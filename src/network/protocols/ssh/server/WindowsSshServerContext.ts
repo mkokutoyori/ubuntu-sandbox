@@ -20,6 +20,7 @@ import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } 
 import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshHostKey } from '../SshHostKey';
 import type { SshCertificate } from '../certificate/SshCertificate';
+import type { WindowsLogonDetails, WindowsLogonFailureCause } from '@/network/devices/windows/events';
 import { SshdCertificateService } from './SshdCertificateService';
 import { certificateOfMaterial, plainKeyOfMaterial } from './UserCertificateAdmission';
 import { SshUserContext } from '../SshUserContext';
@@ -74,15 +75,32 @@ export interface WindowsShellExecutor {
   shellBanner?(): string;
   runExecAs?(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
   bindForwardedAgent?(user: string, agent: AgentPort): { readonly path: string; release(): void };
+  /** Le port source TCP de la connexion acceptée depuis cette adresse. */
+  clientPort?(fromIp: string): number | undefined;
 }
 
 /**
- * Callback fired after every inbound SSH auth attempt — wired up by
- * WindowsPC so the Security event log records 4624 (logon success) /
- * 4625 (logon failure) at logon type 10 (RemoteInteractive), matching
- * what a real Windows host writes for an OpenSSH-for-Windows login.
+ * Un logon que sshd demande à Windows. Win32-OpenSSH en fait deux sortes
+ * (win32_usertoken_utils.c) : le mot de passe passe par LogonUserExExW
+ * (LOGON32_LOGON_NETWORK_CLEARTEXT, type 8), la clé par un logon S4U
+ * (LsaLogonUser, type Network = 3). Un utilisateur refusé par sshd lui-même
+ * (DenyUsers, méthode désactivée, clé inconnue) ne demande rien à Windows :
+ * il n'y a alors aucun événement de sécurité, seulement le journal OpenSSH.
  */
-export type WindowsSshLogonReporter = (user: string, success: boolean) => void;
+export interface WindowsSshLogonReport {
+  readonly user: string;
+  readonly success: boolean;
+  readonly method: 'password' | 'publickey';
+  readonly failure?: WindowsLogonFailureCause;
+}
+
+export type WindowsSshLogonReporter = (report: WindowsSshLogonReport) => void;
+
+export const SSHD_EXECUTABLE = 'C:\\Windows\\System32\\OpenSSH\\sshd.exe';
+
+const PASSWORD_LOGON: WindowsLogonDetails = {
+  processName: SSHD_EXECUTABLE, logonProcess: 'Advapi', authenticationPackage: 'Negotiate',
+};
 
 /**
  * Callback fired when an authenticated SSH session ends — paired with
@@ -146,6 +164,10 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   reloadConfig(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon, this.reportLogoff, this.legalNotice, this.operationalLog);
+  }
+
+  clientPort(fromIp: string): number | undefined {
+    return this.shellExecutor?.clientPort?.(fromIp);
   }
 
   recordLogout(user: string, _fromIp: string): void {
@@ -416,11 +438,15 @@ export class WindowsSshServerContext implements ISshServerContext {
   recordLogin(user: string, fromIp: string): void {
     const entry = this.userManager.getUser(user);
     if (entry) entry.lastLogon = simulationDate();
-    if (this.keyLogons.delete(`${user}@${fromIp}`)) this.reportLogon?.(user, true);
+    if (this.keyLogons.delete(`${user}@${fromIp}`)) this.reportLogon?.({ user, success: true, method: 'publickey' });
   }
 
-  recordAuthFailure(user: string, _fromIp: string, reason: string): void {
-    if (reason === 'publickey' || reason === 'wrong_key') this.reportLogon?.(user, false);
+  recordAuthFailure(user: string, fromIp: string, reason: string): void {
+    if (reason !== 'account-expired' && reason !== 'pam-denied') return;
+    this.keyLogons.delete(`${user}@${fromIp}`);
+    const refusal = this.userManager.logonRefusal(user);
+    const failure: WindowsLogonFailureCause = refusal ?? 'disabled';
+    this.reportLogon?.({ user, success: false, method: 'publickey', failure });
   }
 
   /** Build a SshUserContext from the Windows user database. */
@@ -499,19 +525,24 @@ export class WindowsSshServerContext implements ISshServerContext {
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
-        if (!this.userAllowed(user)) { this.reportLogon?.(user, false); return false; }
-        if (!this.config.passwordAuthentication) { this.reportLogon?.(user, false); return false; }
+        if (!this.userAllowed(user)) return false;
+        if (!this.config.passwordAuthentication) return false;
         // logonType 10 (RemoteInteractive) — checkPassword itself now
         // publishes the one and only windows.account.logon for this
         // attempt (PRD-Winlogon.md §1.2 point 1); no separate
         // reportLogon call here, or SSH would double-publish 4624/4625.
-        return this.userManager.checkPassword(user, password, 10);
+        return this.userManager.checkPassword(user, password, 8, true, true, PASSWORD_LOGON);
       },
       // BRD SSH-03-R6: public-key authentication on Windows OpenSSH stores
       // authorized_keys per-user under C:\Users\<user>\.ssh\. Each line is
       // `<algorithm> <material> [<comment>]`. We accept a successful match
       // when both algorithm and material agree.
       checkPublicKey: (user, publicKey) => this.admittedKey(user, publicKey, { ip: '' }) !== null,
+      checkAccountLifecycle: (user) => {
+        const refusal = this.userManager.logonRefusal(user);
+        if (refusal === null) return { ok: true };
+        return { ok: false, kind: refusal === 'expired' ? 'account-expired' : 'pam-denied', detail: `LsaLogonUser refused the S4U logon: account ${refusal}` };
+      },
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];

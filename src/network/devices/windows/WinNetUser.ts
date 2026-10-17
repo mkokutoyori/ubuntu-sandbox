@@ -20,13 +20,42 @@
 
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
-import type { WindowsUserManager } from './WindowsUserManager';
+import { describeCountryCode, type WindowsUserManager } from './WindowsUserManager';
+import { describeLogonHours } from './WindowsLogonHours';
 import type { DirectoryStore } from './server/ad/DirectoryStore';
 
 const ACCESS_DENIED = 'System error 5 has occurred.\n\nAccess is denied.';
 
+const NET_MESSAGE_CODES: ReadonlyMap<string, number> = new Map([
+  ['The user name could not be found.', 2221],
+  ['The account already exists.', 2224],
+  ['The user name or group name parameter is invalid.', 2202],
+  ['The password of this user cannot be changed.', 2243],
+  ['The password of this user is too recent to change.', 2246],
+  ['The specified network password is not correct.', 86],
+  ['The command syntax is invalid.', 3500],
+]);
+
 function netError(message: string): string {
-  return message === 'Access is denied.' ? ACCESS_DENIED : `System error.\n\n${message}`;
+  if (message === 'Access is denied.') return ACCESS_DENIED;
+  const code = NET_MESSAGE_CODES.get(message);
+  if (code !== undefined) return `${message}\n\nMore help is available by typing NET HELPMSG ${code}.`;
+  return `System error.\n\n${message}`;
+}
+
+const USER_OPTIONS = [
+  'active', 'comment', 'countrycode', 'expires', 'fullname', 'homedir', 'passwordchg',
+  'passwordreq', 'profilepath', 'scriptpath', 'times', 'usercomment', 'workstations',
+] as const;
+
+type UserOption = typeof USER_OPTIONS[number];
+
+function resolveOption(switchName: string): UserOption | null {
+  const lower = switchName.toLowerCase();
+  const exact = USER_OPTIONS.find((option) => option === lower);
+  if (exact !== undefined) return exact;
+  const matches = USER_OPTIONS.filter((option) => option.startsWith(lower));
+  return lower !== '' && matches.length === 1 ? matches[0] : null;
 }
 
 export interface NetUserContext {
@@ -46,25 +75,21 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
     return formatUserList(ctx);
   }
 
-  // Parse flags
   const flags = new Map<string, string>();
+  const options: Array<[UserOption, string]> = [];
   const positional: string[] = [];
   let domain = false;
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg.toLowerCase() === '/add') {
-      flags.set('add', 'true');
-    } else if (arg.toLowerCase() === '/delete') {
-      flags.set('delete', 'true');
-    } else if (arg.toLowerCase() === '/domain') {
-      domain = true;
-    } else if (arg.toLowerCase().startsWith('/active:')) {
-      flags.set('active', arg.substring(8));
-    } else if (arg.toLowerCase().startsWith('/fullname:')) {
-      flags.set('fullname', stripQuotes(arg.substring(10)));
-    } else if (arg.toLowerCase().startsWith('/comment:')) {
-      flags.set('comment', stripQuotes(arg.substring(9)));
+  for (const arg of args) {
+    const lower = arg.toLowerCase();
+    if (lower === '/add') flags.set('add', 'true');
+    else if (lower === '/delete') flags.set('delete', 'true');
+    else if (lower === '/domain') domain = true;
+    else if (arg.startsWith('/')) {
+      const colon = arg.indexOf(':');
+      const option = resolveOption(colon === -1 ? arg.slice(1) : arg.slice(1, colon));
+      if (option === null || colon === -1) return netError('The command syntax is invalid.');
+      options.push([option, stripQuotes(arg.slice(colon + 1))]);
     } else {
       positional.push(arg);
     }
@@ -82,60 +107,44 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
   const username = positional[0];
   if (!username) return 'The syntax of this command is:\n\nNET USER [username [password | *] [options]] [/DOMAIN]\n         username {password | *} /ADD [options] [/DOMAIN]\n         username [/DELETE] [/DOMAIN]';
 
-  // net user <name> /add — accept additional flags in the same call so
-  // `net user foo "" /add /fullname:"X" /comment:"Y" /active:no` initialises
-  // every property atomically.
+  const applyOptions = (): string => {
+    for (const [option, value] of options) {
+      const failure = ctx.userManager.setUserProperty(username, option, value);
+      if (failure) return netError(failure);
+    }
+    return '';
+  };
+
   if (flags.has('add')) {
-    const password = positional[1] || '';
-    const err = ctx.userManager.createUser(username, password);
-    if (err) return netError(err);
+    for (const [option, value] of options) {
+      const invalid = ctx.userManager.validateUserOption(option, value);
+      if (invalid) return netError(invalid);
+    }
+    const failure = ctx.userManager.createUser(username, positional[1] || '');
+    if (failure) return netError(failure);
     ctx.userManager.addGroupMember('Users', username);
-    for (const propKey of ['fullname', 'comment', 'active'] as const) {
-      if (flags.has(propKey)) {
-        const e = ctx.userManager.setUserProperty(username, propKey, flags.get(propKey)!);
-        if (e) return `System error.\n\n${e}`;
-      }
+    const optionFailure = applyOptions();
+    if (optionFailure) return optionFailure;
+    return 'The command completed successfully.';
+  }
+
+  if (flags.has('delete')) {
+    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
+    const failure = ctx.userManager.deleteUser(username);
+    if (failure) return netError(failure);
+    return 'The command completed successfully.';
+  }
+
+  if (options.length > 0 || positional.length >= 2) {
+    const optionFailure = applyOptions();
+    if (optionFailure) return optionFailure;
+    if (positional.length >= 2) {
+      const failure = ctx.userManager.setUserProperty(username, 'password', positional[1]);
+      if (failure) return netError(failure);
     }
     return 'The command completed successfully.';
   }
 
-  // net user <name> /delete
-  if (flags.has('delete')) {
-    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
-    const err = ctx.userManager.deleteUser(username);
-    if (err) return netError(err);
-    return 'The command completed successfully.';
-  }
-
-  // net user <name> /active:yes|no
-  if (flags.has('active')) {
-    const err = ctx.userManager.setUserProperty(username, 'active', flags.get('active')!);
-    if (err) return netError(err);
-    return 'The command completed successfully.';
-  }
-
-  // net user <name> /fullname:"x"
-  if (flags.has('fullname')) {
-    const err = ctx.userManager.setUserProperty(username, 'fullname', flags.get('fullname')!);
-    if (err) return netError(err);
-    return 'The command completed successfully.';
-  }
-
-  // net user <name> /comment:"x"
-  if (flags.has('comment')) {
-    const err = ctx.userManager.setUserProperty(username, 'comment', flags.get('comment')!);
-    if (err) return netError(err);
-    return 'The command completed successfully.';
-  }
-
-  // net user <name> <password> (change password)
-  if (positional.length >= 2) {
-    const err = ctx.userManager.setUserProperty(username, 'password', positional[1]);
-    if (err) return netError(err);
-    return 'The command completed successfully.';
-  }
-
-  // net user <name> (view details)
   return formatUserDetails(ctx, username);
 }
 
@@ -225,42 +234,52 @@ function formatUserList(ctx: NetUserContext): string {
 }
 
 function userDate(d: Date, zone?: string): string {
-  return formatDotNetDate(ZonedDate.in(d.getTime(), zone), 'M/d/yyyy');
+  return formatDotNetDate(ZonedDate.in(d.getTime(), zone), 'M/d/yyyy h:mm:ss tt');
+}
+
+const DETAIL_INDENT = ' '.repeat(29);
+
+function detail(label: string, value: string): string {
+  return `${label.padEnd(29)}${value}`.trimEnd();
 }
 
 function formatUserDetails(ctx: NetUserContext, username: string): string {
   const user = ctx.userManager.getUser(username);
-  if (!user) return 'The user name could not be found.\n\nMore help is available by typing NET HELPMSG 2221.';
+  if (!user) return netError('The user name could not be found.');
 
   const groups = ctx.userManager.getGroupsForUser(user.name);
   const localGroups = groups.map(g => `*${g.name}`).join('  ');
+  const expiresAt = ctx.userManager.passwordExpiresAt(user.name);
+  const minAge = ctx.userManager.passwordMinimumAgeDays();
+  const hours = describeLogonHours(user.logonHours);
 
   const lines: string[] = [];
-  lines.push(`User name                    ${user.name}`);
-  lines.push(`Full Name                    ${user.fullName}`);
-  lines.push(`Comment                      ${user.description}`);
-  lines.push(`User's comment`);
-  lines.push(`Country/region code          000 (System Default)`);
-  lines.push(`Account active               ${user.enabled ? 'Yes' : 'No'}`);
-  lines.push(`Account expires              Never`);
-  lines.push(``);
-  lines.push(`Password last set            ${userDate(user.passwordLastSet, ctx.timezone)}`);
-  lines.push(`Password expires             Never`);
-  lines.push(`Password changeable          ${userDate(user.passwordLastSet, ctx.timezone)}`);
-  lines.push(`Password required            ${user.passwordRequired ? 'Yes' : 'No'}`);
-  lines.push(`User may change password     ${user.userMayChangePassword ? 'Yes' : 'No'}`);
-  lines.push(``);
-  lines.push(`Workstations allowed         All`);
-  lines.push(`Logon script`);
-  lines.push(`User profile`);
-  lines.push(`Home directory`);
-  lines.push(`Last logon                   ${user.lastLogon ? userDate(user.lastLogon, ctx.timezone) : 'Never'}`);
-  lines.push(``);
-  lines.push(`Logon hours allowed          All`);
-  lines.push(``);
-  lines.push(`Local Group Memberships      ${localGroups || '(none)'}`);
-  lines.push(`Global Group memberships     *None`);
-  lines.push(`The command completed successfully.`);
+  lines.push(detail('User name', user.name));
+  lines.push(detail('Full Name', user.fullName));
+  lines.push(detail('Comment', user.description));
+  lines.push(detail("User's comment", user.userComment ?? ''));
+  lines.push(detail('Country/region code', describeCountryCode(user.countryCode ?? 0)));
+  lines.push(detail('Account active', user.enabled ? 'Yes' : 'No'));
+  lines.push(detail('Account expires', user.accountExpires ? userDate(user.accountExpires, 'UTC') : 'Never'));
+  lines.push('');
+  lines.push(detail('Password last set', userDate(user.passwordLastSet, ctx.timezone)));
+  lines.push(detail('Password expires', expiresAt === null ? 'Never' : userDate(new Date(expiresAt), ctx.timezone)));
+  lines.push(detail('Password changeable', userDate(new Date(user.passwordLastSet.getTime() + minAge * 86_400_000), ctx.timezone)));
+  lines.push(detail('Password required', user.passwordRequired ? 'Yes' : 'No'));
+  lines.push(detail('User may change password', user.userMayChangePassword ? 'Yes' : 'No'));
+  lines.push('');
+  lines.push(detail('Workstations allowed', user.workstations === undefined ? 'All' : user.workstations.join(',')));
+  lines.push(detail('Logon script', user.scriptPath ?? ''));
+  lines.push(detail('User profile', user.profilePath ?? ''));
+  lines.push(detail('Home directory', user.homeDirectory ?? ''));
+  lines.push(detail('Last logon', user.lastLogon ? userDate(user.lastLogon, ctx.timezone) : 'Never'));
+  lines.push('');
+  lines.push(detail('Logon hours allowed', hours[0]));
+  for (const extra of hours.slice(1)) lines.push(`${DETAIL_INDENT}${extra}`);
+  lines.push('');
+  lines.push(detail('Local Group Memberships', localGroups || ''));
+  lines.push(detail('Global Group memberships', '*None'));
+  lines.push('The command completed successfully.');
   return lines.join('\n');
 }
 

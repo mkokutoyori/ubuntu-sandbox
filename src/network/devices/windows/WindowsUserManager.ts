@@ -13,7 +13,9 @@
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
-import type { WindowsAccountChange } from './events';
+import { parseAccountExpiry } from './WindowsAccountExpiry';
+import { logonHoursAllow, parseLogonHours, type LogonHours } from './WindowsLogonHours';
+import type { WindowsAccountChange, WindowsLogonDetails, WindowsLogonFailureCause } from './events';
 import type { WindowsAccountsPolicy } from './security/WindowsAccountsPolicy';
 
 export interface WindowsUser {
@@ -34,6 +36,41 @@ export interface WindowsUser {
   failedLogonCount: number;
   /** Set once failedLogonCount reaches the lockout threshold; cleared when it elapses. */
   lockedUntil: Date | null;
+  /** `net user /expires` / `Set-LocalUser -AccountExpires`; null means Never. */
+  accountExpires: Date | null;
+  logonHours?: LogonHours;
+  workstations?: readonly string[];
+  passwordNeverExpires?: boolean;
+  homeDirectory?: string;
+  profilePath?: string;
+  scriptPath?: string;
+  userComment?: string;
+  countryCode?: number;
+}
+
+export interface WindowsUserMachine {
+  hostname(): string;
+  timezone(): string | undefined;
+  directoryExists(path: string): boolean;
+}
+
+export type WindowsLogonRefusal = 'disabled' | 'expired' | 'locked' | 'logon-hours' | 'workstation';
+
+const MAX_WORKSTATIONS = 8;
+const MAX_USER_NAME_LENGTH = 20;
+const MAX_COMMENT_LENGTH = 48;
+const FORBIDDEN_NAME_CHARACTERS = /["/\\[\]:;|=,+*?<>]/;
+const SYNTAX_INVALID = 'The command syntax is invalid.';
+
+function yesNo(value: string): boolean | null {
+  const lower = value.toLowerCase();
+  if (lower === 'yes') return true;
+  if (lower === 'no') return false;
+  return null;
+}
+
+function isAbsolutePath(path: string): boolean {
+  return /^([a-z]:|[\\/])/i.test(path);
 }
 
 export interface WindowsGroup {
@@ -99,6 +136,21 @@ const STANDARD_PRIVILEGES: Array<[string, string, string]> = [
   ['SeTimeZonePrivilege', 'Change the time zone', 'Disabled'],
 ];
 
+const COUNTRY_CODES: ReadonlyMap<number, string> = new Map([
+  [1, 'United States'], [7, 'Russia'], [20, 'Egypt'], [27, 'South Africa'], [30, 'Greece'],
+  [31, 'Netherlands'], [32, 'Belgium'], [33, 'France'], [34, 'Spain'], [36, 'Hungary'],
+  [39, 'Italy'], [40, 'Romania'], [41, 'Switzerland'], [43, 'Austria'], [44, 'United Kingdom'],
+  [45, 'Denmark'], [46, 'Sweden'], [47, 'Norway'], [48, 'Poland'], [49, 'Germany'],
+  [52, 'Mexico'], [55, 'Brazil'], [61, 'Australia'], [64, 'New Zealand'], [81, 'Japan'],
+  [82, 'Korea'], [86, "People's Republic of China"], [90, 'Turkey'], [91, 'India'], [351, 'Portugal'],
+  [353, 'Ireland'], [358, 'Finland'], [972, 'Israel'], [966, 'Saudi Arabia'], [971, 'United Arab Emirates'],
+]);
+
+export function describeCountryCode(code: number): string {
+  const label = code === 0 ? 'System Default' : COUNTRY_CODES.get(code) ?? 'Unknown';
+  return `${String(code).padStart(3, '0')} (${label})`;
+}
+
 export class WindowsUserManager {
   private users: Map<string, WindowsUser> = new Map();
   private groups: Map<string, WindowsGroup> = new Map();
@@ -112,6 +164,7 @@ export class WindowsUserManager {
   private deviceId = '';
   /** LSA account policy (net accounts) — null until the device attaches it. */
   private policy: WindowsAccountsPolicy | null = null;
+  private machine: WindowsUserMachine | null = null;
 
   constructor() {
     this.initDefaults();
@@ -127,16 +180,23 @@ export class WindowsUserManager {
     this.deviceId = deviceId;
   }
 
+  attachMachine(machine: WindowsUserMachine): void {
+    this.machine = machine;
+  }
+
   /** Attach the machine's `net accounts` policy so it is actually enforced. */
   attachPolicy(policy: WindowsAccountsPolicy): void {
     this.policy = policy;
   }
 
   /** Publish an account-change event on the central bus. */
-  private publishAccount(account: string, change: WindowsAccountChange): void {
+  private publishAccount(
+    account: string, change: WindowsAccountChange, changed?: Record<string, string>,
+  ): void {
+    const actor = change === 'locked-out' ? 'SYSTEM' : this.currentUser;
     this.bus?.publish({
       topic: 'windows.account.changed',
-      payload: { deviceId: this.deviceId, account, change },
+      payload: { deviceId: this.deviceId, account, change, actor, ...(changed === undefined ? {} : { changed }) },
     });
   }
 
@@ -144,7 +204,7 @@ export class WindowsUserManager {
   private publishMembership(group: string, member: string, added: boolean): void {
     this.bus?.publish({
       topic: 'windows.group.membership-changed',
-      payload: { deviceId: this.deviceId, group, member, added },
+      payload: { deviceId: this.deviceId, group, member, added, actor: this.currentUser },
     });
   }
 
@@ -155,7 +215,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['Administrator'], enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     this.passwords.set('administrator', 'admin');
 
@@ -164,7 +224,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['Guest'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
 
     this.addUser({
@@ -172,7 +232,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['DefaultAccount'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
 
     this.addUser({
@@ -180,7 +240,7 @@ export class WindowsUserManager {
       sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
       passwordLastSet: simulationDate(), lastLogon: simulationDate(), builtIn: false,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     this.passwords.set('user', 'user');
 
@@ -192,10 +252,12 @@ export class WindowsUserManager {
         sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
         passwordRequired: true, userMayChangePassword: true,
         passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
-        passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+        passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
       });
       this.passwords.set(u.toLowerCase(), u);
     }
+
+    for (const builtIn of ['guest', 'defaultaccount']) this.users.get(builtIn)!.passwordNeverExpires = true;
 
     // Built-in groups
     this.addGroup({
@@ -345,6 +407,9 @@ export class WindowsUserManager {
     if (this.users.has(name.toLowerCase())) {
       return `The account already exists.`;
     }
+    if (name.length === 0 || name.length > MAX_USER_NAME_LENGTH || FORBIDDEN_NAME_CHARACTERS.test(name)) {
+      return 'The user name or group name parameter is invalid.';
+    }
     if (!opts.noPassword && password) {
       const pwErr = this.validatePasswordComplexity(password);
       if (pwErr) return pwErr;
@@ -356,7 +421,7 @@ export class WindowsUserManager {
       sid, enabled: true, password: opts.noPassword ? '' : 'x',
       passwordRequired: !opts.noPassword, userMayChangePassword: true,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     if (!opts.noPassword) {
       this.passwords.set(name.toLowerCase(), password);
@@ -398,6 +463,63 @@ export class WindowsUserManager {
     return '';
   }
 
+  private storePassword(user: WindowsUser, value: string): string {
+    const current = this.passwords.get(user.name.toLowerCase()) ?? '';
+    const blankAllowed = value === '' && !user.passwordRequired;
+    const failure = blankAllowed ? '' : this.validatePasswordComplexity(value, [current, ...user.passwordHistory]);
+    if (failure) return failure;
+    const historyLength = this.policy?.snapshot().passwordHistoryLength ?? 0;
+    if (current) {
+      user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
+    }
+    this.passwords.set(user.name.toLowerCase(), value);
+    user.passwordLastSet = simulationDate();
+    return '';
+  }
+
+  changePassword(name: string, oldPassword: string, newPassword: string): string {
+    const user = this.users.get(name.toLowerCase());
+    if (!user) return 'The user name could not be found.';
+    if (this.passwords.get(name.toLowerCase()) !== oldPassword) {
+      return 'The specified network password is not correct.';
+    }
+    if (!user.userMayChangePassword) return 'The password of this user cannot be changed.';
+    const changeableAt = user.passwordLastSet.getTime() + (this.policy?.snapshot().minPasswordAge ?? 0) * 86_400_000;
+    if (changeableAt > simulationNowMs()) return 'The password of this user is too recent to change.';
+    const failure = this.storePassword(user, newPassword);
+    if (failure) return failure;
+    this.publishAccount(user.name, 'password-changed');
+    return '';
+  }
+
+  validateUserOption(property: string, value: string): string {
+    switch (property.toLowerCase()) {
+      case 'times': return parseLogonHours(value).ok ? '' : SYNTAX_INVALID;
+      case 'expires': return parseAccountExpiry(value, simulationNowMs()) === undefined ? SYNTAX_INVALID : '';
+      case 'workstations': {
+        const names = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+        return names.length > MAX_WORKSTATIONS && !names.includes('*') ? SYNTAX_INVALID : '';
+      }
+      case 'passwordchg':
+      case 'passwordreq':
+      case 'passwordneverexpires':
+      case 'active':
+        return yesNo(value) === null ? SYNTAX_INVALID : '';
+      case 'homedir':
+        return value !== '' && !value.startsWith('\\\\') && this.machine !== null && !this.machine.directoryExists(value)
+          ? 'The system cannot find the path specified.' : '';
+      case 'scriptpath': return isAbsolutePath(value) ? SYNTAX_INVALID : '';
+      case 'comment':
+      case 'usercomment':
+        return value.length > MAX_COMMENT_LENGTH ? SYNTAX_INVALID : '';
+      case 'countrycode': {
+        const code = Number(value);
+        return /^\d{1,3}$/.test(value) && (code === 0 || COUNTRY_CODES.has(code)) ? '' : SYNTAX_INVALID;
+      }
+      default: return '';
+    }
+  }
+
   setUserProperty(name: string, property: string, value: string): string {
     if (!this.isCurrentUserAdmin()) return 'Access is denied.';
     const user = this.users.get(name.toLowerCase());
@@ -406,36 +528,113 @@ export class WindowsUserManager {
     switch (property.toLowerCase()) {
       case 'fullname':
         user.fullName = value;
-        this.publishAccount(user.name, 'modified');
+        this.publishAccount(user.name, 'modified', { DisplayName: value });
         break;
       case 'description':
       case 'comment':
+        if (value.length > MAX_COMMENT_LENGTH) return SYNTAX_INVALID;
         user.description = value;
         this.publishAccount(user.name, 'modified');
         break;
       case 'password': {
-        const current = this.passwords.get(name.toLowerCase()) ?? '';
-        const pwErr = this.validatePasswordComplexity(value, [current, ...user.passwordHistory]);
-        if (pwErr) return pwErr;
-        const historyLength = this.policy?.snapshot().passwordHistoryLength ?? 0;
-        if (current) {
-          user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
-        }
-        this.passwords.set(name.toLowerCase(), value);
-        user.passwordLastSet = simulationDate();
+        const failure = this.storePassword(user, value);
+        if (failure) return failure;
         this.publishAccount(user.name, 'password-reset');
         break;
       }
       case 'active': {
-        const enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+        const enabled = yesNo(value);
+        if (enabled === null) return SYNTAX_INVALID;
         user.enabled = enabled;
         if (enabled) {
+          const wasLocked = this.isLockedOut(user.name);
           user.lockedUntil = null;
           user.failedLogonCount = 0;
+          if (wasLocked) this.publishAccount(user.name, 'unlocked');
           this.publishAccount(user.name, 'enabled');
         } else {
           this.publishAccount(user.name, 'disabled');
         }
+        break;
+      }
+      case 'expires': {
+        const parsed = parseAccountExpiry(value, simulationNowMs());
+        if (parsed === undefined) return 'The command syntax is invalid: the /EXPIRES date is not valid.';
+        user.accountExpires = parsed;
+        this.publishAccount(user.name, 'modified', {
+          AccountExpires: parsed === null ? '%%1794' : `${parsed.getUTCMonth() + 1}/${parsed.getUTCDate()}/${parsed.getUTCFullYear()}`,
+        });
+        break;
+      }
+      case 'times': {
+        const parsed = parseLogonHours(value);
+        if (!parsed.ok) return SYNTAX_INVALID;
+        user.logonHours = parsed.hours ?? undefined;
+        this.publishAccount(user.name, 'modified');
+        break;
+      }
+      case 'workstations': {
+        const names = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+        if (names.includes('*') || names.length === 0) {
+          user.workstations = undefined;
+        } else {
+          if (names.length > MAX_WORKSTATIONS) return SYNTAX_INVALID;
+          user.workstations = names;
+        }
+        this.publishAccount(user.name, 'modified');
+        break;
+      }
+      case 'passwordchg': {
+        const allowed = yesNo(value);
+        if (allowed === null) return SYNTAX_INVALID;
+        user.userMayChangePassword = allowed;
+        this.publishAccount(user.name, 'modified');
+        break;
+      }
+      case 'passwordreq': {
+        const required = yesNo(value);
+        if (required === null) return SYNTAX_INVALID;
+        if (required && (this.passwords.get(user.name.toLowerCase()) ?? '') === '') {
+          return this.validatePasswordComplexity('');
+        }
+        user.passwordRequired = required;
+        this.publishAccount(user.name, 'modified');
+        break;
+      }
+      case 'passwordneverexpires': {
+        const never = yesNo(value);
+        if (never === null) return SYNTAX_INVALID;
+        user.passwordNeverExpires = never;
+        this.publishAccount(user.name, 'modified');
+        break;
+      }
+      case 'homedir': {
+        if (value !== '' && !value.startsWith('\\\\') && this.machine !== null && !this.machine.directoryExists(value)) {
+          return 'The system cannot find the path specified.';
+        }
+        user.homeDirectory = value;
+        this.publishAccount(user.name, 'modified', { HomeDirectory: value === '' ? '%%1793' : value });
+        break;
+      }
+      case 'profilepath':
+        user.profilePath = value;
+        this.publishAccount(user.name, 'modified', { ProfilePath: value === '' ? '%%1793' : value });
+        break;
+      case 'scriptpath':
+        if (isAbsolutePath(value)) return SYNTAX_INVALID;
+        user.scriptPath = value;
+        this.publishAccount(user.name, 'modified', { ScriptPath: value === '' ? '%%1793' : value });
+        break;
+      case 'usercomment':
+        if (value.length > MAX_COMMENT_LENGTH) return SYNTAX_INVALID;
+        user.userComment = value;
+        this.publishAccount(user.name, 'modified');
+        break;
+      case 'countrycode': {
+        const code = Number(value);
+        if (!/^\d{1,3}$/.test(value) || (code !== 0 && !COUNTRY_CODES.has(code))) return SYNTAX_INVALID;
+        user.countryCode = code;
+        this.publishAccount(user.name, 'modified');
         break;
       }
       default:
@@ -472,10 +671,39 @@ export class WindowsUserManager {
     return false;
   }
 
+  isAccountExpired(name: string): boolean {
+    const expires = this.users.get(name.toLowerCase())?.accountExpires;
+    return expires != null && expires.getTime() <= simulationNowMs();
+  }
+
+  /**
+   * Why a logon that needs no password (the S4U logon Win32-OpenSSH performs
+   * for public-key authentication, win32_usertoken_utils.c) is refused for
+   * this account, or null when it may proceed. A password that is merely
+   * expired does not appear here: S4U never presents one.
+   */
+  logonRefusal(name: string, workstation?: string): WindowsLogonRefusal | null {
+    const user = this.users.get(name.toLowerCase());
+    if (!user) return null;
+    if (!user.enabled) return 'disabled';
+    if (this.isAccountExpired(name)) return 'expired';
+    if (this.isLockedOut(name)) return 'locked';
+    if (!logonHoursAllow(user.logonHours, simulationNowMs(), this.machine?.timezone())) return 'logon-hours';
+    if (user.workstations !== undefined) {
+      const origin = (workstation ?? this.machine?.hostname() ?? '').toLowerCase();
+      if (!user.workstations.some((entry) => entry.toLowerCase() === origin)) return 'workstation';
+    }
+    return null;
+  }
+
+  passwordMinimumAgeDays(): number {
+    return this.policy?.snapshot().minPasswordAge ?? 0;
+  }
+
   /** The instant this account's password stops being valid, or null if `net accounts /maxpwage` is Never/unset. */
   passwordExpiresAt(name: string): number | null {
     const user = this.users.get(name.toLowerCase());
-    if (!user) return null;
+    if (!user || user.passwordNeverExpires === true) return null;
     const maxAge = this.policy?.snapshot().maxPasswordAge ?? -1;
     if (maxAge < 0) return null;
     return user.passwordLastSet.getTime() + maxAge * 86_400_000;
@@ -531,13 +759,20 @@ export class WindowsUserManager {
    * out of the way entirely rather than double-publishing the failure
    * half like the success half would.
    */
-  checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true): boolean {
+  checkPassword(
+    name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true,
+    details?: WindowsLogonDetails,
+  ): boolean {
     const user = this.users.get(name.toLowerCase());
-    if (user && (user.enabled === false || this.isLockedOut(name) || this.isPasswordExpired(name))) {
+    const refusal = user === undefined ? null : this.logonRefusal(name, details?.workstation);
+    const blocked: WindowsLogonFailureCause | null =
+      refusal !== null ? refusal
+        : user !== undefined && this.isPasswordExpired(name) ? 'password-expired' : null;
+    if (blocked !== null) {
       if (publishOnFailure) {
         this.bus?.publish({
           topic: 'windows.account.logon',
-          payload: { deviceId: this.deviceId, account: name, success: false, logonType },
+          payload: { deviceId: this.deviceId, account: name, success: false, logonType, failure: blocked, details },
         });
       }
       return false;
@@ -562,7 +797,10 @@ export class WindowsUserManager {
     if (!ok && !publishOnFailure) return false;
     this.bus?.publish({
       topic: 'windows.account.logon',
-      payload: { deviceId: this.deviceId, account: name, success: ok, logonType },
+      payload: {
+        deviceId: this.deviceId, account: name, success: ok, logonType, details,
+        ...(ok ? {} : { failure: user === undefined ? 'unknown-user' as const : 'bad-password' as const }),
+      },
     });
     return ok;
   }
@@ -601,7 +839,7 @@ export class WindowsUserManager {
     }
     const sid = `S-1-5-32-${1000 + this.nextRid++}`;
     this.addGroup({ name, description, sid, members: [], builtIn: false });
-    this.bus?.publish({ topic: 'windows.group.created', payload: { deviceId: this.deviceId, group: name } });
+    this.bus?.publish({ topic: 'windows.group.created', payload: { deviceId: this.deviceId, group: name, actor: this.currentUser } });
     return '';
   }
 
@@ -611,7 +849,7 @@ export class WindowsUserManager {
     if (!group) return `The specified group could not be found.`;
     if (group.builtIn) return `Cannot delete built-in group '${group.name}'.`;
     this.groups.delete(name.toLowerCase());
-    this.bus?.publish({ topic: 'windows.group.deleted', payload: { deviceId: this.deviceId, group: group.name } });
+    this.bus?.publish({ topic: 'windows.group.deleted', payload: { deviceId: this.deviceId, group: group.name, actor: this.currentUser } });
     return '';
   }
 
@@ -698,7 +936,7 @@ export class WindowsUserManager {
         builtIn: false,
         passwordHistory: [],
         failedLogonCount: 0,
-        lockedUntil: null,
+        lockedUntil: null, accountExpires: null,
       };
       this.users.set(name.toLowerCase(), user);
       const usersGroup = this.groups.get('users');

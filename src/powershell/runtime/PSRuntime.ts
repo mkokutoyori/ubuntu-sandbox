@@ -2978,9 +2978,9 @@ export class PSRuntime {
         const xmlStr = String(val ?? '');
         const parseAttrs = (attrsStr: string): Record<string, string> => {
           const attrs: Record<string, string> = {};
-          const attrRe = /([\w:.-]+)\s*=\s*"([^"]*)"/g;
+          const attrRe = /([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
           let am: RegExpExecArray | null;
-          while ((am = attrRe.exec(attrsStr)) !== null) attrs[am[1]] = am[2];
+          while ((am = attrRe.exec(attrsStr)) !== null) attrs[am[1]] = am[2] ?? am[3];
           return attrs;
         };
         const parseXML = (s: string): Record<string, PSValue> => {
@@ -2988,7 +2988,7 @@ export class PSRuntime {
             OuterXml: s,
             InnerText: s.replace(/<[^>]*>/g, '').trim(),
           };
-          const childRe = /<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*"[^"]*")*)\s*(?:\/>|>([^]*?)<\/\1>)/g;
+          const childRe = /<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(?:\/>|>([^]*?)<\/\1>)/g;
           let m: RegExpExecArray | null;
           while ((m = childRe.exec(s)) !== null) {
             const [, tag, attrsStr, content] = m;

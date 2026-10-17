@@ -39,6 +39,8 @@ export class WindowsSecurityAuditProjection {
     private readonly auditPolicy?: WindowsAuditPolicy,
     /** Vrai quand `ProcessCreationIncludeCmdLine_Enabled` est posé. */
     private readonly commandLineAudited?: () => boolean,
+    /** Les comptes dont le jeton reçoit des privilèges (membres d'Administrators). */
+    private readonly isAdministrator?: (account: string) => boolean,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
@@ -95,14 +97,17 @@ export class WindowsSecurityAuditProjection {
   private onAccountChanged(p: WindowsAccountChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('User Account Management', 'success')) return;
+    const actor = p.actor ?? 'Administrator';
     switch (p.change) {
-      case 'created': this.audit.accountCreated(p.account); break;
-      case 'deleted': this.audit.accountDeleted(p.account); break;
-      case 'password-reset': this.audit.passwordReset(p.account); break;
-      case 'enabled': this.audit.accountEnabled(p.account); break;
-      case 'disabled': this.audit.accountDisabled(p.account); break;
-      case 'modified': this.audit.accountChanged(p.account); break;
+      case 'created': this.audit.accountCreated(p.account, actor); break;
+      case 'deleted': this.audit.accountDeleted(p.account, actor); break;
+      case 'password-reset': this.audit.passwordReset(p.account, actor); break;
+      case 'password-changed': this.audit.passwordChanged(p.account, actor); break;
+      case 'enabled': this.audit.accountEnabled(p.account, actor); break;
+      case 'disabled': this.audit.accountDisabled(p.account, actor); break;
+      case 'modified': this.audit.accountChanged(p.account, actor, p.changed); break;
       case 'locked-out': this.audit.accountLockedOut(p.account); break;
+      case 'unlocked': this.audit.accountUnlocked(p.account, actor); break;
     }
   }
 
@@ -113,24 +118,24 @@ export class WindowsSecurityAuditProjection {
    * même `TargetLogonId` que le 4624 qui l'a ouverte, sinon on voit des
    * connexions et des déconnexions sans savoir lesquelles vont ensemble.
    */
-  private readonly openSessions = new Map<string, string>();
+  private readonly openSessions = new Map<string, { logonId: string; logonType: number }>();
 
   private onLogon(p: WindowsLogonEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (p.success) {
       if (!this.gated('Logon', 'success')) return;
       const logonId = nextLogonId();
-      this.openSessions.set(p.account.toLowerCase(), logonId);
-      this.audit.logonSuccess(p.account, p.logonType, undefined, logonId);
+      this.openSessions.set(p.account.toLowerCase(), { logonId, logonType: p.logonType });
+      this.audit.logonSuccess(p.account, p.logonType, logonId, p.details);
       // 4672 — un compte privilégié reçoit ses privilèges à l'ouverture
       // de session, et Windows le journalise séparément du 4624. C'est
       // l'événement qu'on surveille pour repérer une session à pouvoirs.
-      if (isPrivilegedAccount(p.account) && this.gated('Special Logon', 'success')) {
+      if ((this.isAdministrator?.(p.account) === true || isPrivilegedAccount(p.account)) && this.gated('Special Logon', 'success')) {
         this.audit.specialPrivileges(p.account, ADMIN_PRIVILEGES, logonId);
       }
     } else {
       if (!this.gated('Logon', 'failure')) return;
-      this.audit.logonFailure(p.account);
+      this.audit.logonFailure(p.account, p.logonType, p.failure ?? 'bad-password', p.details);
     }
   }
 
@@ -138,9 +143,9 @@ export class WindowsSecurityAuditProjection {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Logoff', 'success')) return;
     const key = p.account.toLowerCase();
-    const logonId = this.openSessions.get(key);
+    const session = this.openSessions.get(key);
     this.openSessions.delete(key);
-    this.audit.logoff(p.account, p.logonType, logonId);
+    this.audit.logoff(p.account, session?.logonType ?? p.logonType, session?.logonId);
   }
 
   /**
@@ -153,7 +158,7 @@ export class WindowsSecurityAuditProjection {
   private onSessionDisconnected(p: WindowsSessionLinkEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Other Logon/Logoff Events', 'success')) return;
-    const logonId = this.openSessions.get(p.account.toLowerCase());
+    const logonId = this.openSessions.get(p.account.toLowerCase())?.logonId;
     this.audit.sessionDisconnected(p.account, p.logonType, logonId);
   }
 
@@ -161,7 +166,7 @@ export class WindowsSecurityAuditProjection {
   private onSessionReconnected(p: WindowsSessionLinkEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Other Logon/Logoff Events', 'success')) return;
-    const logonId = this.openSessions.get(p.account.toLowerCase());
+    const logonId = this.openSessions.get(p.account.toLowerCase())?.logonId;
     this.audit.sessionReconnected(p.account, p.logonType, logonId);
   }
 
@@ -187,20 +192,20 @@ export class WindowsSecurityAuditProjection {
   private onGroupCreated(p: WindowsGroupEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Security Group Management', 'success')) return;
-    this.audit.groupCreated(p.group);
+    this.audit.groupCreated(p.group, p.actor);
   }
 
   private onGroupDeleted(p: WindowsGroupEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Security Group Management', 'success')) return;
-    this.audit.groupDeleted(p.group);
+    this.audit.groupDeleted(p.group, p.actor);
   }
 
   private onMembership(p: WindowsGroupMemberEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Security Group Management', 'success')) return;
-    if (p.added) this.audit.groupMemberAdded(p.group, p.member);
-    else this.audit.groupMemberRemoved(p.group, p.member);
+    if (p.added) this.audit.groupMemberAdded(p.group, p.member, 'Local', p.actor);
+    else this.audit.groupMemberRemoved(p.group, p.member, 'Local', p.actor);
   }
 
   private onProcess(p: WindowsProcessEventPayload): void {

@@ -90,6 +90,12 @@ export const CMDLET_HELP: Record<string, CmdletHelpEntry> = {
     syntax: 'Get-NetRoute [[-DestinationPrefix] <String[]>] [-InterfaceAlias <String[]>] [-NextHop <String[]>] [-RouteMetric <UInt16>] [<CommonParameters>]',
     examples: 'EXAMPLE 1\n    PS> Get-NetRoute\n    (Lists routing table)',
   },
+  'get-netprefixpolicy': {
+    synopsis: 'Gets the prefix policy.',
+    description: 'The Get-NetPrefixPolicy cmdlet gets the prefix policy. A computer uses a prefix policy to select source and destination addresses. A prefix policy establishes selection criteria based on the precedence of destination addresses and on labels that are attached to source addresses.',
+    syntax: 'Get-NetPrefixPolicy [[-Prefix] <String[]>] [-Precedence <UInt32[]>] [-Label <UInt32[]>] [-CimSession <CimSession[]>] [<CommonParameters>]',
+    examples: 'EXAMPLE 1\n    PS> Get-NetPrefixPolicy\n\nEXAMPLE 2\n    PS> Get-NetPrefixPolicy -Precedence 1',
+  },
   'new-netroute': {
     synopsis: 'Creates a route in the IP routing table.',
     description: 'The New-NetRoute cmdlet creates a route in the IP routing table.',

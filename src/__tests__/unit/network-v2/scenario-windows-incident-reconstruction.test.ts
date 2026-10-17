@@ -76,13 +76,23 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
       expect(out).not.toMatch(/No events were found/i);
     });
 
-    it('gap confirmé : Phase 6 (Clear-EventLog Application) ne génère jamais d\'EventID 1102 dans le journal Security — l\'effacement de traces passe totalement inaperçu', async () => {
+    it('Phase 6 : Clear-EventLog Application laisse un 104 dans le journal System (Microsoft-Windows-Eventlog) avec le compte et le journal effacé', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
       await run(sh, 'Clear-EventLog -LogName Application');
 
-      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = @(1102, 1100); StartTime = (Get-Date).AddHours(-2) }");
-      expect(out).not.toMatch(/No events were found/i);
+      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 104; StartTime = (Get-Date).AddHours(-2) } | ForEach-Object { $x = [xml]$_.ToXml(); ($x.Event.UserData.LogFileCleared.Channel) + ' ' + $_.ProviderName }");
+      expect(out).toContain('Application Microsoft-Windows-Eventlog');
+    });
+
+    it('Phase 6 : effacer le journal Security laisse un 1102 dans Security lui-même, avec le compte', async () => {
+      const dc = new WindowsServer('DC01');
+      const sh = ps(dc);
+      await run(sh, 'Clear-EventLog -LogName Security');
+
+      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 1102 } | ForEach-Object { $_.Message }");
+      expect(out).toContain('The audit log was cleared.');
+      expect(out).toContain('Account Name:\tAdministrator');
     });
   });
 
@@ -119,7 +129,7 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
         '$PowerShellCount = (Get-WinEvent -FilterHashtable @{ LogName = \'Microsoft-Windows-PowerShell/Operational\'; Id = 4104; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
         '$Registre = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = 4657; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
         '$TachePlanifiee = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = @(4698, 4699, 4702); StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
-        '$JournalEfface = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = @(1102, 1100); StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
+        '$JournalEfface = (Get-WinEvent -FilterHashtable @{ LogName = \'System\'; Id = 104; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
         '"CONNEXION=$Connexion"',
         '"POWERSHELL=$PowerShellCount"',
         '"REGISTRE=$Registre"',

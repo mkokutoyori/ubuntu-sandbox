@@ -37,7 +37,7 @@ describe('§WA1 — Windows SSH publishes 4624/4625 to the Security event log', 
     expect(log).toContain(4625);
   });
 
-  it('uses Logon Type 10 (RemoteInteractive) — that is what Windows logs for SSH', () => {
+  it('uses Logon Type 8 (NetworkCleartext) for a password — Win32-OpenSSH calls LogonUserExExW with LOGON32_LOGON_NETWORK_CLEARTEXT', () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     const ctx = pc.getSshServerContext();
     // Default WindowsUserManager seed: password for 'user' is 'user'.
@@ -46,7 +46,7 @@ describe('§WA1 — Windows SSH publishes 4624/4625 to the Security event log', 
     const entries = (pc.eventLog.getEntriesStructured('Security', { newest: 50 }) ?? [])
       .filter(e => e.eventId === 4624);
     expect(entries.length).toBeGreaterThan(0);
-    expect(entries[0].message).toContain('Logon Type:\t\t10');
+    expect(entries[0].message).toContain('Logon Type:\t\t8');
   });
 
   it('publishes a 4634 (Logoff) event when the SSH session ends', () => {

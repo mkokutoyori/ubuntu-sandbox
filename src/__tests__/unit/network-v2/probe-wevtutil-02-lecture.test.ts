@@ -78,15 +78,15 @@ describe('Scénario 2 — `gl` rend la configuration réelle', () => {
     expect(Number(field(out, 'maxSize'))).toBeGreaterThan(0);
   });
 
-  it('`autoBackup` est faux, et le reste', async () => {
+  it('`autoBackup` est faux par défaut ; il exige la rétention', async () => {
     const dc = new WindowsServer('DC01');
-    // Rien n'archive un journal plein dans ce simulateur. Annoncer autre
-    // chose serait promettre une sauvegarde qui n'aura pas lieu — et
-    // c'est pourquoi `sl /ab:` est refusée plutôt qu'acceptée.
     expect(field(String(await dc.executeCmdCommand('wevtutil gl Security')), 'autoBackup'))
       .toBe('false');
     expect(await dc.executeCmdCommand('wevtutil sl Security /ab:true'))
-      .toContain('is not recognized');
+      .toContain('The parameter is incorrect');
+    expect(await dc.executeCmdCommand('wevtutil sl Security /rt:true /ab:true')).toBe('');
+    expect(field(String(await dc.executeCmdCommand('wevtutil gl Security')), 'autoBackup'))
+      .toBe('true');
   });
 
   it('le nom de fichier échappe le séparateur de canal', async () => {

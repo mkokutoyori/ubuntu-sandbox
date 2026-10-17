@@ -77,23 +77,45 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
 
 /** The kind of change applied to a local account. */
 export type WindowsAccountChange =
-  | 'created' | 'deleted' | 'password-reset' | 'enabled' | 'disabled' | 'modified' | 'locked-out';
+  | 'created' | 'deleted' | 'password-reset' | 'password-changed' | 'enabled' | 'disabled' | 'modified' | 'locked-out' | 'unlocked';
 
 export interface WindowsAccountChangedPayload extends WindowsDeviceRef {
   account: string;
   change: WindowsAccountChange;
+  /** Le compte qui a exécuté la commande (SYSTEM pour un verrouillage). */
+  actor?: string;
+  /** Les attributs modifiés, pour le 4738. */
+  changed?: Record<string, string>;
 }
+
+export interface WindowsLogonDetails {
+  readonly processId?: string;
+  readonly processName?: string;
+  readonly logonProcess?: string;
+  readonly authenticationPackage?: string;
+  readonly workstation?: string;
+  readonly ipAddress?: string;
+  readonly ipPort?: string;
+  readonly elevated?: boolean;
+}
+
+export type WindowsLogonFailureCause =
+  | 'unknown-user' | 'bad-password' | 'disabled' | 'expired' | 'locked'
+  | 'logon-hours' | 'workstation' | 'password-expired';
 
 export interface WindowsLogonEventPayload extends WindowsDeviceRef {
   account: string;
   /** True for a successful authentication, false for a failed one. */
   success: boolean;
-  /** Windows logon type (2 = interactive, 3 = network, 10 = RDP, …). */
+  /** Windows logon type (2 = interactive, 3 = network, 8 = network cleartext, 10 = RDP, …). */
   logonType: number;
+  details?: WindowsLogonDetails;
+  failure?: WindowsLogonFailureCause;
 }
 
 export interface WindowsLogoffEventPayload extends WindowsDeviceRef {
   account: string;
+  logonId?: string;
   /** Windows logon type of the session that ended (mirrors the 4624 it pairs with). */
   logonType: number;
 }
@@ -119,6 +141,7 @@ export interface WindowsSessionLinkEventPayload extends WindowsDeviceRef {
 
 export interface WindowsGroupEventPayload extends WindowsDeviceRef {
   group: string;
+  actor?: string;
 }
 
 export interface WindowsGroupMemberEventPayload extends WindowsGroupEventPayload {

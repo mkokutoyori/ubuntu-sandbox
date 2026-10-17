@@ -65,7 +65,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
 import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
-import { WindowsSshServerContext, windowsPathOf } from '../protocols/ssh/server/WindowsSshServerContext';
+import { WindowsSshServerContext, windowsPathOf, SSHD_EXECUTABLE } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
 import {
@@ -138,11 +138,15 @@ import {
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
+import { createAuditIdentity } from './windows/eventlog/AuditIdentity';
+import type { WindowsLogonDetails } from './windows/events';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
+import { PrefixPolicyStore } from './windows/PrefixPolicyStore';
+import type { DestinationPolicy } from '../layers/internet/DestinationSelection';
 import { PortProxyEndpoint } from './windows/PortProxyEndpoint';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
@@ -314,6 +318,9 @@ import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
  */
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
+const S4U_LOGON: WindowsLogonDetails = {
+  processName: SSHD_EXECUTABLE, logonProcess: 'sshd', authenticationPackage: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0',
+};
 const DNS_CLIENT_SERVICE = 'Dnscache';
 
 /**
@@ -486,6 +493,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private tcpSocketProjection: TcpSocketStateProjection | null = null;
   /** `netsh interface portproxy` rules — port-forwarding entries. */
   readonly portProxyTable: PortProxyTable = new PortProxyTable();
+  readonly prefixPolicies: PrefixPolicyStore = new PrefixPolicyStore();
   /** Reactive consumer: port-proxy events → socket-table listeners. */
   private readonly portProxyEndpoint = new PortProxyEndpoint(() => this.portProxyTable.list(), this.getTcpStack());
   /** Service manager (service lifecycle, dependencies) */
@@ -572,6 +580,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.newEventLog('OpenSSH/Operational', 'OpenSSH');
     this.userMgr = new WindowsUserManager();
     this.userMgr.attachPolicy(this.accountsPolicy);
+    this.userMgr.attachMachine({
+      hostname: () => this.hostname,
+      timezone: () => this.identity.timezone,
+      directoryExists: (path) => this.fs.isDirectory(this.fs.normalizePath(path, 'C:\\')),
+    });
     // Documents the real account roster (name/password/groups) next to the
     // other sample data files (numbers.txt) — driven entirely by userMgr so
     // it can never drift from the accounts that actually exist.
@@ -587,6 +600,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // celle qui horodate le journal, sans quoi un filtre temporel écarte
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
+    this.eventLog.describeBootEvents(this.hostname.toUpperCase());
+    this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
+    this.auditPolicy.attachChangeListener((subcategory, changes) => {
+      if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
+      this.securityAudit().auditPolicyChanged(subcategory, changes, this.userMgr.currentUser || 'Administrator');
+    });
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.winrm.onChange(() => this.startWinRmService());
@@ -638,7 +657,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   private auditRegistryChange(change: RegistryValueChange): void {
     if (!this.auditPolicy.isEnabled('Registry', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).registryValueModified(
+    this.securityAudit().registryValueModified(
       `${change.path}\\${change.name}`,
       change.previous === undefined ? '' : String(change.previous),
       String(change.next),
@@ -646,10 +665,29 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
   }
 
+  private securityAuditInstance: WindowsSecurityAudit | null = null;
+
+  /**
+   * Le journal d'audit de CETTE machine : un seul exemplaire, donc une
+   * seule identité (SID de machine, nom NetBIOS, sessions ouvertes) pour
+   * tous les événements qu'elle écrit.
+   */
+  securityAudit(): WindowsSecurityAudit {
+    this.securityAuditInstance ??= new WindowsSecurityAudit(
+      this.eventLog,
+      createAuditIdentity(
+        this.hostname.toUpperCase(),
+        (account) => this.userMgr.getUser(account)?.sid,
+        (group) => this.userMgr.getGroup(group)?.sid,
+      ),
+    );
+    return this.securityAuditInstance;
+  }
+
   /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
   auditScheduledTaskCreated(taskName: string, command: string): void {
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).scheduledTaskCreated(
+    this.securityAudit().scheduledTaskCreated(
       taskName, command, this.userMgr.currentUser || 'Administrator');
   }
 
@@ -658,9 +696,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * *après* le vidage. Sans cela, effacer ses traces ne laisserait
    * aucune trace, ce que Windows refuse par construction.
    */
-  auditLogCleared(logName: string): void {
-    new WindowsSecurityAudit(this.eventLog).auditLogCleared(
-      logName, this.userMgr.currentUser || 'Administrator');
+  auditLogCleared(logName: string, backupPath: string | null = null): void {
+    this.securityAudit().auditLogCleared(
+      logName, this.userMgr.currentUser || 'Administrator', backupPath);
   }
 
   /**
@@ -676,7 +714,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!this.auditPolicy.isEnabled('File System', 'success')) return;
     const who = this.userMgr.currentUser || 'Administrator';
     if (!this.fs.isAudited(absPath, who, access)) return;
-    new WindowsSecurityAudit(this.eventLog).objectAccessed(
+    this.securityAudit().objectAccessed(
       absPath, access, accessMask, who);
   }
 
@@ -690,21 +728,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   auditShareAdded(shareName: string, path: string): void {
     if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).shareAdded(
+    this.securityAudit().shareAdded(
       shareName, path, this.userMgr.currentUser || 'Administrator');
   }
 
   /** 5140 — un client a atteint un partage. */
   auditShareAccessed(shareName: string, path: string, user: string, sourceAddress: string): void {
     if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).shareAccessed(
+    this.securityAudit().shareAccessed(
       shareName, path, user, sourceAddress);
   }
 
   /** 4670 — les permissions d'un objet du système de fichiers ont changé. */
   auditPermissionChange(absPath: string, identity: string, permissions: string): void {
     if (!this.auditPolicy.isEnabled('File System', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).permissionChanged(
+    this.securityAudit().permissionChanged(
       absPath, identity, permissions, this.userMgr.currentUser || 'Administrator');
   }
 
@@ -784,8 +822,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return false;
   }
 
+  override destinationPolicy(): DestinationPolicy {
+    return this.prefixPolicies.policy();
+  }
+
   override powerOn(): void {
     super.powerOn();
+    this.prefixPolicies.boot();
     this.reconcileListeners();
     this.startScheduledTaskTicker();
   }
@@ -844,8 +887,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.procMgr.attachBus(bus, this.id);
     this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
-      bus, new WindowsSecurityAudit(this.eventLog), this.id, this.auditPolicy,
+      bus, this.securityAudit(), this.id, this.auditPolicy,
       () => this.isCommandLineAuditEnabled(),
+      (account) => this.userMgr.isAdmin(account),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
@@ -1280,6 +1324,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return ports.length === 0 ? [22] : ports;
   }
 
+  private readonly sshPeerPorts = new Map<string, number>();
+
   private openSshdListeners(identity: ListenerIdentity): void {
     this.sshdRuntime ??= { context: this.buildSshServerContext(), ports: new Set() };
     const runtime = this.sshdRuntime;
@@ -1296,6 +1342,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         stack.listen(port, {
           identity,
           onAccept: (socket) => {
+            this.sshPeerPorts.set(socket.remoteIp, socket.remotePort);
             this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
           },
         }, wildcardAddressOf(family));
@@ -1325,15 +1372,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),
       bindForwardedAgent: (user: string, agent: AgentPort) => this.bindForwardedAgent(user, agent),
       shellBanner: () => this.getSshMotd(),
+      clientPort: (fromIp: string) => this.sshPeerPorts.get(fromIp),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
     // — the SecurityAuditProjection turns each into a 4624 / 4625 in
     // the Security event log, matching what OpenSSH-for-Windows logs.
-    // Logon type 10 = RemoteInteractive, what sshd uses on real Windows.
-    (user, success) => {
+    // Win32-OpenSSH: S4U (LsaLogonUser, Network = type 3) for a key, LogonUserExExW
+    // (NETWORK_CLEARTEXT = type 8) for a password -- never type 10, which is RDP.
+    ({ user, success, method, failure }) => {
       this.getBus().publish({
         topic: 'windows.account.logon',
-        payload: { deviceId: this.id, account: user, success, logonType: 10 },
+        payload: {
+          deviceId: this.id, account: user, success, logonType: method === 'password' ? 8 : 3,
+          details: S4U_LOGON, ...(failure === undefined ? {} : { failure }),
+        },
       });
     },
     // Paired logoff hook — turns into 4634 (Logoff) in the Security
@@ -4255,6 +4307,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
 
       portProxy: this.portProxyTable,
+      prefixPolicies: this.prefixPolicies,
+      isElevated: () => this.userMgr.isCurrentUserAdmin(),
       firewallRules: this.firewallRules,
       firewallProfiles: this.firewallProfiles,
       currentFirewallProfile: () =>

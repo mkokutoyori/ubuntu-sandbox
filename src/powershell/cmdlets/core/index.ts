@@ -80,7 +80,7 @@ import {
   GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetIPInterfaceCmdlet, GetNetNeighborCmdlet,
   NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
-  GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
+  GetNetIPConfigurationCmdlet, GetNetRouteCmdlet, GetNetPrefixPolicyCmdlet,
   GetNetTCPConnectionCmdlet, GetNetUDPEndpointCmdlet, HostnameCmdlet, WhoamiCmdlet,
   NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
   NewNetRouteCmdlet, RemoveNetRouteCmdlet,
@@ -439,6 +439,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new InvokeWebRequestCmdlet());
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
+  registry.register(new GetNetPrefixPolicyCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
   registry.register(new GetNetUDPEndpointCmdlet());
   registry.register(new GetNetNeighborCmdlet());

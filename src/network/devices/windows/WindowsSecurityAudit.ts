@@ -12,6 +12,12 @@
  * callers say *what happened* (`accountCreated`), not *which Event ID*.
  */
 
+import type { WindowsLogonDetails, WindowsLogonFailureCause } from './events';
+import { createAuditIdentity, nextLogonId, type AuditIdentity } from './eventlog/AuditIdentity';
+import { renderSecurityMessage, clearedChannelMessage, failureReasonOf } from './eventlog/SecurityEventTemplates';
+
+export { nextLogonId };
+
 /** The slice of the event-log provider the security audit writes through. */
 export interface SecurityEventSink {
   writeEventLog(
@@ -30,6 +36,7 @@ export const SECURITY_EVENT = {
   SPECIAL_PRIVILEGES: 4672,
   ACCOUNT_CREATED: 4720,
   ACCOUNT_ENABLED: 4722,
+  PASSWORD_CHANGED: 4723,
   PASSWORD_RESET: 4724,
   ACCOUNT_DISABLED: 4725,
   ACCOUNT_DELETED: 4726,
@@ -52,6 +59,8 @@ export const SECURITY_EVENT = {
   SHARE_ACCESSED: 5140,
   SHARE_ADDED: 5142,
   AUDIT_LOG_CLEARED: 1102,
+  AUDIT_POLICY_CHANGED: 4719,
+  EVENT_LOG_CLEARED: 104,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
   SERVICE_INSTALLED: 4697,
@@ -98,18 +107,6 @@ function splitAccount(account?: string): Record<string, string> {
   };
 }
 
-/**
- * Un identifiant de session, au format que Windows affiche : un LUID en
- * hexadécimal. Il est alloué en séquence à partir d'une base au-dessus
- * des sessions du noyau (0x3e7 est celle de SYSTEM), pour qu'une session
- * ouverte ici ne puisse jamais porter le même numéro qu'une autre.
- */
-let logonIdCounter = 0x10000;
-export function nextLogonId(): string {
-  logonIdCounter += 1;
-  return `0x${logonIdCounter.toString(16)}`;
-}
-
 /** Les comptes dont le jeton est élevé — administrateurs et SYSTEM. */
 function isElevatedAccount(account?: string): boolean {
   if (!account) return false;
@@ -140,92 +137,134 @@ function resolveElevation(details: ProcessAuditDetails): { tokenElevationType: s
 
 const SECURITY_LOG = 'Security';
 const AUDIT_SOURCE = 'Microsoft-Windows-Security-Auditing';
+const EVENTLOG_SOURCE = 'Microsoft-Windows-Eventlog';
 
-/**
- * `Subject:` block for the free-text message. Real Windows Security
- * events report the identity of the process that *raised* the audit —
- * SYSTEM for anything the OS itself triggers (a fresh interactive
- * logon, a process exit, an account lockout) — not the account the
- * event is *about* (that's `TargetUserName`/`Account Name:` inside the
- * event's own body, already correct everywhere in this file). Callers
- * that know a real human/administrative actor performed the action
- * (account/group management, `runas`, a privileged service call) pass
- * it explicitly; PRD-Winlogon.md §1.2 point 2 documents the bug this
- * replaces — a single hardcoded "Administrator" Subject regardless of
- * who or what actually acted.
- */
-function subjectBlock(actor: string): string {
-  return actor === 'SYSTEM'
-    ? 'Subject:\n\tSecurity ID:\t\tS-1-5-18\n\tAccount Name:\t\tSYSTEM'
-    : `Subject:\n\tSecurity ID:\t\tS-1-5-21\n\tAccount Name:\t\t${actor}`;
-}
+export type LogonDetails = WindowsLogonDetails;
+export type LogonFailureCause = WindowsLogonFailureCause;
+
+const FAILURE_STATUS: Record<LogonFailureCause, { status: string; subStatus: string; reason: string }> = {
+  'unknown-user': { status: '0xC000006D', subStatus: '0xC0000064', reason: '%%2313' },
+  'bad-password': { status: '0xC000006D', subStatus: '0xC000006A', reason: '%%2313' },
+  disabled: { status: '0xC0000072', subStatus: '0x0', reason: '%%2310' },
+  expired: { status: '0xC0000193', subStatus: '0x0', reason: '%%2305' },
+  locked: { status: '0xC0000234', subStatus: '0x0', reason: '%%2307' },
+  'logon-hours': { status: '0xC000006F', subStatus: '0x0', reason: '%%2311' },
+  workstation: { status: '0xC0000070', subStatus: '0x0', reason: '%%2312' },
+  'password-expired': { status: '0xC0000071', subStatus: '0x0', reason: '%%2309' },
+};
+
+const DEFAULT_IDENTITY_MACHINE = 'WORKGROUP';
 
 export class WindowsSecurityAudit {
-  constructor(private readonly sink: SecurityEventSink) {}
+  constructor(
+    private readonly sink: SecurityEventSink,
+    private readonly identity: AuditIdentity = createAuditIdentity(DEFAULT_IDENTITY_MACHINE),
+  ) {}
 
   // ─── Account lifecycle ─────────────────────────────────────────────────
 
+  private subjectFields(actor: string): Record<string, string> {
+    const subject = this.identity.subjectOf(actor);
+    return {
+      SubjectUserSid: subject.sid, SubjectUserName: subject.name,
+      SubjectDomainName: subject.domain, SubjectLogonId: subject.logonId,
+    };
+  }
+
+  private targetFields(account: string): Record<string, string> {
+    const leaf = account.slice(account.indexOf('\\') + 1);
+    const domain = account.includes('\\') ? account.slice(0, account.indexOf('\\')) : this.identity.machine;
+    return { TargetUserName: leaf, TargetDomainName: domain, TargetSid: this.identity.sidOf(account) };
+  }
+
+  private accountEvent(eventId: number, name: string, actor: string, extra: Record<string, string> = {}): void {
+    this.record(eventId, 'SuccessAudit', { ...this.targetFields(name), ...this.subjectFields(actor), ...extra });
+  }
+
   accountCreated(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.ACCOUNT_CREATED, `A user account was created.\n\nNew Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+    this.accountEvent(SECURITY_EVENT.ACCOUNT_CREATED, name, subjectUserName, {
+      PrivilegeList: '-', SamAccountName: name, DisplayName: '%%1793', UserPrincipalName: '-',
+      HomeDirectory: '%%1793', HomePath: '%%1793', ScriptPath: '%%1793', ProfilePath: '%%1793',
+      UserWorkstations: '%%1793', PasswordLastSet: '%%1794', AccountExpires: '%%1794',
+      PrimaryGroupId: '513', AllowedToDelegateTo: '-', OldUacValue: '0x0', NewUacValue: '0x15',
+      UserAccountControl: "Account Disabled\n'Password Not Required' - Enabled\n'Normal Account' - Enabled",
+      UserParameters: '-', SidHistory: '-', LogonHours: '%%1797',
+    });
   }
 
   accountDeleted(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.ACCOUNT_DELETED, `A user account was deleted.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+    this.accountEvent(SECURITY_EVENT.ACCOUNT_DELETED, name, subjectUserName, { PrivilegeList: '-' });
   }
 
   accountEnabled(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.ACCOUNT_ENABLED, `A user account was enabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+    this.accountEvent(SECURITY_EVENT.ACCOUNT_ENABLED, name, subjectUserName);
   }
 
   accountDisabled(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.ACCOUNT_DISABLED, `A user account was disabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+    this.accountEvent(SECURITY_EVENT.ACCOUNT_DISABLED, name, subjectUserName);
   }
 
   accountUnlocked(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.ACCOUNT_UNLOCKED, `A user account was unlocked.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+    this.accountEvent(SECURITY_EVENT.ACCOUNT_UNLOCKED, name, subjectUserName);
   }
 
   passwordReset(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.PASSWORD_RESET, `An attempt was made to reset an account's password.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+    this.accountEvent(SECURITY_EVENT.PASSWORD_RESET, name, subjectUserName);
   }
 
-  accountChanged(name: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.ACCOUNT_CHANGED, `A user account was changed.\n\nTarget Account:\n\tAccount Name:\t${name}`,
-      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+  passwordChanged(name: string, subjectUserName = name): void {
+    this.accountEvent(SECURITY_EVENT.PASSWORD_CHANGED, name, subjectUserName);
+  }
+
+  accountChanged(name: string, subjectUserName = 'Administrator', changed: Record<string, string> = {}): void {
+    this.accountEvent(SECURITY_EVENT.ACCOUNT_CHANGED, name, subjectUserName, { PrivilegeList: '-', ...changed });
   }
 
   // ─── Group lifecycle ───────────────────────────────────────────────────
 
+  private groupFields(group: string): Record<string, string> {
+    const identity = this.identity.groupSidOf(group);
+    return { TargetUserName: group, TargetDomainName: identity.domain, TargetSid: identity.sid };
+  }
+
   groupCreated(group: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.GROUP_CREATED, `A security-enabled local group was created.\n\nGroup:\n\tGroup Name:\t${group}`,
-      { TargetUserName: group, SubjectUserName: subjectUserName }, subjectUserName);
+    this.record(SECURITY_EVENT.GROUP_CREATED, 'SuccessAudit', {
+      ...this.groupFields(group), ...this.subjectFields(subjectUserName),
+      PrivilegeList: '-', SamAccountName: group, SidHistory: '-',
+    });
   }
 
   groupDeleted(group: string, subjectUserName = 'Administrator'): void {
-    this.success(SECURITY_EVENT.GROUP_DELETED, `A security-enabled local group was deleted.\n\nGroup:\n\tGroup Name:\t${group}`,
-      { TargetUserName: group, SubjectUserName: subjectUserName }, subjectUserName);
+    this.record(SECURITY_EVENT.GROUP_DELETED, 'SuccessAudit', {
+      ...this.groupFields(group), ...this.subjectFields(subjectUserName), PrivilegeList: '-',
+    });
   }
 
   groupMemberAdded(group: string, member: string, scope: 'Local' | 'Global' | 'Universal' = 'Local', subjectUserName = 'Administrator'): void {
     const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_MEMBER_ADDED_GLOBAL
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_MEMBER_ADDED_UNIVERSAL
       : SECURITY_EVENT.GROUP_MEMBER_ADDED;
-    this.success(eventId, `A member was added to a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`,
-      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName }, subjectUserName);
+    this.membershipEvent(eventId, group, member, scope, subjectUserName, 'added');
   }
 
   groupMemberRemoved(group: string, member: string, scope: 'Local' | 'Global' | 'Universal' = 'Local', subjectUserName = 'Administrator'): void {
     const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_MEMBER_REMOVED_GLOBAL
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_MEMBER_REMOVED_UNIVERSAL
       : SECURITY_EVENT.GROUP_MEMBER_REMOVED;
-    this.success(eventId, `A member was removed from a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`,
-      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName }, subjectUserName);
+    this.membershipEvent(eventId, group, member, scope, subjectUserName, 'removed');
+  }
+
+  private membershipEvent(
+    eventId: number, group: string, member: string, scope: 'Local' | 'Global' | 'Universal',
+    actor: string, direction: 'added' | 'removed',
+  ): void {
+    const fields = {
+      ...this.groupFields(group), ...this.subjectFields(actor),
+      MemberName: scope === 'Local' ? '-' : member, MemberSid: this.identity.sidOf(member), PrivilegeList: '-',
+    };
+    const message = scope === 'Local' ? null
+      : `A member was ${direction} ${direction === 'added' ? 'to' : 'from'} a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`;
+    this.record(eventId, 'SuccessAudit', fields, message);
   }
 
   // ─── Logon / logoff ────────────────────────────────────────────────────
@@ -238,14 +277,26 @@ export class WindowsSecurityAudit {
    * voit des connexions et des déconnexions sans pouvoir dire lesquelles
    * vont ensemble, donc sans pouvoir mesurer la durée d'une session.
    */
-  logonSuccess(name: string, logonType = 2, ipAddress?: string, logonId?: string): void {
-    this.success(SECURITY_EVENT.LOGON_SUCCESS, `An account was successfully logged on.\n\nLogon Type:\t\t${logonType}\nAccount Name:\t${name}`,
-      {
-        TargetUserName: name,
-        LogonType: String(logonType),
-        TargetLogonId: logonId ?? nextLogonId(),
-        ...(ipAddress ? { IpAddress: ipAddress } : {}),
-      });
+  logonSuccess(name: string, logonType = 2, logonId?: string, details: LogonDetails = {}): void {
+    const id = logonId ?? nextLogonId();
+    this.identity.openSession(name, id);
+    const target = this.targetFields(name);
+    this.record(SECURITY_EVENT.LOGON_SUCCESS, 'SuccessAudit', {
+      ...this.subjectFields('SYSTEM'),
+      TargetUserSid: target.TargetSid, TargetUserName: target.TargetUserName,
+      TargetDomainName: target.TargetDomainName, TargetLogonId: id,
+      LogonType: String(logonType),
+      LogonProcessName: details.logonProcess ?? 'User32',
+      AuthenticationPackageName: details.authenticationPackage ?? 'Negotiate',
+      WorkstationName: details.workstation ?? this.identity.machine,
+      LogonGuid: '{00000000-0000-0000-0000-000000000000}',
+      TransmittedServices: '-', LmPackageName: '-', KeyLength: '0',
+      ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
+      IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
+      ImpersonationLevel: '%%1833', RestrictedAdminMode: '-',
+      TargetOutboundUserName: '-', TargetOutboundDomainName: '-', VirtualAccount: '%%1843',
+      TargetLinkedLogonId: '0x0', ElevatedToken: details.elevated ? '%%1842' : '%%1843',
+    });
   }
 
   /**
@@ -254,28 +305,42 @@ export class WindowsSecurityAudit {
    * `Status` dit qu'il y a eu échec, `SubStatus` dit *lequel* : mot de
    * passe faux (0xC000006A) et compte inexistant (0xC0000064) ne se
    * traitent pas de la même façon, et c'est SubStatus qui les sépare.
+   * Un compte désactivé, expiré ou verrouillé a son propre `Status` et
+   * un `SubStatus` à zéro.
    */
-  logonFailure(name: string, ipAddress?: string, subStatus = '0xC000006A'): void {
-    this.failure(SECURITY_EVENT.LOGON_FAILURE, `An account failed to log on.\n\nAccount For Which Logon Failed:\n\tAccount Name:\t${name}\n\nFailure Information:\n\tStatus:\t\t0xC000006D\n\tSub Status:\t${subStatus}`,
-      {
-        TargetUserName: name,
-        Status: '0xC000006D',
-        SubStatus: subStatus,
-        ...(ipAddress ? { IpAddress: ipAddress } : {}),
-      });
+  logonFailure(name: string, logonType = 2, cause: LogonFailureCause = 'bad-password', details: LogonDetails = {}): void {
+    const codes = FAILURE_STATUS[cause];
+    const target = this.targetFields(name);
+    this.record(SECURITY_EVENT.LOGON_FAILURE, 'FailureAudit', {
+      ...this.subjectFields('SYSTEM'),
+      TargetUserSid: cause === 'unknown-user' ? 'S-1-0-0' : target.TargetSid,
+      TargetUserName: target.TargetUserName, TargetDomainName: target.TargetDomainName,
+      Status: codes.status, FailureReason: codes.reason, SubStatus: codes.subStatus,
+      LogonType: String(logonType),
+      LogonProcessName: details.logonProcess ?? 'User32',
+      AuthenticationPackageName: details.authenticationPackage ?? 'Negotiate',
+      WorkstationName: details.workstation ?? this.identity.machine,
+      TransmittedServices: '-', LmPackageName: '-', KeyLength: '0',
+      ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
+      IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
+    }, undefined, failureReasonOf(codes.status, codes.subStatus));
   }
 
   logoff(name: string, logonType = 2, logonId?: string): void {
-    this.success(SECURITY_EVENT.LOGOFF, `An account was logged off.\n\nSubject:\n\tAccount Name:\t${name}\n\tLogon Type:\t${logonType}`,
-      {
-        TargetUserName: name,
-        LogonType: String(logonType),
-        TargetLogonId: logonId ?? nextLogonId(),
-      });
+    const target = this.targetFields(name);
+    this.record(SECURITY_EVENT.LOGOFF, 'SuccessAudit', {
+      TargetUserSid: target.TargetSid, TargetUserName: target.TargetUserName,
+      TargetDomainName: target.TargetDomainName,
+      TargetLogonId: logonId ?? this.identity.subjectOf(name).logonId,
+      LogonType: String(logonType),
+    });
   }
 
   accountLockedOut(name: string): void {
-    this.failure(SECURITY_EVENT.ACCOUNT_LOCKED_OUT, `A user account was locked out.\n\nAccount That Was Locked Out:\n\tAccount Name:\t${name}`);
+    this.record(SECURITY_EVENT.ACCOUNT_LOCKED_OUT, 'SuccessAudit', {
+      ...this.targetFields(name), ...this.subjectFields('SYSTEM'),
+      TargetDomainName: this.identity.machine,
+    });
   }
 
   /**
@@ -448,12 +513,32 @@ export class WindowsSecurityAudit {
    * effacement a eu lieu. Un effacement qui ne laisse rien serait un
    * effacement parfait, ce que Windows refuse précisément de permettre.
    */
-  auditLogCleared(logName: string, clearedBy: string): void {
-    this.sink.writeEventLog(SECURITY_LOG, 'Microsoft-Windows-Eventlog',
-      SECURITY_EVENT.AUDIT_LOG_CLEARED, 'SuccessAudit',
-      `The audit log was cleared.\n\nSubject:\n\tAccount Name:\t${clearedBy}\n\t` +
-      `Log:\t${logName}`,
-      { ...splitAccount(clearedBy), Channel: logName });
+  auditLogCleared(logName: string, clearedBy: string, backupPath: string | null = null): void {
+    const subject = this.subjectFields(clearedBy);
+    if (logName.toLowerCase() === 'security') {
+      const data = { ...subject };
+      this.sink.writeEventLog(SECURITY_LOG, EVENTLOG_SOURCE, SECURITY_EVENT.AUDIT_LOG_CLEARED, 'SuccessAudit',
+        renderSecurityMessage(SECURITY_EVENT.AUDIT_LOG_CLEARED, data) ?? '', data);
+      return;
+    }
+    const data = {
+      SubjectUserName: subject.SubjectUserName, SubjectDomainName: subject.SubjectDomainName,
+      Channel: logName, BackupPath: backupPath ?? '',
+    };
+    this.sink.writeEventLog('System', EVENTLOG_SOURCE, SECURITY_EVENT.EVENT_LOG_CLEARED, 'Information',
+      clearedChannelMessage(logName), data);
+  }
+
+  auditPolicyChanged(
+    subcategory: { name: string; guid: string; category: string },
+    changes: string, actor: string,
+  ): void {
+    this.record(SECURITY_EVENT.AUDIT_POLICY_CHANGED, 'SuccessAudit', {
+      ...this.subjectFields(actor),
+      CategoryId: subcategory.category, SubcategoryId: subcategory.guid,
+      SubcategoryName: subcategory.name, SubcategoryGuid: subcategory.guid,
+      AuditPolicyChanges: changes,
+    });
   }
 
   /**
@@ -512,11 +597,27 @@ export class WindowsSecurityAudit {
 
   // ─── Internals ─────────────────────────────────────────────────────────
 
+  private subjectText(actor: string): string {
+    const subject = this.identity.subjectOf(actor);
+    return `Subject:\n\tSecurity ID:\t\t${subject.sid}\n\tAccount Name:\t\t${subject.name}`
+      + `\n\tAccount Domain:\t\t${subject.domain}\n\tLogon ID:\t\t${subject.logonId}`;
+  }
+
+  private record(
+    eventId: number, entryType: 'SuccessAudit' | 'FailureAudit', data: Record<string, string>,
+    legacyMessage?: string | null, failureReason?: string,
+  ): void {
+    const complete = failureReason === undefined ? data : { ...data, FailureReason: failureReason };
+    const message = (legacyMessage === undefined || legacyMessage === null ? renderSecurityMessage(eventId, complete) : null)
+      ?? legacyMessage ?? `Event ${eventId}`;
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, entryType, message, data);
+  }
+
   private success(eventId: number, message: string, data?: Record<string, string>, actor = 'SYSTEM'): void {
-    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'SuccessAudit', `${message}\n\n${subjectBlock(actor)}`, data);
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'SuccessAudit', `${message}\n\n${this.subjectText(actor)}`, data);
   }
 
   private failure(eventId: number, message: string, data?: Record<string, string>, actor = 'SYSTEM'): void {
-    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'FailureAudit', `${message}\n\n${subjectBlock(actor)}`, data);
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'FailureAudit', `${message}\n\n${this.subjectText(actor)}`, data);
   }
 }

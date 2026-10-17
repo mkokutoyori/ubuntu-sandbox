@@ -45,6 +45,7 @@ import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './Port
 import { adapterDisplayName, resolveAdapterPortName } from './netAdapter';
 import { adapterIfIndex, withWindowsZone, LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
 import type { Port } from '../../hardware/Port';
+import { netshPrefixPolicy } from './WinNetshPrefixPolicy';
 
 
 // ─── Help text matching real Windows netsh ─────────────────────────
@@ -1369,6 +1370,8 @@ To view help for a command, type the command, followed by a space, and then
     const rest = args.slice(1);
     const obj = (rest[0] || '').toLowerCase();
 
+    if (obj === 'prefixpolicy') return netshPrefixPolicy(ctx, 'add', rest.slice(1));
+
     if (obj === 'address') {
       // netsh interface ipv6 add address <iface> <addr>[/<prefix>]
       const ifName = rest[1] || '';
@@ -1418,6 +1421,8 @@ To view help for a command, type the command, followed by a space, and then
     const rest = args.slice(1);
     const obj = (rest[0] || '').toLowerCase();
     const ifFilter = rest[1] || '';
+
+    if (obj === 'prefixpolicies') return netshPrefixPolicy(ctx, 'show', rest.slice(1));
 
     if (obj === 'addresses' || obj === 'address') {
       const lines: string[] = [''];
@@ -1470,9 +1475,16 @@ To view help for a command, type the command, followed by a space, and then
     return IPV6_HELP;
   }
 
+  if (sub === 'set') {
+    const rest = args.slice(1);
+    if ((rest[0] || '').toLowerCase() === 'prefixpolicy') return netshPrefixPolicy(ctx, 'set', rest.slice(1));
+    return IPV6_HELP;
+  }
+
   if (sub === 'delete') {
     const rest = args.slice(1);
     const obj = (rest[0] || '').toLowerCase();
+    if (obj === 'prefixpolicy') return netshPrefixPolicy(ctx, 'delete', rest.slice(1));
     if (obj === 'route' || obj === 'routes') {
       const prefixRaw = rest[1] || '';
       if (args[args.length - 1] === '?' || !prefixRaw) {
