@@ -2313,7 +2313,7 @@ export abstract class LinuxMachine extends EndHost
     const pid = this.sshConnectionPid(ip, port);
     if (pid === undefined || port === undefined) return;
     this.sshConnectionPids.delete(this.sshConnectionKey(ip, port));
-    this.executor.processMgr.exit(pid, 0);
+    if (!this.sshSessionsByPid.has(pid)) this.executor.processMgr.exit(pid, 0);
   }
 
   sshArrivedOverWire(fromIp: string): boolean {
