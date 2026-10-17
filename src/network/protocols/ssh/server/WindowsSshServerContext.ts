@@ -258,7 +258,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     const certificate = certificateOfMaterial(publicKey);
     if (certificate !== null) return this.admittedCertificate(user, home, certificate, source);
     const plain = sshPublicKeyFromBlob(base64ToBytes(publicKey));
-    if (plain !== null && this.certificates().revocationRefusal(plain, source) !== null) return null;
+    if (plain !== null && this.certificates().revocationRefusal(user, plain, source) !== null) return null;
     for (const entry of this.policy.view(user, source.ip).authorizedKeysFile) {
       const path = this.authorizedKeysPath(entry, user, home);
       const result = this.wfs.readFile(path);

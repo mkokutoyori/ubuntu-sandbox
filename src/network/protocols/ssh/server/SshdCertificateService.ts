@@ -6,7 +6,7 @@ import type { SshHostKey } from '../SshHostKey';
 import type { AuthorizedKey, KeySource } from '../SshPureUtils';
 import type { HostCertificateBinding } from './ISshServerContext';
 import type { SshServerEvent } from './SshServerEvent';
-import type { SshdServerConfig } from './SshdServerConfig';
+import type { SshdEffectiveView, SshdServerConfig } from './SshdServerConfig';
 import { expandPrincipalsPath } from './PrincipalsPath';
 import { admitUserCertificate, type TextFile } from './UserCertificateAdmission';
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -26,8 +26,8 @@ export interface CertificateAccount {
 export class SshdCertificateService {
   constructor(private readonly host: CertificateServiceHost) {}
 
-  revocationRefusal(key: SshPublicKey | SshCertificate, source: KeySource): string | null {
-    const path = this.host.config().revokedKeys;
+  revocationRefusal(user: string, key: SshPublicKey | SshCertificate, source: KeySource): string | null {
+    const path = this.viewOf(user, source).revokedKeys;
     if (path === null) return null;
     const verdict = checkRevocation(this.host.readFile(path), key);
     if (verdict.kind === 'ok') return null;
@@ -44,12 +44,15 @@ export class SshdCertificateService {
     return message;
   }
 
+  private viewOf(user: string, source: KeySource): SshdEffectiveView {
+    return this.host.config().effectiveFor({ user, groups: [...this.host.groupsOf(user)], address: source.ip });
+  }
+
   admit(
     user: string, account: CertificateAccount, certificate: SshCertificate, source: KeySource,
     authorizedKeys: TextFile | null,
   ): AuthorizedKey | null {
-    const config = this.host.config();
-    const view = config.effectiveFor({ user, groups: [...this.host.groupsOf(user)], address: source.ip });
+    const view = this.viewOf(user, source);
     const textFile = (path: string | null): TextFile | null => (path === null ? null : { path, text: this.host.readFile(path) });
     const principalsPath = view.authorizedPrincipalsFile === null
       ? null
@@ -57,11 +60,11 @@ export class SshdCertificateService {
     const result = admitUserCertificate({
       certificate, user, source,
       nowSeconds: BigInt(Math.floor(simulationNowMs() / 1000)),
-      caSignatureAlgorithms: config.caSignatureAlgorithms,
-      trustedCaKeys: textFile(config.trustedUserCaKeys),
+      caSignatureAlgorithms: view.caSignatureAlgorithms,
+      trustedCaKeys: textFile(view.trustedUserCaKeys),
       principalsFile: textFile(principalsPath),
       authorizedKeys,
-      revokedBy: (key) => (this.revocationRefusal(key, source) === null ? null : (config.revokedKeys ?? '')),
+      revokedBy: (key) => (this.revocationRefusal(user, key, source) === null ? null : (view.revokedKeys ?? '')),
     });
     if (source.ip !== '') for (const log of result.logs) this.host.emit({ kind: 'auth_log', level: log.level, text: log.text });
     return result.key;

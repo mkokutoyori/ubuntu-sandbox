@@ -362,7 +362,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         content === null ? null : { path: AUTHORIZED_KEYS_PATH(userEntry.home), text: content });
     }
     const plain = sshPublicKeyFromBlob(base64ToBytes(publicKey));
-    if (plain !== null && this.certificates().revocationRefusal(plain, source) !== null) return null;
+    if (plain !== null && this.certificates().revocationRefusal(user, plain, source) !== null) return null;
     return content ? findAdmittedKey(content, publicKey, source) : null;
   }
 
