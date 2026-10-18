@@ -72,15 +72,15 @@ describe('le pare-feu sur le commutateur — la couche 2', () => {
     await pc.executeCommand('ping -c 1 192.168.1.1');
     const table = await sw.executeCommand('show mac address-table');
 
-    expect(table).toMatch(/FastEthernet0\/1/);
-    expect(table).toMatch(/FastEthernet0\/2/);
+    expect(table).toMatch(/Fa0\/1/);
+    expect(table).toMatch(/Fa0\/2/);
   });
 
   it('et il ne les apprend pas sur le meme port', async () => {
     const { sw, pc } = await labo();
     await pc.executeCommand('ping -c 1 192.168.1.1');
     const lignes = (await sw.executeCommand('show mac address-table'))
-      .split('\n').filter(l => /FastEthernet0\/[12]/.test(l));
+      .split('\n').filter(l => /Fa0\/[12]/.test(l));
 
     expect(lignes.length).toBeGreaterThanOrEqual(2);
   });

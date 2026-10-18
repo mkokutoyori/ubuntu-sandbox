@@ -102,6 +102,7 @@ export interface TableStyle {
   readonly padTrailing?: boolean;
   /** Caractère du filet : `-` par défaut, `=` pour `whoami`. */
   readonly ruleChar?: string;
+  readonly ruleFitsHeader?: boolean;
   /** Lignes écrites sous le tableau, calées sur ses colonnes (totaux). */
   readonly footer?: ReadonlyArray<ReadonlyArray<string>>;
 }
@@ -300,7 +301,10 @@ export function renderTable<R>(
     }
     out.push(joinCells(columns.map((c) => c.header), headerWidths));
   }
-  if (style.rule) out.push(joinCells(widths.map((w) => ruleChar.repeat(w)), widths));
+  if (style.rule) {
+    const ruleWidths = style.ruleFitsHeader ? columns.map((c) => displayWidth(c.header)) : widths;
+    out.push(joinCells(ruleWidths.map((w) => ruleChar.repeat(w)), widths));
+  }
   for (const r of rows) out.push(...physicalLines(columns.map((c) => c.value(r))));
   for (const footer of style.footer ?? []) out.push(...physicalLines(footer));
   return out;

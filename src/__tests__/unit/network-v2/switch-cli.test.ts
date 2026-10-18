@@ -495,8 +495,8 @@ describe('T-L2-04: MAC Address Table', () => {
 
     expect(output).toContain('Mac Address Table');
     expect(output).toContain('DYNAMIC');
-    expect(output).toContain('FastEthernet0/1');
-    expect(output).toContain('FastEthernet0/2');
+    expect(output).toContain('Fa0/1');
+    expect(output).toContain('Fa0/2');
   });
 
   it('should age out MAC entries', () => {

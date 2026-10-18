@@ -676,7 +676,7 @@ export function formatTable(objects: PSObject[], args: string): string {
   }));
   const body = renderTable(
     objects.map((_, rowIndex) => rowIndex), tableColumns,
-    hideHeaders ? { gap: 2, rule: false, header: false, padTrailing: true } : { gap: 2, rule: true, padTrailing: true },
+    hideHeaders ? { gap: 1, rule: false, header: false, padTrailing: true } : { gap: 1, rule: true, ruleFitsHeader: true, padTrailing: true },
   );
   return ['', ...body, ''].join('\n');
 }

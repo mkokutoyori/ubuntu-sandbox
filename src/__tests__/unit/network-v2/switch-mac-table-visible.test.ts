@@ -46,6 +46,8 @@ beforeEach(async () => {
     .configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 });
 
+const dotted = (mac: string): string => { const h = mac.toLowerCase().replace(/[^0-9a-f]/g, ''); return `${h.slice(0, 4)}.${h.slice(4, 8)}.${h.slice(8, 12)}`; };
+
 describe('la table d\'adresses MAC est VISIBLE', () => {
   it('un ping suffit à peupler la vue', async () => {
     expect(await pc.executeCommand('ping -c 1 10.0.0.1')).toContain('1 received');
@@ -55,16 +57,16 @@ describe('la table d\'adresses MAC est VISIBLE', () => {
     // qui les cachait.
     expect(sw.getMACTable()).toHaveLength(2);
     expect(vue).not.toContain('No entries');
-    expect(vue).toContain(pc.getPort('eth0')!.getMAC().toString());
-    expect(vue).toContain('FastEthernet0/2');
+    expect(vue).toContain(dotted(pc.getPort('eth0')!.getMAC().toString()));
+    expect(vue).toContain('Fa0/2');
   });
 
   it('la vue et la table interne disent le même nombre', async () => {
     await pc.executeCommand('ping -c 1 10.0.0.1');
     const vue = await sw.executeCommand('show mac address-table');
     for (const e of sw.getMACTable()) {
-      expect(vue, e.mac).toContain(e.mac);
-      expect(vue, e.port).toContain(e.port);
+      expect(vue, e.mac).toContain(dotted(e.mac));
+      expect(vue, e.port).toContain(e.port.replace('FastEthernet', 'Fa'));
     }
   });
 
@@ -75,8 +77,8 @@ describe('la table d\'adresses MAC est VISIBLE', () => {
     const header = lines.find(l => l.startsWith('Vlan'))!;
     const rule = lines[lines.indexOf(header) + 1];
     expect(header).toMatch(/^Vlan {4}Mac Address +Type +Ports$/);
-    expect(rule).toMatch(/^-{4} {4}-{17} {4}-+ {4}-+$/);
-    expect(vue).toMatch(/\n +\d+ {4}\S{17} {4}DYNAMIC +\S+/);
+    expect(rule).toMatch(/^-{4} {4}-{14} {4}-+ {4}-+$/);
+    expect(vue).toMatch(/\n +\d+ {4}[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4} {4}DYNAMIC +\S+/);
     expect(vue).toContain('DYNAMIC');
     expect(vue).toContain('Total Mac Addresses for this criterion:');
   });
@@ -114,7 +116,7 @@ describe('les filtres de `CiscoSwitchShell` étaient inatteignables', () => {
   it('`interface` restreint à un port', async () => {
     await pc.executeCommand('ping -c 1 10.0.0.1');
     const vue = await sw.executeCommand('show mac address-table interface FastEthernet0/2');
-    expect(vue).toContain(pc.getPort('eth0')!.getMAC().toString());
+    expect(vue).toContain(dotted(pc.getPort('eth0')!.getMAC().toString()));
     expect(vue).not.toContain(r.getPort('GigabitEthernet0/0')!.getMAC().toString());
   });
 });
@@ -135,7 +137,7 @@ describe('DHCP fait bien circuler des trames — ce qui a mené au défaut', () 
     // passer les trames du client et l'a appris sur son port.
     expect(await pc2.executeCommand('ip -4 addr show eth0')).toMatch(/inet 10\.0\.0\.\d+/);
     const vue = await sw.executeCommand('show mac address-table');
-    expect(vue).toContain(pc2.getPort('eth0')!.getMAC().toString());
-    expect(vue).toContain('FastEthernet0/3');
+    expect(vue).toContain(dotted(pc2.getPort('eth0')!.getMAC().toString()));
+    expect(vue).toContain('Fa0/3');
   });
 });

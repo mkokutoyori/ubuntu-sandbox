@@ -4426,7 +4426,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     const sorted = [...entries]
       .sort((a, b) => a.vlan - b.vlan || a.mac.localeCompare(b.mac))
-      .map(e => ({ vlan: e.vlan, mac: e.mac, type: e.type === 'static' ? 'STATIC' : 'DYNAMIC', port: e.port }));
+      .map(e => ({
+        vlan: e.vlan, mac: this.formatMacCisco(new MACAddress(e.mac)),
+        type: e.type === 'static' ? 'STATIC' : 'DYNAMIC', port: this.abbreviateInterface(e.port),
+      }));
     const lines = [...head, '', ...renderTable(sorted, MAC_TABLE_COLUMNS, MAC_TABLE_STYLE)];
     lines.push('');
     lines.push(`Total Mac Addresses for this criterion: ${entries.length}`);

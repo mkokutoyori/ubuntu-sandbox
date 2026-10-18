@@ -54,7 +54,7 @@ describe('the hardware address', () => {
     await pc.executeCommand('ip addr add 10.0.0.10/24 dev eth0');
     await pc.executeCommand('ping -c 1 10.0.0.99');
     const table = await sw.executeCommand('show mac address-table');
-    expect(table.toLowerCase()).toContain('02:11:22:33:44:55');
+    expect(table.toLowerCase()).toContain('0211.2233.4455');
   });
 
   it('a malformed address is refused, and the port keeps the old one', async () => {
