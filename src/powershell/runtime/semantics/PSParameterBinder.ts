@@ -20,6 +20,7 @@ export interface BinderHost {
   invokeScript(script: PSValue, argument: PSValue): PSValue;
   equal(left: PSValue, right: PSValue, ignoreCase: boolean): boolean;
   scriptText(script: PSValue): string;
+  spell(key: string): string;
 }
 
 export interface BindingOptions {
@@ -102,7 +103,7 @@ function bindingError(message: string, type: string = BINDING): PSRuntimeError {
   return new PSRuntimeError(message, type);
 }
 
-function resolveName(models: ParameterModel[], key: string, advanced: boolean, shouldProcess: boolean): ParameterModel | 'common' {
+function resolveName(models: ParameterModel[], key: string, advanced: boolean, shouldProcess: boolean, host: BinderHost): ParameterModel | 'common' {
   const wanted = key.toLowerCase();
   const exact = models.find(m => m.name.toLowerCase() === wanted || m.aliases.some(a => a.toLowerCase() === wanted));
   if (exact !== undefined) return exact;
@@ -119,9 +120,9 @@ function resolveName(models: ParameterModel[], key: string, advanced: boolean, s
   const total = candidates.length + commonMatches.length;
   if (total > 1) {
     const names = [...candidates.map(c => c.name), ...commonMatches].map(n => ` -${n}`).join('');
-    throw bindingError(`Parameter cannot be processed because the parameter name '${key}' is ambiguous. Possible matches include:${names}.`);
+    throw bindingError(`Parameter cannot be processed because the parameter name '${host.spell(key)}' is ambiguous. Possible matches include:${names}.`);
   }
-  throw bindingError(`A parameter cannot be found that matches parameter name '${key}'.`);
+  throw bindingError(`A parameter cannot be found that matches parameter name '${host.spell(key)}'.`);
 }
 
 function describeArgument(value: PSValue): string {
@@ -288,7 +289,7 @@ export function bindParameters(
   };
 
   for (const [key, value] of Object.entries(named)) {
-    const target = resolveName(models, key, advanced, shouldProcess);
+    const target = resolveName(models, key, advanced, shouldProcess, host);
     if (target !== 'common') record(target, value);
   }
 

@@ -27,6 +27,8 @@ import { NestedSshLogin } from '../NestedSshLogin';
 export interface WindowsPowerShellOptions extends AbstractShellOptions {
   /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
   readonly windowsSession?: WindowsShellSession | null;
+  /** 'core' starts PowerShell 7 (pwsh); the default is Windows PowerShell 5.1. */
+  readonly language?: 'desktop' | 'core';
 }
 
 export class WindowsPowerShellShell extends AbstractShell {
@@ -70,6 +72,7 @@ export class WindowsPowerShellShell extends AbstractShell {
       // Pass the (possibly freshly-allocated) per-shell session so PS
       // commands operate on the SSH user's tree, not the global cwd.
       session: this.windowsSession,
+      language: opts.language,
     });
     this.subShell = subShell;
     this.banner = banner;

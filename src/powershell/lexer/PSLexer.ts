@@ -20,12 +20,19 @@ import { PSTokenType, PS_KEYWORDS, psToken } from './PSToken';
 import type { PSToken, SourcePosition } from './PSToken';
 import { PSLexerError } from './PSLexerError';
 
+export interface PSLexerOptions {
+  readonly core: boolean;
+}
+
 export class PSLexer {
+  constructor(private readonly options: PSLexerOptions = { core: false }) {}
+
   private input: string = '';
   private pos: number = 0;
   private line: number = 1;
   private column: number = 1;
   private continuedToEnd = false;
+  private lastToken: PSToken | null = null;
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -41,6 +48,7 @@ export class PSLexer {
     this.line = 1;
     this.column = 1;
     this.continuedToEnd = false;
+    this.lastToken = null;
 
     const tokens: PSToken[] = [];
 
@@ -50,7 +58,7 @@ export class PSLexer {
 
       this.continuedToEnd = false;
       const tok = this.scanToken();
-      if (tok !== null) tokens.push(tok);
+      if (tok !== null) { tokens.push(tok); this.lastToken = tok; }
     }
 
     tokens.push(psToken(PSTokenType.EOF, '', this.pos_()));
@@ -107,6 +115,16 @@ export class PSLexer {
     if (ch === ':') return this.scanColon();
     if (ch === '.') return this.scanDot();
 
+    // ── Pipeline chains && and || (PowerShell 7) ──
+    if (ch === '&' && this.peek1() === '&') return this.advance2(PSTokenType.AND_AND);
+    if (ch === '|' && this.peek1() === '|') return this.advance2(PSTokenType.OR_OR);
+
+    // ── ?, ??, ??=, ?., ?[ after a value (PowerShell 7) ──
+    if (ch === '?' && this.followsValue()) {
+      const operator = this.scanQuestion();
+      if (operator !== null) return operator;
+    }
+
     // ── Pipeline & grouping ──
     if (ch === '|') return this.advance1(PSTokenType.PIPE);
     if (ch === ';') return this.advance1(PSTokenType.SEMICOLON);
@@ -156,6 +174,41 @@ export class PSLexer {
     if (this.input[this.pos] === '\n') { this.line++; this.column = 1; }
     else { this.column++; }
     this.pos++;
+  }
+
+  private advance2(type: PSTokenType): PSToken {
+    const start = this.pos_();
+    const value = this.ch() + (this.peek1() ?? '');
+    this.advance();
+    this.advance();
+    return psToken(type, value, start);
+  }
+
+  private followsValue(): boolean {
+    const last = this.lastToken;
+    if (last === null) return false;
+    return last.type === PSTokenType.VARIABLE || last.type === PSTokenType.NUMBER
+      || last.type === PSTokenType.STRING_SINGLE || last.type === PSTokenType.STRING_DOUBLE
+      || last.type === PSTokenType.HEREDOC_SINGLE || last.type === PSTokenType.HEREDOC_DOUBLE
+      || last.type === PSTokenType.RPAREN || last.type === PSTokenType.RBRACKET
+      || last.type === PSTokenType.SUBEXPR || last.type === PSTokenType.TYPE;
+  }
+
+  private scanQuestion(): PSToken | null {
+    const next = this.peek1();
+    const third = this.peek2();
+    if (next === '?') {
+      if (third === '=') {
+        const start = this.pos_();
+        this.advance(); this.advance(); this.advance();
+        return psToken(PSTokenType.NULL_COALESCE_ASSIGN, '??=', start);
+      }
+      return this.advance2(PSTokenType.NULL_COALESCE);
+    }
+    if (next === '.' && third !== undefined && /[A-Za-z_'"$]/.test(third)) return this.advance2(PSTokenType.NULL_COND_DOT);
+    if (next === '[') return this.advance2(PSTokenType.NULL_COND_INDEX);
+    if (next === ' ' || next === '\t') return this.advance1(PSTokenType.QUESTION);
+    return null;
   }
 
   private advance1(type: PSTokenType): PSToken {
@@ -663,6 +716,13 @@ export class PSLexer {
       return psToken(PSTokenType.NUMBER, value, start);
     }
 
+    if (this.options.core && first_ === '0' && (this.peek1() === 'b' || this.peek1() === 'B') && /[01]/.test(this.peek2() ?? '')) {
+      value += '0'; this.advance();
+      value += this.ch(); this.advance();
+      while (!this.eof() && (this.ch() === '0' || this.ch() === '1')) { value += this.ch(); this.advance(); }
+      return psToken(PSTokenType.NUMBER, value + this.scanCoreNumericSuffix(), start);
+    }
+
     // Check if digit is '2' and followed by '>' → redirect 2> / 2>> / 2>&1
     if (first_ === '2' && this.peek1() === '>') {
       this.advance(); // skip 2
@@ -732,7 +792,9 @@ export class PSLexer {
     if (!this.eof() && /^\d+$/.test(value)) {
       const rest = this.input.slice(this.pos);
       const identifier = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest);
-      const numericSuffix = /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdDuUsSyY]$|[uU][lLyY]$|[uU][lL][lL]$)/;
+      const numericSuffix = this.options.core
+        ? /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdDuUsSyYnN]$|[uU][lLyYsS]$)/
+        : /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdD]$)/;
       if (identifier && !numericSuffix.test(identifier[0])) {
         let word = value;
         while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
@@ -760,12 +822,21 @@ export class PSLexer {
       if (['KB', 'MB', 'GB', 'TB', 'PB'].includes(up2)) {
         value += this.ch(); this.advance();
         value += this.ch(); this.advance();
+      } else if (this.options.core) {
+        value += this.scanCoreNumericSuffix();
       } else if (this.ch() === 'L' || this.ch() === 'l' || ((this.ch() === 'd' || this.ch() === 'D') && !this.isAlNum(this.peek1() ?? ' '))) {
         value += this.ch(); this.advance();
       }
     }
 
     return psToken(PSTokenType.NUMBER, value, start);
+  }
+
+  private scanCoreNumericSuffix(): string {
+    const match = /^(ul|uy|us|[lsyudn])(?![A-Za-z0-9_])/i.exec(this.input.slice(this.pos));
+    if (match === null) return '';
+    for (let i = 0; i < match[1].length; i++) this.advance();
+    return match[1];
   }
 
   /**

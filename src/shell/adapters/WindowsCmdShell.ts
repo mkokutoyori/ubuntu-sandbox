@@ -120,7 +120,7 @@ export class WindowsCmdShell extends AbstractShell {
     // `windowsSession` travels with the child so cwd stays in sync.
     if (lower === 'powershell' || lower === 'powershell.exe'
         || lower === 'pwsh' || lower === 'pwsh.exe') {
-      const child = ShellFactory.tryCreateChild('powershell', {
+      const child = ShellFactory.tryCreateChild(lower.startsWith('pwsh') ? 'pwsh' : 'powershell', {
         device: this.device,
         user: this.user,
         parent: this,

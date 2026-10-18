@@ -11,6 +11,7 @@ import {
   RemoveNetLbfoTeamMemberCmdlet,
 } from './NetLbfoCmdlets';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
+import { JoinStringCmdlet, TestJsonCmdlet } from './CoreEditionCmdlets';
 import {
   WriteOutputCmdlet, WriteHostCmdlet, WriteErrorCmdlet,
   WriteWarningCmdlet, WriteVerboseCmdlet,
@@ -307,6 +308,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new FormatWideCmdlet());
   registry.register(new FormatCustomCmdlet());
   registry.register(new GetMemberCmdlet());
+  registry.register(new JoinStringCmdlet());
+  registry.register(new TestJsonCmdlet());
 
   // ── Conversion ────────────────────────────────────────────────────────────
   registry.register(new ConvertToJsonCmdlet());

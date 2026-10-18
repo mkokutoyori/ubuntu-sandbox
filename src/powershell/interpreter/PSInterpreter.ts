@@ -60,6 +60,8 @@ export interface PSInterpreterOptions {
   registry?: CmdletRegistry;
   /** Windows edition of the hosting device — 'client' hides Server-only cmdlets. */
   edition?: 'client' | 'server';
+  /** Language edition: Windows PowerShell 5.1 ('desktop', default) or PowerShell 7.6 ('core'). */
+  language?: 'desktop' | 'core';
 }
 
 export class PSInterpreter {
@@ -69,7 +71,7 @@ export class PSInterpreter {
 
   constructor(providers: PSProviders = nullProviders(), opts: PSInterpreterOptions = {}) {
     this.registry = opts.edition === 'client' ? opts.registry ?? createClientCmdletOverlay() : getSharedRegistry();
-    this.runtime = new PSRuntime(this.registry, providers);
+    this.runtime = new PSRuntime(this.registry, providers, undefined, opts.language ?? 'desktop');
     // Register a stub script for dot-sourcing tests
     this.runtime.registerScript('script.ps1', '$someVarFromScript = "dotSourced"');
   }
@@ -78,6 +80,8 @@ export class PSInterpreter {
   registerScript(path: string, content: string): void {
     this.runtime.registerScript(path, content);
   }
+
+  typedCommandName(lowerName: string): string { return this.runtime.typedCommandName(lowerName); }
 
   // ── Public API (unchanged) ─────────────────────────────────────────────────
 

@@ -29,7 +29,7 @@ const CASES: Array<[string, string]> = [
   ["function f { param($a, $b) $PSBoundParameters.Keys -join ',' }; f -a 1", "a"],
   ["function f { param($a, $b) $PSBoundParameters.Count }; f 1 2", "2"],
   ["function f { param($Alpha, $Beta) \"$Alpha$Beta\" }; f -Al 1 -Be 2", "12"],
-  ["function f { param($Alpha, $Alps) 1 }; f -Al 1", "Parameter cannot be processed because the parameter name 'al' is ambiguous. Possible matches include: -Alpha -Alps."],
+  ["function f { param($Alpha, $Alps) 1 }; f -Al 1", "Parameter cannot be processed because the parameter name 'Al' is ambiguous. Possible matches include: -Alpha -Alps."],
   ["function f { param($a) $a }; f -zz 1", "A parameter cannot be found that matches parameter name 'zz'."],
   ["function f { param([string]$s, [int]$i) \"[$s][$i]\" }; f", "[][0]"],
   ["function f { [CmdletBinding()]param($a) $a }; f 1 2", "A positional parameter cannot be found that accepts argument '2'."],

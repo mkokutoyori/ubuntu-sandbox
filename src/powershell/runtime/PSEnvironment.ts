@@ -139,7 +139,7 @@ export class PSEnvironment {
 // ─── Built-in Variable Initialiser ───────────────────────────────────────────
 
 /** Seeds the global scope with PowerShell built-in automatic variables. */
-export function seedBuiltins(env: PSEnvironment): void {
+export function seedBuiltins(env: PSEnvironment, edition: 'desktop' | 'core' = 'desktop'): void {
   env.set('true',  true);
   env.set('false', false);
   env.set('null',  null);
@@ -149,7 +149,27 @@ export function seedBuiltins(env: PSEnvironment): void {
     MajorRevision: -1, MinorRevision: -1,
     toString() { return '5.1.0'; },
   } as unknown as PSValue;
-  env.set('PSVersionTable', {
+  if (edition === 'core') {
+    const coreVersion = {
+      Major: 7, Minor: 6, Patch: 0, PreReleaseLabel: null, BuildLabel: null,
+      toString() { return '7.6.0'; },
+    } as unknown as PSValue;
+    env.set('PSVersionTable', {
+      PSVersion: coreVersion,
+      PSEdition: 'Core',
+      GitCommitId: '7.6.0',
+      PSCompatibleVersions: ['1.0', '2.0', '3.0', '4.0', '5.0', '5.1', '6.0', '7.0'],
+      SerializationVersion: '1.1.0.1',
+      PSRemotingProtocolVersion: '2.3',
+      WSManStackVersion: '3.0',
+      Platform: 'Win32NT',
+      OS: 'Microsoft Windows 10.0.19045',
+    } as Record<string, PSValue>);
+    env.set('IsWindows', true);
+    env.set('IsLinux', false);
+    env.set('IsMacOS', false);
+    env.set('IsCoreCLR', true);
+  } else env.set('PSVersionTable', {
     PSVersion:           psVersion,
     PSEdition:           'Desktop',
     BuildVersion:        '10.0.19041.1',

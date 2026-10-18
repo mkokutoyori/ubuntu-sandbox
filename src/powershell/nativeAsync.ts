@@ -70,8 +70,8 @@ export function nativeNotRecognized(command: string, answer: string): boolean {
   return named !== null && named[1].toLowerCase() === command.toLowerCase();
 }
 
-export function translateNativeAnswer(command: string, answer: string): string {
-  return nativeNotRecognized(command, answer) ? commandNotFoundMessage(command) : answer;
+export function translateNativeAnswer(command: string, answer: string, core = false): string {
+  return nativeNotRecognized(command, answer) ? commandNotFoundMessage(command, core) : answer;
 }
 
 export function isNativeProgramName(name: string): boolean {

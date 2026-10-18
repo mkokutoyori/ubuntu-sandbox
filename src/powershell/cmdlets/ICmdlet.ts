@@ -75,6 +75,11 @@ export interface ICmdlet {
    */
   readonly parameterValues?: Readonly<Record<string, ParameterValueKind>>;
 
+  /** Exists only in PowerShell 7 (Core); Windows PowerShell 5.1 does not know the command. */
+  readonly coreOnly?: true;
+  /** Parameters (canonical case) that exist only in PowerShell 7 (Core). */
+  readonly coreOnlyParameters?: readonly string[];
+
   readonly supportsShouldProcess?: true;
 
   whatIfTarget?(ctx: CmdletContext): string;

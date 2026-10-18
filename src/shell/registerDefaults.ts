@@ -66,6 +66,14 @@ export function installDefaultShells(): void {
       parent: a.parent ?? null, windowsSession,
     });
   });
+  ShellFactory.register('pwsh', (a) => {
+    const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
+      .extras?.windowsSession ?? null;
+    return new WindowsPowerShellShell({
+      device: a.device, user: a.user, context: a.context,
+      parent: a.parent ?? null, windowsSession, language: 'core',
+    });
+  });
   // Interpreters reachable from a POSIX login shell. The `launcher`
   // pattern is what makes `sqlplus` open a real REPL both at the local
   // console and over the SSH wire — a future `python3`, `psql` or

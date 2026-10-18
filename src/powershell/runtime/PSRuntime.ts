@@ -35,11 +35,12 @@ import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
 import { stringMember } from './semantics/DotNetString';
+import { formatString } from './semantics/CompositeFormat';
 import { EnumType, PSEnumValue, builtinEnums, enumMember } from './semantics/PSEnum';
 import { bindParameters, unboundParameterValue, type BinderHost } from './semantics/PSParameterBinder';
 import { exceptionMatches, exceptionShortName, resolveExceptionType, makeExceptionObject, defaultExceptionMessage } from './semantics/PSExceptions';
 import { PSChar, PSNumber, ArithmeticFault, compareNumbers, numericKindOf, type NumericKind } from './semantics/PSNumber';
-import { PSConversionError, castToChar, castToNumeric, truthiness } from './semantics/PSConvert';
+import { PSConversionError, castToChar, castToNumeric, truthiness, type ConversionOptions } from './semantics/PSConvert';
 import { bitwise, multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
 import { PASS_THROUGH_CMDLETS, unboxDeep } from './semantics/PSUnbox';
 import { mathStatics } from './semantics/MathStatics';
@@ -51,7 +52,7 @@ import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
-import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
+import type { ICmdlet, ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
   PSProgram, PSStatementList, PSStatement,
@@ -66,7 +67,7 @@ import type {
   PSMemberExpression, PSStaticMemberExpression, PSIndexExpression,
   PSInvocationExpression, PSCastExpression, PSCommandExpression,
   PSScriptBlock, PSPipelineExpression,
-  PSClassDefinition, PSEnumDefinition, PSMethodDefinition, PSPropertyDeclaration,
+  PSClassDefinition, PSEnumDefinition, PSPipelineChainStatement, PSTernaryExpression, PSMethodDefinition, PSPropertyDeclaration,
   PSBreakStatement, PSContinueStatement, PSTrapStatement,
 } from '@/powershell/parser/PSASTNode';
 
@@ -319,8 +320,10 @@ for (const t of STACK_TYPES) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class PSRuntime {
-  private readonly lexer   = new PSLexer();
-  private readonly parser  = new PSParser();
+  private readonly lexer: PSLexer;
+  private readonly parser: PSParser;
+  readonly edition: 'desktop' | 'core';
+  private readonly conversion: ConversionOptions;
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
   private warningLines = 0;
@@ -494,12 +497,17 @@ export class PSRuntime {
     registry: CmdletRegistry,
     providers: PSProviders = nullProviders(),
     globalEnv?: PSEnvironment,
+    edition: 'desktop' | 'core' = 'desktop',
   ) {
     this.registry  = registry;
     this.providers = providers;
+    this.edition   = edition;
+    this.conversion = { core: edition === 'core' };
+    this.lexer     = new PSLexer({ core: edition === 'core' });
+    this.parser    = new PSParser({ core: edition === 'core' });
     this.global    = globalEnv ?? new PSEnvironment();
     if (!globalEnv) {
-      seedBuiltins(this.global);
+      seedBuiltins(this.global, edition);
       this.global.set('__drives__', {
         c:        { Name: 'C',        Root: 'C:\\',   Used: 0, Free: 0 },
         d:        { Name: 'D',        Root: 'D:\\',   Used: 0, Free: 0 },
@@ -526,6 +534,7 @@ export class PSRuntime {
   listCommandNames(): string[] {
     const out = new Set<string>();
     for (const c of this.registry.cmdlets()) {
+      if (c.coreOnly === true && this.edition === 'desktop') continue;
       out.add(c.displayName ?? this.titleCase(c.name));
       for (const a of c.aliases) out.add(a);
     }
@@ -773,7 +782,7 @@ export class PSRuntime {
           if (this.nativeReplay !== null && this.nativeReplay.cursor < run.results.length) {
             this.interactive = null;
             this.nativeReplay = null;
-            throw new PSRuntimeError(commandNotFoundMessage(e.command));
+            throw this.notFound(e.command);
           }
           throw e;
         }
@@ -888,6 +897,7 @@ export class PSRuntime {
       case 'SwitchStatement':     result = this.execSwitch(node as PSSwitchStatement, env); break;
       case 'TryStatement':        result = this.execTry(node as PSTryStatement, env); break;
       case 'FunctionDefinition':  result = this.execFunctionDef(node as PSFunctionDefinition, env); break;
+      case 'PipelineChain':       return this.execPipelineChain(node as PSPipelineChainStatement, env);
       case 'ClassDefinition':     result = this.execClassDef(node as PSClassDefinition, env); break;
       case 'EnumDefinition':      result = this.execEnumDef(node as PSEnumDefinition, env); break;
       case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
@@ -930,6 +940,11 @@ export class PSRuntime {
   // ── Assignment ─────────────────────────────────────────────────────────────
 
   private execAssignment(node: PSAssignmentStatement, env: PSEnvironment): PSValue {
+    if (node.operator === '??=') {
+      const current = this.evalExpr(node.target as PSExpression, env);
+      if (current !== null && current !== undefined) return current;
+      return this.execAssignment({ ...node, operator: '=' }, env);
+    }
     const rhs = this.evalExpr(node.value, env);
 
     // `$null = <expr>` (and, less commonly, `$true =`/`$false =`) is the
@@ -1352,6 +1367,11 @@ export class PSRuntime {
       case 'CastExpression':           return this.evalCast(node as PSCastExpression, env);
       case 'RangeExpression':          return this.evalRange(node as PSRangeExpression, env);
       case 'CommandExpression':        return this.evalCommandExpr(node as PSCommandExpression, env);
+      case 'TernaryExpression': {
+        const ternary = node as PSTernaryExpression;
+        return this.isTruthy(this.evalExpr(ternary.condition, env))
+          ? this.evalExpr(ternary.whenTrue, env) : this.evalExpr(ternary.whenFalse, env);
+      }
       case 'PipelineExpression': {
         const pe = node as PSPipelineExpression;
         const has2to1 = pe.redirections?.some(r => r.op === '2>&1');
@@ -1436,6 +1456,10 @@ export class PSRuntime {
     const currentVersion = String(values['CurrentVersion'] ?? '10.0');
     const build = String(values['CurrentBuildNumber'] ?? '');
     if (!build) return;
+    if (this.edition === 'core') {
+      table['OS'] = `Microsoft Windows ${currentVersion}.${build}`;
+      return;
+    }
     table['BuildVersion'] = `${currentVersion}.${build}.1`;
   }
 
@@ -1495,6 +1519,10 @@ export class PSRuntime {
     }
     if (op === '-or') {
       return this.isTruthy(this.evalExpr(node.left, env)) || this.isTruthy(this.evalExpr(node.right, env));
+    }
+    if (op === '??') {
+      const left = this.evalExpr(node.left, env);
+      return left !== null && left !== undefined ? left : this.evalExpr(node.right, env);
     }
 
     // -is / -isnot / -as: the right side is [TypeName] which the parser wraps as
@@ -1686,8 +1714,25 @@ export class PSRuntime {
   }
 
   private evalRange(node: PSRangeExpression, env: PSEnvironment): PSValue {
-    const start = this.evalExpr(node.start, env) as number;
-    const end   = this.evalExpr(node.end,   env) as number;
+    const startValue = this.evalExpr(node.start, env);
+    const endValue   = this.evalExpr(node.end,   env);
+    if (this.edition === 'core') {
+      const asChar = (value: PSValue): number | null => {
+        if (value instanceof PSChar) return value.code;
+        return typeof value === 'string' && value.length === 1 && !/\d/.test(value) ? value.charCodeAt(0) : null;
+      };
+      const first = asChar(startValue);
+      const last = asChar(endValue);
+      if (first !== null && last !== null) {
+        const chars: PSValue[] = [];
+        if (first <= last) for (let i = first; i <= last; i++) chars.push(new PSChar(i) as PSValue);
+        else for (let i = first; i >= last; i--) chars.push(new PSChar(i) as PSValue);
+        return chars;
+      }
+    }
+    const toInt = (value: PSValue): number => Number(this.guarded(() => castToNumeric('int32', value, this.conversion)));
+    const start = toInt(startValue);
+    const end   = toInt(endValue);
     const arr: number[] = [];
     if (start <= end) for (let i = start; i <= end; i++) arr.push(i);
     else              for (let i = start; i >= end; i--) arr.push(i);
@@ -1696,6 +1741,7 @@ export class PSRuntime {
 
   private evalMember(node: PSMemberExpression, env: PSEnvironment): PSValue {
     const obj    = this.evalExpr(node.object, env);
+    if (node.nullConditional === true && (obj === null || obj === undefined)) return null;
     const member = typeof node.member === 'string'
       ? node.member.toLowerCase()
       : psValueToString(this.evalExpr(node.member as PSExpression, env)).toLowerCase();
@@ -1831,6 +1877,7 @@ export class PSRuntime {
 
   private evalIndex(node: PSIndexExpression, env: PSEnvironment): PSValue {
     const obj = this.evalExpr(node.object, env);
+    if (node.nullConditional === true && (obj === null || obj === undefined)) return null;
     const idx = this.evalExpr(node.index,  env);
     if (typeof obj === 'string') return this.indexSequence([...obj].map(ch => new PSChar(ch.charCodeAt(0)) as PSValue), idx);
     if (Array.isArray(obj)) return this.indexSequence(obj, idx);
@@ -1846,7 +1893,7 @@ export class PSRuntime {
 
   private indexSequence(items: PSValue[], idx: PSValue): PSValue {
     const position = (key: PSValue): number => {
-      const raw = typeof key === 'number' || key instanceof PSNumber ? key : this.guarded(() => castToNumeric('int32', key));
+      const raw = typeof key === 'number' || key instanceof PSNumber ? key : this.guarded(() => castToNumeric('int32', key, this.conversion));
       const n = Math.trunc(Number(raw instanceof PSNumber ? raw.toNumber() : raw));
       return n < 0 ? items.length + n : n;
     };
@@ -1864,6 +1911,11 @@ export class PSRuntime {
   }
 
   private evalInvocation(node: PSInvocationExpression, env: PSEnvironment): PSValue {
+    const calleeNode = node.callee as PSMemberExpression;
+    if (calleeNode.type === 'MemberExpression' && calleeNode.nullConditional === true) {
+      const target = this.evalExpr(calleeNode.object, env);
+      if (target === null || target === undefined) return null;
+    }
     const callee = this.evalExpr(node.callee, env);
     const args   = node.arguments.map(a => this.evalExpr(a, env));
     if (typeof callee === 'function')
@@ -2187,6 +2239,20 @@ export class PSRuntime {
     return null;
   }
 
+  private execPipelineChain(node: PSPipelineChainStatement, env: PSEnvironment): PSValue {
+    const outputs: PSValue[] = [];
+    const collect = (value: PSValue): void => {
+      if (value === null || value === undefined) return;
+      if (Array.isArray(value)) outputs.push(...value);
+      else outputs.push(value);
+    };
+    collect(this.execStatement(node.left, env));
+    const succeeded = this.isTruthy(env.get('?') ?? true);
+    if (node.operator === '&&' ? succeeded : !succeeded) collect(this.execStatement(node.right, env));
+    if (outputs.length === 0) return null;
+    return outputs.length === 1 ? outputs[0] : outputs;
+  }
+
   private execEnumDef(node: PSEnumDefinition, env: PSEnvironment): PSValue {
     const flags = node.attributes?.some(a => a.name.toLowerCase() === 'flags') === true;
     const baseSpec = node.baseType === null ? null : parseTypeName(node.baseType);
@@ -2288,10 +2354,14 @@ export class PSRuntime {
       const rec = val as Record<string, PSValue>;
       const carrier = typeof rec['Exception'] === 'object' && rec['Exception'] !== null ? rec['Exception'] as Record<string, PSValue> : rec;
       if (typeof carrier['__type__'] === 'string') {
-        throw new PSRuntimeError(String(carrier['Message'] ?? ''), carrier['__type__'] as string);
+        const thrown = new PSRuntimeError(String(carrier['Message'] ?? ''), carrier['__type__'] as string);
+        thrown.thrownFromThrowStatement = true;
+        throw thrown;
       }
     }
-    throw new PSRuntimeError(String(val));
+    const thrown = new PSRuntimeError(String(val));
+    thrown.thrownFromThrowStatement = true;
+    throw thrown;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2351,7 +2421,7 @@ export class PSRuntime {
         const positional: PSValue[] = [];
         const named: Record<string, PSValue> = {};
         for (const p of node.parameters)
-          named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true;
+          { this.noteTypedParameter(p); named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true; }
         for (const a of node.arguments)
           positional.push(this.evalExpr(a, env));
         return this.invokeScriptBlock(varVal as PSScriptBlock, named, positional, env, pipeInput);
@@ -2374,7 +2444,7 @@ export class PSRuntime {
       const positional: PSValue[] = [];
       const named: Record<string, PSValue> = {};
       for (const p of node.parameters)
-        named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true;
+        { this.noteTypedParameter(p); named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true; }
       for (const a of node.arguments)
         positional.push(this.evalExpr(a, env));
       return this.invokeScriptBlock(nameNode as unknown as PSScriptBlock, named, positional, env, pipeInput);
@@ -2402,12 +2472,13 @@ export class PSRuntime {
 
     const rawName = this.resolveCommandName(nameNode, env);
     const lname   = rawName.toLowerCase();
+    this.typedCommandNames.set(lname, rawName);
 
     const positional: PSValue[] = [];
     const named: Record<string, PSValue> = {};
 
     for (const p of node.parameters)
-      named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true;
+      { this.noteTypedParameter(p); named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true; }
 
     const argumentSpans: number[] = [];
     for (const a of node.arguments) {
@@ -2557,7 +2628,9 @@ export class PSRuntime {
   acceptNativeResult(result: NativeResult): PSValue {
     if (result.notRecognized === true) {
       this.global.set('?', false);
-      throw new PSRuntimeError(result.output);
+      const missing = new PSRuntimeError(result.output);
+      missing.commandName = /^The term '([^']*)'/.exec(result.output)?.[1];
+      throw missing;
     }
     this.setLastExitCode(result.exitCode);
     return nativeOutputValue(result.output);
@@ -2673,6 +2746,7 @@ export class PSRuntime {
       invokeScript: (script, argument) => this.invokeScriptBlock(script as PSScriptBlock, {}, [], evaluationEnv, argument),
       equal: (left, right, ignoreCase) => this.psEq(left, right, !ignoreCase),
       scriptText: script => (script as PSScriptBlock).sourceText ?? '',
+      spell: key => this.typedParameterName(key),
     };
     const attributes = block.paramBlock.attributes;
     const outcome = bindParameters(declarations, attributes, named, positional, host, {
@@ -2703,6 +2777,23 @@ export class PSRuntime {
    * filter semantics, $input, and ValueFromPipeline parameter binding.
    */
   private callUserFunction(
+    fn: { block: PSScriptBlock; isFilter: boolean; declaredName?: string },
+    named: Record<string, PSValue>,
+    positional: PSValue[],
+    env: PSEnvironment,
+    pipeInput: PSValue,
+  ): PSValue {
+    try {
+      return this.callUserFunctionBody(fn, named, positional, env, pipeInput);
+    } catch (error) {
+      if (error instanceof PSRuntimeError && error.commandName === undefined && !error.thrownFromThrowStatement) {
+        error.commandName = fn.declaredName;
+      }
+      throw error;
+    }
+  }
+
+  private callUserFunctionBody(
     fn: { block: PSScriptBlock; isFilter: boolean },
     named: Record<string, PSValue>,
     positional: PSValue[],
@@ -2876,6 +2967,43 @@ export class PSRuntime {
     return expanded;
   }
 
+  private readonly typedCommandNames = new Map<string, string>();
+
+  typedCommandName(lowerName: string): string {
+    return this.typedCommandNames.get(lowerName) ?? lowerName;
+  }
+
+  private notFound(name: string): PSRuntimeError {
+    const typed = this.typedCommandName(name);
+    const error = new PSRuntimeError(commandNotFoundMessage(typed, this.edition === 'core'));
+    error.commandName = typed;
+    return error;
+  }
+
+  private readonly typedParameterNames = new Map<string, string>();
+
+  private noteTypedParameter(parameter: { name: string; text?: string }): void {
+    const typed = (parameter.text ?? parameter.name).replace(/^-/, '').replace(/:$/, '');
+    this.typedParameterNames.set(parameter.name.toLowerCase(), typed);
+  }
+
+  private typedParameterName(key: string): string {
+    return this.typedParameterNames.get(key) ?? key;
+  }
+
+  private rejectCoreOnlyParameters(cmdlet: ICmdlet, named: Record<string, PSValue>): void {
+    if (this.edition === 'core' || cmdlet.coreOnlyParameters === undefined) return;
+    for (const key of Object.keys(named)) {
+      const hit = cmdlet.coreOnlyParameters.find(parameter => parameter.toLowerCase().startsWith(key));
+      if (hit !== undefined && !(cmdlet.parameters ?? []).some(p => p.toLowerCase() === key && !cmdlet.coreOnlyParameters?.includes(p))) {
+        throw new PSRuntimeError(
+          `A parameter cannot be found that matches parameter name '${this.typedParameterName(key)}'.`,
+          'System.Management.Automation.ParameterBindingException',
+        );
+      }
+    }
+  }
+
   private resolveParameterPrefixes(declaredNames: readonly string[] | undefined, named: Record<string, PSValue>): void {
     if (declaredNames === undefined) return;
     const declared = declaredNames.map(name => name.toLowerCase());
@@ -2890,7 +3018,7 @@ export class PSRuntime {
         }
       } else if (candidates.length > 1) {
         throw new PSRuntimeError(
-          `Parameter cannot be processed because the parameter name '${key}' is ambiguous. Possible matches include:${candidates.map(c => ` -${c}`).join('')}.`,
+          `Parameter cannot be processed because the parameter name '${this.typedParameterName(key)}' is ambiguous. Possible matches include:${candidates.map(c => ` -${c}`).join('')}.`,
           'System.Management.Automation.ParameterBindingException',
         );
       }
@@ -2927,8 +3055,10 @@ export class PSRuntime {
     delete cmdletNamed['outvariable'];
 
     const programStem = this.providers.network?.programStem(name) ?? null;
-    const cmdlet = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
+    const resolved = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
+    const cmdlet = resolved && resolved.coreOnly === true && this.edition === 'desktop' ? undefined : resolved;
     if (cmdlet) {
+      this.rejectCoreOnlyParameters(cmdlet, cmdletNamed);
       this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed);
       const declared = new Set(
         ((cmdlet.parameters ?? []) as readonly string[]).map(p => p.toLowerCase()));
@@ -2943,11 +3073,11 @@ export class PSRuntime {
       if (replayed !== null) return this.acceptNativeResult(replayed);
       this.global.set('?', false);
       if (errorVarName) {
-        const errObj = { Exception: { Message: commandNotFoundMessage(name) }, CategoryInfo: {} } as Record<string, PSValue>;
+        const errObj = { Exception: { Message: commandNotFoundMessage(this.typedCommandName(name), this.edition === 'core') }, CategoryInfo: {} } as Record<string, PSValue>;
         this.global.set(errorVarName, errObj);
       }
       if (silentlyCont) return null;
-      if (programStem === null && !isNativeProgramName(name)) throw new PSRuntimeError(commandNotFoundMessage(name));
+      if (programStem === null && !isNativeProgramName(name)) throw this.notFound(name);
       throw new NativeCommandNeedsAsync(
         programStem ?? name, nativeArguments ?? nativeArgv(positional, cmdletNamed), this.pipelineText(pipeInput));
     }
@@ -2992,6 +3122,7 @@ export class PSRuntime {
       for (let i = 0; i < emittedValues.length; i++) emittedValues[i] = adoptMachineDates(emittedValues[i], this.providers);
     } catch (err) {
       this.global.set('?', false);
+      if (err instanceof PSRuntimeError && err.commandName === undefined && !err.thrownFromThrowStatement) err.commandName = cmdletDisplayName;
       if (errorVarName) {
         const msg = err instanceof Error ? err.message : String(err);
         this.global.set(errorVarName, { Exception: { Message: msg }, CategoryInfo: {} } as Record<string, PSValue>);
@@ -3109,11 +3240,15 @@ export class PSRuntime {
         env.set('Error', [errObj, ...prevGlobalErrors]);
         if (stopOnError) throw new PSRuntimeError(msg);
         if (!silentlyContinue) {
-          self.outputLines.push(
-            `${cmdletDisplayName} : ${msg}`,
-            `    + CategoryInfo          : ${category}: (:) [${cmdletDisplayName}], ${exceptionType}`,
-            `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
-          );
+          if (self.edition === 'core') {
+            self.outputLines.push(`${cmdletDisplayName}: ${msg}`);
+          } else {
+            self.outputLines.push(
+              `${cmdletDisplayName} : ${msg}`,
+              `    + CategoryInfo          : ${category}: (:) [${cmdletDisplayName}], ${exceptionType}`,
+              `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
+            );
+          }
         }
       },
 
@@ -3225,8 +3360,8 @@ export class PSRuntime {
 
   private castScalar(val: PSValue, spec: TypeSpec): PSValue | undefined {
     switch (spec.kind) {
-      case 'numeric': return this.guarded(() => castToNumeric(spec.numeric, val));
-      case 'char': return this.guarded(() => castToChar(val));
+      case 'numeric': return this.guarded(() => castToNumeric(spec.numeric, val, this.conversion));
+      case 'char': return this.guarded(() => castToChar(val, this.conversion));
       case 'string': return psValueToString(val);
       case 'bool': return this.isTruthy(val);
       case 'object': return val;
@@ -3636,7 +3771,7 @@ export class PSRuntime {
       case 'BinaryExpression': case 'UnaryExpression': case 'MemberExpression':
       case 'StaticMemberExpression': case 'IndexExpression': case 'InvocationExpression':
       case 'CastExpression': case 'SubExpression': case 'PipelineExpression':
-      case 'ScriptBlock':
+      case 'ScriptBlock': case 'TernaryExpression':
         return true;
       case 'LiteralExpression': {
         const k = (node as PSLiteralExpression).kind;
@@ -3649,49 +3784,4 @@ export class PSRuntime {
   }
 }
 
-function formatString(fmt: string, args: PSValue[]): string {
-  return fmt.replace(/\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g,
-    (_m: string, idxStr: string, padStr: string | undefined, spec: string | undefined): string => {
-      const idx = Number.parseInt(idxStr, 10);
-      const value = args[idx];
-      let body = spec !== undefined ? applyFormatSpec(value, spec) : psValueToString(value);
-      if (padStr !== undefined) {
-        const width = Number.parseInt(padStr, 10);
-        const pad = Math.abs(width) - body.length;
-        if (pad > 0) {
-          body = width < 0 ? body + ' '.repeat(pad) : ' '.repeat(pad) + body;
-        }
-      }
-      return body;
-    });
-}
-
-function applyFormatSpec(value: PSValue, spec: string): string {
-  const n = typeof value === 'number' ? value : Number(value);
-  if (Number.isNaN(n) && /[NDFXEPC]/i.test(spec[0] ?? '')) return psValueToString(value);
-  const code = spec[0].toUpperCase();
-  const digits = spec.length > 1 ? Number.parseInt(spec.slice(1), 10) : NaN;
-  switch (code) {
-    case 'N': {
-      const p = Number.isFinite(digits) ? digits : 2;
-      const fixed = n.toFixed(p);
-      const [intPart, decPart] = fixed.split('.');
-      const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-      return decPart !== undefined ? `${withCommas}.${decPart}` : withCommas;
-    }
-    case 'D': return Number.isFinite(digits) ? String(Math.trunc(n)).padStart(digits, '0') : String(Math.trunc(n));
-    case 'F': return n.toFixed(Number.isFinite(digits) ? digits : 2);
-    case 'X': {
-      const hex = Math.trunc(n).toString(16);
-      return Number.isFinite(digits) ? hex.padStart(digits, '0') : hex;
-    }
-    case 'E': return n.toExponential(Number.isFinite(digits) ? digits : 6);
-    case 'P': {
-      const p = Number.isFinite(digits) ? digits : 2;
-      return (n * 100).toFixed(p) + '%';
-    }
-    case 'C': return '$' + n.toFixed(Number.isFinite(digits) ? digits : 2);
-    default: return psValueToString(value);
-  }
-}
 

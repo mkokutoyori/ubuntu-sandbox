@@ -61,7 +61,22 @@ export type PSStatement =
   | PSContinueStatement
   | PSThrowStatement
   | PSTrapStatement
-  | PSUsingStatement;
+  | PSUsingStatement
+  | PSPipelineChainStatement;
+
+export interface PSPipelineChainStatement extends ASTBase {
+  type: 'PipelineChain';
+  left: PSStatement;
+  operator: '&&' | '||';
+  right: PSStatement;
+}
+
+export interface PSTernaryExpression extends ASTBase {
+  type: 'TernaryExpression';
+  condition: PSExpression;
+  whenTrue: PSExpression;
+  whenFalse: PSExpression;
+}
 
 // ─── Pipeline Statement ───────────────────────────────────────────────────────
 
@@ -101,7 +116,7 @@ export interface PSCommandParameter extends ASTBase {
 export interface PSAssignmentStatement extends ASTBase {
   type: 'AssignmentStatement';
   target: PSVariableExpression | PSIndexExpression | PSMemberExpression;
-  operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=';
+  operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '??=';
   value: PSExpression;
   postfix?: boolean;
 }
@@ -319,7 +334,8 @@ export type PSExpression =
   | PSFormatExpression
   | PSSplatExpression
   | PSCommandExpression    // bareword command used as expression (pipeline head)
-  | PSPipelineExpression;  // pipeline used as expression (e.g. $r = cmd1 | cmd2)
+  | PSPipelineExpression  // pipeline used as expression (e.g. $r = cmd1 | cmd2)
+  | PSTernaryExpression;
 
 /** A pipeline used in expression context — e.g. `$r = 1,2,3 | Where-Object { ... }` */
 export interface PSPipelineExpression extends ASTBase {
@@ -431,6 +447,7 @@ export interface PSUnaryExpression extends ASTBase {
 // ─── Binary expressions ───────────────────────────────────────────────────────
 
 export type PSBinaryOperator =
+  | '??'
   // Arithmetic
   | '+' | '-' | '*' | '/' | '%'
   // Comparison (case-insensitive by default)
@@ -470,6 +487,7 @@ export interface PSMemberExpression extends ASTBase {
   object: PSExpression;
   member: string | PSExpression;   // string = static name; expression = computed ($obj.$prop)
   computed: boolean;
+  nullConditional?: boolean;
 }
 
 // ─── Static member [Type]::Member ────────────────────────────────────────────
@@ -486,6 +504,7 @@ export interface PSIndexExpression extends ASTBase {
   type: 'IndexExpression';
   object: PSExpression;
   index: PSExpression;
+  nullConditional?: boolean;
 }
 
 // ─── Method call $obj.Method(args) ───────────────────────────────────────────
