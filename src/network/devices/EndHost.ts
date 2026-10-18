@@ -131,7 +131,7 @@ import {
   type IcmpErrorQuote,
   RFC792_ICMP_ERROR_QUOTE,
 } from '../core/IcmpErrors';
-import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
+import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF, ipv4SendRefusal } from '../core/Ipv4Fragmentation';
 import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
 import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
@@ -246,6 +246,24 @@ export type TraceProbeMethod =
   | { kind: 'raw'; protocol: number; tos?: number };
 
 const LOOPBACK_ECHO_MTU = 65536;
+const LOOPBACK_ECHO_RTT_MS = 0.01;
+
+type LocalDelivery = 'delivered' | 'send-dropped' | 'send-rejected' | 'lost';
+
+type EchoOutcome =
+  | { kind: 'reply'; r: HostIcmpEchoReplyPayload }
+  | { kind: 'failed'; r: HostIcmpEchoFailedPayload };
+
+interface EchoSettlement {
+  readonly id: number;
+  readonly seq: number;
+  readonly target: string;
+  readonly sentAt: number;
+  readonly timeoutMs: number;
+  readonly bytes: number;
+  readonly sendError?: Errno;
+  readonly minimumRttMs?: number;
+}
 
 export interface EchoRoute {
   source: IPAddress | null;
@@ -1222,7 +1240,7 @@ export abstract class EndHost extends Equipment {
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
       neighbourResolved: (nextHopIp: string) => this.arpTable.has(nextHopIp),
-      filterLocalSegment: (packet: IPv4Packet | IPv6Packet, family: string) => this.filterLocalDelivery(packet, family),
+      filterLocalSegment: (packet: IPv4Packet | IPv6Packet) => this.filterLocalDelivery(packet),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {
         const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
@@ -3120,6 +3138,9 @@ export abstract class EndHost extends Equipment {
   }
 
   private countLoopbackLeg(packet: IPv4Packet | IPv6Packet, step: 'sent' | 'delivered'): void {
+    if (step === 'sent') {
+      this.ports.get('lo')?.carryLoopback(packet.type === 'ipv6' ? ipv6PacketBytes(packet) : packet.totalLength);
+    }
     if (packet.type === 'ipv6') {
       if (step === 'sent') {
         this.countLocallyOriginated6(packet);
@@ -3232,7 +3253,7 @@ export abstract class EndHost extends Equipment {
 
     countIcmpIn(this.protocolCounters, icmp.icmpType);
     if (icmp.icmpType === 'echo-request') {
-      if (this.broadcastEchoIgnored && !this.getPortOwningIP(ipPkt.destinationIP)) return;
+      if (this.broadcastEchoIgnored && !this.isLocalAddress(ipPkt.destinationIP)) return;
       this.sendEchoReply(portName, ipPkt, icmp);
     } else if (icmp.icmpType === 'echo-reply') {
       // Phase 5.6: settle the awaiting `sendPing` promise via the bus.
@@ -3362,6 +3383,13 @@ export abstract class EndHost extends Equipment {
   }
 
   private sendEchoReply(portName: string, requestIP: IPv4Packet, requestICMP: ICMPPacket): void {
+    if (portName === 'lo') {
+      const reply = buildEchoReply(
+        requestIP, requestICMP, requestIP.destinationIP, this.defaultTTL, this.echoReplyFlags(requestIP), this.echoReplyTos(requestIP),
+      );
+      if (this.loopLocal(reply) === 'delivered') this.handleICMP('lo', reply);
+      return;
+    }
     const port = this.ports.get(portName);
     if (!port) return;
     // RFC 1122 §3.2.2.6: the reply is sourced from the address the request
@@ -3390,6 +3418,37 @@ export abstract class EndHost extends Equipment {
     this.sendIpv4FrameArpAware(outPortName, replyIP, route.nextHopIP);
   }
 
+  protected filtersLoopbackTraffic(): boolean {
+    return true;
+  }
+
+  private loopLocal(packet: IPv4Packet | IPv6Packet): LocalDelivery {
+    const filtered = this.filtersLoopbackTraffic();
+    const verdictAt = (direction: 'out' | 'in'): 'accept' | 'drop' | 'reject' => {
+      if (!filtered) return 'accept';
+      return packet.type === 'ipv6'
+        ? this.firewallFilter6('lo', packet, direction)
+        : this.firewallFilter('lo', packet, direction);
+    };
+    const rejected = (): void => {
+      if (packet.type === 'ipv6') this.sendIpv6Reject('lo', packet);
+      else this.sendICMPReject('lo', packet);
+    };
+    const leaving = verdictAt('out');
+    if (leaving !== 'accept') {
+      if (leaving === 'reject') rejected();
+      return leaving === 'drop' ? 'send-dropped' : 'send-rejected';
+    }
+    this.countLoopbackLeg(packet, 'sent');
+    const arriving = verdictAt('in');
+    if (arriving !== 'accept') {
+      if (arriving === 'reject') rejected();
+      return 'lost';
+    }
+    this.countLoopbackLeg(packet, 'delivered');
+    return 'delivered';
+  }
+
   /**
    * Send the ICMP error (or TCP RST) that a firewall REJECT verdict implies.
    * Honors `--reject-with` when the firewall engine set `lastRejectWith`
@@ -3399,20 +3458,8 @@ export abstract class EndHost extends Equipment {
    * mismatched combination (e.g. configured on a UDP rule) falls back to
    * the default ICMP error rather than silently doing nothing.
    */
-  private filterLocalDelivery(packet: IPv4Packet | IPv6Packet, family: string): boolean {
-    for (const direction of ['out', 'in'] as const) {
-      if (family === 'ipv6') {
-        if (this.firewallFilter6('lo', packet as IPv6Packet, direction) !== 'accept') return false;
-      } else {
-        const verdict = this.firewallFilter('lo', packet as IPv4Packet, direction);
-        if (verdict !== 'accept') {
-          if (verdict === 'reject') this.sendICMPReject('lo', packet as IPv4Packet);
-          return false;
-        }
-      }
-      this.countLoopbackLeg(packet, direction === 'out' ? 'sent' : 'delivered');
-    }
-    return true;
+  private filterLocalDelivery(packet: IPv4Packet | IPv6Packet): boolean {
+    return this.loopLocal(packet) === 'delivered';
   }
 
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
@@ -3485,11 +3532,7 @@ export abstract class EndHost extends Equipment {
       const looped = buildICMPError(errorSource ?? offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
         nextHopMTU, quote: this.icmpErrorQuote(),
       });
-      const verdict = this.firewallFilter('lo', looped, 'out');
-      if (verdict === 'drop' || verdict === 'reject') return;
-      this.countLoopbackLeg(looped, 'sent');
-      this.countLoopbackLeg(looped, 'delivered');
-      this.handleICMP('lo', looped);
+      if (this.loopLocal(looped) === 'delivered') this.handleICMP('lo', looped);
       return;
     }
 
@@ -4055,10 +4098,9 @@ export abstract class EndHost extends Equipment {
       const localPkt = createIPv4Packet(
         destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
       );
-      this.countLoopbackLeg(localPkt, 'sent');
-      this.countLoopbackLeg(localPkt, 'delivered');
-      this.deliverUDP('lo', localPkt, false);
-      return true;
+      const delivery = this.loopLocal(localPkt);
+      if (delivery === 'delivered') this.deliverUDP('lo', localPkt, false);
+      return delivery !== 'send-dropped' && delivery !== 'send-rejected';
     }
 
     // Multicast et broadcast limité n'ont ni route ni voisin à résoudre :
@@ -4115,7 +4157,7 @@ export abstract class EndHost extends Equipment {
 
   private udpDefaultDontFragment(destination: IPAddress, ipTotalLength: number, iface?: string): boolean {
     if (!this.udpDiscoversPathMtu) return false;
-    if (this.isLocalAddress(destination)) return ipTotalLength <= LOOPBACK_ECHO_MTU;
+    if (this.isLocalAddress(destination)) return ipTotalLength <= this.loopbackMtu();
     const route = this.resolveRoute(destination, iface);
     if (!route) return false;
     if (this.liveRouteException(destination)?.locked) return false;
@@ -4277,10 +4319,9 @@ export abstract class EndHost extends Equipment {
         stampUdpChecksum(udp, origin.toString(), destinationIP.toString()),
         udp.length,
       ));
-      this.countLoopbackLeg(localPkt, 'sent');
-      this.countLoopbackLeg(localPkt, 'delivered');
-      this.deliverUDP6('lo', localPkt);
-      return true;
+      const delivery = this.loopLocal(localPkt);
+      if (delivery === 'delivered') this.deliverUDP6('lo', localPkt);
+      return delivery !== 'send-dropped' && delivery !== 'send-rejected';
     }
 
     // A group has neither route nor neighbour, so resolving it by NDP
@@ -4443,10 +4484,7 @@ export abstract class EndHost extends Equipment {
         errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit,
         { type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra }, 48,
       );
-      if (this.firewallFilter6('lo', looped, 'out') !== 'accept') return;
-      this.countLoopbackLeg(looped, 'sent');
-      this.countLoopbackLeg(looped, 'delivered');
-      this.handleICMPv6('lo', looped);
+      if (this.loopLocal(looped) === 'delivered') this.handleICMPv6('lo', looped);
       return;
     }
     const port = this.ports.get(portName);
@@ -4670,10 +4708,7 @@ export abstract class EndHost extends Equipment {
 
   private armEchoWait(
     probe: { id: number; seq: number; target: string; anySource: boolean }, timeoutMs: number,
-  ): () => Promise<
-    | { kind: 'reply'; r: HostIcmpEchoReplyPayload }
-    | { kind: 'failed'; r: HostIcmpEchoFailedPayload }
-  > {
+  ): () => Promise<EchoOutcome> {
     const replied = waitForEvent(
       this.getBus(),
       'host.icmp.echo-reply',
@@ -4723,29 +4758,17 @@ export abstract class EndHost extends Equipment {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 
-    const id = opts?.ident ?? this.allocateEchoIdent();
-
+    const request = this.echoRequest(myIP, targetIP, seq, ttl, opts);
+    const ipPkt = request.packet;
     const targetIpStr = targetIP.toString();
     const sentAt = PathClock.now();
-    const useTtl = ttl ?? this.defaultTTL;
 
     const toBroadcast = linkDestinationFor(targetIP, this.connectedIpv4Prefixes()) !== null;
-    const outcome = this.armEchoWait({ id, seq, target: targetIpStr, anySource: toBroadcast }, timeoutMs);
-
-    const dataSize = opts?.dataSize ?? 56;
-    const icmp: ICMPPacket = {
-      type: 'icmp', icmpType: 'echo-request', code: 0,
-      id, sequence: seq, dataSize,
-    };
-    const icmpSize = 8 + dataSize;
-    const ipPkt = createIPv4Packet(
-      myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize,
-      { ...(opts?.df === undefined ? {} : { flags: opts.df ? 0b010 : 0b000 }), tos: opts?.tos },
-    );
+    const outcome = this.armEchoWait({ id: request.id, seq, target: targetIpStr, anySource: toBroadcast }, timeoutMs);
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
-      id, seq, ttl: useTtl, size: icmpSize,
+      id: request.id, seq, ttl: ipPkt.ttl, size: request.icmpSize,
     });
 
     const verdict = this.firewallFilter(portName, ipPkt, 'out');
@@ -4753,11 +4776,7 @@ export abstract class EndHost extends Equipment {
     if (verdict === 'reject') {
       this.rejectOutgoing(ipPkt);
     } else {
-      const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
-      if (!packets) {
-        throw new LocalSendError({ origin: 'local', errno: 'EMSGSIZE', mtu: this.pathMtuTo(targetIP, port.getMTU()) });
-      }
-      for (const packet of packets) {
+      for (const packet of this.fragmentsForEgress(ipPkt, port.getMTU()) ?? []) {
         this.sendFrame(portName, {
           srcMAC: port.getMAC(), dstMAC: targetMAC,
           etherType: ETHERTYPE_IPV4, payload: packet,
@@ -4765,31 +4784,94 @@ export abstract class EndHost extends Equipment {
       }
     }
 
+    return this.settleEcho(outcome, {
+      id: request.id, seq, target: targetIpStr, sentAt, timeoutMs, bytes: request.icmpSize,
+      sendError: verdict === 'reject' ? 'EPERM' : undefined,
+    });
+  }
+
+  private loopbackMtu(): number {
+    return this.ports.get('lo')?.getMTU() ?? LOOPBACK_ECHO_MTU;
+  }
+
+  private echoRequest(
+    source: IPAddress, target: IPAddress, seq: number, ttl: number | undefined, opts?: EchoOptions,
+  ): { id: number; packet: IPv4Packet; icmpSize: number } {
+    const id = opts?.ident ?? this.allocateEchoIdent();
+    return { id, ...this.echoPacket(id, source, target, seq, ttl, opts) };
+  }
+
+  private echoRefusal(port: Port, target: IPAddress, ttl: number | undefined, opts?: EchoOptions): LocalSocketError | null {
+    const { packet } = this.echoPacket(0, opts?.socket?.sourceIp ?? port.getIPAddress() ?? target, target, 0, ttl, opts);
+    return ipv4SendRefusal(packet.totalLength, this.pathMtuTo(target, port.getMTU()), (packet.flags & IPV4_FLAG_DF) !== 0);
+  }
+
+  private echoPacket(
+    id: number, source: IPAddress, target: IPAddress, seq: number, ttl: number | undefined, opts?: EchoOptions,
+  ): { packet: IPv4Packet; icmpSize: number } {
+    const dataSize = opts?.dataSize ?? 56;
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType: 'echo-request', code: 0,
+      id, sequence: seq, dataSize,
+    };
+    const icmpSize = 8 + dataSize;
+    const packet = createIPv4Packet(
+      source, target, IP_PROTO_ICMP, ttl ?? this.defaultTTL, icmp, icmpSize,
+      { ...(opts?.df === undefined ? {} : { flags: opts.df ? IPV4_FLAG_DF : 0b000 }), tos: opts?.tos },
+    );
+    return { packet, icmpSize };
+  }
+
+  private async settleEcho(outcome: () => Promise<EchoOutcome>, probe: EchoSettlement): Promise<PingResult> {
     try {
       const winner = await outcome();
-      if (winner.kind === 'failed') {
-        throw new IcmpErrorReply(winner.r.reason, undefined, verdict === 'reject' ? 'EPERM' : undefined);
-      }
-      const rtt = PathClock.now() - sentAt;
-      if (rtt > timeoutMs) throw new Error('timeout');
+      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason, winner.r.icmp6, probe.sendError);
+      const rtt = Math.max(PathClock.now() - probe.sentAt, probe.minimumRttMs ?? 0);
+      if (rtt > probe.timeoutMs) throw new Error('timeout');
       return {
         success: true,
         rttMs: rtt,
         ttl: winner.r.ttl,
-        seq,
-        bytes: icmpSize,
-        fromIP: targetIpStr,
+        seq: probe.seq,
+        bytes: probe.bytes,
+        fromIP: probe.target,
         ...(winner.r.ipId === undefined ? {} : { ipId: winner.r.ipId }),
         ...(winner.r.tos === undefined ? {} : { tos: winner.r.tos }),
         ...(winner.r.ipLen === undefined ? {} : { ipLen: winner.r.ipLen }),
       };
     } catch (err) {
       if (err instanceof WaitForEventTimeoutError) {
-        this.emitIcmpEchoTimeout({ toIp: targetIpStr, id, seq });
+        this.emitIcmpEchoTimeout({ toIp: probe.target, id: probe.id, seq: probe.seq });
         throw new Error('timeout');
       }
       throw err;
     }
+  }
+
+  private async sendLocalPing(
+    target: IPAddress, seq: number, timeoutMs: number, ttl: number | undefined, opts?: EchoOptions,
+  ): Promise<PingResult> {
+    const source = opts?.socket?.sourceIp ?? target;
+    const request = this.echoRequest(source, target, seq, ttl, opts);
+    const packet = request.packet;
+    const targetText = target.toString();
+    const sentAt = PathClock.now();
+    const outcome = this.armEchoWait({ id: request.id, seq, target: targetText, anySource: false }, timeoutMs);
+    this.emitIcmpEchoSent({
+      fromIp: source.toString(), toIp: targetText, id: request.id, seq, ttl: packet.ttl, size: request.icmpSize,
+    });
+
+    const refusal = ipv4SendRefusal(packet.totalLength, this.loopbackMtu(), (packet.flags & IPV4_FLAG_DF) !== 0);
+    if (refusal !== null) throw new LocalSendError(refusal);
+
+    const delivery = this.loopLocal(packet);
+    if (delivery === 'send-dropped') throw new SendRefusedError('EPERM');
+    if (delivery === 'delivered') this.handleICMP('lo', packet);
+
+    return this.settleEcho(outcome, {
+      id: request.id, seq, target: targetText, sentAt, timeoutMs, bytes: request.icmpSize,
+      sendError: delivery === 'send-rejected' ? 'EPERM' : undefined, minimumRttMs: LOOPBACK_ECHO_RTT_MS,
+    });
   }
 
   // ─── Route Resolution (LPM — Longest Prefix Match) ──────────────
@@ -4953,29 +5035,9 @@ export abstract class EndHost extends Equipment {
    * Execute a full ping sequence: route lookup → ARP → ICMP echo × count.
    * Returns an array of PingResult (one per ping attempt).
    */
-  /** Fabricate successful echo results for traffic that never leaves the host. */
   allocateEchoIdent(): number {
     this.pingIdCounter++;
     return this.pingIdCounter;
-  }
-
-  private localEchoResults(targetIP: IPAddress, count: number, firstSeq = 1, ident?: number): PingResult[] {
-    const results: PingResult[] = [];
-    const ip = targetIP.toString();
-    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      const id = ident ?? this.allocateEchoIdent();
-      this.emitIcmpEchoSent({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, size: 64 });
-      this.emitIcmpEchoReply({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, rttMs: 0.01 });
-      results.push({
-        success: true,
-        rttMs: 0.01,
-        ttl: this.defaultTTL,
-        seq,
-        bytes: 64,
-        fromIP: ip,
-      });
-    }
-    return results;
   }
 
   private unreachableResults(localIP: IPAddress | null, count: number, firstSeq = 1): PingResult[] {
@@ -5001,7 +5063,10 @@ export abstract class EndHost extends Equipment {
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
     if (this.isLocalAddress(targetIP)) {
-      return this.localEchoResults(targetIP, count, firstSeq, opts?.ident);
+      return this.pingEach(
+        count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendLocalPing(targetIP, seq, timeoutMs, ttl, opts),
+        (seq) => this.collectEchoRedirects(targetIP, seq, opts?.ident),
+      );
     }
 
     // Route resolution
@@ -5011,6 +5076,11 @@ export abstract class EndHost extends Equipment {
     }
 
     const portName = route.port.getName();
+
+    const refusal = this.echoRefusal(route.port, targetIP, ttl, opts);
+    if (refusal !== null) {
+      return this.pingEach(count, firstSeq, opts?.pauseAfterErrorReplyMs, async () => { throw new LocalSendError(refusal); });
+    }
 
     // ARP resolution (for next-hop, not necessarily the final destination)
     let nextHopMAC: MACAddress;
@@ -5026,16 +5096,26 @@ export abstract class EndHost extends Equipment {
     }
 
     // Send pings
+    return this.pingEach(
+      count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts),
+      (seq) => this.collectEchoRedirects(targetIP, seq, opts?.ident),
+    );
+  }
+
+  private async pingEach(
+    count: number, firstSeq: number, pauseAfterErrorReplyMs: number | undefined,
+    transmit: (seq: number) => Promise<PingResult>,
+    observe: (seq: number) => { attachTo(result: PingResult): PingResult } = () => ({ attachTo: (result) => result }),
+  ): Promise<PingResult[]> {
     const results: PingResult[] = [];
     for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      const redirects = this.collectEchoRedirects(targetIP, seq, opts?.ident);
+      const observed = observe(seq);
       try {
-        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
-        results.push(redirects.attachTo(result));
+        results.push(observed.attachTo(await transmit(seq)));
       } catch (err: unknown) {
-        results.push(redirects.attachTo(this.failedProbe(seq, err)));
-        if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
-          await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
+        results.push(observed.attachTo(this.failedProbe(seq, err)));
+        if (err instanceof IcmpErrorReply && pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
+          await this.getScheduler().delay(pauseAfterErrorReplyMs);
         }
       }
     }
@@ -5095,7 +5175,7 @@ export abstract class EndHost extends Equipment {
 
   echoRouteFor(targetIP: IPAddress, socket: TraceSocketOptions): EchoRoute | null {
     if (this.isLocalAddress(targetIP)) {
-      return { source: socket.sourceIp ?? targetIP, iface: 'lo', mtu: LOOPBACK_ECHO_MTU, mtuLocked: false };
+      return { source: socket.sourceIp ?? targetIP, iface: 'lo', mtu: this.loopbackMtu(), mtuLocked: false };
     }
     const route = this.traceRouteFor(targetIP, socket);
     if (route === null || !route.port.getIsUp()) return null;
@@ -5532,7 +5612,7 @@ export abstract class EndHost extends Equipment {
     const local = this.isLocalAddress(targetIP);
     const route = local ? null : this.resolveRoute(targetIP);
     if (!local && !route) return { origin: 'local', errno: 'ENETUNREACH' };
-    const pathMtu = local ? LOOPBACK_ECHO_MTU : this.pathMtuTo(targetIP, route!.port.getMTU());
+    const pathMtu = local ? this.loopbackMtu() : this.pathMtuTo(targetIP, route!.port.getMTU());
     if (UDP_OVER_IPV4_HEADER_BYTES + options.payloadBytes > pathMtu) {
       return { origin: 'local', errno: 'EMSGSIZE', mtu: pathMtu };
     }
@@ -6158,7 +6238,25 @@ export abstract class EndHost extends Equipment {
     }
   }
 
+  private echoReply6(request: IPv6Packet, echo: ICMPv6Packet, source: IPv6Address): IPv6Packet {
+    const dataSize = echo.dataSize ?? ECHO_DATA_BYTES;
+    return createIPv6Packet(
+      source,
+      request.sourceIP,
+      IP_PROTO_ICMPV6,
+      this.defaultHopLimit,
+      createICMPv6EchoReply(echo.id || 0, echo.sequence || 0, dataSize),
+      ICMP_ECHO_HEADER_BYTES + dataSize,
+      { trafficClass: this.echoReplyTrafficClass(request) },
+    );
+  }
+
   private handleICMPv6EchoRequest(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    if (portName === 'lo') {
+      const reply = this.echoReply6(ipv6, icmpv6, ipv6.destinationIP);
+      if (this.loopLocal(reply) === 'delivered') this.handleICMPv6('lo', reply);
+      return;
+    }
     const port = this.ports.get(portName);
     if (!port) return;
 
@@ -6173,17 +6271,7 @@ export abstract class EndHost extends Equipment {
     }
     if (!srcIP) return;
 
-    const dataSize = icmpv6.dataSize ?? ECHO_DATA_BYTES;
-    const reply = createICMPv6EchoReply(icmpv6.id || 0, icmpv6.sequence || 0, dataSize);
-    const replyPkt = createIPv6Packet(
-      srcIP,
-      ipv6.sourceIP,
-      IP_PROTO_ICMPV6,
-      this.defaultHopLimit,
-      reply,
-      ICMP_ECHO_HEADER_BYTES + dataSize,
-      { trafficClass: this.echoReplyTrafficClass(ipv6) },
-    );
+    const replyPkt = this.echoReply6(ipv6, icmpv6, srcIP);
 
     // Route the reply
     const route = this.resolveIPv6Route(ipv6.sourceIP);
@@ -6563,27 +6651,15 @@ export abstract class EndHost extends Equipment {
       throw new Error(`Destination unreachable from ${srcIP}`);
     }
 
-    const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
-    const refusal = ipv6SendRefusal(
-      ICMP_ECHO_HEADER_BYTES + dataSize, this.pathMtuTo(targetIP, port.getIPv6MTU()), opts?.neverFragment === true,
-    );
-    if (refusal !== null) throw new LocalSendError(refusal);
-
-    const id = opts?.ident ?? this.allocateEchoIdent();
-
+    const request = this.echoRequest6(srcIP, targetIP, seq, opts);
+    const ipPkt = request.packet;
     const targetIpStr = targetIP.toString();
     const sentAt = PathClock.now();
 
-    const outcome = this.armEchoWait({ id, seq, target: targetIpStr, anySource: false }, timeoutMs);
-
-    const icmpv6 = createICMPv6EchoRequest(id, seq, dataSize);
-    const ipPkt = createIPv6Packet(
-      srcIP, targetIP, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.defaultHopLimit, icmpv6, ICMP_ECHO_HEADER_BYTES + dataSize,
-      { trafficClass: opts?.trafficClass, flowLabel: opts?.flowLabel },
-    );
+    const outcome = this.armEchoWait({ id: request.id, seq, target: targetIpStr, anySource: false }, timeoutMs);
 
     this.emitIcmpEchoSent({
-      fromIp: srcIP.toString(), toIp: targetIpStr, id, seq, ttl: ipPkt.hopLimit, size: ipPkt.payloadLength,
+      fromIp: srcIP.toString(), toIp: targetIpStr, id: request.id, seq, ttl: ipPkt.hopLimit, size: ipPkt.payloadLength,
     });
 
     const verdict = this.firewallFilter6(portName, ipPkt, 'out');
@@ -6597,25 +6673,54 @@ export abstract class EndHost extends Equipment {
       });
     }
 
-    try {
-      const winner = await outcome();
-      if (winner.kind === 'failed') {
-        throw new IcmpErrorReply(winner.r.reason, winner.r.icmp6, verdict === 'reject' ? 'EPERM' : undefined);
-      }
-      const rtt = PathClock.now() - sentAt;
-      if (rtt > timeoutMs) throw new Error('timeout');
-      return {
-        success: true,
-        rttMs: rtt,
-        ttl: winner.r.ttl,
-        seq,
-        bytes: ipPkt.payloadLength,
-        fromIP: targetIpStr,
-      };
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) throw new Error('timeout');
-      throw err;
-    }
+    return this.settleEcho(outcome, {
+      id: request.id, seq, target: targetIpStr, sentAt, timeoutMs, bytes: ipPkt.payloadLength,
+      sendError: verdict === 'reject' ? 'EPERM' : undefined,
+    });
+  }
+
+  private echoRefusal6(port: Port, target: IPv6Address, opts?: Echo6Options): LocalSocketError | null {
+    return ipv6SendRefusal(
+      ICMP_ECHO_HEADER_BYTES + (opts?.dataSize ?? ECHO_DATA_BYTES), this.pathMtuTo(target, port.getIPv6MTU()), opts?.neverFragment === true,
+    );
+  }
+
+  private echoRequest6(
+    source: IPv6Address, target: IPv6Address, seq: number, opts?: Echo6Options,
+  ): { id: number; packet: IPv6Packet } {
+    const id = opts?.ident ?? this.allocateEchoIdent();
+    const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
+    const packet = createIPv6Packet(
+      source, target, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.defaultHopLimit,
+      createICMPv6EchoRequest(id, seq, dataSize), ICMP_ECHO_HEADER_BYTES + dataSize,
+      { trafficClass: opts?.trafficClass, flowLabel: opts?.flowLabel },
+    );
+    return { id, packet };
+  }
+
+  private async sendLocalPing6(target: IPv6Address, seq: number, timeoutMs: number, opts?: Echo6Options): Promise<PingResult> {
+    const refusal = ipv6SendRefusal(
+      ICMP_ECHO_HEADER_BYTES + (opts?.dataSize ?? ECHO_DATA_BYTES), this.loopbackMtu(), opts?.neverFragment === true,
+    );
+    if (refusal !== null) throw new LocalSendError(refusal);
+
+    const request = this.echoRequest6(target, target, seq, opts);
+    const packet = request.packet;
+    const targetText = target.toString();
+    const sentAt = PathClock.now();
+    const outcome = this.armEchoWait({ id: request.id, seq, target: targetText, anySource: false }, timeoutMs);
+    this.emitIcmpEchoSent({
+      fromIp: targetText, toIp: targetText, id: request.id, seq, ttl: packet.hopLimit, size: packet.payloadLength,
+    });
+
+    const delivery = this.loopLocal(packet);
+    if (delivery === 'send-dropped') throw new SendRefusedError('EPERM');
+    if (delivery === 'delivered') this.handleICMPv6('lo', packet);
+
+    return this.settleEcho(outcome, {
+      id: request.id, seq, target: targetText, sentAt, timeoutMs, bytes: packet.payloadLength,
+      sendError: delivery === 'send-rejected' ? 'EPERM' : undefined, minimumRttMs: LOOPBACK_ECHO_RTT_MS,
+    });
   }
 
   // ─── High-level Ping6 (used by terminal commands) ───────────────
@@ -6651,26 +6756,16 @@ export abstract class EndHost extends Equipment {
     return results;
   }
 
-  private localEchoResults6(target: IPv6Address, count: number, opts?: Echo6Options): PingResult[] {
-    const firstSeq = opts?.firstSeq ?? 1;
-    const bytes = ICMP_ECHO_HEADER_BYTES + (opts?.dataSize ?? ECHO_DATA_BYTES);
-    const refusal = ipv6SendRefusal(bytes, LOOPBACK_ECHO_MTU, opts?.neverFragment === true);
-    const results: PingResult[] = [];
-    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      results.push(refusal !== null ? this.failedProbe(seq, new LocalSendError(refusal)) : {
-        success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes, fromIP: target.toString(),
-      });
-    }
-    return results;
-  }
-
   protected async executePing6Sequence(
     targetIP: IPv6Address,
     count: number = 4,
     timeoutMs: number = 2000,
     opts?: Echo6Options,
   ): Promise<PingResult[]> {
-    if (this.isLocalAddress6(targetIP)) return this.localEchoResults6(targetIP, count, opts);
+    const firstSeq = opts?.firstSeq ?? 1;
+    if (this.isLocalAddress6(targetIP)) {
+      return this.pingEach(count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendLocalPing6(targetIP, seq, timeoutMs, opts));
+    }
 
     const route = this.resolveIPv6Route(targetIP);
     if (!route) {
@@ -6679,7 +6774,11 @@ export abstract class EndHost extends Equipment {
 
     const portName = route.port.getName();
 
-    const firstSeq = opts?.firstSeq ?? 1;
+    const refusal = this.echoRefusal6(route.port, targetIP, opts);
+    if (refusal !== null) {
+      return this.pingEach(count, firstSeq, opts?.pauseAfterErrorReplyMs, async () => { throw new LocalSendError(refusal); });
+    }
+
     let nextHopMAC: MACAddress;
     try {
       nextHopMAC = await this.resolveNDP(portName, route.nextHopIP, timeoutMs);
@@ -6687,18 +6786,9 @@ export abstract class EndHost extends Equipment {
       return this.unreachableResults6(selectIpv6SourceAddress(route.port, targetIP), count, firstSeq);
     }
 
-    const results: PingResult[] = [];
-    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      try {
-        results.push(await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs, opts));
-      } catch (err: unknown) {
-        results.push(this.failedProbe(seq, err));
-        if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
-          await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
-        }
-      }
-    }
-    return results;
+    return this.pingEach(
+      count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs, opts),
+    );
   }
 
   /**

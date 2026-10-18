@@ -1,3 +1,4 @@
+import type { MessageTooLong } from '../../core/Errno';
 import { FragmentEcn, type FragmentEcnVerdict } from '../../core/IpHeaderFields';
 import type { NetworkPdu } from '../../core/NetworkPdu';
 import { IP_PROTO_IPV6_FRAGMENT, type IPv6Packet } from '../../core/types';
@@ -51,13 +52,7 @@ export function ipv6FragmentCapacity(mtu: number): number {
   return Math.floor((mtu - IPV6_HEADER_BYTES - IPV6_FRAGMENT_HEADER_BYTES) / 8) * 8;
 }
 
-export interface Ipv6SendRefusal {
-  readonly origin: 'local';
-  readonly errno: 'EMSGSIZE';
-  readonly mtu: number;
-}
-
-export function ipv6SendRefusal(payloadBytes: number, pathMtu: number, neverFragment: boolean): Ipv6SendRefusal | null {
+export function ipv6SendRefusal(payloadBytes: number, pathMtu: number, neverFragment: boolean): MessageTooLong | null {
   const tooLargeForAnyDatagram = payloadBytes > IPV6_MAX_PAYLOAD_BYTES;
   const tooLargeForOneFrame = neverFragment && IPV6_HEADER_BYTES + payloadBytes > pathMtu;
   return tooLargeForAnyDatagram || tooLargeForOneFrame ? { origin: 'local', errno: 'EMSGSIZE', mtu: pathMtu } : null;
