@@ -155,6 +155,7 @@ export function parseCommand(
 
   let node = table.rootNode();
   const args: Record<string, string> = {};
+  let optionGiven = false;
 
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
@@ -223,6 +224,7 @@ export function parseCommand(
         };
       }
       Object.assign(args, verdict.args);
+      optionGiven = Object.keys(verdict.args).length > 0;
       break;
     }
 
@@ -244,6 +246,9 @@ export function parseCommand(
     return { status: 'incomplete', consumed: tokens.length };
   }
   if (spec.existsOnlyNegated && !negated) {
+    return { status: 'incomplete', consumed: tokens.length };
+  }
+  if (spec.requiresOneOption && !negated && !optionGiven) {
     return { status: 'incomplete', consumed: tokens.length };
   }
   if (!table.isReachable(spec, session)) {
