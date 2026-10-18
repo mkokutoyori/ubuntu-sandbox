@@ -106,6 +106,9 @@ export interface CmdletContext {
    */
   emit(val: PSValue): void;
 
+  /** Write a warning line without taking the cmdlet's returned value off the output stream. */
+  emitWarning(msg: string): void;
+
   /** Write an error message (non-terminating). */
   emitError(msg: string): void;
 

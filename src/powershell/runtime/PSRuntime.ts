@@ -322,6 +322,7 @@ export class PSRuntime {
   private readonly parser  = new PSParser();
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
+  private warningLines = 0;
   private nativeReplay: { results: NativeResult[]; cursor: number } | null = null;
   private interactive: {
     statements: PSStatement[]; traps: PSTrapStatement[];
@@ -339,6 +340,10 @@ export class PSRuntime {
    * display in canonical Format-Table layout instead of the
    * `Key=Value; ...` hashtable form psValueToString produces.
    */
+  private emittedSince(lines: number, warnings: number): boolean {
+    return this.outputLines.length - lines > this.warningLines - warnings;
+  }
+
   private renderValue(result: PSValue): void {
     if (result instanceof Date) {
       this.outputLines.push(formatDotNetDate(result, 'dddd, MMMM d, yyyy h:mm:ss tt'));
@@ -675,8 +680,9 @@ export class PSRuntime {
 
     const runOne = (stmt: PSStatement) => {
       const before = this.outputLines.length;
+      const warningsBefore = this.warningLines;
       const result = this.execStatement(stmt, env);
-      const emitted = this.outputLines.length > before;
+      const emitted = this.emittedSince(before, warningsBefore);
       if (!emitted && result !== null && result !== undefined
           && stmt.type !== 'AssignmentStatement'
           && stmt.type !== 'FunctionDefinition') {
@@ -711,8 +717,9 @@ export class PSRuntime {
     if (!block.body) return;
     for (const s of block.body.statements) {
       const before = this.outputLines.length;
+      const warningsBefore = this.warningLines;
       const r = this.execStatement(s, env);
-      const emitted = this.outputLines.length > before;
+      const emitted = this.emittedSince(before, warningsBefore);
       if (!emitted && r !== null && r !== undefined
           && s.type !== 'AssignmentStatement'
           && s.type !== 'FunctionDefinition') {
@@ -778,8 +785,9 @@ export class PSRuntime {
 
   private runInteractiveStatement(stmt: PSStatement, env: PSEnvironment): void {
     const wasEmpty = this.outputLines.length;
+    const warningsBefore = this.warningLines;
     const result = this.execStatement(stmt, env);
-    const didOutput = this.outputLines.length > wasEmpty;
+    const didOutput = this.emittedSince(wasEmpty, warningsBefore);
     if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
       this.renderValue(result);
     }
@@ -1894,6 +1902,7 @@ export class PSRuntime {
       const before = this.outputLines.length;
       for (const stmt of stmtList.statements) {
         const linesBefore = this.outputLines.length;
+        const warningsBefore = this.warningLines;
         let result: PSValue = null;
         let broke = false;
         try {
@@ -1902,7 +1911,7 @@ export class PSRuntime {
           if (e instanceof BreakSignal) { broke = true; }
           else { this.outputLines.splice(before); throw e; }
         }
-        const didEmit = this.outputLines.length > linesBefore;
+        const didEmit = this.emittedSince(linesBefore, warningsBefore);
         if (!didEmit && result !== null && result !== undefined
             && stmt.type !== 'AssignmentStatement'
             && stmt.type !== 'FunctionDefinition') {
@@ -1986,8 +1995,9 @@ export class PSRuntime {
       let last: PSValue = null;
       for (const s of body.body.statements) {
         const before = this.outputLines.length;
+        const warningsBefore = this.warningLines;
         last = this.execStatement(s, env);
-        const emitted = this.outputLines.length > before;
+        const emitted = this.emittedSince(before, warningsBefore);
         if (!emitted && last !== null && last !== undefined
             && s.type !== 'AssignmentStatement'
             && s.type !== 'FunctionDefinition') {
@@ -2918,6 +2928,11 @@ export class PSRuntime {
       providers: self.providers,
 
       emit: (val: PSValue) => emittedValues.push(val),
+
+      emitWarning: (msg: string) => {
+        self.outputLines.push(`WARNING: ${msg}`);
+        self.warningLines++;
+      },
 
       emitError: (rawMsg: string) => {
         // Many call sites already hand-embed "<Cmdlet> : " (mirroring the

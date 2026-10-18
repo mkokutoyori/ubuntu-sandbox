@@ -411,7 +411,7 @@ function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): nu
     const denied = error instanceof Error && error.message.startsWith('EACCES');
     throw new NcExit([`nc: ${strerror(denied ? 'EACCES' : 'EADDRINUSE')}`]);
   }
-  if (!openTcpListener(ctx, port, ownerUid, socketSettingsOf(opts, false))) {
+  if (!openTcpListener(ctx, port, ownerUid, socketSettingsOf(opts, false), opts.keep)) {
     table.unbind('tcp', '0.0.0.0', port);
     throw new NcExit([`nc: ${strerror('EADDRINUSE')}`]);
   }
@@ -420,7 +420,7 @@ function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): nu
 }
 
 function openTcpListener(
-  ctx: LinuxCommandContext, port: number, ownerUid: number, settings: SocketSettings,
+  ctx: LinuxCommandContext, port: number, ownerUid: number, settings: SocketSettings, keep: boolean,
 ): boolean {
   const device = localDeviceOf(ctx) as unknown as {
     getTcpStack?: () => { listen(localPort: number, opts: TcpListenOptions): unknown };
@@ -428,7 +428,11 @@ function openTcpListener(
   const stack = device?.getTcpStack?.();
   if (!stack) return true;
   try {
-    stack.listen(port, { onAccept: () => undefined, ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings });
+    const pid = ctx.executor.currentPid();
+    stack.listen(port, {
+      onAccept: () => { if (!keep) ctx.executor.processMgr.exit(pid, 0); },
+      ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings,
+    });
     return true;
   } catch {
     return false;

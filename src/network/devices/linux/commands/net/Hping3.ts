@@ -6,6 +6,8 @@ import type { NssServiceEntry } from '@/network/devices/linux/nss/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { localDeviceOf } from '../../network/HostLookup';
+import { readUdpProbeOutcome } from '@/network/scan/UdpProbeOutcome';
 
 type Mode = 'tcp' | 'icmp' | 'udp' | 'rawip' | 'scan';
 type DestPortStep = 'fixed' | 'on-reply' | 'always';
@@ -18,6 +20,7 @@ const TCPHDR_SIZE = 20;
 const UDPHDR_SIZE = 8;
 const ICMPHDR_SIZE = 8;
 const IPPROTO_RAW = 0;
+const ICMP_TYPE_DEST_UNREACHABLE = 3;
 const ICMP_TYPE_TIME_EXCEEDED = 11;
 const MAXPORT = 65535;
 const RELEASE_VERSION = '3.0.0-alpha-1';
@@ -430,12 +433,17 @@ function udpEmission(
   ctx: LinuxCommandContext, parsed: Hping3Args,
   sourcePort: number, destPort: number, target: IPAddress,
 ): Emission {
-  ctx.net.sendUdpProbe(target, destPort, sourcePort, {
-    ttl: parsed.ttl,
-    ...(parsed.spoof === undefined ? {} : { sourceIp: new IPAddress(parsed.spoof) }),
-    ...(parsed.dataSize > 0 ? { payload: new Uint8Array(parsed.dataSize) } : {}),
-  });
-  return { received: false };
+  const outcome = readUdpProbeOutcome(localDeviceOf(ctx), target.toString(), destPort, () =>
+    ctx.net.sendUdpProbe(target, destPort, sourcePort, {
+      ttl: parsed.ttl,
+      ...(parsed.spoof === undefined ? {} : { sourceIp: new IPAddress(parsed.spoof) }),
+      ...(parsed.dataSize > 0 ? { payload: new Uint8Array(parsed.dataSize) } : {}),
+    }));
+  if (outcome?.icmpCode === undefined) return { received: false };
+  const line = icmpErrorLine({
+    icmpType: ICMP_TYPE_DEST_UNREACHABLE, icmpCode: outcome.icmpCode, icmpFrom: outcome.icmpFrom,
+  }, target.toString());
+  return line === null ? { received: false } : { received: false, lines: [line] };
 }
 
 function rawIpEmission(
