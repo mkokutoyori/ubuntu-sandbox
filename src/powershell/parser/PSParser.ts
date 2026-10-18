@@ -471,14 +471,13 @@ export class PSParser {
     //
     // NUMBER/STRING/etc. heads use COMMA_PREC so that a literal comma in
     // contexts like @(1, 2, 3) is left for the outer @() loop to consume.
-    const COMMA_PREC = PRECEDENCE[','];
     if (tok.type === PSTokenType.VARIABLE) {
       return this.parseExpression(0);
     }
     if (tok.type === PSTokenType.NUMBER
         || tok.type === PSTokenType.STRING_SINGLE
         || tok.type === PSTokenType.STRING_DOUBLE) {
-      return this.parseExpression(COMMA_PREC);
+      return this.parseExpression(this.insideArrayLiteral ? PRECEDENCE[','] : 0);
     }
 
     if (tok.type === PSTokenType.WORD) {
@@ -1637,14 +1636,14 @@ export class PSParser {
         const pos = this.pos_();
         this.advance();
         const target = expr as PSVariableExpression;
-        expr = makeAssignment(target, '+=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
+        expr = { ...makeAssignment(target, '+=', makeLiteral(1, '1', 'number', pos), pos), postfix: true } as unknown as PSExpression;
         continue;
       }
       if (this.check(PSTokenType.DECREMENT)) {
         const pos = this.pos_();
         this.advance();
         const target = expr as PSVariableExpression;
-        expr = makeAssignment(target, '-=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
+        expr = { ...makeAssignment(target, '-=', makeLiteral(1, '1', 'number', pos), pos), postfix: true } as unknown as PSExpression;
         continue;
       }
 
@@ -1822,25 +1821,7 @@ export class PSParser {
   }
 
   private makeNumberLiteral(raw: string, pos: SourcePosition): PSLiteralExpression {
-    let value: number;
-    if (raw.startsWith('0x') || raw.startsWith('0X')) {
-      value = parseInt(raw, 16);
-    } else if (raw.endsWith('KB') || raw.endsWith('kb')) {
-      value = parseFloat(raw) * 1024;
-    } else if (raw.endsWith('MB') || raw.endsWith('mb')) {
-      value = parseFloat(raw) * 1024 * 1024;
-    } else if (raw.endsWith('GB') || raw.endsWith('gb')) {
-      value = parseFloat(raw) * 1024 ** 3;
-    } else if (raw.endsWith('TB') || raw.endsWith('tb')) {
-      value = parseFloat(raw) * 1024 ** 4;
-    } else if (raw.endsWith('PB') || raw.endsWith('pb')) {
-      value = parseFloat(raw) * 1024 ** 5;
-    } else if (raw.endsWith('L') || raw.endsWith('l')) {
-      value = parseInt(raw, 10);
-    } else {
-      value = parseFloat(raw);
-    }
-    return makeLiteral(value, raw, 'number', pos);
+    return makeLiteral(parseNumberLiteral(raw) as unknown as number, raw, 'number', pos);
   }
 
   // ─── Argument list (method calls) ──────────────────────────────────────────
@@ -1859,4 +1840,5 @@ export class PSParser {
 }
 
 // Lazy import of PSLexer to avoid circular deps — used only for parsing SUBEXPR content
+import { parseNumberLiteral } from '@/powershell/runtime/semantics/PSLiteral';
 import { PSLexer as PSLexer_ } from '@/powershell/lexer/PSLexer';

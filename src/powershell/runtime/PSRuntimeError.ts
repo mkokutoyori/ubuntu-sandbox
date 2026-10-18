@@ -1,4 +1,8 @@
-/** Runtime error (unrecognised cmdlet, type mismatch, etc.). */
+export const RUNTIME_EXCEPTION = 'System.Management.Automation.RuntimeException';
+
 export class PSRuntimeError extends Error {
-  constructor(message: string) { super(message); this.name = 'PSRuntimeError'; }
+  constructor(message: string, readonly exceptionType: string = RUNTIME_EXCEPTION) {
+    super(message);
+    this.name = 'PSRuntimeError';
+  }
 }

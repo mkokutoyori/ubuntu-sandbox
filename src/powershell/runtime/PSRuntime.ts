@@ -28,12 +28,16 @@ import {
   effectiveExecutionPolicy, scriptRefusal,
 } from '@/powershell/executionPolicy';
 import { isTimeSpan, makeTimeSpan, timeSpanMember, timeSpanStatics } from '@/powershell/runtime/dotnetTimeSpan';
-import { booleanMember, numberMember } from '@/powershell/runtime/dotnetNumber';
+import { booleanMember, boxedNumberMember, charMember, numberMember } from '@/powershell/runtime/dotnetNumber';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime, timeZoneInfoStatics } from '@/powershell/runtime/dotnetDateTime';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError } from './PSRuntimeError';
+import { PSChar, PSNumber, ArithmeticFault, compareNumbers, numericKindOf } from './semantics/PSNumber';
+import { PSConversionError, castToChar, castToNumeric, truthiness } from './semantics/PSConvert';
+import { multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
+import { ARRAY_ELEMENT_TYPE, isScalarInstance, parseTypeName, specEquals, tagArray, type TypeSpec } from './semantics/PSTypes';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
@@ -345,6 +349,10 @@ export class PSRuntime {
   }
 
   private renderValue(result: PSValue): void {
+    if (result instanceof PSNumber || result instanceof PSChar) {
+      this.outputLines.push(psValueToString(result));
+      return;
+    }
     if (result instanceof Date) {
       this.outputLines.push(formatDotNetDate(result, 'dddd, MMMM d, yyyy h:mm:ss tt'));
       return;
@@ -353,7 +361,7 @@ export class PSRuntime {
       // Array of plain objects (all elements are non-null records with at
       // least one string-keyed field) → table format.
       const arr = result as PSValue[];
-      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date))) {
+      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && !(v instanceof PSNumber) && !(v instanceof PSChar))) {
         const formatted = formatDefault(arr as unknown as PSObject[]);
         if (formatted) this.outputLines.push(formatted);
         return;
@@ -970,16 +978,16 @@ export class PSRuntime {
     const current = readCurrent() ?? 0;
     const result = this.applyCompound(node.operator, current, rhs);
     updateVar(varName, result);
-    return result;
+    return node.postfix === true ? current : result;
   }
 
   private applyCompound(op: PSAssignmentStatement['operator'], current: PSValue, rhs: PSValue): PSValue {
     switch (op) {
       case '+=': return this.applyPlus(current, rhs);
-      case '-=': return (current as number) - (rhs as number);
-      case '*=': return (current as number) * (rhs as number);
-      case '/=': return (current as number) / (rhs as number);
-      case '%=': return (current as number) % (rhs as number);
+      case '-=': return this.arithmetic('-', current, rhs);
+      case '*=': return this.applyMultiply(current, rhs);
+      case '/=': return this.arithmetic('/', current, rhs);
+      case '%=': return this.arithmetic('%', current, rhs);
       default:   return rhs;
     }
   }
@@ -1530,10 +1538,10 @@ export class PSRuntime {
       case '-':
         if (left instanceof Date && right instanceof Date) return this.dateDifference(left, right);
         if (left instanceof Date) return likeDate(left, left.getTime() - Number(right)) as unknown as PSValue;
-        return (left as number) - (right as number);
+        return this.arithmetic('-', left, right);
       case '*':  return this.applyMultiply(left, right);
-      case '/':  return (left as number) / (right as number);
-      case '%':  return (left as number) % (right as number);
+      case '/':  return this.arithmetic('/', left, right);
+      case '%':  return this.arithmetic('%', left, right);
 
       case '-eq':  return this.psEq(left, right, false);
       case '-ne':  return !this.psEq(left, right, false);
@@ -1622,8 +1630,8 @@ export class PSRuntime {
   private evalUnary(node: PSUnaryExpression, env: PSEnvironment): PSValue {
     const val = this.evalExpr(node.operand, env);
     switch (node.operator) {
-      case '-':    return -(val as number);
-      case '+':    return +(val as number);
+      case '-':    return this.guarded(() => negateValue(val));
+      case '+':    return val;
       case '-not': return !this.isTruthy(val);
       case '!':    return !this.isTruthy(val);
       case '-bnot':return ~(val as number);
@@ -1718,20 +1726,8 @@ export class PSRuntime {
   private evalIndex(node: PSIndexExpression, env: PSEnvironment): PSValue {
     const obj = this.evalExpr(node.object, env);
     const idx = this.evalExpr(node.index,  env);
-    if (Array.isArray(obj)) {
-      if (Array.isArray(idx)) {
-        const out: PSValue[] = [];
-        for (const r of idx) {
-          let i = Number(r);
-          if (i < 0) i = obj.length + i;
-          if (i >= 0 && i < obj.length) out.push(obj[i]);
-        }
-        return out;
-      }
-      let i = idx as number;
-      if (i < 0) i = obj.length + i;
-      return obj[i] ?? null;
-    }
+    if (typeof obj === 'string') return this.indexSequence([...obj].map(ch => new PSChar(ch.charCodeAt(0)) as PSValue), idx);
+    if (Array.isArray(obj)) return this.indexSequence(obj, idx);
     if (obj !== null && typeof obj === 'object') {
       const rec = obj as Record<string, PSValue>;
       if (Array.isArray(idx)) {
@@ -1740,6 +1736,25 @@ export class PSRuntime {
       return rec[String(idx)] ?? null;
     }
     return null;
+  }
+
+  private indexSequence(items: PSValue[], idx: PSValue): PSValue {
+    const position = (key: PSValue): number => {
+      const raw = typeof key === 'number' || key instanceof PSNumber ? key : this.guarded(() => castToNumeric('int32', key));
+      const n = Math.trunc(Number(raw instanceof PSNumber ? raw.toNumber() : raw));
+      return n < 0 ? items.length + n : n;
+    };
+    if (Array.isArray(idx)) {
+      const out: PSValue[] = [];
+      for (const key of idx) {
+        const i = position(key);
+        if (i >= 0 && i < items.length) out.push(items[i]);
+        else out.push(null);
+      }
+      return out;
+    }
+    const i = position(idx);
+    return i >= 0 && i < items.length ? items[i] : null;
   }
 
   private evalInvocation(node: PSInvocationExpression, env: PSEnvironment): PSValue {
@@ -2169,8 +2184,10 @@ export class PSRuntime {
     const nameNode = node.name;
 
     // $x++ / $x-- encoded as AssignmentStatement in command-name position
-    if ((nameNode.type as string) === 'AssignmentStatement')
-      return this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
+    if ((nameNode.type as string) === 'AssignmentStatement') {
+      this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
+      return null;
+    }
 
     // ++$x / --$x
     if (nameNode.type === 'CommandExpression') {
@@ -2178,8 +2195,8 @@ export class PSRuntime {
       if ((ce.name === '++' || ce.name === '--') && node.arguments.length > 0) {
         const varNode = node.arguments[0] as PSVariableExpression;
         const vname = varNode.varName ?? varNode.name;
-        const cur = (env.get(vname) as number) ?? 0;
-        const newVal = ce.name === '++' ? cur + 1 : cur - 1;
+        const cur = (env.get(vname) as PSValue) ?? 0;
+        const newVal = this.arithmetic(ce.name === '++' ? '+' : '-', cur, 1);
         env.update(vname, newVal);
         return newVal;
       }
@@ -2981,14 +2998,10 @@ export class PSRuntime {
   // ═══════════════════════════════════════════════════════════════════════════
 
   psCast(val: PSValue, typeName: string): PSValue {
-    const t = typeName.replace(/^\[|\]$/g, '').toLowerCase();
+    const t = (typeName.startsWith('[') && typeName.endsWith(']') ? typeName.slice(1, -1) : typeName).toLowerCase();
+    const scalar = this.castScalar(val, parseTypeName(typeName));
+    if (scalar !== undefined) return scalar;
     switch (t) {
-      case 'int': case 'int32': case 'long': case 'int64': return parseInt(String(val), 10);
-      case 'double': case 'float': case 'single': case 'decimal': return parseFloat(String(val));
-      case 'string':  return psValueToString(val);
-      case 'bool': case 'boolean': return this.isTruthy(val);
-      case 'char':    return String(val).charAt(0);
-      case 'array':   return Array.isArray(val) ? val : [val];
       case 'xml': {
         const xmlStr = String(val ?? '');
         const parseAttrs = (attrsStr: string): Record<string, string> => {
@@ -3062,6 +3075,32 @@ export class PSRuntime {
     }
   }
 
+  private castScalar(val: PSValue, spec: TypeSpec): PSValue | undefined {
+    switch (spec.kind) {
+      case 'numeric': return this.guarded(() => castToNumeric(spec.numeric, val));
+      case 'char': return this.guarded(() => castToChar(val));
+      case 'string': return psValueToString(val);
+      case 'bool': return this.isTruthy(val);
+      case 'object': return val;
+      case 'array': return this.castArray(val, spec.element);
+      default: return undefined;
+    }
+  }
+
+  private castArray(val: PSValue, element: TypeSpec | null): PSValue {
+    if (val === null || val === undefined) return val;
+    let items: PSValue[];
+    if (typeof val === 'string' && element !== null) items = [...val].map(ch => new PSChar(ch.charCodeAt(0)) as PSValue);
+    else if (Array.isArray(val)) items = val;
+    else items = [val];
+    if (element === null) return Array.isArray(val) ? val : items;
+    const converted = items.map(item => {
+      const cast = this.castScalar(item, element);
+      return cast === undefined ? item : cast;
+    });
+    return tagArray(converted, element);
+  }
+
   private winNtEntry(path: string): PSValue {
     const match = /^WinNT:\/\/(?:[^/,]+\/)?([^/,]+)(?:,(\w+))?$/i.exec(path.trim());
     const users = this.providers.users;
@@ -3098,12 +3137,7 @@ export class PSRuntime {
   }
 
   isTruthy(val: PSValue): boolean {
-    if (val === null || val === undefined) return false;
-    if (typeof val === 'boolean') return val;
-    if (typeof val === 'number')  return val !== 0;
-    if (typeof val === 'string')  return val.length > 0;
-    if (Array.isArray(val))       return val.length > 0;
-    return true;
+    return truthiness(val);
   }
 
   private applyPlus(left: PSValue, right: PSValue): PSValue {
@@ -3124,13 +3158,27 @@ export class PSRuntime {
     }
     if (typeof left === 'string' || typeof right === 'string')
       return psValueToString(left) + psValueToString(right);
-    return (left as number) + (right as number);
+    if (left === null || left === undefined) return right ?? null;
+    return this.arithmetic('+', left, right);
   }
 
   private applyMultiply(left: PSValue, right: PSValue): PSValue {
-    if (typeof left === 'string' && typeof right === 'number') return left.repeat(right);
-    if (typeof right === 'string' && typeof left === 'number') return right.repeat(left);
-    return (left as number) * (right as number);
+    return this.guarded(() => multiply(left, right));
+  }
+
+  private arithmetic(op: '+' | '-' | '*' | '/' | '%', left: PSValue, right: PSValue): PSValue {
+    return this.guarded(() => numericArithmetic(op, left, right));
+  }
+
+  private guarded<T>(operation: () => T): T {
+    try {
+      return operation();
+    } catch (error) {
+      if (error instanceof ArithmeticFault || error instanceof PSConversionError) {
+        throw new PSRuntimeError(error.message, error.exceptionType);
+      }
+      throw error;
+    }
   }
 
   private psEq(a: PSValue, b: PSValue, caseSensitive: boolean): boolean {
@@ -3171,17 +3219,14 @@ export class PSRuntime {
   }
 
   psIs(val: PSValue, right: PSValue): boolean {
+    const spec = parseTypeName(String(right));
+    const scalar = isScalarInstance(val, spec);
+    if (scalar !== null) return scalar;
     const t = String(right).replace(/^\[|\]$/g, '').toLowerCase();
     switch (t) {
-      case 'string':                     return typeof val === 'string';
-      case 'int': case 'int32':
-      case 'double': case 'float':       return typeof val === 'number';
-      case 'bool': case 'boolean':       return typeof val === 'boolean';
-      case 'array':                      return Array.isArray(val);
       case 'null':                       return val === null;
       case 'datetime': case 'system.datetime': return val instanceof Date;
-      case 'hashtable':                  return val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date);
-      case 'object':                     return val !== null && typeof val === 'object';
+      case 'hashtable':                  return val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date) && !(val instanceof PSNumber) && !(val instanceof PSChar);
       default:                           return false;
     }
   }
@@ -3190,6 +3235,8 @@ export class PSRuntime {
     if (obj === null || obj === undefined) return null;
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
     if (typeof obj === 'number')  return numberMember(obj, member);
+    if (obj instanceof PSNumber)  return boxedNumberMember(obj, member);
+    if (obj instanceof PSChar)    return charMember(obj, member);
     if (typeof obj === 'boolean') return booleanMember(obj, member);
 
     // ArrayList IS an array with a __list__ sentinel — handle list-style methods first
@@ -3397,7 +3444,7 @@ export class PSRuntime {
         const a = Number(start);
         return len !== undefined ? s.slice(0, a) + s.slice(a + Number(len)) : s.slice(0, a);
       };
-      case 'tochararray': return Array.from(s);
+      case 'tochararray': return () => tagArray([...s].map(ch => new PSChar(ch.charCodeAt(0)) as PSValue), { kind: 'char' });
       case 'getenumerator': return Array.from(s);
       default:           return null;
     }

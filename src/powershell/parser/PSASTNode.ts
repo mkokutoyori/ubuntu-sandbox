@@ -103,6 +103,7 @@ export interface PSAssignmentStatement extends ASTBase {
   target: PSVariableExpression | PSIndexExpression | PSMemberExpression;
   operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=';
   value: PSExpression;
+  postfix?: boolean;
 }
 
 // ─── if / elseif / else ───────────────────────────────────────────────────────

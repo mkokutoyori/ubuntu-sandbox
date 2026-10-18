@@ -1,5 +1,9 @@
 import { PSRuntimeError } from './PSRuntimeError';
 import type { PSValue } from './PSEnvironment';
+import {
+  PSChar, PSNumber, compareNumbers, formatNumeric, installDoubleFormatter, kindName, numericKindOf,
+  type NumericKind,
+} from './semantics/PSNumber';
 
 const INT32_MAX = 2_147_483_647;
 const INT32_MIN = -2_147_483_648;
@@ -231,6 +235,44 @@ export function booleanMember(value: boolean, member: string): PSValue {
     case 'equals': return (other: PSValue) => other === value;
     case 'compareto': return (other: PSValue) => (value === other ? 0 : value ? 1 : -1);
     case 'gettype': return () => typeObject('Boolean', 'System.Boolean');
+    default: return null;
+  }
+}
+
+installDoubleFormatter(formatDouble);
+
+function numericTypeObject(kind: NumericKind): PSValue {
+  const { name, fullName } = kindName(kind);
+  return typeObject(name, fullName);
+}
+
+export function boxedNumberMember(value: PSNumber, member: string): PSValue {
+  switch (member) {
+    case 'tostring': return (format?: PSValue) => (format === undefined || format === null || value.kind === 'decimal'
+      ? formatNumeric(value)
+      : formatNumber(value.toNumber(), String(format)));
+    case 'compareto': return (other: PSValue) => {
+      const target = typeof other === 'number' || other instanceof PSNumber ? other : Number(other);
+      return compareNumbers(value, target);
+    };
+    case 'equals': return (other: PSValue) => (typeof other === 'number' || other instanceof PSNumber)
+      && numericKindOf(other) === value.kind && compareNumbers(value, other) === 0;
+    case 'gettype': return () => numericTypeObject(value.kind);
+    case 'gethashcode': return () => Number(value.value) | 0;
+    default: return null;
+  }
+}
+
+export function charMember(value: PSChar, member: string): PSValue {
+  switch (member) {
+    case 'tostring': return () => value.toString();
+    case 'compareto': return (other: PSValue) => {
+      const code = other instanceof PSChar ? other.code : String(other).charCodeAt(0);
+      return value.code < code ? -1 : value.code > code ? 1 : 0;
+    };
+    case 'equals': return (other: PSValue) => other instanceof PSChar && other.code === value.code;
+    case 'gettype': return () => typeObject('Char', 'System.Char');
+    case 'gethashcode': return () => value.code;
     default: return null;
   }
 }

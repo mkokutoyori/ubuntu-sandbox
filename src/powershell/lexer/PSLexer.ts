@@ -760,7 +760,7 @@ export class PSLexer {
       if (['KB', 'MB', 'GB', 'TB', 'PB'].includes(up2)) {
         value += this.ch(); this.advance();
         value += this.ch(); this.advance();
-      } else if (this.ch() === 'L' || this.ch() === 'l') {
+      } else if (this.ch() === 'L' || this.ch() === 'l' || ((this.ch() === 'd' || this.ch() === 'D') && !this.isAlNum(this.peek1() ?? ' '))) {
         value += this.ch(); this.advance();
       }
     }
