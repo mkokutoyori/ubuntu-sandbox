@@ -3800,9 +3800,17 @@ export abstract class EndHost extends Equipment {
     return fragments;
   }
 
-  public udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null {
+  public udpListen(
+    port: number, processName: string, owner: { pid?: number; uid?: number },
+    onDatagram?: (payload: Uint8Array) => void,
+  ): Errno | null {
+    const listener: UdpListener = onDatagram === undefined ? () => undefined : (delivery) => {
+      const payload = delivery.udp.payload;
+      if (payload instanceof Uint8Array) onDatagram(payload);
+      else if (typeof payload === 'string') onDatagram(new TextEncoder().encode(payload));
+    };
     try {
-      return this.udpBind(port, () => undefined, processName, owner) === false ? 'EADDRINUSE' : null;
+      return this.udpBind(port, listener, processName, owner) === false ? 'EADDRINUSE' : null;
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EACCES')) return 'EACCES';
       throw error;

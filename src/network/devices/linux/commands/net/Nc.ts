@@ -393,12 +393,14 @@ async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: stri
   return ret;
 }
 
-function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): number {
+function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput, stdin: string): number {
   if (opts.operands.length > 1 || (opts.operands.length === 0 && opts.sourcePort === undefined)) throw usageExit();
   const port = strtoport(ctx, opts.sourcePort ?? opts.operands[0]);
   const ownerUid = ctx.executor.userMgr.currentUid;
   if (opts.udp) {
-    const failure = ctx.net.udpListen(port, 'nc', { pid: ctx.executor.currentPid(), uid: ownerUid });
+    const pid = ctx.executor.currentPid();
+    const failure = ctx.net.udpListen(port, 'nc', { pid, uid: ownerUid },
+      (payload) => ctx.executor.emitLateStdout(pid, new TextDecoder().decode(payload)));
     if (failure !== null) throw new NcExit([`nc: ${strerror(failure)}`]);
     if (opts.verbose) out.write('stderr', `Bound on 0.0.0.0 ${port}`);
     return 0;
@@ -411,7 +413,7 @@ function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): nu
     const denied = error instanceof Error && error.message.startsWith('EACCES');
     throw new NcExit([`nc: ${strerror(denied ? 'EACCES' : 'EADDRINUSE')}`]);
   }
-  if (!openTcpListener(ctx, port, ownerUid, socketSettingsOf(opts, false), opts.keep)) {
+  if (!openTcpListener(ctx, port, ownerUid, socketSettingsOf(opts, false), opts.keep, stdin)) {
     table.unbind('tcp', '0.0.0.0', port);
     throw new NcExit([`nc: ${strerror('EADDRINUSE')}`]);
   }
@@ -420,7 +422,7 @@ function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): nu
 }
 
 function openTcpListener(
-  ctx: LinuxCommandContext, port: number, ownerUid: number, settings: SocketSettings, keep: boolean,
+  ctx: LinuxCommandContext, port: number, ownerUid: number, settings: SocketSettings, keep: boolean, greeting: string,
 ): boolean {
   const device = localDeviceOf(ctx) as unknown as {
     getTcpStack?: () => { listen(localPort: number, opts: TcpListenOptions): unknown };
@@ -430,7 +432,17 @@ function openTcpListener(
   try {
     const pid = ctx.executor.currentPid();
     stack.listen(port, {
-      onAccept: () => { if (!keep) ctx.executor.processMgr.exit(pid, 0); },
+      onAccept: (socket) => {
+        socket.onData((chunk) => {
+          if (typeof chunk === 'string') ctx.executor.emitLateStdout(pid, chunk);
+          else if (chunk instanceof Uint8Array) ctx.executor.emitLateStdout(pid, new TextDecoder().decode(chunk));
+        });
+        socket.onEnd(() => {
+          if (keep) socket.close();
+          else ctx.executor.processMgr.exit(pid, 0);
+        });
+        if (greeting !== '') socket.write(greeting);
+      },
       ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings,
     });
     return true;
@@ -443,7 +455,7 @@ async function runNc(ctx: LinuxCommandContext, args: string[], stdin = ''): Prom
   const out = new NcOutput();
   try {
     const opts = parseNcArgs(args);
-    const code = opts.listen ? runListen(ctx, opts, out) : await runConnect(ctx, opts, stdin, out);
+    const code = opts.listen ? runListen(ctx, opts, out, stdin) : await runConnect(ctx, opts, stdin, out);
     return out.finish(code);
   } catch (error) {
     if (!(error instanceof NcExit)) throw error;

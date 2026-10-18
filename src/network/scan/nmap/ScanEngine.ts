@@ -34,8 +34,10 @@ function statelessKindOf(scanType: ScanType): StatelessScanKind | undefined {
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
 
 export interface UdpVerdict {
-  state: 'open' | 'closed' | 'open|filtered';
+  state: 'open' | 'closed' | 'filtered' | 'open|filtered';
   replyTtl?: number;
+  reason?: string;
+  reasonFrom?: string;
 }
 
 export interface HostState {
@@ -317,9 +319,11 @@ function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): ProbedPort {
   const sent = PathClock.now();
-  const { state, replyTtl } = probes.udpState(ip, port, options.probeShape);
+  const verdict = probes.udpState(ip, port, options.probeShape);
+  const { state, replyTtl, reasonFrom } = verdict;
   const rttMs = state === 'open|filtered' ? undefined : PathClock.now() - sent;
-  const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
+  const reason = verdict.reason
+    ?? (state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response');
   let service = serviceName(port, 'udp');
   let version: string | undefined;
   if (options.versionScan && state === 'open' && versionScanAllowed(options, port)) {
@@ -329,7 +333,7 @@ function udpResult(
       version = detected.version;
     }
   }
-  return { result: { port, protocol: 'udp', state, service, version, reason, replyTtl }, rttMs };
+  return { result: { port, protocol: 'udp', state, service, version, reason, replyTtl, reasonFrom }, rttMs };
 }
 
 function isSilentRawProbe(options: NmapOptions, probes: HostProbes, probed: ProbedPort): boolean {

@@ -455,6 +455,25 @@ type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly st
 
 const HOST_KEY_ADDED_NOTICE = 'Warning: Permanently added';
 
+function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: string; stdinPath?: string } {
+  const argv: string[] = [];
+  let stdoutPath: string | undefined;
+  let stdinPath: string | undefined;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const out = /^1?(>>?)(.*)$/.exec(token);
+    const input = /^<(.*)$/.exec(token);
+    if (out) {
+      stdoutPath = out[2] !== '' ? out[2] : tokens[++i];
+    } else if (input) {
+      stdinPath = input[1] !== '' ? input[1] : tokens[++i];
+    } else {
+      argv.push(token);
+    }
+  }
+  return { argv, stdoutPath, stdinPath };
+}
+
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
   interactiveOutput: ((line: string) => void) | null = null;
@@ -3158,11 +3177,15 @@ export class LinuxCommandExecutor {
     const noNetworkWork: Promise<unknown> = Promise.resolve();
     let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
-      const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
+      const { argv: netArgv, stdoutPath, stdinPath } = splitRedirections(
+        simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
+      if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
+      const netStdin = stdinPath === undefined ? undefined
+        : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
       const pending = netArgv.length > 0
-        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined))
+        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, netStdin))
         : null;
       this.runningBackgroundJobPid = null;
       if (pending) {
@@ -4770,6 +4793,31 @@ export class LinuxCommandExecutor {
     return reason;
   }
 
+  private readonly lateStdout = new Map<number, {
+    file?: { path: string; uid: number; gid: number; umask: number };
+    pending: string[];
+  }>();
+
+  private appendLateStdout(file: { path: string; uid: number; gid: number; umask: number }, text: string): void {
+    this.vfs.writeFile(file.path, text, file.uid, file.gid, file.umask, true, undefined, false);
+  }
+
+  emitLateStdout(pid: number, text: string): void {
+    if (text === '') return;
+    if (!this.processMgr.get(pid)) {
+      this.lateStdout.delete(pid);
+      return;
+    }
+    const sink = this.lateStdout.get(pid) ?? { pending: [] };
+    this.lateStdout.set(pid, sink);
+    if (sink.file) this.appendLateStdout(sink.file, text);
+    else sink.pending.push(text);
+  }
+
+  private ioContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
+    return this.buildIOContext();
+  }
+
   /** Build an IOContext for the bash interpreter. */
   private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
     return {
@@ -4790,6 +4838,13 @@ export class LinuxCommandExecutor {
       },
       resolvePath: (path: string) => {
         return this.vfs.normalizePath(path, this.cwd);
+      },
+      bindBackgroundStdout: (pid: number, path: string) => {
+        const sink = this.lateStdout.get(pid) ?? { pending: [] };
+        sink.file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
+        this.lateStdout.set(pid, sink);
+        const pending = sink.pending.splice(0);
+        for (const text of pending) this.appendLateStdout(sink.file, text);
       },
       stat: (path: string) => {
         const absPath = this.vfs.normalizePath(path, this.cwd);

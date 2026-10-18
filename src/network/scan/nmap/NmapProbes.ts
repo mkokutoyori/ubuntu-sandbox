@@ -363,6 +363,11 @@ function isNumericAddress(target: string): boolean {
  * port; codes 0, 1, 2, 9, 10 and 13 filter it. Silence leaves the port
  * open|filtered, and a datagram coming back opens it.
  */
+const UDP_FILTERING_ICMP: ReadonlyMap<number, string> = new Map([
+  [0, 'net-unreach'], [1, 'host-unreach'], [2, 'proto-unreach'],
+  [9, 'admin-prohibited'], [10, 'admin-prohibited'], [13, 'admin-prohibited'],
+]);
+
 function probeUdpPort(
   host: ScanHost, ip: string, port: number, shape: ScanProbeShape = {},
 ): UdpVerdict {
@@ -381,9 +386,11 @@ function probeUdpPort(
     }
   });
   if (outcome === null || !sent) return { state: 'open|filtered' };
-  return outcome.icmpCode === ICMP_UNREACH_PORT
-    ? { state: 'closed', replyTtl: outcome.ttl }
-    : { state: 'open|filtered' };
+  if (outcome.icmpCode === ICMP_UNREACH_PORT) return { state: 'closed', replyTtl: outcome.ttl };
+  const reason = outcome.icmpCode === undefined ? undefined : UDP_FILTERING_ICMP.get(outcome.icmpCode);
+  return reason === undefined
+    ? { state: 'open|filtered' }
+    : { state: 'filtered', reason, replyTtl: outcome.ttl, ...(outcome.icmpFrom === ip ? {} : { reasonFrom: outcome.icmpFrom }) };
 }
 
 /**
