@@ -3,6 +3,7 @@ import type { CmdletContext } from '@/powershell/cmdlets/CmdletContext';
 import type { PSValue, PSEnvironment } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { PSRuntimeError } from '@/powershell/runtime/PSRuntimeError';
 import { languageEquals } from '@/powershell/runtime/semantics/PSCompare';
 
 export interface PesterResult {
@@ -170,7 +171,7 @@ function equalValues(actual: PSValue, expected: PSValue, exact: boolean): boolea
     const right = items(expected);
     return left.length === right.length && left.every((value, index) => equalValues(value, right[index], exact));
   }
-  try { return languageEquals(actual, expected, !exact, COMPARE); } catch { return psValueToString(actual) === psValueToString(expected); }
+  try { return languageEquals(expected, actual, !exact, COMPARE); } catch { return psValueToString(actual) === psValueToString(expected); }
 }
 
 function describeValue(value: PSValue): string {
@@ -194,7 +195,8 @@ function shouldCmdlet(): ICmdlet {
       const assertion = ASSERTIONS.find(key => ctx.named[key] !== undefined);
       const raw = ctx.pipeInput;
       const actual: PSValue = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
-      const expected = ctx.named[assertion ?? ''];
+      const named = ctx.named[assertion ?? ''];
+      const expected = named === true && ctx.positional.length > 0 ? ctx.positional[0] : named;
       const fail = (message: string): never => { throw new AssertionFailure(message); };
       const verdict = (passed: boolean, positive: string, negative: string): null => {
         if (negate ? passed : !passed) fail(negate ? negative : positive);
@@ -227,7 +229,10 @@ function shouldCmdlet(): ICmdlet {
             thrown = error instanceof Error ? error : new Error(String(error));
           }
           const wanted = ctx.named['expectedmessage'] ?? (typeof expected === 'string' ? expected : undefined);
-          const matches = thrown !== null && (wanted === undefined || thrown.message.toLowerCase().includes(psValueToString(wanted).toLowerCase()));
+          const wantedId = ctx.named['errorid'];
+          const thrownId = thrown instanceof PSRuntimeError ? thrown.exceptionType.replace(/^.*\./, '') : '';
+          const matches = thrown !== null && (wanted === undefined || thrown.message.toLowerCase().includes(psValueToString(wanted).toLowerCase()))
+            && (wantedId === undefined || thrownId.toLowerCase() === psValueToString(wantedId).toLowerCase());
           return verdict(matches, thrown === null ? 'Expected an exception, but no exception was thrown.' : `Expected message '${psValueToString(wanted)}', but got '${thrown.message}'.`, 'Expected no exception, but one was thrown.');
         }
         default: return fail(`Unsupported Should assertion (${Object.keys(ctx.named).join(', ')}).`);

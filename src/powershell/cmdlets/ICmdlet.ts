@@ -80,6 +80,12 @@ export interface ICmdlet {
   /** Parameters (canonical case) that exist only in PowerShell 7 (Core). */
   readonly coreOnlyParameters?: readonly string[];
 
+  /**
+   * Parameters (canonical case) that take no value. The parser cannot know it and hands
+   * the next word to the switch; the dispatcher gives that word back to the positionals.
+   */
+  readonly switchParameters?: readonly string[];
+
   readonly supportsShouldProcess?: true;
 
   whatIfTarget?(ctx: CmdletContext): string;

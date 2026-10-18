@@ -14,6 +14,12 @@ const COMMON_PARAMETERS = [
   'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable',
 ];
 
+const COMMON_ALIASES: Readonly<Record<string, string>> = {
+  vb: 'Verbose', db: 'Debug', ea: 'ErrorAction', wa: 'WarningAction', infa: 'InformationAction',
+  proga: 'ProgressAction', ev: 'ErrorVariable', wv: 'WarningVariable', iv: 'InformationVariable',
+  ov: 'OutVariable', ob: 'OutBuffer', pv: 'PipelineVariable', wi: 'WhatIf', cf: 'Confirm',
+};
+
 export interface BinderHost {
   evaluate(expression: PSExpression): PSValue;
   cast(value: PSValue, typeName: string): PSValue;
@@ -32,6 +38,8 @@ export interface BindingOutcome {
   readonly values: Map<string, PSValue>;
   readonly bound: Record<string, PSValue>;
   readonly extra: PSValue[];
+  readonly common: Record<string, PSValue>;
+  readonly shouldProcess: boolean;
 }
 
 interface ParameterModel {
@@ -103,10 +111,12 @@ function bindingError(message: string, type: string = BINDING): PSRuntimeError {
   return new PSRuntimeError(message, type);
 }
 
-function resolveName(models: ParameterModel[], key: string, advanced: boolean, shouldProcess: boolean, host: BinderHost): ParameterModel | 'common' {
+function resolveName(models: ParameterModel[], key: string, advanced: boolean, shouldProcess: boolean, host: BinderHost): ParameterModel | { common: string } {
   const wanted = key.toLowerCase();
   const exact = models.find(m => m.name.toLowerCase() === wanted || m.aliases.some(a => a.toLowerCase() === wanted));
   if (exact !== undefined) return exact;
+  const alias = COMMON_ALIASES[wanted];
+  if (advanced && alias !== undefined && (shouldProcess || (alias !== 'WhatIf' && alias !== 'Confirm'))) return { common: alias };
   const candidates = models.filter(m => m.name.toLowerCase().startsWith(wanted)
     || m.aliases.some(a => a.toLowerCase().startsWith(wanted)));
   const common = advanced
@@ -115,7 +125,9 @@ function resolveName(models: ParameterModel[], key: string, advanced: boolean, s
   const commonMatches = common.filter(c => c.toLowerCase().startsWith(wanted));
   if (candidates.length === 1 && commonMatches.length === 0) return candidates[0];
   if (candidates.length === 0 && commonMatches.length > 0) {
-    if (common.some(c => c.toLowerCase() === wanted) || commonMatches.length === 1) return 'common';
+    const exactCommon = common.find(c => c.toLowerCase() === wanted);
+    if (exactCommon !== undefined) return { common: exactCommon };
+    if (commonMatches.length === 1) return { common: commonMatches[0] };
   }
   const total = candidates.length + commonMatches.length;
   if (total > 1) {
@@ -259,6 +271,30 @@ function checkNullability(model: ParameterModel, value: PSValue): void {
     throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is an empty collection.`, VALIDATION);
 }
 
+export interface CmdletBindingInfo {
+  readonly advanced: boolean;
+  readonly supportsShouldProcess: boolean;
+  readonly confirmImpact: string;
+  readonly defaultParameterSetName: string | null;
+  readonly positionalBinding: boolean;
+}
+
+export function cmdletBindingOf(
+  declarations: readonly PSParamDeclaration[], blockAttributes: readonly PSAttribute[], host: BinderHost,
+): CmdletBindingInfo {
+  const attribute = blockAttributes.find(a => a.name.toLowerCase() === 'cmdletbinding');
+  const positional = attribute === undefined ? undefined : namedValue(attribute, 'PositionalBinding', host);
+  const impact = attribute === undefined ? undefined : namedValue(attribute, 'ConfirmImpact', host);
+  const setName = attribute === undefined ? undefined : namedValue(attribute, 'DefaultParameterSetName', host);
+  return {
+    advanced: usesCmdletBinding(declarations, blockAttributes),
+    supportsShouldProcess: attribute !== undefined && flag(attribute, 'SupportsShouldProcess', host),
+    confirmImpact: impact === undefined || impact === null ? 'Medium' : String(impact),
+    defaultParameterSetName: setName === undefined || setName === null ? null : String(setName),
+    positionalBinding: positional === undefined || truthiness(positional),
+  };
+}
+
 export function bindParameters(
   declarations: readonly PSParamDeclaration[],
   blockAttributes: readonly PSAttribute[],
@@ -268,11 +304,10 @@ export function bindParameters(
   options: BindingOptions,
 ): BindingOutcome {
   const models = declarations.map(d => modelOf(d, host));
-  const advanced = usesCmdletBinding(declarations, blockAttributes);
-  const cmdletBinding = blockAttributes.find(a => a.name.toLowerCase() === 'cmdletbinding');
-  const automaticPositions = cmdletBinding === undefined || namedValue(cmdletBinding, 'PositionalBinding', host) === undefined
-    || truthiness(namedValue(cmdletBinding, 'PositionalBinding', host) as PSValue);
-  const shouldProcess = cmdletBinding !== undefined && flag(cmdletBinding, 'SupportsShouldProcess', host);
+  const binding = cmdletBindingOf(declarations, blockAttributes, host);
+  const advanced = binding.advanced;
+  const automaticPositions = binding.positionalBinding;
+  const shouldProcess = binding.supportsShouldProcess;
 
   const values = new Map<string, PSValue>();
   const bound: Record<string, PSValue> = {};
@@ -288,9 +323,18 @@ export function bindParameters(
     bound[model.name] = coerced;
   };
 
+  const common: Record<string, PSValue> = {};
   for (const [key, value] of Object.entries(named)) {
     const target = resolveName(models, key, advanced, shouldProcess, host);
-    if (target !== 'common') record(target, value);
+    if ('common' in target) {
+      const canonical = target.common.toLowerCase();
+      if (canonical in common) {
+        throw bindingError(`Cannot bind parameter because parameter '${target.common}' is specified more than once. To provide multiple values to parameters that can accept multiple values, use the array syntax. For example, "-parameter value1,value2,value3".`);
+      }
+      common[canonical] = value;
+    } else {
+      record(target, value);
+    }
   }
 
   const hasExplicitPositions = models.some(m => m.position !== null);
@@ -333,7 +377,7 @@ export function bindParameters(
     throw bindingError(`Cannot process command because of one or more missing mandatory parameters: ${missing.map(m => m.name).join(', ')}.`);
   }
 
-  return { values, bound, extra: queue };
+  return { values, bound, extra: queue, common, shouldProcess };
 }
 
 export function parameterModelsOf(

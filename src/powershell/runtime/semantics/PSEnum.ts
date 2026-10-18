@@ -115,6 +115,14 @@ const BUILTIN_ENUMS: ReadonlyArray<{ name: string; fullName: string; flags: bool
     members: [['None', 0], ['ObjectInherit', 1], ['ContainerInherit', 2], ['NoPropagateInherit', 4], ['InheritOnly', 8], ['Inherited', 16], ['SuccessfulAccess', 64], ['FailedAccess', 128]],
   },
   {
+    name: 'ActionPreference', fullName: 'System.Management.Automation.ActionPreference', flags: false,
+    members: [['SilentlyContinue', 0], ['Stop', 1], ['Continue', 2], ['Inquire', 3], ['Ignore', 4], ['Suspend', 5], ['Break', 6]],
+  },
+  {
+    name: 'ConfirmImpact', fullName: 'System.Management.Automation.ConfirmImpact', flags: false,
+    members: [['None', 0], ['Low', 1], ['Medium', 2], ['High', 3]],
+  },
+  {
     name: 'CommandTypes', fullName: 'System.Management.Automation.CommandTypes', flags: true,
     members: [['Alias', 1], ['Function', 2], ['Filter', 4], ['Cmdlet', 8], ['ExternalScript', 16], ['Application', 32], ['Script', 64], ['Configuration', 256], ['All', 511]],
   },

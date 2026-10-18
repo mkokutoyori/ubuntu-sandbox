@@ -3,6 +3,7 @@ export const RUNTIME_EXCEPTION = 'System.Management.Automation.RuntimeException'
 export class PSRuntimeError extends Error {
   commandName?: string;
   thrownFromThrowStatement = false;
+  errorRecord?: Record<string, unknown>;
 
   constructor(message: string, readonly exceptionType: string = RUNTIME_EXCEPTION) {
     super(message);

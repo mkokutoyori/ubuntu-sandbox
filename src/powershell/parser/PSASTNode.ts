@@ -83,7 +83,6 @@ export interface PSTernaryExpression extends ASTBase {
 export interface PSPipelineStatement extends ASTBase {
   type: 'PipelineStatement';
   pipeline: PSPipeline;
-  redirections: PSRedirection[];
 }
 
 /** A pipeline of one or more commands joined by | */
@@ -102,6 +101,8 @@ export interface PSCommand extends ASTBase {
   /** Positional arguments (expressions not preceded by -ParamName) */
   arguments: PSExpression[];
   sequence?: ReadonlyArray<PSCommandParameter | PSExpression>;
+  /** Stream redirections written after the command's arguments (`2>$null`, `3>&1`, `> file`). */
+  redirections?: PSRedirection[];
 }
 
 export interface PSCommandParameter extends ASTBase {
@@ -556,7 +557,7 @@ export interface PSCommandExpression extends ASTBase {
 
 // ─── Redirection ──────────────────────────────────────────────────────────────
 
-export type PSRedirectionOp = '>' | '>>' | '2>' | '2>>' | '*>' | '*>>' | '2>&1' | '3>&1';
+export type PSRedirectionOp = string;
 
 export interface PSRedirection extends ASTBase {
   type: 'Redirection';
@@ -580,8 +581,8 @@ export function makePipeline(commands: PSCommand[], pos?: SourcePosition): PSPip
   return { type: 'Pipeline', commands, position: pos };
 }
 
-export function makePipelineStatement(pipeline: PSPipeline, redirections: PSRedirection[] = [], pos?: SourcePosition): PSPipelineStatement {
-  return { type: 'PipelineStatement', pipeline, redirections, position: pos };
+export function makePipelineStatement(pipeline: PSPipeline, pos?: SourcePosition): PSPipelineStatement {
+  return { type: 'PipelineStatement', pipeline, position: pos };
 }
 
 export function makeCommand(

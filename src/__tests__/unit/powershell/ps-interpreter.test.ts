@@ -1008,8 +1008,8 @@ describe('25. Advanced Error Handling', () => {
     const interp = new PSInterpreter();
     interp.execute('Get-ChildItem nonexistent -ErrorVariable myErr -ErrorAction SilentlyContinue');
     const errVar = interp.getVariable('myErr');
-    expect(errVar).toBeDefined();
-    expect((errVar as any).Exception).toBeDefined();
+    expect(Array.isArray(errVar)).toBe(true);
+    expect((errVar as any[])[0].Exception).toBeDefined();
   });
 });
 

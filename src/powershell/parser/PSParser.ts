@@ -497,8 +497,7 @@ export class PSParser {
   private parsePipelineStatement(): PSPipelineStatement {
     const pos = this.pos_();
     const pipeline = this.parsePipeline();
-    const redirections = this.parseRedirections();
-    return makePipelineStatement(pipeline, redirections, pos);
+    return makePipelineStatement(pipeline, pos);
   }
 
   private parsePipeline(): PSPipeline {
@@ -573,7 +572,10 @@ export class PSParser {
       }
     }
 
-    return makeCommand(name, parameters, args, pos, sequence);
+    const command = makeCommand(name, parameters, args, pos, sequence);
+    const redirections = this.parseRedirections();
+    if (redirections.length > 0) command.redirections = redirections;
+    return command;
   }
 
   /**
@@ -725,7 +727,7 @@ export class PSParser {
     // parsePostfixExpression alone can't consume the prefix sign.
     if (tok.type === PSTokenType.PLUS) {
       const suite = this.peekAt(1);
-      if (suite !== undefined && suite.type === PSTokenType.WORD
+      if (suite !== undefined && (suite.type === PSTokenType.WORD || suite.type === PSTokenType.VARIABLE)
           && suite.position.offset === tok.position.offset + 1) {
         return this.parseBareword(false);
       }
@@ -784,9 +786,18 @@ export class PSParser {
     // keyword the lexer normalized for statement position.
     let value = tokenText(head);
     let prevEnd = head.position.offset + head.value.length;
+    let expandable = false;
     for (;;) {
       const nxt = this.peek();
       if (nxt.position.offset !== prevEnd) break;
+      if (nxt.type === PSTokenType.VARIABLE) {
+        const text = /^[A-Za-z_?][\w:?]*$/.test(nxt.value) ? `$${nxt.value}` : `\${${nxt.value}}`;
+        value += text;
+        expandable = true;
+        this.advance();
+        prevEnd = nxt.position.offset + text.length;
+        continue;
+      }
       if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
       if (nxt.type === PSTokenType.RANGE && !withRange) break;
       if (nxt.type === PSTokenType.STRING_SINGLE
@@ -807,7 +818,7 @@ export class PSParser {
       this.advance();
       prevEnd = nxt.position.offset + nxt.value.length;
     }
-    return makeLiteral(value, value, 'string', pos);
+    return makeLiteral(value, value, expandable ? 'expandable' : 'string', pos);
   }
 
   // ─── Redirections ──────────────────────────────────────────────────────────
@@ -818,7 +829,7 @@ export class PSParser {
       const pos = this.pos_();
       const op = this.advance().value as PSRedirectionOp;
       let target: PSExpression | null = null;
-      if (this.canStartExpression()) target = this.parsePrimaryExpression();
+      if (!op.includes('&') && this.canStartExpression()) target = this.parsePrimaryExpression();
       result.push(makeRedirection(op, target, pos));
     }
     return result;
@@ -929,12 +940,12 @@ export class PSParser {
       const firstCmd = makeCommand(first, params, args, pos, sequence);
       const cmds = [firstCmd];
       while (this.check(PSTokenType.PIPE)) { this.advance(); cmds.push(this.parseCommand()); }
-      const redirections = this.parseTrailingStreamRedirections();
+      const redirections = this.parseRedirections();
       return { type: 'PipelineExpression', pipeline: makePipeline(cmds, pos), redirections, position: pos };
     }
 
     if (!this.check(PSTokenType.PIPE)) {
-      const redirections = this.parseTrailingStreamRedirections();
+      const redirections = this.parseRedirections();
       if (redirections.length > 0) {
         const firstCmd = makeCommand(first, [], [], pos);
         return { type: 'PipelineExpression', pipeline: makePipeline([firstCmd], pos), redirections, position: pos };
@@ -942,36 +953,9 @@ export class PSParser {
       return first;
     }
     const result = this.continuePipeline(first, pos);
-    const redirections = this.parseTrailingStreamRedirections();
+    const redirections = this.parseRedirections();
     if (redirections.length > 0) {
       return { ...(result as object), redirections } as PSExpression;
-    }
-    return result;
-  }
-
-  /**
-   * Consumes trailing stream-merge redirections like `2>&1`, `3>&1`, `>&1`.
-   * These appear after a command/pipeline in assignment RHS context.
-   */
-  private parseTrailingStreamRedirections(): PSRedirection[] {
-    const result: PSRedirection[] = [];
-    while (this.isRedirection()) {
-      const pos = this.pos_();
-      const opTok = this.advance();
-      // Check for N>&M pattern: consume &M suffix
-      if (!this.isTerminator() && this.peek().type === PSTokenType.AMPERSAND) {
-        this.advance(); // consume &
-        if (!this.isAtEnd() && this.peek().type === PSTokenType.NUMBER) this.advance(); // consume stream M
-        result.push(makeRedirection('2>&1' as PSRedirectionOp, null, pos));
-      } else if (opTok.value === '2>&1') {
-        // Already consumed as single token by lexer
-        result.push(makeRedirection('2>&1' as PSRedirectionOp, null, pos));
-      } else {
-        // Regular file redirect — put it back via a flag and break
-        // (These redirections go to parsePipelineStatement, not assignment RHS)
-        // For now, just consume and ignore non-merge redirections
-        if (this.canStartExpression()) this.parsePrimaryExpression(); // consume target
-      }
     }
     return result;
   }
@@ -998,7 +982,7 @@ export class PSParser {
   private exprToStatement(expr: PSExpression): PSStatement {
     const cmd = makeCommand(expr, [], [], expr.position);
     const pl  = makePipeline([cmd], expr.position);
-    return makePipelineStatement(pl, [], expr.position);
+    return makePipelineStatement(pl, expr.position);
   }
 
   /** Given a head expression already parsed, continues consuming | commands. */

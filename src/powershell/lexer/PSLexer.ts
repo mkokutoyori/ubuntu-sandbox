@@ -286,6 +286,7 @@ export class PSLexer {
       const c = this.ch();
       if (c === '"' && this.peek1() === '"') { value += '`"'; this.advance(); this.advance(); continue; }
       if (c === '"') break; // closing quote
+      if (c === '$' && this.peek1() === '(') { value += this.readSubExpressionText(); continue; }
       if (c === '`' && !this.eof()) {
         // Backtick escape — preserve raw sequence for the evaluator
         value += '`';
@@ -299,6 +300,42 @@ export class PSLexer {
     if (this.eof()) throw new PSLexerError('Unterminated double-quoted string', start);
     this.advance(); // skip closing "
     return psToken(PSTokenType.STRING_DOUBLE, value, start);
+  }
+
+  private readSubExpressionText(): string {
+    const start = this.pos_();
+    let text = '$(';
+    this.advance();
+    this.advance();
+    let depth = 1;
+    while (!this.eof() && depth > 0) {
+      const c = this.ch();
+      if (c === '(') depth++;
+      else if (c === ')') depth--;
+      else if (c === "'" || c === '"') { text += this.readQuotedText(c); continue; }
+      else if (c === '`') { text += c; this.advance(); if (!this.eof()) { text += this.ch(); this.advance(); } continue; }
+      text += c;
+      this.advance();
+    }
+    if (depth > 0) throw new PSLexerError('Unterminated sub-expression in double-quoted string', start);
+    return text;
+  }
+
+  private readQuotedText(quote: string): string {
+    let text = quote;
+    this.advance();
+    while (!this.eof()) {
+      const c = this.ch();
+      if (c === '`' && quote === '"') { text += c; this.advance(); if (!this.eof()) { text += this.ch(); this.advance(); } continue; }
+      if (quote === '"' && c === '$' && this.peek1() === '(') { text += this.readSubExpressionText(); continue; }
+      text += c;
+      this.advance();
+      if (c === quote) {
+        if (this.ch() === quote) { text += quote; this.advance(); continue; }
+        return text;
+      }
+    }
+    return text;
   }
 
   // ─── Here-strings ──────────────────────────────────────────────────────────
@@ -611,6 +648,21 @@ export class PSLexer {
     return psToken(PSTokenType.PLUS, '+', start);
   }
 
+  private scanRedirectionTail(start: SourcePosition, stream: string): PSToken {
+    let text = `${stream}>`;
+    let type = stream === '*' ? PSTokenType.REDIRECT_ALL_OUT : stream === '2' ? PSTokenType.REDIRECT_ERR_OUT : PSTokenType.REDIRECT_OUT;
+    if (!this.eof() && this.ch() === '>') {
+      this.advance();
+      text += '>';
+      type = stream === '*' ? PSTokenType.REDIRECT_ALL_APPEND : stream === '2' ? PSTokenType.REDIRECT_ERR_APPEND : PSTokenType.REDIRECT_APPEND;
+    } else if (!this.eof() && this.ch() === '&' && this.peek1() === '1') {
+      this.advance();
+      text += `&${this.ch()}`;
+      this.advance();
+    }
+    return psToken(type, text, start);
+  }
+
   // ─── * ────────────────────────────────────────────────────────────────────
 
   private scanStar(): PSToken {
@@ -623,14 +675,9 @@ export class PSLexer {
       return psToken(PSTokenType.MULTIPLY_ASSIGN, '*=', start);
     }
 
-    // *> redirect all streams to file
     if (!this.eof() && this.ch() === '>') {
-      this.advance(); // skip >
-      if (!this.eof() && this.ch() === '>') {
-        this.advance();
-        return psToken(PSTokenType.REDIRECT_ALL_APPEND, '*>>', start);
-      }
-      return psToken(PSTokenType.REDIRECT_ALL_OUT, '*>', start);
+      this.advance();
+      return this.scanRedirectionTail(start, '*');
     }
 
     return psToken(PSTokenType.MULTIPLY, '*', start);
@@ -746,25 +793,10 @@ export class PSLexer {
       return psToken(PSTokenType.NUMBER, value + this.scanCoreNumericSuffix(), start);
     }
 
-    // Check if digit is '2' and followed by '>' → redirect 2> / 2>> / 2>&1
-    if (first_ === '2' && this.peek1() === '>') {
-      this.advance(); // skip 2
-      this.advance(); // skip >
-      if (!this.eof() && this.ch() === '>') {
-        this.advance();
-        return psToken(PSTokenType.REDIRECT_ERR_APPEND, '2>>', start);
-      }
-      // 2>&1 — merge stderr to stdout: consume &1
-      if (!this.eof() && this.ch() === '&') {
-        const saved = this.pos;
-        this.advance(); // skip &
-        if (!this.eof() && this.isDigit(this.ch())) {
-          this.advance(); // skip stream number (e.g. 1)
-          return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>&1', start);
-        }
-        this.pos = saved; // restore if &N pattern not found
-      }
-      return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>', start);
+    if (first_ >= '1' && first_ <= '6' && this.peek1() === '>') {
+      this.advance();
+      this.advance();
+      return this.scanRedirectionTail(start, first_);
     }
 
     // Integer or float

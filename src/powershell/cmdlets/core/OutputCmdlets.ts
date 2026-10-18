@@ -74,54 +74,81 @@ export class WriteHostCmdlet implements ICmdlet {
 export class WriteErrorCmdlet implements ICmdlet {
   readonly name = 'write-error';
   readonly aliases = [] as const;
-  readonly parameters = ['Message'] as const;
+  readonly parameters = ['Message', 'Exception', 'ErrorRecord', 'Category', 'ErrorId', 'TargetObject', 'RecommendedAction', 'CategoryActivity', 'CategoryReason', 'CategoryTargetName', 'CategoryTargetType'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const msg = psValueToString(ctx.named['message'] ?? ctx.positional[0] ?? ctx.pipeInput ?? '');
+    const record = ctx.named['errorrecord'];
+    if (record !== undefined && record !== null) {
+      ctx.emitErrorRecord(record);
+      return null;
+    }
+    const exception = ctx.named['exception'];
+    const exceptionMessage = exception !== undefined && exception !== null && typeof exception === 'object'
+      ? (exception as Record<string, PSValue>).Message : undefined;
+    const msg = psValueToString(ctx.named['message'] ?? ctx.positional[0] ?? exceptionMessage ?? ctx.pipeInput ?? '');
     ctx.emitError(msg);
     return null;
   }
 }
 
-// ─── Write-Warning ─────────────────────────────────────────────────────────
+// ─── Write-Warning / Write-Verbose / Write-Debug / Write-Information ───────
+
+function messageOf(ctx: CmdletContext): string {
+  return psValueToString(ctx.named['message'] ?? ctx.positional[0] ?? ctx.pipeInput ?? '');
+}
 
 export class WriteWarningCmdlet implements ICmdlet {
   readonly name = 'write-warning';
   readonly aliases = [] as const;
+  readonly parameters = ['Message'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const msg = psValueToString(ctx.positional[0] ?? ctx.pipeInput ?? '');
-    ctx.emit(`WARNING: ${msg}`);
+    ctx.emitWarning(messageOf(ctx));
     return null;
   }
 }
-
-// ─── Write-Verbose ─────────────────────────────────────────────────────────
 
 export class WriteVerboseCmdlet implements ICmdlet {
   readonly name = 'write-verbose';
   readonly aliases = [] as const;
+  readonly parameters = ['Message'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const pref = psValueToString(ctx.env.get('VerbosePreference') ?? 'SilentlyContinue');
-    if (pref === 'Continue' || pref === 'Inquire') {
-      const msg = psValueToString(ctx.positional[0] ?? ctx.pipeInput ?? '');
-      ctx.emit(`VERBOSE: ${msg}`);
-    }
+    ctx.emitVerbose(messageOf(ctx));
     return null;
   }
 }
 
-// ─── Write-Debug / Write-Progress / Write-Information (no-ops) ────────────
+export class WriteDebugCmdlet implements ICmdlet {
+  readonly name = 'write-debug';
+  readonly aliases = [] as const;
+  readonly parameters = ['Message'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    ctx.emitDebug(messageOf(ctx));
+    return null;
+  }
+}
+
+export class WriteInformationCmdlet implements ICmdlet {
+  readonly name = 'write-information';
+  readonly aliases = [] as const;
+  readonly parameters = ['MessageData', 'Tags'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const data = ctx.named['messagedata'] ?? ctx.positional[0] ?? ctx.pipeInput ?? null;
+    const tags = ctx.named['tags'];
+    ctx.emitInformation(data, tags === undefined || tags === null ? [] : (Array.isArray(tags) ? tags : [tags]).map(psValueToString));
+    return null;
+  }
+}
 
 class NoOpWriteCmdlet implements ICmdlet {
   constructor(readonly name: string, readonly aliases: readonly string[] = []) {}
   execute(_ctx: CmdletContext): PSValue { return null; }
 }
 
-export const WriteDebugCmdlet       = new NoOpWriteCmdlet('write-debug');
 export const WriteProgressCmdlet    = new NoOpWriteCmdlet('write-progress');
-export const WriteInformationCmdlet = new NoOpWriteCmdlet('write-information');
 
 // ─── Out-Null ──────────────────────────────────────────────────────────────
 

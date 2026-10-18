@@ -277,9 +277,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new WriteErrorCmdlet());
   registry.register(new WriteWarningCmdlet());
   registry.register(new WriteVerboseCmdlet());
-  registry.register(WriteDebugCmdlet);
+  registry.register(new WriteDebugCmdlet());
   registry.register(WriteProgressCmdlet);
-  registry.register(WriteInformationCmdlet);
+  registry.register(new WriteInformationCmdlet());
   registry.register(new OutNullCmdlet());
   registry.register(new OutStringCmdlet());
   registry.register(new OutHostCmdlet());

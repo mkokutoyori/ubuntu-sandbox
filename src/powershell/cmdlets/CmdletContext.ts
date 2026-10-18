@@ -110,11 +110,23 @@ export interface CmdletContext {
    */
   emit(val: PSValue): void;
 
-  /** Write a warning line without taking the cmdlet's returned value off the output stream. */
+  /** Write to the warning stream; `$WarningPreference` / `-WarningAction` decide what happens. */
   emitWarning(msg: string): void;
+
+  /** Write to the verbose stream; shown only when `$VerbosePreference` / `-Verbose` allow it. */
+  emitVerbose(msg: string): void;
+
+  /** Write to the debug stream; shown only when `$DebugPreference` / `-Debug` allow it. */
+  emitDebug(msg: string): void;
+
+  /** Write to the information stream (`Write-Information`). */
+  emitInformation(data: PSValue, tags: readonly string[]): void;
 
   /** Write an error message (non-terminating). */
   emitError(msg: string): void;
+
+  /** Write a ready-made ErrorRecord to the error stream (non-terminating). */
+  emitErrorRecord(record: PSValue): void;
 
   /**
    * Evaluate a script block with a given $_ binding and optional named vars.

@@ -998,7 +998,16 @@ export class GetItemCmdlet implements ICmdlet {
   readonly aliases = ['gi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = pathArgOf(ctx);
+    const explicit = ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0];
+    if (explicit === undefined && ctx.pipeInput !== null && ctx.pipeInput !== undefined) {
+      const items = Array.isArray(ctx.pipeInput) ? ctx.pipeInput : [ctx.pipeInput];
+      const found = items.map(item => this.fetch(ctx, psValueToString(item))).filter(entry => entry !== null);
+      return found.length === 0 ? null : found.length === 1 ? found[0] : found as PSValue;
+    }
+    return this.fetch(ctx, pathArgOf(ctx));
+  }
+
+  private fetch(ctx: CmdletContext, path: string): PSValue {
     if (!path) { ctx.emitError('Get-Item requires -Path'); return null; }
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);

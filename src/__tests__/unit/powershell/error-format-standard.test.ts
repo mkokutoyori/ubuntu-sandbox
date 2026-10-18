@@ -53,8 +53,8 @@ describe('standard PowerShell error format', () => {
   it('Get-Item <missing path> renders the same standard block', async () => {
     const out = await exec("Get-Item -Path 'C:\\does\\not\\exist.txt'");
     expect(out).toMatch(/^Get-Item : Cannot find path/m);
-    expect(out).toMatch(/\+ CategoryInfo\s+: NotSpecified: \(:\) \[Get-Item\]/);
-    expect(out).toMatch(/\+ FullyQualifiedErrorId\s+: \S+/);
+    expect(out).toMatch(/\+ CategoryInfo\s+: ObjectNotFound: \(C:\\does\\not\\exist\.txt:String\) \[Get-Item\], ItemNotFoundException/);
+    expect(out).toMatch(/\+ FullyQualifiedErrorId\s+: PathNotFound,Microsoft\.PowerShell\.Commands\.GetItemCommand/);
   });
 
   it('$Error[0] still exposes structured Exception/CategoryInfo/FullyQualifiedErrorId', async () => {
