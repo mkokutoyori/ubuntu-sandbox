@@ -16,12 +16,21 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 
+import type { MessageTooLong } from './Errno';
 import { IPv4Packet, computeIPv4Checksum, ipv4HeaderBytesFor, optionsForFragment } from './types';
 import type { NetworkPdu } from './NetworkPdu';
 
 /** Header flag bits, matching the convention documented on `IPv4Packet.flags`. */
 export const IPV4_FLAG_DF = 0b010;
 export const IPV4_FLAG_MF = 0b001;
+
+export const IPV4_MAX_TOTAL_LENGTH = 65535;
+
+export function ipv4SendRefusal(totalLength: number, pathMtu: number, dontFragment: boolean): MessageTooLong | null {
+  const tooLargeForAnyDatagram = totalLength > IPV4_MAX_TOTAL_LENGTH;
+  const tooLargeForOneFrame = dontFragment && totalLength > pathMtu;
+  return tooLargeForAnyDatagram || tooLargeForOneFrame ? { origin: 'local', errno: 'EMSGSIZE', mtu: pathMtu } : null;
+}
 
 /** Placeholder payload for a non-first fragment — no upper-layer header lives here. */
 export interface IPv4FragmentData extends NetworkPdu {

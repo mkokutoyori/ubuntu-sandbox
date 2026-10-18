@@ -6769,6 +6769,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.firewallProfiles.get(name)!;
   }
 
+  protected override filtersLoopbackTraffic(): boolean {
+    return false;
+  }
+
   protected override firewallFilter(
     portName: string,
     ipPkt: IPv4Packet,

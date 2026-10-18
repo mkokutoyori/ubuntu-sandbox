@@ -445,12 +445,6 @@ export function createPing(
       echo: async (seq) => {
         const path = host.route(address, socket);
         const mtu = path?.mtu ?? Number.MAX_SAFE_INTEGER;
-        if (mtuDisc === 'do' && packetSize > mtu) {
-          return {
-            success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '',
-            error: strerror('EMSGSIZE'), localError: { origin: 'local', errno: 'EMSGSIZE', mtu },
-          };
-        }
         const fits = packetSize <= mtu && !(path?.mtuLocked ?? false);
         return host.echo(address, seq, {
           ident, timeoutMs: args.timeoutMs, ttl: args.ttl, tos: args.tos, dataSize: args.size,
