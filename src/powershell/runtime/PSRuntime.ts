@@ -1897,10 +1897,11 @@ export class PSRuntime {
       return result;
     }
     for (const stmt of node.elements) {
+      this.memberEnumerationEmpty = false;
       const val = this.execStatement(stmt, env);
       if (Array.isArray(val)) result.push(...val);
       else if (val !== null && val !== undefined) result.push(val);
-      else if (this.isValueExpressionStatement(stmt)) result.push(null);
+      else if (this.isValueExpressionStatement(stmt) && !this.memberEnumerationEmpty) result.push(null);
     }
     return result;
   }
@@ -1977,12 +1978,16 @@ export class PSRuntime {
     return makeTypeObject(described.name, described.fullName);
   }
 
+  private memberEnumerationEmpty = false;
+
   private evalMember(node: PSMemberExpression, env: PSEnvironment): PSValue {
     if (node.object.type === 'TypeLiteral' && typeof node.member === 'string') {
       return this.getMember(this.typeLiteralObject((node.object as unknown as { typeName: string }).typeName), node.member.toLowerCase());
     }
     const obj    = this.evalExpr(node.object, env);
     if (node.nullConditional === true && (obj === null || obj === undefined)) return null;
+    if (obj === null && this.memberEnumerationEmpty) return null;
+    this.memberEnumerationEmpty = false;
     const member = typeof node.member === 'string'
       ? node.member.toLowerCase()
       : psValueToString(this.evalExpr(node.member as PSExpression, env)).toLowerCase();
@@ -4379,7 +4384,10 @@ export class PSRuntime {
         // PowerShell array member enumeration: access member on each element,
         // unwrap to scalar if only one result.
         const mapped = arr.map(el => this.getMember(el, member)).filter(v => v !== null && v !== undefined);
-        if (mapped.length === 0) return null;
+        if (mapped.length === 0) {
+          this.memberEnumerationEmpty = arr.length === 0;
+          return null;
+        }
         return mapped.length === 1 ? mapped[0] : mapped;
       }
     }

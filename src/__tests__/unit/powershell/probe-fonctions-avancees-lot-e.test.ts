@@ -7,10 +7,10 @@
  * ParameterSetName/ThrowTerminatingError), redirections de flux (`2>`, `3>&1`, `*>`, `2>&1 > $null`), `[ref]`,
  * `[powershell]` (Streams.* et InvocationStateInfo), `[PSParser]::Tokenize`, mot nu colle a une variable (`+$x`, `foo$x`),
  * `Get-Variable -ValueOnly nom`.
- * Discrimination : sur la base c61aa5aef, 61 cas rouges sur 74.
- * Temoins (13, verts avant et apres) : fonction avancee sans parametre commun (Write-Verbose, Write-Debug, Write-Information
+ * Discrimination : sur la base c61aa5aef, 63 cas rouges sur 77 (dont `@($vide.Propriete)` : un tableau vide enumere RIEN, `@($null.x)` garde 1 element).
+ * Temoins (14, verts avant et apres) : fonction avancee sans parametre commun (Write-Verbose, Write-Debug, Write-Information
  * silencieux par defaut, Write-Warning affiche, `-Verbose:$false`), fonction simple, `Write-Output`, expansion `"a $x"`,
- * `1,2 | ForEach-Object`, `[int]::Parse`, `Write-Output +abc`.
+ * `1,2 | ForEach-Object`, `[int]::Parse`, `Write-Output +abc`, `@($null.x)`.
  */
 import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
@@ -102,6 +102,9 @@ const VALUES: Array<[string, string]> = [
   ['[int]::Parse("12")', '12'],
   ['function g { [CmdletBinding()] param() Write-Error "e" }; try { g -ErrorAction Stop } catch { "c" }', 'c'],
   ['Write-Output +abc', '+abc'],
+  ['$e = @(); @($e.IPAddress).Count', '0'],
+  ['@(@().a.b).Count', '0'],
+  ['$o = $null; @($o.IPAddress).Count', '1'],
 ];
 
 describe('lot E — fonctions avancees', () => {
