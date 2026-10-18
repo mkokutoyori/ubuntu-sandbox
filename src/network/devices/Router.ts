@@ -39,7 +39,7 @@ import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
 import type { CbacPort } from './router/security/CbacFirewall';
 import type { TcpInterceptPort } from './router/security/TcpIntercept';
-import type { TcpSegment } from '../tcp/types';
+import { tcpFlagBits, type TcpSegment } from '../tcp/types';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
@@ -3224,12 +3224,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const tcp = pkt.payload as TCPPacket;
       sourcePort = tcp.sourcePort;
       destinationPort = tcp.destinationPort;
-      tcpFlags = (tcp.flags.fin ? 0x01 : 0)
-        | (tcp.flags.syn ? 0x02 : 0)
-        | (tcp.flags.rst ? 0x04 : 0)
-        | (tcp.flags.psh ? 0x08 : 0)
-        | (tcp.flags.ack ? 0x10 : 0)
-        | (tcp.flags.urg ? 0x20 : 0);
+      tcpFlags = tcpFlagBits(tcp.flags);
     } else if (pkt.protocol === IP_PROTO_UDP) {
       const udp = pkt.payload as UDPPacket;
       sourcePort = udp.sourcePort;

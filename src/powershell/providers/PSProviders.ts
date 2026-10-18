@@ -1540,6 +1540,7 @@ export interface IUserProvider {
   createUser(name: string, opts: { password?: string; fullName?: string; description?: string }): string;
   removeUser(name: string): string;
   setUser(name: string, opts: LocalUserChanges): string;
+  changePassword(name: string, oldPassword: string, newPassword: string): string;
   enableUser(name: string): string;
   disableUser(name: string): string;
   renameUser(oldName: string, newName: string): string;

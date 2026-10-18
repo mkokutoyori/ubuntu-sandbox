@@ -29,7 +29,7 @@ async function lab() {
 }
 
 async function writeConf(srv: LinuxServer, body: string) {
-  await srv.executeCommand(`printf '%s' ${JSON.stringify(body)} > ${CONF}`);
+  await srv.executeCommand(`printf '%b' ${JSON.stringify(body)} > ${CONF}`);
 }
 
 const CONF_LAN60 = `

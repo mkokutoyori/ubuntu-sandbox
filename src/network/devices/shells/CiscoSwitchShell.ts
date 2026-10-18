@@ -168,11 +168,13 @@ import type { FhrpShowGrammar, FhrpShowSelection } from './cisco/fhrpShowFilter'
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
-import { renderTableText, FIXED_TABLE } from './cli/TextTable';
+import { renderTable, renderTableText, FIXED_TABLE } from './cli/TextTable';
 import {
   INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, INTERFACE_STATUS_NAME_WIDTH,
   type InterfaceStatusRow,
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
+  MAC_TABLE_COLUMNS, MAC_TABLE_STYLE, SECURE_MAC_COLUMNS, STP_BRIDGE_COLUMNS, STP_BRIDGE_STYLE,
+  type SecureMacRow, type StpBridgeRow,
 } from './cisco/ciscoTableLayouts';
 import {
   SOCLE, COMMUTATEUR_SEUL, appliquerContinuations, toutesLesSuites,
@@ -1507,27 +1509,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showPortSecurityAddress(sw: CiscoSwitch): string {
-    const lines = [
-      '          Secure Mac Address Table',
-      '------------------------------------------------------------------------',
-      'Vlan    Mac Address       Type                          Ports   Remaining Age',
-      '----    -----------       ----                          -----   -------------',
-    ];
-    let n = 0;
+    const rows: SecureMacRow[] = [];
     for (const [name, port] of sw._getPortsInternal()) {
       const sec = port.getPortSecurity();
       if (!sec.isEnabled()) continue;
       for (const e of sec.getEntries()) {
-        const typeStr = e.type === 'static' ? 'SecureConfigured'
-          : e.type === 'sticky' ? 'SecureSticky' : 'SecureDynamic';
-        lines.push(
-          `${String(e.vlan).padEnd(8)}${this.formatMacCisco(e.mac).padEnd(18)}` +
-          `${typeStr.padEnd(30)}${this.abbreviateInterface(name).padEnd(8)}` +
-          `${sec.getAgingTimeMin() > 0 ? `${sec.getAgingTimeMin()}m` : '-'}`,
-        );
-        n++;
+        rows.push({
+          vlan: e.vlan,
+          mac: this.formatMacCisco(e.mac),
+          type: e.type === 'static' ? 'SecureConfigured' : e.type === 'sticky' ? 'SecureSticky' : 'SecureDynamic',
+          port: this.abbreviateInterface(name),
+          age: sec.getAgingTimeMin() > 0 ? `${sec.getAgingTimeMin()}m` : '-',
+        });
       }
     }
+    const lines = [
+      '          Secure Mac Address Table',
+      '------------------------------------------------------------------------',
+      ...renderTable(rows, SECURE_MAC_COLUMNS, MAC_TABLE_STYLE),
+    ];
+    const n = rows.length;
     lines.push('');
     lines.push(`Total Addresses: ${n}`);
     return lines.join('\n');
@@ -4423,19 +4424,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const head = ['Mac Address Table', '-------------------------------------------'];
     if (entries.length === 0) return [...head, 'No entries.'].join('\n');
 
-    const lines = [
-      ...head,
-      '',
-      'Vlan    Mac Address       Type        Ports',
-      '----    -----------       --------    -----',
-    ];
-    const sorted = [...entries].sort((a, b) => a.vlan - b.vlan || a.mac.localeCompare(b.mac));
-    for (const e of sorted) {
-      const vlan = String(e.vlan).padEnd(8);
-      const mac = e.mac.padEnd(18);
-      const type = e.type === 'static' ? 'STATIC  ' : 'DYNAMIC ';
-      lines.push(`${vlan}${mac}${type}    ${e.port}`);
-    }
+    const sorted = [...entries]
+      .sort((a, b) => a.vlan - b.vlan || a.mac.localeCompare(b.mac))
+      .map(e => ({ vlan: e.vlan, mac: e.mac, type: e.type === 'static' ? 'STATIC' : 'DYNAMIC', port: e.port }));
+    const lines = [...head, '', ...renderTable(sorted, MAC_TABLE_COLUMNS, MAC_TABLE_STYLE)];
     lines.push('');
     lines.push(`Total Mac Addresses for this criterion: ${entries.length}`);
     return lines.join('\n');
@@ -4840,12 +4832,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
     const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;
     const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
-    return [
-      '                                                   Hello  Max  Fwd',
-      'Vlan             Bridge ID                          Time  Age  Dly  Protocol',
-      '---------------- ---------------------------------- -----  ---  ---  --------',
-      `${vlan.padEnd(17)}${prio} (${prio - vlanId}, ${vlanId})  ${mac}  ${String(hello).padEnd(6)}${String(maxAge).padEnd(5)}${String(fwd).padEnd(5)}ieee`,
-    ].join('\n');
+    const row: StpBridgeRow = { vlan, bridge: `${prio} (${prio - vlanId}, ${vlanId}) ${mac}`, hello, maxAge, fwd };
+    return renderTable([row], STP_BRIDGE_COLUMNS, STP_BRIDGE_STYLE).join('\n');
   }
 
   private showStpBlockedPorts(sw: CiscoSwitch, vlanId = 1): string {

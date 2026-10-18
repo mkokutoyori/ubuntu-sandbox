@@ -18,6 +18,13 @@
  * /expires, dates impossibles) -- structurels, ils prouvent l'analyseur et
  * non le branchement, que portent les autres cas.
  *
+ * SECOND LOT (régions et ADSI) : 9 cas sur 9 tombent avant le correctif --
+ * ordre jour/mois de /expires fixé en dur (MM/DD), aucun réglage régional ni
+ * Get-Culture/Set-Culture, et aucun chemin de commande vers
+ * SamrChangePasswordUser, donc aucun 4723 atteignable. L'ordre vient de
+ * HKCU\Control Panel\International\sShortDate, que Set-Culture et reg add écrivent.
+ * Les formats régionaux (fr-FR, de-DE...) sont écrits de mémoire de .NET/CLDR.
+ *
  * Autorité : docs Windows Commands « net user » (syntaxe, plafonds : nom 20
  * caractères, commentaire 48, 8 postes, heures par pas d'une heure,
  * « Don't include spaces »). Les libellés d'erreur NET HELPMSG (2202, 2221,
@@ -167,11 +174,19 @@ describe('/expires : les trois formats de la référence', () => {
       ['01/09/2019', '2019-01-09'],
       ['Jan,9,2019', '2019-01-09'],
       ['January,9,2019', '2019-01-09'],
-      ['13/01/2019', '2019-01-13'],
     ];
     for (const [text, iso] of cases) {
       expect(parseAccountExpiry(text, now)?.toISOString().slice(0, 10), text).toBe(iso);
     }
+  });
+
+  it('l\'ordre jour/mois/année suit les réglages régionaux : 01/09/2019 est le 9 janvier en MDY, le 1er septembre en DMY', () => {
+    expect(parseAccountExpiry('01/09/2019', now, 'MDY')?.toISOString().slice(0, 10)).toBe('2019-01-09');
+    expect(parseAccountExpiry('01/09/2019', now, 'DMY')?.toISOString().slice(0, 10)).toBe('2019-09-01');
+    expect(parseAccountExpiry('2019/09/01', now, 'YMD')?.toISOString().slice(0, 10)).toBe('2019-09-01');
+    expect(parseAccountExpiry('13/01/2019', now, 'MDY')).toBeUndefined();
+    expect(parseAccountExpiry('13/01/2019', now, 'DMY')?.toISOString().slice(0, 10)).toBe('2019-01-13');
+    expect(parseAccountExpiry('9,Jan,2019', now, 'MDY')?.toISOString().slice(0, 10)).toBe('2019-01-09');
   });
 
   it('sans année, c\'est la prochaine occurrence de la date', () => {
@@ -319,5 +334,93 @@ describe('SSH : les restrictions de compte jouent aussi pour la clé (S4U) et le
     expect(pc.getUserManager().logonRefusal('erin')).toBe('workstation');
     await pc.executeCommand('net user erin /workstations:WSRV');
     expect(pc.getUserManager().logonRefusal('erin')).toBeNull();
+  });
+});
+
+describe('réglages régionaux : la date de /expires et l\'affichage suivent HKCU\\Control Panel\\International', () => {
+  it('par défaut en-US : 01/09/2030 est le 9 janvier, affiché M/d/yyyy h:mm:ss tt', async () => {
+    const pc = machine();
+    await pc.executeCommand('net user erin Passw0rd! /add /expires:01/09/2030');
+    expect(field(await pc.executeCommand('net user erin'), 'Account expires')).toBe('1/9/2030 12:00:00 AM');
+    expect(await pc.executeCommand('net user erin /expires:13/01/2030')).toContain('The command syntax is invalid.');
+  });
+
+  it('Set-Culture fr-FR écrit le registre régional : 01/09/2030 devient le 1er septembre, affiché dd/MM/yyyy HH:mm:ss', async () => {
+    const pc = machine();
+    const shell = PowerShellSubShell.create(pc).subShell;
+    await shell.processLine('Set-Culture fr-FR');
+    expect(pc.registry.getItemPropertyValues('HKCU:\\Control Panel\\International')).toMatchObject({
+      LocaleName: 'fr-FR', sShortDate: 'dd/MM/yyyy', sTimeFormat: 'HH:mm:ss', iDate: '1', iCountry: '33',
+    });
+    expect((await shell.processLine('(Get-Culture).Name')).output.join('').trim()).toBe('fr-FR');
+    await pc.executeCommand('net user erin Passw0rd! /add /expires:01/09/2030');
+    expect(field(await pc.executeCommand('net user erin'), 'Account expires')).toBe('01/09/2030 00:00:00');
+    expect(await pc.executeCommand('net user erin /expires:13/01/2030')).toContain('completed successfully');
+    expect(field(await pc.executeCommand('net user erin'), 'Account expires')).toBe('13/01/2030 00:00:00');
+  });
+
+  it('modifier sShortDate directement dans le registre suffit (reg add), comme sur un vrai poste', async () => {
+    const pc = machine();
+    await pc.executeCommand('reg add "HKCU\\Control Panel\\International" /v sShortDate /t REG_SZ /d yyyy/MM/dd /f');
+    await pc.executeCommand('net user erin Passw0rd! /add /expires:2031/02/03');
+    expect(field(await pc.executeCommand('net user erin'), 'Account expires')).toMatch(/^2031\/02\/03 /);
+  });
+
+  it('une culture inconnue est refusée', async () => {
+    const pc = machine();
+    const shell = PowerShellSubShell.create(pc).subShell;
+    expect((await shell.processLine('Set-Culture xx-ZZ')).output.join('\n')).toContain('invalid culture identifier');
+  });
+});
+
+describe('changement de mot de passe par son titulaire : [ADSI]"WinNT://" (SamrChangePasswordUser)', () => {
+  it('ChangePassword(ancien, nouveau) journalise un 4723 dont le sujet est le titulaire', async () => {
+    const pc = machine();
+    await pc.executeCommand('net user erin Passw0rd! /add');
+    pc.getUserManager().setCurrentUser('erin');
+    const shell = PowerShellSubShell.create(pc).subShell;
+    const out = (await shell.processLine(
+      '$u = [ADSI]"WinNT://./erin,user"; $u.ChangePassword("Passw0rd!", "Another1Passw0rd!")')).output.join('\n');
+    expect(out).toBe('');
+    expect(logon(pc, 'erin', 'Another1Passw0rd!')).toBe(true);
+    const xml = String(await pc.executeCmdCommand('wevtutil qe Security /q:"*[System[EventID=4723]]" /rd:true /c:1 /f:xml'));
+    expect(xml).toContain("<Data Name='TargetUserName'>erin</Data>");
+    expect(xml).toContain("<Data Name='SubjectUserName'>erin</Data>");
+  });
+
+  it('un ancien mot de passe faux, un mot de passe interdit de changement, la politique : exceptions de Windows', async () => {
+    const pc = machine();
+    await pc.executeCommand('net user erin Passw0rd! /add');
+    pc.getUserManager().setCurrentUser('erin');
+    const shell = PowerShellSubShell.create(pc).subShell;
+    const attempt = async (oldPassword: string, newPassword: string) => (await shell.processLine(
+      `([ADSI]"WinNT://./erin,user").ChangePassword("${oldPassword}", "${newPassword}")`)).output.join('\n');
+    expect(await attempt('wrong', 'Another1Passw0rd!')).toContain('The specified network password is not correct.');
+    pc.getUserManager().setCurrentUser('Administrator');
+    await pc.executeCommand('net user erin /passwordchg:no');
+    pc.getUserManager().setCurrentUser('erin');
+    expect(await attempt('Passw0rd!', 'Another1Passw0rd!')).toContain('cannot be changed');
+    expect(logon(pc, 'erin', 'Passw0rd!')).toBe(true);
+    const events = String(await pc.executeCmdCommand('wevtutil qe Security /q:"*[System[EventID=4723]]" /f:xml'));
+    expect(events).not.toContain('erin');
+  });
+
+  it('SetPassword est la réinitialisation : 4724, réservée aux administrateurs', async () => {
+    const pc = machine();
+    await pc.executeCommand('net user erin Passw0rd! /add');
+    const shell = PowerShellSubShell.create(pc).subShell;
+    await shell.processLine('([ADSI]"WinNT://./erin,user").SetPassword("Another1Passw0rd!")');
+    expect(logon(pc, 'erin', 'Another1Passw0rd!')).toBe(true);
+    const xml = String(await pc.executeCmdCommand('wevtutil qe Security /q:"*[System[EventID=4724]]" /rd:true /c:1 /f:xml'));
+    expect(xml).toContain("<Data Name='SubjectUserName'>Administrator</Data>");
+    pc.getUserManager().setCurrentUser('erin');
+    expect((await shell.processLine('([ADSI]"WinNT://./erin,user").SetPassword("Third1Passw0rd!")')).output.join('\n')).toContain('Access is denied.');
+  });
+
+  it('un compte absent ou un chemin qui n\'est pas WinNT est refusé', async () => {
+    const pc = machine();
+    const shell = PowerShellSubShell.create(pc).subShell;
+    expect((await shell.processLine('[ADSI]"WinNT://./ghost,user"')).output.join('\n')).toContain('could not be found');
+    expect((await shell.processLine('[ADSI]"LDAP://CN=x"')).output.join('\n')).toContain('not valid');
   });
 });

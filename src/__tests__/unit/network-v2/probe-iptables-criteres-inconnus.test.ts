@@ -89,13 +89,13 @@ describe('un drapeau TCP est l un des huit', () => {
   it.each(['zorglub', 'SYNC'])('`--tcp-flags %s SYN` est refuse', async (f) => {
     const d = hote(`F${cle(f)}`);
     expect(await sudo(d, `iptables -A INPUT -p tcp --tcp-flags ${f} SYN -j ACCEPT`))
-      .toMatch(/Bad TCP flags/);
+      .toMatch(/Unknown TCP flag/);
   });
 
   it('`--tcp-flags SYN,ACK zorglub` est refuse aussi', async () => {
     const d = hote('F2');
     expect(await sudo(d, 'iptables -A INPUT -p tcp --tcp-flags SYN,ACK zorglub -j ACCEPT'))
-      .toMatch(/Bad TCP flags/);
+      .toMatch(/Unknown TCP flag/);
   });
 
   it('et rien n en reste dans la chaine', async () => {
@@ -108,7 +108,7 @@ describe('un drapeau TCP est l un des huit', () => {
     '`--tcp-flags %s` reste accepte', async (f) => {
       const d = hote(`FO${cle(f)}`);
       expect(await sudo(d, `iptables -A INPUT -p tcp --tcp-flags ${f} -j ACCEPT`))
-        .not.toMatch(/Bad TCP flags/);
+        .not.toMatch(/Unknown TCP flag/);
     });
 });
 

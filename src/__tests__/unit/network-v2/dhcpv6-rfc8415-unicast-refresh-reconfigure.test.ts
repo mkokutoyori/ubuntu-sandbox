@@ -397,7 +397,7 @@ describe('Server Unicast et Information Refresh sur les serveurs d hote', () => 
     srv.getPorts()[0].enableIPv6();
     srv.getPorts()[0].configureIPv6(new IPv6Address('2001:db8:1::1'), 64);
     const conf = 'option dhcp6.unicast 2001:db8:1::1;\noption dhcp6.info-refresh-time 1800;\nsubnet6 2001:db8:1::/64 { range6 2001:db8:1::100 2001:db8:1::110; }\n';
-    await srv.executeCommand(`printf '%s' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd6.conf`);
+    await srv.executeCommand(`printf '%b' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd6.conf`);
     await srv.executeCommand('printf \'INTERFACESv6="eth0"\\n\' > /etc/default/isc-dhcp-server');
     await srv.executeCommand('systemctl start isc-dhcp-server6');
     await c1.executeCommand('dhclient -6 eth0');

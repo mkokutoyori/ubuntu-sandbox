@@ -298,7 +298,7 @@ describe('sur le fil : dhcpd Linux (`leasequery on;`)', () => {
   async function dhcpd(conf: string) {
     const srv = new LinuxServer('linux-server', 'SRV-DHCP');
     const lab = await segment(srv, '192.168.60.1');
-    await srv.executeCommand(`printf '%s' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd.conf`);
+    await srv.executeCommand(`printf '%b' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd.conf`);
     await srv.executeCommand('systemctl start isc-dhcp-server');
     await lab.pc.executeCommand('dhclient eth0');
     return lab;

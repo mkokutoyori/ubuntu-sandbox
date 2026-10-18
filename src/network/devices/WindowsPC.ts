@@ -14,6 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { INTERNATIONAL_KEY, regionalFormatsFrom } from './windows/WindowsRegionalSettings';
 import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
 import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -584,6 +585,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       hostname: () => this.hostname,
       timezone: () => this.identity.timezone,
       directoryExists: (path) => this.fs.isDirectory(this.fs.normalizePath(path, 'C:\\')),
+      regionalFormats: () => regionalFormatsFrom(this.registry.getItemPropertyValues(INTERNATIONAL_KEY)),
     });
     // Documents the real account roster (name/password/groups) next to the
     // other sample data files (numbers.txt) — driven entirely by userMgr so

@@ -367,6 +367,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
       path: ['radius-server', 'dead-criteria'],
       description: 'Set the criteria used to decide that a RADIUS server is dead',
       modes: MODES, minPrivilege: 15,
+      requiresOneOption: true,
       options: (['time', 'tries'] as const).map((mot): OptionSpec => ({
         keyword: mot,
         description: mot === 'time'
@@ -378,7 +379,6 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         } as ArgumentSpec,
       })),
       run: (_s, args) => {
-        if (args.time === undefined && args.tries === undefined) throw new CliIncomplete();
         const defaults = ctx().security().radiusDefaults;
         if (args.time !== undefined) defaults.deadCriteriaTimeSec = Number(args.time);
         if (args.tries !== undefined) defaults.deadCriteriaTries = Number(args.tries);

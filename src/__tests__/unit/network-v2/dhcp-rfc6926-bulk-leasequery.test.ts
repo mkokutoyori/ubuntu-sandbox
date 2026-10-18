@@ -64,7 +64,7 @@ async function lab(server: 'dhcpd' | 'cisco', configure: (engine: DHCPServer) =>
     new Cable('s').connect(srv.getPorts()[0], sw.getPorts()[0]);
     srv.getPorts()[0].configureIP(new IPAddress(SERVER), new SubnetMask('255.255.255.0'));
     srv.powerOn();
-    await srv.executeCommand(`printf '%s' ${JSON.stringify('authoritative;\ndefault-lease-time 600;\nsubnet 192.168.60.0 netmask 255.255.255.0 {\n  range 192.168.60.100 192.168.60.103;\n}\n')} > /etc/dhcp/dhcpd.conf`);
+    await srv.executeCommand(`printf '%b' ${JSON.stringify('authoritative;\ndefault-lease-time 600;\nsubnet 192.168.60.0 netmask 255.255.255.0 {\n  range 192.168.60.100 192.168.60.103;\n}\n')} > /etc/dhcp/dhcpd.conf`);
     await srv.executeCommand('systemctl start isc-dhcp-server');
     engine = srv.dhcpd.getEngine();
   } else {

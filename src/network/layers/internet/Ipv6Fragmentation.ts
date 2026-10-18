@@ -51,6 +51,18 @@ export function ipv6FragmentCapacity(mtu: number): number {
   return Math.floor((mtu - IPV6_HEADER_BYTES - IPV6_FRAGMENT_HEADER_BYTES) / 8) * 8;
 }
 
+export interface Ipv6SendRefusal {
+  readonly origin: 'local';
+  readonly errno: 'EMSGSIZE';
+  readonly mtu: number;
+}
+
+export function ipv6SendRefusal(payloadBytes: number, pathMtu: number, neverFragment: boolean): Ipv6SendRefusal | null {
+  const tooLargeForAnyDatagram = payloadBytes > IPV6_MAX_PAYLOAD_BYTES;
+  const tooLargeForOneFrame = neverFragment && IPV6_HEADER_BYTES + payloadBytes > pathMtu;
+  return tooLargeForAnyDatagram || tooLargeForOneFrame ? { origin: 'local', errno: 'EMSGSIZE', mtu: pathMtu } : null;
+}
+
 export function fragmentIPv6(packet: IPv6Packet, mtu: number, nextIdentification: () => number): IPv6Packet[] {
   const payloadBytes = packet.payloadLength;
   if (ipv6PacketBytes(packet) <= mtu) return [packet];

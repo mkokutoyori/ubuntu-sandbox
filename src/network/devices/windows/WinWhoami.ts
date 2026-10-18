@@ -7,6 +7,24 @@
 
 import type { WindowsUserManager } from './WindowsUserManager';
 import type { DomainSession } from './domain/DomainTypes';
+import { renderTable, type TableColumn, type TableStyle } from '../shells/cli/TextTable';
+
+const WHOAMI_TABLE: TableStyle = { gap: 1, rule: true, ruleChar: '=' };
+
+interface GroupRow { name: string; type: string; sid: string; attributes: string }
+
+const GROUP_COLUMNS: Array<TableColumn<GroupRow>> = [
+  { header: 'Group Name', value: (r) => r.name },
+  { header: 'Type', value: (r) => r.type },
+  { header: 'SID', value: (r) => r.sid },
+  { header: 'Attributes', value: (r) => r.attributes },
+];
+
+const PRIVILEGE_COLUMNS: Array<TableColumn<readonly [string, string, string]>> = [
+  { header: 'Privilege Name', value: (r) => r[0] },
+  { header: 'Description', value: (r) => r[1] },
+  { header: 'State', value: (r) => r[2] },
+];
 
 export interface WhoamiContext {
   hostname: string;
@@ -62,9 +80,10 @@ function formatUserInfo(ctx: WhoamiContext, username: string, domain: DomainSess
   lines.push('USER INFORMATION');
   lines.push('----------------');
   lines.push('');
-  lines.push('User Name' + ' '.repeat(24) + 'SID');
-  lines.push('=' .repeat(33) + ' ' + '='.repeat(47));
-  lines.push(account.padEnd(33) + ' ' + sid);
+  lines.push(...renderTable([{ account, sid }], [
+    { header: 'User Name', value: (r) => r.account },
+    { header: 'SID', value: (r) => r.sid },
+  ], WHOAMI_TABLE));
   return lines.join('\n');
 }
 
@@ -81,51 +100,38 @@ function formatGroupInfo(ctx: WhoamiContext, username: string, domain: DomainSes
   lines.push('GROUP INFORMATION');
   lines.push('-----------------');
   lines.push('');
-  lines.push(
-    'Group Name'.padEnd(44) + 'Type'.padEnd(14) + 'SID'.padEnd(20) + 'Attributes'
-  );
-  lines.push(
-    '='.repeat(44) + ' ' + '='.repeat(13) + ' ' + '='.repeat(48) + ' ' + '='.repeat(30)
-  );
-
-  // Always include well-known groups
-  lines.push(
-    'Everyone'.padEnd(44) + 'Well-known'.padEnd(14) + 'S-1-1-0'.padEnd(49) + 'Mandatory group, Enabled by default'
-  );
-  lines.push(
-    'NT AUTHORITY\\Local account'.padEnd(44) + 'Well-known'.padEnd(14) + 'S-1-5-113'.padEnd(49) + 'Mandatory group, Enabled by default'
-  );
+  const rows: GroupRow[] = [
+    { name: 'Everyone', type: 'Well-known', sid: 'S-1-1-0', attributes: 'Mandatory group, Enabled by default' },
+    { name: 'NT AUTHORITY\\Local account', type: 'Well-known', sid: 'S-1-5-113', attributes: 'Mandatory group, Enabled by default' },
+  ];
 
   if (domain) {
     for (const group of domain.groups) {
-      const groupDisplay = `${domain.netbiosName}\\${group}`;
-      lines.push(
-        groupDisplay.padEnd(44) + 'Group'.padEnd(14) + domainSid(domain.netbiosName).padEnd(49) + 'Mandatory group, Enabled by default'
-      );
+      rows.push({
+        name: `${domain.netbiosName}\\${group}`, type: 'Group',
+        sid: domainSid(domain.netbiosName), attributes: 'Mandatory group, Enabled by default',
+      });
     }
-    lines.push(integrityRow(ctx));
-    return lines.join('\n');
+  } else {
+    for (const group of ctx.userManager.getGroupsForUser(username)) {
+      const owner = group.name.toLowerCase() === 'administrators' ? ', Enabled group, Group owner' : '';
+      rows.push({
+        name: `BUILTIN\\${group.name}`, type: 'Alias', sid: group.sid,
+        attributes: `Mandatory group, Enabled by default${owner}`,
+      });
+    }
   }
-
-  const groups = ctx.userManager.getGroupsForUser(username);
-  for (const group of groups) {
-    const groupDisplay = `BUILTIN\\${group.name}`;
-    const owner = group.name.toLowerCase() === 'administrators' ? ', Enabled group, Group owner' : '';
-    lines.push(
-      groupDisplay.padEnd(44) + 'Alias'.padEnd(14) + group.sid.padEnd(49) + `Mandatory group, Enabled by default${owner}`
-    );
-  }
-  lines.push(integrityRow(ctx));
-
+  rows.push(integrityRow(ctx));
+  lines.push(...renderTable(rows, GROUP_COLUMNS, WHOAMI_TABLE));
   return lines.join('\n');
 }
 
-function integrityRow(ctx: WhoamiContext): string {
+function integrityRow(ctx: WhoamiContext): GroupRow {
   const high = ctx.userManager.isCurrentUserAdmin();
   const name = high ? 'Mandatory Label\\High Mandatory Level' : 'Mandatory Label\\Medium Mandatory Level';
   const sid = high ? 'S-1-16-12288' : 'S-1-16-8192';
   const attributes = high ? 'Mandatory group, Enabled by default, Enabled group' : 'Mandatory group, Enabled by default';
-  return name.padEnd(44) + 'Label'.padEnd(14) + sid.padEnd(49) + attributes;
+  return { name, type: 'Label', sid, attributes };
 }
 
 function formatPrivilegeInfo(ctx: WhoamiContext, username: string): string {
@@ -135,18 +141,7 @@ function formatPrivilegeInfo(ctx: WhoamiContext, username: string): string {
   lines.push('PRIVILEGES INFORMATION');
   lines.push('----------------------');
   lines.push('');
-  lines.push(
-    'Privilege Name'.padEnd(45) + 'Description'.padEnd(50) + 'State'
-  );
-  lines.push(
-    '='.repeat(45) + ' ' + '='.repeat(50) + ' ' + '='.repeat(10)
-  );
-
-  for (const [name, desc, state] of privileges) {
-    lines.push(
-      name.padEnd(45) + desc.padEnd(50) + state
-    );
-  }
+  lines.push(...renderTable(privileges, PRIVILEGE_COLUMNS, WHOAMI_TABLE));
 
   return lines.join('\n');
 }

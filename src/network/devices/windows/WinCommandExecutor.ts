@@ -7,20 +7,12 @@
 
 import { Port } from '../../hardware/Port';
 import { IPAddress, MACAddress, SubnetMask, IPv6Address } from '../../core/types';
-import type { ARPEntry } from '../EndHost';
+import type { ARPEntry, PingResult } from '../EndHost';
 import type { NetFirewallRuleEntry } from './netFirewallRule';
 import type { WindowsAdapterIdentity } from './netAdapter';
 import type { ProtocolCounters } from '../../layers/internet/ProtocolCounters';
 
-/** Ping result from EndHost.executePingSequence */
-export interface PingResult {
-  seq: number;
-  success: boolean;
-  fromIP?: string;
-  ttl: number;
-  rttMs: number;
-  error?: string;
-}
+export type { PingResult };
 
 export interface TracerouteProbe {
   responded: boolean;

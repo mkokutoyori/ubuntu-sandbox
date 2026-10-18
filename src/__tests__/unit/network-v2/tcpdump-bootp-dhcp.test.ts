@@ -43,7 +43,7 @@ async function capture(extra = '') {
   new Cable('b').connect(pc.getPorts()[0], sw.getPorts()[1]);
   srv.getPorts()[0].configureIP(new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
   const conf = 'authoritative;\ndefault-lease-time 7200;\nsubnet 192.168.1.0 netmask 255.255.255.0 {\n  range 192.168.1.100 192.168.1.110;\n  option routers 192.168.1.1;\n  option domain-name-servers 8.8.8.8;\n}\n';
-  await srv.executeCommand(`printf '%s' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd.conf`);
+  await srv.executeCommand(`printf '%b' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd.conf`);
   await srv.executeCommand('printf \'INTERFACESv4="eth0"\\n\' > /etc/default/isc-dhcp-server');
   await srv.executeCommand('systemctl start isc-dhcp-server');
   await pc.executeCommand('sudo tcpdump -i eth0 -w /tmp/d.pcap &');

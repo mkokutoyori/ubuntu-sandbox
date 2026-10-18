@@ -1571,6 +1571,9 @@ class WindowsUserAdapter implements IUserProvider {
     if (opts.enabled === false)          msgs.push(m.disableUser(name));
     return msgs.filter(Boolean).join('\n');
   }
+  changePassword(name: string, oldPassword: string, newPassword: string): string {
+    return this.mgr().changePassword(name, oldPassword, newPassword);
+  }
   enableUser(name: string): string {
     return this.mgr().enableUser(name);
   }

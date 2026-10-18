@@ -200,11 +200,11 @@ describe('non-regression — les voisins gardent leur aide', () => {
     }
   });
 
-  it('`aaa ?` garde ses sept fonctions', async () => {
+  it('`aaa ?` garde ses fonctions', async () => {
     const d = await routeur('F3');
     expect(mots(d.cliHelp('aaa '))).toEqual([
       'accounting', 'authentication', 'authorization', 'group',
-      'local', 'new-model', 'session-id',
+      'local', 'max-sessions', 'new-model', 'session-id',
     ]);
   });
 

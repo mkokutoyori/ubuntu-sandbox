@@ -17,6 +17,11 @@ import type { IcmpRedirectNotice, PingResult } from '../EndHost';
 import type { Port } from '../../hardware/Port';
 import { formatIfconfigInterface } from './LinuxNetCommands';
 import { readIcmpUnreachable } from '../../core/icmpUnreachable';
+import {
+  ICMPV6_EXCEEDED_HOP_LIMIT, ICMPV6_EXCEEDED_REASSEMBLY, ICMPV6_PARAMPROB_HEADER_FIELD,
+  ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER, ICMPV6_PARAMPROB_UNKNOWN_OPTION, ICMPV6_UNREACH_ADDRESS,
+  ICMPV6_UNREACH_ADMIN_PROHIBITED, ICMPV6_UNREACH_NO_ROUTE, ICMPV6_UNREACH_PORT, type Icmp6ErrorReport,
+} from '../../core/IcmpErrors';
 
 export interface LinuxFormatHelpers {
   /** Render a single interface in `ifconfig` style (UP/BROADCAST/...). */
@@ -72,8 +77,8 @@ export function formatPingHeader(
 }
 
 export function isIcmpErrorResult(r: PingResult): boolean {
-  return !r.success && !!r.error
-    && /unreachable|Time to live exceeded|local error/i.test(r.error);
+  return !r.success && (r.icmp6 !== undefined || r.localError !== undefined
+    || (!!r.error && /unreachable|Time to live exceeded/i.test(r.error)));
 }
 
 export function pingErrorCount(results: readonly PingResult[]): number {
@@ -109,10 +114,43 @@ export function icmpUnreachText(code: number | undefined, mtu: number | undefine
   }
 }
 
+const ICMP6_UNREACH_TEXT: Readonly<Record<number, string>> = {
+  [ICMPV6_UNREACH_NO_ROUTE]: 'No route',
+  [ICMPV6_UNREACH_ADMIN_PROHIBITED]: 'Administratively prohibited',
+  2: 'Beyond scope of source address',
+  [ICMPV6_UNREACH_ADDRESS]: 'Address unreachable',
+  [ICMPV6_UNREACH_PORT]: 'Port unreachable',
+};
+
+const ICMP6_PARAM_PROBLEM_TEXT: Readonly<Record<number, string>> = {
+  [ICMPV6_PARAMPROB_HEADER_FIELD]: 'Wrong header field ',
+  [ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER]: 'Unknown header ',
+  [ICMPV6_PARAMPROB_UNKNOWN_OPTION]: 'Unknown option ',
+};
+
+export function icmp6ErrorText(report: Icmp6ErrorReport): string {
+  switch (report.type) {
+    case 'destination-unreachable':
+      return `Destination unreachable: ${ICMP6_UNREACH_TEXT[report.code] ?? `Unknown code ${report.code}`}`;
+    case 'packet-too-big':
+      return `Packet too big: mtu=${report.mtu ?? 0}${report.code === 0 ? '' : `, code=${report.code}`}`;
+    case 'time-exceeded': {
+      const what = report.code === ICMPV6_EXCEEDED_HOP_LIMIT ? 'Hop limit'
+        : report.code === ICMPV6_EXCEEDED_REASSEMBLY ? 'Defragmentation failure' : `code ${report.code}`;
+      return `Time exceeded: ${what}`;
+    }
+    case 'parameter-problem':
+      return `Parameter problem: ${ICMP6_PARAM_PROBLEM_TEXT[report.code] ?? `code ${report.code} `}at ${report.pointer ?? 0}`;
+  }
+}
+
 export function formatPingFailureLine(
   r: PingResult, renderAddress: PingAddressRenderer = numericAddress,
 ): string | null {
   if (r.success) return null;
+  if (r.icmp6 !== undefined) {
+    return `From ${renderAddress(r.icmp6.from)} icmp_seq=${r.seq} ${icmp6ErrorText(r.icmp6)}`;
+  }
   if (r.error?.includes('Time to live exceeded')) {
     const m = /from ([\d.]+)/.exec(r.error);
     return `From ${m ? renderAddress(m[1]) : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;

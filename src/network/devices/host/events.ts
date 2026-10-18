@@ -11,6 +11,8 @@
  * progressively swapped for `waitForEvent` (Phases 5.4–5.6).
  */
 
+import type { Icmp6ErrorReport } from '../../core/IcmpErrors';
+
 // Note: payload fields use plain strings for IPs/MACs to keep the
 // event taxonomy serialisable without coupling consumers to the
 // MACAddress/IPAddress/IPv6Address classes.
@@ -156,6 +158,7 @@ export interface HostIcmpEchoFailedPayload extends HostDeviceRef {
   id: number;
   seq: number;
   reason: string;
+  icmp6?: Icmp6ErrorReport;
 }
 
 // ── TCP ────────────────────────────────────────────────────────────────

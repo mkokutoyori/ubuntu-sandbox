@@ -1033,7 +1033,7 @@ export class IPv6DataPlane {
       this.v6Counters.outTooBig++;
       Logger.info(this.ctx.id, 'router:ipv6-too-big',
         `${this.ctx.name}: ${ipv6PacketBytes(ipv6)} bytes exceed the ${mtu} MTU of ${route.iface}`);
-      this.sendICMPv6Error(route.iface, ipv6, 'packet-too-big', 0, mtu);
+      this.sendICMPv6Error(inPort, ipv6, 'packet-too-big', 0, mtu);
       return;
     }
 

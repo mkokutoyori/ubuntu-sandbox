@@ -230,7 +230,7 @@ function suggestionsAt(
     ? (cursor.node.argument.restMinWords ?? 0) > cursor.restWords.length
     : argument?.type === 'REST' && (argument.restMinWords ?? 0) > 0;
   if (trigger === 'QUESTION_MARK' && ici && cursor.prefix.length === 0
-    && !enAttente && !restePartiel && queue?.kind !== 'pending' && !ici.existsOnlyNegated) {
+    && !enAttente && !restePartiel && queue?.kind !== 'pending' && !ici.existsOnlyNegated && !ici.requiresOneOption) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }
 

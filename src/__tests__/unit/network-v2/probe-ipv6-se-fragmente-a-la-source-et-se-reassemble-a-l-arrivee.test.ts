@@ -798,13 +798,13 @@ describe('a router never fragments IPv6: it answers Packet Too Big, and the sour
     expect(growth(before, snapshot(lab.windows))('udp6InDatagrams')).toBe(0);
   });
 
-  it('the error comes from the egress interface of the router and quotes the fragment that did not fit', async () => {
+  it('the error comes from the interface of the router that faces the sender and quotes the fragment that did not fit', async () => {
     const lab = await routed();
     sendRouted(lab, 3000);
     await settle();
     const [packet] = lab.linuxReceived.map(ipv6Of)
       .filter((p) => (p?.payload as ICMPv6Packet | undefined)?.icmpType === 'packet-too-big');
-    expect(packet!.sourceIP.toString()).toBe('fd00:2::1');
+    expect(packet!.sourceIP.toString()).toBe('fd00:1::1');
     const quoted = (packet!.payload as ICMPv6Packet).invokingPacket!;
     expect(packet!.destinationIP.toString()).toBe(quoted.sourceIP.toString());
     expect(quoted.nextHeader).toBe(IP_PROTO_IPV6_FRAGMENT);
@@ -974,7 +974,7 @@ describe('tcpdump dissects the Fragment header as the real tool does (print-frag
     const capture = lab.linux.executeCommand('sudo tcpdump -c 1 -nn -i eth0 icmp6');
     await settle();
     sendRouted(lab, 3000);
-    expect(lines(await capture)[0]).toMatch(/fd00:2::1 > fd00:1::[0-9a-f:]+: ICMP6, packet too big, mtu 1400, length \d+$/);
+    expect(lines(await capture)[0]).toMatch(/fd00:1::1 > fd00:1::[0-9a-f:]+: ICMP6, packet too big, mtu 1400, length \d+$/);
   });
 
   it('a reassembly timeout shows as Time Exceeded (reassembly) and a bad fragment as Parameter Problem', async () => {

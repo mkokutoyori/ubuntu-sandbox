@@ -59,7 +59,8 @@ describe('ICMPv6 firewall filtering', () => {
   it('-p icmpv6 -j REJECT sends back a real Destination Unreachable instead of a silent timeout', async () => {
     await server.executeCommand('ip6tables -A INPUT -p icmpv6 -j REJECT');
     const out = await client.executeCommand('ping6 -c 1 -W 1 fd00::1');
-    expect(out).toMatch(/Destination Host Unreachable/);
+    expect(out).toMatch(/From fd00::1 icmp_seq=1 Destination unreachable: /);
+    expect(out).not.toMatch(/Destination Host Unreachable/);
     expect(out).not.toMatch(/bytes from/);
   });
 
