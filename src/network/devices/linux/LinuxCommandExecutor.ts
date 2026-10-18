@@ -3185,7 +3185,7 @@ export class LinuxCommandExecutor {
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
       const pending = netArgv.length > 0
-        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, netStdin))
+        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
         : null;
       this.runningBackgroundJobPid = null;
       if (pending) {
