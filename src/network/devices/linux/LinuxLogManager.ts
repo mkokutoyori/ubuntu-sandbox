@@ -13,6 +13,7 @@ import type { ProcessFacts } from './journal/JournaldServer';
 import type { JournalRecord } from './journal/JournalRecord';
 import { fieldValues } from './journal/JournalRecord';
 import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -361,7 +362,7 @@ export class LinuxLogManager {
       const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
       return `[${fmtHumanDate(ts, this.zoneName())}] ${e.message}`;
     }
-    return `[${e.offsetSec.toFixed(6).padStart(12, ' ')}] ${e.message}`;
+    return `[${padToWidth(e.offsetSec.toFixed(6), 12, 'right')}] ${e.message}`;
   }
 
   private readonly dmesgFollowSubs = new Set<{

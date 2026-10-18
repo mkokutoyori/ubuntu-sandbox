@@ -13,6 +13,7 @@ import { hms } from '@/lib/format';
 import { CISCO_ERRORS } from '../cli-utils';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { FIXED_TABLE, padToWidth, renderTable, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -327,7 +328,7 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     for (const n of neighbors) {
       const uptime = hms(simulationNowMs() - n.upSinceMs);
       const expires = hms(Math.max(0, n.helloHoldSec * 1000 - (simulationNowMs() - n.lastHeardMs)));
-      rows.push(`${n.neighborIp.padEnd(18)}${n.iface.padEnd(25)}${(uptime + '/' + expires).padEnd(18)}v2   ${n.drPriority}${n.hasDrPriorityOption ? '' : ' (default)'}`);
+      rows.push(`${padToWidth(n.neighborIp, 18)}${padToWidth(n.iface, 25)}${padToWidth(uptime + '/' + expires, 18)}v2   ${n.drPriority}${n.hasDrPriorityOption ? '' : ' (default)'}`);
     }
     return rows.join('\n');
   });
@@ -390,22 +391,26 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     // se déduisent des MÊMES largeurs, sinon elles finissent décalées
     // comme elles l'étaient — `Nbr Count` annoncé une colonne à droite
     // du compte qu'il surmonte.
-    const COLS = [17, 25, 11, 6, 7, 7] as const;
-    const row = (cells: readonly string[]) =>
-      cells.map((c, i) => (i < COLS.length ? c.padEnd(COLS[i]) : c)).join('').trimEnd();
-    const lines: string[] = [
-      row(['Address', 'Interface', 'Ver/Mode', 'Nbr', 'Query', 'DR', 'DR']),
-      row(['', '', '', 'Count', 'Intvl', 'Prior', '']),
-    ];
+    const columns: TableColumn<string[]>[] = [
+      { superHeader: 'Address', header: '', width: 17 },
+      { superHeader: 'Interface', header: '', width: 25 },
+      { superHeader: 'Ver/Mode', header: '', width: 11 },
+      { superHeader: 'Nbr', header: 'Count', width: 6 },
+      { superHeader: 'Query', header: 'Intvl', width: 7 },
+      { superHeader: 'DR', header: 'Prior', width: 7 },
+      { superHeader: 'DR', header: '' },
+    ].map((column, i) => ({ ...column, value: (cells: string[]) => cells[i] }));
+    const tableRows: string[][] = [];
     for (const ifaceName of ifaces) {
       const rt = a.getInterfaceRuntime(ifaceName);
       if (!rt || !rt.enabled) continue;
       const port = r.getPort(ifaceName);
       const ip = port?.getIPAddress()?.toString() ?? '0.0.0.0';
       const nbrCount = a.listNeighbors(ifaceName).length;
-      lines.push(row([ip, ifaceName, `v2/${rt.mode}`, String(nbrCount),
-        String(rt.helloIntervalSec), String(rt.drPriority), rt.designatedRouterIp ?? 'none']));
+      tableRows.push([ip, ifaceName, `v2/${rt.mode}`, String(nbrCount),
+        String(rt.helloIntervalSec), String(rt.drPriority), rt.designatedRouterIp ?? 'none']);
     }
+    const lines = renderTable(tableRows, columns, FIXED_TABLE);
     const anyDense = ifaces.some((n) => {
       const rt = a.getInterfaceRuntime(n);
       return rt !== undefined && rt.enabled && rt.mode !== 'sparse';

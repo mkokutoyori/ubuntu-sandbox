@@ -17,6 +17,7 @@
  */
 
 import type { TransportProtocol } from './PortNumber';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** One assignment in the registry — a single `/etc/services` line. */
 export interface ServicePortDefinition {
@@ -198,7 +199,7 @@ export class IanaServiceRegistry {
       const portProto = `${def.port}/${def.protocol}`;
       const aliases = def.aliases.length > 0 ? `\t${def.aliases.join(' ')}` : '';
       const comment = def.comment ? `\t# ${def.comment}` : '';
-      lines.push(`${def.name.padEnd(15)} ${portProto.padEnd(11)}${aliases}${comment}`);
+      lines.push(`${padToWidth(def.name, 15)} ${padToWidth(portProto, 11)}${aliases}${comment}`);
     }
     lines.push('');
     return lines.join('\n');

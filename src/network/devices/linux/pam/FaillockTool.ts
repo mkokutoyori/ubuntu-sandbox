@@ -7,6 +7,7 @@ import {
   parseTally,
   tallyPath,
 } from './modules/PamFaillockModule';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface FaillockToolHost {
   readFile(path: string): string | null;
@@ -71,11 +72,11 @@ function reportUser(host: FaillockToolHost, options: Options, user: string): str
     host.files.writeFile(path, '');
     return [];
   }
-  const lines = [`${user}:`, `${'When'.padEnd(19)} ${'Type'.padEnd(5)} ${'Source'.padEnd(48)} ${'Valid'.padEnd(5)}`];
+  const lines = [`${user}:`, `${padToWidth('When', 19)} ${padToWidth('Type', 5)} ${padToWidth('Source', 48)} ${padToWidth('Valid', 5)}`];
   for (const record of parseTally(host.readFile(path))) {
-    const source = record.source.slice(0, SOURCE_WIDTH).padEnd(SOURCE_WIDTH);
+    const source = padToWidth(record.source.slice(0, SOURCE_WIDTH), SOURCE_WIDTH);
     const valid = (record.status & TALLY_STATUS_VALID) !== 0 ? 'V' : 'I';
-    lines.push(`${formatWhen(host, record.time).padEnd(19)} ${recordKind(record.status).padEnd(5)} ${source} ${valid}`);
+    lines.push(`${padToWidth(formatWhen(host, record.time), 19)} ${padToWidth(recordKind(record.status), 5)} ${source} ${valid}`);
   }
   return lines;
 }

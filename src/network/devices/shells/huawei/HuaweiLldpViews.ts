@@ -1,6 +1,7 @@
 import type { LldpAgent, LldpNeighbor } from '@/network/lldp/LldpAgent';
 import { lldpCapabilityWords } from '@/network/lldp/types';
 import { MACAddress } from '@/network/core/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const NOT_ADVERTISED = '--';
 
@@ -17,8 +18,8 @@ export function renderVrpLldpNeighborBrief(
   agent: LldpAgent, displayName: (n: string) => string = (n) => n,
 ): string {
   const rows = agent.getNeighbors().map(n =>
-    `${displayName(n.localPort).padEnd(25)} ${(n.systemName ?? NOT_ADVERTISED).padEnd(15)} ` +
-    `${n.portId.padEnd(15)} ${agent.ttlRemainingSec(n)}`);
+    `${padToWidth(displayName(n.localPort), 25)} ${padToWidth(n.systemName ?? NOT_ADVERTISED, 15)} ` +
+    `${padToWidth(n.portId, 15)} ${agent.ttlRemainingSec(n)}`);
   return [
     'Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)',
     ...rows,

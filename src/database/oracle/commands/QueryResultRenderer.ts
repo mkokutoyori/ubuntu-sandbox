@@ -1,6 +1,7 @@
 import type { ResultSet } from '../../engine/executor/ResultSet';
 import type { TimeZone } from '@/network/core/time/TimeZone';
 import { coerceDateValue, formatDateWithPattern } from '../functions/dateSupport';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface ColumnFormat {
   name: string;
@@ -89,7 +90,7 @@ export class QueryResultRenderer {
   private headerLines(plan: RenderColumn[]): string[] {
     const headers = plan.map(col => {
       const name = col.header.length > col.width ? col.header.slice(0, col.width) : col.header;
-      return col.numeric ? name.padStart(col.width) : name.padEnd(col.width);
+      return col.numeric ? padToWidth(name, col.width, 'right') : padToWidth(name, col.width);
     });
     const underline = plan.map(col => this.settings.underline.repeat(col.width));
     return [headers.join(this.settings.colsep), underline.join(this.settings.colsep)];
@@ -101,7 +102,7 @@ export class QueryResultRenderer {
     for (let lineIdx = 0; lineIdx < height; lineIdx++) {
       const parts = plan.map((col, i) => {
         const text = rowCells[i][lineIdx] ?? '';
-        return col.numeric ? text.padStart(col.width) : text.padEnd(col.width);
+        return col.numeric ? padToWidth(text, col.width, 'right') : padToWidth(text, col.width);
       });
       lines.push(parts.join(this.settings.colsep));
     }

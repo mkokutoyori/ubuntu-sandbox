@@ -2,6 +2,7 @@ import { IPv6Address } from '../../core/types';
 import type { PolicyEntry } from '../../layers/internet/DestinationSelection';
 import { policyPrefixText, type PrefixPolicyStoreName } from './PrefixPolicyStore';
 import type { WinCommandContext } from './WinCommandExecutor';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type PrefixPolicyVerb = 'add' | 'set' | 'delete' | 'show';
 
@@ -140,7 +141,7 @@ function showTable(ctx: WinCommandContext, store: PrefixPolicyStoreName): string
     `Querying ${store} state...`, '', 'Precedence  Label  Prefix', '----------  -----  --------------------------------',
   ];
   for (const row of ctx.prefixPolicies.listed(store)) {
-    lines.push(`${String(row.precedence).padStart(10)}  ${String(row.label).padStart(5)}  ${policyPrefixText(row)}`);
+    lines.push(`${padToWidth(String(row.precedence), 10, 'right')}  ${padToWidth(String(row.label), 5, 'right')}  ${policyPrefixText(row)}`);
   }
   lines.push('');
   return lines.join('\n');

@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 /**
  * `info-center` — le journal de VRP.
  *
@@ -446,7 +447,7 @@ export class InfoCenterConfig {
         lines.push('  default    log     state:on    level:debugging');
       } else {
         for (const s of regles) {
-          lines.push(`  ${s.module.padEnd(10)} ${s.record.padEnd(7)}`
+          lines.push(`  ${padToWidth(s.module, 10)} ${padToWidth(s.record, 7)}`
             + ` state:${s.state ? 'on ' : 'off'}   level:${s.severity}`);
         }
       }

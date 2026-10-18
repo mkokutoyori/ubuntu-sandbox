@@ -15,6 +15,7 @@
  */
 
 import { simulationDate } from '@/network/core/SystemClock';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type JobState =
   | 'Running'
@@ -117,7 +118,7 @@ export class LinuxJob {
 
   /** Bash terminology: a job is "current" elsewhere; here we expose what we know. */
   describe(): string {
-    return `[${this.id}] ${this.state.padEnd(22)}${this.command}`;
+    return `[${this.id}] ${padToWidth(this.state, 22)}${this.command}`;
   }
 
   // ─── mutations ─────────────────────────────────────────────────────

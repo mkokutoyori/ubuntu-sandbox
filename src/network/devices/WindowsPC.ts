@@ -310,6 +310,7 @@ import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
 import { netstatStatistics } from './windows/WinNetstatStatistics';
 import { showRoutePrint } from './windows/WinRoute';
 import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
@@ -2247,7 +2248,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       '-------------------------------------------------------------------------\n';
     if (sessions.length === 0) return header + 'There are no entries in the list.';
     const rows = sessions.map(s =>
-      `\\\\${s.clientComputerName}`.padEnd(22) + s.user.padEnd(21) + ''.padEnd(18) + String(s.numOpens).padStart(5) + '  00:00:00',
+      padToWidth(`\\\\${s.clientComputerName}`, 22) + padToWidth(s.user, 21) + padToWidth('', 18) + padToWidth(String(s.numOpens), 5, 'right') + '  00:00:00',
     );
     return header + rows.join('\n') + '\nThe command completed successfully.';
   }
@@ -2381,10 +2382,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       let fileCount = 0, dirCount = 0, totalBytes = 0;
       for (const e of result.entries ?? []) {
         if (e.isDirectory) { lines.push(`    <DIR>          ${e.name}`); dirCount++; }
-        else { lines.push(`${String(e.size).padStart(14)} ${e.name}`); fileCount++; totalBytes += e.size; }
+        else { lines.push(`${padToWidth(String(e.size), 14, 'right')} ${e.name}`); fileCount++; totalBytes += e.size; }
       }
       lines.push(fileSummaryLine(fileCount, totalBytes));
-      lines.push(`${String(dirCount).padStart(16)} Dir(s)`);
+      lines.push(`${padToWidth(String(dirCount), 16, 'right')} Dir(s)`);
       return lines.join('\n');
     }
 

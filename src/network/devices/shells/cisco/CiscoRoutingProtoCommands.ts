@@ -30,6 +30,7 @@ import {
   showIpEigrpTopology, showIpEigrpInterfaces, eigrpProtocolBlock,
 } from './CiscoEigrpShow';
 import { BGP_WEIGHT_MAX, BGP_HOLD_TIME_MAX as BGP_TIMER_MAX } from '@/network/bgp/attributes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
@@ -830,8 +831,8 @@ export function registerRoutingProtoShow(
       const v = byId.get(ip);
       const upDown = v && v.isUp ? `${v.uptimeSec}s` : 'never';
       const state = cfg.shutdown === true ? 'Idle (Admin)' : v ? v.state : 'Idle';
-      rows.push(`${ip.padEnd(16)}4 ${String(cfg.remoteAs ?? 0).padEnd(5)}` +
-        `      0        0       0    0    0 ${upDown.padEnd(8)} ${state}`);
+      rows.push(`${padToWidth(ip, 16)}4 ${padToWidth(String(cfg.remoteAs ?? 0), 5)}` +
+        `      0        0       0    0    0 ${padToWidth(upDown, 8)} ${state}`);
     }
     return rows.join('\n');
   });
@@ -841,8 +842,8 @@ export function registerRoutingProtoShow(
       const prefix = `${r.network}/${r.mask.toCIDR()}`;
       const nextHop = String(r.nextHop ?? '0.0.0.0');
       const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
-      return `*>   ${prefix.padEnd(17)}${nextHop.padEnd(20)}`
-        + `0         ${String(r.weight).padStart(5)} ${path}`;
+      return `*>   ${padToWidth(prefix, 17)}${padToWidth(nextHop, 20)}`
+        + `0         ${padToWidth(String(r.weight), 5, 'right')} ${path}`;
     });
 
   trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbors', (a) => {
@@ -944,8 +945,8 @@ export function registerRoutingProtoShow(
         '                                            (sec)         (ms)       Cnt Num',
       ];
       e.getNeighbors().forEach((n, i) => {
-        out.push(`${String(i).padEnd(4)}${n.address.padEnd(24)}${n.iface.padEnd(16)}`
-          + `${String(15).padEnd(5)}${String(n.uptimeSec).padEnd(9)}1      200  0  1`);
+        out.push(`${padToWidth(String(i), 4)}${padToWidth(n.address, 24)}${padToWidth(n.iface, 16)}`
+          + `${padToWidth(String(15), 5)}${padToWidth(String(n.uptimeSec), 9)}1      200  0  1`);
       });
       return out.join('\n');
     });
@@ -988,8 +989,8 @@ export function registerRoutingProtoShow(
       '                                       Count    Count    Uptime',
     ];
     for (const n of voisins) {
-      out.push(`  A     ${n.address.padEnd(19)}${n.iface.padEnd(12)}`
-        + `${String(e.getTopologyTable().size).padEnd(8)}0        00:00:00`);
+      out.push(`  A     ${padToWidth(n.address, 19)}${padToWidth(n.iface, 12)}`
+        + `${padToWidth(String(e.getTopologyTable().size), 8)}0        00:00:00`);
     }
     return out.join('\n');
   });

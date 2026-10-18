@@ -42,6 +42,7 @@ import {
   type OracleNetRequest, type OracleNetResponse,
 } from '@/network/oracle-net/wire/OracleNetCall';
 import { callOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export type { ColumnFormat } from './QueryResultRenderer';
 
 export interface SQLPlusSettings {
@@ -1008,7 +1009,7 @@ export class SQLPlusSession {
     lines.push('LINE/COL ERROR');
     lines.push('-------- ' + '-'.repeat(65));
     for (const err of entry.errors) {
-      lines.push(`${`${err.line}/${err.position}`.padEnd(8)} ${err.text}`);
+      lines.push(`${padToWidth(`${err.line}/${err.position}`, 8)} ${err.text}`);
     }
     return lines;
   }
@@ -1153,11 +1154,11 @@ export class SQLPlusSession {
         }
         const params = this.db.instance.getAllParameters();
         output.push('');
-        output.push('NAME'.padEnd(44) + 'TYPE'.padEnd(12) + 'VALUE');
+        output.push(padToWidth('NAME', 44) + padToWidth('TYPE', 12) + 'VALUE');
         output.push('-'.repeat(44) + ' ' + '-'.repeat(11) + ' ' + '-'.repeat(30));
         for (const [name, value] of params) {
           const type = this.getParamTypeStr(value);
-          output.push(name.padEnd(44) + type.padEnd(12) + value);
+          output.push(padToWidth(name, 44) + padToWidth(type, 12) + value);
         }
         break;
       }
@@ -1195,12 +1196,12 @@ export class SQLPlusSession {
           if (this.connected) {
             const params = this.db.instance.getAllParameters();
             output.push('');
-            output.push('NAME'.padEnd(44) + 'TYPE'.padEnd(12) + 'VALUE');
+            output.push(padToWidth('NAME', 44) + padToWidth('TYPE', 12) + 'VALUE');
             output.push('-'.repeat(44) + ' ' + '-'.repeat(11) + ' ' + '-'.repeat(30));
             for (const [name, value] of params) {
               if (!search || name.includes(search)) {
                 const type = this.getParamTypeStr(value);
-                output.push(name.padEnd(44) + type.padEnd(12) + value);
+                output.push(padToWidth(name, 44) + padToWidth(type, 12) + value);
               }
             }
           } else {
@@ -1212,12 +1213,12 @@ export class SQLPlusSession {
           if (this.connected) {
             const params = this.db.instance.getSpfileParameters();
             output.push('');
-            output.push('SID'.padEnd(10) + 'NAME'.padEnd(44) + 'TYPE'.padEnd(12) + 'VALUE');
+            output.push(padToWidth('SID', 10) + padToWidth('NAME', 44) + padToWidth('TYPE', 12) + 'VALUE');
             output.push('-'.repeat(9) + ' ' + '-'.repeat(44) + ' ' + '-'.repeat(11) + ' ' + '-'.repeat(30));
             for (const [name, value] of params) {
               if (!search || name.includes(search)) {
                 const type = this.getParamTypeStr(value);
-                output.push('*'.padEnd(10) + name.padEnd(44) + type.padEnd(12) + value);
+                output.push(padToWidth('*', 10) + padToWidth(name, 44) + padToWidth(type, 12) + value);
               }
             }
           } else {
@@ -1333,7 +1334,7 @@ export class SQLPlusSession {
         output.push(' Argument Name                  Type                    In/Out Default?');
         output.push(' ------------------------------ ----------------------- ------ --------');
         for (const p of m.parameters) {
-          output.push(` ${p.name.padEnd(31)}${p.dataType.padEnd(24)}${p.mode.padEnd(7)}${p.hasDefault ? 'DEFAULT' : ''}`);
+          output.push(` ${padToWidth(p.name, 31)}${padToWidth(p.dataType, 24)}${padToWidth(p.mode, 7)}${p.hasDefault ? 'DEFAULT' : ''}`);
         }
       }
     }
@@ -1357,7 +1358,7 @@ export class SQLPlusSession {
       output.push(` ------------------------------ ----------------------- ------ --------`);
       for (const p of unit.parameters) {
         const dflt = p.defaultValue ? 'DEFAULT' : '';
-        output.push(` ${p.name.padEnd(31)}${p.dataType.padEnd(24)}${p.mode.padEnd(7)}${dflt}`);
+        output.push(` ${padToWidth(p.name, 31)}${padToWidth(p.dataType, 24)}${padToWidth(p.mode, 7)}${dflt}`);
       }
     }
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
@@ -1375,7 +1376,7 @@ export class SQLPlusSession {
         if (col.scale !== undefined && col.scale > 0) typeStr += `(${col.precision},${col.scale})`;
         else typeStr += `(${col.precision})`;
       }
-      output.push(` ${col.name.padEnd(42)}${nullable.padEnd(9)}${typeStr}`);
+      output.push(` ${padToWidth(col.name, 42)}${padToWidth(nullable, 9)}${typeStr}`);
     }
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
@@ -1548,7 +1549,7 @@ export class SQLPlusSession {
     for (const s of rows) {
       const fmt = (d: Date | null) => d ? d.toISOString().slice(0, 19).replace('T', ' ') : '                   ';
       out.push(
-        `${s.username.padEnd(10)} ${String(s.logonCount).padStart(7)} ${String(s.failedLogonCount).padStart(7)} ${String(s.passwordChangeCount).padStart(8)} ${String(s.lockEvents).padStart(6)} ${fmt(s.lastLogonAt).padEnd(24)} ${fmt(s.lastLogoffAt).padEnd(24)} ${String(s.totalSessionSeconds).padStart(10)}`,
+        `${padToWidth(s.username, 10)} ${padToWidth(String(s.logonCount), 7, 'right')} ${padToWidth(String(s.failedLogonCount), 7, 'right')} ${padToWidth(String(s.passwordChangeCount), 8, 'right')} ${padToWidth(String(s.lockEvents), 6, 'right')} ${padToWidth(fmt(s.lastLogonAt), 24)} ${padToWidth(fmt(s.lastLogoffAt), 24)} ${padToWidth(String(s.totalSessionSeconds), 10, 'right')}`,
       );
     }
     return { output: out, exit: false, needsMoreInput: false, prompt: this.getPrompt() };

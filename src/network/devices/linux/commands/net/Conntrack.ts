@@ -38,6 +38,7 @@
 
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const CONNTRACK_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-L', aliases: ['--dump'], dest: 'dump', description: 'List connection tracking table' },
@@ -127,7 +128,7 @@ export function runConntrack(
     const orig = `src=${f.srcIP} dst=${f.dstIP} sport=${f.srcPort} dport=${f.dstPort}`;
     const reply = `src=${f.dstIP} dst=${f.srcIP} sport=${f.dstPort} dport=${f.srcPort}`;
     const etat = f.replied ? 'ESTABLISHED' : '[UNREPLIED]';
-    return `${protoNom(f.protocol).padEnd(8)} ${String(protoNum(f.protocol)).padEnd(2)} ${String(restant).padEnd(6)} `
+    return `${padToWidth(protoNom(f.protocol), 8)} ${padToWidth(String(protoNum(f.protocol)), 2)} ${padToWidth(String(restant), 6)} `
       + `${etat} ${orig} ${reply} mark=0 use=1`;
   });
 

@@ -15,6 +15,7 @@ import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { hasWildcard, wildcardMatches } from '@/powershell/runtime/PSWildcard';
 import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const GROUP_KEY_DELIMITER = '\u0000';
 
@@ -913,7 +914,7 @@ export class FormatWideCmdlet implements ICmdlet {
     const width = Math.max(1, ...cells.map(c => c.length)) + 2;
     const lines: string[] = [];
     for (let i = 0; i < cells.length; i += cols) {
-      lines.push(cells.slice(i, i + cols).map(c => c.padEnd(width)).join('').replace(/\s+$/, ''));
+      lines.push(cells.slice(i, i + cols).map(c => padToWidth(c, width)).join('').replace(/\s+$/, ''));
     }
     return lines.join('\n');
   }

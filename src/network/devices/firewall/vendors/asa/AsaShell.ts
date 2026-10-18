@@ -36,6 +36,7 @@ import {
   ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL,
 } from '@/cli/vendors/asa/asaModes';
 import type { AsaShowHost, AsaShowView } from '@/cli/vendors/asa/asaShowFamily';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type AsaMode = 'exec' | 'privileged' | 'config' | 'config-if' | 'config-object' | 'config-group';
 
@@ -778,7 +779,7 @@ export class AsaShell implements AsaShowHost {
       const zone = this.fw.getZoneTable().zoneOf(iface);
       if (!zone) continue;
       const level = this.fw.getZoneTable().getZone(zone)?.securityLevel ?? 0;
-      lines.push(`${iface.padEnd(25)}${zone.padEnd(25)}${level}`);
+      lines.push(`${padToWidth(iface, 25)}${padToWidth(zone, 25)}${level}`);
     }
     return lines.join('\n');
   }

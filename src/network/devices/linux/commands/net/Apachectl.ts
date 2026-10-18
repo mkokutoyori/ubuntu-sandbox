@@ -32,6 +32,7 @@ import {
   APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH, APACHE_ERROR_LOG,
   APACHE_MODS_ENABLED, APACHE_STATIC_MODULES, APACHE_CONF_PATH, APACHE_CONF_ENABLED,
 } from '../../http/apache/ApacheFiles';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const UNIT = 'apache2';
 
@@ -88,7 +89,7 @@ function dumpVhosts(ctx: LinuxCommandContext): Outcome {
   for (const port of ports) {
     const onThisPort = config.vhosts.filter((v) => v.port === port);
     const fallback = selectVirtualHost(config, port, '');
-    const header = `*:${port}`.padEnd(23);
+    const header = padToWidth(`*:${port}`, 23);
     if (onThisPort.length > 1) {
       lines.push(`${header}is a NameVirtualHost`);
       lines.push(`         default server ${fallback?.serverName ?? 'localhost'} `

@@ -23,6 +23,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const NO_SENSORS = [
   'No sensors found!',
@@ -54,7 +55,7 @@ function readHwmonChips(ctx: LinuxCommandContext): HwmonChip[] {
       const milli = parseInt((ctx.executor.vfs.readFile(`${base}/${f.name}`) ?? '').trim(), 10);
       if (Number.isNaN(milli)) continue;
       const label = (ctx.executor.vfs.readFile(`${base}/${f.name.replace('_input', '_label')}`) ?? f.name.replace('_input', '')).trim();
-      readings.push(`${label}:${(milli / 1000).toFixed(1).padStart(14)}°C`);
+      readings.push(`${label}:${padToWidth((milli / 1000).toFixed(1), 14, 'right')}°C`);
     }
     chips.push({ name, adapter: 'Virtual device', readings });
   }

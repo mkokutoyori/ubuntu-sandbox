@@ -23,6 +23,7 @@ import {
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
 } from '../../core/types';
 import { rejectTypeOf } from '../../core/IcmpErrors';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -1257,8 +1258,8 @@ export class LinuxIptablesManager {
     for (let i = 0; i < chain.rules.length; i++) {
       const r = chain.rules[i];
       const num = lineNumbers ? `${i + 1}     `.slice(0, 6) : '';
-      const target = r.target.padEnd(10);
-      const prot = ((r.negProtocol ? '!' : '') + (r.protocol || 'all')).padEnd(4);
+      const target = padToWidth(r.target, 10);
+      const prot = padToWidth((r.negProtocol ? '!' : '') + (r.protocol || 'all'), 4);
       const opt = r.fragment === 'only' ? '-f  ' : r.fragment === 'not' ? '!f  ' : '--  ';
       const src = this.fmtAddr(r.source, r.negSource, numeric);
       const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
@@ -1266,13 +1267,13 @@ export class LinuxIptablesManager {
 
       if (verbose) {
         const width = exact ? 8 : 5;
-        const pkts = count(r.pkts).padStart(width);
-        const bytes = count(r.bytes).padStart(width);
-        const inIf = ((r.negInInterface ? '!' : '') + (r.inInterface || '*')).padEnd(6);
-        const outIf = ((r.negOutInterface ? '!' : '') + (r.outInterface || '*')).padEnd(6);
-        lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${src.padEnd(20)} ${dst}${extra}`);
+        const pkts = padToWidth(count(r.pkts), width, 'right');
+        const bytes = padToWidth(count(r.bytes), width, 'right');
+        const inIf = padToWidth((r.negInInterface ? '!' : '') + (r.inInterface || '*'), 6);
+        const outIf = padToWidth((r.negOutInterface ? '!' : '') + (r.outInterface || '*'), 6);
+        lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${padToWidth(src, 20)} ${dst}${extra}`);
       } else {
-        lines.push(`${num}${target} ${prot} ${opt}${src.padEnd(20)} ${dst}${extra}`);
+        lines.push(`${num}${target} ${prot} ${opt}${padToWidth(src, 20)} ${dst}${extra}`);
       }
     }
     return lines.join('\n');

@@ -168,7 +168,7 @@ import type { FhrpShowGrammar, FhrpShowSelection } from './cisco/fhrpShowFilter'
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
-import { renderTable, renderTableText, FIXED_TABLE } from './cli/TextTable';
+import { renderTable, renderTableText, FIXED_TABLE, padToWidth } from './cli/TextTable';
 import {
   INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, INTERFACE_STATUS_NAME_WIDTH,
   type InterfaceStatusRow,
@@ -1471,10 +1471,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const sec = port.getPortSecurity();
       if (!sec.isEnabled()) continue;
       lines.push(
-        `${this.abbreviateInterface(name).padEnd(12)} ` +
-        `${String(sec.getMaxMACAddresses()).padEnd(14)} ` +
-        `${String(sec.getEntries().length).padEnd(12)} ` +
-        `${String(sec.getViolationCount()).padEnd(18)} ` +
+        `${padToWidth(this.abbreviateInterface(name), 12)} ` +
+        `${padToWidth(String(sec.getMaxMACAddresses()), 14)} ` +
+        `${padToWidth(String(sec.getEntries().length), 12)} ` +
+        `${padToWidth(String(sec.getViolationCount()), 18)} ` +
         sec.getViolationMode(),
       );
     }
@@ -1682,7 +1682,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const rows = ['Vlan      Neighbor            Port', '----      --------            ----'];
       for (const v of agent.listVlans()) {
         for (const n of v.neighbors.values()) {
-          rows.push(`${String(v.vlan).padEnd(10)}${n.neighborIp.padEnd(20)}${n.port}`);
+          rows.push(`${padToWidth(String(v.vlan), 10)}${padToWidth(n.neighborIp, 20)}${n.port}`);
         }
       }
       return rows.join('\n');
@@ -1690,7 +1690,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (args.includes('group')) {
       const rows = ['Vlan      Group               Port List', '----      -----               ---------'];
       for (const { vlan, group } of agent.listGroups()) {
-        rows.push(`${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}${[...group.members.keys()].join(', ')}`);
+        rows.push(`${padToWidth(String(vlan), 10)}${padToWidth(group.groupAddress, 20)}${[...group.members.keys()].join(', ')}`);
       }
       return rows.join('\n');
     }
@@ -1769,7 +1769,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const { vlan, group } of agent.listGroups(filtre)) {
       const ports = Array.from(group.members.keys()).join(', ');
       rows.push(
-        `${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}igmp    v2       ${ports}`);
+        `${padToWidth(String(vlan), 10)}${padToWidth(group.groupAddress, 20)}igmp    v2       ${ports}`);
     }
     return rows.join('\n');
   }
@@ -1781,7 +1781,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const ports = Array.from(v.routerPorts)
         .map(p => `${p}(${v.staticRouterPorts.has(p) ? 'static' : 'dynamic'})`)
         .join(', ');
-      rows.push(`${String(v.vlan).padEnd(8)}${ports}`);
+      rows.push(`${padToWidth(String(v.vlan), 8)}${ports}`);
     }
     return rows.join('\n');
   }
@@ -2660,8 +2660,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const s = dtp.getPortState(p);
         const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
         lines.push(
-          `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
-          `${s.operationalMode.padEnd(15)}${negotiation}`,
+          `${padToWidth(this.abbreviateInterface(p), 16)}${padToWidth(this.dtpAdminLabel(s.adminMode), 17)}` +
+          `${padToWidth(s.operationalMode, 15)}${negotiation}`,
         );
       }
       return lines.join('\n');
@@ -2767,7 +2767,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         '----------------   ----------------   ----------------',
       ];
       for (const n of switches) {
-        lines.push(`${n.remoteHost.padEnd(19)}${n.remotePlatform.padEnd(19)}${this.abbreviateInterface(n.localPort)}`);
+        lines.push(`${padToWidth(n.remoteHost, 19)}${padToWidth(n.remotePlatform, 19)}${this.abbreviateInterface(n.localPort)}`);
       }
       return lines.join('\n');
     });
@@ -2810,7 +2810,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         ``,
         `Name                   Blocking Listening Learning Forwarding STP Active`,
         `---------------------- -------- --------- -------- ---------- ----------`,
-        `VLAN0001               ${String(blocking).padStart(8)} ${String(listening).padStart(9)} ${String(learning).padStart(8)} ${String(forwarding).padStart(10)} ${String(total).padStart(10)}`,
+        `VLAN0001               ${padToWidth(String(blocking), 8, 'right')} ${padToWidth(String(listening), 9, 'right')} ${padToWidth(String(learning), 8, 'right')} ${padToWidth(String(forwarding), 10, 'right')} ${padToWidth(String(total), 10, 'right')}`,
       ].join('\n');
     });
     t.register('show spanning-tree mst configuration', 'MST region config', () =>
@@ -2850,7 +2850,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return [
         'Name                 Interface                Inconsistency',
         '-------------------- ------------------------ ------------------',
-        ...bad.map((p) => `VLAN0001             ${p.padEnd(24)} Root Inconsistent`),
+        ...bad.map((p) => `VLAN0001             ${padToWidth(p, 24)} Root Inconsistent`),
         '',
         `Number of inconsistent ports (segments) in the system : ${bad.length}`,
       ].join('\n');
@@ -2933,7 +2933,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '--------  -------------------------------------------------',
       `0         ${compactVlanList(vlansMappedToInstanceZero(instances))}`,
     );
-    for (const [id, v] of [...instances].sort((a, b) => a[0] - b[0])) ml.push(`${String(id).padEnd(10)}${compactVlanList(v)}`);
+    for (const [id, v] of [...instances].sort((a, b) => a[0] - b[0])) ml.push(`${padToWidth(String(id), 10)}${compactVlanList(v)}`);
     return ml.join('\n');
   }
 
@@ -2973,7 +2973,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const sts = agent.getForwardStateForInstance(id, name) === 'forwarding' ? 'FWD' : 'BLK';
         const cost = agent.getPortCostForInstance(id, name);
         const linkType = agent.getPortLinkType(name) === 'shared' ? 'Shr' : 'P2p';
-        block.push(`${this.abbreviateInterface(name).padEnd(17)}${roleLabel.padEnd(6)}${sts.padEnd(5)}${String(cost).padEnd(10)}${`128.${idx}`.padEnd(10)}${linkType}`);
+        block.push(`${padToWidth(this.abbreviateInterface(name), 17)}${padToWidth(roleLabel, 6)}${padToWidth(sts, 5)}${padToWidth(String(cost), 10)}${padToWidth(`128.${idx}`, 10)}${linkType}`);
       }
       blocks.push(block.join('\n'));
     }
@@ -3095,11 +3095,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
             const flag = m.bundled ? 'P'
               : m.state === 'standby' ? 'H'
               : m.state === 'standalone' ? 'I' : 's';
-            return `${this.abbreviateInterface(m.portName)}(${flag})`.padEnd(15);
+            return padToWidth(`${this.abbreviateInterface(m.portName)}(${flag})`, 15);
           });
           const inUse = g.members.some(m => m.bundled) ? 'U' : 'D';
           const bundle = `${this.abbreviateInterface(g.name)}(S${inUse})`;
-          const head = `${String(g.id).padEnd(7)}${bundle.padEnd(16)}${protocol.padEnd(10)}`;
+          const head = `${padToWidth(String(g.id), 7)}${padToWidth(bundle, 16)}${padToWidth(protocol, 10)}`;
           for (let i = 0; i < Math.max(ports.length, 1); i += portsPerLine) {
             const lead = i === 0 ? head : ' '.repeat(head.length);
             lines.push(`${lead}${ports.slice(i, i + portsPerLine).join('')}`.trimEnd());
@@ -4445,7 +4445,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ];
     for (const v of vlans) {
       const said = String(100000 + v);
-      detail.push(`${String(v).padEnd(5)}enet  ${said.padEnd(11)}1500  -      -      -        -    -        0      0`);
+      detail.push(`${padToWidth(String(v), 5)}enet  ${padToWidth(said, 11)}1500  -      -      -        -    -        0      0`);
     }
     detail.push(
       '',
@@ -4470,7 +4470,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ];
     for (const v of vlanIds) {
       const n = entries.filter(e => e.vlan === v).length;
-      lines.push(`${String(v).padEnd(6)}        ${n}`);
+      lines.push(`${padToWidth(String(v), 6)}        ${n}`);
     }
     lines.push('', `Total Mac Addresses for this criterion: ${entries.length}`);
     return lines.join('\n');
@@ -4486,7 +4486,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '----    ----------',
     ];
     for (const v of vlanIds) {
-      lines.push(`${String(v).padEnd(8)}${aging}`);
+      lines.push(`${padToWidth(String(v), 8)}${aging}`);
     }
     return lines.join('\n');
   }
@@ -4515,7 +4515,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (filter?.id !== undefined && id !== filter.id) continue;
       if (filter?.name !== undefined && vlan.name.toLowerCase() !== filter.name.toLowerCase()) continue;
       shown++;
-      const name = vlan.name.padEnd(33);
+      const name = padToWidth(vlan.name, 33);
       const status = 'active';
 
       const portsInVlan: string[] = [];
@@ -4526,7 +4526,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
 
       const portsStr = portsInVlan.join(', ');
-      lines.push(`${String(id).padEnd(5)}${name}${status.padEnd(10)}${portsStr}`);
+      lines.push(`${padToWidth(String(id), 5)}${name}${padToWidth(status, 10)}${portsStr}`);
     }
 
     if (filter && shown === 0) {
@@ -4561,20 +4561,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (trunks.length === 0) return '';
     const lines = ['Port        Mode             Encapsulation  Status        Native vlan'];
     for (const t of trunks) {
-      lines.push(`${t.port.padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${t.native}`);
+      lines.push(`${padToWidth(t.port, 12)}${padToWidth('on', 17)}${padToWidth('802.1q', 15)}${padToWidth('trunking', 14)}${t.native}`);
     }
     const allowedStr = (a: VlanSet) =>
       a.size >= 4094 ? '1-4094' : this.compactVlanList([...a].sort((x, y) => x - y));
     const activeStr = (a: VlanSet) =>
       this.compactVlanList(existing.filter((v) => a.has(v))) || 'none';
     lines.push('', 'Port        Vlans allowed on trunk');
-    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);
+    for (const t of trunks) lines.push(`${padToWidth(t.port, 12)}${allowedStr(t.allowed)}`);
     lines.push('', 'Port        Vlans allowed and active in management domain');
-    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    for (const t of trunks) lines.push(`${padToWidth(t.port, 12)}${activeStr(t.allowed)}`);
     const notPrunedStr = (t: { name: string; allowed: VlanSet }) =>
       this.compactVlanList(existing.filter((v) => t.allowed.has(v) && !vtp?.isVlanPruned(t.name, v))) || 'none';
     lines.push('', 'Port        Vlans in spanning tree forwarding state and not pruned');
-    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${notPrunedStr(t)}`);
+    for (const t of trunks) lines.push(`${padToWidth(t.port, 12)}${notPrunedStr(t)}`);
     return lines.join('\n');
   }
 
@@ -4801,7 +4801,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       else if (state === 'forwarding') fwd++;
     }
     const active = blk + lis + lrn + fwd;
-    return `${String(blk).padEnd(9)}${String(lis).padEnd(10)}${String(lrn).padEnd(9)}${String(fwd).padEnd(11)}${active}`;
+    return `${padToWidth(String(blk), 9)}${padToWidth(String(lis), 10)}${padToWidth(String(lrn), 9)}${padToWidth(String(fwd), 11)}${active}`;
   }
 
   private showStpRoot(sw: CiscoSwitch, vlanId = 1): string {
@@ -4822,7 +4822,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '                                        Root    Hello Max Fwd',
       'Vlan             Root ID              Cost    Port    Time  Age Dly',
       '---------------- -------------------- ------- ------- ----- --- ---',
-      `${vlan.padEnd(17)}${prio} ${mac}  ${String(cost).padEnd(8)}${(rootPort ? this.abbreviateInterface(rootPort) : '').padEnd(8)}${String(hello).padEnd(6)}${String(maxAge).padEnd(4)}${fwd}`,
+      `${padToWidth(vlan, 17)}${prio} ${mac}  ${padToWidth(String(cost), 8)}${padToWidth(rootPort ? this.abbreviateInterface(rootPort) : '', 8)}${padToWidth(String(hello), 6)}${padToWidth(String(maxAge), 4)}${fwd}`,
     ].join('\n');
   }
 
@@ -4854,7 +4854,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [
       'Name                 Blocked Interfaces List',
       '-------------------- ------------------------------------',
-      `${vlan.padEnd(21)}${blocked.join(', ')}`,
+      `${padToWidth(vlan, 21)}${blocked.join(', ')}`,
       '',
       `Number of blocked ports (segments) in the system : ${blocked.length}`,
     ].join('\n');
@@ -4935,7 +4935,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       `  ${'-'.repeat(70)}`,
     ];
     for (const b of rows) {
-      lines.push(`  ${b.ipAddress.padEnd(17)}${dottedMac(b.macAddress).padEnd(18)}${String(b.vlan).padEnd(6)}${b.port.padEnd(25)}ACTIVE`);
+      lines.push(`  ${padToWidth(b.ipAddress, 17)}${padToWidth(dottedMac(b.macAddress), 18)}${padToWidth(String(b.vlan), 6)}${padToWidth(b.port, 25)}ACTIVE`);
     }
     lines.push(`  ${'-'.repeat(70)}`);
     lines.push(`  Total number interfaces enabled: ${new Set(rows.map((b) => b.port)).size}`);
@@ -4973,7 +4973,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const filt = cfg.vlanAclFilters.get(v);
       const acl = filt ? filt.aclName : '';
       const stat = filt && filt.staticMode ? 'Yes' : 'No';
-      lines.push(` ${String(v).padEnd(8)} Enabled          Active      ${acl.padEnd(18)} ${stat}`);
+      lines.push(` ${padToWidth(String(v), 8)} Enabled          Active      ${padToWidth(acl, 18)} ${stat}`);
     }
     return lines.join('\n');
   }
@@ -4993,8 +4993,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const filt = cfg.vlanAclFilters.get(v);
       const acl = filt ? filt.aclName : '';
       const stat = filt && filt.staticMode ? 'Yes' : 'No';
-      lines.push(` ${String(v).padEnd(8)} ${(enabled ? 'Enabled' : 'Disabled').padEnd(16)} ` +
-                 `${(enabled ? 'Active' : 'Inactive').padEnd(11)} ${acl.padEnd(18)} ${stat}`);
+      lines.push(` ${padToWidth(String(v), 8)} ${padToWidth(enabled ? 'Enabled' : 'Disabled', 16)} ` +
+                 `${padToWidth(enabled ? 'Active' : 'Inactive', 11)} ${padToWidth(acl, 18)} ${stat}`);
     }
     return lines.join('\n');
   }
@@ -5008,8 +5008,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const perVlan = sw._getArpInspectionVlanStats();
     for (const vlan of [...perVlan.keys()].sort((a, b) => a - b)) {
       const s = perVlan.get(vlan)!;
-      lines.push(` ${String(vlan).padEnd(5)} ${String(s.forwarded).padEnd(13)} ${String(s.dropped).padEnd(13)} ` +
-                 `${String(s.droppedBindingMismatch).padEnd(13)} ${s.droppedAclDeny}`);
+      lines.push(` ${padToWidth(String(vlan), 5)} ${padToWidth(String(s.forwarded), 13)} ${padToWidth(String(s.dropped), 13)} ` +
+                 `${padToWidth(String(s.droppedBindingMismatch), 13)} ${s.droppedAclDeny}`);
     }
     const ports = sw._getPortsInternal();
     lines.push('');
@@ -5018,8 +5018,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const [port] of ports) {
       const s = stats.get(port);
       if (!s || s.received === 0) continue;
-      lines.push(` ${this.abbreviateInterface(port).padEnd(18)} ` +
-                 `${String(s.received).padEnd(17)} ${String(s.forwarded).padEnd(10)} ${s.dropped}`);
+      lines.push(` ${padToWidth(this.abbreviateInterface(port), 18)} ` +
+                 `${padToWidth(String(s.received), 17)} ${padToWidth(String(s.forwarded), 10)} ${s.dropped}`);
     }
     return lines.join('\n');
   }
@@ -5047,9 +5047,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const reason = CiscoSwitchShell.DAI_LOG_REASON_LABEL[e.reason] ?? e.reason;
       const time = new Date(e.lastSeenMs).toISOString().slice(11, 19);
       lines.push(
-        `${this.abbreviateInterface(e.port).padEnd(17)}${String(e.vlan).padEnd(8)}` +
-        `${e.senderMac.padEnd(20)}${e.senderIp.padEnd(17)}${String(e.numPkts).padEnd(11)}` +
-        `${reason.padEnd(15)}${time} UTC`,
+        `${padToWidth(this.abbreviateInterface(e.port), 17)}${padToWidth(String(e.vlan), 8)}` +
+        `${padToWidth(e.senderMac, 20)}${padToWidth(e.senderIp, 17)}${padToWidth(String(e.numPkts), 11)}` +
+        `${padToWidth(reason, 15)}${time} UTC`,
       );
     }
     return lines.join('\n');
@@ -5068,8 +5068,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const rateStr = rate && rate > 0 ? String(rate) : 'None';
       const burst = String(cfg.rateBurstSec);
       const err = errd.has(port) ? 'Yes' : 'No';
-      lines.push(` ${this.abbreviateInterface(port).padEnd(18)} ${trust.padEnd(15)} ` +
-                 `${rateStr.padEnd(13)} ${burst.padEnd(18)} ${err}`);
+      lines.push(` ${padToWidth(this.abbreviateInterface(port), 18)} ${padToWidth(trust, 15)} ` +
+                 `${padToWidth(rateStr, 13)} ${padToWidth(burst, 18)} ${err}`);
     }
     return lines.join('\n');
   }
@@ -5103,7 +5103,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '-----------------            --------------',
     ];
     for (const [cause, on] of causes) {
-      lines.push(`${cause.padEnd(29)}${on ? 'Enabled' : 'Disabled'}`);
+      lines.push(`${padToWidth(cause, 29)}${on ? 'Enabled' : 'Disabled'}`);
     }
     lines.push('');
     lines.push(`Timer interval: ${interval} seconds`);
@@ -5469,8 +5469,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
         const unite = setting.unit === 'percent'
           ? stormControlPercent : (v: number) => String(v);
-        lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
-          + `${unite(setting.upper).padEnd(13)}${unite(setting.lower).padEnd(13)}0.00%`);
+        lignes.push(`${padToWidth(this.abbreviateInterface(nom), 11)}${padToWidth('Forwarding', 15)}`
+          + `${padToWidth(unite(setting.upper), 13)}${padToWidth(unite(setting.lower), 13)}0.00%`);
       }
     }
     if (!trouve) return lignes[0];
@@ -5649,9 +5649,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const rows = groups.map((g) => {
       const iface = iosSviName(g.iface);
       const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
-      return `${iface.padEnd(19)}${String(g.vrid).padEnd(4)}${String(vrrpEffectivePriority(g)).padEnd(4)}` +
-        `${String(3 * g.advertiseSec * 1000).padEnd(8)}${'N'.padEnd(4)}${(g.preempt ? 'Y' : 'N').padEnd(4)}` +
-        `${state.padEnd(9)}${(g.masterIp ?? 'unknown').padEnd(16)}${g.vip ?? 'unassigned'}`;
+      return `${padToWidth(iface, 19)}${padToWidth(String(g.vrid), 4)}${padToWidth(String(vrrpEffectivePriority(g)), 4)}` +
+        `${padToWidth(String(3 * g.advertiseSec * 1000), 8)}${padToWidth('N', 4)}${padToWidth(g.preempt ? 'Y' : 'N', 4)}` +
+        `${padToWidth(state, 9)}${padToWidth(g.masterIp ?? 'unknown', 16)}${g.vip ?? 'unassigned'}`;
     });
     return [header, ...rows].join('\n');
   }
@@ -5668,9 +5668,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         : g.state === 'listen' ? 'Listen'
         : g.state === 'learn' ? 'Learn'
         : 'Init';
-      return `${iface.padEnd(12)}${String(g.group).padEnd(5)}${String(hsrpEffectivePriority(g)).padEnd(4)}` +
-        `${(g.preempt ? 'P' : ' ').padEnd(2)}${state.padEnd(9)}` +
-        `${(g.activeRouterIp ?? 'unknown').padEnd(16)}${(g.standbyRouterIp ?? 'unknown').padEnd(16)}${g.vip ?? 'unassigned'}`;
+      return `${padToWidth(iface, 12)}${padToWidth(String(g.group), 5)}${padToWidth(String(hsrpEffectivePriority(g)), 4)}` +
+        `${padToWidth(g.preempt ? 'P' : ' ', 2)}${padToWidth(state, 9)}` +
+        `${padToWidth(g.activeRouterIp ?? 'unknown', 16)}${padToWidth(g.standbyRouterIp ?? 'unknown', 16)}${g.vip ?? 'unassigned'}`;
     });
     return [header, ...rows].join('\n');
   }
@@ -5685,12 +5685,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         : g.avgState === 'standby' ? 'Standby'
         : g.avgState === 'init' ? 'Init'
         : 'Disabled';
-      rows.push(`${iface.padEnd(12)}${String(g.group).padEnd(5)}${'-'.padEnd(4)}` +
-        `${String(g.priority).padEnd(4)}${avgState.padEnd(9)}` +
-        `${(g.vip ?? 'unassigned').padEnd(16)}${(g.avgIp ?? 'local').padEnd(16)}unknown`);
+      rows.push(`${padToWidth(iface, 12)}${padToWidth(String(g.group), 5)}${padToWidth('-', 4)}` +
+        `${padToWidth(String(g.priority), 4)}${padToWidth(avgState, 9)}` +
+        `${padToWidth(g.vip ?? 'unassigned', 16)}${padToWidth(g.avgIp ?? 'local', 16)}unknown`);
       for (const f of g.forwarders.values()) {
-        rows.push(`${iface.padEnd(12)}${String(g.group).padEnd(5)}${String(f.forwarderNumber).padEnd(4)}` +
-          `${String(f.priority).padEnd(4)}${f.state.padEnd(9)}${f.vmac.padEnd(16)}${(f.ownerIp ?? 'local').padEnd(16)}unknown`);
+        rows.push(`${padToWidth(iface, 12)}${padToWidth(String(g.group), 5)}${padToWidth(String(f.forwarderNumber), 4)}` +
+          `${padToWidth(String(f.priority), 4)}${padToWidth(f.state, 9)}${padToWidth(f.vmac, 16)}${padToWidth(f.ownerIp ?? 'local', 16)}unknown`);
       }
     }
     return [header, ...rows].join('\n');
@@ -5820,7 +5820,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const [ip, e] of entries) {
       const age = String(Math.floor(cache.ageMs(e) / 60000));
       lines.push(
-        `IP        ${e.iface.padEnd(17)}${ip.padEnd(21)}${age.padEnd(10)}${e.mac.toCiscoString().padEnd(17)}ARPA   ${e.iface}`,
+        `IP        ${padToWidth(e.iface, 17)}${padToWidth(ip, 21)}${padToWidth(age, 10)}${padToWidth(e.mac.toCiscoString(), 17)}ARPA   ${e.iface}`,
       );
     }
     return lines.join('\n');
@@ -6023,10 +6023,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     let totN = 0, totS = 0, totR = 0, totO = 0, totM = 0;
     for (const k of order) {
       const c = counts[k];
-      lines.push(`${k.padEnd(16)}${String(c.networks).padEnd(12)}${String(c.subnets).padEnd(12)}${String(c.replicates).padEnd(12)}${String(c.overhead).padEnd(12)}${c.memory}`);
+      lines.push(`${padToWidth(k, 16)}${padToWidth(String(c.networks), 12)}${padToWidth(String(c.subnets), 12)}${padToWidth(String(c.replicates), 12)}${padToWidth(String(c.overhead), 12)}${c.memory}`);
       totN += c.networks; totS += c.subnets; totR += c.replicates; totO += c.overhead; totM += c.memory;
     }
-    lines.push(`${'Total'.padEnd(16)}${String(totN).padEnd(12)}${String(totS).padEnd(12)}${String(totR).padEnd(12)}${String(totO).padEnd(12)}${totM}`);
+    lines.push(`${padToWidth('Total', 16)}${padToWidth(String(totN), 12)}${padToWidth(String(totS), 12)}${padToWidth(String(totR), 12)}${padToWidth(String(totO), 12)}${totM}`);
     return lines.join('\n');
   }
 
@@ -6048,14 +6048,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const expire = Number.isFinite(b.leaseExpiration)
         ? new Date(b.leaseExpiration).toUTCString().slice(5, 25)
         : 'Infinite';
-      lines.push(`${b.ipAddress.padEnd(17)}${expire.padEnd(21)}${b.clientId}`);
+      lines.push(`${padToWidth(b.ipAddress, 17)}${padToWidth(expire, 21)}${b.clientId}`);
     }
     return lines.join('\n');
   }
 
   private showIpDhcpSnoopingStatistics(): string {
     const s = this.d().getDhcpSnoopingStats();
-    const row = (label: string, n: number) => `  ${label.padEnd(52)}${n}`;
+    const row = (label: string, n: number) => `  ${padToWidth(label, 52)}${n}`;
     return [
       'Packets Processed by DHCP Snooping = ' + (s.forwarded + s.dropped),
       'Packets Dropped Because',
@@ -6215,10 +6215,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'Local information:',
       '                            LACP port    Admin     Oper    Port',
       'Port      Flags   State     Priority     Key       Key     Number',
-      `${this.abbreviateInterface(portName).padEnd(10)}`
+      `${padToWidth(this.abbreviateInterface(portName), 10)}`
       + `${(agent.rateOf(info) ? 'F' : 'S') + (info.mode === 'active' ? 'A' : 'P')}      `
-      + `${info.state.padEnd(10)}${String(info.portPriority).padEnd(13)}`
-      + `${String(info.groupId).padEnd(10)}${String(info.groupId).padEnd(8)}`
+      + `${padToWidth(info.state, 10)}${padToWidth(String(info.portPriority), 13)}`
+      + `${padToWidth(String(info.groupId), 10)}${padToWidth(String(info.groupId), 8)}`
       + `${this.d().getPortNames().indexOf(portName) + 1}`,
       '',
       'Partner information:',
@@ -6256,12 +6256,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const m of members) {
         const p = m.partner;
         lines.push(
-          `${this.abbreviateInterface(m.portName).padEnd(10)}`
-          + `${(p ? `${p.systemPriority},${p.systemId}` : 'none').padEnd(27)}`
-          + `${(p ? `${Math.round((simulationNowMs() - m.lastRxMs) / 1000)}s` : '-').padEnd(5)}`
+          `${padToWidth(this.abbreviateInterface(m.portName), 10)}`
+          + `${padToWidth(p ? `${p.systemPriority},${p.systemId}` : 'none', 27)}`
+          + `${padToWidth(p ? `${Math.round((simulationNowMs() - m.lastRxMs) / 1000)}s` : '-', 5)}`
           + `${(agent.rateOf(m) ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
-          + `${String(p?.portPriority ?? 0).padEnd(11)}`
-          + `${String(p?.key ?? 0).padEnd(10)}`
+          + `${padToWidth(String(p?.portPriority ?? 0), 11)}`
+          + `${padToWidth(String(p?.key ?? 0), 10)}`
           + `${p?.portNumber ?? 0}`,
         );
       }
@@ -6283,12 +6283,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         for (const m of g.members) {
           const numero = this.d().getPortNames().indexOf(m.portName) + 1;
           lines.push(
-            `${this.abbreviateInterface(m.portName).padEnd(10)}`
-            + `${((agent.rateOf(m) ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')).padEnd(8)}`
-            + `${iosLacpState(m.state).padEnd(10)}`
-            + `${String(m.portPriority).padEnd(14)}`
-            + `${hex(m.groupId).padEnd(10)}${hex(m.groupId).padEnd(8)}`
-            + `${hex(numero).padEnd(12)}`
+            `${padToWidth(this.abbreviateInterface(m.portName), 10)}`
+            + `${padToWidth((agent.rateOf(m) ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P'), 8)}`
+            + `${padToWidth(iosLacpState(m.state), 10)}`
+            + `${padToWidth(String(m.portPriority), 14)}`
+            + `${padToWidth(hex(m.groupId), 10)}${padToWidth(hex(m.groupId), 8)}`
+            + `${padToWidth(hex(numero), 12)}`
             + `${hex(buildActorState(m.mode, m, agent.rateOf(m)))}`,
           );
         }
@@ -6306,10 +6306,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const s = agent.getStatistics(m.portName);
         const k = agent.getMarkerStatistics(m.portName);
         lines.push(
-          `${this.abbreviateInterface(m.portName).padEnd(11)}`
-          + `${String(s.sent).padEnd(7)}${String(s.received).padEnd(9)}`
-          + `${String(k.sent).padEnd(7)}${String(k.received).padEnd(9)}`
-          + `${String(k.responseSent).padEnd(7)}${String(k.responseReceived).padEnd(10)}0`,
+          `${padToWidth(this.abbreviateInterface(m.portName), 11)}`
+          + `${padToWidth(String(s.sent), 7)}${padToWidth(String(s.received), 9)}`
+          + `${padToWidth(String(k.sent), 7)}${padToWidth(String(k.received), 9)}`
+          + `${padToWidth(String(k.responseSent), 7)}${padToWidth(String(k.responseReceived), 10)}0`,
         );
       }
       return lines.join('\n');

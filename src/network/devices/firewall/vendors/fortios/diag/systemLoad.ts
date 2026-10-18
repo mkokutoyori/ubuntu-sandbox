@@ -1,4 +1,4 @@
-import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
+import { renderTable, FIXED_TABLE, padToWidth } from '../../../../shells/cli/TextTable';
 import type { CpuStates, MemoryStates, SystemLoad } from '../../../health/SystemLoad';
 
 export function cpuStatesLine(label: string, states: CpuStates): string {
@@ -87,7 +87,7 @@ export function conserveModeLines(load: SystemLoad): readonly string[] {
 export function procMeminfoLines(load: SystemLoad): readonly string[] {
   const memory = load.memory();
   const ligne = (cle: string, kib: number): string =>
-    `${(cle + ':').padEnd(16)}${String(kib).padStart(8)} kB`;
+    `${padToWidth(cle + ':', 16)}${padToWidth(String(kib), 8, 'right')} kB`;
   return [
     ligne('MemTotal', memory.totalKib),
     ligne('MemFree', memory.freeKib),

@@ -2,6 +2,7 @@ import { formatLocalTime } from '../system/SystemInfo';
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface WhoOptions {
   all: boolean;
@@ -88,7 +89,7 @@ export interface WhoContext {
   zone?: string;
 }
 
-function pad(s: string, w: number): string { return s.padEnd(w); }
+function pad(s: string, w: number): string { return padToWidth(s, w); }
 
 function activeSessions(ctx: WhoContext): SshSession[] {
   if (!ctx.utmp) return ctx.table.list();

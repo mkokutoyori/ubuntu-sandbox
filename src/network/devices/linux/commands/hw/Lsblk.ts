@@ -2,6 +2,7 @@ import type { HardwareProfile } from '@/network/devices/host/hardware/HardwarePr
 import type { StorageDevice, DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { renderTableText } from '@/network/devices/shells/cli/TextTable';
 
 const COLUMNS = new Map<string, (row: Row) => string>([
   ['NAME',        r => r.name],
@@ -191,12 +192,9 @@ function synthUuid(seed: string): string {
 }
 
 function renderTable(rows: Row[], columns: string[], _list: boolean): string {
-  const widths = columns.map((c, i) => Math.max(c.length, ...rows.map(r => COLUMNS.get(c)!(r).length)));
-  const lines = [columns.map((c, i) => c.padEnd(widths[i])).join(' ')];
-  for (const r of rows) {
-    lines.push(columns.map((c, i) => COLUMNS.get(c)!(r).padEnd(widths[i])).join(' '));
-  }
-  return lines.join('\n');
+  return renderTableText(rows, columns.map((header) => ({ header, value: COLUMNS.get(header)! })), {
+    gap: 1, rule: false, padTrailing: true,
+  });
 }
 
 function renderRaw(rows: Row[], columns: string[]): string {

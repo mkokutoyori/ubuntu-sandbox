@@ -12,6 +12,7 @@ import { parseChronySource } from './ChronyConfig';
 import { parseChronySubnet, formatChronySubnet } from './ChronyAccess';
 import { genererCleChrony } from './ChronyKeys';
 import type { LinuxChronyService } from './LinuxChronyService';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const CHRONYC_VERSION_LINE = 'chronyc (chrony) version 4.5 (+READLINE +SECHASH +IPV6 -DEBUG)';
 const SOCKET_PATH = '/run/chrony/chronyd.sock';
@@ -1038,7 +1039,7 @@ export class ChronycSession {
         i++;
       }
     }
-    this.header(`Hostname                      NTP   Drop Int IntL Last  ${(keyEstablishment ? 'NTS-KE' : 'Cmd').padStart(6)}   Drop Int  Last`);
+    this.header(`Hostname                      NTP   Drop Int IntL Last  ${padToWidth(keyEstablishment ? 'NTS-KE' : 'Cmd', 6, 'right')}   Drop Int  Last`);
     if (!this.authorised(false)) return false;
     for (const client of view.clients(minimumHits)) {
       this.report('%-25s  %6U  %5U  %C  %C  %I  %6U  %5U  %C  %I\n', [

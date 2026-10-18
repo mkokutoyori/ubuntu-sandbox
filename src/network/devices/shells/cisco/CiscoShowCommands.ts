@@ -55,7 +55,7 @@ import {
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { IPv6Address } from '@/network/core/types';
-import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTable';
+import { renderCounterTable, renderTable, type TableColumn, padToWidth } from '../cli/TextTable';
 import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
 import { vrfRunningConfigLines, type VrfHost } from './ciscoVrfStore';
@@ -188,7 +188,7 @@ function reachOf(r: TableRoute, nowMs: number | undefined): string {
 }
 
 function renderedLines(entry: RenderedRoute, codeWidth: number, withLength: boolean): string[] {
-  const head = `${entry.code.padEnd(codeWidth)}${entry.network}${withLength ? `/${entry.prefixLength}` : ''}`;
+  const head = `${padToWidth(entry.code, codeWidth)}${entry.network}${withLength ? `/${entry.prefixLength}` : ''}`;
   const [first, ...alternates] = entry.reaches;
   const indent = ' '.repeat(head.length + 1);
   return [`${head} ${first}`, ...alternates.map((reach) => `${indent}${reach}`)];
@@ -399,9 +399,9 @@ export function ipIntBriefRowsFromPorts(ports: ReadonlyMap<string, Port>): IpInt
 }
 
 export function renderIpIntBrief(rows: readonly IpIntBriefRow[], nameWidth: number): string {
-  const lines = [`${'Interface'.padEnd(nameWidth)}${'IP-Address'.padEnd(16)}OK? Method Status                Protocol`];
+  const lines = [`${padToWidth('Interface', nameWidth)}${padToWidth('IP-Address', 16)}OK? Method Status                Protocol`];
   for (const r of rows) {
-    lines.push(`${r.name.padEnd(nameWidth)}${r.ip.padEnd(16)}YES ${r.method.padEnd(6)} ${r.status.padEnd(22)}${r.protocol}`);
+    lines.push(`${padToWidth(r.name, nameWidth)}${padToWidth(r.ip, 16)}YES ${padToWidth(r.method, 6)} ${padToWidth(r.status, 22)}${r.protocol}`);
   }
   return lines.join('\n');
 }
@@ -1333,7 +1333,7 @@ export function showIpProtocols(router: Router): string {
     block.push('  Routing Information Sources:', '    Gateway         Distance      Last Update');
     for (const iface of ospf.getInterfaces().values()) {
       for (const nbr of iface.neighbors.values()) {
-        block.push(`    ${nbr.routerId.padEnd(16)}110           00:00:00`);
+        block.push(`    ${padToWidth(nbr.routerId, 16)}110           00:00:00`);
       }
     }
     block.push('  Distance: (default is 110)');
@@ -1396,7 +1396,7 @@ function ripProtocolsBlock(router: Router): string {
     const envoiIf = router.ripSendVersionOn?.(nom) ?? envoi;
     const receptionIf = router.ripReceiveVersionOn?.(nom) ?? reception;
     const cle = router.ripAuthKeyChainOn?.(nom) ?? '';
-    block.push(`    ${nom.padEnd(22)}${envoiIf.padEnd(6)}${receptionIf.padEnd(6)}${''.padEnd(15)}${cle}`);
+    block.push(`    ${padToWidth(nom, 22)}${padToWidth(envoiIf, 6)}${padToWidth(receptionIf, 6)}${padToWidth('', 15)}${cle}`);
   }
 
   block.push(`  Automatic network summarization is ${rip?.autoSummary === false ? 'not ' : ''}in effect`);
@@ -1425,7 +1425,7 @@ function ripProtocolsBlock(router: Router): string {
   block.push('    Gateway         Distance      Last Update');
   const distance = rip?.distance ?? 120;
   for (const [source, age] of router.getRIPUpdateSources()) {
-    block.push(`    ${source.padEnd(16)}${String(distance).padEnd(14)}${formatIosElapsed(age * 1_000)}`);
+    block.push(`    ${padToWidth(source, 16)}${padToWidth(String(distance), 14)}${formatIosElapsed(age * 1_000)}`);
   }
   block.push(`  Distance: (default is ${distance})`);
   return block.join('\n');
@@ -1549,7 +1549,7 @@ export function showIpv6InterfaceBrief(router: Router): string {
   for (const [name, port] of ports) {
     const v6 = ipv6AddressStrings(port);
     const { status, protocol } = iosInterfaceStatus(port, name, ports);
-    lines.push(`${name.padEnd(27)}[${status}/${protocol}]`);
+    lines.push(`${padToWidth(name, 27)}[${status}/${protocol}]`);
     if (v6.length === 0) lines.push(`    unassigned`);
     else for (const a of v6) lines.push(`    ${a}`);
   }
@@ -1670,7 +1670,7 @@ export function renderInterfacesDescription(
   for (const [name, port] of ports) {
     const { status, protocol } = iosInterfaceStatus(port, name, ports);
     const shown = status === 'administratively down' ? 'admin down' : status;
-    rows.push(`${nameOf(name).padEnd(31)}${shown.padEnd(15)}${protocol.padEnd(9)}${describe(name)}`);
+    rows.push(`${padToWidth(nameOf(name), 31)}${padToWidth(shown, 15)}${padToWidth(protocol, 9)}${describe(name)}`);
   }
   return rows.join('\n');
 }

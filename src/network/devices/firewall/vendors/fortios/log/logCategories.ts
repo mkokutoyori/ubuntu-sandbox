@@ -1,5 +1,6 @@
 import type { FirewallLogType } from '../../../logging/FirewallLogStore';
 import type { LogFilePrefix } from '../../../logging/LogDisk';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface LogCategory {
   readonly index: number;
@@ -44,7 +45,7 @@ export function resolveLogCategory(raw: string): LogCategory | undefined {
 
 export function describeLogCategories(): string {
   return LOG_CATEGORIES
-    .map(category => `${String(category.index).padStart(2)}: ${category.name}`)
+    .map(category => `${padToWidth(String(category.index), 2, 'right')}: ${category.name}`)
     .join('\n');
 }
 

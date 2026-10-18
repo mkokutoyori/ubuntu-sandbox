@@ -9,6 +9,7 @@ import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { interpretEscapes } from './LinuxShellParser';
 import type { PathActor } from './VfsPath';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export function actorOf(ctx: ShellContext): PathActor {
   const groups = ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? [];
@@ -453,7 +454,7 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
   const dateStr = formatLsTime(opts.timing.style, inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
 
   const coloredName = colorName(name, inode, opts.useColor ?? false);
-  line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${coloredName}`;
+  line += `${perms} ${padToWidth(String(inode.linkCount), maxLinks, 'right')} ${padToWidth(owner, maxOwner)} ${padToWidth(group, maxGroup)} ${padToWidth(String(inode.size), maxSize, 'right')} ${dateStr} ${coloredName}`;
 
   // Symlink target
   if (inode.type === 'symlink') {

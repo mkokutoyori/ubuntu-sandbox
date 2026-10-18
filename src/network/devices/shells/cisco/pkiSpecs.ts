@@ -2,6 +2,7 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { CiscoSecurityConfig } from '../../router/security/CiscoSecurityConfig';
 import type { IosCertificateServer, EnrollmentRecord } from '../../router/pki/IosCertificateServer';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const PKI_SERVER_MODE = 'config-ca-server';
 export const TRUSTPOINT_MODE = 'config-ca-trustpoint';
@@ -57,7 +58,7 @@ const PEM_IMPORT_OPTIONS = [
 const DATE = (ms: number): string => new Date(ms).toUTCString().replace(/^\w+, /, '').replace(' GMT', ' UTC');
 
 function requestRow(record: EnrollmentRecord): string {
-  return [String(record.id).padEnd(8), record.state.padEnd(10), DATE(record.receivedMs).padEnd(26), record.subject].join('');
+  return [padToWidth(String(record.id), 8), padToWidth(record.state, 10), padToWidth(DATE(record.receivedMs), 26), record.subject].join('');
 }
 
 export function renderServerSummary(server: IosCertificateServer): string {
@@ -84,7 +85,7 @@ export function renderServerRequests(server: IosCertificateServer): string {
 }
 
 export function renderServerCertificates(server: IosCertificateServer): string {
-  const rows = server.granted().map((r) => `${r.certificate!.serialNumber.padEnd(18)}${DATE(r.certificate!.notAfter).padEnd(26)}${r.subject}`);
+  const rows = server.granted().map((r) => `${padToWidth(r.certificate!.serialNumber, 18)}${padToWidth(DATE(r.certificate!.notAfter), 26)}${r.subject}`);
   return ['Certificates Database:', 'Serial     Expires                   Subject', ...rows].join('\n');
 }
 

@@ -2,6 +2,7 @@ import type { ProtocolSocketState, SocketProtocol } from '@/network/core/SocketT
 import { IPv6Address } from '@/network/core/types';
 import { TCP_INITIAL_CWND_SEGMENTS } from '@/network/tcp/TcpStack';
 import type { KernelSocketRow } from '../network/KernelSocketRows';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type ProcNetFamily = 4 | 6;
 
@@ -29,7 +30,7 @@ const FRESH_ATO_MS = 40;
 
 const TCP4_HEADER = '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode';
 const UDP4_HEADER = '   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops';
-const IPV6_SPACING = `${'local_address'.padEnd(38)}${'remote_address'.padEnd(38)}`;
+const IPV6_SPACING = `${padToWidth('local_address', 38)}${padToWidth('remote_address', 38)}`;
 const TCP6_HEADER = `  sl  ${IPV6_SPACING}st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode`;
 const UDP6_HEADER = `  sl  ${IPV6_SPACING}st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops`;
 
@@ -67,7 +68,7 @@ function clockTicks(milliseconds: number): number {
 }
 
 function pad(line: string, width: number): string {
-  return line.length >= width ? line : line.padEnd(width);
+  return line.length >= width ? line : padToWidth(line, width);
 }
 
 function rowFamily(row: KernelSocketRow): ProcNetFamily {
@@ -80,24 +81,24 @@ function remoteOf(row: KernelSocketRow, family: ProcNetFamily): string {
 
 function connectionLine(index: number, row: KernelSocketRow, family: ProcNetFamily): string {
   const { entry, state, info, timer, owner, queues, listener } = row;
-  const head = `${String(index).padStart(4)}: ${endpoint(entry.localAddress, entry.localPort, family)} `
+  const head = `${padToWidth(String(index), 4, 'right')}: ${endpoint(entry.localAddress, entry.localPort, family)} `
     + `${endpoint(remoteOf(row, family), entry.remotePort, family)} ${PROC_STATE_HEX[state]}`;
   const uid = owner?.uid ?? 0;
   if (state === 'SYN_RECEIVED') {
     const expires = clockTicks(timer?.expiresInMs ?? 0);
-    return `${head} 00000000:00000000 01:${hex(expires, 8)} ${hex(timer?.retransmits ?? 0, 8)} ${String(uid).padStart(5)} `
-      + `${String(0).padStart(8)} 0 0 ${ROW_POINTER}`;
+    return `${head} 00000000:00000000 01:${hex(expires, 8)} ${hex(timer?.retransmits ?? 0, 8)} ${padToWidth(String(uid), 5, 'right')} `
+      + `${padToWidth(String(0), 8, 'right')} 0 0 ${ROW_POINTER}`;
   }
   if (state === 'TIME_WAIT') {
     const expires = clockTicks(timer?.expiresInMs ?? 0);
-    return `${head} 00000000:00000000 03:${hex(expires, 8)} 00000000 ${String(0).padStart(5)} ${String(0).padStart(8)} 0 1 ${ROW_POINTER}`;
+    return `${head} 00000000:00000000 03:${hex(expires, 8)} 00000000 ${padToWidth(String(0), 5, 'right')} ${padToWidth(String(0), 8, 'right')} 0 1 ${ROW_POINTER}`;
   }
   const sendQueue = state === 'LISTEN' ? 0 : queues.send;
   const receiveQueue = state === 'LISTEN' ? listener?.accept ?? 0 : queues.receive;
   const timerCode = timer === null ? 0 : PROC_TIMER_CODE[timer.kind];
   const expires = timer === null ? 0 : clockTicks(timer.expiresInMs);
   const common = `${head} ${hex(sendQueue, 8)}:${hex(receiveQueue, 8)} ${hex(timerCode, 2)}:${hex(expires, 8)} `
-    + `${hex(info?.retransmits ?? 0, 8)} ${String(uid).padStart(5)} ${String(info?.probes ?? 0).padStart(8)} `
+    + `${hex(info?.retransmits ?? 0, 8)} ${padToWidth(String(uid), 5, 'right')} ${padToWidth(String(info?.probes ?? 0), 8, 'right')} `
     + `${entry.id} 1 ${ROW_POINTER}`;
   if (state === 'LISTEN') return `${common} ${LISTENER_RTO_CLOCK_TICKS} 0 0 ${TCP_INITIAL_CWND_SEGMENTS} 0`;
   if (info === null) return `${common} ${clockTicks(FRESH_RTO_MS)} ${clockTicks(FRESH_ATO_MS)} 0 ${TCP_INITIAL_CWND_SEGMENTS} -1`;
@@ -123,9 +124,9 @@ export function renderProcNetUdp(
   const lines = own.map((row, index) => {
     const { entry, owner } = row;
     const connected = entry.remoteAddress !== '*' && entry.remotePort !== 0;
-    return `${String(index).padStart(5)}: ${endpoint(entry.localAddress, entry.localPort, family)} `
+    return `${padToWidth(String(index), 5, 'right')}: ${endpoint(entry.localAddress, entry.localPort, family)} `
       + `${endpoint(remoteOf(row, family), entry.remotePort, family)} ${connected ? '01' : '07'} `
-      + `00000000:00000000 00:00000000 00000000 ${String(owner?.uid ?? 0).padStart(5)} ${String(0).padStart(8)} `
+      + `00000000:00000000 00:00000000 00000000 ${padToWidth(String(owner?.uid ?? 0), 5, 'right')} ${padToWidth(String(0), 8, 'right')} `
       + `${entry.id} 2 ${ROW_POINTER} 0`;
   });
   if (family === 6) return [UDP6_HEADER, ...lines, ''].join('\n');

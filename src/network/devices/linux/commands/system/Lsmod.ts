@@ -13,6 +13,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Format de kmod, relevé sur l'en-tête réel : `%-19s %8lu  %d`. */
 function renderLsmod(lines: string[]): string {
@@ -20,7 +21,7 @@ function renderLsmod(lines: string[]): string {
   for (const raw of lines) {
     const [name, size, count, usedBy] = raw.split(' ');
     const used = usedBy && usedBy !== '-,' ? ` ${usedBy.replace(/,$/, '')}` : '';
-    out.push(`${name.padEnd(19)} ${size.padStart(8)}  ${count}${used}`);
+    out.push(`${padToWidth(name, 19)} ${padToWidth(size, 8, 'right')}  ${count}${used}`);
   }
   return out.join('\n');
 }
@@ -88,7 +89,7 @@ export const modinfoCommand: LinuxCommand = {
         for (const [k, v] of fields) if (k === field) out.push(v);
         continue;
       }
-      for (const [k, v] of fields) out.push(`${(k + ':').padEnd(16)}${v}`);
+      for (const [k, v] of fields) out.push(`${padToWidth(k + ':', 16)}${v}`);
     }
     return { output: out.join('\n'), exitCode: failed ? 1 : 0 };
   },

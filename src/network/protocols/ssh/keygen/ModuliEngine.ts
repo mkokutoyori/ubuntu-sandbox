@@ -1,4 +1,5 @@
 import { isProbablePrime } from '@/crypto/rsa';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const MODULI_TYPE_SAFE = 2;
 export const MODULI_TYPE_SOPHIE_GERMAIN = 4;
@@ -151,7 +152,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function ctimeText(ms: number, offsetMinutes: number): string {
   const local = new Date(ms + offsetMinutes * 60_000);
   const two = (value: number): string => String(value).padStart(2, '0');
-  const day = String(local.getUTCDate()).padStart(2, ' ');
+  const day = padToWidth(String(local.getUTCDate()), 2, 'right');
   return `${DAYS[local.getUTCDay()]} ${MONTHS[local.getUTCMonth()]} ${day} ${two(local.getUTCHours())}:${two(local.getUTCMinutes())}:${two(local.getUTCSeconds())} ${local.getUTCFullYear()}`;
 }
 

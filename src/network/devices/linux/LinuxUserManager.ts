@@ -41,6 +41,7 @@ import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
 import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
 import { PASSWORD_NEVER_EXPIRES } from './iam/policy/PasswordAgingPolicy';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // Re-export the structural contracts so existing importers keep working.
 export type { UserEntry } from './iam/LinuxUserAccount';
@@ -1339,7 +1340,7 @@ export class LinuxUserManager {
     return [
       uptimeHeader(1, uptimeSeconds),
       `USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT`,
-      `${this.currentUser.padEnd(8)} pts/0    -                ${time}  0.00s  0.00s  0.00s -bash`,
+      `${padToWidth(this.currentUser, 8)} pts/0    -                ${time}  0.00s  0.00s  0.00s -bash`,
     ].join('\n');
   }
 

@@ -13,6 +13,7 @@ import { PermissionCheckingFSDecorator } from '@/network/protocols/ssh/sftp/Perm
 import { ChrootedSftpFileSystem } from '@/network/protocols/ssh/sftp/ChrootedSftpFileSystem';
 import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import { VSFTPD_LISTEN_BACKLOG } from '../ports/ListenBacklogs';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const VSFTPD_CONF_PATH = '/etc/vsftpd.conf';
 export const VSFTPD_VERSION = '3.0.5';
@@ -194,10 +195,10 @@ export class LinuxVsftpdService implements ServiceSocketServer {
     const permissions = this.host.vfs.formatPermissions({ type: entry.type, permissions: entry.mode } as INode);
     return [
       permissions,
-      '1'.padStart(4),
-      String(entry.uid).padEnd(8),
-      String(entry.gid).padEnd(8),
-      String(entry.size).padStart(8),
+      padToWidth('1', 4, 'right'),
+      padToWidth(String(entry.uid), 8),
+      padToWidth(String(entry.gid), 8),
+      padToWidth(String(entry.size), 8, 'right'),
       vsftpdDate(entry.mtime, now),
       entry.name,
     ].join(' ');

@@ -18,6 +18,7 @@ import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import { isMulticastIpv4, isReservedMulticast } from '../../../igmp/types';
 import { hms } from '@/lib/format';
 import { HUAWEI_ERRORS } from '../cli-utils';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface HuaweiIgmpContext {
   r(): Router;
@@ -119,7 +120,7 @@ export function registerHuaweiIgmpDisplayCommands(trie: CommandTrie, getRouter: 
           ? hms(intervalMs - (now - g.lastReportMs))
           : 'never';
         lines.push(
-          `   ${g.groupAddress.padEnd(16)}${(g.lastReporterIp ?? '0.0.0.0').padEnd(16)}${hms(now - g.lastReportMs).padEnd(12)}${expires}`);
+          `   ${padToWidth(g.groupAddress, 16)}${padToWidth(g.lastReporterIp ?? '0.0.0.0', 16)}${padToWidth(hms(now - g.lastReportMs), 12)}${expires}`);
       }
     }
     if (reported === 0) return 'Info: No IGMP group information is found.';

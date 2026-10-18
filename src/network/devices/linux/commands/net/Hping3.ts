@@ -5,6 +5,7 @@ import { noFlags, type TcpFlags } from '@/network/tcp/types';
 import type { NssServiceEntry } from '@/network/devices/linux/nss/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 type Mode = 'tcp' | 'icmp' | 'udp' | 'rawip' | 'scan';
 type DestPortStep = 'fixed' | 'on-reply' | 'always';
@@ -376,7 +377,7 @@ function tcpEmission(
       previousSequence.value = detail.sequence;
       return {
         received: true,
-        lines: [`${String(detail.sequence).padStart(10, ' ')} +${diff}`],
+        lines: [`${padToWidth(String(detail.sequence), 10, 'right')} +${diff}`],
       };
     }
     const protocolPart = `sport=${destPort} flags=${replyFlagLetters(detail.flags)} `
@@ -472,22 +473,22 @@ function scanMain(
       tcpProbeShape(parsed, parsed.baseSourcePort));
     if (detail.reply === 'none') { silent.push(port); continue; }
     if (detail.reply === 'icmp-prohibited' || detail.reply === 'icmp-unreachable') {
-      lines.push(`${String(port).padStart(5, ' ')}:                      `
-        + `${String(detail.ttl).padStart(3, ' ')} `
-        + `${String(detail.totalLength).padStart(5, ' ')} `
-        + `${String(detail.identification).padStart(5, ' ')}   `
+      lines.push(`${padToWidth(String(port), 5, 'right')}:                      `
+        + `${padToWidth(String(detail.ttl), 3, 'right')} `
+        + `${padToWidth(String(detail.totalLength), 5, 'right')} `
+        + `${padToWidth(String(detail.identification), 5, 'right')}   `
         + `(ICMP   3   ${detail.reply === 'icmp-prohibited' ? 13 : 3} `
         + `from ${target.toString()})`);
       continue;
     }
     if (!detail.flags.syn && !parsed.verbose) continue;
-    lines.push(`${String(port).padStart(5, ' ')} `
-      + `${serviceName(ctx, port).slice(0, 11).padEnd(11, ' ')}: `
+    lines.push(`${padToWidth(String(port), 5, 'right')} `
+      + `${padToWidth(serviceName(ctx, port).slice(0, 11), 11)}: `
       + `${scanFlagColumn(detail.flags)} `
-      + `${String(detail.ttl).padStart(3, ' ')} `
-      + `${String(detail.identification).padStart(5, ' ')} `
-      + `${String(detail.window).padStart(5, ' ')} `
-      + `${String(detail.totalLength).padStart(5, ' ')}`);
+      + `${padToWidth(String(detail.ttl), 3, 'right')} `
+      + `${padToWidth(String(detail.identification), 5, 'right')} `
+      + `${padToWidth(String(detail.window), 5, 'right')} `
+      + `${padToWidth(String(detail.totalLength), 5, 'right')}`);
   }
   lines.push('All replies received. Done.');
   lines.push('Not responding ports: '

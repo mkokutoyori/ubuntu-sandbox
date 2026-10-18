@@ -55,6 +55,7 @@ import { InMemoryManager } from './resultcache/InMemoryManager';
 import { LockManager } from './lock/LockManager';
 import { LockActor } from './lock/LockActor';
 import type { OracleStorage } from './OracleStorage';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -827,11 +828,11 @@ export class OracleInstance {
       const b = (spec: string): number => parseSize(spec);
       const fixed = 2 * 1024 * 1024;
       const variable = b(sga.sharedPool) + b(sga.largePool) + b(sga.javaPool);
-      output.push(`Total System Global Area ${String(b(sga.totalSize)).padStart(10)} bytes`);
-      output.push(`Fixed Size               ${String(fixed).padStart(10)} bytes`);
-      output.push(`Variable Size            ${String(variable).padStart(10)} bytes`);
-      output.push(`Database Buffers         ${String(b(sga.bufferCache)).padStart(10)} bytes`);
-      output.push(`Redo Buffers             ${String(b(sga.redoLogBuffer)).padStart(10)} bytes`);
+      output.push(`Total System Global Area ${padToWidth(String(b(sga.totalSize)), 10, 'right')} bytes`);
+      output.push(`Fixed Size               ${padToWidth(String(fixed), 10, 'right')} bytes`);
+      output.push(`Variable Size            ${padToWidth(String(variable), 10, 'right')} bytes`);
+      output.push(`Database Buffers         ${padToWidth(String(b(sga.bufferCache)), 10, 'right')} bytes`);
+      output.push(`Redo Buffers             ${padToWidth(String(b(sga.redoLogBuffer)), 10, 'right')} bytes`);
     }
 
     if (mode === 'NOMOUNT') {

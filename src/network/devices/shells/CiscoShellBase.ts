@@ -268,7 +268,7 @@ import {
   CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
-import { renderTable, IOS_RULED_TABLE } from './cli/TextTable';
+import { renderTable, IOS_RULED_TABLE, padToWidth } from './cli/TextTable';
 import type { TableColumn } from './cli/TextTable';
 import { parseVlanList, compactVlanList } from './cli/vlanList';
 import { createDefaultSnoopingConfig } from '../../dhcp/types';
@@ -2561,7 +2561,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [
       'Directory of nvram:/',
       '',
-      `  190  -rw-        ${String(taille).padStart(6)}                    <no date>  startup-config`,
+      `  190  -rw-        ${padToWidth(String(taille), 6, 'right')}                    <no date>  startup-config`,
       '  191  ----             5                    <no date>  private-config',
       '',
       `${this.fs().nvramTotalBytes()} bytes total `
@@ -5240,10 +5240,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const ligne = (a: {
       serverIp: string; stratum: number; lastReplyMs: number; synced: boolean;
     }): string => [
-      a.serverIp.padEnd(14),
-      String(a.stratum).padEnd(10),
-      String(NTP_VERSION).padEnd(10),
-      (a.lastReplyMs > 0 ? hms(maintenant - a.lastReplyMs) : '-').padEnd(14),
+      padToWidth(a.serverIp, 14),
+      padToWidth(String(a.stratum), 10),
+      padToWidth(String(NTP_VERSION), 10),
+      padToWidth(a.lastReplyMs > 0 ? hms(maintenant - a.lastReplyMs) : '-', 14),
       a.synced ? 'Synced' : '',
     ].join('').trimEnd();
 
@@ -5774,14 +5774,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       vue(['show', 'license'], 'Display licenses', 15, () => {
         const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
         const row = (rang: number, feature: string) =>
-          `${rang}     ${feature.padEnd(25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
+          `${rang}     ${padToWidth(feature, 25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
         if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
         return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
       }),
       vue(['show', 'license', 'udi'], 'Display Unique Device Identifier', 15, () => {
         const pid = this.getChassisProfile() === 'router-isr2911'
           ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-        return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${this.numeroDeSerie()}`;
+        return `Device#   PID                   SN\n*0        ${padToWidth(pid, 22)}${this.numeroDeSerie()}`;
       }),
       vue(['show', 'privilege'], 'Display current privilege level', 1,
         () => showPrivilege(this.currentPrivilegeLevel)),
@@ -9234,7 +9234,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const offerts = PIPE_MODIFIERS.filter((m) => m.keyword.startsWith(partiel));
       if (offerts.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
       const large = Math.max(...offerts.map((m) => m.keyword.length));
-      return offerts.map((m) => `  ${m.keyword.padEnd(large + 2)}${m.description}`).join('\n');
+      return offerts.map((m) => `  ${padToWidth(m.keyword, large + 2)}${m.description}`).join('\n');
     }
     const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
     if (aideUniverselle !== null) return aideUniverselle;
@@ -9293,7 +9293,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
         .map(c => (c.description
-          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          ? `  ${padToWidth(c.keyword, maxKw + 2)}${c.description}`
           // Une description vide ne se rembourre pas : `<cr>` laissait
           // sinon la largeur de la colonne en blancs de fin de ligne.
           : `  ${c.keyword}`))

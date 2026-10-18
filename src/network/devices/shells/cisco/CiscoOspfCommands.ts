@@ -39,6 +39,7 @@ import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { toutesLesSuites } from './ciscoContinuations';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const OSPF_METRIC_MAX = 16777214;
 const OSPF_TIMER_MAX_MS = 600000;
@@ -1747,9 +1748,9 @@ export function showIpOspfNeighbor(router: Router): string {
     const deadTime = compteARebours(iface, n.lastHelloReceived, ospf.now());
 
     lines.push(
-      `${n.routerId.padEnd(16)}${String(n.priority).padEnd(6)}` +
-      `${stateStr.padEnd(16)}${deadTime.padEnd(12)}` +
-      `${n.ipAddress.padEnd(16)}${n.iface}`
+      `${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}` +
+      `${padToWidth(stateStr, 16)}${padToWidth(deadTime, 12)}` +
+      `${padToWidth(n.ipAddress, 16)}${n.iface}`
     );
   }
 
@@ -1783,12 +1784,12 @@ function showIpOspfDatabaseSummaryCounts(router: Router): string {
     const sub = Object.values(byType).reduce((a, b) => a + b, 0);
     lines.push(`Area ${areaId} database summary`);
     lines.push('  LSA Type      Count    Delete   Maxage');
-    lines.push(`  Router        ${String(byType[1] ?? 0).padEnd(9)}0        0`);
-    lines.push(`  Network       ${String(byType[2] ?? 0).padEnd(9)}0        0`);
-    lines.push(`  Summary Net   ${String(byType[3] ?? 0).padEnd(9)}0        0`);
-    lines.push(`  Summary ASBR  ${String(byType[4] ?? 0).padEnd(9)}0        0`);
-    lines.push(`  Type-7 Ext    ${String(byType[7] ?? 0).padEnd(9)}0        0`);
-    lines.push(`  Subtotal      ${String(sub).padEnd(9)}0        0`);
+    lines.push(`  Router        ${padToWidth(String(byType[1] ?? 0), 9)}0        0`);
+    lines.push(`  Network       ${padToWidth(String(byType[2] ?? 0), 9)}0        0`);
+    lines.push(`  Summary Net   ${padToWidth(String(byType[3] ?? 0), 9)}0        0`);
+    lines.push(`  Summary ASBR  ${padToWidth(String(byType[4] ?? 0), 9)}0        0`);
+    lines.push(`  Type-7 Ext    ${padToWidth(String(byType[7] ?? 0), 9)}0        0`);
+    lines.push(`  Subtotal      ${padToWidth(String(sub), 9)}0        0`);
     lines.push('');
   }
   const extCount = [...lsdb.external.values()].length;
@@ -1796,13 +1797,13 @@ function showIpOspfDatabaseSummaryCounts(router: Router): string {
   const grand = Object.values(totals).reduce((a, b) => a + b, 0);
   lines.push(`Process ${ospf.getProcessId()} database summary`);
   lines.push('  LSA Type      Count    Delete   Maxage');
-  lines.push(`  Router        ${String(totals[1] ?? 0).padEnd(9)}0        0`);
-  lines.push(`  Network       ${String(totals[2] ?? 0).padEnd(9)}0        0`);
-  lines.push(`  Summary Net   ${String(totals[3] ?? 0).padEnd(9)}0        0`);
-  lines.push(`  Summary ASBR  ${String(totals[4] ?? 0).padEnd(9)}0        0`);
-  lines.push(`  Type-5 Ext    ${String(totals[5] ?? 0).padEnd(9)}0        0`);
-  lines.push(`  Type-7 Ext    ${String(totals[7] ?? 0).padEnd(9)}0        0`);
-  lines.push(`  Total         ${String(grand).padEnd(9)}0        0`);
+  lines.push(`  Router        ${padToWidth(String(totals[1] ?? 0), 9)}0        0`);
+  lines.push(`  Network       ${padToWidth(String(totals[2] ?? 0), 9)}0        0`);
+  lines.push(`  Summary Net   ${padToWidth(String(totals[3] ?? 0), 9)}0        0`);
+  lines.push(`  Summary ASBR  ${padToWidth(String(totals[4] ?? 0), 9)}0        0`);
+  lines.push(`  Type-5 Ext    ${padToWidth(String(totals[5] ?? 0), 9)}0        0`);
+  lines.push(`  Type-7 Ext    ${padToWidth(String(totals[7] ?? 0), 9)}0        0`);
+  lines.push(`  Total         ${padToWidth(String(grand), 9)}0        0`);
   return lines.join('\n');
 }
 
@@ -1826,9 +1827,9 @@ function showIpOspfDatabase(router: Router): string {
       for (const lsa of routerLSAs) {
         const rLSA = lsa as any;
         lines.push(
-          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
-          `0x${lsa.checksum.toString(16).padEnd(10)}${rLSA.numLinks ?? 0}`
+          `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+          `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
+          `0x${padToWidth(lsa.checksum.toString(16), 10)}${rLSA.numLinks ?? 0}`
         );
       }
       lines.push('');
@@ -1842,8 +1843,8 @@ function showIpOspfDatabase(router: Router): string {
       lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
       for (const lsa of networkLSAs) {
         lines.push(
-          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+          `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+          `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
           `0x${lsa.checksum.toString(16)}`
         );
       }
@@ -1887,15 +1888,15 @@ function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
     for (const lsa of externalLSAs) {
       const e = lsa as any;
       lines.push(
-        `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-        `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
-        `0x${lsa.checksum.toString(16).padEnd(10)}${String(e.externalRouteTag ?? 0).padEnd(5)}` +
+        `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+        `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
+        `0x${padToWidth(lsa.checksum.toString(16), 10)}${padToWidth(String(e.externalRouteTag ?? 0), 5)}` +
         `Forward Address: ${e.forwardingAddress ?? '0.0.0.0'}`
       );
     }
     // If no LSAs and a network filter was given, show a placeholder row to maintain compatibility
     if (externalLSAs.length === 0 && args.length > 0 && args[0] !== 'detail') {
-      lines.push(`${args[0].padEnd(16)}${ospf.getRouterId().padEnd(16)}0           0x80000001      0x0000    0    Forward Address: 0.0.0.0`);
+      lines.push(`${padToWidth(args[0], 16)}${padToWidth(ospf.getRouterId(), 16)}0           0x80000001      0x0000    0    Forward Address: 0.0.0.0`);
     }
   } else {
     for (const lsa of externalLSAs) {
@@ -2032,8 +2033,8 @@ function showIpOspfInterfaceBrief(router: Router): string {
   const rendu = (name: string, area: string, ipMask: string, cost: number,
     state: string, total: number, full: number) => {
     lines.push(
-      `${iosShortInterfaceName(name).padEnd(13)}${String(pid).padEnd(6)}${area.padEnd(16)}`
-      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${total}/${full}`
+      `${padToWidth(iosShortInterfaceName(name), 13)}${padToWidth(String(pid), 6)}${padToWidth(area, 16)}`
+      + `${padToWidth(ipMask, 19)}${padToWidth(String(cost), 6)}${padToWidth(state, 6)}${total}/${full}`
     );
   };
 
@@ -2119,9 +2120,9 @@ function showIpOspfDatabaseRouter(router: Router, detail: boolean): string {
       for (const lsa of routerLSAs) {
         const rLSA = lsa as any;
         lines.push(
-          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
-          `0x${lsa.checksum.toString(16).padEnd(10)}${rLSA.numLinks ?? 0}`
+          `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+          `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
+          `0x${padToWidth(lsa.checksum.toString(16), 10)}${rLSA.numLinks ?? 0}`
         );
       }
     } else {
@@ -2184,8 +2185,8 @@ function showIpOspfDatabaseNetwork(router: Router, detail: boolean): string {
       lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
       for (const lsa of networkLSAs) {
         lines.push(
-          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+          `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+          `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
           `0x${lsa.checksum.toString(16)}`
         );
       }
@@ -2237,8 +2238,8 @@ function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
       lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
       for (const lsa of summaryLSAs) {
         lines.push(
-          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+          `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+          `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
           `0x${lsa.checksum.toString(16)}`
         );
       }
@@ -2408,7 +2409,7 @@ function showIpOspfBorderRouters(router: Router): string {
 
     const typeStr = info.isABR && info.isASBR ? 'ABR/ASBR' :
       info.isABR ? 'ABR     ' : 'ASBR    ';
-    lines.push(`${rid.padEnd(15)}${typeStr.padEnd(9)}${dist.padEnd(6)}${nextHop.padEnd(16)}${via}`);
+    lines.push(`${padToWidth(rid, 15)}${padToWidth(typeStr, 9)}${padToWidth(dist, 6)}${padToWidth(nextHop, 16)}${via}`);
   }
 
   return lines.join('\n');
@@ -2534,9 +2535,9 @@ function showIpOspfRetransmissionList(router: Router): string {
 function lsaQueueTable(queue: readonly LSAHeader[]): string[] {
   return [
     '  Type  LS ID             ADV RTR           Seq NO      Age    Checksum',
-    ...queue.map((lsa) => `${String(lsa.lsType).padStart(6)}  ${lsa.linkStateId.padEnd(18)}`
-      + `${lsa.advertisingRouter.padEnd(18)}${iosHex(lsa.lsSequenceNumber).padEnd(12)}`
-      + `${String(lsa.lsAge).padEnd(7)}${iosHex(lsa.checksum)}`),
+    ...queue.map((lsa) => `${padToWidth(String(lsa.lsType), 6, 'right')}  ${padToWidth(lsa.linkStateId, 18)}`
+      + `${padToWidth(lsa.advertisingRouter, 18)}${padToWidth(iosHex(lsa.lsSequenceNumber), 12)}`
+      + `${padToWidth(String(lsa.lsAge), 7)}${iosHex(lsa.checksum)}`),
   ];
 }
 
@@ -2553,7 +2554,7 @@ function showIpOspfFloodList(router: Router): string {
   if (!ospf) return '';
   const lines: string[] = ['Interface              Area'];
   for (const iface of ospf.getInterfaces().values()) {
-    lines.push(`${iface.name.padEnd(23)}${iface.areaId}`);
+    lines.push(`${padToWidth(iface.name, 23)}${iface.areaId}`);
   }
   lines.push('(no LSAs in flood list — flooding is synchronous in this implementation)');
   return lines.join('\n');
@@ -2621,7 +2622,7 @@ function showIpOspfDatabaseNssaExternal(router: Router): string {
     any = true;
     lines.push(`  Type-7 AS External Link States (Area ${areaId})`, '', 'Link ID         ADV Router      Age       Seq#');
     for (const lsa of type7) {
-      lines.push(`${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}${String(lsa.lsAge).padEnd(10)}0x${(lsa.lsSequenceNumber >>> 0).toString(16)}`);
+      lines.push(`${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}${padToWidth(String(lsa.lsAge), 10)}0x${(lsa.lsSequenceNumber >>> 0).toString(16)}`);
     }
   }
   if (!any) lines.push('(no NSSA external LSAs)');
@@ -2638,7 +2639,7 @@ function showIpOspfDatabaseAsbrSummary(router: Router): string {
     const type4 = [...areaDB.values()].filter(l => l.lsType === 4);
     for (const lsa of type4) {
       any = true;
-      lines.push(`${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}${String(lsa.lsAge).padEnd(10)}0x${(lsa.lsSequenceNumber >>> 0).toString(16)}`);
+      lines.push(`${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}${padToWidth(String(lsa.lsAge), 10)}0x${(lsa.lsSequenceNumber >>> 0).toString(16)}`);
     }
   }
   if (!any) lines.push('(no ASBR-summary LSAs)');
@@ -2788,10 +2789,10 @@ function showIpRouteSummary(router: Router): string {
   let totN = 0, totS = 0, totR = 0, totO = 0, totM = 0;
   for (const k of order) {
     const c = counts[k];
-    lines.push(`${k.padEnd(16)}${String(c.networks).padEnd(12)}${String(c.subnets).padEnd(12)}${String(c.replicates).padEnd(12)}${String(c.overhead).padEnd(12)}${c.memory}`);
+    lines.push(`${padToWidth(k, 16)}${padToWidth(String(c.networks), 12)}${padToWidth(String(c.subnets), 12)}${padToWidth(String(c.replicates), 12)}${padToWidth(String(c.overhead), 12)}${c.memory}`);
     totN += c.networks; totS += c.subnets; totR += c.replicates; totO += c.overhead; totM += c.memory;
   }
-  lines.push(`${'Total'.padEnd(16)}${String(totN).padEnd(12)}${String(totS).padEnd(12)}${String(totR).padEnd(12)}${String(totO).padEnd(12)}${totM}`);
+  lines.push(`${padToWidth('Total', 16)}${padToWidth(String(totN), 12)}${padToWidth(String(totS), 12)}${padToWidth(String(totR), 12)}${padToWidth(String(totO), 12)}${totM}`);
   return lines.join('\n');
 }
 
@@ -2988,7 +2989,7 @@ function showIpv6OspfNeighbor(router: Router): string {
   const neighbors = v3.getNeighbors();
   const lines = ['Neighbor ID     Pri   State           Dead Time   Interface'];
   for (const n of neighbors) {
-    lines.push(`${n.routerId.padEnd(16)}${String(n.priority).padEnd(6)}FULL/ -         ${n.iface}`);
+    lines.push(`${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}FULL/ -         ${n.iface}`);
   }
   return lines.join('\n');
 }
@@ -3098,9 +3099,9 @@ function showIpv6RouteSummary(router: Router): string {
     if (n === 0 && source !== 'connected' && source !== 'local' && source !== 'static') continue;
     total += n;
     // IOS bills 88 bytes of overhead and 44 of table per IPv6 route.
-    lines.push(`${source.padEnd(16)}${String(n).padEnd(12)}${String(n * 88).padEnd(12)}${n * 44}`);
+    lines.push(`${padToWidth(source, 16)}${padToWidth(String(n), 12)}${padToWidth(String(n * 88), 12)}${n * 44}`);
   }
-  lines.push(`Total           ${String(total).padEnd(12)}${String(total * 88).padEnd(12)}${total * 44}`);
+  lines.push(`Total           ${padToWidth(String(total), 12)}${padToWidth(String(total * 88), 12)}${total * 44}`);
   return lines.join('\n');
 }
 

@@ -15,6 +15,7 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import type { ReplicationLogEntry } from './server/ad/replication/ReplicationSession';
 import type { HighWatermarkVectorWire } from './server/ad/replication/HighWatermarkVector';
 import type { EntryReplMeta } from './server/ad/ldap/DirectoryTree';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type NtdsOption = 'DISABLE_OUTBOUND_REPL' | 'DISABLE_INBOUND_REPL' | 'IS_GC' | 'DISABLE_SPN_REGISTRATION';
 export const NTDS_OPTION_NAMES: readonly NtdsOption[] = ['DISABLE_OUTBOUND_REPL', 'DISABLE_INBOUND_REPL', 'IS_GC', 'DISABLE_SPN_REGISTRATION'];
@@ -201,7 +202,7 @@ function replSummary(ctx: RepadminContext): string {
       const fails = relevant.filter(e => !e.ok).length;
       const latest = relevant.length > 0 ? relevant[relevant.length - 1] : null;
       const delta = latest ? `${Math.max(0, Math.floor(simulationNowMs() / 1000) - latest.timestamp)}s ago` : 'n/a';
-      lines.push(` ${dsa.padEnd(20)} ${delta.padStart(14)}    ${fails} / ${total}    Fails ${fails}`);
+      lines.push(` ${padToWidth(dsa, 20)} ${padToWidth(delta, 14, 'right')}    ${fails} / ${total}    Fails ${fails}`);
     }
     lines.push('');
   };
@@ -318,9 +319,9 @@ function showVector(ctx: RepadminContext, args: string[]): string {
     : ctx.resolveTarget(targetName);
   if (!target.ok) return `Unable to contact target: ${targetName}`;
 
-  const lines = [`Repl Up-To-Date Vector for ${nc ?? ctx.domainDn}`, 'Invocation ID'.padEnd(40) + 'USN'];
+  const lines = [`Repl Up-To-Date Vector for ${nc ?? ctx.domainDn}`, padToWidth('Invocation ID', 40) + 'USN'];
   if (target.outboundVector.length === 0) lines.push('(no known invocations yet)');
-  for (const [invocationId, usn] of target.outboundVector) lines.push(`${invocationId.padEnd(40)}${usn}`);
+  for (const [invocationId, usn] of target.outboundVector) lines.push(`${padToWidth(invocationId, 40)}${usn}`);
   return lines.join('\n');
 }
 
@@ -339,7 +340,7 @@ function showObjMeta(ctx: RepadminContext, args: string[]): string {
     `${dn}`,
     'Attribute: (object-level only — this simulator does not track per-attribute replication metadata, see PRD-Repadmin.md §2.1 P6)',
     `    Ver   Originating DC                          Loc.USN  Org.USN  Org.Time/Date`,
-    `    0x1   ${meta.originatingInvocationId.padEnd(38)} ${String(meta.originatingUsn).padEnd(8)} ${meta.originatingUsn}   ${formatTime(meta.timestamp)}`,
+    `    0x1   ${padToWidth(meta.originatingInvocationId, 38)} ${padToWidth(String(meta.originatingUsn), 8)} ${meta.originatingUsn}   ${formatTime(meta.timestamp)}`,
   ].join('\n');
 }
 

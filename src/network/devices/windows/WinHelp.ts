@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 /**
  * Windows HELP command — lists available commands with descriptions.
  *
@@ -101,7 +102,7 @@ export function cmdHelp(args: string[]): string {
       'For more information on a specific command, type HELP command-name',
     ];
     for (const [cmd, desc] of HELP_ENTRIES) {
-      lines.push(`${cmd.padEnd(15)}${desc}`);
+      lines.push(`${padToWidth(cmd, 15)}${desc}`);
     }
     lines.push('');
     lines.push('For more information on tools see the command-line reference in the online help.');

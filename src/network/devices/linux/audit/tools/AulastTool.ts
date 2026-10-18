@@ -4,6 +4,7 @@ import { auparseEvents, type AuparseEvent } from './AuparseEvent';
 import { Interpreter } from './AuditInterpret';
 import { resolveLogSource, type AuditLoginHost } from './AuditLoginHost';
 import { ToolOutput, type ToolResult } from './AuditToolHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const LOG_IN = 0;
 const SESSION_START = 1;
@@ -114,7 +115,7 @@ class Aulast {
 
   private ctime(sec: number): string {
     const tm = this.host.localTime(sec);
-    return `${WEEKDAYS[tm.wday]} ${MONTHS[tm.mon]} ${String(tm.mday).padStart(2, ' ')} ${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)} ${tm.year}`;
+    return `${WEEKDAYS[tm.wday]} ${MONTHS[tm.mon]} ${padToWidth(String(tm.mday), 2, 'right')} ${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)} ${tm.year}`;
   }
 
   private shortDate(sec: number): string {
@@ -128,16 +129,16 @@ class Aulast {
     let noTime = false;
     let line = '';
     if (node.name !== null) {
-      line += `${node.name.slice(0, 8).padEnd(8)} `;
+      line += `${padToWidth(node.name.slice(0, 8), 8)} `;
       if (node.end === 0) {
         node.end = this.host.nowSec();
         noTime = true;
       }
-    } else line += `${node.auid === 0 ? '' : String(unsigned(node.auid))}`.padEnd(8) + ' ';
+    } else line += padToWidth(`${node.auid === 0 ? '' : String(unsigned(node.auid))}`, 8) + ' ';
     const term = node.term ?? '';
-    line += `${(term.startsWith('/dev/') ? term.slice(5) : term).slice(0, 12).padEnd(12)} `;
-    line += `${(node.host ?? '?').slice(0, 16).padEnd(16)} `;
-    line += `${this.ctime(node.start).slice(0, 16).padEnd(16)} `;
+    line += `${padToWidth((term.startsWith('/dev/') ? term.slice(5) : term).slice(0, 12), 12)} `;
+    line += `${padToWidth((node.host ?? '?').slice(0, 16), 16)} `;
+    line += `${padToWidth(this.ctime(node.start).slice(0, 16), 16)} `;
     switch (node.status) {
       case SESSION_START:
         line += '  still logged in\n';
@@ -152,8 +153,8 @@ class Aulast {
         line += '  gone - no logout\n';
         break;
       case LOG_OUT: {
-        if (noTime) line += `- ${' '.padEnd(7)}`;
-        else line += `- ${this.ctime(node.end).slice(11).slice(0, 5).padEnd(7)}`;
+        if (noTime) line += `- ${padToWidth(' ', 7)}`;
+        else line += `- ${padToWidth(this.ctime(node.end).slice(11).slice(0, 5), 7)}`;
         const secs = node.end - node.start;
         const mins = Math.trunc(secs / 60) % 60;
         const hours = Math.trunc(secs / 3600) % 24;

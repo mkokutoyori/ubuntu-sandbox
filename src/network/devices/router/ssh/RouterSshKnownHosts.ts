@@ -1,6 +1,7 @@
 import type { Equipment } from '@/network/equipment/Equipment';
 import { SshKnownHostsFile } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { knownHostsPathFor, ROUTER_SSH_LOCAL_USER, sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface RouterSshKnownHostEntry {
   readonly host: string;
@@ -20,7 +21,7 @@ export class RouterSshKnownHosts {
   renderCisco(): string {
     const header = 'Address          Key fingerprint                                   Type';
     const rows = this.list().map((e) =>
-      `${e.host.padEnd(17)}${e.publicKey.slice(0, 50).padEnd(51)}${e.keyType}`);
+      `${padToWidth(e.host, 17)}${padToWidth(e.publicKey.slice(0, 50), 51)}${e.keyType}`);
     return [header, ...rows].join('\n');
   }
 }

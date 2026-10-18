@@ -4,6 +4,7 @@ import { parseCommand } from '../../CommandParser';
 import { complete, type CompletionTrigger } from '../../CompletionEngine';
 import { ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL } from './asaModes';
 import { asaShowFamily, type AsaShowHost } from './asaShowFamily';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface HelpLine {
   readonly keyword: string;
@@ -224,7 +225,7 @@ export function renderContinuationHelp(
   }
   const large = Math.max(0, ...[...seen.keys()].map(word => word.length));
   return [...seen.entries()].sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([suite, description]) => `  ${suite.padEnd(large + 2)}${description}`.trimEnd());
+    .map(([suite, description]) => `  ${padToWidth(suite, large + 2)}${description}`.trimEnd());
 }
 
 /**

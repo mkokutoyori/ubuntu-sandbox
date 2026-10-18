@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export interface MtrParsedArgs {
   target: string;
   reportMode: boolean;
@@ -126,16 +127,16 @@ export interface MtrFrameInput {
 }
 
 function fmt(value: number | null, width: number, decimals = 1): string {
-  if (value === null) return '?'.padStart(width);
-  return value.toFixed(decimals).padStart(width);
+  if (value === null) return padToWidth('?', width, 'right');
+  return padToWidth(value.toFixed(decimals), width, 'right');
 }
 
 function fmtInt(value: number, width: number): string {
-  return String(value).padStart(width);
+  return padToWidth(String(value), width, 'right');
 }
 
 function fmtPct(value: number): string {
-  return `${value.toFixed(1).padStart(5)}%`;
+  return `${padToWidth(value.toFixed(1), 5, 'right')}%`;
 }
 
 export function formatMtrFrame(input: MtrFrameInput, mode: 'live' | 'report' = 'live'): string {
@@ -151,8 +152,8 @@ export function formatMtrFrame(input: MtrFrameInput, mode: 'live' | 'report' = '
   lines.push('                                       Packets               Pings');
   lines.push(' Host                                Loss%   Snt   Last   Avg  Best  Wrst StDev');
   hops.forEach((h, idx) => {
-    const num = String(idx + 1).padStart(2);
-    const host = (h.ip ?? '???').padEnd(28);
+    const num = padToWidth(String(idx + 1), 2, 'right');
+    const host = padToWidth(h.ip ?? '???', 28);
     lines.push(
       ` ${num}. ${host} ${fmtPct(h.lossPct())} ${fmtInt(h.sent, 5)} ` +
       `${fmt(h.last, 6)} ${fmt(h.avg(), 5)} ${fmt(h.best, 5)} ${fmt(h.worst, 5)} ${fmt(h.stDev(), 5)}`,

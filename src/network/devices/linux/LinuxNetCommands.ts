@@ -9,6 +9,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import { broadcastAddress } from '../../core/ip';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ export function renderNetstatRoutes(ctx: IpNetworkContext | null): string {
     const gw   = r.nextHop ?? '0.0.0.0';
     const mask = cidrToMask(r.cidr);
     const flags = (r.type === 'default' || r.nextHop) ? 'UG' : 'U';
-    lines.push(`${dest.padEnd(16)}${gw.padEnd(16)}${mask.padEnd(16)}${flags.padEnd(8)}0 0          0 ${r.iface}`);
+    lines.push(`${padToWidth(dest, 16)}${padToWidth(gw, 16)}${padToWidth(mask, 16)}${padToWidth(flags, 8)}0 0          0 ${r.iface}`);
   }
   lines.push('127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo');
   return lines.join('\n');
@@ -132,13 +133,13 @@ export function renderNetstatInterfaces(ctx: IpNetworkContext | null): string {
   for (const name of names.includes('lo') ? names : [...names, 'lo']) {
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
-    const mtu = String(info.mtu).padStart(7);
-    const rx  = String(info.counters.framesIn).padStart(8);
-    const tx  = String(info.counters.framesOut).padStart(9);
+    const mtu = padToWidth(String(info.mtu), 7, 'right');
+    const rx  = padToWidth(String(info.counters.framesIn), 8, 'right');
+    const tx  = padToWidth(String(info.counters.framesOut), 9, 'right');
     const flags = name === 'lo'
       ? 'LRU'
       : (info.isUp && info.isConnected ? 'BMRU' : 'BMU');
-    lines.push(`${name.padEnd(11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
+    lines.push(`${padToWidth(name, 11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
   }
   return lines.join('\n');
 }

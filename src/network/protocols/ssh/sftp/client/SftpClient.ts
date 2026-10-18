@@ -8,6 +8,7 @@ import {
   baseName, isDirectoryMode, pathAppend, SftpTransfers, type SftpTransferOptions,
 } from './SftpTransfers';
 import { SftpProtocolFailure, SftpWireClient, type SftpDirectoryEntry, type SftpDiagnostics } from './SftpWireClient';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const SFTP_HELP = [
   'Available commands:',
@@ -302,9 +303,9 @@ export class SftpClient {
           ? this.longListing(shown, entry.attrs, flags.siUnits)
           : entry.longname}\n`;
       } else if (flags.short) {
-        text += `${shown.padEnd(layout.spacing)}\n`;
+        text += `${padToWidth(shown, layout.spacing)}\n`;
       } else {
-        text += shown.padEnd(layout.spacing);
+        text += padToWidth(shown, layout.spacing);
         if (used >= layout.columns) {
           text += '\n';
           used = 1;
@@ -354,9 +355,9 @@ export class SftpClient {
         }
         text += `${this.longListing(shown, attrs, flags.siUnits)}\n`;
       } else if (flags.short) {
-        text += `${shown.padEnd(layout.spacing)}\n`;
+        text += `${padToWidth(shown, layout.spacing)}\n`;
       } else {
-        text += shown.padEnd(layout.spacing);
+        text += padToWidth(shown, layout.spacing);
         if (used >= layout.columns) {
           text += '\n';
           used = 1;
@@ -374,18 +375,18 @@ export class SftpClient {
     const stats = this.wire.filesystemStats(path);
     if (stats === null) return false;
     const percent = (total: number, free: number): string =>
-      (total === 0 ? 'ERR' : `${String(Math.floor((100 * (total - free)) / total)).padStart(3, ' ')}%`);
+      (total === 0 ? 'ERR' : `${padToWidth(String(Math.floor((100 * (total - free)) / total)), 3, 'right')}%`);
     const inodeCapacity = percent(stats.files, stats.freeFiles);
     const dataCapacity = percent(stats.blocks, stats.freeBlocks);
     if (inodes) {
       this.print('     Inodes        Used       Avail      (root)    %Capacity');
-      this.print(`${String(stats.files).padStart(11)} ${String(stats.files - stats.freeFiles).padStart(11)} ${String(stats.availableFiles).padStart(11)} ${String(stats.freeFiles).padStart(11)}         ${inodeCapacity}`);
+      this.print(`${padToWidth(String(stats.files), 11, 'right')} ${padToWidth(String(stats.files - stats.freeFiles), 11, 'right')} ${padToWidth(String(stats.availableFiles), 11, 'right')} ${padToWidth(String(stats.freeFiles), 11, 'right')}         ${inodeCapacity}`);
     } else if (human) {
-      const scale = (blocks: number): string => `${scaledSize(blocks * stats.fragmentSize).padStart(7)}B`;
+      const scale = (blocks: number): string => `${padToWidth(scaledSize(blocks * stats.fragmentSize), 7, 'right')}B`;
       this.print('    Size     Used    Avail   (root)    %Capacity');
       this.print(`${scale(stats.blocks)} ${scale(stats.blocks - stats.freeBlocks)} ${scale(stats.availableBlocks)} ${scale(stats.freeBlocks)}         ${dataCapacity}`);
     } else {
-      const kilobytes = (blocks: number): string => String(Math.floor((stats.fragmentSize * blocks) / 1024)).padStart(12);
+      const kilobytes = (blocks: number): string => padToWidth(String(Math.floor((stats.fragmentSize * blocks) / 1024)), 12, 'right');
       this.print('        Size         Used        Avail       (root)    %Capacity');
       this.print(`${kilobytes(stats.blocks)} ${kilobytes(stats.blocks - stats.freeBlocks)} ${kilobytes(stats.availableBlocks)} ${kilobytes(stats.freeBlocks)}         ${dataCapacity}`);
     }

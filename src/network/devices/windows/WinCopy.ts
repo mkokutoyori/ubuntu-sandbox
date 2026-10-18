@@ -1,6 +1,7 @@
 import type { WinFileCommandContext } from './WinFileCommands';
 import { askLine } from './WinCommandInput';
 import { hasWildcard, joinPath, nameMatcher, splitFileSpec } from './WinPathSpec';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const SYNTAX_ERROR = 'The syntax of the command is incorrect.';
 const NOT_FOUND = 'The system cannot find the file specified.';
@@ -8,7 +9,7 @@ const PATH_NOT_FOUND = 'The system cannot find the path specified.';
 const END_OF_FILE = String.fromCharCode(0x1a);
 
 const countLine = (count: number, verb: 'copied' | 'moved', noun = 'file(s)'): string =>
-  `${String(count).padStart(9)} ${noun} ${verb}.`;
+  `${padToWidth(String(count), 9, 'right')} ${noun} ${verb}.`;
 
 const copyQuestion = (target: string): string => `Overwrite ${target}? (Yes/No/All): `;
 

@@ -3,6 +3,7 @@ import type { CapturePredicate } from '@/network/capture/EmbeddedCapture';
 import type { CaptureFrame } from '@/network/devices/linux/network/tcpdump/CaptureFrame';
 import { hexGroups, hexRows } from '@/network/capture/HexDump';
 import { HUAWEI_ERRORS, resolveHuaweiInterfaceName } from '../cli-utils';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface CapturePacketPlan {
   readonly iface: string;
@@ -109,7 +110,7 @@ export function packetBlock(ordinal: number, frame: CaptureFrame): string[] {
   const direction = frame.direction === 'in' ? 'inbound' : 'outbound';
   const lines = [` Packet ${ordinal}: ${frame.at.toISOString().replace('T', ' ').replace('Z', '')} ${direction} ${frame.iface}, ${frame.length} bytes`];
   for (const row of hexRows(frame.raw)) {
-    lines.push(`  ${row.offset.toString(16).padStart(4, '0')}  ${hexGroups(row.bytes, 1, ' ').padEnd(47, ' ')}  ${row.ascii}`);
+    lines.push(`  ${row.offset.toString(16).padStart(4, '0')}  ${padToWidth(hexGroups(row.bytes, 1, ' '), 47)}  ${row.ascii}`);
   }
   return lines;
 }

@@ -11,6 +11,7 @@ import {
 } from './JournalOutput';
 import { type JournalCursor, type JournalRecord, cursorOf, parseCursor, parseId128 } from './JournalRecord';
 import { formatBytes, text, utf8 } from './JournalText';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const JOURNALCTL_VERSION = 'systemd 255 (255.4-1ubuntu8.14)';
 const FEATURES = '+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified';
@@ -936,7 +937,7 @@ function printBoots(boots: Boot[], args: Args, clock: SystemdClock, say: (text: 
   const header = ['IDX', 'BOOT ID', 'FIRST ENTRY', 'LAST ENTRY'];
   const shown = args.quiet ? rows : [header, ...rows];
   const widths = header.map((_, column) => Math.max(...shown.map(row => row[column].length)));
-  const render = (row: string[]): string => `${row.map((cell, column) => (column === 0 ? cell.padStart(widths[0]) : column < 3 ? cell.padEnd(widths[column]) : cell)).join(' ')}\n`;
+  const render = (row: string[]): string => `${row.map((cell, column) => (column === 0 ? padToWidth(cell, widths[0], 'right') : column < 3 ? padToWidth(cell, widths[column]) : cell)).join(' ')}\n`;
   say(shown.map(render).join(''));
 }
 

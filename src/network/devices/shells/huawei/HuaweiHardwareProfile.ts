@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export interface HuaweiHardwareProfile {
   readonly family: 'router' | 'switch';
   readonly model: string;
@@ -118,8 +119,8 @@ export function renderHardwareDevice(
     const reg = s.online ? 'Registered' : '-         ';
     const status = s.online ? 'Normal' : '-     ';
     const role = s.role;
-    const type = s.type.padEnd(15);
-    return `${s.slot.padEnd(6)}${s.sub.padEnd(5)}${type} ${online} ${power} ${reg}   ${status}   ${role}`;
+    const type = padToWidth(s.type, 15);
+    return `${padToWidth(s.slot, 6)}${padToWidth(s.sub, 5)}${type} ${online} ${power} ${reg}   ${status}   ${role}`;
   });
   return [...header, ...rows,
     '-------------------------------------------------------------------------------',
@@ -178,7 +179,7 @@ export function renderTemperature(profile: HuaweiHardwareProfile): string {
   const lines = [' Slot CPU  Temperature(C)  Threshold(C)  Status'];
   for (const s of profile.temperatureSensors) {
     const status = s.valueC >= s.threshold ? 'Critical' : 'Normal';
-    lines.push(` ${s.slot.padEnd(5)}${s.cpu.padEnd(5)}${String(s.valueC).padEnd(16)}${String(s.threshold).padEnd(14)}${status}`);
+    lines.push(` ${padToWidth(s.slot, 5)}${padToWidth(s.cpu, 5)}${padToWidth(String(s.valueC), 16)}${padToWidth(String(s.threshold), 14)}${status}`);
   }
   return lines.join('\n');
 }
@@ -186,7 +187,7 @@ export function renderTemperature(profile: HuaweiHardwareProfile): string {
 export function renderFans(profile: HuaweiHardwareProfile): string {
   const lines = [' Slot  FAN  Status     Redundancy'];
   for (const f of profile.fans) {
-    lines.push(` ${f.slot.padEnd(6)}${f.id.padEnd(5)}Normal     ${f.redundant ? 'Yes' : 'No'}`);
+    lines.push(` ${padToWidth(f.slot, 6)}${padToWidth(f.id, 5)}Normal     ${f.redundant ? 'Yes' : 'No'}`);
   }
   return lines.join('\n');
 }
@@ -194,7 +195,7 @@ export function renderFans(profile: HuaweiHardwareProfile): string {
 export function renderPower(profile: HuaweiHardwareProfile): string {
   const lines = [' Slot  PWR  Wattage  Status'];
   for (const p of profile.powerSupplies) {
-    lines.push(` ${p.slot.padEnd(6)}${p.id.padEnd(5)}${(p.wattage + 'W').padEnd(9)}Normal`);
+    lines.push(` ${padToWidth(p.slot, 6)}${padToWidth(p.id, 5)}${padToWidth(p.wattage + 'W', 9)}Normal`);
   }
   return lines.join('\n');
 }

@@ -22,6 +22,7 @@ import {
   resolveNetworkdPlans,
   type NetworkdLinkPlan,
 } from './net/NetworkdPlan';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const INTERFACES_PATH = '/etc/network/interfaces';
 export const NETPLAN_PATH = '/etc/netplan/01-netcfg.yaml';
@@ -435,7 +436,7 @@ export class LinuxNetworkConfigManager {
       const key = `${prefix}|${label}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      lines.push(`${String(label).padStart(5)} ${prefix}`);
+      lines.push(`${padToWidth(String(label), 5, 'right')} ${prefix}`);
     }
     return lines.join('\n');
   }
@@ -484,7 +485,7 @@ export class LinuxNetworkConfigManager {
         state = 'disconnected';
         connection = '--';
       }
-      rows.push(`${name.padEnd(8)}ethernet  ${state.padEnd(24)}${connection}`);
+      rows.push(`${padToWidth(name, 8)}ethernet  ${padToWidth(state, 24)}${connection}`);
     }
     return [header, ...rows].join('\n');
   }

@@ -23,6 +23,7 @@ import {
   buildNeighJsonEntry,
   toJsonText,
 } from './commands/net/IpJsonFormat';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Network Context Interface ──────────────────────────────────────
 
@@ -694,9 +695,9 @@ function statsLines(info: IpInterfaceInfo): string[] {
   const errorsOut = c.errorsOut ?? 0;
   return [
     '    RX:  bytes packets errors dropped  missed   mcast',
-    `    ${String(c.bytesIn).padStart(5)}${String(c.framesIn).padStart(8)}${String(errorsIn).padStart(7)}${'0'.padStart(8)}${'0'.padStart(8)}${'0'.padStart(8)}`,
+    `    ${padToWidth(String(c.bytesIn), 5, 'right')}${padToWidth(String(c.framesIn), 8, 'right')}${padToWidth(String(errorsIn), 7, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}`,
     '    TX:  bytes packets errors dropped carrier collsns',
-    `    ${String(c.bytesOut).padStart(5)}${String(c.framesOut).padStart(8)}${String(errorsOut).padStart(7)}${'0'.padStart(8)}${'0'.padStart(8)}${'0'.padStart(8)}`,
+    `    ${padToWidth(String(c.bytesOut), 5, 'right')}${padToWidth(String(c.framesOut), 8, 'right')}${padToWidth(String(errorsOut), 7, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}`,
   ];
 }
 
@@ -764,7 +765,7 @@ function briefSelection(ctx: IpNetworkContext, args: string[]): string[] {
 
 function briefColumns(info: IpInterfaceInfo, c: IpColorizer): string {
   const { state } = formeLien(info);
-  return `${c.ifname(`${info.name.padEnd(16)} `)}${c.operstate(state, `${state.padEnd(14)} `)}`;
+  return `${c.ifname(`${padToWidth(info.name, 16)} `)}${c.operstate(state, `${padToWidth(state, 14)} `)}`;
 }
 
 function briefAddresses(info: IpInterfaceInfo, c: IpColorizer): string[] {
@@ -796,7 +797,7 @@ function ipLinkBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): str
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
     const drapeaux = `<${computeIfaceFlags(info).join(',')}>`;
-    lines.push(`${briefColumns(info, c)}${(info.mac ?? '').padEnd(17)} ${drapeaux} `);
+    lines.push(`${briefColumns(info, c)}${padToWidth(info.mac ?? '', 17)} ${drapeaux} `);
   }
   return lines.join('\n');
 }

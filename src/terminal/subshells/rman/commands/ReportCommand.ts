@@ -13,6 +13,7 @@ import type { IRmanCommand, RmanCommandContext } from './types';
 import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import { RedundancyPolicy } from '../policy/RedundancyPolicy';
 import { RecoveryWindowPolicy } from '../policy/RecoveryWindowPolicy';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Parse an optional REDUNDANCY n / RECOVERY WINDOW OF n DAYS suffix into a policy. */
 function parsePolicySuffix(text: string, fallback: IRetentionPolicy): IRetentionPolicy {
@@ -47,7 +48,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
       for (const s of obsolete) {
         const ts = formatOracleDate(rmanWall(ctx, s.completionTime));
         for (const p of s.pieces) {
-          lines.push(`Backup Set           ${String(s.bsKey).padEnd(6)} ${ts}  ${p.path}`);
+          lines.push(`Backup Set           ${padToWidth(String(s.bsKey), 6)} ${ts}  ${p.path}`);
         }
       }
       if (obsolete.length === 0) lines.push('no obsolete backups found');
@@ -63,7 +64,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
       ];
       const touches = ctx.getUnrecoverableFiles?.() ?? [];
       for (const df of touches) {
-        lines.push(`${String(df.fileNo).padEnd(4)} full or incremental     ${df.path}`);
+        lines.push(`${padToWidth(String(df.fileNo), 4)} full or incremental     ${df.path}`);
       }
       if (touches.length === 0) {
         lines.push('no files require backup due to unrecoverable operations');
@@ -82,10 +83,10 @@ export class ReportCommand implements IRmanCommand<string[]> {
         '---- -------- -------------------- ------- ------------------------',
       ];
       for (const df of ctx.getDatafiles()) {
-        const sizeMB = Math.round(df.sizeBytes / 1_048_576).toString().padEnd(8);
-        const ts = df.tablespace.padEnd(20);
+        const sizeMB = padToWidth(Math.round(df.sizeBytes / 1_048_576).toString(), 8);
+        const ts = padToWidth(df.tablespace, 20);
         const rb = df.tablespace.startsWith('UNDO') || df.tablespace === 'SYSTEM' ? 'YES    ' : 'NO     ';
-        lines.push(`${String(df.fileNo).padEnd(4)} ${sizeMB} ${ts} ${rb} ${df.path}`);
+        lines.push(`${padToWidth(String(df.fileNo), 4)} ${sizeMB} ${ts} ${rb} ${df.path}`);
       }
       lines.push('', 'List of Temporary Files', '=======================',
         'File Size(MB) Tablespace           Maxsize(MB) Tempfile Name',
@@ -135,11 +136,11 @@ export class ReportCommand implements IRmanCommand<string[]> {
         const jours = ancienne === undefined
           ? seuil
           : Math.floor((simulationNowMs() - ancienne) / 86_400_000);
-        lines.push(`${String(df.fileNo).padEnd(4)} ${String(jours).padEnd(5)} ${df.path}`);
+        lines.push(`${padToWidth(String(df.fileNo), 4)} ${padToWidth(String(jours), 5)} ${df.path}`);
         continue;
       }
       if (nombre >= seuil) continue;
-      lines.push(`${String(df.fileNo).padEnd(4)} ${String(nombre).padEnd(5)} ${df.path}`);
+      lines.push(`${padToWidth(String(df.fileNo), 4)} ${padToWidth(String(nombre), 5)} ${df.path}`);
     }
     lines.push('');
     return ok(lines);

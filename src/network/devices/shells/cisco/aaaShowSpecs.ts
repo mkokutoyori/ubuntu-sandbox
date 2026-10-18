@@ -10,6 +10,7 @@ import {
   radiusAcctPort, radiusAuthPort,
   type CiscoSecurityConfig, type RadiusServer,
 } from '../../router/security/CiscoSecurityConfig';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface AaaShowHost {
   security(): CiscoSecurityConfig;
@@ -347,7 +348,7 @@ export function renderRadiusStatistics(host: AaaShowHost): string {
   };
   const average = (c: StatisticsColumn) => (c.delayCount > 0 ? Math.round(c.delayTotal / c.delayCount) : 0);
   const row = (label: string, values: readonly number[]) =>
-    `${label.padEnd(28)}${values.map((value) => String(value).padEnd(11)).join('').trimEnd()}`;
+    `${padToWidth(label, 28)}${values.map((value) => padToWidth(String(value), 11)).join('').trimEnd()}`;
   return [
     '                            Auth.      Acct.      Both',
     row('Total responses seen:', [auth.responses, acct.responses, both.responses]),
