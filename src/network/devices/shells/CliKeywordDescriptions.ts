@@ -201,6 +201,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['security-association', 'IPSec security association'],
   ['send', 'Send'],
   ['server', 'Server'],
+  ['shell', 'Shell configuration'],
   ['session-id', 'Session identifier'],
   ['sham-link', 'OSPF sham link'],
   ['short', 'Short form'],

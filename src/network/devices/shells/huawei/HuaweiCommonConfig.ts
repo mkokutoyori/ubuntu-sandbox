@@ -86,10 +86,21 @@ export function registerHuaweiCommonMgmt(
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
   if (headers) {
-    trie.registerGreedy('header', 'Configure login/shell banner',
-      (args) => applyHeaderCommand(args, headers, false));
-    trie.registerGreedy('undo header', 'Remove the login/shell banner',
-      (args) => applyHeaderCommand(args, headers, true));
+    trie.setCanonicalDescription('header', 'Configure the login and shell banners');
+    trie.setCanonicalDescription('undo header', 'Remove the login or shell banner');
+    for (const kind of ['login', 'shell']) {
+      for (const [form, argument, text] of [
+        ['information', 'text', 'Text of the banner'],
+        ['file', 'file-name', 'Name of the file holding the banner'],
+      ] as const) {
+        trie.registerGreedy(`header ${kind} ${form}`, `Set the ${kind} banner from ${form === 'file' ? 'a file' : 'text'}`,
+          (args) => applyHeaderCommand([kind, form, ...args], headers, false));
+        trie.describeArgs(`header ${kind} ${form}`, [{ name: argument, type: 'WORD', description: text }]);
+      }
+      trie.setCanonicalDescription(`header ${kind}`, `Configure the ${kind} banner`);
+      trie.registerGreedy(`undo header ${kind}`, `Remove the ${kind} banner`,
+        (args) => applyHeaderCommand([kind, ...args], headers, true));
+    }
   }
   trie.register('terminal monitor', 'Enable terminal monitoring', () => 'Info: Current terminal monitor is on.');
   trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
