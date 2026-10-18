@@ -119,6 +119,8 @@ export interface PSAssignmentStatement extends ASTBase {
   operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '??=';
   value: PSExpression;
   postfix?: boolean;
+  typeConstraints?: string[];
+  destructuringTargets?: PSVariableExpression[];
 }
 
 // ─── if / elseif / else ───────────────────────────────────────────────────────

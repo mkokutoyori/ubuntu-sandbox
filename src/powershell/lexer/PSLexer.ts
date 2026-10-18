@@ -284,6 +284,7 @@ export class PSLexer {
     let value = '';
     while (!this.eof()) {
       const c = this.ch();
+      if (c === '"' && this.peek1() === '"') { value += '`"'; this.advance(); this.advance(); continue; }
       if (c === '"') break; // closing quote
       if (c === '`' && !this.eof()) {
         // Backtick escape — preserve raw sequence for the evaluator
@@ -401,6 +402,7 @@ export class PSLexer {
         name += this.ch();
         this.advance();
       }
+      if (!this.eof() && this.ch() === '?') { name += '?'; this.advance(); }
       return psToken(PSTokenType.VARIABLE, name, start);
     }
 
@@ -513,10 +515,16 @@ export class PSLexer {
         // Generic argument or array suffix: [int] or []
         name += '['; this.advance();
         let inner = '';
-        while (!this.eof() && this.ch() !== ']') {
-          inner += this.ch(); this.advance();
+        let depth = 1;
+        while (!this.eof() && depth > 0) {
+          const inside = this.ch();
+          if (inside === '[') depth++;
+          else if (inside === ']') depth--;
+          if (inside === '\n') break;
+          if (depth > 0) inner += inside;
+          this.advance();
         }
-        if (!this.eof()) { name += inner + ']'; this.advance(); }
+        if (depth === 0) name += inner + ']';
       } else {
         break;
       }

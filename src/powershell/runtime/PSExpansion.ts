@@ -203,6 +203,7 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'function') return '';
   if (typeof value === 'object') {
     const rec = value as Record<string, PSValue>;
+    if (rec.type === 'ScriptBlock' && typeof rec.sourceText === 'string') return rec.sourceText;
     const registered = registeredDisplay(rec);
     if (registered !== null) return registered;
     if (isTimeSpan(rec)) return formatTimeSpan(rec.TotalMilliseconds as number);

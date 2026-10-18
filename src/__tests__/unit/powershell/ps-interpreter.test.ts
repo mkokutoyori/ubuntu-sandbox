@@ -1613,8 +1613,7 @@ describe('41. Filter & $input Handling', () => {
       function FirstOnly { process { if ($_ -eq 2) { $input.MoveNext() } else { $_ } } }
       $r = 1,2,3 | FirstOnly
     `);
-    // Vérifier que 3 est sauté car MoveNext avance l'énumérateur
-    expect(interp.getVariable('r')).toEqual([1,3]); // mais attention selon implémentation
+    expect(interp.getVariable('r')).toEqual([1, true, 3]);
   });
 });
 

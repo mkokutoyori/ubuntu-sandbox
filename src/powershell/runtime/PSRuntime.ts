@@ -46,12 +46,14 @@ import { PASS_THROUGH_CMDLETS, unboxDeep } from './semantics/PSUnbox';
 import { mathStatics } from './semantics/MathStatics';
 import { languageCompare, languageEquals, type CompareContext } from './semantics/PSCompare';
 import { compileRegex, regexReplace, regexSplit } from './semantics/PSRegex';
+import { splitWithPredicate, splitWithPredicateFromEnd } from './semantics/PSSplit';
 import { makeTypeObject } from './semantics/PSTypeObject';
-import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, stripTypeBrackets, tagArray, type TypeSpec } from './semantics/PSTypes';
+import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, stripTypeBrackets, tagArray, typeSpecName, type TypeSpec } from './semantics/PSTypes';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
+import { wildcardMatches, escapeWildcard, unescapeWildcard, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import type { ICmdlet, ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -256,6 +258,34 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     getenvironmentvariable: (name: PSValue) => process.env[String(name)] ?? null as PSValue,
   } as Record<string, PSValue>,
 } as Record<string, Record<string, PSValue>>;
+const INPUT_CURSOR = '__inputCursor__';
+
+const SPLIT_SIMPLE_MATCH = 1;
+const SPLIT_REGEX_MATCH = 2;
+const SPLIT_IGNORE_PATTERN_WHITESPACE = 8;
+const SPLIT_MULTILINE = 16;
+const SPLIT_SINGLELINE = 32;
+const SPLIT_IGNORE_CASE = 64;
+const SPLIT_EXPLICIT_CAPTURE = 128;
+
+const KNOWN_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'null', 'void', 'type', 'switch', 'hashtable', 'ordered', 'pscustomobject', 'psobject', 'scriptblock', 'timespan',
+  'datetime', 'datetimeoffset', 'version', 'xml', 'regex', 'guid', 'uri', 'ipaddress', 'securestring', 'pscredential',
+  'psmoduleinfo', 'cmdletinfo', 'commandinfo', 'wildcardpattern', 'adsi', 'wmi', 'wmiclass', 'wmisearcher', 'cimsession',
+  'math', 'convert', 'environment', 'console', 'array', 'string', 'char', 'bool', 'object', 'enum', 'exception',
+  'errorrecord', 'nullstring', 'dbnull', 'bigint', 'biginteger', 'datetimeoffset', 'mailaddress', 'arraylist',
+  'stringbuilder', 'cultureinfo', 'ipendpoint', 'physicaladdress', 'pspropertyinfo', 'pslistmodifier', 'powershell',
+  'runspace', 'initialsessionstate', 'psvariable', 'alias', 'x500distinguishedname', 'x509certificate', 'x509certificate2',
+  'byte', 'sbyte', 'int', 'int16', 'int32', 'int64', 'uint16', 'uint32', 'uint64', 'uint', 'ushort', 'ulong', 'long',
+  'short', 'float', 'single', 'double', 'decimal', 'boolean', 'nullable', 'collections', 'delegate', 'attribute',
+]);
+
+STATIC_TYPES['wildcardpattern'] = {
+  escape: (s: PSValue) => escapeWildcard(String(s)),
+  unescape: (s: PSValue) => unescapeWildcard(String(s)),
+  containswildcardcharacters: (s: PSValue) => hasWildcard(String(s)),
+} as Record<string, PSValue>;
+STATIC_TYPES['system.management.automation.wildcardpattern'] = STATIC_TYPES['wildcardpattern'];
 STATIC_TYPES['system.math'] = STATIC_TYPES['math'];
 STATIC_TYPES['system.text.regularexpressions.regex'] = STATIC_TYPES['regex'];
 STATIC_TYPES['system.guid'] = STATIC_TYPES['guid'];
@@ -946,6 +976,7 @@ export class PSRuntime {
       return this.execAssignment({ ...node, operator: '=' }, env);
     }
     const rhs = this.evalExpr(node.value, env);
+    if (node.destructuringTargets !== undefined) return this.destructure(node.destructuringTargets, rhs, env);
 
     // `$null = <expr>` (and, less commonly, `$true =`/`$false =`) is the
     // idiomatic PowerShell way to discard a cmdlet's return value — the
@@ -964,6 +995,14 @@ export class PSRuntime {
     const target = node.target as PSVariableExpression;
     const varName = target.varName ?? (target as unknown as { name: string }).name;
     const scope = target.scope;
+    if (node.typeConstraints !== undefined) env.constrain(varName, node.typeConstraints);
+    const constrained = (value: PSValue): PSValue => {
+      const types = env.constraintOf(varName);
+      if (types === undefined) return value;
+      let converted = value;
+      for (let i = types.length - 1; i >= 0; i--) converted = this.psCast(converted, types[i]);
+      return converted;
+    };
 
     const writeVar = (name: string, val: PSValue) => {
       if (scope === 'env') {
@@ -982,7 +1021,7 @@ export class PSRuntime {
       else env.update(name, val);
     };
 
-    if (node.operator === '=') { writeVar(varName, rhs); return rhs; }
+    if (node.operator === '=') { const stored = constrained(rhs); writeVar(varName, stored); return stored; }
 
     const readCurrent = (): PSValue => {
       if (scope === 'env') return this.providers.environment?.get(varName) ?? '';
@@ -990,9 +1029,21 @@ export class PSRuntime {
       return env.get(varName);
     };
     const current = readCurrent() ?? 0;
-    const result = this.applyCompound(node.operator, current, rhs);
+    const result = constrained(this.applyCompound(node.operator, current, rhs));
     updateVar(varName, result);
     return node.postfix === true ? current : result;
+  }
+
+  private destructure(targets: PSVariableExpression[], value: PSValue, env: PSEnvironment): PSValue {
+    const values = Array.isArray(value) ? value : value === null || value === undefined ? [] : [value];
+    targets.forEach((target, index) => {
+      const name = target.varName ?? (target as unknown as { name: string }).name;
+      const assigned = index === targets.length - 1 && values.length > targets.length
+        ? values.slice(index)
+        : values[index] ?? null;
+      env.set(name, assigned as PSValue);
+    });
+    return value;
   }
 
   private applyCompound(op: PSAssignmentStatement['operator'], current: PSValue, rhs: PSValue): PSValue {
@@ -1624,9 +1675,9 @@ export class PSRuntime {
     const replacement = args[1] ?? '';
     const options = { ignoreCase };
     if (this.isScriptBlock(replacement) || typeof replacement === 'function') {
-      const call = typeof replacement === 'function'
-        ? replacement as (...a: PSValue[]) => PSValue
-        : (m: PSValue) => this.invokeScriptBlock(replacement as PSScriptBlock, {}, [], env, m);
+      const call = this.isScriptBlock(replacement)
+        ? (m: PSValue) => this.invokeScriptBlock(replacement as PSScriptBlock, {}, [m], env, m)
+        : replacement as (...a: PSValue[]) => PSValue;
       return regexReplace(psValueToString(left), pattern, (match) => {
         const groups = match.groups as Record<string, string> | undefined;
         const matchObject = {
@@ -1642,28 +1693,45 @@ export class PSRuntime {
   private splitOperator(left: PSValue, right: PSValue, ignoreCase: boolean, env: PSEnvironment): PSValue {
     if (Array.isArray(left)) return left.flatMap(item => this.splitOperator(item, right, ignoreCase, env) as PSValue[]);
     const args = Array.isArray(right) ? right : [right];
+    if (args.length === 0) throw new PSRuntimeError(`The argument to operator '-split' is not valid: ${psValueToString(right)}.`);
     const text = psValueToString(left);
-    const limit = args[1] === undefined || args[1] === null ? 0 : Number(args[1] instanceof PSNumber ? args[1].toNumber() : args[1]);
-    const optionText = args[2] === undefined || args[2] === null ? '' : psValueToString(args[2]).toLowerCase();
     const delimiter = args[0];
-    if (this.isScriptBlock(delimiter)) {
-      const parts: string[] = [];
-      let current = '';
-      let produced = 0;
-      for (let i = 0; i < text.length; i++) {
-        const hit = limit > 0 && produced >= limit - 1
-          ? false
-          : this.isTruthy(this.invokeScriptBlock(delimiter as PSScriptBlock, {}, [], env, new PSChar(text.charCodeAt(i)) as PSValue));
-        if (hit) { parts.push(current); current = ''; produced += 1; } else current += text[i];
+    const limit = args[1] === undefined || args[1] === null ? 0 : Number(args[1] instanceof PSNumber ? args[1].toNumber() : args[1]);
+    let flags = 0;
+    const optionArgument = args[2];
+    if (optionArgument !== undefined && optionArgument !== null && psValueToString(optionArgument) !== '') {
+      flags = this.splitOptionFlags(optionArgument);
+      if (this.isScriptBlock(delimiter)) {
+        throw new PSRuntimeError('Options are not allowed on the -split operator with a predicate.', 'System.Management.Automation.ParseException');
       }
-      parts.push(current);
-      return parts;
+      if (ignoreCase) flags |= SPLIT_IGNORE_CASE;
+    } else if (ignoreCase) {
+      flags = SPLIT_IGNORE_CASE;
     }
-    const options = {
-      ignoreCase, simpleMatch: optionText.includes('simplematch'),
-      multiline: optionText.includes('multiline'), singleline: optionText.includes('singleline'),
-    };
-    return regexSplit(text, psValueToString(delimiter ?? ''), limit, options);
+    if (this.isScriptBlock(delimiter)) {
+      const block = delimiter as PSScriptBlock;
+      const test = (character: string, whole: string, index: number): boolean =>
+        this.isTruthy(this.invokeScriptBlock(block, {}, [whole, index], env, character));
+      return limit >= 0 ? splitWithPredicate(text, test, limit) : splitWithPredicateFromEnd(text, test, limit);
+    }
+    if ((flags & (SPLIT_SIMPLE_MATCH | SPLIT_REGEX_MATCH)) === 0) flags |= SPLIT_REGEX_MATCH;
+    if ((flags & SPLIT_SIMPLE_MATCH) !== 0 && (flags & ~(SPLIT_SIMPLE_MATCH | SPLIT_IGNORE_CASE)) !== 0) {
+      throw new PSRuntimeError('The combination of options with the -split operator is not valid.', 'System.Management.Automation.ParseException');
+    }
+    return regexSplit(text, psValueToString(delimiter ?? ''), limit, {
+      ignoreCase: (flags & SPLIT_IGNORE_CASE) !== 0,
+      simpleMatch: (flags & SPLIT_SIMPLE_MATCH) !== 0,
+      multiline: (flags & SPLIT_MULTILINE) !== 0,
+      singleline: (flags & SPLIT_SINGLELINE) !== 0,
+      extended: (flags & SPLIT_IGNORE_PATTERN_WHITESPACE) !== 0,
+      explicitCapture: (flags & SPLIT_EXPLICIT_CAPTURE) !== 0,
+    });
+  }
+
+  private splitOptionFlags(argument: PSValue): number {
+    const type = this.enums.get('splitoptions');
+    if (type === undefined) return 0;
+    return this.guarded(() => type.parse(psValueToString(argument)).numeric);
   }
 
   private evalUnary(node: PSUnaryExpression, env: PSEnvironment): PSValue {
@@ -1739,7 +1807,34 @@ export class PSRuntime {
     return arr;
   }
 
+  private typeLiteralObject(typeName: string): PSValue {
+    const known: Record<string, [string, string]> = {
+      ordered: ['OrderedDictionary', 'System.Collections.Specialized.OrderedDictionary'],
+      hashtable: ['Hashtable', 'System.Collections.Hashtable'],
+      pscustomobject: ['PSCustomObject', 'System.Management.Automation.PSCustomObject'],
+      psobject: ['PSObject', 'System.Management.Automation.PSObject'],
+      regex: ['Regex', 'System.Text.RegularExpressions.Regex'],
+      datetime: ['DateTime', 'System.DateTime'],
+      timespan: ['TimeSpan', 'System.TimeSpan'],
+    };
+    const lower = typeName.toLowerCase();
+    const mapped = known[lower];
+    if (mapped !== undefined) return makeTypeObject(mapped[0], mapped[1]);
+    const enumType = this.enums.get(lower);
+    if (enumType !== undefined) return makeTypeObject(enumType.name, enumType.name);
+    const spec = parseTypeName(typeName);
+    if (spec.kind === 'named') {
+      const short = typeName.slice(typeName.lastIndexOf('.') + 1);
+      return makeTypeObject(short, typeName);
+    }
+    const described = typeSpecName(spec);
+    return makeTypeObject(described.name, described.fullName);
+  }
+
   private evalMember(node: PSMemberExpression, env: PSEnvironment): PSValue {
+    if (node.object.type === 'TypeLiteral' && typeof node.member === 'string') {
+      return this.getMember(this.typeLiteralObject((node.object as unknown as { typeName: string }).typeName), node.member.toLowerCase());
+    }
     const obj    = this.evalExpr(node.object, env);
     if (node.nullConditional === true && (obj === null || obj === undefined)) return null;
     const member = typeof node.member === 'string'
@@ -1756,10 +1851,19 @@ export class PSRuntime {
       };
     }
 
+    if (this.isScriptBlock(obj) && (member === 'invoke' || member === 'invokereturnasis')) {
+      const block = obj as PSScriptBlock;
+      return (...args: PSValue[]) => this.invokeScriptBlock(block, {}, args, env, undefined);
+    }
+
     const intrinsic = this.intrinsicCollectionMethod(obj, member, env);
     if (intrinsic !== null) return intrinsic;
 
-    return this.getMember(obj, member);
+    const found = this.getMember(obj, member);
+    if ((found === null || found === undefined) && member.startsWith('get_')) {
+      return () => this.getMember(obj, member.slice('get_'.length));
+    }
+    return found;
   }
 
   private intrinsicCollectionMethod(obj: PSValue, member: string, env: PSEnvironment): PSValue {
@@ -1920,7 +2024,18 @@ export class PSRuntime {
     const args   = node.arguments.map(a => this.evalExpr(a, env));
     if (typeof callee === 'function')
       return (callee as (...a: PSValue[]) => PSValue)(...args);
+    if (calleeNode.type === 'MemberExpression') this.rejectMissingMethod(calleeNode, env);
     return null;
+  }
+
+  private rejectMissingMethod(callee: PSMemberExpression, env: PSEnvironment): void {
+    const target = this.evalExpr(callee.object, env);
+    if (target === null || target === undefined) {
+      throw new PSRuntimeError('You cannot call a method on a null-valued expression.', 'System.Management.Automation.RuntimeException');
+    }
+    const name = typeof callee.member === 'string' ? callee.member : psValueToString(this.evalExpr(callee.member, env));
+    const typeName = this.describeType(target)?.fullName ?? 'System.Object';
+    throw new PSRuntimeError(`Method invocation failed because [${typeName}] does not contain a method named '${name}'.`, 'System.Management.Automation.RuntimeException');
   }
 
   private evalCast(node: PSCastExpression, env: PSEnvironment): PSValue {
@@ -2418,6 +2533,8 @@ export class PSRuntime {
     if (nameNode.type === 'VariableExpression') {
       const varVal = this.evalVariable(nameNode as PSVariableExpression, env);
       if (this.isScriptBlock(varVal)) {
+        const called = (nameNode as unknown as Record<string, unknown>).__callop__ === true;
+        if (!called && node.parameters.length === 0 && node.arguments.length === 0 && pipeInput === undefined) return varVal;
         const positional: PSValue[] = [];
         const named: Record<string, PSValue> = {};
         for (const p of node.parameters)
@@ -2836,7 +2953,7 @@ export class PSRuntime {
     if (hasNamedBlocks || isFilter) {
       const childEnv = env.createChild();
       this.bindParametersInto(childEnv, block, resolvedNamed, positional, env, pipeParamName);
-      childEnv.set('input', pipeItems);
+      childEnv.set('input', this.asInputEnumerator(pipeItems));
 
       const results: PSValue[] = [];
 
@@ -2869,7 +2986,7 @@ export class PSRuntime {
             }
           }
         } else if (!hasNamedBlocks && block.body) {
-          childEnv.set('input', pipeItems);
+          childEnv.set('input', this.asInputEnumerator(pipeItems));
           results.push(...this.runBlockCapture(block.body, childEnv));
         }
 
@@ -2896,7 +3013,7 @@ export class PSRuntime {
       // Provide $input in the child env
       const childEnv = env.createChild();
       this.bindParametersInto(childEnv, block, namedForInvoke, positional, env, null);
-      childEnv.set('input', pipeItems);
+      childEnv.set('input', this.asInputEnumerator(pipeItems));
       if (block.body) {
         const results = this.runBlockCapture(block.body, childEnv);
         if (results.length === 0) return null;
@@ -3469,13 +3586,7 @@ export class PSRuntime {
   }
 
   private psLike(str: string, pattern: string, caseSensitive: boolean): boolean {
-    const regex = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-    // `s` (dotAll): PowerShell wildcard matching treats the whole string as
-    // one blob — `*` must span embedded newlines (multi-line event-log
-    // messages, multi-line file content, …), not stop at them like JS `.`
-    // does by default.
-    return new RegExp(regex, caseSensitive ? 's' : 'is').test(str);
+    return wildcardMatches(pattern, str, caseSensitive);
   }
 
   private psMatch(str: string, pattern: string, caseSensitive: boolean, env: PSEnvironment, record = true): boolean {
@@ -3506,8 +3617,18 @@ export class PSRuntime {
       case 'null':                       return val === null;
       case 'datetime': case 'system.datetime': return val instanceof Date;
       case 'hashtable':                  return val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date) && !(val instanceof PSNumber) && !(val instanceof PSChar);
-      default:                           return false;
+      case 'pscustomobject': case 'psobject': case 'system.management.automation.pscustomobject': case 'system.management.automation.psobject':
+        return val !== null && typeof val === 'object' && (val as unknown as Record<string, unknown>)['__pscustomobject__'] === true;
+      case 'scriptblock': case 'system.management.automation.scriptblock': return this.isScriptBlock(val);
+      case 'timespan': case 'system.timespan': return val !== null && typeof val === 'object' && isTimeSpan(val as Record<string, PSValue>);
+      default:
+        if (!this.isKnownTypeName(t)) throw new PSRuntimeError(`Unable to find type [${stripTypeBrackets(String(right))}].`);
+        return false;
     }
+  }
+
+  private isKnownTypeName(lowerName: string): boolean {
+    return lowerName.includes('.') || KNOWN_TYPE_NAMES.has(lowerName) || STATIC_TYPES[lowerName] !== undefined;
   }
 
   private describeType(obj: PSValue): { name: string; fullName: string } | null {
@@ -3720,7 +3841,26 @@ export class PSRuntime {
     return stringMember(s, member) ?? null;
   }
 
+  private asInputEnumerator(items: PSValue[]): PSValue[] {
+    Object.defineProperty(items, INPUT_CURSOR, { value: -1, writable: true, enumerable: false, configurable: true });
+    return items;
+  }
+
+  private inputEnumeratorMember(arr: PSValue[], member: string): PSValue | undefined {
+    const cursor = arr as unknown as Record<string, number>;
+    switch (member) {
+      case 'movenext': return () => (cursor[INPUT_CURSOR] += 1) < arr.length;
+      case 'reset': return () => { cursor[INPUT_CURSOR] = -1; return null; };
+      case 'current': return arr[cursor[INPUT_CURSOR]] ?? null;
+      default: return undefined;
+    }
+  }
+
   private getArrayMember(arr: PSValue[], member: string): PSValue {
+    if ((arr as unknown as Record<string, unknown>)[INPUT_CURSOR] !== undefined) {
+      const own = this.inputEnumeratorMember(arr, member);
+      if (own !== undefined) return own;
+    }
     switch (member) {
       case 'length':
       case 'count':    return arr.length;

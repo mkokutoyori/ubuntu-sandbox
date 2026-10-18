@@ -45,9 +45,9 @@ import type {
 // ─── Operator precedence (higher = tighter binding) ──────────────────────────
 
 const PRECEDENCE: Record<string, number> = {
-  '??': 0.5,
   '-or': 1, '-xor': 1, '-and': 1,
-  '-band': 4, '-bor': 4, '-bxor': 4, '-shl': 4, '-shr': 4,
+  '-band': 2, '-bor': 2, '-bxor': 2,
+  '-shl': 5, '-shr': 5,
   '-eq': 5, '-ne': 5, '-gt': 5, '-ge': 5, '-lt': 5, '-le': 5,
   '-ceq': 5, '-cne': 5, '-cgt': 5, '-cge': 5, '-clt': 5, '-cle': 5,
   '-ieq': 5, '-ine': 5, '-igt': 5, '-ige': 5, '-ilt': 5, '-ile': 5,
@@ -58,13 +58,15 @@ const PRECEDENCE: Record<string, number> = {
   '-ccontains': 5, '-cnotcontains': 5, '-icontains': 5, '-inotcontains': 5,
   '-cin': 5, '-cnotin': 5, '-iin': 5, '-inotin': 5,
   '-is': 5, '-isnot': 5, '-as': 5,
-  '-replace': 6, '-creplace': 6, '-ireplace': 6,
-  '-split': 6, '-csplit': 6, '-isplit': 6,
-  '-join': 6,
-  '-f': 6,
-  ',': 7,
+  '-replace': 5, '-creplace': 5, '-ireplace': 5,
+  '-split': 5, '-csplit': 5, '-isplit': 5,
+  '-join': 5,
+  '??': 7,
   '+': 9, '-': 9,
   '*': 10, '/': 10, '%': 10,
+  '-f': 12,
+  '..': 13,
+  ',': 14,
 };
 
 const BAREWORD_LEADERS: ReadonlySet<PSTokenType> = new Set([
@@ -246,6 +248,11 @@ export class PSParser {
     if (tok.type === PSTokenType.VARIABLE && this.isAssignmentAhead()) {
       return this.parseAssignmentStatement();
     }
+    if (tok.type === PSTokenType.VARIABLE && this.destructuringAhead()) {
+      return this.parseDestructuringAssignment();
+    }
+    const typedCount = tok.type === PSTokenType.TYPE ? this.typedAssignmentTypeCount() : 0;
+    if (typedCount > 0) return this.parseTypedAssignment(typedCount);
 
     // ── Default: pipeline statement ──
     return this.parsePipelineStatement();
@@ -256,6 +263,16 @@ export class PSParser {
   private peek(): PSToken { return this.tokens[this.pos] || this.tokens[this.tokens.length - 1]; }
 
   private peekAt(offset: number): PSToken | undefined { return this.tokens[this.pos + offset]; }
+
+  private skipNewlinesPeek(): PSToken {
+    return this.peekAfterNewlines(0) ?? this.peek();
+  }
+
+  private peekAfterNewlines(offset: number): PSToken | undefined {
+    let index = this.pos;
+    while (this.tokens[index]?.type === PSTokenType.NEWLINE) index++;
+    return this.tokens[index + offset];
+  }
 
   private advance(): PSToken {
     const tok = this.tokens[this.pos];
@@ -316,6 +333,66 @@ export class PSParser {
    * Detect VARIABLE (possibly followed by index/member chain) followed by an
    * assignment operator.  Matches: `$v =`, `$v[...] =`, `$v.prop =`, etc.
    */
+  private parseParenthesizedBody(): PSExpression {
+    const assignment = this.assignmentAheadInParentheses();
+    const typedCount = this.typedAssignmentTypeCount();
+    const inner = typedCount > 0 ? this.parseTypedAssignment(typedCount) as unknown as PSExpression
+      : assignment ? this.parseAssignmentStatement() as unknown as PSExpression : this.parseAssignmentRHS();
+    this.skipTerminators();
+    this.expect(PSTokenType.RPAREN);
+    return inner;
+  }
+
+  private assignmentAheadInParentheses(): boolean {
+    if (this.check(PSTokenType.VARIABLE)) return this.isAssignmentAhead();
+    return this.typedAssignmentTypeCount() > 0;
+  }
+
+  private destructuringAhead(): boolean {
+    let index = 0;
+    for (;;) {
+      if (this.peekAt(index)?.type !== PSTokenType.VARIABLE) return false;
+      index++;
+      if (this.peekAt(index)?.type === PSTokenType.COMMA) { index++; continue; }
+      return this.peekAt(index)?.type === PSTokenType.ASSIGN && index > 1;
+    }
+  }
+
+  private parseDestructuringAssignment(): PSAssignmentStatement {
+    const pos = this.pos_();
+    const targets: PSVariableExpression[] = [];
+    for (;;) {
+      const variable = this.advance();
+      targets.push(makeVariable(variable.value, variable.position));
+      if (this.check(PSTokenType.COMMA)) { this.advance(); continue; }
+      break;
+    }
+    this.expect(PSTokenType.ASSIGN);
+    const value = this.parseAssignmentRHS();
+    const assignment = makeAssignment(targets[0], '=', value, pos);
+    assignment.destructuringTargets = targets;
+    return assignment;
+  }
+
+  private typedAssignmentTypeCount(): number {
+    let count = 0;
+    while (this.peekAt(count)?.type === PSTokenType.TYPE) count++;
+    if (count === 0 || this.peekAt(count)?.type !== PSTokenType.VARIABLE) return 0;
+    const saved = this.pos;
+    this.pos += count;
+    const ahead = this.isAssignmentAhead();
+    this.pos = saved;
+    return ahead ? count : 0;
+  }
+
+  private parseTypedAssignment(count: number): PSAssignmentStatement {
+    const types: string[] = [];
+    for (let i = 0; i < count; i++) types.push(this.advance().value);
+    const assignment = this.parseAssignmentStatement();
+    assignment.typeConstraints = types;
+    return assignment;
+  }
+
   private isAssignmentAhead(): boolean {
     let i = 1;
     // Walk past postfix chain: [index], .member, ::member
@@ -542,7 +619,7 @@ export class PSParser {
     if (tok.type === PSTokenType.NUMBER
         || tok.type === PSTokenType.STRING_SINGLE
         || tok.type === PSTokenType.STRING_DOUBLE) {
-      return this.parseExpression(this.insideArrayLiteral ? PRECEDENCE[','] : 0);
+      return this.parseExpression(0, this.insideArrayLiteral);
     }
 
     if (tok.type === PSTokenType.WORD) {
@@ -557,7 +634,8 @@ export class PSParser {
     // here excluded all operators with precedence ≤ comma (-join /
     // -split / -replace / comparisons), leaving them mis-parsed as
     // command parameters.
-    if (tok.type === PSTokenType.LPAREN || tok.type === PSTokenType.AT || tok.type === PSTokenType.TYPE) {
+    if (tok.type === PSTokenType.LPAREN || tok.type === PSTokenType.AT || tok.type === PSTokenType.TYPE
+        || tok.type === PSTokenType.LBRACE || tok.type === PSTokenType.NOT) {
       return this.parseExpression(0);
     }
 
@@ -669,7 +747,7 @@ export class PSParser {
   private parseRangeTail(left: PSExpression): PSExpression {
     if (!this.check(PSTokenType.RANGE)) return left;
     this.advance();
-    const end = this.parseExpression(PRECEDENCE['+']);
+    const end = this.parseExpression(PRECEDENCE['..']);
     return makeRange(left, end, left.position);
   }
 
@@ -741,6 +819,23 @@ export class PSParser {
 
   private parseAssignmentRHS(): PSExpression {
     const pos = this.pos_();
+    const first = this.parseAssignmentRHSOperand();
+    if (!this.check(PSTokenType.AND_AND) && !this.check(PSTokenType.OR_OR)) return first;
+    let chain: PSStatement = this.exprToStatement(first);
+    while (this.check(PSTokenType.AND_AND) || this.check(PSTokenType.OR_OR)) {
+      const operator = this.advance().value as '&&' | '||';
+      this.skipNewlinesOnly();
+      if (this.isAtEnd() || this.isTerminator() || this.check(PSTokenType.RPAREN)) {
+        throw new PSParserError('A pipeline chain operator must be followed by a pipeline.', this.peek().position, 1, 'EmptyPipelineChainElement');
+      }
+      const right = this.exprToStatement(this.parseAssignmentRHSOperand());
+      chain = { type: 'PipelineChain', left: chain, operator, right, position: pos };
+    }
+    return { type: 'StatementExpression', stmt: chain, position: pos } as unknown as PSExpression;
+  }
+
+  private parseAssignmentRHSOperand(): PSExpression {
+    const pos = this.pos_();
 
     // Keyword statements on the RHS (switch, if) produce values
     if (this.checkValue(PSTokenType.WORD, 'switch')) {
@@ -753,6 +848,15 @@ export class PSParser {
     }
     const loop = this.parseLoopStatementOnRight();
     if (loop !== null) return { type: 'StatementExpression', stmt: loop, position: pos } as unknown as PSExpression;
+
+    if (this.check(PSTokenType.VARIABLE) && this.isAssignmentAhead()) {
+      return this.parseAssignmentStatement() as unknown as PSExpression;
+    }
+    if (this.check(PSTokenType.VARIABLE) && this.destructuringAhead()) {
+      return this.parseDestructuringAssignment() as unknown as PSExpression;
+    }
+    const typedChain = this.check(PSTokenType.TYPE) ? this.typedAssignmentTypeCount() : 0;
+    if (typedChain > 0) return this.parseTypedAssignment(typedChain) as unknown as PSExpression;
 
     const first = this.parseCommaList();
 
@@ -1051,11 +1155,13 @@ export class PSParser {
     while (this.checkValue(PSTokenType.WORD, 'catch')) {
       this.advance(); // catch
       const types: string[] = [];
+      this.skipNewlinesOnly();
       // Optional [ExceptionType] list
       while (this.check(PSTokenType.TYPE)) {
         types.push(this.advance().value);
+        this.skipNewlinesOnly();
         // Multiple types separated by comma
-        if (this.check(PSTokenType.COMMA)) this.advance();
+        if (this.check(PSTokenType.COMMA)) { this.advance(); this.skipNewlinesOnly(); }
       }
       const body = this.parseScriptBlock();
       catchClauses.push({ types, body });
@@ -1121,6 +1227,7 @@ export class PSParser {
       baseClass = this.advance().value;
     }
 
+    this.skipNewlinesOnly();
     this.expect(PSTokenType.LBRACE);
     this.skipTerminators();
     const members: PSClassMember[] = [];
@@ -1208,6 +1315,7 @@ export class PSParser {
     const name = this.advance().value;
     let baseType: string | null = null;
     if (this.checkValue(PSTokenType.WORD, ':')) { this.advance(); baseType = this.advance().value; }
+    this.skipNewlinesOnly();
     this.expect(PSTokenType.LBRACE);
     this.skipTerminators();
     const members: PSEnumMember[] = [];
@@ -1294,6 +1402,16 @@ export class PSParser {
   // ─── Script Block { ... } ──────────────────────────────────────────────────
 
   private parseScriptBlock(): PSScriptBlock {
+    const outerInsideArray = this.insideArrayLiteral;
+    this.insideArrayLiteral = false;
+    try {
+      return this.parseScriptBlockBody();
+    } finally {
+      this.insideArrayLiteral = outerInsideArray;
+    }
+  }
+
+  private parseScriptBlockBody(): PSScriptBlock {
     const pos = this.pos_();
     this.skipTerminators();
     const openBrace = this.expect(PSTokenType.LBRACE);
@@ -1327,6 +1445,7 @@ export class PSParser {
       while (!this.check(PSTokenType.RBRACE) && !this.isAtEnd()) {
         const blockKw = this.peek().value;
         this.advance(); // consume begin/process/end
+        this.skipNewlinesOnly();
         const bl = this.parseInnerBlock();
         if (blockKw === 'begin') beginBlock = bl;
         else if (blockKw === 'process') processBlock = bl;
@@ -1381,9 +1500,12 @@ export class PSParser {
 
     // [Attribute(...)] decorators — handles both TYPE-style and LBRACKET-WORD-style
     while (true) {
-      if (this.check(PSTokenType.TYPE) && this.peekAt(1)?.type !== PSTokenType.VARIABLE) {
+      const next = this.skipNewlinesPeek();
+      if (next.type === PSTokenType.TYPE && this.peekAfterNewlines(1)?.type !== PSTokenType.VARIABLE) {
+        this.skipNewlinesOnly();
         attrs.push(this.parseAttribute());
-      } else if (this.check(PSTokenType.LBRACKET) && this.peekAt(1)?.type === PSTokenType.WORD) {
+      } else if (next.type === PSTokenType.LBRACKET && this.peekAfterNewlines(1)?.type === PSTokenType.WORD) {
+        this.skipNewlinesOnly();
         attrs.push(this.parseBracketAttribute());
       } else {
         break;
@@ -1392,8 +1514,10 @@ export class PSParser {
 
     // [type] annotation
     let paramType: string | null = null;
+    this.skipNewlinesOnly();
     if (this.check(PSTokenType.TYPE)) {
       paramType = this.advance().value;
+      this.skipNewlinesOnly();
     }
 
     const varTok = this.expect(PSTokenType.VARIABLE);
@@ -1403,7 +1527,7 @@ export class PSParser {
     if (this.check(PSTokenType.ASSIGN)) {
       this.advance();
       // Comma separates parameters in the param block — don't let comma form an array here.
-      defaultValue = this.parseExpression(PRECEDENCE[',']);
+      defaultValue = this.parseExpression(0, true);
     }
 
     return { type: 'ParamDeclaration', attributes: attrs, paramType, name, defaultValue, mandatory: false, position: pos };
@@ -1423,9 +1547,9 @@ export class PSParser {
             && this.peekAt(1)?.type === PSTokenType.ASSIGN) {
           const k = this.advance().value;
           this.advance(); // =
-          namedArgs[k] = this.parseExpression(PRECEDENCE[',']);
+          namedArgs[k] = this.parseExpression(0, true);
         } else {
-          positionalArgs.push(this.parseExpression(PRECEDENCE[',']));
+          positionalArgs.push(this.parseExpression(0, true));
         }
         if (this.check(PSTokenType.COMMA)) this.advance();
       }
@@ -1482,7 +1606,7 @@ export class PSParser {
   // Expression Parsing — Pratt-style (precedence climbing)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  parseExpression(minPrec: number = 0): PSExpression {
+  parseExpression(minPrec: number = 0, noComma = false): PSExpression {
     // Unary prefix operators
     let left = this.parseUnaryExpression();
 
@@ -1492,6 +1616,7 @@ export class PSParser {
       if (!op) break;
       const prec = PRECEDENCE[op] ?? 0;
       if (prec <= minPrec) break;
+      if (noComma && op === ',') break;
 
       // Comma operator → build an ArrayExpression collecting all same-prec elements
       if (op === ',') {
@@ -1507,27 +1632,30 @@ export class PSParser {
       }
 
       this.advance(); // consume operator token
-      const right = this.parseExpression(op === '??' ? prec - 0.1 : prec);
+      const right = this.parseExpression(op === '??' ? prec - 0.1 : prec, noComma);
+      if (op === '..') {
+        left = makeRange(left, right, left.position);
+        continue;
+      }
       left = makeBinary(op as PSBinaryOperator, left, right, left.position);
     }
 
-    left = this.parseRangeTail(left);
-    if (minPrec === 0 && this.check(PSTokenType.QUESTION)) return this.parseTernaryTail(left);
+    if (minPrec === 0 && this.check(PSTokenType.QUESTION)) return this.parseTernaryTail(left, noComma);
     return left;
   }
 
-  private parseTernaryTail(condition: PSExpression): PSExpression {
+  private parseTernaryTail(condition: PSExpression, noComma: boolean): PSExpression {
     const pos = this.pos_();
     this.advance();
     this.skipNewlinesOnly();
-    const whenTrue = this.parseExpression(0);
+    const whenTrue = this.parseExpression(0, noComma);
     this.skipNewlinesOnly();
     if (!this.checkValue(PSTokenType.WORD, ':')) {
       throw new PSParserError("Missing ':' in the ternary expression.", this.peek().position, 1, 'MissingColonInTernaryExpression');
     }
     this.advance();
     this.skipNewlinesOnly();
-    const whenFalse = this.parseExpression(0);
+    const whenFalse = this.parseExpression(0, noComma);
     return { type: 'TernaryExpression', condition, whenTrue, whenFalse, position: pos };
   }
 
@@ -1586,7 +1714,7 @@ export class PSParser {
 
     // Type cast: [TypeName] expr — but if followed by ::, it's a type literal for static member access
     if (this.check(PSTokenType.TYPE)) {
-      if (this.peekAt(1)?.type === PSTokenType.STATIC_MEMBER) {
+      if (this.peekAt(1)?.type === PSTokenType.STATIC_MEMBER || this.peekAt(1)?.type === PSTokenType.DOT) {
         // Fall through to parsePrimaryExpression which handles TYPE → TypeLiteral,
         // then parsePostfixExpression handles the :: operator.
         return this.parsePostfixExpression();
@@ -1625,6 +1753,7 @@ export class PSParser {
     if (tok.type === PSTokenType.MODULO) return '%';
     if (tok.type === PSTokenType.COMMA) return ',';
     if (tok.type === PSTokenType.NULL_COALESCE) return '??';
+    if (tok.type === PSTokenType.RANGE) return '..';
 
     if (tok.type === PSTokenType.PARAMETER) {
       const v = `-${tok.value}`;
@@ -1635,6 +1764,22 @@ export class PSParser {
   }
 
   // ─── Postfix expressions (.member, [index], method()) ─────────────────────
+
+  private startsDynamicMemberName(): boolean {
+    return this.check(PSTokenType.VARIABLE) || this.check(PSTokenType.LPAREN) || this.check(PSTokenType.SUBEXPR);
+  }
+
+  private parseDynamicMember(object: PSExpression, pos: SourcePosition, nullConditional: boolean): PSExpression {
+    const name = this.parsePrimaryExpression();
+    const member = nullConditional
+      ? { ...makeMember(object, name, true, pos), nullConditional: true }
+      : makeMember(object, name, true, pos);
+    if (!this.check(PSTokenType.LPAREN)) return member;
+    this.advance();
+    const args = this.parseArgumentList();
+    this.expect(PSTokenType.RPAREN);
+    return { type: 'InvocationExpression', callee: member, arguments: args, position: pos };
+  }
 
   private parsePostfixExpression(): PSExpression {
     let expr = this.parsePrimaryExpression();
@@ -1650,6 +1795,10 @@ export class PSParser {
         // point sans effet et rendait l'objet entier au lieu de la
         // valeur. Le nom n'est pas développé : à ce stade seule la forme
         // littérale est acceptée, la forme `."$var"` reste à faire.
+        if (this.startsDynamicMemberName()) {
+          expr = this.parseDynamicMember(expr, pos, false);
+          continue;
+        }
         if (this.check(PSTokenType.STRING_SINGLE) || this.check(PSTokenType.STRING_DOUBLE)) {
           const member = this.advance().value;
           if (this.check(PSTokenType.LPAREN)) {
@@ -1715,6 +1864,10 @@ export class PSParser {
       if (this.check(PSTokenType.NULL_COND_DOT)) {
         const pos = this.pos_();
         this.advance();
+        if (this.startsDynamicMemberName()) {
+          expr = this.parseDynamicMember(expr, pos, true);
+          continue;
+        }
         const member = this.check(PSTokenType.STRING_SINGLE) || this.check(PSTokenType.STRING_DOUBLE)
           ? this.advance().value : this.advance().value.split('.')[0];
         if (this.check(PSTokenType.LPAREN)) {
@@ -1795,11 +1948,13 @@ export class PSParser {
     if (tok.type === PSTokenType.LPAREN) {
       this.advance();
       this.skipTerminators();
-      // Use parseAssignmentRHS which handles: expr, comma-list, cmd args, and pipelines
-      const inner = this.parseAssignmentRHS();
-      this.skipTerminators();
-      this.expect(PSTokenType.RPAREN);
-      return inner;
+      const outerInsideArray = this.insideArrayLiteral;
+      this.insideArrayLiteral = false;
+      try {
+        return this.parseParenthesizedBody();
+      } finally {
+        this.insideArrayLiteral = outerInsideArray;
+      }
     }
 
     // ── Variable ──
@@ -1849,20 +2004,19 @@ export class PSParser {
       this.advance(); // {
       this.skipTerminators();
       const pairs: PSHashtablePair[] = [];
+      const outerInsideArray = this.insideArrayLiteral;
+      this.insideArrayLiteral = false;
       while (!this.check(PSTokenType.RBRACE) && !this.isAtEnd()) {
         // In hashtable key position, barewords are string literals
         const key = this.parseHashtableKey();
         this.expect(PSTokenType.ASSIGN);
-        const valuePos = this.pos_();
-        let value = this.parseExpression();
-        // A hashtable value may itself be a pipeline (`@{ X = $coll | Where-Object {...} }`,
-        // matching real PowerShell) — parseExpression() stops before `|`, so continue into
-        // a PipelineExpression here, same as parseAssignmentRHS() does for `$x = a | b`.
-        if (this.check(PSTokenType.PIPE)) value = this.continuePipeline(value, valuePos);
+        this.skipNewlinesOnly();
+        const value = this.parseAssignmentRHS();
         pairs.push({ key, value });
         this.skipTerminators();
         if (this.check(PSTokenType.SEMICOLON)) { this.advance(); this.skipTerminators(); }
       }
+      this.insideArrayLiteral = outerInsideArray;
       this.expect(PSTokenType.RBRACE);
       return makeHashtable(pairs, pos);
     }
@@ -1944,12 +2098,15 @@ export class PSParser {
 
   private parseArgumentList(): PSExpression[] {
     const args: PSExpression[] = [];
+    this.skipNewlinesOnly();
     if (this.check(PSTokenType.RPAREN)) return args;
-    // Pass minPrec = PRECEDENCE[','] so comma isn't consumed as array construction.
-    args.push(this.parseExpression(PRECEDENCE[',']));
+    args.push(this.parseExpression(0, true));
+    this.skipNewlinesOnly();
     while (this.check(PSTokenType.COMMA)) {
       this.advance();
-      args.push(this.parseExpression(PRECEDENCE[',']));
+      this.skipNewlinesOnly();
+      args.push(this.parseExpression(0, true));
+      this.skipNewlinesOnly();
     }
     return args;
   }

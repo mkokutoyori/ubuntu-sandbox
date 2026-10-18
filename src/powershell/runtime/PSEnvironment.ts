@@ -25,6 +25,7 @@ export type PSValue =
 export class PSEnvironment {
   private readonly vars = new Map<string, PSValue>();
   private readonly parent: PSEnvironment | null;
+  private readonly constraints = new Map<string, string[]>();
 
   constructor(parent: PSEnvironment | null = null) {
     this.parent = parent;
@@ -99,6 +100,18 @@ export class PSEnvironment {
     }
     // Not found anywhere — create in current scope
     this.vars.set(key, value);
+  }
+
+  constrain(name: string, typeNames: string[]): void {
+    this.constraints.set(name.toLowerCase(), typeNames);
+  }
+
+  constraintOf(name: string): string[] | undefined {
+    const key = name.toLowerCase();
+    const found = this.constraints.get(key);
+    if (found !== undefined) return found;
+    if (this.vars.has(key)) return undefined;
+    return this.parent?.constraintOf(key);
   }
 
   /** Removes a variable from the current scope (mimics Remove-Variable). */

@@ -46,6 +46,7 @@ const HONOURED_ALIASES: Record<string, Record<string, string | null>> = {
   'limit-eventlog': { maxsize: 'MaximumSize' },
   'add-localgroupmember': { members: 'Member' },
   'remove-localgroupmember': { members: 'Member' },
+  'join-string': { op: 'OutputPrefix', os: 'OutputSuffix' },
 };
 
 interface ScannedCmdlet {
