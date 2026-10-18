@@ -985,41 +985,6 @@ export class ClearHostCmdlet implements ICmdlet {
   execute(_ctx: CmdletContext): PSValue { return null; }
 }
 
-// ─── Get-Alias ────────────────────────────────────────────────────────────
-//
-// Returns the built-in alias map.  Real PowerShell ships dozens; we mirror
-// every alias declared on a registered cmdlet so the listing stays in sync
-// with whatever the interpreter actually accepts.  `Get-Alias <name>` and
-// `Get-Alias -Name <pattern>` filter the result.
-
-interface AliasEntry { Name: string; Definition: string; CommandType: string }
-
-export class GetAliasCmdlet implements ICmdlet {
-  readonly name = 'get-alias';
-  readonly aliases = ['gal'] as const;
-  readonly parameters = ['Name'] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    const filter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').trim();
-    const all: AliasEntry[] = [];
-    for (const cmdlet of ctx.runtime.listCmdlets()) {
-      for (const a of cmdlet.aliases) {
-        all.push({ Name: a, Definition: cmdlet.name, CommandType: 'Alias' });
-      }
-    }
-    all.sort((a, b) => a.Name.localeCompare(b.Name));
-    if (!filter) return all as unknown as PSValue;
-    const pat = wildcardToRegex(filter);
-    const matched = all.filter(e => pat.test(e.Name));
-    if (matched.length === 0) {
-      ctx.emitError(`Get-Alias : Cannot find alias because alias with name '${filter}' does not exist.`);
-      return null;
-    }
-    return matched as unknown as PSValue;
-  }
-}
-
-
 // ─── Get-PSProvider ───────────────────────────────────────────────────────
 
 export class GetPSProviderCmdlet implements ICmdlet {

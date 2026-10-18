@@ -38,6 +38,17 @@ export class PSEnvironment {
     return new PSEnvironment(this);
   }
 
+  private scriptScopeMarker = false;
+
+  markScriptScope(): void {
+    this.scriptScopeMarker = true;
+  }
+
+  scriptScope(): PSEnvironment {
+    if (this.scriptScopeMarker || this.parent === null) return this;
+    return this.parent.scriptScope();
+  }
+
   /** Returns the root (global) scope. */
   root(): PSEnvironment {
     // eslint-disable-next-line @typescript-eslint/no-this-alias

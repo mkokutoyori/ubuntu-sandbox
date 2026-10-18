@@ -64,7 +64,7 @@ describe('Get-Alias', () => {
     const pc = new WindowsPC('windows-pc', 'WIN');
     pc.setCurrentUser('Administrator');
     const out = await execPS(pc, 'Get-Alias zzzz');
-    expect(out).toMatch(/Cannot find alias/i);
+    expect(out).toMatch(/cannot find a matching alias because an alias with the name/i);
   });
 });
 

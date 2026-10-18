@@ -75,6 +75,10 @@ export interface IRuntimeRef {
   listFunctions(): readonly string[];
   /** The session's command history, newest last, for Get-History. */
   listHistory(): readonly string[];
+  listUserAliases(): ReadonlyArray<{ name: string; definition: string; description: string }>;
+  hasAlias(name: string): boolean;
+  defineAlias(name: string, definition: string, description: string): void;
+  removeAlias(name: string): boolean;
   /** A cmdlet's declared parameter names — the same list `-<Tab>` offers. */
   getCommandParameters(name: string): string[];
   psCast(val: PSValue, typeName: string): PSValue;

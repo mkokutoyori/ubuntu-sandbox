@@ -363,7 +363,18 @@ export class PSLexer {
     if (next === '{') {
       this.advance(); // skip {
       let name = '';
-      while (!this.eof() && this.ch() !== '}') { name += this.ch(); this.advance(); }
+      while (!this.eof() && this.ch() !== '}') {
+        if (this.ch() === '`' && this.peek1() !== undefined) {
+          this.advance();
+          const unicode = this.options.core === true ? this.readUnicodeEscape() : null;
+          if (unicode !== null) { name += unicode; continue; }
+          name += this.ch();
+          this.advance();
+          continue;
+        }
+        name += this.ch();
+        this.advance();
+      }
       if (this.eof()) throw new PSLexerError('Unterminated braced variable ${...}', start);
       this.advance(); // skip }
       return psToken(PSTokenType.VARIABLE, name, start);
@@ -511,6 +522,10 @@ export class PSLexer {
       const c = this.ch();
       if (this.isAlNum(c) || c === '_' || c === '.') {
         name += c; this.advance();
+      } else if (c === '`' && this.peek1() !== undefined) {
+        this.advance();
+        name += this.ch();
+        this.advance();
       } else if (c === '[') {
         // Generic argument or array suffix: [int] or []
         name += '['; this.advance();
@@ -889,6 +904,15 @@ export class PSLexer {
 
   // ─── Word / Keyword / Path ────────────────────────────────────────────────
 
+  private readUnicodeEscape(): string | null {
+    if (this.ch() !== 'u' || this.peek1() !== '{') return null;
+    const close = this.input.indexOf('}', this.pos + 2);
+    const digits = close > 0 ? this.input.slice(this.pos + 2, close) : '';
+    if (!/^[0-9a-fA-F]{1,6}$/.test(digits) || parseInt(digits, 16) > 0x10FFFF) return null;
+    while (this.pos <= close) this.advance();
+    return String.fromCodePoint(parseInt(digits, 16));
+  }
+
   private scanWord(): PSToken {
     const start = this.pos_();
     let value = '';
@@ -902,6 +926,8 @@ export class PSLexer {
       // Allow backtick-escaping of the next char (line continuation / escape)
       if (c === '`' && !this.eof()) {
         this.advance();
+        const unicode = this.options.core === true ? this.readUnicodeEscape() : null;
+        if (unicode !== null) { value += unicode; continue; }
         if (!this.eof()) { value += this.ch(); this.advance(); }
         continue;
       }

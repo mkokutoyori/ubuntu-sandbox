@@ -249,6 +249,11 @@ export interface PSPropertyDeclaration extends ASTBase {
   attributes: PSValidateAttribute[];
 }
 
+export interface PSConstructorInitializer {
+  kind: 'base' | 'this';
+  arguments: PSExpression[];
+}
+
 export interface PSMethodDefinition extends ASTBase {
   type: 'MethodDefinition';
   modifiers: string[];
@@ -256,6 +261,7 @@ export interface PSMethodDefinition extends ASTBase {
   name: string;
   parameters: PSParamDeclaration[];
   body: PSStatementList;
+  initializer?: PSConstructorInitializer;
 }
 
 // ─── enum ─────────────────────────────────────────────────────────────────────
@@ -378,6 +384,7 @@ export interface PSSubExpressionExpression extends ASTBase {
 export interface PSArrayExpression extends ASTBase {
   type: 'ArrayExpression';
   elements: PSStatement[];    // statements whose pipeline output forms array elements
+  commaList?: boolean;
 }
 
 // ─── Hashtable literal @{k=v; ...} ───────────────────────────────────────────
@@ -645,6 +652,10 @@ export function makeScriptBlock(
 
 export function makeHashtable(pairs: PSHashtablePair[], pos?: SourcePosition): PSHashtableExpression {
   return { type: 'HashtableExpression', pairs, position: pos };
+}
+
+export function makeCommaList(elements: PSStatement[], pos?: SourcePosition): PSArrayExpression {
+  return { type: 'ArrayExpression', elements, commaList: true, position: pos };
 }
 
 export function makeArrayExpr(elements: PSStatement[], pos?: SourcePosition): PSArrayExpression {

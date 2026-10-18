@@ -47,6 +47,7 @@ import { mathStatics } from './semantics/MathStatics';
 import { languageCompare, languageEquals, type CompareContext } from './semantics/PSCompare';
 import { compileRegex, regexReplace, regexSplit } from './semantics/PSRegex';
 import { splitWithPredicate, splitWithPredicateFromEnd } from './semantics/PSSplit';
+import { createPowerShellHost } from './PSHost';
 import { makeTypeObject } from './semantics/PSTypeObject';
 import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, stripTypeBrackets, tagArray, typeSpecName, type TypeSpec } from './semantics/PSTypes';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
@@ -78,7 +79,10 @@ import type {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Thrown by return statements to unwind the call stack. */
-export class ReturnSignal   { constructor(public readonly value: PSValue) {} }
+export class ReturnSignal   {
+  readonly emitted: PSValue[] = [];
+  constructor(public readonly value: PSValue) {}
+}
 /** `exit [<code>]` — unwinds to the script boundary, not just the function. */
 export class ExitSignal     { constructor(public readonly code: number) {} }
 /** Thrown by break statements inside loops. Carries optional label for labeled loops. */
@@ -495,6 +499,8 @@ export class PSRuntime {
 
   historyHook: (() => readonly string[]) | null = null;
 
+  private readonly userAliases = new Map<string, { name: string; definition: string; description: string }>();
+
   listHistory(): readonly string[] {
     return this.historyHook?.() ?? [];
   }
@@ -853,6 +859,15 @@ export class PSRuntime {
   }
 
   /** Execute code and return the last produced PSValue (without stringification). Used by IEX. */
+  invokeScriptText(code: string): PSValue[] {
+    const ast = this.parser.parse(this.lexer.tokenize(code), code);
+    return this.runBlockCapture(ast.body, this.global);
+  }
+
+  private openHostSession(): PSRuntime {
+    return new PSRuntime(this.registry, this.providers, undefined, this.edition);
+  }
+
   executeForValue(code: string): PSValue {
     const tokens = this.lexer.tokenize(code);
     const ast    = this.parser.parse(tokens, code);
@@ -950,12 +965,11 @@ export class PSRuntime {
         this.lastStmtVoid = p.pipeline.commands.length === 1
           && p.pipeline.commands[0].parameters.length === 0
           && p.pipeline.commands[0].arguments.length === 0
-          && (p.pipeline.commands[0].name as { type?: string })?.type === 'AssignmentStatement';
+          && (p.pipeline.commands[0].name as { type?: string })?.type === 'AssignmentStatement'
+          && (p.pipeline.commands[0].name as unknown as Record<string, unknown>).parenthesized !== true;
         break;
       }
-      case 'IfStatement':      case 'WhileStatement':   case 'DoWhileStatement':
-      case 'DoUntilStatement': case 'ForStatement':     case 'ForeachStatement':
-      case 'SwitchStatement':  case 'TryStatement':
+      case 'IfStatement':      case 'SwitchStatement':  case 'TryStatement':
         break; // preserve inner statement's voidability
       default:
         this.lastStmtVoid = false;
@@ -1009,7 +1023,8 @@ export class PSRuntime {
         this.providers.environment?.set(name, psValueToString(val));
         return;
       }
-      if (scope === 'global' || scope === 'script') env.setGlobal(name, val);
+      if (scope === 'global') env.setGlobal(name, val);
+      else if (scope === 'script') env.scriptScope().set(name, val);
       else env.set(name, val);
     };
     const updateVar = (name: string, val: PSValue) => {
@@ -1017,7 +1032,8 @@ export class PSRuntime {
         this.providers.environment?.set(name, psValueToString(val));
         return;
       }
-      if (scope === 'global' || scope === 'script') env.setGlobal(name, val);
+      if (scope === 'global') env.setGlobal(name, val);
+      else if (scope === 'script') env.scriptScope().update(name, val);
       else env.update(name, val);
     };
 
@@ -1025,7 +1041,8 @@ export class PSRuntime {
 
     const readCurrent = (): PSValue => {
       if (scope === 'env') return this.providers.environment?.get(varName) ?? '';
-      if (scope === 'global' || scope === 'script') return env.getGlobal(varName);
+      if (scope === 'global') return env.getGlobal(varName);
+      if (scope === 'script') return env.scriptScope().get(varName);
       return env.get(varName);
     };
     const current = readCurrent() ?? 0;
@@ -1193,7 +1210,7 @@ export class PSRuntime {
       if (!block.body) return null;
       return this.aggregateCaptured(this.runBlockCapture(block.body, scopeEnv));
     } catch (e) {
-      if (e instanceof ReturnSignal) return e.value;
+      if (e instanceof ReturnSignal) return this.aggregateCaptured(this.returnedValues(e));
       throw e;
     } finally {
       if (prevU === undefined) scopeEnv.delete('_');     else scopeEnv.set('_', prevU);
@@ -1322,6 +1339,10 @@ export class PSRuntime {
   }
 
   /** Reduce captured statement values into a single PSValue (null / scalar / array). */
+  private returnedValues(signal: ReturnSignal): PSValue[] {
+    return [...signal.emitted, ...this.toArray(signal.value)];
+  }
+
   private aggregateCaptured(captured: PSValue[]): PSValue {
     if (captured.length === 0) return null;
     return captured.length === 1 ? captured[0] : captured;
@@ -1343,7 +1364,7 @@ export class PSRuntime {
     const captured: PSValue[] = [];
     try {
       const value = this.invokeScriptBlock(
-        block, namedArgs, positionalArgs, parentEnv, pipelineInput, captured);
+        block, namedArgs, positionalArgs, parentEnv, pipelineInput, captured, undefined, true);
       this.global.set('LASTEXITCODE', 0);
       return value;
     } catch (e) {
@@ -1362,6 +1383,8 @@ export class PSRuntime {
     parentEnv: PSEnvironment,
     pipelineInput?: PSValue,
     captured: PSValue[] = [],
+    inputItems?: PSValue[],
+    scriptScope = false,
   ): PSValue {
     // If the ScriptBlock was created via GetNewClosure(), inject the captured
     // variables into a new scope that sits between parentEnv and childEnv.
@@ -1380,6 +1403,8 @@ export class PSRuntime {
       childEnv.set('_',      pipelineInput);
       childEnv.set('PSItem', pipelineInput);
     }
+    if (inputItems !== undefined) childEnv.set('input', this.asInputEnumerator([...inputItems]));
+    if (scriptScope) childEnv.markScriptScope();
 
     this.bindParametersInto(childEnv, block, namedArgs, positionalArgs, parentEnv, null);
 
@@ -1390,7 +1415,7 @@ export class PSRuntime {
       if (block.body) return this.aggregateCaptured(this.runBlockCapture(block.body, childEnv, captured));
       return null;
     } catch (e) {
-      if (e instanceof ReturnSignal) return e.value;
+      if (e instanceof ReturnSignal) return this.aggregateCaptured([...captured, ...this.returnedValues(e)]);
       throw e;
     }
   }
@@ -1463,9 +1488,10 @@ export class PSRuntime {
       env,
       (code) => {
         const ast = this.parseCached(code);
-        return this.execProgram(ast, env);
+        return this.aggregateCaptured(this.runBlockCapture(ast.body, env));
       },
       (token, scope) => this.resolveExpansionVar(token, scope),
+      this.edition === 'core',
     );
   }
 
@@ -1493,7 +1519,8 @@ export class PSRuntime {
       // Unset on the device → $null (never the Node.js host environment).
       return null;
     }
-    if (scope === 'global' || scope === 'script') return env.getGlobal(varName);
+    if (scope === 'global') return env.getGlobal(varName);
+    if (scope === 'script') return env.scriptScope().get(varName) ?? null;
     if (scope === 'local')                        return env.get(varName) ?? null;
     return env.get(varName) ?? null;
   }
@@ -1537,7 +1564,7 @@ export class PSRuntime {
     }
 
     if (node.scope === 'global') return env.getGlobal(name);
-    if (node.scope === 'script') return env.getGlobal(name);
+    if (node.scope === 'script') return env.scriptScope().get(name);
     if (node.scope === 'local') {
       const val = env.get(name);
       return val === undefined ? null : val;
@@ -1760,6 +1787,13 @@ export class PSRuntime {
 
   private evalArray(node: PSArrayExpression, env: PSEnvironment): PSValue {
     const result: PSValue[] = [];
+    if (node.commaList === true) {
+      for (const stmt of node.elements) {
+        const val = this.execStatement(stmt, env);
+        result.push(val === undefined ? null : val);
+      }
+      return result;
+    }
     for (const stmt of node.elements) {
       const val = this.execStatement(stmt, env);
       if (Array.isArray(val)) result.push(...val);
@@ -1778,7 +1812,7 @@ export class PSRuntime {
   }
 
   private evalSubExpr(node: PSSubExpressionExpression, env: PSEnvironment): PSValue {
-    return this.execStatementList(node.body, env);
+    return this.aggregateCaptured(this.runBlockCapture(node.body, env));
   }
 
   private evalRange(node: PSRangeExpression, env: PSEnvironment): PSValue {
@@ -1961,6 +1995,9 @@ export class PSRuntime {
     if (tname === 'security.principal.windowsidentity' || tname === 'system.security.principal.windowsidentity') {
       return this.getMember({ getcurrent: () => this.currentWindowsIdentity() } as unknown as PSValue, node.member.toLowerCase());
     }
+    if (tname === 'powershell' || tname === 'system.management.automation.powershell') {
+      return this.getMember({ create: () => createPowerShellHost(() => this.openHostSession()) } as unknown as PSValue, node.member.toLowerCase());
+    }
     const enumType = this.enums.get(tname);
     if (enumType !== undefined) return enumType.member(node.member) ?? null;
     if (tname === 'enum' || tname === 'system.enum') return this.enumStatics(node.member.toLowerCase());
@@ -2080,7 +2117,8 @@ export class PSRuntime {
     try {
       run(collected);
     } catch (e) {
-      for (const value of collected) this.outputLines.push(psValueToString(value));
+      if (e instanceof ReturnSignal) e.emitted.unshift(...collected);
+      else for (const value of collected) this.outputLines.push(psValueToString(value));
       throw e;
     }
     return this.aggregateCaptured(collected);
@@ -2278,25 +2316,23 @@ export class PSRuntime {
   }
 
   private execTry(node: PSTryStatement, env: PSEnvironment): PSValue {
-    const renderBody = (body: PSScriptBlock): PSValue => {
-      if (!body.body) return null;
-      let last: PSValue = null;
-      for (const s of body.body.statements) {
-        const before = this.outputLines.length;
-        const warningsBefore = this.warningLines;
-        last = this.execStatement(s, env);
-        const emitted = this.emittedSince(before, warningsBefore);
-        if (!emitted && last !== null && last !== undefined
-            && s.type !== 'AssignmentStatement'
-            && s.type !== 'FunctionDefinition') {
-          this.renderValue(last);
-        }
-      }
-      return last;
+    const emitted: PSValue[] = [];
+    const run = (body: PSScriptBlock): void => {
+      if (body.body) this.runBlockCapture(body.body, env, emitted);
     };
-    let result: PSValue = null;
     try {
-      result = renderBody(node.tryBody);
+      this.execTryClauses(node, env, run);
+    } catch (e) {
+      if (e instanceof ReturnSignal) e.emitted.unshift(...emitted);
+      else for (const value of emitted) this.outputLines.push(psValueToString(value));
+      throw e;
+    }
+    return this.aggregateCaptured(emitted);
+  }
+
+  private execTryClauses(node: PSTryStatement, env: PSEnvironment, renderBody: (body: PSScriptBlock) => void): void {
+    try {
+      renderBody(node.tryBody);
     } catch (e) {
       // Control-flow signals (return / break / continue / exit) are not
       // errors and must not be caught by `catch` — they propagate out of
@@ -2325,14 +2361,13 @@ export class PSRuntime {
           if (node.finallyBody) renderBody(node.finallyBody);
           throw e;
         }
-        result = renderBody(matchingClause.body);
+        renderBody(matchingClause.body);
       } else {
         if (node.finallyBody) renderBody(node.finallyBody);
         throw e;
       }
     }
     if (node.finallyBody) renderBody(node.finallyBody);
-    return null;
   }
 
   private makeErrorRecord(e: unknown): Record<string, PSValue> {
@@ -2405,19 +2440,52 @@ export class PSRuntime {
 
   private instantiateClass(cls: PSClassDefinition, args: PSValue[]): PSValue {
     const instance: Record<string, PSValue> = { __type__: cls.name };
-    // Initialize base class properties first
-    if (cls.baseClass) {
-      const base = this.userClasses.get(cls.baseClass.toLowerCase());
-      if (base) this.initClassProperties(instance, base);
-    }
-    this.initClassProperties(instance, cls);
-    // Invoke constructor if args given or a constructor exists
-    const ctorName = cls.name.toLowerCase();
-    const ctor = cls.members.find(m =>
-      m.type === 'MethodDefinition' && m.name.toLowerCase() === ctorName
-    ) as PSMethodDefinition | undefined;
-    if (ctor) this.invokeClassMethod(cls, ctor, instance, args);
+    this.constructInstance(cls, instance, args);
     return instance as PSValue;
+  }
+
+  private constructInstance(cls: PSClassDefinition, instance: Record<string, PSValue>, args: PSValue[]): void {
+    const ctorName = cls.name.toLowerCase();
+    const constructors = cls.members.filter(m =>
+      m.type === 'MethodDefinition' && m.name.toLowerCase() === ctorName) as PSMethodDefinition[];
+    const ctor = constructors.find(c => c.parameters.length === args.length) ?? constructors[0];
+    const base = cls.baseClass ? this.userClasses.get(cls.baseClass.toLowerCase()) : undefined;
+    if (ctor === undefined) {
+      if (base !== undefined) this.constructInstance(base, instance, []);
+      this.initClassProperties(instance, cls);
+      return;
+    }
+    const env = this.classMethodEnv(ctor, instance, args);
+    const initializer = ctor.initializer;
+    if (initializer?.kind === 'this') {
+      this.constructInstance(cls, instance, initializer.arguments.map(a => this.evalExpr(a, env)));
+    } else {
+      if (base !== undefined) {
+        this.constructInstance(base, instance, initializer?.kind === 'base' ? initializer.arguments.map(a => this.evalExpr(a, env)) : []);
+      }
+      this.initClassProperties(instance, cls);
+    }
+    this.runClassMethodBody(ctor, env);
+  }
+
+  private classMethodEnv(method: PSMethodDefinition, instance: Record<string, PSValue> | null, args: PSValue[]): PSEnvironment {
+    const env = this.global.createChild();
+    if (instance) env.set('this', instance as PSValue);
+    for (let i = 0; i < method.parameters.length; i++) {
+      const pname = method.parameters[i].name.varName
+        ?? (method.parameters[i].name as { name?: string }).name ?? '';
+      env.set(pname, args[i] ?? null);
+    }
+    return env;
+  }
+
+  private runClassMethodBody(method: PSMethodDefinition, env: PSEnvironment): PSValue {
+    try {
+      return this.execStatementList(method.body, env);
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    }
   }
 
   private initClassProperties(instance: Record<string, PSValue>, cls: PSClassDefinition): void {
@@ -2431,24 +2499,12 @@ export class PSRuntime {
   }
 
   private invokeClassMethod(
-    cls: PSClassDefinition,
+    _cls: PSClassDefinition,
     method: PSMethodDefinition,
     instance: Record<string, PSValue> | null,
     args: PSValue[],
   ): PSValue {
-    const env = this.global.createChild();
-    if (instance) env.set('this', instance as PSValue);
-    for (let i = 0; i < method.parameters.length; i++) {
-      const pname = method.parameters[i].name.varName
-        ?? (method.parameters[i].name as { name?: string }).name ?? '';
-      env.set(pname, args[i] ?? null);
-    }
-    try {
-      return this.execStatementList(method.body, env);
-    } catch (e) {
-      if (e instanceof ReturnSignal) return e.value;
-      throw e;
-    }
+    return this.runClassMethodBody(method, this.classMethodEnv(method, instance, args));
   }
 
   private execReturn(node: PSReturnStatement, env: PSEnvironment): PSValue {
@@ -2505,8 +2561,8 @@ export class PSRuntime {
 
     // $x++ / $x-- encoded as AssignmentStatement in command-name position
     if ((nameNode.type as string) === 'AssignmentStatement') {
-      this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
-      return null;
+      const assigned = this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
+      return (nameNode as unknown as Record<string, unknown>).parenthesized === true ? assigned : null;
     }
 
     // ++$x / --$x
@@ -2541,7 +2597,7 @@ export class PSRuntime {
           { this.noteTypedParameter(p); named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true; }
         for (const a of node.arguments)
           positional.push(this.evalExpr(a, env));
-        return this.invokeScriptBlock(varVal as PSScriptBlock, named, positional, env, pipeInput);
+        return this.invokeScriptBlock(varVal as PSScriptBlock, named, positional, env, pipeInput, [], this.pipedItems(pipeInput));
       }
       // Variable holds a non-scriptblock (array pipeline source, etc.).
       // Under `&` it names what to run — `& $path` on a variable holding
@@ -2564,7 +2620,7 @@ export class PSRuntime {
         { this.noteTypedParameter(p); named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true; }
       for (const a of node.arguments)
         positional.push(this.evalExpr(a, env));
-      return this.invokeScriptBlock(nameNode as unknown as PSScriptBlock, named, positional, env, pipeInput);
+      return this.invokeScriptBlock(nameNode as unknown as PSScriptBlock, named, positional, env, pipeInput, [], this.pipedItems(pipeInput));
     }
 
     // Pure-value expressions evaluate directly (not as cmdlet names).
@@ -2699,6 +2755,13 @@ export class PSRuntime {
       return this.dispatchCmdlet(tname, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans, true));
     }
 
+    const aliasDefinition = this.userAliases.get(lname)?.definition.toLowerCase();
+    if (aliasDefinition !== undefined) {
+      const aliasedFunction = this.functions.get(aliasDefinition);
+      if (aliasedFunction) return this.callUserFunction(aliasedFunction, this.applyDefaultParams(aliasDefinition, named, env), positional, env, pipeInput);
+      return this.dispatchCmdlet(aliasDefinition, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans));
+    }
+
     // User-defined function
     const fn = this.functions.get(lname);
     if (fn) return this.callUserFunction(fn, this.applyDefaultParams(lname, named, env), positional, env, pipeInput);
@@ -2793,15 +2856,17 @@ export class PSRuntime {
    * from every non-assignment statement, mirroring what execute() does at top level.
    */
   private runBlockCapture(
-    node: PSStatementList, env: PSEnvironment, captured: PSValue[] = [],
+    node: PSStatementList, env: PSEnvironment, shared?: PSValue[],
   ): PSValue[] {
+    const captured = shared ?? [];
     const before = this.outputLines.length;
     const printed: string[] = [];
     try {
       this.captureStatements(node, env, captured, printed);
     } catch (e) {
       if (e instanceof ReturnSignal) {
-        if (printed.length > 0) this.outputLines.splice(before, 0, ...printed);
+        this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
+        if (shared === undefined) e.emitted.unshift(...captured);
         throw e;
       }
       this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
@@ -2979,7 +3044,7 @@ export class PSRuntime {
               }
               try { results.push(...this.runBlockCapture(procBlock, childEnv)); }
               catch (e) {
-                if (e instanceof ReturnSignal) { results.push(...this.toArray(e.value)); break; }
+                if (e instanceof ReturnSignal) { results.push(...this.returnedValues(e)); break; }
                 if (e instanceof BreakSignal) break;
                 throw e;
               }
@@ -2993,7 +3058,7 @@ export class PSRuntime {
         // end block — collects its output
         if (block.endBlock) results.push(...this.runBlockCapture(block.endBlock, childEnv));
       } catch (e) {
-        if (e instanceof ReturnSignal) results.push(...this.toArray(e.value));
+        if (e instanceof ReturnSignal) results.push(...this.returnedValues(e));
         else throw e;
       }
 
@@ -3313,6 +3378,10 @@ export class PSRuntime {
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
       listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
+      listUserAliases: () => [...self.userAliases.values()],
+      hasAlias: (name) => self.userAliases.has(name.toLowerCase()) || self.registry.cmdlets().some(c => c.aliases.some(a => a.toLowerCase() === name.toLowerCase())),
+      defineAlias: (name, definition, description) => { self.userAliases.set(name.toLowerCase(), { name, definition, description }); },
+      removeAlias: (name) => self.userAliases.delete(name.toLowerCase()),
       getCommandParameters: (name) => self.getCommandParameters(name),
       psCast: (val, typeName) => self.psCast(val, typeName),
     };
@@ -3839,6 +3908,11 @@ export class PSRuntime {
 
   private getStringMember(s: string, member: string): PSValue {
     return stringMember(s, member) ?? null;
+  }
+
+  private pipedItems(pipeInput: PSValue): PSValue[] | undefined {
+    if (pipeInput === undefined) return undefined;
+    return Array.isArray(pipeInput) ? pipeInput : [pipeInput];
   }
 
   private asInputEnumerator(items: PSValue[]): PSValue[] {

@@ -49,6 +49,7 @@ describe.skipIf(!existsSync(ROOT))('Pester language suites on the PowerShell 7.6
       const interp = new PSInterpreter(createWindowsPSProviders(pc), { edition: 'client', registry, language: 'core' });
       let fileError: string | null = null;
       try {
+        interp.execute('Set-ExecutionPolicy Bypass -Scope LocalMachine -Force');
         interp.execute(readFileSync(join(ROOT, file), 'utf8'));
       } catch (error) {
         fileError = error instanceof Error ? error.message.split('\n')[0] : String(error);

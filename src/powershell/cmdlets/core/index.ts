@@ -3,6 +3,7 @@
  * any Windows system providers. Called by PSInterpreter and PowerShellExecutor.
  */
 
+import { GetAliasCmdlet, NewAliasCmdlet, SetAliasCmdlet, RemoveAliasCmdlet } from './AliasCmdlets';
 import {
   GetNetLbfoTeamCmdlet, NewNetLbfoTeamCmdlet, SetNetLbfoTeamCmdlet, RemoveNetLbfoTeamCmdlet,
   GetNetLbfoTeamMemberCmdlet, GetNetLbfoTeamNicCmdlet, AddNetLbfoTeamMemberCmdlet,
@@ -56,7 +57,7 @@ import {
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
-  GetAliasCmdlet, GetPSProviderCmdlet,
+  GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
 import { AddMemberCmdlet } from './AddMemberCmdlet';
@@ -388,6 +389,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RemovePSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
   registry.register(new GetAliasCmdlet());
+  registry.register(new NewAliasCmdlet());
+  registry.register(new SetAliasCmdlet());
+  registry.register(new RemoveAliasCmdlet());
   registry.register(new GetPSProviderCmdlet());
 
   // ── Services (provider-backed) ────────────────────────────────────────────
