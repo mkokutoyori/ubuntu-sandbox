@@ -31,6 +31,8 @@ async function buildLab(): Promise<Lab> {
 
 const pktLine = (out: string) => out.split('\n').find(l => l.includes('packets transmitted')) ?? '';
 
+const dotted = (mac: string): string => { const h = mac.toLowerCase().replace(/[^0-9a-f]/g, ''); return `${h.slice(0, 4)}.${h.slice(4, 8)}.${h.slice(8, 12)}`; };
+
 describe('Switch reference scenarios — USER EXEC', () => {
   it('1. "?" lists the user-EXEC command set without requiring privileges', async () => {
     const { sw } = await buildLab();
@@ -64,8 +66,8 @@ describe('Switch reference scenarios — USER EXEC', () => {
     await sw.executeCommand('enable');
     const table = await sw.executeCommand('show mac address-table');
     const srvMac = srv.getPort('eth0')!.getMAC().toString().toLowerCase();
-    expect(table.toLowerCase()).toContain(srvMac);
-    expect(table).toContain('FastEthernet0/2');
+    expect(table.toLowerCase()).toContain(dotted(srvMac));
+    expect(table).toContain('Fa0/2');
     expect(table).toContain('DYNAMIC');
   });
 

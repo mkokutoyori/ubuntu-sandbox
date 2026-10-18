@@ -93,7 +93,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, sw } = await creerLaboTraverse();
       await pc.executeCommand('arping -c 1 192.168.1.1');
       const macs = await sw.executeCommand('show mac address-table');
-      expect(macs).toMatch(/FastEthernet0\/2/);
+      expect(macs).toMatch(/Fa0\/2/);
     });
 
     it('2. La requête ARP du PC traverse le switch en broadcast sans être altérée', async () => {
@@ -120,7 +120,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, sw } = await creerLaboTraverse();
       await pc.executeCommand('arping -c 1 -U -I eth0 192.168.1.10');
       const table = await sw.executeCommand('show mac address-table');
-      expect(table).toMatch(/FastEthernet0\/2/);
+      expect(table).toMatch(/Fa0\/2/);
     });
 
     it('6. Le paquet traversant est encapsulé avec la MAC du port WAN du firewall en sortie', async () => {
