@@ -24,7 +24,7 @@ import {
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
-import { computeTcpChecksum } from '@/network/tcp/types';
+import { computeTcpChecksum, tcpFlagBits } from '@/network/tcp/types';
 import { computeUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
@@ -267,19 +267,13 @@ function synthIcmpBytes(icmp: ICMPPacket): number[] {
   return [...header, ...data];
 }
 
-function tcpFlagsByte(flags: CaptureTcpFlags): number {
-  return (flags.cwr ? 0x80 : 0) | (flags.ece ? 0x40 : 0)
-    | (flags.urg ? 0x20 : 0) | (flags.ack ? 0x10 : 0) | (flags.psh ? 0x08 : 0)
-    | (flags.rst ? 0x04 : 0) | (flags.syn ? 0x02 : 0) | (flags.fin ? 0x01 : 0);
-}
-
 function synthTcpBytes(seg: TcpSegment): number[] {
   const dataOffset = Math.max(5, seg.dataOffset || 5);
   const optionBytes = new Array((dataOffset - 5) * 4).fill(0);
   return [
     ...u16(seg.sourcePort), ...u16(seg.destinationPort),
     ...u32(seg.sequence >>> 0), ...u32(seg.acknowledgement >>> 0),
-    dataOffset << 4, tcpFlagsByte(seg.flags),
+    dataOffset << 4, tcpFlagBits(seg.flags),
     ...u16(seg.window & 0xffff),
     ...u16(seg.checksum & 0xffff),
     ...u16(seg.urgentPointer & 0xffff),
@@ -733,7 +727,7 @@ export function makeTcpFrame(
   const tcp = [
     ...u16(pkt.srcPort), ...u16(pkt.dstPort),
     ...u32(pkt.seq >>> 0), ...u32(pkt.ack >>> 0),
-    5 << 4, tcpFlagsByte(flags),
+    5 << 4, tcpFlagBits(flags),
     ...u16(0),
     ...u16(0),
     ...u16(0),

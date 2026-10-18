@@ -1,9 +1,10 @@
 export type Errno =
-  | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
+  | 'EPERM' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
   | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
   | 'EOPNOTSUPP' | 'EPROTO' | 'ETIMEDOUT';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
+  EPERM: { number: 1, text: 'Operation not permitted' },
   EACCES: { number: 13, text: 'Permission denied' },
   EADDRINUSE: { number: 98, text: 'Address already in use' },
   EADDRNOTAVAIL: { number: 99, text: 'Cannot assign requested address' },

@@ -170,11 +170,7 @@ export function computeTcpChecksum(
   words.push(seg.sourcePort & 0xffff, seg.destinationPort & 0xffff);
   words.push((seg.sequence >>> 16) & 0xffff, seg.sequence & 0xffff);
   words.push((seg.acknowledgement >>> 16) & 0xffff, seg.acknowledgement & 0xffff);
-  const f = seg.flags;
-  const flagBits = (f.fin ? 1 : 0) | (f.syn ? 2 : 0) | (f.rst ? 4 : 0)
-    | (f.psh ? 8 : 0) | (f.ack ? 16 : 0) | (f.urg ? 32 : 0)
-    | (f.ece ? 64 : 0) | (f.cwr ? 128 : 0);
-  words.push(((seg.dataOffset & 0xf) << 12) | flagBits, seg.window & 0xffff);
+  words.push(((seg.dataOffset & 0xf) << 12) | tcpFlagBits(seg.flags), seg.window & 0xffff);
   words.push(0, seg.urgentPointer & 0xffff);
   pushBytesAsWords(words, bytes);
 
@@ -185,6 +181,13 @@ export function verifyTcpChecksum(
   seg: TcpSegment, srcIp: string, dstIp: string,
 ): boolean {
   return computeTcpChecksum(seg, srcIp, dstIp) === seg.checksum;
+}
+
+export type TcpFlagSet = Pick<TcpFlags, 'fin' | 'syn' | 'rst' | 'psh' | 'ack' | 'urg'> & Partial<Pick<TcpFlags, 'ece' | 'cwr'>>;
+
+export function tcpFlagBits(f: TcpFlagSet): number {
+  return (f.fin ? 0x01 : 0) | (f.syn ? 0x02 : 0) | (f.rst ? 0x04 : 0) | (f.psh ? 0x08 : 0)
+    | (f.ack ? 0x10 : 0) | (f.urg ? 0x20 : 0) | (f.ece ? 0x40 : 0) | (f.cwr ? 0x80 : 0);
 }
 
 export function flagsString(f: TcpFlags): string {

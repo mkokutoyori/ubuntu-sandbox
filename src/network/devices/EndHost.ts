@@ -35,7 +35,7 @@ import {
 } from '../layers/internet/ProtocolCounters';
 import { ipv6HeaderProblem, ipv6PacketBytes } from '../layers/internet/Ipv6Ingress';
 import {
-  fragmentIPv6, IPv6Reassembler, ipv6FragmentOf, IPV6_REASSEMBLY_TIMEOUT_MS,
+  fragmentIPv6, IPv6Reassembler, ipv6FragmentOf, ipv6SendRefusal, IPV6_REASSEMBLY_TIMEOUT_MS,
   IPV6_REASSEMBLY_HIGH_THRESHOLD_BYTES,
 } from '../layers/internet/Ipv6Fragmentation';
 import { Port } from '../hardware/Port';
@@ -105,7 +105,7 @@ import {
 import type { HostIcmpEchoFailedPayload, HostIcmpEchoReplyPayload, HostIcmpUnreachablePayload } from './host/events';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
 import { Logger } from '../core/Logger';
-import type { Errno } from '../core/Errno';
+import { strerror, type Errno } from '../core/Errno';
 import { MTU } from '../core/constants';
 import { PacketQueue } from '../core/PacketQueue';
 import {
@@ -114,20 +114,16 @@ import {
   mayGenerateICMPv6Error,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
   ICMP_UNREACH_NET,
-  ICMP_UNREACH_HOST,
   ICMP_UNREACH_PROTO,
   ICMP_UNREACH_PORT,
-  ICMP_UNREACH_NET_PROHIBITED,
-  ICMP_UNREACH_HOST_PROHIBITED,
-  ICMP_UNREACH_ADMIN_PROHIBITED,
   ICMP_UNREACH_FRAG_NEEDED,
   ICMPV6_UNREACH_ADDRESS,
-  ICMPV6_UNREACH_ADMIN_PROHIBITED,
   ICMPV6_UNREACH_PORT,
   ICMPV6_EXCEEDED_REASSEMBLY,
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
+  rejectTypeOf,
   udpSocketErrorFor,
   udpSocketErrorForV6,
   type Icmp6ErrorReport,
@@ -226,6 +222,8 @@ export interface PingResult {
   /** ICMP error message (e.g. "Time to live exceeded", "Destination unreachable") */
   error?: string;
   icmp6?: Icmp6ErrorReport;
+  localError?: LocalSocketError;
+  sendError?: Errno;
   seq: number;
   bytes: number;
   fromIP: string;
@@ -276,8 +274,20 @@ const REDIRECT_EXPIRES_MS = 300_000;
 const REDIRECT_CODES = new Set([0, 1, 2, 3]);
 
 class IcmpErrorReply extends Error {
-  constructor(message: string, readonly report?: Icmp6ErrorReport) {
+  constructor(message: string, readonly report?: Icmp6ErrorReport, readonly sendError?: Errno) {
     super(message);
+  }
+}
+
+class SendRefusedError extends Error {
+  constructor(readonly errno: Errno) {
+    super(strerror(errno));
+  }
+}
+
+class LocalSendError extends Error {
+  constructor(readonly failure: LocalSocketError) {
+    super(strerror(failure.errno));
   }
 }
 
@@ -293,6 +303,7 @@ export interface EchoOptions {
 
 export interface Echo6Options {
   dataSize?: number;
+  neverFragment?: boolean;
   hopLimit?: number;
   trafficClass?: number;
   flowLabel?: number;
@@ -309,8 +320,10 @@ export interface TraceSocketOptions {
   direct?: boolean;
 }
 
+export type LocalSocketError = { readonly origin: 'local'; readonly errno: Errno; readonly mtu?: number };
+
 export type UdpErrorReport =
-  | { readonly origin: 'local'; readonly errno: Errno; readonly mtu?: number }
+  | LocalSocketError
   | {
     readonly origin: 'icmp'; readonly from: string; readonly errno: Errno;
     readonly timeExceeded: boolean; readonly mtu?: number; readonly replyTtl?: number; readonly rttMs: number;
@@ -3414,23 +3427,34 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', this.resolveRejectCode(rejectWith));
+    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', this.rejectCode(4, rejectWith));
   }
 
-  /** Map `--reject-with` to the ICMP Destination Unreachable code it selects. */
-  private resolveRejectCode(rejectWith: string | null): number {
-    switch (rejectWith) {
-      case 'icmp-net-unreachable': return ICMP_UNREACH_NET;
-      case 'icmp-host-unreachable': return ICMP_UNREACH_HOST;
-      case 'icmp-port-unreachable': return ICMP_UNREACH_PORT;
-      case 'icmp-proto-unreachable': return ICMP_UNREACH_PROTO;
-      case 'icmp-net-prohibited': return ICMP_UNREACH_NET_PROHIBITED;
-      case 'icmp-host-prohibited': return ICMP_UNREACH_HOST_PROHIBITED;
-      case 'icmp-admin-prohibited': return ICMP_UNREACH_ADMIN_PROHIBITED;
-      // Real iptables: a bare `-j REJECT` with no `--reject-with` defaults
-      // to icmp-port-unreachable, not admin-prohibited.
-      default: return ICMP_UNREACH_PORT;
+  private rejectCode(family: 4 | 6, rejectWith: string | null): number {
+    const code = rejectWith === null ? null : rejectTypeOf(family, rejectWith)?.code ?? null;
+    return code ?? (family === 6 ? ICMPV6_UNREACH_PORT : ICMP_UNREACH_PORT);
+  }
+
+  private rejectOutgoing(packet: IPv4Packet | IPv6Packet): void {
+    const rejectWith = this.lastRejectWith;
+    this.lastRejectWith = null;
+    if (packet.type === 'ipv6') {
+      this.sendICMPv6Error('lo', packet, 'destination-unreachable', this.rejectCode(6, rejectWith), {}, packet.sourceIP);
+    } else {
+      this.sendICMPError('lo', packet, 'destination-unreachable', this.rejectCode(4, rejectWith), undefined, packet.sourceIP);
     }
+  }
+
+  private sendIpv6Reject(portName: string, offendingPkt: IPv6Packet): void {
+    const rejectWith = this.lastRejectWith;
+    this.lastRejectWith = null;
+    if (rejectWith !== null && offendingPkt.nextHeader === IP_PROTO_TCP && rejectTypeOf(6, rejectWith)?.code === null) {
+      this.tcpv2.sendResetForSegment(
+        offendingPkt.destinationIP.toString(), offendingPkt.sourceIP.toString(), offendingPkt.payload as TcpSegment,
+      );
+      return;
+    }
+    this.sendICMPv6Unreachable(portName, offendingPkt, this.rejectCode(6, rejectWith));
   }
 
   /**
@@ -3453,11 +3477,12 @@ export abstract class EndHost extends Equipment {
     icmpType: ICMPErrorType,
     code: number,
     nextHopMTU?: number,
+    errorSource?: IPAddress,
   ): void {
     if (!mayGenerateICMPError(offendingPkt)) return;
 
     if (this.isLocalAddress(offendingPkt.sourceIP)) {
-      const looped = buildICMPError(offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
+      const looped = buildICMPError(errorSource ?? offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
         nextHopMTU, quote: this.icmpErrorQuote(),
       });
       const verdict = this.firewallFilter('lo', looped, 'out');
@@ -4410,9 +4435,20 @@ export abstract class EndHost extends Equipment {
 
   private sendICMPv6Error(
     portName: string, offendingPkt: IPv6Packet, icmpType: ICMPv6Packet['icmpType'], code: number,
-    extra: { pointer?: number; mtu?: number } = {},
+    extra: { pointer?: number; mtu?: number } = {}, errorSource?: IPv6Address,
   ): void {
     if (!mayGenerateICMPv6Error(offendingPkt, icmpType)) return;
+    if (this.isLocalAddress6(offendingPkt.sourceIP)) {
+      const looped = createIPv6Packet(
+        errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit,
+        { type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra }, 48,
+      );
+      if (this.firewallFilter6('lo', looped, 'out') !== 'accept') return;
+      this.countLoopbackLeg(looped, 'sent');
+      this.countLoopbackLeg(looped, 'delivered');
+      this.handleICMPv6('lo', looped);
+      return;
+    }
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
     const srcIP = offendingPkt.destinationIP;
@@ -4713,24 +4749,27 @@ export abstract class EndHost extends Equipment {
     });
 
     const verdict = this.firewallFilter(portName, ipPkt, 'out');
-    if (verdict === 'drop' || verdict === 'reject') {
-      throw new Error('blocked by firewall');
-    }
-
-    const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
-    if (!packets) {
-      throw new Error(`local error: message too long, mtu=${this.pathMtuTo(targetIP, port.getMTU())}`);
-    }
-    for (const packet of packets) {
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: targetMAC,
-        etherType: ETHERTYPE_IPV4, payload: packet,
-      });
+    if (verdict === 'drop') throw new SendRefusedError('EPERM');
+    if (verdict === 'reject') {
+      this.rejectOutgoing(ipPkt);
+    } else {
+      const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
+      if (!packets) {
+        throw new LocalSendError({ origin: 'local', errno: 'EMSGSIZE', mtu: this.pathMtuTo(targetIP, port.getMTU()) });
+      }
+      for (const packet of packets) {
+        this.sendFrame(portName, {
+          srcMAC: port.getMAC(), dstMAC: targetMAC,
+          etherType: ETHERTYPE_IPV4, payload: packet,
+        });
+      }
     }
 
     try {
       const winner = await outcome();
-      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
+      if (winner.kind === 'failed') {
+        throw new IcmpErrorReply(winner.r.reason, undefined, verdict === 'reject' ? 'EPERM' : undefined);
+      }
       const rtt = PathClock.now() - sentAt;
       if (rtt > timeoutMs) throw new Error('timeout');
       return {
@@ -4993,19 +5032,8 @@ export abstract class EndHost extends Equipment {
       try {
         const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
         results.push(redirects.attachTo(result));
-      } catch (err: any) {
-        const errorMsg = typeof err === 'string'
-          ? err
-          : (err instanceof Error ? err.message : String(err));
-        results.push(redirects.attachTo({
-          success: false,
-          rttMs: 0,
-          ttl: 0,
-          seq,
-          bytes: 0,
-          fromIP: '',
-          error: errorMsg,
-        }));
+      } catch (err: unknown) {
+        results.push(redirects.attachTo(this.failedProbe(seq, err)));
         if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
           await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
         }
@@ -5998,7 +6026,7 @@ export abstract class EndHost extends Equipment {
           const icmpVerdict = this.firewallFilter6(portName, ipv6, 'in');
           if (icmpVerdict === 'drop') return;
           if (icmpVerdict === 'reject') {
-            this.sendICMPv6Unreachable(portName, ipv6, ICMPV6_UNREACH_ADMIN_PROHIBITED);
+            this.sendIpv6Reject(portName, ipv6);
             return;
           }
         }
@@ -6015,13 +6043,7 @@ export abstract class EndHost extends Equipment {
       const verdict = this.firewallFilter6(portName, ipv6, 'in');
       if (verdict === 'drop') return;
       if (verdict === 'reject') {
-        if (ipv6.nextHeader === IP_PROTO_TCP) {
-          this.tcpv2.sendResetForSegment(
-            ipv6.destinationIP.toString(), ipv6.sourceIP.toString(), ipv6.payload as TcpSegment,
-          );
-        } else {
-          this.sendICMPv6Unreachable(portName, ipv6);
-        }
+        this.sendIpv6Reject(portName, ipv6);
         return;
       }
 
@@ -6166,6 +6188,7 @@ export abstract class EndHost extends Equipment {
     // Route the reply
     const route = this.resolveIPv6Route(ipv6.sourceIP);
     if (!route) return;
+    if (this.firewallFilter6(route.port.getName(), replyPkt, 'out') !== 'accept') return;
 
     const send = (mac: MACAddress): void => {
       this.sendFrame(route.port.getName(), {
@@ -6540,6 +6563,12 @@ export abstract class EndHost extends Equipment {
       throw new Error(`Destination unreachable from ${srcIP}`);
     }
 
+    const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
+    const refusal = ipv6SendRefusal(
+      ICMP_ECHO_HEADER_BYTES + dataSize, this.pathMtuTo(targetIP, port.getIPv6MTU()), opts?.neverFragment === true,
+    );
+    if (refusal !== null) throw new LocalSendError(refusal);
+
     const id = opts?.ident ?? this.allocateEchoIdent();
 
     const targetIpStr = targetIP.toString();
@@ -6547,7 +6576,6 @@ export abstract class EndHost extends Equipment {
 
     const outcome = this.armEchoWait({ id, seq, target: targetIpStr, anySource: false }, timeoutMs);
 
-    const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
     const icmpv6 = createICMPv6EchoRequest(id, seq, dataSize);
     const ipPkt = createIPv6Packet(
       srcIP, targetIP, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.defaultHopLimit, icmpv6, ICMP_ECHO_HEADER_BYTES + dataSize,
@@ -6558,14 +6586,22 @@ export abstract class EndHost extends Equipment {
       fromIp: srcIP.toString(), toIp: targetIpStr, id, seq, ttl: ipPkt.hopLimit, size: ipPkt.payloadLength,
     });
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: targetMAC,
-      etherType: ETHERTYPE_IPV6, payload: ipPkt,
-    });
+    const verdict = this.firewallFilter6(portName, ipPkt, 'out');
+    if (verdict === 'drop') throw new SendRefusedError('EPERM');
+    if (verdict === 'reject') {
+      this.rejectOutgoing(ipPkt);
+    } else {
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC: targetMAC,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+    }
 
     try {
       const winner = await outcome();
-      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason, winner.r.icmp6);
+      if (winner.kind === 'failed') {
+        throw new IcmpErrorReply(winner.r.reason, winner.r.icmp6, verdict === 'reject' ? 'EPERM' : undefined);
+      }
       const rtt = PathClock.now() - sentAt;
       if (rtt > timeoutMs) throw new Error('timeout');
       return {
@@ -6584,6 +6620,24 @@ export abstract class EndHost extends Equipment {
 
   // ─── High-level Ping6 (used by terminal commands) ───────────────
 
+  private failedProbe(seq: number, err: unknown): PingResult {
+    const report = err instanceof IcmpErrorReply ? err.report : undefined;
+    const localError = err instanceof LocalSendError ? err.failure : undefined;
+    const sendError = err instanceof SendRefusedError ? err.errno : err instanceof IcmpErrorReply ? err.sendError : undefined;
+    return {
+      success: false,
+      rttMs: 0,
+      ttl: 0,
+      seq,
+      bytes: 0,
+      fromIP: report?.from ?? '',
+      error: typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err)),
+      ...(report === undefined ? {} : { icmp6: report }),
+      ...(localError === undefined ? {} : { localError }),
+      ...(sendError === undefined ? {} : { sendError }),
+    };
+  }
+
   private unreachableResults6(source: IPv6Address | null, count: number, firstSeq: number): PingResult[] {
     const from = source === null ? '' : source.toString();
     const results: PingResult[] = [];
@@ -6600,9 +6654,10 @@ export abstract class EndHost extends Equipment {
   private localEchoResults6(target: IPv6Address, count: number, opts?: Echo6Options): PingResult[] {
     const firstSeq = opts?.firstSeq ?? 1;
     const bytes = ICMP_ECHO_HEADER_BYTES + (opts?.dataSize ?? ECHO_DATA_BYTES);
+    const refusal = ipv6SendRefusal(bytes, LOOPBACK_ECHO_MTU, opts?.neverFragment === true);
     const results: PingResult[] = [];
     for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      results.push({
+      results.push(refusal !== null ? this.failedProbe(seq, new LocalSendError(refusal)) : {
         success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes, fromIP: target.toString(),
       });
     }
@@ -6637,20 +6692,7 @@ export abstract class EndHost extends Equipment {
       try {
         results.push(await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs, opts));
       } catch (err: unknown) {
-        const errorMsg = typeof err === 'string'
-          ? err
-          : (err instanceof Error ? err.message : String(err));
-        const report = err instanceof IcmpErrorReply ? err.report : undefined;
-        results.push({
-          success: false,
-          rttMs: 0,
-          ttl: 0,
-          seq,
-          bytes: 0,
-          fromIP: report?.from ?? '',
-          error: errorMsg,
-          ...(report === undefined ? {} : { icmp6: report }),
-        });
+        results.push(this.failedProbe(seq, err));
         if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
           await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
         }
