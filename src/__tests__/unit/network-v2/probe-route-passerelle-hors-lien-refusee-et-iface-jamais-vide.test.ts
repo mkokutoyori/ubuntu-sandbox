@@ -10,6 +10,14 @@
  * Passent des deux côtés : les TEMOINS -- la passerelle joignable est
  * acceptée et sort avec son interface dans `route -n`, et `route add -net`
  * hors lien est déjà refusé (non-régression).
+ *
+ * SECOND LOT, `ip route show SELECTEUR` : 4 cas sur 5 tombent avant (git stash) --
+ * `show default`, un préfixe, root/match, dev/via/proto/scope et le mot
+ * inconnu renvoyaient TOUTE la table, car seul `table N` était lu. Le
+ * TEMOIN (sans sélecteur, toutes les routes) passe des deux côtés.
+ * Sémantique d'iproute2 : un préfixe nu est exact ; `root P` = préfixes pas
+ * plus courts que P et inclus dans P ; `match P` = préfixes pas plus longs
+ * que P et contenant P (la route par défaut y figure donc toujours).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -72,5 +80,46 @@ describe('passerelle par défaut', () => {
     pc.getPorts()[0].configureIP(new IPAddress('10.0.0.5'), new SubnetMask('255.255.255.0'));
     expect(await pc.executeCommand('ip route add default via 10.0.0.1')).toBe('');
     expect(defaultLine(await pc.executeCommand('route -n'))).toMatch(/eth0$/);
+  });
+});
+
+describe('ip route show SELECTEUR', () => {
+  async function lab(): Promise<LinuxPC> {
+    const pc = host();
+    await pc.executeCommand('route add default gw 192.168.20.1');
+    await pc.executeCommand('ip route add 10.9.0.0/16 via 192.168.20.254');
+    await pc.executeCommand('ip route add 10.9.5.0/24 via 192.168.20.254');
+    return pc;
+  }
+
+  it('TEMOIN: sans sélecteur, toutes les routes', async () => {
+    const lines = (await (await lab()).executeCommand('ip route')).split('\n');
+    expect(lines.length).toBe(4);
+  });
+
+  it('show default ne montre que la route par défaut', async () => {
+    const out = await (await lab()).executeCommand('ip route show default');
+    expect(out.split('\n')).toEqual([expect.stringMatching(/^default via 192\.168\.20\.1 dev eth0/)]);
+  });
+
+  it('un préfixe nu est exact ; root et match bornent par la longueur', async () => {
+    const pc = await lab();
+    expect((await pc.executeCommand('ip route show 10.9.0.0/16')).split('\n')).toHaveLength(1);
+    expect((await pc.executeCommand('ip route show root 10.9.0.0/16')).split('\n')).toHaveLength(2);
+    expect((await pc.executeCommand('ip route show match 10.9.5.0/24')).split('\n')).toHaveLength(3);
+    expect(await pc.executeCommand('ip route show 10.8.0.0/16')).toBe('');
+  });
+
+  it('dev, via, proto, scope et metric filtrent aussi', async () => {
+    const pc = await lab();
+    expect((await pc.executeCommand('ip route show dev eth0')).split('\n')).toHaveLength(4);
+    expect(await pc.executeCommand('ip route show dev eth9')).toBe('');
+    expect((await pc.executeCommand('ip route show via 192.168.20.254')).split('\n')).toHaveLength(2);
+    expect((await pc.executeCommand('ip route show proto kernel')).split('\n')).toHaveLength(1);
+    expect((await pc.executeCommand('ip route show scope link')).split('\n')).toHaveLength(1);
+  });
+
+  it('un mot inconnu est une erreur d\'iproute2, pas une liste complète', async () => {
+    expect(await (await lab()).executeCommand('ip route show zorglub')).toContain('"zorglub" is a garbage');
   });
 });

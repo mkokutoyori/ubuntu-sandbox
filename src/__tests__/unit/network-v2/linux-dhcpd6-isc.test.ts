@@ -40,7 +40,7 @@ subnet6 2001:db8:1::/64 {
 `;
 
 const put = (srv: LinuxServer, path: string, text: string) =>
-  srv.executeCommand(`printf '%s' ${JSON.stringify(text)} > ${path}`);
+  srv.executeCommand(`printf '%b' ${JSON.stringify(text)} > ${path}`);
 
 async function lab(conf = CONF, interfaces = '"eth0"') {
   const srv = new LinuxServer('linux-server', 'SRV');
