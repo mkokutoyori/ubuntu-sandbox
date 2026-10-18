@@ -2007,6 +2007,10 @@ export abstract class EndHost extends Equipment {
     if (!best) this.defaultGatewayOrigin = null;
   }
 
+  gatewayReachable(gw: IPAddress): boolean {
+    return this.gatewayInterface(gw) !== '';
+  }
+
   private gatewayInterface(gw: IPAddress): string {
     for (const [, port] of this.ports) {
       const ip = port.getIPAddress();

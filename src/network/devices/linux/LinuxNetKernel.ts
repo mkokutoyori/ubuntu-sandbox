@@ -106,6 +106,7 @@ export interface LinuxNetKernel {
     filter?: { nextHop?: IPAddress | null; metric?: number },
   ): boolean;
   setDefaultGateway(gw: IPAddress): void;
+  gatewayReachable(gw: IPAddress): boolean;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
   addDefaultRouteEntry(gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean;

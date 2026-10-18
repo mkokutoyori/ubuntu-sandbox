@@ -4226,6 +4226,7 @@ export abstract class LinuxMachine extends EndHost
       ): boolean => {
         return this.removeRoute(network, mask, filter);
       },
+      gatewayReachable: (gw: IPAddress): boolean => this.gatewayReachable(gw),
       setDefaultGateway: (gw: IPAddress): void => {
         this.setDefaultGateway(gw);
       },

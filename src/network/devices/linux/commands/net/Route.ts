@@ -107,7 +107,9 @@ function parseRouteTarget(args: string[], isHost: boolean): ParsedTarget | null 
 function ipconfigRouteAdd(ctx: LinuxCommandContext, args: string[]): string {
   if (args[0] === 'default' && args[1] === 'gw' && args[2]) {
     try {
-      ctx.net.setDefaultGateway(new IPAddress(args[2]));
+      const gateway = new IPAddress(args[2]);
+      if (!ctx.net.gatewayReachable(gateway)) return 'SIOCADDRT: Network is unreachable';
+      ctx.net.setDefaultGateway(gateway);
       return '';
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
