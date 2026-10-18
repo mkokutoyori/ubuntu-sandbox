@@ -35,19 +35,27 @@ for (const type of [...Object.values(RECORD_TYPES), INFORMATION_RECORD]) {
   registerPSDisplayFormatter(type, record => String(record.Message ?? ''));
 }
 
-export function actionPreferenceOf(value: PSValue): ActionPreferenceName | null {
+export function actionPreferenceOf(value: PSValue, allowPrefix = false): ActionPreferenceName | null {
   const wanted = String(value ?? '').trim().toLowerCase();
-  return ACTION_PREFERENCES.find(name => name.toLowerCase() === wanted) ?? null;
+  const exact = ACTION_PREFERENCES.find(name => name.toLowerCase() === wanted);
+  if (exact !== undefined || !allowPrefix || wanted === '') return exact ?? null;
+  const candidates = ACTION_PREFERENCES.filter(name => name.toLowerCase().startsWith(wanted));
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function typed(record: Record<string, PSValue>, type: string): Record<string, PSValue> {
+  Object.defineProperty(record, '__type', { value: type, enumerable: false });
+  Object.defineProperty(record, '__type__', { value: type, enumerable: false });
+  return record;
 }
 
 export function messageRecord(kind: 'warning' | 'verbose' | 'debug', message: string): PSValue {
-  return { __type: RECORD_TYPES[kind], Message: message } as Record<string, PSValue>;
+  return typed({ Message: message }, RECORD_TYPES[kind]);
 }
 
 export function informationRecord(data: PSValue, tags: readonly string[], source: string, computer: string): PSValue {
   const text = Array.isArray(data) ? data.map(String).join(' ') : String(data ?? '');
-  return {
-    __type: INFORMATION_RECORD,
+  return typed({
     Message: text,
     MessageData: data,
     Source: source,
@@ -58,7 +66,7 @@ export function informationRecord(data: PSValue, tags: readonly string[], source
     ProcessId: 0,
     NativeThreadId: 0,
     ManagedThreadId: 1,
-  } as Record<string, PSValue>;
+  } as Record<string, PSValue>, INFORMATION_RECORD);
 }
 
 export function displayLine(kind: 'warning' | 'verbose' | 'debug', message: string): string {
@@ -74,13 +82,13 @@ export interface ErrorRecordSpec {
 }
 
 export function newErrorRecord(spec: ErrorRecordSpec): Record<string, PSValue> {
-  return {
+  return typed({
     Message: spec.message,
     Exception: makeExceptionObject(spec.exceptionType, spec.message) as unknown as PSValue,
     CategoryInfo: { Category: spec.category ?? 'NotSpecified' } as Record<string, PSValue>,
     TargetObject: spec.targetObject ?? null,
     FullyQualifiedErrorId: spec.fullyQualifiedErrorId,
-  } as Record<string, PSValue>;
+  } as Record<string, PSValue>, 'System.Management.Automation.ErrorRecord');
 }
 
 export function preferenceStopError(preferenceName: string, message: string): PSRuntimeError {
@@ -131,13 +139,14 @@ export class StreamHub {
     this.collect('error', record);
   }
 
-  recordThrown(error: unknown, build: () => PSValue): PSValue {
+  recordThrown(error: unknown, build: () => PSValue, collected: (record: PSValue) => PSValue = record => record): PSValue {
     if (typeof error !== 'object' || error === null) return build();
     const known = this.thrownRecords.get(error);
     if (known !== undefined) return known;
     const record = build();
     this.thrownRecords.set(error, record);
-    this.recordError(record);
+    this.errorHistory.set([record, ...this.errorHistory.get()]);
+    this.collect('error', collected(record));
     return record;
   }
 
@@ -153,12 +162,26 @@ export class StreamHub {
     this.redirects.pop();
   }
 
+  private diverted: string[] | null = null;
+
+  divert(run: () => void): string[] {
+    const previous = this.diverted;
+    const kept: string[] = [];
+    this.diverted = kept;
+    try {
+      run();
+    } finally {
+      this.diverted = previous;
+    }
+    return kept;
+  }
+
   deliver(kind: StreamKind, record: PSValue, lines: readonly string[], shown = true): void {
     for (let index = this.redirects.length - 1; index >= 0; index--) {
       const handler = this.redirects[index].get(kind);
       if (handler !== undefined && handler(record, lines)) return;
     }
     if (this.sink !== null) this.sink(kind, record);
-    else if (shown) for (const line of lines) { this.writeLine(line); this.linesWritten++; }
+    else if (shown) for (const line of lines) { if (this.diverted !== null) this.diverted.push(line); else { this.writeLine(line); this.linesWritten++; } }
   }
 }

@@ -57,6 +57,8 @@ export function createPowerShellHost(openSession: () => HostSession): Record<str
   let session: HostSession | null = null;
   let serial = 0;
   const streams = { Error: makeList(), Warning: makeList(), Verbose: makeList(), Debug: makeList(), Information: makeList(), Progress: makeList() };
+  const lists = Object.values(streams);
+  Object.assign(streams, { ClearStreams: () => { for (const list of lists) list.length = 0; return null; } });
   const state: Record<string, PSValue> = { State: 'NotStarted' };
   const host: Record<string, PSValue> = {};
   const lastCommand = (): Extract<HostItem, { kind: 'command' }> => {

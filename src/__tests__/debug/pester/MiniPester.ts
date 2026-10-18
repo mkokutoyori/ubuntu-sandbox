@@ -3,7 +3,6 @@ import type { CmdletContext } from '@/powershell/cmdlets/CmdletContext';
 import type { PSValue, PSEnvironment } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { PSRuntimeError } from '@/powershell/runtime/PSRuntimeError';
 import { languageEquals } from '@/powershell/runtime/semantics/PSCompare';
 
 export interface PesterResult {
@@ -189,7 +188,7 @@ function shouldCmdlet(): ICmdlet {
     aliases: [],
     parameters: ['Not', 'Be', 'BeExactly', 'BeNullOrEmpty', 'BeNull', 'BeTrue', 'BeFalse', 'BeOfType', 'Match', 'MatchExactly', 'Contain', 'HaveCount',
       'BeLike', 'BeLikeExactly', 'BeGreaterThan', 'BeLessThan', 'BeGreaterOrEqual', 'BeLessOrEqual', 'Throw', 'ExpectedMessage', 'ErrorId', 'ExceptionType',
-      'Exist', 'BeIn', 'Because', 'ActualValue'],
+      'Exist', 'BeIn', 'Because', 'ActualValue', 'PassThru'],
     execute(ctx: CmdletContext): PSValue {
       const negate = ctx.named['not'] === true;
       const assertion = ASSERTIONS.find(key => ctx.named[key] !== undefined);
@@ -222,18 +221,23 @@ function shouldCmdlet(): ICmdlet {
         case 'belessorequal': return verdict(Number(actual) <= Number(expected), `Expected ${describeValue(actual)} <= ${describeValue(expected)}.`, 'Expected greater.');
         case 'bein': return verdict(items(expected).some(value => equalValues(actual, value, false)), `Expected ${describeValue(actual)} to be in ${describeValue(expected)}.`, 'Expected not in.');
         case 'throw': {
-          let thrown: Error | null = null;
-          try {
-            if (isBlock(actual)) ctx.runtime.invokeScriptBlock(actual, {}, [], ctx.env, null);
-          } catch (error) {
-            thrown = error instanceof Error ? error : new Error(String(error));
-          }
+          ctx.runtime.setVariable('__pester_block__', actual);
+          const outcome = isBlock(actual)
+            ? ctx.runtime.executeForValue("try { $null = & $__pester_block__; '__pester_nothrow__' } catch { $_ }")
+            : '__pester_nothrow__';
+          const thrown = outcome === '__pester_nothrow__' ? null : outcome as Record<string, PSValue>;
+          const exceptionMessage = thrown === null ? '' : psValueToString((thrown.Exception as Record<string, PSValue> | undefined)?.Message ?? thrown.Message);
           const wanted = ctx.named['expectedmessage'] ?? (typeof expected === 'string' ? expected : undefined);
           const wantedId = ctx.named['errorid'];
-          const thrownId = thrown instanceof PSRuntimeError ? thrown.exceptionType.replace(/^.*\./, '') : '';
-          const matches = thrown !== null && (wanted === undefined || thrown.message.toLowerCase().includes(psValueToString(wanted).toLowerCase()))
-            && (wantedId === undefined || thrownId.toLowerCase() === psValueToString(wantedId).toLowerCase());
-          return verdict(matches, thrown === null ? 'Expected an exception, but no exception was thrown.' : `Expected message '${psValueToString(wanted)}', but got '${thrown.message}'.`, 'Expected no exception, but one was thrown.');
+          const thrownId = thrown === null ? '' : psValueToString(thrown.FullyQualifiedErrorId);
+          const matches = thrown !== null && (wanted === undefined || exceptionMessage.toLowerCase().includes(psValueToString(wanted).toLowerCase()))
+            && (wantedId === undefined || thrownId === psValueToString(wantedId));
+          verdict(matches,
+            thrown === null ? 'Expected an exception, but no exception was thrown.'
+              : wantedId !== undefined && thrownId !== psValueToString(wantedId) ? `Expected ErrorId '${psValueToString(wantedId)}', but got '${thrownId}'.`
+              : `Expected message '${psValueToString(wanted)}', but got '${exceptionMessage}'.`,
+            'Expected no exception, but one was thrown.');
+          return ctx.named['passthru'] === true ? thrown : null;
         }
         default: return fail(`Unsupported Should assertion (${Object.keys(ctx.named).join(', ')}).`);
       }

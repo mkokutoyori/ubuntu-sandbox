@@ -4,6 +4,7 @@ import { PSRuntimeError } from '../PSRuntimeError';
 import { compileRegex } from './PSRegex';
 import { truthiness } from './PSConvert';
 import { stripTypeBrackets } from './PSTypes';
+import { PSNumber } from './PSNumber';
 
 const BINDING = 'System.Management.Automation.ParameterBindingException';
 const VALIDATION = 'System.Management.Automation.ParameterBindingValidationException';
@@ -107,8 +108,10 @@ export function usesCmdletBinding(declarations: readonly PSParamDeclaration[], b
     || declarations.some(d => attributesOf(d, 'parameter').length > 0);
 }
 
-function bindingError(message: string, type: string = BINDING): PSRuntimeError {
-  return new PSRuntimeError(message, type);
+function bindingError(message: string, type: string = BINDING, errorId?: string): PSRuntimeError {
+  const error = new PSRuntimeError(message, type);
+  error.errorId = errorId;
+  return error;
 }
 
 function resolveName(models: ParameterModel[], key: string, advanced: boolean, shouldProcess: boolean, host: BinderHost): ParameterModel | { common: string } {
@@ -132,9 +135,9 @@ function resolveName(models: ParameterModel[], key: string, advanced: boolean, s
   const total = candidates.length + commonMatches.length;
   if (total > 1) {
     const names = [...candidates.map(c => c.name), ...commonMatches].map(n => ` -${n}`).join('');
-    throw bindingError(`Parameter cannot be processed because the parameter name '${host.spell(key)}' is ambiguous. Possible matches include:${names}.`);
+    throw bindingError(`Parameter cannot be processed because the parameter name '${host.spell(key)}' is ambiguous. Possible matches include:${names}.`, BINDING, 'AmbiguousParameter');
   }
-  throw bindingError(`A parameter cannot be found that matches parameter name '${host.spell(key)}'.`);
+  throw bindingError(`A parameter cannot be found that matches parameter name '${host.spell(key)}'.`, BINDING, 'NamedParameterNotFound');
 }
 
 function describeArgument(value: PSValue): string {
@@ -212,8 +215,8 @@ function validateElement(
 const ELEMENT_VALIDATORS = new Set(['validateset', 'validaterange', 'validatepattern', 'validatelength', 'validatenotnullorwhitespace', 'validatescript']);
 
 function validate(model: ParameterModel, value: PSValue, host: BinderHost): void {
-  const fail = (message: string): never => {
-    throw bindingError(`Cannot validate argument on parameter '${model.name}'. ${message}`, VALIDATION);
+  const fail = (message: string, errorId = 'ParameterArgumentValidationError'): never => {
+    throw bindingError(`Cannot validate argument on parameter '${model.name}'. ${message}`, VALIDATION, errorId);
   };
   for (const attribute of model.declaration.attributes) {
     const kind = attribute.name.toLowerCase();
@@ -221,12 +224,14 @@ function validate(model: ParameterModel, value: PSValue, host: BinderHost): void
       const hasNull = value === null || value === undefined || (Array.isArray(value) && value.some(v => v === null || v === undefined));
       if (hasNull) fail(Array.isArray(value)
         ? 'The argument has a null value, or an element of the argument collection contains a null value. Provide a collection that does not contain any null values, and then try the command again.'
-        : 'The argument is null. Provide a valid value for the argument, and then try running the command again.');
+        : 'The argument is null. Provide a valid value for the argument, and then try running the command again.',
+      'ParameterArgumentValidationErrorNullNotAllowed');
     } else if (kind === 'validatenotnullorempty') {
       const empty = value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
-      if (empty) fail('The argument is null or empty. Provide an argument that is not null or empty, and then try the command again.');
+      const emptyKind = value === null || value === undefined ? 'NullNotAllowed' : value === '' ? 'EmptyStringNotAllowed' : 'EmptyArrayNotAllowed';
+      if (empty) fail('The argument is null or empty. Provide an argument that is not null or empty, and then try the command again.', `ParameterArgumentValidationError${emptyKind}`);
       if (Array.isArray(value) && value.some(v => v === null || v === undefined || v === ''))
-        fail('The argument is null, empty, or an element of the argument collection contains a null value. Supply a collection that does not contain any null values and then try the command again.');
+        fail('The argument is null, empty, or an element of the argument collection contains a null value. Supply a collection that does not contain any null values and then try the command again.', 'ParameterArgumentValidationErrorNullNotAllowed');
     } else if (kind === 'validatecount') {
       const count = Array.isArray(value) ? value.length : 1;
       const minimum = Number(host.evaluate(attribute.positionalArgs[0]));
@@ -248,11 +253,12 @@ function validate(model: ParameterModel, value: PSValue, host: BinderHost): void
 function coerce(model: ParameterModel, value: PSValue, host: BinderHost): PSValue {
   if (model.isSwitch) return truthiness(value);
   if (model.typeName === null) return value;
+  if (value instanceof PSNumber && value.sourceText !== undefined && /^(string|system\.string)$/i.test(model.typeName)) return value.sourceText;
   try {
     return host.cast(value, model.typeName);
   } catch (error) {
     if (error instanceof PSRuntimeError) {
-      throw bindingError(`Cannot process argument transformation on parameter '${model.name}'. ${error.message}`, TRANSFORMATION);
+      throw bindingError(`Cannot process argument transformation on parameter '${model.name}'. ${error.message}`, TRANSFORMATION, 'ParameterArgumentTransformationError');
     }
     throw error;
   }
@@ -264,11 +270,11 @@ function checkNullability(model: ParameterModel, value: PSValue): void {
   const allowsEmptyString = attributesOf(model.declaration, 'allowemptystring').length > 0;
   const allowsEmptyCollection = attributesOf(model.declaration, 'allowemptycollection').length > 0;
   if ((value === null || value === undefined) && !allowsNull)
-    throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is null.`, VALIDATION);
+    throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is null.`, VALIDATION, 'ParameterArgumentValidationErrorNullNotAllowed');
   if (value === '' && !allowsEmptyString)
-    throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is an empty string.`, VALIDATION);
+    throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is an empty string.`, VALIDATION, 'ParameterArgumentValidationErrorEmptyStringNotAllowed');
   if (Array.isArray(value) && value.length === 0 && !allowsEmptyCollection)
-    throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is an empty collection.`, VALIDATION);
+    throw bindingError(`Cannot bind argument to parameter '${model.name}' because it is an empty collection.`, VALIDATION, 'ParameterArgumentValidationErrorEmptyArrayNotAllowed');
 }
 
 export interface CmdletBindingInfo {
@@ -314,7 +320,7 @@ export function bindParameters(
   const record = (model: ParameterModel, value: PSValue): void => {
     const key = model.name.toLowerCase();
     if (values.has(key)) {
-      throw bindingError(`Cannot bind parameter because parameter '${model.name}' is specified more than once. To provide multiple values to parameters that can accept multiple values, use the array syntax. For example, "-parameter value1,value2,value3".`);
+      throw bindingError(`Cannot bind parameter because parameter '${model.name}' is specified more than once. To provide multiple values to parameters that can accept multiple values, use the array syntax. For example, "-parameter value1,value2,value3".`, BINDING, 'ParameterAlreadyBound');
     }
     checkNullability(model, value);
     const coerced = coerce(model, value, host);
@@ -329,7 +335,7 @@ export function bindParameters(
     if ('common' in target) {
       const canonical = target.common.toLowerCase();
       if (canonical in common) {
-        throw bindingError(`Cannot bind parameter because parameter '${target.common}' is specified more than once. To provide multiple values to parameters that can accept multiple values, use the array syntax. For example, "-parameter value1,value2,value3".`);
+        throw bindingError(`Cannot bind parameter because parameter '${target.common}' is specified more than once. To provide multiple values to parameters that can accept multiple values, use the array syntax. For example, "-parameter value1,value2,value3".`, BINDING, 'ParameterAlreadyBound');
       }
       common[canonical] = value;
     } else {
@@ -368,13 +374,13 @@ export function bindParameters(
   if (remainingModel !== undefined && queue.length > 0) record(remainingModel, queue.splice(0));
 
   if (advanced && queue.length > 0) {
-    throw bindingError(`A positional parameter cannot be found that accepts argument '${describeArgument(queue[0])}'.`);
+    throw bindingError(`A positional parameter cannot be found that accepts argument '${describeArgument(queue[0])}'.`, BINDING, 'PositionalParameterNotFound');
   }
 
   const missing = models.filter(m => m.mandatory && !values.has(m.name.toLowerCase())
     && options.pipelineParameter?.toLowerCase() !== m.name.toLowerCase());
   if (missing.length > 0) {
-    throw bindingError(`Cannot process command because of one or more missing mandatory parameters: ${missing.map(m => m.name).join(', ')}.`);
+    throw bindingError(`Cannot process command because of one or more missing mandatory parameters: ${missing.map(m => m.name).join(', ')}.`, BINDING, 'MissingMandatoryParameter');
   }
 
   return { values, bound, extra: queue, common, shouldProcess };

@@ -7,10 +7,16 @@
  * ParameterSetName/ThrowTerminatingError), redirections de flux (`2>`, `3>&1`, `*>`, `2>&1 > $null`), `[ref]`,
  * `[powershell]` (Streams.* et InvocationStateInfo), `[PSParser]::Tokenize`, mot nu colle a une variable (`+$x`, `foo$x`),
  * `Get-Variable -ValueOnly nom`.
- * Discrimination : sur la base c61aa5aef, 63 cas rouges sur 77 (dont `@($vide.Propriete)` : un tableau vide enumere RIEN, `@($null.x)` garde 1 element).
- * Temoins (14, verts avant et apres) : fonction avancee sans parametre commun (Write-Verbose, Write-Debug, Write-Information
+ * Discrimination : sur la base c61aa5aef, 84 cas rouges sur 100 (dont `@($vide.Propriete)` : un tableau vide enumere RIEN).
+ * Ajouts apres mesure : identifiants d'erreur qualifies (`NamedParameterNotFound,g`, `ParameterBindingFailed,<Cmdlet>Command`),
+ * `-ErrorAction Stop` (catch [ActionPreferenceStopException] ET [WriteErrorException], `$_` = l'enregistrement d'origine,
+ * -ErrorVariable = l'exception d'arret), bloc `clean`, blocs nommes d'un scriptblock, $MyInvocation.Statement/ScriptLineNumber,
+ * texte source d'un litteral numerique passe a un [string] (`0x1F`, `34uy`), `$null[0]`, Streams.ClearStreams.
+ * Temoins (16, verts avant et apres) : fonction avancee sans parametre commun (Write-Verbose, Write-Debug, Write-Information
  * silencieux par defaut, Write-Warning affiche, `-Verbose:$false`), fonction simple, `Write-Output`, expansion `"a $x"`,
- * `1,2 | ForEach-Object`, `[int]::Parse`, `Write-Output +abc`, `@($null.x)`.
+ * `1,2 | ForEach-Object`, `[int]::Parse`, `Write-Output +abc`, `@($null.x)`, `[int]` recevant 0x1F, `clean` sans autre bloc.
+ * Corrections de premisses fausses de cette meme probe : `catch { $_.Exception.Message }` apres -ErrorAction Stop rend le
+ * message d'origine (« e »), pas celui de l'exception d'arret ; son type est WriteErrorException.
  */
 import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
@@ -36,8 +42,7 @@ const VALUES: Array<[string, string]> = [
   [`${ADVANCED}Write-Information 'i' }; g -InformationAction Continue`, 'i'],
   [`${ADVANCED}Write-Information 'i' }; g -InformationVariable iv; $iv.Count`, '1'],
   [`${ADVANCED}Write-Information 'i' }; g -iv iv; $iv[0].MessageData`, 'i'],
-  [`${ADVANCED}Write-Error 'e'; 'after' }; try { g -ErrorAction Stop } catch { $_.Exception.Message }`,
-    'The running command stopped because the preference variable "ErrorActionPreference" or common parameter is set to Stop: e'],
+  [`${ADVANCED}Write-Error 'e'; 'after' }; try { g -ErrorAction Stop } catch { $_.Exception.Message }`, 'e'],
   [`${ADVANCED}Write-Error 'e'; 'after' }; g -ErrorAction SilentlyContinue`, 'after'],
   [`${ADVANCED}Write-Error 'e'; 'after' }; g -ea Ignore`, 'after'],
   [`${ADVANCED}Write-Error 'e'; 'o' }; g -ErrorVariable ev 2>$null; $ev.Count`, 'o|1'],
@@ -73,7 +78,30 @@ const VALUES: Array<[string, string]> = [
   ['function g { [CmdletBinding()] param() $PSCmdlet.ParameterSetName }; g', '__AllParameterSets'],
   ['function g { [CmdletBinding(DefaultParameterSetName="A")] param([Parameter(ParameterSetName="A")]$a, [Parameter(ParameterSetName="B")]$b) $PSCmdlet.ParameterSetName }; g -b 1', 'B'],
   ['function g { [CmdletBinding()] param() try { 1/0 } catch { $PSCmdlet.ThrowTerminatingError($_) } }; try { g } catch { $_.Exception.Message }', 'Attempted to divide by zero.'],
-  ['function g { [CmdletBinding()] param() Write-Error "e" -ErrorAction Stop }; try { g } catch { $_.Exception.GetType().Name }', 'ActionPreferenceStopException'],
+  ['function g { [CmdletBinding()] param() Write-Error "e" -ErrorAction Stop }; try { g } catch { $_.Exception.GetType().Name }', 'WriteErrorException'],
+  ['try { Write-Error "x" -ErrorAction Stop } catch [System.Management.Automation.ActionPreferenceStopException] { "apse" }', 'apse'],
+  ['try { Write-Error "x" -ErrorAction Stop } catch [Microsoft.PowerShell.Commands.WriteErrorException] { "wee" }', 'wee'],
+  ['function g { [CmdletBinding()] param() Write-Error "x" }; try { g -ErrorAction Stop -ErrorVariable ev } catch { }; "$($ev.Count)|$($ev[0] -is [System.Management.Automation.ActionPreferenceStopException])"', '1|True'],
+  ['function g { [CmdletBinding()] param([Parameter(Mandatory)][ValidateNotNull()]$a) }; try { g -a $null } catch { $_.FullyQualifiedErrorId }', 'ParameterArgumentValidationErrorNullNotAllowed,g'],
+  ['function g { [CmdletBinding()] param($a) }; try { g -Bogus 1 } catch { $_.FullyQualifiedErrorId }', 'NamedParameterNotFound,g'],
+  ['try { Write-Output x -ErrorAction Suspend } catch { $_.FullyQualifiedErrorId }', 'ParameterBindingFailed,Microsoft.PowerShell.Commands.WriteOutputCommand'],
+  ['Write-Error "e" -ErrorAction Ig 2>$null; "after"', 'after'],
+  ['& { end { "e" } clean { "c"; Write-Warning "cw" } }', 'e|WARNING: cw'],
+  ['& { end { } clean { 11 } }', ''],
+  ['& { begin { 10 } }', '10'],
+  ['& { process { 15 } }', '15'],
+  ['function t { [CmdletBinding()] param() begin { "b" } process { "p" } end { "e" } clean { "c" } }; t -OutVariable ov | Out-Null; $ov -join ","', 'b,p,e'],
+  ['function t { clean { "x" } }; t; "after"', 'after'],
+  ['try { & { [CmdletBinding()]param() process { throw "failure" } clean { Write-Warning "cw" } } -WarningVariable wv } catch { $_.Exception.Message }; $wv.Count', 'WARNING: cw|failure|1'],
+  ['$x = & { $MyInvocation.Statement }; $x', '& { $MyInvocation.Statement }'],
+  ['function f { $MyInvocation.MyCommand.Name }; f', 'f'],
+  ['function f { $MyInvocation.ScriptLineNumber }; f', '1'],
+  ['function t([string]$v) { $v }; t 0x1F', '0x1F'],
+  ['function t([string]$v) { $v }; t 34uy', '34uy'],
+  ['function t([int]$v) { $v + 1 }; t 0x1F', '32'],
+  ['try { $null[0] } catch { $_.Exception.Message }', 'Cannot index into a null array.'],
+  ['try { 1/0 } catch { $_.Exception -is [System.DivideByZeroException] }', 'True'],
+  ['$ps = [powershell]::Create(); [void]$ps.Streams.Error.Add(1); $ps.Streams.ClearStreams(); $ps.Streams.Error.Count', '0'],
   [`${ADVANCED}Write-Error 'e'; 'o' }; $x = g 2>&1; $x.Count`, '2'],
   [`${ADVANCED}Write-Error 'e'; 'o' }; g 2>&1 > $null; 'end'`, 'end'],
   [`${ADVANCED}Write-Error 'e'; Write-Warning 'w'; 'o' }; g *> $null; 'end'`, 'end'],

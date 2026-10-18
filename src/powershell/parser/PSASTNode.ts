@@ -103,6 +103,8 @@ export interface PSCommand extends ASTBase {
   sequence?: ReadonlyArray<PSCommandParameter | PSExpression>;
   /** Stream redirections written after the command's arguments (`2>$null`, `3>&1`, `> file`). */
   redirections?: PSRedirection[];
+  /** Where the command sits in its source text, for $MyInvocation.Line / .Statement / .PositionMessage. */
+  span?: { readonly source: string; readonly start: number; readonly end: number };
 }
 
 export interface PSCommandParameter extends ASTBase {
@@ -408,6 +410,7 @@ export interface PSScriptBlock extends ASTBase {
   beginBlock: PSStatementList | null;
   processBlock: PSStatementList | null;
   endBlock: PSStatementList | null;
+  cleanBlock?: PSStatementList | null;
   /** If no begin/process/end, the body goes here */
   body: PSStatementList | null;
   sourceText?: string;

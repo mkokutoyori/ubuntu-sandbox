@@ -58,7 +58,7 @@ export class PSLexer {
 
       this.continuedToEnd = false;
       const tok = this.scanToken();
-      if (tok !== null) { tokens.push(tok); this.lastToken = tok; }
+      if (tok !== null) { tok.end = this.pos; tokens.push(tok); this.lastToken = tok; }
     }
 
     tokens.push(psToken(PSTokenType.EOF, '', this.pos_()));

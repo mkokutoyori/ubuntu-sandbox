@@ -43,11 +43,19 @@ export function integerRange(kind: IntegerKind): { min: bigint; max: bigint } {
 }
 
 export class PSNumber {
+  sourceText?: string;
+
   constructor(
     readonly kind: NumericKind,
     readonly value: number | bigint,
     readonly scale: number = 0,
   ) {}
+
+  withSourceText(text: string): PSNumber {
+    const copy = new PSNumber(this.kind, this.value, this.scale);
+    copy.sourceText = text;
+    return copy;
+  }
 
   toNumber(): number {
     if (this.kind === 'decimal') return decimalToNumber(this.value as bigint, this.scale);

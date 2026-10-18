@@ -575,13 +575,19 @@ export class PSParser {
     const command = makeCommand(name, parameters, args, pos, sequence);
     const redirections = this.parseRedirections();
     if (redirections.length > 0) command.redirections = redirections;
-    return command;
+    return this.withSpan(command, pos.offset);
   }
 
   /**
    * Parse the command name: a cmdlet name (WORD), variable ($var), or & expr (call operator).
    * When the head is a literal string, number, or expression, it's treated as a command name too.
    */
+  private withSpan(command: PSCommand, start: number): PSCommand {
+    const last = this.pos > 0 ? this.tokens[this.pos - 1] : undefined;
+    if (this.source !== null && last?.end !== undefined) command.span = { source: this.source, start, end: last.end };
+    return command;
+  }
+
   private parseCommandName(): PSExpression {
     const pos = this.pos_();
     const tok = this.peek();
@@ -937,7 +943,7 @@ export class PSParser {
         sequence.push(argument);
         takeParameters();
       }
-      const firstCmd = makeCommand(first, params, args, pos, sequence);
+      const firstCmd = this.withSpan(makeCommand(first, params, args, pos, sequence), pos.offset);
       const cmds = [firstCmd];
       while (this.check(PSTokenType.PIPE)) { this.advance(); cmds.push(this.parseCommand()); }
       const redirections = this.parseRedirections();
@@ -1463,7 +1469,7 @@ export class PSParser {
     this.skipTerminators();
 
     let paramBlock: PSParamBlock | null = null;
-    let beginBlock = null, processBlock = null, endBlock = null;
+    let beginBlock = null, processBlock = null, endBlock = null, cleanBlock = null;
     let body = null;
 
     // Skip function-level attribute declarations like [CmdletBinding()] before param()
@@ -1486,15 +1492,17 @@ export class PSParser {
     if (this.checkValue(PSTokenType.WORD, 'begin')
         || this.checkValue(PSTokenType.WORD, 'process')
         || this.checkValue(PSTokenType.WORD, 'end')
+        || (this.options.core && this.check(PSTokenType.WORD) && this.peek().value.toLowerCase() === 'clean' && this.peekAt(1)?.type === PSTokenType.LBRACE)
         || this.checkValue(PSTokenType.WORD, 'dynamicparam')) {
       while (!this.check(PSTokenType.RBRACE) && !this.isAtEnd()) {
-        const blockKw = this.peek().value;
+        const blockKw = this.peek().value.toLowerCase();
         this.advance(); // consume begin/process/end
         this.skipNewlinesOnly();
         const bl = this.parseInnerBlock();
         if (blockKw === 'begin') beginBlock = bl;
         else if (blockKw === 'process') processBlock = bl;
         else if (blockKw === 'end') endBlock = bl;
+        else if (blockKw === 'clean') cleanBlock = bl;
         this.skipTerminators();
       }
     } else {
@@ -1508,6 +1516,7 @@ export class PSParser {
     sb.beginBlock = beginBlock;
     sb.processBlock = processBlock;
     sb.endBlock = endBlock;
+    sb.cleanBlock = cleanBlock;
     return sb;
   }
 

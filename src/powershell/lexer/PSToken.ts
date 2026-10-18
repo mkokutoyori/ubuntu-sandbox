@@ -193,6 +193,8 @@ export interface PSToken {
    * that keeps the case the operator wrote.
    */
   text?: string;
+  /** Offset just past the token in the source, set by the lexer. */
+  end?: number;
 }
 
 /** Convenience factory. */

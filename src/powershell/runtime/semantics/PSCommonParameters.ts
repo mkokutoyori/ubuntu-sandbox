@@ -21,13 +21,15 @@ export function parseVariableTarget(raw: PSValue): VariableTarget {
 const BINDING_TRANSFORMATION = 'System.Management.Automation.ParameterBindingArgumentTransformationException';
 
 function actionPreference(parameter: string, value: PSValue): string {
-  const found = actionPreferenceOf(value);
+  const found = actionPreferenceOf(value, true);
   if (found === null || found === 'Suspend') {
     const shown = String(value ?? '');
     const names = ACTION_PREFERENCES.join(', ');
-    throw new PSRuntimeError(
+    const error = new PSRuntimeError(
       `Cannot process argument transformation on parameter '${parameter}'. Cannot convert value "${shown}" to type "System.Management.Automation.ActionPreference". Error: "Unable to match the identifier name ${shown} to a valid enumerator name. Specify one of the following enumerator names and try again:\n${names}"`,
       BINDING_TRANSFORMATION);
+    error.errorId = 'ParameterBindingFailed';
+    throw error;
   }
   return found;
 }
