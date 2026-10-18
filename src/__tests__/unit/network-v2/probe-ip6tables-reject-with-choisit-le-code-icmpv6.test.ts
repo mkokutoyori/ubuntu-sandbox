@@ -140,6 +140,7 @@ describe('a REJECT on UDP and TCP follows the same table', () => {
 });
 
 describe('a type that the program does not know is refused when it is typed', () => {
+  const tryLine = (tool: string) => `\nTry \`${tool} -h' or '${tool} --help' for more information.`;
   it.each([
     ['ip6tables -A INPUT -j REJECT --reject-with icmp-port-unreachable', 'ip6tables v1.8.7 (nf_tables): unknown reject type "icmp-port-unreachable"'],
     ['ip6tables -A INPUT -j REJECT --reject-with whatever', 'ip6tables v1.8.7 (nf_tables): unknown reject type "whatever"'],
@@ -148,7 +149,7 @@ describe('a type that the program does not know is refused when it is typed', ()
     ['ip6tables -A INPUT -j REJECT --reject-with', 'ip6tables v1.8.7 (nf_tables): option "--reject-with" requires an argument'],
   ])('%s', async (command, sentence) => {
     const { server } = lab();
-    expect(await server.executeCommand(`sudo ${command}`)).toBe(sentence);
+    expect(await server.executeCommand(`sudo ${command}`)).toBe(sentence + tryLine(command.split(' ')[0]));
     expect(await server.executeCommand('sudo ip6tables -S INPUT')).not.toContain('REJECT');
     expect(await server.executeCommand('sudo iptables -S INPUT')).not.toContain('REJECT');
   });

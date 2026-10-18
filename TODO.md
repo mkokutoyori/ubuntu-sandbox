@@ -2803,24 +2803,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   des identifiants de VLAN l'a laissee telle quelle : leur donner un
   vocabulaire demande d'attester celui de VRP, hors de portee depuis ce
   reseau, et une liste ecrite de memoire refuserait des commandes reelles.
-- `iptables -p tcp --tcp-flags <masque> <compare>` est desormais JUGE (une
-  faute de frappe est refusee dans les mots du vrai iptables) mais n'est
-  toujours pas EVALUE : `PacketInfo`, la structure que `matchesRule` voit
-  d'un paquet, ne porte aucun drapeau TCP — ni SYN, ni ACK, ni RST. Le
-  ranger en ferait un critere que rien ne lit, ce que la regle du depot
-  interdit ; c'est donc le paquet qu'il faut enrichir, et non l'analyse.
-  Consequence a connaitre en attendant : une regle portant `--tcp-flags`
-  correspond comme si la clause n'y etait pas, donc elle est plus
-  PERMISSIVE que ce que l'operateur a ecrit.
-- `IPTABLES_MATCH_MODULES` declare vingt modules alors que `matchesRule`
-  n'en EVALUE que six (`state`, `conntrack`, `multiport`, `limit`, `mac`,
-  `iprange`). Les quatorze autres sont acceptes, rendus, et sautes a
-  l'evaluation — meme forme que `--tcp-flags` ci-dessus. Le lot des
-  criteres inconnus a ferme le mot INVENTE, qui est le cas dangereux (une
-  faute de frappe ouvrait la regle en silence), et n'a pas tranche pour
-  les modules reels-mais-non-evalues : les refuser casserait des
-  laboratoires qui les emploient legitimement, les evaluer demande autant
-  de travail que de modules. A reprendre module par module.
+- `IPTABLES_MATCH_MODULES` declare vingt et un modules. Le moteur en EVALUE douze : `state`, `conntrack`, `multiport`, `limit`, `mac`,
+  `iprange`, `recent`, `comment` et les quatre modules de protocole `tcp`, `udp`, `icmp`, `icmp6` (leurs options sont des CHAMPS
+  de la regle : ports, drapeaux, options TCP, type ICMP). Les neuf autres -- `addrtype`, `mark`, `connmark`, `owner`, `pkttype`,
+  `length`, `ttl`, `hashlimit`, `string` -- sont acceptes et listes (le vrai iptables les connait) mais ne correspondent a RIEN :
+  une regle qu'on ne sait pas decider ne devient pas plus large que son texte. A reprendre module par module ; `mark`/`connmark`
+  demandent des marques PAR PAQUET et l'evaluation des tables mangle aux crochets, `owner` l'uid du processus emetteur.
 - `scenario-windows-log-export-remoting.test.ts` > « Export-Csv puis
   Import-Csv … en CSV » echoue sur `78370a4b3`, c'est-a-dire AVANT le lot
   des regles de pare-feu netsh — verifie par `git stash` sur un arbre

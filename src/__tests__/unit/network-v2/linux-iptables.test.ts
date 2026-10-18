@@ -562,7 +562,7 @@ describe('iptables', () => {
     it('should support REDIRECT target', async () => {
       await server.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080');
       const out = await server.executeCommand('iptables -t nat -S PREROUTING');
-      expect(out).toContain('--to-port 8080');
+      expect(out).toContain('--to-ports 8080');
     });
 
     it('should support RETURN target', async () => {

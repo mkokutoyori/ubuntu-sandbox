@@ -49,6 +49,14 @@ export function decodeOptions(options: readonly TcpOption[]): TcpOptionsSet {
   return out;
 }
 
+const TCP_OPTION_KIND_NUMBER: Readonly<Record<TcpOption['kind'], number>> = {
+  end: 0, nop: 1, mss: 2, 'window-scale': 3, 'sack-permitted': 4, sack: 5, timestamp: 8,
+};
+
+export function tcpOptionKindNumber(option: TcpOption): number {
+  return TCP_OPTION_KIND_NUMBER[option.kind];
+}
+
 export function interpretOptions(options: readonly TcpOption[]): TcpOptionsSet {
   const { mss, windowScale, ...rest } = decodeOptions(options);
   const interpreted: TcpOptionsSet = rest;

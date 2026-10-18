@@ -40,7 +40,12 @@ export interface PacketInfo {
   macAddress?: string;      // source MAC address (for -m mac --mac-source)
   isV6?: boolean;           // true for IPv6 packets
   icmpType?: number;        // ICMP message type, when protocol is ICMP
+  icmpCode?: number;
   icmpId?: number;          // ICMP echo identifier, when the message carries one
+  tcpFlags?: number;
+  tcpOptions?: readonly number[];
+  fragmentOffset?: number;
+  ipPacketBytes?: number;
 }
 
 const ICMP_REPLY_TYPE: Readonly<Record<number, number>> = {
@@ -63,19 +68,230 @@ function tupleKey(
 
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
-  'tcp', 'udp', 'icmp', 'icmp6', 'ipv6-icmp', 'addrtype', 'mark', 'recent',
+  'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
   'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string',
 ]);
 
-const TCP_FLAG_NAMES = new Set([
-  'SYN', 'ACK', 'FIN', 'RST', 'URG', 'PSH', 'ALL', 'NONE',
-]);
+const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
 
-function tcpFlagSet(token: string | undefined): boolean {
-  if (token === undefined) return false;
-  const mots = token.toUpperCase().split(',');
-  return mots.length > 0 && mots.every((m) => TCP_FLAG_NAMES.has(m));
+type ModuleOptionFlags = '' | 'I' | 'M' | 'F' | 'IM' | 'IF';
+
+const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOptionFlags>>>> = {
+  state: { '--state': 'IM' },
+  conntrack: {
+    '--ctstate': 'I', '--ctproto': 'I', '--ctorigsrc': 'I', '--ctorigdst': 'I', '--ctreplsrc': 'I', '--ctrepldst': 'I',
+    '--ctstatus': 'I', '--ctexpire': 'I', '--ctorigsrcport': 'I', '--ctorigdstport': 'I', '--ctreplsrcport': 'I',
+    '--ctrepldstport': 'I', '--ctdir': '',
+  },
+  multiport: { '--sports': 'I', '--dports': 'I', '--ports': 'I' },
+  limit: { '--limit': '', '--limit-burst': '' },
+  mac: { '--mac-source': 'IM' },
+  iprange: { '--src-range': 'I', '--dst-range': 'I' },
+  comment: { '--comment': 'M' },
+  recent: {
+    '--set': 'IF', '--rcheck': 'IF', '--update': 'IF', '--remove': 'IF', '--seconds': '', '--reap': 'F', '--hitcount': '',
+    '--rttl': 'F', '--name': '', '--rsource': 'F', '--rdest': 'F', '--mask': '',
+  },
+  addrtype: { '--src-type': 'I', '--dst-type': 'I', '--limit-iface-in': 'F', '--limit-iface-out': 'F' },
+  mark: { '--mark': 'IM' },
+  connmark: { '--mark': 'IM' },
+  owner: {
+    '--uid-owner': 'I', '--gid-owner': 'I', '--pid-owner': 'I', '--sid-owner': 'I', '--cmd-owner': 'I',
+    '--socket-exists': 'IF', '--suppl-groups': 'F',
+  },
+  pkttype: { '--pkt-type': 'IM' },
+  length: { '--length': 'IM' },
+  ttl: { '--ttl-eq': 'I', '--ttl-gt': '', '--ttl-lt': '' },
+  hashlimit: {
+    '--hashlimit-upto': 'I', '--hashlimit-above': 'I', '--hashlimit-burst': '', '--hashlimit-mode': '', '--hashlimit-srcmask': '',
+    '--hashlimit-dstmask': '', '--hashlimit-name': 'M', '--hashlimit-htable-size': '', '--hashlimit-htable-max': '',
+    '--hashlimit-htable-expire': '', '--hashlimit-htable-gcinterval': '', '--hashlimit-rate-match': 'F', '--hashlimit-rate-interval': '',
+  },
+  string: { '--algo': 'M', '--from': '', '--to': '', '--string': 'I', '--hex-string': 'I', '--icase': 'F' },
+};
+
+const MODULE_OPTION_ALIASES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  multiport: { '--source-ports': '--sports', '--destination-ports': '--dports' },
+  ttl: { '--ttl': '--ttl-eq' },
+  hashlimit: { '--hashlimit': '--hashlimit-upto' },
+};
+
+const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  state: ['--state'],
+  conntrack: ['--ctstate'],
+  multiport: ['--sports', '--dports', '--ports'],
+  limit: ['--limit', '--limit-burst'],
+  mac: ['--mac-source'],
+  iprange: ['--src-range', '--dst-range'],
+  comment: ['--comment'],
+  recent: ['--name', '--set', '--rcheck', '--update', '--remove', '--seconds', '--hitcount', '--rsource', '--rdest', '--mask', '--reap'],
+};
+
+const RECENT_ACTIONS = ['--set', '--rcheck', '--update', '--remove'] as const;
+
+const MULTIPORT_LISTING = [['--dports', 'dports'], ['--sports', 'sports'], ['--ports', 'ports']] as const;
+
+const TCP_FLAG_BITS: ReadonlyArray<readonly [string, number]> = [
+  ['FIN', 0x01], ['SYN', 0x02], ['RST', 0x04], ['PSH', 0x08], ['ACK', 0x10], ['URG', 0x20], ['ALL', 0x3F], ['NONE', 0],
+];
+
+const TCP_SYN_MASK = 0x01 | 0x02 | 0x04 | 0x10;
+const TCP_SYN_FLAG = 0x02;
+
+interface IcmpTypeName {
+  readonly name: string;
+  readonly type: number;
+  readonly codeMin: number;
+  readonly codeMax: number;
 }
+
+const ICMP_ANY_TYPE = 0xFF;
+
+const ICMPV4_TYPE_NAMES: readonly IcmpTypeName[] = [
+  { name: 'any', type: 0xFF, codeMin: 0, codeMax: 0xFF },
+  { name: 'echo-reply', type: 0, codeMin: 0, codeMax: 0xFF },
+  { name: 'pong', type: 0, codeMin: 0, codeMax: 0xFF },
+  { name: 'destination-unreachable', type: 3, codeMin: 0, codeMax: 0xFF },
+  { name: 'network-unreachable', type: 3, codeMin: 0, codeMax: 0 },
+  { name: 'host-unreachable', type: 3, codeMin: 1, codeMax: 1 },
+  { name: 'protocol-unreachable', type: 3, codeMin: 2, codeMax: 2 },
+  { name: 'port-unreachable', type: 3, codeMin: 3, codeMax: 3 },
+  { name: 'fragmentation-needed', type: 3, codeMin: 4, codeMax: 4 },
+  { name: 'source-route-failed', type: 3, codeMin: 5, codeMax: 5 },
+  { name: 'network-unknown', type: 3, codeMin: 6, codeMax: 6 },
+  { name: 'host-unknown', type: 3, codeMin: 7, codeMax: 7 },
+  { name: 'network-prohibited', type: 3, codeMin: 9, codeMax: 9 },
+  { name: 'host-prohibited', type: 3, codeMin: 10, codeMax: 10 },
+  { name: 'TOS-network-unreachable', type: 3, codeMin: 11, codeMax: 11 },
+  { name: 'TOS-host-unreachable', type: 3, codeMin: 12, codeMax: 12 },
+  { name: 'communication-prohibited', type: 3, codeMin: 13, codeMax: 13 },
+  { name: 'host-precedence-violation', type: 3, codeMin: 14, codeMax: 14 },
+  { name: 'precedence-cutoff', type: 3, codeMin: 15, codeMax: 15 },
+  { name: 'source-quench', type: 4, codeMin: 0, codeMax: 0xFF },
+  { name: 'redirect', type: 5, codeMin: 0, codeMax: 0xFF },
+  { name: 'network-redirect', type: 5, codeMin: 0, codeMax: 0 },
+  { name: 'host-redirect', type: 5, codeMin: 1, codeMax: 1 },
+  { name: 'TOS-network-redirect', type: 5, codeMin: 2, codeMax: 2 },
+  { name: 'TOS-host-redirect', type: 5, codeMin: 3, codeMax: 3 },
+  { name: 'echo-request', type: 8, codeMin: 0, codeMax: 0xFF },
+  { name: 'ping', type: 8, codeMin: 0, codeMax: 0xFF },
+  { name: 'router-advertisement', type: 9, codeMin: 0, codeMax: 0xFF },
+  { name: 'router-solicitation', type: 10, codeMin: 0, codeMax: 0xFF },
+  { name: 'time-exceeded', type: 11, codeMin: 0, codeMax: 0xFF },
+  { name: 'ttl-exceeded', type: 11, codeMin: 0, codeMax: 0xFF },
+  { name: 'ttl-zero-during-transit', type: 11, codeMin: 0, codeMax: 0 },
+  { name: 'ttl-zero-during-reassembly', type: 11, codeMin: 1, codeMax: 1 },
+  { name: 'parameter-problem', type: 12, codeMin: 0, codeMax: 0xFF },
+  { name: 'ip-header-bad', type: 12, codeMin: 0, codeMax: 0 },
+  { name: 'required-option-missing', type: 12, codeMin: 1, codeMax: 1 },
+  { name: 'timestamp-request', type: 13, codeMin: 0, codeMax: 0xFF },
+  { name: 'timestamp-reply', type: 14, codeMin: 0, codeMax: 0xFF },
+  { name: 'address-mask-request', type: 17, codeMin: 0, codeMax: 0xFF },
+  { name: 'address-mask-reply', type: 18, codeMin: 0, codeMax: 0xFF },
+];
+
+const ICMPV6_TYPE_NAMES: readonly IcmpTypeName[] = [
+  { name: 'destination-unreachable', type: 1, codeMin: 0, codeMax: 0xFF },
+  { name: 'no-route', type: 1, codeMin: 0, codeMax: 0 },
+  { name: 'communication-prohibited', type: 1, codeMin: 1, codeMax: 1 },
+  { name: 'beyond-scope', type: 1, codeMin: 2, codeMax: 2 },
+  { name: 'address-unreachable', type: 1, codeMin: 3, codeMax: 3 },
+  { name: 'port-unreachable', type: 1, codeMin: 4, codeMax: 4 },
+  { name: 'failed-policy', type: 1, codeMin: 5, codeMax: 5 },
+  { name: 'reject-route', type: 1, codeMin: 6, codeMax: 6 },
+  { name: 'packet-too-big', type: 2, codeMin: 0, codeMax: 0xFF },
+  { name: 'time-exceeded', type: 3, codeMin: 0, codeMax: 0xFF },
+  { name: 'ttl-exceeded', type: 3, codeMin: 0, codeMax: 0xFF },
+  { name: 'ttl-zero-during-transit', type: 3, codeMin: 0, codeMax: 0 },
+  { name: 'ttl-zero-during-reassembly', type: 3, codeMin: 1, codeMax: 1 },
+  { name: 'parameter-problem', type: 4, codeMin: 0, codeMax: 0xFF },
+  { name: 'bad-header', type: 4, codeMin: 0, codeMax: 0 },
+  { name: 'unknown-header-type', type: 4, codeMin: 1, codeMax: 1 },
+  { name: 'unknown-option', type: 4, codeMin: 2, codeMax: 2 },
+  { name: 'echo-request', type: 128, codeMin: 0, codeMax: 0xFF },
+  { name: 'ping', type: 128, codeMin: 0, codeMax: 0xFF },
+  { name: 'echo-reply', type: 129, codeMin: 0, codeMax: 0xFF },
+  { name: 'pong', type: 129, codeMin: 0, codeMax: 0xFF },
+  { name: 'router-solicitation', type: 133, codeMin: 0, codeMax: 0xFF },
+  { name: 'router-advertisement', type: 134, codeMin: 0, codeMax: 0xFF },
+  { name: 'neighbour-solicitation', type: 135, codeMin: 0, codeMax: 0xFF },
+  { name: 'neighbor-solicitation', type: 135, codeMin: 0, codeMax: 0xFF },
+  { name: 'neighbour-advertisement', type: 136, codeMin: 0, codeMax: 0xFF },
+  { name: 'neighbor-advertisement', type: 136, codeMin: 0, codeMax: 0xFF },
+  { name: 'redirect', type: 137, codeMin: 0, codeMax: 0xFF },
+];
+
+function parseUint8(text: string): number | null {
+  const digits = /^(?:0x([0-9a-f]+)|(0[0-7]*)|([1-9][0-9]*))$/i.exec(text);
+  if (digits === null) return null;
+  const value = digits[1] !== undefined ? parseInt(digits[1], 16) : digits[2] !== undefined ? parseInt(digits[2], 8) : Number(digits[3]);
+  return value <= 0xFF ? value : null;
+}
+
+function leadingCounter(text: string): number | null {
+  const digits = /^\s*(\d+)/.exec(text);
+  return digits === null ? null : Number(digits[1]);
+}
+
+function parseIcmpTypeSpec(text: string, family: 4 | 6, invert: boolean): IcmpTypeMatch | string {
+  const names = family === 6 ? ICMPV6_TYPE_NAMES : ICMPV4_TYPE_NAMES;
+  const label = family === 6 ? 'ICMPv6' : 'ICMP';
+  const needle = text.toLowerCase();
+  let found: IcmpTypeName | null = null;
+  for (const entry of names) {
+    if (!entry.name.toLowerCase().startsWith(needle)) continue;
+    if (found !== null) return `Ambiguous ${label} type \`${text}': \`${found.name}' or \`${entry.name}'?`;
+    found = entry;
+  }
+  if (found !== null) return { type: found.type, codeMin: found.codeMin, codeMax: found.codeMax, invert };
+  const slash = text.indexOf('/');
+  const typeText = slash === -1 ? text : text.slice(0, slash);
+  const type = parseUint8(typeText);
+  if (type === null) return `Invalid ${label} type \`${typeText}'\n`;
+  if (slash === -1) return { type, codeMin: 0, codeMax: 0xFF, invert };
+  const code = parseUint8(text.slice(slash + 1));
+  if (code === null) return `Invalid ${label} code \`${text.slice(slash + 1)}'\n`;
+  return { type, codeMin: code, codeMax: code, invert };
+}
+
+function parseTcpFlagList(text: string): number | string {
+  let bits = 0;
+  for (const token of text.split(',')) {
+    if (token === '') continue;
+    const entry = TCP_FLAG_BITS.find(([name]) => name.toLowerCase() === token.toLowerCase());
+    if (entry === undefined) return token;
+    bits |= entry[1];
+  }
+  return bits;
+}
+
+function tcpFlagListText(bits: number): string {
+  const names: string[] = [];
+  for (const [name, bit] of TCP_FLAG_BITS) {
+    if (bit === 0x3F || bit === 0) continue;
+    if ((bits & bit) !== 0) names.push(name);
+  }
+  return names.length === 0 ? 'NONE' : names.join(',');
+}
+
+function icmpTypeSpecText(match: IcmpTypeMatch): string {
+  if (match.type === ICMP_ANY_TYPE) return 'any';
+  const withCode = match.codeMin !== 0 || match.codeMax !== 0xFF;
+  return withCode ? `${match.type}/${match.codeMin}` : String(match.type);
+}
+
+const PORT_BEARING_PROTOCOLS: ReadonlySet<number> = new Set([IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, 132, 33]);
+
+const TARGET_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  ACCEPT: [], DROP: [], RETURN: [], NOTRACK: [],
+  REJECT: ['--reject-with'],
+  LOG: ['--log-level', '--log-prefix', '--log-tcp-sequence', '--log-tcp-options', '--log-ip-options', '--log-uid'],
+  MASQUERADE: ['--to-ports', '--random', '--random-fully'],
+  DNAT: ['--to-destination', '--random', '--persistent'],
+  SNAT: ['--to-source', '--random', '--random-fully', '--persistent'],
+  REDIRECT: ['--to-ports', '--random'],
+  MARK: ['--set-mark', '--set-xmark', '--and-mark', '--or-mark', '--xor-mark'],
+};
 
 // ─── Internal types ──────────────────────────────────────────────────
 
@@ -87,10 +303,33 @@ type BuiltinPolicy = 'ACCEPT' | 'DROP';
 interface MatchExtension {
   module: string;               // e.g. 'state', 'conntrack', 'multiport', 'comment', 'limit', 'mac', 'iprange'
   options: Map<string, string>; // e.g. '--state' => 'ESTABLISHED,RELATED'
+  negated?: ReadonlySet<string>;
+}
+
+function inverts(match: MatchExtension, option: string): boolean {
+  return match.negated?.has(option) ?? false;
 }
 
 interface TargetOptions {
   [key: string]: string;
+}
+
+interface TcpFlagsMatch {
+  mask: number;
+  comp: number;
+  invert: boolean;
+}
+
+interface TcpOptionMatch {
+  kind: number;
+  invert: boolean;
+}
+
+interface IcmpTypeMatch {
+  type: number;
+  codeMin: number;
+  codeMax: number;
+  invert: boolean;
 }
 
 interface IptablesRule {
@@ -101,6 +340,14 @@ interface IptablesRule {
   outInterface: string;   // '' or 'eth0'
   sport: string;          // '' or '1024' or '1024:65535'
   dport: string;          // '' or '22' or '6000:6007'
+  negSport: boolean;
+  negDport: boolean;
+  tcpFlags: TcpFlagsMatch | null;
+  tcpOption: TcpOptionMatch | null;
+  icmpType: IcmpTypeMatch | null;
+  protocolMatch: '' | 'tcp' | 'udp' | 'icmp' | 'icmp6';
+  fragment: '' | 'only' | 'not';
+  goto: boolean;
   target: string;         // 'ACCEPT', 'DROP', 'REJECT', 'LOG', chain name, etc.
   targetOptions: TargetOptions;
   matches: MatchExtension[];
@@ -496,16 +743,19 @@ export class LinuxIptablesManager {
       if (this.ruleMatchesPacket(rule, pkt)) {
         // Update counters
         rule.pkts++;
-        rule.bytes += 64;
+        rule.bytes += pkt.ipPacketBytes ?? 64;
         chain.pkts++;
-        chain.bytes += 64;
+        chain.bytes += pkt.ipPacketBytes ?? 64;
 
         // If target is a user-defined chain, jump into it
         const targetChain = table.chains.get(rule.target);
         if (targetChain && targetChain.policy === null) {
           const result = this.evaluateChainInner(table, targetChain, pkt, depth + 1);
           // null = sub-chain fell through (RETURN) → continue in calling chain
-          if (result === null) continue;
+          if (result === null) {
+            if (rule.goto) return null;
+            continue;
+          }
           return result;
         }
 
@@ -564,33 +814,69 @@ export class LinuxIptablesManager {
       if (rule.negOutInterface ? matches : !matches) return false;
     }
 
+    if (rule.fragment !== '') {
+      const isFragment = (pkt.fragmentOffset ?? 0) > 0;
+      if (isFragment !== (rule.fragment === 'only')) return false;
+    }
+
     // Destination port
     if (rule.dport) {
-      if (!this.portMatchesSpec(pkt.dstPort, rule.dport)) return false;
+      if (this.portMatchesSpec(pkt.dstPort, rule.dport) === rule.negDport) return false;
     }
 
     // Source port
     if (rule.sport) {
-      if (!this.portMatchesSpec(pkt.srcPort, rule.sport)) return false;
+      if (this.portMatchesSpec(pkt.srcPort, rule.sport) === rule.negSport) return false;
+    }
+
+    if (rule.tcpFlags !== null) {
+      if (pkt.tcpFlags === undefined) return false;
+      const holds = (pkt.tcpFlags & rule.tcpFlags.mask) === rule.tcpFlags.comp;
+      if (holds === rule.tcpFlags.invert) return false;
+    }
+
+    if (rule.tcpOption !== null) {
+      if (pkt.tcpOptions === undefined) return false;
+      if (pkt.tcpOptions.includes(rule.tcpOption.kind) === rule.tcpOption.invert) return false;
+    }
+
+    if (rule.icmpType !== null) {
+      if (pkt.icmpType === undefined) return false;
+      const wanted = rule.icmpType;
+      const code = pkt.icmpCode ?? 0;
+      const holds = wanted.type === ICMP_ANY_TYPE
+        || (pkt.icmpType === wanted.type && code >= wanted.codeMin && code <= wanted.codeMax);
+      if (holds === wanted.invert) return false;
     }
 
     // Match extensions
     for (const m of rule.matches) {
+      const decided = DECIDED_MODULE_OPTIONS[m.module];
+      if (decided === undefined) return false;
+      for (const option of m.options.keys()) {
+        if (!decided.includes(option)) return false;
+      }
+      const inverted = (option: string): boolean => inverts(m, option);
       if (m.module === 'multiport') {
         const dports = m.options.get('--dports');
         const sports = m.options.get('--sports');
-        if (dports && !this.portMatchesSpec(pkt.dstPort, dports)) return false;
-        if (sports && !this.portMatchesSpec(pkt.srcPort, sports)) return false;
+        const either = m.options.get('--ports');
+        if (dports !== undefined && this.portMatchesSpec(pkt.dstPort, dports) === inverted('--dports')) return false;
+        if (sports !== undefined && this.portMatchesSpec(pkt.srcPort, sports) === inverted('--sports')) return false;
+        if (either !== undefined
+          && (this.portMatchesSpec(pkt.srcPort, either) || this.portMatchesSpec(pkt.dstPort, either)) === inverted('--ports')) return false;
       }
       if (m.module === 'limit') {
         if (!this.spendLimitCredit(rule, m)) return false;
       }
       if (m.module === 'recent') {
-        if (!this.matchRecent(pkt, m)) return false;
+        const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
+        if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
       // state/conntrack: evaluate connection tracking
       if (m.module === 'state' || m.module === 'conntrack') {
-        const states = (m.options.get('--state') || m.options.get('--ctstate') || '').toUpperCase();
+        const option = m.module === 'state' ? '--state' : '--ctstate';
+        const states = (m.options.get(option) ?? '').toUpperCase();
         if (states) {
           const stateList = states.split(',');
           const isEstab = this.isEstablished(pkt);
@@ -601,24 +887,23 @@ export class LinuxIptablesManager {
             (stateList.includes('ESTABLISHED') && isEstab) ||
             (stateList.includes('RELATED') && isEstab) ||
             (stateList.includes('NEW') && !isEstab);
-          if (!matchesState) return false;
+          if (matchesState === inverted(option)) return false;
         }
       }
       // mac match: check source MAC address
       if (m.module === 'mac') {
         const macSrc = m.options.get('--mac-source');
-        if (macSrc && pkt.macAddress) {
-          if (pkt.macAddress.toLowerCase() !== macSrc.toLowerCase()) return false;
-        } else if (macSrc && !pkt.macAddress) {
-          return false; // no MAC info → can't match
+        if (macSrc) {
+          if (!pkt.macAddress) return false;
+          if ((pkt.macAddress.toLowerCase() === macSrc.toLowerCase()) === inverted('--mac-source')) return false;
         }
       }
       // iprange match: check IP ranges
       if (m.module === 'iprange') {
         const srcRange = m.options.get('--src-range');
         const dstRange = m.options.get('--dst-range');
-        if (srcRange && !this.ipInRange(pkt.srcIP, srcRange)) return false;
-        if (dstRange && !this.ipInRange(pkt.dstIP, dstRange)) return false;
+        if (srcRange && this.ipInRange(pkt.srcIP, srcRange) === inverted('--src-range')) return false;
+        if (dstRange && this.ipInRange(pkt.dstIP, dstRange) === inverted('--dst-range')) return false;
       }
       // comment match: no filtering effect, just stored
     }
@@ -844,7 +1129,8 @@ export class LinuxIptablesManager {
     return {
       protocol: '', source: '', destination: '',
       inInterface: '', outInterface: '',
-      sport: '', dport: '',
+      sport: '', dport: '', negSport: false, negDport: false,
+      tcpFlags: null, tcpOption: null, icmpType: null, protocolMatch: '', fragment: '', goto: false,
       target: '', targetOptions: {}, matches: [],
       negSource: false, negDestination: false, negProtocol: false,
       negInInterface: false, negOutInterface: false,
@@ -871,6 +1157,11 @@ export class LinuxIptablesManager {
       }
       tableName = t as TableName;
       a.splice(tIdx, 2);
+    }
+
+    for (let k = a.length - 1; k >= 0; k--) {
+      if (!['-w', '--wait', '-W', '--wait-interval'].includes(a[k])) continue;
+      a.splice(k, k + 1 < a.length && /^\d+$/.test(a[k + 1]) ? 2 : 1);
     }
 
     const table = this.tables.get(tableName)!;
@@ -968,7 +1259,7 @@ export class LinuxIptablesManager {
       const num = lineNumbers ? `${i + 1}     `.slice(0, 6) : '';
       const target = r.target.padEnd(10);
       const prot = ((r.negProtocol ? '!' : '') + (r.protocol || 'all')).padEnd(4);
-      const opt = '--  ';
+      const opt = r.fragment === 'only' ? '-f  ' : r.fragment === 'not' ? '!f  ' : '--  ';
       const src = this.fmtAddr(r.source, r.negSource, numeric);
       const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
       const extra = this.fmtRuleExtras(r, numeric);
@@ -995,8 +1286,17 @@ export class LinuxIptablesManager {
 
   private fmtRuleExtras(r: IptablesRule, numeric: boolean): string {
     const parts: string[] = [];
-    if (r.dport) parts.push(`${r.protocol} ${r.dport.includes(':') ? 'dpts' : 'dpt'}:${this.portLabel(r.dport, r.protocol, numeric)}`);
-    if (r.sport) parts.push(`${r.protocol} ${r.sport.includes(':') ? 'spts' : 'spt'}:${this.portLabel(r.sport, r.protocol, numeric)}`);
+    const transport: string[] = [];
+    if (r.sport) transport.push(this.portTerm('spt', r.sport, r.negSport, r.protocol, numeric));
+    if (r.dport) transport.push(this.portTerm('dpt', r.dport, r.negDport, r.protocol, numeric));
+    if (r.tcpOption !== null) transport.push(`option=${r.tcpOption.invert ? '!' : ''}${r.tcpOption.kind}`);
+    if (r.tcpFlags !== null) {
+      const { mask, comp, invert } = r.tcpFlags;
+      const hex = (bits: number): string => `0x${bits.toString(16).toUpperCase().padStart(2, '0')}`;
+      transport.push(`flags:${invert ? '!' : ''}${numeric ? `${hex(mask)}/${hex(comp)}` : `${tcpFlagListText(mask)}/${tcpFlagListText(comp)}`}`);
+    }
+    if (transport.length > 0) parts.push(`${r.protocol} ${transport.join(' ')}`);
+    if (r.icmpType !== null) parts.push(this.icmpListText(r.icmpType, numeric));
     for (const m of r.matches) {
       const s = this.fmtMatch(m);
       if (s) parts.push(s);
@@ -1006,6 +1306,20 @@ export class LinuxIptablesManager {
     return parts.length > 0 ? ' ' + parts.join(' ') : '';
   }
 
+  private portTerm(name: 'spt' | 'dpt', spec: string, negated: boolean, proto: string, numeric: boolean): string {
+    return `${name}${spec.includes(':') ? 's' : ''}:${negated ? '!' : ''}${this.portLabel(spec, proto, numeric)}`;
+  }
+
+  private icmpListText(match: IcmpTypeMatch, numeric: boolean): string {
+    const names = this.family === 6 ? ICMPV6_TYPE_NAMES : ICMPV4_TYPE_NAMES;
+    const lead = this.family === 6 ? 'ipv6-icmp' : 'icmp';
+    const named = numeric ? undefined : names.find((entry) => entry.type === match.type
+      && entry.codeMin === match.codeMin && entry.codeMax === match.codeMax);
+    if (named !== undefined) return `${lead} ${match.invert ? '!' : ''}${named.name}`;
+    const codes = match.codeMin === match.codeMax ? ` code ${match.codeMin}` : '';
+    return `${lead}${match.invert ? ' !' : ''}type ${match.type}${codes}`;
+  }
+
   private portLabel(spec: string, proto: string, numeric: boolean): string {
     if (numeric || !this.resolveService || !/^\d+$/.test(spec)) return spec;
     return this.resolveService(parseInt(spec, 10), proto || 'tcp') ?? spec;
@@ -1013,21 +1327,23 @@ export class LinuxIptablesManager {
 
   private fmtMatch(m: MatchExtension): string {
     const o = m.options;
+    const bang = (option: string): string => (inverts(m, option) ? '! ' : '');
     switch (m.module) {
       case 'tcp': case 'udp': case 'icmp': return '';
-      case 'state':     return o.get('--state') ? `state ${o.get('--state')}` : '';
-      case 'conntrack': return o.get('--ctstate') ? `ctstate ${o.get('--ctstate')}` : '';
-      case 'multiport':
-        if (o.get('--dports')) return `multiport dports ${o.get('--dports')}`;
-        if (o.get('--sports')) return `multiport sports ${o.get('--sports')}`;
-        if (o.get('--ports'))  return `multiport ports ${o.get('--ports')}`;
-        return 'multiport';
+      case 'state':     return o.get('--state') ? `${bang('--state')}state ${o.get('--state')}` : '';
+      case 'conntrack': return o.get('--ctstate') ? `${bang('--ctstate')}ctstate ${o.get('--ctstate')}` : '';
+      case 'multiport': {
+        const listed = MULTIPORT_LISTING.find(([option]) => o.get(option));
+        if (listed === undefined) return 'multiport';
+        const [option, label] = listed;
+        return `multiport ${label} ${inverts(m, option) ? ' !' : ''}${o.get(option)}`;
+      }
       case 'comment':   return `/* ${o.get('--comment') ?? ''} */`;
       case 'limit':     return `limit: avg ${o.get('--limit') ?? ''} burst ${o.get('--limit-burst') ?? '5'}`;
-      case 'mac':       return o.get('--mac-source') ? `MAC ${o.get('--mac-source')}` : '';
+      case 'mac':       return o.get('--mac-source') ? `MAC ${inverts(m, '--mac-source') ? '!' : ''}${o.get('--mac-source')}` : '';
       default: {
         const parts: string[] = [];
-        for (const [k, v] of o) parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, ''));
+        for (const [k, v] of o) parts.push(`${bang(k)}${v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, '')}`);
         return parts.join(' ');
       }
     }
@@ -1083,14 +1399,24 @@ export class LinuxIptablesManager {
     if (rule.inInterface)  { if (rule.negInInterface) p.push('!'); p.push(`-i ${rule.inInterface}`); }
     if (rule.outInterface) { if (rule.negOutInterface) p.push('!'); p.push(`-o ${rule.outInterface}`); }
     if (rule.protocol && rule.protocol !== 'all') { if (rule.negProtocol) p.push('!'); p.push(`-p ${rule.protocol}`); }
-    if (rule.sport) p.push(`--sport ${rule.sport}`);
-    if (rule.dport) p.push(`--dport ${rule.dport}`);
+    if (rule.fragment !== '') p.push(rule.fragment === 'not' ? '! -f' : '-f');
+    if (rule.sport) p.push(`${rule.negSport ? '! ' : ''}--sport ${rule.sport}`);
+    if (rule.dport) p.push(`${rule.negDport ? '! ' : ''}--dport ${rule.dport}`);
+    if (rule.tcpOption !== null) p.push(`${rule.tcpOption.invert ? '! ' : ''}--tcp-option ${rule.tcpOption.kind}`);
+    if (rule.tcpFlags !== null) {
+      p.push(`${rule.tcpFlags.invert ? '! ' : ''}--tcp-flags ${tcpFlagListText(rule.tcpFlags.mask)} ${tcpFlagListText(rule.tcpFlags.comp)}`);
+    }
+    if (rule.icmpType !== null) {
+      p.push(`${rule.icmpType.invert ? '! ' : ''}${this.family === 6 ? '--icmpv6-type' : '--icmp-type'} ${icmpTypeSpecText(rule.icmpType)}`);
+    }
     for (const m of rule.matches) {
       p.push(`-m ${m.module}`);
-      for (const [opt, val] of m.options) p.push(val === '' ? opt : `${opt} ${this.quote(val)}`);
+      for (const [opt, val] of m.options) {
+        p.push(`${inverts(m, opt) ? '! ' : ''}${val === '' ? opt : `${opt} ${this.quote(val)}`}`);
+      }
     }
     if (rule.target) {
-      p.push(`-j ${rule.target}`);
+      p.push(`${rule.goto ? '-g' : '-j'} ${rule.target}`);
       for (const [opt, val] of Object.entries(rule.targetOptions)) p.push(`${opt} ${this.quote(val)}`);
     }
     return p.join(' ');
@@ -1139,7 +1465,7 @@ export class LinuxIptablesManager {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     }
     const natErr = this.natTargetChainError(table, cn, r.target, 'RULE_APPEND')
-      ?? this.tcpResetError(r, cn, 'RULE_APPEND');
+      ?? this.structureError(r, cn, 'RULE_APPEND');
     if (natErr) return { output: natErr, exitCode: 4 };
     ch.rules.push(r);
     return { output: '', exitCode: 0 };
@@ -1153,11 +1479,26 @@ export class LinuxIptablesManager {
     if (rule.target !== 'REJECT') return null;
     const argument = rule.targetOptions['--reject-with'];
     if (argument === undefined) return null;
-    if (argument === '') return `${this.banner}: option "--reject-with" requires an argument`;
+    if (argument === '') return this.parameterProblem('option "--reject-with" requires an argument');
     const type = rejectTypeOf(this.family, argument);
-    if (type === null) return `${this.banner}: unknown reject type "${argument}"`;
+    if (type === null) return this.parameterProblem(`unknown reject type "${argument}"`);
     rule.targetOptions['--reject-with'] = type.name;
     return null;
+  }
+
+  private structureError(
+    rule: IptablesRule, chainName: string, op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
+  ): string | null {
+    return this.tcpResetError(rule, chainName, op) ?? this.protocolMatchError(rule, chainName, op);
+  }
+
+  private protocolMatchError(
+    rule: IptablesRule, chainName: string, op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
+  ): string | null {
+    if (rule.protocolMatch === '') return null;
+    const wanted = { tcp: IP_PROTO_TCP, udp: IP_PROTO_UDP, icmp: IP_PROTO_ICMP, icmp6: IP_PROTO_ICMPV6 }[rule.protocolMatch];
+    const protocol = rule.negProtocol ? null : protocolNumberOf(rule.protocol);
+    return protocol === wanted ? null : `${this.banner}:  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }
 
   private tcpResetError(
@@ -1234,7 +1575,7 @@ export class LinuxIptablesManager {
     const r = this.parseRule(ruleArgs);
     if (typeof r === 'string') return { output: r, exitCode: 1 };
     const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT')
-      ?? this.tcpResetError(r, cn, 'RULE_INSERT');
+      ?? this.structureError(r, cn, 'RULE_INSERT');
     if (natErrI) return { output: natErrI, exitCode: 4 };
     ch.rules.splice(Math.min(pos - 1, ch.rules.length), 0, r);
     return { output: '', exitCode: 0 };
@@ -1252,7 +1593,7 @@ export class LinuxIptablesManager {
     const r = this.parseRule(args.slice(2));
     if (typeof r === 'string') return { output: r, exitCode: 1 };
     const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE')
-      ?? this.tcpResetError(r, cn, 'RULE_REPLACE');
+      ?? this.structureError(r, cn, 'RULE_REPLACE');
     if (natErrR) return { output: natErrR, exitCode: 4 };
     ch.rules[num - 1] = r;
     return { output: '', exitCode: 0 };
@@ -1502,6 +1843,43 @@ export class LinuxIptablesManager {
   // Rule parsing & validation
   // ═══════════════════════════════════════════════════════════════════
 
+  private get tool(): string {
+    return this.family === 6 ? 'ip6tables' : 'iptables';
+  }
+
+  private parameterProblem(message: string): string {
+    return `${this.banner}: ${message}\nTry \`${this.tool} -h' or '${this.tool} --help' for more information.`;
+  }
+
+  private multiportProtocolProblem(rule: IptablesRule): string | null {
+    const protocol = rule.negProtocol ? null : protocolNumberOf(rule.protocol);
+    if (protocol !== null && PORT_BEARING_PROTOCOLS.has(protocol)) return null;
+    return this.parameterProblem(rule.protocol === '' && !rule.negProtocol
+      ? "multiport needs `-p tcp', `-p udp', `-p udplite', `-p sctp' or `-p dccp'"
+      : 'multiport only works with TCP, UDP, UDPLITE, SCTP and DCCP');
+  }
+
+  private static moduleProblem(module: string, options: ReadonlyMap<string, string>): string | null {
+    if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
+      return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'string' && !options.has('--string') && !options.has('--hex-string')) {
+      return "STRING match: You must specify `--string' or `--hex-string'";
+    }
+    return null;
+  }
+
+  private optionApplies(rule: IptablesRule, module: 'tcp' | 'port' | 'icmp'): boolean {
+    const protocol = rule.negProtocol ? null : protocolNumberOf(rule.protocol);
+    if (module === 'tcp') return rule.protocolMatch === 'tcp' || protocol === IP_PROTO_TCP;
+    if (module === 'port') {
+      return rule.protocolMatch === 'tcp' || rule.protocolMatch === 'udp'
+        || (protocol !== null && PORT_BEARING_PROTOCOLS.has(protocol));
+    }
+    if (this.family === 6) return rule.protocolMatch === 'icmp6' || protocol === IP_PROTO_ICMPV6;
+    return rule.protocolMatch === 'icmp' || protocol === IP_PROTO_ICMP;
+  }
+
   parseRule(args: string[]): IptablesRule | string {
     const rule = LinuxIptablesManager.createRule();
     let i = 0;
@@ -1509,8 +1887,9 @@ export class LinuxIptablesManager {
     while (i < args.length) {
       const isNeg = args[i] === '!';
       if (isNeg) { i++; if (i >= args.length) break; }
+      const flag = args[i];
 
-      switch (args[i]) {
+      switch (flag) {
         case '-p': case '--protocol':
           i++;
           if (i >= args.length) return 'iptables: option "-p" requires an argument';
@@ -1551,42 +1930,105 @@ export class LinuxIptablesManager {
           rule.outInterface = args[i];
           break;
 
-        case '--sport': case '--source-port':
+        case '--sport': case '--source-port': case '--dport': case '--destination-port': {
+          const source = flag === '--sport' || flag === '--source-port';
+          if (!this.optionApplies(rule, 'port')) return this.parameterProblem(`unknown option "${flag}"`);
           i++;
-          if (i >= args.length) return 'iptables: option "--sport" requires an argument';
-          rule.sport = args[i];
-          if (!this.validatePortSpec(rule.sport)) return `iptables: invalid port/service \`${rule.sport}' specified`;
-          break;
-
-        case '--dport': case '--destination-port':
-          i++;
-          if (i >= args.length) return 'iptables: option "--dport" requires an argument';
-          rule.dport = args[i];
-          if (!this.validatePortSpec(rule.dport)) return `iptables: invalid port/service \`${rule.dport}' specified`;
-          break;
-
-        /*
-         * Les deux listes sont JUGEES et non retenues : `PacketInfo` ne
-         * porte aucun drapeau TCP, donc ranger le critere en ferait un
-         * critere que rien n'evalue. Ce lot attrape la faute de frappe ;
-         * l'evaluation est inscrite au `TODO.md`.
-         */
-        case '--tcp-flags': {
-          if (!tcpFlagSet(args[i + 1]) || !tcpFlagSet(args[i + 2])) {
-            return `iptables v1.8.7: Bad TCP flags \`${args[i + 1] ?? args[i]}'`;
+          if (i >= args.length) return this.parameterProblem(`option "${flag}" requires an argument`);
+          if (source ? rule.sport : rule.dport) {
+            return this.parameterProblem(`Only one \`--${source ? 'source' : 'destination'}-port' allowed`);
           }
-          i += 3;
-          continue;
+          const spec = args[i];
+          if (!this.validatePortSpec(spec)) return `iptables: invalid port/service \`${spec}' specified`;
+          if (source) { rule.sport = spec; rule.negSport = isNeg; } else { rule.dport = spec; rule.negDport = isNeg; }
+          break;
         }
 
-        case '-j': case '--jump': {
+        case '--syn': case '--tcp-flags': {
+          if (!this.optionApplies(rule, 'tcp')) return this.parameterProblem(`unknown option "${flag}"`);
+          if (rule.tcpFlags !== null) return this.parameterProblem('Only one of `--syn\' or `--tcp-flags\'  allowed');
+          if (flag === '--syn') {
+            rule.tcpFlags = { mask: TCP_SYN_MASK, comp: TCP_SYN_FLAG, invert: isNeg };
+            break;
+          }
+          if (i + 1 >= args.length) return this.parameterProblem(`option "${flag}" requires an argument`);
+          const comp = args[i + 2];
+          if (comp === undefined || comp.startsWith('-') || comp.startsWith('!')) {
+            return this.parameterProblem('--tcp-flags requires two args.');
+          }
+          const mask = parseTcpFlagList(args[i + 1]);
+          if (typeof mask === 'string') return this.parameterProblem(`Unknown TCP flag \`${mask}'`);
+          const wanted = parseTcpFlagList(comp);
+          if (typeof wanted === 'string') return this.parameterProblem(`Unknown TCP flag \`${wanted}'`);
+          rule.tcpFlags = { mask, comp: wanted, invert: isNeg };
+          i += 2;
+          break;
+        }
+
+        case '--tcp-option': {
+          if (!this.optionApplies(rule, 'tcp')) return this.parameterProblem(`unknown option "${flag}"`);
           i++;
-          if (i >= args.length) return 'iptables: option "-j" requires an argument';
+          if (i >= args.length) return this.parameterProblem(`option "${flag}" requires an argument`);
+          if (rule.tcpOption !== null) return this.parameterProblem('Only one `--tcp-option\' allowed');
+          const kind = parseUint8(args[i]);
+          if (kind === null || kind < 1) return this.parameterProblem(`Bad TCP option "${args[i]}"`);
+          rule.tcpOption = { kind, invert: isNeg };
+          break;
+        }
+
+        case '--icmp-type': case '--icmpv6-type': {
+          const expected = this.family === 6 ? '--icmpv6-type' : '--icmp-type';
+          if (flag !== expected || !this.optionApplies(rule, 'icmp')) return this.parameterProblem(`unknown option "${flag}"`);
+          i++;
+          if (i >= args.length) return this.parameterProblem(`option "${flag}" requires an argument`);
+          const parsed = parseIcmpTypeSpec(args[i], this.family, isNeg);
+          if (typeof parsed === 'string') return this.parameterProblem(parsed);
+          rule.icmpType = parsed;
+          break;
+        }
+
+        case '-f': case '--fragment':
+          if (this.family === 6) return this.parameterProblem(`unknown option "${flag}"`);
+          rule.fragment = isNeg ? 'not' : 'only';
+          break;
+
+        case '-c': case '--set-counters': {
+          if (i + 1 >= args.length) return this.parameterProblem(`option "${flag}" requires an argument`);
+          const packetsText = args[i + 1];
+          const comma = packetsText.indexOf(',', 1);
+          let bytesText: string | undefined = comma >= 0 ? packetsText.slice(comma + 1) : undefined;
+          let consumed = 1;
+          if (bytesText === undefined && i + 2 < args.length && !args[i + 2].startsWith('-') && !args[i + 2].startsWith('!')) {
+            bytesText = args[i + 2];
+            consumed = 2;
+          }
+          if (bytesText === undefined) return this.parameterProblem('-c requires packet and byte counter');
+          const packets = leadingCounter(packetsText);
+          if (packets === null) return this.parameterProblem('-c packet counter not numeric');
+          const bytes = leadingCounter(bytesText);
+          if (bytes === null) return this.parameterProblem('-c byte counter not numeric');
+          rule.pkts = packets;
+          rule.bytes = bytes;
+          i += consumed;
+          break;
+        }
+
+        case '-n': case '--numeric': case '-v': case '--verbose': case '-x': case '--exact': case '--line-numbers':
+          break;
+
+        case '-j': case '--jump': case '-g': case '--goto': {
+          i++;
+          if (i >= args.length) return `iptables: option "${flag}" requires an argument`;
+          rule.goto = flag === '-g' || flag === '--goto';
           rule.target = args[i];
           i++;
-          // Parse target options
+          const allowed = TARGET_OPTIONS[rule.target] ?? [];
           while (i < args.length && args[i].startsWith('--')) {
-            const optName = args[i]; i++;
+            const typed = args[i];
+            const candidates = allowed.includes(typed) ? [typed] : allowed.filter((name) => name.startsWith(typed));
+            if (candidates.length !== 1) break;
+            const optName = candidates[0];
+            i++;
             if (i < args.length && !args[i].startsWith('-')) {
               rule.targetOptions[optName] = args[i]; i++;
             } else if (i < args.length && args[i].startsWith('--')) {
@@ -1610,25 +2052,54 @@ export class LinuxIptablesManager {
           i++;
           if (i >= args.length) return 'iptables: option "-m" requires an argument';
           const mod = args[i];
-          if (!IPTABLES_MATCH_MODULES.has(mod.toLowerCase())) {
+          const module = mod.toLowerCase();
+          if (!IPTABLES_MATCH_MODULES.has(module)) {
             return `iptables v1.8.7 (nf_tables): Couldn't load match \`${mod}':`
               + 'No such file or directory';
           }
-          const ext: MatchExtension = { module: mod, options: new Map() };
-          i++;
-          while (i < args.length && args[i].startsWith('--')) {
-            const on = args[i]; i++;
-            if (i < args.length && !args[i].startsWith('-')) {
-              ext.options.set(on, args[i]); i++;
-            } else {
-              ext.options.set(on, '');
-            }
+          if (PROTOCOL_MATCH_MODULES.has(module)) {
+            rule.protocolMatch = module as IptablesRule['protocolMatch'];
+            i++;
+            continue;
           }
-          rule.matches.push(ext);
+          const accepted = MODULE_OPTIONS[module];
+          const options = new Map<string, string>();
+          const negated = new Set<string>();
+          i++;
+          while (i < args.length) {
+            const inverted = args[i] === '!' && i + 1 < args.length;
+            const typed = inverted ? args[i + 1] : args[i];
+            const name = MODULE_OPTION_ALIASES[module]?.[typed] ?? typed;
+            const flags = accepted[name];
+            if (flags === undefined) break;
+            if (module === 'multiport') {
+              const problem = this.multiportProtocolProblem(rule);
+              if (problem !== null) return problem;
+            }
+            if (options.has(name)) return this.parameterProblem(`${module}: option "${name}" can only be used once.\n`);
+            if (inverted && !flags.includes('I')) return this.parameterProblem(`${module}: option "${name}" cannot be inverted.\n`);
+            i += inverted ? 2 : 1;
+            let value = '';
+            if (!flags.includes('F')) {
+              if (i >= args.length) return this.parameterProblem(`${module}: option "${name}" requires an argument.\n`);
+              value = args[i];
+              i++;
+            }
+            options.set(name, value);
+            if (inverted) negated.add(name);
+          }
+          const missing = Object.entries(accepted).find(([name, flags]) => flags.includes('M') && !options.has(name));
+          if (missing !== undefined) return this.parameterProblem(`${module}: option "${missing[0]}" must be specified\n`);
+          const incomplete = LinuxIptablesManager.moduleProblem(module, options);
+          if (incomplete !== null) return this.parameterProblem(incomplete);
+          rule.matches.push({ module, options, negated });
           continue;
         }
 
-        default: break;
+        default:
+          return flag.startsWith('-')
+            ? this.parameterProblem(`unknown option "${flag}"`)
+            : `Bad argument \`${flag}'\nTry \`${this.tool} -h' or '${this.tool} --help' for more information.`;
       }
       i++;
     }
@@ -1698,13 +2169,17 @@ export class LinuxIptablesManager {
     return a.protocol === b.protocol && a.source === b.source && a.destination === b.destination &&
       a.inInterface === b.inInterface && a.outInterface === b.outInterface &&
       a.sport === b.sport && a.dport === b.dport && a.target === b.target &&
+      a.negSport === b.negSport && a.negDport === b.negDport && a.fragment === b.fragment && a.goto === b.goto &&
+      JSON.stringify(a.tcpFlags) === JSON.stringify(b.tcpFlags) && JSON.stringify(a.tcpOption) === JSON.stringify(b.tcpOption) &&
+      JSON.stringify(a.icmpType) === JSON.stringify(b.icmpType) &&
       a.negSource === b.negSource && a.negDestination === b.negDestination &&
       a.negProtocol === b.negProtocol && a.negInInterface === b.negInInterface &&
       a.negOutInterface === b.negOutInterface &&
       a.matches.length === b.matches.length &&
       a.matches.every((m, i) => m.module === b.matches[i].module &&
         m.options.size === b.matches[i].options.size &&
-        [...m.options].every(([k, v]) => b.matches[i].options.get(k) === v));
+        [...m.options].every(([k, v]) => b.matches[i].options.get(k) === v &&
+          inverts(m, k) === inverts(b.matches[i], k)));
   }
 
   private tokenize(line: string): string[] {
