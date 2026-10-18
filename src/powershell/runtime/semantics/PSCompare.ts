@@ -1,3 +1,4 @@
+import { PSEnumValue } from './PSEnum';
 import { PSChar, PSNumber, compareNumbers, type NumericKind, numericKindOf } from './PSNumber';
 import { castToNumeric, parseNumericString, truthiness, PSConversionError } from './PSConvert';
 import { psValueToString } from '../PSExpansion';
@@ -41,6 +42,9 @@ export function languageEquals(
 ): boolean {
   if (first === null || first === undefined) return second === null || second === undefined;
   if (second === null || second === undefined) return false;
+  if (first instanceof PSEnumValue && typeof second === 'string') {
+    return languageEquals(first, first.definition.parse(second), ignoreCase, context);
+  }
   if (typeof first === 'string') {
     const text = typeof second === 'string' ? second : psValueToString(second);
     return ignoreCase ? collator(true).compare(first, text) === 0 : first === text;
@@ -85,6 +89,9 @@ export function languageCompare(
   }
   if (second === null || second === undefined) {
     return isNumber(first) ? (compareNumbers(first, 0) < 0 ? -1 : 1) : 1;
+  }
+  if (first instanceof PSEnumValue && typeof second === 'string') {
+    return languageCompare(first, first.definition.parse(second), ignoreCase, context);
   }
   if (typeof first === 'string') {
     const text = typeof second === 'string' ? second : psValueToString(second);

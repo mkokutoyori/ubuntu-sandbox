@@ -740,6 +740,8 @@ export function formatDefault(objects: PSObject[]): string {
   if (serverManager !== null) return serverManager;
   const partitions = partitionDiskGroups(objects);
   if (partitions !== null) return partitions;
+  const members = memberDefinitionView(objects);
+  if (members !== null) return members;
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
@@ -751,6 +753,17 @@ export function formatDefault(objects: PSObject[]): string {
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+function memberDefinitionView(objects: PSObject[]): string | null {
+  const owner = (entry: PSObject): string | undefined => (entry as Record<string, unknown>).__memberOf__ as string | undefined;
+  if (objects.some(entry => owner(entry) === undefined)) return null;
+  const groups = new Map<string, PSObject[]>();
+  for (const entry of objects) {
+    const key = owner(entry) as string;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  return [...groups].map(([typeName, rows]) => `\n   TypeName: ${typeName}\n${formatTable(rows, '')}`).join('\n');
 }
 
 function matchInfoView(objects: PSObject[]): string | null {

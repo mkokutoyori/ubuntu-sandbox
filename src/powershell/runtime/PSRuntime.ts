@@ -34,8 +34,11 @@ import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
+import { stringMember } from './semantics/DotNetString';
+import { EnumType, PSEnumValue, builtinEnums, enumMember } from './semantics/PSEnum';
+import { bindParameters, unboundParameterValue, type BinderHost } from './semantics/PSParameterBinder';
 import { exceptionMatches, exceptionShortName, resolveExceptionType, makeExceptionObject, defaultExceptionMessage } from './semantics/PSExceptions';
-import { PSChar, PSNumber, ArithmeticFault, compareNumbers, numericKindOf } from './semantics/PSNumber';
+import { PSChar, PSNumber, ArithmeticFault, compareNumbers, numericKindOf, type NumericKind } from './semantics/PSNumber';
 import { PSConversionError, castToChar, castToNumeric, truthiness } from './semantics/PSConvert';
 import { bitwise, multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
 import { PASS_THROUGH_CMDLETS, unboxDeep } from './semantics/PSUnbox';
@@ -43,7 +46,7 @@ import { mathStatics } from './semantics/MathStatics';
 import { languageCompare, languageEquals, type CompareContext } from './semantics/PSCompare';
 import { compileRegex, regexReplace, regexSplit } from './semantics/PSRegex';
 import { makeTypeObject } from './semantics/PSTypeObject';
-import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, tagArray, type TypeSpec } from './semantics/PSTypes';
+import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, stripTypeBrackets, tagArray, type TypeSpec } from './semantics/PSTypes';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
@@ -63,7 +66,7 @@ import type {
   PSMemberExpression, PSStaticMemberExpression, PSIndexExpression,
   PSInvocationExpression, PSCastExpression, PSCommandExpression,
   PSScriptBlock, PSPipelineExpression,
-  PSClassDefinition, PSMethodDefinition, PSPropertyDeclaration,
+  PSClassDefinition, PSEnumDefinition, PSMethodDefinition, PSPropertyDeclaration,
   PSBreakStatement, PSContinueStatement, PSTrapStatement,
 } from '@/powershell/parser/PSASTNode';
 
@@ -421,7 +424,7 @@ export class PSRuntime {
       return hit;
     }
     const tokens = this.lexer.tokenize(code);
-    const ast    = this.parser.parse(tokens);
+    const ast    = this.parser.parse(tokens, code);
     if (this.astCache.size >= PSRuntime.AST_CACHE_LIMIT) {
       // Drop the oldest entry (first key in iteration order).
       const oldest = this.astCache.keys().next().value;
@@ -437,6 +440,7 @@ export class PSRuntime {
 
   /** User-defined PowerShell classes. */
   private readonly userClasses = new Map<string, PSClassDefinition>();
+  private readonly enums = builtinEnums();
 
   /** Error objects collected by emitError — merged into output when 2>&1 is active. */
   private errorObjects: PSValue[] = [];
@@ -812,7 +816,7 @@ export class PSRuntime {
   /** Execute code and return the last produced PSValue (without stringification). Used by IEX. */
   executeForValue(code: string): PSValue {
     const tokens = this.lexer.tokenize(code);
-    const ast    = this.parser.parse(tokens);
+    const ast    = this.parser.parse(tokens, code);
     let last: PSValue = null;
     for (const stmt of ast.body.statements) {
       last = this.execStatement(stmt, this.global);
@@ -885,6 +889,7 @@ export class PSRuntime {
       case 'TryStatement':        result = this.execTry(node as PSTryStatement, env); break;
       case 'FunctionDefinition':  result = this.execFunctionDef(node as PSFunctionDefinition, env); break;
       case 'ClassDefinition':     result = this.execClassDef(node as PSClassDefinition, env); break;
+      case 'EnumDefinition':      result = this.execEnumDef(node as PSEnumDefinition, env); break;
       case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
       case 'ExitStatement':       return this.execExit(node as PSExitStatement, env);
       case 'BreakStatement':      throw new BreakSignal((node as PSBreakStatement).label ?? undefined);
@@ -1310,27 +1315,7 @@ export class PSRuntime {
       childEnv.set('PSItem', pipelineInput);
     }
 
-    // Always expose $args (all positional args not consumed by param block)
-    const remainingArgs = [...positionalArgs];
-
-    if (block.paramBlock) {
-      block.paramBlock.parameters.forEach(p => {
-        const pname = p.name.varName ?? p.name.name;
-        const pkey  = pname.toLowerCase();
-        if (namedArgs[pkey] !== undefined) {
-          childEnv.set(pname, namedArgs[pkey]);
-        } else if (remainingArgs.length > 0) {
-          childEnv.set(pname, remainingArgs.shift()!);
-        } else if (p.defaultValue) {
-          childEnv.set(pname, this.evalExpr(p.defaultValue, parentEnv));
-        } else {
-          childEnv.set(pname, null);
-        }
-      });
-    }
-
-    // $args contains positional args not consumed by declared parameters
-    childEnv.set('args', remainingArgs);
+    this.bindParametersInto(childEnv, block, namedArgs, positionalArgs, parentEnv, null);
 
     try {
       if (block.beginBlock)   this.execStatementList(block.beginBlock,   childEnv);
@@ -1541,7 +1526,11 @@ export class PSRuntime {
       case '-or':  return this.isTruthy(left) || this.isTruthy(right);
       case '-xor': return this.isTruthy(left) !== this.isTruthy(right);
       case '-band': case '-bor': case '-bxor': case '-shl': case '-shr':
-        return this.guarded(() => bitwise(op, left, right));
+      {
+        const combined = this.guarded(() => bitwise(op, left, right));
+        const enumOperand = left instanceof PSEnumValue ? left : right instanceof PSEnumValue ? right : null;
+        return enumOperand !== null && op !== '-shl' && op !== '-shr' ? enumOperand.definition.fromNumber(Number(combined)) : combined;
+      }
       case '-join': return (Array.isArray(left) ? left : [left]).map(psValueToString).join(psValueToString(right));
       case '-f': {
         const args = Array.isArray(right) ? right : [right];
@@ -1549,7 +1538,7 @@ export class PSRuntime {
       }
       case '-is':    return this.psIs(left, String(right));
       case '-isnot': return !this.psIs(left, String(right));
-      case '-as':    return this.psCast(left, String(right).replace(/^\[|\]$/g, ''));
+      case '-as':    return this.psCast(left, stripTypeBrackets(String(right)));
       default:       return this.namedOperator(op, left, right, env);
     }
   }
@@ -1661,6 +1650,14 @@ export class PSRuntime {
       // even when the operand is itself an array (`(,@(1,2,3)).Count`
       // is 1, not 3).
       case ',':    return [val];
+      case '-join': return (Array.isArray(val) ? val : [val]).map(psValueToString).join('');
+      case '-split': {
+        const pieces = (Array.isArray(val) ? val : [val]).flatMap(item => {
+          const trimmed = psValueToString(item).trim();
+          return trimmed === '' ? [''] : trimmed.split(/\s+/);
+        });
+        return pieces;
+      }
       default:     throw new PSRuntimeError(`Unknown unary operator: ${node.operator}`);
     }
   }
@@ -1776,6 +1773,26 @@ export class PSRuntime {
     return out;
   }
 
+  private enumTypeOf(argument: PSValue): EnumType {
+    const type = this.enums.get(stripTypeBrackets(String(argument)).toLowerCase());
+    if (type === undefined) throw new PSRuntimeError(`Cannot find type [${stripTypeBrackets(String(argument))}]: verify that the assembly containing this type is loaded.`);
+    return type;
+  }
+
+  private enumStatics(member: string): PSValue {
+    switch (member) {
+      case 'getnames': return ((type: PSValue) => this.enumTypeOf(type).names()) as unknown as PSValue;
+      case 'getvalues': return ((type: PSValue) => [...this.enumTypeOf(type).members()]) as unknown as PSValue;
+      case 'getname': return ((type: PSValue, value: PSValue) => this.enumTypeOf(type).fromNumber(Number(value)).memberName) as unknown as PSValue;
+      case 'isdefined': return ((type: PSValue, value: PSValue) => {
+        const definition = this.enumTypeOf(type);
+        return typeof value === 'string' ? definition.member(value) !== undefined : definition.members().some(m => m.numeric === Number(value));
+      }) as unknown as PSValue;
+      case 'parse': return ((type: PSValue, text: PSValue) => this.guarded(() => this.enumTypeOf(type).parse(String(text)))) as unknown as PSValue;
+      default: return null;
+    }
+  }
+
   private evalStaticMember(node: PSStaticMemberExpression, env: PSEnvironment): PSValue {
     const tname = node.typeName.toLowerCase();
     if (tname === 'environment' || tname === 'system.environment') {
@@ -1794,6 +1811,9 @@ export class PSRuntime {
     if (tname === 'security.principal.windowsidentity' || tname === 'system.security.principal.windowsidentity') {
       return this.getMember({ getcurrent: () => this.currentWindowsIdentity() } as unknown as PSValue, node.member.toLowerCase());
     }
+    const enumType = this.enums.get(tname);
+    if (enumType !== undefined) return enumType.member(node.member) ?? null;
+    if (tname === 'enum' || tname === 'system.enum') return this.enumStatics(node.member.toLowerCase());
     const exceptionType = resolveExceptionType(node.typeName);
     if (exceptionType !== null && node.member.toLowerCase() === 'new') {
       return ((message?: PSValue) => makeExceptionObject(exceptionType, message === undefined || message === null ? defaultExceptionMessage(exceptionType) : String(message))) as unknown as PSValue;
@@ -2087,7 +2107,7 @@ export class PSRuntime {
     if (typeof subject === 'string' && typeof test === 'string') {
       return opts.caseSensitive ? subject === test : subject.toLowerCase() === test.toLowerCase();
     }
-    return subject === test;
+    return this.guarded(() => this.psEq(subject, test, opts.caseSensitive));
   }
 
   private execTry(node: PSTryStatement, env: PSEnvironment): PSValue {
@@ -2164,6 +2184,22 @@ export class PSRuntime {
     const isFilter = node.kind === 'filter';
     this.functions.set(node.name.toLowerCase(), { block: node.body, isFilter, declaredName: node.name });
     env.set(node.name, node.name as PSValue);
+    return null;
+  }
+
+  private execEnumDef(node: PSEnumDefinition, env: PSEnvironment): PSValue {
+    const flags = node.attributes?.some(a => a.name.toLowerCase() === 'flags') === true;
+    const baseSpec = node.baseType === null ? null : parseTypeName(node.baseType);
+    const underlying: NumericKind = baseSpec !== null && baseSpec.kind === 'numeric' ? baseSpec.numeric : 'int32';
+    const type = new EnumType(node.name, underlying, flags);
+    let next = 0;
+    for (const member of node.members) {
+      const declared = member.value === null ? null : this.evalExpr(member.value, env);
+      const value = declared === null ? next : Number(declared);
+      type.add(member.name, value);
+      next = flags && declared === null && next === 0 ? 1 : (flags && declared === null ? next * 2 : value + 1);
+    }
+    this.enums.set(node.name.toLowerCase(), type);
     return null;
   }
 
@@ -2618,6 +2654,50 @@ export class PSRuntime {
     }
   }
 
+  private bindParametersInto(
+    target: PSEnvironment,
+    block: PSScriptBlock,
+    named: Record<string, PSValue>,
+    positional: readonly PSValue[],
+    evaluationEnv: PSEnvironment,
+    pipelineParameter: string | null,
+  ): void {
+    if (!block.paramBlock) {
+      target.set('args', [...positional]);
+      return;
+    }
+    const declarations = block.paramBlock.parameters;
+    const host: BinderHost = {
+      evaluate: expression => this.evalExpr(expression, evaluationEnv),
+      cast: (value, typeName) => this.psCast(value, typeName),
+      invokeScript: (script, argument) => this.invokeScriptBlock(script as PSScriptBlock, {}, [], evaluationEnv, argument),
+      equal: (left, right, ignoreCase) => this.psEq(left, right, !ignoreCase),
+      scriptText: script => (script as PSScriptBlock).sourceText ?? '',
+    };
+    const attributes = block.paramBlock.attributes;
+    const outcome = bindParameters(declarations, attributes, named, positional, host, {
+      pipelineParameter,
+      supportsShouldProcess: false,
+    });
+    for (const declaration of declarations) {
+      const name = declaration.name.varName ?? (declaration.name as { name?: string }).name ?? '';
+      const key = name.toLowerCase();
+      if (outcome.values.has(key)) {
+        target.set(name, outcome.values.get(key) as PSValue);
+        continue;
+      }
+      const typeName = declaration.paramType === null ? null : stripTypeBrackets(declaration.paramType).toLowerCase();
+      if (declaration.defaultValue) {
+        const initial = this.evalExpr(declaration.defaultValue, evaluationEnv);
+        target.set(name, typeName === null || typeName === 'switch' ? initial : this.psCast(initial, typeName));
+      } else {
+        target.set(name, unboundParameterValue(typeName));
+      }
+    }
+    target.set('args', outcome.extra);
+    target.set('PSBoundParameters', outcome.bound as PSValue);
+  }
+
   /**
    * Invoke a user-defined function, handling Begin/Process/End blocks,
    * filter semantics, $input, and ValueFromPipeline parameter binding.
@@ -2659,85 +2739,12 @@ export class PSRuntime {
       }
     }
 
-    // Resolve aliases and validate params
     const resolvedNamed = { ...named };
-    if (block.paramBlock) {
-      for (const p of block.paramBlock.parameters) {
-        const pname = p.name.varName ?? (p.name as { name?: string }).name ?? '';
-        const pkey = pname.toLowerCase();
-        for (const attr of p.attributes) {
-          if (attr.name.toLowerCase() === 'alias') {
-            for (const aliasExpr of attr.positionalArgs) {
-              const alias = String((aliasExpr as { value?: unknown }).value ?? '').toLowerCase();
-              if (resolvedNamed[alias] !== undefined && resolvedNamed[pkey] === undefined)
-                resolvedNamed[pkey] = resolvedNamed[alias];
-            }
-          }
-        }
-        const isMandatory = p.attributes.some(a => {
-          if (a.name.toLowerCase() !== 'parameter') return false;
-          const mv = a.namedArgs['Mandatory'] ?? a.namedArgs['mandatory'];
-          return mv !== null && mv !== undefined && (mv as { value?: unknown }).value !== false;
-        });
-        if (isMandatory && resolvedNamed[pkey] === undefined && positional.length === 0
-            && pipeParamName?.toLowerCase() !== pkey)
-          throw new PSRuntimeError(`Missing mandatory parameter: ${pname}`);
-
-        for (const attr of p.attributes) {
-          if (attr.name.toLowerCase() === 'validaterange' && resolvedNamed[pkey] !== undefined) {
-            const min = (attr.positionalArgs[0] as { value?: number })?.value ?? 0;
-            const max = (attr.positionalArgs[1] as { value?: number })?.value ?? Infinity;
-            const val = Number(resolvedNamed[pkey]);
-            if (val < min || val > max)
-              throw new PSRuntimeError(`Validation error: ${pname} must be between ${min} and ${max}`);
-          }
-          if (attr.name.toLowerCase() === 'validateset' && resolvedNamed[pkey] !== undefined) {
-            const allowed = attr.positionalArgs.map(a => String((a as { value?: unknown }).value ?? ''));
-            const val = String(resolvedNamed[pkey]);
-            if (!allowed.some(a => a.toLowerCase() === val.toLowerCase()))
-              throw new PSRuntimeError(`Validation error: ${pname} must be one of [${allowed.join(', ')}]`);
-          }
-          if (attr.name.toLowerCase() === 'validatepattern' && resolvedNamed[pkey] !== undefined) {
-            const pat = String((attr.positionalArgs[0] as { value?: unknown })?.value ?? '');
-            const val = String(resolvedNamed[pkey]);
-            let re: RegExp | null = null;
-            try { re = new RegExp(pat); } catch { re = null; }
-            if (!re || !re.test(val))
-              throw new PSRuntimeError(`Validation error: ${pname} does not match pattern ${pat}`);
-          }
-          if (attr.name.toLowerCase() === 'validatenotnull' && (resolvedNamed[pkey] === null || resolvedNamed[pkey] === undefined)) {
-            throw new PSRuntimeError(`Validation error: ${pname} cannot be null`);
-          }
-          if (attr.name.toLowerCase() === 'validatenotnullorempty'
-              && (resolvedNamed[pkey] === null || resolvedNamed[pkey] === undefined || resolvedNamed[pkey] === '')) {
-            throw new PSRuntimeError(`Validation error: ${pname} cannot be null or empty`);
-          }
-          if (attr.name.toLowerCase() === 'validatelength' && resolvedNamed[pkey] !== undefined) {
-            const min = Number((attr.positionalArgs[0] as { value?: unknown })?.value ?? 0);
-            const max = Number((attr.positionalArgs[1] as { value?: unknown })?.value ?? Infinity);
-            const len = String(resolvedNamed[pkey]).length;
-            if (len < min || len > max)
-              throw new PSRuntimeError(`Validation error: ${pname} length must be between ${min} and ${max}`);
-          }
-        }
-      }
-    }
 
     // For functions with named blocks (begin/process/end) or filter keyword
     if (hasNamedBlocks || isFilter) {
       const childEnv = env.createChild();
-      if (block.paramBlock) {
-        const remaining = [...positional];
-        for (const p of block.paramBlock.parameters) {
-          const pname = p.name.varName ?? (p.name as { name?: string }).name ?? '';
-          const pkey = pname.toLowerCase();
-          if (resolvedNamed[pkey] !== undefined) childEnv.set(pname, resolvedNamed[pkey]);
-          else if (remaining.length > 0) childEnv.set(pname, remaining.shift()!);
-          else if (p.defaultValue) childEnv.set(pname, this.evalExpr(p.defaultValue, env));
-          else childEnv.set(pname, null);
-        }
-        childEnv.set('args', positional);
-      }
+      this.bindParametersInto(childEnv, block, resolvedNamed, positional, env, pipeParamName);
       childEnv.set('input', pipeItems);
 
       const results: PSValue[] = [];
@@ -2797,18 +2804,7 @@ export class PSRuntime {
     if (pipeItems.length > 0 && !pipeParamName) {
       // Provide $input in the child env
       const childEnv = env.createChild();
-      if (block.paramBlock) {
-        const remaining = [...positional];
-        for (const p of block.paramBlock.parameters) {
-          const pname = p.name.varName ?? (p.name as { name?: string }).name ?? '';
-          const pkey = pname.toLowerCase();
-          if (namedForInvoke[pkey] !== undefined) childEnv.set(pname, namedForInvoke[pkey]);
-          else if (remaining.length > 0) childEnv.set(pname, remaining.shift()!);
-          else if (p.defaultValue) childEnv.set(pname, this.evalExpr(p.defaultValue, env));
-          else childEnv.set(pname, null);
-        }
-        childEnv.set('args', positional);
-      }
+      this.bindParametersInto(childEnv, block, namedForInvoke, positional, env, null);
       childEnv.set('input', pipeItems);
       if (block.body) {
         const results = this.runBlockCapture(block.body, childEnv);
@@ -2868,6 +2864,39 @@ export class PSRuntime {
     return lie ? bound : null;
   }
 
+  private expandCommonParameterAliases(named: Record<string, PSValue>): Record<string, PSValue> {
+    const aliases: Record<string, string> = {
+      ea: 'erroraction', wa: 'warningaction', infa: 'informationaction', ev: 'errorvariable',
+      wv: 'warningvariable', iv: 'informationvariable', ov: 'outvariable', ob: 'outbuffer',
+      pv: 'pipelinevariable', vb: 'verbose', db: 'debug', wi: 'whatif', cf: 'confirm',
+    };
+    if (!Object.keys(named).some(key => aliases[key] !== undefined)) return named;
+    const expanded: Record<string, PSValue> = {};
+    for (const [key, value] of Object.entries(named)) expanded[aliases[key] ?? key] = value;
+    return expanded;
+  }
+
+  private resolveParameterPrefixes(declaredNames: readonly string[] | undefined, named: Record<string, PSValue>): void {
+    if (declaredNames === undefined) return;
+    const declared = declaredNames.map(name => name.toLowerCase());
+    for (const key of Object.keys(named)) {
+      if (declared.includes(key)) continue;
+      const candidates = declaredNames.filter(name => name.toLowerCase().startsWith(key));
+      if (candidates.length === 1) {
+        const target = candidates[0].toLowerCase();
+        if (named[target] === undefined) {
+          named[target] = named[key];
+          delete named[key];
+        }
+      } else if (candidates.length > 1) {
+        throw new PSRuntimeError(
+          `Parameter cannot be processed because the parameter name '${key}' is ambiguous. Possible matches include:${candidates.map(c => ` -${c}`).join('')}.`,
+          'System.Management.Automation.ParameterBindingException',
+        );
+      }
+    }
+  }
+
   private dispatchCmdlet(
     name: string,
     positional: PSValue[],
@@ -2876,6 +2905,7 @@ export class PSRuntime {
     env: PSEnvironment,
     nativeArguments?: string[],
   ): PSValue {
+    named = this.expandCommonParameterAliases(named);
     // Extract common parameters before dispatch
     const errorVarName     = named['errorvariable']  ? psValueToString(named['errorvariable'])  : null;
     const explicitAction   = named['erroraction']    ? psValueToString(named['erroraction']).toLowerCase() : null;
@@ -2899,6 +2929,7 @@ export class PSRuntime {
     const programStem = this.providers.network?.programStem(name) ?? null;
     const cmdlet = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
     if (cmdlet) {
+      this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed);
       const declared = new Set(
         ((cmdlet.parameters ?? []) as readonly string[]).map(p => p.toLowerCase()));
       for (const commun of ['whatif', 'confirm'] as const) {
@@ -3101,6 +3132,8 @@ export class PSRuntime {
 
   psCast(val: PSValue, typeName: string): PSValue {
     const t = (typeName.startsWith('[') && typeName.endsWith(']') ? typeName.slice(1, -1) : typeName).toLowerCase();
+    const enumType = this.enums.get(t);
+    if (enumType !== undefined) return this.guarded(() => this.castEnum(enumType, val));
     const scalar = this.castScalar(val, parseTypeName(typeName));
     if (scalar !== undefined) return scalar;
     switch (t) {
@@ -3162,6 +3195,12 @@ export class PSRuntime {
         const parts = String(val).split('.').map(Number);
         return { Major: parts[0]??0, Minor: parts[1]??0, Build: parts[2]??-1, Revision: parts[3]??-1, ToString: () => String(val) } as unknown as PSValue;
       }
+      case 'ordered': {
+        if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+          Object.defineProperty(val, '__ordered__', { value: true, enumerable: false, configurable: true });
+        }
+        return val;
+      }
       case 'pscustomobject': case 'psobject':
       case 'system.management.automation.pscustomobject': {
         // Tag the object so Get-Member can report its members as
@@ -3175,6 +3214,13 @@ export class PSRuntime {
       }
       default:        return val;
     }
+  }
+
+  private castEnum(type: EnumType, val: PSValue): PSValue {
+    if (val instanceof PSEnumValue && val.definition === type) return val;
+    if (Array.isArray(val)) return val.map(item => this.castEnum(type, item));
+    if (typeof val === 'string') return type.parse(val);
+    return type.fromNumber(Number(val));
   }
 
   private castScalar(val: PSValue, spec: TypeSpec): PSValue | undefined {
@@ -3315,10 +3361,12 @@ export class PSRuntime {
   }
 
   psIs(val: PSValue, right: PSValue): boolean {
+    const enumType = this.enums.get(stripTypeBrackets(String(right)).toLowerCase());
+    if (enumType !== undefined) return val instanceof PSEnumValue && val.definition === enumType;
     const spec = parseTypeName(String(right));
     const scalar = isScalarInstance(val, spec);
     if (scalar !== null) return scalar;
-    const t = String(right).replace(/^\[|\]$/g, '').toLowerCase();
+    const t = stripTypeBrackets(String(right)).toLowerCase();
     switch (t) {
       case 'null':                       return val === null;
       case 'datetime': case 'system.datetime': return val instanceof Date;
@@ -3341,6 +3389,9 @@ export class PSRuntime {
     if ((rec as unknown as Record<string, unknown>)['__pscustomobject__'] === true) {
       return { name: 'PSCustomObject', fullName: 'System.Management.Automation.PSCustomObject' };
     }
+    if ((rec as unknown as Record<string, unknown>)['__ordered__'] === true) {
+      return { name: 'OrderedDictionary', fullName: 'System.Collections.Specialized.OrderedDictionary' };
+    }
     return { name: 'Hashtable', fullName: 'System.Collections.Hashtable' };
   }
 
@@ -3352,6 +3403,10 @@ export class PSRuntime {
     }
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
     if (typeof obj === 'number')  return numberMember(obj, member);
+    if (obj instanceof PSEnumValue) {
+      const own = enumMember(obj, member);
+      if (own !== undefined) return own as PSValue;
+    }
     if (obj instanceof PSNumber)  return boxedNumberMember(obj, member);
     if (obj instanceof PSChar)    return charMember(obj, member);
     if (typeof obj === 'boolean') return booleanMember(obj, member);
@@ -3527,44 +3582,7 @@ export class PSRuntime {
   }
 
   private getStringMember(s: string, member: string): PSValue {
-    switch (member) {
-      case 'length':     return s.length;
-      case 'toupper':    return () => s.toUpperCase();
-      case 'tolower':    return () => s.toLowerCase();
-      case 'trim':       return (chars?: PSValue) => chars !== undefined
-        ? trimChars(s, String(chars), true, true) : s.trim();
-      case 'trimstart':  return (chars?: PSValue) => chars !== undefined
-        ? trimChars(s, String(chars), true, false) : s.trimStart();
-      case 'trimend':    return (chars?: PSValue) => chars !== undefined
-        ? trimChars(s, String(chars), false, true) : s.trimEnd();
-      case 'contains':   return (sub: PSValue) => s.toLowerCase().includes(String(sub).toLowerCase());
-      case 'startswith': return (pfx: PSValue) => s.toLowerCase().startsWith(String(pfx).toLowerCase());
-      case 'endswith':   return (sfx: PSValue) => s.toLowerCase().endsWith(String(sfx).toLowerCase());
-      case 'replace':    return (o: PSValue, n: PSValue) => s.split(String(o)).join(String(n));
-      case 'split':      return (sep: PSValue, limit?: PSValue) => {
-        const sepStr = String(sep ?? '');
-        return limit !== undefined ? s.split(sepStr, Number(limit)) : s.split(sepStr);
-      };
-      case 'indexof':    return (sub: PSValue, start?: PSValue) =>
-        start !== undefined ? s.indexOf(String(sub), Number(start)) : s.indexOf(String(sub));
-      case 'lastindexof': return (sub: PSValue) => s.lastIndexOf(String(sub));
-      case 'substring':  return (start: PSValue, len?: PSValue) =>
-        len !== undefined ? s.substr(Number(start), Number(len)) : s.substr(Number(start));
-      case 'padleft':    return (w: PSValue, ch?: PSValue) =>
-        s.padStart(Number(w), ch !== undefined ? String(ch) : ' ');
-      case 'padright':   return (w: PSValue, ch?: PSValue) =>
-        s.padEnd(Number(w), ch !== undefined ? String(ch) : ' ');
-      case 'chars':      return Array.from(s);
-      case 'insert':     return (i: PSValue, v: PSValue) =>
-        s.slice(0, Number(i)) + String(v) + s.slice(Number(i));
-      case 'remove':     return (start: PSValue, len?: PSValue) => {
-        const a = Number(start);
-        return len !== undefined ? s.slice(0, a) + s.slice(a + Number(len)) : s.slice(0, a);
-      };
-      case 'tochararray': return () => tagArray([...s].map(ch => new PSChar(ch.charCodeAt(0)) as PSValue), { kind: 'char' });
-      case 'getenumerator': return Array.from(s);
-      default:           return null;
-    }
+    return stringMember(s, member) ?? null;
   }
 
   private getArrayMember(arr: PSValue[], member: string): PSValue {
@@ -3609,7 +3627,7 @@ export class PSRuntime {
       return (node as unknown as { typeName: string }).typeName;
     if (node.type === 'CastExpression')
       return (node as PSCastExpression).targetType;
-    return psValueToString(this.evalExpr(node, this.global)).replace(/^\[|\]$/g, '');
+    return stripTypeBrackets(psValueToString(this.evalExpr(node, this.global)));
   }
 
   private isPureValueNode(node: PSExpression, _env?: PSEnvironment): boolean {
@@ -3677,10 +3695,3 @@ function applyFormatSpec(value: PSValue, spec: string): string {
   }
 }
 
-function trimChars(s: string, chars: string, start: boolean, end: boolean): string {
-  const set = new Set(chars);
-  let a = 0, b = s.length;
-  if (start) while (a < b && set.has(s[a])) a++;
-  if (end)   while (b > a && set.has(s[b - 1])) b--;
-  return s.slice(a, b);
-}

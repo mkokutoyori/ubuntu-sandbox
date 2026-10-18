@@ -1,3 +1,4 @@
+import { PSEnumValue } from './PSEnum';
 import { PSChar, PSNumber, kindName, numericKindOf, type NumericKind } from './PSNumber';
 
 export type TypeSpec =
@@ -95,10 +96,15 @@ export function isScalarInstance(value: unknown, spec: TypeSpec): boolean | null
 }
 
 export function describeScalarType(value: unknown): { name: string; fullName: string } | null {
+  if (value instanceof PSEnumValue) return { name: value.definition.name, fullName: value.definition.name };
   if (typeof value === 'number' || value instanceof PSNumber) return kindName(numericKindOf(value) as NumericKind);
   if (value instanceof PSChar) return typeSpecName({ kind: 'char' });
   if (typeof value === 'string') return typeSpecName({ kind: 'string' });
   if (typeof value === 'boolean') return typeSpecName({ kind: 'bool' });
   if (Array.isArray(value)) return typeSpecName({ kind: 'array', element: elementTypeOf(value) });
   return null;
+}
+
+export function stripTypeBrackets(typeName: string): string {
+  return typeName.startsWith('[') && typeName.endsWith(']') ? typeName.slice(1, -1) : typeName;
 }

@@ -104,7 +104,8 @@ export class GetDateCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const fmt = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
     const ufmt = ctx.named['uformat'] ? psValueToString(ctx.named['uformat']) : null;
-    const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
+    const piped = Array.isArray(ctx.pipeInput) ? ctx.pipeInput[0] : ctx.pipeInput;
+    const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? piped ?? null;
     const now = machineDate(ctx.providers);
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {

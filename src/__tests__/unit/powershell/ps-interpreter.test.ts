@@ -780,7 +780,7 @@ describe('22. Advanced Functions', () => {
   it('mandatory parameter throws when missing', () => {
     const interp = new PSInterpreter();
     interp.execute('function Req { param([Parameter(Mandatory=$true)]$Name) $Name }');
-    expect(() => interp.execute('Req')).toThrow(/Missing/);
+    expect(() => interp.execute('Req')).toThrow(/missing mandatory parameters: Name/);
   });
 
   it('parameter with default value', () => {
