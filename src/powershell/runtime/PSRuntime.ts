@@ -751,7 +751,8 @@ export class PSRuntime {
         runOne(stmt);
       } catch (e) {
         if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
-        const trap = traps[0];
+        const trap = this.selectTrap(traps, e);
+        if (trap === null) throw e;
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
           this.runTrapBody(trap.body, env);
@@ -762,6 +763,12 @@ export class PSRuntime {
         }
       }
     }
+  }
+
+  private selectTrap(traps: readonly PSTrapStatement[], error: unknown): PSTrapStatement | null {
+    const actualType = error instanceof PSRuntimeError ? error.exceptionType : RUNTIME_EXCEPTION;
+    const typed = traps.find(trap => trap.exceptionType !== null && exceptionMatches(actualType, trap.exceptionType.replace(/^\[|\]$/g, '')));
+    return typed ?? traps.find(trap => trap.exceptionType === null) ?? null;
   }
 
   private runTrapBody(block: PSScriptBlock, env: PSEnvironment): void {
@@ -847,9 +854,11 @@ export class PSRuntime {
   private trapInteractive(run: NonNullable<PSRuntime['interactive']>, e: unknown): boolean {
     if (run.traps.length === 0) return false;
     if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) return false;
+    const trap = this.selectTrap(run.traps, e);
+    if (trap === null) return false;
     this.global.set('_', e instanceof Error ? e : new Error(String(e)));
     try {
-      this.runTrapBody(run.traps[0].body, this.global);
+      this.runTrapBody(trap.body, this.global);
     } catch (trapSignal) {
       if (trapSignal instanceof ContinueSignal && !trapSignal.label) return true;
       if (trapSignal instanceof BreakSignal && !trapSignal.label) { run.index = -1; return true; }
@@ -866,6 +875,10 @@ export class PSRuntime {
 
   private openHostSession(): PSRuntime {
     return new PSRuntime(this.registry, this.providers, undefined, this.edition);
+  }
+
+  errorRecord(error: unknown): PSValue {
+    return this.makeErrorRecord(error);
   }
 
   executeForValue(code: string): PSValue {
@@ -911,7 +924,8 @@ export class PSRuntime {
         last = this.execStatement(stmt, env);
       } catch (e) {
         if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
-        const trap = traps[0];
+        const trap = this.selectTrap(traps, e);
+        if (trap === null) throw e;
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
           this.runTrapBody(trap.body, env);
@@ -1183,7 +1197,12 @@ export class PSRuntime {
     if (block.processBlock) this.execStatementList(block.processBlock, env);
     if (block.endBlock)     this.execStatementList(block.endBlock,     env);
     if (!block.body) return null;
-    return this.aggregateCaptured(this.runBlockCapture(block.body, env));
+    try {
+      return this.aggregateCaptured(this.runBlockCapture(block.body, env));
+    } catch (e) {
+      if (e instanceof ReturnSignal) return this.aggregateCaptured(this.returnedValues(e));
+      throw e;
+    }
   }
 
   /**
@@ -1382,7 +1401,7 @@ export class PSRuntime {
     positionalArgs: PSValue[],
     parentEnv: PSEnvironment,
     pipelineInput?: PSValue,
-    captured: PSValue[] = [],
+    captured?: PSValue[],
     inputItems?: PSValue[],
     scriptScope = false,
   ): PSValue {
@@ -1415,7 +1434,7 @@ export class PSRuntime {
       if (block.body) return this.aggregateCaptured(this.runBlockCapture(block.body, childEnv, captured));
       return null;
     } catch (e) {
-      if (e instanceof ReturnSignal) return this.aggregateCaptured([...captured, ...this.returnedValues(e)]);
+      if (e instanceof ReturnSignal) return this.aggregateCaptured([...(captured ?? []), ...this.returnedValues(e)]);
       throw e;
     }
   }
@@ -1467,7 +1486,7 @@ export class PSRuntime {
       }
       case 'ScriptBlock':              return node as unknown as PSValue;
       case 'AssignmentStatement':      return this.execAssignment(node as unknown as PSAssignmentStatement, env);
-      case 'TypeLiteral':              return `[${(node as unknown as { typeName: string }).typeName}]`;
+      case 'TypeLiteral':              return this.typeLiteralObject((node as unknown as { typeName: string }).typeName);
       case 'StatementExpression':      return this.execStatement((node as unknown as { stmt: PSStatement }).stmt, env);
       default:                         return null;
     }
@@ -1798,8 +1817,18 @@ export class PSRuntime {
       const val = this.execStatement(stmt, env);
       if (Array.isArray(val)) result.push(...val);
       else if (val !== null && val !== undefined) result.push(val);
+      else if (this.isValueExpressionStatement(stmt)) result.push(null);
     }
     return result;
+  }
+
+  private isValueExpressionStatement(stmt: PSStatement): boolean {
+    if (stmt.type !== 'PipelineStatement') return false;
+    const commands = (stmt as PSPipelineStatement).pipeline.commands;
+    if (commands.length !== 1 || commands[0].arguments.length > 0 || commands[0].parameters.length > 0) return false;
+    const kind = commands[0].name.type as string;
+    return kind === 'LiteralExpression' || kind === 'VariableExpression' || kind === 'MemberExpression'
+      || kind === 'IndexExpression' || kind === 'CastExpression';
   }
 
   private evalHashtable(node: PSHashtableExpression, env: PSEnvironment): PSValue {
@@ -1894,6 +1923,7 @@ export class PSRuntime {
     if (intrinsic !== null) return intrinsic;
 
     const found = this.getMember(obj, member);
+    if ((found === null || found === undefined) && member === 'tostring') return () => psValueToString(obj);
     if ((found === null || found === undefined) && member.startsWith('get_')) {
       return () => this.getMember(obj, member.slice('get_'.length));
     }
@@ -2361,7 +2391,12 @@ export class PSRuntime {
           if (node.finallyBody) renderBody(node.finallyBody);
           throw e;
         }
-        renderBody(matchingClause.body);
+        try {
+          renderBody(matchingClause.body);
+        } catch (inner) {
+          if (node.finallyBody) renderBody(node.finallyBody);
+          throw inner;
+        }
       } else {
         if (node.finallyBody) renderBody(node.finallyBody);
         throw e;
@@ -2581,6 +2616,7 @@ export class PSRuntime {
     // [Type] cast: TypeLiteral in command-name position
     if (nameNode.type === 'TypeLiteral') {
       const typeName = (nameNode as { typeName: string }).typeName;
+      if (node.arguments.length === 0) return this.typeLiteralObject(typeName);
       const arg = node.arguments[0] ? this.evalExpr(node.arguments[0], env) : null;
       return this.psCast(arg, typeName);
     }
@@ -2870,6 +2906,7 @@ export class PSRuntime {
         throw e;
       }
       this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
+      if (shared === undefined) for (const value of captured) this.outputLines.push(psValueToString(value));
       throw e;
     }
     this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
@@ -2889,24 +2926,42 @@ export class PSRuntime {
   private captureStatements(
     node: PSStatementList, env: PSEnvironment, captured: PSValue[], printed: string[],
   ): void {
+    const traps = node.statements.filter((s): s is PSTrapStatement => s.type === 'TrapStatement');
     for (const stmt of node.statements) {
+      if (stmt.type === 'TrapStatement') continue;
       const linesBefore = this.outputLines.length;
-      const result = this.execStatement(stmt, env);
-      const didEmit = this.outputLines.length > linesBefore;
-      // `$c++` / `$c += 1` (even nested in an if/loop whose taken branch
-      // ends in one) are voidable in PowerShell — they must not feed the
-      // pipeline. execStatement tracks this via lastStmtVoid.
-      const isVoidAssign = this.lastStmtVoid;
-      // Non-assignment, non-definition statements that didn't emit via cmdlet → collect value
-      if (!didEmit && result !== null && result !== undefined
-          && !isVoidAssign
-          && stmt.type !== 'AssignmentStatement'
-          && stmt.type !== 'FunctionDefinition') {
-        if (Array.isArray(result)) captured.push(...result);
-        else captured.push(result);
+      try {
+        this.captureStatement(stmt, env, captured, printed);
+      } catch (e) {
+        if (traps.length === 0 || e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
+        const trap = this.selectTrap(traps, e);
+        if (trap === null) throw e;
+        this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
+        env.set('_', this.makeErrorRecord(e));
+        try {
+          if (trap.body.body) this.runBlockCapture(trap.body.body, env, captured);
+        } catch (signal) {
+          if (signal instanceof ContinueSignal && !signal.label) continue;
+          if (signal instanceof BreakSignal && !signal.label) throw e;
+          throw signal;
+        }
       }
-      this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
     }
+  }
+
+  private captureStatement(stmt: PSStatement, env: PSEnvironment, captured: PSValue[], printed: string[]): void {
+    const linesBefore = this.outputLines.length;
+    const result = this.execStatement(stmt, env);
+    const didEmit = this.outputLines.length > linesBefore;
+    const isVoidAssign = this.lastStmtVoid;
+    if (!didEmit && result !== null && result !== undefined
+        && !isVoidAssign
+        && stmt.type !== 'AssignmentStatement'
+        && stmt.type !== 'FunctionDefinition') {
+      if (Array.isArray(result)) captured.push(...result);
+      else captured.push(result);
+    }
+    this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
   }
 
   private bindParametersInto(
@@ -3157,7 +3212,7 @@ export class PSRuntime {
 
   private notFound(name: string): PSRuntimeError {
     const typed = this.typedCommandName(name);
-    const error = new PSRuntimeError(commandNotFoundMessage(typed, this.edition === 'core'));
+    const error = new PSRuntimeError(commandNotFoundMessage(typed, this.edition === 'core'), 'System.Management.Automation.CommandNotFoundException');
     error.commandName = typed;
     return error;
   }

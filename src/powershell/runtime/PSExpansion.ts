@@ -8,6 +8,7 @@
  *   - $(subexpr)  — recursive sub-expression evaluation (via callback)
  */
 
+import { PSRuntimeError } from './PSRuntimeError';
 import type { PSEnvironment, PSValue } from './PSEnvironment';
 import { formatDouble } from './dotnetNumber';
 import { PSChar, PSNumber, formatNumeric } from './semantics/PSNumber';
@@ -75,7 +76,7 @@ export function expandString(
           continue;
         }
       }
-      result += BACKTICK[next] ?? next;
+      result += (unicodeEscapes && next === 'e' ? '\x1b' : BACKTICK[next]) ?? next;
       i += 2;
       continue;
     }
@@ -126,6 +127,11 @@ export function expandString(
           result += psValueToString(resolver(scopedName, env));
           i = k;
         } else {
+          if (j < raw.length && raw[j] === ':' && raw[j + 1] !== ':') {
+            throw new PSRuntimeError(
+              "Variable reference is not valid. ':' was not followed by a valid variable name character. Consider using ${} to delimit the name.",
+              'System.Management.Automation.ParseException');
+          }
           result += psValueToString(resolver(part, env));
           i = j;
         }

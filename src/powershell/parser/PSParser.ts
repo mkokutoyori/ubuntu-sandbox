@@ -296,6 +296,12 @@ export class PSParser {
   private expect(type: PSTokenType, hint?: string): PSToken {
     if (!this.check(type)) {
       const tok = this.peek();
+      if (this.isAtEnd() && type === PSTokenType.RBRACE) {
+        throw new PSParserError("Missing closing '}' in statement block or type definition.", tok.position, 1, 'MissingEndCurlyBrace');
+      }
+      if (this.isAtEnd() && type === PSTokenType.RPAREN) {
+        throw new PSParserError("Missing closing ')' in expression.", tok.position, 1, 'MissingEndParenthesisInExpression');
+      }
       throw new PSParserError(
         `Expected ${hint ?? type}, got '${tok.value}' (${tok.type})`,
         tok.position,
@@ -497,6 +503,7 @@ export class PSParser {
 
   private parsePipeline(): PSPipeline {
     const pos = this.pos_();
+    if (this.check(PSTokenType.PIPE)) throw new PSParserError('An empty pipe element is not allowed.', pos, 1, 'EmptyPipeElement');
     const commands: PSCommand[] = [this.parseCommand()];
     while (this.check(PSTokenType.PIPE)) {
       this.advance(); // consume |
@@ -508,6 +515,7 @@ export class PSParser {
 
   private parseLaterPipelineElement(): PSCommand {
     const position = this.pos_();
+    if (this.isAtEnd() || this.check(PSTokenType.PIPE)) throw new PSParserError('An empty pipe element is not allowed.', position, 1, 'EmptyPipeElement');
     const command = this.parseCommand();
     const kind = command.name.type as string;
     if (kind === 'LiteralExpression' || kind === 'SubExpression' || kind === 'ArrayExpression' || kind === 'HashtableExpression') {
@@ -868,6 +876,10 @@ export class PSParser {
     }
     if (this.checkValue(PSTokenType.WORD, 'if')) {
       const stmt = this.parseIfStatement();
+      return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
+    }
+    if (this.checkValue(PSTokenType.WORD, 'try')) {
+      const stmt = this.parseTryStatement();
       return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
     }
     const loop = this.parseLoopStatementOnRight();

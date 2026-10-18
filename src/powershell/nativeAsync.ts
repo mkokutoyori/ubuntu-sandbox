@@ -48,7 +48,7 @@ export class NativeCommandNeedsAsync extends PSRuntimeError {
   readonly commandLine: string;
 
   constructor(command: string, argv: readonly string[], stdin: string | null = null) {
-    super(commandNotFoundMessage(command));
+    super(commandNotFoundMessage(command), 'System.Management.Automation.CommandNotFoundException');
     this.name = 'NativeCommandNeedsAsync';
     this.command = command;
     this.argv = argv;

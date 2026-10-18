@@ -5,6 +5,13 @@ import { PSRuntimeError } from './PSRuntimeError';
 export interface HostSession {
   invokeScriptText(code: string): PSValue[];
   setVariable(name: string, value: PSValue): void;
+  errorRecord(error: unknown): PSValue;
+}
+
+function makeList(): PSValue[] {
+  const list: PSValue[] = [];
+  Object.defineProperty(list, '__list__', { value: true, enumerable: false });
+  return list;
 }
 
 type HostItem =
@@ -31,7 +38,7 @@ export function createPowerShellHost(openSession: () => HostSession): Record<str
   const items: HostItem[] = [];
   let session: HostSession | null = null;
   let serial = 0;
-  const streams = { Error: [] as PSValue[], Warning: [] as PSValue[], Verbose: [] as PSValue[], Debug: [] as PSValue[], Information: [] as PSValue[], Progress: [] as PSValue[] };
+  const streams = { Error: makeList(), Warning: makeList(), Verbose: makeList(), Debug: makeList(), Information: makeList(), Progress: makeList() };
   const host: Record<string, PSValue> = {};
   const lastCommand = (): Extract<HostItem, { kind: 'command' }> => {
     const last = items[items.length - 1];
@@ -67,7 +74,8 @@ export function createPowerShellHost(openSession: () => HostSession): Record<str
         if (carried !== null) outputs.push(...carried);
       } catch (error) {
         host.HadErrors = true;
-        throw error;
+        if (!(error instanceof PSRuntimeError) || error.thrownFromThrowStatement) throw error;
+        streams.Error.push(active.errorRecord(error));
       }
       return outputs;
     },
