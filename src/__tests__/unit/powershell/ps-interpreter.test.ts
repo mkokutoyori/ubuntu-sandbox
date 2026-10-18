@@ -1363,7 +1363,7 @@ describe('33. Type Accelerators & Special Types', () => {
   });
 
   it('[Math] static methods', () => {
-    expect(runAndGet('$r = [Math]::Pow(2, 8)', 'r')).toBe(256);
+    expect(Number(runAndGet('$r = [Math]::Pow(2, 8)', 'r'))).toBe(256);
   });
 
   it('[System.IO.Path]::Combine', () => {

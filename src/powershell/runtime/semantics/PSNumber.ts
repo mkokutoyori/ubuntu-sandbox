@@ -54,6 +54,10 @@ export class PSNumber {
     return Number(this.value);
   }
 
+  valueOf(): number {
+    return this.toNumber();
+  }
+
   toString(): string {
     return formatNumeric(this);
   }

@@ -33,11 +33,17 @@ import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime, timeZoneInfoStatics } from '@/powershell/runtime/dotnetDateTime';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
-import { PSRuntimeError } from './PSRuntimeError';
+import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
+import { exceptionMatches, exceptionShortName, resolveExceptionType, makeExceptionObject, defaultExceptionMessage } from './semantics/PSExceptions';
 import { PSChar, PSNumber, ArithmeticFault, compareNumbers, numericKindOf } from './semantics/PSNumber';
 import { PSConversionError, castToChar, castToNumeric, truthiness } from './semantics/PSConvert';
-import { multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
-import { ARRAY_ELEMENT_TYPE, isScalarInstance, parseTypeName, specEquals, tagArray, type TypeSpec } from './semantics/PSTypes';
+import { bitwise, multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
+import { PASS_THROUGH_CMDLETS, unboxDeep } from './semantics/PSUnbox';
+import { mathStatics } from './semantics/MathStatics';
+import { languageCompare, languageEquals, type CompareContext } from './semantics/PSCompare';
+import { compileRegex, regexReplace, regexSplit } from './semantics/PSRegex';
+import { makeTypeObject } from './semantics/PSTypeObject';
+import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, tagArray, type TypeSpec } from './semantics/PSTypes';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
@@ -92,19 +98,7 @@ function pipelineTarget(pipeInput: PSValue): string | null {
 // ─── Static type map ([math], [system.math]) ─────────────────────────────────
 
 const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
-  math: {
-    pi:    Math.PI,
-    e:     Math.E,
-    abs:   (x: PSValue) => Math.abs(x as number),
-    ceil:  (x: PSValue) => Math.ceil(x as number),
-    floor: (x: PSValue) => Math.floor(x as number),
-    round: (x: PSValue, d?: PSValue) =>
-      d !== undefined ? parseFloat((x as number).toFixed(d as number)) : Math.round(x as number),
-    sqrt:  (x: PSValue) => Math.sqrt(x as number),
-    pow:   (b: PSValue, e: PSValue) => Math.pow(b as number, e as number),
-    min:   (a: PSValue, b: PSValue) => Math.min(a as number, b as number),
-    max:   (a: PSValue, b: PSValue) => Math.max(a as number, b as number),
-  } as Record<string, PSValue>,
+  math: mathStatics(),
 
   regex: {
     // [regex]::Match(input, pattern) → match object with .Value / .Groups
@@ -1512,12 +1506,10 @@ export class PSRuntime {
     const op = node.operator.toLowerCase();
 
     if (op === '-and') {
-      return this.isTruthy(this.evalExpr(node.left, env))
-        ? this.evalExpr(node.right, env) : false;
+      return this.isTruthy(this.evalExpr(node.left, env)) && this.isTruthy(this.evalExpr(node.right, env));
     }
     if (op === '-or') {
-      const l = this.evalExpr(node.left, env);
-      return this.isTruthy(l) ? l : this.evalExpr(node.right, env);
+      return this.isTruthy(this.evalExpr(node.left, env)) || this.isTruthy(this.evalExpr(node.right, env));
     }
 
     // -is / -isnot / -as: the right side is [TypeName] which the parser wraps as
@@ -1532,7 +1524,10 @@ export class PSRuntime {
 
     const left  = this.evalExpr(node.left,  env);
     const right = this.evalExpr(node.right, env);
+    return this.applyOperator(op, left, right, env);
+  }
 
+  private applyOperator(op: string, left: PSValue, right: PSValue, env: PSEnvironment): PSValue {
     switch (op) {
       case '+':  return this.applyPlus(left, right);
       case '-':
@@ -1542,89 +1537,116 @@ export class PSRuntime {
       case '*':  return this.applyMultiply(left, right);
       case '/':  return this.arithmetic('/', left, right);
       case '%':  return this.arithmetic('%', left, right);
-
-      case '-eq':  return this.psEq(left, right, false);
-      case '-ne':  return !this.psEq(left, right, false);
-      case '-ceq': return this.psEq(left, right, true);
-      case '-cne': return !this.psEq(left, right, true);
-      case '-ieq': return this.psEq(left, right, false);
-      case '-ine': return !this.psEq(left, right, false);
-      case '-gt':  return (left as number) > (right as number);
-      case '-lt':  return (left as number) < (right as number);
-      case '-ge':  return (left as number) >= (right as number);
-      case '-le':  return (left as number) <= (right as number);
-      case '-cgt': return String(left) > String(right);
-      case '-clt': return String(left) < String(right);
-      case '-cge': return String(left) >= String(right);
-      case '-cle': return String(left) <= String(right);
-
-      case '-like':     return this.psLike(String(left), String(right), false);
-      case '-notlike':  return !this.psLike(String(left), String(right), false);
-      case '-clike':    return this.psLike(String(left), String(right), true);
-      case '-cnotlike': return !this.psLike(String(left), String(right), true);
-
-      case '-match':    return this.psMatch(String(left), String(right), false, env);
-      case '-notmatch': return !this.psMatch(String(left), String(right), false, env);
-      case '-cmatch':   return this.psMatch(String(left), String(right), true, env);
-      case '-cnotmatch':return !this.psMatch(String(left), String(right), true, env);
-
-      case '-contains': {
-        const arr = Array.isArray(left) ? left : [];
-        return arr.some(e => this.psEq(e, right, false));
-      }
-      case '-notcontains': {
-        const arr = Array.isArray(left) ? left : [];
-        return !arr.some(e => this.psEq(e, right, false));
-      }
-      case '-in': {
-        const arr = Array.isArray(right) ? right : [];
-        return arr.some(e => this.psEq(e, left, false));
-      }
-      case '-notin': {
-        const arr = Array.isArray(right) ? right : [];
-        return !arr.some(e => this.psEq(e, left, false));
-      }
-
-      case '-xor':  return this.isTruthy(left) !== this.isTruthy(right);
-      case '-band': return (left as number) & (right as number);
-      case '-bor':  return (left as number) | (right as number);
-      case '-bxor': return (left as number) ^ (right as number);
-      case '-shl':  return (left as number) << (right as number);
-      case '-shr':  return (left as number) >> (right as number);
-
-      case '-replace': {
-        const args = Array.isArray(right) ? right : [right];
-        const repl = args[1] ?? '';
-        if (this.isScriptBlock(repl) || typeof repl === 'function') {
-          const fn = typeof repl === 'function' ? repl as (...a: PSValue[]) => PSValue
-            : (m: PSValue) => this.invokeScriptBlock(repl as PSScriptBlock, {}, [], env, m);
-          return String(left).replace(new RegExp(String(args[0] ?? ''), 'gi'), (match) => {
-            const matchObj = { Value: match, Groups: [match] as PSValue[], Length: match.length } as unknown as PSValue;
-            return psValueToString(fn(matchObj));
-          });
-        }
-        return String(left).replace(new RegExp(String(args[0] ?? ''), 'gi'), String(repl));
-      }
-      case '-creplace': {
-        const args = Array.isArray(right) ? right : [right];
-        return String(left).replace(new RegExp(String(args[0] ?? ''), 'g'), String(args[1] ?? ''));
-      }
-      case '-split': {
-        const args = Array.isArray(right) ? right : [right];
-        const parts = String(left).split(new RegExp(String(args[0] ?? '')));
-        const limit = args[1] !== undefined ? Number(args[1]) : undefined;
-        return limit !== undefined ? parts.slice(0, limit) : parts;
-      }
-      case '-join': return (Array.isArray(left) ? left : [left]).map(psValueToString).join(String(right));
+      case '-and': return this.isTruthy(left) && this.isTruthy(right);
+      case '-or':  return this.isTruthy(left) || this.isTruthy(right);
+      case '-xor': return this.isTruthy(left) !== this.isTruthy(right);
+      case '-band': case '-bor': case '-bxor': case '-shl': case '-shr':
+        return this.guarded(() => bitwise(op, left, right));
+      case '-join': return (Array.isArray(left) ? left : [left]).map(psValueToString).join(psValueToString(right));
       case '-f': {
-        const fmt = String(left);
         const args = Array.isArray(right) ? right : [right];
-        return formatString(fmt, args);
+        return formatString(psValueToString(left), args);
       }
-
-      default:
-        throw new PSRuntimeError(`Unknown operator: ${op}`);
+      case '-is':    return this.psIs(left, String(right));
+      case '-isnot': return !this.psIs(left, String(right));
+      case '-as':    return this.psCast(left, String(right).replace(/^\[|\]$/g, ''));
+      default:       return this.namedOperator(op, left, right, env);
     }
+  }
+
+  private namedOperator(op: string, left: PSValue, right: PSValue, env: PSEnvironment): PSValue {
+    const parsed = /^-([ci]?)(eq|ne|gt|ge|lt|le|notlike|like|notmatch|match|notcontains|contains|notin|in|replace|split)$/.exec(op);
+    if (parsed === null) throw new PSRuntimeError(`Unknown operator: ${op}`);
+    const ignoreCase = parsed[1] !== 'c';
+    const base = parsed[2];
+    switch (base) {
+      case 'contains': return this.collectionHas(left, right, ignoreCase);
+      case 'notcontains': return !this.collectionHas(left, right, ignoreCase);
+      case 'in': return this.collectionHas(right, left, ignoreCase);
+      case 'notin': return !this.collectionHas(right, left, ignoreCase);
+      case 'replace': return this.replaceOperator(left, right, ignoreCase, env);
+      case 'split': return this.splitOperator(left, right, ignoreCase, env);
+      default: break;
+    }
+    if (Array.isArray(left)) {
+      return left.filter(item => this.scalarComparison(base, item, right, ignoreCase, env, false)) as PSValue;
+    }
+    return this.scalarComparison(base, left, right, ignoreCase, env, true);
+  }
+
+  private scalarComparison(
+    base: string, left: PSValue, right: PSValue, ignoreCase: boolean, env: PSEnvironment, recordMatches: boolean,
+  ): boolean {
+    switch (base) {
+      case 'eq': return this.psEq(left, right, !ignoreCase);
+      case 'ne': return !this.psEq(left, right, !ignoreCase);
+      case 'gt': return this.guarded(() => languageCompare(left, right, ignoreCase, this.compareContext())) > 0;
+      case 'ge': return this.guarded(() => languageCompare(left, right, ignoreCase, this.compareContext())) >= 0;
+      case 'lt': return this.guarded(() => languageCompare(left, right, ignoreCase, this.compareContext())) < 0;
+      case 'le': return this.guarded(() => languageCompare(left, right, ignoreCase, this.compareContext())) <= 0;
+      case 'like': return this.psLike(psValueToString(left), psValueToString(right), !ignoreCase);
+      case 'notlike': return !this.psLike(psValueToString(left), psValueToString(right), !ignoreCase);
+      case 'match': return this.psMatch(psValueToString(left), psValueToString(right), !ignoreCase, env, recordMatches);
+      default: return !this.psMatch(psValueToString(left), psValueToString(right), !ignoreCase, env, recordMatches);
+    }
+  }
+
+  private compareContext(): CompareContext {
+    return { toDate: (text) => { try { return parseDateTime(text, this.providers) as Date; } catch { return null; } } };
+  }
+
+  private collectionHas(collection: PSValue, item: PSValue, ignoreCase: boolean): boolean {
+    const items = Array.isArray(collection) ? collection : collection === null || collection === undefined ? [] : [collection];
+    return items.some(element => languageEquals(element, item, ignoreCase, this.compareContext()));
+  }
+
+  private replaceOperator(left: PSValue, right: PSValue, ignoreCase: boolean, env: PSEnvironment): PSValue {
+    if (Array.isArray(left)) return left.map(item => this.replaceOperator(item, right, ignoreCase, env));
+    const args = Array.isArray(right) ? right : [right];
+    const pattern = psValueToString(args[0] ?? '');
+    const replacement = args[1] ?? '';
+    const options = { ignoreCase };
+    if (this.isScriptBlock(replacement) || typeof replacement === 'function') {
+      const call = typeof replacement === 'function'
+        ? replacement as (...a: PSValue[]) => PSValue
+        : (m: PSValue) => this.invokeScriptBlock(replacement as PSScriptBlock, {}, [], env, m);
+      return regexReplace(psValueToString(left), pattern, (match) => {
+        const groups = match.groups as Record<string, string> | undefined;
+        const matchObject = {
+          Value: match[0], Length: match[0].length, Index: match.index, Success: true,
+          Groups: [...match] as PSValue[], ...(groups ?? {}),
+        } as unknown as PSValue;
+        return psValueToString(call(matchObject));
+      }, options);
+    }
+    return regexReplace(psValueToString(left), pattern, psValueToString(replacement), options);
+  }
+
+  private splitOperator(left: PSValue, right: PSValue, ignoreCase: boolean, env: PSEnvironment): PSValue {
+    if (Array.isArray(left)) return left.flatMap(item => this.splitOperator(item, right, ignoreCase, env) as PSValue[]);
+    const args = Array.isArray(right) ? right : [right];
+    const text = psValueToString(left);
+    const limit = args[1] === undefined || args[1] === null ? 0 : Number(args[1] instanceof PSNumber ? args[1].toNumber() : args[1]);
+    const optionText = args[2] === undefined || args[2] === null ? '' : psValueToString(args[2]).toLowerCase();
+    const delimiter = args[0];
+    if (this.isScriptBlock(delimiter)) {
+      const parts: string[] = [];
+      let current = '';
+      let produced = 0;
+      for (let i = 0; i < text.length; i++) {
+        const hit = limit > 0 && produced >= limit - 1
+          ? false
+          : this.isTruthy(this.invokeScriptBlock(delimiter as PSScriptBlock, {}, [], env, new PSChar(text.charCodeAt(i)) as PSValue));
+        if (hit) { parts.push(current); current = ''; produced += 1; } else current += text[i];
+      }
+      parts.push(current);
+      return parts;
+    }
+    const options = {
+      ignoreCase, simpleMatch: optionText.includes('simplematch'),
+      multiline: optionText.includes('multiline'), singleline: optionText.includes('singleline'),
+    };
+    return regexSplit(text, psValueToString(delimiter ?? ''), limit, options);
   }
 
   private evalUnary(node: PSUnaryExpression, env: PSEnvironment): PSValue {
@@ -1691,7 +1713,67 @@ export class PSRuntime {
       };
     }
 
+    const intrinsic = this.intrinsicCollectionMethod(obj, member, env);
+    if (intrinsic !== null) return intrinsic;
+
     return this.getMember(obj, member);
+  }
+
+  private intrinsicCollectionMethod(obj: PSValue, member: string, env: PSEnvironment): PSValue {
+    if (member !== 'where' && member !== 'foreach') return null;
+    if (obj === null || obj === undefined) return null;
+    if (!Array.isArray(obj) && typeof obj === 'object' && !(obj instanceof PSNumber) && !(obj instanceof PSChar)
+        && Object.keys(obj as object).some(key => key.toLowerCase() === member)) return null;
+    const items = Array.isArray(obj) ? obj : [obj];
+    if (member === 'where') {
+      return (condition: PSValue, mode?: PSValue, count?: PSValue): PSValue =>
+        this.whereMethod(items, condition, mode === undefined ? 'default' : psValueToString(mode).toLowerCase(),
+          count === undefined ? 0 : Number(count), env);
+    }
+    return (action: PSValue, ...args: PSValue[]): PSValue => this.forEachMethod(items, action, args, env);
+  }
+
+  private whereMethod(items: PSValue[], condition: PSValue, mode: string, count: number, env: PSEnvironment): PSValue {
+    const test = (item: PSValue): boolean =>
+      this.isTruthy(this.invokeScriptBlock(condition as PSScriptBlock, {}, [], env, item));
+    const limit = count > 0 ? count : Number.POSITIVE_INFINITY;
+    switch (mode) {
+      case 'first': return items.filter(test).slice(0, limit);
+      case 'last': return items.filter(test).slice(-limit);
+      case 'skipuntil': {
+        const at = items.findIndex(test);
+        return at < 0 ? [] : items.slice(at, at + limit);
+      }
+      case 'until': {
+        const at = items.findIndex(test);
+        return (at < 0 ? items : items.slice(0, at)).slice(0, limit);
+      }
+      case 'split': {
+        const kept: PSValue[] = [];
+        const rest: PSValue[] = [];
+        for (const item of items) (kept.length < limit && test(item) ? kept : rest).push(item);
+        return [kept, rest];
+      }
+      default: return items.filter(test).slice(0, limit);
+    }
+  }
+
+  private forEachMethod(items: PSValue[], action: PSValue, args: PSValue[], env: PSEnvironment): PSValue {
+    const out: PSValue[] = [];
+    for (const item of items) {
+      let produced: PSValue;
+      if (this.isScriptBlock(action)) {
+        produced = this.invokeScriptBlock(action as PSScriptBlock, {}, args, env, item);
+      } else if (typeof action === 'string') {
+        const member = this.getMember(item, action.toLowerCase());
+        produced = typeof member === 'function' ? (member as (...a: PSValue[]) => PSValue)(...args) : member;
+      } else {
+        produced = item;
+      }
+      if (Array.isArray(produced)) out.push(...produced);
+      else if (produced !== null && produced !== undefined) out.push(produced);
+    }
+    return out;
   }
 
   private evalStaticMember(node: PSStaticMemberExpression, env: PSEnvironment): PSValue {
@@ -1711,6 +1793,10 @@ export class PSRuntime {
     }
     if (tname === 'security.principal.windowsidentity' || tname === 'system.security.principal.windowsidentity') {
       return this.getMember({ getcurrent: () => this.currentWindowsIdentity() } as unknown as PSValue, node.member.toLowerCase());
+    }
+    const exceptionType = resolveExceptionType(node.typeName);
+    if (exceptionType !== null && node.member.toLowerCase() === 'new') {
+      return ((message?: PSValue) => makeExceptionObject(exceptionType, message === undefined || message === null ? defaultExceptionMessage(exceptionType) : String(message))) as unknown as PSValue;
     }
     const typeObj = STATIC_TYPES[tname]
       // Generic list fallback: List[T] for any T
@@ -2039,15 +2125,19 @@ export class PSRuntime {
 
       if (node.catchClauses.length > 0) {
         env.set('_', errRecord);
+        const actualType = e instanceof PSRuntimeError ? e.exceptionType : RUNTIME_EXCEPTION;
         const matchingClause = node.catchClauses.find(c => {
           if (c.types.length === 0) return false;
-          const msg = e instanceof Error ? e.message : String(e);
           return c.types.some(t => {
             const tn = (t as unknown as { typeName?: string; value?: string }).typeName
               ?? (t as unknown as { value?: string }).value ?? String(t);
-            return msg.includes(tn) || tn.includes('Exception') || tn.toLowerCase().includes('argument');
+            return exceptionMatches(actualType, tn);
           });
-        }) ?? node.catchClauses.find(c => c.types.length === 0) ?? node.catchClauses[0];
+        }) ?? node.catchClauses.find(c => c.types.length === 0);
+        if (matchingClause === undefined) {
+          if (node.finallyBody) renderBody(node.finallyBody);
+          throw e;
+        }
         result = renderBody(matchingClause.body);
       } else {
         if (node.finallyBody) renderBody(node.finallyBody);
@@ -2060,11 +2150,13 @@ export class PSRuntime {
 
   private makeErrorRecord(e: unknown): Record<string, PSValue> {
     const msg = e instanceof Error ? e.message : String(e);
+    const typeName = e instanceof PSRuntimeError ? e.exceptionType : RUNTIME_EXCEPTION;
+    const exception = makeExceptionObject(typeName, msg);
     return {
       Message: msg,
-      Exception: { Message: msg } as Record<string, PSValue>,
+      Exception: exception,
       CategoryInfo: { Category: 'NotSpecified' } as Record<string, PSValue>,
-      FullyQualifiedErrorId: 'RuntimeException',
+      FullyQualifiedErrorId: exceptionShortName(typeName),
     } as Record<string, PSValue>;
   }
 
@@ -2156,7 +2248,14 @@ export class PSRuntime {
   private execThrow(node: PSThrowStatement, env: PSEnvironment): PSValue {
     const val = node.value ? this.evalExpr(node.value, env) : new PSRuntimeError('ScriptHalted');
     if (val instanceof Error) throw val;
-    throw new Error(String(val));
+    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      const rec = val as Record<string, PSValue>;
+      const carrier = typeof rec['Exception'] === 'object' && rec['Exception'] !== null ? rec['Exception'] as Record<string, PSValue> : rec;
+      if (typeof carrier['__type__'] === 'string') {
+        throw new PSRuntimeError(String(carrier['Message'] ?? ''), carrier['__type__'] as string);
+      }
+    }
+    throw new PSRuntimeError(String(val));
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2904,6 +3003,9 @@ export class PSRuntime {
     cmdletDisplayName: string = 'Write-Error',
   ): CmdletContext {
     const self = this;
+    positional = positional.map(unboxDeep);
+    named = Object.fromEntries(Object.entries(named).map(([key, value]) => [key, unboxDeep(value)]));
+    if (!PASS_THROUGH_CMDLETS.has(cmdletDisplayName.toLowerCase())) pipeInput = unboxDeep(pipeInput);
 
     const runtimeRef: IRuntimeRef = {
       execute:            (code) => self.execute(code),
@@ -3156,8 +3258,8 @@ export class PSRuntime {
         Millisecond: result.getMilliseconds(), DayOfWeek: result.getDay(), Ticks: result.getTime(),
       }) as unknown as PSValue;
     }
-    if (typeof left === 'string' || typeof right === 'string')
-      return psValueToString(left) + psValueToString(right);
+    if (typeof left === 'string')
+      return left + psValueToString(right);
     if (left === null || left === undefined) return right ?? null;
     return this.arithmetic('+', left, right);
   }
@@ -3182,9 +3284,7 @@ export class PSRuntime {
   }
 
   private psEq(a: PSValue, b: PSValue, caseSensitive: boolean): boolean {
-    if (typeof a === 'string' && typeof b === 'string')
-      return caseSensitive ? a === b : a.toLowerCase() === b.toLowerCase();
-    return a === b;
+    return languageEquals(a, b, !caseSensitive, this.compareContext());
   }
 
   private psLike(str: string, pattern: string, caseSensitive: boolean): boolean {
@@ -3197,25 +3297,21 @@ export class PSRuntime {
     return new RegExp(regex, caseSensitive ? 's' : 'is').test(str);
   }
 
-  private psMatch(str: string, pattern: string, caseSensitive: boolean, env: PSEnvironment): boolean {
-    const re = new RegExp(pattern, caseSensitive ? '' : 'i');
-    const m  = str.match(re);
-    if (m) {
-      const matches: Record<string, PSValue> = { '0': m[0] };
-      // Numbered groups
-      m.slice(1).forEach((g, i) => { matches[String(i + 1)] = g ?? null; });
-      // Named captures from groups (?<name>...)
-      if (m.groups) {
-        for (const [key, val] of Object.entries(m.groups)) {
-          matches[key] = val ?? null;
+  private psMatch(str: string, pattern: string, caseSensitive: boolean, env: PSEnvironment, record = true): boolean {
+    const match = compileRegex(pattern, { ignoreCase: !caseSensitive }).exec(str);
+    if (match !== null && record) {
+      const matches: Record<string, PSValue> = {};
+      match.forEach((value, index) => { if (value !== undefined) matches[String(index)] = value; });
+      if (match.groups) {
+        for (const [key, value] of Object.entries(match.groups)) {
+          if (value !== undefined) matches[key] = value;
         }
       }
-      // $Matches is a global automatic variable
       this.global.set('Matches', matches);
-    } else {
+    } else if (record) {
       this.global.set('Matches', null);
     }
-    return !!m;
+    return match !== null;
   }
 
   psIs(val: PSValue, right: PSValue): boolean {
@@ -3231,8 +3327,29 @@ export class PSRuntime {
     }
   }
 
+  private describeType(obj: PSValue): { name: string; fullName: string } | null {
+    const scalar = describeScalarType(obj);
+    if (scalar !== null) return scalar;
+    if (obj instanceof Date) return { name: 'DateTime', fullName: 'System.DateTime' };
+    if (typeof obj === 'function') return { name: 'ScriptBlock', fullName: 'System.Management.Automation.ScriptBlock' };
+    if (typeof obj !== 'object') return null;
+    const rec = obj as Record<string, PSValue>;
+    if (isTimeSpan(rec)) return { name: 'TimeSpan', fullName: 'System.TimeSpan' };
+    if (this.isScriptBlock(obj)) return { name: 'ScriptBlock', fullName: 'System.Management.Automation.ScriptBlock' };
+    const declared = rec['__type__'];
+    if (typeof declared === 'string') return { name: declared.slice(declared.lastIndexOf('.') + 1), fullName: declared };
+    if ((rec as unknown as Record<string, unknown>)['__pscustomobject__'] === true) {
+      return { name: 'PSCustomObject', fullName: 'System.Management.Automation.PSCustomObject' };
+    }
+    return { name: 'Hashtable', fullName: 'System.Collections.Hashtable' };
+  }
+
   getMember(obj: PSValue, member: string): PSValue {
     if (obj === null || obj === undefined) return null;
+    if (member === 'gettype' && !(typeof obj === 'object' && !Array.isArray(obj) && 'gettype' in (obj as object))) {
+      const described = this.describeType(obj);
+      if (described !== null) return () => makeTypeObject(described.name, described.fullName);
+    }
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
     if (typeof obj === 'number')  return numberMember(obj, member);
     if (obj instanceof PSNumber)  return boxedNumberMember(obj, member);
@@ -3482,49 +3599,8 @@ export class PSRuntime {
    * Used when a pure-value command has binary-operator parameters in pipeline context.
    */
   private applyBinaryOpByName(op: string, left: PSValue, right: PSValue, env: PSEnvironment): PSValue {
-    switch (op) {
-      case '-eq':  return this.psEq(left, right, false);
-      case '-ne':  return !this.psEq(left, right, false);
-      case '-ceq': return this.psEq(left, right, true);
-      case '-cne': return !this.psEq(left, right, true);
-      case '-gt':  return (left as number) > (right as number);
-      case '-lt':  return (left as number) < (right as number);
-      case '-ge':  return (left as number) >= (right as number);
-      case '-le':  return (left as number) <= (right as number);
-      case '-like':     return this.psLike(String(left), String(right), false);
-      case '-notlike':  return !this.psLike(String(left), String(right), false);
-      case '-match':    return this.psMatch(String(left), String(right), false, env);
-      case '-notmatch': return !this.psMatch(String(left), String(right), false, env);
-      case '-cmatch':   return this.psMatch(String(left), String(right), true, env);
-      case '-cnotmatch':return !this.psMatch(String(left), String(right), true, env);
-      case '-contains': return (Array.isArray(left) ? left : []).some(e => this.psEq(e, right, false));
-      case '-notcontains': return !(Array.isArray(left) ? left : []).some(e => this.psEq(e, right, false));
-      case '-in':   return (Array.isArray(right) ? right : []).some(e => this.psEq(e, left, false));
-      case '-notin':return !(Array.isArray(right) ? right : []).some(e => this.psEq(e, left, false));
-      case '-is':    return this.psIs(left, String(right));
-      case '-isnot': return !this.psIs(left, String(right));
-      case '-as':    return this.psCast(left, String(right).replace(/^\[|\]$/g, ''));
-      case '-replace': {
-        const args = Array.isArray(right) ? right : [right];
-        const repl2 = args[1] ?? '';
-        if (this.isScriptBlock(repl2)) {
-          return String(left).replace(new RegExp(String(args[0] ?? ''), 'gi'), (match) => {
-            const matchObj = { Value: match, Groups: [match] as PSValue[], Length: match.length } as unknown as PSValue;
-            return psValueToString(this.invokeScriptBlock(repl2 as PSScriptBlock, {}, [], env, matchObj));
-          });
-        }
-        return String(left).replace(new RegExp(String(args[0] ?? ''), 'gi'), String(repl2));
-      }
-      case '-and': return this.isTruthy(left) ? right : false;
-      case '-or':  return this.isTruthy(left) ? left : right;
-      case '-not': return !this.isTruthy(right);
-      case '-band': return (left as number) & (right as number);
-      case '-bor':  return (left as number) | (right as number);
-      case '-bxor': return (left as number) ^ (right as number);
-      case '-shl':  return (left as number) << (right as number);
-      case '-shr':  return (left as number) >> (right as number);
-      default: return left;
-    }
+    if (op === '-not') return !this.isTruthy(right);
+    return this.applyOperator(op, left, right, env);
   }
 
   /** Extracts the type name string from a [TypeName] node (TypeLiteral or CastExpression wrapping an empty operand). */

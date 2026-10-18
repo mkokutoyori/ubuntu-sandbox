@@ -45,8 +45,8 @@ import type {
 // ─── Operator precedence (higher = tighter binding) ──────────────────────────
 
 const PRECEDENCE: Record<string, number> = {
-  '-or': 1, '-xor': 2, '-and': 3,
-  '-band': 4, '-bor': 4, '-bxor': 4,
+  '-or': 1, '-xor': 1, '-and': 1,
+  '-band': 4, '-bor': 4, '-bxor': 4, '-shl': 4, '-shr': 4,
   '-eq': 5, '-ne': 5, '-gt': 5, '-ge': 5, '-lt': 5, '-le': 5,
   '-ceq': 5, '-cne': 5, '-cgt': 5, '-cge': 5, '-clt': 5, '-cle': 5,
   '-ieq': 5, '-ine': 5, '-igt': 5, '-ige': 5, '-ilt': 5, '-ile': 5,
@@ -54,13 +54,14 @@ const PRECEDENCE: Record<string, number> = {
   '-clike': 5, '-cnotlike': 5, '-cmatch': 5, '-cnotmatch': 5,
   '-ilike': 5, '-inotlike': 5, '-imatch': 5, '-inotmatch': 5,
   '-contains': 5, '-notcontains': 5, '-in': 5, '-notin': 5,
+  '-ccontains': 5, '-cnotcontains': 5, '-icontains': 5, '-inotcontains': 5,
+  '-cin': 5, '-cnotin': 5, '-iin': 5, '-inotin': 5,
   '-is': 5, '-isnot': 5, '-as': 5,
   '-replace': 6, '-creplace': 6, '-ireplace': 6,
   '-split': 6, '-csplit': 6, '-isplit': 6,
   '-join': 6,
   '-f': 6,
   ',': 7,
-  '-shl': 8, '-shr': 8,
   '+': 9, '-': 9,
   '*': 10, '/': 10, '%': 10,
 };

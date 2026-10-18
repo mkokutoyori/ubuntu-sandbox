@@ -195,13 +195,6 @@ et `eventcreate /?` ne sont pas ecrits (texte d'aide non source), `eventcreate /
 refuse, la table des fuseaux Windows ne porte que 17 entrees, et ni `tzutil /s` ni `eventcreate` ne
 verifient l'elevation (`Set-TimeZone` non plus).
 
-### [powershell] le runtime n'a qu'un type numerique
-**Mesure** : `(5.0).GetType().Name` et `[double]5` rendent `Int32` (le type est deduit de la valeur) ; `-is [double]`
-accepte tout nombre ; `[int]7/2` et `7/2` sont tous deux des doubles JavaScript. Les formats `.ToString("N2")`,
-`"X"`, `"D5"` et `[Math]::Pi` sont justes.
-**Pourquoi ce n'est pas ferme** : distinguer Int32/Int64/Double demande un type de valeur porte par chaque nombre,
-c'est-a-dire toucher l'evaluateur d'expressions entier, pas un membre.
-
 ### [persistance] ce que la sauvegarde ne sait toujours pas ecrire, et une configuration modifiee ecrite en entier
 **Mesure** : (1) un `CiscoRouter` modifie ecrit tout son `running-config` (environ 600 octets) au lieu des
 lignes qui different du jumeau d'usine ; les MAC des ports sont ecrites pour chaque equipement (65 octets par

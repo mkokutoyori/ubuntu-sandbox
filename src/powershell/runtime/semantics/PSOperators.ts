@@ -115,3 +115,51 @@ export function describeOperand(value: PSValue): string {
 }
 
 export { compareNumbers, numericKindOf };
+
+export type BitwiseOperator = '-band' | '-bor' | '-bxor' | '-shl' | '-shr';
+
+function bitwiseOperand(value: PSValue): bigint | null {
+  const operand = arithmeticOperand(value);
+  if (operand === null) return null;
+  if (typeof operand === 'number') return Number.isInteger(operand) ? BigInt(operand) : BigInt(Math.round(operand));
+  return operand.kind === 'decimal' || operand.kind === 'double' || operand.kind === 'single'
+    ? BigInt(Math.round(operand.toNumber()))
+    : BigInt(operand.value);
+}
+
+function wideOperand(value: PSValue): boolean {
+  const kind = numericKindOf(value);
+  return kind === 'int64' || kind === 'uint64' || kind === 'uint32';
+}
+
+export function bitwise(op: BitwiseOperator, left: PSValue, right: PSValue): PSValue {
+  const a = bitwiseOperand(left);
+  const b = bitwiseOperand(right);
+  if (a === null || b === null) throw missingOperator('*', a === null ? left : right);
+  const wide = wideOperand(left) || wideOperand(right) || a > 2147483647n || a < -2147483648n;
+  const bits = wide ? 64n : 32n;
+  let result: bigint;
+  switch (op) {
+    case '-band': result = a & b; break;
+    case '-bor': result = a | b; break;
+    case '-bxor': result = a ^ b; break;
+    case '-shl': result = a << (b & (bits - 1n)); break;
+    default: result = a >> (b & (bits - 1n));
+  }
+  const wrapped = BigInt.asIntN(Number(bits), result);
+  if (bits === 32n) return Number(wrapped);
+  return arithmetic('+', boxInt64(wrapped), 0) as PSValue;
+}
+
+function boxInt64(value: bigint): PSNumber {
+  return new PSNumber('int64', value);
+}
+
+export function bitwiseNot(value: PSValue): PSValue {
+  const a = bitwiseOperand(value);
+  if (a === null) throw missingOperator('*', value);
+  const wide = wideOperand(value) || a > 2147483647n || a < -2147483648n;
+  const result = BigInt.asIntN(wide ? 64 : 32, ~a);
+  if (!wide) return Number(result);
+  return arithmetic('+', boxInt64(result), 0) as PSValue;
+}
