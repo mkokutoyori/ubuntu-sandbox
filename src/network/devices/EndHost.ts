@@ -223,6 +223,7 @@ export interface PingResult {
   error?: string;
   icmp6?: Icmp6ErrorReport;
   localError?: LocalSocketError;
+  sendError?: Errno;
   seq: number;
   bytes: number;
   fromIP: string;
@@ -273,8 +274,14 @@ const REDIRECT_EXPIRES_MS = 300_000;
 const REDIRECT_CODES = new Set([0, 1, 2, 3]);
 
 class IcmpErrorReply extends Error {
-  constructor(message: string, readonly report?: Icmp6ErrorReport) {
+  constructor(message: string, readonly report?: Icmp6ErrorReport, readonly sendError?: Errno) {
     super(message);
+  }
+}
+
+class SendRefusedError extends Error {
+  constructor(readonly errno: Errno) {
+    super(strerror(errno));
   }
 }
 
@@ -3424,6 +3431,16 @@ export abstract class EndHost extends Equipment {
     return code ?? (family === 6 ? ICMPV6_UNREACH_PORT : ICMP_UNREACH_PORT);
   }
 
+  private rejectOutgoing(packet: IPv4Packet | IPv6Packet): void {
+    const rejectWith = this.lastRejectWith;
+    this.lastRejectWith = null;
+    if (packet.type === 'ipv6') {
+      this.sendICMPv6Error('lo', packet, 'destination-unreachable', this.rejectCode(6, rejectWith), {}, packet.sourceIP);
+    } else {
+      this.sendICMPError('lo', packet, 'destination-unreachable', this.rejectCode(4, rejectWith), undefined, packet.sourceIP);
+    }
+  }
+
   private sendIpv6Reject(portName: string, offendingPkt: IPv6Packet): void {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;
@@ -3456,11 +3473,12 @@ export abstract class EndHost extends Equipment {
     icmpType: ICMPErrorType,
     code: number,
     nextHopMTU?: number,
+    errorSource?: IPAddress,
   ): void {
     if (!mayGenerateICMPError(offendingPkt)) return;
 
     if (this.isLocalAddress(offendingPkt.sourceIP)) {
-      const looped = buildICMPError(offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
+      const looped = buildICMPError(errorSource ?? offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
         nextHopMTU, quote: this.icmpErrorQuote(),
       });
       const verdict = this.firewallFilter('lo', looped, 'out');
@@ -4413,9 +4431,20 @@ export abstract class EndHost extends Equipment {
 
   private sendICMPv6Error(
     portName: string, offendingPkt: IPv6Packet, icmpType: ICMPv6Packet['icmpType'], code: number,
-    extra: { pointer?: number; mtu?: number } = {},
+    extra: { pointer?: number; mtu?: number } = {}, errorSource?: IPv6Address,
   ): void {
     if (!mayGenerateICMPv6Error(offendingPkt, icmpType)) return;
+    if (this.isLocalAddress6(offendingPkt.sourceIP)) {
+      const looped = createIPv6Packet(
+        errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit,
+        { type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra }, 48,
+      );
+      if (this.firewallFilter6('lo', looped, 'out') !== 'accept') return;
+      this.countLoopbackLeg(looped, 'sent');
+      this.countLoopbackLeg(looped, 'delivered');
+      this.handleICMPv6('lo', looped);
+      return;
+    }
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
     const srcIP = offendingPkt.destinationIP;
@@ -4716,24 +4745,27 @@ export abstract class EndHost extends Equipment {
     });
 
     const verdict = this.firewallFilter(portName, ipPkt, 'out');
-    if (verdict === 'drop' || verdict === 'reject') {
-      throw new Error('blocked by firewall');
-    }
-
-    const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
-    if (!packets) {
-      throw new LocalSendError({ origin: 'local', errno: 'EMSGSIZE', mtu: this.pathMtuTo(targetIP, port.getMTU()) });
-    }
-    for (const packet of packets) {
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: targetMAC,
-        etherType: ETHERTYPE_IPV4, payload: packet,
-      });
+    if (verdict === 'drop') throw new SendRefusedError('EPERM');
+    if (verdict === 'reject') {
+      this.rejectOutgoing(ipPkt);
+    } else {
+      const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
+      if (!packets) {
+        throw new LocalSendError({ origin: 'local', errno: 'EMSGSIZE', mtu: this.pathMtuTo(targetIP, port.getMTU()) });
+      }
+      for (const packet of packets) {
+        this.sendFrame(portName, {
+          srcMAC: port.getMAC(), dstMAC: targetMAC,
+          etherType: ETHERTYPE_IPV4, payload: packet,
+        });
+      }
     }
 
     try {
       const winner = await outcome();
-      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
+      if (winner.kind === 'failed') {
+        throw new IcmpErrorReply(winner.r.reason, undefined, verdict === 'reject' ? 'EPERM' : undefined);
+      }
       const rtt = PathClock.now() - sentAt;
       if (rtt > timeoutMs) throw new Error('timeout');
       return {
@@ -6152,6 +6184,7 @@ export abstract class EndHost extends Equipment {
     // Route the reply
     const route = this.resolveIPv6Route(ipv6.sourceIP);
     if (!route) return;
+    if (this.firewallFilter6(route.port.getName(), replyPkt, 'out') !== 'accept') return;
 
     const send = (mac: MACAddress): void => {
       this.sendFrame(route.port.getName(), {
@@ -6549,14 +6582,22 @@ export abstract class EndHost extends Equipment {
       fromIp: srcIP.toString(), toIp: targetIpStr, id, seq, ttl: ipPkt.hopLimit, size: ipPkt.payloadLength,
     });
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: targetMAC,
-      etherType: ETHERTYPE_IPV6, payload: ipPkt,
-    });
+    const verdict = this.firewallFilter6(portName, ipPkt, 'out');
+    if (verdict === 'drop') throw new SendRefusedError('EPERM');
+    if (verdict === 'reject') {
+      this.rejectOutgoing(ipPkt);
+    } else {
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC: targetMAC,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+    }
 
     try {
       const winner = await outcome();
-      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason, winner.r.icmp6);
+      if (winner.kind === 'failed') {
+        throw new IcmpErrorReply(winner.r.reason, winner.r.icmp6, verdict === 'reject' ? 'EPERM' : undefined);
+      }
       const rtt = PathClock.now() - sentAt;
       if (rtt > timeoutMs) throw new Error('timeout');
       return {
@@ -6578,6 +6619,7 @@ export abstract class EndHost extends Equipment {
   private failedProbe(seq: number, err: unknown): PingResult {
     const report = err instanceof IcmpErrorReply ? err.report : undefined;
     const localError = err instanceof LocalSendError ? err.failure : undefined;
+    const sendError = err instanceof SendRefusedError ? err.errno : err instanceof IcmpErrorReply ? err.sendError : undefined;
     return {
       success: false,
       rttMs: 0,
@@ -6588,6 +6630,7 @@ export abstract class EndHost extends Equipment {
       error: typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err)),
       ...(report === undefined ? {} : { icmp6: report }),
       ...(localError === undefined ? {} : { localError }),
+      ...(sendError === undefined ? {} : { sendError }),
     };
   }
 

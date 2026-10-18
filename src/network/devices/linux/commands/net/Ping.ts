@@ -499,7 +499,9 @@ export function createPing(
     }
     if (r.localError !== undefined) { emit(`${cmd}: ${current.localErrorText(r.localError)}`); return; }
     const line = formatPingReplyLine(r, args.size, current.renderAddress);
-    if (line !== null) emit(`${timestampPrefix(args.timestamp)}${line}`);
+    if (line === null) return;
+    emit(`${timestampPrefix(args.timestamp)}${line}`);
+    if (r.sendError !== undefined) emit(`${cmd}: sendmsg: ${strerror(r.sendError)}`);
   };
 
   const run = async (shouldStop: () => boolean): Promise<number> => {
