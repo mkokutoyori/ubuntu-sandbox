@@ -216,12 +216,10 @@ describe('$LASTEXITCODE and $? follow the native program', () => {
   it('reports the exit code of cmd /c', async () => {
     const { ps } = machine();
 
-    await ps('cmd /c exit 3');
+    expect(await ps('cmd /c exit 3; $?')).toBe('False');
     expect(await ps('$LASTEXITCODE')).toBe('3');
-    expect(await ps('$?')).toBe('False');
-    await ps('cmd /c exit 0');
+    expect(await ps('cmd /c exit 0; $?')).toBe('True');
     expect(await ps('$LASTEXITCODE')).toBe('0');
-    expect(await ps('$?')).toBe('True');
   });
 
   it('reports ping success and failure', async () => {
