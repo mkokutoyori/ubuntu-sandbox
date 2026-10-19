@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -728,7 +728,71 @@ def gen_blocks(seed, count):
         cases.append({"id": "blo%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": without_main_prompts(steps), "disk": True, "hidden": True})
     return cases
 
+EXEC_COMMANDS = ["echo hi", "echo a; echo b", "printf 'x\\ny\\n'", "seq 1 3", "seq 1 14", "cat t.txt", "ls", "wc -l < t.txt", "true", "false", "exit 2", "echo err >&2",
+                 "cat missing.txt", "ls missing", "echo 'a: b'; false", "echo ''", "printf '\\n\\n'", "echo ABC | tr A-Z a-z", "zzz", "echo x > new.txt", "echo y >> t.txt", "rm -f new.txt"]
+EXEC_FILTERS = ["wc -l", "wc -c", "true", "false"]
+EXEC_KEYS = ["Up", "Down", "Left", "Right", "Home", "End", "PageDown", "PageUp", "M-\\", "M-/", "x", "M-a", "M-u", "M-e", "C-k", "C-u", "BSpace", "Enter", "M-(", "M-)"]
+
+def exec_flow(r, marked):
+    kind = r.random()
+    if kind < 0.45:
+        return ["C-t", r.choice(EXEC_COMMANDS), "Enter"]
+    if kind < 0.65:
+        filters = EXEC_FILTERS + ([] if marked else ["cat"])
+        return ["C-t", "M-\\", r.choice(filters), "Enter"]
+    if kind < 0.75:
+        return ["C-t", r.choice(["C-s", "C-y", "C-o", "C-j", "C-v", "C-c", "Enter"])]
+    if kind < 0.85:
+        return ["C-t", r.choice(["echo q", "ls", "x"]), r.choice(["C-x", "C-c"]), r.choice(["Enter", "C-c", "C-x"])]
+    if kind < 0.95:
+        return ["C-t"] + [r.choice(["Up", "Down", "Up"]) for _ in range(r.randint(1, 3))] + [r.choice(["Enter", "C-c"])]
+    return ["C-t", "M-\\", r.choice(["M-\\", "C-c"]), r.choice(["Enter", "C-c"])]
+
+def without_stray_exec_keys(steps):
+    kept = []
+    state = "main"
+    for step in steps:
+        if state == "main":
+            if step in ("C-s", "C-x", "C-o"):
+                continue
+            if step == "C-t":
+                state = "execute"
+        elif state == "execute":
+            if step in ("Enter", "C-c", "C-s", "C-t", "C-y", "C-o", "C-j", "C-v"):
+                state = "main"
+            elif step == "C-x":
+                state = "insert"
+        else:
+            if step in ("Enter", "C-c"):
+                state = "main"
+            elif step == "C-x":
+                state = "execute"
+        kept.append(step)
+    return kept
+
+def gen_exec(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (8, 30)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-A", "-%", "-_", "-e", "-0"], r.choice([0, 0, 0, 1, 1, 2]))
+        steps = []
+        marked = False
+        for _ in range(r.randint(2, 7)):
+            if r.random() < 0.6:
+                steps.extend(exec_flow(r, marked))
+            else:
+                key = r.choice(EXEC_KEYS)
+                if key == "M-a":
+                    marked = not marked
+                steps.append(key)
+        cases.append({"id": "exe%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": without_stray_exec_keys(steps), "disk": True, "hidden": True})
+    return cases
+
 def gen(seed, count, corpus):
+    if corpus == "exec":
+        return gen_exec(seed, count)
     if corpus == "blocks":
         return gen_blocks(seed, count)
     if corpus == "prompts":
@@ -793,7 +857,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))

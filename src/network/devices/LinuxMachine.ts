@@ -5233,6 +5233,18 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
+  runChildShellForEditor(commandLine: string, stdin: string | undefined, session?: LinuxShellSession): { output: string; status: number } {
+    if (!this.isPoweredOn || (session !== undefined && session.disposed)) return { output: '', status: 1 };
+    const run = (): { output: string; status: number } => this.executor.executeChild(commandLine, stdin);
+    if (session !== undefined) return this.sessionSwap.withinSync(session, run, { capture: false });
+    const baseline = this.executor.snapshotState();
+    try {
+      return run();
+    } finally {
+      this.executor.restoreFromSnapshot(baseline);
+    }
+  }
+
   runCommandFrameInSession(commandLine: string, session: LinuxShellSession): string {
     if (!this.isPoweredOn || session.disposed) return '';
     return this.executor.executeInSession(commandLine, session);

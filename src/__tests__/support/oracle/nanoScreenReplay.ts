@@ -1,3 +1,4 @@
+import { installRealChildShell } from './nanoShellBridge';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
@@ -63,6 +64,7 @@ export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>
   for (const [lockName, lock] of Object.entries(c.locks ?? {})) initial[`/tmp/${lockName}`] = buildNanoLock(lock);
   const fs = new InMemoryEditorFsContext(initial);
   fs.refuseWritesIntoMissingDirectories();
+  installRealChildShell(fs);
   for (const [modeName, mode] of Object.entries(c.modes ?? {})) fs.setMode(`/tmp/${modeName}`, mode);
   const absolute = name === '' ? '' : fs.resolvePath(name);
   const content = absolute === '' ? null : fs.readFile(absolute);

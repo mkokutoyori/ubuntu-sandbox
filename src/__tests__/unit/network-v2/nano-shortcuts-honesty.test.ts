@@ -187,7 +187,7 @@ describe('Scénario — ^T Execute Command insère la sortie d\'une commande au 
     typeText(nano, 'echo hello');
     press(nano, 'Enter');
     expect(nano.mode).toBe('edit');
-    expect(nano.lines).toEqual(['hellobefore']);
+    expect(nano.lines).toEqual(['hello', 'before']);
   });
 
   it('mode vue (-v) : ^T est bloqué comme les autres raccourcis de mutation', () => {
