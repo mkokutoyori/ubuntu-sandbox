@@ -212,7 +212,8 @@ export class InvokeExpressionCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const code = psValueToString(ctx.named['command'] ?? ctx.positional[0] ?? ctx.pipeInput ?? '');
     if (!code) return null;
-    return ctx.runtime.executeForValue(code);
+    const produced = ctx.runtime.invokeScriptText(code, ctx.env);
+    return produced.length === 0 ? null : produced.length === 1 ? produced[0] : produced;
   }
 }
 

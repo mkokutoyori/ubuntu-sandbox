@@ -25,6 +25,7 @@ export interface IRuntimeRef {
   takeNativeResult(): NativeResult | null;
   /** Execute code and return the last PSValue (no stringification). Used by IEX. */
   executeForValue(code: string): PSValue;
+  invokeScriptText(code: string, env?: PSEnvironment): PSValue[];
   getVariable(name: string): PSValue;
   setVariable(name: string, value: PSValue): void;
   /** Evaluate a script block in a child scope of env. */

@@ -561,8 +561,14 @@ export class PSRuntime {
   private readonly enums = builtinEnums();
 
 
+  private readonly streamLines = new WeakSet<object>();
+
   readonly streams = new StreamHub(
-    line => this.outputLines.push(line),
+    line => {
+      const tagged = new String(line);
+      this.streamLines.add(tagged);
+      this.outputLines.push(tagged as string);
+    },
     { get: () => (this.global.get('Error') as PSValue[] | undefined) ?? [], set: list => this.global.set('Error', list) },
   );
 
@@ -1000,9 +1006,9 @@ export class PSRuntime {
   }
 
   /** Execute code and return the last produced PSValue (without stringification). Used by IEX. */
-  invokeScriptText(code: string): PSValue[] {
+  invokeScriptText(code: string, env: PSEnvironment = this.global): PSValue[] {
     const ast = this.parser.parse(this.lexer.tokenize(code), code);
-    return this.runBlockCapture(ast.body, this.global);
+    return this.runBlockCapture(ast.body, env);
   }
 
   private openHostSession(): PSRuntime {
@@ -1090,7 +1096,7 @@ export class PSRuntime {
   execStatement(node: PSStatement, env: PSEnvironment): PSValue {
     let result: PSValue;
     switch (node.type) {
-      case 'PipelineStatement':   result = this.keepingStatus(() => this.execPipelineStmt(node as PSPipelineStatement, env)); break;
+      case 'PipelineStatement':   result = this.keepingStatus(() => this.execPipelineStmt(node as PSPipelineStatement, env), this.isPureValueStatement(node as PSPipelineStatement)); break;
       case 'AssignmentStatement': result = this.keepingStatus(() => this.execAssignment(node as PSAssignmentStatement, env)); break;
       case 'IfStatement':         result = this.execIf(node as PSIfStatement, env); break;
       case 'WhileStatement':      result = this.execWhile(node as PSWhileStatement, env); break;
@@ -1148,7 +1154,10 @@ export class PSRuntime {
       if (current !== null && current !== undefined) return current;
       return this.execAssignment({ ...node, operator: '=' }, env);
     }
-    const rhs = this.evalExpr(node.value, env);
+    const linesBefore = this.outputLines.length;
+    let rhs = this.consumingValues(() => this.evalExpr(node.value, env));
+    const printed = this.takeNonStreamLines(linesBefore);
+    if ((rhs === null || rhs === undefined) && printed.length > 0) rhs = printed.length === 1 ? printed[0] : printed;
     if (node.destructuringTargets !== undefined) return this.destructure(node.destructuringTargets, rhs, env);
 
     // `$null = <expr>` (and, less commonly, `$true =`/`$false =`) is the
@@ -1642,9 +1651,9 @@ export class PSRuntime {
       case 'VariableExpression':       return this.evalVariable(node as PSVariableExpression, env);
       case 'BinaryExpression':         return this.evalBinary(node as PSBinaryExpression, env);
       case 'UnaryExpression':          return this.evalUnary(node as PSUnaryExpression, env);
-      case 'ArrayExpression':          return this.evalArray(node as PSArrayExpression, env);
+      case 'ArrayExpression':          return this.consumingValues(() => this.evalArray(node as PSArrayExpression, env));
       case 'HashtableExpression':      return this.evalHashtable(node as PSHashtableExpression, env);
-      case 'SubExpression':            return this.evalSubExpr(node as PSSubExpressionExpression, env);
+      case 'SubExpression':            return this.consumingValues(() => this.evalSubExpr(node as PSSubExpressionExpression, env));
       case 'MemberExpression':         return this.evalMember(node as PSMemberExpression, env);
       case 'StaticMemberExpression':   return this.evalStaticMember(node as PSStaticMemberExpression, env);
       case 'IndexExpression':          return this.evalIndex(node as PSIndexExpression, env);
@@ -1695,7 +1704,7 @@ export class PSRuntime {
       env,
       (code) => {
         const ast = this.parseCached(code);
-        return this.aggregateCaptured(this.runBlockCapture(ast.body, env));
+        return this.consumingValues(() => this.aggregateCaptured(this.runBlockCapture(ast.body, env)));
       },
       (token, scope) => this.resolveExpansionVar(token, scope),
       this.edition === 'core',
@@ -3304,14 +3313,45 @@ export class PSRuntime {
     return captured;
   }
 
+  private valueConsumers = 0;
+
+  private consumingValues<T>(run: () => T): T {
+    this.valueConsumers++;
+    try {
+      return run();
+    } finally {
+      this.valueConsumers--;
+    }
+  }
+
+  private takeNonStreamLines(from: number): string[] {
+    const taken: string[] = [];
+    const kept: string[] = [];
+    for (let i = from; i < this.outputLines.length; i++) {
+      const line = this.outputLines[i];
+      if (this.streamLines.has(line as unknown as object)) kept.push(line);
+      else taken.push(line);
+    }
+    this.outputLines.splice(from);
+    this.outputLines.push(...kept);
+    return taken;
+  }
+
   private promoteOutputLinesEvenWhenUnwinding(
     from: number, captured: PSValue[], printed: string[],
   ): void {
+    const hostLines: string[] = [];
     for (let i = from; i < this.outputLines.length; i++) {
-      captured.push(this.outputLines[i]);
-      printed.push(this.outputLines[i]);
+      const line = this.outputLines[i];
+      if (this.valueConsumers > 0 && this.streamLines.has(line as unknown as object)) {
+        hostLines.push(line);
+        continue;
+      }
+      captured.push(String(line));
+      printed.push(String(line));
     }
     this.outputLines.splice(from);
+    this.outputLines.push(...hostLines);
   }
 
   private captureStatements(
@@ -3920,11 +3960,20 @@ export class PSRuntime {
     this.global.set('?', succeeded);
   }
 
-  private keepingStatus<T>(run: () => T): T {
+  private keepingStatus<T>(run: () => T, alwaysSucceeds = false): T {
     const before = this.statusWrites;
     const result = run();
-    if (this.statusWrites === before) this.global.set('?', true);
+    if (alwaysSucceeds || this.statusWrites === before) this.global.set('?', true);
     return result;
+  }
+
+  private isPureValueStatement(node: PSPipelineStatement): boolean {
+    const commands = node.pipeline.commands;
+    if (commands.length !== 1) return false;
+    const command = commands[0];
+    return command.parameters.length === 0 && command.arguments.length === 0
+      && command.redirections === undefined && command.name.type === 'LiteralExpression'
+      && ['string', 'expandable'].includes((command.name as PSLiteralExpression).kind);
   }
 
   private writeErrorRecord(record: Record<string, PSValue>, cmdletDisplayName: string, errorAction: string): void {
@@ -4145,6 +4194,7 @@ export class PSRuntime {
       acceptNativeResult: (result) => self.acceptNativeResult(result),
       takeNativeResult: () => self.takeNativeResult(),
       executeForValue:    (code) => self.executeForValue(code),
+      invokeScriptText:   (code, scope) => self.invokeScriptText(code, scope),
       getVariable:        (name) => self.getVariable(name),
       setVariable:        (name, val) => self.global.set(name, val),
       invokeScriptBlock:  (block, namedV, posV, env2, $under) =>
