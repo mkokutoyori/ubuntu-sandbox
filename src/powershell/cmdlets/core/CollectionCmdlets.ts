@@ -238,7 +238,8 @@ function isTruthy(val: PSValue): boolean {
 
 export class ForEachObjectCmdlet implements ICmdlet {
   readonly name = 'foreach-object';
-  readonly parameters = ['Process', 'InputObject', 'Begin', 'End', 'MemberName', 'ArgumentList'] as const;
+  readonly parameters = ['Process', 'InputObject', 'Begin', 'End', 'MemberName', 'ArgumentList', 'Parallel', 'ThrottleLimit'] as const;
+  readonly coreOnlyParameters = ['Parallel', 'ThrottleLimit'] as const;
   readonly aliases = ['foreach', '%'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -278,7 +279,7 @@ export class ForEachObjectCmdlet implements ICmdlet {
       return out.length === 1 ? out[0] : out;
     }
 
-    const script = (namedProcess ?? firstPos) as PSScriptBlock;
+    const script = (ctx.named['parallel'] ?? namedProcess ?? firstPos) as PSScriptBlock;
     const begin  = ctx.named['begin']  as PSScriptBlock | undefined;
     const end    = ctx.named['end']    as PSScriptBlock | undefined;
     const scope  = ctx.runtime.makeChildScope(ctx.env);

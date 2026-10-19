@@ -4,12 +4,26 @@ export interface RegexOptions {
   readonly singleline?: boolean;
   readonly extended?: boolean;
   readonly simpleMatch?: boolean;
+  readonly explicitCapture?: boolean;
 }
 
 const INLINE_FLAGS = /^\(\?([imsx]+)\)/;
 
 export function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&');
+}
+
+function withoutUnnamedGroups(source: string): string {
+  let out = '';
+  let inClass = false;
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i];
+    if (c === '\\') { out += c + (source[i + 1] ?? ''); i++; continue; }
+    if (inClass) { if (c === ']') inClass = false; out += c; continue; }
+    if (c === '[') { inClass = true; out += c; continue; }
+    out += c === '(' && source[i + 1] !== '?' ? '(?:' : c;
+  }
+  return out;
 }
 
 function translatePattern(pattern: string): string {
@@ -38,6 +52,7 @@ export function compileRegex(pattern: string, options: RegexOptions, extraFlags 
       source = source.slice(inline[0].length);
     }
     source = translatePattern(source);
+    if (options.explicitCapture === true) source = withoutUnnamedGroups(source);
     if (extended) source = source.replace(/\\#/g, '\u0000').replace(/#.*$/gm, '').replace(/\s+/g, '').replace(/\u0000/g, '\\#');
   } else {
     source = escapeRegex(source);
@@ -108,23 +123,26 @@ export function regexReplace(
 
 export function regexSplit(text: string, pattern: string, limit: number, options: RegexOptions): string[] {
   const regex = compileRegex(pattern, options, 'g');
-  const parts: string[] = [];
-  let last = 0;
+  const matches: RegExpExecArray[] = [];
   let match: RegExpExecArray | null;
   regex.lastIndex = 0;
   while ((match = regex.exec(text)) !== null) {
-    if (limit > 0 && parts.length >= limit - 1) break;
     if (match[0] === '') {
       if (match.index >= text.length) break;
-      if (match.index === last) {
-        regex.lastIndex += 1;
-        continue;
-      }
+      regex.lastIndex += 1;
+      if (match.index === 0) continue;
     }
-    parts.push(text.slice(last, match.index));
-    for (let g = 1; g < match.length; g++) if (match[g] !== undefined) parts.push(match[g]);
-    last = match.index + match[0].length;
-    if (match[0] === '') regex.lastIndex += 1;
+    matches.push(match);
+  }
+  const count = Math.abs(limit);
+  if (count === 1) return [text];
+  const chosen = count === 0 ? matches : limit > 0 ? matches.slice(0, count - 1) : matches.slice(Math.max(0, matches.length - (count - 1)));
+  const parts: string[] = [];
+  let last = 0;
+  for (const hit of chosen) {
+    parts.push(text.slice(last, hit.index));
+    for (let g = 1; g < hit.length; g++) if (hit[g] !== undefined) parts.push(hit[g]);
+    last = hit.index + hit[0].length;
   }
   parts.push(text.slice(last));
   return parts;

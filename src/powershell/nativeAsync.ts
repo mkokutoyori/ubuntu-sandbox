@@ -48,7 +48,7 @@ export class NativeCommandNeedsAsync extends PSRuntimeError {
   readonly commandLine: string;
 
   constructor(command: string, argv: readonly string[], stdin: string | null = null) {
-    super(commandNotFoundMessage(command));
+    super(commandNotFoundMessage(command), 'System.Management.Automation.CommandNotFoundException');
     this.name = 'NativeCommandNeedsAsync';
     this.command = command;
     this.argv = argv;
@@ -70,8 +70,8 @@ export function nativeNotRecognized(command: string, answer: string): boolean {
   return named !== null && named[1].toLowerCase() === command.toLowerCase();
 }
 
-export function translateNativeAnswer(command: string, answer: string): string {
-  return nativeNotRecognized(command, answer) ? commandNotFoundMessage(command) : answer;
+export function translateNativeAnswer(command: string, answer: string, core = false): string {
+  return nativeNotRecognized(command, answer) ? commandNotFoundMessage(command, core) : answer;
 }
 
 export function isNativeProgramName(name: string): boolean {

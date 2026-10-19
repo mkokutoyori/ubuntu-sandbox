@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2 [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -558,6 +558,90 @@ def gen_undo2(seed, count):
                       "disk": True, "hidden": True, "files": {"r.txt": ["alpha", "beta gamma", "delta"], "w.txt": ["one"]}})
     return cases
 
+SEARCH_TERMS = ["a", "e", "o", "ba", "x", "foo", "é", "中", "tab", "(x)", "[1", "end.", "world", "Hello", "zzz", "b", "r", "z", "  ", "here"]
+SEARCH_REGEXES = ["a.b", "^t", "o$", "[aeiou]+", "[A-Z]", "w.r", "^$", "o*", "x|z", "\\w+$", "e.", "[0-9]", "(o)(o)", "(a|ab)(c|bcd)?", "\\<t", "r\\>", "[[:upper:]]", "x{2}", "(ba)+", ".*", "^.", "(", "[", "a{", "*a", "o+?", "é|e", "\\bb"]
+
+def search_flow(r, view=False):
+    kind = r.random()
+    term = r.choice(SEARCH_TERMS)
+    if kind < 0.25:
+        return ["C-w", term, "Enter"]
+    if kind < 0.33:
+        return ["C-w", "Enter"]
+    if kind < 0.38:
+        return ["C-w", "C-c"]
+    if kind < 0.45:
+        return ["C-w", "M-c", term, "Enter"]
+    if kind < 0.52:
+        return ["C-w", "M-b", term, "Enter"]
+    if kind < 0.62:
+        return ["C-w", "M-r", r.choice(SEARCH_REGEXES), "Enter"]
+    if kind < 0.68:
+        return ["M-w"] if r.random() < 0.5 else ["M-q"]
+    if kind < 0.70:
+        return ["C-q", term, "Enter"] if view or r.random() < 0.5 else ["C-w", term, "C-r", "Enter", "Z", "Enter", "y"]
+    if kind < 0.73:
+        return ["C-w", "Up", "Enter"] if r.random() < 0.6 else ["C-w", term, "C-t", "Enter"]
+    answers = [r.choice(["y", "n", "a", "C-c", "y", "n", "N", "x"]) for _ in range(r.randint(1, 4))]
+    replacement = r.choice(["Z", "", "XY", "0", "é", "ab", "[\\1]", "\\1\\2", "<&>", "\\0", "\\"])
+    head = ["C-\\"]
+    if r.random() < 0.15:
+        head.append("M-c")
+    if r.random() < 0.15:
+        head.append("M-b")
+    if r.random() < 0.2:
+        return head + ["M-r", r.choice(SEARCH_REGEXES), "Enter", replacement, "Enter"] + answers
+    return head + [term, "Enter", replacement, "Enter"] + answers
+
+SEARCH_KEYS = ["x", "yz", "Left", "Right", "Up", "Down", "Home", "End", "M-/", "M-\\", "PageDown", "PageUp", "C-Right", "C-Left", "M-a", "M-a", "M-6", "C-k", "M-u", "M-e", "C-u", "Enter", "Tab"]
+
+def gen_search(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8, 14]))]
+        text[r.randrange(len(text))] += " foo bar tab here world"
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (8, 30)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-A", "-%", "-_", "-j", "-e", "-v"], r.choice([0, 0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(3, 9)):
+            if r.random() < 0.6:
+                steps.extend(search_flow(r, "-v" in flags))
+            else:
+                steps.append(r.choice(SEARCH_KEYS))
+        cases.append({"id": "sea%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
+    return cases
+
+HELP_OPENERS = [["C-g"], ["C-g"], ["C-g"], ["C-w", "C-g"], ["C-\\", "C-g"], ["C-\\", "x", "Enter", "C-g"], ["C-o", "C-g"], ["C-r", "C-g"], ["C-x", "C-g"]]
+HELP_KEYS = ["Up", "Down", "Up", "Down", "Down", "PageUp", "PageDown", "PageDown", "Home", "End", "Left", "Right", "Space", "Enter", "Tab", "BSpace", "C-p", "C-n", "C-y", "C-v", "C-v", "C-l",
+             "M-\\", "M-/", "M-Up", "M-Down", "x", "q", "e", "b", "-", "?", "s", "n", "N", "w", "/", "z", "7", "C-a", "C-e", "C-b", "C-f", "C-k", "C-u", "C-j", "C-o", "C-d", "M-x", "M-c", "M-n", "M-z", "M-a", "M-u", "M-b", "M-f", "M-w", "M-q", "DC"]
+
+def help_search(r):
+    kind = r.random()
+    term = r.choice(["he", "key", "the", "zzz", "Replace", "M-", "^", "file", "bar", "  ", "Enter"])
+    if kind < 0.4:
+        return [r.choice(["C-w", "w", "/", "C-f"]), term, "Enter"]
+    if kind < 0.6:
+        return ["C-q", term, "Enter"]
+    if kind < 0.75:
+        return [r.choice(["M-w", "M-q", "n", "N", "C-w"]), "Enter"] if r.random() < 0.5 else [r.choice(["M-w", "M-q", "n", "N"])]
+    return [r.choice(["C-w", "C-q"]), "C-c"]
+
+def gen_help(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        rows, cols = r.choice([(24, 80), (24, 80), (12, 50), (8, 30), (10, 40), (30, 100), (24, 120), (14, 60), (20, 39), (7, 80), (6, 70), (5, 60), (40, 74), (24, 41), (24, 38)])
+        flags = r.sample(["-R", "-p", "-t", "-v", "-x", "-0", "-e", "-_", "-%", "-S", "-l", "-c", "-i"], r.choice([0, 0, 0, 1, 1, 2]))
+        opener = r.choice(HELP_OPENERS)
+        while "-v" in flags and "C-r" in opener:
+            opener = r.choice(HELP_OPENERS)
+        steps = list(opener)
+        for _ in range(r.randint(1, 8)):
+            steps.extend(help_search(r) if r.random() < 0.3 else [r.choice(HELP_KEYS)])
+        cases.append({"id": "hlp%d-%d" % (seed, i), "text": ["alpha beta", "gamma"], "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -581,6 +665,10 @@ def gen(seed, count, corpus):
         return gen_undo(seed, count)
     if corpus == "undo2":
         return gen_undo2(seed, count)
+    if corpus == "search":
+        return gen_search(seed, count)
+    if corpus == "help":
+        return gen_help(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
@@ -617,7 +705,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))

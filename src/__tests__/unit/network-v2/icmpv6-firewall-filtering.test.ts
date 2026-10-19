@@ -1,5 +1,5 @@
 /**
- * ICMPv6 filtered by ip6tables INPUT, with Neighbor Discovery exempted.
+ * ICMPv6 filtered by ip6tables INPUT.
  *
  * PRD-Iptables-UFW.md §1.3 item C.7 / §2.1 objectif C.7 (Phase 3): before
  * this fix, `handleIPv6` dispatched every ICMPv6 packet straight to
@@ -10,10 +10,10 @@
  * `LinuxIptablesManager` (protocol number 58) — `ip6tables -p icmpv6`
  * previously failed at rule-parse time ("unknown protocol").
  *
- * The fix explicitly exempts Neighbor Discovery messages (RFC 4861:
- * neighbor/router solicitation and advertisement) from filtering — blocking
- * those would break address resolution itself rather than just the traffic
- * an administrator meant to block.
+ * Neighbor Discovery messages (RFC 4861) are ICMPv6 like any other: a rule on
+ * the protocol as a whole stops address resolution too, as on a real host
+ * (see probe-ip6tables-la-decouverte-de-voisins-traverse-les-chaines.test.ts),
+ * so the rules below that mean to stop the ping name the echo request.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -57,25 +57,29 @@ describe('ICMPv6 firewall filtering', () => {
   });
 
   it('-p icmpv6 -j REJECT sends back a real Destination Unreachable instead of a silent timeout', async () => {
-    await server.executeCommand('ip6tables -A INPUT -p icmpv6 -j REJECT');
+    await server.executeCommand('ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j REJECT');
     const out = await client.executeCommand('ping6 -c 1 -W 1 fd00::1');
     expect(out).toMatch(/From fd00::1 icmp_seq=1 Destination unreachable: /);
     expect(out).not.toMatch(/Destination Host Unreachable/);
     expect(out).not.toMatch(/bytes from/);
   });
 
-  it('a -p icmpv6 DROP rule does not affect TCP/UDP traffic (protocol scoping is correct)', async () => {
-    await server.executeCommand('ip6tables -A INPUT -p icmpv6 -j DROP');
+  it('a -p icmpv6 DROP rule on the echo request does not affect TCP/UDP traffic (protocol scoping is correct)', async () => {
+    await server.executeCommand('ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j DROP');
     const out = await client.executeCommand('nc -zv -w 1 fd00::1 22');
     expect(out).toMatch(/succeeded|open|Connected/i);
   });
 
-  it('Neighbor Discovery keeps working under a blanket icmpv6 DROP (address resolution is never filtered)', async () => {
+  it('a blanket icmpv6 DROP stops address resolution : the solicitation is dropped and the client has no route to the host', async () => {
     await server.executeCommand('ip6tables -A INPUT -p icmpv6 -j DROP');
-    // A successful TCP handshake to fd00::1 requires the client to have
-    // resolved the server's MAC via NS/NA first — if ND were filtered too,
-    // this would time out at the neighbor-resolution stage rather than
-    // merely failing to receive the (deliberately blocked) ping reply.
+    const out = await client.executeCommand('nc -zv -w 1 fd00::1 22');
+    expect(out).toMatch(/No route to host/);
+    expect(await server.executeCommand('ip6tables -L INPUT -v -n')).toMatch(/^\s*[1-9]\d*\s+\d+\s+DROP\s+icmpv6/m);
+  });
+
+  it('TEMOIN : with the solicitation accepted ahead of the blanket DROP, the same connection succeeds', async () => {
+    await server.executeCommand('ip6tables -A INPUT -p icmpv6 --icmpv6-type neighbor-solicitation -j ACCEPT');
+    await server.executeCommand('ip6tables -A INPUT -p icmpv6 -j DROP');
     const out = await client.executeCommand('nc -zv -w 1 fd00::1 22');
     expect(out).toMatch(/succeeded|open|Connected/i);
   });

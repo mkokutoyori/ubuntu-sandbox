@@ -35,7 +35,7 @@ export interface NanoScreenInput {
   readonly spotlight: { readonly line: number; readonly start: number; readonly end: number } | null;
   readonly tabsize: number;
   readonly softwrap: boolean;
-  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null };
+  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null; readonly heading?: string };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean; readonly raw?: boolean } | null;
   readonly minibar: MinibarInfo | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
@@ -43,7 +43,7 @@ export interface NanoScreenInput {
   readonly menu: NanoMenuName;
   readonly menuOptions: MenuOptions;
   readonly pause: string | null;
-  readonly helpLines: readonly string[] | null;
+  readonly pauseKeepsMenu?: boolean;
 }
 
 class Canvas {
@@ -88,6 +88,14 @@ const SPACE_ROW: ScreenRow = { text: '', spans: [] };
 function clipped(text: string, width: number, tabsize: number): string {
   const end = actualX(text, width, tabsize);
   return text.slice(0, end);
+}
+
+function headingRow(cols: number, heading: string, tabsize: number): ScreenRow {
+  const canvas = new Canvas(cols);
+  const width = breadth(heading, tabsize);
+  canvas.put(Math.max(0, Math.ceil((cols - width) / 2)), heading);
+  canvas.mark(0, cols, 'reverse');
+  return canvas.fullRow();
 }
 
 export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null = null): ScreenRow {
@@ -180,7 +188,7 @@ function drawDataRow(
     }
   }
   const light = input.spotlight;
-  let spotlit: { column: number; cells: readonly string[] } | null = null;
+  let spotlit: { column: number; cells: readonly string[]; overshoots: boolean } | null = null;
   if (light !== null && light.line === lineIndex) {
     const from = Math.max(light.start, display.fromX);
     const to = Math.min(light.end, display.tillX);
@@ -190,8 +198,14 @@ function drawDataRow(
       const word = displayString(text, wideness(text, from, input.tabsize), wideness(text, to, input.tabsize) - wideness(text, from, input.tabsize), {
         isData: false, isPrompt: false, softwrap: false, tabsize: input.tabsize,
       });
-      spotlit = { column: margin + start, cells: word.cells.slice(0, Math.max(0, window.cols - margin - start)) };
+      const overshoots = !input.softwrap && wideness(text, light.end, input.tabsize) - fromCol > window.editCols;
+      spotlit = { column: margin + start, cells: word.cells.slice(0, Math.max(0, window.cols - margin - start)), overshoots };
       canvas.mark(margin + start, margin + end, 'reverse');
+    } else if (light.start === light.end && light.start >= display.fromX && light.start <= display.tillX) {
+      const start = Math.max(0, wideness(text, light.start, input.tabsize) - fromCol);
+      const blanked = canvas.cells[margin + start + 1] === CONTINUATION ? 2 : 1;
+      spotlit = { column: margin + start, cells: new Array<string>(blanked).fill(' '), overshoots: false };
+      canvas.mark(margin + start, margin + start + 1, 'reverse');
     }
   }
   if (sidescrolled && fromCol > 0 && display.cells.length > 0) {
@@ -202,7 +216,13 @@ function drawDataRow(
     canvas.put(window.cols - 1, '>');
     canvas.mark(window.cols - 1, window.cols, 'reverse');
   }
-  if (spotlit !== null) canvas.putCells(spotlit.column, spotlit.cells);
+  if (spotlit !== null) {
+    canvas.putCells(spotlit.column, spotlit.cells);
+    if (spotlit.overshoots) {
+      canvas.put(window.cols - 1, '>');
+      canvas.mark(window.cols - 1, window.cols, 'reverse');
+    }
+  }
   void spanEnd;
   return canvas.row();
 }
@@ -229,20 +249,6 @@ function editRows(input: NanoScreenInput): ScreenRow[] {
       if (endOfLine || rows.length >= height) break;
       fromCol = end;
     }
-  }
-  while (rows.length < height) rows.push(SPACE_ROW);
-  return rows;
-}
-
-function helpRows(input: NanoScreenInput): ScreenRow[] {
-  const height = input.window.editRows;
-  const rows: ScreenRow[] = [];
-  for (const line of input.helpLines ?? []) {
-    if (rows.length >= height) break;
-    const shown = displayString(line, 0, input.window.cols, { isData: false, isPrompt: false, softwrap: false, tabsize: input.tabsize });
-    const canvas = new Canvas(input.window.cols);
-    canvas.putCells(0, shown.cells);
-    rows.push(canvas.row());
   }
   while (rows.length < height) rows.push(SPACE_ROW);
   return rows;
@@ -393,9 +399,9 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   const rows: ScreenRow[] = new Array(window.rows).fill(SPACE_ROW);
   let cursorAt: { row: number; col: number } | null = null;
 
-  if (layout.titleRows > 0) rows[0] = titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags);
+  if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? headingRow(cols, input.title.heading, tabsize) : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags);
 
-  const body = input.helpLines === null ? editRows(input) : helpRows(input);
+  const body = editRows(input);
   const bodyTop = layout.editFrom;
   body.forEach((row, index) => { if (bodyTop + index < rows.length) rows[bodyTop + index] = row; });
 
@@ -403,7 +409,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   let bars: [ScreenRow, ScreenRow] | null = null;
   if (input.pause !== null) {
     footerStatus = statusRow(cols, { text: input.pause, alert: true }, tabsize);
-    bars = [SPACE_ROW, SPACE_ROW];
+    bars = input.pauseKeepsMenu === true ? shortcutRows(cols, input.menu, tabsize, input.menuOptions) : [SPACE_ROW, SPACE_ROW];
     cursorAt = { row: -1, col: footerStatus.text.trimEnd().length };
   } else if (input.yesNo !== null) {
     const question = clipped(input.yesNo.question, cols - 1, tabsize);
@@ -421,10 +427,8 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   } else {
     footerStatus = input.minibar !== null ? minibarRow(cols, input.minibar, tabsize) : statusRow(cols, input.status, tabsize);
     bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions);
-    if (input.helpLines === null) {
-      const place = window.place(input.cursor);
-      cursorAt = { row: bodyTop + place.row, col: window.margin + place.column };
-    }
+    const place = window.place(input.cursor);
+    cursorAt = { row: bodyTop + place.row, col: window.margin + place.column };
   }
 
   const footerHasContent = input.pause !== null || input.yesNo !== null || input.prompt !== null || input.status !== null || input.minibar !== null;

@@ -40,13 +40,13 @@ test.describe('Scénario (e2e) — `nano --version` imprime la bannière au lieu
 
   test('`nano --version` affiche la bannière et ne bascule pas dans l\'overlay éditeur', async ({ page }) => {
     await typeCmd(page, 'nano --version');
-    await expect(page.getByText(/GNU nano, version 6\.2/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/GNU nano, version 7\.2/)).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="nano-body"]')).toHaveCount(0);
   });
 
   test('`nano -V` (forme courte) a le même effet', async ({ page }) => {
     await typeCmd(page, 'nano -V');
-    await expect(page.getByText(/GNU nano, version 6\.2/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/GNU nano, version 7\.2/)).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="nano-body"]')).toHaveCount(0);
   });
 

@@ -9,6 +9,7 @@ export class EnumType {
     readonly name: string,
     readonly underlying: NumericKind,
     readonly flags: boolean,
+    readonly fullName: string = name,
   ) {}
 
   add(memberName: string, value: number): PSEnumValue {
@@ -53,7 +54,7 @@ export class EnumType {
   }
 
   private unmatched(text: string): PSConversionError {
-    return conversionFailure(text, this.name, `Unable to match the identifier name ${text} to a valid enumerator name. Specify one of the following enumerator names and try again:\n${this.names().join(', ')}`);
+    return conversionFailure(text, this.fullName, `Unable to match the identifier name ${text} to a valid enumerator name. Specify one of the following enumerator names and try again:\n${this.names().join(', ')}`);
   }
 }
 
@@ -92,7 +93,7 @@ export function enumMember(value: PSEnumValue, member: string): unknown {
   }
 }
 
-const BUILTIN_ENUMS: ReadonlyArray<{ name: string; fullName: string; flags: boolean; members: ReadonlyArray<readonly [string, number]> }> = [
+const BUILTIN_ENUMS: ReadonlyArray<{ name: string; fullName: string; flags: boolean; underlying?: NumericKind; members: ReadonlyArray<readonly [string, number]> }> = [
   {
     name: 'StringComparison', fullName: 'System.StringComparison', flags: false,
     members: [['CurrentCulture', 0], ['CurrentCultureIgnoreCase', 1], ['InvariantCulture', 2], ['InvariantCultureIgnoreCase', 3], ['Ordinal', 4], ['OrdinalIgnoreCase', 5]],
@@ -105,12 +106,36 @@ const BUILTIN_ENUMS: ReadonlyArray<{ name: string; fullName: string; flags: bool
     name: 'DayOfWeek', fullName: 'System.DayOfWeek', flags: false,
     members: [['Sunday', 0], ['Monday', 1], ['Tuesday', 2], ['Wednesday', 3], ['Thursday', 4], ['Friday', 5], ['Saturday', 6]],
   },
+  {
+    name: 'SplitOptions', fullName: 'System.Management.Automation.SplitOptions', flags: true,
+    members: [['SimpleMatch', 1], ['RegexMatch', 2], ['CultureInvariant', 4], ['IgnorePatternWhitespace', 8], ['Multiline', 16], ['Singleline', 32], ['IgnoreCase', 64], ['ExplicitCapture', 128]],
+  },
+  {
+    name: 'AceFlags', fullName: 'System.Security.AccessControl.AceFlags', flags: true, underlying: 'byte',
+    members: [['None', 0], ['ObjectInherit', 1], ['ContainerInherit', 2], ['NoPropagateInherit', 4], ['InheritOnly', 8], ['Inherited', 16], ['SuccessfulAccess', 64], ['FailedAccess', 128]],
+  },
+  {
+    name: 'ActionPreference', fullName: 'System.Management.Automation.ActionPreference', flags: false,
+    members: [['SilentlyContinue', 0], ['Stop', 1], ['Continue', 2], ['Inquire', 3], ['Ignore', 4], ['Suspend', 5], ['Break', 6]],
+  },
+  {
+    name: 'ErrorCategory', fullName: 'System.Management.Automation.ErrorCategory', flags: false,
+    members: [['NotSpecified', 0], ['OpenError', 1], ['CloseError', 2], ['DeviceError', 3], ['DeadlockDetected', 4], ['InvalidArgument', 5], ['InvalidData', 6], ['InvalidOperation', 7], ['InvalidResult', 8], ['InvalidType', 9], ['MetadataError', 10], ['NotImplemented', 11], ['NotInstalled', 12], ['ObjectNotFound', 13], ['OperationStopped', 14], ['OperationTimeout', 15], ['SyntaxError', 16], ['ParserError', 17], ['PermissionDenied', 18], ['ResourceBusy', 19], ['ResourceExists', 20], ['ResourceUnavailable', 21], ['ReadError', 22], ['WriteError', 23], ['FromStdErr', 24], ['SecurityError', 25], ['ProtocolError', 26], ['ConnectionError', 27], ['AuthenticationError', 28], ['LimitsExceeded', 29], ['QuotaExceeded', 30], ['NotEnabled', 31]],
+  },
+  {
+    name: 'ConfirmImpact', fullName: 'System.Management.Automation.ConfirmImpact', flags: false,
+    members: [['None', 0], ['Low', 1], ['Medium', 2], ['High', 3]],
+  },
+  {
+    name: 'CommandTypes', fullName: 'System.Management.Automation.CommandTypes', flags: true,
+    members: [['Alias', 1], ['Function', 2], ['Filter', 4], ['Cmdlet', 8], ['ExternalScript', 16], ['Application', 32], ['Script', 64], ['Configuration', 256], ['All', 511]],
+  },
 ];
 
 export function builtinEnums(): Map<string, EnumType> {
   const registry = new Map<string, EnumType>();
   for (const definition of BUILTIN_ENUMS) {
-    const type = new EnumType(definition.name, 'int32', definition.flags);
+    const type = new EnumType(definition.name, definition.underlying ?? 'int32', definition.flags, definition.fullName);
     for (const [name, value] of definition.members) type.add(name, value);
     registry.set(definition.name.toLowerCase(), type);
     registry.set(definition.fullName.toLowerCase(), type);

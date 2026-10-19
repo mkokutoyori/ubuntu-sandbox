@@ -19,5 +19,5 @@ export function unboxDeep(value: PSValue): PSValue {
 export const PASS_THROUGH_CMDLETS: ReadonlySet<string> = new Set([
   'where-object', 'foreach-object', 'select-object', 'sort-object', 'write-output', 'out-null',
   'tee-object', 'group-object', 'out-string', 'out-host', 'write-host', 'format-table', 'format-list',
-  'get-member', 'compare-object', 'add-member', 'new-object',
+  'get-member', 'compare-object', 'add-member', 'new-object', 'should',
 ]);

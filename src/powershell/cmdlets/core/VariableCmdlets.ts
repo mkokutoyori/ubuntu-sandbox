@@ -30,6 +30,7 @@ export class SetVariableCmdlet implements ICmdlet {
 export class GetVariableCmdlet implements ICmdlet {
   readonly name = 'get-variable';
   readonly parameters = ['Name', 'ValueOnly', 'Include', 'Exclude', 'Scope'] as const;
+  readonly switchParameters = ['ValueOnly'] as const;
   readonly aliases = ['gv'] as const;
 
   execute(ctx: CmdletContext): PSValue {

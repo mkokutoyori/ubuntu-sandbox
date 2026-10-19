@@ -370,7 +370,14 @@ export class VirtualFileSystem {
     this.createFileAt('/etc/ufw/before6.rules',
       '# Rules that should be run before the ufw user rules (IPv6).\n*filter\n:ufw6-before-input - [0:0]\n:ufw6-before-output - [0:0]\n:ufw6-before-forward - [0:0]\n\n' +
       '-A ufw6-before-input -i lo -j ACCEPT\n-A ufw6-before-output -o lo -j ACCEPT\n-A ufw6-before-input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A ufw6-before-output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n\n' +
-      '-A ufw6-before-input -p icmpv6 -j ACCEPT\n-A ufw6-before-output -p icmpv6 -j ACCEPT\n\nCOMMIT\n',
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type destination-unreachable -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type packet-too-big -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type time-exceeded -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type parameter-problem -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type echo-request -j ACCEPT\n\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type router-solicitation -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type neighbor-solicitation -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type neighbor-advertisement -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type redirect -j ACCEPT\n\n' +
+      '-A ufw6-before-output -p icmpv6 --icmpv6-type router-solicitation -j ACCEPT\n-A ufw6-before-output -p icmpv6 --icmpv6-type neighbor-solicitation -j ACCEPT\n' +
+      '-A ufw6-before-output -p icmpv6 --icmpv6-type neighbor-advertisement -j ACCEPT\n\nCOMMIT\n',
       0o640, 0, 0);
 
     this.createFileAt('/etc/ufw/after6.rules',

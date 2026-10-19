@@ -202,7 +202,7 @@ foreach ($e in $events) {
     const out = run(`
 function Deploy {
   param([string]$Host, [int]$Port, [string]$Env)
-  "deploy $Host:$Port [$Env]"
+  "deploy \${Host}:$Port [$Env]"
 }
 $opts = @{ Host='10.0.0.5'; Port=443; Env='prod' }
 Deploy @opts

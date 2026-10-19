@@ -65,6 +65,8 @@ test.describe('Scénario (e2e) — édition curseur dans les champs de prompt na
     await expect.poll(() => nanoPromptAnswer(page, 'File Name to Write:')).toBe('/tmp/real.txt');
 
     await page.keyboard.press('Enter');
+    await expect(page.locator('[data-testid="nano-status-message"]')).toContainText('Save file under DIFFERENT NAME?');
+    await page.keyboard.press('y');
     await expect(page.locator('[data-testid="nano-status-message"]')).toContainText('Wrote');
   });
 });

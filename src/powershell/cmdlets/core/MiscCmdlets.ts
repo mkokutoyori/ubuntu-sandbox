@@ -20,6 +20,10 @@ import { wildcardMatches, wildcardToRegex, hasWildcard } from '@/powershell/runt
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { isRegistryPath, registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
 import { renderCmdletHelp, helpTopicNotFound, HELP_SYSTEM_TOPIC } from '@/powershell/help/renderHelp';
+import { parseCommentHelp, scriptHeadHelp } from '@/powershell/help/CommentHelp';
+import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
+import { helpObject, matchesFilter, resolveHelp } from '@/powershell/help/FunctionHelp';
+import { newErrorRecord } from '@/powershell/runtime/semantics/PSStreams';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -38,6 +42,10 @@ export class NewObjectCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const tname = psValueToString(ctx.named['typename'] ?? ctx.positional[0] ?? '').toLowerCase();
+    if (/(^|[.])(list|collection)\[.+\]$/.test(tname)) {
+      const initial = ctx.named['argumentlist'] ?? ctx.positional[1];
+      return ctx.runtime.executeForValue(`[${tname}]::new(${Array.isArray(initial) ? '@(' + initial.map(psValueToString).join(',') + ')' : ''})`);
+    }
     if (tname.includes('hashtable') || tname.includes('dictionary'))
       return {} as Record<string, PSValue>;
     if (tname.includes('arraylist') || tname.includes('list`1') || tname.includes('list<')) {
@@ -208,7 +216,8 @@ export class InvokeExpressionCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const code = psValueToString(ctx.named['command'] ?? ctx.positional[0] ?? ctx.pipeInput ?? '');
     if (!code) return null;
-    return ctx.runtime.executeForValue(code);
+    const produced = ctx.runtime.invokeScriptText(code, ctx.env);
+    return produced.length === 0 ? null : produced.length === 1 ? produced[0] : produced;
   }
 }
 
@@ -274,19 +283,38 @@ export class GetHelpCmdlet implements ICmdlet {
       ctx.emit(HELP_SYSTEM_TOPIC);
       return null;
     }
-    const source = ctx.runtime.getFunctionSource(name);
-    if (source) {
-      const help = extractCommentHelp(source);
-      const synopsis = help['synopsis'] ?? '';
-      const description = help['description'] ?? '';
-      const examples = help['example'] ?? '';
-      const sections: string[] = [`NAME\n    ${name}`];
-      if (synopsis) sections.push(`SYNOPSIS\n    ${synopsis}`);
-      sections.push(`SYNTAX\n    ${name} [<CommonParameters>]`);
-      if (description) sections.push(`DESCRIPTION\n    ${description}`);
-      if (examples) sections.push(`EXAMPLES\n    ${examples}`);
-      ctx.emit(sections.join('\n\n'));
-      return null;
+    const block = ctx.runtime.getFunctionBlock(name) as unknown as PSScriptBlock | null;
+    if (block !== null && block !== undefined) {
+      const help = resolveHelp(block, ctx.runtime.getFunctionLeadingComment(name));
+      const wanted = {
+        component: ctx.named['component'] === undefined ? undefined : psValueToString(ctx.named['component']),
+        role: ctx.named['role'] === undefined ? undefined : psValueToString(ctx.named['role']),
+        functionality: ctx.named['functionality'] === undefined ? undefined : psValueToString(ctx.named['functionality']),
+      };
+      const matches = matchesFilter(help?.component ?? '', wanted.component)
+        && matchesFilter(help?.role ?? '', wanted.role)
+        && matchesFilter(help?.functionality ?? '', wanted.functionality);
+      if (!matches) {
+        ctx.emitErrorRecord(newErrorRecord({
+          message: helpTopicNotFound(name).replace(/^Get-Help : /, ''),
+          exceptionType: 'System.Management.Automation.Help.HelpNotFoundException',
+          fullyQualifiedErrorId: 'HelpNotFound,Microsoft.PowerShell.Commands.GetHelpCommand',
+          category: 'ObjectNotFound',
+          targetObject: name,
+        }) as unknown as PSValue);
+        return null;
+      }
+      return helpObject(name, 'Function', help, block, ctx.runtime.getFunctionSignature(name)!) as unknown as PSValue;
+    }
+    const scriptPath = /\.ps1$/i.test(name) ? name : null;
+    if (scriptPath !== null && ctx.providers.filesystem) {
+      let content: string | null = null;
+      try { content = ctx.providers.filesystem.readFile(scriptPath); } catch { content = null; }
+      if (content !== null) {
+        const head = scriptHeadHelp(content);
+        const help = head === null ? null : parseCommentHelp(head);
+        return helpObject(scriptPath, 'ExternalScript', help, null, { parameters: [], advanced: false, enumNames: () => null }) as unknown as PSValue;
+      }
     }
     const rendered = renderCmdletHelp(name, {
       examples:   ctx.named['examples'] === true,
@@ -345,39 +373,6 @@ function isFileSystemPath(path: string): boolean {
   return qualifier === null || qualifier[1].length === 1;
 }
 
-export function extractCommentHelp(source: string): Record<string, string> {
-  const blockRe = /<#([\s\S]*?)#>/;
-  const block = blockRe.exec(source);
-  if (!block) return {};
-  const body = block[1];
-  const result: Record<string, string> = {};
-  // `\Z` n'est pas une ancre en JavaScript — c'est un `Z` litteral. La
-  // derniere section d'un bloc d'aide n'etait donc capturee que si elle
-  // contenait la lettre Z ; la fin d'entree s'ecrit `(?![\s\S])`.
-  const sectionRe = /^\s*\.([A-Z][A-Z]+)\s*$([\s\S]*?)(?=^\s*\.[A-Z][A-Z]+\s*$|(?![\s\S]))/gm;
-  let m: RegExpExecArray | null;
-  while ((m = sectionRe.exec(body)) !== null) {
-    result[m[1].toLowerCase()] = m[2].trim();
-  }
-  if (Object.keys(result).length === 0) {
-    const lines = body.split(/\n/);
-    let currentKey = '';
-    let buf: string[] = [];
-    const flush = () => { if (currentKey) result[currentKey] = buf.join('\n').trim(); buf = []; };
-    for (const raw of lines) {
-      const headerMatch = raw.match(/^\s*\.([A-Z][A-Z_]+)\s*$/);
-      if (headerMatch) {
-        flush();
-        currentKey = headerMatch[1].toLowerCase();
-      } else if (currentKey) {
-        buf.push(raw.trim());
-      }
-    }
-    flush();
-  }
-  return result;
-}
-
 // ─── Get-Command ──────────────────────────────────────────────────────────
 
 export class GetCommandCmdlet implements ICmdlet {
@@ -398,6 +393,7 @@ export class GetCommandCmdlet implements ICmdlet {
       Version: string;
       Source: string;
       Definition?: string;
+      ScriptBlock?: PSValue;
     };
     const rows: Row[] = [];
     for (const c of all) {
@@ -420,7 +416,9 @@ export class GetCommandCmdlet implements ICmdlet {
       }
     }
     for (const fn of ctx.runtime.listFunctions()) {
-      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '' });
+      const block = ctx.runtime.getFunctionBlock(fn);
+      const definition = block !== null && typeof block === 'object' ? (block as { sourceText?: string }).sourceText ?? '' : '';
+      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '', Definition: definition, ScriptBlock: block });
     }
 
     // -Name (positional or named): wildcard / exact, matched against the
@@ -984,41 +982,6 @@ export class ClearHostCmdlet implements ICmdlet {
   readonly aliases = ['cls', 'clear'] as const;
   execute(_ctx: CmdletContext): PSValue { return null; }
 }
-
-// ─── Get-Alias ────────────────────────────────────────────────────────────
-//
-// Returns the built-in alias map.  Real PowerShell ships dozens; we mirror
-// every alias declared on a registered cmdlet so the listing stays in sync
-// with whatever the interpreter actually accepts.  `Get-Alias <name>` and
-// `Get-Alias -Name <pattern>` filter the result.
-
-interface AliasEntry { Name: string; Definition: string; CommandType: string }
-
-export class GetAliasCmdlet implements ICmdlet {
-  readonly name = 'get-alias';
-  readonly aliases = ['gal'] as const;
-  readonly parameters = ['Name'] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    const filter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').trim();
-    const all: AliasEntry[] = [];
-    for (const cmdlet of ctx.runtime.listCmdlets()) {
-      for (const a of cmdlet.aliases) {
-        all.push({ Name: a, Definition: cmdlet.name, CommandType: 'Alias' });
-      }
-    }
-    all.sort((a, b) => a.Name.localeCompare(b.Name));
-    if (!filter) return all as unknown as PSValue;
-    const pat = wildcardToRegex(filter);
-    const matched = all.filter(e => pat.test(e.Name));
-    if (matched.length === 0) {
-      ctx.emitError(`Get-Alias : Cannot find alias because alias with name '${filter}' does not exist.`);
-      return null;
-    }
-    return matched as unknown as PSValue;
-  }
-}
-
 
 // ─── Get-PSProvider ───────────────────────────────────────────────────────
 

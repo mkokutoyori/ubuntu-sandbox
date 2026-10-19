@@ -113,7 +113,7 @@ export function squeeze(text: string, skip: number, punctuation = DEFAULT_PUNCTU
   return result.slice(0, end);
 }
 
-export function breakLine(text: string, goal: number, tabsize: number): number {
+export function breakLine(text: string, goal: number, tabsize: number, help = false): number {
   let pointer = 0;
   let column = 0;
   let lastBlank = -1;
@@ -124,10 +124,16 @@ export function breakLine(text: string, goal: number, tabsize: number): number {
   };
   while (pointer < text.length && isBlankChar(text[pointer])) step();
   while (pointer < text.length && column <= goal) {
-    if (isBlankChar(text[pointer])) lastBlank = pointer;
+    if (isBlankChar(text[pointer]) && (!help || column > 17 || goal < 40)) {
+      lastBlank = pointer;
+    } else if (help && text[pointer] === '\n') {
+      lastBlank = pointer;
+      break;
+    }
     step();
   }
   if (column <= goal) return pointer;
+  if (help && lastBlank < 0) return pointer - (isLowSurrogateAt(text, pointer - 1) ? 2 : 1);
   while (lastBlank < 0) {
     if (pointer >= text.length) return -1;
     if (isBlankChar(text[pointer])) lastBlank = pointer;
@@ -139,6 +145,11 @@ export function breakLine(text: string, goal: number, tabsize: number): number {
     pointer++;
   }
   return lastBlank;
+}
+
+function isLowSurrogateAt(text: string, index: number): boolean {
+  const code = text.charCodeAt(index);
+  return code >= 0xdc00 && code <= 0xdfff;
 }
 
 export function rewrapParagraph(lines: string[], start: number, leadString: string, context: JustifyContext): number {

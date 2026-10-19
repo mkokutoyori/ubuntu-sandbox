@@ -99,6 +99,11 @@ export class JoinPathCmdlet implements ICmdlet {
 
 // ─── Test-Path ────────────────────────────────────────────────────────────
 
+function functionDriveName(path: string): string | null {
+  const match = /^function:[\\/]?(.+)$/i.exec(path);
+  return match === null ? null : match[1];
+}
+
 export class TestPathCmdlet implements ICmdlet {
   readonly name = 'test-path';
   readonly parameters = ['Path', 'LiteralPath', 'PathType', 'Filter', 'Include', 'Exclude', 'IsValid', 'Newer', 'OlderThan'] as const;
@@ -108,6 +113,9 @@ export class TestPathCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const path = pathArgOf(ctx);
     if (!path) return false;
+
+    const functionName = functionDriveName(path);
+    if (functionName !== null) return ctx.runtime.getFunctionBlock(functionName) !== null;
 
     if (ctx.providers.registry) {
       if (isRegistryPath(path)) return ctx.providers.registry.testPath(path) ?? false;
@@ -330,6 +338,17 @@ export class GetContentCmdlet implements ICmdlet {
       : pathListOf(ctx.named['path'] ?? ctx.positional[0] ?? '');
     if (specs.length === 0) return null;
 
+    const driveFunction = functionDriveName(specs[0]);
+    if (driveFunction !== null) {
+      const source = ctx.runtime.getFunctionSource(driveFunction);
+      if (source === null) {
+        ctx.emitError(`Get-Content : Cannot find path 'Function:\\${driveFunction}' because it does not exist.`);
+        return null;
+      }
+      const braced = /^\s*\{[\s\S]*\}\s*$/.test(source);
+      return (braced ? source.trim().slice(1, -1) : source).split(/\r?\n/);
+    }
+
     const targets: string[] = [];
     for (const spec of specs) {
       const matched = literal !== undefined ? [spec] : expandPathSpec(fs, spec);
@@ -475,6 +494,18 @@ export class NewItemCmdlet implements ICmdlet {
     }
     const value    = ctx.named['value'] !== undefined ? psValueToString(ctx.named['value']) : null;
 
+    const functionName = functionDriveName(path);
+    if (functionName !== null) {
+      if (ctx.runtime.getFunctionBlock(functionName) !== null && ctx.named['force'] !== true) {
+        ctx.emitError(`New-Item : An item with the specified name '${functionName}' already exists.`);
+        return null;
+      }
+      if (!ctx.runtime.defineFunction(functionName, ctx.named['value'] ?? null)) {
+        ctx.emitError(`New-Item : Cannot convert the value to a script block for function '${functionName}'.`);
+      }
+      return null;
+    }
+
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       const force = ctx.named['force'] === true;
@@ -536,6 +567,13 @@ export class RemoveItemCmdlet implements ICmdlet {
       const envMatch = /^env:(.+)$/i.exec(path);
       if (envMatch) {
         ctx.providers.environment?.remove(envMatch[1]);
+        continue;
+      }
+      const functionName = functionDriveName(path);
+      if (functionName !== null) {
+        if (!ctx.runtime.removeFunction(functionName)) {
+          ctx.emitError(`Remove-Item : Cannot find path 'Function:\\${functionName}' because it does not exist.`);
+        }
         continue;
       }
       if (isRegistryPath(path)) {
@@ -998,7 +1036,16 @@ export class GetItemCmdlet implements ICmdlet {
   readonly aliases = ['gi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = pathArgOf(ctx);
+    const explicit = ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0];
+    if (explicit === undefined && ctx.pipeInput !== null && ctx.pipeInput !== undefined) {
+      const items = Array.isArray(ctx.pipeInput) ? ctx.pipeInput : [ctx.pipeInput];
+      const found = items.map(item => this.fetch(ctx, psValueToString(item))).filter(entry => entry !== null);
+      return found.length === 0 ? null : found.length === 1 ? found[0] : found as PSValue;
+    }
+    return this.fetch(ctx, pathArgOf(ctx));
+  }
+
+  private fetch(ctx: CmdletContext, path: string): PSValue {
     if (!path) { ctx.emitError('Get-Item requires -Path'); return null; }
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
@@ -1081,6 +1128,13 @@ export class SetItemCmdlet implements ICmdlet {
     const path  = pathArgOf(ctx);
     const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? '');
     if (!path) { ctx.emitError('Set-Item requires -Path'); return null; }
+    const functionName = functionDriveName(path);
+    if (functionName !== null) {
+      if (!ctx.runtime.defineFunction(functionName, ctx.named['value'] ?? ctx.positional[1] ?? null)) {
+        ctx.emitError(`Set-Item : Cannot convert the value to a script block for function '${functionName}'.`);
+      }
+      return null;
+    }
     // Env:VAR — write through to the environment provider so cmd subshells
     // see the same variable.
     const envMatch = /^env:(.+)$/i.exec(path);

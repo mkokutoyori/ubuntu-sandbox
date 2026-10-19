@@ -22,8 +22,9 @@ import {
   IPAddress, IPv6Address, SubnetMask,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
 } from '../../core/types';
-import { rejectTypeOf } from '../../core/IcmpErrors';
+import { answersWithTcpReset, rejectTypeOf } from '../../core/IcmpErrors';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { ConnectionTracker, type ConnectionState, type ConnectionTuple, type TrackedEntry } from './ConnectionTracker';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -47,25 +48,10 @@ export interface PacketInfo {
   tcpOptions?: readonly number[];
   fragmentOffset?: number;
   ipPacketBytes?: number;
+  related?: ConnectionTuple;
 }
 
-const ICMP_REPLY_TYPE: Readonly<Record<number, number>> = {
-  8: 0, 13: 14, 15: 16, 17: 18,
-  128: 129, 133: 134, 135: 136,
-};
-
-function icmpReplyType(type: number): number {
-  return ICMP_REPLY_TYPE[type] ?? type;
-}
-
-function tupleKey(
-  protocol: number, srcIP: string, srcPort: number,
-  dstIP: string, dstPort: number, icmpType?: number, icmpId?: number,
-): string {
-  const base = `${protocol}:${srcIP}:${srcPort}:${dstIP}:${dstPort}`;
-  if (icmpType === undefined) return base;
-  return `${base}:${icmpType}:${icmpId ?? 0}`;
-}
+export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
@@ -403,9 +389,11 @@ const TABLE_BUILTIN_CHAINS: Record<TableName, string[]> = {
 // ─── NAT result ────────────────────────────────────────────────────
 
 export interface NatResult {
-  action: 'MASQUERADE' | 'DNAT' | 'SNAT' | 'REDIRECT';
+  action: 'MASQUERADE' | 'DNAT' | 'SNAT' | 'REDIRECT' | 'DROP';
   address?: string;   // for DNAT: "ip:port", for SNAT: "ip", for REDIRECT: "port"
 }
+
+type ChainOutcome = FirewallVerdict | NatResult;
 
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
 const PROTOCOL_NUMBERS: Readonly<Record<string, number>> = {
@@ -435,6 +423,10 @@ const NAT_TARGET_HOOKS: Record<string, string[]> = {
   MASQUERADE: ['POSTROUTING'],
 };
 
+const TARGET_TABLE: Readonly<Record<string, TableName>> = {
+  DNAT: 'nat', REDIRECT: 'nat', SNAT: 'nat', MASQUERADE: 'nat', REJECT: 'filter',
+};
+
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export type IptablesServiceResolver = (port: number, proto: string) => string | null;
@@ -445,10 +437,8 @@ export class LinuxIptablesManager {
   private tables: Map<TableName, IptablesTable> = new Map();
   private readonly limitBuckets = new WeakMap<IptablesRule, { tokens: number; at: number }>();
   private readonly recentLists = new Map<string, Map<string, number[]>>();
-  // Connection tracking: "proto:srcIP:srcPort:dstIP:dstPort" → timestamp
-  // Used for state/conntrack match extensions
-  private conntrack: Map<string, number> = new Map();
-  private readonly CONNTRACK_TIMEOUT = 300_000; // 5 minutes
+  readonly connections: ConnectionTracker;
+  private readonly attached = new WeakMap<object, TrackedEntry>();
   // `--reject-with` of the rule that produced the most recent 'reject'
   // verdict from filterPacket(), if any — read by the caller immediately
   // after filterPacket() to pick the right ICMP error / TCP RST.
@@ -470,6 +460,7 @@ export class LinuxIptablesManager {
     if (vfs) this.vfs = vfs;
     if (resolveService) this.resolveService = resolveService;
     this.family = opts?.family ?? 4;
+    this.connections = new ConnectionTracker(this.family);
     this.initializeTables();
   }
 
@@ -499,6 +490,7 @@ export class LinuxIptablesManager {
    */
   resetAll(): void {
     this.initializeTables();
+    this.connections.flush();
   }
 
   /** Whether a chain currently exists in the given table. */
@@ -536,21 +528,18 @@ export class LinuxIptablesManager {
    *
    * Supports INPUT, OUTPUT, and FORWARD chains based on pkt.direction.
    */
-  filterPacket(pkt: PacketInfo): FirewallVerdict {
+  filterPacket(pkt: PacketInfo, subject?: object): FirewallVerdict {
     this.lastRejectWith = null;
     this.lastMark = null;
+    const entry = subject === undefined ? this.connections.enter(pkt) : this.track(pkt, subject);
     const filterTable = this.tables.get('filter')!;
     const chainName = pkt.direction === 'in' ? 'INPUT'
                     : pkt.direction === 'out' ? 'OUTPUT'
                     : 'FORWARD';
     const chain = filterTable.chains.get(chainName)!;
-    const verdict = this.evaluateChain(filterTable, chain, pkt, 0);
-
-    // Track established connections for accepted packets
-    if (verdict === 'accept') {
-      this.trackConnection(pkt);
-    }
-
+    const outcome = this.evaluateChain(filterTable, chain, pkt, 0, entry.state);
+    const verdict = typeof outcome === 'string' ? outcome : 'drop';
+    if (verdict === 'accept') this.connections.confirm(entry);
     return verdict;
   }
 
@@ -587,133 +576,17 @@ export class LinuxIptablesManager {
     const chain = natTable.chains.get(hook);
     if (!chain) return null;
 
-    for (const rule of chain.rules) {
-      if (this.ruleMatchesPacket(rule, pkt)) {
-        rule.pkts++;
-        rule.bytes += 64;
-        chain.pkts++;
-        chain.bytes += 64;
-
-        switch (rule.target) {
-          case 'MASQUERADE':
-            return { action: 'MASQUERADE' };
-          case 'DNAT': {
-            const toDest = rule.targetOptions['--to-destination'] || '';
-            return { action: 'DNAT', address: toDest };
-          }
-          case 'SNAT': {
-            const toSrc = rule.targetOptions['--to-source'] || '';
-            return { action: 'SNAT', address: toSrc };
-          }
-          case 'REDIRECT': {
-            const toPort = rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '';
-            return { action: 'REDIRECT', address: toPort };
-          }
-          default: continue;
-        }
-      }
-    }
-    return null;
+    const outcome = this.evaluateChain(natTable, chain, pkt, 0, this.connections.classify(pkt));
+    if (typeof outcome !== 'string') return outcome;
+    return outcome === 'accept' ? null : { action: 'DROP' };
   }
 
-  // ─── Connection tracking ──────────────────────────────────────
-
-  // ─── Lecture de la table, pour `conntrack -L` / `-S` ────────────
-  //
-  // La table existait et faisait déjà marcher `iptables -m state`, mais
-  // rien ne la nommait : encore un moteur sans porte. Ce qui suit ne
-  // fabrique aucun état, il expose celui qui décide déjà du sort des
-  // paquets.
-
-  /** Compteurs réels de `conntrack -S`, incrémentés aux vrais points. */
-  readonly conntrackStats = { insert: 0, found: 0, invalid: 0, drop: 0 };
-
-  /**
-   * Les flux vivants, une entrée par CONNEXION (pas par direction).
-   *
-   * La table indexe les deux sens séparément — c'est ce dont
-   * `isEstablished` a besoin. `conntrack -L`, lui, montre un flux avec
-   * ses deux tuples, donc on les réunit ici : le sens ORIGINAL est celui
-   * dont le tuple inverse existe aussi, et l'absence de retour est
-   * exactement ce que le vrai binaire marque `[UNREPLIED]`.
-   */
-  listConntrack(): Array<{
-    protocol: string; srcIP: string; srcPort: number;
-    dstIP: string; dstPort: number; ageMs: number; replied: boolean;
-  }> {
-    const now = simulationNowMs();
-    const vus = new Set<string>();
-    const flux: Array<{
-      protocol: string; srcIP: string; srcPort: number;
-      dstIP: string; dstPort: number; ageMs: number; replied: boolean;
-    }> = [];
-    for (const [cle, ts] of this.conntrack) {
-      if (now - ts > this.CONNTRACK_TIMEOUT) continue;
-      const p = cle.split(':');
-      if (p.length < 5) continue;
-      const [protocol, srcIP, srcPort, dstIP, dstPort, type, id] = p;
-      const inverse = tupleKey(
-        Number(protocol), dstIP, Number(dstPort), srcIP, Number(srcPort),
-        type === undefined ? undefined : icmpReplyType(Number(type)),
-        id === undefined ? undefined : Number(id));
-      if (vus.has(cle) || vus.has(inverse)) continue;
-      vus.add(cle);
-      flux.push({
-        protocol,
-        srcIP, srcPort: parseInt(srcPort, 10) || 0,
-        dstIP, dstPort: parseInt(dstPort, 10) || 0,
-        ageMs: now - ts,
-        replied: this.conntrack.has(inverse),
-      });
-    }
-    return flux;
-  }
-
-  /** Le délai d'expiration, ce que `conntrack -L` décompte par flux. */
-  conntrackTimeoutSec(): number { return this.CONNTRACK_TIMEOUT / 1000; }
-
-  /** `conntrack -F` — vide la table, et rend le nombre d'entrées jetées. */
-  flushConntrack(): number {
-    const n = this.conntrack.size;
-    this.conntrack.clear();
-    return n;
-  }
-
-  /** Track a connection for state/conntrack matching (ESTABLISHED,RELATED) */
-  private trackConnection(pkt: PacketInfo): void {
-    // Track the reply direction: so the reply (dst→src) is ESTABLISHED
-    const replyKey = tupleKey(
-      pkt.protocol, pkt.dstIP, pkt.dstPort, pkt.srcIP, pkt.srcPort,
-      pkt.icmpType === undefined ? undefined : icmpReplyType(pkt.icmpType), pkt.icmpId);
-    this.conntrack.set(replyKey, simulationNowMs());
-    // Also track original direction
-    const origKey = tupleKey(
-      pkt.protocol, pkt.srcIP, pkt.srcPort, pkt.dstIP, pkt.dstPort, pkt.icmpType, pkt.icmpId);
-    if (!this.conntrack.has(origKey)) this.conntrackStats.insert++;
-    this.conntrack.set(origKey, simulationNowMs());
-    // Periodically clean old entries (keep it simple — clean on every 50th insert)
-    if (this.conntrack.size > 200) this.cleanConntrack();
-  }
-
-  /** Check if a packet matches an ESTABLISHED or RELATED connection */
-  private isEstablished(pkt: PacketInfo): boolean {
-    const key = tupleKey(
-      pkt.protocol, pkt.srcIP, pkt.srcPort, pkt.dstIP, pkt.dstPort, pkt.icmpType, pkt.icmpId);
-    const ts = this.conntrack.get(key);
-    if (!ts) return false;
-    if (simulationNowMs() - ts > this.CONNTRACK_TIMEOUT) {
-      this.conntrack.delete(key);
-      return false;
-    }
-    this.conntrackStats.found++;
-    return true;
-  }
-
-  private cleanConntrack(): void {
-    const now = simulationNowMs();
-    for (const [key, ts] of this.conntrack) {
-      if (now - ts > this.CONNTRACK_TIMEOUT) this.conntrack.delete(key);
-    }
+  track(pkt: PacketInfo, subject: object): TrackedEntry {
+    const known = this.attached.get(subject);
+    if (known !== undefined) return known;
+    const entry = this.connections.enter(pkt);
+    this.attached.set(subject, entry);
+    return entry;
   }
 
   /**
@@ -722,11 +595,13 @@ export class LinuxIptablesManager {
    * decided the packet's fate (ACCEPT/DROP/REJECT). terminated=false means the
    * chain was exhausted without a terminal decision (equivalent to RETURN).
    */
-  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number): FirewallVerdict {
+  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number, state: ConnectionState): ChainOutcome {
     if (depth > 20) return 'accept';
 
-    const innerResult = this.evaluateChainInner(table, chain, pkt, depth);
+    const innerResult = this.evaluateChainInner(table, chain, pkt, depth, state);
     if (innerResult !== null) return innerResult;
+    chain.pkts++;
+    chain.bytes += pkt.ipPacketBytes ?? 0;
 
     // No rule matched → apply chain policy (only built-in chains have policies)
     if (chain.policy === 'DROP') return 'drop';
@@ -737,21 +612,20 @@ export class LinuxIptablesManager {
    * Inner chain evaluation. Returns null if the chain was exhausted (RETURN behavior),
    * or a FirewallVerdict if a terminal decision was made.
    */
-  private evaluateChainInner(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number): FirewallVerdict | null {
+  private evaluateChainInner(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number, state: ConnectionState): ChainOutcome | null {
     if (depth > 20) return 'accept';
 
+    const bytes = pkt.ipPacketBytes ?? 0;
     for (const rule of chain.rules) {
-      if (this.ruleMatchesPacket(rule, pkt)) {
+      if (this.ruleMatchesPacket(rule, pkt, state)) {
         // Update counters
         rule.pkts++;
-        rule.bytes += pkt.ipPacketBytes ?? 64;
-        chain.pkts++;
-        chain.bytes += pkt.ipPacketBytes ?? 64;
+        rule.bytes += bytes;
 
         // If target is a user-defined chain, jump into it
         const targetChain = table.chains.get(rule.target);
         if (targetChain && targetChain.policy === null) {
-          const result = this.evaluateChainInner(table, targetChain, pkt, depth + 1);
+          const result = this.evaluateChainInner(table, targetChain, pkt, depth + 1, state);
           // null = sub-chain fell through (RETURN) → continue in calling chain
           if (result === null) {
             if (rule.goto) return null;
@@ -767,6 +641,10 @@ export class LinuxIptablesManager {
             this.lastRejectWith = rule.targetOptions['--reject-with'] ?? null;
             return 'reject';
           case 'RETURN': return null; // return to calling chain
+          case 'MASQUERADE': return { action: 'MASQUERADE' };
+          case 'DNAT': return { action: 'DNAT', address: rule.targetOptions['--to-destination'] || '' };
+          case 'SNAT': return { action: 'SNAT', address: rule.targetOptions['--to-source'] || '' };
+          case 'REDIRECT': return { action: 'REDIRECT', address: rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '' };
           case 'LOG':
             this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
             continue; // LOG doesn't terminate; continue to next rule
@@ -783,7 +661,7 @@ export class LinuxIptablesManager {
     return null;
   }
 
-  private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
+  private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo, state: ConnectionState): boolean {
     // Protocol check
     if (rule.protocol && rule.protocol !== 'all') {
       const matches = pkt.protocol === (protocolNumberOf(rule.protocol) ?? -1);
@@ -874,22 +752,10 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
-      // state/conntrack: evaluate connection tracking
       if (m.module === 'state' || m.module === 'conntrack') {
         const option = m.module === 'state' ? '--state' : '--ctstate';
-        const states = (m.options.get(option) ?? '').toUpperCase();
-        if (states) {
-          const stateList = states.split(',');
-          const isEstab = this.isEstablished(pkt);
-          // NEW: packet not in conntrack table
-          // ESTABLISHED: packet matches an existing connection
-          // RELATED: simplified — treat same as ESTABLISHED
-          const matchesState =
-            (stateList.includes('ESTABLISHED') && isEstab) ||
-            (stateList.includes('RELATED') && isEstab) ||
-            (stateList.includes('NEW') && !isEstab);
-          if (matchesState === inverted(option)) return false;
-        }
+        const wanted = (m.options.get(option) ?? '').toUpperCase();
+        if (wanted !== '' && wanted.split(',').includes(state) === inverted(option)) return false;
       }
       // mac match: check source MAC address
       if (m.module === 'mac') {
@@ -1506,7 +1372,7 @@ export class LinuxIptablesManager {
     rule: IptablesRule, chainName: string, op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
   ): string | null {
     const argument = rule.target === 'REJECT' ? rule.targetOptions['--reject-with'] : undefined;
-    if (argument === undefined || rejectTypeOf(this.family, argument)?.code !== null) return null;
+    if (argument === undefined || !answersWithTcpReset(this.family, argument)) return null;
     const onlyTcp = !rule.negProtocol && protocolNumberOf(rule.protocol) === IP_PROTO_TCP;
     return onlyTcp ? null : `${this.banner}:  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }
@@ -1523,12 +1389,14 @@ export class LinuxIptablesManager {
     table: IptablesTable, chainName: string, target: string,
     op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
   ): string | null {
-    if (table.name !== 'nat') return null;
+    const refusal = `${this.banner}:  ${op} failed (Invalid argument): rule in chain ${chainName}`;
+    const requiredTable = TARGET_TABLE[target];
+    if (requiredTable !== undefined && requiredTable !== table.name) return refusal;
     const allowedChains = NAT_TARGET_HOOKS[target];
     if (!allowedChains) return null;
     if (!TABLE_BUILTIN_CHAINS.nat.includes(chainName)) return null;
     if (allowedChains.includes(chainName)) return null;
-    return `iptables v1.8.7 (nf_tables):  ${op} failed (Invalid argument): rule in chain ${chainName}`;
+    return refusal;
   }
 
   // ─── -D ────────────────────────────────────────────────────────

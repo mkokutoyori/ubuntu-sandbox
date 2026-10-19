@@ -1,5 +1,5 @@
 export type ShortOption =
-  | { readonly kind: 'option'; readonly letter: string; readonly argument?: string }
+  | { readonly kind: 'option'; readonly letter: string; readonly argument?: string; readonly long?: string }
   | { readonly kind: 'operand'; readonly value: string; readonly index: number }
   | { readonly kind: 'invalid'; readonly letter: string }
   | { readonly kind: 'missing-argument'; readonly letter: string; readonly long?: string }
@@ -35,15 +35,15 @@ function* longOption(
     return at;
   }
   if (!option.takesArgument) {
-    yield inline === undefined ? { kind: 'option', letter: option.letter } : { kind: 'needless-argument', long: option.name };
+    yield inline === undefined ? { kind: 'option', letter: option.letter, long: option.name } : { kind: 'needless-argument', long: option.name };
     return at;
   }
   if (inline !== undefined) {
-    yield { kind: 'option', letter: option.letter, argument: inline };
+    yield { kind: 'option', letter: option.letter, argument: inline, long: option.name };
     return at;
   }
   if (at + 1 < args.length) {
-    yield { kind: 'option', letter: option.letter, argument: args[at + 1] };
+    yield { kind: 'option', letter: option.letter, argument: args[at + 1], long: option.name };
     return at + 1;
   }
   yield { kind: 'missing-argument', letter: option.letter, long: option.name };

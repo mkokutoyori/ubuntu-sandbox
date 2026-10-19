@@ -446,16 +446,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly doskey: DoskeyTable = new DoskeyTable();
   /** Per-device PowerShell shim state (functions, aliases, vars). */
   readonly psShimState: PsShimState = createShimState();
+  readonly psCoreShimState: PsShimState = createShimState();
   /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
   private psInterpreter: PSInterpreter | null = null;
+  private psCoreInterpreter: PSInterpreter | null = null;
 
   readonly rsatCapabilities = new Set<string>();
   readonly cmdletOverlay = createClientCmdletOverlay();
 
   getWindowsEdition(): 'client' | 'server' { return 'client'; }
 
-  private async runPowerShellCode(code: string): Promise<string> {
-    const interpreter = this.getPowerShellInterpreter();
+  private async runPowerShellCode(code: string, language: 'desktop' | 'core' = 'desktop'): Promise<string> {
+    const interpreter = this.getPowerShellInterpreter(language);
     interpreter.beginInteractive(code);
     for (;;) {
       try {
@@ -467,7 +469,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         }
         const answer = await this.runProgram(e.commandLine, e.stdin ?? undefined);
         interpreter.provideNativeResult({
-          output: translateNativeAnswer(e.command, answer.output),
+          output: translateNativeAnswer(e.command, answer.output, language === 'core'),
           exitCode: answer.exitCode,
           notRecognized: nativeNotRecognized(e.command, answer.output),
         });
@@ -475,7 +477,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  getPowerShellInterpreter(): PSInterpreter {
+  getPowerShellInterpreter(language: 'desktop' | 'core' = 'desktop'): PSInterpreter {
+    if (language === 'core') {
+      if (!this.psCoreInterpreter) {
+        this.psCoreInterpreter = new PSInterpreter(
+          createWindowsPSProviders(this), { edition: this.getWindowsEdition(), registry: this.cmdletOverlay, language: 'core' },
+        );
+      }
+      return this.psCoreInterpreter;
+    }
     if (!this.psInterpreter) {
       // No `shared` bag: the factory already defaults every store to this
       // device's own registry / event log / network tables, so `reg` and
@@ -3680,12 +3690,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
       case 'powershell.exe':
-      case 'pwsh':
-      case 'pwsh.exe':
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
           runFullPs: (code) => this.runPowerShellCode(code),
+        }, args, splitCmdArgs(expanded, true).slice(1));
+      case 'pwsh':
+      case 'pwsh.exe':
+        return runPowerShellShim({
+          executeCmdCommand: (l) => this.executeCmdCommand(l),
+          shimState: this.psCoreShimState,
+          runFullPs: (code) => this.runPowerShellCode(code, 'core'),
         }, args, splitCmdArgs(expanded, true).slice(1));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;

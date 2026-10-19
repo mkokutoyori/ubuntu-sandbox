@@ -3,6 +3,7 @@
  * any Windows system providers. Called by PSInterpreter and PowerShellExecutor.
  */
 
+import { GetAliasCmdlet, NewAliasCmdlet, SetAliasCmdlet, RemoveAliasCmdlet } from './AliasCmdlets';
 import {
   GetNetLbfoTeamCmdlet, NewNetLbfoTeamCmdlet, SetNetLbfoTeamCmdlet, RemoveNetLbfoTeamCmdlet,
   GetNetLbfoTeamMemberCmdlet, GetNetLbfoTeamNicCmdlet, AddNetLbfoTeamMemberCmdlet,
@@ -11,6 +12,7 @@ import {
   RemoveNetLbfoTeamMemberCmdlet,
 } from './NetLbfoCmdlets';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
+import { JoinStringCmdlet, TestJsonCmdlet } from './CoreEditionCmdlets';
 import {
   WriteOutputCmdlet, WriteHostCmdlet, WriteErrorCmdlet,
   WriteWarningCmdlet, WriteVerboseCmdlet,
@@ -55,7 +57,7 @@ import {
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
-  GetAliasCmdlet, GetPSProviderCmdlet,
+  GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
 import { AddMemberCmdlet } from './AddMemberCmdlet';
@@ -275,9 +277,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new WriteErrorCmdlet());
   registry.register(new WriteWarningCmdlet());
   registry.register(new WriteVerboseCmdlet());
-  registry.register(WriteDebugCmdlet);
+  registry.register(new WriteDebugCmdlet());
   registry.register(WriteProgressCmdlet);
-  registry.register(WriteInformationCmdlet);
+  registry.register(new WriteInformationCmdlet());
   registry.register(new OutNullCmdlet());
   registry.register(new OutStringCmdlet());
   registry.register(new OutHostCmdlet());
@@ -307,6 +309,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new FormatWideCmdlet());
   registry.register(new FormatCustomCmdlet());
   registry.register(new GetMemberCmdlet());
+  registry.register(new JoinStringCmdlet());
+  registry.register(new TestJsonCmdlet());
 
   // ── Conversion ────────────────────────────────────────────────────────────
   registry.register(new ConvertToJsonCmdlet());
@@ -385,6 +389,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RemovePSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
   registry.register(new GetAliasCmdlet());
+  registry.register(new NewAliasCmdlet());
+  registry.register(new SetAliasCmdlet());
+  registry.register(new RemoveAliasCmdlet());
   registry.register(new GetPSProviderCmdlet());
 
   // ── Services (provider-backed) ────────────────────────────────────────────

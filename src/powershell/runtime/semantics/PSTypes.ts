@@ -13,7 +13,7 @@ export type TypeSpec =
 const NUMERIC_ALIASES: Readonly<Record<string, NumericKind>> = {
   byte: 'byte', sbyte: 'sbyte', int16: 'int16', short: 'int16', uint16: 'uint16', ushort: 'uint16',
   int: 'int32', int32: 'int32', uint32: 'uint32', uint: 'uint32', long: 'int64', int64: 'int64',
-  uint64: 'uint64', ulong: 'uint64', float: 'single', single: 'single', double: 'double', decimal: 'decimal',
+  uint64: 'uint64', ulong: 'uint64', bigint: 'bigint', biginteger: 'bigint', 'numerics.biginteger': 'bigint', float: 'single', single: 'single', double: 'double', decimal: 'decimal',
 };
 
 export const ARRAY_ELEMENT_TYPE = '__elementType__';

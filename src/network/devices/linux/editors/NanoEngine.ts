@@ -5,6 +5,10 @@ import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/Na
 import { decodeFile, LINE_END, type NanoFileFormat } from './nano/NanoFormat';
 import { directoryNameOf, fullPathOf, openingFor } from './nano/NanoOpening';
 import { NanoUndoStack, type UndoKind, type UndoRestore } from './nano/NanoUndo';
+import {
+  expandReplacement, PosixRegexError, SearchCircuit, SearchPattern,
+  type SearchHit, type SearchModus, type SearchSpot, type SearchStyle,
+} from './nano/NanoSearch';
 import { yesNoAnswer } from './nano/NanoYesNo';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
@@ -16,9 +20,11 @@ import {
   paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
 } from './nano/NanoJustify';
 import type { NanoMenuName } from './nano/NanoMenus';
+import { helpAction, unboundKeyMessage } from './nano/NanoHelpKeys';
+import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
-import type { EditorScreen } from './screen/EditorScreen';
+import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type NanoMode =
@@ -36,8 +42,10 @@ const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 
   k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
 };
 
+const CONTROL_MOTIONS: Readonly<Record<string, string>> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
 const STATUS_LINGER_KEYS = 20;
 const PAUSE_MILLIS = 1800;
+const VIEW_WARNING_MILLIS = 600;
 
 export interface Confirmation {
   readonly question: string | ((columns: number) => string);
@@ -52,6 +60,8 @@ export interface NanoLaunchOptions {
   readonly settings?: NanoSettings;
   readonly start?: NanoStart | null;
   readonly displayName?: string;
+  readonly helpTitle?: string;
+  readonly staleFooter?: ScreenRow;
 }
 
 export interface PendingReplaceMatch {
@@ -61,8 +71,21 @@ export interface PendingReplaceMatch {
   matchText: string;
 }
 
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+interface ReplaceRun {
+  readonly pattern: SearchPattern;
+  readonly replacement: string;
+  readonly backwards: boolean;
+  readonly circuit: SearchCircuit;
+  readonly begin: SearchSpot;
+  readonly edittop: number;
+  readonly firstcolumn: number;
+  modus: SearchModus;
+  skipOne: boolean;
+  replaceAll: boolean;
+  replaced: number;
+  region: { topLine: number; topCol: number; botLine: number; botCol: number } | null;
+  mark: SearchSpot | null;
+  markIsBeforeCursor: boolean;
 }
 
 function isWordChar(ch: string | undefined, punctuationAsLetters: boolean, wordChars: string | null): boolean {
@@ -79,13 +102,6 @@ function whiteLength(text: string, tabsize: number): number {
     if (text[count] !== ' ') return count;
     if (++count === tabsize) return tabsize;
   }
-}
-
-/** Search `line` for the next match of `regex` at or after column `fromCol`. */
-function execFrom(line: string, regex: RegExp, fromCol: number): RegExpExecArray | null {
-  const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
-  re.lastIndex = fromCol;
-  return re.exec(line);
 }
 
 /**
@@ -105,16 +121,21 @@ export class NanoEngine {
   private get _modified(): boolean { return this.modifiedState; }
   private set _modified(value: boolean) {
     if (value && !this.modifiedState) this.lockAsModified();
+    if (value !== this.modifiedState) this.markFlagHidden = false;
     this.modifiedState = value;
   }
+  private markFlagHidden = false;
   private statusText = '';
   private statusCountdown = 0;
   private statusAlert = false;
   private pauseNote: string | null = null;
+  private pauseMillis = PAUSE_MILLIS;
+  private pauseKeepsMenu = false;
   private statusMore = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
   private set _statusMessage(value: string) {
+    this.staleFooter = null;
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
     this.statusAlert = messageLevel(value) >= MESSAGE_LEVEL.ahem;
@@ -131,6 +152,9 @@ export class NanoEngine {
   private marginPending = false;
   readonly settings: NanoSettings;
   private readonly live: { -readonly [K in keyof NanoSettings]: NanoSettings[K] };
+  private readonly helpTitle: string | null;
+  private staleFooter: ScreenRow | null;
+  private helpViewer: NanoEngine | null = null;
   private _readOnly: boolean;
   private titleName: string;
   private bufferPath: string;
@@ -157,19 +181,19 @@ export class NanoEngine {
   private exitAfterSave = false;
   private caseSensitive = false;
   private searchDir: 'forward' | 'backward' = 'forward';
-  private searchQueryBuffer = '';
+  private searchAnswer = '';
+  private searchDefaultText = '';
   private lastSearchTerm = '';
-  // Up/Down history recall in the Search: prompt, scoped to this session.
-  private searchHistoryList: string[] = [];
-  private historyNavIndex: number | null = null;
-  private historyNavStash = '';
+  private searchHistory: string[] = [];
+  private replaceHistory: string[] = [];
+  private historyPosition: number | null = null;
+  private historyStash: string | null = null;
   private useRegex = false;
-  private replaceSearchBuffer = '';
   private replaceWithBuffer = '';
-  private replaceState: {
-    regex: RegExp; replacement: string; currentLine: number; currentCol: number; totalReplaced: number;
-    originLine: number; originCol: number; wrapped: boolean; originEdittop: number; originFirstcolumn: number;
-  } | null = null;
+  private replaceOrigin: { pattern: SearchPattern; line: number; col: number; edittop: number; firstcolumn: number } | null = null;
+  private replaceRun: ReplaceRun | null = null;
+  private pendingHit: SearchHit | null = null;
+  private searchSpotlight: { line: number; start: number; end: number } | null = null;
   private _pendingReplaceMatch: PendingReplaceMatch | null = null;
   private cutBuffer: string[] | null = null;
   private cutAction: 'cut' | 'copy' | null = null;
@@ -194,6 +218,8 @@ export class NanoEngine {
     showLineNumbers = false,
     launch: NanoLaunchOptions = {},
   ) {
+    this.helpTitle = launch.helpTitle ?? null;
+    this.staleFooter = launch.staleFooter ?? null;
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
     this.launchIdentity = launch.identity;
     const typedName = launch.displayName ?? filePath;
@@ -225,7 +251,7 @@ export class NanoEngine {
     this.ensureTrailingBlankLine();
     if (opening.alert !== null) this._statusMessage = `[ ${opening.alert} ]`;
     else if (!named) {
-      if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
+      if (!this.live.nohelp && this.helpTitle === null) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
     } else if (unread) this._statusMessage = '';
     else if (isNewFile) this._statusMessage = '[ New File ]';
     else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
@@ -275,7 +301,7 @@ export class NanoEngine {
     return this.linesArr.length > 1 && !this.live.nonewlines ? this.linesArr.slice(0, -1) : this.linesArr;
   }
   get bufferLines(): readonly string[] { return this.linesArr; }
-  get mode(): NanoMode { return this._mode; }
+  get mode(): NanoMode { return this.helpViewer !== null ? 'help' : this._mode; }
   get cursorLine(): number { return this._cursorLine; }
   get cursorCol(): number { return this._cursorCol; }
   get modified(): boolean { return this._modified; }
@@ -292,35 +318,8 @@ export class NanoEngine {
   get caseSensitiveSearch(): boolean { return this.caseSensitive; }
   /** Real nano's M-B toggle inside the search prompt (default: forward). */
   get searchDirection(): 'forward' | 'backward' { return this.searchDir; }
-  /** A compact reference of the bindings this engine actually implements — shown by ^G. */
-  get helpText(): string {
-    return [
-      'GNU nano Help Text',
-      '',
-      'The nano editor is a small, free text editor.',
-      '',
-      'Key bindings:',
-      '  ^G  Display this help text',
-      '  ^X  Exit / close a prompt',
-      '  ^O  Write the current buffer to disk',
-      '  ^R  Insert another file at the cursor',
-      '  ^T  Insert the output of a shell command',
-      '  ^W  Search for text (M-C case sensitive, M-R regexp, M-B backwards)',
-      '  ^\\  Search and replace text',
-      '  ^K  Cut the current line',
-      '  ^U  Paste the last cut text',
-      '  ^J  Justify the current paragraph',
-      '  ^_  Go to a specific line and column',
-      '  ^C  Show the current cursor position',
-      '  ^Y  Scroll up one page',
-      '  ^V  Scroll down one page',
-      '  M-U Undo the last action',
-      '  M-E Redo the last undone action',
-      '',
-      'Press ^X to close this help screen.',
-    ].join('\n');
-  }
-  get searchQuery(): string { return this.searchQueryBuffer; }
+  get helpText(): string { return this.helpViewer === null ? '' : this.helpViewer.bufferLines.join('\n'); }
+  get searchQuery(): string { return this.searchAnswer; }
   get filePath(): string { return this.bufferPath; }
   get swapFilePath(): string { return this.lockPath; }
   get swapFileExists(): boolean { return this.lockPath !== '' && this.fs.exists(this.lockPath); }
@@ -330,7 +329,7 @@ export class NanoEngine {
   get lineNumbersShown(): boolean { return this.live.linenumbers; }
   /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
   get regexSearchEnabled(): boolean { return this.useRegex; }
-  get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
+  get replaceSearchQuery(): string { return this.searchAnswer; }
   get replaceWithText(): string { return this.replaceWithBuffer; }
   get pendingReplaceMatch(): PendingReplaceMatch | null { return this._pendingReplaceMatch; }
 
@@ -338,6 +337,11 @@ export class NanoEngine {
 
   applyKey(k: EditorKeyInput): void {
     if (this._exited) return;
+    if (this.live.preserve && k.ctrl && (k.key.toLowerCase() === 'q' || k.key.toLowerCase() === 's')) return;
+    if (this.helpViewer !== null) {
+      this.keyInHelp(k);
+      return;
+    }
     this.pauseNote = null;
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
@@ -345,14 +349,22 @@ export class NanoEngine {
       this.statusMore = false;
     }
     this.messageThisKey = false;
+    const carriedSpotlight = this.searchSpotlight;
+    this.searchSpotlight = null;
     this.manner = 'centering';
     this.verticalKey = false;
     if (!this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
     if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     const cursorBefore = { line: this._cursorLine, col: this._cursorCol };
-    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') this.toggleHelpInPrompt();
-    else this.dispatchKey(k);
+    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') {
+      if (this.helpTitle === null) this.toggleHelpInPrompt();
+    } else if (wasPrompting && k.ctrl && k.key.toLowerCase() === 'g' && this.helpMenuOfPrompt() !== null) {
+      this.openHelp(this.helpMenuOfPrompt()!);
+    } else {
+      this.dispatchKey(k);
+    }
+    if (this.searchSpotlight === null && this.isPrompting()) this.searchSpotlight = carriedSpotlight;
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
     const promptLeftCursorAlone = (wasPrompting || this.isPrompting())
@@ -382,8 +394,8 @@ export class NanoEngine {
   }
 
   private minibarInfo(messageExpired: boolean): MinibarInfo | null {
-    const prompting = this.isPrompting() || this._mode === 'help';
-    if (!this.minibarMode() || prompting) return null;
+    const prompting = this.isPrompting();
+    if (!this.minibarMode() || prompting || this.helpTitle !== null) return null;
     if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
     const text = this.line(this._cursorLine);
     const code = this._cursorCol < text.length
@@ -426,7 +438,7 @@ export class NanoEngine {
   private searchPromptLabel(replacing: boolean): string {
     const replaceNote = replacing ? (this.markLine === null ? ' (to replace)' : ' (to replace) in selection') : '';
     return `Search${this.caseSensitive ? ' [Case Sensitive]' : ''}${this.useRegex ? ' [Regexp]' : ''}`
-      + `${this.searchDir === 'backward' ? ' [Backwards]' : ''}${replaceNote}${this.searchDefaultNote()}`;
+      + `${this.searchDir === 'backward' ? ' [Backwards]' : ''}${replaceNote}${this.searchDefaultText}`;
   }
 
   private searchDefaultNote(): string {
@@ -436,8 +448,10 @@ export class NanoEngine {
     return ` [${shown.cells.join('')}${breadth(this.lastSearchTerm, this.live.tabsize) > limit ? '...' : ''}]`;
   }
 
-  private pauseWith(note: string): void {
+  private pauseWith(note: string, millis = PAUSE_MILLIS, keepsMenu = false): void {
     this.pauseNote = note;
+    this.pauseMillis = millis;
+    this.pauseKeepsMenu = keepsMenu;
   }
 
   private refuseWhenRestricted(): boolean {
@@ -480,8 +494,8 @@ export class NanoEngine {
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
     switch (this._mode) {
       case 'save-prompt': return { label: this.writeOutLabel(), answer: this.saveFileNameBuffer, menu: 'write-out' };
-      case 'search': return { label: this.searchPromptLabel(false), answer: this.searchQueryBuffer, menu: 'search' };
-      case 'replace-search': return { label: this.searchPromptLabel(true), answer: this.replaceSearchBuffer, menu: 'replace' };
+      case 'search': return { label: this.searchPromptLabel(false), answer: this.searchAnswer, menu: 'search' };
+      case 'replace-search': return { label: this.searchPromptLabel(true), answer: this.searchAnswer, menu: 'replace' };
       case 'replace-with': return { label: 'Replace with', answer: this.replaceWithBuffer, menu: 'replace-with' };
       case 'goto-line': return { label: 'Enter line number, column number', answer: this.gotoLineBuffer, menu: 'goto' };
       case 'execute-prompt': return { label: 'Command to execute', answer: this.executeCmdBuffer, menu: 'execute' };
@@ -491,8 +505,9 @@ export class NanoEngine {
   }
 
   get screen(): EditorScreen {
+    if (this.helpViewer !== null) return this.helpViewer.screen;
     const live = this.paintScreen(false);
-    if (this.pauseNote !== null) return { ...live, hold: { millis: PAUSE_MILLIS, then: this.paintScreen(true) } };
+    if (this.pauseNote !== null) return { ...live, hold: { millis: this.pauseMillis, then: this.paintScreen(true) } };
     const level = messageLevel(this.statusText);
     const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
     if (!transient || this.isPrompting()) return live;
@@ -508,7 +523,7 @@ export class NanoEngine {
   }
 
   private bareDisplay(): boolean {
-    return this.minibarMode() || this.zeroMode();
+    return this.helpTitle === null && (this.minibarMode() || this.zeroMode());
   }
 
   private paintScreen(messageExpired: boolean): EditorScreen {
@@ -520,14 +535,15 @@ export class NanoEngine {
       lines: this.linesArr,
       cursor: { line: this._cursorLine, col: this._cursorCol },
       mark: this.markLine === null ? null : { line: this.markLine, col: this.markCol ?? 0 },
-      spotlight: this._pendingReplaceMatch === null ? null : { line: this._pendingReplaceMatch.line, start: this._pendingReplaceMatch.start, end: this._pendingReplaceMatch.end },
+      spotlight: this._pendingReplaceMatch === null ? this.searchSpotlight : { line: this._pendingReplaceMatch.line, start: this._pendingReplaceMatch.start, end: this._pendingReplaceMatch.end },
       tabsize: this.live.tabsize,
       softwrap: this.live.softwrap,
       title: {
-        name: this._mode === 'help' ? 'Main nano help text' : this.titleName === '' ? 'New Buffer' : this.titleName,
-        state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
+        name: this.titleName === '' ? 'New Buffer' : this.titleName,
+        state: this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
         branding: 'GNU nano 7.2',
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
+        heading: this.helpTitle ?? undefined,
       },
       status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore, raw: this.statusRaw },
       minibar: this.minibarInfo(messageExpired),
@@ -536,11 +552,16 @@ export class NanoEngine {
         ? { question: 'Save modified buffer? ', withAll: false }
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
-      menu: this._mode === 'help' ? 'help' : prompt === null ? 'main' : prompt.menu,
-      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view },
+      menu: this.helpTitle !== null ? (prompt === null ? 'help' : 'search-in-help') : prompt === null ? 'main' : prompt.menu,
+      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.live.preserve },
       pause: messageExpired ? null : this.pauseNote,
-      helpLines: this._mode === 'help' ? this.helpText.split('\n') : null,
+      pauseKeepsMenu: this.pauseKeepsMenu,
     });
+    if (this.staleFooter !== null && this._mode === 'edit' && this.statusText === '') {
+      const rows = [...screen.rows];
+      rows[this.window.layout.statusRow] = this.staleFooter;
+      return { ...screen, rows };
+    }
     if (this._mode !== 'confirm' || !this.confirmation!.startup) return screen;
     const footerFrom = this.window.layout.statusRow;
     return { ...screen, rows: screen.rows.map((row, index) => (index < footerFrom ? { text: '', spans: [] } : row)) };
@@ -592,7 +613,7 @@ export class NanoEngine {
   }
 
   private stateLetters(): string {
-    return (this.live.autoindent ? 'I' : ' ') + (this.markLine !== null ? 'M' : ' ')
+    return (this.live.autoindent ? 'I' : ' ') + (this.markLine !== null && !this.markFlagHidden ? 'M' : ' ')
       + (this.live.breaklonglines ? 'L' : ' ') + ' ' + (this.live.softwrap ? 'S' : ' ');
   }
 
@@ -647,6 +668,7 @@ export class NanoEngine {
   }
 
   private wipeStatus(): void {
+    this.staleFooter = null;
     this.statusText = '';
     this.statusCountdown = 0;
     this.statusAlert = false;
@@ -659,7 +681,11 @@ export class NanoEngine {
   }
 
   resize(rows: number, cols: number): void {
-    if (this.sized && (rows !== this.window.rows || cols !== this.window.cols)) this.wipeStatus();
+    this.helpViewer?.resize(rows, cols);
+    if (this.sized && (rows !== this.window.rows || cols !== this.window.cols)) {
+      this.wipeStatus();
+      this.markFlagHidden = false;
+    }
     const first = !this.sized;
     this.sized = true;
     const cursor = { line: this._cursorLine, col: this._cursorCol };
@@ -699,16 +725,15 @@ export class NanoEngine {
 
   private dispatchKey(k: EditorKeyInput): void {
     switch (this._mode) {
-      case 'edit': return this.applyEditKey(k);
+      case 'edit': return this.helpTitle === null ? this.applyEditKey(k) : this.applyHelpViewerKey(k);
       case 'save-prompt': return this.applySavePromptKey(k);
       case 'exit-save-prompt': return this.applyExitSavePromptKey(k);
       case 'confirm': return this.applyConfirmKey(k);
       case 'search': return this.applySearchKey(k);
-      case 'replace-search': return this.applyReplaceSearchKey(k);
+      case 'replace-search': return this.applySearchKey(k);
       case 'replace-with': return this.applyReplaceWithKey(k);
       case 'replace-confirm': return this.applyReplaceConfirmKey(k);
       case 'goto-line': return this.applyGotoLineKey(k);
-      case 'help': return this.applyHelpKey(k);
       case 'execute-prompt': return this.applyExecutePromptKey(k);
       case 'read-file-prompt': return this.applyReadFilePromptKey(k);
     }
@@ -736,10 +761,8 @@ export class NanoEngine {
         this.insertIntoPromptField(() => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; }, firstLine);
         return;
       case 'search':
-        this.insertIntoPromptField(() => this.searchQueryBuffer, (v) => { this.searchQueryBuffer = v; }, firstLine);
-        return;
       case 'replace-search':
-        this.insertIntoPromptField(() => this.replaceSearchBuffer, (v) => { this.replaceSearchBuffer = v; }, firstLine);
+        this.insertIntoPromptField(() => this.searchAnswer, (v) => { this.searchAnswer = v; }, firstLine);
         return;
       case 'replace-with':
         this.insertIntoPromptField(() => this.replaceWithBuffer, (v) => { this.replaceWithBuffer = v; }, firstLine);
@@ -1037,8 +1060,8 @@ export class NanoEngine {
     if (k.key === 'ArrowLeft') { this.jumpWordLeft(); return; }
     if (k.key === 'ArrowRight') { this.jumpWordRight(); return; }
     const key = k.key.toLowerCase();
-    const emacs: Record<string, string> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
-    if (emacs[key]) { this.applyEditKey({ ...k, key: emacs[key], ctrl: false }); return; }
+    const motion = CONTROL_MOTIONS[key];
+    if (motion) { this.applyEditKey({ ...k, key: motion, ctrl: false }); return; }
     if (key === 'r' && this.refuseWhenRestricted()) return;
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
@@ -1077,20 +1100,16 @@ export class NanoEngine {
         }
         return;
       case 'w': // Where Is (search)
-        this.searchQueryBuffer = '';
-        this.searchDir = 'forward';
-        this._promptCursor = 0;
-        this._mode = 'search';
-        this.historyNavIndex = null;
+        this.beginSearchPrompt(false);
         return;
       case '\\': // Replace
-        this.replaceSearchBuffer = '';
-        this.searchDir = 'forward';
-        this._promptCursor = 0;
-        this._mode = 'replace-search';
+        this.beginReplacePrompt();
+        return;
+      case 'q':
+        this.beginSearchPrompt(true);
         return;
       case 'g': // Get Help
-        this._mode = 'help';
+        this.openHelp('main');
         return;
       case 'c': { // Cur Pos
         this._statusMessage = this.locationMessage();
@@ -1154,7 +1173,7 @@ export class NanoEngine {
     if (this.movePage(true) > 0) {
       const last = this.linesArr.length - 1;
       this._cursorLine = last;
-      this._cursorCol = this.line(last).length;
+      this._cursorCol = this.helpTitle !== null ? 0 : this.line(last).length;
       this.verticalKey = false;
       this.manner = 'flowing';
       return;
@@ -1283,14 +1302,33 @@ export class NanoEngine {
       return;
     }
     if (k.key === '\\') { // First Line
-      this._cursorLine = 0;
-      this._cursorCol = 0;
+      this.toFirstLine();
       return;
     }
     if (k.key === '/') { // Last Line
-      this.manner = 'flowing';
-      this._cursorLine = this.linesArr.length - 1;
-      this._cursorCol = this.line(this._cursorLine).length;
+      this.toLastLine();
+      return;
+    }
+    if (key === 'r') {
+      this.beginReplacePrompt();
+      return;
+    }
+    if (key === 'b') {
+      this._statusMessage = '[ No linter is defined for this type of file ]';
+      return;
+    }
+    if (key === 'f') {
+      this._statusMessage = '[ No formatter is defined for this type of file ]';
+      return;
+    }
+    if (key === 'w') {
+      this.wipeStatus();
+      this.researchWith(false);
+      return;
+    }
+    if (key === 'q') {
+      this.wipeStatus();
+      this.researchWith(true);
       return;
     }
     if (key === 'a') { // Mark Text (M-A alias of ^6)
@@ -1311,10 +1349,22 @@ export class NanoEngine {
     }
   }
 
+  private toFirstLine(): void {
+    this._cursorLine = 0;
+    this._cursorCol = 0;
+  }
+
+  private toLastLine(): void {
+    this.manner = 'flowing';
+    this._cursorLine = this.linesArr.length - 1;
+    this._cursorCol = this.helpTitle !== null ? 0 : this.line(this._cursorLine).length;
+  }
+
   // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
 
   private toggleMark(): void {
     this.verticalKey = true;
+    this.markFlagHidden = false;
     if (this.markLine !== null) {
       this.clearMark();
       this._statusMessage = 'Mark Unset';
@@ -1684,15 +1734,17 @@ export class NanoEngine {
       if (this.cutBuffer !== null) this.insertIntoPromptField(get, set, this.cutBuffer[0]);
       return true;
     }
-    if (k.key === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
-    if (k.key === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
-    if (k.key === 'Home') { this._promptCursor = 0; return true; }
-    if (k.key === 'End') { this._promptCursor = text.length; return true; }
-    if (k.key === 'Delete') {
+    const motion = k.ctrl && !k.alt ? CONTROL_MOTIONS[k.key.toLowerCase()] : undefined;
+    const name = motion ?? k.key;
+    if (name === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
+    if (name === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
+    if (name === 'Home') { this._promptCursor = 0; return true; }
+    if (name === 'End') { this._promptCursor = text.length; return true; }
+    if (name === 'Delete') {
       if (this._promptCursor < text.length) set(text.slice(0, this._promptCursor) + text.slice(this._promptCursor + 1));
       return true;
     }
-    if (k.key === 'Backspace') {
+    if (name === 'Backspace') {
       if (this._promptCursor > 0) {
         set(text.slice(0, this._promptCursor - 1) + text.slice(this._promptCursor));
         this._promptCursor--;
@@ -1720,7 +1772,7 @@ export class NanoEngine {
   }
 
   private isPrompting(): boolean {
-    return this._mode !== 'edit' && this._mode !== 'help';
+    return this._mode !== 'edit';
   }
 
   private writeTarget(name: string): string {
@@ -2017,8 +2069,12 @@ export class NanoEngine {
   private searchAtStartup(request: NanoSearchRequest): void {
     this.searchDir = request.backwards ? 'backward' : 'forward';
     this.lastSearchTerm = request.pattern;
-    this.performSearch(request.pattern);
-    if (this.statusText === '[ Search Wrapped ]') this.wipeStatus();
+    const pattern = this.compileSearch(request.pattern);
+    if (pattern === null) return;
+    const circuit = new SearchCircuit(pattern, request.backwards);
+    const hit = this.findNext(pattern, 'JUSTFIND', false, { line: 0, col: 0 }, circuit);
+    if (hit === null) this.reportNotFound(request.pattern);
+    else if (messageLevel(this.statusText) <= MESSAGE_LEVEL.remark) this.wipeStatus();
   }
 
   private gotoLineNumbers(line: number, column: number): void {
@@ -2035,9 +2091,114 @@ export class NanoEngine {
 
   // ── Help (^G) ────────────────────────────────────────────────────
 
-  private applyHelpKey(k: EditorKeyInput): void {
-    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'x')) {
-      this._mode = 'edit';
+  private helpMenuOfPrompt(): HelpMenu | null {
+    switch (this._mode) {
+      case 'search': return 'search';
+      case 'replace-search': return 'replace';
+      case 'replace-with': return 'replace-with';
+      case 'goto-line': return 'goto';
+      case 'save-prompt': return 'write';
+      case 'read-file-prompt': return 'insert';
+      case 'execute-prompt': return 'execute';
+      default: return null;
+    }
+  }
+
+  private openHelp(menu: HelpMenu): void {
+    const rows = this.window.rows;
+    const cols = this.window.cols;
+    const page = helpPage(
+      menu,
+      { restricted: this.live.restricted, preserve: this.live.preserve, saveonexit: this.live.saveonexit, view: this._readOnly },
+      { columns: cols, rows, leadingBlank: (this.live.minibar || !this.live.emptyline) && rows > 6 },
+    );
+    const settings = defaultNanoSettings({
+      ...this.live,
+      tabsize: 8,
+      linenumbers: false,
+      nohelp: false,
+      zero: false,
+      view: false,
+      restricted: false,
+      nonewlines: true,
+      locking: false,
+      constantshow: false,
+      stateflags: false,
+    });
+    const tiny = this.footerKeepsStaleText();
+    const viewer = new NanoEngine(this.fs, '', page.lines.join('\n'), false, false, undefined, false, {
+      identity: this.launchIdentity,
+      settings,
+      helpTitle: page.title,
+      staleFooter: tiny ? this.paintScreen(false).rows[this.window.layout.statusRow] : undefined,
+    });
+    viewer.lastSearchTerm = this.lastSearchTerm;
+    viewer.searchHistory = this.searchHistory;
+    viewer.replaceHistory = this.replaceHistory;
+    viewer.resize(rows, cols);
+    this.helpViewer = viewer;
+    this.wipeStatus();
+  }
+
+  private footerKeepsStaleText(): boolean {
+    return this.window.layout.barsFrom === null && this.window.rows > 1 && !this.live.nohelp && !this.live.zero;
+  }
+
+  private keyInHelp(k: EditorKeyInput): void {
+    const viewer = this.helpViewer!;
+    viewer.applyKey(k);
+    if (!viewer.exited) return;
+    const footer = viewer.screen.rows[this.window.layout.statusRow];
+    this.lastSearchTerm = viewer.lastSearchTerm;
+    this.helpViewer = null;
+    this.wipeStatus();
+    if (this.footerKeepsStaleText()) this.staleFooter = footer;
+    if (this.reportsPositionAsMessage() && this._mode === 'edit') this._statusMessage = this.locationMessage();
+  }
+
+  private applyHelpViewerKey(k: EditorKeyInput): void {
+    const action = helpAction(k, this.live.preserve);
+    switch (action) {
+      case 'scroll-up':
+        this.scrollView(false, 1);
+        return;
+      case 'scroll-down':
+        if (this.window.edittop + this.window.editRows - 1 < this.linesArr.length - 1) this.scrollView(true, 1);
+        return;
+      case 'page-up':
+        this.pageUp();
+        return;
+      case 'page-down':
+        this.pageDown();
+        return;
+      case 'first-line':
+        this.toFirstLine();
+        return;
+      case 'last-line':
+        this.toLastLine();
+        return;
+      case 'search-forward':
+        this.beginSearchPrompt(false);
+        return;
+      case 'search-backward':
+        this.beginSearchPrompt(true);
+        return;
+      case 'find-next':
+        this.wipeStatus();
+        this.researchWith(false);
+        return;
+      case 'find-previous':
+        this.wipeStatus();
+        this.researchWith(true);
+        return;
+      case 'refresh':
+        return;
+      case 'exit':
+        this._exited = true;
+        return;
+      default:
+        this._statusMessage = `[ ${unboundKeyMessage(k)} ]`;
+        this.statusCountdown = 1;
     }
   }
 
@@ -2248,263 +2409,324 @@ export class NanoEngine {
   // ── Search ───────────────────────────────────────────────────────
 
   private applySearchKey(k: EditorKeyInput): void {
-    if (k.alt && k.key.toLowerCase() === 'r') {
-      this.useRegex = !this.useRegex;
+    const key = k.key.toLowerCase();
+    const inHelp = this.helpTitle !== null;
+    if (k.alt && (key === 'c' || key === 'r' || key === 'b')) {
+      if (inHelp) return;
+      if (key === 'c') this.caseSensitive = !this.caseSensitive;
+      else if (key === 'r') this.useRegex = !this.useRegex;
+      else this.searchDir = this.searchDir === 'forward' ? 'backward' : 'forward';
+      this.resetHistoryRecall();
       return;
     }
-    if (k.alt && k.key.toLowerCase() === 'c') {
-      this.caseSensitive = !this.caseSensitive;
+    if (k.ctrl && key === 'r') {
+      if (inHelp) return;
+      this.resetHistoryRecall();
+      if (this._readOnly) this.pauseWith('Key is invalid in view mode', VIEW_WARNING_MILLIS, true);
+      else this._mode = this._mode === 'search' ? 'replace-search' : 'search';
       return;
     }
-    if (k.alt && k.key.toLowerCase() === 'b') {
-      this.searchDir = this.searchDir === 'forward' ? 'backward' : 'forward';
+    if (k.ctrl && key === 't' && this._mode === 'search' && !inHelp) {
+      this.resetHistoryRecall();
+      this.gotoLineBuffer = this.searchAnswer;
+      this._promptCursor = this.gotoLineBuffer.length;
+      this._mode = 'goto-line';
       return;
     }
-    if (k.key === 'Enter') {
-      const term = this.searchQueryBuffer !== '' ? this.searchQueryBuffer : this.lastSearchTerm;
+    if (k.ctrl && (key === 'y' || key === 'v') && this._mode === 'search') {
+      this.resetHistoryRecall();
       this._mode = 'edit';
-      this.historyNavIndex = null;
-      if (term === '') {
-        this._statusMessage = 'Cancelled';
-        return;
-      }
-      this.lastSearchTerm = term;
-      this.searchHistoryList.push(term);
-      this.performSearch(term);
-      return;
-    }
-    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
-      this.historyNavIndex = null;
-      this.cancelPrompt();
-      return;
-    }
-    if (k.key === 'ArrowUp') {
-      if (this.historyNavIndex === null) {
-        if (this.searchHistoryList.length === 0) return;
-        this.historyNavStash = this.searchQueryBuffer;
-        this.historyNavIndex = this.searchHistoryList.length - 1;
-      } else if (this.historyNavIndex > 0) {
-        this.historyNavIndex--;
-      }
-      this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
-      this._promptCursor = this.searchQueryBuffer.length;
-      return;
-    }
-    if (k.key === 'ArrowDown') {
-      if (this.historyNavIndex === null) return;
-      if (this.historyNavIndex < this.searchHistoryList.length - 1) {
-        this.historyNavIndex++;
-        this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
-      } else {
-        this.historyNavIndex = null;
-        this.searchQueryBuffer = this.historyNavStash;
-      }
-      this._promptCursor = this.searchQueryBuffer.length;
-      return;
-    }
-    this.applyPromptFieldKey(k, () => this.searchQueryBuffer, (v) => { this.searchQueryBuffer = v; });
-  }
-
-  private buildSearchRegex(query: string): RegExp {
-    // Real nano's search is case-insensitive by default (M-C toggles it).
-    return new RegExp(this.useRegex ? query : escapeRegExp(query), this.caseSensitive ? '' : 'i');
-  }
-
-  private setCursorFromFlatOffset(idx: number): void {
-    const before = this.content.slice(0, idx).split('\n');
-    this._cursorLine = before.length - 1;
-    this._cursorCol = before[before.length - 1].length;
-  }
-
-  private performSearch(query: string): void {
-    const flatOffset = this.linesArr.slice(0, this._cursorLine).join('\n').length
-      + (this._cursorLine > 0 ? 1 : 0) + this._cursorCol;
-    const text = this.content;
-    const re = this.buildSearchRegex(query);
-
-    if (this.searchDir === 'backward') {
-      const globalRe = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
-      const before = [...text.slice(0, flatOffset).matchAll(globalRe)];
-      let idx: number;
-      let wrapped = false;
-      if (before.length > 0) {
-        idx = before[before.length - 1].index!;
-      } else {
-        const all = [...text.matchAll(globalRe)];
-        if (all.length === 0) {
-          this.reportNotFound(query);
-          return;
-        }
-        idx = all[all.length - 1].index!;
-        wrapped = true;
-      }
-      if (wrapped && idx === flatOffset) {
-        this._statusMessage = '[ This is the only occurrence ]';
-        return;
-      }
-      this.setCursorFromFlatOffset(idx);
-      this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
-      return;
-    }
-
-    let m = text.slice(flatOffset + 1).match(re);
-    let idx = m && m.index !== undefined ? flatOffset + 1 + m.index : -1;
-    let wrapped = false;
-    if (idx < 0) {
-      m = text.match(re);
-      idx = m && m.index !== undefined ? m.index : -1;
-      wrapped = true;
-    }
-    if (idx < 0) {
-      this.reportNotFound(query);
-      return;
-    }
-    if (wrapped && idx === flatOffset) {
-      this._statusMessage = '[ This is the only occurrence ]';
-      return;
-    }
-    this.setCursorFromFlatOffset(idx);
-    this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
-  }
-
-  // ── Replace (Ctrl+\) ────────────────────────────────────────────
-
-  private applyReplaceSearchKey(k: EditorKeyInput): void {
-    if (k.alt && k.key.toLowerCase() === 'r') {
-      this.useRegex = !this.useRegex;
-      return;
-    }
-    if (k.alt && k.key.toLowerCase() === 'c') {
-      this.caseSensitive = !this.caseSensitive;
+      if (key === 'y') this.toFirstLine(); else this.toLastLine();
       return;
     }
     if (k.key === 'Enter') {
-      const term = this.replaceSearchBuffer !== '' ? this.replaceSearchBuffer : this.lastSearchTerm;
-      if (term === '') {
-        this._mode = 'edit';
-        this._statusMessage = 'Cancelled';
-        return;
-      }
-      this.lastSearchTerm = term;
-      this.replaceWithBuffer = '';
-      this._promptCursor = 0;
-      this._mode = 'replace-with';
+      this.submitSearch();
       return;
     }
-    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+    if (k.key === 'Escape' || (k.ctrl && key === 'c')) {
+      this.resetHistoryRecall();
       this.cancelPrompt();
       return;
     }
-    this.applyPromptFieldKey(k, () => this.replaceSearchBuffer, (v) => { this.replaceSearchBuffer = v; });
+    if (this.recallHistory(k, this.searchHistory, () => this.searchAnswer, (value) => { this.searchAnswer = value; })) return;
+    this.applyPromptFieldKey(k, () => this.searchAnswer, (value) => { this.searchAnswer = value; });
+  }
+
+  private beginSearchPrompt(backwards: boolean): void {
+    this.searchDefaultText = this.searchDefaultNote();
+    this.searchAnswer = '';
+    this.searchDir = backwards ? 'backward' : 'forward';
+    this._promptCursor = 0;
+    this._mode = 'search';
+    this.resetHistoryRecall();
+  }
+
+  private beginReplacePrompt(): void {
+    if (this._readOnly) {
+      this._statusMessage = '[ Key is invalid in view mode ]';
+      return;
+    }
+    this.searchDefaultText = this.searchDefaultNote();
+    this.searchAnswer = '';
+    this.searchDir = 'forward';
+    this._promptCursor = 0;
+    this._mode = 'replace-search';
+    this.resetHistoryRecall();
+  }
+
+  private resetHistoryRecall(): void {
+    this.historyPosition = null;
+    this.historyStash = null;
+  }
+
+  private recallHistory(k: EditorKeyInput, history: string[], get: () => string, set: (value: string) => void): boolean {
+    const older = k.key === 'ArrowUp' || (k.ctrl && k.key.toLowerCase() === 'p');
+    const newer = k.key === 'ArrowDown' || (k.ctrl && k.key.toLowerCase() === 'n');
+    if (!older && !newer) return false;
+    if (older) {
+      if (this.historyStash === null) this.historyPosition = history.length;
+      if (this.historyPosition === history.length) this.historyStash = get();
+      if (this.historyPosition !== null && this.historyPosition > 0) {
+        this.historyPosition--;
+        set(history[this.historyPosition]);
+      }
+    } else {
+      if (this.historyPosition !== null && this.historyPosition < history.length) {
+        this.historyPosition++;
+        set(this.historyPosition === history.length ? '' : history[this.historyPosition]);
+      }
+      if (this.historyPosition === history.length && this.historyStash !== null && get() === '') set(this.historyStash);
+    }
+    this._promptCursor = get().length;
+    return true;
+  }
+
+  private rememberInHistory(history: string[], text: string): void {
+    const at = history.indexOf(text);
+    if (at >= 0) history.splice(at, 1);
+    history.push(text);
+  }
+
+  private searchStyle(): SearchStyle {
+    return { caseSensitive: this.caseSensitive, regex: this.useRegex, backwards: this.searchDir === 'backward' };
+  }
+
+  private compileSearch(needle: string): SearchPattern | null {
+    try {
+      return new SearchPattern(needle, this.searchStyle());
+    } catch (error) {
+      if (!(error instanceof PosixRegexError)) throw error;
+      this._statusMessage = `[ Bad regex "${needle}": ${error.message} ]`;
+      return null;
+    }
+  }
+
+  private submitSearch(): void {
+    const replacing = this._mode === 'replace-search';
+    this.resetHistoryRecall();
+    this._mode = 'edit';
+    if (this.searchAnswer === '' && this.lastSearchTerm === '') {
+      this._statusMessage = 'Cancelled';
+      return;
+    }
+    if (this.searchAnswer !== '') {
+      this.lastSearchTerm = this.searchAnswer;
+      this.rememberInHistory(this.searchHistory, this.searchAnswer);
+    }
+    const pattern = this.compileSearch(this.lastSearchTerm);
+    if (pattern === null) return;
+    if (replacing) this.askForReplacement(pattern);
+    else this.goLooking(pattern);
+  }
+
+  private findNext(pattern: SearchPattern, modus: SearchModus, skipOne: boolean, begin: SearchSpot, circuit: SearchCircuit): SearchHit | null {
+    const hit = circuit.next({
+      lines: this.linesArr,
+      modus,
+      from: { line: this._cursorLine, col: this._cursorCol },
+      skipOne,
+      begin,
+    });
+    if (hit === null) return null;
+    this._cursorLine = hit.line;
+    this._cursorCol = hit.col;
+    return hit;
+  }
+
+  private goLooking(pattern: SearchPattern): void {
+    const wasLine = this._cursorLine;
+    const wasCol = this._cursorCol;
+    const circuit = new SearchCircuit(pattern, this.searchDir === 'backward');
+    const hit = this.findNext(pattern, 'JUSTFIND', true, { line: wasLine, col: wasCol }, circuit);
+    if (hit === null) {
+      this.reportNotFound(pattern.needle);
+      return;
+    }
+    if (this.markLine === null) this.searchSpotlight = { line: hit.line, start: hit.col, end: hit.col + hit.length };
+    if (hit.line === wasLine && hit.col === wasCol) this._statusMessage = '[ This is the only occurrence ]';
+    else if (hit.wrapped) this._statusMessage = '[ Search Wrapped ]';
+  }
+
+  private researchWith(backwards: boolean): void {
+    this.searchDir = backwards ? 'backward' : 'forward';
+    if (this.lastSearchTerm === '' && this.searchHistory.length > 0) this.lastSearchTerm = this.searchHistory[this.searchHistory.length - 1];
+    if (this.lastSearchTerm === '') {
+      this._statusMessage = '[ No current search pattern ]';
+      return;
+    }
+    const pattern = this.compileSearch(this.lastSearchTerm);
+    if (pattern !== null) this.goLooking(pattern);
+  }
+
+  private askForReplacement(pattern: SearchPattern): void {
+    this.replaceOrigin = {
+      pattern,
+      line: this._cursorLine,
+      col: this._cursorCol,
+      edittop: this.window.edittop,
+      firstcolumn: this.window.firstcolumn,
+    };
+    this.replaceWithBuffer = '';
+    this._promptCursor = 0;
+    this._mode = 'replace-with';
   }
 
   private applyReplaceWithKey(k: EditorKeyInput): void {
-    if (k.alt && k.key.toLowerCase() === 'c') {
-      this.caseSensitive = !this.caseSensitive;
-      return;
-    }
     if (k.key === 'Enter') {
-      this.startReplace();
+      this.resetHistoryRecall();
+      if (this.replaceWithBuffer !== '') this.rememberInHistory(this.replaceHistory, this.replaceWithBuffer);
+      this.startReplaceRun();
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this.resetHistoryRecall();
+      this.replaceOrigin = null;
       this.cancelPrompt();
       return;
     }
-    this.applyPromptFieldKey(k, () => this.replaceWithBuffer, (v) => { this.replaceWithBuffer = v; });
+    if (this.recallHistory(k, this.replaceHistory, () => this.replaceWithBuffer, (value) => { this.replaceWithBuffer = value; })) return;
+    this.applyPromptFieldKey(k, () => this.replaceWithBuffer, (value) => { this.replaceWithBuffer = value; });
   }
 
-  private startReplace(): void {
-    const regex = this.buildSearchRegex(this.lastSearchTerm);
-    this.replaceState = {
-      regex, replacement: this.replaceWithBuffer, currentLine: this._cursorLine, currentCol: this._cursorCol, totalReplaced: 0,
-      originLine: this._cursorLine, originCol: this._cursorCol, wrapped: false,
-      originEdittop: this.window.edittop, originFirstcolumn: this.window.firstcolumn,
+  private startReplaceRun(): void {
+    const origin = this.replaceOrigin!;
+    this.replaceOrigin = null;
+    const pattern = this.lastSearchTerm === origin.pattern.needle ? origin.pattern : this.compileSearch(this.lastSearchTerm) ?? origin.pattern;
+    const backwards = this.searchDir === 'backward';
+    const marked = this.markLine !== null;
+    const run: ReplaceRun = {
+      pattern,
+      replacement: this.replaceWithBuffer,
+      backwards,
+      circuit: new SearchCircuit(pattern, backwards),
+      begin: { line: origin.line, col: origin.col },
+      edittop: origin.edittop,
+      firstcolumn: origin.firstcolumn,
+      modus: 'REPLACING',
+      skipOne: backwards,
+      replaceAll: false,
+      replaced: -1,
+      region: null,
+      mark: null,
+      markIsBeforeCursor: false,
     };
-    if (this.advanceReplaceMatch()) return;
-    this.replaceState = null;
-    this._mode = 'edit';
-    this.reportNotFound(this.lastSearchTerm);
-  }
-
-  private advanceReplaceMatch(): boolean {
-    const st = this.replaceState;
-    if (!st) return false;
-    for (;;) {
-      if (st.currentLine >= this.linesArr.length) {
-        if (st.wrapped) return false;
-        st.wrapped = true;
-        st.currentLine = 0;
-        st.currentCol = 0;
-        continue;
-      }
-      if (st.wrapped && st.currentLine > st.originLine) return false;
-      const m = execFrom(this.linesArr[st.currentLine], st.regex, st.currentCol);
-      if (m && !(st.wrapped && st.currentLine === st.originLine && m.index >= st.originCol)) {
-        this._pendingReplaceMatch = { line: st.currentLine, start: m.index, end: m.index + m[0].length, matchText: m[0] };
-        this._cursorLine = st.currentLine;
-        this._cursorCol = m.index;
-        this._mode = 'replace-confirm';
-        return true;
-      }
-      st.currentLine++;
-      st.currentCol = 0;
+    if (marked) {
+      const region = this.getMarkedRegion()!;
+      run.region = { topLine: region.startLine, topCol: region.startCol, botLine: region.endLine, botCol: region.endCol };
+      run.mark = { line: this.markLine!, col: this.markCol! };
+      run.markIsBeforeCursor = this.markLine! < this._cursorLine || (this.markLine === this._cursorLine && this.markCol! < this._cursorCol);
+      run.modus = 'INREGION';
+      this._cursorLine = backwards ? region.endLine : region.startLine;
+      this._cursorCol = backwards ? region.endCol : region.startCol;
     }
+    this.replaceRun = run;
+    this.continueReplace();
   }
 
-  private applyPendingReplaceMatch(): void {
-    const st = this.replaceState!;
-    const pm = this._pendingReplaceMatch!;
-    const line = this.linesArr[pm.line];
-    this.undo.begin('REPLACE', this.linesArr, { line: pm.line, col: pm.start }, this.window.cursorRow);
-    // Real nano's replacement text is always literal — it does not support
-    // \1-style backreferences even when the search side is a regex.
-    this.linesArr[pm.line] = line.slice(0, pm.start) + st.replacement + line.slice(pm.end);
-    this.undo.finish({ line: pm.line, col: pm.start });
-    st.totalReplaced++;
-    this._modified = true;
-    st.currentCol = pm.start + st.replacement.length;
+  private continueReplace(): void {
+    const run = this.replaceRun!;
+    for (;;) {
+      const hit = this.findNext(run.pattern, run.modus, run.skipOne, run.begin, run.circuit);
+      if (hit === null) break;
+      const region = run.region;
+      if (region !== null && (hit.line > region.botLine || hit.line < region.topLine
+        || (hit.line === region.botLine && hit.col + hit.length > region.botCol)
+        || (hit.line === region.topLine && hit.col < region.topCol))) break;
+      if (run.replaced === -1) run.replaced = 0;
+      if (!run.replaceAll) {
+        const text = this.linesArr[hit.line];
+        this.pendingHit = hit;
+        this._pendingReplaceMatch = { line: hit.line, start: hit.col, end: hit.col + hit.length, matchText: text.slice(hit.col, hit.col + hit.length) };
+        this._mode = 'replace-confirm';
+        return;
+      }
+      this.replaceHit(hit);
+    }
+    this.finishReplace();
   }
 
   private applyReplaceConfirmKey(k: EditorKeyInput): void {
     const given = yesNoAnswer(k, true);
-    if (given === 'cancel') { this.finishReplace(); return; }
-    if (given === 'yes') {
-      this.applyPendingReplaceMatch();
-      this._pendingReplaceMatch = null;
-      if (!this.advanceReplaceMatch()) this.finishReplace();
-      return;
-    }
-    if (given === 'no') {
-      const st = this.replaceState!;
-      const pm = this._pendingReplaceMatch!;
-      st.currentCol = pm.end;
-      this._pendingReplaceMatch = null;
-      if (!this.advanceReplaceMatch()) this.finishReplace();
-      return;
-    }
-    if (given === 'all') {
-      this.applyPendingReplaceMatch();
-      this._pendingReplaceMatch = null;
-      while (this.advanceReplaceMatch()) this.applyPendingReplaceMatch();
-      this._pendingReplaceMatch = null;
+    if (given === null) return;
+    const run = this.replaceRun!;
+    const hit = this.pendingHit!;
+    this.pendingHit = null;
+    this._pendingReplaceMatch = null;
+    this._mode = 'edit';
+    if (given === 'cancel') {
       this.finishReplace();
       return;
     }
+    run.replaceAll = given === 'all';
+    run.skipOne = given === 'no' || run.backwards;
+    if (given === 'yes' || run.replaceAll) this.replaceHit(hit);
+    this.continueReplace();
+  }
+
+  private replaceHit(hit: SearchHit): void {
+    const run = this.replaceRun!;
+    const text = this.linesArr[hit.line];
+    const replacement = run.pattern.isRegex
+      ? expandReplacement(run.replacement, text, { index: hit.col, length: hit.length, groups: hit.groups }, run.pattern.groupCount)
+      : run.replacement;
+    const altered = text.slice(0, hit.col) + replacement + text.slice(hit.col + hit.length);
+    const lengthChange = altered.length - text.length;
+    this.undo.begin('REPLACE', this.linesArr, { line: hit.line, col: hit.col }, this.window.cursorRow);
+    const region = run.region;
+    if (run.mark !== null && !run.markIsBeforeCursor) {
+      if (hit.line === run.mark.line && run.mark.col > hit.col) {
+        run.mark.col = run.mark.col < hit.col + hit.length ? hit.col : run.mark.col + lengthChange;
+        region!.botCol = run.mark.col;
+      }
+    }
+    if (run.mark === null || run.markIsBeforeCursor) {
+      if (hit.line === run.begin.line && hit.col < run.begin.col) {
+        if (run.begin.col < hit.col + hit.length) run.begin.col = hit.col + hit.length;
+        run.begin.col += lengthChange;
+        if (region !== null) region.botCol = run.begin.col;
+      }
+    }
+    if (hit.length === 0 || (run.pattern.needle[0] === '^' && run.pattern.isRegex)) run.skipOne = true;
+    this._cursorCol = run.backwards ? hit.col : hit.col + hit.length + lengthChange;
+    this._cursorLine = hit.line;
+    this.linesArr[hit.line] = altered;
+    this.undo.finish({ line: hit.line, col: hit.col });
+    const firstModification = !this.modifiedState;
+    this._modified = true;
+    if (firstModification && run.mark !== null) this.markFlagHidden = true;
+    run.replaced++;
   }
 
   private finishReplace(): void {
-    const st = this.replaceState;
+    const run = this.replaceRun!;
+    this.replaceRun = null;
     this._mode = 'edit';
-    this._pendingReplaceMatch = null;
-    this.replaceState = null;
-    if (st) {
-      this.window.edittop = Math.min(st.originEdittop, this.linesArr.length - 1);
-      this.window.firstcolumn = st.originFirstcolumn;
-      this._cursorLine = Math.min(st.originLine, this.linesArr.length - 1);
-      this._cursorCol = Math.min(st.originCol, this.line(this._cursorLine).length);
-      this._statusMessage = `Replaced ${st.totalReplaced} occurrence${st.totalReplaced === 1 ? '' : 's'}`;
-    }
+    if (run.replaced === -1) this.reportNotFound(run.pattern.needle);
+    this.window.edittop = Math.min(run.edittop, this.linesArr.length - 1);
+    this.window.firstcolumn = run.firstcolumn;
+    this._cursorLine = Math.min(run.begin.line, this.linesArr.length - 1);
+    this._cursorCol = Math.min(run.begin.col, this.line(this._cursorLine).length);
+    if (run.replaced >= 0) this._statusMessage = `Replaced ${run.replaced} occurrence${run.replaced === 1 ? '' : 's'}`;
   }
 
   // ── Exit bookkeeping ─────────────────────────────────────────────

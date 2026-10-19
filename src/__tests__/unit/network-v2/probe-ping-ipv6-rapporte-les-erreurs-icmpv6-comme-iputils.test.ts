@@ -139,7 +139,7 @@ describe('an on-link neighbour that never answers is « Address unreachable », 
 
   it('TEMOIN : a probe nobody answers is a loss and not an error', async () => {
     const { a, b } = pair();
-    await b.executeCommand('sudo ip6tables -A INPUT -p icmpv6 -j DROP');
+    await b.executeCommand('sudo ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j DROP');
     const out = await pingOnSimulatedClock(a, 'ping -6 -c 1 -W 1 2001:db8::2');
     expect(out).toContain('1 packets transmitted, 0 received, 100% packet loss');
     expect(out).not.toContain('errors');

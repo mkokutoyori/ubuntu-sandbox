@@ -1119,6 +1119,11 @@ describe('iptables', () => {
         srcIP: '10.0.0.1', dstIP: '192.168.1.1',
         srcPort: 1234, dstPort: 80, iface: 'eth0',
       });
+      ipt.filterPacket({
+        direction: 'out', protocol: 6,
+        srcIP: '192.168.1.1', dstIP: '10.0.0.1',
+        srcPort: 80, dstPort: 1234, iface: 'eth0',
+      });
 
       // Now set strict rules: only allow ESTABLISHED
       await server.executeCommand('iptables -P INPUT DROP');

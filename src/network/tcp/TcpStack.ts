@@ -297,6 +297,7 @@ export interface TcpHost {
   adviseNegative?(nextHopIp: string): void;
   neighbourResolved?(nextHopIp: string): boolean;
   filterLocalSegment?(packet: IPv4Packet | IPv6Packet, family: IpFamily): boolean;
+  filterOutgoing?(egressName: string, packet: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject';
   defaultTtl?(family: IpFamily): number | undefined;
   pathMtu?(remoteIp: string, linkMtu: number): number;
   ecnPolicy?(): TcpEcnPolicy;
@@ -3243,6 +3244,7 @@ export class TcpStack {
       });
       return;
     }
+    if ((this.host.filterOutgoing?.(egress.name, l3Packet) ?? 'accept') !== 'accept') return;
     const nextHopIp = egress.nextHopIp ?? dstIp;
     if (family === 'ipv6') {
       this.host.sendIpv6FrameNdpAware?.(

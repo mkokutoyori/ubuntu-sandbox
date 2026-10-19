@@ -14,7 +14,7 @@ export function yesNoAnswer(input: YesNoKey, withAll: boolean): YesNoAnswer | nu
     if (key === 'y') return 'yes';
     return withAll && key === 'a' ? 'all' : null;
   }
-  if (input.alt || input.key.length !== 1) return null;
+  if (input.key.length !== 1) return null;
   if (key === 'y') return 'yes';
   if (key === 'n') return 'no';
   return withAll && key === 'a' ? 'all' : null;

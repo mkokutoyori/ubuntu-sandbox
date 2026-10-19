@@ -19,13 +19,21 @@
 import { PSTokenType, PS_KEYWORDS, psToken } from './PSToken';
 import type { PSToken, SourcePosition } from './PSToken';
 import { PSLexerError } from './PSLexerError';
+import { scanNumericLiteral } from '@/powershell/runtime/semantics/PSLiteral';
+
+export interface PSLexerOptions {
+  readonly core: boolean;
+}
 
 export class PSLexer {
+  constructor(private readonly options: PSLexerOptions = { core: false }) {}
+
   private input: string = '';
   private pos: number = 0;
   private line: number = 1;
   private column: number = 1;
   private continuedToEnd = false;
+  private lastToken: PSToken | null = null;
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -41,6 +49,7 @@ export class PSLexer {
     this.line = 1;
     this.column = 1;
     this.continuedToEnd = false;
+    this.lastToken = null;
 
     const tokens: PSToken[] = [];
 
@@ -50,7 +59,7 @@ export class PSLexer {
 
       this.continuedToEnd = false;
       const tok = this.scanToken();
-      if (tok !== null) tokens.push(tok);
+      if (tok !== null) { tok.end = this.pos; tokens.push(tok); this.lastToken = tok; }
     }
 
     tokens.push(psToken(PSTokenType.EOF, '', this.pos_()));
@@ -107,6 +116,16 @@ export class PSLexer {
     if (ch === ':') return this.scanColon();
     if (ch === '.') return this.scanDot();
 
+    // ── Pipeline chains && and || (PowerShell 7) ──
+    if (ch === '&' && this.peek1() === '&') return this.advance2(PSTokenType.AND_AND);
+    if (ch === '|' && this.peek1() === '|') return this.advance2(PSTokenType.OR_OR);
+
+    // ── ?, ??, ??=, ?., ?[ after a value (PowerShell 7) ──
+    if (ch === '?' && this.followsValue()) {
+      const operator = this.scanQuestion();
+      if (operator !== null) return operator;
+    }
+
     // ── Pipeline & grouping ──
     if (ch === '|') return this.advance1(PSTokenType.PIPE);
     if (ch === ';') return this.advance1(PSTokenType.SEMICOLON);
@@ -156,6 +175,41 @@ export class PSLexer {
     if (this.input[this.pos] === '\n') { this.line++; this.column = 1; }
     else { this.column++; }
     this.pos++;
+  }
+
+  private advance2(type: PSTokenType): PSToken {
+    const start = this.pos_();
+    const value = this.ch() + (this.peek1() ?? '');
+    this.advance();
+    this.advance();
+    return psToken(type, value, start);
+  }
+
+  private followsValue(): boolean {
+    const last = this.lastToken;
+    if (last === null) return false;
+    return last.type === PSTokenType.VARIABLE || last.type === PSTokenType.NUMBER
+      || last.type === PSTokenType.STRING_SINGLE || last.type === PSTokenType.STRING_DOUBLE
+      || last.type === PSTokenType.HEREDOC_SINGLE || last.type === PSTokenType.HEREDOC_DOUBLE
+      || last.type === PSTokenType.RPAREN || last.type === PSTokenType.RBRACKET
+      || last.type === PSTokenType.SUBEXPR || last.type === PSTokenType.TYPE;
+  }
+
+  private scanQuestion(): PSToken | null {
+    const next = this.peek1();
+    const third = this.peek2();
+    if (next === '?') {
+      if (third === '=') {
+        const start = this.pos_();
+        this.advance(); this.advance(); this.advance();
+        return psToken(PSTokenType.NULL_COALESCE_ASSIGN, '??=', start);
+      }
+      return this.advance2(PSTokenType.NULL_COALESCE);
+    }
+    if (next === '.' && third !== undefined && /[A-Za-z_'"$]/.test(third)) return this.advance2(PSTokenType.NULL_COND_DOT);
+    if (next === '[') return this.advance2(PSTokenType.NULL_COND_INDEX);
+    if (next === ' ' || next === '\t') return this.advance1(PSTokenType.QUESTION);
+    return null;
   }
 
   private advance1(type: PSTokenType): PSToken {
@@ -231,7 +285,9 @@ export class PSLexer {
     let value = '';
     while (!this.eof()) {
       const c = this.ch();
+      if (c === '"' && this.peek1() === '"') { value += '`"'; this.advance(); this.advance(); continue; }
       if (c === '"') break; // closing quote
+      if (c === '$' && this.peek1() === '(') { value += this.readSubExpressionText(); continue; }
       if (c === '`' && !this.eof()) {
         // Backtick escape — preserve raw sequence for the evaluator
         value += '`';
@@ -245,6 +301,42 @@ export class PSLexer {
     if (this.eof()) throw new PSLexerError('Unterminated double-quoted string', start);
     this.advance(); // skip closing "
     return psToken(PSTokenType.STRING_DOUBLE, value, start);
+  }
+
+  private readSubExpressionText(): string {
+    const start = this.pos_();
+    let text = '$(';
+    this.advance();
+    this.advance();
+    let depth = 1;
+    while (!this.eof() && depth > 0) {
+      const c = this.ch();
+      if (c === '(') depth++;
+      else if (c === ')') depth--;
+      else if (c === "'" || c === '"') { text += this.readQuotedText(c); continue; }
+      else if (c === '`') { text += c; this.advance(); if (!this.eof()) { text += this.ch(); this.advance(); } continue; }
+      text += c;
+      this.advance();
+    }
+    if (depth > 0) throw new PSLexerError('Unterminated sub-expression in double-quoted string', start);
+    return text;
+  }
+
+  private readQuotedText(quote: string): string {
+    let text = quote;
+    this.advance();
+    while (!this.eof()) {
+      const c = this.ch();
+      if (c === '`' && quote === '"') { text += c; this.advance(); if (!this.eof()) { text += this.ch(); this.advance(); } continue; }
+      if (quote === '"' && c === '$' && this.peek1() === '(') { text += this.readSubExpressionText(); continue; }
+      text += c;
+      this.advance();
+      if (c === quote) {
+        if (this.ch() === quote) { text += quote; this.advance(); continue; }
+        return text;
+      }
+    }
+    return text;
   }
 
   // ─── Here-strings ──────────────────────────────────────────────────────────
@@ -309,7 +401,18 @@ export class PSLexer {
     if (next === '{') {
       this.advance(); // skip {
       let name = '';
-      while (!this.eof() && this.ch() !== '}') { name += this.ch(); this.advance(); }
+      while (!this.eof() && this.ch() !== '}') {
+        if (this.ch() === '`' && this.peek1() !== undefined) {
+          this.advance();
+          const unicode = this.options.core === true ? this.readUnicodeEscape() : null;
+          if (unicode !== null) { name += unicode; continue; }
+          name += this.ch();
+          this.advance();
+          continue;
+        }
+        name += this.ch();
+        this.advance();
+      }
       if (this.eof()) throw new PSLexerError('Unterminated braced variable ${...}', start);
       this.advance(); // skip }
       return psToken(PSTokenType.VARIABLE, name, start);
@@ -348,6 +451,7 @@ export class PSLexer {
         name += this.ch();
         this.advance();
       }
+      if (!this.eof() && this.ch() === '?') { name += '?'; this.advance(); }
       return psToken(PSTokenType.VARIABLE, name, start);
     }
 
@@ -456,14 +560,24 @@ export class PSLexer {
       const c = this.ch();
       if (this.isAlNum(c) || c === '_' || c === '.') {
         name += c; this.advance();
+      } else if (c === '`' && this.peek1() !== undefined) {
+        this.advance();
+        name += this.ch();
+        this.advance();
       } else if (c === '[') {
         // Generic argument or array suffix: [int] or []
         name += '['; this.advance();
         let inner = '';
-        while (!this.eof() && this.ch() !== ']') {
-          inner += this.ch(); this.advance();
+        let depth = 1;
+        while (!this.eof() && depth > 0) {
+          const inside = this.ch();
+          if (inside === '[') depth++;
+          else if (inside === ']') depth--;
+          if (inside === '\n') break;
+          if (depth > 0) inner += inside;
+          this.advance();
         }
-        if (!this.eof()) { name += inner + ']'; this.advance(); }
+        if (depth === 0) name += inner + ']';
       } else {
         break;
       }
@@ -535,6 +649,21 @@ export class PSLexer {
     return psToken(PSTokenType.PLUS, '+', start);
   }
 
+  private scanRedirectionTail(start: SourcePosition, stream: string): PSToken {
+    let text = `${stream}>`;
+    let type = stream === '*' ? PSTokenType.REDIRECT_ALL_OUT : stream === '2' ? PSTokenType.REDIRECT_ERR_OUT : PSTokenType.REDIRECT_OUT;
+    if (!this.eof() && this.ch() === '>') {
+      this.advance();
+      text += '>';
+      type = stream === '*' ? PSTokenType.REDIRECT_ALL_APPEND : stream === '2' ? PSTokenType.REDIRECT_ERR_APPEND : PSTokenType.REDIRECT_APPEND;
+    } else if (!this.eof() && this.ch() === '&' && this.peek1() === '1') {
+      this.advance();
+      text += `&${this.ch()}`;
+      this.advance();
+    }
+    return psToken(type, text, start);
+  }
+
   // ─── * ────────────────────────────────────────────────────────────────────
 
   private scanStar(): PSToken {
@@ -547,14 +676,9 @@ export class PSLexer {
       return psToken(PSTokenType.MULTIPLY_ASSIGN, '*=', start);
     }
 
-    // *> redirect all streams to file
     if (!this.eof() && this.ch() === '>') {
-      this.advance(); // skip >
-      if (!this.eof() && this.ch() === '>') {
-        this.advance();
-        return psToken(PSTokenType.REDIRECT_ALL_APPEND, '*>>', start);
-      }
-      return psToken(PSTokenType.REDIRECT_ALL_OUT, '*>', start);
+      this.advance();
+      return this.scanRedirectionTail(start, '*');
     }
 
     return psToken(PSTokenType.MULTIPLY, '*', start);
@@ -628,9 +752,15 @@ export class PSLexer {
 
     // If followed by a digit, this is a decimal start without leading zero (.5)
     if (!this.eof() && this.isDigit(this.ch())) {
-      let num = '.';
-      while (!this.eof() && this.isDigit(this.ch())) { num += this.ch(); this.advance(); }
-      return psToken(PSTokenType.NUMBER, num, start);
+      const dotAt = this.pos - 1;
+      const scanned = scanNumericLiteral(this.input, dotAt, this.options);
+      let text = '.';
+      if (scanned === null) {
+        while (!this.eof() && this.isWordChar(this.ch())) { text += this.ch(); this.advance(); }
+        return psToken(PSTokenType.WORD, text, start);
+      }
+      while (this.pos < dotAt + scanned.length) this.advance();
+      return psToken(PSTokenType.NUMBER, this.input.slice(dotAt, dotAt + scanned.length), start);
     }
 
     return psToken(PSTokenType.DOT, '.', start);
@@ -655,33 +785,10 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, daysTimeSpan[0], start);
     }
 
-    // Hex: 0x...
-    if (first_ === '0' && (this.peek1() === 'x' || this.peek1() === 'X')) {
-      value += '0'; this.advance();
-      value += this.ch(); this.advance(); // x
-      while (!this.eof() && this.isHexDigit(this.ch())) { value += this.ch(); this.advance(); }
-      return psToken(PSTokenType.NUMBER, value, start);
-    }
-
-    // Check if digit is '2' and followed by '>' → redirect 2> / 2>> / 2>&1
-    if (first_ === '2' && this.peek1() === '>') {
-      this.advance(); // skip 2
-      this.advance(); // skip >
-      if (!this.eof() && this.ch() === '>') {
-        this.advance();
-        return psToken(PSTokenType.REDIRECT_ERR_APPEND, '2>>', start);
-      }
-      // 2>&1 — merge stderr to stdout: consume &1
-      if (!this.eof() && this.ch() === '&') {
-        const saved = this.pos;
-        this.advance(); // skip &
-        if (!this.eof() && this.isDigit(this.ch())) {
-          this.advance(); // skip stream number (e.g. 1)
-          return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>&1', start);
-        }
-        this.pos = saved; // restore if &N pattern not found
-      }
-      return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>', start);
+    if (first_ >= '1' && first_ <= '6' && this.peek1() === '>') {
+      this.advance();
+      this.advance();
+      return this.scanRedirectionTail(start, first_);
     }
 
     // Integer or float
@@ -729,43 +836,14 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, word, start);
     }
 
-    if (!this.eof() && /^\d+$/.test(value)) {
-      const rest = this.input.slice(this.pos);
-      const identifier = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest);
-      const numericSuffix = /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdDuUsSyY]$|[uU][lLyY]$|[uU][lL][lL]$)/;
-      if (identifier && !numericSuffix.test(identifier[0])) {
-        let word = value;
-        while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
-        return psToken(PSTokenType.WORD, word, start);
-      }
+    const scanned = scanNumericLiteral(this.input, savedPos, this.options);
+    if (scanned === null) {
+      let word = value;
+      while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
+      return psToken(PSTokenType.WORD, word, start);
     }
-
-    // Decimal part
-    if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
-      value += '.'; this.advance();
-      while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
-    }
-    void savedPos;
-
-    // Exponent
-    if (!this.eof() && (this.ch() === 'e' || this.ch() === 'E')) {
-      value += this.ch(); this.advance();
-      if (!this.eof() && (this.ch() === '+' || this.ch() === '-')) { value += this.ch(); this.advance(); }
-      while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
-    }
-
-    // Type suffixes: KB, MB, GB, TB, PB, L
-    if (!this.eof()) {
-      const up2 = (this.ch() + (this.peek1() ?? '')).toUpperCase();
-      if (['KB', 'MB', 'GB', 'TB', 'PB'].includes(up2)) {
-        value += this.ch(); this.advance();
-        value += this.ch(); this.advance();
-      } else if (this.ch() === 'L' || this.ch() === 'l' || ((this.ch() === 'd' || this.ch() === 'D') && !this.isAlNum(this.peek1() ?? ' '))) {
-        value += this.ch(); this.advance();
-      }
-    }
-
-    return psToken(PSTokenType.NUMBER, value, start);
+    while (this.pos < savedPos + scanned.length) this.advance();
+    return psToken(PSTokenType.NUMBER, this.input.slice(savedPos, savedPos + scanned.length), start);
   }
 
   /**
@@ -810,6 +888,15 @@ export class PSLexer {
 
   // ─── Word / Keyword / Path ────────────────────────────────────────────────
 
+  private readUnicodeEscape(): string | null {
+    if (this.ch() !== 'u' || this.peek1() !== '{') return null;
+    const close = this.input.indexOf('}', this.pos + 2);
+    const digits = close > 0 ? this.input.slice(this.pos + 2, close) : '';
+    if (!/^[0-9a-fA-F]{1,6}$/.test(digits) || parseInt(digits, 16) > 0x10FFFF) return null;
+    while (this.pos <= close) this.advance();
+    return String.fromCodePoint(parseInt(digits, 16));
+  }
+
   private scanWord(): PSToken {
     const start = this.pos_();
     let value = '';
@@ -823,6 +910,8 @@ export class PSLexer {
       // Allow backtick-escaping of the next char (line continuation / escape)
       if (c === '`' && !this.eof()) {
         this.advance();
+        const unicode = this.options.core === true ? this.readUnicodeEscape() : null;
+        if (unicode !== null) { value += unicode; continue; }
         if (!this.eof()) { value += this.ch(); this.advance(); }
         continue;
       }

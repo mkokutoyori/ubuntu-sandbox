@@ -15,8 +15,9 @@ import type { ISubShell, SubShellResult } from './ISubShell';
 import { PromiseInputBroker as PromiseInputBrokerPS } from '@/shell/input';
 import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
 import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
-import { PS_BANNER } from '@/network/devices/windows/PSConstants';
-import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
+import { PS_BANNER, PWSH_BANNER } from '@/network/devices/windows/PSConstants';
+import { PSInterpreter, PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
+import { PSParserError } from '@/powershell/parser/PSParserError';
 import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleteness';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -70,8 +71,11 @@ export class PowerShellSubShell implements ISubShell {
   /** Set for a sub-shell pushed by `Enter-PSSession` — prefixes every prompt with `[computername]: `. */
   private promptPrefix = '';
 
-  private constructor(device: Equipment) {
+  private readonly language: 'desktop' | 'core';
+
+  private constructor(device: Equipment, language: 'desktop' | 'core') {
     this.device = device;
+    this.language = language;
     // The interpreter and the legacy executor look at the same per-device
     // state (Phase 4 relocation): registry / event-log / network maps /
     // VPN connections all live on the WindowsPC itself, not on the
@@ -79,9 +83,9 @@ export class PowerShellSubShell implements ISubShell {
     // device. Non-Windows devices keep the default NULL_PROVIDERS.
     this.interp = device instanceof WindowsPC
       ? new PSInterpreter(
-          createWindowsPSProviders(device), { edition: device.getWindowsEdition(), registry: device.cmdletOverlay },
+          createWindowsPSProviders(device), { edition: device.getWindowsEdition(), registry: device.cmdletOverlay, language },
         )
-      : new PSInterpreter();
+      : new PSInterpreter(undefined, { language });
   }
 
   /**
@@ -97,9 +101,10 @@ export class PowerShellSubShell implements ISubShell {
    */
   static create(
     device: Equipment,
-    opts?: { initialCwd?: string; session?: WindowsShellSession | null; promptPrefix?: string },
+    opts?: { initialCwd?: string; session?: WindowsShellSession | null; promptPrefix?: string; language?: 'desktop' | 'core' },
   ): { subShell: PowerShellSubShell; banner: string[] } {
-    const subShell = new PowerShellSubShell(device);
+    const language = opts?.language ?? 'desktop';
+    const subShell = new PowerShellSubShell(device, language);
     subShell.session = opts?.session ?? null;
     subShell.promptPrefix = opts?.promptPrefix ?? '';
     // Prefer the caller-provided cwd (per-terminal session); fall back to
@@ -112,7 +117,7 @@ export class PowerShellSubShell implements ISubShell {
     subShell.interp.historyHook = () => subShell.commandHistory;
     return {
       subShell,
-      banner: PS_BANNER.split('\n'),
+      banner: language === 'core' ? PWSH_BANNER.split('\n') : PS_BANNER.split('\n'),
     };
   }
 
@@ -304,15 +309,19 @@ export class PowerShellSubShell implements ISubShell {
     const device = this.device as unknown as {
       runProgram(commandLine: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
     };
-    this.interp.beginInteractive(line);
+    try {
+      this.interp.beginInteractive(line);
+    } catch (e) {
+      return this.formatInterpreterError(e, line);
+    }
     for (;;) {
       try {
         return this.interp.resumeInteractive();
       } catch (e) {
-        if (!(e instanceof NativeCommandNeedsAsync)) return this.formatInterpreterError(e);
+        if (!(e instanceof NativeCommandNeedsAsync)) return this.formatInterpreterError(e, line);
         const answer = await device.runProgram(e.commandLine, e.stdin ?? undefined);
         this.interp.provideNativeResult({
-          output: translateNativeAnswer(e.command, answer.output),
+          output: translateNativeAnswer(this.interp.typedCommandName(e.command), answer.output, this.language === 'core'),
           exitCode: answer.exitCode,
           notRecognized: nativeNotRecognized(e.command, answer.output),
         });
@@ -320,7 +329,9 @@ export class PowerShellSubShell implements ISubShell {
     }
   }
 
-  private formatInterpreterError(e: unknown): string {
+  private formatInterpreterError(e: unknown, source: string): string {
+    if (e instanceof PSParserError) return this.language === 'core' ? e.renderConcise(source) : e.render(source);
+    if (e instanceof PSRuntimeError) return this.interp.describeFailure(e);
     if (e instanceof Error) return e.message;
     return String(e);
   }

@@ -34,14 +34,31 @@ export class ConvertToJsonCmdlet implements ICmdlet {
 
 // ─── ConvertFrom-Json ─────────────────────────────────────────────────────
 
+function adoptJson(value: unknown, asHashtable: boolean): PSValue {
+  if (Array.isArray(value)) return value.map(item => adoptJson(item, asHashtable));
+  if (value !== null && typeof value === 'object') {
+    const converted: Record<string, PSValue> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) converted[key] = adoptJson(item, asHashtable);
+    if (!asHashtable) Object.defineProperty(converted, '__pscustomobject__', { value: true, enumerable: false, configurable: true });
+    return converted;
+  }
+  return value as PSValue;
+}
+
 export class ConvertFromJsonCmdlet implements ICmdlet {
   readonly name = 'convertfrom-json';
   readonly aliases = [] as const;
+  readonly parameters = ['InputObject', 'AsHashtable', 'Depth', 'NoEnumerate'] as const;
+  readonly coreOnlyParameters = ['AsHashtable', 'Depth', 'NoEnumerate'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const src = psValueToString(ctx.pipeInput ?? ctx.positional[0] ?? '');
-    try { return JSON.parse(src) as PSValue; }
-    catch { return null; }
+    const src = psValueToString(ctx.named['inputobject'] ?? ctx.pipeInput ?? ctx.positional[0] ?? '');
+    try {
+      return adoptJson(JSON.parse(src), ctx.named['ashashtable'] === true);
+    } catch {
+      ctx.emitError(`ConvertFrom-Json : Conversion from JSON failed with error: ${src === '' ? 'Unexpected end of JSON input' : 'Unexpected token in JSON'}`);
+      return null;
+    }
   }
 }
 

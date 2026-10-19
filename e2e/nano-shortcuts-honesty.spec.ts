@@ -45,10 +45,13 @@ test.describe('Scénario (e2e) — barre de raccourcis nano : ^G, ^X→Y, ^T, ^R
     await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+g');
-    await expect.poll(() => nanoText(page)).toMatch(/GNU nano Help Text/);
+    const titlebar = page.locator('[data-testid="nano-titlebar"]');
+    await expect(titlebar).toContainText('Main nano help text');
+    await expect.poll(() => nanoText(page)).toMatch(/The nano editor is designed to emulate the functionality/);
 
     await page.keyboard.press('Control+x');
-    await expect.poll(() => nanoText(page)).not.toMatch(/GNU nano Help Text/);
+    await expect(titlebar).toContainText('GNU nano');
+    await expect(titlebar).not.toContainText('Main nano help text');
   });
 
   test('^X puis Y repasse par "File Name to Write:" avant d\'écrire', async ({ page }) => {
