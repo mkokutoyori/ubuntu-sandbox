@@ -45,6 +45,8 @@ import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './Port
 import { adapterDisplayName, resolveAdapterPortName } from './netAdapter';
 import { adapterIfIndex, withWindowsZone, LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
 import type { Port } from '../../hardware/Port';
+import { netshPrefixPolicy } from './WinNetshPrefixPolicy';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 
 // ─── Help text matching real Windows netsh ─────────────────────────
@@ -411,7 +413,7 @@ function handleNetshInterfaceShow(ctx: WinCommandContext, args: string[]): strin
     const state = !adminEnabled ? 'Disconnected' : (isConnected ? 'Connected' : 'Disconnected');
     const displayName = adapterDisplayName(name, ctx.ports);
     lines.push(
-      `${adminState.padEnd(15)}${state.padEnd(15)}${'Dedicated'.padEnd(17)}${displayName}`
+      `${padToWidth(adminState, 15)}${padToWidth(state, 15)}${padToWidth('Dedicated', 17)}${displayName}`
     );
   }
 
@@ -598,8 +600,8 @@ function renderPortproxySection(family: PortProxyFamily, rules: PortProxyRule[])
   ];
   for (const r of rules) {
     lines.push(
-      `${r.listenAddress.padEnd(16)}${String(r.listenPort).padEnd(12)}` +
-      `${r.connectAddress.padEnd(16)}${r.connectPort}`,
+      `${padToWidth(r.listenAddress, 16)}${padToWidth(String(r.listenPort), 12)}` +
+      `${padToWidth(r.connectAddress, 16)}${r.connectPort}`,
     );
   }
   return lines.join('\n');
@@ -776,16 +778,16 @@ function handleShowIpInterfaces(ctx: NetshContext): string {
   const lines = ['', 'Idx     Met         MTU          State                Name',
     '---  ----------  ----------  ------------  ---------------------------'];
   lines.push(
-    `${String(LOOPBACK_IFINDEX).padStart(3)}${String(75).padStart(12)}`
-    + `${String(4294967295).padStart(12)}${'connected'.padStart(14)}  Loopback Pseudo-Interface 1`,
+    `${padToWidth(String(LOOPBACK_IFINDEX), 3, 'right')}${padToWidth(String(75), 12, 'right')}`
+    + `${padToWidth(String(4294967295), 12, 'right')}${padToWidth('connected', 14, 'right')}  Loopback Pseudo-Interface 1`,
   );
   const names = [...ctx.ports.keys()];
   for (const [name, port] of ctx.ports) {
     const displayName = adapterDisplayName(name, ctx.ports);
     const etat = port.isAdminDown() ? 'disabled' : (port.getIsUp() && port.hasCarrier() ? 'connected' : 'disconnected');
     lines.push(
-      `${String(adapterIfIndex(names.indexOf(name))).padStart(3)}${String(25).padStart(12)}`
-      + `${String(port.getMTU()).padStart(12)}${etat.padStart(14)}  ${displayName}`,
+      `${padToWidth(String(adapterIfIndex(names.indexOf(name))), 3, 'right')}${padToWidth(String(25), 12, 'right')}`
+      + `${padToWidth(String(port.getMTU()), 12, 'right')}${padToWidth(etat, 14, 'right')}  ${displayName}`,
     );
   }
   lines.push('');
@@ -864,11 +866,11 @@ function handleShowNeighbors(ctx: WinCommandContext, family: 'ipv4' | 'ipv6'): s
   }
   const lines: string[] = [];
   lines.push('');
-  lines.push(`${'Interface'.padEnd(15)}${'Internet Address'.padEnd(38)}${'Physical Address'.padEnd(20)}Type`);
+  lines.push(`${padToWidth('Interface', 15)}${padToWidth('Internet Address', 38)}${padToWidth('Physical Address', 20)}Type`);
   lines.push('---------------------------------------------------------------------------------------');
   for (const row of rows) {
     const displayName = adapterDisplayName(row.iface, ctx.ports);
-    lines.push(`${displayName.padEnd(15)}${row.ip.padEnd(38)}${row.mac.padEnd(20)}${row.state}`);
+    lines.push(`${padToWidth(displayName, 15)}${padToWidth(row.ip, 38)}${padToWidth(row.mac, 20)}${row.state}`);
   }
   lines.push('');
   return lines.join('\n');
@@ -918,7 +920,7 @@ function handleShowRoute(ctx: WinCommandContext): string {
     const prefix = `${r.network}/${r.mask.toCIDR()}`;
     const nextHop = r.nextHop || 'On-link';
     lines.push(
-      `No       ${r.type.padEnd(10)}${String(r.metric).padEnd(5)}${prefix.padEnd(26)}${nextHop}`
+      `No       ${padToWidth(r.type, 10)}${padToWidth(String(r.metric), 5)}${padToWidth(prefix, 26)}${nextHop}`
     );
   }
 
@@ -1369,6 +1371,8 @@ To view help for a command, type the command, followed by a space, and then
     const rest = args.slice(1);
     const obj = (rest[0] || '').toLowerCase();
 
+    if (obj === 'prefixpolicy') return netshPrefixPolicy(ctx, 'add', rest.slice(1));
+
     if (obj === 'address') {
       // netsh interface ipv6 add address <iface> <addr>[/<prefix>]
       const ifName = rest[1] || '';
@@ -1419,6 +1423,8 @@ To view help for a command, type the command, followed by a space, and then
     const obj = (rest[0] || '').toLowerCase();
     const ifFilter = rest[1] || '';
 
+    if (obj === 'prefixpolicies') return netshPrefixPolicy(ctx, 'show', rest.slice(1));
+
     if (obj === 'addresses' || obj === 'address') {
       const lines: string[] = [''];
       for (const [portName, port] of ctx.ports) {
@@ -1459,8 +1465,8 @@ To view help for a command, type the command, followed by a space, and then
         }
         const prefix = `${r.prefix.toString()}/${r.prefixLength}`;
         const target = r.nextHop ? r.nextHop.toString() : adapterDisplayName(r.iface, ctx.ports);
-        lines.push(`${'No '.padEnd(9)}${(r.nextHop ? 'Static' : 'Connected').padEnd(10)}`
-          + `${String(r.metric).padEnd(5)}${prefix.padEnd(36)}${target}`);
+        lines.push(`${padToWidth('No ', 9)}${padToWidth(r.nextHop ? 'Static' : 'Connected', 10)}`
+          + `${padToWidth(String(r.metric), 5)}${padToWidth(prefix, 36)}${target}`);
       }
       lines.push('');
       return lines.join('\n');
@@ -1470,9 +1476,16 @@ To view help for a command, type the command, followed by a space, and then
     return IPV6_HELP;
   }
 
+  if (sub === 'set') {
+    const rest = args.slice(1);
+    if ((rest[0] || '').toLowerCase() === 'prefixpolicy') return netshPrefixPolicy(ctx, 'set', rest.slice(1));
+    return IPV6_HELP;
+  }
+
   if (sub === 'delete') {
     const rest = args.slice(1);
     const obj = (rest[0] || '').toLowerCase();
+    if (obj === 'prefixpolicy') return netshPrefixPolicy(ctx, 'delete', rest.slice(1));
     if (obj === 'route' || obj === 'routes') {
       const prefixRaw = rest[1] || '';
       if (args[args.length - 1] === '?' || !prefixRaw) {
@@ -1778,13 +1791,13 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
     }
 
     if (obj === 'interfaces') {
-      const lines = ['', `${'Interface'.padEnd(25)}${'DHCP Enabled'.padEnd(15)}IP Address`];
+      const lines = ['', `${padToWidth('Interface', 25)}${padToWidth('DHCP Enabled', 15)}IP Address`];
       lines.push('----------------------------------------------------------------------');
       for (const [name, port] of ctx.ports) {
         const displayName = adapterDisplayName(name, ctx.ports);
         const isDHCP = ctx.isDHCPConfigured(name);
         const ip = port.getIPAddress();
-        lines.push(`${displayName.padEnd(25)}${isDHCP ? 'Yes' : 'No'.padEnd(14)} ${ip ? ip.toString() : '---'}`);
+        lines.push(`${padToWidth(displayName, 25)}${isDHCP ? 'Yes' : padToWidth('No', 14)} ${ip ? ip.toString() : '---'}`);
       }
       lines.push('');
       return lines.join('\n');
@@ -1852,7 +1865,7 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
 
   if (sub === 'list') {
     // Show all interfaces with their DHCP client state
-    const header = `\n${'Interface Name'.padEnd(28)}${'IP Address'.padEnd(18)}State`;
+    const header = `\n${padToWidth('Interface Name', 28)}${padToWidth('IP Address', 18)}State`;
     const sep   = '-'.repeat(68);
     const rows: string[] = [header, sep];
     for (const [name, port] of ctx.ports) {
@@ -1861,7 +1874,7 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
       const isDHCP = ctx.isDHCPConfigured(name);
       // State: Manual (static IP), BOUND (DHCP with lease), INIT (no IP/default DHCP)
       const state = !isDHCP && ip ? 'Manual' : (isDHCP && ip ? 'BOUND' : 'INIT');
-      rows.push(`${displayName.padEnd(28)}${(ip ? ip.toString() : '---').padEnd(18)}${state}`);
+      rows.push(`${padToWidth(displayName, 28)}${padToWidth(ip ? ip.toString() : '---', 18)}${state}`);
     }
     rows.push('');
     return rows.join('\n');
@@ -1953,13 +1966,13 @@ function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
   }
 
   if (sub === 'interfaces') {
-    const lines = ['', `${'Interface'.padEnd(25)}${'Mode'.padEnd(10)}DNS servers`];
+    const lines = ['', `${padToWidth('Interface', 25)}${padToWidth('Mode', 10)}DNS servers`];
     lines.push('----------------------------------------------------------------------');
     for (const [name] of ctx.ports) {
       const displayName = adapterDisplayName(name, ctx.ports);
       const servers = ctx.getDnsServers(name);
       const mode = ctx.getDnsMode(name);
-      lines.push(`${displayName.padEnd(25)}${mode.padEnd(10)}${servers.join(', ') || '(none)'}`);
+      lines.push(`${padToWidth(displayName, 25)}${padToWidth(mode, 10)}${servers.join(', ') || '(none)'}`);
     }
     lines.push('');
     return lines.join('\n');

@@ -23,34 +23,12 @@ import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleten
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { ShellFactory } from '../ShellFactory';
-import {
-  tryInterpretSshLaunch,
-  finalisePendingAuth,
-  wireProbeFor,
-  SSH_PASSWORD_PROMPTS,
-  type PendingSshAuth,
-} from '../sshLauncher';
-
-function parseSshExecCommandPs(line: string): string | null {
-  const tokens = line.trim().split(/\s+/);
-  if (tokens[0]?.toLowerCase() !== 'ssh') return null;
-  let i = 1;
-  const valueFlags = new Set(['-p', '-i', '-l', '-o', '-b', '-c', '-D', '-E', '-F', '-I', '-J', '-L', '-R', '-S', '-W']);
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t === '-V') return null;
-    if (valueFlags.has(t)) { i += 2; continue; }
-    if (t.startsWith('-')) { i++; continue; }
-    break;
-  }
-  if (i + 1 >= tokens.length) return null;
-  return tokens.slice(i + 1).join(' ');
-}
-
-
+import { NestedSshLogin } from '../NestedSshLogin';
 export interface WindowsPowerShellOptions extends AbstractShellOptions {
   /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
   readonly windowsSession?: WindowsShellSession | null;
+  /** 'core' starts PowerShell 7 (pwsh); the default is Windows PowerShell 5.1. */
+  readonly language?: 'desktop' | 'core';
 }
 
 export class WindowsPowerShellShell extends AbstractShell {
@@ -64,9 +42,7 @@ export class WindowsPowerShellShell extends AbstractShell {
   /** True when this shell owns the WindowsShellSession (allocated it
    *  itself, typical of SSH-pushed PS) and must close it on dispose. */
   private readonly ownsSession: boolean;
-  private pendingSshAuth: PendingSshAuth | null = null;
-  private pendingExecCommand: string | null = null;
-  private readonly knownHostsTracker = new Set<string>();
+  private readonly nestedSsh = new NestedSshLogin();
 
   /** PowerShell exposes BOTH `clear` and `cls` as aliases of Clear-Host. */
   protected override clearWords: ReadonlySet<string> = new Set(['clear', 'cls', 'clear-host']);
@@ -96,6 +72,7 @@ export class WindowsPowerShellShell extends AbstractShell {
       // Pass the (possibly freshly-allocated) per-shell session so PS
       // commands operate on the SSH user's tree, not the global cwd.
       session: this.windowsSession,
+      language: opts.language,
     });
     this.subShell = subShell;
     this.banner = banner;
@@ -122,28 +99,13 @@ export class WindowsPowerShellShell extends AbstractShell {
     if (this.subShell.awaitsMoreInput() || powershellInputIsIncomplete(line)) {
       return this.runInSubShell(line);
     }
-    const sshAttempt = await tryInterpretSshLaunch(line, {
+    const ssh = await this.nestedSsh.launch(line, {
       defaultUser: this.user,
-      knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIpPs(this.device),
       sourceDevice: this.device,
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
-      wireProbe: wireProbeFor(this.device),
-    });
-    if (sshAttempt) {
-      if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
-          || sshAttempt.kind === 'exec') {
-        return sshAttempt.result;
-      }
-      const brokerResult = await this.runSshAuthViaBroker(
-        sshAttempt.pendingAuth,
-        parseSshExecCommandPs(line),
-      );
-      if (brokerResult) return brokerResult;
-      this.pendingSshAuth = sshAttempt.pendingAuth;
-      this.pendingExecCommand = parseSshExecCommandPs(line);
-      return sshAttempt.result;
-    }
+    }, this.input);
+    if (ssh) return ssh;
 
     const lower = line.trim().toLowerCase();
     if (lower === 'cmd' || lower === 'cmd.exe') {
@@ -192,57 +154,8 @@ export class WindowsPowerShellShell extends AbstractShell {
     }
   }
 
-  private async runSshAuthViaBroker(
-    auth: PendingSshAuth,
-    execCmd: string | null,
-  ): Promise<ShellLineResult | null> {
-    if (!this.input.capabilities().interactive) return null;
-    const promptText = `${auth.user}@${auth.host}'s password: `;
-    for (;;) {
-      const pw = await this.input.password(promptText);
-      if (pw === null) return { output: [] };
-      const finalised = await finalisePendingAuth(auth, pw);
-      if (finalised.kind === 'refused') {
-        return { output: finalised.message.split('\n') };
-      }
-      if (finalised.kind === 'exec') {
-        return { output: [...finalised.banner, ...finalised.lines] };
-      }
-      if (finalised.kind === 'success') {
-        return { output: [...finalised.banner], childShell: finalised.shell };
-      }
-      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
-        return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
-      }
-      this.input.emit('Permission denied, please try again.');
-    }
-  }
-
   async handleInput(value: string): Promise<ShellLineResult> {
-    const auth = this.pendingSshAuth;
-    if (!auth) return { output: [] };
-    const finalised = await finalisePendingAuth(auth, value);
-    if (finalised.kind === 'refused') {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return { output: finalised.message.split('\n') };
-    }
-    if (finalised.kind === 'success') {
-      const execCmd = this.pendingExecCommand;
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-
-      return { output: [...finalised.banner], childShell: finalised.shell };
-    }
-    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
-    }
-    return {
-      output: ['Permission denied, please try again.'],
-      pendingInput: { kind: 'password', promptText: `${auth.user}@${auth.host}'s password: ` },
-    };
+    return this.nestedSsh.answer(value);
   }
 }
 

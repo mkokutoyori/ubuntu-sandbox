@@ -53,6 +53,10 @@ export interface ISubShell extends IShellBase {
 
   getPromptParts?(): BashPromptParts | null;
 
+  supportsInlineHelp?(): boolean;
+
+  inlineHelpAsync?(line: string): Promise<string[]>;
+
   /**
    * Handle a key event. Returns true if consumed, false to let
    * the view handle it (e.g. typing into the input field).

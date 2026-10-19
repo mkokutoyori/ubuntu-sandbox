@@ -28,6 +28,7 @@ import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast'
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
 import { IOS_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import { ciscoPasswordMatches } from '@/network/devices/shells/cisco/ciscoPasswordVerify';
+import { getSecurityConfig } from '@/network/devices/shells/cisco/CiscoSecurityCommands';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -201,9 +202,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
   private buildLinePasswordLoginSteps(attendu: string, algo: 'plain' | 'type-7' = 'plain'): InteractiveStep[] {
     const loginBanner = this.deviceBanner('login');
     const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
+    const messages = this.loginMessages();
     return [
-      /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
-      /* 1 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'line_login_password' },
+      /* 0 */ { type: 'output', outputLines: [...preLines, ...(messages.banner ?? 'User Access Verification').split('\n'), ''] },
+      /* 1 */ { type: 'password', prompt: messages.passwordPrompt, mask: 'hidden', storeAs: 'line_login_password' },
       /* 2 */ {
         type: 'execute',
         action: async (ctx) => {
@@ -249,7 +251,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         },
       },
       /* 5 */ { type: 'branch', predicate: () => 10 },
-      /* 6 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 6 */ { type: 'output', outputLines: [messages.failMessage ?? '% Login invalid'] },
       /* 7 */ {
         type: 'branch',
         predicate: (ctx) => (parseInt(ctx.values.get('line_login_attempts') ?? '0', 10) >= 3 ? 8 : 1),
@@ -268,6 +270,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * La substitution est faite ICI et non au rangement, parce que le nom
    * de la machine peut changer apres qu'on a ecrit la banniere.
    */
+  private loginMessages(): ReturnType<ReturnType<typeof getSecurityConfig>['loginMessages']> {
+    return getSecurityConfig(this.device as object).loginMessages();
+  }
+
   private deviceBanner(kind: 'motd' | 'login' | 'exec' | 'incoming'): string {
     const dev = this.device as unknown as {
       getBanner?: (k: string) => string;
@@ -364,10 +370,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
     // before this flow even starts).
     const loginBanner = this.deviceBanner('login');
     const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
+    const messages = this.loginMessages();
     return [
-      /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
-      /* 1 */ { type: 'text', prompt: 'Username: ', allowEmpty: true, storeAs: 'console_login_username' },
-      /* 2 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'console_login_password' },
+      /* 0 */ { type: 'output', outputLines: [...preLines, ...(messages.banner ?? 'User Access Verification').split('\n'), ''] },
+      /* 1 */ { type: 'text', prompt: messages.usernamePrompt, allowEmpty: true, storeAs: 'console_login_username' },
+      /* 2 */ { type: 'password', prompt: messages.passwordPrompt, mask: 'hidden', storeAs: 'console_login_password' },
       /* 3 */ {
         // `InteractiveStep.validation` is synchronous only, but AAA
         // authentication (TACACS+ over the real TCP stack) is genuinely
@@ -439,7 +446,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         },
       },
       /* 6 */ { type: 'branch', predicate: () => 15 },
-      /* 7 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 7 */ { type: 'output', outputLines: [messages.failMessage ?? '% Login invalid'] },
       /* 8 */ {
         type: 'branch',
         predicate: (ctx) => {
@@ -450,7 +457,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
       /* 9 */ { type: 'output', outputLines: ['% Bad passwords'] },
       /* 10 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
       /* 11 */ { type: 'branch', predicate: () => 15 },
-      /* 12 */ { type: 'output', outputLines: ['% Authentication failed'] },
+      /* 12 */ { type: 'output', outputLines: [messages.failMessage ?? '% Authentication failed'] },
       /* 13 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
       /* 14 */ { type: 'branch', predicate: () => 15 },
       // Steps 6, 11 and 14 branch to index 15 == steps.length, ending the
@@ -465,11 +472,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
   // here, and the SSH adapters render the SAME plan. Nothing banner-
   // specific remains in the terminal layer.
 
-  // Set by `prepareAsRemoteUser` -- `this.isRemoteChild` (`_parent !==
-  // null`) is NOT yet true at that point (`adoptRemoteChild` calls
-  // `prepareAsRemoteUser` BEFORE `attachAsChildOf`), so exec-timeout
-  // resolution needs its own explicit "this is a VTY line, not the
-  // console" flag rather than relying on parent-attachment timing.
   private isVtyRemoteSession = false;
 
   override attachToVtyLine(): void {
@@ -480,26 +482,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected override onLineAssigned(kind: CliLineKind, index: number, recordId: string): void {
     this.vty?.assignLine(kind, index, recordId);
-  }
-
-  protected override prepareAsRemoteUser(user: string): void {
-    this.isVtyRemoteSession = true;
-    this.authenticatedUsername = user || null;
-    this.authGatePassed = true;
-    if (this.vty) {
-      // Real IOS: a `privilege level N` configured on the VTY line
-      // OVERRIDES the authenticated user's own account privilege (same
-      // rule as the console line above) -- confirmed via Cisco's own
-      // documentation, not just a default-when-unset fallback.
-      const linePrivilege = this.vtyLinePrivilegeOverride();
-      const privilege = linePrivilege ?? this.lookupAccountPrivilege(user);
-      this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
-      this.vty.state.privilegeLevel = privilege;
-      this.vty.state.sessionUser = user || null;
-    }
-    this.isBooting = false;
-    this.updatePrompt();
-    this.rearmExecTimeout();
   }
 
   /**
@@ -602,7 +584,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   private onAbsoluteTimeout(): void {
     if (this.disposed) return;
-    if (this.isRemoteChild) { this.endRemoteSession(); return; }
     if (this.vty) {
       this.vty.state.mode = 'user';
       this.vty.state.privilegeLevel = 1;
@@ -613,12 +594,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   private onExecTimeout(): void {
     if (this.disposed) return;
-    if (this.isRemoteChild) {
-      // VTY: the line drops -- the local (client) session sees the same
-      // "Connection to X closed." footer any other SSH teardown produces.
-      this.endRemoteSession();
-      return;
-    }
     // Console: the EXEC session times out and resets to an unauthenticated
     // line -- if `login local` is configured, the login banner reappears;
     // otherwise this is a silent no-op (matches real IOS: exec-timeout on
@@ -744,7 +719,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * nothing is deferred — async lines interrupt immediately.
    */
   protected override shouldDeferAsyncOutput(): boolean {
-    if (this.isRemoteChild) return false; // scoped to the console line for now
     if (this.input.length === 0) return false;
     const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
     const cfg = (shell as {
@@ -1099,7 +1073,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
       label: 'IOS debug output',
       run: (ctx) => new Promise<void>((resolve) => {
         if (ctx.cancelled()) { resolve(); return; }
-        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        this.debugUnsubscribe = svc.subscribe(
+          (line) => ctx.sink.line(line),
+          this.vty?.lineKind === 'vty' ? 'monitor' : 'console',
+        );
         ctx.onCancel(() => {
           this.debugUnsubscribe?.();
           this.debugUnsubscribe = null;
@@ -1116,7 +1093,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * la ligne, elle ne debranche pas le cable.
    */
   protected override consoleReleasedBanner(): string[] | null {
-    if (this.isRemoteChild) return null;
     const nom = this.device.getHostname?.() ?? 'Router';
     return ['', `${nom} con0 is now available`, '', 'Press RETURN to get started.', ''];
   }

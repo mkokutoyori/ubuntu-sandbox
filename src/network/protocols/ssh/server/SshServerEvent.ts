@@ -5,7 +5,7 @@
  *
  * The bus is the single integration point between the SSH transport layer
  * (SshServerHandler) and reactive subscribers: SshSyslogger writes auth.log
- * lines, SshAuthThrottler implements fail2ban-style rate limiting,
+ * lines, Fail2banAgent counts failures and bans through iptables,
  * SshSessionTracker can count concurrent sessions, etc. Adding a new
  * reactor never requires touching the handler — just subscribe.
  */
@@ -38,6 +38,7 @@ export type DisconnectReason =
 export type AuthFailureReason =
   | 'wrong_password'
   | 'wrong_key'
+  | 'publickey_query'
   | 'method_disabled'
   | 'root_login_disabled'
   | 'user_not_allowed'
@@ -49,6 +50,11 @@ export type AuthFailureReason =
   | 'pam_account_denied'
   | 'unknown';
 
+export interface SshEventPeer {
+  readonly ip: string;
+  readonly port?: number;
+}
+
 export type SshServerEvent =
   | { kind: 'client_connected'; ip: string; port?: number; timestamp: number }
   | {
@@ -59,6 +65,7 @@ export type SshServerEvent =
       port?: number;
       keyType?: string;
       keyFingerprint?: string;
+      certificate?: { keyId: string; serial: string; caType: string; caFingerprint: string };
       fromHost?: string;
       timestamp?: number;
     }
@@ -89,6 +96,7 @@ export type SshServerEvent =
       user: string;
       ip: string;
       path: string;
+      subject: 'file' | 'directory';
       port?: number;
       timestamp?: number;
     }
@@ -105,14 +113,6 @@ export type SshServerEvent =
       timestamp?: number;
     }
   | {
-      kind: 'auth_throttled';
-      ip: string;
-      failuresInWindow: number;
-      windowSeconds: number;
-      blockUntil: number;
-      timestamp?: number;
-    }
-  | {
       // Supplementary PAM account-phase line emitted alongside an
       // `auth_failure` (reason: 'password_expired') — real `pam_unix`
       // writes a distinct `expired password for user <u>` line in
@@ -123,7 +123,10 @@ export type SshServerEvent =
       port?: number;
       timestamp?: number;
     }
-  | { kind: 'channel_opened'; user: string; channelType: ChannelType }
+  | { kind: 'auth_log'; level: 'error' | 'info' | 'verbose'; text: string; peer?: SshEventPeer }
+  | { kind: 'channel_opened'; user: string; channelType: ChannelType; peer?: SshEventPeer }
+  | { kind: 'session_fatal'; user: string; text: string; peer?: SshEventPeer }
+  | { kind: 'sftp_log'; user: string; program: 'sftp-server' | 'internal-sftp'; pid: number; text: string }
   | {
       kind: 'channel_closed';
       user: string;

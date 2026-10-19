@@ -6,6 +6,8 @@ import { reflectRecordRoute, reverseSourceRoute } from '../layers/internet/Ipv4O
 
 export const ECHO_DATA_BYTES = 56;
 
+export const ICMP_ECHO_HEADER_BYTES = 8;
+
 export const IPV4_ICMP_ECHO_OVERHEAD = 28;
 
 export const CISCO_ECHO_DATAGRAM_BYTES = 100;
@@ -38,7 +40,7 @@ export function buildEchoRequest(
 
 export function buildEchoReply(
   request: IPv4Packet, requestIcmp: ICMPPacket, source: IPAddress, ttl: number,
-  flags: number = request.flags,
+  flags: number = request.flags, tos: number = 0,
 ): IPv4Packet {
   const reply: ICMPPacket = {
     type: 'icmp', icmpType: 'echo-reply', code: 0,
@@ -54,7 +56,7 @@ export function buildEchoReply(
   return createIPv4Packet(
     source, returnRoute ? returnRoute.firstHop : request.sourceIP,
     IP_PROTO_ICMP, ttl, reply, 8 + requestIcmp.dataSize,
-    { flags, ...(ipOptions.length > 0 ? { ipOptions } : {}) },
+    { flags, tos, ...(ipOptions.length > 0 ? { ipOptions } : {}) },
   );
 }
 

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-09-25T18:31:03.490Z
+Generated: 2026-10-14T22:22:15.883Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -951,9 +951,10 @@ Total steps: 369
 
 [193/369] r1 R1# show ipv6 dhcp pool
   DHCPv6 pool: V6POOL
-    Prefix: 2001:db8:1::/64
-    DNS servers: 2001:4860:4860::8888
-    Domain: v6.lab
+    Address allocation prefix: 2001:DB8:1::/64 valid 3600 preferred 1800 (0 in use, 0 conflicts)
+    DNS server: 2001:4860:4860::8888
+    Domain name: v6.lab
+    Active clients: 0
 
 [194/369] r1 R1# show ipv6 dhcp binding
   No IPv6 DHCP bindings.
@@ -1019,7 +1020,7 @@ Total steps: 369
 <empty>
 
 [212/369] r1 R1(config-if)# ip nat outside
-<empty>
+  % Interface GigabitEthernet0/1 has no IP address configured.
 
 [213/369] r1 R1(config-if)# exit
 <empty>
@@ -1155,7 +1156,7 @@ Total steps: 369
   Static translations: 14
   Dynamic translations: 0
   Translation errors: 0
-  Outside interfaces:  GigabitEthernet0/1
+  Outside interfaces:  none
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
@@ -1265,7 +1266,7 @@ Total steps: 369
   Static translations: 14
   Dynamic translations: 0
   Translation errors: 0
-  Outside interfaces:  GigabitEthernet0/1
+  Outside interfaces:  none
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
@@ -1357,7 +1358,7 @@ Total steps: 369
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX97905YQU
+  Processor board ID FTX7894CP4L
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1367,9 +1368,9 @@ Total steps: 369
 [262/369] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 5155 bytes
+  Current configuration : 5267 bytes
   !
-  ! Last configuration change at 18:31:06 UTC Fri Sep 25 2026 by console
+  ! Last configuration change at 22:22:23 UTC Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1512,7 +1513,6 @@ Total steps: 369
   !
   interface GigabitEthernet0/1
    ip address dhcp
-   ip nat outside
    ipv6 dhcp relay destination 2001:db8:ff::1
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -1550,6 +1550,11 @@ Total steps: 369
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
   !
+  ipv6 dhcp pool V6POOL
+   address prefix 2001:db8:1::/64 lifetime 3600 1800
+   dns-server 2001:4860:4860::8888
+   domain-name v6.lab
+  !
   ipv6 unicast-routing
   !
   route-map RM-NAT permit 10
@@ -1563,7 +1568,7 @@ Total steps: 369
 [264/369] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
+  GigabitEthernet0/1         unassigned      YES DHCP   up                    up
   GigabitEthernet0/2         unassigned      YES unset  down                  down
   GigabitEthernet0/3         unassigned      YES unset  down                  down
 
@@ -1590,7 +1595,6 @@ Total steps: 369
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
-    Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -1605,7 +1609,7 @@ Total steps: 369
        Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 538 bytes, 0 underruns
+       5 packets output, 884 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1660,9 +1664,6 @@ Total steps: 369
   
   Gateway of last resort is not set
   
-        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
-  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
@@ -1671,14 +1672,14 @@ Total steps: 369
   IP routing table name is Default-IP-Routing-Table(0)
   IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
-  connected       2           2           0           304         720
+  connected       1           1           0           152         360
   static          0           0           0           0           0
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         0           0           0           0           0
-  Total           2           2           0           304         720
+  Total           1           1           0           152         360
 
 [268/369] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1686,12 +1687,10 @@ Total steps: 369
 [269/369] r1 R1# show ip arp
   Protocol  Address              Age(min)       Hardware Addr     Type      Interface
   Internet  192.168.1.1          -              0200.0000.0001    ARPA      GigabitEthernet0/0
-  Internet  10.0.0.1             -              0200.0000.0002    ARPA      GigabitEthernet0/1
 
 [270/369] r1 R1# show arp
   Protocol  Address              Age(min)       Hardware Addr     Type      Interface
   Internet  192.168.1.1          -              0200.0000.0001    ARPA      GigabitEthernet0/0
-  Internet  10.0.0.1             -              0200.0000.0002    ARPA      GigabitEthernet0/1
 
 [271/369] r1 R1# show ip ospf
 <empty>
@@ -1745,7 +1744,7 @@ Total steps: 369
   Static translations: 14
   Dynamic translations: 0
   Translation errors: 0
-  Outside interfaces:  GigabitEthernet0/1
+  Outside interfaces:  none
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
@@ -2079,19 +2078,19 @@ Total steps: 369
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:31:03.482: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:03.483: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:03.486: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:03.486: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:03.679: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:04.729: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.085: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.227: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.358: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.529: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.665: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:06.107: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:06.421: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:15.862: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 22:22:15.862: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 22:22:15.864: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 22:22:15.864: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 22:22:16.061: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:16.823: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.113: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.214: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.296: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.402: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:22.527: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:22.793: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:23.019: %SYS-5-CONFIG_I: Configured from console by console
 
 [296/369] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2102,8 +2101,8 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 300 (1/100 of seconds), resolution is 4001
-  reference time is EE613C6A.E0C49BA5 (18:31:06.878 UTC Fri Sep 25 2026)
+  ntp uptime is 700 (1/100 of seconds), resolution is 4001
+  reference time is EE7A7F1F.60418937 (22:22:23.376 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2114,14 +2113,14 @@ Total steps: 369
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [299/369] r1 R1# show clock
-  *18:31:06.000 UTC Fri Sep 25 2026
+  *22:22:23.000 UTC Wed Oct 14 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           177        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -2190,7 +2189,6 @@ Total steps: 369
   Prefix               Next Hop             Interface
   0.0.0.0/0            no route
   192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
 
 [308/369] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -2217,7 +2215,6 @@ Total steps: 369
 [309/369] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
-    Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2232,29 +2229,13 @@ Total steps: 369
        Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 538 bytes, 0 underruns
+       5 packets output, 884 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [310/369] r1 R1# show ip interface GigabitEthernet0/1
-  GigabitEthernet0/1 is up, line protocol is up (nat: outside)
-    Internet address is 10.0.0.1/30
-    Broadcast address is 255.255.255.255
-    Address determined by DHCP
-    MTU is 1500 bytes
-    Helper address is not set
-    Directed broadcast forwarding is disabled
-    Outgoing access list is not set
-    Inbound  access list is not set
-    Proxy ARP is enabled
-    Local Proxy ARP is disabled
-    Security level is default
-    Split horizon is enabled
-    ICMP redirects are always sent
-    ICMP unreachables are always sent
-    ICMP mask replies are never sent
-    IP fast switching is enabled
-    IP CEF switching is enabled
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet protocol processing disabled
 
 [311/369] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2296,7 +2277,7 @@ Total steps: 369
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX97905YQU
+  Processor board ID FTX7894CP4L
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2306,9 +2287,9 @@ Total steps: 369
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 5155 bytes
+  Current configuration : 5267 bytes
   !
-  ! Last configuration change at 18:31:06 UTC Fri Sep 25 2026 by console
+  ! Last configuration change at 22:22:23 UTC Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2451,7 +2432,6 @@ Total steps: 369
   !
   interface GigabitEthernet0/1
    ip address dhcp
-   ip nat outside
    ipv6 dhcp relay destination 2001:db8:ff::1
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -2489,6 +2469,11 @@ Total steps: 369
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
   !
+  ipv6 dhcp pool V6POOL
+   address prefix 2001:db8:1::/64 lifetime 3600 1800
+   dns-server 2001:4860:4860::8888
+   domain-name v6.lab
+  !
   ipv6 unicast-routing
   !
   route-map RM-NAT permit 10
@@ -2499,7 +2484,7 @@ Total steps: 369
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
+  GigabitEthernet0/1         unassigned      YES DHCP   up                    up
   GigabitEthernet0/2         unassigned      YES unset  down                  down
   GigabitEthernet0/3         unassigned      YES unset  down                  down
   
@@ -2516,9 +2501,6 @@ Total steps: 369
   
   Gateway of last resort is not set
   
-        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
-  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
@@ -2546,7 +2528,6 @@ Total steps: 369
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
-    Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2561,7 +2542,7 @@ Total steps: 369
        Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 538 bytes, 0 underruns
+       5 packets output, 884 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2643,7 +2624,7 @@ Total steps: 369
   Static translations: 14
   Dynamic translations: 0
   Translation errors: 0
-  Outside interfaces:  GigabitEthernet0/1
+  Outside interfaces:  none
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
@@ -2680,8 +2661,10 @@ Total steps: 369
   
   
   ------------------ show ip dhcp binding ------------------
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2706,23 +2689,23 @@ Total steps: 369
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:31:03.482: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:03.483: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:03.486: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:03.486: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:03.679: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:04.729: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.085: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.227: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.358: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.529: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:05.665: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:06.107: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:06.421: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:15.862: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 22:22:15.862: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 22:22:15.864: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 22:22:15.864: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 22:22:16.061: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:16.823: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.113: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.214: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.296: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:17.402: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:22.527: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:22.793: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 22:22:23.019: %SYS-5-CONFIG_I: Configured from console by console
 
 [313/369] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX97905YQU
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX7894CP4L
 
 [314/369] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2754,6 +2737,10 @@ Total steps: 369
   SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
   Minimum expected Diffie Hellman key size : 1024 bits
+  Hostkey Algorithms:x509v3-ssh-rsa,ssh-rsa
+  Encryption Algorithms:aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  MAC Algorithms:hmac-sha1,hmac-sha1-96
+  KEX Algorithms:diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1
 
 [320/369] r1 R1# show line
      Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
@@ -2807,7 +2794,6 @@ Total steps: 369
   !
   interface GigabitEthernet0/1
    ip address dhcp
-   ip nat outside
    ipv6 dhcp relay destination 2001:db8:ff::1
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -2826,7 +2812,7 @@ Total steps: 369
 [326/369] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 5155 bytes
+  Current configuration : 5267 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2951,7 +2937,6 @@ Total steps: 369
    ipv6 dhcp server V6POOL
   interface GigabitEthernet0/1
    ip address dhcp
-   ip nat outside
    ipv6 dhcp relay destination 2001:db8:ff::1
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -2984,6 +2969,10 @@ Total steps: 369
   ip nat translation icmp-timeout 30
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
+  ipv6 dhcp pool V6POOL
+   address prefix 2001:db8:1::/64 lifetime 3600 1800
+   dns-server 2001:4860:4860::8888
+   domain-name v6.lab
   ipv6 unicast-routing
   route-map RM-NAT permit 10
    match ip address 2
@@ -2995,7 +2984,6 @@ Total steps: 369
 [328/369] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
 
 
 --- [329] § regression: mode nav + negation ---
@@ -3068,7 +3056,7 @@ Total steps: 369
 [351/369] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
+  GigabitEthernet0/1         unassigned      YES DHCP   up                    up
   GigabitEthernet0/2         unassigned      YES unset  down                  down
   GigabitEthernet0/3         unassigned      YES unset  down                  down
 
@@ -3144,6 +3132,7 @@ Total steps: 369
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
+    icmp               ICMP options
     local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
@@ -3171,7 +3160,7 @@ Total steps: 369
     gdoi         Define a GDOI GET-VPN group
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Define an IKE policy
+    isakmp       Enable ISAKMP
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
@@ -3187,13 +3176,13 @@ Total steps: 369
     cdp            Enable CDP globally
     class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
-    crypto         Encryption module
+    crypto         Restore the default DF bit handling
     enable         Set enable secret
     event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
     ip             Disable IP routing
-    ipv6           IPv6 interface subcommands
+    ipv6           Remove the IPv6 prefix pool
     key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally
@@ -3224,7 +3213,7 @@ Total steps: 369
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  29
+  30
 
 [369/369] r1 R1# write memory
   Building configuration...

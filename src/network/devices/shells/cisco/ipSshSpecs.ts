@@ -4,7 +4,7 @@ import { SSH_DEFAULTS, type SshConfig } from '../../router/security/CiscoSecurit
 import {
   IOS_ALGORITHM_VALUES, iosSshDefaults, type IosSshAlgorithmFamily,
 } from '../../router/security/CiscoSshAlgorithms';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
 import type { CiscoSoftwareIdentity } from './CiscoPlatform';
 
 export interface IpSshHost {
@@ -15,6 +15,9 @@ export interface IpSshHost {
 
 export const SSH_TIMEOUT_RANGE: readonly [number, number] = [1, 120];
 export const SSH_RETRIES_RANGE: readonly [number, number] = [0, 5];
+export const SSH_MAXSTARTUPS_RANGE: readonly [number, number] = [2, 128];
+export const SSH_REKEY_TIME_RANGE: readonly [number, number] = [10, 1440];
+export const SSH_REKEY_VOLUME_RANGE: readonly [number, number] = [100, 4194303];
 
 const VERSION: ArgumentSpec = {
   name: 'version', type: 'ENUM', description: 'SSH protocol version',
@@ -48,17 +51,27 @@ const TAILLE_DH: ArgumentSpec = {
   ],
 };
 
+const AUTH_METHOD: ArgumentSpec = {
+  name: 'method', type: 'ENUM', description: 'User authentication method',
+  values: [
+    { keyword: 'publickey', description: 'Public-key based authentication' },
+    { keyword: 'keyboard', description: 'Keyboard-interactive authentication' },
+    { keyword: 'password', description: 'Password based authentication' },
+  ],
+};
+
 type CoteSsh = 'server' | 'client';
 
 const LISTES_PAR_COTE: Readonly<Record<CoteSsh, Partial<Record<IosSshAlgorithmFamily, keyof SshConfig>>>> = {
   server: {
     mac: 'macAlgorithms', encryption: 'encryptionAlgorithms', kex: 'kexAlgorithms', hostkey: 'hostKeyAlgorithms',
+    authentication: 'authenticationMethods', publickey: 'publickeyAlgorithms',
   },
   client: { mac: 'clientMacAlgorithms', encryption: 'clientEncryptionAlgorithms' },
 };
 
 const FAMILLES_PAR_COTE: Readonly<Record<CoteSsh, readonly IosSshAlgorithmFamily[]>> = {
-  server: ['encryption', 'hostkey', 'kex', 'mac'],
+  server: ['authentication', 'encryption', 'hostkey', 'kex', 'mac', 'publickey'],
   client: ['encryption', 'mac'],
 };
 
@@ -67,6 +80,8 @@ const DESCRIPTION_FAMILLE: Readonly<Record<IosSshAlgorithmFamily, string>> = {
   hostkey: 'Host key algorithms',
   kex: 'Key exchange algorithms',
   mac: 'Message authentication code algorithms',
+  authentication: 'User authentication methods',
+  publickey: 'Public key algorithms of the user authentication',
 };
 
 const LISTE_FAMILLE = (famille: IosSshAlgorithmFamily): ArgumentSpec => ({
@@ -160,6 +175,56 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
       (_session, args) => { ctx().sshConfig().dhMinBits = Number(args.bits); return ''; },
       () => { ctx().sshConfig().dhMinBits = SSH_DEFAULTS.dhMinBits; return ''; }),
 
+    spec('stricthostkeycheck', ['ip', 'ssh', 'stricthostkeycheck'], 'Strict host key checking of SSH servers',
+      () => { ctx().sshConfig().strictHostKeyCheck = true; return ''; },
+      () => { ctx().sshConfig().strictHostKeyCheck = false; return ''; }),
+
+    spec('maxstartups', ['ip', 'ssh', 'maxstartups', {
+      name: 'nombre', type: 'INT', range: SSH_MAXSTARTUPS_RANGE, optional: true,
+      description: 'Number of connections accepted concurrently',
+    }], 'Maximum concurrent SSH sessions being started',
+    (_session, args) => {
+      ctx().sshConfig().maxStartups = args.nombre === undefined
+        ? SSH_DEFAULTS.maxStartups : Number(args.nombre);
+      return '';
+    },
+    () => { ctx().sshConfig().maxStartups = SSH_DEFAULTS.maxStartups; return ''; }),
+
+    {
+      id: 'config-ip-ssh-rekey-time',
+      path: ['ip', 'ssh', 'rekey', 'time', {
+        name: 'minutes', type: 'INT', range: SSH_REKEY_TIME_RANGE,
+        description: 'Rekey time in minutes',
+      }],
+      description: 'Time-based rekey of an SSH session',
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => { ctx().sshConfig().rekeyTimeMinutes = Number(args.minutes); return ''; },
+    },
+    {
+      id: 'config-ip-ssh-rekey-volume',
+      path: ['ip', 'ssh', 'rekey', 'volume', {
+        name: 'kilooctets', type: 'INT', range: SSH_REKEY_VOLUME_RANGE,
+        description: 'Rekeyed data volume in kilobytes',
+      }],
+      description: 'Volume-based rekey of an SSH session',
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => { ctx().sshConfig().rekeyVolumeKb = Number(args.kilooctets); return ''; },
+    },
+    {
+      id: 'config-ip-ssh-rekey-no',
+      path: ['ip', 'ssh', 'rekey'],
+      description: 'Rekey of an SSH session',
+      undoDescription: 'Disable the time-based and the volume-based rekey',
+      modes: ['config'], minPrivilege: 15,
+      existsOnlyNegated: true,
+      run: () => { throw new CliIncomplete(); },
+      undo: () => {
+        delete ctx().sshConfig().rekeyTimeMinutes;
+        delete ctx().sshConfig().rekeyVolumeKb;
+        return '';
+      },
+    },
+
     spec('logging-events', ['ip', 'ssh', 'logging', 'events'], 'Log SSH events',
       () => { ctx().sshConfig().loggingEvents = true; return ''; },
       () => { ctx().sshConfig().loggingEvents = false; return ''; }),
@@ -177,6 +242,18 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
         if (retires.length === 0) { reglerListe(ctx().sshConfig(), cote, famille, []); return ''; }
         return retirerDeLaListe(ctx(), cote, famille, retires);
       }))),
+
+    spec('server-authenticate-user', ['ip', 'ssh', 'server', 'authenticate', 'user', AUTH_METHOD],
+      'User authentication methods of the SSH server',
+      (_session, args) => {
+        const current = listeEffective(ctx(), 'server', 'authentication');
+        if (current.includes(args.method)) return '';
+        const wanted = [...current, args.method];
+        const order = IOS_ALGORITHM_VALUES.authentication;
+        reglerListe(ctx().sshConfig(), 'server', 'authentication', order.filter((name) => wanted.includes(name)));
+        return '';
+      },
+      (_session, args) => retirerDeLaListe(ctx(), 'server', 'authentication', [args.method])),
 
     spec('scp-server', ['ip', 'scp', 'server', 'enable'], 'Enable the SCP server',
       () => { ctx().sshConfig().scpServerEnabled = true; return ''; },

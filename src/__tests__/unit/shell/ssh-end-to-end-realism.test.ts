@@ -1010,6 +1010,8 @@ describe('SSH end-to-end realism — 100-step debug', () => {
   test('§87 — Windows→Linux: /etc/issue.net contents shown when set', async () => {
     lan = await buildLan();
     await lan.linuxSrv.executeCommand('echo "AUTHORIZED USE ONLY" > /etc/issue.net');
+    await lan.linuxSrv.executeCommand('echo "Banner /etc/issue.net" >> /etc/ssh/sshd_config');
+    await lan.linuxSrv.executeCommand('systemctl reload ssh');
     const t = new WindowsTerminalSession('o87', lan.winA);
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');

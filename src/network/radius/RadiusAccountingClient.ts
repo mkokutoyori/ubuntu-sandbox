@@ -2,7 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { type RadiusPacket, UDP_PORT_RADIUS_ACCT } from './types';
+import { type RadiusPacket, type RadiusAttributePolicy, defaultAttributePolicy, UDP_PORT_RADIUS_ACCT } from './types';
 import { withAccountingRequestAuthenticator, verifyResponseAuthenticator } from './authenticators';
 import { acctAttributesFor, generateAcctSessionId, type AcctRecord, type AcctTerminateCause } from './accounting';
 import {
@@ -10,6 +10,8 @@ import {
   type EthernetFrame, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { PathClock } from '../core/time/PathClock';
+import { ServerCounters } from './ServerCounters';
 import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface RadiusAcctServerConfig {
@@ -57,6 +59,8 @@ interface PendingAcct {
   firstAttemptAt: number;
   timer: TimerHandle | null;
   attemptsLeft: number;
+  transmissions: number;
+  sentAtMs: number;
 }
 
 /** NAS-side RADIUS accounting client (RFC 2866): Start/Interim-Update/Stop with retransmission. */
@@ -67,6 +71,13 @@ export class RadiusAccountingClient {
   private nextIdentifier = 1;
   private scheduler: IScheduler | null = null;
   private running = false;
+  private counters = new ServerCounters(simulationNowMs);
+
+  useCounters(shared: ServerCounters): void { this.counters = shared; }
+
+  private attributePolicy: RadiusAttributePolicy = defaultAttributePolicy();
+
+  setAttributePolicy(policy: RadiusAttributePolicy): void { this.attributePolicy = policy; }
 
   constructor(
     private readonly host: RadiusAccountingHost,
@@ -112,17 +123,27 @@ export class RadiusAccountingClient {
 
   /** Begin a session and send Acct-Start. Returns the generated session id, or null if no server is configured. */
   startSession(username: string, serverIp?: string): string | null {
+    return this.beginSession(username, serverIp, true);
+  }
+
+  beginSession(username: string, serverIp: string | undefined, announce: boolean): string | null {
     const server = serverIp ? this.servers.find((s) => s.ip === serverIp) : this.servers[0];
     if (!server) return null;
     const sessionId = generateAcctSessionId();
     this.sessions.set(sessionId, {
       sessionId, username, server, startedAt: simulationNowMs(), inputOctets: 0, outputOctets: 0,
     });
-    this.send(server, {
-      sessionId, username, nasIp: '0.0.0.0', status: 'start',
-      delaySec: 0, sessionTimeSec: 0, inputOctets: 0, outputOctets: 0,
-    });
+    if (announce) {
+      this.send(server, {
+        sessionId, username, nasIp: '0.0.0.0', status: 'start',
+        delaySec: 0, sessionTimeSec: 0, inputOctets: 0, outputOctets: 0,
+      });
+    }
     return sessionId;
+  }
+
+  acknowledgedCount(serverIp: string): number {
+    return this.counters.phase(serverIp, 'accounting').transactionSuccess;
   }
 
   /** Send an Acct-Interim-Update reflecting cumulative counters for an active session. */
@@ -165,6 +186,12 @@ export class RadiusAccountingClient {
     }
     if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
     this.pending.delete(payload.identifier);
+    const answered = this.counters.phase(pending.server.ip, 'accounting');
+    answered.transactionSuccess++;
+    answered.lastResponseMs = Math.max(0, Math.round(PathClock.now() - pending.sentAtMs));
+    if (pending.record.status === 'start') answered.startResponses++;
+    else if (pending.record.status === 'stop') answered.stopResponses++;
+    else answered.interimResponses++;
     this.getBus().publish({
       topic: 'radius.packet.received',
       payload: {
@@ -182,6 +209,7 @@ export class RadiusAccountingClient {
     const pending: PendingAcct = {
       identifier, server, record, authenticator: '',
       firstAttemptAt: simulationNowMs(), timer: null, attemptsLeft: server.retransmit,
+      transmissions: 0, sentAtMs: 0,
     };
     this.pending.set(identifier, pending);
     this.transmit(pending);
@@ -193,11 +221,14 @@ export class RadiusAccountingClient {
     this.scheduler = s;
     pending.timer = s.setTimeout(() => {
       if (!this.pending.has(pending.identifier)) return;
+      const silent = this.counters.phase(pending.server.ip, 'accounting');
+      silent.timeouts++;
       if (pending.attemptsLeft > 0) {
         pending.attemptsLeft--;
         this.transmit(pending);
         this.armTimeout(pending);
       } else {
+        silent.transactionFailure++;
         this.pending.delete(pending.identifier);
         Logger.warn(this.host.id, 'radius:acct-timeout',
           `${this.host.name}: ${pending.record.status} for ${pending.record.sessionId} never acknowledged`);
@@ -215,7 +246,7 @@ export class RadiusAccountingClient {
     let payload: RadiusPacket = {
       type: 'radius', code: 'accounting-request', identifier: pending.identifier,
       authenticator: '00'.repeat(16),
-      attributes: acctAttributesFor(record),
+      attributes: acctAttributesFor(record, this.attributePolicy),
     };
     payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
     pending.authenticator = payload.authenticator;
@@ -233,6 +264,14 @@ export class RadiusAccountingClient {
         identifier: pending.identifier, username: pending.record.username,
       },
     });
+    const sent = this.counters.phase(pending.server.ip, 'accounting');
+    sent.requests++;
+    if (pending.transmissions > 0) sent.retransmissions++;
+    if (pending.record.status === 'start') sent.starts++;
+    else if (pending.record.status === 'stop') sent.stops++;
+    else sent.interims++;
+    pending.transmissions++;
+    pending.sentAtMs = PathClock.now();
     this.host.sendUdpDatagram(datagram);
   }
 

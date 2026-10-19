@@ -9722,3 +9722,40 @@ connexes : 244 fichiers, 4628 cas, tous verts. `npm run typecheck` :
 248 erreurs, comme sur la base ; eslint revenu a son compte d'avant.
 Trois cas e2e Playwright verifient `--state=running`, l'effet de
 `--all` et l'accord `ss` / `systemctl status` sur le pid de sshd.
+
+## Partage des segments entre agents (SSH / securite Cisco)
+
+Deux agents travaillent sur `mandeng`. Pour ne pas toucher la meme chose :
+
+**Agent SSH sur le fil** (ce journal, sections `runSshClient`) — possede :
+`src/network/protocols/ssh/**` (session, canaux, agent `agent/`, serveur
+`SshServerHandler` / `LinuxSshServerContext`), `LinuxSshClient.ts` et les
+chemins ssh/scp/sftp/rsync de `LinuxCommandExecutor.ts`, `wireSshLogin.ts`,
+`routerOutboundSsh.ts`, `RouterSshKnownHosts`. Fait : `-A` (canal
+`auth-agent@openssh.com`), `-W`, `ProxyCommand`, suppression de
+`runSshClient`, journal sshd (AllowUsers / DenyUsers / PermitRootLogin).
+
+**Agent securite Cisco** (`docs/Audit-Securite-Cisco-IOS.md`, `official_docs/cisco`)
+— possede : les commandes IOS des familles `aaa`, `radius-server`,
+`tacacs-server`, `username`, `ip ssh ...` cote CLI, et leur evaluation par
+les moteurs de `src/network/devices/router/**` et `shells/cisco/**`.
+
+Frontiere sur `ip ssh` : l'agent securite ajoute la commande et la valeur
+(`port`, `maxstartups`, `rekey`, `stricthostkeycheck`, `dscp`) ; l'agent SSH
+n'ecrit AUCUNE de ces commandes. Si le serveur filaire doit les lire, c'est
+a travers `RouterSshServerContext` / `ISshServerContext` — un point d'appui
+etroit a convenir avant de le modifier des deux cotes.
+
+Deja pris en charge par l'agent SSH, a ne pas refaire : les messages
+`%SEC_LOGIN-1-QUIET_MODE_ON` et `%SEC_LOGIN-5-QUIET_MODE_OFF` de
+`login block-for` (`LoginBlocker.onQuietMode`, `SecurityAuditLog.recordQuietMode`),
+d'apres la reference `ios-security-command-reference-d-to-l-2019.pdf` p. 919-920.
+
+Releve, laisse a l'agent securite Cisco (famille `login`, pas SSH) : la
+reference decrit une ACL cachee `sl_def_acl` (`deny tcp any any eq telnet`,
+`eq www`, `eq 22`, `permit ip any any`) visible par
+`show access-lists sl_def_acl` tant que `login block-for` est configure, et
+la sortie `show login` documentee ("A default login delay of 1 seconds is
+applied.", "Router presently in Watch-Mode, will remain in Watch-Mode for
+N seconds.", "Present login failure count N"). Le refus de connexion SSH
+pendant la periode silencieuse est, lui, deja rendu par le fil.

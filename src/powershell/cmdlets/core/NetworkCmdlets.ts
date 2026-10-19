@@ -36,6 +36,10 @@ import {
   netRouteKey, noMatchingNetRoute, planNetRoute, selectNetRoutes,
 } from '@/network/devices/windows/netRoute';
 import {
+  type NetPrefixPolicyRow, type NetPrefixPolicySelection, noMatchingNetPrefixPolicy,
+  prefixPolicySelectionIsEmpty, selectNetPrefixPolicies,
+} from '@/network/devices/windows/netPrefixPolicy';
+import {
   type NetAdapterSelection, adapterNameProblem, adapterNameTaken, formatNetAdapterMac,
   noMatchingNetAdapter, parseNetAdapterMac, selectNetAdapters, selectionIsEmpty,
 } from '@/network/devices/windows/netAdapter';
@@ -728,6 +732,43 @@ export class GetNetRouteCmdlet implements ICmdlet {
       return null;
     }
     return matched.map(routeToPSObject) as PSValue;
+  }
+}
+
+const NET_PREFIX_POLICY_FILTERS = ['Prefix', 'Precedence', 'Label', 'CimSession'] as const;
+
+function prefixPolicyToPSObject(r: NetPrefixPolicyRow): Record<string, PSValue> {
+  return {
+    Prefix:     r.prefix,
+    Precedence: r.precedence,
+    Label:      r.label,
+    Store:      r.store,
+  };
+}
+
+export class GetNetPrefixPolicyCmdlet implements ICmdlet {
+  readonly name = 'get-netprefixpolicy';
+  readonly displayName = 'Get-NetPrefixPolicy';
+  readonly aliases = [] as const;
+  readonly description = 'Gets the prefix policy.';
+  readonly parameters = NET_PREFIX_POLICY_FILTERS;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const remote = remoteCimRefusal(ctx, this.displayName);
+    if (remote !== null) { ctx.emitError(remote); return null; }
+    const list = cimFilterReader(ctx, NET_PREFIX_POLICY_FILTERS);
+    const selection: NetPrefixPolicySelection = {
+      prefix: list('prefix') ?? (ctx.positional[0] === undefined ? undefined : [psValueToString(ctx.positional[0])]),
+      precedence: list('precedence'),
+      label: list('label'),
+    };
+    const matched = selectNetPrefixPolicies(net.getPrefixPolicies?.() ?? [], selection);
+    if (matched.length === 0 && !prefixPolicySelectionIsEmpty(selection)) {
+      ctx.emitError(`${this.displayName} : ${noMatchingNetPrefixPolicy(selection)}`);
+      return null;
+    }
+    return matched.map(prefixPolicyToPSObject) as PSValue;
   }
 }
 
@@ -1524,6 +1565,12 @@ export class TestNetConnectionCmdlet implements ICmdlet {
     result.SourceAddress = egress?.sourceIp ?? '';
     if (detailed) result['NetRoute (NextHop)'] = egress?.nextHop ?? '';
     if (tcpTested) {
+      if (!tcpSucceeded && resolved !== '') {
+        ctx.emitWarning(`TCP connect to (${resolved} : ${port}) failed`);
+        if (!pingSucceeded) ctx.emitWarning(`Ping to ${resolved} failed with status: TimedOut`);
+        result.PingSucceeded = pingSucceeded;
+        result['PingReplyDetails (RTT)'] = `${rttMs} ms`;
+      }
       result.TcpTestSucceeded = tcpSucceeded;
     } else {
       result.PingSucceeded = pingSucceeded;

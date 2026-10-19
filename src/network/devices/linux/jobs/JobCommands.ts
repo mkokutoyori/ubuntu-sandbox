@@ -8,6 +8,7 @@
 
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
 import type { LinuxJobTable, JobEntry } from './LinuxJobTable';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface JobCmdContext {
   pm: LinuxProcessManager;
@@ -29,9 +30,9 @@ function marker(table: LinuxJobTable, j: JobEntry): string {
 }
 
 function formatJob(table: LinuxJobTable, j: JobEntry, long: boolean): string {
-  const pid = long ? ` ${String(j.pid).padStart(5)}` : '';
+  const pid = long ? ` ${padToWidth(String(j.pid), 5, 'right')}` : '';
   // bash columns: "[N]<marker> <pid?> <state><pad>command"
-  const state = j.state.padEnd(22);
+  const state = padToWidth(j.state, 22);
   return `[${j.id}]${marker(table, j)}${pid} ${state}${j.command}`;
 }
 

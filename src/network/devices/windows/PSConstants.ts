@@ -4,6 +4,9 @@
  * the Phase 4 chopping block).
  */
 
+export const PWSH_BANNER = `PowerShell 7.6.0
+`;
+
 export const PS_BANNER = `Windows PowerShell
 Copyright (C) Microsoft Corporation. All rights reserved.
 

@@ -210,7 +210,7 @@ ${local}  range 10.0.0.10 10.0.0.50;
   option routers 10.0.0.1;
 }
 `;
-  await srv.executeCommand(`printf '%s' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd.conf`);
+  await srv.executeCommand(`printf '%b' ${JSON.stringify(conf)} > /etc/dhcp/dhcpd.conf`);
   await srv.executeCommand('sudo systemctl start isc-dhcp-server');
   return { srv, squatteur, client };
 }

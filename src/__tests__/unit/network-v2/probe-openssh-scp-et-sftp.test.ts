@@ -111,7 +111,7 @@ describe('scp : le contenu ARRIVE, a l octet', () => {
 
 describe('sftp : les verbes de la page man, sur le serveur', () => {
   const lot = (verbes: string) =>
-    `${MOT} sftp -o StrictHostKeyChecking=no -b - alice@${SRV} <<'EOF'\n${verbes}\nEOF`;
+    `${MOT} sftp -o StrictHostKeyChecking=no -o BatchMode=no -N -b - alice@${SRV} <<'EOF'\n${verbes}\nEOF`;
 
   it('l ouverture annonce « Connected to <hote>. »', async () => {
     const { pc } = await labo();

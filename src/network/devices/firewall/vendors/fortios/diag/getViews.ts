@@ -3,8 +3,7 @@ import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLines, memoryLine } from './systemLoad';
 import type { SystemLoad } from '../../../health/SystemLoad';
 import {
-  renderTable, FIXED_TABLE, type TableStyle,
-} from '../../../../shells/cli/TextTable';
+  renderTable, FIXED_TABLE, type TableStyle, padToWidth } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
@@ -275,7 +274,7 @@ export function renderRoutingDatabase(routes: RouteTable, now: number): string {
 
   for (const route of routes.all()) {
     const kept = routes.isSelected(route);
-    lines.push(`${protocolLetter(route).padEnd(5)}${kept ? '*>' : '  '} `
+    lines.push(`${padToWidth(protocolLetter(route), 5)}${kept ? '*>' : '  '} `
       + `${route.network}/${prefixLength(route.mask)} ${reachedBy(route, now)}`
       + (kept ? '' : ' inactive'));
   }
@@ -374,8 +373,8 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     outQueue: '0',
     upDown: peer.isUp ? uptimeClock(peer.uptimeSec) : 'never',
     state: peer.isUp
-      ? String(peer.prefixesReceived).padStart(BGP_STATE_WIDTH)
-      : ` ${peer.state}`.padEnd(BGP_STATE_WIDTH),
+      ? padToWidth(String(peer.prefixesReceived), BGP_STATE_WIDTH, 'right')
+      : padToWidth(` ${peer.state}`, BGP_STATE_WIDTH),
   }));
 
   lines.push(...renderTable(rows, [

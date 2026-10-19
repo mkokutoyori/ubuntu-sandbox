@@ -911,6 +911,13 @@ export class Port {
     this.load.reset();
   }
 
+  carryLoopback(ipPacketBytes: number): void {
+    this.counters.framesOut++;
+    this.counters.bytesOut += ipPacketBytes;
+    this.counters.framesIn++;
+    this.counters.bytesIn += ipPacketBytes;
+  }
+
   incrementErrorsIn(): void { this.counters.errorsIn++; }
   incrementCrcErrorsIn(): void { this.counters.errorsIn++; this.counters.crcErrorsIn = (this.counters.crcErrorsIn ?? 0) + 1; }
   incrementErrorsOut(): void { this.counters.errorsOut++; }

@@ -1,5 +1,6 @@
 import type { HostClock } from '../audit/tools/AuditHostClock';
 import { strptime, type Tm } from '../time/Strptime';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const USEC_PER_SEC = 1_000_000;
 const USEC_PER_MSEC = 1_000;
@@ -225,7 +226,7 @@ export function ctimeText(epochSec: number, clock: HostClock): string {
   const tm = clock.localTime(epochSec);
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[tm.wday]} ${months[tm.mon]} ${String(tm.mday).padStart(2, ' ')} ${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)} ${tm.year}`;
+  return `${days[tm.wday]} ${months[tm.mon]} ${padToWidth(String(tm.mday), 2, 'right')} ${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)} ${tm.year}`;
 }
 
 export function isoTimestamp(epochSec: number, clock: HostClock): string {
@@ -235,5 +236,5 @@ export function isoTimestamp(epochSec: number, clock: HostClock): string {
   const zoneHour = Math.trunc(minutes / 60);
   const zoneMinute = Math.abs(minutes % 60);
   const signed = `${zoneHour < 0 ? '-' : '+'}${pad2(Math.abs(zoneHour))}`;
-  return `${String(tm.year).padStart(4, ' ')}-${pad2(tm.mon + 1)}-${pad2(tm.mday)}T${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)}${signed}:${pad2(zoneMinute)}`;
+  return `${padToWidth(String(tm.year), 4, 'right')}-${pad2(tm.mon + 1)}-${pad2(tm.mday)}T${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)}${signed}:${pad2(zoneMinute)}`;
 }

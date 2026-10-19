@@ -60,7 +60,7 @@ describe('Parser — barewords in command-argument position', () => {
     const pc = new WindowsPC('windows-pc', 'WIN');
     pc.setCurrentUser('Administrator');
     const out = await execPS(pc, 'Get-Alias zzzznotreal');
-    expect(out).toMatch(/Cannot find alias/i);
+    expect(out).toMatch(/cannot find a matching alias because an alias with the name/i);
   });
 
   it('Format-Table Name, Status — positional comma-list builds a property array', async () => {

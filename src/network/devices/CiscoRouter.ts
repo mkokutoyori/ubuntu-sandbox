@@ -11,7 +11,7 @@ import { ciscoSshIdentification } from '@/network/protocols/ssh/serverIdentifica
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
 import { effectiveIosSshAlgorithms, iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
 import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
-import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshHostKey, SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
 import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
@@ -45,6 +45,8 @@ import { PimAgent } from '../pim/PimAgent';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
+import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
+import { routerRsaKey } from '../ipsec/RouterRsaKey';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
 import { CoaListener, type CoaSessionHandler } from '../radius/CoaListener';
 import { CoaClient } from '../radius/CoaClient';
@@ -54,6 +56,7 @@ import { GreAgent } from '../gre/GreAgent';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { v, vb } from '../snmp/types';
 import { registerRttMonOperation } from '../snmp/mibs/RttMonMib';
+import { ntpV4MibRows } from '../snmp/mibs/NtpV4Mib';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
@@ -225,6 +228,8 @@ export class CiscoRouter extends Router {
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
       sendIpv4Packet: (request: Ipv4SendRequest) => this.sendIpv4Packet(request),
       sendUdpDatagram: (request: UdpSendRequest) => this.sendUdpDatagram(request),
+      joinMulticastGroup: (iface: string, group: string) => { this.joinLocalMulticast(iface, group); },
+      leaveMulticastGroup: (iface: string, group: string) => { this.leaveLocalMulticast(iface, group); },
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
       sendArpRequestFor: (iface: string, target: IPAddress) =>
         this.sendArpRequestFor(iface, target),
@@ -259,6 +264,7 @@ export class CiscoRouter extends Router {
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
     this.radiusAccountingClient = new RadiusAccountingClient(hostBase, () => this.getBus());
+    this.radiusAccountingClient.useCounters(this.radiusClient.counters);
     this.coaListener = new CoaListener(hostBase, () => this.getBus());
     this.coaListener.setSessionHandler(this.defaultCoaSessionHandler());
     this.coaClient = new CoaClient(hostBase, () => this.getBus());
@@ -284,6 +290,9 @@ export class CiscoRouter extends Router {
       this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.snmpAgent.registerSubtree(() => ntpV4MibRows(this.ntpAgent, {
+      softwareName: 'IOS NTP', softwareVersion: 'Cisco IOS Software', vendor: 'Cisco Systems, Inc.', systemType: 'Cisco IOS',
+    }));
     this.getIpSlaEngine().setMibRegistrar((operationId) => {
       registerRttMonOperation(
         (oid, read) => this.snmpAgent.registerMib(oid, read),
@@ -377,7 +386,7 @@ export class CiscoRouter extends Router {
       return true;
     }
     if (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP) {
-      this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp, ipPkt.destinationIP);
       return true;
     }
     if (udp.destinationPort === UDP_PORT_GLBP) {
@@ -505,6 +514,23 @@ export class CiscoRouter extends Router {
     if (ssh.encryptionAlgorithms.length === 0 && ssh.macAlgorithms.length === 0) return null;
     const effective = effectiveIosSshAlgorithms(ssh, C2900_SOFTWARE);
     return { chiffrement: effective.encryption[0], hmac: effective.mac[0] };
+  }
+
+  override _ikeRsaProvider(): IkeRsaProvider | null {
+    const security = getSecurityConfig(this);
+    return {
+      privateKey: () => {
+        const generated = security.cryptoKeys[0];
+        return generated ? routerRsaKey(this.getHostname(), generated.modulus)?.privateKey ?? null : null;
+      },
+      peerPublicKey: (address, hostnames) => security.ikePubkeys.publicKeyFor(address, hostnames, 'encryption'),
+    };
+  }
+
+  sshHostKeyAuthority(): ((host: string, key: SshHostKey) => boolean) | undefined {
+    const security = getSecurityConfig(this);
+    if (!security.ssh.strictHostKeyCheck) return undefined;
+    return (host, key) => security.sshPubkeys.admitsServer(host, key.publicKey);
   }
 
   protected override sshPublicKeyAdmitted(user: string, offeredKeyMaterial: string): boolean {

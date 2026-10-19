@@ -1,6 +1,7 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { VirtualFileSystem } from '../VirtualFileSystem';
-import { UT, UTMPX_SIZE, Utmpx, binaryStringToBytes, bytesToBinaryString } from '../login/UtmpxRecord';
+import { UT, UTMPX_SIZE, Utmpx } from '../login/UtmpxRecord';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 export interface UtmpRecord {
   user: string;

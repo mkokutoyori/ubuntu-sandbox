@@ -35,6 +35,7 @@ import {
   type BgpErrorCode, type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
 import { TimerSet } from '@/events/TimerSet';
+import { electRouterId } from '../routing/RouterIdElection';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpNeighborCfg {
@@ -197,8 +198,15 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    *  new BGP routes into the Router RIB (push updates outside converge). */
   setOnRibChange(cb: () => void): void { this.onRibChange = cb; }
 
+  getRouterId(): string {
+    if (this.config.routerId) return this.config.routerId;
+    return electRouterId(this.deviceCtx.connectedNetworks().map((c) => ({
+      iface: c.iface, ip: String(c.localIp),
+    }))) ?? '0.0.0.0';
+  }
+
   private routerId(): string {
-    return this.config.routerId ?? '0.0.0.0';
+    return this.getRouterId();
   }
 
   /** Prefixes really originated: a `network` stmt backed by a real

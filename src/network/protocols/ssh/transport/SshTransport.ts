@@ -4,7 +4,8 @@ import {
   sshPublicKeyFromBlob, type SshPrivateKey,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { SshReader, SshWriter } from '../wire/SshDataTypes';
-import { hostKeySignatureAlgorithmsFor, signWithAlgorithm, verifyUserauthSignature } from '../auth/UserauthSignature';
+import { hostKeySignatureAlgorithmsFor } from '../auth/UserauthSignature';
+import { signHostKeyExchange, verifyHostKeyExchange } from '../certificate/HostKeySignature';
 import { identificationLine, scanIdentification, type SshIdentification } from './SshIdentification';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
@@ -25,7 +26,7 @@ import {
 } from './SshKeyExchange';
 import {
   EXT_INFO_CLIENT, IMPLEMENTED_CIPHERS, IMPLEMENTED_COMPRESSION, IMPLEMENTED_HOST_KEY_ALGORITHMS,
-  IMPLEMENTED_KEX_METHODS, IMPLEMENTED_MACS, OPENSSH_CIPHERS, OPENSSH_HOST_KEY_ALGORITHMS,
+  IMPLEMENTED_KEX_METHODS, IMPLEMENTED_MACS, OPENSSH_CIPHERS, OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS,
   OPENSSH_KEX_ALGORITHMS, OPENSSH_MACS, SERVER_SIGNATURE_ALGORITHMS, implementedOnly, isAeadCipher,
 } from './SshAlgorithms';
 import {
@@ -46,9 +47,14 @@ const SUPPORTED_PROTOCOL_VERSIONS = ['2.0', '1.99'];
 const SERVER_SIG_ALGS = 'server-sig-algs';
 const PUBLICKEY_HOSTBOUND = 'publickey-hostbound@openssh.com';
 
-export interface SshServerHostKey {
+export interface SshServerHostKeyMaterial {
   readonly publicKeyBlob: Uint8Array;
   readonly privateKey: SshPrivateKey;
+}
+
+export interface SshServerHostKey {
+  readonly algorithms: readonly string[];
+  load(): SshServerHostKeyMaterial | null;
 }
 
 export interface SshAlgorithmPreferences {
@@ -101,9 +107,16 @@ export type SshTransportOutcome = SshTransportEstablished | SshTransportFailure;
 
 type Phase = 'kexinit' | 'kex' | 'newkeys' | 'service' | 'open' | 'closed';
 
+export function eagerServerHostKey(publicKeyBlob: Uint8Array, privateKey: SshPrivateKey): SshServerHostKey {
+  const parsed = sshPublicKeyFromBlob(publicKeyBlob);
+  return {
+    algorithms: parsed === null ? [] : hostKeySignatureAlgorithmsFor(parsed),
+    load: () => ({ publicKeyBlob, privateKey }),
+  };
+}
+
 function hostKeyAlgorithmsOf(key: SshServerHostKey): readonly string[] {
-  const parsed = sshPublicKeyFromBlob(key.publicKeyBlob);
-  return parsed === null ? [] : hostKeySignatureAlgorithmsFor(parsed);
+  return key.algorithms;
 }
 
 export class SshTransport {
@@ -223,9 +236,9 @@ export class SshTransport {
     const server = this.config.role === 'server';
     const preferences = this.config.algorithms ?? {};
     const hostKey = server
-      ? implementedOnly(preferences.hostKey ?? OPENSSH_HOST_KEY_ALGORITHMS,
+      ? implementedOnly(preferences.hostKey ?? OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS,
         (this.config.hostKeys ?? []).flatMap(hostKeyAlgorithmsOf))
-      : implementedOnly(preferences.hostKey ?? this.config.hostKeyAlgorithms ?? OPENSSH_HOST_KEY_ALGORITHMS,
+      : implementedOnly(preferences.hostKey ?? this.config.hostKeyAlgorithms ?? OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS,
         IMPLEMENTED_HOST_KEY_ALGORITHMS);
     const kex = implementedOnly(preferences.kex ?? OPENSSH_KEX_ALGORITHMS, IMPLEMENTED_KEX_METHODS);
     const ciphers = implementedOnly(preferences.ciphers ?? OPENSSH_CIPHERS, IMPLEMENTED_CIPHERS);
@@ -507,7 +520,7 @@ export class SshTransport {
       return;
     }
     const negotiated = this.negotiated;
-    const hostKey = (this.config.hostKeys ?? []).find((k) => hostKeyAlgorithmsOf(k).includes(negotiated.hostKey));
+    const hostKey = (this.config.hostKeys ?? []).find((k) => hostKeyAlgorithmsOf(k).includes(negotiated.hostKey))?.load() ?? null;
     const group = this.exchangeGroup;
     if (method.groupExchange && group === null) {
       this.unexpectedKexMessage(payload[0]);
@@ -538,7 +551,7 @@ export class SshTransport {
       .writeByte(method.groupExchange ? SSH_MSG_KEX_DH_GEX_REPLY : SSH_MSG_KEXDH_REPLY)
       .writeBytes(hostKey.publicKeyBlob);
     writeKexValue(reply, method.encoding, ephemeral.publicKey);
-    this.sendPacket(reply.writeBytes(signWithAlgorithm(hostKey.privateKey, negotiated.hostKey, hash)).toBytes());
+    this.sendPacket(reply.writeBytes(signHostKeyExchange(hostKey.privateKey, negotiated.hostKey, hash)).toBytes());
     this.installKeys(shared, hash);
   }
 
@@ -588,7 +601,7 @@ export class SshTransport {
       sharedSecret: shared,
       ...(this.exchangeGroup === null ? {} : { groupExchange: this.exchangeGroup }),
     });
-    if (!verifyUserauthSignature(hostKeyBlob, this.negotiated.hostKey, signature, hash)) {
+    if (!verifyHostKeyExchange(hostKeyBlob, this.negotiated.hostKey, signature, hash)) {
       this.abort(SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE, 'incorrect signature', 'signature');
       return;
     }

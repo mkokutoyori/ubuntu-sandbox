@@ -15,6 +15,8 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IEventLogProvider, EventLogEntryInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { describeEvent } from '@/network/devices/windows/eventlog/EventDescriptor';
+import { renderEventXml } from '@/network/devices/windows/eventlog/EventXml';
 import {
   parseEventXPath, parseEventQueryList, type XPathChannelQuery,
 } from '@/network/devices/windows/WinEventXPath';
@@ -31,16 +33,30 @@ function shortEventTime(d: Date): string {
   return `${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
 
-function xmlEscape(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-/** Real Windows events surface their structured payload as `<EventData><Data Name="...">value</Data>...</EventData>` — this is what `[xml]$_.ToXml()` scripts (Get-ADSecurityReport-style correlation) parse. */
-function buildEventXml(e: EventLogEntryInfo): string {
-  const dataXml = Object.entries(e.data ?? {})
-    .map(([k, v]) => `<Data Name="${xmlEscape(k)}">${xmlEscape(v)}</Data>`)
-    .join('');
-  return `<Event><System><EventID>${e.eventId}</EventID><TimeCreated SystemTime="${e.timeGenerated.toISOString()}"/><Provider Name="${xmlEscape(e.source)}"/></System><EventData>${dataXml}</EventData></Event>`;
+function winEventObject(e: EventLogEntryInfo, logName: string, machine: string): Record<string, PSValue> {
+  const descriptor = describeEvent(e);
+  const xml = renderEventXml(e, { channel: logName, computer: machine });
+  return {
+    LogName: logName,
+    Id: e.eventId,
+    Version: descriptor.version,
+    Level: descriptor.level,
+    LevelDisplayName: descriptor.levelName,
+    Task: descriptor.taskId,
+    TaskDisplayName: descriptor.taskName,
+    Opcode: descriptor.opcode,
+    OpcodeDisplayName: descriptor.opcodeName,
+    Keywords: BigInt(descriptor.keywords).toString(),
+    KeywordsDisplayNames: [...descriptor.keywordNames] as PSValue,
+    ProviderName: e.source,
+    ProviderId: descriptor.providerGuid,
+    TimeCreated: e.timeGenerated,
+    Message: e.message,
+    RecordId: e.index,
+    MachineName: e.data?.MachineName ?? machine,
+    Properties: Object.values(e.data ?? {}) as PSValue,
+    ToXml: () => xml,
+  } as Record<string, PSValue>;
 }
 
 function entryToPSObject(e: EventLogEntryInfo): Record<string, PSValue> {
@@ -268,17 +284,7 @@ export class GetWinEventCmdlet implements ICmdlet {
     // a real Get-WinEvent always exposes this property, not just on
     // ForwardedEvents.
     const localHostname = ctx.providers.network?.getHostname() ?? '';
-    return entries.map(e => ({
-      LogName:        logName,
-      Id:             e.eventId,
-      Level:          e.entryType,
-      ProviderName:   e.source,
-      TimeCreated:    e.timeGenerated,
-      Message:        e.message,
-      RecordId:       e.index,
-      MachineName:    e.data?.MachineName ?? localHostname,
-      ToXml:          () => buildEventXml(e),
-    } as Record<string, PSValue>)) as PSValue;
+    return entries.map(e => winEventObject(e, logName, localHostname)) as PSValue;
   }
 
   /** `-FilterXml` : un `<QueryList>` complet, canal(aux) compris. */
@@ -314,17 +320,7 @@ export class GetWinEventCmdlet implements ICmdlet {
       }
       for (const e of log.getEntries(q.path, {})) {
         if (!q.predicate(e, now)) continue;
-        rows.push({
-          LogName: q.path,
-          Id: e.eventId,
-          Level: e.entryType,
-          ProviderName: e.source,
-          TimeCreated: e.timeGenerated,
-          Message: e.message,
-          RecordId: e.index,
-          MachineName: e.data?.MachineName ?? localHostname,
-          ToXml: () => buildEventXml(e),
-        } as Record<string, PSValue>);
+        rows.push(winEventObject(e, q.path, localHostname));
       }
     }
     if (rows.length === 0) {

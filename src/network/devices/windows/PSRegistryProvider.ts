@@ -7,6 +7,9 @@
  *   - Test-Path, Get-PSDrive
  */
 
+import { WINDOWS_CULTURES, cultureRegistryValues } from './WindowsRegionalSettings';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+
 // ─── Data Structures ─────────────────────────────────────────────────────────
 
 export interface RegistryValue {
@@ -264,6 +267,9 @@ function buildHKCU(): RegistryKey {
   // HKCU:\Control Panel
   const controlPanel = makeKey('Control Panel');
   root.subkeys.set('control panel', controlPanel);
+  const international = makeKey('International');
+  controlPanel.subkeys.set('international', international);
+  for (const [name, value] of Object.entries(cultureRegistryValues(WINDOWS_CULTURES[0]))) seedValue(international, name, value);
 
   // HKCU:\Console
   root.subkeys.set('console', makeKey('Console'));
@@ -451,7 +457,7 @@ export class PSRegistryProvider {
       '',
       'Name                           Property',
       '----                           --------',
-      `${key.name.padEnd(30)} (${subkeyCount} subkeys, ${valueCount} values) [${fullPath}]`,
+      `${padToWidth(key.name, 30)} (${subkeyCount} subkeys, ${valueCount} values) [${fullPath}]`,
     ].join('\n');
   }
 
@@ -479,7 +485,7 @@ export class PSRegistryProvider {
     for (const [, child] of key.subkeys) {
       const valueCount = child.values.size;
       const prop = valueCount > 0 ? Array.from(child.values.values()).map(v => shownName(v.name)).join(', ') : '';
-      lines.push(`${child.name.padEnd(30)} ${prop}`);
+      lines.push(`${padToWidth(child.name, 30)} ${prop}`);
     }
 
     return lines.join('\n');
@@ -506,7 +512,7 @@ export class PSRegistryProvider {
     const key = this.ensurePath(parsed);
     const hivePath = parsed.hive === 'HKLM' ? 'HKLM:' : 'HKCU:';
     const fullPath = `${hivePath}\\${parsed.segments.join('\\')}`;
-    return `\n\n    Hive: ${hivePath}\\${parsed.segments.slice(0, -1).join('\\') || ''}\n\nName                           Property\n----                           --------\n${key.name.padEnd(30)}\n`;
+    return `\n\n    Hive: ${hivePath}\\${parsed.segments.slice(0, -1).join('\\') || ''}\n\nName                           Property\n----                           --------\n${padToWidth(key.name, 30)}\n`;
   }
 
   removeItem(path: string, recurse: boolean): string {
@@ -539,14 +545,14 @@ export class PSRegistryProvider {
     if (name) {
       const val = key.values.get(storedName(name).toLowerCase());
       if (!val) return `Get-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
-      return `\n${shownName(val.name).padEnd(20)}: ${val.value}\n`;
+      return `\n${padToWidth(shownName(val.name), 20)}: ${val.value}\n`;
     }
 
     // List all values
     if (key.values.size === 0) return '';
     const lines: string[] = [''];
     for (const [, val] of key.values) {
-      lines.push(`${shownName(val.name).padEnd(20)}: ${val.value}`);
+      lines.push(`${padToWidth(shownName(val.name), 20)}: ${val.value}`);
     }
     lines.push('');
     return lines.join('\n');
@@ -787,13 +793,13 @@ export class PSRegistryProvider {
    */
   getPSDrive(fsDrives: ReadonlyArray<{ letter: string; usedGB: number; freeGB: number }> = []): string {
     const fmtCol = (n: number, width: number): string =>
-      n.toFixed(2).padStart(width);
+      padToWidth(n.toFixed(2), width, 'right');
     const fsLines = fsDrives.map(({ letter, usedGB, freeGB }) => {
       const L = letter.toUpperCase();
       // Match real PS column widths: Used (GB) and Free (GB) right-aligned.
       const used = fmtCol(usedGB, 14);
       const free = fmtCol(freeGB, 14);
-      return `${L.padEnd(15)}${used}${free} FileSystem    ${L}:\\`;
+      return `${padToWidth(L, 15)}${used}${free} FileSystem    ${L}:\\`;
     });
     const lines: string[] = [
       '',

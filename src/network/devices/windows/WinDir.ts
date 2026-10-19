@@ -8,6 +8,7 @@ import {
   isDefaultVisible, parseDirAttributeSpec, selectionAccepts,
   type AttributeSelection,
 } from './fileAttributes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 type SortKey = 'name' | 'extension' | 'group' | 'size' | 'date';
 
@@ -89,11 +90,11 @@ export function groupDigits(value: number, thousands = true): string {
 }
 
 export function fileSummaryLine(count: number, bytes: number, thousands = true): string {
-  return `${String(count).padStart(16)} File(s) ${groupDigits(bytes, thousands).padStart(14)} bytes`;
+  return `${padToWidth(String(count), 16, 'right')} File(s) ${padToWidth(groupDigits(bytes, thousands), 14, 'right')} bytes`;
 }
 
 export function dirSummaryLine(count: number, freeBytes: number, thousands = true): string {
-  return `${String(count).padStart(16)} Dir(s) ${groupDigits(freeBytes, thousands).padStart(15)} bytes free`;
+  return `${padToWidth(String(count), 16, 'right')} Dir(s) ${padToWidth(groupDigits(freeBytes, thousands), 15, 'right')} bytes free`;
 }
 
 const invalidSwitch = (text: string): string => `Invalid switch - "${text}".`;
@@ -261,7 +262,7 @@ function rowLine(row: Row, options: DirOptions): string {
   const name = shown(row.name, options);
   return row.isDirectory
     ? `${date}${DIRECTORY_MARKER}${name}`
-    : `${date}${groupDigits(row.size, options.thousands).padStart(SIZE_FIELD_WIDTH)} ${name}`;
+    : `${date}${padToWidth(groupDigits(row.size, options.thousands), SIZE_FIELD_WIDTH, 'right')} ${name}`;
 }
 
 function wideLines(rows: readonly Row[], options: DirOptions): string[] {
@@ -275,7 +276,7 @@ function wideLines(rows: readonly Row[], options: DirOptions): string[] {
     const picked: string[] = [];
     for (let column = 0; column < WIDE_COLUMNS; column++) {
       const index = options.columnMajor ? column * height + line : line * WIDE_COLUMNS + column;
-      if (index < cells.length) picked.push(cells[index].padEnd(WIDE_COLUMN_WIDTH));
+      if (index < cells.length) picked.push(padToWidth(cells[index], WIDE_COLUMN_WIDTH));
     }
     lines.push(picked.join('').trimEnd());
   }

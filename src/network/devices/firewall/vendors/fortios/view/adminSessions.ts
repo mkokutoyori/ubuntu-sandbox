@@ -1,6 +1,7 @@
 import {
   ADMIN_TRANSPORT_PROTOCOL, type AdminEndpoint, type AdminSession,
 } from '../../../mgmt/AdminSessionTable';
+import { renderTableText } from '@/network/devices/shells/cli/TextTable';
 
 export interface AdminSessionClock {
   readonly stamp: (at: number) => string;
@@ -28,15 +29,10 @@ export function renderAdminSessionList(
     clock.stamp(session.since),
   ]);
 
-  const headers = ['username', 'local', 'device', 'remote', 'started'];
-  const widths = headers.map((header, column) => Math.max(
-    header.length, ...rows.map(row => row[column].length)));
-
-  const line = (cells: readonly string[]) => cells
-    .map((cell, column) => (column === cells.length - 1
-      ? cell : cell.padEnd(widths[column]))).join(' ');
-
-  return [line(headers), ...rows.map(line)].join('\n');
+  const columns = ['username', 'local', 'device', 'remote', 'started'].map((header, column) => ({
+    header, value: (row: string[]) => row[column],
+  }));
+  return renderTableText(rows, columns, { gap: 1, rule: false });
 }
 
 export function renderAdminSessionStatus(

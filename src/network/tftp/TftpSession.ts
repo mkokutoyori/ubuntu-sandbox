@@ -19,18 +19,9 @@ import {
 import { encodeTftpPacket, decodeTftpPacket, concatBytes } from './codec';
 import { negotiateOptions } from './options';
 import { randomTftpTransferId } from './events';
+import { binaryStringToBytes as stringToBytes, bytesToBinaryString as bytesToString } from '@/crypto/encoding';
 
-function stringToBytes(s: string): Uint8Array {
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
-  return out;
-}
 
-function bytesToString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
 function joinRoot(root: string, filename: string): string {
   const base = root.endsWith('/') ? root.slice(0, -1) : root;

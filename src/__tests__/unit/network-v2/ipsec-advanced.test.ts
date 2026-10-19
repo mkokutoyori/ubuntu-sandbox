@@ -682,7 +682,7 @@ describe('IPSec – Maintenance et Opérations', () => {
     // Peer address
     expect(sessionOut).toContain('Peer: 10.0.12.2 port 500');
     // IKEv1 session
-    expect(sessionOut).toContain('IKEv1 SA:');
+    expect(sessionOut).toContain('IKE SA:');
     // Child SA / IPSec SA (fvr / fvs = forward/reverse flows)
     expect(sessionOut).toContain('IPSEC FLOW:');
     expect(sessionOut).toContain('Active SAs: 2');  // une inbound, une outbound

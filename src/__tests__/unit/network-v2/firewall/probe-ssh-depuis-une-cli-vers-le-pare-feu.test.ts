@@ -73,6 +73,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
+import { allowLegacyIosSshServer, allowLegacyIosSshServerOnFortiOs } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -105,10 +106,14 @@ const runOn = (d: Cmd, cmds: readonly string[]) =>
   cmds.reduce(async (p, c) => { await p; await d.executeCommand(c); }, Promise.resolve<unknown>(undefined));
 
 async function saisir(s: TerminalSession, ligne: string): Promise<void> {
-  s.foreground.setInput(ligne);
-  s.foreground.setInputBuf(ligne);
+  s.setInput(ligne);
+  s.setInputBuf(ligne);
   s.handleKey(key('Enter'));
   for (let i = 0; i < 14; i++) await tick();
+}
+
+async function attendre(s: TerminalSession, motif: RegExp): Promise<void> {
+  for (let i = 0; i < 400 && !motif.test(transcript(s)); i++) await tick();
 }
 
 async function repondreMotDePasse(s: TerminalSession, secret: string): Promise<void> {
@@ -129,7 +134,7 @@ async function ouvrirSsh(
 
 const transcript = (s: TerminalSession): string => s.lines.map((l) => l.text).join('\n');
 
-const surLePareFeu = (s: TerminalSession): boolean => /FGT\b.*#/.test(s.foreground.getPrompt());
+const surLePareFeu = (s: TerminalSession): boolean => /FGT\b.*#/.test(s.getPrompt());
 
 async function demarrer(
   s: TerminalSession & { isBooting?: boolean },
@@ -175,6 +180,8 @@ async function laboratoire(allowaccess = 'ping https ssh') {
     'set accprofile "super_admin"', 'next', 'end',
   ]) pareFeu2.getShell().execute(ligne);
 
+  allowLegacyIosSshServer(serveur);
+  allowLegacyIosSshServerOnFortiOs(pareFeu.getShell());
   serveur.getPorts()[0].configureIP(new IPAddress(SERVEUR), new SubnetMask('255.255.255.0'));
   await runOn(serveur, ['useradd -m alice', `echo alice:${SECRET} | chpasswd`]);
 
@@ -208,7 +215,7 @@ describe('une CLI constructeur atteint le pare-feu', () => {
     await ouvrirSsh(s, `ssh -l admin ${PARE_FEU}`, SECRET);
 
     expect(transcript(s), transcript(s)).not.toMatch(/Connection refused/);
-    expect(surLePareFeu(s)).toBe(true);
+    expect(surLePareFeu(s), transcript(s)).toBe(true);
   });
 
   it('depuis un VRP', async () => {
@@ -239,6 +246,7 @@ describe('un paquet JETE reste un silence, dans les mots de chaque CLI', () => {
     const s = await surIos(routeur);
 
     await saisir(s, `ssh -l admin ${PARE_FEU}`);
+    await attendre(s, /timed out|refused/);
 
     expect(transcript(s)).toMatch(/% Connection timed out; remote host not responding/);
     expect(transcript(s)).not.toMatch(/% Connection refused/);
@@ -249,7 +257,9 @@ describe('un paquet JETE reste un silence, dans les mots de chaque CLI', () => {
     const s = await surIos(routeur);
 
     await saisir(s, `ssh -l admin ${PARE_FEU}`);
+    await attendre(s, /timed out|refused/);
 
+    expect(transcript(s)).toMatch(/timed out/);
     expect(s.currentInputMode.type).toBe('normal');
   });
 });

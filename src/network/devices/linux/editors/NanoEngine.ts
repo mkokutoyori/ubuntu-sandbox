@@ -23,6 +23,7 @@ import type { NanoMenuName } from './nano/NanoMenus';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import type { EditorScreen } from './screen/EditorScreen';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
@@ -268,7 +269,7 @@ export class NanoEngine {
     for (let i = 0; i < this._cursorLine; i++) before += [...this.line(i)].length + 1;
     before += [...this.line(this._cursorLine).slice(0, this._cursorCol)].length;
     const pct = (part: number, whole: number): number => (whole === 0 ? 0 : Math.floor((100 * part) / whole));
-    const pad = (n: number, width: number): string => String(n).padStart(width, ' ');
+    const pad = (n: number, width: number): string => padToWidth(String(n), width, 'right');
     const lineWidth = Math.max(2, String(totalLines).length);
     const sizeWidth = Math.max(2, String(fullSize).length);
     return `[ line ${pad(line, lineWidth)}/${totalLines} (${pad(pct(line, totalLines), 2)}%), `

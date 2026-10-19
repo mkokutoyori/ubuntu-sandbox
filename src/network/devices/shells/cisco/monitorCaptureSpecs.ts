@@ -8,6 +8,7 @@ import type { CaptureFrame } from '@/network/devices/linux/network/tcpdump/Captu
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { hexGroups, hexRows } from '@/network/capture/HexDump';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface MonitorCaptureHost {
   service(): EmbeddedCaptureService;
@@ -143,7 +144,7 @@ function dumpFrame(stored: { frame: CaptureFrame }, host: MonitorCaptureHost, or
   for (const row of hexRows(bytes)) {
     const words: string[] = [];
     for (let index = 0; index < 16; index += 4) {
-      words.push(hexGroups(row.bytes.slice(index, index + 4), 4, '').toUpperCase().padEnd(8, ' '));
+      words.push(padToWidth(hexGroups(row.bytes.slice(index, index + 4), 4, '').toUpperCase(), 8));
     }
     const address = (0x0F7CF5D0 + ordinal * 0x100 + row.offset).toString(16).toUpperCase().padStart(8, '0');
     lines.push(`${address}: ${words.join(' ')}  ${row.ascii}`);

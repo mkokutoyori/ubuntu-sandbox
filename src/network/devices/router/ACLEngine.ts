@@ -59,6 +59,8 @@ const ACL_ICMP_KEYWORDS: Record<string, { type: string; code?: number }> = {
   'time-exceeded': { type: 'time-exceeded' },
   'ttl-exceeded': { type: 'time-exceeded', code: 0 },
   'redirect': { type: 'redirect' },
+  'timestamp-request': { type: 'timestamp-request' },
+  'timestamp-reply': { type: 'timestamp-reply' },
 };
 
 // ─── Drapeaux TCP ───────────────────────────────────────────────

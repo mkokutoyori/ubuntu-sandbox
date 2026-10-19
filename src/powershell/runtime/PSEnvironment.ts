@@ -25,6 +25,7 @@ export type PSValue =
 export class PSEnvironment {
   private readonly vars = new Map<string, PSValue>();
   private readonly parent: PSEnvironment | null;
+  private readonly constraints = new Map<string, string[]>();
 
   constructor(parent: PSEnvironment | null = null) {
     this.parent = parent;
@@ -35,6 +36,17 @@ export class PSEnvironment {
   /** Creates a child scope for function/block invocation. */
   createChild(): PSEnvironment {
     return new PSEnvironment(this);
+  }
+
+  private scriptScopeMarker = false;
+
+  markScriptScope(): void {
+    this.scriptScopeMarker = true;
+  }
+
+  scriptScope(): PSEnvironment {
+    if (this.scriptScopeMarker || this.parent === null) return this;
+    return this.parent.scriptScope();
   }
 
   /** Returns the root (global) scope. */
@@ -101,6 +113,18 @@ export class PSEnvironment {
     this.vars.set(key, value);
   }
 
+  constrain(name: string, typeNames: string[]): void {
+    this.constraints.set(name.toLowerCase(), typeNames);
+  }
+
+  constraintOf(name: string): string[] | undefined {
+    const key = name.toLowerCase();
+    const found = this.constraints.get(key);
+    if (found !== undefined) return found;
+    if (this.vars.has(key)) return undefined;
+    return this.parent?.constraintOf(key);
+  }
+
   /** Removes a variable from the current scope (mimics Remove-Variable). */
   delete(name: string): void {
     this.vars.delete(name.toLowerCase());
@@ -139,7 +163,7 @@ export class PSEnvironment {
 // ─── Built-in Variable Initialiser ───────────────────────────────────────────
 
 /** Seeds the global scope with PowerShell built-in automatic variables. */
-export function seedBuiltins(env: PSEnvironment): void {
+export function seedBuiltins(env: PSEnvironment, edition: 'desktop' | 'core' = 'desktop'): void {
   env.set('true',  true);
   env.set('false', false);
   env.set('null',  null);
@@ -149,7 +173,27 @@ export function seedBuiltins(env: PSEnvironment): void {
     MajorRevision: -1, MinorRevision: -1,
     toString() { return '5.1.0'; },
   } as unknown as PSValue;
-  env.set('PSVersionTable', {
+  if (edition === 'core') {
+    const coreVersion = {
+      Major: 7, Minor: 6, Patch: 0, PreReleaseLabel: null, BuildLabel: null,
+      toString() { return '7.6.0'; },
+    } as unknown as PSValue;
+    env.set('PSVersionTable', {
+      PSVersion: coreVersion,
+      PSEdition: 'Core',
+      GitCommitId: '7.6.0',
+      PSCompatibleVersions: ['1.0', '2.0', '3.0', '4.0', '5.0', '5.1', '6.0', '7.0'],
+      SerializationVersion: '1.1.0.1',
+      PSRemotingProtocolVersion: '2.3',
+      WSManStackVersion: '3.0',
+      Platform: 'Win32NT',
+      OS: 'Microsoft Windows 10.0.19045',
+    } as Record<string, PSValue>);
+    env.set('IsWindows', true);
+    env.set('IsLinux', false);
+    env.set('IsMacOS', false);
+    env.set('IsCoreCLR', true);
+  } else env.set('PSVersionTable', {
     PSVersion:           psVersion,
     PSEdition:           'Desktop',
     BuildVersion:        '10.0.19041.1',

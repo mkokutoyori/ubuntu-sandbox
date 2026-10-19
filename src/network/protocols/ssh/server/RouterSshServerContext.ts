@@ -55,10 +55,12 @@ export interface NetworkOsCredentialAuthority {
 }
 
 export interface RouterSshServerDeps {
+  limitScope?: object;
   /** Hostname surfaced in banners / motd. */
   hostname(): string;
   /** Cached or freshly-generated SSH host key. */
   hostKey(): SshHostKey;
+  additionalHostKeys?(): SshHostKey[];
   /** Authority backing username / password validation. */
   credentials(): NetworkOsCredentialAuthority;
   /** Optional AAA method-list authentication chain (RADIUS/TACACS+/local/enable/none). */
@@ -71,6 +73,8 @@ export interface RouterSshServerDeps {
   sftpSource?(): RouterSftpSource | null;
   /** Optional reactive event bus from the SSH event subsystem. */
   events?: ISshServerEventBus;
+  /** Login shell kind announced on the channel (`cisco-ios`, `huawei-vrp`). */
+  shellKind?(): string;
   /** Optional banner text printed before authentication. */
   banner?(): string | null;
   identification?(): string;
@@ -93,18 +97,28 @@ export interface RouterSshServerDeps {
 
 export class RouterSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
-  readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   readonly events?: ISshServerEventBus;
+  readonly connectionLimitScope?: object;
+  private readonly overrides: () => Partial<SshServerConfig>;
 
   constructor(
     private readonly deps: RouterSshServerDeps,
-    overrides: Partial<SshServerConfig> = {},
+    overrides: Partial<SshServerConfig> | (() => Partial<SshServerConfig>) = {},
   ) {
     this.hostKey = deps.hostKey();
-    this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...overrides });
+    this.connectionLimitScope = deps.limitScope;
+    this.overrides = typeof overrides === 'function' ? overrides : () => overrides;
     this.events = deps.events;
     this.auth = this.buildAuthContext();
+  }
+
+  get config(): Readonly<SshServerConfig> {
+    return Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...this.overrides() });
+  }
+
+  additionalHostKeys(): SshHostKey[] {
+    return this.deps.additionalHostKeys?.() ?? [];
   }
 
   getFilesystem(_userCtx: SshUserContext): ISftpFileSystem {
@@ -150,6 +164,7 @@ export class RouterSshServerContext implements ISshServerContext {
         // `?` is a help key here, and `clear counters` is a real command
         // — neither behaves the POSIX way.
         posixShell: false,
+        ...(this.deps.shellKind === undefined ? {} : { loginShellKind: this.deps.shellKind() }),
       };
     }
 
@@ -189,7 +204,7 @@ export class RouterSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
-    return this.deps.motd?.() ?? `Welcome to ${this.deps.hostname()}\n`;
+    return this.deps.motd?.() ?? '';
   }
 
   getLastLogin(_user: string): string | null { return null; }
@@ -251,9 +266,25 @@ export class RouterSshServerContext implements ISshServerContext {
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];
-        if (this.config.pubkeyAuthentication && this.deps.publicKeyAdmitted) methods.push('publickey');
-        if (this.config.passwordAuthentication) methods.push('password');
+        for (const name of this.config.authMethodOrder ?? ['publickey', 'password']) {
+          if (name === 'publickey' && this.config.pubkeyAuthentication && this.deps.publicKeyAdmitted) methods.push('publickey');
+          if (name === 'keyboard' && this.config.kbdInteractiveAuthentication === true) methods.push('keyboard-interactive');
+          if (name === 'password' && this.config.passwordAuthentication) methods.push('password');
+        }
         return methods;
+      },
+      keyboardInteractive: () => {
+        if (this.config.kbdInteractiveAuthentication !== true) return null;
+        return {
+          device: '',
+          name: '',
+          instruction: '',
+          prompts: [{ prompt: 'Password: ', echo: false }],
+          verify: (user, responses) => this.deps.credentials().authenticate(user, responses[0] ?? ''),
+          ...(this.deps.aaaAuthenticate ? {
+            verifyAsync: (user: string, responses: readonly string[]) => this.deps.aaaAuthenticate!(user, responses[0] ?? ''),
+          } : {}),
+        };
       },
     };
   }

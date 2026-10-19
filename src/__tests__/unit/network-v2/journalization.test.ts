@@ -878,16 +878,18 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       expect(output).toContain('Number of events');
     });
 
-    it('119. should show summary of logins using aureport -l', async () => {
+    it('119. should show summary of logins using aureport -l --summary', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('aureport -l');
+      const output = await pc.executeCommand('aureport -l --summary');
       expect(output).toContain('Login Summary Report');
+      expect(await pc.executeCommand('aureport -l')).toContain('Login Report');
     });
 
-    it('120. should show summary of execution files using aureport -x', async () => {
+    it('120. should show summary of execution files using aureport -x --summary', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('aureport -x');
+      const output = await pc.executeCommand('aureport -x --summary');
       expect(output).toContain('Executable Summary Report');
+      expect(await pc.executeCommand('aureport -x')).toContain('Executable Report');
     });
 
     it('121. should reject audit rule creations with invalid syntax parameters', async () => {
@@ -984,10 +986,11 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       expect(output).toContain('hosts_alert');
     });
 
-    it('135. should show summary of configuration alerts on aureport -c', async () => {
+    it('135. should show summary of configuration alerts on aureport -c --summary', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('aureport -c');
-      expect(output).toContain('Config Summary Report');
+      const output = await pc.executeCommand('aureport -c --summary');
+      expect(output).toContain('Config Change Summary Report');
+      expect(await pc.executeCommand('aureport -c')).toContain('Config Change Report');
     });
 
     it('136. should support formatting output lists as tables via aureport --interpret', async () => {
@@ -1088,13 +1091,14 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('148. should support rotate bounds limitation (rotate 5 keeps only 5 backups)', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('echo "rotate = 2" >> /etc/logrotate.conf');
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf'); // syslog.1 created
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf'); // syslog.2 created
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf'); // syslog.3 should NOT exist, oldest removed
-      const listFiles = await pc.executeCommand('ls /var/log/syslog.*');
-      expect(listFiles).toContain('syslog.2');
-      expect(listFiles).not.toContain('syslog.3');
+      await pc.executeCommand('printf "/var/log/app.log {\\n rotate 2\\n}\\n" > /etc/app.conf');
+      for (let run = 0; run < 3; run++) {
+        await pc.executeCommand(`echo run${run} > /var/log/app.log`);
+        await pc.executeCommand('logrotate -f /etc/app.conf');
+      }
+      const listFiles = await pc.executeCommand('ls /var/log/app.log.*');
+      expect(listFiles).toContain('app.log.2');
+      expect(listFiles).not.toContain('app.log.3');
     });
 
     it('149. should reject execution when configuration file parameter does not exist', async () => {
@@ -1147,10 +1151,11 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('155. should support nocreate options preventing empty log files generation', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('echo "nocreate" >> /etc/logrotate.conf');
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf');
-      const checkFile = await pc.executeCommand('ls /var/log/syslog');
-      expect(checkFile.toLowerCase()).toContain('no such file');
+      await pc.executeCommand('printf "/var/log/app.log {\\n rotate 1\\n nocreate\\n}\\n" > /etc/app.conf');
+      await pc.executeCommand('echo content > /var/log/app.log');
+      await pc.executeCommand('logrotate -f /etc/app.conf');
+      expect(await pc.executeCommand('ls /var/log/app.log.1')).toContain('app.log.1');
+      expect((await pc.executeCommand('ls /var/log/app.log')).toLowerCase()).toContain('no such file');
     });
 
     it('156. should support missingok directive preventing failure if target log is absent', async () => {
@@ -1163,18 +1168,18 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('157. should log errors during rotations if missingok is disabled and log is absent', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('rm /var/log/syslog');
-      await pc.executeCommand('echo "nomissingok" >> /etc/logrotate.conf');
-      const output = await pc.executeCommand('logrotate /etc/logrotate.conf');
-      expect(output.toLowerCase()).toMatch(/error|log does not exist/);
+      await pc.executeCommand('printf "/var/log/gone.log {\\n rotate 2\\n}\\n" > /etc/gone.conf');
+      const output = await pc.executeCommand('logrotate /etc/gone.conf');
+      expect(output).toBe('error: stat of /var/log/gone.log failed: No such file or directory');
     });
 
     it('158. should respect dateext options appending exact ISO date to rotated log backups', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('echo "dateext" >> /etc/logrotate.conf');
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf');
-      const listFiles = await pc.executeCommand('ls /var/log/syslog-*');
-      expect(listFiles).toMatch(/syslog-\d{8}/);
+      await pc.executeCommand('printf "/var/log/app.log {\\n rotate 2\\n dateext\\n}\\n" > /etc/app.conf');
+      await pc.executeCommand('echo content > /var/log/app.log');
+      await pc.executeCommand('logrotate -f /etc/app.conf');
+      const listFiles = await pc.executeCommand('ls /var/log/app.log-*');
+      expect(listFiles).toMatch(/app\.log-\d{8}/);
     });
 
     it('159. should run postrotate execution script sequences safely', async () => {
@@ -1195,9 +1200,11 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('161. should abort rotation if prerotate script fails (returns non-zero status)', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('echo "prerotate\\nexit 1\\nendscript" >> /etc/logrotate.conf');
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf');
-      const dotOne = await pc.executeCommand('ls /var/log/syslog.1');
+      await pc.executeCommand('printf "/var/log/app.log {\\n rotate 2\\n prerotate\\n exit 1\\n endscript\\n}\\n" > /etc/app.conf');
+      await pc.executeCommand('echo content > /var/log/app.log');
+      const output = await pc.executeCommand('logrotate -f /etc/app.conf');
+      expect(output).toBe("error: error running non-shared prerotate script for /var/log/app.log of '/var/log/app.log '");
+      const dotOne = await pc.executeCommand('ls /var/log/app.log.1');
       expect(dotOne.toLowerCase()).toContain('no such file');
     });
 
@@ -1217,8 +1224,10 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('164. should support sharedscripts parameters resolving postrotate scripts execution once for all matching logs', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('echo "sharedscripts\\npostrotate\\necho \\"run\\" >> /tmp/shared_runs\\nendscript" >> /etc/logrotate.conf');
-      await pc.executeCommand('logrotate -f /etc/logrotate.conf');
+      await pc.executeCommand('printf "/var/log/app.log\\n/var/log/b.log {\\n sharedscripts\\n postrotate\\n echo run >> /tmp/shared_runs\\n endscript\\n}\\n" > /etc/app.conf');
+      await pc.executeCommand('echo x > /var/log/app.log');
+      await pc.executeCommand('echo y > /var/log/b.log');
+      await pc.executeCommand('logrotate -f /etc/app.conf');
       const runs = await pc.executeCommand('cat /tmp/shared_runs');
       expect(runs.trim()).toBe('run');
     });
@@ -1254,10 +1263,11 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('169. should preserve rotate rules inside custom include directories (/etc/logrotate.d/)', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('echo "/var/log/custom.log {\\nforce\\n}" > /etc/logrotate.d/custom_app');
-      await pc.executeCommand('touch /var/log/custom.log');
+      await pc.executeCommand('printf "/var/log/custom.log {\\n rotate 1\\n}\\n" > /etc/logrotate.d/custom_app');
+      await pc.executeCommand('echo content > /var/log/custom.log');
       const output = await pc.executeCommand('logrotate -f /etc/logrotate.conf');
       expect(output).not.toContain('error');
+      expect(await pc.executeCommand('cat /var/log/custom.log.1')).toBe('content');
     });
 
     it('170. should verify successful termination status code 0 on complete rotations execution', async () => {

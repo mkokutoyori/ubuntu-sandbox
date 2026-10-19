@@ -14,6 +14,7 @@
  * `Equipment` at all. See `linux_gap.md` §7.3.
  */
 
+import type { SshDaemonPort } from '@/network/protocols/ssh/server/SshDaemonPort';
 import type { LinuxDhcpd6Service } from '../dhcp/LinuxDhcpd6Service';
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
@@ -110,6 +111,10 @@ export interface LinuxCommandContext {
    * `ip -c=auto` en dépend entièrement.
    */
   readonly outputPiped?: boolean;
+
+  readonly invokedAs?: string;
+
+  readonly sshDaemon?: SshDaemonPort;
 
   readonly whenKilled?: (listener: (signal: Signal) => void) => () => void;
 

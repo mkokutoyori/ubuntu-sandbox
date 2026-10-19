@@ -41,8 +41,8 @@ function key(k: string): KeyEvent {
 const tick = () => new Promise<void>((r) => setTimeout(r, 25));
 
 async function taper(host: TerminalSession, texte: string, secret = 'alice') {
-  host.foreground.setInput(texte);
-  host.foreground.setInputBuf(texte);
+  host.setInput(texte);
+  host.setInputBuf(texte);
   host.handleKey(key('Enter'));
   for (let i = 0; i < 10; i++) await tick();
   if (host.currentInputMode.type === 'password') {

@@ -11,6 +11,7 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ClientSession } from './http1/Http1ClientSession';
 import { createRequest, type HttpMethod } from './semantics/types';
 import type { HttpResponsePdu } from './HttpTypes';
+import { bytesToBinaryString } from '@/crypto/encoding';
 
 export interface HttpDialResult {
   ok: boolean;
@@ -27,11 +28,6 @@ export function parseHttpUrl(url: string): ParsedHttpUrl | null {
   return { host: m[1], port: m[2] ? parseInt(m[2], 10) : 80, path: m[3] || '/' };
 }
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
 export function dialHttp(opts: {
   tcpStack: TcpStack;

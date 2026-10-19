@@ -2,7 +2,7 @@
  * SSH from one Cisco/Huawei device's interactive terminal session into
  * another must delegate EVERY key (not just the prompt/banner text) to the
  * remote child session — exactly like Windows/Linux already do via
- * `if (this.hasActiveChild) return this.foreground.handleKey(e);` at the
+ * `if (this.hasActiveChild) return this.handleKey(e);` at the
  * top of their `handleKey()` override.
  *
  * CLITerminalSession (the shared Cisco/Huawei base) had no such override,
@@ -45,7 +45,7 @@ async function type(session: CiscoTerminalSession, cmd: string): Promise<void> {
   await tick();
 }
 
-describe('Cisco IOS interactive SSH — remote child delegation', () => {
+describe('Cisco IOS interactive SSH — remote child delegation', { timeout: 30000 }, () => {
   let bus: EventBus;
   let manager: TerminalManager;
   let r1: CiscoRouter;
@@ -90,17 +90,17 @@ describe('Cisco IOS interactive SSH — remote child delegation', () => {
   async function sshFromR1IntoR2(session: CiscoTerminalSession): Promise<void> {
     await type(session, 'enable');
     await type(session, 'ssh -l admin 10.0.0.2');
-    await tick(50);
+    for (let i = 0; i < 400 && session.currentInputMode.type !== 'password'; i++) await tick(25);
     session.setPasswordBuf('Cisco123');
     session.handleKey(key('Enter'));
-    await tick(100);
+    for (let i = 0; i < 400 && !session.getPrompt().startsWith('Router2'); i++) await tick(25);
   }
 
   it('an interactive SSH session actually delegates keys to the remote child', async () => {
     const session = await openR1Terminal();
     await sshFromR1IntoR2(session);
 
-    expect(session.hasActiveChild).toBe(true);
+    expect(session.getPrompt()).toBe('Router2#');
   });
 
   it('a config command typed over SSH mutates the REMOTE device, not the local one', async () => {

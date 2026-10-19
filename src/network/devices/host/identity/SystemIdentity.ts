@@ -24,6 +24,7 @@ import type { HostIdentityField } from '../events';
 import { OsRelease } from './OsRelease';
 import { KernelInfo } from './KernelInfo';
 import { TimeZone } from '../../../core/time/TimeZone';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Le clavier que Debian declare par defaut dans `/etc/default/keyboard`. */
 const X11_MODEL = 'pc105';
@@ -230,7 +231,7 @@ export class SystemIdentity {
       ['X11 Model', X11_MODEL],
     ];
     const largeur = Math.max(...champs.map(([nom]) => nom.length)) + 2;
-    return champs.map(([nom, valeur]) => `${nom.padStart(largeur)}: ${valeur}`).join('\n');
+    return champs.map(([nom, valeur]) => `${padToWidth(nom, largeur, 'right')}: ${valeur}`).join('\n');
   }
 
   /** Render the `hostnamectl` status report. */

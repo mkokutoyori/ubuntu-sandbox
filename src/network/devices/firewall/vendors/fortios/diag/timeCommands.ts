@@ -1,5 +1,6 @@
 import type { Firewall } from '../../../Firewall';
 import { FortiMessages } from '../FortiMessages';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/;
 const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -39,7 +40,7 @@ const MONTHS = [
 export function fortiSystemTime(fw: Firewall, at?: number): string {
   const local = new Date(at === undefined ? fw.localNow() : fw.localTimeOf(at));
   return `${WEEKDAYS[local.getUTCDay()]} ${MONTHS[local.getUTCMonth()]}`
-    + ` ${String(local.getUTCDate()).padStart(2, ' ')} ${localClockText(fw, at)}`
+    + ` ${padToWidth(String(local.getUTCDate()), 2, 'right')} ${localClockText(fw, at)}`
     + ` ${local.getUTCFullYear()}`;
 }
 

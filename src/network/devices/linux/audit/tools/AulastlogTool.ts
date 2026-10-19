@@ -2,6 +2,7 @@ import { auparseEvents, type AuparseEvent } from './AuparseEvent';
 import { Interpreter } from './AuditInterpret';
 import { resolveLogSource, type AuditLoginHost } from './AuditLoginHost';
 import { ToolOutput, type ToolResult } from './AuditToolHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface Row {
   sec: number;
@@ -98,7 +99,7 @@ export function runAulastlog(host: AuditLoginHost, args: string[], stdin: string
   out.printf('Username         Port         From                       Latest\n');
   for (const row of rows) {
     const latest = row.sec === 0 ? '**Never logged in**' : formatLatest(host, row.sec);
-    out.printf(`${row.name.padEnd(16)} ${(row.term ?? '').slice(0, 12).padEnd(12)} ${(row.host ?? '').slice(0, 26).padEnd(26)} ${latest}\n`);
+    out.printf(`${padToWidth(row.name, 16)} ${padToWidth((row.term ?? '').slice(0, 12), 12)} ${padToWidth((row.host ?? '').slice(0, 26), 26)} ${latest}\n`);
   }
   return done(0);
 }

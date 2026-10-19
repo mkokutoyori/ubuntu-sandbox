@@ -13,6 +13,7 @@ import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress, SubnetMask } from '../../core/types';
 import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IPV4 } from './WindowsLoopbackRoutes';
 import { LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const ROUTE_HELP = `
 Manipulates network routing tables.
@@ -218,9 +219,9 @@ export function showRoutePrint(
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC().toString().replace(/:/g, ' ');
     const card = ctx.adapterIdentityOf(name);
-    lines.push(`  ${card.ifIndex.toString().padStart(2)}...${mac} ......${card.description}`);
+    lines.push(`  ${padToWidth(card.ifIndex.toString(), 2, 'right')}...${mac} ......${card.description}`);
   }
-  lines.push(`  ${String(LOOPBACK_IFINDEX).padStart(2)}...........................Software Loopback Interface 1`);
+  lines.push(`  ${padToWidth(String(LOOPBACK_IFINDEX), 2, 'right')}...........................Software Loopback Interface 1`);
   lines.push('===========================================================================');
   lines.push('');
   if (families.ipv4) {
@@ -233,16 +234,16 @@ export function showRoutePrint(
   // sur une vraie machine : `Active Routes:` sortait vide sur un poste
   // fraichement demarre, alors que Windows en montre toujours trois.
   for (const lo of WINDOWS_LOOPBACK_ROUTES) {
-    lines.push(`  ${lo.network.padEnd(24)} ${lo.mask.padEnd(16)} `
-      + `${'On-link        '} ${LOOPBACK_IPV4.padEnd(14)} ${lo.metric}`);
+    lines.push(`  ${padToWidth(lo.network, 24)} ${padToWidth(lo.mask, 16)} `
+      + `${'On-link        '} ${padToWidth(LOOPBACK_IPV4, 14)} ${lo.metric}`);
   }
 
   for (const route of table) {
-    const dest = route.network.toString().padEnd(24);
-    const mask = route.mask.toString().padEnd(16);
-    const gw = route.nextHop ? route.nextHop.toString().padEnd(15) : 'On-link        ';
+    const dest = padToWidth(route.network.toString(), 24);
+    const mask = padToWidth(route.mask.toString(), 16);
+    const gw = route.nextHop ? padToWidth(route.nextHop.toString(), 15) : 'On-link        ';
     const port = ctx.ports.get(route.iface);
-    const iface = port?.getIPAddress()?.toString().padEnd(14) || route.iface.padEnd(14);
+    const iface = padToWidth(port?.getIPAddress()?.toString(), 14) || padToWidth(route.iface, 14);
     lines.push(`  ${dest} ${mask} ${gw} ${iface} ${route.metric}`);
   }
 
@@ -258,15 +259,15 @@ export function showRoutePrint(
     lines.push('Active Routes:');
     lines.push(' If Metric Network Destination      Gateway');
     for (const lo of WINDOWS_LOOPBACK_ROUTES_V6) {
-      lines.push(`  ${String(LOOPBACK_IFINDEX).padStart(2)} ${String(lo.metric).padStart(6)} `
-        + `${`${lo.prefix}/${lo.prefixLength}`.padEnd(24)} On-link`);
+      lines.push(`  ${padToWidth(String(LOOPBACK_IFINDEX), 2, 'right')} ${padToWidth(String(lo.metric), 6, 'right')} `
+        + `${padToWidth(`${lo.prefix}/${lo.prefixLength}`, 24)} On-link`);
     }
     for (const route of ctx.getIPv6RoutingTable()) {
       const card = ctx.adapterIdentityOf(route.iface);
       const destination = `${route.prefix.toString()}/${route.prefixLength}`;
       const gateway = route.nextHop ? route.nextHop.toString() : 'On-link';
-      lines.push(`  ${String(card.ifIndex).padStart(2)} ${String(route.metric).padStart(6)} `
-        + `${destination.padEnd(24)} ${gateway}`);
+      lines.push(`  ${padToWidth(String(card.ifIndex), 2, 'right')} ${padToWidth(String(route.metric), 6, 'right')} `
+        + `${padToWidth(destination, 24)} ${gateway}`);
     }
     lines.push('===========================================================================');
     lines.push('Persistent Routes:');

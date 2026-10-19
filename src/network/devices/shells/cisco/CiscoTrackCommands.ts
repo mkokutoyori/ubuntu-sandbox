@@ -15,6 +15,7 @@ import { showTrackSpec } from './showViewSpecs';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface TrackCommandContext {
   r(): Router;
@@ -233,9 +234,9 @@ export function trackShowSpecs(ctx: TrackCommandContext): CommandSpec[] {
           ? 'never'
           : formatUptime(now - object.lastChangeMs);
         lines.push(
-          `${String(object.id).padEnd(8)}${briefObject(object).padEnd(31)}`
-          + `${briefParameter(object).padEnd(17)}`
-          + `${(object.state === 'up' ? 'Up' : 'Down').padEnd(11)}${lastChange}`,
+          `${padToWidth(String(object.id), 8)}${padToWidth(briefObject(object), 31)}`
+          + `${padToWidth(briefParameter(object), 17)}`
+          + `${padToWidth(object.state === 'up' ? 'Up' : 'Down', 11)}${lastChange}`,
         );
       }
       return lines.join('\n');

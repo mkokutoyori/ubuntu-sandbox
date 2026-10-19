@@ -34,7 +34,7 @@ export interface ITerminalIO {
 }
 
 export class TerminalSshInteractionHandler implements ISshInteractionHandler {
-  constructor(private readonly io: ITerminalIO) {}
+  constructor(private readonly io: ITerminalIO, private readonly quiet: boolean = false) {}
 
   async promptHostKeyConfirmation(
     host: string,
@@ -42,11 +42,11 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
     keyType: string,
   ): Promise<HostKeyResponse> {
     this.io.writeLine(
-      `The authenticity of host '${host}' can't be established.`,
+      `The authenticity of host '${host} (${host})' can't be established.`,
     );
     this.io.writeLine(`${keyType} key fingerprint is ${fingerprint}.`);
     this.io.writeLine(
-      `This key is not known by any other names.`,
+      `This key is not known by any other names`,
     );
     const answer = (
       await this.io.readInput(
@@ -70,12 +70,14 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
   }
 
   showWarning(message: string): void {
+    if (this.quiet) return;
     for (const line of message.split('\n')) {
       this.io.writeLine(line, 'warning');
     }
   }
 
   showInfo(message: string): void {
+    if (this.quiet) return;
     this.io.writeLine(message, 'info');
   }
 

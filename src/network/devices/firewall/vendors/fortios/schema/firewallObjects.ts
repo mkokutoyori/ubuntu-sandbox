@@ -1,3 +1,4 @@
+import { ADDRESS_REFERENCE_ATTRIBUTES } from './firewallAddressReference';
 import {
   icmpService, ipProtocolService, makeService,
   type PortRange, type ServiceEntry,
@@ -47,6 +48,7 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
       { keyword: 'fqdn', description: 'Fully Qualified Domain Name address.' },
       { keyword: 'geography', description: 'IP addresses from a specified country.' },
       { keyword: 'wildcard', description: 'IPv4 address and wildcard netmask.' },
+      { keyword: 'mac', description: 'Range of MAC addresses.' },
     ], 'ipmask'),
     {
       ...addressMask('subnet', 'IP address and subnet mask of address.',
@@ -77,13 +79,23 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
       ['system interface', 'system zone']),
     text('comment', 'Comment.'),
     count('color', 'Color of icon on the GUI.', 0, 32, 0),
+    ...ADDRESS_REFERENCE_ATTRIBUTES,
   ],
   onCommit(object, context) {
     const kind = object.effective('type')[0];
     if (kind !== 'ipmask' && kind !== 'iprange' && kind !== 'fqdn'
-      && kind !== 'wildcard' && kind !== 'geography') return;
+      && kind !== 'wildcard' && kind !== 'geography' && kind !== 'mac') return;
 
     context.objects.removeAddress(object.key);
+    if (kind === 'mac') {
+      const ranges = [...object.effective('macaddr')];
+      if (ranges.length === 0) return;
+      context.objects.addAddress({
+        name: object.key, kind: 'mac', family: 'ipv4',
+        macRanges: ranges, predefined: false, tags: [],
+      });
+      return;
+    }
     if (kind === 'geography') {
       const country = object.effective('country')[0] ?? '';
       if (country.length === 0) return;
@@ -122,7 +134,8 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
     if (!fqdn) return;
     context.objects.addAddress({
       name: object.key, kind: 'fqdn', family: 'ipv4',
-      fqdn, predefined: false, tags: [],
+      fqdn, cacheTtlSec: Number.parseInt(object.effective('cache-ttl')[0] ?? '0', 10) || undefined,
+      predefined: false, tags: [],
     });
     context.device.resolveFqdnNow(fqdn);
   },

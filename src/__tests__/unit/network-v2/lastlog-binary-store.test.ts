@@ -14,7 +14,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { binaryStringToBytes } from '@/network/devices/linux/login/UtmpxRecord';
+import { binaryStringToBytes } from '@/crypto/encoding';
 
 beforeEach(() => {
   resetCounters();

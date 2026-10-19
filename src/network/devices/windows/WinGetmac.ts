@@ -14,6 +14,7 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { adapterDisplayName } from './netAdapter';
+import { padToWidth, renderTableText, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 const GETMAC_HELP = `
 GETMAC [/S system [/U username [/P [password]]]] [/FO format] [/NH] [/V]
@@ -107,19 +108,12 @@ function renderTable(rows: Row[], verbose: boolean, noHeader: boolean): string {
       : [r.physicalAddress, r.transport],
   );
 
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...cells.map((row) => row[i].length)),
-  );
-
-  const lines: string[] = [];
-  if (!noHeader) {
-    lines.push(headers.map((h, i) => h.padEnd(widths[i])).join(' '));
-    lines.push(widths.map((w) => '='.repeat(w)).join(' '));
-  }
-  for (const row of cells) {
-    lines.push(row.map((v, i) => v.padEnd(widths[i])).join(' '));
-  }
-  return lines.join('\n');
+  const columns: TableColumn<string[]>[] = headers.map((header, i) => ({
+    header, value: (row) => row[i],
+  }));
+  return renderTableText(cells, columns, {
+    gap: 1, rule: !noHeader, header: !noHeader, ruleChar: '=', padTrailing: true,
+  });
 }
 
 function renderList(rows: Row[], verbose: boolean): string {
@@ -137,7 +131,7 @@ function renderList(rows: Row[], verbose: boolean): string {
           ['Transport Name', r.transport],
         ];
     const keyWidth = Math.max(...pairs.map(([k]) => k.length));
-    blocks.push(pairs.map(([k, v]) => `${k.padEnd(keyWidth)}: ${v}`).join('\n'));
+    blocks.push(pairs.map(([k, v]) => `${padToWidth(k, keyWidth)}: ${v}`).join('\n'));
   }
   return blocks.join('\n\n');
 }

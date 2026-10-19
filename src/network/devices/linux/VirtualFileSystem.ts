@@ -1,3 +1,5 @@
+import { deferContent } from '@/network/core/DeferredContent';
+import { UBUNTU_2204_SSH_CONFIG } from '@/network/protocols/ssh/client/UbuntuSshClientConfigFile';
 import { bytesToFileText } from '@/crypto/encoding';
 /**
  * Inode-based Virtual File System for Linux device simulation.
@@ -10,10 +12,11 @@ import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
 import { fnmatch, globPaths } from './fs/Glob';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
+import { GAI_CONF_FACTORY, GAI_CONF_PATH } from './network/GaiConf';
 import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
 import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
 
-export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
+export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
 
 export interface RemoteMountStat {
   readonly type: FileType;
@@ -246,7 +249,7 @@ export class VirtualFileSystem {
       '/etc/iptables',
       '/etc/network', '/etc/network/interfaces.d', '/etc/network/if-up.d',
       '/etc/network/if-down.d', '/etc/network/if-pre-up.d', '/etc/network/if-post-down.d',
-      '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
+      '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/lib/logrotate', '/var/log',
       '/var/tmp', '/var/cache', '/var/spool', '/var/spool/mail', '/var/spool/cron',
       '/var/local', '/var/opt', '/var/backups', '/var/run', '/var/spool/cron/crontabs',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
@@ -289,6 +292,8 @@ export class VirtualFileSystem {
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
+    this.mkdirp('/etc/ssh/ssh_config.d', 0o755, 0, 0);
+    this.createFileAt('/etc/ssh/ssh_config', UBUNTU_2204_SSH_CONFIG, 0o644, 0, 0);
     this.createFileAt('/etc/crontab',
       'SHELL=/bin/sh\n' +
       'PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n' +
@@ -327,6 +332,7 @@ export class VirtualFileSystem {
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
       0o666, 0, 0);
+    this.createFileAt(GAI_CONF_PATH, GAI_CONF_FACTORY, 0o644, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
     for (const path of pluginFilePaths(LIBSASL2_MODULES_PLUGINS)) this.createFileAt(path, '\x7fELF', 0o644, 0, 0);
@@ -364,7 +370,14 @@ export class VirtualFileSystem {
     this.createFileAt('/etc/ufw/before6.rules',
       '# Rules that should be run before the ufw user rules (IPv6).\n*filter\n:ufw6-before-input - [0:0]\n:ufw6-before-output - [0:0]\n:ufw6-before-forward - [0:0]\n\n' +
       '-A ufw6-before-input -i lo -j ACCEPT\n-A ufw6-before-output -o lo -j ACCEPT\n-A ufw6-before-input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A ufw6-before-output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n\n' +
-      '-A ufw6-before-input -p icmpv6 -j ACCEPT\n-A ufw6-before-output -p icmpv6 -j ACCEPT\n\nCOMMIT\n',
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type destination-unreachable -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type packet-too-big -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type time-exceeded -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type parameter-problem -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type echo-request -j ACCEPT\n\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type router-solicitation -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type neighbor-solicitation -j ACCEPT\n-A ufw6-before-input -p icmpv6 --icmpv6-type neighbor-advertisement -j ACCEPT\n' +
+      '-A ufw6-before-input -p icmpv6 --icmpv6-type redirect -j ACCEPT\n\n' +
+      '-A ufw6-before-output -p icmpv6 --icmpv6-type router-solicitation -j ACCEPT\n-A ufw6-before-output -p icmpv6 --icmpv6-type neighbor-solicitation -j ACCEPT\n' +
+      '-A ufw6-before-output -p icmpv6 --icmpv6-type neighbor-advertisement -j ACCEPT\n\nCOMMIT\n',
       0o640, 0, 0);
 
     this.createFileAt('/etc/ufw/after6.rules',
@@ -615,6 +628,14 @@ export class VirtualFileSystem {
   getType(path: string, followSymlinks = true): FileType | null {
     const inode = followSymlinks ? this.resolveInode(path) : this.resolveInode(path, false);
     return inode?.type ?? null;
+  }
+
+  createDeferredFileAt(
+    path: string, produce: () => string, permissions: number, uid: number, gid: number, declaredSize: number,
+  ): INode | null {
+    const inode = this.createFileAt(path, '', permissions, uid, gid);
+    if (inode !== null) deferContent(inode, produce, declaredSize);
+    return inode;
   }
 
   createFileAt(path: string, content: string, permissions: number, uid: number, gid: number): INode | null {
@@ -1322,6 +1343,17 @@ export class VirtualFileSystem {
     return true;
   }
 
+  createSocket(path: string, permissions: number, uid: number, gid: number): boolean {
+    const parent = this.resolveParent(path);
+    if (!parent) return false;
+    const [parentInode, basename] = parent;
+    if (parentInode.children.has(basename)) return false;
+    const inode = this.allocInode('socket', permissions, uid, gid);
+    parentInode.children.set(basename, inode.id);
+    parentInode.mtime = this.nowMs();
+    return true;
+  }
+
   // ─── Search Operations ────────────────────────────────────────────
 
   /**
@@ -1453,7 +1485,7 @@ export class VirtualFileSystem {
    */
   formatPermissions(inode: INode): string {
     const typeChars: Record<FileType, string> = {
-      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c'
+      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c', socket: 's'
     };
     let s = typeChars[inode.type] || '-';
 

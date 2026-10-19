@@ -8,8 +8,10 @@
  *   - $(subexpr)  — recursive sub-expression evaluation (via callback)
  */
 
+import { PSRuntimeError } from './PSRuntimeError';
 import type { PSEnvironment, PSValue } from './PSEnvironment';
 import { formatDouble } from './dotnetNumber';
+import { PSChar, PSNumber, formatNumeric } from './semantics/PSNumber';
 import { formatTimeSpan, isTimeSpan } from './dotnetTimeSpan';
 
 /** Callback type for evaluating a $(…) sub-expression string. */
@@ -54,6 +56,7 @@ export function expandString(
   env: PSEnvironment,
   evalSubExpr?: SubExprEvaluator,
   resolver: VariableResolver = resolveVar,
+  unicodeEscapes = false,
 ): string {
   let result = '';
   let i = 0;
@@ -64,7 +67,16 @@ export function expandString(
     // ── Backtick escape ──────────────────────────────────────────────────
     if (ch === '`' && i + 1 < raw.length) {
       const next = raw[i + 1];
-      result += BACKTICK[next] ?? next;
+      if (unicodeEscapes && next === 'u' && raw[i + 2] === '{') {
+        const close = raw.indexOf('}', i + 3);
+        const digits = close > 0 ? raw.slice(i + 3, close) : '';
+        if (/^[0-9a-fA-F]{1,6}$/.test(digits) && parseInt(digits, 16) <= 0x10FFFF) {
+          result += String.fromCodePoint(parseInt(digits, 16));
+          i = close + 1;
+          continue;
+        }
+      }
+      result += (unicodeEscapes && next === 'e' ? '\x1b' : BACKTICK[next]) ?? next;
       i += 2;
       continue;
     }
@@ -115,6 +127,11 @@ export function expandString(
           result += psValueToString(resolver(scopedName, env));
           i = k;
         } else {
+          if (j < raw.length && raw[j] === ':' && raw[j + 1] !== ':') {
+            throw new PSRuntimeError(
+              "Variable reference is not valid. ':' was not followed by a valid variable name character. Consider using ${} to delimit the name.",
+              'System.Management.Automation.ParseException');
+          }
           result += psValueToString(resolver(part, env));
           i = j;
         }
@@ -184,6 +201,8 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'number') return formatDouble(value);
   if (typeof value === 'string') return value;
+  if (value instanceof PSNumber) return value.toString();
+  if (value instanceof PSChar) return value.toString();
   if (value instanceof Date) {
     // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM".
     const m   = value.getMonth() + 1;
@@ -200,6 +219,7 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'function') return '';
   if (typeof value === 'object') {
     const rec = value as Record<string, PSValue>;
+    if (rec.type === 'ScriptBlock' && typeof rec.sourceText === 'string') return rec.sourceText;
     const registered = registeredDisplay(rec);
     if (registered !== null) return registered;
     if (isTimeSpan(rec)) return formatTimeSpan(rec.TotalMilliseconds as number);

@@ -17,6 +17,7 @@
 
 import type { ARPEntry } from '../EndHost';
 import { IPAddress, MACAddress } from '../../core/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface LinuxArpContext {
   /** ARP table: IP string → ARPEntry */
@@ -177,7 +178,7 @@ function formatTabular(entries: [string, ARPEntry][]): string {
   for (const [ip, entry] of entries) {
     const flags = entry.type === 'static' ? 'CM' : 'C';
     lines.push(
-      `${ip.padEnd(25)}ether   ${entry.mac.toString().padEnd(20)}${flags.padEnd(6)}${'*'.padEnd(16)}${entry.iface}`,
+      `${padToWidth(ip, 25)}ether   ${padToWidth(entry.mac.toString(), 20)}${padToWidth(flags, 6)}${padToWidth('*', 16)}${entry.iface}`,
     );
   }
   return lines.join('\n');

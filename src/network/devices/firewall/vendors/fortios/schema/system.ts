@@ -1,9 +1,12 @@
 import {
   address, addressMask, choice, count, enable, reference, refList, text, word,
-  type FortiObjectView, type FortiTableSpec,
+  type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
   type LldpSetting,
   type LldpVdomSetting,
 } from './types';
+import {
+  IMPLEMENTED_CIPHERS, IMPLEMENTED_HOST_KEY_ALGORITHMS, IMPLEMENTED_KEX_METHODS, IMPLEMENTED_MACS,
+} from '../../../../../protocols/ssh/transport/SshAlgorithms';
 import { FORTIOS_SESSION_HELPER_NAMES } from '../sessionHelpers';
 import {
   MANAGEMENT_SERVICES, type ManagementService,
@@ -37,6 +40,20 @@ const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.
 const ACCESS_SERVICES = MANAGEMENT_SERVICES.map(service => ({
   keyword: service, description: ACCESS_SERVICE_HELP[service],
 }));
+
+function sshAlgorithmList(name: string, help: string, values: readonly string[]): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    multiValue: true,
+    parts: [{
+      name, type: 'ENUM', description: help,
+      values: values.map((keyword) => ({ keyword, description: keyword })),
+    }],
+    defaultValue: [],
+  };
+}
 
 export { parseIpv6Prefix };
 
@@ -84,6 +101,14 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       1, 480, 5),
     count('admin-sport', 'Administrative access port for HTTPS.', 1, 65535, 443),
     count('admin-ssh-port', 'Administrative access port for SSH.', 1, 65535, 22),
+    sshAlgorithmList('ssh-kex-algo', 'Select one or more SSH kex algorithms.',
+      IMPLEMENTED_KEX_METHODS),
+    sshAlgorithmList('ssh-enc-algo', 'Select one or more SSH ciphers.',
+      IMPLEMENTED_CIPHERS),
+    sshAlgorithmList('ssh-mac-algo', 'Select one or more SSH MAC algorithms.',
+      IMPLEMENTED_MACS),
+    sshAlgorithmList('ssh-hostkey-algo', 'Select one or more SSH hostkey algorithms.',
+      IMPLEMENTED_HOST_KEY_ALGORITHMS),
     count('admin-port', 'Administrative access port for HTTP.', 1, 65535, 80),
     count('admin-telnet-port', 'Administrative access port for TELNET.', 1, 65535, 23),
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
@@ -201,6 +226,12 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       fragmentMemoryMb: number('ip-fragment-mem-thresholds', DEFAULT_FRAGMENT_MEM_MB),
       ipConflictDetection: object.effective('ip-conflict-detection')[0] === 'enable',
       adminSshPort: number('admin-ssh-port', 22),
+      sshAlgorithms: {
+        ...(object.effective('ssh-kex-algo').length > 0 ? { kex: object.effective('ssh-kex-algo') } : {}),
+        ...(object.effective('ssh-enc-algo').length > 0 ? { ciphers: object.effective('ssh-enc-algo') } : {}),
+        ...(object.effective('ssh-mac-algo').length > 0 ? { macs: object.effective('ssh-mac-algo') } : {}),
+        ...(object.effective('ssh-hostkey-algo').length > 0 ? { hostKey: object.effective('ssh-hostkey-algo') } : {}),
+      },
       adminTelnetPort: number('admin-telnet-port', 23),
       adminHttpPort: number('admin-port', 80),
       adminHttpsPort: number('admin-sport', 443),
@@ -1288,6 +1319,15 @@ export const SYSTEM_DHCP6_SERVER: FortiTableSpec = {
   },
 };
 
+const NTP_KEY_TYPES = [
+  { keyword: 'MD5', description: 'Use MD5 to authenticate the message.' },
+  { keyword: 'SHA1', description: 'Use SHA1 to authenticate the message.' },
+  { keyword: 'SHA256', description: 'Use SHA256 to authenticate the message.' },
+] as const;
+
+const NTP_KEY_ID = (help: string) => count('key-id', help, 0, 4294967295, 0);
+const NTP_KEY = { ...text('key', 'Key for authentication.'), quoted: true, secret: true };
+
 export const SYSTEM_NTP: FortiTableSpec = {
   path: ['system', 'ntp'],
   kind: 'object',
@@ -1296,14 +1336,21 @@ export const SYSTEM_NTP: FortiTableSpec = {
   renderOrder: 75,
   help: 'Configure system NTP information.',
   attributes: [
-    enable('ntpsync', 'Enable/disable setting the FortiGate clock by NTP.'),
-    choice('type', 'Use FortiGuard or a custom NTP server.', [
-      { keyword: 'fortiguard', description: 'Use the FortiGuard NTP servers.' },
-      { keyword: 'custom', description: 'Use the servers configured below.' },
-    ], 'fortiguard'),
-    count('syncinterval', 'NTP synchronization interval, in minutes.', 1, 1440, 60),
-    reference('source-ip-interface', 'Interface the NTP requests leave by.',
+    enable('authentication', 'Enable/disable authentication.'),
+    refList('interface', 'FortiGate interface(s) with NTP server mode enabled. Devices on your network can contact these interfaces for NTP services.',
       ['system interface']),
+    NTP_KEY,
+    NTP_KEY_ID('Key ID for authentication.'),
+    choice('key-type', 'Key type for authentication (MD5, SHA1, SHA256).', NTP_KEY_TYPES, 'MD5'),
+    enable('ntpsync', 'Enable/disable setting the FortiGate system time by synchronizing with an NTP Server.'),
+    enable('server-mode', 'Enable/disable FortiGate NTP Server Mode. Your FortiGate becomes an NTP server for other devices on your network. The FortiGate relays NTP requests to its configured NTP server.'),
+    address('source-ip', 'Source IP address for communication to the NTP server.', '0.0.0.0'),
+    { ...text('source-ip6', 'Source IPv6 address for communication to the NTP server.', '::'), quoted: false },
+    count('syncinterval', 'NTP synchronization interval (1 - 1440 min).', 1, 1440, 60),
+    choice('type', 'Use the FortiGuard NTP server or any other available NTP Server.', [
+      { keyword: 'fortiguard', description: 'Use the FortiGuard NTP server.' },
+      { keyword: 'custom', description: 'Use any other available NTP server.' },
+    ], 'fortiguard'),
   ],
   children: [
     {
@@ -1314,28 +1361,69 @@ export const SYSTEM_NTP: FortiTableSpec = {
       scope: 'global',
       accessGroup: 'sysgrp',
       renderOrder: 76,
-      help: 'Configure the NTP servers.',
+      help: 'Configure the FortiGate to connect to any available third-party NTP server.',
       attributes: [
         { ...word('id', 'NTP server ID.'), readOnly: true },
-        word('server', 'IP address or hostname of the NTP server.'),
+        enable('authentication', 'Enable/disable authentication.'),
+        word('interface', 'Specify outgoing interface to reach server.'),
+        choice('interface-select-method', 'Specify how to select outgoing interface to reach server.', [
+          { keyword: 'auto', description: 'Set outgoing interface automatically.' },
+          { keyword: 'sdwan', description: 'Set outgoing interface by SD-WAN or policy routing rules.' },
+          { keyword: 'specify', description: 'Set outgoing interface manually.' },
+        ], 'auto'),
+        choice('ip-type', 'Choose to connect to IPv4 or/and IPv6 NTP server.', [
+          { keyword: 'IPv6', description: 'Enable look up for IPv6 NTP server.' },
+          { keyword: 'IPv4', description: 'Enable look up for IPv4 NTP server.' },
+          { keyword: 'Both', description: 'Enable look up for both IPv4 and IPv6 NTP server.' },
+        ], 'Both'),
+        NTP_KEY,
+        NTP_KEY_ID('Key ID for authentication.'),
+        choice('key-type', 'Select NTP authentication type.', NTP_KEY_TYPES, 'MD5'),
+        enable('ntpv3', 'Enable to use NTPv3 instead of NTPv4.'),
+        word('server', 'IP address or hostname of the NTP Server.'),
+        count('vrf-select', 'VRF ID used for connection to server.', 0, 511, 0),
       ],
     },
   ],
   onCommit(object, context) {
-    const servers = object.childEntries('ntpserver')
-      .map(entry => entry.effective('server')[0] ?? '')
-      .filter(server => server.length > 0);
-    const enabled = object.effective('ntpsync')[0] === 'enable';
+    const one = (name: string, byDefault = ''): string => object.effective(name)[0] ?? byDefault;
+    const entries = object.childEntries('ntpserver').map(entry => {
+      const text = (name: string, byDefault = ''): string => entry.effective(name)[0] ?? byDefault;
+      return {
+        id: Number.parseInt(entry.key, 10),
+        server: text('server'),
+        authentication: text('authentication', 'disable') === 'enable',
+        keyId: Number.parseInt(text('key-id', '0'), 10),
+        key: text('key'),
+        keyType: text('key-type', 'MD5') as 'MD5' | 'SHA1' | 'SHA256',
+        ntpv3: text('ntpv3', 'disable') === 'enable',
+        interface: text('interface'),
+        interfaceSelectMethod: text('interface-select-method', 'auto') as 'auto' | 'sdwan' | 'specify',
+        ipType: text('ip-type', 'Both') as 'IPv4' | 'IPv6' | 'Both',
+        vrf: Number.parseInt(text('vrf-select', '0'), 10),
+      };
+    }).filter(entry => entry.server.length > 0);
+    const enabled = one('ntpsync') === 'enable';
+    const custom = one('type', 'fortiguard') === 'custom';
 
-    if (enabled && object.effective('type')[0] === 'custom' && servers.length === 0) {
+    if (enabled && custom && entries.length === 0) {
       return 'a custom NTP configuration needs at least one server.';
     }
 
     return context.device.applyNtp({
       enabled,
-      servers,
-      syncIntervalMin: Number.parseInt(object.effective('syncinterval')[0] ?? '60', 10),
-      sourceInterface: object.effective('source-ip-interface')[0] ?? '',
+      servers: entries.map(entry => entry.server),
+      serverEntries: entries,
+      syncIntervalMin: Number.parseInt(one('syncinterval', '60'), 10),
+      sourceInterface: '',
+      sourceIp: one('source-ip', '0.0.0.0'),
+      sourceIp6: one('source-ip6', '::'),
+      serverMode: one('server-mode') === 'enable',
+      serverInterfaces: object.effective('interface'),
+      authentication: one('authentication') === 'enable',
+      keyId: Number.parseInt(one('key-id', '0'), 10),
+      key: one('key'),
+      keyType: one('key-type', 'MD5') as 'MD5' | 'SHA1' | 'SHA256',
     });
   },
 };

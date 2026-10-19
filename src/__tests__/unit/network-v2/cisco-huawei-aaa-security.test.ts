@@ -487,7 +487,7 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
     await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
     await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"', 'Admin@123\n');
     const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"', 'Admin@123\n');
-    expect(blocked).toMatch(/Connection refused \(Quiet-Mode\)/);
+    expect(blocked).toMatch(/Connection refused/);
   });
 });
 

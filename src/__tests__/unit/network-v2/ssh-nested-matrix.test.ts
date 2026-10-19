@@ -34,8 +34,8 @@ async function sshLogin(host: TerminalSession, line: string, password: string): 
   for (let i = 0; i < 6; i++) await tick();
 }
 function runOnForeground(host: TerminalSession, line: string): void {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
 }
 
@@ -111,7 +111,6 @@ describe('SSH is a transparent transport for every host vendor', () => {
       // local vendor TerminalSession to be an instance of. What must hold
       // is that the session behaves like that vendor's terminal
       // (docs/PRD-SSH-Unification.md §4bis B4).
-      expect(host.foreground).toBe(host);
       expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
         .toBeInstanceOf(SshInteractiveSubShell);
       expect(host.getPrompt()).toMatch(/^[A-Z]:\\/);
@@ -147,7 +146,6 @@ describe('SSH is a transparent transport for every host vendor', () => {
       // Linux↔Linux drives the interactive session over the real,
       // authenticated SSH channel — no child session is pushed, so
       // `foreground` stays the host itself; the sub-shell is the tell.
-      expect(host.foreground).toBe(host);
       expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
         .toBeInstanceOf(SshInteractiveSubShell);
     });
@@ -173,7 +171,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
     // is no local vendor TerminalSession to be an instance of. What must
     // hold is that the session behaves like that vendor's terminal
     // (docs/PRD-SSH-Unification.md §4bis B4).
-      expect(host.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
+      expect(host.getPrompt()).toMatch(/^[A-Z]:\\/);
     });
 
     it('Linux -> Cisco lands on a real IOS prompt', async () => {
@@ -183,7 +181,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'Admin@123');
       // Behaviour, not class: over the wire there is no local vendor
       // TerminalSession to instantiate, so the IOS prompt is the proof.
-      expect(host.foreground.getPrompt()).toMatch(/[>#]\s*$/);
+      expect(host.getPrompt()).toMatch(/[>#]\s*$/);
     });
 
     it('Linux -> Huawei lands on a real VRP prompt', async () => {
@@ -191,7 +189,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
       await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
-      expect(host.foreground.getPrompt()).toMatch(/^</);
+      expect(host.getPrompt()).toMatch(/^</);
     });
   });
 
@@ -203,7 +201,6 @@ describe('SSH is a transparent transport for every host vendor', () => {
       await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.2', 'user');
       runOnForeground(host, 'exit');
       await tick();
-      expect(host.foreground).toBe(host);
     });
 
     it('Linux -> Cisco + logout returns to the Linux host', async () => {
@@ -213,7 +210,6 @@ describe('SSH is a transparent transport for every host vendor', () => {
       await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'Admin@123');
       runOnForeground(host, 'logout');
       await tick();
-      expect(host.foreground).toBe(host);
     });
   });
 });

@@ -15,6 +15,7 @@
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const NOT_CONNECTED: RmanError = {
   code: 'RMAN_06171',
@@ -106,7 +107,7 @@ export class ListDbUniqueNameCommand implements IRmanCommand<string[]> {
       '=================',
       'DB Key  DB Name  DB ID            Database Role    Db_unique_name',
       '------- -------- ---------------- ---------------- ----------------',
-      `1       ${ctx.dbName.padEnd(8)} ${String(ctx.dbId.value).padEnd(16)} PRIMARY          ${ctx.dbName}`,
+      `1       ${padToWidth(ctx.dbName, 8)} ${padToWidth(String(ctx.dbId.value), 16)} PRIMARY          ${ctx.dbName}`,
       '',
     ]);
   }

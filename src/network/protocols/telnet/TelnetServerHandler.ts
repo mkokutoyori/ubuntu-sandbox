@@ -178,7 +178,17 @@ class TelnetSession {
 
   private async dispatch(line: string): Promise<void> {
     if (this.phase === 'closed') return;
-    if (this.phase === 'username') { this.username = line.trim(); this.phase = 'password'; this.write(this.prompts().password); return; }
+    if (this.phase === 'username') {
+      this.username = line.trim();
+      if (this.username !== '' && await this.ctx.authenticateWithoutPassword?.(this.username)) {
+        this.ctx.recordLogin?.(this.username, this.clientIp);
+        this.beginExec(this.username);
+        return;
+      }
+      this.phase = 'password';
+      this.write(this.prompts().password);
+      return;
+    }
     if (this.phase === 'password') { await this.verifyPassword(line); return; }
     await this.runCommand(line);
   }
@@ -219,8 +229,10 @@ class TelnetSession {
     this.shell = this.ctx.createShell(this.username);
     this.phase = 'exec';
 
-    const motd = this.ctx.motd?.();
-    if (motd) this.write(`\n${motd}\n`);
+    const greeting = handle.greeting !== undefined
+      ? handle.greeting.join('').replace(/\n+$/, '')
+      : this.ctx.motd?.();
+    if (greeting) this.write(`\n${greeting}\n`);
     this.offAsyncOutput = this.shell?.subscribeAsyncOutput?.((out) => this.write(`\n${out}\n`)) ?? null;
     this.write('\n');
     this.writePrompt();

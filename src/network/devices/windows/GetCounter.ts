@@ -2,6 +2,7 @@ import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { WindowsPC } from '../WindowsPC';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface GetCounterParsedArgs {
   counters: string[];
@@ -154,7 +155,7 @@ export function formatCounterSnapshot(hostname: string, snap: CounterSnapshot): 
   lines.push('---------                 --------------');
   let first = true;
   for (const s of snap.samples) {
-    const prefix = first ? fmtTs(snap.ts).padEnd(26) : ' '.repeat(26);
+    const prefix = first ? padToWidth(fmtTs(snap.ts), 26) : ' '.repeat(26);
     lines.push(`${prefix}\\\\${hostname.toLowerCase()}${s.path.toLowerCase()} :`);
     lines.push(`${' '.repeat(26)}      ${s.value.toFixed(s.unknown ? 0 : 2)}`);
     first = false;

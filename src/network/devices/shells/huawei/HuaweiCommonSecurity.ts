@@ -31,6 +31,7 @@ import {
 import { projectSnmpServiceOntoAgent } from '../../../snmp/snmpProjection';
 import { getSnmpAgent } from '../../../equipment/RouterServiceCapabilities';
 import type { SnmpService } from '../../router/management/SnmpService';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export function displayLocalUser(device: unknown): string {
   const accounts = getCredentialStore(device)?.list() ?? [];
@@ -43,7 +44,7 @@ export function displayLocalUser(device: unknown): string {
     ? ['  (no local users configured)']
     : accounts.map((a) => {
         const services = a.serviceTypes.length > 0 ? a.serviceTypes.join(',') : '-';
-        return `  ${a.name.padEnd(24)}${a.disabled ? 'B' : 'A'}      ${services.padEnd(9)} ${a.privilege}`;
+        return `  ${padToWidth(a.name, 24)}${a.disabled ? 'B' : 'A'}      ${padToWidth(services, 9)} ${a.privilege}`;
       });
   return [...head, ...rows,
     '  ----------------------------------------------------------------------',
@@ -67,6 +68,12 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
     ...(ssh.timeout !== SSH_DEFAULT_TIMEOUT_SEC ? [`ssh server timeout ${ssh.timeout}`] : []),
     ...(ssh.retries !== SSH_DEFAULT_AUTH_RETRIES ? [`ssh server authentication-retries ${ssh.retries}`] : []),
+    ...Object.entries(mgmt.getSshAlgorithmLists())
+      .filter(([, tokens]) => tokens.length > 0)
+      .map(([family, tokens]) => `ssh server ${family} ${tokens.join(' ')}`),
+    ...Object.entries(mgmt.getSshClientAlgorithmLists())
+      .filter(([, tokens]) => tokens.length > 0)
+      .map(([family, tokens]) => `ssh client ${family} ${tokens.join(' ')}`),
     ...(mgmt.sshDefaultPasswordAuthenticationEnabled() ? [] : ['undo ssh authentication-type default password']),
     ...[...mgmt.getSshUsers()].flatMap(([name, user]) => [
       `ssh user ${name}`,
@@ -87,7 +94,7 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
 
 export function displayTelnetServerStatusVrp(device: unknown): string {
   const telnet = getManagementService(device)?.getTelnet();
-  const row = (label: string, value: string | number): string => ` ${label.padEnd(41)}:${value}`;
+  const row = (label: string, value: string | number): string => ` ${padToWidth(label, 41)}:${value}`;
   const sourceIp = telnet?.source
     ? (device as { getPort?: (name: string) => { getIPAddress(): { toString(): string } | null } | undefined })
       .getPort?.(telnet.source)?.getIPAddress()?.toString()
@@ -124,7 +131,7 @@ export function displaySshServerSessionVrp(device: unknown): string {
     const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
     const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
     const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
-    return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+    return `${padToWidth((i + 1).toString(), 6)} ${ssh.version}    ${h}:${m}:${sec}  ${padToWidth(s.user, 10)} ${s.fromIp}`;
   });
   return [header, ...rows].join('\n');
 }
@@ -270,10 +277,13 @@ export function registerHuaweiCommonSecurity(
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   registerUndoForms('ssh', 'Restore the SSH server defaults', [
     ['server', 'enable'], ['server', 'port'], ['server', 'timeout'], ['server', 'authentication-retries'],
+    ['server', 'key-exchange'], ['server', 'cipher'], ['server', 'hmac'], ['server', 'publickey'],
+    ['client', 'key-exchange'], ['client', 'cipher'], ['client', 'hmac'], ['client', 'publickey'],
     ['user', ANY_WORD], ['user', ANY_WORD, 'authentication-type'], ['user', ANY_WORD, 'service-type'],
     ['authentication-type', 'default', 'password'],
   ], [
     { keyword: 'server', description: 'SSH server' },
+    { keyword: 'client', description: 'SSH client' },
     { keyword: 'user', description: 'SSH user' },
     { keyword: 'authentication-type', description: 'Default authentication type of SSH users' },
   ],
@@ -312,7 +322,8 @@ export function registerHuaweiCommonSecurity(
     if (!agent) return dispatch('ntp-service', args);
     const a = analyserNtpVrp(args);
     if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `ntp-service ${args.join(' ')}`);
-    appliquerNtpVrp(agent, a.action);
+    const portNames = agent.portNames();
+    appliquerNtpVrp(agent, a.action, (name) => resolveHuaweiInterfaceName(portNames, name));
     return '';
   });
   trie.registerGreedy('undo ntp-service', 'Remove NTP service configuration', (args) => {

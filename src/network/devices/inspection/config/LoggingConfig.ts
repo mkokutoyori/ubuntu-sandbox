@@ -8,6 +8,7 @@ import { ospfHelloMismatchLines } from '@/network/ospf/events';
 import {
   getManagementService, getNtpAgent,
 } from '@/network/equipment/RouterServiceCapabilities';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * LoggingConfig — config-driven syslog/logging state (Lot C).
@@ -709,7 +710,7 @@ export class LoggingConfig {
     const pad = (n: number) => String(n).padStart(2, '0');
     const marque = (this.clock?.authoritative() ?? false) ? ' ' : '*';
     const annee = spec.year ? ` ${d.getUTCFullYear()}` : '';
-    let stamp = `${marque}${mois} ${String(d.getUTCDate()).padStart(2, ' ')}${annee} `
+    let stamp = `${marque}${mois} ${padToWidth(String(d.getUTCDate()), 2, 'right')}${annee} `
       + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
     if (spec.msec) stamp += `.${String(d.getUTCMilliseconds()).padStart(3, '0')}`;
     if (spec.showTimezone) {
@@ -1921,7 +1922,7 @@ export class LoggingConfig {
       total += v.count;
       const stamp = new Date(v.last).toISOString().slice(5, 19).replace('T', ' ');
       lines.push(
-        `${facility.padEnd(19)}${mnem.padEnd(26)}${sev.padStart(3)}${String(v.count).padStart(6)}   ${stamp}`,
+        `${padToWidth(facility, 19)}${padToWidth(mnem, 26)}${padToWidth(sev, 3, 'right')}${padToWidth(String(v.count), 6, 'right')}   ${stamp}`,
       );
     }
     lines.push('');
@@ -1952,7 +1953,7 @@ export class LoggingConfig {
     // « Console » et « Monitor », donc son deux-points est suivi de deux
     // espaces.
     const dest = (nom: string, actif: boolean, sev: Severity, compte: number): string[] => {
-      const etiquette = `${nom} logging:`.padEnd(16);
+      const etiquette = padToWidth(`${nom} logging:`, 16);
       if (!actif) return [`    ${etiquette} disabled`];
       return [
         `    ${etiquette} level ${sev}, ${compte} messages logged, xml disabled,`,
@@ -2029,8 +2030,8 @@ export class LoggingConfig {
       if (md.mnemonics) parts.push(`mnemonics ${md.mnemonics.mode} ${md.mnemonics.pattern}`);
       if (md.msgBody) parts.push(`msg-body ${md.msgBody.mode} ${md.msgBody.pattern}`);
       if (md.rateLimit !== undefined) parts.push(`rate-limit ${md.rateLimit}`);
-      if (parts.length === 0) return [`${md.name.padEnd(20)}(no filter clause)`];
-      return parts.map((p, i) => `${(i === 0 ? md.name : '').padEnd(20)}${p}`);
+      if (parts.length === 0) return [`${padToWidth(md.name, 20)}(no filter clause)`];
+      return parts.map((p, i) => `${padToWidth(i === 0 ? md.name : '', 20)}${p}`);
     };
     const actifs = [...this.discriminators.values()].filter(m => attaches.has(m.name));
     const inactifs = [...this.discriminators.values()].filter(m => !attaches.has(m.name));

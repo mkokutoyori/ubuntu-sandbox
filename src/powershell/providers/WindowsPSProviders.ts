@@ -32,6 +32,7 @@ import {
 } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
 import { type DnsAnswerRow, type DnsCacheRow, dnsAnswerRowOf, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
+import { type NetPrefixPolicyRow, prefixPolicyRowsOf } from '@/network/devices/windows/netPrefixPolicy';
 import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
@@ -97,7 +98,7 @@ import type {
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
-  DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
+  DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo, LocalUserChanges,
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo, PartitionInfo, IWmiProvider,
@@ -1538,11 +1539,11 @@ class WindowsUserAdapter implements IUserProvider {
   private mgr() { return this.pc.getUserManager(); }
 
   listUsers(): UserInfo[] {
-    return this.mgr().getAllUsers().map(toUserInfo);
+    return this.mgr().getAllUsers().map((user) => toUserInfo(user, this.mgr()));
   }
   getUser(name: string): UserInfo | null {
     const u = this.mgr().getUser(name);
-    return u ? toUserInfo(u) : null;
+    return u ? toUserInfo(u, this.mgr()) : null;
   }
   createUser(name: string, opts: { password?: string; fullName?: string; description?: string }): string {
     return this.mgr().createUser(name, opts.password ?? '', {
@@ -1553,15 +1554,25 @@ class WindowsUserAdapter implements IUserProvider {
   removeUser(name: string): string {
     return this.mgr().deleteUser(name);
   }
-  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string }): string {
+  setUser(name: string, opts: LocalUserChanges): string {
     const m = this.mgr();
     const msgs: string[] = [];
     if (opts.fullName !== undefined)     msgs.push(m.setUserProperty(name, 'fullName',    opts.fullName));
     if (opts.description !== undefined)  msgs.push(m.setUserProperty(name, 'description', opts.description));
     if (opts.password !== undefined)     msgs.push(m.setUserProperty(name, 'password',    opts.password));
+    if (opts.accountExpires !== undefined) {
+      msgs.push(m.setUserProperty(name, 'expires', opts.accountExpires === null
+        ? 'never'
+        : `${opts.accountExpires.getUTCMonth() + 1}/${opts.accountExpires.getUTCDate()}/${opts.accountExpires.getUTCFullYear()}`));
+    }
+    if (opts.userMayChangePassword !== undefined) msgs.push(m.setUserProperty(name, 'passwordchg', opts.userMayChangePassword ? 'yes' : 'no'));
+    if (opts.passwordNeverExpires !== undefined) msgs.push(m.setUserProperty(name, 'passwordneverexpires', opts.passwordNeverExpires ? 'yes' : 'no'));
     if (opts.enabled === true)           msgs.push(m.enableUser(name));
     if (opts.enabled === false)          msgs.push(m.disableUser(name));
     return msgs.filter(Boolean).join('\n');
+  }
+  changePassword(name: string, oldPassword: string, newPassword: string): string {
+    return this.mgr().changePassword(name, oldPassword, newPassword);
   }
   enableUser(name: string): string {
     return this.mgr().enableUser(name);
@@ -1601,7 +1612,7 @@ class WindowsUserAdapter implements IUserProvider {
     const out: UserInfo[] = [];
     for (const memberName of g.members) {
       const u = this.mgr().getUser(memberName);
-      if (u) out.push(toUserInfo(u));
+      if (u) out.push(toUserInfo(u, this.mgr()));
     }
     return out;
   }
@@ -1610,7 +1621,11 @@ class WindowsUserAdapter implements IUserProvider {
   }
 }
 
-function toUserInfo(u: import('@/network/devices/windows/WindowsUserManager').WindowsUser): UserInfo {
+function toUserInfo(
+  u: import('@/network/devices/windows/WindowsUserManager').WindowsUser,
+  manager: import('@/network/devices/windows/WindowsUserManager').WindowsUserManager,
+): UserInfo {
+  const expiresAt = manager.passwordExpiresAt(u.name);
   return {
     name: u.name,
     fullName: u.fullName,
@@ -1620,6 +1635,10 @@ function toUserInfo(u: import('@/network/devices/windows/WindowsUserManager').Wi
     passwordRequired: u.passwordRequired,
     lastLogon: u.lastLogon,
     passwordLastSet: u.passwordLastSet ?? null,
+    accountExpires: u.accountExpires,
+    userMayChangePassword: u.userMayChangePassword,
+    passwordExpires: expiresAt === null ? null : new Date(expiresAt),
+    passwordChangeableDate: new Date(u.passwordLastSet.getTime() + manager.passwordMinimumAgeDays() * 86_400_000),
   };
 }
 function toGroupInfo(g: import('@/network/devices/windows/WindowsUserManager').WindowsGroup): GroupInfo {
@@ -1670,11 +1689,7 @@ class WindowsRegistryAdapter implements IRegistryProvider {
 // ── Event-log adapter (minimal — returns parsed shape where possible) ──────
 
 class WindowsEventLogAdapter implements IEventLogProvider {
-  constructor(
-    private readonly log: PSEventLogProvider,
-    /** L'appareil, pour l'audit 1102 — absent sur un hôte non-Windows. */
-    private readonly pc?: { auditLogCleared?(logName: string): void },
-  ) {}
+  constructor(private readonly log: PSEventLogProvider) {}
 
   listLogs() {
     return this.log.getAllLogsStructured();
@@ -1697,11 +1712,7 @@ class WindowsEventLogAdapter implements IEventLogProvider {
     return this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
   clearLog(logName: string): string {
-    const out = this.log.clearEventLog(logName);
-    // 1102 s'écrit *après* le vidage : c'est la première entrée du
-    // journal neuf, et souvent la seule trace qu'un effacement a eu lieu.
-    if (!out) this.pc?.auditLogCleared?.(logName);
-    return out;
+    return this.log.clearEventLog(logName);
   }
   newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
   limitLog(logName: string): void { this.log.limitEventLog(logName); }
@@ -2348,6 +2359,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
   resolveDnsRecords(name: string, type: string, server?: string): DnsAnswerRow[] | null {
     const records = this.pc.lookupDnsRecordsSync(name, type, server);
     return records === null ? null : records.map(dnsAnswerRowOf);
+  }
+  getPrefixPolicies(): NetPrefixPolicyRow[] {
+    return prefixPolicyRowsOf(this.pc.prefixPolicies.listed('active'), 'Active');
   }
   getDnsClientCache(): DnsCacheRow[] {
     return dnsCacheRowsOf(this.pc.dnsCache.entries());
@@ -3831,7 +3845,7 @@ export function createWindowsPSProviders(
     }),
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg, () => pc.getUserManager().isCurrentUserAdmin()),
-    eventLog:       new WindowsEventLogAdapter(log, pc),
+    eventLog:       new WindowsEventLogAdapter(log),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
     // Le fuseau vit sur l'identite de la machine, la meme que

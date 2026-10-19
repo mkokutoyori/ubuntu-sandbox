@@ -1,3 +1,4 @@
+import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
@@ -1256,7 +1257,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
         destination: new MACAddress(pvstPlus ? PVST_PLUS_MAC : STP_BRIDGE_MAC),
         etherType: ETHERTYPE_STP,
         payload: bpdu,
-        ...(pvstPlus ? { dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: key } } : {}),
+        ...(pvstPlus ? { dot1q: makeVlanTag({ vid: key }) } : {}),
       });
     } finally { this.advertising.delete(adKey); }
     this.getBus().publish({

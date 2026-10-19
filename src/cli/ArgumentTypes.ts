@@ -10,6 +10,21 @@ export type ArgumentType =
 export interface EnumValue {
   readonly keyword: string;
   readonly description: string;
+  readonly thenWord?: string;
+}
+
+export type FormTail =
+  | { readonly kind: 'pending'; readonly place: ArgumentSpec }
+  | { readonly kind: 'closed' }
+  | undefined;
+
+export function formTail(spec: ArgumentSpec, words: readonly string[]): FormTail {
+  if (words.length === 0 || !spec.alternatives) return undefined;
+  const first = words[0].toLowerCase();
+  const form = spec.alternatives.find(alternative => alternative.thenWord !== undefined && alternative.keyword.toLowerCase() === first);
+  if (!form) return undefined;
+  if (words.length > 1) return { kind: 'closed' };
+  return { kind: 'pending', place: { name: form.keyword, type: 'REST', literal: 'LINE', description: form.thenWord } };
 }
 
 export interface ArgumentSpec {

@@ -17,6 +17,7 @@ import { QuicStreamManager, type StreamDirection } from './QuicStream';
 import { LossDetectionState, onPacketSent as onLossPacketSent, onAckReceived } from './lossRecovery';
 import { createCongestionState, isInSlowStart, onPacketSent as onCongestionPacketSent, onPacketAcked, onPacketsLost, type CongestionState } from './congestionControl';
 import { randomConnectionId, type QuicDomainEvent, type CongestionPhase } from './events';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 const CRYPTO_FLIGHT_PREFIX = 4;
 const CRYPTO_FRAME_PAYLOAD = 1000;
@@ -57,17 +58,7 @@ export interface QuicMessage {
   fin: boolean;
 }
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 function concatFrameBytes(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, c) => sum + c.length, 0);

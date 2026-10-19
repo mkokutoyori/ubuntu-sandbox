@@ -464,9 +464,7 @@ describe('filtre de fichiers : le CONTENU decide, pas l`extension', () => {
 
 describe('les familles sans moteur sont REFUSEES, pas rangees', () => {
   it.each([
-    ['ips sensor', 'signature'],
     ['dlp sensor', 'signature'],
-    ['firewall shaper traffic-shaper', 'clock'],
   ])('`config %s` refuse en nommant la brique absente', async (chemin, brique) => {
     const { sh } = await laboratoire();
 
@@ -474,6 +472,19 @@ describe('les familles sans moteur sont REFUSEES, pas rangees', () => {
 
     expect(vu).toContain('Command fail');
     expect(vu.toLowerCase()).toContain(brique);
+  });
+});
+
+describe('ips sensor et traffic-shaper ne sont plus refuses : un moteur les evalue', () => {
+  it.each([
+    ['ips sensor', 'set comment "X"'],
+    ['firewall shaper traffic-shaper', 'set maximum-bandwidth 100'],
+  ])('`config %s` accepte sa configuration', async (chemin, ligne) => {
+    const { sh } = await laboratoire();
+
+    const vu = run(sh, `config ${chemin}`, 'edit "X"', ligne);
+
+    expect(vu).not.toContain('Command fail');
   });
 });
 

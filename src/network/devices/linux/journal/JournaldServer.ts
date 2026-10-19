@@ -3,6 +3,7 @@ import { fieldNameIsValid } from './JournalRecord';
 import { safeAtoi } from '../systemd/SafeNumbers';
 import { concat, utf8 } from './JournalText';
 import { unitNameIsValid } from '../systemd/UnitName';
+import { bytesToBinaryString } from '@/crypto/encoding';
 
 export interface Ucred {
   pid: number;
@@ -80,7 +81,7 @@ const WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d, 0x0b, 0x0c]);
 const SETUP_LINE_MAX = 255;
 const ENTRY_FIELD_COUNT_MAX = 1024;
 
-const ascii = (bytes: Uint8Array): string => String.fromCharCode(...bytes);
+const ascii = (bytes: Uint8Array): string => bytesToBinaryString(bytes);
 const field = (name: string, value: string | Uint8Array): Uint8Array => concat(utf8(`${name}=`), typeof value === 'string' ? utf8(value) : value);
 const cutAtNul = (bytes: Uint8Array): Uint8Array => {
   const nul = bytes.indexOf(0);

@@ -208,6 +208,47 @@ export function canonicalIpText(ip: string): string {
 
 const OPAQUE_PAYLOAD_SEQUENCE_UNITS = 1;
 
+export function resetSegmentFor(
+  offending: TcpSegment, localIp: string, remoteIp: string,
+): TcpSegment {
+  const flags = noFlags();
+  flags.rst = true;
+  let sequence = 0;
+  let acknowledgement = 0;
+  if (offending.flags.ack) {
+    sequence = offending.acknowledgement;
+  } else {
+    flags.ack = true;
+    acknowledgement = (offending.sequence
+      + (offending.flags.syn ? 1 : 0)
+      + (offending.flags.fin ? 1 : 0)
+      + segmentPayloadSize(offending)) >>> 0;
+  }
+  const seg: TcpSegment = {
+    type: 'tcp',
+    sourcePort: offending.destinationPort, destinationPort: offending.sourcePort,
+    sequence, acknowledgement,
+    dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
+    options: [], payload: undefined,
+  };
+  seg.checksum = computeTcpChecksum(seg, localIp, remoteIp);
+  return seg;
+}
+
+export function resetSegmentAt(
+  sourcePort: number, destinationPort: number, sequence: number, localIp: string, remoteIp: string,
+): TcpSegment {
+  const flags = noFlags();
+  flags.rst = true;
+  const seg: TcpSegment = {
+    type: 'tcp', sourcePort, destinationPort, sequence: sequence >>> 0, acknowledgement: 0,
+    dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
+    options: [], payload: undefined,
+  };
+  seg.checksum = computeTcpChecksum(seg, localIp, remoteIp);
+  return seg;
+}
+
 export function segmentPayloadSize(seg: TcpSegment): number {
   if (seg.payload === undefined) return 0;
   return isStreamPayload(seg.payload) ? seg.payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
@@ -256,6 +297,7 @@ export interface TcpHost {
   adviseNegative?(nextHopIp: string): void;
   neighbourResolved?(nextHopIp: string): boolean;
   filterLocalSegment?(packet: IPv4Packet | IPv6Packet, family: IpFamily): boolean;
+  filterOutgoing?(egressName: string, packet: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject';
   defaultTtl?(family: IpFamily): number | undefined;
   pathMtu?(remoteIp: string, linkMtu: number): number;
   ecnPolicy?(): TcpEcnPolicy;
@@ -2832,27 +2874,7 @@ export class TcpStack {
   private sendRst(localIp: string, remoteIp: string, offending: TcpSegment): void {
     const egress = this.resolveEgress(remoteIp);
     if (!egress) return;
-    const flags = noFlags();
-    flags.rst = true;
-    let sequence = 0;
-    let acknowledgement = 0;
-    if (offending.flags.ack) {
-      sequence = offending.acknowledgement;
-    } else {
-      flags.ack = true;
-      acknowledgement = (offending.sequence
-        + (offending.flags.syn ? 1 : 0)
-        + (offending.flags.fin ? 1 : 0)
-        + segmentPayloadSize(offending)) >>> 0;
-    }
-    const seg: TcpSegment = {
-      type: 'tcp',
-      sourcePort: offending.destinationPort, destinationPort: offending.sourcePort,
-      sequence, acknowledgement,
-      dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
-      options: [], payload: undefined,
-    };
-    seg.checksum = computeTcpChecksum(seg, localIp, remoteIp);
+    const seg = resetSegmentFor(offending, localIp, remoteIp);
     this.shipSegment(egress, localIp, remoteIp, seg);
   }
 
@@ -3222,6 +3244,7 @@ export class TcpStack {
       });
       return;
     }
+    if ((this.host.filterOutgoing?.(egress.name, l3Packet) ?? 'accept') !== 'accept') return;
     const nextHopIp = egress.nextHopIp ?? dstIp;
     if (family === 'ipv6') {
       this.host.sendIpv6FrameNdpAware?.(

@@ -61,14 +61,28 @@ export type PSStatement =
   | PSContinueStatement
   | PSThrowStatement
   | PSTrapStatement
-  | PSUsingStatement;
+  | PSUsingStatement
+  | PSPipelineChainStatement;
+
+export interface PSPipelineChainStatement extends ASTBase {
+  type: 'PipelineChain';
+  left: PSStatement;
+  operator: '&&' | '||';
+  right: PSStatement;
+}
+
+export interface PSTernaryExpression extends ASTBase {
+  type: 'TernaryExpression';
+  condition: PSExpression;
+  whenTrue: PSExpression;
+  whenFalse: PSExpression;
+}
 
 // ─── Pipeline Statement ───────────────────────────────────────────────────────
 
 export interface PSPipelineStatement extends ASTBase {
   type: 'PipelineStatement';
   pipeline: PSPipeline;
-  redirections: PSRedirection[];
 }
 
 /** A pipeline of one or more commands joined by | */
@@ -87,6 +101,10 @@ export interface PSCommand extends ASTBase {
   /** Positional arguments (expressions not preceded by -ParamName) */
   arguments: PSExpression[];
   sequence?: ReadonlyArray<PSCommandParameter | PSExpression>;
+  /** Stream redirections written after the command's arguments (`2>$null`, `3>&1`, `> file`). */
+  redirections?: PSRedirection[];
+  /** Where the command sits in its source text, for $MyInvocation.Line / .Statement / .PositionMessage. */
+  span?: { readonly source: string; readonly start: number; readonly end: number };
 }
 
 export interface PSCommandParameter extends ASTBase {
@@ -101,8 +119,11 @@ export interface PSCommandParameter extends ASTBase {
 export interface PSAssignmentStatement extends ASTBase {
   type: 'AssignmentStatement';
   target: PSVariableExpression | PSIndexExpression | PSMemberExpression;
-  operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=';
+  operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '??=';
   value: PSExpression;
+  postfix?: boolean;
+  typeConstraints?: string[];
+  destructuringTargets?: PSVariableExpression[];
 }
 
 // ─── if / elseif / else ───────────────────────────────────────────────────────
@@ -231,6 +252,11 @@ export interface PSPropertyDeclaration extends ASTBase {
   attributes: PSValidateAttribute[];
 }
 
+export interface PSConstructorInitializer {
+  kind: 'base' | 'this';
+  arguments: PSExpression[];
+}
+
 export interface PSMethodDefinition extends ASTBase {
   type: 'MethodDefinition';
   modifiers: string[];
@@ -238,6 +264,7 @@ export interface PSMethodDefinition extends ASTBase {
   name: string;
   parameters: PSParamDeclaration[];
   body: PSStatementList;
+  initializer?: PSConstructorInitializer;
 }
 
 // ─── enum ─────────────────────────────────────────────────────────────────────
@@ -247,6 +274,7 @@ export interface PSEnumDefinition extends ASTBase {
   name: string;
   baseType: string | null;
   members: PSEnumMember[];
+  attributes?: PSAttribute[];
 }
 
 export interface PSEnumMember {
@@ -317,7 +345,8 @@ export type PSExpression =
   | PSFormatExpression
   | PSSplatExpression
   | PSCommandExpression    // bareword command used as expression (pipeline head)
-  | PSPipelineExpression;  // pipeline used as expression (e.g. $r = cmd1 | cmd2)
+  | PSPipelineExpression  // pipeline used as expression (e.g. $r = cmd1 | cmd2)
+  | PSTernaryExpression;
 
 /** A pipeline used in expression context — e.g. `$r = 1,2,3 | Where-Object { ... }` */
 export interface PSPipelineExpression extends ASTBase {
@@ -358,6 +387,7 @@ export interface PSSubExpressionExpression extends ASTBase {
 export interface PSArrayExpression extends ASTBase {
   type: 'ArrayExpression';
   elements: PSStatement[];    // statements whose pipeline output forms array elements
+  commaList?: boolean;
 }
 
 // ─── Hashtable literal @{k=v; ...} ───────────────────────────────────────────
@@ -380,8 +410,11 @@ export interface PSScriptBlock extends ASTBase {
   beginBlock: PSStatementList | null;
   processBlock: PSStatementList | null;
   endBlock: PSStatementList | null;
+  cleanBlock?: PSStatementList | null;
   /** If no begin/process/end, the body goes here */
   body: PSStatementList | null;
+  sourceText?: string;
+  extentText?: string;
 }
 
 // ─── param() block ────────────────────────────────────────────────────────────
@@ -417,7 +450,7 @@ export interface PSTypeLiteral extends ASTBase {
 
 // ─── Unary expressions ────────────────────────────────────────────────────────
 
-export type PSUnaryOperator = '-not' | '!' | '-bnot' | '+' | '-' | ',';
+export type PSUnaryOperator = '-not' | '!' | '-bnot' | '-join' | '-split' | '+' | '-' | ',';
 
 export interface PSUnaryExpression extends ASTBase {
   type: 'UnaryExpression';
@@ -428,6 +461,7 @@ export interface PSUnaryExpression extends ASTBase {
 // ─── Binary expressions ───────────────────────────────────────────────────────
 
 export type PSBinaryOperator =
+  | '??'
   // Arithmetic
   | '+' | '-' | '*' | '/' | '%'
   // Comparison (case-insensitive by default)
@@ -467,6 +501,7 @@ export interface PSMemberExpression extends ASTBase {
   object: PSExpression;
   member: string | PSExpression;   // string = static name; expression = computed ($obj.$prop)
   computed: boolean;
+  nullConditional?: boolean;
 }
 
 // ─── Static member [Type]::Member ────────────────────────────────────────────
@@ -483,6 +518,7 @@ export interface PSIndexExpression extends ASTBase {
   type: 'IndexExpression';
   object: PSExpression;
   index: PSExpression;
+  nullConditional?: boolean;
 }
 
 // ─── Method call $obj.Method(args) ───────────────────────────────────────────
@@ -525,7 +561,7 @@ export interface PSCommandExpression extends ASTBase {
 
 // ─── Redirection ──────────────────────────────────────────────────────────────
 
-export type PSRedirectionOp = '>' | '>>' | '2>' | '2>>' | '*>' | '*>>' | '2>&1' | '3>&1';
+export type PSRedirectionOp = string;
 
 export interface PSRedirection extends ASTBase {
   type: 'Redirection';
@@ -549,8 +585,8 @@ export function makePipeline(commands: PSCommand[], pos?: SourcePosition): PSPip
   return { type: 'Pipeline', commands, position: pos };
 }
 
-export function makePipelineStatement(pipeline: PSPipeline, redirections: PSRedirection[] = [], pos?: SourcePosition): PSPipelineStatement {
-  return { type: 'PipelineStatement', pipeline, redirections, position: pos };
+export function makePipelineStatement(pipeline: PSPipeline, pos?: SourcePosition): PSPipelineStatement {
+  return { type: 'PipelineStatement', pipeline, position: pos };
 }
 
 export function makeCommand(
@@ -621,6 +657,10 @@ export function makeScriptBlock(
 
 export function makeHashtable(pairs: PSHashtablePair[], pos?: SourcePosition): PSHashtableExpression {
   return { type: 'HashtableExpression', pairs, position: pos };
+}
+
+export function makeCommaList(elements: PSStatement[], pos?: SourcePosition): PSArrayExpression {
+  return { type: 'ArrayExpression', elements, commaList: true, position: pos };
 }
 
 export function makeArrayExpr(elements: PSStatement[], pos?: SourcePosition): PSArrayExpression {

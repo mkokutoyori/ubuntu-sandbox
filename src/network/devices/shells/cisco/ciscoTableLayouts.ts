@@ -175,3 +175,37 @@ export const SPANNING_TREE_COLUMNS: ReadonlyArray<TableColumn<SpanningTreePortRo
 ];
 
 export const SPANNING_TREE_STYLE: TableStyle = { gap: 1, rule: true };
+
+export interface MacTableRow { vlan: number; mac: string; type: string; port: string }
+
+export const MAC_TABLE_COLUMNS: ReadonlyArray<TableColumn<MacTableRow>> = [
+  { header: 'Vlan', align: 'right', value: (r) => String(r.vlan) },
+  { header: 'Mac Address', value: (r) => r.mac },
+  { header: 'Type', value: (r) => r.type },
+  { header: 'Ports', value: (r) => r.port },
+];
+
+export const MAC_TABLE_STYLE: TableStyle = { gap: 4, rule: true };
+
+export interface SecureMacRow { vlan: number; mac: string; type: string; port: string; age: string }
+
+export const SECURE_MAC_COLUMNS: ReadonlyArray<TableColumn<SecureMacRow>> = [
+  { header: 'Vlan', align: 'right', value: (r) => String(r.vlan) },
+  { header: 'Mac Address', value: (r) => r.mac },
+  { header: 'Type', value: (r) => r.type },
+  { header: 'Ports', value: (r) => r.port },
+  { header: 'Remaining Age', value: (r) => r.age },
+];
+
+export interface StpBridgeRow { vlan: string; bridge: string; hello: number; maxAge: number; fwd: number }
+
+export const STP_BRIDGE_COLUMNS: ReadonlyArray<TableColumn<StpBridgeRow>> = [
+  { header: 'Vlan', width: 16, value: (r) => r.vlan },
+  { header: 'Bridge ID', width: 33, value: (r) => r.bridge },
+  { header: 'Time', width: 5, align: 'right', superHeader: 'Hello', value: (r) => String(r.hello) },
+  { header: 'Age', width: 3, align: 'right', superHeader: 'Max', value: (r) => String(r.maxAge) },
+  { header: 'Dly', width: 3, align: 'right', superHeader: 'Fwd', value: (r) => String(r.fwd) },
+  { header: 'Protocol', value: () => 'ieee' },
+];
+
+export const STP_BRIDGE_STYLE: TableStyle = { gap: 2, rule: true };

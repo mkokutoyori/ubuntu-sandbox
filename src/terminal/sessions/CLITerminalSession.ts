@@ -13,9 +13,13 @@
  *   - Dynamic prompt from device.getPrompt()
  */
 
+import { ROUTER_SSH_LOCAL_USER } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import type { Equipment, ICLIDevice } from '@/network';
-import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
-import { sshWireFailureLine, type SshDialect } from '@/terminal/ssh/sshDialect';
+import { openWireSshShell, resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
+import { QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
+import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
+import type { SshDialect } from '@/terminal/ssh/sshDialect';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
@@ -28,15 +32,13 @@ import {
 import type { InteractiveStep } from '@/terminal/core/types';
 import { isInteractionPlanner, type InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
-import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import type { TelnetDialect } from '@/terminal/subshells/telnetDialect';
-import type { TelnetInteractiveSubShell } from '@/terminal/subshells/TelnetInteractiveSubShell';
-import { createSessionForDevice } from './sessionFactory';
-import { verifyRemoteCredentials } from '@/terminal/ssh/remoteCredentials';
-import { IPAddress } from '@/network/core/types';
-import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
-import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
+import type { ISubShell } from '@/terminal/subshells/ISubShell';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
+import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
+import { establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { CliLineKind } from '@/network/devices/shells/vty/CliShellSession';
 
 interface LineRegistryPort {
@@ -94,8 +96,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   getPrompt(): string {
-    if (this.hasActiveChild) return this.foreground.getPrompt();
-    if (this.telnetSubShell) return this.telnetSubShell.getPrompt();
+    if (this.remoteSubShell) return this.remoteSubShell.getPrompt();
     if (this.promptHiddenUntilFirstKey) return '';
     return this.prompt;
   }
@@ -106,7 +107,7 @@ export abstract class CLITerminalSession extends TerminalSession {
    * it is telnet, whose remote answers arrive asynchronously off a real
    * socket (docs/PRD-VTY-Transport.md §2.1 item 6).
    */
-  private telnetSubShell: TelnetInteractiveSubShell | null = null;
+  private remoteSubShell: ISubShell | null = null;
   private quoteNextKey = false;
 
   protected abstract getDefaultPrompt(): string;
@@ -152,7 +153,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Input mode ─────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
-    if (this.hasActiveChild) return this.foreground.currentInputMode;
+    if (this.pendingSshIO?.isWaitingForInput) return this.inputMode;
     if (this.isFlowActive) {
       return this.inputMode; // set by advanceFlow()
     }
@@ -170,7 +171,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   private occupyLine(): void {
-    if (this.lineRecordId !== null || this.isRemoteChild) return;
+    if (this.lineRecordId !== null) return;
     const registry = this.lineRegistry();
     if (!registry) return;
     const record = registry.open({
@@ -318,7 +319,6 @@ export abstract class CLITerminalSession extends TerminalSession {
         closeWhere(p: (s: { lineKind?: string; transport?: string }) => boolean, r?: string): number;
       };
     };
-    if (this.isRemoteChild) return;
     dev.getSshSessionRegistry?.().closeWhere((s) => s.lineKind === 'con', 'logout');
   }
 
@@ -377,21 +377,9 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Key handling ────────────────────────────────────────────────
 
-  /**
-   * An interactive SSH/Telnet hop (`ssh -l admin 10.0.0.2`, then typing
-   * commands on the remote device) attaches a child session via
-   * `adoptRemoteChild`, exactly like Linux/Windows do. Those two already
-   * route every key to `this.foreground` once a child exists — CLI
-   * (Cisco/Huawei) lacked the same override, so keys kept being handled by
-   * `this` (the LOCAL session): the visible prompt/banner came from the
-   * remote child (`getPrompt()`/`currentInputMode` already delegate), but
-   * `onEnter()`/`showInlineHelp()` ran locally, silently applying typed
-   * commands — including config changes — to the wrong device. One override
-   * here fixes it for both vendors without duplicating per-device logic.
-   */
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
-    if (this.hasActiveChild) return this.foreground.handleKey(e);
+    if (this.pendingSshIO?.isWaitingForInput) return this.handleSshIOKey(e);
     return super.handleKey(e);
   }
 
@@ -442,12 +430,13 @@ export abstract class CLITerminalSession extends TerminalSession {
 
     // ? (inline help — intercepted before reaching input)
     if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey
-      && this.telnetSubShell === null) {
+      && (this.remoteSubShell === null || this.remoteSubShell.supportsInlineHelp?.() === true)) {
       if (this.quoteNextKey) {
         this.quoteNextKey = false;
         return false;
       }
-      this.showInlineHelp(this.input);
+      if (this.remoteSubShell === null) this.showInlineHelp(this.input);
+      else void this.showRemoteInlineHelp(this.remoteSubShell, this.input);
       return true;
     }
     if (this.quoteNextKey && e.key.length === 1) this.quoteNextKey = false;
@@ -509,8 +498,8 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.pushHistory(trimmed);
     }
 
-    if (this.telnetSubShell) {
-      await this.runTelnetLine(trimmed);
+    if (this.remoteSubShell) {
+      await this.runRemoteLine(trimmed);
       return;
     }
 
@@ -521,11 +510,7 @@ export abstract class CLITerminalSession extends TerminalSession {
       return;
     }
     if (firstWord && this.sshInteractiveVerbs().includes(firstWord) && this.sshInteractiveModeAllowed()) {
-      const sshSteps = this.buildSshInteractiveFlowSteps(clientLine);
-      if (sshSteps) {
-        this.startFlowFromSteps(sshSteps, trimmed);
-        return;
-      }
+      if (await this.enterWireSsh(clientLine)) return;
     }
 
     const steps = this.buildInteractiveFlow(trimmed);
@@ -536,14 +521,13 @@ export abstract class CLITerminalSession extends TerminalSession {
 
     if (this.tryInterceptAsyncCommand(trimmed)) return;
 
-    const exitBeforeExec = (this.isRemoteChild || this.exitClosesLocalSession())
+    const exitBeforeExec = this.exitClosesLocalSession()
       && this.isTopLevelExit(trimmed);
 
     try {
       const result = await this.executeOnDevice(trimmed);
 
       if (result === CONNECTION_CLOSED || exitBeforeExec) {
-        if (this.endRemoteSession()) return;
         this.endExecSession();
         return;
       }
@@ -612,186 +596,96 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   /**
-   * Parse `ssh|stelnet [-l user] [-p port] host [command...]`. Returns
-   * null for a malformed invocation or for exec mode (`command` present)
-   * — both fall through to the device's synchronous one-shot client,
-   * which already handles those correctly.
+   * `ssh|stelnet [-l user] [-p port] host` typed at the prompt. The router
+   * resolves the name with its own resolver, asks the wire whether anything
+   * answers, then lets the SSH layer raise the host-key and password
+   * dialogs. Everything typed afterwards crosses the shell channel of the
+   * established session; nothing about the remote is read from its object.
+   * Returns `false` for an exec-mode line, which the device's one-shot
+   * client keeps handling.
    */
-  private parseSshInteractiveTarget(
-    trimmed: string,
-  ): { user: string | null; host: string; port: number } | null {
-    const args = trimmed.split(/\s+/).slice(1);
-    let user: string | null = null;
-    let port = 22;
-    const rest: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-l' && args[i + 1]) { user = args[++i]; continue; }
-      if (a === '-p' && args[i + 1]) {
-        const n = Number.parseInt(args[++i], 10);
-        if (Number.isFinite(n) && n > 0 && n < 65536) port = n;
-        continue;
-      }
-      if (a.startsWith('-')) continue;
-      rest.push(a);
+  private async enterWireSsh(clientLine: string): Promise<boolean> {
+    const verbs = this.sshInteractiveVerbs().join('|');
+    const parsed = parseSshCommandLine(clientLine, new RegExp(`^(${verbs})(\\s|$)`));
+    if (parsed === null || parsed.host === '' || parsed.command !== null) return false;
+
+    const dialect = this.getSshDialect();
+    const { host: typedHost, port } = parsed;
+    if (!this.firstLocalIp()) {
+      this.addLine(dialect.unreachable(typedHost, port));
+      return true;
     }
-    if (rest.length !== 1) return null;
-    const m = /^(?:([\w.-]+)@)?([\w.-]+)$/.exec(rest[0]);
-    if (!m) return null;
-    return { user: user ?? m[1] ?? null, host: m[2], port };
+    const target = await resolveSshTarget(this.device as Equipment, typedHost, port, dialect);
+    if (target.kind === 'failed') {
+      this.addLine(target.line);
+      return true;
+    }
+
+    const asksUsername = parsed.user === null && clientLine.split(/\s+/)[0] === 'stelnet';
+    const io = this.createSshTerminalIO();
+    let outcome: Awaited<ReturnType<typeof openWireSshShell>> | null = null;
+    let user = parsed.user ?? 'admin';
+    try {
+      if (asksUsername) {
+        const typed = (await io.readInput('Please input the username:', false)).trim();
+        if (typed === '') return true;
+        user = typed;
+      }
+      outcome = await openWireSshShell({
+        device: this.device as Equipment,
+        localUser: ROUTER_SSH_LOCAL_USER,
+        user,
+        host: target.address,
+        port,
+        io,
+        strict: parsed.strict ?? 'accept-new',
+        quiet: parsed.quiet,
+        identityFiles: parsed.identityFiles,
+        authentication: parsed.authentication,
+        algorithms: parsed.algorithms,
+      });
+    } catch (error) {
+      if (!(error instanceof QueuedTerminalIOCancelled)) throw error;
+      this.addLine('^C');
+      return true;
+    } finally {
+      this.pendingSshIO = null;
+      this.notify();
+    }
+
+    if (outcome.kind === 'cancelled') {
+      this.addLine('^C');
+    } else if (outcome.kind === 'host-key-changed') {
+      this.addLine('Host key verification failed.');
+    } else if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') {
+      this.addLine(outcome.message);
+    } else if (outcome.kind === 'connected') {
+      this.openRemoteShell(outcome.session, outcome.channel, user, typedHost, target.address, parsed.quiet);
+    }
+    return true;
   }
 
-  /**
-   * Build the interactive-login flow for an outbound `ssh`/`stelnet`
-   * launch: resolve the target, gate it the same way an inbound SSH
-   * connection would be gated, prompt for a password (OpenSSH-style
-   * retry wording), then push a full nested {@link TerminalSession} for
-   * the remote device so commands genuinely execute there — mirroring
-   * what Linux and Windows already do for outbound SSH.
-   */
-  private buildSshInteractiveFlowSteps(trimmed: string): InteractiveStep[] | null {
-    const parsed = this.parseSshInteractiveTarget(trimmed);
-    if (!parsed) return null;
-    const { host, port } = parsed;
-
-    const sourceIp = this.firstLocalIp();
-    const localHostname = this.device.getHostname?.() ?? '';
-    if (!sourceIp) {
-      return [{ type: 'output', outputLines: [this.getSshDialect().unreachable(host, port)] }];
-    }
-    // Matches the exec-mode client's own default (runOutboundSshClient) —
-    // real IOS/VRP `ssh host` with no `-l`/`user@` defaults to 'admin'.
-    const asksUsername = parsed.user === null && trimmed.split(/\s+/)[0] === 'stelnet';
-    let user = parsed.user ?? 'admin';
-
-    // Passing this.device as `from` restricts the search to what a real
-    // client can actually reach across the cable plant (docs/PRD-Link-
-    // State.md §2.1 P6) — a pulled cable stops the target from being
-    // found at all, not just from reporting a fake "interface down".
-    const dialect = this.getSshDialect();
-    const found = findHostByAddress(host, undefined, this.device);
-    if (!found) {
-      const outputLines = [IPAddress.isValid(host)
-        ? (sshUnreachableReason(this.device, host) === 'Network is unreachable'
-          ? dialect.unreachable(host, port)
-          : dialect.timedOut(host, port))
-        : dialect.unresolved(host, port)];
-      return [{ type: 'output', outputLines }];
-    }
-    if (found.poweredOff || found.interfaceDown) {
-      return [{ type: 'output', outputLines: [dialect.timedOut(host, port)] }];
-    }
-
-    type RemoteSurface = {
-      isSshActive?: () => boolean;
-      sshdAcceptsLogin?: (u: string) => { ok: boolean; reason?: string };
-      recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
-      getSshHost?: () => {
-        isSshActive?: () => boolean;
-        acceptsLogin?: (u: string) => { ok: boolean; reason?: string };
-        evaluate?: (req: unknown) => { outcome: string };
-      };
-    };
-    const remoteDevice = found.device;
-    const remote = remoteDevice as unknown as RemoteSurface;
-    const declared = typeof remote.isSshActive === 'function'
-      ? remote.isSshActive()
-      : remote.getSshHost?.()?.isSshActive?.();
-    if (declared === false) {
-      remote.recordSshLogin?.(user, sourceIp, localHostname, false);
-      return [{ type: 'output', outputLines: [dialect.refused(host, port)] }];
-    }
-    if (declared === undefined) {
-      const wire = wireReachOutcome(this.device, found.ip, port);
-      if (wire !== 'open') {
-        return [{
-          type: 'output',
-          outputLines: [sshWireFailureLine(dialect, wire, host, port)],
-        }];
+  private openRemoteShell(
+    session: SshSession, channel: ISshShellChannel,
+    user: string, typedHost: string, address: string, quiet: boolean,
+  ): void {
+    if (!quiet) {
+      const greeting = (channel as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
+      for (const greetingLine of greeting.replace(/\n+$/, '').split('\n')) {
+        if (greetingLine.length > 0) this.addLine(greetingLine);
       }
     }
-
-    const gate = asksUsername
-      ? { ok: true }
-      : remote.sshdAcceptsLogin?.(user) ?? remote.getSshHost?.()?.acceptsLogin?.(user) ?? { ok: true };
-    if (!gate.ok) {
-      remote.recordSshLogin?.(user, sourceIp, localHostname, false);
-      return [{ type: 'output', outputLines: [`${user}@${host}: Permission denied (publickey,password).`] }];
-    }
-
-    let attempts = 0;
-    const usernameSteps: InteractiveStep[] = asksUsername ? [{
-      type: 'text',
-      prompt: 'Please input the username:',
-      storeAs: 'cli_ssh_user',
-      validation: (value: string) => {
-        if (value.trim() === '') return { valid: false, errorMessage: '' };
-        user = value.trim();
-        return { valid: true };
-      },
-    }] : [];
-    return [
-      ...usernameSteps,
-      {
-        type: 'password',
-        prompt: asksUsername ? 'Enter password:' : `${user}@${host}'s password: `,
-        mask: 'hidden',
-        storeAs: 'cli_ssh_password',
-        validation: (pwd: string) => {
-          const ok = this.verifySshCredentials(remoteDevice, user, host, port, sourceIp, localHostname, pwd);
-          if (ok) return { valid: true };
-          attempts++;
-          remote.recordSshLogin?.(user, sourceIp, localHostname, false);
-          if (attempts >= 3) {
-            return { valid: false, maxRetries: 2, errorMessage: `${user}@${host}: Permission denied (publickey,password).` };
-          }
-          return { valid: false, maxRetries: 2, errorMessage: 'Permission denied, please try again.' };
-        },
-      },
-      {
-        type: 'execute',
-        action: async (context) => {
-          const password = context.values.get('cli_ssh_password') ?? '';
-          // Credentials are already known-good (the password step's own
-          // validation just checked them) — open the REAL wire connection
-          // they belong to so the remote sees a genuine TCP+SSH session
-          // (auth.log, tcpdump) instead of nothing at all, then hand the
-          // interactive experience to the existing in-memory child
-          // session, since the child-session machinery below (tab
-          // completion, nested-ssh, foreground streaming) isn't yet
-          // ported onto the wire shell channel for every vendor.
-          //
-          // Two things this must NOT do, both because a single `ssh` is
-          // a single login and the remote's log is read by the learner:
-          // ask for a shell channel it will never type into (the server
-          // would open a login session and hang up the shell it spawned
-          // a moment later), or close the connection before the user
-          // logs out. So: connection only, held for the child's life.
-          const outcome = await openWireSshConnection({
-            device: this.device,
-            localUser: user,
-            user, host, port,
-            io: silentConnectIo(),
-            password,
-            // 'accept-new' — not 'no' — so a first-seen host key is
-            // actually recorded (NoVerificationStrategy accepts silently
-            // but never saves).
-            strict: 'accept-new',
-          });
-          const wire = outcome.kind === 'connected' ? outcome.session : null;
-
-          const child = createSessionForDevice(remoteDevice, `${this.id}>ssh`);
-          if (!child) { wire?.disconnect(); return; }
-          if (wire) child.registerTearDown(() => wire.disconnect());
-          const clientPort = 50_000 + (user.length * 7 % 10_000);
-          const serverIp = firstConfiguredIp(remoteDevice) ?? host;
-          this.adoptRemoteChild(child, user, host, {
-            SSH_CONNECTION: `${sourceIp} ${clientPort} ${serverIp} ${port}`,
-            SSH_CLIENT: `${sourceIp} ${clientPort} ${port}`,
-          });
-        },
-      },
-    ];
+    const opening = (channel as { initialPrompt?: () => string | null }).initialPrompt?.() ?? null;
+    const promptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? typedHost;
+    this.remoteSubShell = new SshInteractiveSubShell(
+      session, channel, user, typedHost, `/home/${user}`,
+      () => session.disconnect(),
+      promptHost,
+      establishedSessionLiveness(session, this.device as Equipment, address),
+      (footer) => { this.addLine(footer); this.remoteSubShell = null; this.updatePrompt(); },
+      (line) => this.addLine(line),
+    );
+    this.notify();
   }
 
   /**
@@ -807,34 +701,27 @@ export abstract class CLITerminalSession extends TerminalSession {
     });
     if (!sub) { this.notify(); return; }
 
-    this.telnetSubShell = sub;
+    this.remoteSubShell = sub;
     const opening = await sub.begin();
     for (const line of opening.output) this.addLine(line);
-    if (opening.exit) this.telnetSubShell = null;
+    if (opening.exit) this.remoteSubShell = null;
     this.notify();
   }
 
-  private async runTelnetLine(line: string): Promise<void> {
-    const sub = this.telnetSubShell;
+  private async runRemoteLine(line: string): Promise<void> {
+    const sub = this.remoteSubShell;
     if (!sub) return;
-    const result = await sub.processLine(line);
-    for (const out of result.output) this.addLine(out);
-    if (result.exit) { sub.dispose(); this.telnetSubShell = null; }
+    let result = await sub.processLine(line, (text) => this.addLine(text));
+    for (;;) {
+      for (const out of result.output) this.addLine(out);
+      if (result.exit) { sub.dispose(); this.remoteSubShell = null; break; }
+      if (result.pendingInput === undefined || sub.handleInput === undefined) break;
+      const io = this.createSshTerminalIO();
+      const answer = await io.readInput(result.pendingInput.promptText, result.pendingInput.kind === 'password');
+      this.pendingSshIO = null;
+      result = await sub.handleInput(answer);
+    }
     this.notify();
-  }
-
-  /**
-   * Validate <user, password> against whatever credential store the
-   * remote vendor exposes — direct `checkPassword` for Linux/Windows
-   * hosts, or the SSH host's AAA evaluator for routers/switches.
-   */
-  private verifySshCredentials(
-    device: Equipment, user: string, host: string, port: number,
-    sourceIp: string, sourceHostname: string, password: string,
-  ): boolean {
-    return verifyRemoteCredentials(device, {
-      user, password, host, port, sourceIp, sourceHostname,
-    });
   }
 
   /**
@@ -854,7 +741,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(reverse: boolean = false): void {
-    if (this.telnetSubShell !== null) return;
+    if (this.remoteSubShell !== null) return;
     const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
     const out = this.cliCompletion.handleTab(this.input, source, reverse);
     if (!out.changed) return;
@@ -873,6 +760,12 @@ export abstract class CLITerminalSession extends TerminalSession {
     // Input is NOT cleared — user continues typing
   }
 
+  private async showRemoteInlineHelp(remote: ISubShell, currentInput: string): Promise<void> {
+    this.addLine(`${remote.getPrompt()}${currentInput}?`);
+    for (const helpLine of await remote.inlineHelpAsync?.(currentInput) ?? []) this.addLine(helpLine);
+    this.notify();
+  }
+
   protected resolveCliHelp(currentInput: string): string {
     return this.cliDevice.cliHelp(currentInput);
   }
@@ -882,7 +775,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected override computeGhostSuggestion(): string | null {
-    if (this.isBooting || this.pagerLines !== null || this.telnetSubShell !== null) return null;
+    if (this.isBooting || this.pagerLines !== null || this.remoteSubShell !== null) return null;
     const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
     return ghostRemainder(this.input, source);
   }

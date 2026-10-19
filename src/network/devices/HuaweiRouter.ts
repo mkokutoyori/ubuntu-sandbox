@@ -7,6 +7,7 @@
  *   - Boot sequence: Huawei VRP bootstrap
  */
 
+import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
 import { SSH_HUAWEI_VRP_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
@@ -43,6 +44,7 @@ import { RadiusTcpClient, RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { SnmpAgent } from '../snmp/SnmpAgent';
+import { ntpV4MibRows } from '../snmp/mibs/NtpV4Mib';
 import { projectSnmpServiceOntoAgent } from '../snmp/snmpProjection';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
@@ -51,7 +53,7 @@ import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
-import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
+import type { SshServerConfig, SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import type { AccountServiceType } from './router/aaa/NetworkOsAccount';
 import type { EthernetFrame, IPv4Packet, UDPPacket, IPAddress } from '../core/types';
 import { IP_PROTO_TCP } from '../core/types';
@@ -59,6 +61,7 @@ import { dispatchControlPlaneIpv4 } from './router/controlPlaneIpv4';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const HUAWEI_UDP_OWNERS: ReadonlyMap<number, string> = new Map([
   [UDP_PORT_NTP, 'ntp'],
@@ -149,6 +152,7 @@ export class HuaweiRouter extends Router {
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
     this.radiusAccountingClient = new RadiusAccountingClient(hostBase, () => this.getBus());
+    this.radiusAccountingClient.useCounters(this.radiusClient.counters);
     this.coaListener = new CoaListener(hostBase, () => this.getBus());
     this.coaListener.setSessionHandler(this.defaultCoaSessionHandler());
     this.coaClient = new CoaClient(hostBase, () => this.getBus());
@@ -173,6 +177,9 @@ export class HuaweiRouter extends Router {
       this.tacacsClient, this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.snmpAgent.registerSubtree(() => ntpV4MibRows(this.ntpAgent, {
+      softwareName: 'VRP NTP', softwareVersion: 'Huawei Versatile Routing Platform', vendor: 'Huawei Technologies Co., Ltd.', systemType: 'Huawei VRP',
+    }));
     projectSnmpServiceOntoAgent(this.getSnmpService(), this.snmpAgent);
   }
 
@@ -339,6 +346,18 @@ export class HuaweiRouter extends Router {
   }
   protected override factoryAccountServiceTypes(): AccountServiceType[] { return ['ssh']; }
 
+  sshClientProfile(): SshClientProfile | null {
+    const algorithms = this.getManagementService().sshClientAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0
+      ? null
+      : { identification: SSH_HUAWEI_VRP_IDENTIFICATION, extInfo: true, algorithms };
+  }
+
+  protected override sshTransportPolicy(): SshTransportPolicy {
+    const algorithms = this.getManagementService().sshServerAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
+  }
+
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return this.getManagementService().sshServerLimits();
   }
@@ -493,13 +512,13 @@ export class HuaweiRouter extends Router {
           const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
           const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
           const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
-          return `${(i + 1).toString().padEnd(6)} 2    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+          return `${padToWidth((i + 1).toString(), 6)} 2    ${h}:${m}:${sec}  ${padToWidth(s.user, 10)} ${s.fromIp}`;
         });
       return { output: `${[header, ...rows].join('\n')}\n`, exitCode: 0 };
     }
     if (/^display\s+local-user\s*$/i.test(cmd)) {
       const users = this._listLocalUsers();
-      return { output: `User-name              State   Type   Privilege\n${users.map(u => `${u.name.padEnd(22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
+      return { output: `User-name              State   Type   Privilege\n${users.map(u => `${padToWidth(u.name, 22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
     }
     if (/^display\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
       return { output: `${displayInterfaceBrief(this)}\n`, exitCode: 0 };

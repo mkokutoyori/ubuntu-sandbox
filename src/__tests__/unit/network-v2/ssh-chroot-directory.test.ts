@@ -62,7 +62,7 @@ describe('sshd_config — top-level ChrootDirectory + ForceCommand parsing', () 
     vfs.mkdirp('/srv/jail', 0o755, 0, 0);
     vfs.writeFile('/srv/jail/inside.txt', 'jailed', 0, 0, 0o022);
     vfs.writeFile('/etc/secret.txt', 'leaked', 0, 0, 0o022);
-    await reload(srv, 'ChrootDirectory /srv/jail\nPasswordAuthentication yes\n');
+    await reload(srv, 'ChrootDirectory /srv/jail\nPasswordAuthentication yes\nSubsystem sftp internal-sftp\n');
 
     const out = await pc.executeCommand("sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nls /\nbye\nEOF");
     expect(out).toMatch(/inside\.txt/);

@@ -1,48 +1,110 @@
-import { agentKeyOf, type SshAgent, type SshAgentKeyReader } from './SshAgent';
+import { agentKeyOf, type SshAgentKeyReader } from './SshAgent';
+import { callAgent, type AgentCall, type AgentPort } from './agent/AgentService';
+import type { AgentIdentityEntry } from './agent/AgentWire';
 import type { SshKeygenOutcome } from './SshKeygenCommand';
 import type { OpenSshRelease } from './OpenSshRelease';
 import { OPENSSH_DEFAULT_IDENTITY_FILES } from './SshConnectOptions';
 import { unprotectedPrivateKeyWarning } from './PrivateKeyPermissions';
 import {
-  isFingerprintHash, keygenBlobDigest, keygenKeyFacts, sshPublicKeyFromBlob,
+  isFingerprintHash, keygenBlobDigest, keygenKeyFacts, keygenLoadPrivate, keygenSerializePrivate, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { bsdGetoptDiagnostic, shortOptions } from '@/network/devices/linux/commands/Getopt';
-import { base64ToBytes } from '@/crypto/encoding';
+import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 
 export interface SshAgentHost {
-  readonly agent: SshAgent;
+  readonly agent: AgentPort | undefined;
+  readonly agentUnavailable: string;
   readonly reader: SshAgentKeyReader;
   readonly homeDir: string;
-  readonly authSocket: string;
   readonly release: OpenSshRelease;
-  agentUnreachable(): string | null;
   privateKeyMode(path: string): number | null;
-  setEnvironment(name: string, value: string): void;
+  typedLine(): string | null;
 }
 
-const AGENT_PID = 1;
+export interface SshAgentLauncher {
+  readonly release: OpenSshRelease;
+  environment(name: string): string | undefined;
+  start(request: { readonly lifetime: number | null; readonly socket: string | null }): { readonly pid: number; readonly socket: string } | null;
+  kill(pid: number): boolean;
+  runWith(command: string[], agent: { readonly pid: number; readonly socket: string }): Promise<SshKeygenOutcome>;
+}
 
-export function runSshAgentCommand(
+const AGENT_USAGE = [
+  'usage: ssh-agent [-c | -s] [-Dd] [-a bind_address] [-E fingerprint_hash]',
+  '                 [-P allowed_providers] [-t life]',
+  '       ssh-agent [-a bind_address] [-E fingerprint_hash] [-P allowed_providers]',
+  '                 [-t life] command [arg ...]',
+  '       ssh-agent [-c | -s] -k',
+].join('\n');
+
+const AGENT_OPTSTRING = '+cDdksE:a:P:t:';
+
+function lifetimeSeconds(text: string): number | null {
+  const match = /^(\d+)([smhdw]?)$/i.exec(text);
+  if (match === null) return null;
+  const unit = { '': 1, s: 1, m: 60, h: 3600, d: 86400, w: 604800 }[match[2].toLowerCase() as '' | 's' | 'm' | 'h' | 'd' | 'w'];
+  return Number(match[1]) * unit;
+}
+
+export async function runSshAgentCommand(
   args: readonly string[],
-  host: SshAgentHost,
-): SshKeygenOutcome {
-  if (args.includes('-k')) {
-    host.agent.removeAll();
-    return { output: `echo Agent pid ${AGENT_PID} killed;`, exitCode: 0 };
+  host: SshAgentLauncher,
+): Promise<SshKeygenOutcome> {
+  let csh: boolean | null = null;
+  let kill = false;
+  let lifetime: number | null = null;
+  let socket: string | null = null;
+  const operands: string[] = [];
+  for (const option of shortOptions(args, AGENT_OPTSTRING)) {
+    if (option.kind === 'operand') {
+      operands.push(option.value);
+      continue;
+    }
+    if (option.kind === 'invalid' || option.kind === 'missing-argument') {
+      return { output: `${bsdGetoptDiagnostic(option)}\n${AGENT_USAGE}`, exitCode: 1 };
+    }
+    if (option.kind !== 'option') continue;
+    switch (option.letter) {
+      case 'c': csh = true; break;
+      case 's': csh = false; break;
+      case 'k': kill = true; break;
+      case 'a': socket = option.argument ?? null; break;
+      case 'E':
+        if (!isFingerprintHash(option.argument ?? '')) {
+          return { output: `Invalid hash algorithm "${option.argument ?? ''}"`, exitCode: 1 };
+        }
+        break;
+      case 't':
+        lifetime = lifetimeSeconds(option.argument ?? '');
+        if (lifetime === null) return { output: `Invalid lifetime\n${AGENT_USAGE}`, exitCode: 1 };
+        break;
+    }
   }
-  const lines = args.includes('-c')
-    ? [
-        `setenv SSH_AUTH_SOCK ${host.authSocket};`,
-        `setenv SSH_AGENT_PID ${AGENT_PID};`,
-        `echo Agent pid ${AGENT_PID};`,
-      ]
-    : [
-        `SSH_AUTH_SOCK=${host.authSocket}; export SSH_AUTH_SOCK;`,
-        `SSH_AGENT_PID=${AGENT_PID}; export SSH_AGENT_PID;`,
-        `echo Agent pid ${AGENT_PID};`,
-      ];
-  host.setEnvironment('SSH_AUTH_SOCK', host.authSocket);
-  host.setEnvironment('SSH_AGENT_PID', String(AGENT_PID));
+  const cshSyntax = csh ?? /csh$/.test(host.environment('SHELL') ?? '');
+  if (kill) {
+    const pid = host.environment('SSH_AGENT_PID');
+    if (pid === undefined || pid === '') return { output: 'SSH_AGENT_PID not set, cannot kill agent', exitCode: 1 };
+    if (!/^\d+$/.test(pid)) return { output: `SSH_AGENT_PID="${pid}", which is not a good PID: Invalid argument`, exitCode: 1 };
+    if (!host.kill(Number(pid))) return { output: 'kill: No such process', exitCode: 1 };
+    return {
+      output: [
+        cshSyntax ? 'unsetenv SSH_AUTH_SOCK;' : 'unset SSH_AUTH_SOCK;',
+        cshSyntax ? 'unsetenv SSH_AGENT_PID;' : 'unset SSH_AGENT_PID;',
+        `echo Agent pid ${pid} killed;`,
+      ].join('\n'),
+      exitCode: 0,
+    };
+  }
+  const started = host.start({ lifetime, socket });
+  if (started === null) return { output: `bind: ${socket ?? ''}: Address already in use`, exitCode: 1 };
+  if (operands.length > 0) {
+    const result = await host.runWith(operands, started);
+    host.kill(started.pid);
+    return result;
+  }
+  const lines = cshSyntax
+    ? [`setenv SSH_AUTH_SOCK ${started.socket};`, `setenv SSH_AGENT_PID ${started.pid};`, `echo Agent pid ${started.pid};`]
+    : [`SSH_AUTH_SOCK=${started.socket}; export SSH_AUTH_SOCK;`, `SSH_AGENT_PID=${started.pid}; export SSH_AGENT_PID;`, `echo Agent pid ${started.pid};`];
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
@@ -56,10 +118,7 @@ const UNSIMULATED_ADD_OPTIONS: Readonly<Record<string, string>> = {
   H: 'destination constraints',
   M: 'XMSS keys',
   m: 'XMSS keys',
-  t: 'key lifetimes',
   T: 'agent signature tests',
-  x: 'agent locks',
-  X: 'agent locks',
 };
 
 interface PublicKeyOnDisk {
@@ -89,7 +148,11 @@ function loadPublic(path: string, host: SshAgentHost): PublicKeyOnDisk | null {
   return fromPrivate === null ? null : { blob: fromPrivate.blob, label: fromPrivate.algorithm, comment: '(null)' };
 }
 
-function addFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): boolean {
+const PASSPHRASE_TRIES = 3;
+
+function* addFile(
+  path: string, host: SshAgentHost, quiet: boolean, lifetime: number | undefined, lines: string[],
+): AgentProgram<boolean> {
   const material = host.reader.readFile(path);
   if (material === null) {
     lines.push(`${path}: No such file or directory`);
@@ -101,23 +164,41 @@ function addFile(path: string, host: SshAgentHost, quiet: boolean, lines: string
     lines.push(...warning);
     return false;
   }
-  const key = agentKeyOf(path, material);
+  let loaded = keygenLoadPrivate(material, '');
+  for (let attempt = 0; loaded.kind === 'encrypted' || loaded.kind === 'wrong-passphrase'; attempt++) {
+    if (attempt === PASSPHRASE_TRIES) return false;
+    lines.push(attempt === 0 ? `Enter passphrase for ${path}: ` : `Bad passphrase, try again for ${path}: `);
+    const typed = host.typedLine();
+    if (typed === null || typed === '') return false;
+    loaded = keygenLoadPrivate(material, typed);
+  }
+  if (loaded.kind !== 'key') {
+    lines.push(loaded.kind === 'unsupported-cipher'
+      ? `Error loading key "${path}": unknown or unsupported key cipher`
+      : `Error loading key "${path}": invalid format`);
+    return false;
+  }
+  const key = agentKeyOf(path, keygenSerializePrivate(loaded.key, undefined));
   if (key === null) {
     lines.push(`Error loading key "${path}": invalid format`);
     return false;
   }
-  host.agent.install(key);
+  if (!(yield { op: 'add', key, ...(lifetime === undefined ? {} : { lifetime }) })) {
+    lines.push(`Could not add identity "${path}": agent refused operation`);
+    return false;
+  }
   if (!quiet) lines.push(`Identity added: ${path} (${key.comment})`);
+  if (lifetime !== undefined && !quiet) lines.push(`Lifetime set to ${lifetime} seconds`);
   return true;
 }
 
-function deleteFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): boolean {
+function* deleteFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): AgentProgram<boolean> {
   const key = loadPublic(path, host);
   if (key === null) {
     lines.push(`Bad key file ${path}: No such file or directory`);
     return false;
   }
-  if (!host.agent.removeKey(key.blob)) {
+  if (!(yield { op: 'remove', blob: base64ToBytes(key.blob) })) {
     lines.push(`Could not remove identity "${path}": agent refused operation`);
     return false;
   }
@@ -125,23 +206,45 @@ function deleteFile(path: string, host: SshAgentHost, quiet: boolean, lines: str
   return true;
 }
 
-function listIdentities(host: SshAgentHost, listing: string, hash: string): SshKeygenOutcome {
-  const keys = host.agent.list();
-  if (keys.length === 0) return { output: 'The agent has no identities.', exitCode: 1 };
-  const lines = keys.map(k => (listing === 'l'
-    ? `${k.bits} ${keygenBlobDigest(k.blob, hash)} ${k.comment} (${k.algorithm})`
-    : `${k.publicKey} ${k.comment}`));
+function* lockAgent(action: 'lock' | 'unlock', host: SshAgentHost): AgentProgram<SshKeygenOutcome> {
+  const lines = ['Enter lock password: '];
+  const password = host.typedLine();
+  if (password === null) return { output: lines.join('\n'), exitCode: 1 };
+  if (action === 'lock') {
+    lines.push('Again: ');
+    if (host.typedLine() !== password) {
+      lines.push('Passwords do not match.');
+      return { output: lines.join('\n'), exitCode: 1 };
+    }
+  }
+  const done = yield { op: action, password };
+  lines.push(done ? (action === 'lock' ? 'Agent locked.' : 'Agent unlocked.') : (action === 'lock' ? 'Failed to lock agent.' : 'Failed to unlock agent.'));
+  return { output: lines.join('\n'), exitCode: done ? 0 : 1 };
+}
+
+function* listIdentities(listing: string, hash: string): AgentProgram<SshKeygenOutcome> {
+  const entries = (yield { op: 'identities' }) as readonly AgentIdentityEntry[];
+  if (entries.length === 0) return { output: 'The agent has no identities.', exitCode: 1 };
+  const lines = entries.map((entry) => {
+    const blob = bytesToBase64(entry.blob);
+    const algorithm = sshPublicKeyFromBlob(entry.blob)?.algorithm ?? '';
+    const facts = keygenKeyFacts(`${algorithm} ${blob}`);
+    return listing === 'l'
+      ? `${facts.bits} ${keygenBlobDigest(blob, hash)} ${entry.comment} (${facts.label})`
+      : `${algorithm} ${blob} ${entry.comment}`;
+  });
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-export function runSshAddCommand(
+function* sshAddProgram(
   args: readonly string[],
   host: SshAgentHost,
-): SshKeygenOutcome {
-  const unreachable = host.agentUnreachable();
-  if (unreachable !== null) return { output: unreachable, exitCode: 2 };
+): AgentProgram<SshKeygenOutcome> {
+  if (host.agent === undefined) return { output: host.agentUnavailable, exitCode: 2 };
   let deleting = false;
   let deleteAll = false;
+  let lock: 'lock' | 'unlock' | null = null;
+  let lifetime: number | undefined;
   let quiet = false;
   let listing: string | null = null;
   let hash = 'sha256';
@@ -171,15 +274,24 @@ export function runSshAddCommand(
         }
         hash = option.argument ?? 'sha256';
         break;
+      case 't': {
+        const seconds = lifetimeSeconds(option.argument ?? '');
+        if (seconds === null || seconds === 0) return { output: `Invalid lifetime\n${host.release.addUsage}`, exitCode: 1 };
+        lifetime = seconds;
+        break;
+      }
+      case 'x': lock = 'lock'; break;
+      case 'X': lock = 'unlock'; break;
       case 'd': deleting = true; break;
       case 'D': deleteAll = true; break;
       case 'q': quiet = true; break;
     }
   }
   if (listing !== null && deleteAll) return { output: 'Invalid combination of actions', exitCode: 255 };
-  if (listing !== null) return listIdentities(host, listing, hash);
+  if (lock !== null) return yield* lockAgent(lock, host);
+  if (listing !== null) return yield* listIdentities(listing, hash);
   if (deleteAll) {
-    host.agent.removeAll();
+    if (!(yield { op: 'removeAll' })) return { output: 'Failed to remove all identities.', exitCode: 1 };
     return { output: quiet ? '' : 'All identities removed.', exitCode: 0 };
   }
   const defaults = files.length === 0;
@@ -191,8 +303,20 @@ export function runSshAddCommand(
   const lines: string[] = [];
   let failed = defaults && targets.length === 0;
   for (const path of targets) {
-    const done = deleting ? deleteFile(path, host, quiet, lines) : addFile(path, host, quiet, lines);
+    const done = deleting ? yield* deleteFile(path, host, quiet, lines) : yield* addFile(path, host, quiet, lifetime, lines);
     if (!done) failed = true;
   }
   return { output: lines.join('\n'), exitCode: failed ? 1 : 0 };
+}
+
+type AgentProgram<T> = Generator<AgentCall, T, unknown>;
+
+export async function runSshAddCommand(
+  args: readonly string[],
+  host: SshAgentHost,
+): Promise<SshKeygenOutcome> {
+  const program = sshAddProgram(args, host);
+  let step = program.next();
+  while (!step.done) step = program.next(await callAgent(host.agent as AgentPort, step.value as AgentCall));
+  return step.value as SshKeygenOutcome;
 }

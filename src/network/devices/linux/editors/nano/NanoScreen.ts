@@ -3,6 +3,7 @@ import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
 import { menuLayout, type MenuOptions, type NanoMenuName } from './NanoMenus';
 import type { NanoWindow, Position } from './NanoWindow';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type TitleState = 'View' | 'Modified' | 'Restricted' | '';
 
@@ -140,7 +141,7 @@ export function titleRow(cols: number, name: string, state: TitleState, branding
 }
 
 function numberLabel(line: number, width: number): string {
-  return String(line + 1).padStart(width);
+  return padToWidth(String(line + 1), width, 'right');
 }
 
 function selectionBounds(input: NanoScreenInput): { top: Position; bottom: Position } | null {
@@ -326,7 +327,7 @@ export function minibarRow(cols: number, info: MinibarInfo, tabsize: number): Sc
   if (info.showPosition && namewidth + tallywidth + location.length + 32 < cols) canvas.put(cols - 27 - location.length, location);
   if (info.showPosition && namewidth + tallywidth + 28 < cols) canvas.put(cols - 23, info.hex);
   if (info.stateLetters !== null && namewidth + tallywidth + 14 + 2 * padding < cols) canvas.put(cols - 11 - padding, info.stateLetters);
-  if (namewidth + 6 < cols) canvas.put(cols - 4 - padding, `${String(info.percent).padStart(3)}%`);
+  if (namewidth + 6 < cols) canvas.put(cols - 4 - padding, `${padToWidth(String(info.percent), 3, 'right')}%`);
   canvas.mark(0, cols, 'reverse');
   return canvas.fullRow();
 }

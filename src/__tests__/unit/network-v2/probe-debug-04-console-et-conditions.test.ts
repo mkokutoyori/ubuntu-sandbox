@@ -4,7 +4,7 @@
  * Scénarios couverts :
  *   1  la saisie en cours est réaffichée sous le flot de logs
  *   2  le flux de debug ne déclenche jamais le pager `--More--`
- *   3  `no logging on` coupe l'émission sans perdre les drapeaux
+ *   3  `no logging on` garde la console et coupe le tampon, sans perdre les drapeaux
  *   4  `debug condition vrf` restreint à une VRF
  *   5  changer le format d'horodatage s'applique dès la ligne suivante
  *   6  le tampon mémoire est un anneau : le vieux cède la place
@@ -159,7 +159,7 @@ describe('Scénario 2 — le flux de debug ignore le pager', () => {
 });
 
 describe('Scénario 3 — no logging on, l\'interrupteur général', () => {
-  it('coupe l\'émission mais conserve les drapeaux', async () => {
+  it('laisse la console audible et conserve les drapeaux', async () => {
     const { run, lignes, r } = await routeur();
     await run('debug ip icmp');
     await run('debug arp');
@@ -169,23 +169,41 @@ describe('Scénario 3 — no logging on, l\'interrupteur général', () => {
     for (const c of ['configure terminal', 'no logging on', 'end']) await run(c);
     r.getDebugService().emitLine('ip.icmp', 'ICMP: apres coupure');
 
-    expect(lignes.length, 'plus rien ne sort').toBe(1);
+    expect(lignes.length, 'la console reste audible').toBe(2);
     const etat = await run('show debug');
     expect(etat, 'mais l\'instrumentation reste armée').toContain('ICMP packet debugging is on');
     expect(etat).toContain('ARP');
+  }, LONG);
+
+  it('une session vty (terminal monitor) ne reçoit plus rien, la console si', async () => {
+    const { run, r } = await routeur();
+    await run('debug ip icmp');
+    const vty: string[] = [];
+    const consoleLines: string[] = [];
+    r.getDebugService().subscribe((l: string) => consoleLines.push(l), 'console');
+    r.getDebugService().subscribe((l: string) => vty.push(l), 'monitor');
+    r.getDebugService().emitLine('ip.icmp', 'ICMP: logging actif');
+    expect(vty.length).toBe(1);
+
+    for (const c of ['configure terminal', 'no logging on', 'end']) await run(c);
+    r.getDebugService().emitLine('ip.icmp', 'ICMP: logging coupe');
+    expect(vty.length).toBe(1);
+    expect(consoleLines.length).toBe(2);
   }, LONG);
 
   it('`logging on` rétablit l\'émission sans réactiver quoi que ce soit', async () => {
     const { run, lignes, r } = await routeur();
     await run('debug ip icmp');
     for (const c of ['configure terminal', 'no logging on', 'end']) await run(c);
-    r.getDebugService().emitLine('ip.icmp', 'ICMP: muet');
-    expect(lignes.length).toBe(0);
+    const tampon = (await run('show logging')).length;
+    r.getDebugService().emitLine('ip.icmp', 'ICMP: console seule');
+    expect(lignes.length).toBe(1);
+    expect((await run('show logging')).length, 'le tampon ne reçoit rien').toBe(tampon);
 
     for (const c of ['configure terminal', 'logging on', 'end']) await run(c);
     r.getDebugService().emitLine('ip.icmp', 'ICMP: de nouveau audible');
 
-    expect(lignes.length).toBe(1);
+    expect(lignes.length).toBe(2);
   }, LONG);
 });
 

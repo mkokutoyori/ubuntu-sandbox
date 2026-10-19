@@ -7,6 +7,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { ChannelAgentPort, type AgentPort } from '../agent/AgentService';
+import { AGENT_CHANNEL_TYPE, AGENT_FORWARDING_REQUEST } from '../agent/AgentWire';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import {
@@ -22,6 +24,8 @@ import { getDefaultScheduler } from '@/events/Scheduler';
 import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge, SshPeer } from '../auth/ISshAuthMethod';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
 import { SftpWireSession } from '../sftp/SftpWireSession';
+import { DEFAULT_SFTP_SERVER_OPTIONS } from '../sftp/server/SftpServerOptions';
+import { sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
 import { ScpServerSession, parseScpServerCommand, type ScpServerCommand } from '../scp/ScpServerSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
@@ -35,15 +39,17 @@ import {
 } from '../connection/ChannelPayloads';
 import { SSH_EXTENDED_DATA_STDERR, SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, SSH_OPEN_CONNECT_FAILED } from '../transport/SshMessageNumbers';
 import { signatureAlgorithmsFor, userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
+import { certificateAlgorithmOf, parseCertificateBlob, plainAlgorithmOf } from '../certificate/SshCertificate';
+import { certificateKeyEvidence, certificateOfMaterial } from './UserCertificateAdmission';
 import {
-  keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyFromBlob,
+  keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import {
   SshTransport, transportLink, type SshServerHostKey, type SshTransportConfig,
 } from '../transport/SshTransport';
 import type { SshHostKey } from '../SshHostKey';
-import type { ISshServerContext, SshTransportPolicy } from './ISshServerContext';
+import type { HostCertificateBinding, ISshServerContext, SshTransportPolicy } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import { SshShellSession } from './SshShellSession';
 import {
@@ -56,17 +62,34 @@ interface SessionChannelInfo {
   shellSession: SshShellSession | null;
   pty: PtyRequestPayload | null;
   readonly environment: Map<string, string>;
+  agent: AgentPort | null;
+  readonly stdin: Uint8Array[];
+}
+
+function decodeStdin(chunks: readonly Uint8Array[]): string {
+  const merged = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+  let at = 0;
+  for (const chunk of chunks) { merged.set(chunk, at); at += chunk.length; }
+  return new TextDecoder().decode(merged);
 }
 
 const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
 
-function preauthSlot(ctx: object): { value: number } {
-  let s = PREAUTH_COUNT.get(ctx);
-  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(ctx, s); }
+function preauthSlot(ctx: ISshServerContext): { value: number } {
+  const scope = ctx.connectionLimitScope ?? ctx;
+  let s = PREAUTH_COUNT.get(scope);
+  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(scope, s); }
   return s;
 }
 
 export class SshServerHandler {
+  private methodEnabled(user: string, clientIp: string, method: 'password' | 'publickey' | 'keyboard-interactive'): boolean {
+    const global = method === 'password' ? this.ctx.config.passwordAuthentication
+      : method === 'publickey' ? this.ctx.config.pubkeyAuthentication
+        : this.ctx.config.kbdInteractiveAuthentication;
+    return global && (this.ctx.authMethodEnabled?.(user, clientIp, method) ?? true);
+  }
+
 
   private readonly eventBus: ISshServerEventBus;
 
@@ -113,9 +136,6 @@ export class SshServerHandler {
       port: this.ctx.clientPort?.(clientIp),
       timestamp: simulationNowMs(),
     });
-    // Reactive guard: throttled IPs are dropped at connect time. The bus
-    // already carries the auth_throttled event, so the logger has written
-    // an entry; here we just refuse the handshake.
     if (this.ctx.isClientBlocked?.(clientIp)) {
       conn.close();
       this.eventBus.emit({
@@ -144,13 +164,48 @@ export class SshServerHandler {
     }).start();
   }
 
-  private serveSftp(channel: ConnectionChannel, user: SshUserContext): void {
+  private sftpPlanFor(
+    user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null,
+  ): SftpServicePlan {
+    if (this.ctx.sftpService !== undefined) return this.ctx.sftpService(user, clientIp, launch, keyOptions);
+    const named = launch.kind === 'subsystem' && launch.name === 'sftp';
+    if (!named || this.ctx.subsystemAdmitted?.('sftp', user) === false) return { kind: 'unavailable' };
+    return { kind: 'serve', program: 'sftp-server', options: DEFAULT_SFTP_SERVER_OPTIONS, diagnostics: [] };
+  }
+
+  private runSftpPlan(channel: ConnectionChannel, user: SshUserContext, clientIp: string, plan: SftpServicePlan): void {
+    if (plan.kind === 'serve') {
+      this.serveSftp(channel, user, clientIp, plan);
+      return;
+    }
+    if (plan.kind === 'exits') this.finishWith(channel, plan);
+    else if (plan.kind === 'runs') void plan.run().then((result) => this.finishWith(channel, result));
+  }
+
+  private finishWith(
+    channel: ConnectionChannel, result: { readonly stdout: string; readonly stderr: string; readonly exitCode: number },
+  ): void {
+    if (result.stderr !== '') channel.writeExtended(SSH_EXTENDED_DATA_STDERR, new TextEncoder().encode(result.stderr));
+    if (result.stdout !== '') channel.write(new TextEncoder().encode(result.stdout));
+    void channel.request('exit-status', encodeExitStatus(result.exitCode));
+    channel.eof();
+    channel.close();
+  }
+
+  private serveSftp(
+    channel: ConnectionChannel, user: SshUserContext, clientIp: string,
+    plan: Extract<SftpServicePlan, { kind: 'serve' }>,
+  ): void {
     const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(user), user);
+    const pid = 2000 + Math.floor(Math.random() * 8000);
     const sftp = new SftpWireSession({
-      vfs: fs, userCtx: user, rootPath: user.homeDirectory, accountNames: this.ctx.accountNames?.(),
+      vfs: fs, userCtx: user, rootPath: this.ctx.sftpSessionRoot?.(user) ?? user.homeDirectory,
+      accountNames: this.ctx.accountNames?.(), options: plan.options, clientAddress: clientIp,
+      log: (_level, text) => this.eventBus.emit({ kind: 'sftp_log', user: user.username, program: plan.program, pid, text }),
     });
     const openedAt = simulationNowMs();
     this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'sftp' });
+    sftp.begin();
     let pending = new Uint8Array(0);
     channel.onData((bytes) => {
       const merged = new Uint8Array(pending.length + bytes.length);
@@ -170,6 +225,7 @@ export class SshServerHandler {
     });
     channel.onEof(() => { channel.eof(); channel.close(); });
     channel.onClose(() => {
+      sftp.finish();
       this.eventBus.emit({
         kind: 'channel_closed', user: user.username, channelType: 'sftp', durationMs: simulationNowMs() - openedAt,
       });
@@ -180,7 +236,10 @@ export class SshServerHandler {
     const transport = new SshTransport(rawConn, {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
-      hostKeys: serverHostKeys(this.ctx.hostKey),
+      hostKeys: [
+        ...(this.ctx.hostCertificates?.() ?? []).map(certificateHostKey),
+        ...[this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
+      ],
       ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = transportLink(transport, rawConn);
@@ -381,22 +440,32 @@ export class SshServerHandler {
           return;
         }
         const channel = incoming.accept();
-        const info: SessionChannelInfo = { started: false, shellSession: null, pty: null, environment: new Map() };
+        const info: SessionChannelInfo = { started: false, shellSession: null, pty: null, environment: new Map(), agent: null, stdin: [] };
         sessionChannels.set(channel.localId, info);
+        channel.onData((bytes) => { if (!info.started) info.stdin.push(bytes); });
         channel.onClose(() => { sessionChannels.delete(channel.localId); });
         channel.onRequest((request) => {
           switch (request.name) {
             case 'env': {
               const variable = decodeEnvRequest(request.payload);
-              const accepted = variable !== null && /^(LANG|LC_[A-Z_]+)$/.test(variable.name);
+              const accepted = variable !== null
+                && (this.ctx.acceptsEnvironment?.(variable.name) ?? /^(LANG|LC_[A-Z_]+)$/.test(variable.name));
               if (accepted) info.environment.set(variable.name, variable.value);
               request.reply(accepted);
               return;
             }
+            case AGENT_FORWARDING_REQUEST: {
+              const permitted = info.started === false
+                && this.ctx.agentForwardingPermitted?.(user, clientIp, keyOptions) === true;
+              if (permitted) info.agent = new ChannelAgentPort(() => active.openChannel(AGENT_CHANNEL_TYPE));
+              request.reply(permitted);
+              return;
+            }
             case 'pty-req': {
               const pty = decodePtyRequest(request.payload);
-              if (pty !== null) info.pty = pty;
-              request.reply(pty !== null);
+              const permitted = pty !== null && this.ctx.ptyPermitted?.(user, clientIp, keyOptions) !== false;
+              if (permitted) info.pty = pty;
+              request.reply(permitted);
               return;
             }
             case 'exec': {
@@ -415,16 +484,39 @@ export class SshServerHandler {
                 channel.close();
                 return;
               }
-              const scpCommand = forced === null ? parseScpServerCommand(asked) : null;
+              const refusedShell = this.ctx.loginShellRefusal?.(user) ?? null;
+              if (refusedShell !== null) {
+                channel.write(refusedShell.output);
+                void channel.request('exit-status', encodeExitStatus(refusedShell.exitCode));
+                channel.eof();
+                channel.close();
+                return;
+              }
+              if (forced === null && sftpProgramOf(asked) === 'sftp-server') {
+                const plan = this.sftpPlanFor(user, clientIp, { kind: 'command', command: asked }, keyOptions);
+                if (plan.kind !== 'unavailable') {
+                  this.runSftpPlan(channel, user, clientIp, plan);
+                  return;
+                }
+              }
+              const scpCommand = forced === null ? parseScpServerCommand(asked, /windows/i.test(this.ctx.serverIdentification?.() ?? '')) : null;
               if (scpCommand !== null) {
                 this.serveScp(channel, user, scpCommand);
                 return;
               }
-              const command = forced === null ? asked : withOriginalCommand(forced, asked);
-              const shell = this.ctx.getShell(user, user.homeDirectory);
+              const command = forced === null ? asked : this.ctx.originalCommandLine?.(forced, asked) ?? withOriginalCommand(forced, asked);
+              const shell = this.ctx.getShell(user, user.homeDirectory, {
+                clientIp,
+                clientPort: this.ctx.clientPort?.(clientIp),
+                exec: { environment: info.environment, pty: info.pty, keyOptions },
+                ...(info.agent === null ? {} : { agent: info.agent }),
+              });
               const sessionStart = simulationNowMs();
               this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
-              void shell.execute(command).then((result) => {
+              const stdin = info.stdin.length === 0 ? undefined : decodeStdin(info.stdin);
+              void shell.execute(command, undefined, stdin).then((result) => {
+                const held = shell.takeSessionHold?.() ?? 0;
+                if (held > 0) this.ctx.holdSession?.(user, clientIp, held);
                 channel.write(endedLine(result.stdout));
                 channel.writeExtended(SSH_EXTENDED_DATA_STDERR, endedLine(result.stderr));
                 void channel.request('exit-status', encodeExitStatus(result.exitCode));
@@ -441,15 +533,16 @@ export class SshServerHandler {
               return;
             }
             case 'subsystem': {
-              const subsystem = decodeStringPayload(request.payload);
-              if (info.started || subsystem !== 'sftp'
-                || this.ctx.subsystemAdmitted?.('sftp', user) === false) {
+              const name = decodeStringPayload(request.payload);
+              const plan = info.started ? { kind: 'unavailable' } as SftpServicePlan
+                : this.sftpPlanFor(user, clientIp, { kind: 'subsystem', name }, keyOptions);
+              if (plan.kind === 'unavailable') {
                 request.reply(false);
                 return;
               }
               info.started = true;
               request.reply(true);
-              this.serveSftp(channel, user);
+              this.runSftpPlan(channel, user, clientIp, plan);
               return;
             }
             case 'shell': {
@@ -460,6 +553,14 @@ export class SshServerHandler {
               info.started = true;
               request.reply(true);
               const forcedShell = this.ctx.forcedCommand?.(user, clientIp, keyOptions) ?? null;
+              const refusedLogin = forcedShell === 'internal-sftp' ? null : this.ctx.loginShellRefusal?.(user) ?? null;
+              if (refusedLogin !== null) {
+                channel.write(refusedLogin.output);
+                void channel.request('exit-status', encodeExitStatus(refusedLogin.exitCode));
+                channel.eof();
+                channel.close();
+                return;
+              }
               if (forcedShell !== null) {
                 const runner = this.ctx.getShell(user, user.homeDirectory);
                 const forcedLine = forcedShell === 'internal-sftp'
@@ -477,6 +578,7 @@ export class SshServerHandler {
                 interactive: true,
                 clientIp,
                 clientPort: 50_000 + (user.username.length * 7 % 10_000),
+                ...(info.agent === null ? {} : { agent: info.agent }),
               });
               info.shellSession = new SshShellSession(channel, info.pty, {
                 shell,
@@ -534,7 +636,7 @@ export class SshServerHandler {
       }
       if (authIdentity === null) {
         authIdentity = { user: request.user, service: request.service };
-        const banner = this.ctx.getBanner?.() ?? null;
+        const banner = this.ctx.bannerFor?.(request.user, clientIp) ?? this.ctx.getBanner?.() ?? null;
         if (banner) transport.send(encodeUserauthBanner(banner));
       } else if (authIdentity.user !== request.user || authIdentity.service !== request.service) {
         transport.disconnect(SSH_DISCONNECT_PROTOCOL_ERROR,
@@ -544,7 +646,7 @@ export class SshServerHandler {
       }
       pendingInfoResponse?.(null);
       pendingInfoResponse = null;
-      const cap = this.ctx.config.maxAuthTries;
+      const cap = this.ctx.maxAuthTriesFor?.(request.user, clientIp) ?? this.ctx.config.maxAuthTries;
       authRequests += 1;
       const penaltyFree = authRequests === 1 && request.method === 'none';
       if (authFailures >= cap) {
@@ -578,10 +680,19 @@ export class SshServerHandler {
             endAuthentication();
             return;
           }
-          transport.send(encodeUserauthFailure(this.ctx.auth.getAvailableMethods(), false));
+          transport.send(encodeUserauthFailure(this.ctx.availableMethodsFor?.(request.user, clientIp) ?? this.ctx.auth.getAvailableMethods(), false));
         });
     });
 
+  }
+
+  private announcePolicyRefusal(user: string, clientIp: string): void {
+    const rootRefused = user === 'root' && !(this.ctx.rootMayLogIn?.('password') ?? this.ctx.config.permitRootLogin);
+    const reason = rootRefused ? 'PermitRootLogin' : this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
+    if (reason === null) return;
+    this.eventBus.emit({
+      kind: 'auth_policy_refused', user, ip: clientIp, reason, port: this.ctx.clientPort?.(clientIp),
+    });
   }
 
   private async handleAuth(
@@ -598,6 +709,7 @@ export class SshServerHandler {
     const user = (payload.user as string | undefined) ?? '';
     const peer: SshPeer = { ip: clientIp, port: this.ctx.clientPort?.(clientIp) };
     const credentialless = payload.method === 'none';
+    if (firstRequest) this.announcePolicyRefusal(user, clientIp);
     if (credentialless && this.ctx.buildUserContext(user) !== null
       && !(this.ctx.auth.acceptsWithoutCredential?.(user) ?? false)) return { ok: false };
     let password = (payload.password as string | undefined) ?? '';
@@ -640,6 +752,29 @@ export class SshServerHandler {
         method,
       });
       this.ctx.recordAuthFailure?.(user, clientIp, 'root login disabled');
+      return { ok: false };
+    }
+
+    const policyRefusal = this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
+    if (policyRefusal !== null) {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
+        user,
+        reason: 'user_not_allowed',
+        ip: clientIp,
+        method,
+      });
+      this.ctx.recordAuthFailure?.(user, clientIp, policyRefusal);
+      return { ok: false };
+    }
+
+    if (this.ctx.accountLocked?.(user)) {
+      this.eventBus.emit({
+        kind: 'auth_policy_refused', user, ip: clientIp, reason: 'account locked',
+        port: this.ctx.clientPort?.(clientIp),
+      });
+      this.ctx.recordAuthFailure?.(user, clientIp, 'account locked');
       return { ok: false };
     }
 
@@ -696,9 +831,9 @@ export class SshServerHandler {
     if (credentialless) {
       success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
     } else if (challenge && responses) {
-      success = challenge.verify(user, responses);
+      success = challenge.verifyAsync ? await challenge.verifyAsync(user, responses) : challenge.verify(user, responses);
     } else if (method === 'password') {
-      success = this.ctx.config.passwordAuthentication && (
+      success = this.methodEnabled(user, clientIp, 'password') && (
         this.ctx.auth.checkPasswordAsync
           ? await this.ctx.auth.checkPasswordAsync(user, password, peer)
           : this.ctx.auth.checkPassword(user, password)
@@ -710,10 +845,10 @@ export class SshServerHandler {
         const admitted = this.ctx.admittedKey(user, offered, { ip: clientIp });
         const rootForced = user !== 'root'
           || (this.ctx.rootMayLogIn?.('publickey', admitted?.options?.command !== undefined) ?? true);
-        keyAdmitted = this.ctx.config.pubkeyAuthentication && admitted !== null && rootForced;
+        keyAdmitted = this.methodEnabled(user, clientIp, 'publickey') && admitted !== null && rootForced;
         keyOptions = admitted?.options ?? null;
       } else {
-        keyAdmitted = this.ctx.config.pubkeyAuthentication && this.ctx.auth.checkPublicKey(user, offered);
+        keyAdmitted = this.methodEnabled(user, clientIp, 'publickey') && this.ctx.auth.checkPublicKey(user, offered);
       }
       const signature = payload.signature as string | undefined;
       if (signature === undefined && keyAdmitted) return { ok: false, pkOk: true };
@@ -722,6 +857,13 @@ export class SshServerHandler {
       authenticatedKey = offered;
     }
     if (!success) {
+      if (method === 'publickey' && payload.signature === undefined) {
+        this.eventBus.emit({
+          kind: 'auth_failure', port: this.ctx.clientPort?.(clientIp), user, reason: 'publickey_query', ip: clientIp, method,
+        });
+        this.ctx.recordAuthFailure?.(user, clientIp, 'publickey');
+        return { ok: false };
+      }
       this.eventBus.emit({
         kind: 'auth_failure',
         port: this.ctx.clientPort?.(clientIp),
@@ -774,6 +916,14 @@ function signatureProvesKey(
   if (sessionId === null) return false;
   try {
     const blob = base64ToBytes(publicKey);
+    const certificate = parseCertificateBlob(blob);
+    if (certificate !== null) {
+      const signed = signatureAlgorithmsFor(certificate.subject).map(certificateAlgorithmOf);
+      const plain = plainAlgorithmOf(algorithm);
+      if (plain === null || !signatureAlgorithmsFor(certificate.subject).includes(plain) || !signed.includes(algorithm)) return false;
+      return verifyUserauthSignature(
+        sshPublicKeyBlob(certificate.subject), plain, base64ToBytes(signature), userauthSignedData(sessionId, user, algorithm, blob));
+    }
     const key = sshPublicKeyFromBlob(blob);
     if (key === null || !signatureAlgorithmsFor(key).includes(algorithm)) return false;
     return verifyUserauthSignature(
@@ -783,7 +933,9 @@ function signatureProvesKey(
   }
 }
 
-function keyEvidence(publicKey: string): { keyType: string; keyFingerprint: string } | Record<string, never> {
+function keyEvidence(publicKey: string): ReturnType<typeof certificateKeyEvidence> | { keyType: string; keyFingerprint: string } | Record<string, never> {
+  const certificate = certificateOfMaterial(publicKey);
+  if (certificate !== null) return certificateKeyEvidence(certificate);
   const algorithm = (() => {
     try { return sshPublicKeyFromBlob(base64ToBytes(publicKey))?.algorithm ?? null; } catch { return null; }
   })();
@@ -820,8 +972,27 @@ function endedLine(text: string): string {
   return text === '' || text.endsWith('\n') ? text : `${text}\n`;
 }
 
+const HOST_KEY_SIGNATURES: Readonly<Record<string, readonly string[]>> = {
+  'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+};
+
+function certificateHostKey(binding: HostCertificateBinding): SshServerHostKey {
+  const { certificate, hostKey } = binding;
+  return {
+    algorithms: signatureAlgorithmsFor(certificate.subject).map(certificateAlgorithmOf),
+    load: () => {
+      const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+      return privateKey === null ? null : { publicKeyBlob: certificate.blob, privateKey };
+    },
+  };
+}
+
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {
-  const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
-  if (privateKey === null) return [];
-  return [{ publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey }];
+  return [{
+    algorithms: HOST_KEY_SIGNATURES[hostKey.algorithm] ?? [hostKey.algorithm],
+    load: () => {
+      const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+      return privateKey === null ? null : { publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey };
+    },
+  }];
 }

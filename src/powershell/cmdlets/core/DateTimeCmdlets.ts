@@ -17,6 +17,10 @@ import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { TimeZone } from '@/network/core/time/TimeZone';
+import {
+  INTERNATIONAL_KEY, WINDOWS_CULTURES, cultureRegistryValues, findCulture, regionalFormatsFrom,
+  type RegionalFormats, type WindowsCulture,
+} from '@/network/devices/windows/WindowsRegionalSettings';
 import { WINDOWS_TIME_ZONES as ZONES_WINDOWS, windowsStandardOffset, windowsZoneDisplayName, type WindowsTimeZone } from '@/network/core/time/WindowsTimeZones';
 import {
   observesDaylightSaving, standardOffsetMinutes,
@@ -100,7 +104,8 @@ export class GetDateCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const fmt = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
     const ufmt = ctx.named['uformat'] ? psValueToString(ctx.named['uformat']) : null;
-    const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
+    const piped = Array.isArray(ctx.pipeInput) ? ctx.pipeInput[0] : ctx.pipeInput;
+    const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? piped ?? null;
     const now = machineDate(ctx.providers);
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {
@@ -241,6 +246,63 @@ export class StartSleepCmdlet implements ICmdlet {
     if (millis != null) ms += Number(millis);
     if (seconds != null) ms += Number(seconds) * 1000;
     if (ms > 0) ctx.providers.jobs?.recordSleep(ms);
+    return null;
+  }
+}
+
+// ─── Get-Culture / Set-Culture ────────────────────────────────────────────
+
+function cultureObject(culture: WindowsCulture, formats: RegionalFormats): PSValue {
+  return {
+    Name: culture.name,
+    LCID: culture.lcid,
+    DisplayName: culture.displayName,
+    DateTimeFormat: { ShortDatePattern: formats.shortDate, LongTimePattern: formats.timeFormat },
+  } as unknown as PSValue;
+}
+
+function currentCulture(ctx: CmdletContext): { culture: WindowsCulture; formats: RegionalFormats } {
+  const values = ctx.providers.registry?.getItemPropertyValues?.(INTERNATIONAL_KEY) ?? null;
+  const name = typeof values?.LocaleName === 'string' ? values.LocaleName : WINDOWS_CULTURES[0].name;
+  return { culture: findCulture(name) ?? WINDOWS_CULTURES[0], formats: regionalFormatsFrom(values) };
+}
+
+export class GetCultureCmdlet implements ICmdlet {
+  readonly name = 'get-culture';
+  readonly aliases = [] as const;
+  readonly parameters = ['ListAvailable'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    if (ctx.named['listavailable'] !== undefined) {
+      return WINDOWS_CULTURES.map((culture) => cultureObject(culture, regionalFormatsFrom(
+        { sShortDate: culture.shortDate, sTimeFormat: culture.timeFormat }))) as unknown as PSValue;
+    }
+    const { culture, formats } = currentCulture(ctx);
+    return cultureObject(culture, formats);
+  }
+}
+
+export class SetCultureCmdlet implements ICmdlet {
+  readonly name = 'set-culture';
+  readonly aliases = [] as const;
+  readonly parameters = ['CultureInfo'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const requested = ctx.named['cultureinfo'] ?? ctx.positional[0];
+    if (requested === undefined || requested === null) {
+      throw new PSRuntimeError("Set-Culture: Cannot bind argument to parameter 'CultureInfo' because it is null.");
+    }
+    const asked = typeof requested === 'object' && 'Name' in (requested as object)
+      ? psValueToString((requested as Record<string, PSValue>).Name)
+      : psValueToString(requested);
+    const culture = findCulture(asked);
+    if (culture === undefined) {
+      throw new PSRuntimeError(`Set-Culture: Culture is not supported.\nParameter name: name\n${asked} is an invalid culture identifier.`);
+    }
+    const registry = ctx.providers.registry;
+    for (const [name, value] of Object.entries(cultureRegistryValues(culture))) {
+      registry?.setItemProperty(INTERNATIONAL_KEY, name, value);
+    }
     return null;
   }
 }

@@ -17,6 +17,7 @@ const SCP_USAGE = 'usage: scp [-346ABCOpqRrsTv] [-c cipher] [-D sftp_server_path
 export const scpCommand: LinuxCommand = {
   name: 'scp',
   needsNetworkContext: true,
+  opensWireSession: true,
   manSection: 1,
   usage: SCP_USAGE,
   help: 'Copy files between hosts over SSH.',

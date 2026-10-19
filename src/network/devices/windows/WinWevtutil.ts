@@ -17,10 +17,15 @@
  */
 
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
-import { parseEventXPath, levelOf, type XPathEvent } from './WinEventXPath';
+import { parseEventXPath, type XPathEvent } from './WinEventXPath';
+import { describeEvent } from './eventlog/EventDescriptor';
+import { renderEventXml, systemTime, xmlEscape } from './eventlog/EventXml';
+import { LOG_SIZE_STEP_BYTES, MIN_LOG_BYTES } from './PSEventLogProvider';
 
 /** Les verbes tenus, forme longue → forme courte. */
 const VERBS: Record<string, string> = {
@@ -72,13 +77,30 @@ Query options:
 
 Set-log options:
 
-/{e | enabled}:VALUE    Enable or disable a log.
-/{ms | maxsize}:VALUE   Maximum log size, in bytes.
-/{r | retention}:VALUE  Log retention mode.
+/{e | enabled}:VALUE        Enable or disable a log.
+/{i | isolation}:VALUE      Log isolation: system, application or custom.
+/{lfn | logfilename}:VALUE  Path of the log file.
+/{rt | retention}:VALUE     Log retention mode.
+/{ab | autobackup}:VALUE    Archive the log when it is full (needs retention).
+/{ms | maxsize}:VALUE       Maximum log size, in bytes (at least 1048576).
+/{l | level}:VALUE          Level filter of a log with a dedicated session.
+/{k | keywords}:VALUE       Keywords filter of a log with a dedicated session.
+/{ca | channelaccess}:VALUE Security descriptor (SDDL) of the channel.
+/{c | config}:VALUE         Read the log properties from a configuration file.
+
+Query options:
+
+/{bm | bookmark}:VALUE      Resume after the bookmark stored in this file.
+/{sbm | savebookmark}:VALUE Save a bookmark of this query in this file.
+/{e | element}:VALUE        Wrap the XML output in this root element.
 
 Export options:
 
-/{ow | overwrite}:VALUE Overwrite the export file if it exists.`;
+/{ow | overwrite}:VALUE Overwrite the export file if it exists.
+
+Clear options:
+
+/{bu | backup}:VALUE    Save the cleared events in this .evtx file.`;
 
 /** Les refus réels de `wevtutil`, au mot près. */
 const ERR = {
@@ -91,55 +113,87 @@ const ERR = {
 } as const;
 
 /**
- * Les options que ce `wevtutil` ne sait pas honorer, et qu'il refuse
- * plutôt que d'accepter en silence.
- *
- * `/r:` en particulier : l'exécution distante passe par RPC/DCOM, que
- * rien ne modélise ici. WinRM existe, mais ce n'est pas le même
- * transport, et s'en servir serait un raccourci qu'on présenterait pour
- * l'original. Attention à l'ambiguïté : `/r:` est *aussi* la rétention
- * de `sl`, d'où le filtrage par verbe.
+ * Les options d'exécution distante (`/r`, `/u`, `/p`, `/a`) passent par
+ * RPC/DCOM, que rien ne modélise ici : elles sont refusées plutôt
+ * qu'acceptées en silence. `/uni` ne change que l'encodage de la sortie,
+ * que ce simulateur ne distingue pas ; elle est lue et sans effet.
  */
 const REMOTE_OPTIONS = new Set(['r', 'remote', 'u', 'username', 'p', 'password', 'a', 'authentication']);
+
+type OptionKey =
+  | 'format' | 'enabled' | 'isolation' | 'logfilename' | 'retention' | 'autobackup' | 'maxsize'
+  | 'level' | 'keywords' | 'channelaccess' | 'config' | 'logfile' | 'structuredquery' | 'query'
+  | 'bookmark' | 'savebookmark' | 'reversedirection' | 'locale' | 'count' | 'element'
+  | 'overwrite' | 'backup' | 'unicode';
+
+const ALIASES: Record<OptionKey, readonly string[]> = {
+  format: ['f', 'format'], enabled: ['e', 'enabled'], isolation: ['i', 'isolation'],
+  logfilename: ['lfn', 'logfilename'], retention: ['rt', 'retention'], autobackup: ['ab', 'autobackup'],
+  maxsize: ['ms', 'maxsize'], level: ['l', 'level'], keywords: ['k', 'keywords'],
+  channelaccess: ['ca', 'channelaccess'], config: ['c', 'config'], logfile: ['lf', 'logfile'],
+  structuredquery: ['sq', 'structuredquery'], query: ['q', 'query'], bookmark: ['bm', 'bookmark'],
+  savebookmark: ['sbm', 'savebookmark'], reversedirection: ['rd', 'reversedirection'],
+  locale: ['l', 'locale'], count: ['c', 'count'], element: ['e', 'element'],
+  overwrite: ['ow', 'overwrite'], backup: ['bu', 'backup'], unicode: ['uni', 'unicode'],
+};
+
+const VERB_OPTIONS: Record<string, readonly OptionKey[]> = {
+  el: ['unicode'],
+  gl: ['format', 'unicode'],
+  sl: ['enabled', 'isolation', 'logfilename', 'retention', 'autobackup', 'maxsize', 'level', 'keywords',
+    'channelaccess', 'config', 'unicode'],
+  gli: ['logfile', 'unicode'],
+  qe: ['logfile', 'structuredquery', 'query', 'bookmark', 'savebookmark', 'reversedirection', 'format',
+    'locale', 'count', 'element', 'unicode'],
+  epl: ['logfile', 'structuredquery', 'query', 'overwrite', 'unicode'],
+  al: ['locale', 'unicode'],
+  cl: ['backup', 'unicode'],
+};
 
 interface ParsedCommand {
   verb: string;
   positional: string[];
-  options: Map<string, string>;
+  options: Map<OptionKey, string>;
+  unknown: string | null;
+  remote: string | null;
 }
 
 /**
  * L'analyseur unique. Chaque verbe lit ensuite un objet, pas un tableau
  * de chaînes — sans quoi ils re-découpent chacun à leur façon et
- * finissent par diverger, ce qui était le cas.
+ * finissent par diverger. Les noms d'options sont résolus PAR VERBE :
+ * `/e` est l'activation pour `sl` et l'élément racine pour `qe`.
  */
 export function parseWevtutilArgs(args: string[]): ParsedCommand {
   const [raw = '', ...rest] = args;
   const lower = raw.toLowerCase();
-  const verb = VERBS[lower] ?? (SHORT_VERBS.has(lower) ? lower : lower);
+  const verb = VERBS[lower] ?? lower;
+  const allowed = VERB_OPTIONS[verb] ?? [];
   const positional: string[] = [];
-  const options = new Map<string, string>();
+  const options = new Map<OptionKey, string>();
+  let unknown: string | null = null;
+  let remote: string | null = null;
   for (const a of rest) {
     if (!a.startsWith('/')) { positional.push(a); continue; }
     const body = a.slice(1);
     const colon = body.indexOf(':');
     const name = (colon < 0 ? body : body.slice(0, colon)).toLowerCase();
     const value = colon < 0 ? 'true' : body.slice(colon + 1).replace(/^"(.*)"$/, '$1');
-    options.set(name, value);
+    const key = allowed.find((candidate) => ALIASES[candidate].includes(name));
+    if (key !== undefined) { options.set(key, value); continue; }
+    if (REMOTE_OPTIONS.has(name)) remote ??= name;
+    else unknown ??= name;
   }
-  return { verb, positional, options };
+  return { verb, positional, options, unknown, remote };
 }
 
 const truthy = (v: string | undefined): boolean =>
   v !== undefined && v.toLowerCase() !== 'false' && v !== '0';
 
-/** `/lf` ou `/logfile`, `/c` ou `/count`… — une option, deux écritures. */
-function opt(cmd: ParsedCommand, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = cmd.options.get(n);
-    if (v !== undefined) return v;
-  }
-  return undefined;
+const isBoolean = (v: string): boolean => ['true', 'false'].includes(v.toLowerCase());
+
+function opt(cmd: ParsedCommand, key: OptionKey): string | undefined {
+  return cmd.options.get(key);
 }
 
 export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
@@ -147,20 +201,13 @@ export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
     return WEVTUTIL_HELP;
   }
 
-  // La porte de service reste en tête, avant l'analyse du verbe : sans le
-  // service, aucune commande n'a de sens, pas même une commande inconnue.
   const gate = requireWindowsService(ctx, 'EventLog');
   if (!gate.ok) return gate.error;
 
   const cmd = parseWevtutilArgs(args);
-
-  // Les options d'exécution distante sont refusées partout sauf là où
-  // `/r:` désigne autre chose (la rétention de `set-log`).
-  for (const name of cmd.options.keys()) {
-    if (!REMOTE_OPTIONS.has(name)) continue;
-    if (cmd.verb === 'sl' && (name === 'r' || name === 'remote')) continue;
-    return ERR.unknownOption(`/${name}`);
-  }
+  if (!SHORT_VERBS.has(cmd.verb)) return ERR.unknownCommand;
+  if (cmd.remote !== null) return ERR.unknownOption(`/${cmd.remote}`);
+  if (cmd.unknown !== null) return ERR.unknownOption(`/${cmd.unknown}`);
 
   switch (cmd.verb) {
     case 'el':  return enumLogs(ctx);
@@ -175,41 +222,58 @@ export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
   }
 }
 
-// ─── el ─────────────────────────────────────────────────────────────
-
-/**
- * La liste vient du registre réel des journaux, pas d'un tableau écrit
- * dans le code : `wevtutil el` et `Get-WinEvent -ListLog` doivent voir
- * le même ensemble, sinon toute création de canal creuse l'écart entre
- * eux.
- */
 function enumLogs(ctx: WinCommandContext): string {
   const logs = ctx.eventLog?.getAllLogsStructured?.() ?? [];
   return logs.map((l) => l.logName).join('\n');
 }
 
-// ─── gl / gli ───────────────────────────────────────────────────────
+const SYSTEM_ISOLATED = new Map([['system', 'System'], ['security', 'Custom']]);
+
+function channelType(logName: string): string {
+  const leaf = logName.slice(logName.lastIndexOf('/') + 1).toLowerCase();
+  return ['operational', 'analytic', 'debug'].includes(leaf) ? leaf[0].toUpperCase() + leaf.slice(1) : 'Admin';
+}
+
+function isolationOf(logName: string, configured: string): string {
+  if (configured !== 'Application') return configured[0].toUpperCase() + configured.slice(1).toLowerCase();
+  return SYSTEM_ISOLATED.get(logName.toLowerCase()) ?? 'Application';
+}
 
 function getLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
   const name = cmd.positional[0];
   if (!name) return 'Usage: wevtutil gl <log>';
   const st = ctx.eventLog?.getLogStatus?.(name);
   if (!st) return ERR.noChannel(name);
+  const maxBytes = st.maxSizeKB * 1024;
+  const isolation = isolationOf(st.logName, st.isolation);
+  const retention = st.overflow === 'DoNotOverwrite';
+  const format = (opt(cmd, 'format') ?? 'text').toLowerCase();
+  if (format === 'xml') {
+    const publishing = `<fileMax>1</fileMax>${st.levelFilter === null ? '' : `<level>${xmlEscape(st.levelFilter)}</level>`}`
+      + `${st.keywordsFilter === null ? '' : `<keywords>${xmlEscape(st.keywordsFilter)}</keywords>`}`;
+    return `<channel name='${xmlEscape(st.logName)}' chid='${xmlEscape(st.logName)}' symbol='' type='${channelType(st.logName)}'`
+      + ` enabled='${st.enabled}' isolation='${isolation}' xmlns='http://schemas.microsoft.com/win/2004/08/events'>`
+      + `<logging><logFileName>${xmlEscape(st.fileName)}</logFileName><retention>${retention}</retention>`
+      + `<autoBackup>${st.autoBackup}</autoBackup><maxSize>${maxBytes}</maxSize></logging>`
+      + `<publishing>${publishing}</publishing></channel>`;
+  }
+  if (format !== 'text') return ERR.unknownOption(`/f:${format}`);
   return [
     `name: ${st.logName}`,
     `enabled: ${st.enabled}`,
-    'type: Admin',
+    `type: ${channelType(st.logName)}`,
     'owningPublisher:',
-    'isolation: Application',
-    'channelAccess:',
+    `isolation: ${isolation}`,
+    `channelAccess: ${st.channelAccess}`,
     'logging:',
-    `  logFileName: %SystemRoot%\\System32\\Winevt\\Logs\\${st.logName.replace(/\//g, '%4')}.evtx`,
-    `  retention: ${st.overflow === 'DoNotOverwrite'}`,
-    // Toujours faux : rien n'archive un journal plein dans ce
-    // simulateur, et `sl /ab:` est refusée pour la même raison.
-    '  autoBackup: false',
-    `  maxSize: ${st.maxSizeKB * 1024}`,
+    `  logFileName: ${st.fileName}`,
+    `  retention: ${retention}`,
+    `  autoBackup: ${st.autoBackup}`,
+    `  maxSize: ${maxBytes}`,
     'publishing:',
+    '  fileMax: 1',
+    ...(st.levelFilter === null ? [] : [`  level: ${st.levelFilter}`]),
+    ...(st.keywordsFilter === null ? [] : [`  keywords: ${st.keywordsFilter}`]),
   ].join('\n');
 }
 
@@ -218,11 +282,11 @@ function getLogInfo(ctx: WinCommandContext, cmd: ParsedCommand): string {
   if (!name) return 'Usage: wevtutil gli <log>';
   const st = ctx.eventLog?.getLogStatus?.(name);
   if (!st) return ERR.noChannel(name);
-  const stamp = st.lastWriteTime ? st.lastWriteTime.toISOString() : '';
+  const written = systemTime(st.lastWriteTime ?? st.created);
   return [
-    `creationTime: ${stamp}`,
-    `lastAccessTime: ${stamp}`,
-    `lastWriteTime: ${stamp}`,
+    `creationTime: ${systemTime(st.created)}`,
+    `lastAccessTime: ${written}`,
+    `lastWriteTime: ${written}`,
     `fileSize: ${st.fileSize}`,
     'attributes: 32',
     `numberOfLogRecords: ${st.numberOfLogRecords}`,
@@ -230,89 +294,110 @@ function getLogInfo(ctx: WinCommandContext, cmd: ParsedCommand): string {
   ].join('\n');
 }
 
-// ─── sl ─────────────────────────────────────────────────────────────
+interface ChannelConfig {
+  name: string | null;
+  isolation?: string;
+  retention?: string;
+  autoBackup?: string;
+  maxSize?: string;
+}
+
+function configFromXml(xml: string): ChannelConfig | null {
+  const channel = /<channel\b([^>]*)>/i.exec(xml);
+  if (channel === null) return null;
+  const attribute = (name: string): string | undefined =>
+    new RegExp(`\\b${name}\\s*=\\s*['"]?([^'"\\s>]+)`, 'i').exec(channel[1])?.[1];
+  const element = (name: string): string | undefined =>
+    new RegExp(`<${name}>\\s*([^<]*?)\\s*</${name}>`, 'i').exec(xml)?.[1];
+  return {
+    name: attribute('name') ?? null, isolation: attribute('isolation'),
+    retention: element('retention'), autoBackup: element('autoBackup'), maxSize: element('maxSize'),
+  };
+}
+
+function roundedLogBytes(bytes: number): number {
+  const stepped = Math.round(bytes / LOG_SIZE_STEP_BYTES) * LOG_SIZE_STEP_BYTES;
+  return Math.max(MIN_LOG_BYTES, stepped);
+}
 
 function setLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
-  const name = cmd.positional[0];
+  if (!ctx.eventLog?.setLogConfig) return ERR.noChannel(cmd.positional[0] ?? '');
+
+  const configPath = opt(cmd, 'config');
+  let name = cmd.positional[0];
+  const values = new Map<OptionKey, string>(cmd.options);
+  if (configPath !== undefined) {
+    if (name) return ERR.unknownOption(`/c:${configPath}`);
+    const content = ctx.eventLog.readExportedLog?.(configPath);
+    if (content === null || content === undefined) {
+      return `Failed to open configuration file ${configPath}. The system cannot find the file specified.`;
+    }
+    const parsed = configFromXml(content);
+    if (parsed === null || parsed.name === null) {
+      return `Failed to read configuration file ${configPath}. The file is not a channel configuration.`;
+    }
+    name = parsed.name;
+    if (parsed.isolation !== undefined) values.set('isolation', parsed.isolation);
+    if (parsed.retention !== undefined) values.set('retention', parsed.retention);
+    if (parsed.autoBackup !== undefined) values.set('autobackup', parsed.autoBackup);
+    if (parsed.maxSize !== undefined) values.set('maxsize', parsed.maxSize);
+  }
   if (!name) return 'Usage: wevtutil sl <log> [/e:true|false] [/ms:BYTES]';
-  if (!ctx.eventLog?.setLogConfig) return ERR.noChannel(name);
 
-  const enabled = opt(cmd, 'e', 'enabled');
-  const maxSize = opt(cmd, 'ms', 'maxsize');
-  const retention = opt(cmd, 'r', 'retention');
-  // `/ab:` n'est pas honorée : rien n'archive un journal plein ici, et
-  // l'accepter en silence ferait croire à une sauvegarde automatique qui
-  // n'aura pas lieu.
-  if (opt(cmd, 'ab', 'autobackup') !== undefined) return ERR.unknownOption('/ab');
+  const invalid = (): string => `Failed to modify configuration for log ${name}. The parameter is incorrect.`;
+  for (const key of ['enabled', 'retention', 'autobackup'] as const) {
+    const value = values.get(key);
+    if (value !== undefined && !isBoolean(value)) return invalid();
+  }
+  const isolation = values.get('isolation');
+  if (isolation !== undefined && !['system', 'application', 'custom'].includes(isolation.toLowerCase())) return invalid();
+  if (isolation?.toLowerCase() === 'custom' && values.get('channelaccess') === undefined) return invalid();
 
+  const maxSize = values.get('maxsize');
   const bytes = maxSize !== undefined ? Number(maxSize) : undefined;
-  if (bytes !== undefined && (Number.isNaN(bytes) || bytes <= 0)) {
+  if (bytes !== undefined && (!Number.isInteger(bytes) || bytes <= 0)) {
     return `Failed to modify configuration for log ${name}. The value "${maxSize}" is not a valid size.`;
   }
 
+  const enabled = values.get('enabled');
+  const retention = values.get('retention');
+  const autoBackup = values.get('autobackup');
   const err = ctx.eventLog.setLogConfig(name, {
     ...(enabled !== undefined ? { enabled: truthy(enabled) } : {}),
-    // La configuration se donne en octets et se garde en kilo-octets.
-    ...(bytes !== undefined ? { maxSizeKB: Math.max(1, Math.round(bytes / 1024)) } : {}),
+    ...(bytes !== undefined ? { maxSizeKB: roundedLogBytes(bytes) / 1024 } : {}),
     ...(retention !== undefined ? { retention: truthy(retention) } : {}),
+    ...(autoBackup !== undefined ? { autoBackup: truthy(autoBackup) } : {}),
+    ...(isolation !== undefined ? { isolation: isolation.toLowerCase() } : {}),
+    ...(values.get('channelaccess') !== undefined ? { channelAccess: values.get('channelaccess') } : {}),
+    ...(values.get('logfilename') !== undefined ? { fileName: values.get('logfilename') } : {}),
+    ...(values.get('level') !== undefined ? { levelFilter: values.get('level') } : {}),
+    ...(values.get('keywords') !== undefined ? { keywordsFilter: values.get('keywords') } : {}),
   });
   return err ?? '';
 }
 
-// ─── qe ─────────────────────────────────────────────────────────────
+function localDate(ctx: WinCommandContext, date: Date): string {
+  return formatDotNetDate(ZonedDate.in(date.getTime(), ctx.timezone), "yyyy-MM-dd'T'HH:mm:ss.fff");
+}
 
-/**
- * Le rendu texte de `wevtutil qe /f:text`, dans la disposition réelle.
- *
- * L'implémentation précédente inventait son propre format
- * (`Event[0]:\n  Log Name: …`), qui ne correspondait à aucun des trois
- * de Windows — un script qui le dépouillait n'aurait pas fonctionné sur
- * une vraie machine, et réciproquement.
- */
-function renderText(logName: string, e: QueryEvent): string {
+function renderText(ctx: WinCommandContext, logName: string, e: QueryEvent): string {
+  const descriptor = describeEvent(e);
   return [
     `Event[${e.ordinal}]:`,
     `  Log Name: ${logName}`,
     `  Source: ${e.source}`,
-    `  Date: ${e.timeGenerated.toISOString()}`,
+    `  Date: ${localDate(ctx, e.timeGenerated)}`,
     `  Event ID: ${e.eventId}`,
-    `  Task: N/A`,
-    `  Level: ${e.entryType}`,
-    `  Opcode: Info`,
-    `  Keyword: N/A`,
+    `  Task: ${descriptor.taskName ?? 'N/A'}`,
+    `  Level: ${descriptor.levelName}`,
+    `  Opcode: ${descriptor.opcodeName}`,
+    `  Keyword: ${descriptor.keywordNames.length === 0 ? 'N/A' : descriptor.keywordNames.join(', ')}`,
     `  User: N/A`,
     `  User Name: N/A`,
     `  Computer: ${e.computer}`,
     `  Description: `,
     e.message,
   ].join('\n');
-}
-
-function xmlEscape(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function renderXml(logName: string, e: QueryEvent, rendered: boolean): string {
-  const data = Object.entries(e.data ?? {})
-    .map(([k, v]) => `<Data Name='${xmlEscape(k)}'>${xmlEscape(v)}</Data>`).join('');
-  const core =
-    `<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>`
-    + `<System><Provider Name='${xmlEscape(e.source)}'/>`
-    + `<EventID>${e.eventId}</EventID><Level>${levelOf(e.entryType)}</Level>`
-    + `<TimeCreated SystemTime='${e.timeGenerated.toISOString()}'/>`
-    + `<EventRecordID>${e.index}</EventRecordID>`
-    + `<Channel>${xmlEscape(logName)}</Channel>`
-    + `<Computer>${xmlEscape(e.computer)}</Computer></System>`
-    + `<EventData>${data}</EventData>`;
-  if (!rendered) return `${core}</Event>`;
-  // `RenderedXml` ajoute le message déjà mis en forme — c'est ce qui la
-  // distingue de `XML`, qui ne rend que l'événement brut.
-  return `${core}<RenderingInfo Culture='en-US'>`
-    + `<Message>${xmlEscape(e.message)}</Message>`
-    + `<Level>${xmlEscape(e.entryType)}</Level>`
-    + `<Channel>${xmlEscape(logName)}</Channel>`
-    + `</RenderingInfo></Event>`;
 }
 
 interface QueryEvent extends XPathEvent {
@@ -322,31 +407,35 @@ interface QueryEvent extends XPathEvent {
   ordinal: number;
 }
 
+function bookmarkRecordId(content: string): number | null {
+  const id = /RecordId=['"](\d+)['"]/i.exec(content)?.[1];
+  return id === undefined ? null : Number(id);
+}
+
+function bookmarkXml(channel: string, recordId: number): string {
+  return `<BookmarkList>\n  <Bookmark Channel='${xmlEscape(channel)}' RecordId='${recordId}' IsCurrent='true'/>\n</BookmarkList>`;
+}
+
 function queryEvents(ctx: WinCommandContext, cmd: ParsedCommand): string {
   const target = cmd.positional[0];
   if (!target) return 'Usage: wevtutil qe <log> [/q:XPATH] [/c:N] [/rd:true] [/f:Text|XML|RenderedXml]';
 
-  const format = (opt(cmd, 'f', 'format') ?? 'text').toLowerCase();
+  const format = (opt(cmd, 'format') ?? 'text').toLowerCase();
   if (!['text', 'xml', 'renderedxml'].includes(format)) {
     return ERR.unknownOption(`/f:${format}`);
   }
-  const reverse = truthy(opt(cmd, 'rd', 'reversedirection'));
-  const countRaw = opt(cmd, 'c', 'count');
+  const reverse = truthy(opt(cmd, 'reversedirection'));
+  const countRaw = opt(cmd, 'count');
   const count = countRaw !== undefined ? Number(countRaw) : undefined;
   if (count !== undefined && (Number.isNaN(count) || count < 0)) {
     return ERR.unknownOption(`/c:${countRaw}`);
   }
 
-  const query = opt(cmd, 'q', 'query');
+  const query = opt(cmd, 'query');
   const parsed = parseEventXPath(query ?? '*');
   if (!parsed.predicate) return ERR.badQuery(parsed.error ?? 'The query is malformed.');
 
-  const fromFile = truthy(opt(cmd, 'lf', 'logfile'));
-  // Le client DHCP tient ses lignes à part et ne les verse qu'à la
-  // demande ; les réconcilier avant toute lecture de canal évite de
-  // rendre un journal en retard sur la machine. C'est une mise à jour,
-  // pas une substitution de contenu : elle a lieu quelle que soit la
-  // requête, à l'inverse du détournement par le mot « dhcp » d'avant.
+  const fromFile = truthy(opt(cmd, 'logfile'));
   if (!fromFile) ctx.syncDHCPEvents();
   const source = fromFile ? readExportedLog(ctx, target) : readChannel(ctx, target);
   if (source === null) {
@@ -355,24 +444,41 @@ function queryEvents(ctx: WinCommandContext, cmd: ParsedCommand): string {
       : ERR.noChannel(target);
   }
 
+  const bookmarkPath = opt(cmd, 'bookmark');
+  let after: number | null = null;
+  if (bookmarkPath !== undefined) {
+    const content = ctx.eventLog?.readExportedLog?.(bookmarkPath);
+    if (content === null || content === undefined) {
+      return `Failed to read bookmark ${bookmarkPath}. The system cannot find the file specified.`;
+    }
+    after = bookmarkRecordId(content);
+    if (after === null) return `Failed to read bookmark ${bookmarkPath}. The bookmark is not valid.`;
+  }
+
   const now = ctx.eventLog?.now?.() ?? simulationNowMs();
-  let events = source.filter((e) => parsed.predicate!(e, now));
-  // `getEntriesStructured` rend du plus récent au plus ancien ;
-  // `wevtutil` sans `/rd:` fait l'inverse — c'est un piège classique, et
-  // le défaut opposé de celui de `Get-WinEvent`.
+  let events = source.filter((e) => parsed.predicate!(e, now) && (after === null || e.index > after));
   if (!reverse) events = events.reverse();
   if (count !== undefined) events = events.slice(0, count);
+
+  const logName = fromFile ? (source[0]?.channel ?? target) : target;
+  const savePath = opt(cmd, 'savebookmark');
+  if (savePath !== undefined && events.length > 0) {
+    const newest = events.reduce((highest, e) => Math.max(highest, e.index), 0);
+    const err = ctx.eventLog?.writeTextFile?.(savePath, bookmarkXml(logName, newest));
+    if (err) return err;
+  }
   if (events.length === 0) {
     return 'No events found that match the specified selection criteria.';
   }
 
-  const logName = fromFile ? (source[0]?.channel ?? target) : target;
-  return events.map((e, i) => {
+  const rendered = events.map((e, i) => {
     const ev = { ...e, ordinal: i };
     return format === 'text'
-      ? renderText(logName, ev)
-      : renderXml(logName, ev, format === 'renderedxml');
+      ? renderText(ctx, logName, ev)
+      : renderEventXml(ev, { channel: logName, computer: ev.computer }, format === 'renderedxml');
   }).join(format === 'text' ? '\n\n' : '\n');
+  const root = opt(cmd, 'element');
+  return format !== 'text' && root !== undefined ? `<${root}>\n${rendered}\n</${root}>` : rendered;
 }
 
 interface SourceEvent extends QueryEvent { channel?: string }
@@ -394,14 +500,6 @@ function readChannel(ctx: WinCommandContext, logName: string): SourceEvent[] | n
   }));
 }
 
-/**
- * Relit un fichier produit par `epl`. C'est ce qui referme la boucle :
- * on exporte, puis on relit ce qu'on a exporté, et les deux disent la
- * même chose.
- *
- * Le format lu est celui que le fournisseur écrit — du texte, pas le
- * binaire `.evtx` de Windows (voir `docs/PRD-Wevtutil.md` §7).
- */
 function readExportedLog(ctx: WinCommandContext, path: string): SourceEvent[] | null {
   const content = ctx.eventLog?.readExportedLog?.(path);
   if (content === null || content === undefined) return null;
@@ -426,13 +524,8 @@ function readExportedLog(ctx: WinCommandContext, path: string): SourceEvent[] | 
       ordinal: 0,
     });
   }
-  // Le fichier est écrit du plus ancien au plus récent ; le canal se lit
-  // dans l'autre sens. On aligne la source sur la convention du canal,
-  // pour que `/rd:` se comporte pareil des deux côtés.
   return out.reverse();
 }
-
-// ─── epl / al / cl ──────────────────────────────────────────────────
 
 function exportLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
   const [logName, destination] = cmd.positional;
@@ -442,19 +535,9 @@ function exportLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
   if (!ctx.eventLog?.exportLog) {
     return `Failed to export log ${logName}. The system cannot find the path specified.`;
   }
-  // `wevtutil epl` qui réussit n'écrit rien : le silence *est* le
-  // succès, et c'est le fichier écrit qui en témoigne.
-  return ctx.eventLog.exportLog(logName, destination, truthy(opt(cmd, 'ow', 'overwrite'))) ?? '';
+  return ctx.eventLog.exportLog(logName, destination, truthy(opt(cmd, 'overwrite'))) ?? '';
 }
 
-/**
- * `al` — archive un journal exporté. Sur un vrai Windows, l'archivage
- * ajoute les ressources de localisation au fichier pour qu'il reste
- * lisible sur une machine qui n'a pas les éditeurs d'origine. Ici les
- * messages sont déjà rendus dans le fichier : l'archivage n'a donc rien
- * à ajouter, et se réduit à une copie. C'est déclaré plutôt que
- * maquillé.
- */
 function archiveLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
   const source = cmd.positional[0];
   if (!source) return 'Usage: wevtutil al <logFile>';
@@ -467,16 +550,12 @@ function archiveLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
 function clearLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
   const name = cmd.positional[0];
   if (!name) return 'Usage: wevtutil cl <log> [/bu:BACKUPFILE]';
-  const backup = opt(cmd, 'bu', 'backup');
-  // La sauvegarde précède le vidage — après, il n'y a plus rien à
-  // sauvegarder. Si elle échoue, le journal n'est pas vidé : c'est la
-  // seule variante de `cl` qui rende l'effacement réversible, et la
-  // vider quand même la rendrait mensongère.
+  const backup = opt(cmd, 'backup');
   if (backup !== undefined) {
     const err = ctx.eventLog?.exportLog?.(name, backup, true);
     if (err) return err;
   }
   if (!ctx.eventLog?.clearEventLog) return ERR.noChannel(name);
-  ctx.eventLog.clearEventLog(name);
+  ctx.eventLog.clearEventLog(name, backup ?? null);
   return '';
 }

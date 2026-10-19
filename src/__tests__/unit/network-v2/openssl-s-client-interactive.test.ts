@@ -27,7 +27,7 @@ async function flush(times = 10): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));
@@ -58,7 +58,7 @@ describe('openssl s_client interactif', () => {
   it('la connexion reste ouverte : le sous-shell prend la main sans invite', async () => {
     const { term } = await lab();
     await type(term, 'openssl s_client -connect 127.0.0.1:443');
-    expect(term.foreground.getPrompt()).toBe('');
+    expect(term.getPrompt()).toBe('');
   });
 
   it('une requête tapée ligne à ligne obtient la page', async () => {
@@ -84,7 +84,7 @@ describe('openssl s_client interactif', () => {
     await type(term, 'openssl s_client -connect 127.0.0.1:443');
     await type(term, 'Q');
     expect(text(term)).toContain('DONE');
-    expect(term.foreground.getPrompt()).not.toBe('');
+    expect(term.getPrompt()).not.toBe('');
   });
 
   it('en TLS 1.2, k annonce que le KeyUpdate demande TLS 1.3', async () => {

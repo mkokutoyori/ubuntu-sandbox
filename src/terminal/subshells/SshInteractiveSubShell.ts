@@ -24,55 +24,24 @@
  * engine does (`printf '%s\n' '<pwd>' | su`, LinuxInteractionPlanner.ts's
  * suExecuteStep) — one extra plain round trip, no new wire message.
  *
- * A *nested* `ssh user@host` (bare — no flags, no trailing command) typed
- * inside this session is a REAL second hop, not a limitation: since this
- * whole simulator is one JS process, the instance driving hop N can just
- * construct a genuine SshSession from hop N's OWN device (its real
- * tcpConnect, its real known_hosts) straight to hop N+1, and recursively
- * wrap it in another SshInteractiveSubShell (see startNestedHop()) — the
- * exact same construction LinuxTerminalSession.connectAndEnterSsh() uses
- * for the first hop. Password/host-key prompts during that connect are
- * bridged to the SAME pendingInput/handleInput broker `su` uses, via
- * HopInteractionHandler (an ISshInteractionHandler whose prompt methods
- * return a promise this class resolves itself once the value arrives).
- * Once connected, every subsequent line/Ctrl+C/dispose delegates to the
- * nested instance until it reports `exit` (the user typed `exit` at hop
- * N+1), at which point control returns to this level.
- *
  * Still out of scope: multi-turn REPLs that aren't a single password
  * challenge (`sqlplus`, RMAN, `sftp`/`ftp` sub-shells, `vim`/`nano`) — those
  * relied on the old in-memory createSessionForDevice() bypass instantiating
  * a full client-side LinuxTerminalSession with its own SqlPlusSubShell/
  * editor machinery bound directly to the remote Equipment. `sudo`/`passwd`/
- * `adduser` could reuse the same single-password broker `su` and nested
- * ssh both use, but no current use case exercises them here yet.
+ * `adduser` could reuse the same single-password broker `su` uses, but no
+ * current use case exercises them here yet.
  *
  * Reference: BRD-SSH-SFTP.md SSH-04.
  */
 
-import { findEquipmentByIp } from '@/shell/hostResolution';
 import {
   bashPromptParts, formatBashPrompt, parseBashPrompt, type BashPromptParts,
 } from '@/network/devices/linux/shell/BashPrompt';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
-import { LinuxMachine } from '@/network/devices/LinuxMachine';
-import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import type { ISshSession } from '@/network/protocols/ssh/session/ISshSession';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
-import { SshConnectOptionsBuilder, type StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
-import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
-import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
-import { isOk } from '@/network/protocols/ssh/Result';
-import {
-  type HostKeyResponse,
-  type ISshInteractionHandler,
-  type SshConnectionInfo,
-  hostKeyFingerprint,
-  hostKeyNo,
-  hostKeyYes,
-} from '@/network/protocols/ssh/session/ISshInteractionHandler';
-import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
@@ -83,100 +52,6 @@ const MAX_SU_ATTEMPTS = 3;
 /** Single-quote a value for safe use inside the remote `printf '%s\n' '<x>' | su` pipe. */
 function shQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-export function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
-  const eq = findEquipmentByIp(targetIp);
-  return eq instanceof LinuxMachine ? eq : null;
-}
-
-/**
- * Bridges SshSession's interactive callbacks (password / host-key
- * confirmation) to whoever is driving a nested hop's connect: prompt
- * methods return a promise that only resolves once `answer()` is called
- * from the outside (fed by the host terminal's pendingInput/handleInput
- * broker, exactly like `su`'s password round trip).
- */
-class HopInteractionHandler implements ISshInteractionHandler {
-  private pendingPasswordResolve: ((v: string) => void) | null = null;
-  private pendingHostKeyResolve: ((v: HostKeyResponse) => void) | null = null;
-  private waiters: Array<(p: { kind: 'password' | 'text'; promptText: string }) => void> = [];
-  private readonly infoLines: string[] = [];
-
-  /** Resolves the next time a prompt method is called. */
-  waitForPrompt(): Promise<{ kind: 'password' | 'text'; promptText: string }> {
-    return new Promise((resolve) => this.waiters.push(resolve));
-  }
-
-  private signal(p: { kind: 'password' | 'text'; promptText: string }): void {
-    const waiters = this.waiters;
-    this.waiters = [];
-    for (const w of waiters) w(p);
-  }
-
-  promptPassword(user: string, host: string): Promise<string> {
-    return this.promptKeyboardInteractive(`${user}@${host}'s password:`, false);
-  }
-
-  promptKeyboardInteractive(prompt: string, echo: boolean): Promise<string> {
-    return new Promise((resolve) => {
-      this.pendingPasswordResolve = resolve;
-      this.signal({ kind: echo ? 'text' : 'password', promptText: prompt.trimEnd() });
-    });
-  }
-
-  promptHostKeyConfirmation(host: string, fingerprint: string, keyType: string): Promise<HostKeyResponse> {
-    return new Promise((resolve) => {
-      this.pendingHostKeyResolve = resolve;
-      this.signal({
-        kind: 'text',
-        promptText:
-          `The authenticity of host '${host}' can't be established.\n` +
-          `${keyType} key fingerprint is ${fingerprint}.\n` +
-          `Are you sure you want to continue connecting (yes/no/[fingerprint])?`,
-      });
-    });
-  }
-
-  /** Feed the value the host terminal collected back into whichever prompt is pending. */
-  answer(value: string): void {
-    if (this.pendingHostKeyResolve) {
-      const resolve = this.pendingHostKeyResolve;
-      this.pendingHostKeyResolve = null;
-      const v = value.trim().toLowerCase();
-      resolve(v === 'yes' ? hostKeyYes() : v === 'no' ? hostKeyNo() : hostKeyFingerprint(value.trim()));
-      return;
-    }
-    if (this.pendingPasswordResolve) {
-      const resolve = this.pendingPasswordResolve;
-      this.pendingPasswordResolve = null;
-      resolve(value);
-    }
-  }
-
-  showAuthFailure(_user: string, _host: string): void {
-    this.infoLines.push('Permission denied, please try again.');
-  }
-
-  showWarning(message: string): void { this.infoLines.push(message); }
-  showInfo(message: string): void { this.infoLines.push(message); }
-  onConnected(_info: SshConnectionInfo): void { /* banner handled by composeSshLoginBanner instead */ }
-
-  drainInfoLines(): string[] {
-    const lines = this.infoLines.splice(0, this.infoLines.length);
-    return lines.flatMap((m) => m.replace(/\n+$/, '').split('\n')).filter((l) => l.length > 0);
-  }
-}
-
-interface PendingHopConnect {
-  readonly targetUser: string;
-  readonly targetHost: string;
-  readonly targetPort: number;
-  readonly interaction: HopInteractionHandler;
-  readonly connectResult: ReturnType<ISshSession['connect']>;
-  readonly session: SshSession;
-  /** Non-null for `ssh host cmd`: run it and stay in the current shell. */
-  readonly execCommand: string | null;
 }
 
 export class SshInteractiveSubShell implements ISubShell {
@@ -208,10 +83,6 @@ export class SshInteractiveSubShell implements ISubShell {
     promptText: string;
     attemptsLeft: number;
   } | null = null;
-  /** Set while a nested `ssh`'s connect handshake is awaiting a password/host-key answer. */
-  private pendingHopConnect: PendingHopConnect | null = null;
-  /** A fully-connected nested hop: once set, every call delegates to it. */
-  private nestedHop: SshInteractiveSubShell | null = null;
 
   /** Latest prompt the remote published, or null while it has published none. */
   private serverPrompt: string | null = null;
@@ -265,11 +136,6 @@ export class SshInteractiveSubShell implements ISubShell {
      *  defaults to `remoteHost` when the caller has no better value
      *  (e.g. a bare SshServerHandler in tests with no resolvable device). */
     private readonly promptHost: string = remoteHost,
-    /** The LinuxMachine this instance's channel/session connects TO — its
-     *  own tcpConnect/vfs/userMgr are what a *nested* ssh typed inside
-     *  this session needs to open the next hop from. Undefined disables
-     *  nested-ssh support (falls through to the generic passthrough). */
-    private readonly remoteDevice?: LinuxMachine,
     /** Liveness of the transport, probed before each command on the same
      *  wire the session was opened on. Omitted means "never check"
      *  (docs/PRD-Link-State.md §3.3). */
@@ -315,7 +181,6 @@ export class SshInteractiveSubShell implements ISubShell {
   private hungUpDuringCommand = false;
 
   getPrompt(): string {
-    if (this.nestedHop) return this.nestedHop.getPrompt();
     // The remote's own prompt when it published one: it knows the real
     // home (which may not be /home/<user>, or may not exist at all) and,
     // for a router, the current CLI mode. The local guess below is only
@@ -335,7 +200,6 @@ export class SshInteractiveSubShell implements ISubShell {
   }
 
   getPromptParts(): BashPromptParts | null {
-    if (this.nestedHop) return this.nestedHop.getPromptParts();
     if (this.serverNested || !(this.channel.isPosixShell?.() ?? true)) return null;
     return parseBashPrompt(this.getPrompt());
   }
@@ -346,24 +210,20 @@ export class SshInteractiveSubShell implements ISubShell {
    * for its own level.
    */
   async getCompletionsAsync(line: string): Promise<string[]> {
-    if (this.nestedHop) return this.nestedHop.getCompletionsAsync(line);
     if (this.inFlight) return [];
     return this.channel.complete(line);
   }
 
   /** True when `?` is a help key on this remote rather than a plain character. */
   supportsInlineHelp(): boolean {
-    if (this.nestedHop) return this.nestedHop.supportsInlineHelp();
     return this.channel.supportsInlineHelp();
   }
 
   completesWholeLine(): boolean {
-    if (this.nestedHop) return this.nestedHop.completesWholeLine();
     return this.channel.supportsInlineHelp();
   }
 
   completionStyle(): 'readline' | 'cycling' {
-    if (this.nestedHop) return this.nestedHop.completionStyle();
     return !this.serverNested && (this.channel.isPosixShell?.() ?? true) ? 'readline' : 'cycling';
   }
 
@@ -372,7 +232,6 @@ export class SshInteractiveSubShell implements ISubShell {
    * line the user is composing or changing the CLI mode.
    */
   async inlineHelpAsync(line: string): Promise<string[]> {
-    if (this.nestedHop) return this.nestedHop.inlineHelpAsync(line);
     if (this.inFlight) return [];
     const result = await this.run(`${line}?`);
     const text = `${result.stdout ?? ''}${result.stderr ?? ''}`;
@@ -386,7 +245,6 @@ export class SshInteractiveSubShell implements ISubShell {
    * (docs/PRD-SSH-Unification.md §4bis B3).
    */
   async openRemoteEditor(line: string): Promise<EditorView | null> {
-    if (this.nestedHop) return this.nestedHop.openRemoteEditor(line);
     if (this.inFlight) return null;
     if (!parseEditorLaunch(line)) return null;
     return this.channel.openEditor(line);
@@ -397,12 +255,10 @@ export class SshInteractiveSubShell implements ISubShell {
   resize(rows: number, cols: number): void {
     this.windowSize = { rows, cols };
     this.channel.resize(cols, rows);
-    this.nestedHop?.resize(rows, cols);
   }
 
   /** The channel an open remote editor exchanges keys and screens over. */
   editorTransport(): RemoteEditorTransport {
-    if (this.nestedHop) return this.nestedHop.editorTransport();
     return this.channel;
   }
 
@@ -412,7 +268,6 @@ export class SshInteractiveSubShell implements ISubShell {
    * (docs/PRD-SSH-Unification.md §4bis B4).
    */
   handleKey(e: KeyEvent): boolean {
-    if (this.nestedHop) return this.nestedHop.handleKey(e);
     if (!(e.key === 'd' && e.ctrlKey)) return false;
     return this.channel.isPosixShell?.() ?? true;
   }
@@ -423,7 +278,6 @@ export class SshInteractiveSubShell implements ISubShell {
    * "clear input, echo ^C") when nothing is actually in flight.
    */
   interruptForeground(): boolean {
-    if (this.nestedHop) return this.nestedHop.interruptForeground();
     if (!this.inFlight) return false;
     this.interruptSent = true;
     this.channel.sendSignal('SIGINT');
@@ -431,11 +285,6 @@ export class SshInteractiveSubShell implements ISubShell {
   }
 
   async processLine(line: string, onProgress?: (text: string) => void): Promise<SubShellResult> {
-    if (this.nestedHop) {
-      const result = await this.nestedHop.processLine(line, onProgress);
-      return this.afterNestedResult(result);
-    }
-
     if (this.probeAlive && !this.probeAlive()) {
       this.session.disconnect();
       return {
@@ -535,12 +384,6 @@ export class SshInteractiveSubShell implements ISubShell {
       };
     }
 
-    const nested = this.remoteDevice ? parseSshCommandLine(trimmed) : null;
-    if (nested !== null && nested.host !== '') {
-      return this.startNestedHop(
-        nested.user ?? this.remoteUser, nested.host, nested.command, nested.port, nested.algorithms, nested.strict);
-    }
-
     const collected: string[] = [];
     const emit = (chunk: string): void => {
       const lines = chunk.replace(/\n$/, '').split('\n');
@@ -592,11 +435,6 @@ export class SshInteractiveSubShell implements ISubShell {
 
   /** Feed a value the host collected for a pending su / nested-ssh challenge. */
   async handleInput(value: string): Promise<SubShellResult> {
-    if (this.nestedHop) {
-      const result = await this.nestedHop.handleInput(value);
-      return this.afterNestedResult(result);
-    }
-
     // A challenge raised by the remote's own shell: the answer belongs
     // on the wire, not in a local flow.
     if (this.serverPendingInput) {
@@ -614,11 +452,6 @@ export class SshInteractiveSubShell implements ISubShell {
         clearScreen: this.serverClearedScreen,
         pendingInput: this.serverPendingInput ?? undefined,
       };
-    }
-
-    if (this.pendingHopConnect) {
-      this.pendingHopConnect.interaction.answer(value);
-      return this.pumpHopConnect(this.pendingHopConnect);
     }
 
     const su = this.pendingSu;
@@ -655,28 +488,12 @@ export class SshInteractiveSubShell implements ISubShell {
 
   dispose(): void {
     this.closing = true;
-    this.nestedHop?.dispose();
     this.channel.close();
     if (this.onDispose) this.onDispose();
     else this.session.disconnect();
   }
 
   // ─── private ────────────────────────────────────────────────────
-
-  /**
-   * A nested hop's result bubbles up almost unchanged — its own `prompt`
-   * already reflects its own getPrompt(). The one thing this level owns:
-   * when the nested hop reports `exit` (the user typed `exit` AT that
-   * hop), that must pop back to THIS level, not propagate further up as
-   * if the whole outer session were closing.
-   */
-  private afterNestedResult(result: SubShellResult): SubShellResult {
-    if (result.exit) {
-      this.nestedHop = null;
-      return { output: result.output, exit: false, prompt: this.getPrompt() };
-    }
-    return result;
-  }
 
   /** Run `<cdCmd> && pwd`; the last stdout line becomes the new cwd. */
   private async handleCd(cdCmd: string): Promise<SubShellResult> {
@@ -700,145 +517,6 @@ export class SshInteractiveSubShell implements ISubShell {
       ? result.stderr.replace(/\n$/, '').split('\n')
       : ['cd: no such file or directory'];
     return done(errLines, this.getPrompt());
-  }
-
-  /**
-   * Open a real second hop FROM this instance's own device (remoteDevice)
-   * to targetHost — the same construction connectAndEnterSsh() uses for
-   * the first hop, just originating from the remote instead of the local
-   * terminal. Real password/host-key prompts during connect are bridged
-   * via HopInteractionHandler + pumpHopConnect() to this sub-shell's own
-   * pendingInput/handleInput broker.
-   */
-  private async startNestedHop(
-    targetUser: string, targetHost: string, execCommand: string | null = null,
-    port = 22, algorithms: SshAlgorithmPreferences = {}, strict: StrictHostKeyChecking = 'ask',
-  ): Promise<SubShellResult> {
-    const dev = this.remoteDevice as unknown as {
-      tcpConnect: (host: string, port: number) => Promise<unknown>;
-      executor?: {
-        vfs?: unknown;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
-      };
-    };
-    const userEntry = dev.executor?.userMgr?.getUser(this.remoteUser);
-    const homeDir = userEntry?.home ?? `/home/${this.remoteUser}`;
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) return done([`ssh: ${this.promptHost} does not support nested SSH`], this.getPrompt());
-
-    const interaction = new HopInteractionHandler();
-    const session2 = new SshSession({
-      tcpConnector: (host, port) => dev.tcpConnect(host, port) as ReturnType<typeof dev.tcpConnect> as never,
-      vfs: localVfs as never,
-      localUser: this.remoteUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: interaction,
-    });
-    const opts = SshConnectOptionsBuilder.create()
-      .host(targetHost).user(targetUser).port(port)
-      .strictHostKeyChecking(strict)
-      .algorithms(algorithms)
-      .build();
-
-    const pending: PendingHopConnect = {
-      targetUser, targetHost, targetPort: port, interaction, session: session2,
-      connectResult: session2.connect(opts),
-      execCommand,
-    };
-    this.pendingHopConnect = pending;
-    return this.pumpHopConnect(pending);
-  }
-
-  /**
-   * Race the connect's own settlement against the interaction handler
-   * wanting the next prompt answered — whichever happens first. Called
-   * once to start, and again from handleInput() every time a password/
-   * host-key answer arrives, until the connect either fails or succeeds.
-   */
-  private async pumpHopConnect(pending: PendingHopConnect): Promise<SubShellResult> {
-    const outcome = await Promise.race([
-      pending.connectResult.then((r) => ({ kind: 'settled' as const, result: r })),
-      pending.interaction.waitForPrompt().then((p) => ({ kind: 'prompt' as const, prompt: p })),
-    ]);
-
-    if (outcome.kind === 'prompt') {
-      return {
-        output: pending.interaction.drainInfoLines(), exit: false, prompt: this.getPrompt(),
-        pendingInput: { kind: outcome.prompt.kind, promptText: outcome.prompt.promptText },
-      };
-    }
-
-    this.pendingHopConnect = null;
-    const infoLines = pending.interaction.drainInfoLines();
-    if (!isOk(outcome.result)) {
-      const err = outcome.result.error;
-      const lines = [...infoLines];
-      // AUTH_FAILED's "Permission denied (...)." is already pushed into
-      // infoLines by SshSession.doAuthenticate() via showWarning() — don't
-      // duplicate it (mirrors connectAndEnterSsh()'s own error handling).
-      if (err.kind !== 'AUTH_FAILED') {
-        lines.push(
-          err.kind === 'CONNECTION_REFUSED'
-            ? `ssh: connect to host ${pending.targetHost} port ${pending.targetPort}: Connection refused`
-            : err.kind === 'CONNECTION_TIMEOUT'
-            ? `ssh: connect to host ${pending.targetHost} port ${pending.targetPort}: Connection timed out`
-            : err.kind === 'KEX_FAILED'
-            ? err.message
-            : err.kind === 'HOST_KEY_REJECTED' || err.kind === 'HOST_KEY_CHANGED'
-            ? 'Host key verification failed.'
-            : `${pending.targetUser}@${pending.targetHost}: Permission denied (publickey,password).`,
-        );
-      }
-      return done(lines, this.getPrompt());
-    }
-
-    if (pending.execCommand !== null && pending.execCommand !== undefined) {
-      const execResult = pending.session.openExecChannel(pending.execCommand);
-      if (!isOk(execResult)) {
-        pending.session.disconnect();
-        return done([...infoLines, 'ssh: failed to open exec channel'], this.getPrompt());
-      }
-      const run = await execResult.value.execute();
-      execResult.value.close();
-      pending.session.disconnect();
-      const body = `${run.stdout}${run.stderr}`.replace(/\n+$/, '');
-      return done(
-        [...infoLines, ...(body.length > 0 ? body.split('\n') : [])], this.getPrompt());
-    }
-
-    const channelResult = pending.session.openShellChannel();
-    if (!isOk(channelResult)) {
-      pending.session.disconnect();
-      return done([...infoLines, 'ssh: failed to open shell channel'], this.getPrompt());
-    }
-
-    const targetDevice = findLinuxMachineByIp(pending.targetHost);
-    const sourceIp = this.firstDeviceIp(this.remoteDevice) ?? '0.0.0.0';
-    const banner = targetDevice
-      ? composeSshLoginBanner(targetDevice, pending.targetUser, sourceIp, this.promptHost, false)
-      : [];
-
-    this.nestedHop = new SshInteractiveSubShell(
-      pending.session, channelResult.value, pending.targetUser, pending.targetHost,
-      `/home/${pending.targetUser}`,
-      () => pending.session.disconnect(),
-      targetDevice?.getSshHostname() ?? pending.targetHost,
-      targetDevice ?? undefined,
-    );
-    if (this.windowSize !== null) this.nestedHop.resize(this.windowSize.rows, this.windowSize.cols);
-    return done([...infoLines, ...banner], this.getPrompt());
-  }
-
-  private firstDeviceIp(device: LinuxMachine | undefined): string | null {
-    const ports = (device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> } | undefined)?.getPorts?.();
-    if (!ports) return null;
-    for (const port of ports) {
-      const ip = port.getIPAddress();
-      if (ip && port.getIsUp()) return ip.toString();
-    }
-    return null;
   }
 }
 

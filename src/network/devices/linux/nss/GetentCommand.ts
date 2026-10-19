@@ -44,6 +44,7 @@ import type {
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface GetentResult {
   output: string;
@@ -527,7 +528,7 @@ function handleInitgroups(single: SingleFn, keys: string[]): GetentResult {
   for (const user of keys) {
     const r = single<number[]>('initgroups', s => s.initgroups?.(user));
     if (r.status === 'SUCCESS' && r.entry) {
-      out.push(`${user.padEnd(15)} ${r.entry.join(' ')}`);
+      out.push(`${padToWidth(user, 15)} ${r.entry.join(' ')}`);
     } else allOk = false;
   }
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };

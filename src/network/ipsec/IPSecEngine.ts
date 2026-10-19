@@ -10,6 +10,8 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { EzvpnServer, type MapClientPolicy } from './ezvpn/EzvpnServer';
+import { EzvpnClient } from './ezvpn/EzvpnClient';
 
 import { findIpsecTransform } from './transforms';
 import {
@@ -62,7 +64,10 @@ import {
 import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
-import type { IkeConfigRequest, IkeConfigReply } from './IPSecTypes';
+import type { CryptoIdentityList, IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint, IkeRsaProvider } from './IPSecTypes';
+import { rsaEncryptPkcs1, rsaDecryptPkcs1 } from '@/crypto/rsa';
+import { systemRandom } from '../../crypto/random';
+import { renderCryptoSessions, type CryptoSession, type CryptoSessionMode } from './CryptoSessionView';
 import {
   IPSecSignalStore,
   makeReadonlyIPSecObservables,
@@ -77,6 +82,7 @@ import { PkiKeyPair } from '../pki/PkiKeyPair';
 import { verificationToIkeReason } from './IkeCertAuthConfig';
 import type { X509Certificate } from '../pki/X509Certificate';
 import { DdnsResolver } from './DdnsResolver';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 
 // Forward reference — resolved at runtime to avoid circular imports
@@ -604,11 +610,37 @@ function multicastSAKey(spi: number, groupAddress: string): string {
   return `${spi}|${groupAddress}`;
 }
 
+export type IkeConfigVerdict = IkeConfigReply | string | undefined;
+
 export type IkeConfigMethod = (
   peerIP: string, request: IkeConfigRequest,
-) => IkeConfigReply | string | undefined;
+) => IkeConfigVerdict | Promise<IkeConfigVerdict>;
+
+const DEFAULT_ISAKMP_POLICIES: readonly ISAKMPPolicy[] = Object.freeze([
+  { priority: 65507, encryption: 'aes', hash: 'sha', auth: 'rsa-sig', group: 5, lifetime: 86400 },
+  { priority: 65508, encryption: 'aes', hash: 'sha', auth: 'pre-share', group: 5, lifetime: 86400 },
+  { priority: 65509, encryption: 'aes', hash: 'md5', auth: 'rsa-sig', group: 5, lifetime: 86400 },
+  { priority: 65510, encryption: 'aes', hash: 'md5', auth: 'pre-share', group: 5, lifetime: 86400 },
+  { priority: 65511, encryption: '3des', hash: 'sha', auth: 'rsa-sig', group: 2, lifetime: 86400 },
+  { priority: 65512, encryption: '3des', hash: 'sha', auth: 'pre-share', group: 2, lifetime: 86400 },
+  { priority: 65513, encryption: '3des', hash: 'md5', auth: 'rsa-sig', group: 2, lifetime: 86400 },
+  { priority: 65514, encryption: '3des', hash: 'md5', auth: 'pre-share', group: 2, lifetime: 86400 },
+]);
+
+const DEFAULT_TRANSFORM_SETS: readonly TransformSet[] = Object.freeze([
+  { name: '#$!default_transform_set_1', transforms: ['esp-aes', 'esp-sha-hmac'], mode: 'transport' as const },
+  { name: '#$!default_transform_set_0', transforms: ['esp-3des', 'esp-sha-hmac'], mode: 'transport' as const },
+]);
+
+export const DEFAULT_OPTIONAL_RETRY_SECONDS = 300;
+const IKE_DEFERRED_TIMEOUT_MS = 30_000;
+export const EZVPN_TRANSFORM_PREFIX = '#$!ezvpn-';
 
 export class IPSecEngine implements IProtocolEngine {
+  readonly ezvpn = new EzvpnServer();
+  readonly ezvpnClient = new EzvpnClient();
+  readonly identityLists = new Map<string, CryptoIdentityList>();
+  private readonly mapClientPolicies = new Map<string, MapClientPolicy>();
   private configMethod: IkeConfigMethod | null = null;
   private readonly configRequests = new Map<string, IkeConfigRequest>();
   private readonly configReplies = new Map<string, IkeConfigReply>();
@@ -618,6 +650,27 @@ export class IPSecEngine implements IProtocolEngine {
 
   // ── IKEv1 Configuration ──────────────────────────────────────────
   private isakmpPolicies: Map<number, ISAKMPPolicy> = new Map();
+  private defaultIkePolicyEnabled = true;
+  private defaultTransformSetEnabled = true;
+
+  setDefaultIkePolicyEnabled(enabled: boolean): void { this.defaultIkePolicyEnabled = enabled; }
+  setDefaultTransformSetEnabled(enabled: boolean): void { this.defaultTransformSetEnabled = enabled; }
+
+  private usingDefaultIkePolicies(): boolean {
+    return this.isakmpPolicies.size === 0 && this.defaultIkePolicyEnabled;
+  }
+
+  private effectiveIsakmpPolicies(): ISAKMPPolicy[] {
+    const configured = [...this.isakmpPolicies.values()];
+    return (this.usingDefaultIkePolicies() ? [...DEFAULT_ISAKMP_POLICIES] : configured)
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  private transformSetsOf(entry: { transformSets: string[] }): TransformSet[] {
+    const named = entry.transformSets.map((n) => this.transformSets.get(n)).filter(Boolean) as TransformSet[];
+    if (named.length > 0 || entry.transformSets.length > 0) return named;
+    return this.defaultTransformSetEnabled ? [...DEFAULT_TRANSFORM_SETS] : [];
+  }
   /** peer IP → PSK (use '0.0.0.0' for wildcard) */
   /**
    * Les clés pré-partagées IKEv1, indexées par l'IDENTITÉ du pair —
@@ -643,10 +696,23 @@ export class IPSecEngine implements IProtocolEngine {
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
+  private ikeEnabled = true;
+  private passiveMode = false;
+  private optionalRetrySeconds = DEFAULT_OPTIONAL_RETRY_SECONDS;
+  private readonly clearTextUntilMs = new Map<string, number>();
+  private clearTextFallback = false;
+  private replayCheckingDisabled = false;
+  private idleTimeGlobalSec: number | null = null;
+  private dfBitGlobal: DfBitPolicy = 'copy';
+  private readonly dfBitByInterface = new Map<string, DfBitPolicy>();
+  private fragmentationGlobal: FragmentationPoint = 'before-encryption';
+  private readonly fragmentationByInterface = new Map<string, FragmentationPoint>();
+  private readonly deferredIke = new Set<string>();
+  private readonly ikeWaiters = new Map<string, Array<(up: boolean) => void>>();
   private pendingIke = new Map<string, {
     entry: CryptoMapEntry; egressIface: string; localIP: string;
     apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
-    keyPair?: IkeKeyPair;
+    keyPair?: IkeKeyPair; rsaNonce?: string;
   }>();
   private natKeepaliveInterval: number = 0;
   private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
@@ -953,6 +1019,7 @@ export class IPSecEngine implements IProtocolEngine {
       if (!this.running) return;
       this.recheckIKESALifetimes();
       this.runDPDCheck();
+      this.expireIdleSAs();
     }, 1000);
   }
 
@@ -1108,6 +1175,50 @@ export class IPSecEngine implements IProtocolEngine {
     this.isakmpProfiles.delete(name);
   }
 
+  private identityMatches(list: CryptoIdentityList | undefined, offer: IkeOfferMessage): boolean {
+    if (!list) return false;
+    const normalise = (text: string): string => text.replace(/\s*=\s*/g, '=').trim().toLowerCase();
+    if (list.fqdn !== undefined && offer.identity.toLowerCase() === list.fqdn.toLowerCase()) return true;
+    const subject = (offer.certPayload?.cert as X509Certificate | undefined)?.subject;
+    if (subject === undefined) return false;
+    const rdns = subject.split(',').map(normalise);
+    return list.dn.some((dn) => rdns.includes(normalise(dn)));
+  }
+
+  private identityListsPermit(peerEntry: CryptoMapEntry | null, srcIp: string, offer: IkeOfferMessage): boolean {
+    const names: Array<string | undefined> = [];
+    if (peerEntry) names.push(peerEntry.identityName);
+    else {
+      const mapName = this.ifaceCryptoMap.get(this.findInterfaceForPeer(srcIp) ?? '');
+      for (const dynName of this.cryptoMaps.get(mapName ?? '')?.dynamicEntries.values() ?? []) {
+        for (const entry of this.dynamicCryptoMaps.get(dynName)?.entries.values() ?? []) names.push(entry.identityName);
+      }
+    }
+    if (names.length === 0 || names.some((n) => n === undefined)) return true;
+    return names.some((n) => this.identityMatches(this.identityLists.get(n!), offer));
+  }
+
+  getOrCreateIdentityList(name: string): CryptoIdentityList {
+    let list = this.identityLists.get(name);
+    if (!list) {
+      list = { name, dn: [] };
+      this.identityLists.set(name, list);
+    }
+    return list;
+  }
+
+  showCryptoIdentity(name?: string): string {
+    const lists = [...this.identityLists.values()].filter((l) => name === undefined || l.name === name);
+    const out: string[] = [];
+    for (const list of lists) {
+      out.push(`crypto identity ${list.name}:`);
+      if (list.description) out.push(`Description: ${list.description}`);
+      if (list.fqdn) out.push(`fqdn ${list.fqdn}`);
+      for (const dn of list.dn) out.push(`dn ${dn}`);
+    }
+    return out.join('\n');
+  }
+
   private peerIdentityAccepted(
     entry: CryptoMapEntry, identity: string, srcIp: string,
   ): boolean {
@@ -1151,6 +1262,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   private findISAKMPPSK(entry: CryptoMapEntry | null, ...candidateIPs: string[]): string {
+    if (entry?.presharedKey) return entry.presharedKey;
     const profile = entry?.isakmpProfileName ? this.isakmpProfiles.get(entry.isakmpProfileName) : undefined;
     if (profile?.keyring) {
       const identityOk = !profile.matchAddress || candidateIPs.includes(profile.matchAddress);
@@ -1418,6 +1530,106 @@ export class IPSecEngine implements IProtocolEngine {
     map.dynamicEntries.set(seq, dynMapName);
   }
 
+  setIkeEnabled(enabled: boolean): void {
+    this.ikeEnabled = enabled;
+  }
+
+  setPassiveMode(enabled: boolean): void {
+    this.passiveMode = enabled;
+    if (!enabled) {
+      this.optionalRetrySeconds = DEFAULT_OPTIONAL_RETRY_SECONDS;
+      this.clearTextUntilMs.clear();
+    }
+  }
+
+  isPassiveMode(): boolean { return this.passiveMode; }
+
+  setOptionalRetry(seconds: number): void { this.optionalRetrySeconds = seconds; }
+
+  getOptionalRetry(): number { return this.optionalRetrySeconds; }
+
+  consumeClearTextFallback(): boolean {
+    const taken = this.clearTextFallback;
+    this.clearTextFallback = false;
+    return taken;
+  }
+
+  rejectsClearText(inPort: string, pkt: IPv4Packet): boolean {
+    if (this.passiveMode) return false;
+    if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) return false;
+    const mapName = this.ifaceCryptoMap.get(inPort);
+    if (!mapName) return false;
+    const cmap = this.cryptoMaps.get(mapName);
+    if (!cmap) return false;
+    const transport = pkt.payload as { type?: string; sourcePort?: number; destinationPort?: number } | undefined;
+    if (transport?.type === 'udp' && (transport.sourcePort === 500 || transport.destinationPort === 500
+        || transport.sourcePort === 4500 || transport.destinationPort === 4500)) return false;
+    const mirrored: IPv4Packet = {
+      ...pkt,
+      sourceIP: pkt.destinationIP,
+      destinationIP: pkt.sourceIP,
+      payload: transport && (transport.type === 'udp' || transport.type === 'tcp')
+        ? { ...transport, sourcePort: transport.destinationPort, destinationPort: transport.sourcePort } as unknown as IPv4Packet['payload']
+        : pkt.payload,
+    };
+    for (const entry of cmap.staticEntries.values()) {
+      if (entry.aclName && this.matchACL(entry.aclName, mirrored)) return true;
+    }
+    return false;
+  }
+
+  setReplayCheckingDisabled(disabled: boolean): void {
+    this.replayCheckingDisabled = disabled;
+  }
+
+  setIdleTime(seconds: number | null): void {
+    this.idleTimeGlobalSec = seconds;
+  }
+
+  getIdleTime(): number | null {
+    return this.idleTimeGlobalSec;
+  }
+
+  expireIdleSAs(): void {
+    const now = simulationNowMs();
+    for (const [peerIP, sas] of [...this.ipsecSADB.entries()]) {
+      const idle = sas.filter((sa) => sa.idleTimeSec !== undefined && now - sa.lastActivityMs >= sa.idleTimeSec * 1000);
+      if (idle.length === 0) continue;
+      if (idle.length === sas.length) {
+        this.clearSAsForPeer(peerIP, 'lifetime');
+        continue;
+      }
+      for (const sa of idle) this.spiToSA.delete(sa.spiIn);
+      this.ipsecSADB.set(peerIP, sas.filter((sa) => !idle.includes(sa)));
+    }
+  }
+
+  setDfBit(policy: DfBitPolicy | null, ifName?: string): void {
+    if (ifName === undefined) {
+      this.dfBitGlobal = policy ?? 'copy';
+      return;
+    }
+    if (policy === null) this.dfBitByInterface.delete(ifName);
+    else this.dfBitByInterface.set(ifName, policy);
+  }
+
+  resolveDfBit(ifName: string): DfBitPolicy {
+    return this.dfBitByInterface.get(ifName) ?? this.dfBitGlobal;
+  }
+
+  setFragmentationPoint(point: FragmentationPoint | null, ifName?: string): void {
+    if (ifName === undefined) {
+      this.fragmentationGlobal = point ?? 'before-encryption';
+      return;
+    }
+    if (point === null) this.fragmentationByInterface.delete(ifName);
+    else this.fragmentationByInterface.set(ifName, point);
+  }
+
+  resolveFragmentationPoint(ifName: string): FragmentationPoint {
+    return this.fragmentationByInterface.get(ifName) ?? this.fragmentationGlobal;
+  }
+
   applyCryptoMapToInterface(ifName: string, mapName: string): void {
     this.ifaceCryptoMap.set(ifName, mapName);
   }
@@ -1678,6 +1890,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   /** ISAKMP on UDP 500 — DPD R-U-THERE/ACK notifies (RFC 3706). */
   handleIkeUdp(_inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
+    if (!this.ikeEnabled) return;
     const payload = udp.payload;
     const srcIp = ipPkt.sourceIP.toString();
     if (isIkeMessage(payload)) {
@@ -2527,7 +2740,7 @@ export class IPSecEngine implements IProtocolEngine {
     const seqs = [...cmap.staticEntries.keys()].sort((a, b) => a - b);
     for (const seq of seqs) {
       const entry = cmap.staticEntries.get(seq)!;
-      if (entry.aclName && this.matchACL(entry.aclName, pkt)) {
+      if (entry.matcher ? entry.matcher(pkt) : entry.aclName && this.matchACL(entry.aclName, pkt)) {
         return entry;
       }
     }
@@ -2548,6 +2761,7 @@ export class IPSecEngine implements IProtocolEngine {
             transformSets: dynEntry.transformSets,
             aclName: dynEntry.aclName || '',
             pfsGroup: dynEntry.pfsGroup,
+            identityName: dynEntry.identityName,
           };
         }
       }
@@ -2565,7 +2779,7 @@ export class IPSecEngine implements IProtocolEngine {
     const seqs = [...cmap.staticEntries.keys()].sort((a, b) => a - b);
     for (const seq of seqs) {
       const entry = cmap.staticEntries.get(seq)!;
-      if (entry.aclName && this.matchACL(entry.aclName, pkt)) out.push(entry);
+      if (entry.matcher ? entry.matcher(pkt) : entry.aclName && this.matchACL(entry.aclName, pkt)) out.push(entry);
     }
     if (out.length > 1) {
       Logger.warn(this.router.id, 'ipsec:overlap',
@@ -2635,10 +2849,21 @@ export class IPSecEngine implements IProtocolEngine {
       this.dbgIpsec(`    local_proxy= ${localProxy ?? pkt.sourceIP.toString() + '/255.255.255.255/0/0'} (type=4)`);
       this.dbgIpsec(`    remote_proxy= ${remoteProxy ?? pkt.destinationIP.toString() + '/255.255.255.255/0/0'} (type=4)`);
       this.dbgIpsec(`IPSEC(key_engine): got a queue event with 1 KMI message(s)`);
+      const holdUntil = this.passiveMode ? this.clearTextUntilMs.get(peerIP) ?? 0 : 0;
+      if (simulationNowMs() < holdUntil) {
+        this.clearTextFallback = true;
+        return null;
+      }
       const ok = this.negotiateTunnel(peerIP, entry, egressIface);
-      if (!ok) return null;
-      sa = this.getBestIPSecSA(peerIP);
-      if (!sa) return null;
+      sa = ok ? this.getBestIPSecSA(peerIP) : null;
+      if (!sa) {
+        if (this.passiveMode) {
+          this.clearTextUntilMs.set(peerIP, simulationNowMs() + this.optionalRetrySeconds * 1000);
+          this.clearTextFallback = true;
+        }
+        return null;
+      }
+      this.clearTextUntilMs.delete(peerIP);
       this.dbgIpsec(`IPSEC(initialize_sas): ,`);
       this.dbgIpsec(`IPSEC(create_sa): sa created,`);
       this.dbgIpsec(`  (sa) sa_dest= ${peerIP}, sa_proto= 50,`);
@@ -2647,6 +2872,28 @@ export class IPSecEngine implements IProtocolEngine {
       (this.router as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
         .getLoggingConfig?.()?.append('notifications', 'crypto',
           `Crypto tunnel is UP. Peer ${peerIP}:500 Id: ${peerIP}`, true, 'SESSION_STATUS');
+    }
+
+    const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
+    const interfaceMtu = this.router._ipsecInterfaceMtu(egressIface) ?? sa.pathMTU;
+    const limit = Math.min(sa.pathMTU, interfaceMtu);
+    const innerMayBeFragmented = (pkt.flags & 0b010) === 0 && (pkt.flags & 0b100) === 0 && pkt.fragmentOffset === 0;
+    const exceeds = pkt.totalLength + overhead > limit;
+    const prefragment = exceeds && innerMayBeFragmented
+      && (sa.dfBitPolicy === 'set' || this.resolveFragmentationPoint(egressIface) === 'before-encryption');
+    if (prefragment) {
+      const pieces = fragmentIPv4Packet(pkt, Math.max(MIN_IPV4_MTU, limit - overhead));
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC: pre-encryption fragmentation: ${pkt.totalLength} + ${overhead} > MTU ${limit}, ${pieces.length} fragments`);
+      }
+      const encapsulated: IPv4Packet[] = [];
+      for (const piece of pieces) {
+        const wrapped = this.encapsulate(piece, sa, egressIface, true);
+        if (!wrapped) return null;
+        encapsulated.push(wrapped);
+      }
+      return encapsulated;
     }
 
     // Wrap in ESP (or AH for AH-only)
@@ -2723,7 +2970,7 @@ export class IPSecEngine implements IProtocolEngine {
     return sas && sas.length > 0 ? sas[0] : null;
   }
 
-  private encapsulate(innerPkt: IPv4Packet, sa: IPSec_SA, egressIface: string): IPv4Packet | null {
+  private encapsulate(innerPkt: IPv4Packet, sa: IPSec_SA, egressIface: string, prefragmented = false): IPv4Packet | null {
     const localAddress = this.router._ipsecLocalIp(egressIface);
     if (!localAddress) return null;
     const localIP: IPAddress = new IPAddress(localAddress);
@@ -2732,7 +2979,7 @@ export class IPSecEngine implements IProtocolEngine {
     // In tunnel mode, fragments should be reassembled before IPsec processing.
     // Check if the inner packet is a fragment (MF set or offset > 0).
     // MF = bit 2 of flags field (0b100 = 0x4).
-    if (sa.statefulFragCheck && sa.mode === 'Tunnel') {
+    if (sa.statefulFragCheck && sa.mode === 'Tunnel' && !prefragmented) {
       const mfSet = (innerPkt.flags & 0b100) !== 0; // MF flag = bit 2
       const isFragment = mfSet || innerPkt.fragmentOffset !== 0;
       if (isFragment) {
@@ -2812,6 +3059,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsEncaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.outboundSeqNum++;
     sa.bytesEncaps += innerPkt.totalLength;
 
@@ -2945,15 +3194,14 @@ export class IPSecEngine implements IProtocolEngine {
    * Controls the DF bit per the SA's dfBitPolicy.
    */
   private computeOuterFlags(innerPkt: IPv4Packet, sa: IPSec_SA): number {
+    const innerDf = (innerPkt.flags & 0b010) !== 0;
     switch (sa.dfBitPolicy) {
-      case 'copy':
-        return innerPkt.flags; // preserve DF from inner
       case 'set':
-        return innerPkt.flags | 0b010; // force DF on
+        return 0b010;
       case 'clear':
-        return innerPkt.flags & ~0b010; // force DF off
+        return 0;
       default:
-        return innerPkt.flags;
+        return innerDf ? 0b010 : 0;
     }
   }
 
@@ -3188,6 +3436,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsDecaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.bytesDecaps += (inner?.totalLength || 0);
 
     if (inner && !this.acceptsEcnOnDecap(outerPkt, inner, sa)) return null;
@@ -3216,6 +3466,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsDecaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
 
     // SA bundle (RFC 4301 §4.5): combined AH+ESP — unwrap both layers here
@@ -3226,6 +3478,7 @@ export class IPSecEngine implements IProtocolEngine {
         const espInner = openEsp(sa.cryptoKeys, esp);
         if (espInner === null) { sa.recvErrors++; return null; }
         sa.pktsDecaps++;
+        sa.lastActivityMs = simulationNowMs();
         sa.bytesDecaps += (espInner?.totalLength || 0);
         if (espInner && !this.acceptsEcnOnDecap(outerPkt, espInner, sa)) return null;
         return espInner;
@@ -3398,6 +3651,14 @@ export class IPSecEngine implements IProtocolEngine {
    * Initiate IKEv1/IKEv2 tunnel establishment with a peer.
    * Synchronous — completes immediately by directly calling the peer's engine.
    */
+  private rsaNonceSeed(initiatorNonce: string, responderNonce: string): string {
+    return `rsa-encr:${bytesToHex(sha256(utf8ToBytes(`${initiatorNonce}|${responderNonce}`)))}`;
+  }
+
+  private rsaProvider(): IkeRsaProvider | null {
+    return this.router._ikeRsaProvider();
+  }
+
   private ikePskProof(psk: string): string {
     if (!psk) return '';
     let h = 0;
@@ -3435,15 +3696,16 @@ export class IPSecEngine implements IProtocolEngine {
     return {
       peerIP: p.peerIP, localIP: p.localIP, spiIn: p.spiIn, spiOut: p.spiOut,
       outboundSeqNum: 0, seqOverflowFlag: true,
-      replayWindowSize: this.replayWindowSize,
-      replayBitmap: createReplayBitmap(this.replayWindowSize),
+      replayWindowSize: this.replayCheckingDisabled ? 0 : this.replayWindowSize,
+      replayBitmap: createReplayBitmap(this.replayCheckingDisabled ? 0 : this.replayWindowSize),
       replayWindowLastSeq: 0, esnEnabled: this.esnDefault,
       outboundSeqNumHigh: 0, replayWindowLastSeqHigh: 0,
       cryptoKeys: p.cryptoKeys, created: now,
       lifetime: p.lifetime, lifetimeKB: p.lifetimeKB,
       mode: p.mode, trafficSelectors: p.trafficSelectors,
       statefulFragCheck: p.mode === 'Tunnel',
-      dfBitPolicy: 'copy', dscpEcnConfig: defaultDscpEcnConfig(),
+      dfBitPolicy: this.resolveDfBit(p.outIface), dscpEcnConfig: defaultDscpEcnConfig(),
+      idleTimeSec: this.idleTimeGlobalSec ?? undefined, lastActivityMs: now,
       pathMTU, ipMTU: pathMTU - overhead, pathMTULastUpdated: now,
       transforms: p.transforms, aclName: p.aclName,
       pktsEncaps: 0, pktsDecaps: 0, sendErrors: 0, recvErrors: 0,
@@ -3493,12 +3755,9 @@ export class IPSecEngine implements IProtocolEngine {
     localIP: string, apparentSrcIP: string, egressIface: string,
     version: 1 | 2,
   ): boolean {
-    const transforms: IkeTransformProposal[] = entry.transformSets
-      .map((n) => this.transformSets.get(n))
-      .filter(Boolean)
-      .map((t) => ({ name: t!.name, transforms: t!.transforms, mode: t!.mode }));
-    const policies: IkePolicyProposal[] = [...this.isakmpPolicies.values()]
-      .sort((a, b) => a.priority - b.priority)
+    const transforms: IkeTransformProposal[] = this.transformSetsOf(entry)
+      .map((t) => ({ name: t.name, transforms: t.transforms, mode: t.mode }));
+    const policies: IkePolicyProposal[] = this.effectiveIsakmpPolicies()
       .map((p) => ({ priority: p.priority, encryption: p.encryption, hash: p.hash, group: p.group, auth: p.auth, lifetime: p.lifetime }));
     const ikev2Proposals: IkeV2ProposalWire[] = [...this.ikev2Proposals.values()]
       .map((p) => ({ name: p.name, encryption: [...p.encryption], integrity: [...p.integrity], dhGroup: [...p.dhGroup] }));
@@ -3527,7 +3786,7 @@ export class IPSecEngine implements IProtocolEngine {
     const spiInitIn = randomSPI();
     const offer: IkeOfferMessage = {
       type: 'ike', step: 'offer', version,
-      exchangeMode: this.aggressiveMode ? 'aggressive' : 'main',
+      exchangeMode: this.aggressiveMode || entry.managedBy === 'ezvpn' ? 'aggressive' : 'main',
       initiatorSpi: spiHex(randomSPI()), identity,
       destination: peerIP,
       pskProof: this.ikePskProof(myPSK),
@@ -3538,7 +3797,8 @@ export class IPSecEngine implements IProtocolEngine {
       natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
       trafficSelectors: this.selectorsForEntry(entry),
-      configRequest: this.configRequests.get(peerIP),
+      configRequest: this.configRequests.get(peerIP)
+        ?? (this.mapClientPolicies.get(this.ifaceCryptoMap.get(egressIface) ?? '')?.initiate ? { wantAddress: true } : undefined),
     };
     if (this.ikeCertAuth) {
       
@@ -3548,9 +3808,26 @@ export class IPSecEngine implements IProtocolEngine {
         authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${apparentSrcIP}|${peerIP}|${spiInitIn}`),
       };
     }
+    let rsaNonce: string | undefined;
+    if (version === 1 && policies[0]?.auth === 'rsa-encr') {
+      const provider = this.rsaProvider();
+      if (!provider?.privateKey()) {
+        this.createFailedIKESA(peerIP, egressIface, 'RSA key pair not found');
+        return false;
+      }
+      const peerKey = provider.peerPublicKey(peerIP, this.hostnamesFor(peerIP));
+      if (!peerKey) {
+        this.createFailedIKESA(peerIP, egressIface, 'RSA public key of the peer not found');
+        return false;
+      }
+      rsaNonce = bytesToHex(systemRandom(16));
+      offer.authMode = 'rsa-encr';
+      offer.policies = offer.policies.filter((p) => p.auth === 'rsa-encr');
+      offer.rsaNonce = bytesToHex(rsaEncryptPkcs1(peerKey, hexToBytes(rsaNonce)));
+    }
     this.pendingIke.set(peerIP, {
       entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer,
-      keyPair: exchange?.pair,
+      keyPair: exchange?.pair, rsaNonce,
     });
     this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
     this.dbgIsakmp(`ISAKMP: Created a peer struct for ${peerIP}, peer port 500`);
@@ -3565,10 +3842,11 @@ export class IPSecEngine implements IProtocolEngine {
       this.dbgIsakmp(`ISAKMP:      default group ${pol.group}`);
     }
     this.router._sendIkeUdp(peerIP, offer);
-    this.pendingIke.delete(peerIP);
     const up = version === 2
       ? this.ikev2SADB.get(peerIP)?.status === 'READY'
       : this.ikeSADB.get(peerIP)?.status === 'QM_IDLE';
+    if (!up && this.deferredIke.has(peerIP)) return false;
+    this.pendingIke.delete(peerIP);
     if (up) {
       this.dbgIsakmp(`ISAKMP:(0): atts are acceptable. Next payload is 0`);
       this.dbgIsakmp(`ISAKMP:(1001): processing KE payload`);
@@ -3592,6 +3870,7 @@ export class IPSecEngine implements IProtocolEngine {
     else if (msg.step === 'accept') this.handleIkeAccept(srcIp, msg);
     else if (msg.step === 'reject') this.createFailedIKESA(srcIp, '', msg.reason);
     else if (msg.step === 'rekey') this.refreshIkeSAFromWire(srcIp);
+    else if (msg.step === 'processing' && this.pendingIke.has(srcIp)) this.deferredIke.add(srcIp);
   }
 
   private refreshIkeSAFromWire(srcIp: string): void {
@@ -3637,7 +3916,7 @@ export class IPSecEngine implements IProtocolEngine {
       }
       if (!chosenIkev2) { this.rejectIke(srcIp, 'No matching IKEv2 proposal'); return; }
     } else {
-      const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
+      const myPolicies = this.effectiveIsakmpPolicies();
       this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
       this.dbgIsakmp(`ISAKMP: Created a peer struct for ${srcIp}, peer port 500`);
       this.dbgIsakmp(`ISAKMP:(0): Processing SA payload.  message ID = 0`);
@@ -3677,7 +3956,7 @@ export class IPSecEngine implements IProtocolEngine {
       this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_R_MM_KEY_EXCH  New State = IKE_P1_COMPLETE, QM_IDLE`);
     }
 
-    const usingCert = offer.authMode === 'x509' || !!this.ikeCertAuth;
+    const usingCert = offer.authMode !== 'rsa-encr' && (offer.authMode === 'x509' || !!this.ikeCertAuth);
     if (usingCert) {
       
       
@@ -3714,19 +3993,52 @@ export class IPSecEngine implements IProtocolEngine {
       if (!isV2) this.createFailedIKESA(srcIp, '', 'Peer ID mismatch');
       return;
     }
-    const myPSK = usingCert
+    if (!this.identityListsPermit(peerEntry, srcIp, offer)) {
+      this.rejectIke(srcIp, 'Peer identity not permitted by the crypto identity');
+      if (!isV2) this.createFailedIKESA(srcIp, '', 'Peer identity not permitted by the crypto identity');
+      return;
+    }
+    let rsaReplyNonce: string | undefined;
+    let rsaSeed: string | undefined;
+    if (offer.authMode === 'rsa-encr') {
+      const provider = this.rsaProvider();
+      const own = provider?.privateKey();
+      if (!own || !offer.rsaNonce) {
+        this.rejectIke(srcIp, 'RSA key pair not found');
+        this.createFailedIKESA(srcIp, '', 'RSA key pair not found');
+        return;
+      }
+      const clear = rsaDecryptPkcs1(own, hexToBytes(offer.rsaNonce));
+      if (clear === null) {
+        this.rejectIke(srcIp, 'RSA nonce decryption failed');
+        this.createFailedIKESA(srcIp, '', 'RSA nonce decryption failed');
+        return;
+      }
+      const peerKey = provider!.peerPublicKey(srcIp, [...this.hostnamesFor(srcIp), offer.identity]);
+      if (!peerKey) {
+        this.rejectIke(srcIp, 'RSA public key of the peer not found');
+        this.createFailedIKESA(srcIp, '', 'RSA public key of the peer not found');
+        return;
+      }
+      const responderNonce = bytesToHex(systemRandom(16));
+      rsaReplyNonce = bytesToHex(rsaEncryptPkcs1(peerKey, hexToBytes(responderNonce)));
+      rsaSeed = this.rsaNonceSeed(bytesToHex(clear), responderNonce);
+    }
+    const myPSK = rsaSeed !== undefined
+      ? rsaSeed
+      : usingCert
       ? 'cert-auth-key'
       : (isV2
         ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
-        : this.findISAKMPPSK(peerEntry, offer.identity, srcIp));
-    if (!usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
+        : (this.ezvpn.groupKeyFor(offer.identity) ?? this.findISAKMPPSK(peerEntry, offer.identity, srcIp)));
+    if (rsaSeed === undefined && !usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
       this.rejectIke(srcIp, 'PSK mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'PSK mismatch');
       return;
     }
 
     const myTSets = peerEntry
-      ? peerEntry.transformSets.map((n) => this.transformSets.get(n)).filter(Boolean) as TransformSet[]
+      ? this.transformSetsOf(peerEntry)
       : [...this.transformSets.values()];
     let chosenTransform: IkeTransformProposal | null = null;
     for (const off of offer.transforms) {
@@ -3747,7 +4059,7 @@ export class IPSecEngine implements IProtocolEngine {
     const lifetimeSec = Math.min(offer.lifetimeSec, peerEntry?.saLifetimeSeconds ?? this.globalSALifetimeSeconds);
     const lifetimeKB = Math.min(offer.lifetimeKB, this.globalSALifetimeKB);
     const natT = this.natTraversalDecision(
-      offer.natTHint || srcIp !== offer.identity || dstIp !== offer.destination);
+      offer.natTHint || (IPAddress.tryParse(offer.identity) !== null && srcIp !== offer.identity) || dstIp !== offer.destination);
     const spiRespIn = randomSPI();
     const transforms = chosenTransform.transforms;
     const loSpi = Math.min(offer.ipsecSpiIn, spiRespIn);
@@ -3778,78 +4090,104 @@ export class IPSecEngine implements IProtocolEngine {
     const localSelectors = this.selectorsForEntry(peerEntry);
     const trafficSelectors = narrowSelectors(offer.trafficSelectors, localSelectors);
     const childAccepted = trafficSelectors !== null;
-    const configVerdict = offer.configRequest === undefined || !this.configMethod
+    const pendingVerdict = offer.configRequest === undefined
       ? undefined
-      : this.configMethod(srcIp, offer.configRequest);
-    if (configVerdict !== undefined && typeof configVerdict === 'string') {
-      this.rejectIke(srcIp, configVerdict);
+      : this.configMethod
+        ? this.configMethod(srcIp, offer.configRequest)
+        : this.ezvpn.answer(srcIp, offer.identity, offer.configRequest);
+    const complete = (configVerdict: IkeConfigReply | string | undefined): void => {
+      if (configVerdict !== undefined && typeof configVerdict === 'string') {
+        this.rejectIke(srcIp, configVerdict);
+        return;
+      }
+
+      if (childAccepted) {
+        const sa = this.buildIpsecSAStruct({
+          peerIP: srcIp, localIP, spiIn: spiRespIn, spiOut: offer.ipsecSpiIn,
+          cryptoKeys, lifetime: lifetimeSec, lifetimeKB, mode: saMode,
+          trafficSelectors: trafficSelectors ?? undefined, transforms, aclName: peerEntry?.aclName || '',
+          pfsGroup: peerEntry?.pfsGroup ?? offer.pfsGroup, natT, outIface: egress, hasESP, hasAH,
+        });
+        this.installIpsecSALocal(srcIp, sa);
+      }
+
+      const responderSpi = spiHex(randomSPI());
+      if (isV2) {
+        const ikev2Dpd = this.resolveIkev2Dpd(peerEntry);
+        this.ikev2SADB.set(srcIp, {
+          peerIP: srcIp, localIP, status: 'READY',
+          spiLocal: responderSpi, spiRemote: offer.initiatorSpi, role: 'Responder',
+          proposalUsed: chosenIkev2!.propName, encryptionUsed: chosenIkev2!.enc,
+          integrityUsed: chosenIkev2!.int, dhGroupUsed: chosenIkev2!.grp,
+          created: simulationNowMs(), natT,
+          lifetime: this.resolveIkev2Lifetime(peerEntry),
+          dpdEnabled: !!ikev2Dpd,
+          dpdIntervalSec: ikev2Dpd?.interval, dpdRetries: ikev2Dpd?.retry, dpdMode: ikev2Dpd?.mode,
+          lastDPDActivity: simulationNowMs(), dpdTimeouts: 0,
+        });
+      } else {
+        const useAggr = offer.exchangeMode === 'aggressive' || this.aggressiveMode;
+        this.ikeSADB.set(srcIp, this.buildIkeSAStruct({
+          peerIP: srcIp, localIP, role: 'responder', policy: chosenPolicy!,
+          lifetime: ikeLifetime, natT, exchangeMode: useAggr ? 'aggressive' : 'main',
+        }));
+      }
+      if (natT) this.rearmNatTKeepalive(srcIp, isV2 ? 2 : 1);
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-installed',
+        payload: { ...this.deviceRef(), peerIp: srcIp, localIp: localIP, version: isV2 ? 2 : 1, lifetimeSec: ikeLifetime },
+      });
+      Logger.info(this.router.id, 'ipsec:sa-up',
+        `${this.router.name}: IPSec SA UP with ${srcIp} [${transforms.join(',')}]`);
+
+      const accept: IkeAcceptMessage = {
+        type: 'ike', step: 'accept', responderSpi,
+        pskProof: this.ikePskProof(myPSK), rsaNonce: rsaReplyNonce, chosenPolicy, chosenIkev2, chosenTransform,
+        ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
+        lifetimeSec, lifetimeKB, natT,
+        keyExchange: responderExchange?.payload,
+        childRejected: childAccepted ? undefined : 'TS_UNACCEPTABLE',
+        narrowedSelectors: trafficSelectors ? mirrorSelectors(trafficSelectors) : undefined,
+        configReply: typeof configVerdict === 'string' ? undefined : configVerdict,
+      };
+      if (this.ikeCertAuth && rsaSeed === undefined) {
+      
+        accept.certPayload = {
+          cert: this.ikeCertAuth.localCert,
+          authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${responderSpi}|${srcIp}`),
+        };
+      }
+      this.router._sendIkeUdp(srcIp, accept);
+    };
+    if (pendingVerdict instanceof Promise) {
+      this.router._sendIkeUdp(srcIp, { type: 'ike', step: 'processing' });
+      void pendingVerdict.then(complete, () => complete('CONFIG_METHOD_FAILED'));
       return;
     }
-
-    if (childAccepted) {
-      const sa = this.buildIpsecSAStruct({
-        peerIP: srcIp, localIP, spiIn: spiRespIn, spiOut: offer.ipsecSpiIn,
-        cryptoKeys, lifetime: lifetimeSec, lifetimeKB, mode: saMode,
-        trafficSelectors: trafficSelectors ?? undefined, transforms, aclName: peerEntry?.aclName || '',
-        pfsGroup: peerEntry?.pfsGroup ?? offer.pfsGroup, natT, outIface: egress, hasESP, hasAH,
-      });
-      this.installIpsecSALocal(srcIp, sa);
-    }
-
-    const responderSpi = spiHex(randomSPI());
-    if (isV2) {
-      const ikev2Dpd = this.resolveIkev2Dpd(peerEntry);
-      this.ikev2SADB.set(srcIp, {
-        peerIP: srcIp, localIP, status: 'READY',
-        spiLocal: responderSpi, spiRemote: offer.initiatorSpi, role: 'Responder',
-        proposalUsed: chosenIkev2!.propName, encryptionUsed: chosenIkev2!.enc,
-        integrityUsed: chosenIkev2!.int, dhGroupUsed: chosenIkev2!.grp,
-        created: simulationNowMs(), natT,
-        lifetime: this.resolveIkev2Lifetime(peerEntry),
-        dpdEnabled: !!ikev2Dpd,
-        dpdIntervalSec: ikev2Dpd?.interval, dpdRetries: ikev2Dpd?.retry, dpdMode: ikev2Dpd?.mode,
-        lastDPDActivity: simulationNowMs(), dpdTimeouts: 0,
-      });
-    } else {
-      const useAggr = offer.exchangeMode === 'aggressive' || this.aggressiveMode;
-      this.ikeSADB.set(srcIp, this.buildIkeSAStruct({
-        peerIP: srcIp, localIP, role: 'responder', policy: chosenPolicy!,
-        lifetime: ikeLifetime, natT, exchangeMode: useAggr ? 'aggressive' : 'main',
-      }));
-    }
-    if (natT) this.rearmNatTKeepalive(srcIp, isV2 ? 2 : 1);
-    this.getBus().publish({
-      topic: 'ipsec.ike.sa-installed',
-      payload: { ...this.deviceRef(), peerIp: srcIp, localIp: localIP, version: isV2 ? 2 : 1, lifetimeSec: ikeLifetime },
-    });
-    Logger.info(this.router.id, 'ipsec:sa-up',
-      `${this.router.name}: IPSec SA UP with ${srcIp} [${transforms.join(',')}]`);
-
-    const accept: IkeAcceptMessage = {
-      type: 'ike', step: 'accept', responderSpi,
-      pskProof: this.ikePskProof(myPSK), chosenPolicy, chosenIkev2, chosenTransform,
-      ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
-      lifetimeSec, lifetimeKB, natT,
-      keyExchange: responderExchange?.payload,
-      childRejected: childAccepted ? undefined : 'TS_UNACCEPTABLE',
-      narrowedSelectors: trafficSelectors ? mirrorSelectors(trafficSelectors) : undefined,
-      configReply: typeof configVerdict === 'string' ? undefined : configVerdict,
-    };
-    if (this.ikeCertAuth) {
-      
-      accept.certPayload = {
-        cert: this.ikeCertAuth.localCert,
-        authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${responderSpi}|${srcIp}`),
-      };
-    }
-    this.router._sendIkeUdp(srcIp, accept);
+    complete(pendingVerdict);
   }
 
   private handleIkeAccept(srcIp: string, accept: IkeAcceptMessage): void {
     const pending = this.pendingIke.get(srcIp);
     if (!pending) return;
     const isV2 = pending.offer.version === 2;
-    if (this.ikeCertAuth) {
+    let rsaSeed: string | undefined;
+    if (pending.rsaNonce !== undefined) {
+      const own = this.rsaProvider()?.privateKey();
+      const clear = own && accept.rsaNonce ? rsaDecryptPkcs1(own, hexToBytes(accept.rsaNonce)) : null;
+      if (clear === null) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'RSA nonce decryption failed');
+        return;
+      }
+      rsaSeed = this.rsaNonceSeed(pending.rsaNonce, bytesToHex(clear));
+      if (this.ikePskProof(rsaSeed) !== accept.pskProof) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'RSA nonce decryption failed');
+        return;
+      }
+    }
+    if (rsaSeed !== undefined) {
+      /* authenticated by the nonce exchange */
+    } else if (this.ikeCertAuth) {
       
       if (!accept.certPayload) {
         this.createFailedIKESA(srcIp, pending.egressIface, 'Certificate unknown');
@@ -3874,7 +4212,9 @@ export class IPSecEngine implements IProtocolEngine {
         this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
       }
     }
-    const myPSK = isV2
+    const myPSK = rsaSeed !== undefined
+      ? rsaSeed
+      : isV2
       ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? 'cert-auth-key')
       : (this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP, ...this.hostnamesFor(srcIp)) || 'cert-auth-key');
     const spiInitIn = pending.spiInitIn;
@@ -3934,9 +4274,47 @@ export class IPSecEngine implements IProtocolEngine {
     });
     Logger.info(this.router.id, 'ipsec:sa-up',
       `${this.router.name}: IPSec SA UP with ${srcIp} [${transforms.join(',')}]`);
+    this.settleIke(srcIp, true);
+  }
+
+  ikeFailureReason(peer: string): string | undefined {
+    return this.ikeSADB.get(peer)?.failureReason;
+  }
+
+  bringUpClientTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean | Promise<boolean> {
+    const up = this.negotiateTunnel(peerIP, entry, egressIface);
+    return !up && this.deferredIke.has(peerIP) ? this.awaitIke(peerIP) : up;
+  }
+
+  installManagedCryptoMap(mapName: string, entries: CryptoMapEntry[]): void {
+    const map = this.getOrCreateCryptoMap(mapName);
+    for (const [seq, entry] of [...map.staticEntries]) if (entry.managedBy) map.staticEntries.delete(seq);
+    for (const entry of entries) map.staticEntries.set(entry.seq, entry);
+  }
+
+  removeManagedCryptoMap(mapName: string): void {
+    this.cryptoMaps.delete(mapName);
+    for (const [iface, name] of [...this.ifaceCryptoMap]) if (name === mapName) this.ifaceCryptoMap.delete(iface);
+  }
+
+  cryptoMapOn(iface: string): string | undefined { return this.ifaceCryptoMap.get(iface); }
+
+  ensureEzvpnTransformSets(): string[] {
+    const ciphers = ['esp-aes', 'esp-aes 192', 'esp-aes 256', 'esp-3des'];
+    const auths = ['esp-sha-hmac', 'esp-md5-hmac', 'esp-sha256-hmac'];
+    const names: string[] = [];
+    for (const cipher of ciphers) {
+      for (const auth of auths) {
+        const name = `${EZVPN_TRANSFORM_PREFIX}${cipher.replace(/\s+/g, '-')}-${auth}`;
+        if (!this.transformSets.has(name)) this.transformSets.set(name, { name, transforms: [cipher, auth], mode: 'tunnel' });
+        names.push(name);
+      }
+    }
+    return names;
   }
 
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
+    if (!this.ikeEnabled) return false;
     if (this.router._ipsecInterfaceDown(egressIface)) {
       Logger.info(this.router.id, 'ipsec:port-down',
         `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
@@ -4017,9 +4395,30 @@ export class IPSecEngine implements IProtocolEngine {
     return null;
   }
 
+  private settleIke(peerIP: string, up: boolean): void {
+    this.deferredIke.delete(peerIP);
+    this.pendingIke.delete(peerIP);
+    const waiters = this.ikeWaiters.get(peerIP);
+    this.ikeWaiters.delete(peerIP);
+    for (const waiter of waiters ?? []) waiter(up);
+  }
+
+  awaitIke(peerIP: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const timer = this.timers.setTimeout(() => {
+        this.settleIke(peerIP, false);
+        this.createFailedIKESA(peerIP, '', 'IKE negotiation timed out');
+      }, IKE_DEFERRED_TIMEOUT_MS);
+      const waiters = this.ikeWaiters.get(peerIP) ?? [];
+      waiters.push((up) => { this.timers.clear(timer); resolve(up); });
+      this.ikeWaiters.set(peerIP, waiters);
+    });
+  }
+
   private createFailedIKESA(peerIP: string, _iface: string, reason: string): void {
+    if (this.deferredIke.has(peerIP)) queueMicrotask(() => this.settleIke(peerIP, false));
     const phase: 1 | 2 = /No matching (transform|IPSec)|Child SA|Phase 2/i.test(reason) ? 2 : 1;
-    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL/i.test(r);
+    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL|RSA|AUTHENTICATION_FAILED|AUTHORIZATION_FAILED|MAX_USERS|MAX_LOGINS|NO_GROUP|pool/i.test(r);
     if (/Certificate revoked/i.test(reason)) {
       Logger.warn(this.router.id, 'ipsec:cert-revoked',
         `${this.router.name}: %CRYPTO-4-IKE_QUICK_MODE_BAD_CERT peer=${peerIP} reason="Certificate revoked"`);
@@ -4079,7 +4478,7 @@ export class IPSecEngine implements IProtocolEngine {
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {
       lines.push(
-        `${sa.peerIP.padEnd(16)}${sa.localIP.padEnd(16)}${sa.status.padEnd(15)}${String(1).padEnd(8)}ACTIVE`,
+        `${padToWidth(sa.peerIP, 16)}${padToWidth(sa.localIP, 16)}${padToWidth(sa.status, 15)}${padToWidth(String(this.connIdOf(sa)), 8)}ACTIVE`,
       );
     }
     return lines.join('\n');
@@ -4127,23 +4526,45 @@ export class IPSecEngine implements IProtocolEngine {
     return lines.join('\n');
   }
 
+  private policyBlock(p: ISAKMPPolicy, title: string): string[] {
+    return [
+      `${title} ${p.priority}`,
+      `\tencryption algorithm:   ${this.formatEncForPolicy(p.encryption)}`,
+      `\thash algorithm:         ${this.formatHashForPolicy(p.hash)}`,
+      `\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth === 'rsa-sig' ? 'Rivest-Shamir-Adleman Signature' : p.auth === 'rsa-encr' ? 'Rivest-Shamir-Adleman Encryption' : p.auth}`,
+      `\tDiffie-Hellman group:   #${p.group} (${this.dhGroupBits(p.group)} bit)`,
+      `\tlifetime:               ${p.lifetime} seconds, no volume limit`,
+    ];
+  }
+
   showCryptoISAKMPPolicy(): string {
     const lines: string[] = ['Global IKE policy'];
-    for (const [, p] of [...this.isakmpPolicies.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push(`Protection suite of priority ${p.priority}`);
-      lines.push(`\tencryption algorithm:   ${this.formatEncForPolicy(p.encryption)}`);
-      lines.push(`\thash algorithm:         ${this.formatHashForPolicy(p.hash)}`);
-      lines.push(`\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth}`);
-      lines.push(`\tDiffie-Hellman group:   #${p.group} (${this.dhGroupBits(p.group)} bit)`);
-      lines.push(`\tlifetime:               ${p.lifetime} seconds, no volume limit`);
-    }
-    lines.push(`Default protection suite`);
-    lines.push(`\tencryption algorithm:   DES - Data Encryption Standard (56 bit keys).`);
-    lines.push(`\thash algorithm:         Secure Hash Standard`);
-    lines.push(`\tauthentication method:  Rivest-Shamir-Adleman Signature`);
-    lines.push(`\tDiffie-Hellman group:   #1 (768 bit)`);
-    lines.push(`\tlifetime:               86400 seconds, no volume limit`);
+    const title = this.usingDefaultIkePolicies() ? 'Default protection suite of priority' : 'Protection suite of priority';
+    for (const p of this.effectiveIsakmpPolicies()) lines.push(...this.policyBlock(p, title));
     return lines.join('\n');
+  }
+
+  showCryptoISAKMPDefaultPolicy(): string {
+    if (!this.usingDefaultIkePolicies()) return '';
+    return DEFAULT_ISAKMP_POLICIES.flatMap((p) => this.policyBlock(p, 'Default protection suite of priority')).join('\n');
+  }
+
+  showCryptoIPSecTransformSetDefault(): string {
+    if (!this.defaultTransformSetEnabled) return '';
+    return DEFAULT_TRANSFORM_SETS.flatMap((t) => [
+      `Transform set ${t.name}: { ${t.transforms.join(' ')} }`,
+      `   will negotiate = { ${t.mode === 'transport' ? 'Transport' : 'Tunnel'}, },`,
+    ]).join('\n');
+  }
+
+  showCryptoISAKMPPeers(address?: string): string {
+    const peers = new Map<string, { port: number; identity: string }>();
+    for (const sa of this.ikeSADB.values()) {
+      if (sa.status !== 'QM_IDLE') continue;
+      if (address !== undefined && sa.peerIP !== address) continue;
+      peers.set(sa.peerIP, { port: sa.natT ? 4500 : 500, identity: sa.peerIP });
+    }
+    return [...peers].flatMap(([ip, peer]) => [`Peer: ${ip} Port: ${peer.port}`, `Phase1 id: ${peer.identity}`]).join('\n');
   }
 
   private dhGroupBits(group: number): number {
@@ -4382,6 +4803,7 @@ export class IPSecEngine implements IProtocolEngine {
     if (this.transformSets.size === 0) return 'No transform sets defined.';
     const lines: string[] = [];
     for (const [, ts] of this.transformSets) {
+      if (ts.name.startsWith(EZVPN_TRANSFORM_PREFIX)) continue;
       lines.push(`Transform set ${ts.name}: { ${ts.transforms.join(' ')} }`);
       lines.push(`   will negotiate = { ${ts.mode === 'transport' ? 'Transport' : 'Tunnel'} },`);
     }
@@ -4392,10 +4814,11 @@ export class IPSecEngine implements IProtocolEngine {
     const lines: string[] = [];
     for (const [, cmap] of this.cryptoMaps) {
       for (const [, entry] of [...cmap.staticEntries.entries()].sort((a, b) => a[0] - b[0])) {
+        if (entry.managedBy) continue;
         lines.push(`Crypto Map "${cmap.name}" ${entry.seq} ipsec-isakmp`);
         lines.push(`\tPeer = ${entry.peers.join(', ')}`);
         lines.push(`\tExtended IP access list ${entry.aclName}`);
-        lines.push(`\tSecurity association lifetime: 4608000 kilobytes/${entry.saLifetimeSeconds || this.globalSALifetimeSeconds} seconds`);
+        lines.push(`\tSecurity association lifetime: ${this.globalSALifetimeKB} kilobytes/${entry.saLifetimeSeconds || this.globalSALifetimeSeconds} seconds`);
         if (entry.pfsGroup) {
           lines.push(`\tPFS (Y/N): Y`);
           lines.push(`\tDH group: ${entry.pfsGroup}`);
@@ -4430,7 +4853,7 @@ export class IPSecEngine implements IProtocolEngine {
     ];
     let tid = 1;
     for (const [, sa] of this.ikev2SADB) {
-      lines.push(`${String(tid++).padEnd(10)}${sa.localIP.padEnd(22)}${sa.peerIP.padEnd(22)}none/none            ${sa.status.padEnd(13)}${sa.role}`);
+      lines.push(`${padToWidth(String(tid++), 10)}${padToWidth(sa.localIP, 22)}${padToWidth(sa.peerIP, 22)}none/none            ${padToWidth(sa.status, 13)}${sa.role}`);
     }
     return lines.join('\n');
   }
@@ -4464,22 +4887,84 @@ export class IPSecEngine implements IProtocolEngine {
     return algo.toUpperCase();
   }
 
-  showCryptoSession(): string {
-    const lines: string[] = [];
-    for (const [peerIP, sas] of this.ipsecSADB) {
-      if (sas.length === 0) continue;
-      const sa = sas[0];
-      lines.push(`Crypto session current status`);
-      lines.push('');
-      lines.push(`Interface: ${sa.outIface || 'GigabitEthernet0/1'}`);
-      lines.push(`Session status: UP-ACTIVE`);
-      lines.push(`Peer: ${peerIP} port ${sa.natT ? '4500' : '500'}`);
-      lines.push(`  Session ID: 1`);
-      lines.push(`  IKEv1 SA: local ${sa.localIP}/500 remote ${peerIP}/500 Active`);
-      lines.push(`  IPSEC FLOW: permit ip ${this.getACLSrcNet(sa.aclName)} ${this.getACLDstNet(sa.aclName)}`);
-      lines.push(`        Active SAs: ${sas.length * 2}, origin: crypto map`);
+  private connIds = new WeakMap<object, number>();
+  private lastConnId = 0;
+
+  private connIdOf(sa: object): number {
+    let id = this.connIds.get(sa);
+    if (id === undefined) {
+      this.lastConnId += 1;
+      id = this.lastConnId;
+      this.connIds.set(sa, id);
     }
-    return lines.length ? lines.join('\n') : 'No active crypto sessions.';
+    return id;
+  }
+
+  private flowText(sa: IPSec_SA): string {
+    const selector = sa.trafficSelectors;
+    if (!selector) return `permit ip ${this.getACLSrcNet(sa.aclName)} ${this.getACLDstNet(sa.aclName)}`;
+    const protocol = ({ 0: 'ip', 1: 'icmp', 6: 'tcp', 17: 'udp' } as Record<number, string>)[selector.protocol] ?? String(selector.protocol);
+    const side = (address: string, wildcard: string): string => {
+      if (!address || address === 'any') return '0.0.0.0/0.0.0.0';
+      if (!wildcard || wildcard === '0.0.0.0') return `host ${address}`;
+      const mask = wildcard.split('.').map((octet) => 255 - Number(octet)).join('.');
+      return `${address}/${mask}`;
+    };
+    return `permit ${protocol} ${side(selector.srcAddress, selector.srcWildcard)} ${side(selector.dstAddress, selector.dstWildcard)}`;
+  }
+
+  cryptoSessions(): CryptoSession[] {
+    const now = simulationNowMs();
+    const peers = new Set<string>([...this.ikeSADB.keys(), ...this.ikev2SADB.keys(), ...this.ipsecSADB.keys()]);
+    const sessions: CryptoSession[] = [];
+    for (const peer of peers) {
+      const ipsec = this.ipsecSADB.get(peer) ?? [];
+      const ike: CryptoSession['ike'] = [];
+      let created = now;
+      let natT = false;
+      const v1 = this.ikeSADB.get(peer);
+      if (v1) {
+        created = Math.min(created, v1.created);
+        natT = natT || v1.natT;
+        const capabilities = `${v1.dpdEnabled ? 'D' : ''}${v1.natT ? 'N' : ''}` || '(none)';
+        ike.push({
+          local: v1.localIP, remote: peer, active: v1.status === 'QM_IDLE', connId: this.connIdOf(v1),
+          remainingSeconds: Math.max(0, v1.lifetime - Math.floor((now - v1.created) / 1000)), capabilities,
+        });
+      }
+      const v2 = this.ikev2SADB.get(peer);
+      if (v2) {
+        created = Math.min(created, v2.created);
+        natT = natT || v2.natT;
+        const capabilities = `${v2.dpdEnabled ? 'D' : ''}${v2.natT ? 'N' : ''}` || '(none)';
+        ike.push({
+          local: v2.localIP, remote: peer, active: v2.status === 'READY', connId: this.connIdOf(v2),
+          remainingSeconds: Math.max(0, v2.lifetime - Math.floor((now - v2.created) / 1000)), capabilities,
+        });
+      }
+      for (const sa of ipsec) created = Math.min(created, sa.created);
+      const interfaceName = ipsec[0]?.outIface || this.router._ipsecEgressInterfaceFor(peer) || '';
+      sessions.push({
+        peer, port: natT ? 4500 : 500, interfaceName, phase1Id: peer,
+        uptimeSeconds: Math.floor((now - created) / 1000), ike,
+        flows: ipsec.map((sa) => ({
+          permit: this.flowText(sa), activeSas: 2, origin: 'crypto map',
+          decapsulated: sa.pktsDecaps, decapsulationDrops: sa.recvErrors,
+          encapsulated: sa.pktsEncaps, encapsulationDrops: sa.sendErrors,
+          remainingKilobytes: Math.max(0, sa.lifetimeKB - Math.floor((sa.bytesEncaps + sa.bytesDecaps) / 1024)),
+          remainingSeconds: Math.max(0, sa.lifetime - Math.floor((now - sa.created) / 1000)),
+        })),
+      });
+    }
+    return sessions;
+  }
+
+  showCryptoIPSecSALifetime(): string {
+    return `Security-association lifetime: ${this.globalSALifetimeKB} kilobytes/${this.globalSALifetimeSeconds} seconds`;
+  }
+
+  showCryptoSession(mode: CryptoSessionMode = 'plain'): string {
+    return renderCryptoSessions(this.cryptoSessions(), mode);
   }
 
   private getACLSrcNet(aclName: string): string {
@@ -4566,7 +5051,7 @@ export class IPSecEngine implements IProtocolEngine {
       const dst = sp.dstAddress ? `${sp.dstAddress}/${sp.dstWildcard || '0.0.0.0'}` : 'any';
       const proto = sp.protocol === 0 ? 'any' : String(sp.protocol);
       lines.push(
-        `${String(sp.id).padEnd(6)}${sp.direction.padEnd(11)}${sp.action.padEnd(10)}${src.padEnd(22)}${dst.padEnd(22)}${proto}`
+        `${padToWidth(String(sp.id), 6)}${padToWidth(sp.direction, 11)}${padToWidth(sp.action, 10)}${padToWidth(src, 22)}${padToWidth(dst, 22)}${proto}`
       );
     }
     return lines.join('\n');
@@ -4634,7 +5119,7 @@ export class IPSecEngine implements IProtocolEngine {
     if (this.preSharedKeys.size === 0) return 'No pre-shared keys configured.';
     const lines: string[] = ['Keychain  Hostname / Address   Preshared Key'];
     for (const [ident, e] of this.preSharedKeys) {
-      lines.push(`default   ${ident.padEnd(21)}${e.key.replace(/./g, '*')}`);
+      lines.push(`default   ${padToWidth(ident, 21)}${e.key.replace(/./g, '*')}`);
     }
     return lines.join('\n');
   }
@@ -4684,111 +5169,15 @@ export class IPSecEngine implements IProtocolEngine {
     return lines.join('\n');
   }
 
-  showRunningConfig(): string[] {
-    const lines: string[] = [];
-
-    // Global IPSec settings
-    if (this.globalSALifetimeSeconds !== 3600) {
-      lines.push(`crypto ipsec security-association lifetime seconds ${this.globalSALifetimeSeconds}`);
-    }
-    if (this.globalSALifetimeKB !== 4608000) {
-      lines.push(`crypto ipsec security-association lifetime kilobytes ${this.globalSALifetimeKB}`);
-    }
-    if (this.replayWindowSize !== 64) {
-      lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
-    }
-    if (this.aggressiveMode) {
-      lines.push(`no crypto isakmp aggressive-mode disable`);
-    }
-    if (this.esnDefault) {
-      lines.push(`crypto ipsec security-association esn`);
-    }
-
-    // ISAKMP policies
-    for (const [, p] of [...this.isakmpPolicies.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push('!');
-      lines.push(`crypto isakmp policy ${p.priority}`);
-      lines.push(` encryption ${p.encryption}`);
-      lines.push(` hash ${p.hash}`);
-      lines.push(` authentication ${p.auth}`);
-      lines.push(` group ${p.group}`);
-      if (p.lifetime !== 86400) lines.push(` lifetime ${p.lifetime}`);
-    }
-    // PSKs
-    for (const [ident, e] of this.preSharedKeys) {
-      lines.push(`crypto isakmp key ${e.key} ${e.byHostname ? 'hostname' : 'address'} ${ident}`);
-    }
-    if (this.natKeepaliveInterval > 0) {
-      lines.push(`crypto isakmp nat keepalive ${this.natKeepaliveInterval}`);
-    }
-    if (this.dpdConfig) {
-      lines.push(`crypto isakmp keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
-    }
-
-    // Transform sets
-    for (const [, ts] of this.transformSets) {
-      lines.push('!');
-      lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);
-      lines.push(` mode ${ts.mode}`);
-    }
-
-    // Crypto maps
-    for (const [, cmap] of this.cryptoMaps) {
-      for (const [, entry] of [...cmap.staticEntries.entries()].sort((a, b) => a[0] - b[0])) {
-        lines.push('!');
-        lines.push(`crypto map ${cmap.name} ${entry.seq} ipsec-isakmp`);
-        for (const peer of entry.peers) lines.push(` set peer ${peer}`);
-        for (const ts of entry.transformSets) lines.push(` set transform-set ${ts}`);
-        if (entry.aclName) lines.push(` match address ${entry.aclName}`);
-        if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
-        if (entry.saLifetimeSeconds) lines.push(` set security-association lifetime seconds ${entry.saLifetimeSeconds}`);
-        if (entry.ikev2ProfileName) lines.push(` set ikev2-profile ${entry.ikev2ProfileName}`);
-      }
-      for (const [seq, dynName] of cmap.dynamicEntries) {
-        lines.push('!');
-        lines.push(`crypto map ${cmap.name} ${seq} ipsec-isakmp dynamic ${dynName}`);
-      }
-    }
-
-    // IKEv2
-    for (const [, prop] of this.ikev2Proposals) {
-      lines.push('!');
-      lines.push(`crypto ikev2 proposal ${prop.name}`);
-      if (prop.encryption.length) lines.push(` encryption ${prop.encryption.join(' ')}`);
-      if (prop.integrity.length) lines.push(` integrity ${prop.integrity.join(' ')}`);
-      if (prop.dhGroup.length) lines.push(` group ${prop.dhGroup.join(' ')}`);
-    }
-    for (const [, pol] of this.ikev2Policies) {
-      lines.push('!');
-      lines.push(`crypto ikev2 policy ${pol.priority}`);
-      for (const p of pol.proposalNames) lines.push(` proposal ${p}`);
-    }
-    for (const [, kr] of this.ikev2Keyrings) {
-      lines.push('!');
-      lines.push(`crypto ikev2 keyring ${kr.name}`);
-      for (const [, peer] of kr.peers) {
-        lines.push(` peer ${peer.name}`);
-        lines.push(`  address ${peer.address}`);
-        lines.push(`  pre-shared-key ${peer.preSharedKey}`);
-      }
-    }
-    for (const [, prof] of this.ikev2Profiles) {
-      lines.push('!');
-      lines.push(`crypto ikev2 profile ${prof.name}`);
-      if (prof.matchIdentityRemoteAddress) lines.push(` match identity remote address ${prof.matchIdentityRemoteAddress} 255.255.255.255`);
-      lines.push(` authentication local ${prof.authLocal}`);
-      lines.push(` authentication remote ${prof.authRemote}`);
-      if (prof.keyringName) lines.push(` keyring local ${prof.keyringName}`);
-      if (prof.keyringLocalName) lines.push(` keyring local ${prof.keyringLocalName}`);
-    }
-
-    return lines;
-  }
-
   showRunningConfigInterface(ifName: string): string[] {
     const lines: string[] = [];
     const mapName = this.ifaceCryptoMap.get(ifName);
-    if (mapName) lines.push(` crypto map ${mapName}`);
+    if (mapName && !mapName.startsWith('_ezvpn_')) lines.push(` crypto map ${mapName}`);
+    lines.push(...this.ezvpnClient.interfaceLines(ifName));
+    const df = this.dfBitByInterface.get(ifName);
+    if (df) lines.push(` crypto ipsec df-bit ${df}`);
+    const fragmentation = this.fragmentationByInterface.get(ifName);
+    if (fragmentation) lines.push(` crypto ipsec fragmentation ${fragmentation}`);
     const tp = this.tunnelProtection.get(ifName);
     if (tp) lines.push(` tunnel protection ipsec profile ${tp.profileName}${tp.shared ? ' shared' : ''}`);
     return lines;
@@ -4861,6 +5250,21 @@ export class IPSecEngine implements IProtocolEngine {
     return this.ipsecSADB.get(peerIP) ?? [];
   }
 
+  setClientPolicy(mapName: string, patch: Partial<MapClientPolicy> | null): void {
+    if (patch === null) { this.mapClientPolicies.delete(mapName); return; }
+    this.mapClientPolicies.set(mapName, { respond: false, ...this.mapClientPolicies.get(mapName), ...patch });
+  }
+
+  clientPolicyOf(mapName: string): MapClientPolicy | undefined {
+    return this.mapClientPolicies.get(mapName);
+  }
+
+  clientPolicyForPeer(peer: string): MapClientPolicy | null {
+    const iface = this.findInterfaceForPeer(peer);
+    const mapName = iface ? this.ifaceCryptoMap.get(iface) : undefined;
+    return mapName ? this.mapClientPolicies.get(mapName) ?? null : null;
+  }
+
   setConfigMethod(handler: IkeConfigMethod | null): void {
     this.configMethod = handler;
   }
@@ -4896,6 +5300,26 @@ export class IPSecEngine implements IProtocolEngine {
 
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
+    if (this.globalSALifetimeSeconds !== 3600) {
+      lines.push(`crypto ipsec security-association lifetime seconds ${this.globalSALifetimeSeconds}`);
+    }
+    if (this.globalSALifetimeKB !== 4608000) {
+      lines.push(`crypto ipsec security-association lifetime kilobytes ${this.globalSALifetimeKB}`);
+    }
+    if (this.replayWindowSize !== 64) {
+      lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
+    }
+    if (!this.ikeEnabled) lines.push('no crypto isakmp enable');
+    if (!this.defaultIkePolicyEnabled) lines.push('no crypto isakmp default policy');
+    if (!this.defaultTransformSetEnabled) lines.push('no crypto ipsec transform-set default');
+    if (this.passiveMode) lines.push('crypto ipsec optional');
+    if (this.passiveMode && this.optionalRetrySeconds !== DEFAULT_OPTIONAL_RETRY_SECONDS) lines.push(`crypto ipsec optional retry ${this.optionalRetrySeconds}`);
+    if (this.replayCheckingDisabled) lines.push('crypto ipsec security-association replay disable');
+    if (this.idleTimeGlobalSec !== null) lines.push(`crypto ipsec security-association idle-time ${this.idleTimeGlobalSec}`);
+    if (this.aggressiveMode) lines.push('no crypto isakmp aggressive-mode disable');
+    if (this.esnDefault) lines.push('crypto ipsec security-association esn');
+    if (this.dfBitGlobal !== 'copy') lines.push(`crypto ipsec df-bit ${this.dfBitGlobal}`);
+    if (this.fragmentationGlobal !== 'before-encryption') lines.push(`crypto ipsec fragmentation ${this.fragmentationGlobal}`);
     for (const [, p] of [...this.isakmpPolicies].sort((a, b) => a[0] - b[0])) {
       lines.push(`crypto isakmp policy ${p.priority}`);
       if (p.encryption) lines.push(` encryption ${p.encryption}`);
@@ -4908,9 +5332,13 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`crypto isakmp key ${e.key} ${e.byHostname ? 'hostname' : 'address'} ${ident}`);
     }
     if (this.natKeepaliveInterval > 0) {
-      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${(this.dpdConfig as DPDConfig & { retryInterval?: number } | null)?.retryInterval ?? 3}`);
+      lines.push(`crypto isakmp nat keepalive ${this.natKeepaliveInterval}`);
+    }
+    if (this.dpdConfig) {
+      lines.push(`crypto isakmp keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
     }
     for (const [, ts] of this.transformSets) {
+      if (ts.name.startsWith(EZVPN_TRANSFORM_PREFIX)) continue;
       lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);
       if (ts.mode !== 'tunnel') lines.push(` mode ${ts.mode}`);
     }
@@ -4921,6 +5349,7 @@ export class IPSecEngine implements IProtocolEngine {
     }
     for (const [, cmap] of this.cryptoMaps) {
       for (const [, entry] of [...cmap.staticEntries].sort((a, b) => a[0] - b[0])) {
+        if (entry.managedBy) continue;
         lines.push(`crypto map ${cmap.name} ${entry.seq} ${entry.type}`);
         for (const peer of entry.peers) lines.push(` set peer ${peer}`);
         for (const t of entry.transformSets) lines.push(` set transform-set ${t}`);
@@ -4928,18 +5357,34 @@ export class IPSecEngine implements IProtocolEngine {
         if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
         if (entry.saLifetimeSeconds) lines.push(` set security-association lifetime seconds ${entry.saLifetimeSeconds}`);
         if (entry.ikev2ProfileName) lines.push(` set ikev2-profile ${entry.ikev2ProfileName}`);
+        if (entry.identityName) lines.push(` set identity ${entry.identityName}`);
       }
       for (const [seq, dynName] of [...cmap.dynamicEntries].sort((a, b) => a[0] - b[0])) {
         lines.push(`crypto map ${cmap.name} ${seq} ipsec-isakmp dynamic ${dynName}`);
       }
     }
+    for (const [tag, policy] of this.mapClientPolicies) {
+      if (policy.authenticationList) lines.push(`crypto map ${tag} client authentication list ${policy.authenticationList}`);
+      if (policy.authorizationList) lines.push(`crypto map ${tag} isakmp authorization list ${policy.authorizationList}`);
+      if (policy.respond) lines.push(`crypto map ${tag} client configuration address respond`);
+      if (policy.initiate) lines.push(`crypto map ${tag} client configuration address initiate`);
+    }
+    lines.push(...this.ezvpn.renderGroupLines());
+    lines.push(...this.ezvpnClient.renderConfigLines());
     for (const [, dyn] of this.dynamicCryptoMaps) {
       for (const [, entry] of [...dyn.entries].sort((a, b) => a[0] - b[0])) {
         lines.push(`crypto dynamic-map ${dyn.name} ${entry.seq}`);
         for (const t of entry.transformSets) lines.push(` set transform-set ${t}`);
         if (entry.aclName) lines.push(` match address ${entry.aclName}`);
         if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
+        if (entry.identityName) lines.push(` set identity ${entry.identityName}`);
       }
+    }
+    for (const list of this.identityLists.values()) {
+      lines.push(`crypto identity ${list.name}`);
+      if (list.description) lines.push(` description ${list.description}`);
+      if (list.fqdn) lines.push(` fqdn ${list.fqdn}`);
+      for (const dn of list.dn) lines.push(` dn ${dn}`);
     }
     for (const [, prop] of this.ikev2Proposals) {
       lines.push(`crypto ikev2 proposal ${prop.name}`);

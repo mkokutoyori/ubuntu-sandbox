@@ -744,11 +744,20 @@ export const ETHERTYPE_ARP  = 0x0806;
 export const ETHERTYPE_IPV4 = 0x0800;
 export const ETHERTYPE_IPV6 = 0x86dd;
 
+export interface Dot1QTag {
+  tpid: number;
+  pcp: number;
+  dei: number;
+  vid: number;
+}
+
 export interface EthernetFrame {
   srcMAC: MACAddress;
   dstMAC: MACAddress;
   etherType: number;
   payload: ARPPacket | IPv4Packet | IPv6Packet | unknown;
+  dot1q?: Dot1QTag;
+  outerDot1q?: Dot1QTag;
 }
 
 export const ETHERNET_FRAME_OVERHEAD_BYTES = 18;
@@ -1065,7 +1074,9 @@ export type ICMPType =
   | 'echo-reply'              // Type 0
   | 'destination-unreachable'  // Type 3
   | 'redirect'                 // Type 5
-  | 'time-exceeded';           // Type 11
+  | 'time-exceeded'            // Type 11
+  | 'timestamp-request'        // Type 13
+  | 'timestamp-reply';         // Type 14
 
 const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
   'echo-reply': 0,
@@ -1073,6 +1084,8 @@ const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
   redirect: 5,
   'echo-request': 8,
   'time-exceeded': 11,
+  'timestamp-request': 13,
+  'timestamp-reply': 14,
 };
 
 /** The number the type carries on the wire (RFC 792). */
@@ -1109,6 +1122,8 @@ export interface ICMPPacket extends NetworkPdu {
    * and Don't Fragment was Set) per RFC 1191 §4.
    */
   mtu?: number;
+  /** Originate, receive and transmit times of types 13/14, in ms since midnight UTC (RFC 792). */
+  timestamps?: { originate: number; receive: number; transmit: number };
   /**
    * Reference to the offending packet that triggered this ICMP error.
    * Used by the simulator so that receivers (e.g. IPsec PMTU) can inspect
@@ -1313,6 +1328,11 @@ export interface IPv6Packet extends NetworkPdu {
 /**
  * Create an IPv6 packet with default fields.
  */
+export interface IPv6HeaderOptions {
+  trafficClass?: number;
+  flowLabel?: number;
+}
+
 export function createIPv6Packet(
   sourceIP: IPv6Address,
   destinationIP: IPv6Address,
@@ -1320,12 +1340,13 @@ export function createIPv6Packet(
   hopLimit: number,
   payload: ICMPv6Packet | UDPPacket | unknown,
   payloadLength: number,
+  options: IPv6HeaderOptions = {},
 ): IPv6Packet {
   return {
     type: 'ipv6',
     version: 6,
-    trafficClass: 0,
-    flowLabel: 0,
+    trafficClass: options.trafficClass ?? 0,
+    flowLabel: options.flowLabel ?? 0,
     payloadLength,
     nextHeader,
     hopLimit,

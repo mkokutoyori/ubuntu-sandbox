@@ -1,4 +1,5 @@
 import { bootpText } from './TcpdumpBootp';
+import { ntpText } from './TcpdumpNtp';
 import {
   icmpTimeExceededPhrase, icmpUnreachablePhrase, icmpv6ParameterProblemPhrase, icmpv6TimeExceededPhrase,
   icmpv6UnreachablePhrase,
@@ -10,6 +11,7 @@ import { EcnCodepoint } from '@/network/core/IpHeaderFields';
 import {
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, IP_PROTO_TCP, IP_PROTO_UDP,
 } from '@/network/core/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface AddressNames {
   host(ip: string): string;
@@ -260,11 +262,12 @@ function tcpChecksumToken(frame: CaptureFrame): string {
   return `, cksum 0x${hex} (incorrect -> 0x${expected})`;
 }
 
-function udpChecksumToken(frame: CaptureFrame): string {
-  if (frame.udpChecksum === undefined) return '';
-  if (frame.udpChecksum === 0) return ', cksum 0x0000 (unverified)';
-  const hex = frame.udpChecksum.toString(16).padStart(4, '0');
-  return frame.udpChecksumOk ? `, cksum 0x${hex} (correct)` : `, cksum 0x${hex} (incorrect)`;
+function udpSumToken(frame: CaptureFrame, verbose: number): string {
+  if (verbose === 0 || frame.udpChecksum === undefined) return '';
+  if (frame.udpChecksum === 0) return '[no cksum] ';
+  if (frame.udpChecksumOk) return verbose >= 2 ? '[udp sum ok] ' : '';
+  const hex = (n: number): string => `0x${n.toString(16).padStart(4, '0')}`;
+  return `[bad udp cksum ${hex(frame.udpChecksum)} -> ${hex(frame.udpChecksumComputed ?? 0)}!] `;
 }
 
 const DNS_RCODE_TEXT: Record<number, string> = {
@@ -314,6 +317,13 @@ function tcpOptionsToken(frame: CaptureFrame): string {
   return parts.length > 0 ? `, options [${parts.join(',')}]` : '';
 }
 
+function clockOfDay(milliseconds: number): string {
+  const pad = (value: number, width: number): string => String(value).padStart(width, '0');
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  return `${pad(Math.floor(minutes / 60), 2)}:${pad(minutes % 60, 2)}:${pad(seconds % 60, 2)}.${pad(milliseconds % 1000, 3)}`;
+}
+
 function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   if (frame.l4 === 'icmp') {
     let phrase: string;
@@ -323,6 +333,13 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
       phrase = icmpTimeExceededText(frame);
     } else {
       phrase = ICMP_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
+    }
+    if (frame.icmpType === 'timestamp-request') {
+      return `ICMP time stamp query id ${frame.icmpId ?? 0} seq ${frame.icmpSeq ?? 0}, length ${frame.payloadLength ?? 0}`;
+    }
+    if (frame.icmpType === 'timestamp-reply') {
+      const t = frame.icmpTimestamps ?? { originate: 0, receive: 0, transmit: 0 };
+      return `ICMP time stamp reply id ${frame.icmpId ?? 0} seq ${frame.icmpSeq ?? 0}: org ${clockOfDay(t.originate)}, recv ${clockOfDay(t.receive)}, xmit ${clockOfDay(t.transmit)}, length ${frame.payloadLength ?? 0}`;
     }
     if (opt.quiet) return `ICMP ${phrase}, length ${frame.payloadLength ?? 0}`;
     if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {
@@ -352,8 +369,11 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
   if (frame.l4 === 'udp') {
     if (frame.dnsQr !== undefined) return dnsLine(frame, opt);
     if (frame.bootp && !opt.quiet) return bootpText(frame.bootp, opt.verbose, frame.payloadLength ?? 0);
-    const cksum = opt.verbose > 0 && !opt.skipChecksumCheck ? udpChecksumToken(frame) : '';
-    return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
+    if (!opt.quiet && frame.appPayload && (frame.srcPort === 123 || frame.dstPort === 123)) {
+      return ntpText(frame.appPayload, opt.verbose, opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose));
+    }
+    const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+    return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'icmp6') {
     const phrase = ICMP6_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
@@ -456,7 +476,7 @@ function ipFlagsToken(frame: CaptureFrame): string {
 
 function ipChecksumSuffix(frame: CaptureFrame, opt: TcpdumpOptions): string {
   if (opt.skipChecksumCheck || frame.ipChecksumOk === undefined) return '';
-  if (frame.ipChecksumOk) return opt.verbose >= 2 ? ', ip sum ok' : '';
+  if (frame.ipChecksumOk) return '';
   const hex = (frame.ipChecksum ?? 0).toString(16).padStart(4, '0');
   return `, bad ip cksum 0x${hex}!`;
 }
@@ -559,9 +579,9 @@ function cookedPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRe
     ? `ethertype 802.1Q (0x8100), length ${cookedLength(frame, cooked)}: vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ${inner}`
     : `${inner.slice(0, -2)}, length ${cookedLength(frame, cooked)}: `;
   if (cooked.version === 1) {
-    return opt.linkLevel ? `${packetType.padStart(3, ' ')} ${state.ether(frame.srcMac)} ${detail}` : '';
+    return opt.linkLevel ? `${padToWidth(packetType, 3, 'right')} ${state.ether(frame.srcMac)} ${detail}` : '';
   }
-  const head = `${frame.iface.padEnd(5, ' ')} ${packetType.padEnd(3, ' ')} `;
+  const head = `${padToWidth(frame.iface, 5)} ${padToWidth(packetType, 3)} `;
   if (!opt.linkLevel) return head;
   return `${head}ifindex ${cooked.index(frame.iface)} ${state.ether(frame.srcMac)} ${detail}`;
 }
@@ -605,7 +625,7 @@ export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: Tcpdump
       hex += chunk[j].toString(16).padStart(2, '0');
       if (j % 2 === 1) hex += ' ';
     }
-    hex = hex.trimEnd().padEnd(40, ' ');
+    hex = padToWidth(hex.trimEnd(), 40);
     const offset = '0x' + i.toString(16).padStart(4, '0') + ':';
     if (opt.hex === 'hexascii') {
       const ascii = chunk.map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.')).join('');
@@ -624,7 +644,7 @@ export function formatFrame(
   state.prev = frame;
   state.first ??= frame;
   state.count++;
-  const number = opt.packetNumbers ? `${String(state.count).padStart(5, ' ')}  ` : '';
+  const number = opt.packetNumbers ? `${padToWidth(String(state.count), 5, 'right')}  ` : '';
   const cooked = state.cooked;
   const link = cooked !== null
     ? cookedPrefix(frame, opt, state, cooked)

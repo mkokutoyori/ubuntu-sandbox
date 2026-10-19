@@ -4,10 +4,11 @@ import type { WinFileCommandContext } from './WinFileCommands';
 import type { WinDirEntry, WinFSEntry } from './WindowsFileSystem';
 import { longDateTime, slashedTimestamp } from './WinSystemCommands';
 import { hasWildcard, joinPath, nameMatcher } from './WinPathSpec';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const BANNER_RULE = '-'.repeat(79);
 const SECTION_RULE = '-'.repeat(78);
-const TITLE = '   ROBOCOPY     ::     Robust File Copy for Windows'.padEnd(79);
+const TITLE = padToWidth('   ROBOCOPY     ::     Robust File Copy for Windows', 79);
 const DEFAULT_RETRIES = 1_000_000;
 const DEFAULT_WAIT = 30;
 const RETRY_CAP = 3;
@@ -359,13 +360,13 @@ function fileLine(run: Run, label: string, entry: WinFSEntry, shownName: string)
   const { options } = run;
   const cells = [options.noClass ? '' : label];
   cells.push('');
-  if (!options.noSize) cells.push(sizeText(run, entry.size).padStart(8));
+  if (!options.noSize) cells.push(padToWidth(sizeText(run, entry.size), 8, 'right'));
   const stamp = options.timestamps ? `${slashedTimestamp(run.ctx.timezone, entry.mtime.getTime())} ` : '';
   return `\t${cells.join('\t')}\t${stamp}${shownName}`;
 }
 
 function directoryLine(label: string, count: number, path: string): string {
-  return `\t${label}${String(count).padStart(20 - label.length)}\t${withSeparator(path)}`;
+  return `\t${label}${padToWidth(String(count), 20 - label.length, 'right')}\t${withSeparator(path)}`;
 }
 
 function matchesPattern(pattern: string, name: string, fullPath: string): boolean {
@@ -620,7 +621,7 @@ function scan(run: Run, sourceDir: string, destinationDir: string, level: number
 function summaryRows(run: Run): string[] {
   const cells = (counter: Counter, render: (value: number) => string): string =>
     [counter.total, counter.copied, counter.skipped, counter.mismatch, counter.failed, counter.extras]
-      .map(value => render(value).padStart(10)).join('');
+      .map(value => padToWidth(render(value), 10, 'right')).join('');
   const plain = (value: number): string => String(value);
   return [
     '               Total    Copied   Skipped  Mismatch    FAILED    Extras',

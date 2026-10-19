@@ -1,3 +1,4 @@
+import { binaryStringToBytes } from '@/crypto/encoding';
 export const UTMPX_SIZE = 384;
 
 export const UT = {
@@ -92,14 +93,3 @@ export class Utmpx {
   }
 }
 
-export function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 8192) out += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return out;
-}
-
-export function binaryStringToBytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}

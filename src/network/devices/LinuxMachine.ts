@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LinuxPam } from './linux/pam/LinuxPam';
@@ -29,16 +30,20 @@ import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { PortNumber } from '../core/ports/PortNumber';
-import type { TcpWireOutcome } from '../tcp/types';
+import { noFlags, tcpFlagBits, type TcpSegment, type TcpWireOutcome } from '../tcp/types';
+import { tcpOptionKindNumber } from '../tcp/TcpOptionsCodec';
+import { ipv6PacketBytes } from '../layers/internet/Ipv6Ingress';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
+import { GAI_CONF_PATH, parseGaiConf } from './linux/network/GaiConf';
+import { GLIBC_POLICY, type DestinationPolicy } from '../layers/internet/DestinationSelection';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
 import { LinuxVsftpdService } from './linux/ftp/LinuxVsftpdService';
 import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/LinuxNfsService';
@@ -50,7 +55,7 @@ import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
 import { runJournalctl } from './linux/journal/JournalctlTool';
 import { cursorOf } from './linux/journal/JournalRecord';
 import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
-import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
+import { RSYSLOG_SEEDED_FILES, RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
@@ -93,11 +98,16 @@ import {
   MACAddress,
   type DeviceType,
   type IPv4Packet,
+  type IPv6Packet,
   type EthernetFrame,
   type ICMPType,
   type ICMPv6Type,
+  type TCPPacket,
+  type ICMPPacket,
+  type ICMPv6Packet,
   icmpTypeNumber,
   icmpv6TypeNumber,
+  ipv4HeaderBytesFor,
 } from '../core/types';
 
 // Linux kernel / userspace
@@ -153,6 +163,8 @@ import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 /** Le listener TNS d'Oracle — §P2c de docs/PRD-Sockets-Une-Seule-Verite.md. */
 const TNS_PORT = 1521;
 const STUB_DEVICE = 'lo';
+const TCP_BASE_HEADER_BYTES = 5 * 4;
+const BARE_SYN_IP_BYTES = ipv4HeaderBytesFor(undefined) + TCP_BASE_HEADER_BYTES;
 const TNS_BOOT_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
@@ -185,7 +197,8 @@ import type { DsRecordData, ResourceRecord, ResourceRecordData } from '../dns/wi
 import { decodeDnsMessage, encodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { X509Certificate } from '../pki/X509Certificate';
-import type { PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
+import type { PacketFacts, PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
+import { connectionTupleOf, type ConnectionTuple } from './linux/ConnectionTracker';
 
 // Façade + command registry
 import type { LinuxNetKernel, TracerouteHop } from './linux/LinuxNetKernel';
@@ -215,7 +228,8 @@ import {
   LinuxTelnetServerContext, type LinuxTelnetHost,
 } from '../protocols/telnet/LinuxTelnetServerContext';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
-import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import type { SshDaemonPort } from '../protocols/ssh/server/SshDaemonPort';
+import { validateSshdConfig } from '../protocols/ssh/server/SshdConfigValidator';
 import {
   checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath,
   commandNotFoundMessage,
@@ -235,7 +249,7 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
-import { LINUX_ICMP_ERROR_QUOTE, type IcmpErrorQuote } from '../core/IcmpErrors';
+import { LINUX_ICMP_ERROR_QUOTE, isICMPErrorMessage, isICMPv6ErrorMessage, type IcmpErrorQuote } from '../core/IcmpErrors';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { PamDialogue } from './linux/pam/PamDialogue';
@@ -582,9 +596,10 @@ export abstract class LinuxMachine extends EndHost
       if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
       if (registered.runWithStatusSync) {
-        return registered.runWithStatusSync(this.buildCommandContext(), argv, input);
+        return registered.runWithStatusSync(this.buildCommandContext(false, cmd), argv, input);
       }
-      const result = registered.run(this.buildCommandContext(), argv, input);
+      if (registered.opensWireSession === true) return null;
+      const result = registered.run(this.buildCommandContext(false, cmd), argv, input);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
@@ -787,7 +802,7 @@ export abstract class LinuxMachine extends EndHost
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
         if (denial) { restore(); return Promise.resolve(denial); }
       }
-      const ctx = this.buildCommandContext(outputPiped);
+      const ctx = this.buildCommandContext(outputPiped, argv[0]);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
       }
@@ -963,8 +978,20 @@ export abstract class LinuxMachine extends EndHost
     return outcome === 'timeout' && this.neighbourUnresolved(target) ? 'host-unreachable' : outcome;
   }
 
+  protected override answersIcmpTimestamp(): boolean {
+    return true;
+  }
+
   protected override echoReplyFlags(): number {
     return 0;
+  }
+
+  protected override echoReplyTos(request: IPv4Packet): number {
+    return request.tos;
+  }
+
+  protected override echoReplyTrafficClass(request: IPv6Packet): number {
+    return request.trafficClass;
   }
 
   protected override icmpErrorQuote(): IcmpErrorQuote {
@@ -1553,6 +1580,10 @@ export abstract class LinuxMachine extends EndHost
     for (const [chemin, contenu] of RSYSLOG_SEEDED_FILES) {
       if (!vfs.exists(chemin)) vfs.writeFile(chemin, contenu, 0, 0, 0o022, true);
     }
+    if (!vfs.exists(RSYSLOG_ROTATE_PATH)) {
+      vfs.writeFile(RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN, 0, 0, 0o022, true);
+      vfs.chmod(RSYSLOG_ROTATE_PATH, 0o755);
+    }
     this.rsyslogService = new LinuxRsyslogService({
       lireFichier: (p) => vfs.readFile(p) ?? null,
       ecrireLigne: (p, l) => this.executor.logMgr.appendLine(p, l),
@@ -1684,7 +1715,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
-  private ntpPortBound = false;
+  private ntpPortsBound = new Set<number>();
 
   /**
    * chrony (`docs/PRD-NTP-Tutoriel.md` §4) — le paquet était déclaré
@@ -1716,11 +1747,39 @@ export abstract class LinuxMachine extends EndHost
     this.chronyService = new LinuxChronyService({
       readFile: (p) => vfs.readFile(p),
       ntp: () => this.getNtpAgent(),
-      bindNtpPort: (port) => this.ntpPortBound
-        || (this.ntpPortBound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
+      bindNtpPort: (port) => {
+        if (this.ntpPortsBound.has(port)) return true;
+        const bound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
           this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
-        }, 'chronyd') !== false),
-      releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
+        }, 'chronyd') !== false;
+        if (bound) this.ntpPortsBound.add(port);
+        return bound;
+      },
+      releaseNtpPort: (port) => {
+        if (!this.ntpPortsBound.delete(port)) return;
+        this.udpClose(port);
+      },
+      daemonExited: (reason) => this.executor.serviceMgr.markFailed('chrony', reason),
+      bindCommandAddress: (address, port, listener) => {
+        if (address === '0.0.0.0') return this.udpBind(port, listener, 'chronyd') !== false;
+        this.udpBindAddress(address, port, listener, 'chronyd');
+        return true;
+      },
+      releaseCommandAddress: (address, port) => {
+        if (address === '0.0.0.0') this.udpClose(port);
+        else this.udpCloseAddress(address, port);
+      },
+      sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+      listDirectory: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
+      writeFile: (path, content, mode) => this.executor.vfs.writeFile(path, content, 0, 0, 0o777 & ~mode),
+      tcpStack: () => this.getTcpStack(),
+      trustAnchors: () => this.trustedCAs,
+      identity: () => ({
+        processName: 'chronyd', service: 'chrony',
+        pid: this.executor.serviceMgr.getPortBinding('chrony')?.mainPid,
+      }),
+      log: (message) => this.executor.logMgr.logDaemon(
+        'chronyd', message, this.executor.serviceMgr.getPortBinding('chrony')?.mainPid, 'chrony'),
     });
     this.executor.chronyService = this.chronyService;
     this.executor.registerServiceSocketServer('chrony', this.chronyService);
@@ -1966,6 +2025,48 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.processMgr.list({ comm: 'sshd' })[0]?.pid ?? LinuxMachine.SSHD_PID;
   }
 
+  private sshDaemonPort(): SshDaemonPort {
+    const wildcards = new Set(['0.0.0.0', '::']);
+    const familyOf = (address: string): 'v4' | 'v6' => (address.includes(':') ? 'v6' : 'v4');
+    return {
+      portTaken: (address, port) => this.getTcpStack().listListeners().some((listener) => (
+        listener.localPort === port && familyOf(listener.localIp) === familyOf(address)
+        && (listener.localIp === address || wildcards.has(listener.localIp) || wildcards.has(address))
+      )),
+      start: (request) => {
+        const process = this.executor.processMgr.spawn({
+          command: request.commandLine, user: 'root', uid: 0, gid: 0, comm: 'sshd',
+        });
+        const stack = this.getTcpStack();
+        const opened: Array<{ port: number; address: string }> = [];
+        for (const port of request.ports) {
+          for (const address of request.listenAddresses) {
+            try {
+              stack.listen(port, {
+                backlog: SSHD_LISTEN_BACKLOG,
+                identity: { pid: process.pid, processName: 'sshd' },
+                onAccept: (socket) => {
+                  this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
+                  this.openSshConnectionProcess(socket.remoteIp, socket.remotePort);
+                  this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+                },
+              }, address);
+              opened.push({ port, address });
+            } catch { /* adresse déjà prise */ }
+          }
+        }
+        const off = this.onProcessExit(process.pid, () => {
+          for (const entry of opened) stack.closeListener(entry.port, entry.address);
+          off();
+        });
+        return process.pid;
+      },
+      logDaemon: (level, message) => {
+        this.executor.logMgr.logAuth('sshd', `${level}: ${message}`, this.sshdPid());
+      },
+    };
+  }
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     const pid = this.sshdPid();
@@ -1985,6 +2086,7 @@ export abstract class LinuxMachine extends EndHost
             identity: { pid, processName: 'sshd' },
             onAccept: (socket) => {
               this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
+              this.openSshConnectionProcess(socket.remoteIp, socket.remotePort);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
           }, addr);
@@ -2009,6 +2111,8 @@ export abstract class LinuxMachine extends EndHost
     }
     return this._telnetContext;
   }
+
+  private readonly telnetPamSessions = new Map<string, { close(): void }>();
 
   private telnetHost(): LinuxTelnetHost {
     return {
@@ -2036,9 +2140,15 @@ export abstract class LinuxMachine extends EndHost
           user, uid: entry?.uid ?? 1000, sshdPid: this.telnetdPid(),
           fromIp, fromHost: fromIp,
         });
-        return { id: session.tty, line: session.tty };
+        const pam = this.executor.openServiceSession('login', user, {
+          rhost: fromIp, tty: `/dev/${session.tty}`, pid: this.telnetdPid(),
+        }, 'LOGIN');
+        this.telnetPamSessions.set(session.tty, pam);
+        return { id: session.tty, line: session.tty, greeting: pam.greeting };
       },
       closeSession: (id, reason) => {
+        this.telnetPamSessions.get(id)?.close();
+        this.telnetPamSessions.delete(id);
         this.sessionTable.close(id, reason);
       },
       recordLogin: (user, fromIp, tty, uid) => {
@@ -2199,6 +2309,37 @@ export abstract class LinuxMachine extends EndHost
     this.sshWirePeers.add(fromIp);
   }
 
+  private readonly sshConnectionPids = new Map<string, number>();
+
+  private sshConnectionKey(ip: string, port: number): string {
+    return `${ip}:${port}`;
+  }
+
+  private openSshConnectionProcess(ip: string, port: number): void {
+    const master = this.executor.processMgr.list({ comm: 'sshd' }).find((p) => p.ppid === 1)?.pid ?? 1;
+    const process = this.executor.processMgr.spawn({
+      command: 'sshd: [accepted]', comm: 'sshd', user: 'root', uid: 0, gid: 0, ppid: master, tty: '?',
+    });
+    this.sshConnectionPids.set(this.sshConnectionKey(ip, port), process.pid);
+  }
+
+  sshConnectionPid(ip: string, port: number | undefined): number | undefined {
+    return port === undefined ? undefined : this.sshConnectionPids.get(this.sshConnectionKey(ip, port));
+  }
+
+  sshConnectionAuthenticated(ip: string, port: number | undefined, user: string): void {
+    const pid = this.sshConnectionPid(ip, port);
+    const process = pid === undefined ? undefined : this.executor.processMgr.get(pid);
+    if (process !== undefined) process.command = `sshd: ${user} [priv]`;
+  }
+
+  endSshConnectionProcess(ip: string, port: number | undefined): void {
+    const pid = this.sshConnectionPid(ip, port);
+    if (pid === undefined || port === undefined) return;
+    this.sshConnectionPids.delete(this.sshConnectionKey(ip, port));
+    if (!this.sshSessionsByPid.has(pid)) this.executor.processMgr.exit(pid, 0);
+  }
+
   sshArrivedOverWire(fromIp: string): boolean {
     return this.sshWirePeers.has(fromIp);
   }
@@ -2283,7 +2424,10 @@ export abstract class LinuxMachine extends EndHost
       this.executor.lastlog.record(user, fromIp, session.tty);
       const sshdMasterPid = this.executor.processMgr.list({ comm: 'sshd' })
         .find((p) => p.ppid === 1)?.pid ?? 1;
-      const sshdChild = this.executor.processMgr.spawn({
+      const adoptedPid = this.sshConnectionPid(fromIp, peerPort);
+      const adopted = adoptedPid === undefined ? undefined : this.executor.processMgr.get(adoptedPid);
+      if (adopted !== undefined) adopted.command = `sshd: ${user} [priv]`;
+      const sshdChild = adopted ?? this.executor.processMgr.spawn({
         command: `sshd: ${user} [priv]`,
         comm: 'sshd',
         user: 'root', uid: 0, gid: 0,
@@ -2327,6 +2471,16 @@ export abstract class LinuxMachine extends EndHost
       }
     }
     return peerPort;
+  }
+
+  takeSessionHold(): number {
+    const held = this.executor.sessionHoldSeconds;
+    this.executor.sessionHoldSeconds = 0;
+    return held;
+  }
+
+  openSshSessionPort(user: string, fromIp: string): number | undefined {
+    return this.sessionTable.list().filter((s) => s.user === user && s.fromIp === fromIp && !s.closed).at(-1)?.fromPort;
   }
 
   private readonly heldSshRecords = new Map<string, number>();
@@ -2766,6 +2920,7 @@ export abstract class LinuxMachine extends EndHost
 
   protected override onDhcpLeaseConfigured(iface: string): void {
     const lease = this.dhcpClient.getState(iface)?.lease;
+    this.publishDhcpTimeSources(iface, lease?.ntpServers ?? []);
     const dns = lease?.dnsServers ?? [];
     if (dns.length === 0) return;
     const lines: string[] = [];
@@ -2799,10 +2954,26 @@ export abstract class LinuxMachine extends EndHost
     if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
   }
 
+  private publishDhcpTimeSources(iface: string, servers: readonly string[]): void {
+    const path = `/run/chrony-dhcp/${iface}.sources`;
+    const vfs = this.executor.vfs;
+    if (servers.length === 0) {
+      if (vfs.exists(path)) vfs.deleteFile?.(path);
+    } else {
+      vfs.writeFile(path, servers.map((ip) => `server ${ip} iburst`).join('\n') + '\n', 0, 0, 0o022);
+    }
+    if (this.chronyService?.isRunning()) this.chronyService.reload();
+  }
+
   protected override onDhcpLeaseReleased(iface: string): void {
-    void iface;
+    this.publishDhcpTimeSources(iface, []);
     this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);
     this.dnsResolverIP = '';
+  }
+
+  override destinationPolicy(): DestinationPolicy {
+    const text = this.executor.vfs.readFile(GAI_CONF_PATH);
+    return typeof text === 'string' ? parseGaiConf(text) : GLIBC_POLICY;
   }
 
   private syncHostnameFiles(hostname: string): void {
@@ -2975,10 +3146,12 @@ export abstract class LinuxMachine extends EndHost
       ({ payload }) => listener(payload.signal !== undefined && payload.signal in SIGNAL_NUMBERS ? payload.signal as Signal : null));
   }
 
-  protected buildCommandContext(outputPiped = false): LinuxCommandContext {
+  protected buildCommandContext(outputPiped = false, invokedAs?: string): LinuxCommandContext {
     const pid = this.executor.currentPid();
     return {
       outputPiped,
+      ...(invokedAs === undefined ? {} : { invokedAs }),
+      sshDaemon: this.sshDaemonPort(),
       whenKilled: (listener) => this.onProcessExit(pid, (signal) => { if (signal !== null) listener(signal); }),
       supervised: this.executor.isSupervised(pid),
       executor: this.executor,
@@ -3005,7 +3178,7 @@ export abstract class LinuxMachine extends EndHost
         bondOption: (bond: string, key: string, value: string) =>
           this.setBondOption(bond, key, value),
         addVeth: (name: string, peerName: string) => this.addVethPair(name, peerName),
-        addVlan: (name: string, parent: string, vid: number) => this.addVlanSubInterface(name, parent, vid),
+        addVlan: (name: string, parent: string, vid: number, mvrp?: boolean) => this.addVlanSubInterface(name, parent, vid, mvrp),
         deleteLink: (name: string) => this.deleteVirtualInterface(name),
       },
       netns: {
@@ -3295,7 +3468,7 @@ export abstract class LinuxMachine extends EndHost
     return '';
   }
 
-  private addVlanSubInterface(name: string, parent: string, vid: number): string {
+  private addVlanSubInterface(name: string, parent: string, vid: number, mvrp = false): string {
     if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
     const parentPort = this.ports.get(parent);
     if (!parentPort) return `Cannot find device "${parent}"`;
@@ -3304,6 +3477,7 @@ export abstract class LinuxMachine extends EndHost
     this.addPort(port);
     this.virtualInterfaces.add(name);
     this.registerVlanSubInterface(name, parent, vid);
+    if (mvrp) this.declareVlanOverMvrp(parent, vid);
     return '';
   }
 
@@ -3313,9 +3487,11 @@ export abstract class LinuxMachine extends EndHost
         ? `RTNETLINK answers: Operation not permitted`
         : `Cannot find device "${name}"`;
     }
+    const vlan = this.getVlanSubInterface(name);
     this.ports.delete(name);
     this.virtualInterfaces.delete(name);
     this.unregisterVlanSubInterface(name);
+    if (vlan) this.withdrawVlanFromMvrp(vlan.parent, vlan.vid);
     return '';
   }
 
@@ -3422,6 +3598,10 @@ export abstract class LinuxMachine extends EndHost
       this._sshContext = this._sshContext?.reloadConfig() ?? null;
       this.executor.logMgr.logSystemd('ssh', 'Received SIGHUP; restarting.');
     };
+    const isFail2ban = (p: { name: string }): boolean => p.name === 'fail2ban';
+    const rereadJail = (): void => { this._sshContext?.rereadFail2banJail(); };
+    const offJailRestart = bus.subscribeWhere('linux.service.restarted', isFail2ban, rereadJail);
+    const offJailStart = bus.subscribeWhere('linux.service.started', isFail2ban, rereadJail);
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
     // Ouvrir et refermer les écoutes suffit : elles s'inscrivent et se
@@ -3437,7 +3617,7 @@ export abstract class LinuxMachine extends EndHost
     const offStarted = bus.subscribeWhere('linux.service.started', isSsh, rebindPorts);
     const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
     const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
-    this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
+    this._sshLifecycleOff = () => { offJailRestart(); offJailStart(); offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
     (this.executor as unknown as { sshContextForFail2ban?: (() => {
       bannedIps(): string[];
       totalAuthFailures(): number;
@@ -3546,9 +3726,7 @@ export abstract class LinuxMachine extends EndHost
   async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
     settleOrderedDeliveries();
-    if (stdin !== undefined) {
-      this.executor._scenarioStdin = stdin;
-    }
+    this.executor._scenarioStdin = stdin;
 
     const trimmed = command.trim();
     if (!trimmed) return '';
@@ -3905,6 +4083,18 @@ export abstract class LinuxMachine extends EndHost
     return null;
   }
 
+  sshAgentPort(): AgentPort {
+    return this.executor.agentPort();
+  }
+
+  bindForwardedAgent(user: string, agent: AgentPort): { readonly path: string; release(): void } {
+    return this.executor.bindForwardedAgent(user, agent);
+  }
+
+  resolveHostname(name: string): Promise<IPAddress | null> {
+    return this.resolveHostnameOverWire(name);
+  }
+
   private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
     try { return new IPAddress(name); } catch { void 0; }
 
@@ -4045,6 +4235,7 @@ export abstract class LinuxMachine extends EndHost
       ): boolean => {
         return this.removeRoute(network, mask, filter);
       },
+      gatewayReachable: (gw: IPAddress): boolean => this.gatewayReachable(gw),
       setDefaultGateway: (gw: IPAddress): void => {
         this.setDefaultGateway(gw);
       },
@@ -4143,14 +4334,15 @@ export abstract class LinuxMachine extends EndHost
       routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
       flushRouteExceptions: () => this.flushRouteExceptions(),
-      udpListen: (port, processName, owner) => this.udpListen(port, processName, owner),
+      udpListen: (port, processName, owner, onDatagram) => this.udpListen(port, processName, owner, onDatagram),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (
         target: IPv6Address,
         count: number,
         timeoutMs = 2000,
+        opts?: Echo6Options,
       ): Promise<PingResult[]> => {
-        return this.executePing6Sequence(target, count, timeoutMs);
+        return this.executePing6Sequence(target, count, timeoutMs, opts);
       },
       traceroute: async (
         target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,
@@ -4179,6 +4371,10 @@ export abstract class LinuxMachine extends EndHost
         target: IPAddress,
         options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
       ): boolean => this.sendCraftedIcmpEcho(target, options ?? {}),
+      sendCraftedIcmpTimestamp: (
+        target: IPAddress,
+        options?: { sourceIp?: IPAddress; ttl?: number },
+      ): boolean => this.sendCraftedIcmpTimestamp(target, options ?? {}),
       sendRawIpPacket: (
         target: IPAddress, protocol: number,
         options: { sourceIp?: IPAddress; ttl?: number; dataSize?: number } = {},
@@ -4279,21 +4475,9 @@ export abstract class LinuxMachine extends EndHost
     direction: 'in' | 'out' | 'forward',
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
-    const ports = this.extractPorts(ipPkt);
-    const icmp = ipPkt.payload as { type?: string; icmpType?: ICMPType; id?: number } | undefined;
     return this.runFilterTable(this.executor.iptables, {
-      direction,
-      protocol: ipPkt.protocol,
-      srcIP: ipPkt.sourceIP.toString(),
-      dstIP: ipPkt.destinationIP.toString(),
-      srcPort: ports.srcPort,
-      dstPort: ports.dstPort,
-      iface: portName,
-      outIface: outPortName,
-      icmpType: icmp?.type === 'icmp' && icmp.icmpType !== undefined
-        ? icmpTypeNumber(icmp.icmpType) : undefined,
-      icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
-    });
+      direction, iface: portName, outIface: outPortName, ...this.packetFacts(ipPkt),
+    }, ipPkt);
   }
 
   protected override firewallFilter6(
@@ -4302,29 +4486,77 @@ export abstract class LinuxMachine extends EndHost
     direction: 'in' | 'out' | 'forward',
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
+    return this.runFilterTable(this.executor.ip6tables, {
+      direction, iface: portName, outIface: outPortName, ...this.packetFacts6(ipv6Pkt),
+    }, ipv6Pkt);
+  }
+
+  private packetFacts(ipPkt: IPv4Packet): PacketFacts {
+    const ports = this.extractPorts(ipPkt);
+    const icmp = ipPkt.payload as { type?: string; icmpType?: ICMPType; id?: number; code?: number } | undefined;
+    return {
+      protocol: ipPkt.protocol,
+      srcIP: ipPkt.sourceIP.toString(),
+      dstIP: ipPkt.destinationIP.toString(),
+      srcPort: ports.srcPort,
+      dstPort: ports.dstPort,
+      icmpType: icmp?.type === 'icmp' && icmp.icmpType !== undefined
+        ? icmpTypeNumber(icmp.icmpType) : undefined,
+      icmpCode: icmp?.type === 'icmp' ? icmp.code : undefined,
+      icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
+      fragmentOffset: ipPkt.fragmentOffset,
+      ipPacketBytes: ipPkt.totalLength,
+      related: this.quotedTuple(ipPkt),
+      ...this.tcpFacts(ipPkt.payload),
+    };
+  }
+
+  private quotedTuple(ipPkt: IPv4Packet): ConnectionTuple | undefined {
+    if (!isICMPErrorMessage(ipPkt)) return undefined;
+    const quoted = (ipPkt.payload as ICMPPacket).originalPacket;
+    return quoted === undefined ? undefined : connectionTupleOf(this.packetFacts(quoted));
+  }
+
+  private quotedTuple6(ipv6Pkt: IPv6Packet): ConnectionTuple | undefined {
+    if (!isICMPv6ErrorMessage(ipv6Pkt)) return undefined;
+    const quoted = (ipv6Pkt.payload as ICMPv6Packet).invokingPacket;
+    return quoted === undefined ? undefined : connectionTupleOf(this.packetFacts6(quoted));
+  }
+
+  private packetFacts6(ipv6Pkt: import('../core/types').IPv6Packet): PacketFacts {
     const transport = ipv6Pkt.payload as {
       sourcePort?: number; destinationPort?: number;
-      type?: string; icmpType?: ICMPv6Type; id?: number;
+      type?: string; icmpType?: ICMPv6Type; id?: number; code?: number;
     } | undefined;
-    return this.runFilterTable(this.executor.ip6tables, {
-      direction,
+    return {
       protocol: ipv6Pkt.nextHeader,
       srcIP: ipv6Pkt.sourceIP.toString(),
       dstIP: ipv6Pkt.destinationIP.toString(),
       srcPort: transport?.sourcePort ?? 0,
       dstPort: transport?.destinationPort ?? 0,
-      iface: portName,
-      outIface: outPortName,
       icmpType: transport?.type === 'icmpv6' && transport.icmpType !== undefined
         ? icmpv6TypeNumber(transport.icmpType) : undefined,
+      icmpCode: transport?.type === 'icmpv6' ? transport.code : undefined,
       icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
-    });
+      ipPacketBytes: ipv6PacketBytes(ipv6Pkt),
+      related: this.quotedTuple6(ipv6Pkt),
+      ...this.tcpFacts(ipv6Pkt.payload),
+    };
+  }
+
+  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[] } {
+    const segment = payload as TCPPacket | TcpSegment | undefined;
+    if (segment?.type !== 'tcp') return {};
+    return {
+      tcpFlags: tcpFlagBits(segment.flags),
+      tcpOptions: 'options' in segment ? segment.options.map(tcpOptionKindNumber) : [],
+    };
   }
 
   private runFilterTable(
-    manager: LinuxIptablesManager, pkt: PacketInfo,
+    manager: LinuxIptablesManager, pkt: PacketInfo, subject: object,
   ): 'accept' | 'drop' | 'reject' {
-    const verdict = manager.filterPacket(pkt);
+    const verdict = manager.filterPacket(pkt, subject);
     if (verdict === 'reject') this.lastRejectWith = manager.getLastRejectWith();
     if (verdict !== 'accept') {
       this.logIptablesDrop(pkt, verdict, pkt.iface, pkt.outIface);
@@ -4362,6 +4594,7 @@ export abstract class LinuxMachine extends EndHost
     const iface = ownPort?.getName() ?? this.getPorts()[0]?.getName() ?? '';
     return this.executor.iptables.filterPacket({
       direction: 'in', protocol: 6, srcIP, dstIP, srcPort: 0, dstPort, iface,
+      tcpFlags: tcpFlagBits({ ...noFlags(), syn: true }), tcpOptions: [], fragmentOffset: 0, ipPacketBytes: BARE_SYN_IP_BYTES,
     });
   }
 
@@ -4419,40 +4652,23 @@ export abstract class LinuxMachine extends EndHost
     inPort: string,
     outPort: string,
   ): { action: string; address?: string } | null {
-    const ports = this.extractPorts(ipPkt);
-    const pkt: PacketInfo = {
-      direction: 'forward',
-      protocol: ipPkt.protocol,
-      srcIP: ipPkt.sourceIP.toString(),
-      dstIP: ipPkt.destinationIP.toString(),
-      srcPort: ports.srcPort,
-      dstPort: ports.dstPort,
-      iface: inPort,
-      outIface: outPort,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'POSTROUTING');
+    return this.executor.iptables.evaluateNat({
+      direction: 'forward', iface: inPort, outIface: outPort, ...this.packetFacts(ipPkt),
+    }, 'POSTROUTING');
   }
 
   protected override evaluatePreRouting(
     inPort: string,
     ipPkt: IPv4Packet,
   ): { action: string; address?: string } | null {
-    const ports = this.extractPorts(ipPkt);
-    const pkt: PacketInfo = {
-      direction: 'in',
-      protocol: ipPkt.protocol,
-      srcIP: ipPkt.sourceIP.toString(),
-      dstIP: ipPkt.destinationIP.toString(),
-      srcPort: ports.srcPort,
-      dstPort: ports.dstPort,
-      iface: inPort,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'PREROUTING');
+    return this.executor.iptables.evaluateNat({
+      direction: 'in', iface: inPort, ...this.packetFacts(ipPkt),
+    }, 'PREROUTING');
   }
 
   protected override evaluateNatOutput(
     srcIP: string, dstIP: IPAddress, dstPort: number, srcPort: number,
-    protocol: number, tentativeOutIface: string,
+    protocol: number, tentativeOutIface: string, ipPacketBytes: number,
   ): { action: string; address?: string } | null {
     const pkt: PacketInfo = {
       direction: 'out',
@@ -4461,6 +4677,7 @@ export abstract class LinuxMachine extends EndHost
       dstIP: dstIP.toString(),
       srcPort, dstPort,
       iface: tentativeOutIface,
+      ipPacketBytes,
     };
     return this.executor.iptables.evaluateNat(pkt, 'OUTPUT');
   }
@@ -4469,17 +4686,9 @@ export abstract class LinuxMachine extends EndHost
     inPort: string,
     ipv6Pkt: import('../core/types').IPv6Packet,
   ): { action: string; address?: string } | null {
-    const transport = ipv6Pkt.payload as { sourcePort?: number; destinationPort?: number } | undefined;
-    const pkt: PacketInfo = {
-      direction: 'in',
-      protocol: ipv6Pkt.nextHeader,
-      srcIP: ipv6Pkt.sourceIP.toString(),
-      dstIP: ipv6Pkt.destinationIP.toString(),
-      srcPort: transport?.sourcePort ?? 0,
-      dstPort: transport?.destinationPort ?? 0,
-      iface: inPort,
-    };
-    return this.executor.ip6tables.evaluateNat(pkt, 'PREROUTING');
+    return this.executor.ip6tables.evaluateNat({
+      direction: 'in', iface: inPort, ...this.packetFacts6(ipv6Pkt),
+    }, 'PREROUTING');
   }
 
   // ─── OS Info ─────────────────────────────────────────────────────────
@@ -4501,7 +4710,7 @@ export abstract class LinuxMachine extends EndHost
   editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
     const type = this.executor.vfs.getType(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
     if (type === null) return 'missing';
-    return type === 'chardev' ? 'device' : type === 'symlink' ? 'file' : type;
+    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
   }
 
   editorPathIsReadOnly(path: string): boolean {
@@ -4537,7 +4746,7 @@ export abstract class LinuxMachine extends EndHost
     const cmd = this.commands.get(head);
     if (!hasShellSyntax && cmd && cmd.needsNetworkContext) {
       const args = LinuxMachine.tokenizeArgs(trimmed).slice(1);
-      const result = cmd.run(this.buildCommandContext(), args);
+      const result = cmd.run(this.buildCommandContext(false, head), args);
       if (typeof result === 'string') return result;
     }
 
@@ -4984,17 +5193,19 @@ export abstract class LinuxMachine extends EndHost
    * context (e.g. one-shot `ssh host cmd` exec, which has no pty and so
    * real coreutils auto-detect no-tty and disable color).
    */
-  executeCommandInSession(command: string, session: LinuxShellSession, opts?: { color?: boolean }): Promise<string> {
+  executeCommandInSession(command: string, session: LinuxShellSession, opts?: { color?: boolean; stdin?: string }): Promise<string> {
     // Chain on the per-device queue: subsequent commands wait their turn.
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
       return this.sessionSwap.within(session, async () => {
         this.executor.displayColor = opts?.color ?? true;
+        this.executor.setExecInput(opts?.stdin);
         try {
           return await this.executeCommand(command);
         } finally {
           this.executor.displayColor = false;
+          this.executor.setExecInput(undefined);
         }
       });
     });

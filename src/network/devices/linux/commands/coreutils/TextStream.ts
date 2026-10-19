@@ -22,9 +22,10 @@
 
 import { simulationDate } from '@/network/core/SystemClock';
 
-import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
+import { base64ToBytes, bytesToBase64, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth, renderTableText, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * Défait les options courtes agglutinées, comme le fait `getopt` : `-sw 9`
@@ -154,7 +155,7 @@ export const nlCommand = coreutil(
       for (const line of toLines(content)) {
         if (line === '' && !numberAll) { out.push(''); continue; }
         n += 1;
-        out.push(`${String(n).padStart(6)}\t${line}`);
+        out.push(`${padToWidth(String(n), 6, 'right')}\t${line}`);
       }
     }
     return out.join('\n');
@@ -433,7 +434,7 @@ export const prCommand = coreutil(
 
     const out: string[] = [];
     for (let f = 0; f < got.length; f++) {
-      const body = toLines(got[f]).map((l, i) => (numbered ? `${String(i + 1).padStart(5)}\t${l}` : l));
+      const body = toLines(got[f]).map((l, i) => (numbered ? `${padToWidth(String(i + 1), 5, 'right')}\t${l}` : l));
       if (omitHeader) { out.push(...body); continue; }
       out.push('', '', `${simulationDate().toDateString()}  ${files[f] ?? ''}  Page 1`, '', '');
       out.push(...body);
@@ -474,16 +475,11 @@ export const columnCommand = coreutil(
       ? /\s+/
       : new RegExp(`[${sep.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}]`);
     const rows = lines.map(l => l.split(splitter));
-    const widths: number[] = [];
-    for (const row of rows) {
-      row.forEach((cell, i) => { widths[i] = Math.max(widths[i] ?? 0, cell.length); });
-    }
-    return rows
-      .map(row => row
-        .map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i] + 2)))
-        .join('')
-        .trimEnd())
-      .join('\n');
+    const columns: TableColumn<string[]>[] = Array.from(
+      { length: Math.max(0, ...rows.map(row => row.length)) },
+      (_, i) => ({ header: '', value: (row: string[]) => row[i] ?? '' }),
+    );
+    return renderTableText(rows, columns, { gap: 2, rule: false, header: false });
   },
 );
 
@@ -605,15 +601,12 @@ export const base64Command = coreutil(
 
     try {
       if (decode) {
-        const binary = atob(input.replace(/\s+/g, ''));
-        const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+        const bytes = base64ToBytes(input.replace(/\s+/g, ''));
         const decoded = bytesToFileText(bytes);
         return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
       }
       const bytes = fileTextToBytes(input.endsWith('\n') ? input : input + '\n');
-      let binary = '';
-      for (const b of bytes) binary += String.fromCharCode(b);
-      return btoa(binary);
+      return bytesToBase64(bytes);
     } catch {
       return 'base64: invalid input';
     }

@@ -111,7 +111,7 @@ async function sshAuTravers(
   acl: readonly string[], entree: readonly string[] = [],
 ): Promise<string> {
   const { pc } = await labo(acl, entree);
-  return (await pc.executeCommand(SSH)).trim();
+  return (await pc.executeCommand(SSH)).trim().split('\n').pop() ?? '';
 }
 
 describe('Une liste de transit se SUBIT, elle ne se rejoue pas', () => {

@@ -8,7 +8,7 @@ import { createSessionForDevice } from '@/terminal/sessions/sessionFactory';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { DeviceType } from '@/network/core/types';
 import type { Equipment } from '@/network/equipment/Equipment';
-import { allowLegacyIosSsh } from '../iosLegacySsh';
+import { interoperateWithIos15 } from '../iosLegacySsh';
 
 export const SECRET = 'Secret123';
 export const ADMIN = 'netadmin';
@@ -157,12 +157,7 @@ export async function buildMatrixLab(kinds: readonly Kind[] = ALL_KINDS): Promis
     });
   }
   for (const node of nodes) await configureNode(node, '255.255.255.0');
-  for (const node of nodes) {
-    if (node.kind === 'linux-pc' || node.kind === 'linux-server'
-      || node.kind === 'windows-pc' || node.kind === 'windows-server') {
-      allowLegacyIosSsh(node.device);
-    }
-  }
+  for (const node of nodes) await interoperateWithIos15(node.device);
   return { nodes, switchDevice };
 }
 
@@ -195,7 +190,7 @@ export class Console {
 
   async type(line: string): Promise<void> {
     const s = this.session;
-    s.foreground.setInput(line); s.foreground.setInputBuf(line); s.handleKey(key('Enter'));
+    s.setInput(line); s.setInputBuf(line); s.handleKey(key('Enter'));
     await this.settle();
   }
 
@@ -216,7 +211,7 @@ export class Console {
     }
   }
 
-  get prompt(): string { return this.session.foreground.getPrompt(); }
+  get prompt(): string { return this.session.getPrompt(); }
   get transcript(): string { return this.session.lines.map((l) => l.text).join('\n'); }
   get mode(): string { return this.session.currentInputMode.type; }
 

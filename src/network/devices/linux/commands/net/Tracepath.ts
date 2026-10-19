@@ -8,6 +8,7 @@ import { makeArgCompleter } from '../completionHelpers';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
 import { reverseNameOf } from '../../network/ReverseName';
 import { INT_MAX, IPUTILS_VERSION_LINE, strtolOrErr } from './IputilsCommon';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const OPTSTRING = '46nbh?l:m:p:V';
 const MAX_PROBES = 10;
@@ -114,7 +115,7 @@ export function parseTracepathArgs(args: readonly string[]): TracepathArgs {
 
 function formatRtt(rttMs: number): string {
   const us = Math.round(rttMs * 1000);
-  return `${String(Math.trunc(us / 1000)).padStart(3)}.${String(us % 1000).padStart(3, '0')}ms `;
+  return `${padToWidth(String(Math.trunc(us / 1000)), 3, 'right')}.${String(us % 1000).padStart(3, '0')}ms `;
 }
 
 function returnHops(replyTtl: number | undefined): number {
@@ -175,9 +176,9 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
     if (report.origin === 'local' && report.errno !== 'EMSGSIZE') return -1;
     let line: string;
     if (report.origin === 'local') {
-      line = `${String(state.ttl).padStart(2)}?: ${'[LOCALHOST]'.padEnd(32)} `;
+      line = `${padToWidth(String(state.ttl), 2, 'right')}?: ${padToWidth('[LOCALHOST]', 32)} `;
     } else {
-      line = `${String(sentTtl).padStart(2)}:  ${hostColumn(report.from)}${formatRtt(report.rttMs)}`;
+      line = `${padToWidth(String(sentTtl), 2, 'right')}:  ${hostColumn(report.from)}${formatRtt(report.rttMs)}`;
     }
     const rethops = report.origin === 'icmp' ? returnHops(report.replyTtl) : returnHops(undefined);
     const errno: Errno = report.errno;
@@ -196,7 +197,7 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
         return 0;
       case 'EHOSTUNREACH':
         if (report.origin === 'icmp' && report.timeExceeded) {
-          const asymm = rethops >= 0 && rethops !== sentTtl ? `asymm ${String(rethops).padStart(2)} ` : '';
+          const asymm = rethops >= 0 && rethops !== sentTtl ? `asymm ${padToWidth(String(rethops), 2, 'right')} ` : '';
           out.push(`${line}${asymm}`);
           return state.mtu;
         }
@@ -233,7 +234,7 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
       attempt++;
     }
     state.hisptr = (state.hisptr + 1) & (HIS_ARRAY_SIZE - 1);
-    out.push(`${String(state.ttl).padStart(2)}:  send failed`);
+    out.push(`${padToWidth(String(state.ttl), 2, 'right')}:  send failed`);
     return 0;
   };
 
@@ -248,7 +249,7 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
       if (res > 0) break;
     }
     if (done) break;
-    if (res < 0) out.push(`${String(state.ttl).padStart(2)}:  no reply`);
+    if (res < 0) out.push(`${padToWidth(String(state.ttl), 2, 'right')}:  no reply`);
   }
   if (!done) out.push(`     Too many hops: pmtu ${state.mtu}`);
   out.push(`     Resume: pmtu ${state.mtu} ${state.hopsTo >= 0 ? `hops ${state.hopsTo} ` : ''}`

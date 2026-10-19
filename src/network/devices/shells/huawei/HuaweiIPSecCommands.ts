@@ -14,6 +14,7 @@
 
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Context interface for Huawei IPSec sub-modes ────────────────────
 
@@ -1080,7 +1081,7 @@ export function registerHuaweiIPSecDisplayCommands(
     if (args[0]?.toLowerCase() === 'brief') {
       const lines = ['Peer name           Remote addr     PSK'];
       for (const [name, peer] of kr.peers as Map<string, any>) {
-        lines.push(`  ${name.padEnd(18)} ${String(peer.address).padEnd(15)} ${peer.preSharedKey ? '****' : 'none'}`);
+        lines.push(`  ${padToWidth(name, 18)} ${padToWidth(String(peer.address), 15)} ${peer.preSharedKey ? '****' : 'none'}`);
       }
       return lines.join('\n');
     }

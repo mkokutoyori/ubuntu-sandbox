@@ -2,6 +2,7 @@ import { EDGE_MARK_COL, codePointWidth, parseListChars, type Cell, type ListSpec
 import type { VimWindow } from './VimWindow';
 import type { HighlightSpan } from './VimSearch';
 import { CONTINUATION, type EditorScreen, type ScreenRow, type ScreenSpan, type ScreenStyle } from '../screen/EditorScreen';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface ScreenVisual {
   readonly mode: 'visual' | 'visual-line' | 'visual-block';
@@ -139,10 +140,10 @@ function searchRanges(cells: readonly Cell[], spans: readonly HighlightSpan[] | 
 function numberLabel(input: ScreenInput, lnum: number, width: number): string {
   const absolute = lnum + 1;
   const relative = Math.abs(lnum - input.cursor.line);
-  if (input.number && !input.relativenumber) return `${String(absolute).padStart(width)} `;
-  if (input.relativenumber && !input.number) return `${String(relative).padStart(width)} `;
-  if (relative === 0) return `${String(absolute).padEnd(width)} `;
-  return `${String(relative).padStart(width)} `;
+  if (input.number && !input.relativenumber) return `${padToWidth(String(absolute), width, 'right')} `;
+  if (input.relativenumber && !input.number) return `${padToWidth(String(relative), width, 'right')} `;
+  if (relative === 0) return `${padToWidth(String(absolute), width)} `;
+  return `${padToWidth(String(relative), width, 'right')} `;
 }
 
 function trimEdges(slice: Cell[], all: readonly Cell[], offset: number, spec: ListSpec | null): Cell[] {
@@ -324,7 +325,7 @@ function bottomRow(window: VimWindow, input: ScreenInput, relative: string): Scr
 }
 
 export function relativeLabel(position: 'All' | 'Top' | 'Bot' | number): string {
-  return typeof position === 'number' ? `${String(position).padStart(2)}%` : position;
+  return typeof position === 'number' ? `${padToWidth(String(position), 2, 'right')}%` : position;
 }
 
 export function buildScreen(window: VimWindow, input: ScreenInput): EditorScreen {

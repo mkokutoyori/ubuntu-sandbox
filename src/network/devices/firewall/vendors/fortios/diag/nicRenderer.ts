@@ -1,4 +1,5 @@
 import type { PortCounters } from '@/network/core/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface NicView {
   readonly name: string;
@@ -16,7 +17,7 @@ const NIC_LIST_HEADING = 'The following NICs are available:';
 const NIC_LIST_INDENT = ' '.repeat(8);
 
 function field(name: string, value: string): string {
-  return `${name.padEnd(FIELD_WIDTH)}${value}`;
+  return `${padToWidth(name, FIELD_WIDTH)}${value}`;
 }
 
 function statLine(counters: Readonly<PortCounters>): string {

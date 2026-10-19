@@ -4,13 +4,15 @@ import type { SshConfig } from './CiscoSecurityConfig';
 import type { SshClientProfile } from '../../../protocols/ssh/SshClientProfile';
 import { IOS_SSH_CLIENT_IDENTIFICATION } from '../../../protocols/ssh/serverIdentification';
 
-export type IosSshAlgorithmFamily = 'encryption' | 'mac' | 'hostkey' | 'kex';
+export type IosSshAlgorithmFamily = 'encryption' | 'mac' | 'hostkey' | 'kex' | 'authentication' | 'publickey';
 
 export interface IosSshAlgorithms {
   readonly encryption: readonly string[];
   readonly mac: readonly string[];
   readonly hostkey: readonly string[];
   readonly kex: readonly string[];
+  readonly authentication: readonly string[];
+  readonly publickey: readonly string[];
 }
 
 export const IOS_ENCRYPTION_ALGORITHMS: readonly string[] = [
@@ -36,8 +38,10 @@ export const IOS_KEX_ALGORITHMS: readonly string[] = [
 export const IOS_ALGORITHM_VALUES: Readonly<Record<IosSshAlgorithmFamily, readonly string[]>> = {
   encryption: IOS_ENCRYPTION_ALGORITHMS,
   mac: [...IOS_MAC_ALGORITHMS, 'hmac-sha2-256', 'hmac-sha2-512'],
-  hostkey: IOS_HOSTKEY_ALGORITHMS,
-  kex: IOS_KEX_ALGORITHMS,
+  hostkey: [...IOS_HOSTKEY_ALGORITHMS, 'rsa-sha2-256', 'rsa-sha2-512'],
+  kex: [...IOS_KEX_ALGORITHMS, 'ecdh-sha2-nistp256'],
+  authentication: ['publickey', 'keyboard', 'password'],
+  publickey: ['x509v3-ssh-rsa', 'ssh-rsa'],
 };
 
 const X509_HOSTKEY = 'x509v3-ssh-rsa';
@@ -48,6 +52,8 @@ export function iosSshDefaults(software: CiscoSoftwareIdentity): IosSshAlgorithm
     mac: IOS_MAC_ALGORITHMS,
     hostkey: IOS_HOSTKEY_ALGORITHMS,
     kex: software.sshKex,
+    authentication: ['publickey', 'keyboard', 'password'],
+    publickey: ['x509v3-ssh-rsa', 'ssh-rsa'],
   };
 }
 
@@ -60,6 +66,15 @@ export function effectiveIosSshAlgorithms(config: SshConfig, software: CiscoSoft
     mac: pick(config.macAlgorithms, defaults.mac),
     hostkey: pick(config.hostKeyAlgorithms, defaults.hostkey),
     kex: pick(config.kexAlgorithms, defaults.kex),
+    authentication: pick(config.authenticationMethods, defaults.authentication),
+    publickey: pick(config.publickeyAlgorithms, defaults.publickey),
+  };
+}
+
+function iosRekeyLimit(config: SshConfig): { bytes?: number; seconds?: number } {
+  return {
+    ...(config.rekeyVolumeKb !== undefined ? { bytes: config.rekeyVolumeKb * 1024 } : {}),
+    ...(config.rekeyTimeMinutes !== undefined ? { seconds: config.rekeyTimeMinutes * 60 } : {}),
   };
 }
 
@@ -71,6 +86,7 @@ export function iosSshTransportPolicy(config: SshConfig, software: CiscoSoftware
       hostKey: effective.hostkey.filter((name) => name !== X509_HOSTKEY),
       ciphers: effective.encryption,
       macs: effective.mac,
+      rekeyLimit: iosRekeyLimit(config),
     },
     groupExchangeMinBits: config.dhMinBits,
     extInfo: false,
@@ -89,6 +105,7 @@ export function iosSshClientProfile(config: SshConfig, software: CiscoSoftwareId
       hostKey: IOS_CLIENT_HOSTKEY_ALGORITHMS,
       ciphers: config.clientEncryptionAlgorithms.length > 0 ? config.clientEncryptionAlgorithms : defaults.encryption,
       macs: config.clientMacAlgorithms.length > 0 ? config.clientMacAlgorithms : defaults.mac,
+      rekeyLimit: iosRekeyLimit(config),
     },
   };
 }

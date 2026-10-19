@@ -195,13 +195,6 @@ et `eventcreate /?` ne sont pas ecrits (texte d'aide non source), `eventcreate /
 refuse, la table des fuseaux Windows ne porte que 17 entrees, et ni `tzutil /s` ni `eventcreate` ne
 verifient l'elevation (`Set-TimeZone` non plus).
 
-### [powershell] le runtime n'a qu'un type numerique
-**Mesure** : `(5.0).GetType().Name` et `[double]5` rendent `Int32` (le type est deduit de la valeur) ; `-is [double]`
-accepte tout nombre ; `[int]7/2` et `7/2` sont tous deux des doubles JavaScript. Les formats `.ToString("N2")`,
-`"X"`, `"D5"` et `[Math]::Pi` sont justes.
-**Pourquoi ce n'est pas ferme** : distinguer Int32/Int64/Double demande un type de valeur porte par chaque nombre,
-c'est-a-dire toucher l'evaluateur d'expressions entier, pas un membre.
-
 ### [persistance] ce que la sauvegarde ne sait toujours pas ecrire, et une configuration modifiee ecrite en entier
 **Mesure** : (1) un `CiscoRouter` modifie ecrit tout son `running-config` (environ 600 octets) au lieu des
 lignes qui different du jumeau d'usine ; les MAC des ports sont ecrites pour chaque equipement (65 octets par
@@ -586,16 +579,6 @@ pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
 active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
 d'anomalie de fragments par defaut. Le test reste rouge.
 
-### [ssh] deux modeles de `sshd_config` coexistent encore
-`SshSshdConfig` (celui du contexte serveur, de Windows et de la
-validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs
-`Match`, `sshd -T`, politique de connexion) lisent le meme fichier.
-`PermitRootLogin` est desormais une seule valeur OpenSSH dans les deux
-(defaut `prohibit-password`, ecrit tel quel dans l'image) ; les autres
-directives restent lues deux fois. Fermer le doublon demande de faire
-porter au contexte serveur le seul `SshdServerConfig` et de migrer ses
-lecteurs (`config.*` du gestionnaire, WindowsSshServerContext, validation).
-
 ### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
 `echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
 le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
@@ -763,23 +746,6 @@ alors `hidden` et le filtre la rendra sans une ligne de plus.
 ---
 
 ## Gestion (SNMP, NTP, syslog)
-
-### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES
-La queue de `ntp server|peer` ne connait que les quatre formes qu'elle
-declare (`key`, `prefer`, `source`, `version`) ; depuis le lot qui les
-juge, un mot hors de cette liste est refuse au lieu d'etre avale en
-silence. Un vrai IOS accepte pourtant `minpoll`/`maxpoll` (intervalles de
-scrutation) et `burst`/`iburst`.
-**Mesure** : `ntp server 10.0.0.1 iburst` rend `% Invalid input detected`
-ici et est accepte sur une vraie machine.
-**Pourquoi c'est ce refus qui a ete choisi** : `CLAUDE.md` tranche —
-« soit le moteur applique le mot-cle, soit l'analyseur le refuse ». Les
-accepter demanderait de RANGER une valeur que rien ne lit, ce qui est
-l'inverse du defaut que ce lot refermait.
-**Report** : `minpoll`/`maxpoll` sont applicables — `NtpAssociation`
-porte deja `pollSec` et le minuteur de scrutation existe — mais c'est un
-travail de temporisation, pas de CLI. `burst`/`iburst` demandent une
-rafale de huit paquets a l'association, que ce moteur n'a pas.
 
 ### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
 IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
@@ -1389,105 +1355,6 @@ client n'est enregistre aupres d'une session) et `Uptime: 00:00:03`
 ici). Les ecrire avec des zeros annoncerait une mesure qui n'a pas lieu.
 
 
-### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
-**Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
-rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure, par le
-compteur du cable : entre deux hotes separes par un routeur, le meme
-`ssh` ne fait franchir au routeur ni plus ni moins de trames que rien
-du tout.
-
-**Ce qui a ete FERME (lot « le verdict de transit vient du fil »).** Le
-client ne rejoue plus les listes de transit. Il demandait a
-`transitTcpAclVerdict` (`HostLookup.ts`) si un SYN passerait — une
-SECONDE implantation de « ce paquet passerait-il ? », a cote de
-`evaluateForDataPlane`. Il emet desormais un vrai SYN sans connexion
-(`TcpStack.scanProbe`, celui des balayages `nmap`) et lit ce qui
-revient. `transitTcpAclVerdict` et `transitAckAclVerdict` sont
-supprimes ; il ne reste du parcours que `transitUdpAclVerdict`, lu par
-`traceroute` seul, dont la sonde UDP n'a pas encore d'equivalent sans
-connexion. La sonde `probe-ssh-verdict-de-transit-sur-le-fil` tient le
-resultat, et le note : les quatre verdicts etaient DEJA justes — ce qui
-manquait, c'est qu'ils soient subis.
-
-**Puis (lot « le client entend l'ICMP du fil ») la DERNIERE porte
-re-derivee cote client est tombee.** `inboundFirewallVerdict` atteignait
-l'`iptables` de la machine distante et tranchait AVANT la sonde du fil :
-un `ssh` bloque par une liste de ROUTEUR se faisait donc juger par un
-pare-feu qu'il n'avait pas atteint, et la consultation INCREMENTAIT ses
-compteurs pour une trame jamais recue. La cause etait en amont — la
-sonde apatride etait SOURDE a l'ICMP (`onIcmpUnreachable` ne parcourait
-que `sockets`, or `scanProbe` n'en ouvre aucun), si bien que tout refus
-se presentait comme un silence. La sonde entend maintenant les deux
-classes de code, et le verdict du client vient du fil seul. Restent les
-gates sshd re-derivees (`Match Address`, forced-command, banner…) et la
-commande distante executee en memoire, ci-dessous.
-
-**La note qui declarait ce rejeu « porteur » etait PERIMEE.** Elle
-affirmait que le chemin `tcpConnectOutcome`/`TcpStack` n'atteignait pas
-`evaluateForDataPlane` du routeur de transit. Remesure, en neutralisant
-`transitTcpAclVerdict` a `permit` : `connectOutcome` rend TOUJOURS
-`prohibited` a travers un routeur `deny ip any any`, alors que `ssh`
-rendait `alice`. Le plan de donnees savait deja refuser ; seul le client
-ne le lui demandait pas.
-
-**Le client reel canonique existe deja : `SshSession` (session/SshSession.ts).**
-Le serveur `SshServerHandler` est un vrai sshd sur TCP (ops JSON
-hello/auth/open_channel/exec sur la socket :22 acceptee) ; `SshSession` en est
-le CLIENT — banniere + host key (`known_hosts`, `strictHostKeyChecking`), auth
-negociee, puis `openExecChannel(cmd).execute()`, `openShellChannel()`,
-`openSftpChannel()`. Le lanceur `sshLauncher` (via `openWireSshConnection`)
-fait DEJA passer `ssh user@host cmd` par `SshSession.openExecChannel().execute()`
-— mesure `ssh-exec-runs-on-the-wire` : la commande coute ses propres trames et
-`whoami` rend l'utilisateur SSH, pas le root du peripherique. `runSshTransportAsync`
-fait DEJA passer scp/sftp avec mot de passe par `SshSession` + `SshSftpChannel`
-(`tryOpenWireSftpFs`). Les fixtures `ssh-lan-fixtures` (`openSshSession`,
-`sshExec`, `openSftpSession`) sont le point d'entree partage ; les gardes
-`ssh-wire-exec` / `ssh-journalctl-tcpdump-coherence` / `sftp-scp-wire-coherence`
-prouvent la coherence trois-vues (ssh/journalctl/tcpdump) et la subissance ACL
-de transit sur ce client.
-
-**Ce qui reste : migrer `LinuxSshClient.runSshClient` (~1555 lignes) sur
-`SshSession`.** C'est le chemin god-mode SYNCHRONE encore appele par la commande
-bash `ssh` (`LinuxCommandExecutor`) et par les shells Cisco/Huawei : il retrouve
-le peripherique pair par `findHostByAddress` puis appelle ses methodes en memoire
-(`machine.executor.execute`, gates sshd re-derivees cote client). Mesure : 274
-fichiers de tests EPINGLENT ce comportement client (lignes `auth.log`,
-forced-command, port/env forwarding, banner, motd, `.bashrc`). Les faire passer
-par `SshServerHandler` deplace ces effets du client vers le serveur et doit
-reproduire chaque sortie a l'octet ; migration incrementale, famille par famille,
-validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc.
-
-**La barriere, localisee.** `LinuxCommandExecutor.dispatch` est synchrone
-(`case 'ssh':`), mais la porte asynchrone EXISTE deja et sert `scp`/`sftp` :
-`executeCoreAsync` -> `runScriptContentAsync` -> `dispatchMaybeNetwork` ->
-`networkRunner`, qui sert toute commande declaree `needsNetworkContext`
-dans `commands/net/` (voir `Scp.ts`, dont le `runWithStatus` attend
-`runSshTransportAsync`). Declarer un `ssh` la-bas est donc le chemin, et
-le point de couture dans `runSshClient` est UNIQUE : le bloc
-`execMod.executeWithEnv(effectiveCmd, forwarded)` / `execMod.execute(effectiveCmd)`
-qui suit le calcul de `forwarded` et de `effectiveCmd`. Tout ce qui est
-au-dessus (auth, politique, forwarding, `.bashrc` sous `-t`) reste client.
-
-### [ssh] `sftp` depuis Windows ne fait franchir AUCUNE trame au cable
-**Mesure** (WindowsPC -> LinuxServer, un cable, compteur `Cable.getStats().framesTransmitted`
-lu avant/apres `sftp -b lot.txt bob@10.93.0.20`) : un lot `bye` coute 0 trame ; un lot
-`get /home/bob/big.txt C:\big.txt` d'un fichier de 200001 octets coute 0 trame, et le fichier
-arrive (`dir` le montre). Meme la negociation d'authentification ne traverse pas le cable : la
-sonde `runWindowsSshClient` retrouve la machine par `findHostByAddress` et interroge ses
-methodes, puis `resolveRemoteSftpFs` lit le `VirtualFileSystem` / `WindowsFileSystem` de la
-machine distante en memoire. La regle 4 est violee de bout en bout, et aucun mot de passe n'est
-demande au client.
-**Ce qui existe deja** : `runWindowsScpClient` (meme dossier) ouvre un vrai `SftpSession` sur TCP
-et la sonde `windows-scp` mesure l'echange sur le fil ; `LinuxCommandExecutor.tryOpenWireSftpFs`
-fait de meme pour `sftp` Linux et enveloppe le canal dans `WireSftpFileSystem`, que
-`SftpInteractiveSession` consomme sans changement.
-**Pourquoi ce n'est pas ferme** : le mot de passe. `cmdScp` n'en fournit aucun a
-`SilentSshInteractionHandler`, et `sftp.exe` en demande un a la saisie ; il faut d'abord un
-passage de justificatif du flux interactif de Windows (le meme que celui de `ssh`) jusqu'a
-`runWindowsSftpClient`, sans quoi la migration refuserait toute connexion. A faire dans l'ordre :
-justificatif -> `SshSession` avec `WindowsLocalFs` -> `WireSftpFileSystem` -> retrait de
-`resolveRemoteSftpFs` et de la sonde en memoire.
-
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
 BGP, DHCP et IPsec, et laisse GRE dehors.
@@ -1621,25 +1488,6 @@ de repondre. C'est le comportement d'un vrai FortiGate, mais c'est un
 changement du plan de GESTION et non de la relation interface/port que
 le lot courant referme, et il demande de reprendre les laboratoires qui
 joignent l'administration par une interface WAN.
-
-### [ssh] un mot de passe VIDE ne traverse pas le terminal interactif
-**Constat.** Le compte `admin` d'usine a un mot de passe vide et le
-pare-feu l'accepte — `authenticateAdmin('admin', '')` rend `true`, et
-`ManagementPlane.requiresPasswordChange` existe justement pour ce cas.
-Mais `ssh admin@192.168.1.99` depuis un terminal, en validant une saisie
-vide a l'invite, rend `Permission denied, please try again.`
-
-**Mesure.** Meme laboratoire, deux cas : mot de passe vide → refus ;
-`set password "Secret123"` puis ce mot de passe → la session s'ouvre sur
-l'invite `FGT #`. Le serveur n'est donc pas en cause, son
-`checkPassword` delegue directement a `authenticateAdmin`.
-
-**Report.** Le refus vient du chemin CLIENT (la saisie vide n'est pas
-soumise), qui est commun a toutes les plateformes et non propre au
-pare-feu ; le trancher demande de mesurer d'abord ce que fait la meme
-saisie vers un hote Linux dont le compte n'a pas de mot de passe, sans
-quoi on corrigerait un symptome sur une seule cible.
-
 
 ### [vdom] `set vdom-mode split-vdom` est accepte et se comporte comme multi-vdom
 **Constat.** `vdom-mode` accepte trois valeurs. `no-vdom` et `multi-vdom`
@@ -1962,23 +1810,6 @@ est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
 ## SSH
-
-### [ssh] toutes les lignes du journal portent le PID de l'ECOUTEUR
-Depuis que `pam_unix(sshd:session)` a un seul producteur — le
-syslogger —, les quatre lignes d'une connexion partagent le meme
-`sshd[<pid>]`, celui du processus qui ECOUTE. C'est deja plus juste
-qu'avant, ou `Accepted` portait le PID de l'ecouteur et la ligne pam
-celui de l'enfant : un vrai sshd ecrit les deux depuis le MEME
-processus, l'enfant qui sert la connexion. Ce qui reste faux est
-lequel : il devrait s'agir d'un PID par CONNEXION, pas de celui de
-l'ecouteur.
-**Mesure** : quatre clients, `sshd[22]` partout, alors que le tableau
-des processus porte bien un `sshd: alice [priv]` par session.
-**Report** : le syslogger est construit une fois par machine avec un
-`sshdPid` fixe ; lui faire porter un PID par connexion demande de lui
-passer l'enfant a l'emission, donc de faire voyager cette identite dans
-les evenements du bus — un changement de la forme des evenements, pas
-du format des messages.
 
 ## Couche lien
 
@@ -2397,15 +2228,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   partagé) mais rendue par le seul parcours du routeur, donc perdue au
   rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
   déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.
-- `sntp broadcast client` est ACCEPTE, RENDU, et n'est evalue par
-  personne. `NtpAgent` n'a aucune notion de mode diffusion (mode 5) : pas
-  une occurrence de `broadcast` dans tout le module, donc rien ne peut
-  recevoir une annonce. Il est stocke plutot que refuse parce que le
-  refuser ferait disparaitre a l'import d'une topologie une ligne qu'une
-  vraie machine accepte — meme raisonnement que `ip ssh server algorithm`
-  et `snmp-agent mib-view`. Fermer demande un emetteur d'annonces cote
-  serveur et une reception cote client, c'est-a-dire un mode de plus dans
-  le moteur, pas une porte.
 - `sntp source-interface <nom>` est REFUSEE alors que la Basic System
   Management Command Reference la decrit. Le moteur, lui, sait le faire :
   `NtpAgent.setSourceInterface` existe et `ntp source` l'ecrit. Ce qui
@@ -2974,24 +2796,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   des identifiants de VLAN l'a laissee telle quelle : leur donner un
   vocabulaire demande d'attester celui de VRP, hors de portee depuis ce
   reseau, et une liste ecrite de memoire refuserait des commandes reelles.
-- `iptables -p tcp --tcp-flags <masque> <compare>` est desormais JUGE (une
-  faute de frappe est refusee dans les mots du vrai iptables) mais n'est
-  toujours pas EVALUE : `PacketInfo`, la structure que `matchesRule` voit
-  d'un paquet, ne porte aucun drapeau TCP — ni SYN, ni ACK, ni RST. Le
-  ranger en ferait un critere que rien ne lit, ce que la regle du depot
-  interdit ; c'est donc le paquet qu'il faut enrichir, et non l'analyse.
-  Consequence a connaitre en attendant : une regle portant `--tcp-flags`
-  correspond comme si la clause n'y etait pas, donc elle est plus
-  PERMISSIVE que ce que l'operateur a ecrit.
-- `IPTABLES_MATCH_MODULES` declare vingt modules alors que `matchesRule`
-  n'en EVALUE que six (`state`, `conntrack`, `multiport`, `limit`, `mac`,
-  `iprange`). Les quatorze autres sont acceptes, rendus, et sautes a
-  l'evaluation — meme forme que `--tcp-flags` ci-dessus. Le lot des
-  criteres inconnus a ferme le mot INVENTE, qui est le cas dangereux (une
-  faute de frappe ouvrait la regle en silence), et n'a pas tranche pour
-  les modules reels-mais-non-evalues : les refuser casserait des
-  laboratoires qui les emploient legitimement, les evaluer demande autant
-  de travail que de modules. A reprendre module par module.
+- `IPTABLES_MATCH_MODULES` declare vingt et un modules. Le moteur en EVALUE douze : `state`, `conntrack`, `multiport`, `limit`, `mac`,
+  `iprange`, `recent`, `comment` et les quatre modules de protocole `tcp`, `udp`, `icmp`, `icmp6` (leurs options sont des CHAMPS
+  de la regle : ports, drapeaux, options TCP, type ICMP). Les neuf autres -- `addrtype`, `mark`, `connmark`, `owner`, `pkttype`,
+  `length`, `ttl`, `hashlimit`, `string` -- sont acceptes et listes (le vrai iptables les connait) mais ne correspondent a RIEN :
+  une regle qu'on ne sait pas decider ne devient pas plus large que son texte. A reprendre module par module ; `mark`/`connmark`
+  demandent des marques PAR PAQUET et l'evaluation des tables mangle aux crochets, `owner` l'uid du processus emetteur.
 - `scenario-windows-log-export-remoting.test.ts` > « Export-Csv puis
   Import-Csv … en CSV » echoue sur `78370a4b3`, c'est-a-dire AVANT le lot
   des regles de pare-feu netsh — verifie par `git stash` sur un arbre
@@ -3376,76 +3186,3 @@ mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
-### [ssh] les commandes d'une session SSH ne traversent pas le fil depuis la CLI vendeur
-`LinuxTerminalSession` et `WindowsTerminalSession` ouvrent
-`session.openShellChannel()` et pilotent la session par
-`SshInteractiveSubShell` : chaque commande tapee traverse le cable.
-`CLITerminalSession` ouvre bien une connexion SSH REELLE — donc le login
-est authentifie sur le fil et la politique decide — puis greffe un enfant
-EN MEMOIRE sur l'objet `Equipment` du pair (`createSessionForDevice` +
-`adoptRemoteChild`). Le login traverse le fil, les commandes non.
-
-**Mesure** (methode du §4 : la DIFFERENCE entre le meme echange avec et
-sans la charge, puisqu'un vrai login met deja des trames sur le fil).
-Labo : poste ─ commutateur ─ cible Linux, `Cable.getStats()
-.framesTransmitted` releve juste apres le login, puis apres N `whoami` :
-
-    origine        enfant adopte   N=2    N=10   par commande
-    Linux (temoin)      non         10      48       ~4,75
-    Windows             non         10      48       ~4,75
-    CLI Cisco           oui          6       6        0
-
-La CLI Cisco est PLATE — 6 trames a deux commandes, 6 a dix : zero trame
-par commande. Les deux autres lignes montent, ce qui prouve que
-l'instrument mesure bien quelque chose et que le labo n'est pas muet.
-La ligne Windows a rejoint celle de Linux avec la bascule de B4 ; c'est
-le meme nombre qui dira quand la CLI l'aura rejointe.
-
-**Consequence** : sur cette origine, ce que le §4 annonce ne tient pas.
-Un privilege ou une politique qui se decide APRES le login — ce que le
-shell distant autorise a cet utilisateur — n'est pas traverse, et rien
-n'est comptable sur le fil.
-
-**Report** : `CLITerminalSession` n'a AUCUNE machinerie de sous-shell
-(seulement `telnetSubShell`), et son `ssh` passe par un flow
-(`{type:'password', validation}` puis `{type:'execute'}`) dont la
-validation est un verdict en memoire. Lui donner un `activeSubShell` est
-un prealable a la bascule, et c'est un lot en soi — la bascule Windows,
-elle, a demande quatre capacites manquantes et la reecriture de 40 cas.
-
-### [ssh] le chemin non interactif de Windows ne s'authentifie pas sur le fil
-`ssh hote "commande"` tape sur un poste Windows rend la sortie de la
-commande a un client que l'`access-class` de la vty REFUSE. Le meme appel
-depuis Linux rend `ssh: connect to host … port 22: Connection refused`.
-
-**Mesure.** Maquette : poste Windows `10.0.0.1`, poste Linux `10.0.0.2`,
-routeur `10.0.0.9` avec `ip access-list standard ONLY` / `permit host
-<un seul des deux>` et `access-class ONLY in` sur `line vty 0 4`.
-
-    depuis Linux,   bloque   ssh: connect to host 10.0.0.9 port 22: Connection refused
-    depuis Windows, bloque   *15:32:27.000 UTC Tue Sep 22 2026
-
-**Cause.** `WindowsSshClient` retombe sur `remote.runSshCommand(...)` —
-un appel direct sur l'objet `Equipment` du pair, zero octet sur le fil —
-quand le relais du fil manque. Instrumentation de `WindowsPC.cmdSsh` sur
-ce cas : `reach=open` (le SYN recoit sa reponse, l'`access-class` ne
-tranche pas au niveau TCP) mais `wire=non`, la session etant refusee a
-l'ADMISSION.
-
-**Ce qui a ete essaye et RETIRE.** Une garde « `reach` ouvert et pas de
-session sur le fil ⇒ refuser » a fait tomber 33 cas sur 9 fichiers
-(`windows-lan-ssh-suite` 14, `probe-windows-honore-passwordauthentication
--no` 5, `cross-equipment-ssh-suite` 3, …). La raison est instructive :
-sur ce chemin, `password` vient de `_scenarioStdin` et vaut le plus
-souvent `undefined`, donc « pas de session sur le fil » est l'etat
-ORDINAIRE et non le signe d'un refus. Les deux causes — « rien a offrir »
-et « refuse par la politique » — y sont indiscernables. La garde retiree,
-486/486 repassent sur ces neuf fichiers.
-
-**Report** : les rendre discernables demande que ce client porte son
-justificatif jusqu'au fil et traite l'echec comme un refus, c'est-a-dire
-le meme portage que l'entree voisine (`les commandes d'une session SSH ne
-traversent le fil QUE depuis Linux`) — le lot B de
-`docs/PRD-SSH-Unification.md` §4bis. Le cas de `probe-un-refus-du-fil-vaut
--sur-windows-aussi` qui l'epinglerait a ete RETIRE plutot que laisse
-rouge : un test qui encode le defaut le fige.

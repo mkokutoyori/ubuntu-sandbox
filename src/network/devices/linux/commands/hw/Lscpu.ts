@@ -98,7 +98,7 @@ function renderExtended(cpu: CpuSpec): string {
   for (let i = 0; i < cpu.logicalCpus; i++) {
     const socket = Math.floor(i / cpu.siblingsPerSocket);
     const core = Math.floor((i % cpu.siblingsPerSocket) / cpu.threadsPerCore);
-    lines.push(`${i.toString().padStart(3, ' ')}    0      ${socket}    ${core} ${core}:${core}:${socket}:0 yes`);
+    lines.push(`${padToWidth(i.toString(), 3, 'right')}    0      ${socket}    ${core} ${core}:${core}:${socket}:0 yes`);
   }
   return lines.join('\n');
 }
@@ -129,6 +129,7 @@ function helpText(): string {
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const lscpuCommand: LinuxCommand = {
   name: 'lscpu',

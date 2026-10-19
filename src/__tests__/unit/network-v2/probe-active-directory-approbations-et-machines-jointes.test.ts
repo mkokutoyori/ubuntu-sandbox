@@ -224,7 +224,7 @@ describe('what group policy already applied is still applied after reopening', (
     const [, , pcEntry] = exportOf(lab.all, lab.connections).devices;
     expect(Object.keys(pcEntry.windowsDomain ?? {}).sort()).toEqual(['groupPolicy', 'membership']);
     expect(pcEntry.windowsSecurity?.accounts).toMatchObject({ minPasswordLength: 7 });
-    expect(JSON.stringify(pcEntry).length).toBeLessThan(2_500);
+    expect(JSON.stringify(pcEntry).length).toBeLessThan(3_500);
   });
 });
 

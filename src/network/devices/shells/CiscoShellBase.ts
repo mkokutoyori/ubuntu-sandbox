@@ -12,6 +12,8 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
+import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
 import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { FrameSource } from '../../hardware/PortTap';
@@ -85,6 +87,15 @@ import { effectiveIosSshAlgorithms } from '../router/security/CiscoSshAlgorithms
 import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
+import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
+import { zoneShowSpecs } from './cisco/zoneShowSpecs';
+import { inspectShowSpecs } from './cisco/inspectShowSpecs';
+import { radiusAttributeSpecs } from './cisco/radiusAttributeSpecs';
+import { ikePubkeySpecs, storeKeyString, type IkePubkeyHost, type IkePubkeyMode } from './cisco/ikePubkeySpecs';
+import type { IkePeerKey } from '../router/security/IkePubkeyChain';
+import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
+import { ServerCounters } from '../../radius/ServerCounters';
+import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import { showDebuggingSpecs, type ShowDebuggingHost } from './cisco/showDebuggingSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
@@ -94,7 +105,6 @@ import {
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
@@ -104,8 +114,10 @@ import { aaaServerSpecs, type AaaServerHost } from './cisco/aaaServerSpecs';
 import {
   usernameSpecs, type UsernameHost, type UsernameSettings,
 } from './cisco/usernameSpecs';
+import { enableSecretSpecs, type EnableHost } from './cisco/enableSecretSpecs';
 import { parserViewSpecs, type ParserViewHost } from './cisco/parserViewSpecs';
 import { aaaHeadSpecs, type AaaHeadHost } from './cisco/aaaHeadSpecs';
+import { kerberosSpecs } from './cisco/kerberosSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
@@ -227,7 +239,9 @@ import {
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
-import { ciscoPasswordMatches } from './cisco/ciscoPasswordVerify';
+import {
+  ciscoPasswordMatches, invalidEncryptedSecretMessage, isWellFormedSecret, TYPE4_DEPRECATION_WARNING,
+} from './cisco/ciscoPasswordVerify';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent, getHttpService,
   getSessionRegistry,
@@ -254,7 +268,7 @@ import {
   CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
-import { renderTable, IOS_RULED_TABLE } from './cli/TextTable';
+import { renderTable, IOS_RULED_TABLE, padToWidth } from './cli/TextTable';
 import type { TableColumn } from './cli/TextTable';
 import { parseVlanList, compactVlanList } from './cli/vlanList';
 import { createDefaultSnoopingConfig } from '../../dhcp/types';
@@ -455,7 +469,7 @@ interface DhcpConfigServer {
   disable(): void;
 }
 
-type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
+type BannerKind = 'motd' | 'login' | 'exec' | 'incoming' | 'aaa-banner' | 'aaa-fail-message';
 
 const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
   ['exec', 'Set EXEC process creation banner'],
@@ -930,24 +944,8 @@ function analyserTeteLigne(args: readonly string[]): TeteLigne {
 
 const IDENTITE_ET_AMORCAGE: ReadonlySet<string> = new Set([
   'boot system', 'boot enable-break', 'boot manual', 'config-register',
-  'hostname', 'enable secret', 'enable algorithm-type', 'enable password',
+  'hostname',
 ]);
-
-const ALGORITHM_TYPE_PLACES: readonly ArgumentSpec[] = [
-  {
-    name: 'algorithm', type: 'ENUM', description: 'Algorithm to hash the secret with',
-    values: [
-      { keyword: 'md5', description: 'Select MD5 as the hashing algorithm' },
-      { keyword: 'scrypt', description: 'Select scrypt as the hashing algorithm' },
-      { keyword: 'sha256', description: 'Select PBKDF2 with SHA256 as the hashing algorithm' },
-    ],
-  },
-  {
-    name: 'kind', type: 'ENUM', description: 'What to set',
-    values: [{ keyword: 'secret', description: 'Assign the privileged level secret' }],
-  },
-  { name: 'secret', type: 'LINE', description: 'The UNENCRYPTED (cleartext) enable secret' },
-];
 
 const IDENTITE_PLACES:
   Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
@@ -958,15 +956,6 @@ const IDENTITE_PLACES:
   'boot system': {
     name: 'image', type: 'REST', description: 'System image file', literal: 'WORD',
   },
-  'enable secret': {
-    name: 'reste', type: 'REST',
-    description: 'Assign the privileged level secret', literal: 'LINE',
-  },
-  'enable password': {
-    name: 'reste', type: 'REST',
-    description: 'Assign the privileged level password', literal: 'LINE',
-  },
-  'enable algorithm-type': ALGORITHM_TYPE_PLACES,
 };
 
 type HardeningEntry = readonly [
@@ -985,7 +974,6 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
 
-export const ENABLE_LEVEL_RANGE: readonly [number, number] = [0, 15];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -1627,6 +1615,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return this.enableInteractionPlan(em.args, ctx?.device, ctx?.onVtyLine === true);
       }
     }
+    const xauth = /^crypto\s+ipsec\s+client\s+ezvpn\s+xauth(?:\s+(\S+))?$/i.exec(line);
+    if (xauth && mode === 'privileged') return this.ezvpnXauthPlan(xauth[1] ?? null, ctx?.device as TDevice | undefined);
+
     if (mode === 'user') return null;
 
     // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
@@ -1635,10 +1626,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `banner <kind> <delim>TEXT<delim>` form stays synchronous in the
     // config-trie handler.
     if (mode === 'config') {
+      const paste = /^crypto\s+(?:pki|ca)\s+authenticate\s+(\S+)$/i.exec(line);
+      if (paste) return this.pkiPastePlan('ca', paste[1], ctx?.device as TDevice | undefined);
+      const pool = /^crypto\s+pki\s+trustpool\s+import\s+(clean\s+)?terminal$/i.exec(line);
+      if (pool) return this.pkiPastePlan(pool[1] ? 'trustpool-clean' : 'trustpool', '', ctx?.device as TDevice | undefined);
+      const certificate = /^crypto\s+pki\s+import\s+(\S+)\s+certificate$/i.exec(line);
+      if (certificate) return this.pkiPastePlan('certificate', certificate[1], ctx?.device as TDevice | undefined);
+    }
+    if (mode === 'config') {
+      const pem = /^crypto\s+pki\s+import\s+(\S+)\s+pem\s+terminal((?:\s+(?:exportable|password\s+\S+))*)$/i.exec(line);
+      if (pem) {
+        const phrase = /password\s+(\S+)/i.exec(pem[2])?.[1] ?? null;
+        return this.pemImportPlan(pem[1], phrase, /\bexportable\b/i.test(pem[2]), ctx?.device as TDevice | undefined);
+      }
+    }
+    if (mode === 'config') {
       const bm = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(line);
       if (bm) {
         return this.bannerCaptureInteractionPlan(
           bm[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', bm[2], ctx?.device,
+        );
+      }
+      const am = /^aaa\s+authentication\s+(banner|fail-message)\s+(\S)\s*$/i.exec(line);
+      if (am) {
+        return this.bannerCaptureInteractionPlan(
+          am[1].toLowerCase() === 'banner' ? 'aaa-banner' : 'aaa-fail-message', am[2], ctx?.device,
         );
       }
       return null;
@@ -1837,7 +1849,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // `enable` a chaque fois, ce qu'aucune machine reelle ne
           // demande, et `% Bad secrets` n'existait nulle part.
           kind: 'password',
-          prompt: 'Password: ',
+          prompt: getSecurityConfig((deviceCtx ?? this.d()) as object).loginMessages().passwordPrompt,
           validate: (value) => {
             if (correspond(value)) return { valid: true };
             essais += 1;
@@ -2085,17 +2097,44 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { scope, tous, niveau, commande: mots.join(' ') };
   }
 
-  private pubkeyUser: string | null = null;
+  private pubkeyTarget: { kind: 'user' | 'server'; name: string } | null = null;
   private keyStringLines: string[] | null = null;
 
   protected pubkeyChainHost(): PubkeyChainHost {
     return {
       chain: () => getSecurityConfig(this.d()).sshPubkeys,
-      selectedUser: () => this.pubkeyUser,
-      selectUser: (name) => { this.pubkeyUser = name; },
+      target: () => this.pubkeyTarget,
+      select: (kind, name) => { this.pubkeyTarget = { kind, name }; },
       enter: (mode: PubkeyChainMode) => { this.mode = mode; },
       beginKeyString: () => { this.keyStringLines = []; this.mode = 'config-ssh-pubkey-data'; },
     };
+  }
+
+  private ikePeerKey: IkePeerKey | null = null;
+  private ikeKeyStringLines: string[] | null = null;
+
+  protected ikePubkeyHost(): IkePubkeyHost {
+    return {
+      chain: () => getSecurityConfig(this.d()).ikePubkeys,
+      selected: () => this.ikePeerKey,
+      select: (key) => { this.ikePeerKey = key; },
+      enter: (mode: IkePubkeyMode) => { this.mode = mode; },
+      beginKeyString: () => { this.ikeKeyStringLines = []; this.mode = 'config-pubkey-data'; },
+    };
+  }
+
+  private collectIkeKeyStringLine(rawLine: string): string {
+    const word = rawLine.trim().toLowerCase();
+    if (word !== 'exit' && word !== 'quit') {
+      this.ikeKeyStringLines!.push(rawLine.trim());
+      return '';
+    }
+    const lines = this.ikeKeyStringLines!;
+    this.ikeKeyStringLines = null;
+    this.mode = 'config-pubkey-key';
+    const key = this.ikePeerKey;
+    if (key === null || !storeKeyString(key, lines)) return '% Invalid public key: only RSA keys in X.509 SubjectPublicKeyInfo form can be stored.';
+    return '';
   }
 
   private collectKeyStringLine(device: TDevice, rawLine: string): string {
@@ -2106,10 +2145,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const lines = this.keyStringLines!;
     this.keyStringLines = null;
-    this.mode = 'config-ssh-pubkey-user';
+    const target = this.pubkeyTarget;
+    this.mode = target?.kind === 'server' ? 'config-ssh-pubkey-server' : 'config-ssh-pubkey-user';
     const decoded = decodeKeyString(lines);
-    if (decoded === null || this.pubkeyUser === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
-    getSecurityConfig(device).sshPubkeys.add(this.pubkeyUser, decoded.entry);
+    if (decoded === null || target === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
+    const chain = getSecurityConfig(device).sshPubkeys;
+    if (target.kind === 'server') chain.addServerKey(target.name, decoded.entry);
+    else chain.add(target.name, decoded.entry);
     return '';
   }
 
@@ -2119,19 +2161,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       hasRsaKeys: () => getSecurityConfig(this.d()).cryptoKeys.length > 0,
       software: () => ciscoSoftwareOf(this.d()),
     };
-  }
-
-  private lireNiveauEnable(
-    mots: readonly string[],
-  ): { level: number; reste: readonly string[] } {
-    if (mots[0]?.toLowerCase() !== 'level') return { level: 15, reste: mots };
-    const brut = mots[1];
-    if (brut === undefined) throw new CliIncomplete();
-    const [min, max] = ENABLE_LEVEL_RANGE;
-    if (!/^\d+$/.test(brut) || Number(brut) < min || Number(brut) > max) {
-      throw new CliInvalidInput({ token: brut });
-    }
-    return { level: Number(brut), reste: mots.slice(2) };
   }
 
   protected privilegeRuleHost(): PrivilegeRuleHost {
@@ -2227,14 +2256,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       _setIncomingBanner?: (b: string) => void;
     } | null;
     if (!dev) return;
-    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    if (kind === 'aaa-banner' || kind === 'aaa-fail-message') {
+      const security = getSecurityConfig(dev ?? this.d());
+      if (kind === 'aaa-banner') security.aaaLoginBanner = text;
+      else security.aaaFailMessage = text;
+    }
+    else if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
     else if (kind === 'login') dev._setLoginBanner?.(text);
     else if (kind === 'exec') dev._setExecBanner?.(text);
     else if (kind === 'incoming') dev._setIncomingBanner?.(text);
   }
 
   private bannerCaptureInteractionPlan(
-    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    kind: BannerKind,
     delim: string,
     device?: unknown,
   ): CommandInteractionPlan {
@@ -2527,7 +2561,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [
       'Directory of nvram:/',
       '',
-      `  190  -rw-        ${String(taille).padStart(6)}                    <no date>  startup-config`,
+      `  190  -rw-        ${padToWidth(String(taille), 6, 'right')}                    <no date>  startup-config`,
       '  191  ----             5                    <no date>  private-config',
       '',
       `${this.fs().nvramTotalBytes()} bytes total `
@@ -2852,6 +2886,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
     if (this.keyStringLines !== null) return this.collectKeyStringLine(device, rawInput);
+    if (this.ikeKeyStringLines !== null) return this.collectIkeKeyStringLine(rawInput);
     if (this.bannerCollector) {
       this.deviceRef = device;
       const out = this.collectBannerLine(rawInput);
@@ -3298,10 +3333,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mots.length === 0) return null;
 
     const candidats: string[][] = [];
-    for (const chemin of this.cheminsDuSocle(table, scope)) {
-      if (chemin.length > mots.length) continue;
-      if (!chemin.every((mot, rang) => mot.startsWith(mots[rang]))) continue;
-      candidats.push(chemin);
+    for (const [initiale, chemins] of this.cheminsDuSocleParInitiale(table, scope)) {
+      if (!initiale.startsWith(mots[0])) continue;
+      for (const chemin of chemins) {
+        if (chemin.length > mots.length) continue;
+        if (!chemin.every((mot, rang) => mot.startsWith(mots[rang]))) continue;
+        candidats.push(chemin);
+      }
     }
     /*
      * Un mot TAPE EN ENTIER l'emporte sur un mot dont il n'est que le
@@ -3338,6 +3376,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       keywords: meilleur.join(' '),
       full: [...meilleur, ...mots.slice(meilleur.length)].join(' '),
     };
+  }
+
+  private socleCheminsParInitiale?: Map<string, Map<string, string[][]>>;
+
+  private cheminsDuSocleParInitiale(table: CommandTable, scope: AuthScope): ReadonlyMap<string, string[][]> {
+    if (!this.socleCheminsParInitiale) this.socleCheminsParInitiale = new Map();
+    let index = this.socleCheminsParInitiale.get(scope);
+    if (index === undefined) {
+      index = new Map();
+      for (const chemin of this.cheminsDuSocle(table, scope)) {
+        const liste = index.get(chemin[0]) ?? [];
+        liste.push(chemin);
+        index.set(chemin[0], liste);
+      }
+      this.socleCheminsParInitiale.set(scope, index);
+    }
+    return index;
   }
 
   private cheminsDuSocle(table: CommandTable, scope: AuthScope): readonly string[][] {
@@ -4579,12 +4634,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         { keyword: 'prefer', description: 'Prefer this peer when possible' },
         { keyword: 'source', description: 'Interface for source address' },
         { keyword: 'version', description: 'Configure NTP version' },
+        { keyword: 'maxpoll', description: 'Maximum poll interval' },
+        { keyword: 'minpoll', description: 'Minimum poll interval' },
+        { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
+        { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
       ],
     };
 
     return sequenceFamily([
       { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
       { path: ['ntp', 'logging'], description: 'Enable NTP message logging' },
+      {
+        path: ['ntp', 'broadcastdelay'], description: 'Estimated round-trip delay between broadcast client and server',
+        args: [{ name: 'microsecondes', type: 'INT', range: [1, 999999], description: 'Round-trip delay in microseconds' }],
+      },
       {
         path: ['ntp', 'update-calendar'],
         description: 'Periodically update calendar from NTP',
@@ -5177,10 +5240,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const ligne = (a: {
       serverIp: string; stratum: number; lastReplyMs: number; synced: boolean;
     }): string => [
-      a.serverIp.padEnd(14),
-      String(a.stratum).padEnd(10),
-      String(NTP_VERSION).padEnd(10),
-      (a.lastReplyMs > 0 ? hms(maintenant - a.lastReplyMs) : '-').padEnd(14),
+      padToWidth(a.serverIp, 14),
+      padToWidth(String(a.stratum), 10),
+      padToWidth(String(NTP_VERSION), 10),
+      padToWidth(a.lastReplyMs > 0 ? hms(maintenant - a.lastReplyMs) : '-', 14),
       a.synced ? 'Synced' : '',
     ].join('').trimEnd();
 
@@ -5711,14 +5774,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       vue(['show', 'license'], 'Display licenses', 15, () => {
         const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
         const row = (rang: number, feature: string) =>
-          `${rang}     ${feature.padEnd(25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
+          `${rang}     ${padToWidth(feature, 25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
         if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
         return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
       }),
       vue(['show', 'license', 'udi'], 'Display Unique Device Identifier', 15, () => {
         const pid = this.getChassisProfile() === 'router-isr2911'
           ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-        return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${this.numeroDeSerie()}`;
+        return `Device#   PID                   SN\n*0        ${padToWidth(pid, 22)}${this.numeroDeSerie()}`;
       }),
       vue(['show', 'privilege'], 'Display current privilege level', 1,
         () => showPrivilege(this.currentPrivilegeLevel)),
@@ -5941,6 +6004,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       parseMethodList: (phase, args) =>
         parseAaaMethod(getSecurityConfig(this.d()), phase, [...args]),
+      placeAaaMessage: (kind, rest) =>
+        this.placeBanner(kind === 'banner' ? 'aaa-banner' : 'aaa-fail-message', rest),
+    };
+  }
+
+  protected enableHost(): EnableHost {
+    const dev = () => this.d() as unknown as {
+      _setEnableSecretForLevel?: (level: number, s: string, algo: EnableSecretAlgorithm) => void;
+      _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
+      _setEnableSecret?: (s: string, algo: 'plain') => void;
+      _setEnablePassword?: (p: string, algo: 'plain') => void;
+      getServiceFlags?: () => ReadonlyMap<string, boolean>;
+    };
+    return {
+      setSecret: (level, secret, algorithm) => { dev()._setEnableSecretForLevel?.(level, secret, algorithm); },
+      setPassword: (level, password, algorithm) => { dev()._setEnablePasswordForLevel?.(level, password, algorithm); },
+      clearSecret: (level) => {
+        if (level === 15) dev()._setEnableSecret?.('', 'plain');
+        else dev()._setEnableSecretForLevel?.(level, '', 'plain');
+      },
+      clearPassword: (level) => {
+        if (level === 15) dev()._setEnablePassword?.('', 'plain');
+        else dev()._setEnablePasswordForLevel?.(level, '', 'plain');
+      },
+      minPasswordLength: () => getSecurityConfig(this.d()).passwords.minLength,
+      passwordEncryptionEnabled: () => dev().getServiceFlags?.().get('password-encryption') === true,
+      encryptType7: (password) => _encryptType7(password, parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16)),
     };
   }
 
@@ -6001,7 +6091,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...globalHeadSpecs(() => this.globalHeadHost()),
       ...aaaServerSpecs(() => this.aaaServerHost()),
       ...usernameSpecs(() => this.usernameHost()),
+      ...enableSecretSpecs(() => this.enableHost()),
       ...aaaHeadSpecs(() => this.aaaHeadHost()),
+      ...kerberosSpecs(() => ({ security: () => getSecurityConfig(this.d()) })),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
@@ -6044,6 +6136,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
       ...ipSshSpecs(() => this.ipSshHost()),
       ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
+      ...ikePubkeySpecs(() => this.ikePubkeyHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
@@ -6059,6 +6152,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       })),
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
+      ...aaaShowSpecs(() => this.aaaShowHost()),
+      ...zoneShowSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
+      ...radiusAttributeSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
+      ...inspectShowSpecs(() => ({
+        security: () => getSecurityConfig(this.d() as object),
+        interfaceAcl: (iface, direction) => {
+          const reference = (this.d() as unknown as { getInterfaceACL?: (i: string, d: 'in' | 'out') => number | string | null })
+            .getInterfaceACL?.(iface, direction);
+          return reference === undefined || reference === null ? null : String(reference);
+        },
+        interfaceNames: () => (this.d() as unknown as { getPortNames?: () => string[] }).getPortNames?.() ?? [],
+      })),
+      ...this.ipsecDataPlaneSpecs(),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
     ];
@@ -6302,25 +6408,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * plus specifique gagnait, donc la branche `motd` de l'autre etait
    * morte. Il n'en reste qu'une.
    */
+  protected placeBanner(sorte: BannerKind, reste: string): string {
+    const texte = reste.replace(/^\s+/, '');
+    if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const delim = texte.startsWith('^C') ? '^C' : texte[0];
+    const corps = texte.slice(delim.length);
+    const fin = corps.indexOf(delim);
+    if (fin !== -1) {
+      this.setBanner(sorte, corps.slice(0, fin));
+      return '';
+    }
+    this.bannerCollector = {
+      type: sorte, delimiter: delim,
+      lines: corps.length > 0 ? [corps] : [],
+    };
+    return `Enter TEXT message.  End with the character '${delim}'.`;
+  }
+
   protected bannerSpecs(): CommandSpec[] {
     const sortes = BANNER_SORTES.map(([keyword, description]) =>
       ({ keyword, description }));
-    const poser = (sorte: string, reste: string): string => {
-      const texte = reste.replace(/^\s+/, '');
-      if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      const delim = texte.startsWith('^C') ? '^C' : texte[0];
-      const corps = texte.slice(delim.length);
-      const fin = corps.indexOf(delim);
-      if (fin !== -1) {
-        this.setBanner(sorte as BannerKind, corps.slice(0, fin));
-        return '';
-      }
-      this.bannerCollector = {
-        type: sorte as BannerKind, delimiter: delim,
-        lines: corps.length > 0 ? [corps] : [],
-      };
-      return `Enter TEXT message.  End with the character '${delim}'.`;
-    };
+    const poser = (sorte: string, reste: string): string => this.placeBanner(sorte as BannerKind, reste);
     const retirer = (sorte: string): string => {
       const dev = this.d() as unknown as {
         _setMotdBanner?: (b: string) => void;
@@ -7348,6 +7456,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       [['debug'], 'Enable debugging functions'],
       [['undebug'], 'Disable debugging functions'],
       [['show', 'ip', 'http'], 'HTTP information'],
+      [['enable', 'secret'], 'Assign the privileged level secret'],
+      [['enable', 'password'], 'Assign the privileged level password'],
+      [['enable', 'algorithm-type'], 'Algorithm to hash the secret with'],
       [['client-identifier'], 'Manual binding client identifier'],
       [['lease'], 'Set DHCP lease duration'],
       [['option'], 'Set a raw DHCP option'],
@@ -8687,7 +8798,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return 'Connection closed.';
   }
 
-  protected avecReferenceAppareil(device: TDevice, action: () => string): string {
+  protected avecReferenceAppareil<T = string>(device: TDevice, action: () => T): T {
     const precedente = this.deviceRef;
     this.deviceRef = device;
     try {
@@ -8877,6 +8988,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         agent.setAccessGroup(a[1], a[2]);
       } else if (a[0] === 'logging') {
         agent.setLogging(true, 'ntp');
+      } else if (a[0] === 'broadcastdelay' && a[1]) {
+        agent.setBroadcastDelayUs(parseInt(a[1], 10));
       } else if (a[0] === 'update-calendar') {
         agent.setUpdateCalendar(true);
       } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
@@ -8899,6 +9012,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (a[0] === 'source') agent.setSourceInterface('');
       else if (a[0] === 'logging') agent.setLogging(false);
       else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
+      else if (a[0] === 'broadcastdelay') agent.setBroadcastDelayUs(3000);
       // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
       else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
         agent.setAllowModeControl(false);
@@ -8921,7 +9035,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (let i = 2; i < minuscules.length; i++) {
       const mot = minuscules[i];
       if (mot === 'prefer') { queue.prefer = true; continue; }
+      if (mot === 'iburst' || mot === 'burst') {
+        queue.options = { ...queue.options, [mot]: true };
+        continue;
+      }
       const valeur = minuscules[i + 1];
+      if (mot === 'minpoll' || mot === 'maxpoll') {
+        if (valeur === undefined || !/^\d+$/.test(valeur) || Number(valeur) < 4 || Number(valeur) > 17) {
+          return { ...queue, refus: valeur ?? mot };
+        }
+        queue.options = { ...queue.options, [mot]: Number(valeur) };
+        i++;
+        continue;
+      }
       if (mot === 'key') {
         if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
         queue.keyId = Number(valeur);
@@ -9108,7 +9234,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const offerts = PIPE_MODIFIERS.filter((m) => m.keyword.startsWith(partiel));
       if (offerts.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
       const large = Math.max(...offerts.map((m) => m.keyword.length));
-      return offerts.map((m) => `  ${m.keyword.padEnd(large + 2)}${m.description}`).join('\n');
+      return offerts.map((m) => `  ${padToWidth(m.keyword, large + 2)}${m.description}`).join('\n');
     }
     const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
     if (aideUniverselle !== null) return aideUniverselle;
@@ -9167,7 +9293,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
         .map(c => (c.description
-          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          ? `  ${padToWidth(c.keyword, maxKw + 2)}${c.description}`
           // Une description vide ne se rembourre pas : `<cr>` laissait
           // sinon la largeur de la colonne en blancs de fin de ligne.
           : `  ${c.keyword}`))
@@ -9364,7 +9490,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
     trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
-      (args) => this.runOutboundSshClient(args));
+      () => '% Password: required. Outbound SSH asks for it through its interaction prompt.');
     trie.registerGreedy('telnet', 'Open a Telnet session',
       (args) => this.runOutboundTelnet(args));
   }
@@ -9912,10 +10038,44 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /**
    * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
-   * and dispatch through the shared runSshClient. Source IP is the
-   * router's first configured interface — runSshClient probes for it
-   * automatically when sourceIp resolves to a known device.
+   * and open it over the wire (routerOutboundSsh).
    */
+  protected pkiPastePlan(
+    _kind: 'ca' | 'certificate' | 'trustpool' | 'trustpool-clean', _trustpoint: string, _device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    return null;
+  }
+
+  protected pemImportPlan(
+    _trustpoint: string, _phrase: string | null, _exportable: boolean, _device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    return null;
+  }
+
+  private ezvpnXauthPlan(tunnel: string | null, device: TDevice | undefined): CommandInteractionPlan | null {
+    const client = (device as unknown as {
+      _getOrCreateIPSecEngine?: () => { ezvpnClient: import('../../ipsec/ezvpn/EzvpnClient').EzvpnClient };
+    } | undefined)?._getOrCreateIPSecEngine?.().ezvpnClient;
+    if (!client) return null;
+    const pending = client.pendingTunnel(tunnel);
+    if ('error' in pending) return { steps: [{ kind: 'output', lines: [pending.error] }] };
+    return {
+      steps: [
+        { kind: 'text', prompt: 'Enter Username and Password: ', storeAs: 'ezvpn_user' },
+        { kind: 'password', prompt: 'Password: ', storeAs: 'ezvpn_password' },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const failure = await client.connect(pending.name, {
+              user: rt.values.get('ezvpn_user') ?? '', password: rt.values.get('ezvpn_password') ?? '',
+            });
+            if (failure) rt.output(failure);
+          },
+        },
+      ],
+    };
+  }
+
   private outboundSshClientPlan(
     commandLine: string, device: TDevice | undefined,
   ): CommandInteractionPlan | null {
@@ -9928,7 +10088,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         {
           kind: 'run',
           run: async (rt) => {
-            rt.output(this.avecReferenceAppareil(device, () =>
+            rt.output(await this.avecReferenceAppareil(device, () =>
               this.runOutboundSshClient(args, rt.values.get('ssh_password'))));
           },
         },
@@ -9936,7 +10096,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
-  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
+  private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -9951,66 +10111,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (rest.length === 0) return '% Incomplete command.';
     let host = rest[0];
     const cmd = rest.slice(1).join(' ');
-    const router = this.d() as unknown as {
+    const device = this.d();
+    const router = device as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostnameInternal: () => string;
       _getHostsTable?: () => { resolve: (n: string) => string | null };
     };
-    // Resolve through the static `ip host` table before any DNS fallback.
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
-    let sourceIp: string | null = null;
+    let hasSourceAddress = false;
     for (const [, p] of router._getPortsInternal()) {
-      const ip = p.getIPAddress();
-      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+      if (p.getIPAddress() && p.getIsUp()) { hasSourceAddress = true; break; }
     }
-    if (!sourceIp) return '% No usable interface IP for outbound SSH';
-    const sshStack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
-      .getTcpStack?.();
-    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
-      return IOS_SSH.unreachable(host, Number(port ?? 22));
-    }
-    const clientArgs: string[] = [];
-    if (port) clientArgs.push('-p', port);
-    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
-    // Cisco IOS' built-in ssh client always allocates a line-mode PTY on
-    // the VTY — opposite of OpenSSH's exec-mode default.
-    clientArgs.push('-t');
-    clientArgs.push(`${user}@${host}`);
-    if (cmd) clientArgs.push(cmd);
-    const result = runSshClient({
-      args: clientArgs,
-      sourceHostname: router._getHostnameInternal(),
-      sourceIp,
-      sourceUser: user,
-      offeredPassword,
-      localVfs: {
-        readFile: () => null,
-        writeFile: () => undefined,
-      },
+    if (!hasSourceAddress) return '% No usable interface IP for outbound SSH';
+    return runRouterOutboundSsh({
+      device: device as unknown as Equipment,
+      dialect: IOS_SSH,
+      allocatePty: true,
+      user,
+      host,
+      port: Number(port ?? 22),
+      command: cmd,
+      password: offeredPassword,
     });
-    // TOFU: record the remote host key in this router's local
-    // known-hosts table so `show ip ssh known-hosts` reflects it.
-    if (result.exitCode === 0) {
-      const dev = this.d() as unknown as {
-        _getSshKnownHosts?: () => { add: (e: { host: string; keyType: string; publicKey: string }) => void };
-      };
-      const remoteHk = this.lookupRemoteSshHostKey(host);
-      if (remoteHk) {
-        dev._getSshKnownHosts?.().add({ host, ...remoteHk });
-      }
-      if (!cmd) {
-        this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
-      }
-    }
-    return result.output;
-  }
-
-  /** Read the remote machine's host key via the topology registry. */
-  private lookupRemoteSshHostKey(host: string): { keyType: string; publicKey: string } | null {
-    const found = findHostByAddress(host, undefined, this.d() as never) as { device?: { getSshHostKey?: () => { type: string; publicKey: string } } } | null;
-    const hk = found?.device?.getSshHostKey?.();
-    return hk ? { keyType: hk.type, publicKey: hk.publicKey } : null;
   }
 
   private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {
@@ -10089,116 +10211,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
     // pour une seule commande finiraient par se contredire sur la même
     // date.
-    trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
-      let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
-      let secret = '';
-      let level = 15;
-      // Cleartext forms (0, level N, or bare) are what `security passwords
-      // min-length` validates — a pasted hash (5/7/8/9) is exempt, same as
-      // `username ... secret` (CiscoSecurityCommands.ts).
-      let plaintextEntered: string | undefined;
-      // La grammaire d'IOS est `enable secret [level N] [{0|5|7|8|9}]
-      // <chaine>`, et les deux parties sont INDEPENDANTES. Elles etaient
-      // traitees comme exclusives : apres `level N`, le chiffre
-      // d'algorithme etait avale DANS le secret. La forme rendue par la
-      // machine — `enable secret level 12 5 $1$…` — n'etait donc pas
-      // relisible par elle-meme, et le coffre du palier disparaissait a
-      // l'import d'une topologie, sans rien dire.
-      const lu = this.lireNiveauEnable(args);
-      level = lu.level;
-      const reste = lu.reste;
-      const chiffres: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
-        '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
-      };
-      const nomme = chiffres[reste[0] ?? ''];
-      // `enable secret 5` sans rien apres : le chiffre EST le type, donc
-      // il ne reste aucun secret — IOS repond incomplet plutot que de
-      // ranger « 5 » comme mot de passe en clair.
-      if (nomme !== undefined && reste.length === 1) return '% Incomplete command.';
-      if (nomme !== undefined && reste.length > 1) {
-        algo = nomme;
-        secret = reste.slice(1).join(' ');
-        // Seul le clair est soumis a `security passwords min-length` : un
-        // condense colle est exempt, comme pour `username … secret`.
-        if (nomme === 'plain') plaintextEntered = secret;
-      } else {
-        secret = reste.join(' ');
-        plaintextEntered = secret;
-      }
-      if (secret === '') return '% Incomplete command.';
-      const minLength = getSecurityConfig(this.d()).passwords.minLength;
-      if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-      }
-      dev._setEnableSecretForLevel?.(level, secret, algo);
-      return '';
-    });
-    // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
-    // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
-    // a cleartext password and hashes it with the named algorithm.
-    trie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
-      const algoName = args[0]?.toLowerCase();
-      const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
-      const algo = algoMap[algoName ?? ''];
-      // Un mot ABSENT n'est pas un mot faux : `enable algorithm-type`
-      // seul reclame l'algorithme, il ne le nie pas.
-      if (algoName === undefined) return CISCO_ERRORS.INCOMPLETE;
-      if (!algo) return CISCO_ERRORS.INVALID_INPUT;
-      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
-      if (args[1].toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
-      const lu = this.lireNiveauEnable(args.slice(2));
-      const level = lu.level;
-      const secret = lu.reste.join(' ');
-      if (secret === '') return CISCO_ERRORS.INCOMPLETE;
-      const minLength = getSecurityConfig(this.d()).passwords.minLength;
-      if (minLength && secret.length < minLength) {
-        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-      }
-      dev._setEnableSecretForLevel?.(level, secret, algo);
-      return '';
-    });
-    trie.registerGreedy('enable password', 'Set enable password', (args) => {
-      const dev = this.d() as unknown as {
-        _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
-        getServiceFlags?: () => ReadonlyMap<string, boolean>;
-      };
-      let algo: 'plain' | 'type-7' = 'plain';
-      let password = '';
-      let level = 15;
-      let plaintextEntered: string | undefined;
-      const lu = this.lireNiveauEnable(args);
-      level = lu.level;
-      const apres = lu.reste;
-      if (apres[0] === '0') {
-        algo = 'plain'; password = apres.slice(1).join(' '); plaintextEntered = password;
-      } else if (apres[0] === '7') {
-        algo = 'type-7'; password = apres.slice(1).join(' ');
-      } else { password = apres.join(' '); plaintextEntered = password; }
-      if (password === '') return '% Incomplete command.';
-      const minLength = getSecurityConfig(this.d()).passwords.minLength;
-      if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-      }
-      if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
-        const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
-        dev._setEnablePasswordForLevel?.(level, _encryptType7(password, salt), 'type-7');
-      } else {
-        dev._setEnablePasswordForLevel?.(level, password, algo);
-      }
-      return '';
-    });
-    trie.register('no enable secret', 'Remove enable secret', () => {
-      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain') => void };
-      dev._setEnableSecret?.('', 'plain');
-      return '';
-    });
-    trie.register('no enable password', 'Remove enable password', () => {
-      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain') => void };
-      dev._setEnablePassword?.('', 'plain');
-      return '';
-    });
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
@@ -10311,7 +10323,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const vue = this.vueEnCours();
       if (!vue) return '';
       const mots = brut.split(/\s+/);
-      const map: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
+      const map: Record<string, EnableSecretAlgorithm> = {
         '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
       };
       const chiffre = map[mots[0]];
@@ -10395,6 +10407,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
         return '';
       },
+    };
+  }
+
+  protected ipsecDataPlaneSpecs(): readonly CommandSpec[] {
+    return ipsecDataPlaneSpecs(() => {
+      const device = this.d() as unknown as { _getOrCreateIPSecEngine: () => IpsecDataPlaneEngine };
+      return {
+        engine: () => device._getOrCreateIPSecEngine(),
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+      };
+    });
+  }
+
+  private aaaShowHost(): AaaShowHost {
+    const device = this.d();
+    return {
+      security: () => getSecurityConfig(device as object),
+      counters: () => (device as unknown as { getRadiusClient?: () => RadiusClientAgent })
+        .getRadiusClient?.().counters ?? new ServerCounters(simulationNowMs),
     };
   }
 

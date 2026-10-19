@@ -1,0 +1,40 @@
+import { addressMask, choice, count, enable, isoMoment, moment, reference, text, word, type FortiAttributeSpec } from './types';
+
+const list = (name: string, help: string): FortiAttributeSpec => ({
+  name, help, quoted: true, multiValue: true, parts: [{ name, type: 'WORD', description: help }],
+});
+
+export const ADDRESS_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object.freeze([
+  { ...word('agent-id', 'Telemetry agent id.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...enable('allow-routing', 'Enable/disable use of this address in routing configurations.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  count('cache-ttl', 'Defines the minimal TTL of individual IP addresses in FQDN cache measured in seconds.', 0, 86400, 0),
+  { ...choice('clearpass-spt', 'SPT (System Posture Token) value.', [{ keyword: 'unknown', description: 'UNKNOWN.' }, { keyword: 'healthy', description: 'HEALTHY.' }, { keyword: 'quarantine', description: 'QUARANTINE.' }, { keyword: 'checkup', description: 'CHECKUP.' }, { keyword: 'transient', description: 'TRANSIENT.' }, { keyword: 'infected', description: 'INFECTED.' }], 'unknown'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('epg-name', 'Endpoint group name.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...enable('fabric-object', 'Security Fabric global object setting.', false), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...text('filter', 'Match criteria filter.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  { ...word('fsso-group', 'FSSO group(s). FSSO group name.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('hw-model', 'Dynamic address matching hardware model.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('hw-vendor', 'Dynamic address matching hardware vendor.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('interface', 'Name of interface whose IP address is to be used.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  { ...list('macaddr', 'Multiple MAC address ranges. MAC address ranges <start>[-<end>] separated by space.'), availableWhen: (object) => object.effective('type')[0] === 'mac', acceptsValue: (value: string) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}(-([0-9a-f]{2}:){5}[0-9a-f]{2})?$/i.test(value) },
+  { ...enable('node-ip-only', 'Enable/disable collection of node addresses only in Kubernetes.', false), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...text('obj-id', 'Object ID for NSX.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('obj-tag', 'Tag of dynamic address object.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...choice('obj-type', 'Object type.', [{ keyword: 'ip', description: 'IP address.' }, { keyword: 'mac', description: 'MAC address' }], 'ip'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...count('obsolete', 'Indicates whether the address can be used. Read-only.', 0, 4294967295, 0), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('organization', 'Organization domain name (Syntax: organization/domain).'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('os', 'Dynamic address matching operating system.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...enable('passive-fqdn-learning', 'Enable/disable passive learning of FQDNs. When enabled, the FortiGate learns, trusts, and saves FQDNs from endpoint DNS queries (default = enable).', true), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  { ...word('policy-group', 'Policy group name.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...count('route-tag', 'Address.', 1, 4294967295, 0), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  { ...word('sdn', 'SDN.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...choice('sdn-addr-type', 'Type of addresses to collect.', [{ keyword: 'private', description: 'Collect private addresses only.' }, { keyword: 'public', description: 'Collect public addresses only.' }, { keyword: 'all', description: 'Collect both public and private addresses.' }], 'private'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('sdn-tag', 'SDN Tag.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('sso-attribute-value', 'RADIUS attributes value. RADIUS attribute value.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...choice('sub-type', 'Sub-type of address.', [], 'sdn'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('subnet-name', 'Subnet name.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  { ...word('sw-version', 'Dynamic address matching software version.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('tag-detection-level', 'Tag detection level of dynamic address object.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('tag-type', 'Tag type of dynamic address object.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+  { ...word('tenant', 'Tenant.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
+] as const);

@@ -1,4 +1,6 @@
-import { PkiKeyPair, type PkiPrivateKey } from './PkiKeyPair';
+import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from './PkiKeyPair';
+import type { CertificateRequest } from './pem';
+import { verifyCertificateRequest } from './CertificateSigningRequest';
 import { type X509Certificate, type X509CertificateFields, signCertificate } from './X509Certificate';
 import { CertificateRevocationList, type RevokedEntry } from './CertificateRevocationList';
 
@@ -95,6 +97,22 @@ export class CertificateAuthority {
       throw new Error(`notAfter (${opts.notAfter}) must be > notBefore (${opts.notBefore})`);
     }
     const keys = PkiKeyPair.generate(this.rootCertificate.publicKey.algorithm, opts.keyBits);
+    return { cert: this.signEndEntity(opts, keys.publicKey), privateKey: keys.privateKey };
+  }
+
+  signRequest(request: CertificateRequest, opts: Omit<IssueOptions, 'subject'>): X509Certificate | null {
+    if (opts.notAfter <= opts.notBefore) {
+      throw new Error(`notAfter (${opts.notAfter}) must be > notBefore (${opts.notBefore})`);
+    }
+    if (!verifyCertificateRequest(request)) return null;
+    const requestedNames = request.extensions?.subjectAltName;
+    return this.signEndEntity(
+      { ...opts, subject: request.subject, subjectAltNames: opts.subjectAltNames ?? requestedNames },
+      request.publicKey,
+    );
+  }
+
+  private signEndEntity(opts: IssueOptions, publicKey: PkiPublicKey): X509Certificate {
     const fields: X509CertificateFields = {
       version: 3,
       serialNumber: opts.serialNumber ?? nextSerial(),
@@ -102,7 +120,7 @@ export class CertificateAuthority {
       issuer: this.rootCertificate.subject,
       notBefore: opts.notBefore,
       notAfter: opts.notAfter,
-      publicKey: keys.publicKey,
+      publicKey,
       signatureAlgorithm: this.rootCertificate.signatureAlgorithm,
       extensions: Object.freeze({
         basicConstraints: Object.freeze({ cA: false }),
@@ -112,7 +130,7 @@ export class CertificateAuthority {
         crlDistributionPoints: opts.crlDistributionPoints ? Object.freeze([...opts.crlDistributionPoints]) : undefined,
       }),
     };
-    return { cert: signCertificate(fields, this.rootKey), privateKey: keys.privateKey };
+    return signCertificate(fields, this.rootKey);
   }
 
   issueSubordinateCA(opts: SubordinateOptions): CertificateAuthority {
@@ -142,6 +160,10 @@ export class CertificateAuthority {
 
   revoke(serialNumber: string, revocationDate: number, reasonCode?: RevokedEntry['reasonCode']): void {
     this.revoked.set(serialNumber, { serialNumber, revocationDate, reasonCode });
+  }
+
+  unrevoke(serialNumber: string): boolean {
+    return this.revoked.delete(serialNumber);
   }
 
   publishCRL(now: number, validityMs: number = 24 * 3600 * 1000): CertificateRevocationList {

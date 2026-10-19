@@ -96,8 +96,8 @@ const runOn = (d: Cmd, cmds: readonly string[]) =>
   cmds.reduce(async (p, c) => { await p; await d.executeCommand(c); }, Promise.resolve<unknown>(undefined));
 
 async function saisir(s: TerminalSession, ligne: string): Promise<void> {
-  s.foreground.setInput(ligne);
-  s.foreground.setInputBuf(ligne);
+  s.setInput(ligne);
+  s.setInputBuf(ligne);
   s.handleKey(key('Enter'));
   for (let i = 0; i < 60; i++) await tick();
 }

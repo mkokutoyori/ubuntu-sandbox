@@ -82,8 +82,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     name: 'secondes', type: 'REST', description: 'Lifetime of a security association' },
   'crypto ipsec security-association lifetime kilobytes': {
     name: 'kilooctets', type: 'REST', description: 'Volume a security association carries' },
-  'crypto ipsec security-association replay window-size': {
-    name: 'taille', type: 'REST', description: 'Size of the anti-replay window' },
   'crypto ipsec security-association esn': null,
   /*
    * La place est EXIGEE : le gestionnaire refuse en dessous de trois
@@ -94,8 +92,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'crypto ipsec security-policy': { name: 'reste', type: 'REST',
     description:
       'Name, PROTECT|BYPASS|DISCARD, in|out, then src/dst/proto selectors' },
-  'crypto map': { name: 'reste', type: 'REST',
-    description: 'Name and sequence number, then the kind of entry' },
   'crypto dynamic-map': { name: 'reste', type: 'REST',
     description: 'Name and sequence number' },
 };
@@ -221,21 +217,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── no crypto map NAME [SEQ] ────────────────────────────────────
-  trie.registerGreedy('no crypto map', 'Remove crypto map or entry', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const mapName = args[0];
-    if (args.length >= 2) {
-      const seq = parseInt(args[1], 10);
-      if (!isNaN(seq)) {
-        eng(ctx).removeCryptoMapEntry(mapName, seq);
-        return '';
-      }
-    }
-    eng(ctx).removeCryptoMap(mapName);
-    return '';
-  });
-
   // ── no crypto dynamic-map NAME ──────────────────────────────────
   trie.registerGreedy('no crypto dynamic-map', 'Remove dynamic crypto map', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -268,22 +249,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── crypto ipsec security-association replay window-size N ──────
-  trie.registerGreedy('crypto ipsec security-association replay window-size', 'Set anti-replay window size', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const n = parseInt(args[0], 10);
-    if (isNaN(n) || n < 0 || n > 1024) return '% Invalid value. Range: 0-1024';
-    eng(ctx).setReplayWindowSize(n);
-    return '';
-  });
-
-  // ── no crypto ipsec security-association replay ─────────────────
-  trie.register('no crypto ipsec security-association replay', 'Disable anti-replay', () => {
-    eng(ctx).setReplayWindowSize(0);
-    return '';
-  });
-
-  // ── crypto ipsec security-association esn ──────────────────────
   trie.register('crypto ipsec security-association esn', 'Enable Extended Sequence Numbers (64-bit)', () => {
     eng(ctx).setESN(true);
     return '';
@@ -408,33 +373,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   //    OR:  crypto ipsec transform-set MYTS esp-aes 256 esp-sha256-hmac
   trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set',
     (args) => declareTransformSet(ctx, args, true));
-
-  // ── crypto map NAME SEQ ipsec-isakmp [dynamic DYNMAP] ────────────
-  trie.registerGreedy('crypto map', 'Define a crypto map entry', (args) => {
-    // args: NAME SEQ ipsec-isakmp [dynamic DYNMAP]
-    //    or: NAME SEQ ipsec-isakmp dynamic DYNMAP
-    if (args.length < 3) return '% Incomplete command.';
-    const mapName = args[0];
-    const seq     = parseInt(args[1], 10);
-    if (isNaN(seq)) return '% Invalid sequence number.';
-
-    const keyword = args[2]?.toLowerCase();
-
-    if (keyword === 'ipsec-isakmp') {
-      if (args[3]?.toLowerCase() === 'dynamic' && args[4]) {
-        // Reference to dynamic map: crypto map NAME SEQ ipsec-isakmp dynamic DYNMAP
-        eng(ctx).addDynamicRefToCryptoMap(mapName, seq, args[4]);
-        return '';
-      }
-      eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
-      ctx.setSelectedCryptoMap(mapName);
-      ctx.setSelectedCryptoMapSeq(seq);
-      ctx.setSelectedCryptoMapIsDynamic(false);
-      ctx.setMode('config-crypto-map');
-      return '';
-    }
-    return '% Invalid crypto map type. Use ipsec-isakmp.';
-  });
 
   // ── crypto dynamic-map NAME SEQ ───────────────────────────────────
   trie.registerGreedy('crypto dynamic-map', 'Define a dynamic crypto map', (args) => {
@@ -589,14 +527,6 @@ export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellCont
     if (Number.isFinite(n)) eng(ctx).setGlobalSALifetimeKB(n);
     return '';
   });
-  trie.registerGreedy('crypto ipsec security-association replay window-size', 'Set anti-replay window', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setReplayWindowSize(n);
-    return '';
-  });
-  trie.registerGreedy('crypto ipsec security-association idle-time', 'Set SA idle time', () => '');
-  trie.registerGreedy('crypto ipsec df-bit', 'Configure DF-bit handling', () => '');
-  trie.registerGreedy('crypto ipsec fragmentation', 'Configure IPSec fragmentation', () => '');
   trie.registerGreedy('crypto ipsec profile', 'Enter IPSec profile config', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     eng(ctx).getOrCreateIPSecProfile(args[0]);
@@ -694,6 +624,41 @@ export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellCo
       const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
       entry.saLifetimeSeconds = seconds;
     }
+    return '';
+  });
+
+  const selectedEntry = (): { transformSets: string[]; aclName?: string; pfsGroup?: string; peers: string[]; peerHostname?: string } | null => {
+    const mapName = ctx.getSelectedCryptoMap();
+    const seq     = ctx.getSelectedCryptoMapSeq();
+    if (!mapName || seq === null) return null;
+    return ctx.getSelectedCryptoMapIsDynamic()
+      ? eng(ctx).getOrCreateDynamicMapEntry(mapName, seq) as never
+      : eng(ctx).getOrCreateCryptoMapEntry(mapName, seq) as never;
+  };
+
+  trie.registerGreedy('no set transform-set', 'Remove transform sets', (args) => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    entry.transformSets = args.length === 0 ? [] : entry.transformSets.filter((name) => !args.includes(name));
+    return '';
+  });
+
+  trie.registerGreedy('no match address', 'Remove the crypto ACL', () => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    entry.aclName = '';
+    return '';
+  });
+
+  trie.registerGreedy('no set pfs', 'Remove PFS', () => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    entry.pfsGroup = '';
+    return '';
+  });
+
+  trie.registerGreedy('no set peer', 'Remove peers', (args) => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    const named = args.filter((a) => a && a !== 'default' && a.toLowerCase() !== 'dynamic');
+    entry.peers = named.length === 0 ? [] : entry.peers.filter((peer) => !named.includes(peer));
+    if (named.length === 0) entry.peerHostname = undefined;
     return '';
   });
 
@@ -947,10 +912,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     name: 'kilooctets', type: 'INT',
     description: 'Security association duration in kilobytes of traffic',
   },
-  'crypto ipsec security-association replay window-size': {
-    name: 'taille', type: 'INT', range: [64, 1024],
-    description: 'Size of the anti-replay window',
-  },
 };
 
 const IPSEC_PROFILE_ARGUMENTS:
@@ -1084,6 +1045,7 @@ export function cryptoMapEntrySpecs(ctx: CiscoShellContext): CommandSpec[] {
       buildCryptoMapEntryCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config-crypto-map'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
       argumentFor: (path) => CRYPTO_MAP_ARGUMENTS[path],
     },
   );

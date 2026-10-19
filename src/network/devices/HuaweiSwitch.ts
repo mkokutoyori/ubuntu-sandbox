@@ -1,4 +1,6 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPAddress, type MACAddress } from '../core/types';
+import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
+import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { SSH_HUAWEI_VRP_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { selectBundleMember, DEFAULT_LOAD_BALANCE, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { AgentRegistry } from './AgentRegistry';
@@ -92,16 +94,16 @@ export class HuaweiSwitch extends Switch {
       getSviIp: (vlan: number) =>
         this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
       getVlanIds: () => [...this.getVLANs().keys()],
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.pimSnoopingAgent = new PimSnoopingAgent({
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.dot1xAgent = new Dot1xAgent({
       ...hostBase,
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.agents.registerAll(
       this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent, this.pimSnoopingAgent,
       this.dot1xAgent,
@@ -330,6 +332,18 @@ export class HuaweiSwitch extends Switch {
 
   protected override sshForcedCommand(user: string): string | null {
     return this.getManagementService().sshForcedCommand(user);
+  }
+
+  sshClientProfile(): SshClientProfile | null {
+    const algorithms = this.getManagementService().sshClientAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0
+      ? null
+      : { identification: SSH_HUAWEI_VRP_IDENTIFICATION, extInfo: true, algorithms };
+  }
+
+  protected override sshTransportPolicy(): SshTransportPolicy {
+    const algorithms = this.getManagementService().sshServerAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
   }
 
   protected override sshServerLimits(): Partial<SshServerConfig> {

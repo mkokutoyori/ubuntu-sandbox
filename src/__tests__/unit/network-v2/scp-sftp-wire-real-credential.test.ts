@@ -12,7 +12,7 @@
  * `sshpass -p <pw> scp|sftp ...` is the one place scp/sftp can offer a
  * REAL password. When one IS offered, this test proves the transfer
  * goes through a genuine authenticated SshSession + SshSftpChannel
- * (WireSftpFileSystem) — spying on SshSftpChannel.prototype.sendRequest,
+ * (WireSftpFileSystem) — spying on SshSftpChannel.prototype.exchange,
  * the one method every real SSH_FXP_* wire op funnels through. When
  * none is offered and the wire session cannot authenticate, the
  * transfer is refused: the in-memory resolution no longer repairs a
@@ -23,6 +23,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { SshSftpChannel } from '@/network/protocols/ssh/channels/SshSftpChannel';
+import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { buildLan, assignIps, type SshLan, PC2_IP } from './ssh-lan-fixtures';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -41,19 +42,16 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
     await assignIps(lan);
   });
 
-  it('sshpass -p <pw> scp: the transfer calls SshSftpChannel.sendRequest (real SSH_FXP_* wire ops), not a direct VFS copy', async () => {
-    const spy = vi.spyOn(SshSftpChannel.prototype, 'sendRequest');
+  it('sshpass -p <pw> scp: the transfer is the scp sink protocol on an exec channel, not a direct VFS copy', async () => {
+    const spy = vi.spyOn(SshSession.prototype, 'openExecStream');
     await lan.pc1.executeCommand("echo 'hello real wire' > /home/user/payload.txt");
 
     const out = await lan.pc1.executeCommand(
       `sshpass -p admin scp /home/user/payload.txt user@${PC2_IP}:/home/user/payload.txt`,
     );
 
-    // Real wire ops: OPEN (via 'put'), WRITE, CLOSE all funnel through
-    // sendRequest() on the client-side SshSftpChannel.
-    const putCalls = spy.mock.calls.filter(([req]) => (req as { op: string }).op === 'put');
-    expect(putCalls.length).toBeGreaterThanOrEqual(1);
-    expect((putCalls[0][0] as { content: string }).content).toContain('hello real wire');
+    const sinks = spy.mock.calls.filter(([command]) => /^scp .*-t /.test(command));
+    expect(sinks.length).toBeGreaterThanOrEqual(1);
     expect(out).not.toMatch(/no route to host/);
 
     const remoteContent = await lan.pc2.executeCommand('cat /home/user/payload.txt');
@@ -62,20 +60,20 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
     spy.mockRestore();
   });
 
-  it('sshpass -p <pw> sftp -b <batchfile>: batch commands also go through the real wire channel', async () => {
-    const spy = vi.spyOn(SshSftpChannel.prototype, 'sendRequest');
+  it('sshpass -p <pw> sftp -o BatchMode=no -b <batchfile>: batch commands also go through the real wire channel (plain -b is BatchMode yes and refuses the password, as OpenSSH does)', async () => {
+    const spy = vi.spyOn(SshSftpChannel.prototype, 'exchange');
     await lan.pc2.executeCommand("echo 'remote file' > /home/user/remote.txt");
     await lan.pc1.executeCommand(
       "printf 'get /home/user/remote.txt /home/user/fetched.txt\\nbye\\n' > /home/user/batch.sftp",
     );
 
     const out = await lan.pc1.executeCommand(
-      `sshpass -p admin sftp -b /home/user/batch.sftp user@${PC2_IP}`,
+      `sshpass -p admin sftp -o BatchMode=no -b /home/user/batch.sftp user@${PC2_IP}`,
     );
 
-    const getCalls = spy.mock.calls.filter(([req]) => (req as { op: string }).op === 'get');
-    expect(getCalls.length).toBeGreaterThanOrEqual(1);
-    expect(out).toMatch(/Connected to/);
+    const readCalls = spy.mock.calls.filter(([packet]) => packet.type === 'READ');
+    expect(readCalls.length).toBeGreaterThanOrEqual(1);
+    expect(out).toContain('sftp> get /home/user/remote.txt /home/user/fetched.txt');
 
     const localContent = await lan.pc1.executeCommand('cat /home/user/fetched.txt');
     expect(localContent.trim()).toBe('remote file');
@@ -84,7 +82,7 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
   });
 
   it('wrong sshpass password is rejected before any transfer (probe unchanged)', async () => {
-    const spy = vi.spyOn(SshSftpChannel.prototype, 'sendRequest');
+    const spy = vi.spyOn(SshSftpChannel.prototype, 'exchange');
     await lan.pc1.executeCommand("echo 'should not land' > /home/user/payload2.txt");
 
     const out = await lan.pc1.executeCommand(
@@ -100,7 +98,7 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
   });
 
   it('plain scp (no credential offered) is refused — no in-memory fallback', async () => {
-    const spy = vi.spyOn(SshSftpChannel.prototype, 'sendRequest');
+    const spy = vi.spyOn(SshSftpChannel.prototype, 'exchange');
     await lan.pc1.executeCommand("echo 'plain path' > /home/user/plain.txt");
 
     const out = await lan.pc1.executeCommand(

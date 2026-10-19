@@ -150,6 +150,12 @@ export function lineIdleTimeoutMs(line: VtyLineConfig | undefined): number | nul
   return ms > 0 ? ms : null;
 }
 
+export function mergeMethodListLines(existing: string | null | undefined, incoming: string): string {
+  const keyOf = (line: string): string => line.split(' ').slice(0, -1).join(' ');
+  const kept = (existing ?? '').split('\n').filter((line) => line !== '' && keyOf(line) !== keyOf(incoming));
+  return [...kept, incoming].join('\n');
+}
+
 export class VtyLineConfig {
   readonly first: number;
   readonly last: number;
@@ -234,6 +240,15 @@ export class VtyLineConfig {
   }
 
   /** The line span as a value object (membership / overlap / size helpers). */
+  methodListFor(kind: 'accounting' | 'authorization', service: string): string | null {
+    const lines = ((kind === 'accounting' ? this.accountingList : this.authorizationList) ?? '').split('\n');
+    for (const line of lines) {
+      const words = line.split(' ');
+      if (words.length >= 2 && words.slice(0, -1).join(' ') === service) return words[words.length - 1];
+    }
+    return null;
+  }
+
   get range(): VtyLineRange {
     return new VtyLineRange(this.first, this.last);
   }
@@ -277,8 +292,10 @@ export class VtyLineConfig {
       absoluteTimeoutMinutes: patch.absoluteTimeoutMinutes ?? this.absoluteTimeoutMinutes ?? undefined,
       escapeCharacter:    patch.escapeCharacter    ?? this.escapeCharacter    ?? undefined,
       autocommand:        patch.autocommand        ?? this.autocommand        ?? undefined,
-      authorizationList:  patch.authorizationList  ?? this.authorizationList  ?? undefined,
-      accountingList:     patch.accountingList     ?? this.accountingList     ?? undefined,
+      authorizationList:  patch.authorizationList === undefined ? this.authorizationList ?? undefined
+        : mergeMethodListLines(this.authorizationList, patch.authorizationList),
+      accountingList:     patch.accountingList === undefined ? this.accountingList ?? undefined
+        : mergeMethodListLines(this.accountingList, patch.accountingList),
       loginAuthList:      patch.loginAuthList      ?? this.loginAuthList      ?? undefined,
       terminalLength:     patch.terminalLength     ?? this.terminalLength     ?? undefined,
       terminalWidth:      patch.terminalWidth      ?? this.terminalWidth      ?? undefined,
@@ -313,8 +330,8 @@ export class VtyLineConfig {
     else if (this.historySize !== null) lines.push(` history size ${this.historySize}`);
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
-    if (this.authorizationList !== null) lines.push(` authorization ${this.authorizationList}`);
-    if (this.accountingList !== null) lines.push(` accounting ${this.accountingList}`);
+    for (const entry of (this.authorizationList ?? '').split('\n')) if (entry !== '') lines.push(` authorization ${entry}`);
+    for (const entry of (this.accountingList ?? '').split('\n')) if (entry !== '') lines.push(` accounting ${entry}`);
     if (this.linePassword) {
       lines.push(` password ${renderPasswordField(this.linePassword, this.linePasswordAlgo === 'type-7' ? 'type-7' : 'plain-password', serviceEncryption, false, `line-vty:${this.first}`)}`);
     }

@@ -10,11 +10,10 @@
  */
 
 import { SCREEN_REPAINT_MARK } from '@/network/protocols/ssh/server/SshScreenRepaint';
-import { findEquipmentByIp } from '@/shell/hostResolution';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
-import { Equipment, type HostCapableDevice } from '@/network';
+import { Equipment } from '@/network';
 import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '@/network/core/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
@@ -57,7 +56,6 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
-import { createSessionForDevice } from './sessionFactory';
 import { followArguments, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
@@ -66,7 +64,7 @@ import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShell
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, SubShellCompletionControllers } from '@/terminal/completion';
 import {
-  bashPromptParts, collapseHome, formatBashPrompt, type BashPromptParts,
+  bashPromptParts, collapseHome, formatBashPrompt, parseBashPrompt, type BashPromptParts,
 } from '@/network/devices/linux/shell/BashPrompt';
 import type { SubShellTabHost } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
@@ -78,7 +76,6 @@ import {
 } from '@/shell/input';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
-import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { NsupdateSubShell } from '@/terminal/subshells/NsupdateSubShell';
 import { nsupdateNamesAFile } from '@/network/dns/update/NsupdateScript';
 import { parseNsupdateKeyOption } from '@/network/dns/update/NsupdateScript';
@@ -106,7 +103,9 @@ import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
+import type { SftpClientSession } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
+import { parseSftpCommandLine } from '@/network/protocols/ssh/sftp/client/SftpCommandLine';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import {
   OPENSSH_DEFAULT_IDENTITY_FILES,
@@ -121,20 +120,18 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
-import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
-import { parseScpArgs } from '@/network/protocols/ssh/Scp';
+import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
+import { parseScpCommandLine } from '@/network/protocols/ssh/scp/ScpCommandLine';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
 import type { SshClientHandle } from '@/network/devices/linux/network/SshClientProcess';
-import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
   type ParsedSshArgs,
-  type ProxyHop,
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
-import type { TcpConnector } from '@/network/tcp/types';
+import type { TcpConnector, TcpDialFailure } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
@@ -204,25 +201,7 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Saved input before history navigation started. */
   private subShellSavedInput: string = '';
 
-  /**
-   * Stack of SSH "frames" — each entry remembers the local device and
-   * the saved cwd/user pair that were active before connecting to a
-   * remote machine. The terminal becomes the remote machine's terminal
-   * (BRD SSH-04: every command runs on the remote, editors open on the
-   * remote, tab completion uses the remote VFS) until the user types
-   * `exit` / `logout` or presses Ctrl+D.
-   */
-  private sshStack: Array<{
-    device: Equipment;
-    user: string;
-    path: string;
-    /** Local shell session paused while this remote frame is active. */
-    pausedShell: LinuxShellSession | null;
-    /** Closing callback (e.g. ssh session disconnect). */
-    onPop: () => void;
-    /** Display string used in "Connection to <X> closed." line. */
-    label: string;
-  }> = [];
+  private sshTrail: ReadonlyArray<{ host: string; user: string }> = [];
 
   /**
    * Reactive SSH IO: holds the QueuedTerminalIO that bridges the async SSH
@@ -267,10 +246,9 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private ensureRootBash(): LinuxBashShell | null {
     if (!(this.device instanceof LinuxMachine) || !this.shell) return null;
-    // Re-create when the bound session no longer matches the active one —
-    // this is what happens after `pushRemoteDevice` swaps `this.shell` to
-    // a remote session. The previous instance is disposed (no-op on the
-    // session itself: it doesn't own it) so its internal state is freed.
+    // Re-create when the bound session no longer matches the active one.
+    // The previous instance is disposed (no-op on the session itself: it
+    // doesn't own it) so its internal state is freed.
     const sessionDrifted = this.rootBash !== null
       && (this.rootBash as unknown as { session: LinuxShellSession | null }).session !== this.shell;
     if (this.rootBash && !sessionDrifted) return this.rootBash;
@@ -415,30 +393,6 @@ export class LinuxTerminalSession extends TerminalSession {
     return this.shell?.user ?? this.currentUser;
   }
 
-  protected override applyRemoteEnv(env: Record<string, string>): void {
-    const shellEnv = (this.shell as unknown as { env?: { set(k: string, v: string): void } } | null)?.env;
-    if (!shellEnv) return;
-    for (const [k, v] of Object.entries(env)) shellEnv.set(k, v);
-  }
-
-  protected override prepareAsRemoteUser(user: string): void {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) {
-      this.currentUser = user;
-      this.currentPath = `/home/${user}`;
-      return;
-    }
-    if (this.shell) dev.closeShellSession(this.shell);
-    this.shell = this.adoptWindowSize(dev.openShellSession({ user }));
-    this.currentUser = user;
-    this.currentPath = this.shell.cwd;
-    if (this.rootBash) {
-      this.rootBash.deactivate();
-      this.rootBash.dispose();
-      this.rootBash = null;
-    }
-  }
-
   /**
    * Route every command through the per-terminal shell session so that
    * cwd / env / su stack mutations stay local to this terminal. Falls back
@@ -464,7 +418,6 @@ export class LinuxTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return LINUX_THEME; }
 
   getPrompt(): string {
-    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
     // PS2 continuation prompt while accumulating an incomplete command
     // (open quote, trailing `\`, dangling connector, open block, heredoc).
@@ -499,7 +452,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // what makes the renderer print `getPrompt()` verbatim — without this
     // the canvas terminal kept showing PS1 through a whole here-document,
     // even though the session was collecting a body.
-    if (this._continuationBuffer !== null && !this.hasActiveChild && !this.activeSubShell) {
+    if (this._continuationBuffer !== null && !this.activeSubShell) {
       return {
         user: this.currentUser,
         hostname: this.device.getHostname() || 'localhost',
@@ -507,23 +460,6 @@ export class LinuxTerminalSession extends TerminalSession {
         promptChar: '$',
         foreign: true,
       };
-    }
-    if (this.hasActiveChild) {
-      if (this.foreground.getSessionType() !== 'linux') {
-        return {
-          user: this.currentUser,
-          hostname: this.device.getHostname() || 'localhost',
-          path: this.currentPath,
-          promptChar: '$',
-          foreign: true,
-        };
-      }
-      // The foreground child is itself a Linux session (SSH'd into
-      // another Linux box) — its own currentUser/device/currentPath are
-      // the ones that must render, not this (parent) session's. Delegate
-      // recursively so multi-hop Linux→Linux→Linux chains each show
-      // their own remote hostname in turn.
-      return (this.foreground as LinuxTerminalSession).getPromptParts();
     }
     if (this.activeSubShell) {
       const remoteBash = this.activeSubShell.getPromptParts?.();
@@ -562,34 +498,12 @@ export class LinuxTerminalSession extends TerminalSession {
     // `getPromptParts`), which is the right place to surface that.
     const local = this.getLocalDevice();
     const hostname = local.getHostname() || 'localhost';
-    const path = collapseHome(this.localPath, homeDirectoryOn(local, this.localUser));
-    return { left: `${this.localUser}@${hostname}: ${path}` };
+    const path = collapseHome(this.currentPath, homeDirectoryOn(local, this.currentUser));
+    return { left: `${this.currentUser}@${hostname}: ${path}` };
   }
 
-  /**
-   * Device the terminal modal is rooted on, i.e. the local host the user
-   * opened the terminal from. Distinct from `this.device`, which points
-   * at the *currently active* device — that may be a remote when SSH
-   * frames are pushed on the stack.
-   */
   getLocalDevice(): Equipment {
-    return this.sshStack.length === 0
-      ? this.device
-      : this.sshStack[0].device;
-  }
-
-  /** User on the local device (bottom of the SSH stack). */
-  private get localUser(): string {
-    return this.sshStack.length === 0
-      ? this.currentUser
-      : this.sshStack[0].user;
-  }
-
-  /** Path on the local device (bottom of the SSH stack). */
-  private get localPath(): string {
-    return this.sshStack.length === 0
-      ? this.currentPath
-      : this.sshStack[0].path;
+    return this.device;
   }
 
   async init(): Promise<void> {
@@ -602,7 +516,6 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
-    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -648,8 +561,6 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
-
-    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -741,8 +652,6 @@ export class LinuxTerminalSession extends TerminalSession {
       // end the shell: bash warns and runs the command with the body it
       // has. Nothing here may close the session or the SSH connection.
       if (this._pendingHeredocDelimiter !== null) { void this.endHeredocAtEof(); return true; }
-      if (this.endRemoteSession()) return true;
-      if (this.sshStack.length > 0) { this.popRemoteDevice(); return true; }
       this._onRequestClose?.();
       return true;
     }
@@ -974,11 +883,6 @@ export class LinuxTerminalSession extends TerminalSession {
         this.syncDeviceState();
         return;
       }
-      if (this.sshStack.length > 0) {
-        this.popRemoteDevice();
-        return;
-      }
-      if (this.endRemoteSession()) return;
       // Signal close — the view/manager will handle it
       this._onRequestClose?.();
       return;
@@ -1602,7 +1506,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   override editorSave(content: string, filePath: string): void {
-    if (this.hasActiveChild) { super.editorSave(content, filePath); return; }
     const dev = this.device;
     if (this.shell && dev instanceof LinuxMachine) {
       dev.writeFileFromEditorInSession(filePath, content, this.shell);
@@ -1620,7 +1523,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
   override editorExit(saved: boolean = true): void {
-    if (this.hasActiveChild) { super.editorExit(saved); return; }
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
@@ -1651,12 +1553,6 @@ export class LinuxTerminalSession extends TerminalSession {
     // identity for the duration of the push; reading the device's
     // local-console user would drift back to e.g. 'user' on a Windows
     // host and break the prompt mid-session.
-    if (this.sshStack.length > 0) {
-      const cwd = this.device.getCwd?.();
-      if (cwd) this.currentPath = cwd;
-      this.notify();
-      return;
-    }
     const cwd = this.device.getCwd?.();
     if (cwd) this.currentPath = cwd;
     this.currentUser = this.device.getCurrentUser?.() ?? 'user';
@@ -1811,16 +1707,6 @@ export class LinuxTerminalSession extends TerminalSession {
       this.enterSqlPlus(JSON.parse(sqlplusArgs));
       return;
     }
-    const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
-    if (sftpMeta) {
-      const { userAtHost, batchFile } = JSON.parse(sftpMeta) as {
-        userAtHost: string;
-        batchFile?: string | null;
-      };
-      const password = ctx.values.get('sftp_password') ?? '';
-      this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
-      return;
-    }
     const ftpMeta = ctx.metadata.get('enter_ftp') as string | undefined;
     if (ftpMeta) {
       const { host, port, user } = JSON.parse(ftpMeta) as { host: string; port?: number; user: string };
@@ -1832,27 +1718,16 @@ export class LinuxTerminalSession extends TerminalSession {
     // directly using the reactive QueuedTerminalIO approach.
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
     if (sshCopyMeta) {
-      const meta = JSON.parse(sshCopyMeta) as {
-        userAtHost: string;
-        identityFile: string;
-      };
+      const meta = JSON.parse(sshCopyMeta) as { args: string[] };
       const password = ctx.values.get('ssh_copy_id_password') ?? '';
-      this.runSshCopyId(meta, password);
+      void this.runSshCopyId(meta, password);
       return;
     }
     const scpMeta = ctx.metadata.get('enter_scp') as string | undefined;
     if (scpMeta) {
-      const meta = JSON.parse(scpMeta) as {
-        userAtHost: string;
-        port: number;
-        identityFiles: string[];
-        local: { path: string };
-        remote: { path: string };
-        direction: 'upload' | 'download';
-        recursive: boolean;
-      };
+      const meta = JSON.parse(scpMeta) as { args: string[] };
       const password = ctx.values.get('scp_password') ?? '';
-      this.runScp(meta, password);
+      void this.runScp(meta, password);
       return;
     }
     this.syncDeviceState();
@@ -1909,115 +1784,66 @@ export class LinuxTerminalSession extends TerminalSession {
     }
   }
 
-  /**
-   * Start an interactive sftp session.
-   * Parses args for `[user@]host`, prompts for a password, then connects.
-   * Non-interactive batch-mode transfers (sftp user@host:/path /local) are
-   * handled by the LinuxCommandExecutor fallback (returns a canned error for now).
-   */
   private enterSftp(args: string[]): void {
-    // Strip flags we care about and find the host argument.
-    let batchFile: string | null = null;
-    const positional: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-b' && i + 1 < args.length) {
-        batchFile = args[++i];
-      } else if (!a.startsWith('-')) {
-        positional.push(a);
-      }
-    }
-    const userAtHost = positional[0] ?? '';
-    if (!userAtHost) {
-      this.addLine('usage: sftp [options] [user@]host[:path]', 'error');
+    const parsed = parseSftpCommandLine(args);
+    if (parsed.kind !== 'parsed') {
+      const text = parsed.kind === 'usage'
+        ? `${parsed.diagnostic === null ? '' : `${parsed.diagnostic}\n`}${OPENSSH_UBUNTU_22_04.sftpUsage}`
+        : parsed.message;
+      for (const line of text.split('\n')) this.addLine(line, 'error');
       this.notify();
       return;
     }
-
-    // Derive display name for the password prompt ("user@host's password:")
-    const user = userAtHost.includes('@')
-      ? userAtHost.split('@')[0]
-      : this.currentUser;
-    const host = userAtHost.includes('@')
-      ? userAtHost.split('@')[1]
-      : userAtHost;
-    const displayTarget = `${user}@${host}`;
-
-    const steps: InteractiveStep[] = [
-      {
-        type: 'password',
-        prompt: `${displayTarget}'s password: `,
-        mask: 'hidden',
-        storeAs: 'sftp_password',
-      },
-      {
-        type: 'execute',
-        action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_sftp',
-            JSON.stringify({ userAtHost: displayTarget, batchFile }),
-          );
-        },
-      },
-    ];
-    this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
+    void this.connectAndEnterSftp(args);
   }
 
-  private async connectAndEnterSftp(
-    userAtHost: string,
-    password: string,
-    batchFile: string | null = null,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
+  private async connectAndEnterSftp(args: string[]): Promise<void> {
+    const machine = this.device as unknown as {
       executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+        openSftpClientSession(args: string[], password: string, io: ITerminalIO): Promise<
+          | { kind: 'opened'; session: SftpClientSession }
+          | { kind: 'ended'; outcome: { output: string; exitCode: number } }
+        >;
       };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
+    if (machine.executor === undefined) {
       this.addLine('sftp: this device does not support SFTP', 'error');
       this.notify();
       return;
     }
-
-    const tcpConnector: TcpConnector = dialConnector(this.device);
-
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const session = new SftpSession({
-      tcpConnector,
-      localVfs: localVfs as never,
-      localUser: this.currentUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      localCwd: this.currentPath,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
-      homeDirectory: homeDir,
-    });
-
-    const banner = await session.connect(userAtHost, { password });
-    if (!session.isConnected()) {
-      this.addLine(banner, 'error');
-      this.notify();
-      return;
+    let opened: Awaited<ReturnType<NonNullable<typeof machine.executor>['openSftpClientSession']>>;
+    try {
+      opened = await machine.executor.openSftpClientSession(args, '', this.createSshTerminalIO());
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
     }
-    this.addLine(banner);
-
-    // BRD SFTP-13 / analysis doc P5: `sftp -b <file>` runs the batch then
-    // exits without installing the interactive sub-shell. Each line of the
-    // batch is echoed with the prompt (mirroring OpenSSH), output captured,
-    // and the session is disconnected at EOF. A leading `-` on a command
-    // suppresses failure (parity with OpenSSH).
-    if (batchFile) {
-      await this.runSftpBatch(session, localVfs, batchFile);
+    if (opened.kind === 'ended') {
+      for (const line of opened.outcome.output.split('\n')) this.addLine(line, opened.outcome.exitCode === 0 ? 'normal' : 'error');
       this._inputBuf = '';
       this.notify();
       return;
     }
-
+    const session = opened.session;
+    const announce = (text: string): void => {
+      for (const line of text.replace(/\n$/, '').split('\n')) if (line !== '') this.addLine(line);
+    };
+    announce(session.drain());
+    if (session.batchScript !== null) {
+      const outcome = await session.runScript(session.batchScript);
+      announce(outcome.output);
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
+    if (session.finished) {
+      session.close();
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
     installDefaultShells();
     const shell = ShellFactory.create('sftp', {
       device: this.device,
@@ -2167,35 +1993,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  private async runSftpBatch(
-    session: SftpSession,
-    vfs: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem,
-    batchPath: string,
-  ): Promise<void> {
-    const raw = vfs.readFile(batchPath);
-    if (raw === null) {
-      this.addLine(`Couldn't open batch file ${batchPath}`, 'error');
-      session.disconnect();
-      return;
-    }
-    const shell = new SftpSubShell(session);
-    const lines = raw.split('\n');
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-      const ignoreErrors = line.startsWith('-');
-      const cmd = ignoreErrors ? line.slice(1).trim() : line;
-      this.addEchoLine(shell.getPrompt(), cmd);
-      const result = shell.processLine(cmd);
-      for (const out of result.output) {
-        if (out) this.addLine(out);
-      }
-      if (result.exit) break;
-      if (!ignoreErrors && hasSftpError(result.output)) break;
-    }
-    session.disconnect();
-  }
-
   // ── ssh entry point ─────────────────────────────────────────────
 
   /**
@@ -2216,22 +2013,6 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     // BRD SSH-06: merge ~/.ssh/config defaults under CLI overrides.
     const merged = this.mergeWithSshConfig(parsed);
-    // OpenSSH `-J host1[,host2,...]` (ProxyJump): walk each hop before
-    // opening the final connection. Each hop is pushed onto the SSH
-    // stack so `exit` unwinds one hop at a time, matching real ssh -J.
-    if (merged.jumpHosts && merged.jumpHosts.length > 0) {
-      const hops = merged.jumpHosts.flatMap((h) => [
-        ...parseProxyJumpSpec(h),
-      ]);
-      if (!this.pushSshChain(hops)) {
-        this.addLine(
-          `ssh: could not resolve one or more jump hosts: ${merged.jumpHosts.join(', ')}`,
-          'error',
-        );
-        this.notify();
-        return;
-      }
-    }
     // Reactive approach: connect directly — password (and host-key confirmation)
     // are prompted lazily by TerminalSshInteractionHandler via QueuedTerminalIO,
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
@@ -2297,6 +2078,7 @@ export class LinuxTerminalSession extends TerminalSession {
       strict: StrictHostKeyChecking | undefined;
       command: string | null;
       hashKnownHosts?: boolean;
+      jumpHosts?: readonly string[];
       localForwards?: readonly SshPortForward[];
       remoteForwards?: readonly SshPortForward[];
       dynamicForwards?: readonly SshPortForward[];
@@ -2304,6 +2086,7 @@ export class LinuxTerminalSession extends TerminalSession {
       requestTty?: 'yes' | 'no' | 'force';
       authentication?: SshClientAuthentication;
       algorithms?: SshAlgorithmPreferences;
+      quiet?: boolean;
     },
     args: readonly string[],
   ): Promise<void> {
@@ -2346,12 +2129,11 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // Reactive IO: password and host-key prompts are shown on demand by
-    // TerminalSshInteractionHandler → QueuedTerminalIO → handleSshIOKey().
-    // Public-key auth that succeeds silently will never trigger a password prompt.
-    const io = this.createSshTerminalIO();
-    const session = new SshSession({
-      tcpConnector,
+    const localDevice = this.getLocalDevice();
+    const localAgent = localDevice instanceof LinuxMachine ? localDevice.sshAgentPort() : undefined;
+    const newSession = (connector: TcpConnector, io: QueuedTerminalIO): SshSession => new SshSession({
+      tcpConnector: connector,
+      ...(localAgent === undefined ? {} : { agent: localAgent }),
       vfs: localVfs as never,
       localUser: this.currentUser,
       localUid: userEntry?.uid ?? 1000,
@@ -2360,12 +2142,46 @@ export class LinuxTerminalSession extends TerminalSession {
       interactionHandler: new TerminalSshInteractionHandler(io),
     });
 
+    const jumpSessions: SshSession[] = [];
+    const releaseJumps = (): void => {
+      for (const jump of jumpSessions.splice(0).reverse()) jump.disconnect();
+    };
+    let connector = tcpConnector;
+    let inheritedUser = this.currentUser;
+    const hops = (meta.jumpHosts ?? []).flatMap((spec) => [...parseProxyJumpSpec(spec)]);
+    for (const hop of hops) {
+      const hopHost = this.resolveSshHost(hop.host);
+      if (!hopHost) {
+        this.addLine(`ssh: Could not resolve hostname ${hop.host}: Name or service not known`, 'error');
+        releaseJumps();
+        this.notify();
+        return;
+      }
+      const hopUser = hop.user ?? inheritedUser;
+      const hopPort = hop.port ?? 22;
+      const hopIo = this.createSshTerminalIO();
+      const hopSession = newSession(connector, hopIo);
+      const hopOptions = SshConnectOptionsBuilder.create()
+        .host(hopHost).user(hopUser).port(hopPort)
+        .strictHostKeyChecking(meta.strict ?? 'ask');
+      for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) hopOptions.addIdentityFile(id);
+      if (!await this.connectSshSession(hopSession, hopOptions.build(), hopHost, hopPort, hopUser, jumpSessions.length === 0)) {
+        releaseJumps();
+        return;
+      }
+      jumpSessions.push(hopSession);
+      connector = this.tunnelThroughJump(hopSession);
+      inheritedUser = hopUser;
+    }
+
+    const io = this.createSshTerminalIO();
+    const session = newSession(connector, io);
+
     const builder = SshConnectOptionsBuilder.create()
       .host(host)
       .user(user)
       .port(meta.port)
       .strictHostKeyChecking(meta.strict ?? 'ask');
-    // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     if (meta.authentication) builder.authentication(meta.authentication);
     if (meta.algorithms) builder.algorithms(meta.algorithms);
@@ -2373,78 +2189,12 @@ export class LinuxTerminalSession extends TerminalSession {
       builder.addIdentityFile(id);
     }
 
-    // No usable path to the host — a real client fails here, before any
-    // key exchange or password prompt (docs/PRD-Link-State.md §2.1 P6).
-    const reachable = this.remoteLivenessProbe(host);
-    if (reachable && !reachable()) {
-      this.addLine(`ssh: connect to host ${host} port ${meta.port}: ${sshUnreachableReason(this.device, host)}`, 'error');
-      session.disconnect();
-      this.pendingSshIO = null;
-      this.notify();
+    if (!await this.connectSshSession(session, builder.build(), host, meta.port, user, hops.length === 0)) {
+      releaseJumps();
       return;
     }
 
-    let result: Awaited<ReturnType<typeof session.connect>> | null = null;
-    let cancelled = false;
-    try {
-      result = await session.connect(builder.build());
-    } catch (err) {
-      if (err instanceof QueuedTerminalIOCancelled) {
-        cancelled = true;
-      } else {
-        throw err;
-      }
-    } finally {
-      // Always release the reactive IO once the connection phase is over,
-      // regardless of success or failure.
-      this.pendingSshIO = null;
-      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
-        this.inputMode = { type: 'normal' };
-      }
-      this.notify();
-    }
-
-    if (cancelled) {
-      this.addLine('^C', 'normal');
-      session.disconnect();
-      this.notify();
-      return;
-    }
-
-    if (!result || !isOk(result)) {
-      const errKind = result
-        ? (result as { error: { kind: string } }).error.kind
-        : 'UNKNOWN';
-      // AUTH_FAILED is already surfaced via showWarning() inside doAuthenticate();
-      // do not duplicate it. Other errors have no prior warning, so display them here.
-      if (errKind !== 'AUTH_FAILED') {
-        const msg =
-          // A refused connection is `Connection refused`, not `No route to
-          // host` — the unreachable case was already decided above, by the
-          // liveness probe, before any session was opened, so reaching
-          // here means the path was fine and the far end said no. That is
-          // what a router in quiet-mode, a `transport input none`, or a
-          // stopped daemon look like from the client, and calling it a
-          // routing failure sends the operator to check cables instead.
-          errKind === 'CONNECTION_REFUSED'
-            ? `ssh: connect to host ${host} port ${meta.port}: Connection refused`
-            : errKind === 'CONNECTION_TIMEOUT'
-            ? `ssh: connect to host ${host} port ${meta.port}: Connection timed out`
-            : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
-            ? 'Host key verification failed.'
-            : errKind === 'KEX_FAILED'
-            ? (result as { error: { message: string } }).error.message
-            : `${user}@${host}: Permission denied (publickey,password).`;
-        this.addLine(msg, 'error');
-      }
-      // A failed connection attempt (bad auth, rejected host key, refused
-      // admission, …) must not linger: a real ssh client tears down its
-      // TCP connection on failure rather than leaving the vty/pty line it
-      // occupied on the server dangling until some other timeout fires.
-      session.disconnect();
-      this.notify();
-      return;
-    }
+    if (meta.forwardAgent && localAgent !== undefined) session.forwardAgent(localAgent);
 
     if (meta.command) {
       // OpenSSH parity: announce PTY allocation BEFORE running the command
@@ -2455,10 +2205,11 @@ export class LinuxTerminalSession extends TerminalSession {
         );
       }
       // BRD SSH-05: non-interactive — run the command, print output, close.
-      const channelResult = session.openExecChannel(meta.command);
+      const channelResult = session.openExecChannel(meta.command, { forwardAgent: meta.forwardAgent === true });
       if (!isOk(channelResult)) {
         this.addLine('ssh: failed to open exec channel', 'error');
         session.disconnect();
+        releaseJumps();
         this.notify();
         return;
       }
@@ -2475,6 +2226,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       channelResult.value.close();
       session.disconnect();
+      releaseJumps();
       this.notify();
       return;
     }
@@ -2484,88 +2236,131 @@ export class LinuxTerminalSession extends TerminalSession {
     // tab-completion, history). If the remote machine cannot be
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
-    const linuxRemoteDevice = findLinuxMachineByIp(host);
     const client = this.device instanceof LinuxMachine && this.shell
       ? this.device.openSshClientProcess(args, session, this.shell)
       : null;
     this.openSshForwards(session, client, meta);
-    const agentForwarding = linuxRemoteDevice
-      ? this.installAgentForwarding(linuxRemoteDevice, meta)
-      : null;
     const onSessionEnd = () => {
-      agentForwarding?.detach();
       if (client !== null) client.retire();
       else session.disconnect();
+      releaseJumps();
+      this.sshTrail = [];
     };
+    if (hops.length > 0) {
+      this.sshTrail = [
+        ...hops.map((hop) => ({ host: hop.host, user: hop.user ?? this.currentUser })),
+        { host: typedHost, user },
+      ];
+    }
 
     // Every vendor is driven over the real, authenticated SSH channel.
     // The server shells became stateful (A2/A3), publish their prompt
     // and completion (A1/B1), stack their own sub-shells (B2), host
     // their own editors (B3) and raise their own challenges (B4), so
     // one client driver is left (docs/PRD-SSH-Unification.md §4bis).
-    const wireRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
-    if (wireRemoteDevice) {
-      const channelResult = session.openShellChannel();
-      if (isOk(channelResult)) {
-        const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
-        const sourceHost = this.device.getHostname?.() ?? '';
-        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false, true);
-        for (const line of banner) this.addLine(line);
-        const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
-          .getSshHostname?.() ?? host;
-        this.activeSubShell = new SshInteractiveSubShell(
-          session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
-          promptHost, linuxRemoteDevice ?? undefined,
-          // Liveness of an OPEN session is read, never provoked with a
-          // fresh handshake — otherwise every command would make the
-          // remote log an accept/close pair. Two facts are read: this
-          // side's own socket, which knows when THIS link drops, and the
-          // path, which is the only thing that notices a cable pulled at
-          // the far end, a switch losing power in between, or the peer
-          // being switched off (docs/PRD-Pannes.md §F1, §F5).
-          establishedSessionLiveness(session, this.device, host),
-          (footer) => this.onRemoteHangup(footer),
-          (line) => this.addLine(line),
-        );
-        const size = this.windowSize;
-        if (size !== null) this.activeSubShell.resize?.(size.rows, size.cols);
-        this._inputBuf = '';
-        this.notify();
-        return;
+    const channelResult = session.openShellChannel({ forwardAgent: meta.forwardAgent === true });
+    if (isOk(channelResult)) {
+      const channel = channelResult.value;
+      if (!meta.quiet) {
+        const greeting = (channel as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
+        for (const greetingLine of greeting.replace(/\n+$/, '').split('\n')) {
+          if (greetingLine.length > 0) this.addLine(greetingLine);
+        }
       }
+      const opening = (channel as { initialPrompt?: () => string | null }).initialPrompt?.() ?? null;
+      const promptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? host;
+      this.activeSubShell = new SshInteractiveSubShell(
+        session, channel, user, host, `/home/${user}`, onSessionEnd,
+        promptHost,
+        establishedSessionLiveness(session, this.device, host),
+        (footer) => this.onRemoteHangup(footer),
+        (line) => this.addLine(line),
+      );
+      const size = this.windowSize;
+      if (size !== null) this.activeSubShell.resize?.(size.rows, size.cols);
+      this._inputBuf = '';
+      this.notify();
+      return;
     }
 
-    const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
-    if (anyRemoteDevice) {
-      const child = createSessionForDevice(anyRemoteDevice, `${this.id}>ssh`);
-      if (child) {
-        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-        const serverIp = host;
-        const clientPort = 50_000 + (user.length * 7 % 10_000);
-        this.adoptRemoteChild(child, user, host, {
-          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} 22`,
-          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
-        });
-        child.registerTearDown(onSessionEnd);
-        return;
-      }
-    }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
     this.notify();
   }
 
-  /** Best-effort `lastlog`-style line via a one-shot remote exec. */
-  private async tryReadLastLogin(session: SshSession, user: string): Promise<string | null> {
-    const channelResult = session.openExecChannel(
-      `last -i ${user} 2>/dev/null | head -n 1`,
-    );
-    if (!isOk(channelResult)) return null;
-    const channel = channelResult.value;
-    const result = await channel.execute();
-    channel.close();
-    const out = result.stdout.replace(/\n$/, '');
-    return out || null;
+  private tunnelThroughJump(jump: SshSession): TcpConnector {
+    return async (host, port) => {
+      const opened = await jump.openDirectTcpip(host, port);
+      if (isOk(opened)) return opened.value as Awaited<ReturnType<TcpConnector>>;
+      const refused: TcpDialFailure = { dialFailed: 'refused' };
+      return refused;
+    };
+  }
+
+  private async connectSshSession(
+    session: SshSession,
+    options: ReturnType<SshConnectOptionsBuilder['build']>,
+    host: string,
+    port: number,
+    user: string,
+    probeFromHere: boolean,
+  ): Promise<boolean> {
+    const reachable = probeFromHere ? this.remoteLivenessProbe(host) : null;
+    if (reachable && !reachable()) {
+      this.addLine(`ssh: connect to host ${host} port ${port}: ${sshUnreachableReason(this.device, host)}`, 'error');
+      session.disconnect();
+      this.pendingSshIO = null;
+      this.notify();
+      return false;
+    }
+
+    let result: Awaited<ReturnType<typeof session.connect>> | null = null;
+    let cancelled = false;
+    try {
+      result = await session.connect(options);
+    } catch (err) {
+      if (err instanceof QueuedTerminalIOCancelled) {
+        cancelled = true;
+      } else {
+        throw err;
+      }
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+      this.notify();
+    }
+
+    if (cancelled) {
+      this.addLine('^C', 'normal');
+      session.disconnect();
+      this.notify();
+      return false;
+    }
+
+    if (!result || !isOk(result)) {
+      const errKind = result
+        ? (result as { error: { kind: string } }).error.kind
+        : 'UNKNOWN';
+      if (errKind !== 'AUTH_FAILED') {
+        const msg =
+          errKind === 'CONNECTION_REFUSED'
+            ? `ssh: connect to host ${host} port ${port}: Connection refused`
+            : errKind === 'CONNECTION_TIMEOUT'
+            ? `ssh: connect to host ${host} port ${port}: Connection timed out`
+            : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
+            ? 'Host key verification failed.'
+            : errKind === 'KEX_FAILED'
+            ? (result as { error: { message: string } }).error.message
+            : `${user}@${host}: Permission denied (publickey,password).`;
+        this.addLine(msg, 'error');
+      }
+      session.disconnect();
+      this.notify();
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -2646,6 +2441,8 @@ export class LinuxTerminalSession extends TerminalSession {
       requestTty: parsed.requestTty,
       authentication: parsed.authentication,
       algorithms: parsed.algorithms,
+      loginName: parsed.loginName,
+      quiet: parsed.quiet,
     };
   }
 
@@ -2672,29 +2469,8 @@ export class LinuxTerminalSession extends TerminalSession {
    * BRD SSH-03-R5.
    */
   private enterSshCopyId(args: string[]): void {
-    let identityFile = '';
-    let userAtHost = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-i' && i + 1 < args.length) identityFile = args[++i];
-      else if (!args[i].startsWith('-')) userAtHost = args[i];
-    }
-    if (!userAtHost) {
-      this.addLine('usage: ssh-copy-id [-i identity_file] [user@]host', 'error');
-      this.notify();
-      return;
-    }
-    const dev = this.device as unknown as {
-      executor?: {
-        userMgr?: { getUser(name: string): { home?: string } | undefined };
-      };
-    };
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const resolvedIdentity = identityFile || `${homeDir}/.ssh/id_ed25519`;
-    const displayTarget = userAtHost.includes('@')
-      ? userAtHost
-      : `${this.currentUser}@${userAtHost}`;
-
+    const target = [...args].reverse().find((word) => !word.startsWith('-')) ?? '';
+    const displayTarget = target.includes('@') ? target : `${this.currentUser}@${target}`;
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -2705,181 +2481,60 @@ export class LinuxTerminalSession extends TerminalSession {
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_ssh_copy_id',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              identityFile: resolvedIdentity,
-            }),
-          );
+          ctx.metadata.set('enter_ssh_copy_id', JSON.stringify({ args }));
         },
       },
     ];
-    this.startFlowFromSteps(steps, `ssh-copy-id ${userAtHost}`);
+    this.startFlowFromSteps(steps, `ssh-copy-id ${target}`);
   }
 
-  private async runSshCopyId(
-    meta: { userAtHost: string; identityFile: string },
-    password: string,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+  private async runSshCopyId(meta: { args: string[] }, password: string): Promise<void> {
+    const machine = this.device as unknown as {
+      executor?: { runSshCopyIdAsync(args: string[], password: string): Promise<{ output: string; exitCode: number }> };
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('ssh-copy-id: no local filesystem', 'error');
-      this.notify();
-      return;
-    }
-    const pubPath = `${meta.identityFile}.pub`;
-    const publicKeyLine = localVfs.readFile(pubPath);
-    if (!publicKeyLine) {
-      this.addLine(
-        `/usr/bin/ssh-copy-id: ERROR: failed to open ID file '${pubPath}': No such file or directory`,
-        'error',
-      );
-      this.notify();
-      return;
-    }
-    const session = await this.connectSshForBatch(meta.userAtHost, password);
-    if (!session) return;
-    const user = meta.userAtHost.split('@')[0];
-    const remoteHome = `/home/${user}`;
-    const result = await sshCopyId(session, publicKeyLine.trim(), remoteHome);
-    session.disconnect();
-    if ('error' in result) {
-      this.addLine(`ssh-copy-id: ${result.error}`, 'error');
-    } else {
-      for (const line of result.output) {
-        this.addLine(
-          line.replace('<user>', user).replace('<host>', meta.userAtHost.split('@')[1] ?? ''),
-        );
-      }
-    }
+    const outcome = await machine.executor?.runSshCopyIdAsync(meta.args, password);
+    for (const line of (outcome?.output ?? '').split('\n')) this.addLine(line);
     this.notify();
   }
 
   // ── scp ─────────────────────────────────────────────────────────
 
-  /** BRD SSH-08: parse scp args, collect password, defer transfer. */
   private enterScp(args: string[]): void {
-    const parsed = parseScpArgs(args);
-    if (!parsed) {
-      this.addLine('usage: scp [-r] [-P port] [-i identity_file] src dst', 'error');
+    const parsed = parseScpCommandLine(args);
+    if (parsed.kind === 'rejected') {
+      const lines = parsed.diagnostic === null ? [] : [parsed.diagnostic];
+      for (const line of [...lines, ...OPENSSH_UBUNTU_22_04.scpUsage.split('\n')]) this.addLine(line, 'error');
       this.notify();
       return;
     }
-    const remoteEndpoint = parsed.source.remote ? parsed.source : parsed.destination;
-    const localEndpoint = parsed.source.remote ? parsed.destination : parsed.source;
-    if (parsed.source.remote === parsed.destination.remote) {
-      this.addLine(
-        'scp: exactly one of source/destination must be remote',
-        'error',
-      );
-      this.notify();
+    const remote = parsed.line.operands.map(parseScpEndpoint).find((endpoint) => endpoint.remote);
+    if (remote === undefined) {
+      void this.runScp({ args }, '');
       return;
     }
-    const direction: 'upload' | 'download' = parsed.source.remote
-      ? 'download'
-      : 'upload';
-    const user = remoteEndpoint.user ?? this.currentUser;
-    const host = remoteEndpoint.host ?? '';
-    const displayTarget = `${user}@${host}`;
-
     const steps: InteractiveStep[] = [
       {
         type: 'password',
-        prompt: `${displayTarget}'s password: `,
+        prompt: `${remote.user ?? this.currentUser}@${remote.host}'s password: `,
         mask: 'hidden',
         storeAs: 'scp_password',
       },
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_scp',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              port: parsed.port,
-              identityFiles: parsed.identityFiles,
-              local: { path: localEndpoint.path },
-              remote: { path: remoteEndpoint.path },
-              direction,
-              recursive: parsed.recursive,
-            }),
-          );
+          ctx.metadata.set('enter_scp', JSON.stringify({ args }));
         },
       },
     ];
     this.startFlowFromSteps(steps, `scp ${args.join(' ')}`);
   }
 
-  private async runScp(
-    meta: {
-      userAtHost: string;
-      port: number;
-      identityFiles: string[];
-      local: { path: string };
-      remote: { path: string };
-      direction: 'upload' | 'download';
-      recursive: boolean;
-    },
-    password: string,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+  private async runScp(meta: { args: string[] }, password: string): Promise<void> {
+    const machine = this.device as unknown as {
+      executor?: { runSshTransportAsync(command: 'scp', args: string[], password: string): Promise<{ output: string; exitCode: number }> };
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('scp: no local filesystem', 'error');
-      this.notify();
-      return;
-    }
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const tcpConnector: TcpConnector = dialConnector(this.device);
-
-    const sftp = new SftpSession({
-      tcpConnector,
-      localVfs,
-      localUser: this.currentUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      localCwd: this.currentPath,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
-      homeDirectory: homeDir,
-    });
-    const banner = await sftp.connect(meta.userAtHost, {
-      port: meta.port,
-      identityFiles: this.autoDiscoverIdentityFiles(meta.identityFiles),
-      password,
-    });
-    if (!sftp.isConnected()) {
-      this.addLine(banner, 'error');
-      this.notify();
-      return;
-    }
-
-    const transferOutput =
-      meta.direction === 'upload'
-        ? meta.recursive
-          ? sftp.putRecursive(meta.local.path, meta.remote.path)
-          : sftp.put(meta.local.path, meta.remote.path)
-        : meta.recursive
-        ? sftp.getRecursive(meta.remote.path, meta.local.path)
-        : sftp.get(meta.remote.path, meta.local.path);
-    for (const line of transferOutput.split('\n')) {
-      if (line) this.addLine(line);
-    }
-    sftp.disconnect();
+    const outcome = await machine.executor?.runSshTransportAsync('scp', meta.args, password);
+    for (const line of (outcome?.output ?? '').split('\n')) if (line) this.addLine(line, outcome?.exitCode === 0 ? undefined : 'error');
     this.notify();
   }
 
@@ -2931,67 +2586,6 @@ export class LinuxTerminalSession extends TerminalSession {
       return null;
     }
     return session;
-  }
-
-  /** Best-effort MOTD fetch via a one-shot remote `cat /etc/motd`. */
-  private async tryReadRemoteMotd(session: SshSession): Promise<string[]> {
-    const channelResult = session.openExecChannel('cat /etc/motd 2>/dev/null');
-    if (!isOk(channelResult)) return [];
-    const channel = channelResult.value;
-    const result = await channel.execute();
-    channel.close();
-    return result.stdout ? result.stdout.replace(/\n$/, '').split('\n') : [];
-  }
-
-  /**
-   * Banner composition for the fallback exec-channel path (synthetic SSH
-   * handlers in tests). Mirrors `composeLoginBanner` ordering: Welcome →
-   * motd → blank → Last login. Uses ssh exec commands because we do not
-   * have direct access to the remote VFS.
-   */
-  private async composeLoginBannerViaExec(
-    session: SshSession,
-    user: string,
-  ): Promise<string[]> {
-    const lines: string[] = [];
-    // Single source-of-truth for the Welcome line: motd if it has one,
-    // otherwise a synthesised line from /etc/os-release. Avoids the
-    // "Welcome to Ubuntu" duplicate (terminal_gap.md §9.2) that occurred
-    // when the remote already had a motd that began with that line.
-    const motd = await this.tryReadRemoteMotd(session);
-    if (motd.length > 0 && motd.some((l) => l.trim().length > 0)) {
-      for (const m of motd) lines.push(m);
-    } else {
-      const welcome = await this.tryReadWelcome(session);
-      if (welcome) lines.push(welcome);
-    }
-    const lastLogin = await this.tryReadLastLogin(session, user);
-    if (lastLogin) {
-      if (lines.length > 0) lines.push('');
-      lines.push(lastLogin);
-    }
-    return lines;
-  }
-
-  /**
-   * Compose the canonical Ubuntu "Welcome to …" banner from /etc/os-release
-   * + uname. Falls back to a generic string if the remote does not surface
-   * those files.
-   */
-  private async tryReadWelcome(session: SshSession): Promise<string | null> {
-    const ch = session.openExecChannel(
-      'sh -c "grep PRETTY_NAME /etc/os-release 2>/dev/null; uname -r 2>/dev/null"',
-    );
-    if (!isOk(ch)) return null;
-    const r = await ch.value.execute();
-    ch.value.close();
-    const out = r.stdout || '';
-    const pretty = /PRETTY_NAME="([^"]+)"/.exec(out)?.[1];
-    const release = out.split('\n').find((l) => /^\d+\./.test(l)) ?? '';
-    if (!pretty && !release) return null;
-    const machine = 'GNU/Linux';
-    const arch = 'x86_64';
-    return `Welcome to ${pretty ?? 'Ubuntu'} (${machine} ${release || '5.15.0'} ${arch})`;
   }
 
   /**
@@ -3212,8 +2806,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private exitSubShell(): void {
-    const wasSshAdapter = this.activeSubShell instanceof ShellSubShellAdapter
-      && this.activeSubShell.inner.kind === 'ssh-remote';
     if (this.activeSubShell) {
       this.activeSubShell.dispose();
       this.activeSubShell = null;
@@ -3223,10 +2815,7 @@ export class LinuxTerminalSession extends TerminalSession {
     this.subShellHistoryIndex = -1;
     this.subShellSavedInput = '';
     this.inputMode = { type: 'normal' };
-    if (wasSshAdapter && this.sshStack.length > 0) {
-      this.popRemoteDevice();
-      return;
-    }
+    this.sshTrail = [];
     this.notify();
   }
 
@@ -3291,74 +2880,10 @@ export class LinuxTerminalSession extends TerminalSession {
     return found?.ip ?? null;
   }
 
-  pushRemoteDevice(
-    remote: HostCapableDevice,
-    user: string,
-    label: string,
-    onPop: () => void = () => undefined,
-  ): void {
-    // Stash the previous device + the local shell session, then allocate a
-    // fresh shell session on the remote so commands executed during the SSH
-    // chain run with the remote user's home / env / suStack — not the local
-    // one. On pop we close that remote session and restore the local pair.
-    const pausedShell = this.shell;
-    let remoteShell: LinuxShellSession | null = null;
-    if (remote instanceof LinuxMachine) {
-      remoteShell = this.adoptWindowSize(remote.openShellSession({ user }));
-    }
-    this.sshStack.push({
-      device: this.device,
-      user: this.currentUser,
-      path: this.currentPath,
-      pausedShell,
-      onPop: () => {
-        if (remoteShell && remote instanceof LinuxMachine) {
-          remote.closeShellSession(remoteShell);
-        }
-        try { onPop(); } catch { /* swallow */ }
-      },
-      label,
-    });
-    this.device = remote;
-    this.shell = remoteShell;
-    this.currentUser = user;
-    this.currentPath = remoteShell?.cwd ?? remote.getCwd?.() ?? `/home/${user}`;
-    this.notify();
-  }
-
-  popRemoteDevice(): void {
-    const frame = this.sshStack.pop();
-    if (!frame) return;
-    try {
-      frame.onPop();
-    } catch {
-      /* ignore teardown errors */
-    }
-    this.addLine('logout');
-    this.addLine(`Connection to ${frame.label} closed.`);
-    this.device = frame.device;
-    this.shell = frame.pausedShell;
-    this.currentUser = frame.user;
-    this.currentPath = frame.path;
-    this.notify();
-  }
-
   get isInsideSshSession(): boolean {
-    return this.sshStack.length > 0 || this.hasActiveChild
-      || this.activeSubShell?.connection === 'ssh';
+    return this.activeSubShell?.connection === 'ssh';
   }
 
-  /**
-   * OpenSSH `ssh -J <hops>` ProxyJump support. Pushes one SSH stack
-   * frame per hop in order, resolving each `host` to a local Equipment
-   * via the SSH-LAN registry. Returns `false` (and rolls back) if any
-   * hop fails to resolve.
-   *
-   * For the simulator, "connecting" to a LAN-local device is the same
-   * as pushing it on the stack — the underlying SSH session is what
-   * `connectAndEnterSsh` opens afterwards for the final hop. Each hop
-   * defaults its user to the previous hop's user when omitted.
-   */
   private openSshForwards(
     session: SshSession,
     client: SshClientHandle | null,
@@ -3391,49 +2916,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
-   * Wire OpenSSH `-A` agent forwarding: copy the local device's
-   * SshAgent into the remote device's SshAgent. Both ends look up
-   * their agent via the executor (LinuxCommandExecutor exposes
-   * `sshAgent`). Returns null when forwarding is disabled or either
-   * end is not a fully-fledged LinuxPC.
-   */
-  private installAgentForwarding(
-    remoteDeviceRaw: Equipment,
-    meta: { forwardAgent?: boolean },
-  ): SshAgentForwarding | null {
-    if (!meta.forwardAgent) return null;
-    const localExec = (this.getLocalDevice() as unknown as {
-      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
-    }).executor;
-    const remoteExec = (remoteDeviceRaw as unknown as {
-      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
-    }).executor;
-    if (!localExec?.sshAgent || !remoteExec?.sshAgent) return null;
-    const fwd = new SshAgentForwarding(localExec.sshAgent, remoteExec.sshAgent);
-    fwd.attach();
-    return fwd;
-  }
-
-  pushSshChain(hops: readonly ProxyHop[]): boolean {
-    const pushed: number[] = [];
-    let inheritedUser = this.currentUser;
-    for (const hop of hops) {
-      const remote = findLinuxMachineByIp(hop.host);
-      if (!remote) {
-        // Roll back any successful hops so the stack is unchanged.
-        for (let i = 0; i < pushed.length; i++) this.popRemoteDevice();
-        return false;
-      }
-      const user = hop.user ?? inheritedUser;
-      const label = `${user}@${hop.host}`;
-      this.pushRemoteDevice(remote, user, label, () => undefined);
-      pushed.push(1);
-      inheritedUser = user;
-    }
-    return true;
-  }
-
-  /**
    * Snapshot of the SSH stack for the UI layer. Returns one entry per
    * pushed remote, oldest first; `current` is the active host name. The
    * UI uses this to render an "SSH connected to <host>" banner so the
@@ -3445,12 +2927,7 @@ export class LinuxTerminalSession extends TerminalSession {
     chain: readonly { host: string; user: string }[];
     current: string | null;
   } {
-    const chain = this.sshStack.map((f) => {
-      const at = f.label.indexOf('@');
-      return at >= 0
-        ? { host: f.label.slice(at + 1), user: f.label.slice(0, at) }
-        : { host: f.label, user: f.user };
-    });
+    const chain = this.sshTrail;
     const current = chain.length > 0 ? chain[chain.length - 1].host : null;
     return {
       active: chain.length > 0,
@@ -3462,91 +2939,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
 // ── IP → device resolver (BRD SSH-04) ───────────────────────────
 
-/**
- * Look up the LinuxMachine whose any port is bound to the given IPv4.
- * Used by `connectAndEnterSsh` to switch the terminal's `device` to the
- * remote machine without touching the simulated SSH transport. Returns
- * null when the target is not a Linux device managed by the sandbox.
- */
 function homeDirectoryOn(device: Equipment, user: string): string {
   return device instanceof LinuxMachine
     ? device.homeDirectoryOf(user)
     : user === 'root' ? '/root' : `/home/${user}`;
-}
-
-function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
-  const eq = findEquipmentByIp(targetIp);
-  if (eq && eq instanceof LinuxMachine) return eq;
-  return null;
-}
-
-/**
- * Compose the post-authentication banner the way OpenSSH does (with PAM
- * configured the Ubuntu way):
- *   1. "Welcome to Ubuntu <pretty-name> (GNU/Linux <release> <arch>)"
- *   2. Contents of /etc/motd (if non-empty)
- *   3. Blank line separator
- *   4. "Last login: …" pulled from the in-memory lastlog registry
- *
- * Honours `~/.hushlogin`: if the user's home contains it, no banner is
- * emitted — matches PAM behaviour exactly.
- */
-function composeLoginBanner(remote: Equipment, user: string): string[] {
-  const exec = (remote as unknown as {
-    executor?: {
-      vfs?: { readFile: (p: string) => string | null };
-      lastlog?: {
-        getPrevious: (u: string) => { when: number; sourceHost: string; tty: string } | undefined;
-      };
-      userMgr?: { getUser: (u: string) => { home?: string } | undefined };
-    };
-  }).executor;
-  if (!exec?.vfs) return [];
-
-  const home = exec.userMgr?.getUser(user)?.home ?? `/home/${user}`;
-  // /etc/nologin: refuse non-root logins. Conventional Ubuntu honors it via PAM.
-  // /etc/motd:    static-motd. /etc/legal: not surfaced by default sshd.
-  // ~/.hushlogin: suppress all banner content (motd + lastlog).
-  const hushLogin = exec.vfs.readFile(`${home}/.hushlogin`);
-  if (hushLogin !== null) return [];
-
-  const lines: string[] = [];
-
-  // Single "Welcome to …" line — sourced ONCE.
-  //
-  // Ubuntu provisions /etc/motd at LinuxMachine setup time (LinuxMachine.ts:
-  // ~line 160) with the canonical line baked in. If the machine has a
-  // motd, use that as the authoritative source. If not, synthesise a
-  // fallback from /etc/os-release so unconfigured machines still get
-  // a banner. Either way the line appears exactly once
-  // (terminal_gap.md §9.2).
-  const motdRaw = (exec.vfs.readFile('/etc/motd') ?? '').replace(/\n+$/, '');
-  if (motdRaw.trim().length > 0) {
-    for (const m of motdRaw.split('\n')) lines.push(m);
-  } else {
-    const osRelease = exec.vfs.readFile('/etc/os-release') ?? '';
-    const pretty = /PRETTY_NAME="([^"]+)"/.exec(osRelease)?.[1] ?? 'Ubuntu 22.04 LTS';
-    lines.push(`Welcome to ${pretty} (GNU/Linux 5.15.0-91-generic x86_64)`);
-  }
-
-  const prev = exec.lastlog?.getPrevious(user);
-  if (prev) {
-    lines.push('');
-    // Ctime format identical to pam_lastlog.so.
-    const d = new Date(prev.when);
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ctime =
-      `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ` +
-      `${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:` +
-      `${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} ` +
-      `${d.getUTCFullYear()}`;
-    lines.push(`Last login: ${ctime} from ${prev.sourceHost}`);
-  }
-
-  return lines;
 }
 
 // ── ssh CLI argument parser ─────────────────────────────────────
@@ -3624,14 +3020,6 @@ export function shouldExecuteSegment(
   if (connector === ';') return true;
   if (connector === '&&') return previousExitCode === 0;
   return previousExitCode !== 0;
-}
-
-function hasSftpError(output: readonly string[]): boolean {
-  return output.some((line) =>
-    /Couldn't|No such file|Permission denied|Failure|invalid|command not found/i.test(
-      line,
-    ),
-  );
 }
 
 function dialConnector(device: unknown): TcpConnector {

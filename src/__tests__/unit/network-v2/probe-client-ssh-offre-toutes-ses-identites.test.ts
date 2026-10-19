@@ -38,6 +38,8 @@ describe('un poste qui porte deux identites', () => {
   });
 
   it('sans -i, la deuxieme identite est offerte apres le refus de la premiere', async () => {
+    await server.executeCommand('sudo sh -c "echo LogLevel VERBOSE >> /etc/ssh/sshd_config"');
+    await server.executeCommand('sudo systemctl reload ssh');
     expect(await pc.executeCommand(`ssh ${target}`)).toContain('lsrv');
     expect(await server.executeCommand('sudo tail -30 /var/log/auth.log')).toMatch(/Failed publickey[\s\S]*Accepted publickey/);
   });

@@ -11,6 +11,7 @@
  *   - invokeBlock to evaluate a PSScriptBlock with a given $_ and named vars
  */
 
+import type { FunctionSignature } from '@/powershell/help/FunctionHelp';
 import type { PSValue, PSEnvironment } from '@/powershell/runtime/PSEnvironment';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
@@ -25,6 +26,7 @@ export interface IRuntimeRef {
   takeNativeResult(): NativeResult | null;
   /** Execute code and return the last PSValue (no stringification). Used by IEX. */
   executeForValue(code: string): PSValue;
+  invokeScriptText(code: string, env?: PSEnvironment): PSValue[];
   getVariable(name: string): PSValue;
   setVariable(name: string, value: PSValue): void;
   /** Evaluate a script block in a child scope of env. */
@@ -71,10 +73,19 @@ export interface IRuntimeRef {
   /** Enumerate the host's environment variables (for `Get-ChildItem Env:`). */
   listEnvVars(): Array<{ Name: string; Value: string }>;
   getFunctionSource(name: string): string | null;
+  getFunctionBlock(name: string): PSValue;
+  getFunctionLeadingComment(name: string): string | null;
+  getFunctionSignature(name: string): FunctionSignature | null;
+  defineFunction(name: string, block: PSValue): boolean;
+  removeFunction(name: string): boolean;
   /** Names of the functions this session has defined, for Get-Command. */
   listFunctions(): readonly string[];
   /** The session's command history, newest last, for Get-History. */
   listHistory(): readonly string[];
+  listUserAliases(): ReadonlyArray<{ name: string; definition: string; description: string }>;
+  hasAlias(name: string): boolean;
+  defineAlias(name: string, definition: string, description: string): void;
+  removeAlias(name: string): boolean;
   /** A cmdlet's declared parameter names — the same list `-<Tab>` offers. */
   getCommandParameters(name: string): string[];
   psCast(val: PSValue, typeName: string): PSValue;
@@ -106,8 +117,23 @@ export interface CmdletContext {
    */
   emit(val: PSValue): void;
 
+  /** Write to the warning stream; `$WarningPreference` / `-WarningAction` decide what happens. */
+  emitWarning(msg: string): void;
+
+  /** Write to the verbose stream; shown only when `$VerbosePreference` / `-Verbose` allow it. */
+  emitVerbose(msg: string): void;
+
+  /** Write to the debug stream; shown only when `$DebugPreference` / `-Debug` allow it. */
+  emitDebug(msg: string): void;
+
+  /** Write to the information stream (`Write-Information`). */
+  emitInformation(data: PSValue, tags: readonly string[]): void;
+
   /** Write an error message (non-terminating). */
   emitError(msg: string): void;
+
+  /** Write a ready-made ErrorRecord to the error stream (non-terminating). */
+  emitErrorRecord(record: PSValue): void;
 
   /**
    * Evaluate a script block with a given $_ binding and optional named vars.

@@ -1,5 +1,6 @@
 import { IPv6Address } from '@/network/core/types';
 import type { NetstatOptions } from './NetstatArguments';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface NetstatInternetHost {
   procFile(path: string): string | null;
@@ -127,10 +128,10 @@ function trailer(
   let text = '';
   if (options.extended > 1) {
     const user = options.numericUsers ? null : host.userName(line.uid);
-    text += ` ${(user ?? String(line.uid)).padEnd(10)} `;
-    text += String(line.inode).padEnd(10);
+    text += ` ${padToWidth(user ?? String(line.uid), 10)} `;
+    text += padToWidth(String(line.inode), 10);
   }
-  if (options.programs) text += ` ${(host.programOf(line.inode) ?? '-').padEnd(PROGRAM_NAME_WIDTH)}`;
+  if (options.programs) text += ` ${padToWidth(host.programOf(line.inode) ?? '-', PROGRAM_NAME_WIDTH)}`;
   if (options.timers) text += ` ${timerText(line, tcp)}`;
   return `${text}\n`;
 }
@@ -141,8 +142,8 @@ function tcpRow(
   const local = endpointText(line.localAddress, line.localPort, line.ipv6, 'tcp', options, host);
   const remote = endpointText(line.remoteAddress, line.remotePort, line.ipv6, 'tcp', options, host);
   const state = TCP_STATE_NAMES[line.state] ?? '';
-  return `${protocol.padEnd(4)}  ${String(line.receiveQueue).padStart(6)} ${String(line.transmitQueue).padStart(6)} `
-    + `${local.padEnd(Math.max(23, local.length))} ${remote.padEnd(Math.max(23, remote.length))} ${state.padEnd(11)}`
+  return `${padToWidth(protocol, 4)}  ${padToWidth(String(line.receiveQueue), 6, 'right')} ${padToWidth(String(line.transmitQueue), 6, 'right')} `
+    + `${padToWidth(local, Math.max(23, local.length))} ${padToWidth(remote, Math.max(23, remote.length))} ${padToWidth(state, 11)}`
     + trailer(line, true, options, host);
 }
 
@@ -151,8 +152,8 @@ function datagramRow(
 ): string {
   const local = endpointText(line.localAddress, line.localPort, line.ipv6, family, options, host);
   const remote = endpointText(line.remoteAddress, line.remotePort, line.ipv6, family, options, host);
-  return `${protocol.padEnd(5)} ${String(line.receiveQueue).padStart(6)} ${String(line.transmitQueue).padStart(6)} `
-    + `${local.padEnd(23)} ${remote.padEnd(23)} ${state.padEnd(11)}`
+  return `${padToWidth(protocol, 5)} ${padToWidth(String(line.receiveQueue), 6, 'right')} ${padToWidth(String(line.transmitQueue), 6, 'right')} `
+    + `${padToWidth(local, 23)} ${padToWidth(remote, 23)} ${padToWidth(state, 11)}`
     + trailer(line, false, options, host);
 }
 
@@ -201,7 +202,7 @@ export function renderInternetConnections(
     text += options.all ? '(servers and established)' : options.listening ? '(only servers)' : '(w/o servers)';
     text += '\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ';
     if (options.extended > 1) text += ' User       Inode     ';
-    if (options.programs) text += ` ${'PID/Program name'.padEnd(PROGRAM_NAME_WIDTH)}`;
+    if (options.programs) text += ` ${padToWidth('PID/Program name', PROGRAM_NAME_WIDTH)}`;
     if (options.timers) text += ' Timer';
     text += '\n';
   }
@@ -266,8 +267,8 @@ function rawRow(
 ): string {
   const local = endpointText(line.localAddress, line.localPort, line.ipv6, 'raw', options, host);
   const remote = endpointText(line.remoteAddress, line.remotePort, line.ipv6, 'raw', options, host);
-  return `${protocol.padEnd(4)}  ${String(line.receiveQueue).padStart(6)} ${String(line.transmitQueue).padStart(6)} `
-    + `${local.padEnd(23)} ${remote.padEnd(23)} ${String(line.state).padEnd(11)}${trailer(line, false, options, host)}`;
+  return `${padToWidth(protocol, 4)}  ${padToWidth(String(line.receiveQueue), 6, 'right')} ${padToWidth(String(line.transmitQueue), 6, 'right')} `
+    + `${padToWidth(local, 23)} ${padToWidth(remote, 23)} ${padToWidth(String(line.state), 11)}${trailer(line, false, options, host)}`;
 }
 
 export function renderUnixSockets(
@@ -276,7 +277,7 @@ export function renderUnixSockets(
   let text = 'Active UNIX domain sockets ';
   text += options.all ? '(servers and established)' : options.listening ? '(only servers)' : '(w/o servers)';
   text += '\nProto RefCnt Flags       Type       State         I-Node  ';
-  if (options.programs) text += ` ${'PID/Program name'.padEnd(PROGRAM_NAME_WIDTH)}`;
+  if (options.programs) text += ` ${padToWidth('PID/Program name', PROGRAM_NAME_WIDTH)}`;
   text += ' Path\n';
   if (host.procFile('/proc/net/unix') === null && options.argumentCount > 0) {
     return { text, stderr: programNotice + missing('AF UNIX'), exitCode: 1 };

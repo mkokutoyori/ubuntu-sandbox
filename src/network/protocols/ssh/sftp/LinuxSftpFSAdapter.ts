@@ -104,25 +104,25 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
     );
     return success
       ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: mkdir failed` });
+      : err({ kind: 'IO_ERROR', message: `${path}: ${this.mkdirRefusal(path)}` });
   }
 
   deleteFile(path: string): Result<void> {
     return this.vfs.deleteFile(path)
       ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: rm failed` });
+      : err({ kind: 'IO_ERROR', message: `${path}: ${this.removalRefusal(path, false)}` });
   }
 
   rmdir(path: string): Result<void> {
     return this.vfs.rmdir(path)
       ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: rmdir failed` });
+      : err({ kind: 'IO_ERROR', message: `${path}: ${this.removalRefusal(path, true)}` });
   }
 
   rename(src: string, dst: string): Result<void> {
     return this.vfs.rename(src, dst)
       ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `rename ${src} -> ${dst} failed` });
+      : err({ kind: 'IO_ERROR', message: `rename ${src} -> ${dst}: ${this.renameRefusal(src, dst)}` });
   }
 
   setPermissions(path: string, mode: number): Result<void> {
@@ -131,10 +131,43 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
       : err({ kind: 'IO_ERROR', message: `${path}: chmod failed` });
   }
 
+  setTimes(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void> {
+    return this.vfs.setTimes(path, times)
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${path}: utimes failed` });
+  }
+
   setOwner(path: string, uid: number, gid: number): Result<void> {
     return this.vfs.chown(path, uid, gid)
       ? ok(undefined)
       : err({ kind: 'IO_ERROR', message: `${path}: chown failed` });
+  }
+
+  private parentOf(path: string): string {
+    return path.replace(/\/[^/]+\/?$/, '') || '/';
+  }
+
+  private mkdirRefusal(path: string): string {
+    if (this.vfs.exists(path)) return 'File exists';
+    const parent = this.parentOf(path);
+    if (!this.vfs.exists(parent)) return 'No such file or directory';
+    if (this.vfs.getType(parent, true) !== 'directory') return 'Not a directory';
+    return 'Permission denied';
+  }
+
+  private removalRefusal(path: string, directory: boolean): string {
+    const type = this.vfs.getType(path, false);
+    if (type === null) return 'No such file or directory';
+    if (directory && type !== 'directory') return 'Not a directory';
+    if (!directory && type === 'directory') return 'Is a directory';
+    if (directory) return 'Directory not empty';
+    return 'Permission denied';
+  }
+
+  private renameRefusal(src: string, dst: string): string {
+    if (this.vfs.getType(src, false) === null) return 'No such file or directory';
+    if (!this.vfs.exists(this.parentOf(dst))) return 'No such file or directory';
+    return 'Permission denied';
   }
 
   // ── ACLs ────────────────────────────────────────────────────────────

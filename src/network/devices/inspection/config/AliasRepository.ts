@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 /**
  * AliasRepository — config-driven CLI alias state (Lot C,
  * docs/DESIGN-DEVICE-STATE-INSPECTION.md).
@@ -110,12 +111,12 @@ export class AliasRepository {
     const exec = new Map<string, string>(this.defaultExec());
     for (const [k, v] of this.user.get('exec') ?? []) exec.set(k, v);
     lines.push('Exec mode aliases:');
-    for (const [k, v] of exec) lines.push(`  ${k.padEnd(20)}${v}`);
+    for (const [k, v] of exec) lines.push(`  ${padToWidth(k, 20)}${v}`);
     for (const mode of ['configure', 'interface', 'line', 'router'] as AliasMode[]) {
       const m = this.user.get(mode);
       if (!m || m.size === 0) continue;
       lines.push(`${mode.charAt(0).toUpperCase() + mode.slice(1)} mode aliases:`);
-      for (const [k, v] of m) lines.push(`  ${k.padEnd(20)}${v}`);
+      for (const [k, v] of m) lines.push(`  ${padToWidth(k, 20)}${v}`);
     }
     return lines.join('\n');
   }

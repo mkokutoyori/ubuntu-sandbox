@@ -3,6 +3,7 @@
  * any Windows system providers. Called by PSInterpreter and PowerShellExecutor.
  */
 
+import { GetAliasCmdlet, NewAliasCmdlet, SetAliasCmdlet, RemoveAliasCmdlet } from './AliasCmdlets';
 import {
   GetNetLbfoTeamCmdlet, NewNetLbfoTeamCmdlet, SetNetLbfoTeamCmdlet, RemoveNetLbfoTeamCmdlet,
   GetNetLbfoTeamMemberCmdlet, GetNetLbfoTeamNicCmdlet, AddNetLbfoTeamMemberCmdlet,
@@ -11,6 +12,7 @@ import {
   RemoveNetLbfoTeamMemberCmdlet,
 } from './NetLbfoCmdlets';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
+import { JoinStringCmdlet, TestJsonCmdlet } from './CoreEditionCmdlets';
 import {
   WriteOutputCmdlet, WriteHostCmdlet, WriteErrorCmdlet,
   WriteWarningCmdlet, WriteVerboseCmdlet,
@@ -35,7 +37,7 @@ import {
 } from './ConversionCmdlets';
 import {
   GetDateCmdlet, SetDateCmdlet, NewTimespanCmdlet, StartSleepCmdlet,
-  GetTimeZoneCmdlet, SetTimeZoneCmdlet,
+  GetTimeZoneCmdlet, SetTimeZoneCmdlet, GetCultureCmdlet, SetCultureCmdlet,
   MeasureCommandCmdlet,
 } from './DateTimeCmdlets';
 import {
@@ -50,12 +52,12 @@ import {
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
-  ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
+  ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
-  GetAliasCmdlet, GetPSProviderCmdlet,
+  GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
 import { AddMemberCmdlet } from './AddMemberCmdlet';
@@ -80,7 +82,7 @@ import {
   GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetIPInterfaceCmdlet, GetNetNeighborCmdlet,
   NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
-  GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
+  GetNetIPConfigurationCmdlet, GetNetRouteCmdlet, GetNetPrefixPolicyCmdlet,
   GetNetTCPConnectionCmdlet, GetNetUDPEndpointCmdlet, HostnameCmdlet, WhoamiCmdlet,
   NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
   NewNetRouteCmdlet, RemoveNetRouteCmdlet,
@@ -275,9 +277,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new WriteErrorCmdlet());
   registry.register(new WriteWarningCmdlet());
   registry.register(new WriteVerboseCmdlet());
-  registry.register(WriteDebugCmdlet);
+  registry.register(new WriteDebugCmdlet());
   registry.register(WriteProgressCmdlet);
-  registry.register(WriteInformationCmdlet);
+  registry.register(new WriteInformationCmdlet());
   registry.register(new OutNullCmdlet());
   registry.register(new OutStringCmdlet());
   registry.register(new OutHostCmdlet());
@@ -307,6 +309,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new FormatWideCmdlet());
   registry.register(new FormatCustomCmdlet());
   registry.register(new GetMemberCmdlet());
+  registry.register(new JoinStringCmdlet());
+  registry.register(new TestJsonCmdlet());
 
   // ── Conversion ────────────────────────────────────────────────────────────
   registry.register(new ConvertToJsonCmdlet());
@@ -320,6 +324,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetDateCmdlet());
   registry.register(new GetTimeZoneCmdlet());
   registry.register(new SetTimeZoneCmdlet());
+  registry.register(new GetCultureCmdlet());
+  registry.register(new SetCultureCmdlet());
   registry.register(new SetDateCmdlet());
   registry.register(new NewTimespanCmdlet());
   registry.register(new StartSleepCmdlet());
@@ -364,6 +370,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new InvokeExpressionCmdlet());
   registry.register(new ConvertToSecureStringCmdlet());
   registry.register(new ReadHostCmdlet());
+  registry.register(new GetHostCmdlet());
   registry.register(new GetHelpCmdlet());
   registry.register(new GetCommandCmdlet());
   registry.register(new GetModuleCmdlet());
@@ -382,6 +389,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RemovePSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
   registry.register(new GetAliasCmdlet());
+  registry.register(new NewAliasCmdlet());
+  registry.register(new SetAliasCmdlet());
+  registry.register(new RemoveAliasCmdlet());
   registry.register(new GetPSProviderCmdlet());
 
   // ── Services (provider-backed) ────────────────────────────────────────────
@@ -438,6 +448,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new InvokeWebRequestCmdlet());
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
+  registry.register(new GetNetPrefixPolicyCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
   registry.register(new GetNetUDPEndpointCmdlet());
   registry.register(new GetNetNeighborCmdlet());

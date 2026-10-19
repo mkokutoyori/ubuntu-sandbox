@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 /**
  * CpuSpec — domain model of a host's central processing unit.
  *
@@ -127,7 +128,7 @@ export class CpuSpec {
   /** Render the `lscpu` report. */
   toLscpu(): string {
     const row = (label: string, value: string): string =>
-      label.padEnd(LSCPU_LABEL_WIDTH) + value;
+      padToWidth(label, LSCPU_LABEL_WIDTH) + value;
     return [
       row('Architecture:', this.architecture),
       row('CPU op-mode(s):', '32-bit, 64-bit'),
@@ -155,7 +156,7 @@ export class CpuSpec {
       const physicalId = Math.floor(cpu / this.siblingsPerSocket);
       const coreId = Math.floor((cpu % this.siblingsPerSocket) / this.threadsPerCore);
       const field = (key: string, value: string): string =>
-        `${key.padEnd(16)}: ${value}`;
+        `${padToWidth(key, 16)}: ${value}`;
       blocks.push([
         field('processor', String(cpu)),
         field('vendor_id', this.vendor),

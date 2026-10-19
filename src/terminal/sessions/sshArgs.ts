@@ -64,7 +64,11 @@ export interface ParsedSshArgs {
   readonly requestTty?: 'yes' | 'no' | 'force';
   readonly authentication: SshClientAuthentication;
   readonly algorithms: SshAlgorithmPreferences;
+  readonly loginName: string | null;
+  readonly quiet: boolean;
 }
+
+const SSH_VALUE_OPTIONS_IGNORED = new Set(['b', 'c', 'e', 'm', 'w', 'B', 'E', 'F', 'I', 'O', 'Q', 'S', 'W']);
 
 export interface ProxyHop {
   readonly user: string | null;
@@ -108,6 +112,8 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
   let forwardAgent = false;
   let requestTty: 'yes' | 'no' | 'force' | undefined;
   let host: string | null = null;
+  let loginName: string | null = null;
+  let quiet = false;
   const commandTokens: string[] = [];
   const optionValues: string[] = [];
 
@@ -135,6 +141,12 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     } else if (arg === '-D' && i + 1 < args.length) {
       const fwd = SshPortForward.parse('dynamic', args[++i].trim());
       if (fwd) dynamicForwards.push(fwd);
+    } else if (arg === '-l' && i + 1 < args.length) {
+      loginName = args[++i];
+    } else if (arg === '-q') {
+      quiet = true;
+    } else if (arg.length === 2 && arg[0] === '-' && SSH_VALUE_OPTIONS_IGNORED.has(arg[1]) && i + 1 < args.length) {
+      i++;
     } else if (arg === '-A') {
       forwardAgent = true;
     } else if (arg === '-t') {
@@ -193,6 +205,8 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     requestTty: requestTty ?? ttyFromOption,
     authentication: sshClientAuthentication(optionValues),
     algorithms: sshClientAlgorithms(optionValues),
+    loginName,
+    quiet,
   };
 }
 
@@ -204,29 +218,38 @@ export interface ParsedSshLine {
   readonly quiet: boolean;
   readonly algorithms: SshAlgorithmPreferences;
   readonly strict: StrictHostKeyChecking | undefined;
+  readonly identityFiles: readonly string[];
+  readonly authentication: SshClientAuthentication;
 }
 
-export function parseSshCommandLine(line: string): ParsedSshLine | null {
+export function parseSshCommandLine(
+  line: string, commandWord: RegExp = /^ssh(\s|$)/,
+): ParsedSshLine | null {
   const trimmed = line.trim();
-  if (!/^ssh(\s|$)/.test(trimmed)) return null;
+  if (!commandWord.test(trimmed)) return null;
   const tokens = trimmed.split(/\s+/).slice(1);
 
-  const login = tokens.indexOf('-l');
-  const loginName = login >= 0 ? tokens[login + 1] ?? null : null;
-  const args = login >= 0 ? [...tokens.slice(0, login), ...tokens.slice(login + 2)] : tokens;
-
-  const parsed = parseSshArgs(args);
-  if (parsed === null) return { user: null, host: '', port: 22, command: null, quiet: false, algorithms: {}, strict: undefined };
+  const parsed = parseSshArgs(tokens);
+  if (parsed === null) {
+    return {
+      user: null, host: '', port: 22, command: null, quiet: false, algorithms: {}, strict: undefined,
+      identityFiles: [], authentication: sshClientAuthentication([]),
+    };
+  }
   const at = parsed.userAtHost.indexOf('@');
   const host = at >= 0 ? parsed.userAtHost.slice(at + 1) : parsed.userAtHost;
   if (!/^[A-Za-z0-9._-]+$/.test(host)) return null;
   return {
-    user: at >= 0 ? parsed.userAtHost.slice(0, at) : loginName,
+    user: at >= 0 ? parsed.userAtHost.slice(0, at) : parsed.loginName,
     host,
     port: parsed.port,
     command: parsed.command,
-    quiet: args.slice(0, args.indexOf(parsed.userAtHost)).includes('-q'),
+    quiet: parsed.quiet,
     algorithms: parsed.algorithms,
     strict: parsed.strict,
+    identityFiles: parsed.identityFiles,
+    authentication: parsed.authentication,
   };
 }
+
+export const WINDOWS_SSH_COMMAND_WORD = /^ssh(\.exe)?(\s|$)/i;

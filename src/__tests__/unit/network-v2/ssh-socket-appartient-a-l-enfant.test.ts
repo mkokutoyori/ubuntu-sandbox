@@ -94,7 +94,7 @@ async function connectedLab(): Promise<Lab> {
   t.setInput('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2');
   t.handleKey(key('Enter'));
   await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf('secret');
     t.handleKey(key('Enter'));
     await flush();

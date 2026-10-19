@@ -1,6 +1,9 @@
-import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
+import {
+  TYPE4_DEPRECATION_WARNING, invalidEncryptedSecretMessage, isWellFormedSecret,
+} from './ciscoPasswordVerify';
 
 const MODES = ['config'] as const;
 
@@ -9,7 +12,7 @@ export const ACCESS_CLASS_RANGE: readonly [number, number] = [1, 199];
 export const USER_MAXLINKS_RANGE: readonly [number, number] = [0, 255];
 
 export type UsernameSecretAlgo =
-  'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+  'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7' | 'type-4';
 
 export interface UsernameSettings {
   privilege?: number;
@@ -35,17 +38,18 @@ export interface UsernameHost {
 const ligne = (nom: string, description: string): ArgumentSpec =>
   ({ name: nom, type: 'REST', literal: 'LINE', description });
 
-const CHIFFRES_SECRET: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: '0', description: 'Specifies an UNENCRYPTED secret will follow' },
-  { keyword: '5', description: 'Specifies a MD5 HASHED secret will follow' },
-  { keyword: '8', description: 'Specifies a PBKDF2 HASHED secret will follow' },
-  { keyword: '9', description: 'Specifies a SCRYPT HASHED secret will follow' },
+const CHIFFRES_SECRET: readonly EnumValue[] = [
+  { keyword: '0', description: 'Specifies an UNENCRYPTED secret will follow', thenWord: 'The UNENCRYPTED (cleartext) user secret' },
+  { keyword: '4', description: 'Specifies a SHA-256 HASHED secret will follow (deprecated)', thenWord: 'The HASHED user secret' },
+  { keyword: '5', description: 'Specifies a MD5 HASHED secret will follow', thenWord: 'The HASHED user secret' },
+  { keyword: '8', description: 'Specifies a PBKDF2 HASHED secret will follow', thenWord: 'The HASHED user secret' },
+  { keyword: '9', description: 'Specifies a SCRYPT HASHED secret will follow', thenWord: 'The HASHED user secret' },
   { keyword: 'LINE', description: 'The UNENCRYPTED (cleartext) user secret' },
 ];
 
-const CHIFFRES_PASSWORD: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: '0', description: 'Specifies an UNENCRYPTED password will follow' },
-  { keyword: '7', description: 'Specifies a HIDDEN password will follow' },
+const CHIFFRES_PASSWORD: readonly EnumValue[] = [
+  { keyword: '0', description: 'Specifies an UNENCRYPTED password will follow', thenWord: 'The UNENCRYPTED (cleartext) user password' },
+  { keyword: '7', description: 'Specifies a HIDDEN password will follow', thenWord: 'The HIDDEN user password' },
   { keyword: 'LINE', description: 'The UNENCRYPTED (cleartext) user password' },
 ];
 
@@ -115,8 +119,9 @@ export const USERNAME_OPTIONS: readonly OptionSpec[] = [
 ];
 
 const ALGOS_CONDENSE: Readonly<Record<string, UsernameSecretAlgo>> = {
-  0: 'plain', 4: 'sha256', 5: 'md5', 8: 'sha256', 9: 'scrypt',
+  0: 'plain', 4: 'type-4', 5: 'md5', 8: 'sha256', 9: 'scrypt',
 };
+
 
 interface SecretLu {
   readonly valeur: string;
@@ -130,6 +135,7 @@ function lireSecret(brut: string, demande?: UsernameSecretAlgo): SecretLu {
   const algo = ALGOS_CONDENSE[tete];
   if (algo !== undefined && coupe !== -1) {
     const valeur = brut.slice(coupe + 1);
+    if (!isWellFormedSecret(tete, valeur)) throw new CliSecretRefused(tete);
     return algo === 'plain' ? { valeur, algo, clair: valeur } : { valeur, algo };
   }
   return { valeur: brut, algo: demande ?? 'md5', clair: brut };
@@ -143,6 +149,12 @@ function lirePassword(brut: string): SecretLu {
   }
   const valeur = tete === '0' && coupe !== -1 ? brut.slice(coupe + 1) : brut;
   return { valeur, algo: 'plain-password', clair: valeur };
+}
+
+export class CliSecretRefused extends Error {
+  constructor(readonly type: string) {
+    super('The secret you entered is not a valid encrypted secret.');
+  }
 }
 
 const AVERTISSEMENT_TYPE_0 =
@@ -161,9 +173,17 @@ export function usernameSpecs(ctx: () => UsernameHost): CommandSpec[] {
     run: (_session, args) => {
       const hote = ctx();
       const demande = args['algorithm-type'] as UsernameSecretAlgo | undefined;
-      const lu = args.secret !== undefined ? lireSecret(args.secret, demande)
-        : args.password !== undefined ? lirePassword(args.password)
-          : undefined;
+      let lu: SecretLu | undefined;
+      try {
+        lu = args.secret !== undefined ? lireSecret(args.secret, demande)
+          : args.password !== undefined ? lirePassword(args.password)
+            : undefined;
+      } catch (error) {
+        if (error instanceof CliSecretRefused) {
+          return invalidEncryptedSecretMessage(error.type);
+        }
+        throw error;
+      }
 
       if (args.view !== undefined && !hote.viewExists(args.view)) {
         return `%Error: View ${args.view} is not present in the system`;
@@ -190,6 +210,7 @@ export function usernameSpecs(ctx: () => UsernameHost): CommandSpec[] {
         maxLinks: args['user-maxlinks'] === undefined
           ? undefined : Number(args['user-maxlinks']),
       });
+      if (lu?.algo === 'type-4') return TYPE4_DEPRECATION_WARNING;
       return lu?.algo === 'plain-password' && lu.clair !== undefined
         ? AVERTISSEMENT_TYPE_0 : '';
     },

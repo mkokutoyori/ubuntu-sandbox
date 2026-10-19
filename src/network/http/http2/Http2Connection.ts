@@ -8,23 +8,14 @@ import {
 import { HpackContext, encodeHeaderBlock, decodeHeaderBlock } from './Hpack';
 import type { IEventBus } from '@/events/EventBus';
 import { randomHttpConnectionId } from '../events';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 // RFC 9113 §3.4 — h2c "prior knowledge": the client sends this fixed
 // 24-octet preface immediately, no HTTP/1.1 Upgrade dance.
 const CONNECTION_PREFACE = 'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n';
 const DEFAULT_INITIAL_WINDOW = 65535;
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, c) => sum + c.length, 0);

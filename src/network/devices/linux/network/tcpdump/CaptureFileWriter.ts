@@ -1,5 +1,6 @@
 import type { CaptureFrame } from './CaptureFrame';
 import { serializeCaptureFile, type CaptureFileHeader } from './CaptureFileFormat';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const PCAP_FILE_HEADER_BYTES = 24;
 const PCAP_RECORD_HEADER_BYTES = 16;
@@ -32,7 +33,7 @@ export function strftime(template: string, date: Date): string {
       case 'y': return two(date.getFullYear() % 100);
       case 'm': return two(date.getMonth() + 1);
       case 'd': return two(date.getDate());
-      case 'e': return String(date.getDate()).padStart(2, ' ');
+      case 'e': return padToWidth(String(date.getDate()), 2, 'right');
       case 'H': return two(date.getHours());
       case 'M': return two(date.getMinutes());
       case 'S': return two(date.getSeconds());

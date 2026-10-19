@@ -48,7 +48,7 @@ async function sshedIn(): Promise<LinuxTerminalSession> {
   term.setPasswordBuf('alice');
   term.handleKey(key('Enter'));
   for (let i = 0; i < 20; i++) await wait(25);
-  expect(term.foreground.getPrompt(), 'the session must be up for this to measure anything').toMatch(/alice@/);
+  expect(term.getPrompt(), 'the session must be up for this to measure anything').toMatch(/alice@/);
   return term;
 }
 

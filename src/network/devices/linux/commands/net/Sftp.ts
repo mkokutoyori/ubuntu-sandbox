@@ -19,6 +19,7 @@ const SFTP_USAGE = 'usage: sftp [-46AaCfNpqrv] [-B buffer_size] [-b batchfile] [
 export const sftpCommand: LinuxCommand = {
   name: 'sftp',
   needsNetworkContext: true,
+  opensWireSession: true,
   readsStdin: true,
   manSection: 1,
   usage: SFTP_USAGE,

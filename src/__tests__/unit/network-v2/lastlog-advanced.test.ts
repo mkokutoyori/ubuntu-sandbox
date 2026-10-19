@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
-import { binaryStringToBytes } from '@/network/devices/linux/login/UtmpxRecord';
+import { binaryStringToBytes } from '@/crypto/encoding';
 import { LASTLOG_RECORD_SIZE } from '@/network/devices/linux/login/LastlogTool';
 import { LinuxLastlogRegistry, LASTLOG_PATH } from '@/network/devices/linux/LinuxLastlogRegistry';
 import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshServerContext';

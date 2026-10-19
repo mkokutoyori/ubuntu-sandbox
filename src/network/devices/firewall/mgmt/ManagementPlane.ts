@@ -1,4 +1,5 @@
 import type { IPv4Packet } from '../../../core/types';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import { withinMask, type AccessMatrix } from '../authz/AccessMatrix';
 import {
   adminAcceptsPublicKey, adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
@@ -38,6 +39,7 @@ export class ManagementPlane {
   private adminServer: AdminHttpServer | null = null;
   private ports: ManagementPorts = DEFAULT_MANAGEMENT_PORTS;
   private idleTimeoutMin = MANAGEMENT_IDLE_TIMEOUT_MIN;
+  private sshAlgorithmPreferences: SshAlgorithmPreferences = {};
   private httpsRedirect = true;
   private serverCertificate = 'self-sign';
   private expiry: PasswordExpiryPolicy = NO_PASSWORD_EXPIRY;
@@ -77,6 +79,12 @@ export class ManagementPlane {
     this.ports = withManagementPorts(this.ports, patch);
     this.cliServer?.refresh();
     this.adminServer?.refresh();
+  }
+
+  sshAlgorithms(): SshAlgorithmPreferences { return this.sshAlgorithmPreferences; }
+
+  setSshAlgorithms(algorithms: SshAlgorithmPreferences): void {
+    this.sshAlgorithmPreferences = algorithms;
   }
 
   idleTimeoutMs(): number { return this.idleTimeoutMin * 60_000; }

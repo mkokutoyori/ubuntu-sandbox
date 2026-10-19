@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import type { TcpStream } from '@/network/tcp/types';
-import { SshTransport, type SshTransportConfig } from '@/network/protocols/ssh/transport/SshTransport';
+import { SshTransport, eagerServerHostKey, type SshTransportConfig } from '@/network/protocols/ssh/transport/SshTransport';
 import { SshHostKey } from '@/network/protocols/ssh/SshHostKey';
 import { keygenPrivateKey } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes } from '@/crypto/encoding';
@@ -50,7 +50,7 @@ export async function lab(
   const wire: Uint8Array[] = [];
   const serverTransport = new SshTransport(serverSide, {
     role: 'server', identification: 'SSH-2.0-probe-server',
-    hostKeys: [{ publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey }],
+    hostKeys: [eagerServerHostKey(base64ToBytes(hostKey.publicKey), privateKey)],
     ...transports.server,
   });
   const clientTransport = new SshTransport(clientSide, { role: 'client', identification: 'SSH-2.0-probe-client', ...transports.client });

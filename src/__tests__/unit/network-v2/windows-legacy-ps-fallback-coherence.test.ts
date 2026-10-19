@@ -176,7 +176,7 @@ describe('legacy Get/Register-ScheduledTask share the schtasks store', () => {
     const ps = makeLivePs(pc);
     const psOut = await ps.execute('Get-ScheduledTask');
     const cmdOut = await pc.executeCommand('schtasks /query');
-    const psNames = [...psOut.matchAll(/^\\?\S*\s{2,}(\S[^ ]*(?: [^ ]+)*?)\s{2,}\S+\s*$/gm)]
+    const psNames = [...psOut.matchAll(/^\\?\S*\s+(\S[^ ]*(?: [^ ]+)*?)\s+\S+\s*$/gm)]
       .map((m) => m[1])
       .filter((n) => n && n !== 'TaskName' && !/^-+$/.test(n));
     for (const name of psNames) {

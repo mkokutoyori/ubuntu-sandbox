@@ -1,3 +1,4 @@
+import { VID_WILDCARD } from '../../../../layers/link/vlan/VlanId';
 import { IPAddress, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
 import { isMulticastIpv4 } from '@/network/core/ip';
 import type { CaptureFrame } from './CaptureFrame';
@@ -17,7 +18,7 @@ export type FilterResult = FilterOk | FilterErr;
 const MAC_RE = /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/;
 
 const SYNTAX_ERROR = "tcpdump: can't parse filter expression: syntax error";
-const MAXIMUM_VLAN_TAG = 4095;
+const MAXIMUM_VLAN_TAG = VID_WILDCARD;
 const MAXIMUM_PORT = 65535;
 
 export interface FilterNames {

@@ -20,6 +20,7 @@
 
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const SWAPON_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-s', aliases: ['--summary'], dest: 'summary', description: 'Display swap usage summary by device' },
@@ -78,7 +79,7 @@ export function runSwapon(ctx: LinuxCommandContext, args: string[]): { output: s
   return {
     output: [
       'NAME       TYPE      SIZE USED PRIO',
-      `/swapfile  file  ${size.padStart(8)} ${used.padStart(4)}   -2`,
+      `/swapfile  file  ${padToWidth(size, 8, 'right')} ${padToWidth(used, 4, 'right')}   -2`,
     ].join('\n'),
     exitCode: 0,
   };

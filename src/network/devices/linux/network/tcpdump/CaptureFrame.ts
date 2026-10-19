@@ -24,7 +24,7 @@ import {
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
-import { computeTcpChecksum } from '@/network/tcp/types';
+import { computeTcpChecksum, tcpFlagBits } from '@/network/tcp/types';
 import { computeUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
@@ -91,6 +91,7 @@ export interface CaptureFrame {
   icmpCode?: number;
   icmpId?: number;
   icmpSeq?: number;
+  icmpTimestamps?: { originate: number; receive: number; transmit: number };
   /** NDP target address: what an NS asks for and an NA answers with. */
   ndpTarget?: string;
   /** RFC 1191 §4 Next-Hop MTU, present on Fragmentation Needed (type 3, code 4). */
@@ -108,6 +109,7 @@ export interface CaptureFrame {
   tcpChecksumOk?: boolean;
   udpChecksum?: number;
   udpChecksumOk?: boolean;
+  udpChecksumComputed?: number;
   ipChecksum?: number;
   ipChecksumOk?: boolean;
   arpOp?: 'request' | 'reply';
@@ -257,15 +259,12 @@ function u32(value: number): number[] {
 function synthIcmpBytes(icmp: ICMPPacket): number[] {
   const type = icmpTypeNumber(icmp.icmpType);
   const header = [type, icmp.code & 0xff, ...u16(0), ...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff)];
+  if (icmp.timestamps) {
+    return [...header, ...u32(icmp.timestamps.originate), ...u32(icmp.timestamps.receive), ...u32(icmp.timestamps.transmit)];
+  }
   const data: number[] = [];
   for (let i = 0; i < (icmp.dataSize ?? 0); i++) data.push(i & 0xff);
   return [...header, ...data];
-}
-
-function tcpFlagsByte(flags: CaptureTcpFlags): number {
-  return (flags.cwr ? 0x80 : 0) | (flags.ece ? 0x40 : 0)
-    | (flags.urg ? 0x20 : 0) | (flags.ack ? 0x10 : 0) | (flags.psh ? 0x08 : 0)
-    | (flags.rst ? 0x04 : 0) | (flags.syn ? 0x02 : 0) | (flags.fin ? 0x01 : 0);
 }
 
 function synthTcpBytes(seg: TcpSegment): number[] {
@@ -274,7 +273,7 @@ function synthTcpBytes(seg: TcpSegment): number[] {
   return [
     ...u16(seg.sourcePort), ...u16(seg.destinationPort),
     ...u32(seg.sequence >>> 0), ...u32(seg.acknowledgement >>> 0),
-    dataOffset << 4, tcpFlagsByte(seg.flags),
+    dataOffset << 4, tcpFlagBits(seg.flags),
     ...u16(seg.window & 0xffff),
     ...u16(seg.checksum & 0xffff),
     ...u16(seg.urgentPointer & 0xffff),
@@ -540,6 +539,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.icmpCode = icmp.code;
     base.icmpId = icmp.id;
     base.icmpSeq = icmp.sequence;
+    base.icmpTimestamps = icmp.timestamps;
     base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
     base.icmpNextHopMtu = icmp.mtu;
     if (icmp.originalPacket) base.icmpOrig = decodeIcmpOrig(icmp.originalPacket);
@@ -572,8 +572,8 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.srcPort = udp.sourcePort;
     base.dstPort = udp.destinationPort;
     base.udpChecksum = udp.checksum;
-    base.udpChecksumOk = udp.checksum === 0
-      || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
+    base.udpChecksumComputed = computeUdpChecksum(udp, base.srcIp!, base.dstIp!);
+    base.udpChecksumOk = udp.checksum === 0 || base.udpChecksumComputed === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
     base.appPayload = appPayloadBytes(udp.payload);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
@@ -727,7 +727,7 @@ export function makeTcpFrame(
   const tcp = [
     ...u16(pkt.srcPort), ...u16(pkt.dstPort),
     ...u32(pkt.seq >>> 0), ...u32(pkt.ack >>> 0),
-    5 << 4, tcpFlagsByte(flags),
+    5 << 4, tcpFlagBits(flags),
     ...u16(0),
     ...u16(0),
     ...u16(0),

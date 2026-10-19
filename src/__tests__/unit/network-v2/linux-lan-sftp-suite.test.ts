@@ -112,13 +112,14 @@ interface Row {
   setup?: (lan: Lan) => Promise<void> | void;
   on: (lan: Lan) => Dev;
   cmd: string;
+  stdin?: string;
   contains?: (string | RegExp)[];
   excludes?: (string | RegExp)[];
 }
 
 async function runRow(lan: Lan, row: Row): Promise<string> {
   if (row.setup) await row.setup(lan);
-  return row.on(lan).executeCommand(row.cmd);
+  return row.on(lan).executeCommand(row.cmd, row.stdin);
 }
 
 function assertRow(out: string, row: Row): void {
@@ -149,9 +150,9 @@ function passwordFor(user: string, host: string): string {
 /**
  * Build a here-doc sftp invocation, carrying the account's password.
  *
- * `fromWindows` drops it: a Windows box ships no `sshpass`, and its own
- * client (`WindowsSftpClient`) is a separate path that still resolves the
- * remote in memory — §26 measures that client, not this one.
+ * `fromWindows` drops it: a Windows box ships no `sshpass`, so the account's
+ * password reaches its client on the first line of standard input (`stdin`
+ * on the row), the way `ssh` from Windows already takes it.
  */
 function sftp(
   dest: string, verbs: string[], opts: { flags?: string; fromWindows?: boolean } = {},
@@ -377,10 +378,10 @@ describe('§4 — cd navigates the remote tree', () => {
       contains: [/Not a directory/i],
     },
     {
-      name: 'cd without argument goes to the remote root (default "/")',
+      name: 'cd without argument returns to the directory the session started in',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['cd /tmp', 'cd', 'pwd']),
-      contains: [/Remote working directory: \/$/m],
+      contains: [/Remote working directory: \/home\/alice$/m],
     },
   ];
 
@@ -555,20 +556,21 @@ describe('§8 — rm / delete remove remote files', () => {
       setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo gone > /tmp/doomed.txt && chown alice:alice /tmp/doomed.txt"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/doomed.txt', 'ls /tmp']),
-      excludes: ['doomed.txt'],
+      contains: ['Removing /tmp/doomed.txt'],
+      excludes: [/^doomed\.txt$/m],
     },
     {
-      name: 'delete is an alias for rm',
+      name: 'delete is not an sftp command in OpenSSH 8.9',
       setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo bye > /tmp/aliased && chown alice:alice /tmp/aliased"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['delete /tmp/aliased', 'ls /tmp']),
-      excludes: ['aliased'],
+      contains: ['Invalid command.', /sftp> ls \/tmp\n\/tmp\/aliased/],
     },
     {
       name: 'rm of a missing file surfaces an error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/never-existed']),
-      contains: [/unlink failed|No such|Failure/i],
+      contains: ['remote delete /tmp/never-existed: No such file or directory'],
     },
     {
       name: 'rm of a directory is refused (not a regular file)',
@@ -584,8 +586,8 @@ describe('§8 — rm / delete remove remote files', () => {
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/r1', 'rm /tmp/ghost', 'rm /tmp/r2', 'ls /tmp']),
-      contains: [/unlink failed|No such|Failure/i],
-      excludes: ['r1', 'r2'],
+      contains: ['Removing /tmp/r1', 'Removing /tmp/r2', 'remote delete /tmp/ghost: No such file or directory'],
+      excludes: [/^r1$/m, /^r2$/m],
     },
   ];
 
@@ -630,13 +632,13 @@ describe('§9 — put uploads files from the client to the server', () => {
       setup: async (l) => { await l.pc1.executeCommand('echo same > /tmp/same'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['put /tmp/same']),
-      contains: [/Uploading \/tmp\/same to \/tmp\/same/],
+      contains: [/Uploading \/tmp\/same to \/home\/alice\/same/],
     },
     {
       name: 'put with no args at all is a parse error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['put']),
-      contains: [/put: missing source/],
+      contains: ['You must specify at least one path after a put command.'],
     },
     {
       name: 'Server→Server put replicates a config file',
@@ -697,7 +699,7 @@ describe('§10 — get downloads files from the server to the client', () => {
       name: 'get with no args at all is a parse error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['get']),
-      contains: [/get: missing source/],
+      contains: ['You must specify at least one path after a get command.'],
     },
   ];
 
@@ -736,35 +738,34 @@ describe('§11 — rename / mv move remote files atomically', () => {
       contains: ['to2'],
     },
     {
-      name: 'mv is an alias for rename',
+      name: 'mv is not an sftp command in OpenSSH 8.9',
       setup: async (l) => {
         await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/mv-src && chown alice:alice /tmp/mv-src"');
-        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mv /tmp/mv-src /tmp/mv-dst']));
       },
-      on: l => l.pc2,
-      cmd: 'cat /tmp/mv-dst',
-      contains: [/^r$/m],
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['mv /tmp/mv-src /tmp/mv-dst']),
+      contains: ['Invalid command.'],
     },
     {
-      name: 'rename when destination already exists fails',
+      name: 'rename onto an existing destination overwrites it through posix-rename@openssh.com',
       setup: async (l) => {
         await l.pc2.executeCommand('sudo sh -c "echo a > /tmp/ra && echo b > /tmp/rb && chown alice:alice /tmp/ra /tmp/rb"');
       },
       on: l => l.pc1,
-      cmd: sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']),
-      contains: [/rename failed|exist|Failure/i],
+      cmd: sftp('alice@10.0.0.2', ['rename -l /tmp/ra /tmp/rb', 'rename /tmp/ra /tmp/rb', 'get /tmp/rb /tmp/rb-back']),
+      contains: ['remote rename "/tmp/ra" to "/tmp/rb": Failure', 'Fetching /tmp/rb to /tmp/rb-back'],
     },
     {
       name: 'rename with one arg is a parse error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rename /tmp/only']),
-      contains: [/rename: needs two args/],
+      contains: ['You must specify two paths after a rename command.'],
     },
     {
       name: 'rename of a non-existent source fails',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rename /tmp/ghost /tmp/whatever']),
-      contains: [/rename failed|No such|Failure/i],
+      contains: ['remote rename "/tmp/ghost" to "/tmp/whatever": No such file or directory'],
     },
   ];
 
@@ -805,13 +806,13 @@ describe('§12 — chmod changes remote file permissions', () => {
       name: 'chmod with no mode is a parse error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['chmod']),
-      contains: [/chmod: invalid mode/],
+      contains: ['You must supply a numeric argument to the chmod command.'],
     },
     {
       name: 'chmod with non-octal mode is a parse error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['chmod foo /tmp/x']),
-      contains: [/chmod: invalid mode/],
+      contains: ['You must supply a numeric argument to the chmod command.'],
     },
     {
       name: 'chmod on a non-existent path surfaces an error',
@@ -886,7 +887,7 @@ describe('§14 — invalid verbs surface "Invalid command"', () => {
       name: 'unknown verb produces Invalid command',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['fubar /tmp']),
-      contains: [/Invalid command: fubar/],
+      contains: ['Invalid command.'],
     },
     {
       name: 'gibberish at start of line is rejected',
@@ -936,40 +937,40 @@ describe('§15 — missing path arguments produce parse errors', () => {
 
   const rows: Row[] = [
     {
-      name: 'put with no args: "put: missing source"',
+      name: 'put with no args: "You must specify at least one path"',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['put']),
-      contains: [/put: missing source/],
+      contains: ['You must specify at least one path after a put command.'],
     },
     {
-      name: 'get with no args: "get: missing source"',
+      name: 'get with no args: "You must specify at least one path"',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['get']),
-      contains: [/get: missing source/],
+      contains: ['You must specify at least one path after a get command.'],
     },
     {
-      name: 'rename with no args: "rename: needs two args"',
+      name: 'rename with no args: "You must specify two paths"',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rename']),
-      contains: [/rename: needs two args/],
+      contains: ['You must specify two paths after a rename command.'],
     },
     {
-      name: 'chmod with no args: "chmod: invalid mode"',
+      name: 'chmod with no args: "You must supply a numeric argument"',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['chmod']),
-      contains: [/chmod: invalid mode/],
+      contains: ['You must supply a numeric argument to the chmod command.'],
     },
     {
-      name: 'mkdir with no args surfaces a usage / failure error',
+      name: 'mkdir with no args asks for a path',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['mkdir']),
-      contains: [/mkdir failed|Failure|usage|missing|invalid/i],
+      contains: ['You must specify a path after a mkdir command.'],
     },
     {
-      name: 'rm with no args surfaces a usage / failure error',
+      name: 'rm with no args asks for a path',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm']),
-      contains: [/unlink failed|Failure|usage|missing/i],
+      contains: ['You must specify a path after a rm command.'],
     },
   ];
 
@@ -1150,7 +1151,7 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     {
       name: 'DenyUsers bob: sftp bob@pc2 is rejected',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "DenyUsers bob\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
@@ -1160,7 +1161,7 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     {
       name: 'AllowUsers alice: bob refused, alice accepted',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "AllowUsers alice\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
@@ -1170,7 +1171,7 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     {
       name: 'PermitRootLogin yes lets root through sftp',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "PermitRootLogin yes\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
@@ -1201,7 +1202,7 @@ describe('§20 — sftp -P uses an alternate port', () => {
     {
       name: 'After Port 2222 + reload, default sftp (port 22) is refused',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "Port 2222\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
@@ -1211,7 +1212,7 @@ describe('§20 — sftp -P uses an alternate port', () => {
     {
       name: 'sftp -P 2222 reaches the new port',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "Port 2222\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
@@ -1227,7 +1228,7 @@ describe('§20 — sftp -P uses an alternate port', () => {
     {
       name: 'Two listening Port directives accept both',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
@@ -1257,7 +1258,7 @@ describe('§21 — auth.log records sftp sessions', () => {
       contains: [/Accepted password for alice from 10\.0\.0\.1/],
     },
     {
-      name: 'refused sftp (sshd stopped) records Failed password',
+      name: 'refused sftp (sshd stopped) leaves no Failed password line: nothing was listening',
       setup: async (l) => {
         await l.pc2.executeCommand('systemctl stop ssh');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
@@ -1265,7 +1266,7 @@ describe('§21 — auth.log records sftp sessions', () => {
       },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
-      contains: [/Failed password for alice/],
+      excludes: [/Failed password for alice/],
     },
     {
       name: 'auth.log carries the source IP',
@@ -1441,7 +1442,7 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
         await l.pc1.executeCommand('printf "pwd\\nbye\\n" > /tmp/batch.txt');
       },
       on: l => l.pc1,
-      cmd: 'sshpass -p alice sftp -b /tmp/batch.txt alice@10.0.0.2',
+      cmd: 'sshpass -p alice sftp -o BatchMode=no -N -b /tmp/batch.txt alice@10.0.0.2',
       contains: [/Connected to 10\.0\.0\.2/, /sftp>/],
     },
     {
@@ -1454,7 +1455,7 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
       name: 'sftp -b runs the verbs from the file (mkdir lands on remote)',
       setup: async (l) => {
         await l.pc1.executeCommand('printf "mkdir /tmp/from-batch\\nbye\\n" > /tmp/b2.txt');
-        await l.pc1.executeCommand('sshpass -p alice sftp -b /tmp/b2.txt alice@10.0.0.2');
+        await l.pc1.executeCommand('sshpass -p alice sftp -o BatchMode=no -b /tmp/b2.txt alice@10.0.0.2');
       },
       on: l => l.pc2,
       cmd: 'ls -d /tmp/from-batch',
@@ -1491,6 +1492,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       name: 'win1 → linux pc2: sftp alice@10.0.0.2 connects',
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { fromWindows: true }),
+      stdin: 'alice',
       contains: [/Connected to 10\.0\.0\.2/],
       excludes: [/not recognized|command not found/i],
     },
@@ -1498,29 +1500,32 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       name: 'win1 → linux server: sftp alice@srv1 connects',
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.10', ['pwd'], { fromWindows: true }),
+      stdin: 'alice',
       contains: [/Connected to 10\.0\.0\.10/],
     },
     {
       name: 'win1 → win2: cross-Windows sftp connects',
       on: l => l.win1,
       cmd: sftp('User@10.0.0.21', ['pwd'], { fromWindows: true }),
+      stdin: 'user',
       contains: [/Connected to 10\.0\.0\.21/],
     },
     {
       name: 'sftp -P 2222 on Windows targets an alternate port',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('printf "Port 2222\\nSubsystem sftp /usr/lib/openssh/sftp-server\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222', fromWindows: true }),
+      stdin: 'alice',
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'sftp from Windows to an unreachable IP fails gracefully',
       on: l => l.win1,
       cmd: sftp('alice@192.0.2.99', ['pwd'], { fromWindows: true }),
-      contains: [/no route|Could not resolve|refused|timed out/i],
+      contains: [/no route|Could not resolve|refused|timed out|Network is unreachable/i],
       excludes: [/Connected to/],
     },
     {
@@ -1536,6 +1541,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
         await l.win1.executeCommand('echo from-win > C:\\Users\\User\\to-linux.txt');
         await l.win1.executeCommand(
           sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt'], { fromWindows: true }),
+          'alice',
         );
       },
       on: l => l.pc2,
@@ -1561,7 +1567,7 @@ describe('§27 — multi-verb batches keep going on errors', () => {
       name: 'invalid verb in the middle does not stop subsequent verbs',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd', 'fubar', 'lpwd']),
-      contains: [/Remote working directory:/, /Invalid command: fubar/, /Local working directory:/],
+      contains: [/Remote working directory:/, 'Invalid command.', /Local working directory:/],
     },
     {
       name: 'failed put still lets the next verb run',
@@ -1824,9 +1830,9 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
     {
       name: 'ChrootDirectory /var/sftp confines the sftp user to that subtree',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /var/sftp/upload');
-        await l.pc2.executeCommand('chown root:root /var/sftp && chmod 755 /var/sftp');
-        await l.pc2.executeCommand('chown bob:bob /var/sftp/upload');
+        await l.pc2.executeCommand('sudo mkdir -p /var/sftp/upload');
+        await l.pc2.executeCommand('sudo chown root:root /var/sftp && sudo chmod 755 /var/sftp');
+        await l.pc2.executeCommand('sudo chown bob:bob /var/sftp/upload');
         await l.pc2.executeCommand(
           `sudo sh -c 'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config'`,
         );
@@ -1840,7 +1846,8 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
     {
       name: 'chrooted user cannot cd ../.. past the chroot root',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /var/sftp/upload');
+        await l.pc2.executeCommand('sudo mkdir -p /var/sftp/upload');
+        await l.pc2.executeCommand('sudo chown root:root /var/sftp && sudo chmod 755 /var/sftp');
         await l.pc2.executeCommand(
           `sudo sh -c 'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config'`,
         );
@@ -2113,7 +2120,7 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
       contains: [/Timeout, server.*not responding|Connection closed|Permission denied/i],
     },
     {
-      name: 'auth.log records "Disconnecting" lines for throttled sessions',
+      name: 'auth.log records the pre-auth disconnect of a client that has nothing left to try',
       setup: async (l) => {
         await l.pc2.executeCommand('printf "MaxAuthTries 1\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
@@ -2121,7 +2128,7 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
       },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
-      contains: [/Disconnecting|Too many authentication failures|Connection closed by/i],
+      contains: [/Disconnected from 10\.0\.0\.1 port \d+ \[preauth\]/],
     },
   ];
 
@@ -2137,11 +2144,11 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
 //
 // The sections above drive sftp through the executor's batch (here-doc)
 // path. The four sections below take the other route: open a real
-// SftpSession, wrap it in the SftpSubShell that the LinuxTerminalSession
+// SftpTestClient, wrap it in the SftpSubShell that the LinuxTerminalSession
 // hosts, and assert on each REPL turn — the prompt string, the exit
 // flag, the output lines and how the shell composes successive calls.
 
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { openSftpClientSession, type SftpTestClientDeps } from './sftpTestClient';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -2165,15 +2172,13 @@ function vfsOf(d: LinuxPC | LinuxServer): VirtualFileSystem {
   return (d as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
 }
 
-interface ShellFixture { shell: SftpSubShell; session: SftpSession; local: VirtualFileSystem; }
+interface ShellFixture { shell: SftpSubShell; session: Awaited<ReturnType<typeof openSftpClientSession>>; local: VirtualFileSystem; }
 
 async function openShell(client: LinuxPC | LinuxServer, target: string, opts: { user?: string; password?: string; localCwd?: string } = {}): Promise<ShellFixture> {
   const user = opts.user ?? 'alice';
-  // Standard cast on LinuxCommandExecutor sets each user's password to
-  // their username (alice/alice, bob/bob, …).
   const password = opts.password ?? user;
   const local = new VirtualFileSystem();
-  const session = new SftpSession({
+  const deps: SftpTestClientDeps = {
     tcpConnector: tcpConnectorOf(client),
     localVfs: local,
     localUser: 'root',
@@ -2183,9 +2188,9 @@ async function openShell(client: LinuxPC | LinuxServer, target: string, opts: { 
     knownHostsPath: '/root/.ssh/known_hosts',
     interactionHandler: new SilentSshInteractionHandler(password),
     homeDirectory: '/root',
-  });
-  const banner = await session.connect(`${user}@${target}`, { password });
-  expect(banner).toContain('Connected');
+  };
+  const session = await openSftpClientSession(deps, `${user}@${target}`, password);
+  expect(session.drain()).toContain('Connected to');
   const shell = new SftpSubShell(session);
   return { shell, session, local };
 }
@@ -2403,8 +2408,8 @@ describe('§38 — interactive sftp shell: file ops round-trip', () => {
         const { uid, gid } = uidOf(lan.pc2, 'alice');
         vfsOf(lan.pc2).writeFile('/tmp/cm.txt', 'm', uid, gid, 0o022);
       },
-      lines: ['chmod 600 /tmp/cm.txt', 'stat /tmp/cm.txt'],
-      contains: [/0?600|rw-------/],
+      lines: ['chmod 600 /tmp/cm.txt', 'ls -l /tmp/cm.txt'],
+      contains: ['Changing mode on /tmp/cm.txt', /-rw-------/],
     },
     {
       name: 'rmdir on an empty directory removes it',
@@ -2468,50 +2473,50 @@ describe('§39 — exit semantics, usage messages and prompt invariants', () => 
       contains: [],
     },
     {
-      name: 'mkdir without an arg prints "usage: mkdir path"',
+      name: 'mkdir without an arg asks for a path',
       lines: ['mkdir'],
-      contains: ['usage: mkdir path'],
+      contains: ['You must specify a path after a mkdir command.'],
       expectPrompt: 'sftp> ',
     },
     {
-      name: 'rm without an arg prints "usage: rm path"',
+      name: 'rm without an arg asks for a path',
       lines: ['rm'],
-      contains: ['usage: rm path'],
+      contains: ['You must specify a path after a rm command.'],
     },
     {
-      name: 'rmdir without an arg prints "usage: rmdir path"',
+      name: 'rmdir without an arg asks for a path',
       lines: ['rmdir'],
-      contains: ['usage: rmdir path'],
+      contains: ['You must specify a path after a rmdir command.'],
     },
     {
-      name: 'rename with one arg prints "usage: rename oldpath newpath"',
+      name: 'rename with one arg asks for two paths',
       lines: ['rename /tmp/only'],
-      contains: ['usage: rename oldpath newpath'],
+      contains: ['You must specify two paths after a rename command.'],
     },
     {
-      name: 'chmod with only mode (no path) prints "usage: chmod mode path"',
+      name: 'chmod with only a mode asks for a path',
       lines: ['chmod 600'],
-      contains: ['usage: chmod mode path'],
+      contains: ['You must specify a path after a chmod command.'],
     },
     {
-      name: 'get without args prints "usage: get remote [local]"',
+      name: 'get without args asks for at least one path',
       lines: ['get'],
-      contains: ['usage: get remote [local]'],
+      contains: ['You must specify at least one path after a get command.'],
     },
     {
-      name: 'put without args prints "usage: put local [remote]"',
+      name: 'put without args asks for at least one path',
       lines: ['put'],
-      contains: ['usage: put local [remote]'],
+      contains: ['You must specify at least one path after a put command.'],
     },
     {
-      name: 'lmkdir without an arg prints "usage: lmkdir path"',
+      name: 'lmkdir without an arg asks for a path',
       lines: ['lmkdir'],
-      contains: ['usage: lmkdir path'],
+      contains: ['You must specify a path after a lmkdir command.'],
     },
     {
-      name: 'stat without an arg prints "usage: stat path"',
+      name: 'stat is not an sftp command in OpenSSH 8.9',
       lines: ['stat'],
-      contains: ['usage: stat path'],
+      contains: ['Invalid command.'],
     },
     {
       name: 'prompt remains "sftp> " after a non-exit error',

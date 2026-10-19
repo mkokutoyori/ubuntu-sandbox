@@ -1,5 +1,6 @@
 import type { MemoryProfile } from '../../host/hardware';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface VmstatArgs {
   intervalSeconds: number | null;
@@ -89,43 +90,43 @@ export function formatVmstatRow(sample: VmstatSample, args: VmstatArgs): string 
   const m = (kib: number) => scaleMemory(kib, args.unit);
   if (args.wide) {
     return [
-      String(sample.procsR).padStart(4),
-      String(sample.procsB).padStart(4),
-      String(m(sample.swpdKib)).padStart(12),
-      String(m(sample.freeKib)).padStart(12),
-      String(m(sample.buffKib)).padStart(12),
-      String(m(sample.cacheKib)).padStart(12),
-      String(sample.siKibPerSec).padStart(4),
-      String(sample.soKibPerSec).padStart(4),
-      String(sample.biBlocksPerSec).padStart(5),
-      String(sample.boBlocksPerSec).padStart(5),
-      String(sample.interruptsPerSec).padStart(4),
-      String(sample.ctxSwitchesPerSec).padStart(4),
-      String(sample.cpuUser).padStart(3),
-      String(sample.cpuSystem).padStart(3),
-      String(sample.cpuIdle).padStart(3),
-      String(sample.cpuIowait).padStart(3),
-      String(sample.cpuSteal).padStart(3),
+      padToWidth(String(sample.procsR), 4, 'right'),
+      padToWidth(String(sample.procsB), 4, 'right'),
+      padToWidth(String(m(sample.swpdKib)), 12, 'right'),
+      padToWidth(String(m(sample.freeKib)), 12, 'right'),
+      padToWidth(String(m(sample.buffKib)), 12, 'right'),
+      padToWidth(String(m(sample.cacheKib)), 12, 'right'),
+      padToWidth(String(sample.siKibPerSec), 4, 'right'),
+      padToWidth(String(sample.soKibPerSec), 4, 'right'),
+      padToWidth(String(sample.biBlocksPerSec), 5, 'right'),
+      padToWidth(String(sample.boBlocksPerSec), 5, 'right'),
+      padToWidth(String(sample.interruptsPerSec), 4, 'right'),
+      padToWidth(String(sample.ctxSwitchesPerSec), 4, 'right'),
+      padToWidth(String(sample.cpuUser), 3, 'right'),
+      padToWidth(String(sample.cpuSystem), 3, 'right'),
+      padToWidth(String(sample.cpuIdle), 3, 'right'),
+      padToWidth(String(sample.cpuIowait), 3, 'right'),
+      padToWidth(String(sample.cpuSteal), 3, 'right'),
     ].join(' ');
   }
   return [
-    String(sample.procsR).padStart(2),
-    String(sample.procsB).padStart(2),
-    String(m(sample.swpdKib)).padStart(6),
-    String(m(sample.freeKib)).padStart(6),
-    String(m(sample.buffKib)).padStart(6),
-    String(m(sample.cacheKib)).padStart(6),
-    String(sample.siKibPerSec).padStart(4),
-    String(sample.soKibPerSec).padStart(4),
-    String(sample.biBlocksPerSec).padStart(5),
-    String(sample.boBlocksPerSec).padStart(5),
-    String(sample.interruptsPerSec).padStart(4),
-    String(sample.ctxSwitchesPerSec).padStart(4),
-    String(sample.cpuUser).padStart(2),
-    String(sample.cpuSystem).padStart(2),
-    String(sample.cpuIdle).padStart(2),
-    String(sample.cpuIowait).padStart(2),
-    String(sample.cpuSteal).padStart(2),
+    padToWidth(String(sample.procsR), 2, 'right'),
+    padToWidth(String(sample.procsB), 2, 'right'),
+    padToWidth(String(m(sample.swpdKib)), 6, 'right'),
+    padToWidth(String(m(sample.freeKib)), 6, 'right'),
+    padToWidth(String(m(sample.buffKib)), 6, 'right'),
+    padToWidth(String(m(sample.cacheKib)), 6, 'right'),
+    padToWidth(String(sample.siKibPerSec), 4, 'right'),
+    padToWidth(String(sample.soKibPerSec), 4, 'right'),
+    padToWidth(String(sample.biBlocksPerSec), 5, 'right'),
+    padToWidth(String(sample.boBlocksPerSec), 5, 'right'),
+    padToWidth(String(sample.interruptsPerSec), 4, 'right'),
+    padToWidth(String(sample.ctxSwitchesPerSec), 4, 'right'),
+    padToWidth(String(sample.cpuUser), 2, 'right'),
+    padToWidth(String(sample.cpuSystem), 2, 'right'),
+    padToWidth(String(sample.cpuIdle), 2, 'right'),
+    padToWidth(String(sample.cpuIowait), 2, 'right'),
+    padToWidth(String(sample.cpuSteal), 2, 'right'),
   ].join(' ');
 }
 

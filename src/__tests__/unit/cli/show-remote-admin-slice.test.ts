@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { MACAddress, resetCounters } from '@/network/core/types';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { knownHostsPathFor, ROUTER_SSH_LOCAL_USER, sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 
 beforeEach(() => {
   resetCounters();
@@ -93,9 +95,10 @@ describe('les deux plateformes repondent la MEME chose', () => {
 describe('un commutateur RETIENT desormais la cle qu\'il apprend', () => {
   it('la vue liste ce que le magasin du commutateur porte', async () => {
     const commutateur = await privilegie(PLATEFORMES[1][1]);
-    commutateur._getSshKnownHosts().add({
-      host: '10.0.0.1', keyType: 'ssh-rsa', publicKey: 'AAAAB3NzaC1yc2EAAAA',
-    });
+    const fichier = knownHostsPathFor(commutateur as unknown as Equipment, ROUTER_SSH_LOCAL_USER);
+    const fs = sshLocalFsFor(commutateur as unknown as Equipment);
+    fs.mkdirp?.(fichier.slice(0, fichier.lastIndexOf('/')), 0o700, 0, 0);
+    fs.writeFile(fichier, '10.0.0.1 ssh-rsa AAAAB3NzaC1yc2EAAAA\n', 0, 0, 0o022);
     const rendu = await commutateur.executeCommand('show ip ssh known-hosts');
     expect(rendu).toContain('10.0.0.1');
     expect(rendu).toContain('ssh-rsa');

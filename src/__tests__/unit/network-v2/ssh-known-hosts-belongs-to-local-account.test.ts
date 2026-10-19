@@ -56,9 +56,9 @@ async function sshAs(lab: Lab, user: string, password: string): Promise<void> {
   lab.term.setInput(`ssh ${user}@10.0.40.2`);
   lab.term.setInputBuf(`ssh ${user}@10.0.40.2`);
   lab.term.handleKey(key('Enter'));
-  for (let i = 0; i < 60 && lab.term.foreground.currentInputMode.type !== 'password'; i++) await flush();
-  lab.term.foreground.setPasswordBuf(password);
-  lab.term.foreground.handleKey(key('Enter'));
+  for (let i = 0; i < 60 && lab.term.currentInputMode.type !== 'password'; i++) await flush();
+  lab.term.setPasswordBuf(password);
+  lab.term.handleKey(key('Enter'));
   await flush();
 }
 

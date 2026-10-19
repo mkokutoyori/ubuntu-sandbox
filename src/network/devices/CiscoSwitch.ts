@@ -21,7 +21,7 @@ import type { ISwitchShell } from './shells/ISwitchShell';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
 import { effectiveIosSshAlgorithms, iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
 import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
-import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshHostKey, SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
 import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
 import { CdpAgent } from '../cdp/CdpAgent';
@@ -469,6 +469,12 @@ export class CiscoSwitch extends Switch {
   }
 
   getOSType(): string { return 'cisco-ios'; }
+
+  sshHostKeyAuthority(): ((host: string, key: SshHostKey) => boolean) | undefined {
+    const security = getSecurityConfig(this);
+    if (!security.ssh.strictHostKeyCheck) return undefined;
+    return (host, key) => security.sshPubkeys.admitsServer(host, key.publicKey);
+  }
 
   protected override sshPublicKeyAdmitted(user: string, offeredKeyMaterial: string): boolean {
     return getSecurityConfig(this).sshPubkeys.admits(user, offeredKeyMaterial);

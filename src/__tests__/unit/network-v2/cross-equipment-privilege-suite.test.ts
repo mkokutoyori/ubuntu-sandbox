@@ -217,9 +217,6 @@ function launchOptions(l: PrivLan, from: Client): SshLaunchOptions {
     defaultUser: 'root',
     sourceIp: IP[from],
     sourceDevice: device as never,
-    wireProbe: (h, p) => (device as unknown as {
-      tcpConnectOutcome(ip: IPAddress, port: number): 'open' | 'refused' | 'timeout';
-    }).tcpConnectOutcome(new IPAddress(h), p),
   };
 }
 

@@ -20,6 +20,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { DirEntry, INode } from '../VirtualFileSystem';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Narrow filesystem seam (DIP — the executor injects its VFS). */
 export interface ArchiveFs {
@@ -358,7 +359,7 @@ function tarReadArchive(ctx: ArchiveCtx, o: TarOptions, baseDir: string,
   if (mode === 't') {
     const lines = opened.members.map((m) => o.verbose
       ? `${m.type === 'dir' ? 'd' : '-'}${formatMode(m.mode)} ` +
-        `${m.uid}/${m.gid} ${String((m.content ?? '').length).padStart(7)} ` +
+        `${m.uid}/${m.gid} ${padToWidth(String((m.content ?? '').length), 7, 'right')} ` +
         `${formatDate(m.mtime)} ${m.path}`
       : m.path);
     return { output: lines.join('\n'), exitCode: 0 };
@@ -562,7 +563,7 @@ export function cmdUnzip(ctx: ArchiveCtx, args: string[]): CmdResult {
   if (list) {
     const rows = members.map((m) => {
       const len = (m.content ?? '').length;
-      return `${String(len).padStart(9)}  ${formatDate(m.mtime)}   ${m.path}`;
+      return `${padToWidth(String(len), 9, 'right')}  ${formatDate(m.mtime)}   ${m.path}`;
     });
     const total = members.reduce((s, m) => s + (m.content ?? '').length, 0);
     return {
@@ -572,7 +573,7 @@ export function cmdUnzip(ctx: ArchiveCtx, args: string[]): CmdResult {
         '---------  ---------- -----   ----',
         ...rows,
         '---------                     -------',
-        `${String(total).padStart(9)}                     ${members.length} files`,
+        `${padToWidth(String(total), 9, 'right')}                     ${members.length} files`,
       ].join('\n'),
       exitCode: 0,
     };

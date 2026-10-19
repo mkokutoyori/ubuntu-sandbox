@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-09-25T18:31:16.087Z
+Generated: 2026-10-14T22:27:33.865Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -719,7 +719,7 @@ Total steps: 288
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [185/288] r1 <R1> display version
   Huawei Versatile Routing Platform Software
@@ -728,7 +728,7 @@ Total steps: 288
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [186/288] r1 <R1> display current-configuration
   #
@@ -784,6 +784,11 @@ Total steps: 288
   #
   ip pool INFINITE
    network 172.16.0.0 mask 255.255.0.0
+  #
+  dhcpv6 pool V6POOL
+   address prefix 2001:db8:1::/64
+   dns-server 2001:4860:4860::8888
+   dns-domain-name v6.lab
   #
   dhcp server forbidden-ip 192.168.1.1 192.168.1.10
   dhcp server forbidden-ip 192.168.2.1 192.168.2.10
@@ -1127,14 +1132,14 @@ Total steps: 288
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 18:31:16.193  Sep 25 2026(EE613C74.316872B0)
+  Reference time: 22:27:33.969  Oct 14 2026(EE7A8055.F810624D)
 
 [218/288] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [219/288] r1 <R1> display clock
-  2026-09-25 18:31:16
-  Friday
+  2026-10-14 22:27:33
+  Wednesday
   Time Zone(UTC) : UTC
 
 [220/288] r1 <R1> display lldp neighbor
@@ -1155,13 +1160,13 @@ Total steps: 288
 [222/288] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-25 18:31:16
+  CPU Usage Stat. Time : 2026-10-14 22:27:33
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-25 18:31:16
+  Memory utilization statistics at 2026-10-14 22:27:33
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1202,10 +1207,10 @@ Total steps: 288
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-25 18:31:16 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:31:16 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:31:16 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:31:16 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-14 22:27:33 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-14 22:27:33 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-14 22:27:33 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-14 22:27:33 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [228/288] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1351,6 +1356,11 @@ Total steps: 288
   ip pool INFINITE
    network 172.16.0.0 mask 255.255.0.0
   #
+  dhcpv6 pool V6POOL
+   address prefix 2001:db8:1::/64
+   dns-server 2001:4860:4860::8888
+   dns-domain-name v6.lab
+  #
   dhcp server forbidden-ip 192.168.1.1 192.168.1.10
   dhcp server forbidden-ip 192.168.2.1 192.168.2.10
   dhcp server forbidden-ip 192.168.3.1 192.168.3.10
@@ -1422,15 +1432,17 @@ Total steps: 288
   Info: No online-fail record.
 
 [241/288] r1 <R1> display ssh server status
-  SSH server: Disabled
-
-[242/288] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
   SSH authentication retries      : 3 times
   SFTP server                     : Disable
-  STELNET server                  : Enable
+  Stelnet server                  : Disable
+
+[242/288] r1 <R1> display ssh user-information
+  Error: Unrecognized command found at '^' position.
+  display ssh user-information
+          ^
 
 [243/288] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
@@ -1531,6 +1543,10 @@ Total steps: 288
    lease day 6 hour 12 minute 30
   ip pool INFINITE
    network 172.16.0.0 mask 255.255.0.0
+  dhcpv6 pool V6POOL
+   address prefix 2001:db8:1::/64
+   dns-server 2001:4860:4860::8888
+   dns-domain-name v6.lab
   dhcp server forbidden-ip 192.168.1.1 192.168.1.10
   dhcp server forbidden-ip 192.168.2.1 192.168.2.10
   dhcp server forbidden-ip 192.168.3.1 192.168.3.10
@@ -1713,37 +1729,45 @@ Total steps: 288
     routing-table  Routing table configuration
 
 [285/288] r1 [Huawei] undo ?
-    acl            Delete Access Control List
-    bfd            Disable BFD globally
-    bgp            Remove BGP
-    command-alias  Disable CLI alias
-    debugging      Disable system debugging functions
-    dns            Domain Name System
-    firewall       Firewall configuration
-    ike            Internet Key Exchange
-    ikev2          Internet Key Exchange version 2
-    info-center    Information center configuration
-    ip             Internet Protocol
-    ipsec          IP Security
-    ipv6           Disable IPv6
-    isis           Remove IS-IS
-    lldp           Link Layer Discovery Protocol
-    local-user     Remove a local user
-    multicast      Disable multicast routing
-    nat            Network Address Translation
-    nqa            Network Quality Analysis
-    nqa-server     Remove an NQA server binding
-    ntp-service    Remove NTP service configuration
-    ospf           Remove OSPF protocol configuration
-    ospfv3         Remove OSPFv3 protocol configuration
-    route-policy   Remove a route-policy
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
-    snmp-agent     Remove SNMP agent configuration
-    stelnet        Disable the STelnet server
-    terminal       Set the terminal line characteristics
-    time-range     Remove a time-range
-    traffic        Display traffic statistics
+    acl                  Delete Access Control List
+    bfd                  Disable BFD globally
+    bgp                  Remove BGP
+    command-alias        Disable CLI alias
+    debugging            Disable system debugging functions
+    dhcp                 Dynamic Host Configuration Protocol
+    dhcpv6               DHCPv6 configuration
+    dns                  Domain Name System
+    firewall             Firewall configuration
+    header               Remove the login/shell banner
+    ike                  Internet Key Exchange
+    ikev2                Internet Key Exchange version 2
+    info-center          Information center configuration
+    information-refresh  Restore the default information refresh interval
+    ip                   Internet Protocol
+    ipsec                IP Security
+    ipv6                 Disable IPv6
+    isis                 Remove IS-IS
+    lldp                 Link Layer Discovery Protocol
+    local-user           Remove a local user
+    multicast            Disable multicast routing
+    nat                  Network Address Translation
+    nqa                  Network Quality Analysis
+    nqa-server           Remove an NQA server binding
+    ntp-service          Remove NTP service configuration
+    ospf                 Remove OSPF protocol configuration
+    ospfv3               Remove OSPFv3 protocol configuration
+    route-policy         Remove a route-policy
+    rsa                  RSA key pair
+    screen-length        Restore default screen length
+    screen-width         Restore default screen width
+    sftp                 Disable the SFTP server
+    snmp-agent           Remove SNMP agent configuration
+    ssh                  Restore the SSH server defaults
+    stelnet              Disable the STelnet server
+    telnet               Disable the Telnet server
+    terminal             Set the terminal line characteristics
+    time-range           Remove a time-range
+    traffic              Display traffic statistics
 
 [286/288] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)

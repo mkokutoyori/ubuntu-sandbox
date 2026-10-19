@@ -5,7 +5,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { hexToBytes, bytesToHex, bytesToUtf8 } from '@/crypto/encoding';
 import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
-  type RadiusAttribute,
+  type RadiusAttribute, type RadiusAttributePolicy, defaultAttributePolicy,
   createDefaultClientConfig, defaultServerEntry, attr, getAttr, getVsa,
   encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
@@ -23,7 +23,11 @@ import {
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { PathClock } from '../core/time/PathClock';
+import { ServerCounters } from './ServerCounters';
 import { type UdpSendRequest } from '../layers/transport/UdpEgress';
+
+const SERVICE_TYPE_LOGIN = 1;
 
 export interface RadiusClientHost {
   readonly id: string;
@@ -58,12 +62,13 @@ interface PendingRequest {
   resolve: (result: RadiusRoundResult) => void;
   timer: TimerHandle | null;
   attemptsLeft: number;
+  transmissions: number;
+  sentAtMs: number;
 }
 
 interface ServerRuntimeState {
   /** ms epoch until which the server is treated as dead (skipped in ordering); null = alive. */
   deadUntil: number | null;
-  stats: { requests: number; accepts: number; rejects: number; timeouts: number };
 }
 
 export interface RadiusServerStatus {
@@ -141,6 +146,7 @@ export class RadiusClientAgent {
   private scheduler: IScheduler | null = null;
   private running = false;
   private serverStates = new Map<string, ServerRuntimeState>();
+  readonly counters = new ServerCounters(simulationNowMs);
   /** `radius-server deadtime` equivalent — 0 disables cross-request server avoidance (Cisco default). */
   private deadtimeMs = 0;
   /**
@@ -204,9 +210,14 @@ export class RadiusClientAgent {
   removeServer(ip: string): void {
     this.config.servers = this.config.servers.filter((s) => s.ip !== ip);
     this.serverStates.delete(ip);
+    this.counters.forget(ip);
   }
 
   setNasIdentifier(id: string | null): void { this.config.nasIdentifier = id; }
+
+  private attributePolicy: RadiusAttributePolicy = defaultAttributePolicy();
+
+  setAttributePolicy(policy: RadiusAttributePolicy): void { this.attributePolicy = policy; }
   setSourceInterface(iface: string | null): void { this.config.sourceInterface = iface; }
 
   /** `radius-server deadtime <minutes>` equivalent, taking milliseconds. 0 (default) disables it. */
@@ -222,10 +233,11 @@ export class RadiusClientAgent {
     const now = simulationNowMs();
     return this.config.servers.map((s) => {
       const state = this.stateFor(s.ip);
+      const authentication = this.counters.phase(s.ip, 'authentication');
       return {
         ip: s.ip, alive: !this.isDead(s.ip, now), deadUntil: state.deadUntil,
-        requests: state.stats.requests, accepts: state.stats.accepts,
-        rejects: state.stats.rejects, timeouts: state.stats.timeouts,
+        requests: authentication.requests, accepts: authentication.accepts,
+        rejects: authentication.rejects, timeouts: authentication.timeouts,
       };
     });
   }
@@ -533,24 +545,20 @@ export class RadiusClientAgent {
   ): void {
     if (idx >= order.length) { resolve('timeout'); return; }
     const server = order[idx];
-    const state = this.stateFor(server.ip);
-    state.stats.requests++;
     this.beginRequest(server, username, password, authMethod, null, DEFAULT_MAX_CHALLENGE_ROUNDS, (result) => {
       if (result === 'accept') {
-        state.stats.accepts++;
         this.markAlive(server.ip);
         resolve('accept');
         return;
       }
       if (result === 'reject') {
-        state.stats.rejects++;
         this.markAlive(server.ip);
         resolve('reject');
         return;
       }
-      state.stats.timeouts++;
       this.markDead(server.ip);
       if (!this.running) { resolve('timeout'); return; } // agent stopped mid-flight — don't start a new request
+      if (idx + 1 < order.length) this.counters.phase(server.ip, 'authentication').failovers++;
       this.tryServers(order, idx + 1, username, password, authMethod, resolve);
     });
   }
@@ -558,7 +566,7 @@ export class RadiusClientAgent {
   private stateFor(ip: string): ServerRuntimeState {
     let s = this.serverStates.get(ip);
     if (!s) {
-      s = { deadUntil: null, stats: { requests: 0, accepts: 0, rejects: 0, timeouts: 0 } };
+      s = { deadUntil: null };
       this.serverStates.set(ip, s);
     }
     return s;
@@ -608,6 +616,7 @@ export class RadiusClientAgent {
       authenticator, secret: server.sharedSecret, state, challengesLeft,
       resolve, timer: null,
       attemptsLeft: server.retransmit,
+      transmissions: 0, sentAtMs: 0,
     };
     this.pending.set(identifier, pending);
     this.transmit(server, pending);
@@ -628,19 +637,28 @@ export class RadiusClientAgent {
     if (msChapPending) { this.handleMsChapUdp(payload, srcIp, msChapPending); return; }
 
     const pending = this.pending.get(payload.identifier);
-    if (!pending) return;
+    if (!pending) {
+      if (this.config.servers.some((s) => s.ip === srcIp.toString())) {
+        this.counters.phase(srcIp.toString(), 'authentication').unexpected++;
+      }
+      return;
+    }
     if (pending.serverIp !== srcIp.toString()) return;
+    const answered = this.counters.phase(pending.serverIp, 'authentication');
 
     if (!verifyResponseAuthenticator(payload, pending.authenticator, pending.secret)) {
+      answered.incorrect++;
       Logger.warn(this.host.id, 'radius:bad-response-authenticator',
         `${this.host.name}: dropped ${payload.code} from ${srcIp} for ${pending.username} — invalid Response Authenticator`);
       return; // silently ignored (RFC 2865 §3) — retransmission/timeout proceeds as if nothing arrived
     }
     if (!verifyMessageAuthenticator(payload, pending.authenticator, pending.secret)) {
+      answered.incorrect++;
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: dropped ${payload.code} from ${srcIp} for ${pending.username} — invalid Message-Authenticator`);
       return;
     }
+    answered.lastResponseMs = Math.max(0, Math.round(PathClock.now() - pending.sentAtMs));
 
     this.getBus().publish({
       topic: 'radius.packet.received',
@@ -651,13 +669,21 @@ export class RadiusClientAgent {
     });
 
     if (payload.code === 'access-challenge') {
+      answered.challenges++;
       this.continueChallenge(payload, pending);
       return;
     }
+    const serviceTypes = payload.attributes.filter((attribute) => attribute.type === 'service-type').length;
+    const policy = this.attributePolicy;
+    const unacceptable = payload.code === 'access-accept'
+      && ((policy.serviceTypeMandatory && serviceTypes === 0) || (serviceTypes > 1 && !policy.serviceTypeSupportMultiple));
+    if (payload.code === 'access-accept' && !unacceptable) answered.accepts++;
+    else answered.rejects++;
+    answered.transactionSuccess++;
 
     if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
     this.pending.delete(payload.identifier);
-    const accepted = payload.code === 'access-accept';
+    const accepted = payload.code === 'access-accept' && !unacceptable;
     const reasonAttr = getAttr(payload, 'reply-message');
     const reason = reasonAttr ? String(reasonAttr.value) : null;
     pending.resolve(accepted ? 'accept' : 'reject');
@@ -708,11 +734,14 @@ export class RadiusClientAgent {
     this.scheduler = s;
     pending.timer = s.setTimeout(() => {
       if (!this.pending.has(pending.identifier)) return;
+      const silent = this.counters.phase(server.ip, 'authentication');
+      silent.timeouts++;
       if (pending.attemptsLeft > 0) {
         pending.attemptsLeft--;
         this.transmit(server, pending);
         this.armTimeout(server, pending);
       } else {
+        silent.transactionFailure++;
         this.pending.delete(pending.identifier);
         pending.resolve('timeout');
         this.getBus().publish({
@@ -739,9 +768,11 @@ export class RadiusClientAgent {
     } else {
       attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
     }
-    attrs.push(attr('nas-ip-address', srcIp.toString()));
+    attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
+    if (this.attributePolicy.serviceTypeInLoginRequest) attrs.push(attr('service-type', SERVICE_TYPE_LOGIN));
     if (pending.state) attrs.push(attr('state', pending.state));
-    if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
+    const identifier = this.attributePolicy.nasIdentifier?.(srcIp.toString()) ?? this.config.nasIdentifier;
+    if (identifier) attrs.push(attr('nas-identifier', identifier));
     let payload: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier: pending.identifier,
       authenticator: pending.authenticator,
@@ -767,6 +798,11 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
+    const sent = this.counters.phase(server.ip, 'authentication');
+    sent.requests++;
+    if (pending.transmissions > 0) sent.retransmissions++;
+    pending.transmissions++;
+    pending.sentAtMs = PathClock.now();
     this.host.sendUdpDatagram(datagram);
   }
 

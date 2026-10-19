@@ -18,6 +18,8 @@
  * filtrée.
  */
 
+import { describeEvent } from './eventlog/EventDescriptor';
+
 /** L'entrée telle que l'évaluateur a besoin de la lire. */
 export interface XPathEvent {
   eventId: number;
@@ -36,27 +38,8 @@ export interface XPathParseResult {
   error?: string;
 }
 
-/**
- * Le niveau de sévérité que Windows associe à un événement.
- *
- * Les journaux de ce simulateur portent un `entryType` façon
- * `Get-EventLog` (`Information`, `Warning`, …) et non le `Level`
- * numérique du canal moderne : la table les rapproche. Les deux types
- * d'audit n'ont pas de niveau propre chez Windows — ils sont
- * `Information` (4), leur succès ou leur échec se lisant sur le
- * `Keywords`, pas sur le `Level`.
- */
-const LEVEL_BY_ENTRY_TYPE: Record<string, number> = {
-  critical: 1,
-  error: 2,
-  warning: 3,
-  information: 4,
-  successaudit: 4,
-  failureaudit: 4,
-};
-
 export function levelOf(entryType: string): number {
-  return LEVEL_BY_ENTRY_TYPE[entryType.toLowerCase()] ?? 4;
+  return describeEvent({ source: '', eventId: 0, entryType }).level;
 }
 
 // ─── Analyse ────────────────────────────────────────────────────────

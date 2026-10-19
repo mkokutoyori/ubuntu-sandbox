@@ -1,4 +1,4 @@
-import { renderTable, FIXED_TABLE } from '../cli/TextTable';
+import { renderTable, FIXED_TABLE, padToWidth } from '../cli/TextTable';
 import { formatIosElapsed } from './iosElapsed';
 import type { EIGRPEngine } from '../../../eigrp/EIGRPEngine';
 import type { EigrpStubTlv } from '../../../eigrp/packets';
@@ -19,10 +19,10 @@ const NEIGHBOR_COLUMNS = [
   { header: 'H', width: 4, value: (r: NeighborRow) => String(r.h) },
   { header: 'Address', width: 24, value: (r: NeighborRow) => r.address },
   { header: 'Interface', width: 23, value: (r: NeighborRow) => r.iface },
-  { header: 'Hold', width: 5, value: (r: NeighborRow) => String(r.hold).padStart(4) },
+  { header: 'Hold', width: 5, value: (r: NeighborRow) => padToWidth(String(r.hold), 4, 'right') },
   { header: 'Uptime', width: 9, value: (r: NeighborRow) => formatIosElapsed(r.uptimeSec * 1_000) },
-  { header: 'SRTT', width: 7, value: (r: NeighborRow) => String(r.srtt).padStart(4) },
-  { header: 'RTO', width: 5, value: (r: NeighborRow) => String(r.rto).padStart(3) },
+  { header: 'SRTT', width: 7, value: (r: NeighborRow) => padToWidth(String(r.srtt), 4, 'right') },
+  { header: 'RTO', width: 5, value: (r: NeighborRow) => padToWidth(String(r.rto), 3, 'right') },
   { header: 'Q', width: 3, value: () => '0' },
   { header: 'Seq', value: (r: NeighborRow) => String(r.seq) },
 ] as const;
@@ -30,7 +30,7 @@ const NEIGHBOR_COLUMNS = [
 function placeAt(labels: ReadonlyArray<readonly [number, string]>): string {
   let out = '';
   for (const [col, text] of labels) {
-    out = out.padEnd(col) + text;
+    out = padToWidth(out, col) + text;
   }
   return out;
 }
@@ -281,7 +281,7 @@ export function eigrpProtocolBlock(
   out.push('  Routing Information Sources:');
   out.push('    Gateway         Distance      Last Update');
   for (const n of e.getNeighbors()) {
-    out.push(`    ${n.address.padEnd(16)}${String(90).padStart(4)}`
+    out.push(`    ${padToWidth(n.address, 16)}${padToWidth(String(90), 4, 'right')}`
       + `      ${formatIosElapsed(n.uptimeSec * 1_000)}`);
   }
   out.push('  Distance: internal 90 external 170');

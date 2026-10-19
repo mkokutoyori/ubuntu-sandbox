@@ -12,7 +12,8 @@
  *            and exits at EOF.
  */
 
-import { UT, Utmpx, binaryStringToBytes } from '@/network/devices/linux/login/UtmpxRecord';
+import { UT, Utmpx } from '@/network/devices/linux/login/UtmpxRecord';
+import { binaryStringToBytes } from '@/crypto/encoding';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
@@ -144,15 +145,13 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
     // Build a real SFTP session, then drive a SftpSubShell line by line, the
     // way the terminal's batch runner does. This is the integration path
     // exercised by LinuxTerminalSession.runSftpBatch.
-    const { openSftpSession } = await import('./ssh-lan-fixtures');
-    const { sftp } = await openSftpSession(lan.pc1, PC2_IP, 'user', 'admin');
-    const { SftpSubShell } = await import('@/terminal/subshells/SftpSubShell');
-    const shell = new SftpSubShell(sftp);
+    const { openSftpShell } = await import('./ssh-lan-fixtures');
+    const { shell } = await openSftpShell(lan.pc1, PC2_IP, 'user', 'admin');
 
     const lines = ['pwd', 'mkdir batch-target', 'ls', 'quit'];
     const captured: string[] = [];
     for (const line of lines) {
-      const result = shell.processLine(line);
+      const result = await shell.processLine(line);
       for (const out of result.output) captured.push(out);
       if (result.exit) break;
     }
@@ -165,10 +164,8 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
 
   // G9
   it('G9 — batch mode ignores a comment line and stops on the first error', async () => {
-    const { openSftpSession } = await import('./ssh-lan-fixtures');
-    const { sftp } = await openSftpSession(lan.pc1, PC2_IP, 'user', 'admin');
-    const { SftpSubShell } = await import('@/terminal/subshells/SftpSubShell');
-    const shell = new SftpSubShell(sftp);
+    const { openSftpShell } = await import('./ssh-lan-fixtures');
+    const { shell } = await openSftpShell(lan.pc1, PC2_IP, 'user', 'admin');
 
     const script = [
       '# comment, ignored',
@@ -180,9 +177,9 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
     for (const rawLine of script) {
       const line = rawLine.trim();
       if (!line || line.startsWith('#')) continue;
-      const r = shell.processLine(line);
+      const r = await shell.processLine(line);
       const hasError = r.output.some((l) =>
-        /Couldn't|No such|Failure/i.test(l),
+        /Can't|not found|No such|Failure/i.test(l),
       );
       if (hasError) {
         stopped = true;

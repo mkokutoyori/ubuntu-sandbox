@@ -26,6 +26,8 @@ import { OwnedScheduler, getDefaultScheduler, type IScheduler } from '@/events/S
 import { SystemClock, schedulerWallClock } from '../core/SystemClock';
 import { PathClock } from '../core/time/PathClock';
 
+export type EnableSecretAlgorithm = 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' | 'type-4';
+
 export abstract class Equipment {
   readonly id: string;
   name: string;
@@ -39,11 +41,11 @@ export abstract class Equipment {
   private readonly systemClock: SystemClock;
   private bootedAtMs: number;
 
-  private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null = null;
+  private _enableSecret: { value: string; algo: EnableSecretAlgorithm } | null = null;
   private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
 
-  getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
-  _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
+  getEnableSecret(): { value: string; algo: EnableSecretAlgorithm } | null { return this._enableSecret; }
+  _setEnableSecret(value: string, algo: EnableSecretAlgorithm): void {
     this._enableSecret = value === '' ? null : { value, algo };
   }
 
@@ -72,14 +74,14 @@ export abstract class Equipment {
   // Per-level `enable secret level N` / `enable password level N` (N != 15
   // — level 15 always uses the fields above, matching real IOS where the
   // bare/unqualified form and `level 15` are the same thing).
-  private _enableSecretLevels: Map<number, { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> = new Map();
+  private _enableSecretLevels: Map<number, { value: string; algo: EnableSecretAlgorithm }> = new Map();
   private _enablePasswordLevels: Map<number, { value: string; algo: 'plain' | 'type-7' }> = new Map();
 
-  getEnableSecretForLevel(level: number): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null {
+  getEnableSecretForLevel(level: number): { value: string; algo: EnableSecretAlgorithm } | null {
     if (level === 15) return this.getEnableSecret();
     return this._enableSecretLevels.get(level) ?? null;
   }
-  _setEnableSecretForLevel(level: number, value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
+  _setEnableSecretForLevel(level: number, value: string, algo: EnableSecretAlgorithm): void {
     if (level === 15) { this._setEnableSecret(value, algo); return; }
     if (value === '') this._enableSecretLevels.delete(level);
     else this._enableSecretLevels.set(level, { value, algo });
@@ -119,7 +121,7 @@ export abstract class Equipment {
   getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
   _setServiceFlag(name: string, on: boolean): void { this._serviceFlags.set(name, on); }
 
-  listEnableSecretLevels(): ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> {
+  listEnableSecretLevels(): ReadonlyArray<{ level: number; value: string; algo: EnableSecretAlgorithm }> {
     return [...this._enableSecretLevels.entries()]
       .sort(([a], [b]) => a - b)
       .map(([level, v]) => ({ level, ...v }));
@@ -179,7 +181,23 @@ export abstract class Equipment {
     return this.getScheduler();
   }
 
+  private readonly disposeHooks = new Set<() => void>();
+  private disposed = false;
+
+  isDisposed(): boolean {
+    return this.disposed;
+  }
+
+  onDispose(hook: () => void): () => void {
+    this.disposeHooks.add(hook);
+    return () => { this.disposeHooks.delete(hook); };
+  }
+
   dispose(): void {
+    this.disposed = true;
+    const hooks = [...this.disposeHooks];
+    this.disposeHooks.clear();
+    for (const hook of hooks) hook();
     this.machineScheduler?.clearAll();
     EquipmentRegistry.getInstance().deregister(this.id);
   }

@@ -17,7 +17,7 @@ import {
   getHuaweiRoutingExtras, getSwitchSecurityService,
 } from '../../../equipment/RouterServiceCapabilities';
 import { IPAddress, IPv6Address, type ARPEntry } from '../../../core/types';
-import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
+import { renderTable, VRP_TABLE, type TableColumn, padToWidth } from '../cli/TextTable';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { localUserConfigLinesVrp } from './huaweiLocalUser';
 import { vrpInterfaceCounterLines } from './HuaweiCounterViews';
@@ -185,17 +185,17 @@ function huaweiConnectedNextHop(router: Router, r: any): string {
 function renderHuaweiRouteRows(router: Router, table: any[]): string[] {
   const rows: string[] = [];
   for (const r of table) {
-    const dest = `${r.network}/${r.mask.toCIDR()}`.padEnd(19);
-    const proto = huaweiProtoName(r).padEnd(8);
+    const dest = padToWidth(`${r.network}/${r.mask.toCIDR()}`, 19);
+    const proto = padToWidth(huaweiProtoName(r), 8);
     const pref = r.preference ?? huaweiDefaultPreference(r.type);
-    const pre = String(pref).padEnd(5);
-    const cost = String(r.metric ?? 0).padEnd(6);
-    const flags = (r.type === 'connected' ? 'D' : 'RD').padEnd(6);
+    const pre = padToWidth(String(pref), 5);
+    const cost = padToWidth(String(r.metric ?? 0), 6);
+    const flags = padToWidth(r.type === 'connected' ? 'D' : 'RD', 6);
     let nh: string;
     if (r.type === 'connected') nh = huaweiConnectedNextHop(router, r);
     else if (r.nextHop) nh = r.nextHop.toString();
     else nh = '0.0.0.0';
-    rows.push(`${dest} ${proto}${pre}${cost}${flags}${nh.padEnd(16)}${r.iface}`);
+    rows.push(`${dest} ${proto}${pre}${cost}${flags}${padToWidth(nh, 16)}${r.iface}`);
   }
   return rows;
 }
@@ -492,7 +492,7 @@ export function displayIpRoutingTableStatistics(router: Router): string {
   ];
   let total = 0;
   for (const [proto, count] of Object.entries(counts)) {
-    lines.push(`${proto.padEnd(10)}${count}`);
+    lines.push(`${padToWidth(proto, 10)}${count}`);
     total += count;
   }
   lines.push('--------------------');
@@ -798,8 +798,8 @@ export function displayTrafficFilterApplied(router: Router): string {
   const bindings = router._getInterfaceACLBindingsInternal();
   const rows: string[] = [];
   for (const [ifName, b] of bindings) {
-    if (b.inbound !== null) rows.push(` ${ifName.padEnd(33)} inbound    --     ${b.inbound}`);
-    if (b.outbound !== null) rows.push(` ${ifName.padEnd(33)} outbound   --     ${b.outbound}`);
+    if (b.inbound !== null) rows.push(` ${padToWidth(ifName, 33)} inbound    --     ${b.inbound}`);
+    if (b.outbound !== null) rows.push(` ${padToWidth(ifName, 33)} outbound   --     ${b.outbound}`);
   }
   if (rows.length === 0) return 'No traffic-filter applications.';
   return [
@@ -1022,8 +1022,8 @@ export function displayIpv6Neighbors(router: Router, ifFilter?: string): string 
     total++;
     const age = Math.floor(Math.max(0, nowMs - entry.timestamp) / 1000);
     lines.push(`IPv6 Address : ${ip.split('%')[0].toUpperCase()}`);
-    lines.push(`Link-layer   : ${huaweiMacAddress(entry.mac).padEnd(22)}State : ${VRP_NEIGHBOR_STATE[entry.state]}`);
-    lines.push(`Interface    : ${entry.iface.padEnd(22)}Age   : ${age}`);
+    lines.push(`Link-layer   : ${padToWidth(huaweiMacAddress(entry.mac), 22)}State : ${VRP_NEIGHBOR_STATE[entry.state]}`);
+    lines.push(`Interface    : ${padToWidth(entry.iface, 22)}Age   : ${age}`);
     lines.push(`VLAN         : -                     CEVLAN: -`);
     lines.push(`VPN name     :                       Is Router: ${entry.isRouter ? 'TRUE' : 'FALSE'}`);
     lines.push('Secure       : FALSE');
@@ -1607,7 +1607,7 @@ export function registerDisplayCommands(
     if (sessions.length === 0) return 'Info: No NAT session is found.';
     const lines = ['Protocol  Local                         Global                        Outside'];
     for (const s of sessions) {
-      lines.push(`${String(s.protocol).padEnd(10)}${(s.localIP + ':' + s.localPort).padEnd(30)}${(s.outsideGlobal ?? '-') + ':' + (s.outsideGlobalPort ?? 0)}`);
+      lines.push(`${padToWidth(String(s.protocol), 10)}${padToWidth(s.localIP + ':' + s.localPort, 30)}${(s.outsideGlobal ?? '-') + ':' + (s.outsideGlobalPort ?? 0)}`);
     }
     return lines.join('\n');
   });
@@ -1670,7 +1670,7 @@ export function registerDisplayCommands(
     if (sessions.length === 0) return 'Info: No BFD sessions';
     const lines = ['Local Remote      PeerIpAddr       State     Type        InterfaceName'];
     for (const s of sessions) {
-      lines.push(`${String(s.discriminatorLocal ?? '-').padEnd(6)}${String(s.discriminatorRemote ?? '-').padEnd(12)}${(s.peerIp ?? '-').padEnd(17)}${s.state.padEnd(10)}${(s.auto ? 'AUTO' : 'STATIC').padEnd(12)}${s.outIface ?? '-'}`);
+      lines.push(`${padToWidth(String(s.discriminatorLocal ?? '-'), 6)}${padToWidth(String(s.discriminatorRemote ?? '-'), 12)}${padToWidth(s.peerIp ?? '-', 17)}${padToWidth(s.state, 10)}${padToWidth(s.auto ? 'AUTO' : 'STATIC', 12)}${s.outIface ?? '-'}`);
     }
     return lines.join('\n');
   });
@@ -1761,7 +1761,7 @@ export function registerDisplayCommands(
     const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
     const established = [...byId.values()].filter((n) => n.state === 'Established').length;
     const lines = [
-      `BGP local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
+      `BGP local router ID : ${bgp.routerId ?? e.getRouterId()}`,
       `Local AS number : ${bgp.asn}`,
       `Total number of peers : ${bgp.peers.size}              Peers in established state : ${established}`,
       '  Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv',
@@ -1770,7 +1770,7 @@ export function registerDisplayCommands(
       const v = byId.get(ip);
       const upDown = v && v.isUp ? `${v.uptimeSec}s` : '00:00:00';
       const state = v ? v.state : 'Idle';
-      lines.push(`  ${ip.padEnd(15)}  4    ${String(p.asNumber ?? bgp.asn).padEnd(5)}     0        0     0  ${upDown.padEnd(8)}      ${state}       0`);
+      lines.push(`  ${padToWidth(ip, 15)}  4    ${padToWidth(String(p.asNumber ?? bgp.asn), 5)}     0        0     0  ${padToWidth(upDown, 8)}      ${state}       0`);
     }
     return lines.join('\n');
   });
@@ -1788,7 +1788,7 @@ export function registerDisplayCommands(
     getRouter().convergeDynamicRouting();
     const table = e.getBgpTable();
     const lines = [
-      `BGP Local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
+      `BGP Local router ID : ${bgp.routerId ?? e.getRouterId()}`,
       ' Total Number of Routes: ' + table.length,
       ' Network            NextHop         MED        LocPrf    PrefVal Path/Ogn',
     ];
@@ -1796,7 +1796,7 @@ export function registerDisplayCommands(
       const prefix = `${r.network}/${r.mask.toCIDR()}`;
       const nextHop = String(r.nextHop ?? '0.0.0.0');
       const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
-      lines.push(` ${prefix.padEnd(19)}${nextHop.padEnd(16)}0          ${String(r.localPref).padEnd(10)}${String(r.weight).padEnd(8)}${path}`);
+      lines.push(` ${padToWidth(prefix, 19)}${padToWidth(nextHop, 16)}0          ${padToWidth(String(r.localPref), 10)}${padToWidth(String(r.weight), 8)}${path}`);
     }
     return lines.join('\n');
   });

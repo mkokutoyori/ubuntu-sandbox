@@ -6,6 +6,7 @@
 
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { SftpWirePacket } from '../sftp/SftpWireCodec';
 
 export type ChannelType = 'shell' | 'exec' | 'sftp';
 
@@ -20,6 +21,7 @@ export interface ISshChannel {
 }
 
 export interface ExecResult {
+  readonly clientNotices?: string;
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
@@ -59,6 +61,11 @@ export interface ISshShellChannel extends ISshChannel {
   resize(cols: number, rows: number): void;
   send(data: string): void;
   onData(handler: (data: string) => void): () => void;
+  initialMotd?(): string | null;
+  untilQuiet?(): Promise<void>;
+  takeUnclaimedOutput?(): string;
+  loginShellKind?(): string | null;
+  remoteExitStatus?(): number | null;
   /**
    * Dispatch a single line of shell input to the server's persistent
    * shell session for this channel. Resolves with the captured output.
@@ -119,6 +126,13 @@ export interface ISshShellChannel extends ISshChannel {
   sendSignal(signal: 'SIGINT'): void;
 }
 
+export interface ExecChannelOptions {
+  readonly environment?: ReadonlyMap<string, string>;
+  readonly pty?: { readonly term: string; readonly columns: number; readonly rows: number };
+  readonly forwardAgent?: boolean;
+  readonly stdin?: string;
+}
+
 export interface ISshExecChannel extends ISshChannel {
   readonly type: 'exec';
   execute(): Promise<ExecResult>;
@@ -127,19 +141,12 @@ export interface ISshExecChannel extends ISshChannel {
   readonly exitCode: number;
 }
 
-export interface SftpRequest {
-  readonly op: string;
-  readonly [key: string]: unknown;
-}
-
-export interface SftpResponse {
-  readonly ok: boolean;
-  readonly [key: string]: unknown;
-}
-
 export interface ISshSftpChannel extends ISshChannel {
   readonly type: 'sftp';
-  sendRequest(req: SftpRequest): SftpResponse;
-  readonly remoteCwd: string;
+  exchange(packet: SftpWirePacket): SftpWirePacket | null;
+  readonly protocolVersion: number;
+  readonly serverExtensions: ReadonlyMap<string, string>;
+  readonly remoteStderr: string;
+  readonly oversizedMessage: number | null;
   accepted(): Promise<boolean>;
 }

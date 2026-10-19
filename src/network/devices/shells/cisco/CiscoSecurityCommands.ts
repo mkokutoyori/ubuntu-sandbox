@@ -1,15 +1,12 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
+import { routerRsaKey } from '../../../ipsec/RouterRsaKey';
+import { encodeRsaPublicKey, groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 
 import type { Router } from '../../Router';
-import type { CiscoRouter } from '../../CiscoRouter';
 import { CommandTrie } from '../CommandTrie';
 import { showIpTraffic } from './CiscoCommonShow';
 import {
   CiscoSecurityConfig,
-  newRadiusServerStats,
   newTacacsServerStats,
-  radiusAuthPort,
-  radiusAcctPort,
   tacacsServerPort,
   type AaaServiceKind,
   type AaaPhase,
@@ -29,7 +26,6 @@ import { isValidIPv4 } from '@/network/core/ip';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
-import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 
@@ -133,6 +129,7 @@ export const USERNAME_CONTINUATIONS: ReadonlyArray<{
  */
 
 import { AAA_SERVICES } from './aaaHeadSpecs';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
   authentication: [
     'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
@@ -270,78 +267,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('crypto pki trustpoint', 'Declare a PKI trustpoint', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().ensurePkiTrustpoint(args[0]);
-    ctx.setPkiTrustpoint?.(args[0]);
-    ctx.setMode('config-ca-trustpoint' as CiscoShellMode);
-    return '';
-  });
-
-  trie.registerGreedy('no crypto pki trustpoint', 'Remove a PKI trustpoint', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().pkiTrustpoints.delete(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('crypto pki authenticate', 'Authenticate trustpoint CA', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    tp.caCert = ca.rootCertificate;
-    return `% Trustpoint ${name} CA certificate accepted`;
-  });
-  trie.registerGreedy('crypto pki enroll', 'Enroll trustpoint', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    if (!tp.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
-    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    const now = simulationNowMs();
-    const subject = tp.subjectName || `CN=${ctx.r()._getHostnameInternal()}`;
-    const issued = ca.issueCertificate({
-      subject, notBefore: now, notAfter: now + 365 * 24 * 3600 * 1000,
-      subjectAltNames: tp.fqdn ? [tp.fqdn] : undefined,
-    });
-    tp.localCert = issued.cert;
-    tp.localKey = issued.privateKey;
-    (ctx.r() as CiscoRouter).installIkeCertAuth({
-      localCert: issued.cert,
-      localKey: issued.privateKey,
-      trustAnchors: [tp.caCert],
-      revocationCheck: mapRevocationCheck(tp.revocationCheck),
-    });
-    return `% Start certificate enrollment for trustpoint ${name}\n`
-      + '% Certificate request sent to Certificate Authority\n'
-      + '% Certificate successfully received and installed';
-  });
-  trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    const what = args[1]?.toLowerCase();
-    if (what === 'certificate' || what === 'pem') {
-      (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
-        format: what,
-        importedAtMs: simulationNowMs(),
-      };
-      if (tp.localCert && tp.localKey && tp.caCert) {
-        (ctx.r() as CiscoRouter).installIkeCertAuth({
-          localCert: tp.localCert,
-          localKey: tp.localKey,
-          trustAnchors: [tp.caCert],
-          revocationCheck: mapRevocationCheck(tp.revocationCheck),
-        });
-      }
-      return `% Certificate imported into trustpoint ${name}`;
-    }
-    return `% Unknown import type "${what}"`;
-  });
-
   trie.registerGreedy('parameter-map type inspect', 'Define parameter-map', (args) => {
     if (!args[0]) return '% Incomplete command.';
     sec().ensureParameterMapInspect(args[0]);
@@ -350,9 +275,9 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
 }
 
-function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
+export function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
   if (mode === 'ocsp') return 'ocsp';
-  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl';
+  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl-strict';
   return 'none';
 }
 
@@ -383,7 +308,7 @@ export function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: 
     i++;
   }
   const methods = args.slice(i);
-  if (methods.length === 0) return CISCO_ERRORS.INCOMPLETE;
+  if (methods.length === 0 && recordType !== 'none') return CISCO_ERRORS.INCOMPLETE;
   const incomplet = verifierMethodesAaa(phase, methods);
   if (incomplet) return incomplet;
   sec.aaaMethods.push({ phase, service, listName, privilegeLevel, recordType, methods });
@@ -874,7 +799,13 @@ export function policyMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSp
 const PMAP_CLASS_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   police: place('debit', 'REST', 'Committed information rate in bits per second'),
-  drop: null,
+  drop: place('option', 'ENUM', 'Log the dropped packets', {
+    optional: true, values: [{ keyword: 'log', description: 'Log dropped packets' }],
+  }),
+  pass: place('option', 'ENUM', 'Log the passed packets', {
+    optional: true, values: [{ keyword: 'log', description: 'Log passed packets' }],
+  }),
+  inspect: place('parametres', 'WORD', 'Parameter map applied to the inspection', { optional: true }),
   'set dscp': place('valeur', 'INT', 'Differentiated services codepoint value', {
     range: [0, 63],
     values: [
@@ -1088,7 +1019,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     'Percentage of the certificate lifetime after which to re-enrol', {
       optional: true,
     }),
-  fingerprint: place('empreinte', 'WORD', 'Fingerprint the certificate must carry'),
+  fingerprint: place('empreinte', 'REST', 'Fingerprint the certificate must carry', { literal: 'LINE' }),
 };
 
 export function trustpointSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
@@ -1133,9 +1064,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'source', description: 'Check the source, then `reachable-via`' },
     ],
   },
-  'zone-member security': {
-    name: 'zone', type: 'WORD', description: 'Name of the security zone',
-  },
 };
 
 export function securityInterfaceSpecs(
@@ -1157,19 +1085,41 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
 
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
-    const allowDefault = args.includes('allow-default');
+    const aclOf = (word: string | undefined): string | undefined => {
+      if (word === undefined) return undefined;
+      const n = Number(word);
+      const valid = /^\d+$/.test(word) && ((n >= 1 && n <= 199) || (n >= 1300 && n <= 2699));
+      if (!valid) throw new CliInvalidInput({ token: word });
+      return word;
+    };
     if (args[0] === 'reverse-path') {
-      sec().ifaceFlags(i).urpf = { mode: 'strict', allowDefault };
-    } else if (args[0] === 'source' && args[1] === 'reachable-via' && args[2]) {
-      sec().ifaceFlags(i).urpf = {
-        mode: args[2] === 'any' ? 'loose' : 'strict', allowDefault,
-      };
+      if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+      sec().ifaceFlags(i).urpf = { mode: 'strict', acl: aclOf(args[1]) };
+      return '';
     }
+    if (args[0] !== 'source') throw new CliInvalidInput({ token: args[0] ?? '' });
+    if (args[1] !== 'reachable-via') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      throw new CliInvalidInput({ token: args[1] });
+    }
+    if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (args[2] !== 'any' && args[2] !== 'rx') throw new CliInvalidInput({ token: args[2] });
+    const urpf: { mode: 'strict' | 'loose'; allowDefault?: boolean; allowSelfPing?: boolean; acl?: string } = {
+      mode: args[2] === 'any' ? 'loose' : 'strict',
+    };
+    for (let k = 3; k < args.length; k++) {
+      if (args[k] === 'allow-default' && urpf.allowDefault === undefined) urpf.allowDefault = true;
+      else if (args[k] === 'allow-self-ping' && urpf.allowSelfPing === undefined) urpf.allowSelfPing = true;
+      else if (k === args.length - 1 && urpf.acl === undefined) urpf.acl = aclOf(args[k]);
+      else throw new CliInvalidInput({ token: args[k] });
+    }
+    sec().ifaceFlags(i).urpf = urpf;
     return '';
   });
-  trie.registerGreedy('zone-member security', 'Assign zone', (args) => {
-    const i = ctx.getSelectedInterface(); if (!i || !args[0]) return '';
-    sec().ifaceFlags(i).zoneMember = args[0];
+
+  trie.registerGreedy('no ip verify unicast', 'Disable uRPF', () => {
+    const i = ctx.getSelectedInterface(); if (!i) return '';
+    delete sec().ifaceFlags(i).urpf;
     return '';
   });
 }
@@ -1198,31 +1148,6 @@ export function buildIdentityShowCommands(
     path: readonly string[], description: string, niveau: number, render: () => string,
   ): void => { vues.push({ path, description, niveau, render }); };
 
-  vue(['show', 'aaa', 'servers'], 'Display AAA servers', 1, () => {
-    const s = sec();
-    const lines: string[] = [];
-    let idx = 1;
-    for (const r of s.radiusServers.values()) {
-      const st = r.stats;
-      lines.push(`RADIUS: id ${idx++}, priority 1, host ${r.address ?? '<no address>'}`
-        + `, auth-port ${radiusAuthPort(r, s.radiusDefaults)}`
-        + `, acct-port ${radiusAcctPort(r, s.radiusDefaults)}`);
-      lines.push(`    State: current UP, duration ${secondsSince(st.upSinceMs)}s, previous duration 0s`);
-      lines.push(`    Authen: request ${st.authRequests}, timeouts ${st.authTimeouts}, retransmission ${st.authRetransmits}`);
-      lines.push(`            Response: accept ${st.authAccepts}, reject ${st.authRejects}, challenge 0`);
-      lines.push(`    Account: request ${st.acctRequests}, timeouts ${st.acctTimeouts}, retransmission ${st.acctRetransmits}`);
-      lines.push(`            Response: ${st.acctResponses}`);
-    }
-    for (const t of s.tacacsServers.values()) {
-      const st = t.stats;
-      lines.push(`TACACS+: id ${idx++}, host ${t.address ?? '<no address>'}`
-        + `, port ${tacacsServerPort(t, s.tacacsDefaults)}`);
-      lines.push(`    Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}, aborts: ${st.socketAborts}, errors: ${st.socketErrors}`);
-      lines.push(`    Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
-    }
-    return lines.length ? lines.join('\n') : 'No AAA servers configured';
-  });
-
   vue(['show', 'aaa', 'local', 'user', 'lockout'],
     'Local users currently locked out', 1, () => {
     const lines = [
@@ -1231,7 +1156,7 @@ export function buildIdentityShowCommands(
     ];
     for (const a of getDevice().getCredentialStore().list()) {
       if (!a.locked) continue;
-      lines.push(`${a.name.padEnd(22)}${a.lockReason ?? 'locked'}`);
+      lines.push(`${padToWidth(a.name, 22)}${a.lockReason ?? 'locked'}`);
     }
     return lines.join('\n');
   });
@@ -1259,8 +1184,8 @@ export function buildIdentityShowCommands(
       return lines.join('\n');
     }
     for (const [service, c] of trafic) {
-      lines.push(`     ${service.padEnd(18)}${String(c.starts).padStart(6)}`
-        + `${String(c.stops).padStart(9)}${String(c.failed).padStart(10)}`);
+      lines.push(`     ${padToWidth(service, 18)}${padToWidth(String(c.starts), 6, 'right')}`
+        + `${padToWidth(String(c.stops), 9, 'right')}${padToWidth(String(c.failed), 10, 'right')}`);
     }
     return lines.join('\n');
   });
@@ -1273,20 +1198,7 @@ export function buildIdentityShowCommands(
     const lines = [`Total sessions since last reload: ${active.length + past.length}`];
     if (active.length > 0) {
       lines.push('Session-Id Unique Id User       IP Address    Session Type');
-      for (const s of active) lines.push(`${s.id.padEnd(11)}1          ${s.user.padEnd(11)}${s.fromIp.padEnd(14)}${s.line}`);
-    }
-    return lines.join('\n');
-  });
-
-  vue(['show', 'radius', 'statistics'], 'Display Radius stats', 1, () => {
-    const s = sec();
-    if (s.radiusServers.size === 0) return 'No RADIUS servers configured';
-    const lines = ['  Radius Statistics:'];
-    for (const r of s.radiusServers.values()) {
-      const st = r.stats;
-      lines.push(`  Server: ${r.name} (${r.address ?? 'unconfigured'})`);
-      lines.push(`    Auth requests: ${st.authRequests}, retransmits: ${st.authRetransmits}, accepts: ${st.authAccepts}, rejects: ${st.authRejects}`);
-      lines.push(`    Acct requests: ${st.acctRequests}, retransmits: ${st.acctRetransmits}, responses: ${st.acctResponses}`);
+      for (const s of active) lines.push(`${padToWidth(s.id, 11)}1          ${padToWidth(s.user, 11)}${padToWidth(s.fromIp, 14)}${s.line}`);
     }
     return lines.join('\n');
   });
@@ -1373,7 +1285,7 @@ export function buildIdentityShowCommands(
     }
     for (const [k, g] of groups) {
       const user = k.split('@')[0];
-      lines.push(`${user.padEnd(11)}${g.ip.padEnd(14)}22    ${String(g.count).padEnd(7)}${new Date(g.last).toISOString().replace('T', ' ').slice(0, 19)}`);
+      lines.push(`${padToWidth(user, 11)}${padToWidth(g.ip, 14)}22    ${padToWidth(String(g.count), 7)}${new Date(g.last).toISOString().replace('T', ' ').slice(0, 19)}`);
     }
     return lines.join('\n');
   });
@@ -1386,9 +1298,9 @@ export function buildIdentityShowCommands(
       `Key name: ${k.label}`,
       ' Storage Device: not specified',
       ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
-      ' Key is not exportable.',
+      k.exportable ? ' Key is exportable.' : ' Key is not exportable.',
       ' Key Data:',
-      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
+      ...pubkeyDataLines(getDevice() as { getHostname(): string }, k.modulus),
     ].join('\n')).join('\n\n');
   });
 
@@ -1409,12 +1321,8 @@ export function buildIdentityShowCommands(
 const SECURITY_SHOW_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'show crypto pki trustpoints': null,
-  'show crypto pki certificates': null,
   'show crypto key mypubkey rsa': null,
   'show policy-map control-plane': null,
-  'show zone security': null,
-  'show zone-pair security': null,
-  'show policy-map type inspect zone-pair': null,
   'show ip traffic': null,
   'show parameter-map type inspect': { name: 'nom', type: 'WORD', optional: true,
     description: 'Name of the inspect parameter-map' },
@@ -1455,32 +1363,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       tp.serialNumber ? `    Serial Number: ${tp.serialNumber}` : '',
     ].filter(Boolean).join('\n')).join('\n');
   });
-  trie.register('show crypto pki certificates', 'PKI certificates', () => {
-    const tps = [...sec().pkiTrustpoints.values()];
-    if (tps.length === 0) return 'No PKI certificates installed';
-    return tps.map(tp => {
-      if (!tp.localCert) return `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`;
-      const lines = [
-        `Certificate (Trustpoint ${tp.name}):`,
-        '  Status: Available',
-        `  Certificate Serial Number: ${tp.localCert.serialNumber}`,
-        `  Subject: ${tp.localCert.subject}`,
-        `  Issuer: ${tp.localCert.issuer}`,
-        `  Validity: ${new Date(tp.localCert.notBefore).toISOString()} to ${new Date(tp.localCert.notAfter).toISOString()}`,
-      ];
-      if (tp.caCert) {
-        lines.push(
-          `CA Certificate (Trustpoint ${tp.name}):`,
-          '  Status: Available',
-          `  Certificate Serial Number: ${tp.caCert.serialNumber}`,
-          `  Subject: ${tp.caCert.subject}`,
-        );
-      }
-      return lines.join('\n');
-    }).join('\n\n');
-  });
-
-
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();
     const pm = s.controlPlane.servicePolicyInput;
@@ -1510,35 +1392,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     ].join('\n')).join('\n');
   });
 
-  trie.register('show zone security', 'Display zones', () => {
-    const s = sec();
-    if (s.zones.size === 0) return 'No zones configured';
-    return [...s.zones.values()].map(z => {
-      const description = (z as unknown as { description?: string }).description ?? `${z.name} security zone`;
-      const members: string[] = [];
-      for (const [iface, f] of s.interfaceFlags) {
-        if (f.zoneMember === z.name) members.push(`    ${iface}`);
-      }
-      return [
-        `Zone: ${z.name}`,
-        `  Description: ${description}`,
-        '  Member Interfaces:',
-        ...(members.length === 0 ? ['    None'] : members),
-      ].join('\n');
-    }).join('\n');
-  });
-
-  trie.register('show zone-pair security', 'Display zone-pairs', () => {
-    const s = sec();
-    if (s.zonePairs.size === 0) return 'No zone-pairs configured';
-    return [...s.zonePairs.values()].map(zp => `Zone-pair name: ${zp.name}\n  Source-Zone: ${zp.source}  Destination-Zone: ${zp.destination}\n  service-policy ${zp.servicePolicy ?? 'not configured'}`).join('\n');
-  });
-
-  trie.register('show policy-map type inspect zone-pair', 'Show inspect policy', () => {
-    const s = sec();
-    return [...s.zonePairs.values()].map(zp => `policy exists on zp ${zp.name}`).join('\n');
-  });
-
   trie.register('show ip traffic', 'IP traffic statistics', () =>
     showIpTraffic(getRouter()._getPortsInternal().values()));
 
@@ -1560,7 +1413,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       if (prefixe && !dst.startsWith(`${prefixe}/`) && r.network.toString() !== prefixe) continue;
       const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
       const next = attachee ? 'attached' : r.nextHop!.toString();
-      lines.push(`${dst.padEnd(21)}${next.padEnd(21)}${r.iface ?? ''}`);
+      lines.push(`${padToWidth(dst, 21)}${padToWidth(next, 21)}${r.iface ?? ''}`);
     }
     return lines.join('\n');
   });
@@ -1606,10 +1459,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   });
 }
 
-function secondsSince(ms: number): number {
-  return Math.max(0, Math.floor((simulationNowMs() - ms) / 1000));
-}
-
 /** `10:04:36 UTC Aug 6 2026` — la date telle qu'IOS l'écrit ici. */
 function formatIosKeyDate(ms: number): string {
   const d = new Date(ms);
@@ -1620,27 +1469,8 @@ function formatIosKeyDate(ms: number): string {
     + `${mois} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
 }
 
-function rsaPublicKeyMaterial(label: string, modulus: number, generatedAtMs: number): string {
-  let h1 = 2166136261 >>> 0;
-  let h2 = 0x811C9DC5 >>> 0;
-  const seed = `${label}|${modulus}|${generatedAtMs}`;
-  for (let i = 0; i < seed.length; i++) {
-    h1 ^= seed.charCodeAt(i);
-    h1 = Math.imul(h1, 16777619) >>> 0;
-    h2 = Math.imul(h2 ^ seed.charCodeAt(i), 0x01000193) >>> 0;
-  }
-  const blocks = Math.max(4, Math.floor(modulus / 64));
-  const out: string[] = [];
-  for (let i = 0; i < blocks; i++) {
-    h1 = Math.imul(h1 ^ (i + 1), 0x9E3779B1) >>> 0;
-    h2 = Math.imul(h2 ^ (i + 1), 0xBB67AE85) >>> 0;
-    out.push(h1.toString(16).padStart(8, '0').toUpperCase());
-    out.push(h2.toString(16).padStart(8, '0').toUpperCase());
-  }
-  const hex = out.join('');
-  const lines: string[] = [];
-  for (let i = 0; i < hex.length; i += 64) {
-    lines.push(hex.slice(i, i + 64));
-  }
-  return lines.join('\n  ');
+function pubkeyDataLines(device: { getHostname(): string }, modulus: number): string[] {
+  const key = routerRsaKey(device.getHostname(), modulus);
+  if (key === null) return [];
+  return groupedHex(encodeRsaPublicKey(key.publicKey)).map((row) => `  ${row}`);
 }

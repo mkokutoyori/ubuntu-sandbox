@@ -129,6 +129,12 @@ export interface IOContext {
   globExpand?(pattern: string, cwd: string): string[] | null;
   /** Resolve the home directory of `user`; `null` means the user is unknown. */
   homeFor?(user: string): string | null;
+  /**
+   * A backgrounded command keeps writing to its stdout after the shell has
+   * moved on (`nc -l > file &` receives data minutes later): the shell binds
+   * the file to the job's pid once the redirection is applied.
+   */
+  bindBackgroundStdout?(pid: number, path: string): void;
 }
 
 export interface InterpreterOptions {
@@ -886,12 +892,15 @@ export class BashInterpreter {
     // Whether the command produced a genuinely separate stderr stream
     // (only external commands that opt in via the `stderr` field do).
     let explicitStderr: string | null = null;
+    let backgroundedPid: number | undefined;
 
     // Check for function
     const fn = this.functions.get(cmdName);
     if (cmdName === 'command') {
       // `command` runs its operand skipping function and alias lookup.
       yield* this.runCommandWord(args.slice(1), pipeInput);
+    } else if (cmdName === 'exec') {
+      if (args.length > 1) yield* this.runCommandWord(args.slice(1), pipeInput);
     } else if (fn) {
       yield* this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {
@@ -914,6 +923,7 @@ export class BashInterpreter {
       });
       if (result.backgroundPid !== undefined) {
         this.env.set('!', String(result.backgroundPid));
+        backgroundedPid = result.backgroundPid;
       }
       if (result.stderr !== undefined) {
         // The command separates fd 1 / fd 2. Stdout flows normally;
@@ -959,6 +969,7 @@ export class BashInterpreter {
         explicitStderr !== null ? capturedStderr : undefined,
         cmdName,
       );
+      if (backgroundedPid !== undefined) yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
     }
 
     this.flushOutSubs();
@@ -1120,6 +1131,15 @@ export class BashInterpreter {
   }
 
   /** Apply output redirections to captured output. */
+  private *bindBackgroundStdout(redirections: Redirection[], pid: number): Effects<void> {
+    if (!this.io?.bindBackgroundStdout) return;
+    for (const redir of redirections) {
+      if ((redir.op !== '>' && redir.op !== '>>') || (redir.fd !== undefined && redir.fd !== 1)) continue;
+      const target = yield* this.expandWordG(redir.target);
+      this.io.bindBackgroundStdout(pid, this.io.resolvePath(target));
+    }
+  }
+
   private *applyRedirections(
     redirections: Redirection[],
     capturedOutput: string,

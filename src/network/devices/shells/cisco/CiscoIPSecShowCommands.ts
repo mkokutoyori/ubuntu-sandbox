@@ -53,9 +53,6 @@ export function registerIPSecShowCommands(
   trie.register('show crypto ikev2 sa detail', 'Display detailed IKEv2 SAs', () =>
     eng()?.showCryptoIKEv2SADetail() ?? 'IPSec not configured.');
 
-  trie.register('show crypto session', 'Display crypto session status', () =>
-    eng()?.showCryptoSession() ?? 'IPSec not configured.');
-
   trie.register('show crypto ipsec security-policy', 'Display IPSec security policies (SPD)', () =>
     eng()?.showSecurityPolicy() ?? 'IPSec not configured.');
 
@@ -144,34 +141,10 @@ export function registerIPSecShowCommands(
     if (!e) return 'No crypto engine connections active.';
     return e.showCryptoSession();
   });
-  trie.registerGreedy('show crypto session detail', 'Detailed crypto sessions', () =>
-    eng()?.showCryptoSession?.() ?? 'IPSec not configured.');
   trie.registerGreedy('show crypto ipsec sa interface', 'IPSec SAs for an interface', () =>
     eng()?.showCryptoIPSecSADetail?.() ?? eng()?.showCryptoIPSecSA?.() ?? 'IPSec not configured.');
-  trie.register('show crypto ipsec security-association lifetime', 'IPSec SA lifetime', () => {
-    const e = eng() as unknown as { globalSALifetimeSeconds?: number; globalSALifetimeKB?: number } | undefined;
-    return `Security association lifetime: ${e?.globalSALifetimeKB ?? 4608000} kilobytes / ${e?.globalSALifetimeSeconds ?? 3600} seconds`;
-  });
   trie.registerGreedy('show crypto map interface', 'Crypto maps on an interface', () =>
     eng()?.showCryptoMap?.() ?? 'No crypto maps configured');
-
-  trie.register('show crypto pki certificates verbose', 'Detailed PKI certificates', () => {
-    const sec = (getRouter() as unknown as { [s: symbol]: { pkiTrustpoints?: Map<string, { name: string; subjectName?: string; enrollmentUrl?: string; revocationCheck?: string; rsaKeypair?: string; importedCertificate?: { format: string; importedAtMs: number } }> } | undefined })[Symbol.for('CiscoSecurityConfig')];
-    const tps = sec?.pkiTrustpoints;
-    if (!tps || tps.size === 0) return 'No PKI certificates installed';
-    return [...tps.values()].map(tp => [
-      `Trustpoint ${tp.name} (verbose):`,
-      `  Subject Name: ${tp.subjectName ?? '<not configured>'}`,
-      `  Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
-      `  Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
-      `  RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
-      tp.importedCertificate
-        ? `  Imported Certificate (${tp.importedCertificate.format}): ${new Date(tp.importedCertificate.importedAtMs).toISOString()}`
-        : '  Certificate: pending enrollment',
-      '  Validity: 365 days',
-      `  Certificate fingerprint (SHA1): ${'AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB'}`,
-    ].join('\n')).join('\n\n');
-  });
 
   const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
     + ' the certificate engine publishes no enrolment or validation event';

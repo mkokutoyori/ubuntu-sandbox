@@ -4,6 +4,7 @@ import type { NqaService, NqaTestInstance, NqaTestType } from '../../../nqa/NqaS
 import { NQA_TEST_TYPES, NQA_UNSUPPORTED_TYPES } from '../../../nqa/NqaService';
 import { applyTypeDefaults } from '../../../ipsla/types';
 import { looksLikeIPv6 } from '../cisco/ciscoPing';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface HuaweiNqaShellCtx {
   r(): Router;
@@ -372,10 +373,10 @@ export function registerHuaweiNqaDisplayCommands(
     const lines = [`NQA entry(${test.admin}, ${test.name}) history record:`,
       '  Index    Response     Status           LastRC  Time'];
     for (const record of test.history) {
-      lines.push(`  ${String(record.index).padEnd(9)}`
-        + `${String(record.rttMs === null ? 0 : Math.round(record.rttMs)).padEnd(13)}`
-        + `${(record.success ? 'success' : 'timeout').padEnd(17)}`
-        + `${(record.success ? '0' : '1').padEnd(8)}`
+      lines.push(`  ${padToWidth(String(record.index), 9)}`
+        + `${padToWidth(String(record.rttMs === null ? 0 : Math.round(record.rttMs)), 13)}`
+        + `${padToWidth(record.success ? 'success' : 'timeout', 17)}`
+        + `${padToWidth(record.success ? '0' : '1', 8)}`
         + `${formatVrpTimestamp(record.sampleEpochMs)}`);
     }
     return lines.join('\n');

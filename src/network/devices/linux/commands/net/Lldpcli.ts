@@ -2,6 +2,7 @@ import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { LldpAgent, LldpNeighbor } from '@/network/lldp/LldpAgent';
 import type { LldpCapability, LldpFrame, LldpManagementAddress } from '@/network/lldp/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const SEP = '-'.repeat(79);
 
@@ -29,7 +30,7 @@ class TextWriter {
       this.flush();
     }
     const indent = '  '.repeat(Math.max(0, this.level - 1));
-    this.current = `${indent}${`${label}:`.padEnd(13)}`;
+    this.current = `${indent}${padToWidth(`${label}:`, 13)}`;
     if (this.level === 0) {
       this.lines.push(this.current, SEP);
       this.current = '';

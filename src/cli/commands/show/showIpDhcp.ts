@@ -1,6 +1,7 @@
 import type { CommandSpec } from '../../CommandTable';
 import { pad2 } from '@/lib/format';
 import { IOS_MONTHS } from '@/network/devices/shells/cisco/CiscoCommonShow';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface DhcpBindingRow {
   ipAddress: string;
@@ -58,9 +59,9 @@ export function formatDhcpBindings(
   for (const binding of server.getBindings().values()) {
     if (filter && binding.ipAddress !== filter) continue;
     lines.push(
-      binding.ipAddress.padEnd(20)
-      + clientIdText(binding.clientId).padEnd(24)
-      + leaseExpirationText(binding.leaseExpiration, localTime).padEnd(24)
+      padToWidth(binding.ipAddress, 20)
+      + padToWidth(clientIdText(binding.clientId), 24)
+      + padToWidth(leaseExpirationText(binding.leaseExpiration, localTime), 24)
       + bindingTypeText(binding.type));
   }
   return lines.join('\n');

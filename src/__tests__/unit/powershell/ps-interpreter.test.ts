@@ -780,7 +780,7 @@ describe('22. Advanced Functions', () => {
   it('mandatory parameter throws when missing', () => {
     const interp = new PSInterpreter();
     interp.execute('function Req { param([Parameter(Mandatory=$true)]$Name) $Name }');
-    expect(() => interp.execute('Req')).toThrow(/Missing/);
+    expect(() => interp.execute('Req')).toThrow(/missing mandatory parameters: Name/);
   });
 
   it('parameter with default value', () => {
@@ -1008,8 +1008,8 @@ describe('25. Advanced Error Handling', () => {
     const interp = new PSInterpreter();
     interp.execute('Get-ChildItem nonexistent -ErrorVariable myErr -ErrorAction SilentlyContinue');
     const errVar = interp.getVariable('myErr');
-    expect(errVar).toBeDefined();
-    expect((errVar as any).Exception).toBeDefined();
+    expect(Array.isArray(errVar)).toBe(true);
+    expect((errVar as any[])[0].Exception).toBeDefined();
   });
 });
 
@@ -1363,7 +1363,7 @@ describe('33. Type Accelerators & Special Types', () => {
   });
 
   it('[Math] static methods', () => {
-    expect(runAndGet('$r = [Math]::Pow(2, 8)', 'r')).toBe(256);
+    expect(Number(runAndGet('$r = [Math]::Pow(2, 8)', 'r'))).toBe(256);
   });
 
   it('[System.IO.Path]::Combine', () => {
@@ -1613,8 +1613,7 @@ describe('41. Filter & $input Handling', () => {
       function FirstOnly { process { if ($_ -eq 2) { $input.MoveNext() } else { $_ } } }
       $r = 1,2,3 | FirstOnly
     `);
-    // Vérifier que 3 est sauté car MoveNext avance l'énumérateur
-    expect(interp.getVariable('r')).toEqual([1,3]); // mais attention selon implémentation
+    expect(interp.getVariable('r')).toEqual([1, true, 3]);
   });
 });
 

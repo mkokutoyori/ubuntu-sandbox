@@ -149,12 +149,11 @@ export class GetServiceCmdlet implements ICmdlet {
     const names = Array.isArray(name) ? name : [name];
     const out: ServiceInfo[] = [];
     for (const n of names) {
-      // Wildcard support — `Get-Service "spo*"` filters by name + display.
       if (hasWildcard(n)) {
         const pat = wildcardToRegex(n);
         let matched = 0;
         for (const s of svc.listServices()) {
-          if (pat.test(s.name) || pat.test(s.displayName)) { out.push(s); matched++; }
+          if (pat.test(s.name)) { out.push(s); matched++; }
         }
         if (matched === 0) {
           ctx.emitError(`Cannot find any service with service name '${n}'.`);

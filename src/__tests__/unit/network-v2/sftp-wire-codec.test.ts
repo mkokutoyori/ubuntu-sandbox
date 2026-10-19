@@ -101,7 +101,7 @@ describe('SftpWireCodec — byte-level round-trips (draft-ietf-secsh-filexfer §
     const bytes = encodeSftpWirePacket({ type: 'INIT', version: 3 });
     // 4-byte length prefix, then the type byte.
     expect(bytes[4]).toBe(SFTP_TYPE.INIT);
-    const status = encodeSftpWirePacket({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    const status = encodeSftpWirePacket({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(status[4]).toBe(SFTP_TYPE.STATUS);
   });
 
@@ -155,7 +155,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
 
   it('MKDIR then OPENDIR+READDIR lists the new directory as empty, then EOF', () => {
     const { session } = buildSession();
-    expect(session.handle({ type: 'MKDIR', requestId: 1, path: 'sub', attrs: {} })).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(session.handle({ type: 'MKDIR', requestId: 1, path: 'sub', attrs: {} })).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
 
     const openReply = session.handle({ type: 'OPENDIR', requestId: 2, path: 'sub' });
     expect(openReply.type).toBe('HANDLE');
@@ -185,14 +185,14 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
   it('REMOVE deletes a real file', () => {
     const { session, vfs } = buildSession();
     const reply = session.handle({ type: 'REMOVE', requestId: 1, filename: 'hello.txt' });
-    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(vfs.exists('/home/alice/hello.txt')).toBe(false);
   });
 
   it('RENAME renames a real file', () => {
     const { session, vfs } = buildSession();
     const reply = session.handle({ type: 'RENAME', requestId: 1, oldPath: 'hello.txt', newPath: 'renamed.txt' });
-    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(vfs.exists('/home/alice/renamed.txt')).toBe(true);
   });
 
@@ -200,14 +200,14 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     const { session, vfs } = buildSession();
     session.handle({ type: 'MKDIR', requestId: 1, path: 'empty', attrs: {} });
     const reply = session.handle({ type: 'RMDIR', requestId: 2, path: 'empty' });
-    expect(reply).toEqual({ type: 'STATUS', requestId: 2, code: 0, message: 'OK' });
+    expect(reply).toEqual({ type: 'STATUS', requestId: 2, code: 0, message: 'Success' });
     expect(vfs.exists('/home/alice/empty')).toBe(false);
   });
 
   it('SYMLINK creates a real symlink, then READLINK reads its target back', () => {
     const { session, vfs } = buildSession();
-    const symlinkReply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'link', targetpath: 'hello.txt' });
-    expect(symlinkReply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    const symlinkReply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'hello.txt', targetpath: 'link' });
+    expect(symlinkReply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(vfs.getType('/home/alice/link', false)).toBe('symlink');
 
     const readlinkReply = session.handle({ type: 'READLINK', requestId: 2, path: 'link' });
@@ -217,7 +217,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
 
   it('SYMLINK on an already-existing path fails without creating anything', () => {
     const { session } = buildSession();
-    const reply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'hello.txt', targetpath: 'irrelevant' });
+    const reply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'irrelevant', targetpath: 'hello.txt' });
     expect(reply.type).toBe('STATUS');
     expect((reply as { code: number }).code).toBeGreaterThan(0);
   });
@@ -254,7 +254,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     const userCtx = new SshUserContext('alice', 1000, 1000, [], '/home/alice');
     const session = new SftpWireSession({ vfs: noSymlinkFs, userCtx, rootPath: '/home/alice' });
 
-    const symlinkReply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'link', targetpath: 'hello.txt' });
+    const symlinkReply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'hello.txt', targetpath: 'link' });
     expect(symlinkReply.type).toBe('STATUS');
     expect((symlinkReply as { code: number }).code).toBe(8); // SSH_FX_OP_UNSUPPORTED
 

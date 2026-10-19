@@ -72,7 +72,7 @@ async function connectedLab(): Promise<Lab> {
   t.setInput('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2');
   t.handleKey(key('Enter'));
   await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf('secret');
     t.handleKey(key('Enter'));
     await flush();
@@ -82,8 +82,8 @@ async function connectedLab(): Promise<Lab> {
 
 /** Type a line into whatever is in the foreground (remote or local). */
 async function type(t: LinuxTerminalSession, line: string): Promise<void> {
-  t.foreground.setInput(line);
-  t.foreground.setInputBuf(line);
+  t.setInput(line);
+  t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
 }
@@ -293,8 +293,8 @@ describe('the same rules from a Windows client', () => {
   }
 
   const winType = async (t: WindowsTerminalSession, line: string): Promise<void> => {
-    t.foreground.setInput(line);
-    t.foreground.setInputBuf(line);
+    t.setInput(line);
+    t.setInputBuf(line);
     t.handleKey(key('Enter'));
     await flush();
   };

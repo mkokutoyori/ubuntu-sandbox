@@ -52,13 +52,15 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { NtpAgent } from '../../../ntp/NtpAgent';
-import type { ErreurGrammaireVrp } from '../cli-utils';
+import type { NtpVersion } from '../../../ntp/types';
+import { huaweiDisplayInterfaceName, type ErreurGrammaireVrp } from '../cli-utils';
 import { isValidIPv4 } from '../../../core/ip';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ── La grammaire ────────────────────────────────────────────────────
 
 export type ActionNtpVrp =
-  | { quoi: 'association'; mode: 'server' | 'peer'; ip: string; preference: boolean; keyId?: number }
+  | { quoi: 'association'; mode: 'server' | 'peer'; ip: string; preference: boolean; keyId?: number; version?: NtpVersion; sourceInterface?: string }
   | { quoi: 'refclock-master'; stratum: number }
   | { quoi: 'source-interface'; nom: string }
   | { quoi: 'authentication'; actif: boolean }
@@ -90,6 +92,8 @@ function queueAssociation(
 ): AnalyseNtpVrp {
   let preference = false;
   let keyId: number | undefined;
+  let version: NtpVersion | undefined;
+  let sourceInterface: string | undefined;
   for (let i = 0; i < reste.length; i++) {
     const mot = reste[i].toLowerCase();
     if (mot === 'preference') { preference = true; continue; }
@@ -104,17 +108,19 @@ function queueAssociation(
     if (mot === 'version') {
       const v = entier(reste[i + 1]);
       if (v === null || v < 1 || v > 4) return reste[i + 1] ? mauvais(reste[i + 1]) : incomplet();
+      version = v as NtpVersion;
       i++;
       continue;
     }
     if (mot === 'source-interface') {
       if (!reste[i + 1]) return incomplet();
+      sourceInterface = reste[i + 1];
       i++;
       continue;
     }
     return mauvais(reste[i]);
   }
-  return { statut: 'ok', action: { quoi: 'association', mode, ip, preference, keyId } };
+  return { statut: 'ok', action: { quoi: 'association', mode, ip, preference, keyId, version, sourceInterface } };
 }
 
 /** Analyse les mots qui SUIVENT `ntp-service`. */
@@ -182,20 +188,23 @@ export function analyserNtpVrp(args: readonly string[]): AnalyseNtpVrp {
 }
 
 /** Ecrit l'analyse dans l'agent — le seul magasin. */
-export function appliquerNtpVrp(agent: NtpAgent, action: ActionNtpVrp): void {
+export function appliquerNtpVrp(
+  agent: NtpAgent, action: ActionNtpVrp, resolveInterface: (raw: string) => string | null = (raw) => raw,
+): void {
+  const canonical = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : resolveInterface(raw) ?? raw);
   switch (action.quoi) {
     case 'association':
       // Une seconde commande sur la MEME adresse doit mettre a jour : le
       // sac de chaines qu'elle remplaçait empilait deux lignes.
       agent.removeServer(action.ip);
-      if (action.mode === 'peer') agent.addPeer(action.ip, action.preference, action.keyId);
-      else agent.addServer(action.ip, action.preference, action.keyId);
+      if (action.mode === 'peer') agent.addPeer(action.ip, action.preference, action.keyId, { version: action.version, sourceInterface: canonical(action.sourceInterface) });
+      else agent.addServer(action.ip, action.preference, action.keyId, 'ntp', { version: action.version, sourceInterface: canonical(action.sourceInterface) });
       break;
     case 'refclock-master':
       agent.setServerMode(true);
       agent.setLocalStratum(action.stratum);
       break;
-    case 'source-interface': agent.setSourceInterface(action.nom); break;
+    case 'source-interface': agent.setSourceInterface(canonical(action.nom) ?? action.nom); break;
     case 'authentication': agent.setAuthenticate(action.actif); break;
     case 'auth-key': agent.addAuthKey(action.id, action.algo, action.cle); break;
     case 'reliable': agent.addTrustedKey(action.id); break;
@@ -238,10 +247,12 @@ export function lignesConfigNtpVrp(agent: NtpAgent | undefined): string[] {
   for (const [ip, a] of cfg.associations) {
     const genre = a.mode === 'symmetric-active' ? 'unicast-peer' : 'unicast-server';
     out.push(`ntp-service ${genre} ${ip}`
+      + (a.version !== undefined ? ` version ${a.version}` : '')
+      + (a.sourceInterface ? ` source-interface ${huaweiDisplayInterfaceName(a.sourceInterface)}` : '')
       + (a.keyId !== undefined ? ` authentication-keyid ${a.keyId}` : '')
       + (a.prefer ? ' preference' : ''));
   }
-  if (cfg.sourceInterface) out.push(`ntp-service source-interface ${cfg.sourceInterface}`);
+  if (cfg.sourceInterface) out.push(`ntp-service source-interface ${huaweiDisplayInterfaceName(cfg.sourceInterface)}`);
   if (cfg.authenticate) out.push('ntp-service authentication enable');
   for (const k of cfg.authKeys.values()) {
     out.push(`ntp-service authentication-keyid ${k.id} authentication-mode ${k.algo} ${k.key}`);
@@ -297,7 +308,7 @@ export function displayNtpServiceStatus(agent: NtpAgent | undefined): string {
     `Peer dispersion: ${(best ? best.dispersionMs / 2 : maitreLocal ? 0 : 16000).toFixed(2)} ms`,
     `Reference time: ${horodatageVrp(cfg.lastSyncMs || simulationNowMs())}`,
   ];
-  if (cfg.sourceInterface) lignes.push(`Source interface: ${cfg.sourceInterface}`);
+  if (cfg.sourceInterface) lignes.push(`Source interface: ${huaweiDisplayInterfaceName(cfg.sourceInterface)}`);
   return lignes.join('\n');
 }
 
@@ -367,7 +378,7 @@ export function displayNtpServiceSessions(
     ` source          reference       stra reach poll  now offset   delay  disper`,
     FILET_SESSIONS,
   ];
-  if (cfg.sourceInterface) entete.unshift(`source-interface: ${cfg.sourceInterface}`);
+  if (cfg.sourceInterface) entete.unshift(`source-interface: ${huaweiDisplayInterfaceName(cfg.sourceInterface)}`);
   entete.unshift(`clock stratum: ${cfg.localStratum}`);
   const lignes: string[] = [];
   for (const [, a] of cfg.associations) {
@@ -375,11 +386,11 @@ export function displayNtpServiceSessions(
     const marque = a.preferred && joignable ? '*' : a.prefer && joignable ? '+' : ' ';
     const depuis = a.lastReplyMs ? Math.floor((simulationNowMs() - a.lastReplyMs) / 1000) : 0;
     lignes.push(
-      `${marque}${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : 'LOCAL(0)').padEnd(15)} `
-      + `${String(a.stratum).padStart(2)} ${a.reach.toString(8).padStart(3, '0')} `
-      + `${String(a.pollSec).padStart(4)} ${String(depuis).padStart(4)} `
-      + `${a.offsetMs.toFixed(4).padStart(8)} ${Math.abs(a.delayMs).toFixed(4).padStart(7)} `
-      + `${a.dispersionMs.toFixed(3).padStart(6)}`,
+      `${marque}${padToWidth(a.serverIp, 15)} ${padToWidth(a.stratum < 16 ? a.serverIp : 'LOCAL(0)', 15)} `
+      + `${padToWidth(String(a.stratum), 2, 'right')} ${a.reach.toString(8).padStart(3, '0')} `
+      + `${padToWidth(String(a.pollSec), 4, 'right')} ${padToWidth(String(depuis), 4, 'right')} `
+      + `${padToWidth(a.offsetMs.toFixed(4), 8, 'right')} ${padToWidth(Math.abs(a.delayMs).toFixed(4), 7, 'right')} `
+      + `${padToWidth(a.dispersionMs.toFixed(3), 6, 'right')}`,
     );
     if (verbose) {
       // Ce que `verbose` ajoute et que le tableau ne peut pas porter :

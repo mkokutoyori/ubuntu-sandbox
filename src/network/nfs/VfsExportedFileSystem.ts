@@ -6,6 +6,7 @@ import {
 import type {
   NfsCredentials, NfsExportedFileSystem, NfsFileStat, NfsSpaceTotals,
 } from './NfsExportedFileSystem';
+import { binaryStringToBytes as fromLatin1, bytesToBinaryString as toLatin1 } from '@/crypto/encoding';
 
 const HOLE_BYTE = String.fromCharCode(0);
 
@@ -15,19 +16,10 @@ const TYPE_OF: Readonly<Record<INode['type'], Ftype3>> = {
   symlink: Ftype3.NF3LNK,
   fifo: Ftype3.NF3FIFO,
   chardev: Ftype3.NF3CHR,
+  socket: Ftype3.NF3SOCK,
 };
 
-function toLatin1(data: Uint8Array): string {
-  let out = '';
-  for (const byte of data) out += String.fromCharCode(byte);
-  return out;
-}
 
-function fromLatin1(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
 function parentOf(path: string): string {
   const trimmed = path.replace(/\/+$/, '');

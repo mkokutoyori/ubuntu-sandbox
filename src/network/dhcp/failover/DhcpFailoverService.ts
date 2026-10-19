@@ -13,6 +13,7 @@ import {
   decodeMessage, sendFailoverMessage, signMessage, verifyMessage,
   type FailoverMessage, type FailoverMessageType, type FailoverReply,
 } from './FailoverWire';
+import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 
 export interface FailoverHost {
   now(): number;
@@ -49,19 +50,6 @@ function fnv1a(text: string): number {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash >>> 0;
-}
-
-function base64(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-function fromBase64(text: string): Uint8Array {
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 const ADMIN_MESSAGES: readonly FailoverMessageType[] = ['SETUP', 'UPDATE', 'SCOPESYNC', 'REMOVE'];
@@ -303,7 +291,7 @@ export class DhcpFailoverService {
     const apReq = this.host.adminApReqFor(partner.name);
     if (!apReq) return { ok: false, message: 'Access is denied: no Kerberos identity is available to administer the partner server.' };
     const message: FailoverMessage = {
-      type, relationship: name, from: this.host.hostName(), body: { config, ...extra }, apReq: base64(apReq),
+      type, relationship: name, from: this.host.hostName(), body: { config, ...extra }, apReq: bytesToBase64(apReq),
     };
     const reply = sendFailoverMessage(this.host.tcp(), partner.address, message);
     return reply ?? { ok: false, message: `The partner server ${partner.name} could not be reached on TCP ${DHCP_FAILOVER_PORT}.` };
@@ -349,7 +337,7 @@ export class DhcpFailoverService {
   }
 
   private handleAdmin(message: FailoverMessage): FailoverReply {
-    if (!message.apReq || !this.host.verifyAdministrator(fromBase64(message.apReq))) {
+    if (!message.apReq || !this.host.verifyAdministrator(base64ToBytes(message.apReq))) {
       return { ok: false, message: 'Access is denied.' };
     }
     const config = message.body.config as FailoverConfig;

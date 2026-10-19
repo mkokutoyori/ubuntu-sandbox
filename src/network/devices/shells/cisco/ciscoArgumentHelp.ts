@@ -260,7 +260,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ]);
   tries.configIf.describeArgs('tunnel vrf', [WORD('name', 'VRF used to reach the tunnel destination')]);
   tries.configIf.describeArgs('crypto map', [WORD('name', 'Name of the crypto map')]);
-  tries.configIf.describeArgs('zone-member security', [WORD('zone', 'Name of the security zone')]);
   tries.configIf.describeArgs('custom-queue-list', [INT('list', [1, 16], 'Custom queue list number')]);
   tries.configIf.describeArgs('priority-group', [INT('group', [1, 16], 'Priority group number')]);
   tries.configIf.describeArgs('bfd interval', [
@@ -754,8 +753,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.executableWhen('interface',
     (args) => !(args.length === 1 && estTypeSansNumero(args[0])));
   tries.config.requireArgs('ip dhcp pool', 1);
-  tries.config.requireArgs('enable secret', 1);
-  tries.config.requireArgs('enable password', 1);
   tries.config.requireArgs('access-list', 2);
   tries.config.requireArgs('ntp', 1);
   tries.config.requireArgs('ip nat', 1);

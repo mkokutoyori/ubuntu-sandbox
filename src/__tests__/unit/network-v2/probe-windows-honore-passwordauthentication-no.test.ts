@@ -27,12 +27,15 @@
  * politique de compte. Le correctif ne reecrit aucun verificateur, il
  * branche le client sur celui qui existe.
  *
- * Mesure avant correction : 4 cas tombent sur 7.
+ * Mesure avant correction : 4 cas tombent sur 7. Le retrait du client en memoire ajoute
+ * « sans aucun justificatif, la session est refusee » : il tombe avant (la convention
+ * l'acceptait) et passe apres.
  * Les 3 qui passent des deux cotes sont nommes :
  *   - « une cle qui correspond ouvre la session » : TEMOIN, sans lui une
  *     sonde faite de refus ne prouverait rien ;
- *   - « sans l'option, la convention du simulateur tient » : NON-REGRESSION,
- *     c'est le comportement volontairement conserve ;
+ *   - « sans l'option, le mot de passe donne sur l'entree standard ouvre la
+ *     session » : TEMOIN, la convention du simulateur (une connexion sans
+ *     aucun justificatif etait acceptee) a disparu avec le client en memoire ;
  *   - « le client Linux refuse deja » : REFERENCE, c'est la reponse que
  *     Windows doit rejoindre.
  */
@@ -105,11 +108,18 @@ describe('Windows honore le retrait du repli par mot de passe', () => {
     expect(out.trim()).toBe(srv.getHostname());
   });
 
-  it('sans l option, la convention du simulateur tient', async () => {
+  it('sans l option, le mot de passe donne sur l entree standard ouvre la session', async () => {
     const { win, srv } = await labo();
     const out = await win.executeCommand(
-      'ssh -o StrictHostKeyChecking=no alice@10.0.0.2 hostname');
+      'ssh -o StrictHostKeyChecking=no alice@10.0.0.2 hostname', 'secret123');
     expect(out.trim()).toBe(srv.getHostname());
+  });
+
+  it('sans l option et sans aucun justificatif, la session est refusee', async () => {
+    const { win } = await labo();
+    const out = await win.executeCommand(
+      'ssh -o StrictHostKeyChecking=no alice@10.0.0.2 hostname');
+    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey,password).');
   });
 
   it('un SERVEUR qui refuse le mot de passe est honore sans option cliente', async () => {

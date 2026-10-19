@@ -9,6 +9,7 @@ import { COLUMN, SsTable } from './SsTable';
 import {
   bandwidthText, formatG, hexMask, printMsTimer, wholeJiffies, wholeMicroseconds,
 } from './SsFormat';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface SsOutputHost {
   hostName(address: string): string | null;
@@ -130,9 +131,9 @@ export class SsRowPrinter {
     const receive = listening ? row.listener?.accept ?? 0 : row.queues.receive;
     const send = listening ? row.listener?.backlog ?? 0 : row.queues.send;
     table.set(COLUMN.RECVQ);
-    table.out(String(receive).padEnd(6));
+    table.out(padToWidth(String(receive), 6));
     table.set(COLUMN.SENDQ);
-    table.out(String(send).padEnd(6));
+    table.out(padToWidth(String(send), 6));
     table.set(COLUMN.ADDR);
   }
 

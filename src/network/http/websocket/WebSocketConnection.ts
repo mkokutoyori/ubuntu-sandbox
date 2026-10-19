@@ -2,6 +2,7 @@ import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeFrame, decodeFrame, type WebSocketOpcode } from './WebSocketFrame';
 import type { IEventBus } from '@/events/EventBus';
 import { randomHttpConnectionId } from '../events';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 export type WebSocketRole = 'client' | 'server';
 
@@ -10,19 +11,7 @@ export interface WebSocketMessage {
   payload: Uint8Array;
 }
 
-// The project's convention for real binary protocols over the string-based
-// TcpSocket transport (cf. DnsHttpsTransport.ts): one character per byte.
-export function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
-export function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 function randomMaskingKey(): [number, number, number, number] {
   return [

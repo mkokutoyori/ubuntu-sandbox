@@ -9,6 +9,7 @@ import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { interpretEscapes } from './LinuxShellParser';
 import type { PathActor } from './VfsPath';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export function actorOf(ctx: ShellContext): PathActor {
   const groups = ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? [];
@@ -28,6 +29,7 @@ const C = {
   BOLD_CYAN: '\x1b[1;36m',    // symlinks
   BOLD_GREEN: '\x1b[1;32m',   // executables
   BOLD_YELLOW: '\x1b[1;33m',  // FIFOs (named pipes)
+  BOLD_MAGENTA: '\x1b[1;35m', // sockets
   BOLD_YELBG: '\x1b[30;43m',  // sticky + other-writable dirs
   BOLD_BLUEBG: '\x1b[34;42m', // other-writable dirs (no sticky)
   BOLD_GREENBG: '\x1b[37;42m',// sticky dirs (not other-writable)
@@ -122,6 +124,11 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const existed = ctx.vfs.exists(path);
     if (!existed && noCreate) continue;
+    const target = ctx.vfs.path(path, '/', actorOf(ctx));
+    if (ctx.uid !== 0 && (existed ? !target.canWrite() && !target.ownedByActor() : target.parent().exists() && !target.parent().isWritableDir())) {
+      errors.push(`touch: cannot touch '${arg}': Permission denied`);
+      continue;
+    }
     if (!existed) {
       ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
       if (!ctx.vfs.exists(path)) {
@@ -401,6 +408,7 @@ function classifySuffix(inode: INode): string {
     case 'directory': return '/';
     case 'symlink': return '@';
     case 'fifo': return '|';
+    case 'socket': return '=';
     case 'file':
       // Executable check: any execute bit set
       if (inode.permissions & 0o111) return '*';
@@ -423,6 +431,7 @@ function colorName(name: string, inode: INode, useColor = true): string {
     }
     case 'symlink': return `${C.BOLD_CYAN}${name}${C.RESET}`;
     case 'fifo': return `${C.BOLD_YELLOW}${name}${C.RESET}`;
+    case 'socket': return `${C.BOLD_MAGENTA}${name}${C.RESET}`;
     case 'chardev': return `${C.CHARDEV}${name}${C.RESET}`;
     case 'file':
       if (inode.permissions & 0o111) return `${C.BOLD_GREEN}${name}${C.RESET}`;
@@ -445,7 +454,7 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
   const dateStr = formatLsTime(opts.timing.style, inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
 
   const coloredName = colorName(name, inode, opts.useColor ?? false);
-  line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${coloredName}`;
+  line += `${perms} ${padToWidth(String(inode.linkCount), maxLinks, 'right')} ${padToWidth(owner, maxOwner)} ${padToWidth(group, maxGroup)} ${padToWidth(String(inode.size), maxSize, 'right')} ${dateStr} ${coloredName}`;
 
   // Symlink target
   if (inode.type === 'symlink') {

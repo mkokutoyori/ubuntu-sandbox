@@ -3,6 +3,7 @@ import { type JournalRecord, cursorOf, fieldNameIsValid } from './JournalRecord'
 import {
   JSON_THRESHOLD, PRINT_CHAR_THRESHOLD, PRINT_LINE_THRESHOLD, concat, ellipsizeMem, formatBytes, isPrintableUtf8, stripTabAnsi, text, utf8,
 } from './JournalText';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type OutputMode = 'short' | 'short-full' | 'short-iso' | 'short-iso-precise' | 'short-precise' | 'short-monotonic' | 'short-delta'
 | 'short-unix' | 'verbose' | 'export' | 'json' | 'json-pretty' | 'json-sse' | 'json-seq' | 'cat' | 'with-unit';
@@ -82,7 +83,7 @@ function timestampText(mode: OutputMode, flags: OutputFlags, realtime: number, c
   const gmtoff = zone.utcOffsetSecondsAt(seconds);
   switch (mode) {
     case 'short-unix':
-      return `${String(seconds).padStart(10, ' ')}.${String(microseconds).padStart(6, '0')}`;
+      return `${padToWidth(String(seconds), 10, 'right')}.${String(microseconds).padStart(6, '0')}`;
     case 'short-iso':
     case 'short-iso-precise': {
       let buf = `${String(tm.year).padStart(4, '0')}-${pad2(tm.mon + 1)}-${pad2(tm.mday)}T${pad2(tm.hour)}:${pad2(tm.min)}:${pad2(tm.sec)}`;
@@ -102,7 +103,7 @@ function timestampText(mode: OutputMode, flags: OutputFlags, realtime: number, c
 
 function monotonicText(mode: OutputMode, display: Display, state: DisplayState): string {
   const monotonic = display.monotonic as number;
-  let buf = `[${String(Math.floor(monotonic / 1_000_000)).padStart(5, ' ')}.${String(monotonic % 1_000_000).padStart(6, '0')}`;
+  let buf = `[${padToWidth(String(Math.floor(monotonic / 1_000_000)), 5, 'right')}.${String(monotonic % 1_000_000).padStart(6, '0')}`;
   if (mode === 'short-delta') {
     let delta: number;
     let reliable = true;
@@ -111,7 +112,7 @@ function monotonicText(mode: OutputMode, display: Display, state: DisplayState):
       delta = Math.max(0, display.realtime - state.previousRealtime);
       reliable = false;
     } else return `${buf}${' '.repeat(16)}]`;
-    buf += ` <${String(Math.floor(delta / 1_000_000)).padStart(5, ' ')}.${String(delta % 1_000_000).padStart(6, '0')}${reliable ? ' ' : '*'}>`;
+    buf += ` <${padToWidth(String(Math.floor(delta / 1_000_000)), 5, 'right')}.${String(delta % 1_000_000).padStart(6, '0')}${reliable ? ' ' : '*'}>`;
   }
   return `${buf}]`;
 }

@@ -33,7 +33,17 @@ export class LinuxCommandRegistry {
 
   /** Look up a command by name or alias. */
   get(name: string): LinuxCommand | undefined {
-    return this.cmds.get(name);
+    return this.cmds.get(name) ?? this.cmds.get(LinuxCommandRegistry.binaryName(name));
+  }
+
+  private static readonly BINARY_DIRECTORIES: ReadonlySet<string> = new Set([
+    '/usr/bin', '/usr/sbin', '/bin', '/sbin', '/usr/local/bin', '/usr/local/sbin', '/usr/lib/openssh',
+  ]);
+
+  private static binaryName(path: string): string {
+    const slash = path.lastIndexOf('/');
+    if (slash <= 0) return path;
+    return LinuxCommandRegistry.BINARY_DIRECTORIES.has(path.slice(0, slash)) ? path.slice(slash + 1) : path;
   }
 
   /** Has any command been registered under this name? */

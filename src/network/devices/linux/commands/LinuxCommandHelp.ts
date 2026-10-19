@@ -13,12 +13,13 @@
  */
 
 import type { LinuxCommand, LinuxCommandOption } from './LinuxCommand';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Format a single option line: `-c count      Stop after ...` */
 function formatOptionLine(opt: LinuxCommandOption): string {
   const flagAndArg = opt.takesArg && opt.argName ? `${opt.flag} ${opt.argName}` : opt.flag;
   // Pad to a stable column width so descriptions line up.
-  const padded = flagAndArg.padEnd(16, ' ');
+  const padded = padToWidth(flagAndArg, 16);
   return `  ${padded}${opt.description}`;
 }
 

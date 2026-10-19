@@ -4,6 +4,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { VxlanAgent } from '../../../vxlan/VxlanAgent';
 import { hms } from '@/lib/format';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface IfCtx {
   selectedInterface(): string | null;
@@ -107,7 +108,7 @@ export function registerVxlanShowCommands(trie: CommandTrie, ctx: ShowCtx): void
     for (const p of peers) {
       const iface = Array.from(a.getConfig().interfaces.values()).find((i) => i.vnis.has(p.vni))?.name ?? 'nve1';
       const age = p.lastSeenMs > 0 ? hms(simulationNowMs() - p.lastSeenMs) : 'never';
-      rows.push(`${iface.padEnd(11)}${p.remoteVtepIp.padEnd(17)}${String(p.vni).padEnd(10)}${'Up'.padEnd(7)}${'CP'.padEnd(11)}${age.padEnd(10)}${String(p.packetsIn).padEnd(10)}${p.packetsOut}`);
+      rows.push(`${padToWidth(iface, 11)}${padToWidth(p.remoteVtepIp, 17)}${padToWidth(String(p.vni), 10)}${padToWidth('Up', 7)}${padToWidth('CP', 11)}${padToWidth(age, 10)}${padToWidth(String(p.packetsIn), 10)}${p.packetsOut}`);
     }
     return rows.join('\n');
   });
@@ -118,7 +119,7 @@ export function registerVxlanShowCommands(trie: CommandTrie, ctx: ShowCtx): void
     const rows = ['Interface  VNI       Multicast-group  State  Mode  Source-IP'];
     for (const i of a.getConfig().interfaces.values()) {
       for (const vni of Array.from(i.vnis).sort((x, y) => x - y)) {
-        rows.push(`${i.name.padEnd(11)}${String(vni).padEnd(10)}${'n/a'.padEnd(17)}${(i.enabled ? 'Up' : 'Down').padEnd(7)}${'CP'.padEnd(6)}${i.localVtepIp ?? 'n/a'}`);
+        rows.push(`${padToWidth(i.name, 11)}${padToWidth(String(vni), 10)}${padToWidth('n/a', 17)}${padToWidth(i.enabled ? 'Up' : 'Down', 7)}${padToWidth('CP', 6)}${i.localVtepIp ?? 'n/a'}`);
       }
     }
     return rows.join('\n');
@@ -132,7 +133,7 @@ export function registerVxlanShowCommands(trie: CommandTrie, ctx: ShowCtx): void
       for (const vni of Array.from(i.vnis).sort((x, y) => x - y)) {
         const peers = a.listRemoteVteps(vni).length;
         const macs = a.listMacTable().filter((m) => m.vni === vni).length;
-        rows.push(`${String(vni).padEnd(10)}${i.name.padEnd(11)}${String(peers).padEnd(7)}${String(macs).padEnd(13)}${i.enabled ? 'Up' : 'Down'}`);
+        rows.push(`${padToWidth(String(vni), 10)}${padToWidth(i.name, 11)}${padToWidth(String(peers), 7)}${padToWidth(String(macs), 13)}${i.enabled ? 'Up' : 'Down'}`);
       }
     }
     return rows.join('\n');
@@ -144,7 +145,7 @@ export function registerVxlanShowCommands(trie: CommandTrie, ctx: ShowCtx): void
     const rows = ['Vni       Mac Address       Remote-VTEP       Age'];
     for (const e of a.listMacTable()) {
       const age = e.lastSeenMs > 0 ? hms(simulationNowMs() - e.lastSeenMs) : 'never';
-      rows.push(`${String(e.vni).padEnd(10)}${e.mac.padEnd(18)}${e.remoteVtepIp.padEnd(18)}${age}`);
+      rows.push(`${padToWidth(String(e.vni), 10)}${padToWidth(e.mac, 18)}${padToWidth(e.remoteVtepIp, 18)}${age}`);
     }
     return rows.join('\n');
   });

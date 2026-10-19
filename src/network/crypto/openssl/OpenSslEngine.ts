@@ -106,6 +106,7 @@ import type { TlsPeerProbe } from './OpenSslHost';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
 import { OPENSSL_VERSION_DATE, OPENSSL_VERSION_TEXT } from './opensslVersion';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const DIGESTS: Readonly<Record<string, { label: string; fn: (s: string) => string }>> = {
   md4: { label: 'MD4', fn: (s) => bytesToHex(md4(fileTextToBytes(s))) },
@@ -143,7 +144,7 @@ function opensslDate(ms: number): string {
   const d = new Date(ms);
   const mois = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const p = (n: number) => String(n).padStart(2, '0');
-  const jour = String(d.getUTCDate()).padStart(2, ' ');
+  const jour = padToWidth(String(d.getUTCDate()), 2, 'right');
   return `${mois[d.getUTCMonth()]} ${jour} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:`
     + `${p(d.getUTCSeconds())} ${d.getUTCFullYear()} GMT`;
 }
@@ -890,7 +891,7 @@ function runCiphers(argv: readonly string[]): OpenSslResult {
           ? `          ${hex2(id >> 8)},${hex2(id)} - `
           : `${hex2(id >> 24)},${hex2(id >> 16)},${hex2(id >> 8)},${hex2(id)} - `;
       }
-      return `${prefix}${opts.has('-stdname') ? `${standard.padEnd(45)} - ` : ''}${text}`;
+      return `${prefix}${opts.has('-stdname') ? `${padToWidth(standard, 45)} - ` : ''}${text}`;
     };
     for (const c of tls13) lines.push(describe(c.id, c.name, tls13Description(c)));
     for (const c of legacy) lines.push(describe(c.id, c.standardName, cipherDescription(c)));
@@ -1267,7 +1268,7 @@ const LONG_ATTRIBUTE_NAMES: Readonly<Record<string, string>> = {
 function subjectAttributeLines(subject: string): string[] {
   return splitDistinguishedName(subject).map(({ type, value }) => {
     const kind = type === 'C' || type === 'serialNumber' ? 'PRINTABLE' : type === 'DC' || type === 'emailAddress' ? 'IA5STRING' : 'ASN.1 12';
-    return `${(LONG_ATTRIBUTE_NAMES[type] ?? type).padEnd(22)}:${kind}:'${value}'`;
+    return `${padToWidth(LONG_ATTRIBUTE_NAMES[type] ?? type, 22)}:${kind}:'${value}'`;
   });
 }
 

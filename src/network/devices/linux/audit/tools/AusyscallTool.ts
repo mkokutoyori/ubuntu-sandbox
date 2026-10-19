@@ -1,6 +1,7 @@
 import { elfToMachine, MACH } from './AuditInterpret';
 import { SYSCALL_TABLES } from './AuditSyscallTables';
 import { ExitSignal, ToolOutput, type ToolResult } from './AuditToolHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const LAST_SYSCALL = 1400;
 const DUMP_LIMIT = 8192;
@@ -178,7 +179,7 @@ export function runAusyscall(host: AusyscallHost, args: string[]): ToolResult {
           const entry = syscallToName(i, machine);
           if (entry !== null && entry.toLowerCase().includes(name.toLowerCase())) {
             any = true;
-            out.printf(`${entry.padEnd(18)} ${i}\n`);
+            out.printf(`${padToWidth(entry, 18)} ${i}\n`);
           }
         }
         if (!any) {

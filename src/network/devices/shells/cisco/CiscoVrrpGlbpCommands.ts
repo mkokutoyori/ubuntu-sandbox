@@ -13,6 +13,7 @@ import {
   fhrpShowMatches, fhrpShowSpecs,
   VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
 } from './fhrpShowFilter';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface Ctx {
   r(): Router;
@@ -109,10 +110,10 @@ export function vrrpGlbpShowSpecs(
         const rows = ['Interface          Grp Pri Time  Own Pre State   Master addr     Group addr'];
         for (const g of groups) {
           rows.push(
-            `${g.iface.slice(0, 18).padEnd(19)}${String(g.group).padEnd(4)}` +
-            `${String(g.priority).padEnd(4)}    -   ${g.preempt ? 'Y' : 'N'}   ` +
-            `${vrrpState(ctx.r(), g).padEnd(8)}` +
-            `${vrrpMasterIp(ctx.r(), g).padEnd(16)}${g.vip ?? 'unknown'}`);
+            `${padToWidth(g.iface.slice(0, 18), 19)}${padToWidth(String(g.group), 4)}` +
+            `${padToWidth(String(g.priority), 4)}    -   ${g.preempt ? 'Y' : 'N'}   ` +
+            `${padToWidth(vrrpState(ctx.r(), g), 8)}` +
+            `${padToWidth(vrrpMasterIp(ctx.r(), g), 16)}${g.vip ?? 'unknown'}`);
         }
         return rows.join('\n');
       }
@@ -126,10 +127,10 @@ export function vrrpGlbpShowSpecs(
         const rows = ['Interface   Grp  Fwd Pri State    Address         Active router   Standby router'];
         for (const g of groups) {
           rows.push(
-            `${g.iface.slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
-            `-   ${String(g.priority).padEnd(4)}` +
-            `${glbpState(ctx.r(), g).padEnd(9)}` +
-            `${(g.vip ?? 'unknown').padEnd(16)}${glbpActiveIp(ctx.r(), g).padEnd(16)}unknown`);
+            `${padToWidth(g.iface.slice(0, 11), 12)}${padToWidth(String(g.group), 5)}` +
+            `-   ${padToWidth(String(g.priority), 4)}` +
+            `${padToWidth(glbpState(ctx.r(), g), 9)}` +
+            `${padToWidth(g.vip ?? 'unknown', 16)}${padToWidth(glbpActiveIp(ctx.r(), g), 16)}unknown`);
         }
         return rows.join('\n');
       }

@@ -30,6 +30,7 @@ import { performCurlFtp } from './CurlFtp';
 import { judgeCertStatus } from './CurlCertStatus';
 import { loadCurlClientCredential } from './CurlClientCertificate';
 import { parseGroupList } from '@/network/tls/legacy/sslConf';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 
 function opensslSuiteName(name: string): string {
@@ -145,17 +146,7 @@ function headerPairs(message: HttpMessage): CurlHeaderPair[] {
   return message.headers.entries().map(([name, value]) => ({ name, value }));
 }
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 export function resolvedOverride(opts: CurlOptions, url: CurlUrl): string | null {
   const entry = opts.resolve.find((r) => r.host === url.host && r.port === url.port);

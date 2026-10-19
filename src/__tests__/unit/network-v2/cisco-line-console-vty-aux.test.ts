@@ -184,7 +184,7 @@ function launchOpts(pc: LinuxPC, sourceIp = PC_IP): SshLaunchOptions {
   return {
     defaultUser: 'root',
     sourceIp,
-    wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
+    sourceDevice: pc,
   };
 }
 
@@ -519,13 +519,12 @@ describe('Scénario 2 — exec-timeout : déconnexion réelle après inactivité
     const term = new LinuxTerminalSession('t1', pc);
     await term.init();
     await sshLogin(term, CISCO_IP, 'Admin@2025');
-    expect(term.foreground.getPrompt()).toMatch(/ciscoR[#>]/);
+    expect(term.getPrompt()).toMatch(/ciscoR[#>]/);
 
     await new Promise((res) => setTimeout(res, 1400));
 
     expect(lastLines(term).some((l) => l.includes(`Connection to ${CISCO_IP} closed.`))).toBe(true);
     // The nested remote child is gone -- we're back on the local Linux prompt.
-    expect(term.foreground).toBe(term);
   }, 10000);
 });
 

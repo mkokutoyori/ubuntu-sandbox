@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export interface FsutilHost {
   readonly volumes: {
     letters(): string[];
@@ -14,7 +15,7 @@ function gigabytes(bytes: number): string {
 }
 
 function total(label: string, bytes: number): string {
-  return `${label.padEnd(LABEL_WIDTH)}: ${bytes} (${gigabytes(bytes)})`;
+  return `${padToWidth(label, LABEL_WIDTH)}: ${bytes} (${gigabytes(bytes)})`;
 }
 
 function letterOf(volumePath: string): string {

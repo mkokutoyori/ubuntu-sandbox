@@ -10,6 +10,7 @@
  */
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { WindowsPrintServerRole } from './PrintServerRole';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const LPD_PORT = 515;
 
@@ -94,7 +95,7 @@ export class LpdServerHandler {
           const jobs = this.role.listJobs(operand);
           const listing = jobs.length === 0
             ? 'no entries\n'
-            : jobs.map((j) => `${j.status.padEnd(10)} ${j.owner.padEnd(16)} ${j.id.toString().padEnd(6)} ${j.document.padEnd(24)} ${j.size} bytes\n`).join('');
+            : jobs.map((j) => `${padToWidth(j.status, 10)} ${padToWidth(j.owner, 16)} ${padToWidth(j.id.toString(), 6)} ${padToWidth(j.document, 24)} ${j.size} bytes\n`).join('');
           socket.send(toBytes(listing));
           socket.close();
           return;

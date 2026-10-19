@@ -6,6 +6,7 @@ import {
   rewriteSrcIP,
 } from '../../../nat/rewrite';
 import type { ObjectStore } from '../model/ObjectStore';
+import { addressObjectMatches, literalAddress } from '../model/AddressObject';
 import type { RealServerPool } from './RealServerPool';
 import type { FirewallSession, SessionTranslation } from '../session/SessionTable';
 import type { FlowDirection } from '../session/TcpStateMachine';
@@ -321,7 +322,9 @@ export class FirewallNatEngine {
 
   private addressMatches(name: string, candidate: string): boolean {
     if (name === candidate) return true;
-    return this.deps.objects.matchesAddress(name, candidate);
+    if (this.deps.objects.matchesAddress(name, candidate)) return true;
+    const literal = this.deps.objects.getAddress(name) === undefined ? literalAddress(name) : undefined;
+    return literal !== undefined && addressObjectMatches(literal, candidate, {});
   }
 
   private anyAddressMatches(names: readonly string[], candidate: string): boolean {

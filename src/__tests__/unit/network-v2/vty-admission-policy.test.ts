@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { interoperateWithIos15 } from './iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -19,7 +20,7 @@ function launchOpts(pc: LinuxPC): SshLaunchOptions {
   return {
     defaultUser: 'root',
     sourceIp: PC_IP,
-    wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
+    sourceDevice: pc,
   };
 }
 
@@ -40,6 +41,7 @@ async function buildCiscoLan(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
     'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
     'end',
   ]) await cisco.executeCommand(cmd);
+  await interoperateWithIos15(cisco);
   return { pc, cisco };
 }
 
@@ -61,6 +63,7 @@ async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> 
     'stelnet server enable',
     'quit',
   ]) await huawei.executeCommand(cmd);
+  await interoperateWithIos15(huawei);
   return { pc, huawei };
 }
 

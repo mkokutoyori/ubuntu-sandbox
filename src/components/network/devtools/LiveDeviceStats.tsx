@@ -20,6 +20,7 @@ import {
   useIPSecStats, useNatStats,
   useDhcpClientStats, useDhcpServerStats,
 } from '@/react/hooks';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface LiveDeviceStatsProps {
   /** id of the device whose state to display. */
@@ -72,7 +73,7 @@ export function LiveDeviceStats({ deviceId, className }: LiveDeviceStatsProps) {
   const dhcpServer = useDhcpServerStats(deviceId);
 
   const arpRows = useMemo(
-    () => arp.map((e) => `${e.ip.padEnd(15)} ${e.mac} ${e.iface}`),
+    () => arp.map((e) => `${padToWidth(e.ip, 15)} ${e.mac} ${e.iface}`),
     [arp],
   );
   const routeRows = useMemo(

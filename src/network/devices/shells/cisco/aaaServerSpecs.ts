@@ -1,12 +1,15 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
+import type { DomainStripping } from '../../router/aaa/UsernameRouting';
+import { DEFAULT_LOAD_BALANCE_BATCH } from '../../../radius/ServerSelector';
 import type {
   CiscoSecurityConfig, RadiusServer, TacacsServer,
 } from '../../router/security/CiscoSecurityConfig';
 import {
-  newRadiusServerStats, newTacacsServerStats,
+  newTacacsServerStats,
 } from '../../router/security/CiscoSecurityConfig';
 
 const MODES = ['config'] as const;
@@ -36,6 +39,70 @@ export const TACACS_RANGES: Readonly<Record<string, readonly [number, number]>> 
   port: [1, 65535],
   timeout: [1, 1000],
 };
+
+export const RADIUS_DEADTIME_RANGE: readonly [number, number] = [0, 1440];
+export const RADIUS_DEAD_CRITERIA_RANGES: Readonly<Record<'time' | 'tries', readonly [number, number]>> = {
+  time: [1, 120],
+  tries: [1, 100],
+};
+
+const DELIMITER_CHARACTERS = '@/$%\\#-';
+
+function delimiterSet(text: string | undefined): string {
+  if (text === undefined) return '';
+  const chars = text.replace(/\\\\/g, '\\');
+  if (chars.length === 0 || chars.length > 7) throw new CliInvalidInput({ token: text });
+  for (const c of chars) if (!DELIMITER_CHARACTERS.includes(c)) throw new CliInvalidInput({ token: text });
+  return chars;
+}
+
+function domainStrippingSpec(
+  id: string, head: 'radius-server' | 'tacacs-server', who: string,
+  stripping: () => DomainStripping,
+): CommandSpec {
+  const options: OptionSpec[] = [
+    { keyword: 'right-to-left', description: 'Parse the username from right to left' },
+    {
+      keyword: 'prefix-delimiter', description: 'Strip a prefix up to one of these characters',
+      argument: { name: 'prefix-delimiter', type: 'WORD', description: 'Prefix delimiter characters (@ / $ % \\ # -)' },
+    },
+    {
+      keyword: 'delimiter', description: 'Strip a suffix from one of these characters',
+      argument: { name: 'delimiter', type: 'WORD', description: 'Suffix delimiter characters (@ / $ % \\ # -)' },
+    },
+    {
+      keyword: 'strip-suffix', description: 'Strip only this suffix',
+      argument: { name: 'strip-suffix', type: 'WORD', description: 'Suffix to strip' },
+    },
+    {
+      keyword: 'vrf', description: 'Restrict the rule to one VRF',
+      argument: { name: 'vrf', type: 'WORD', description: 'VRF name' },
+    },
+  ];
+  return {
+    id, path: [head, 'domain-stripping'],
+    description: `Strip the domain from the username sent to the ${who} server`,
+    modes: MODES, minPrivilege: 15,
+    options,
+    run: (_s, args) => {
+      if (args['strip-suffix'] !== undefined) {
+        stripping().addSuffix(args.vrf, args['strip-suffix']);
+        return '';
+      }
+      stripping().configure(args.vrf, {
+        rightToLeft: args['right-to-left'] !== undefined,
+        prefixDelimiters: delimiterSet(args['prefix-delimiter']),
+        suffixDelimiters: args.delimiter !== undefined ? delimiterSet(args.delimiter) : undefined,
+      });
+      return '';
+    },
+    undo: (_s, args) => {
+      if (args['strip-suffix'] !== undefined) stripping().removeSuffix(args.vrf, args['strip-suffix']);
+      else stripping().remove(args.vrf);
+      return '';
+    },
+  };
+}
 
 export interface AaaServerHost {
   security(): CiscoSecurityConfig;
@@ -174,7 +241,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         const nomServeur = args.nom;
         const existant = radius().get(nomServeur);
         radius().set(nomServeur, existant ?? {
-          name: nomServeur, stats: newRadiusServerStats(),
+          name: nomServeur, configuredAtMs: simulationNowMs(), serverId: ctx().security().allocateServerId(),
         });
         ctx().selectRadiusServer(nomServeur);
         return '';
@@ -223,7 +290,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
           name: hote, address: hote, key: args.cle,
           authPort: nombre('auth-port'), acctPort: nombre('acct-port'),
           timeoutSec: nombre('timeout'), retransmit: nombre('retransmit'),
-          legacySpelling: true, stats: newRadiusServerStats(),
+          legacySpelling: true, configuredAtMs: simulationNowMs(), serverId: ctx().security().allocateServerId(),
         });
         return '';
       },
@@ -282,6 +349,140 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
       'Number of retries to an active server', 'Number of retries',
       (n) => { ctx().security().radiusDefaults.retransmit = n; },
       () => { ctx().security().radiusDefaults.retransmit = undefined; }),
+    globalRadius('radius-server-deadtime', 'deadtime', RADIUS_DEADTIME_RANGE,
+      'Time to skip a RADIUS server marked dead', 'Minutes a dead server is skipped',
+      (n) => { ctx().security().radiusDefaults.deadtimeMinutes = n === 0 ? undefined : n; },
+      () => { ctx().security().radiusDefaults.deadtimeMinutes = undefined; }),
+    {
+      id: 'radius-server-optional-passwords',
+      path: ['radius-server', 'optional-passwords'],
+      description: 'Make the first RADIUS request without password verification',
+      undoDescription: 'Always ask for the password before the first RADIUS request',
+      modes: MODES, minPrivilege: 15,
+      run: () => { ctx().security().radiusDefaults.optionalPasswords = true; return ''; },
+      undo: () => { ctx().security().radiusDefaults.optionalPasswords = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-dead-criteria',
+      path: ['radius-server', 'dead-criteria'],
+      description: 'Set the criteria used to decide that a RADIUS server is dead',
+      modes: MODES, minPrivilege: 15,
+      requiresOneOption: true,
+      options: (['time', 'tries'] as const).map((mot): OptionSpec => ({
+        keyword: mot,
+        description: mot === 'time'
+          ? 'Seconds since the last valid reply before the server is marked dead'
+          : 'Consecutive timeouts before the server is marked dead',
+        argument: {
+          name: mot, type: 'INT', range: RADIUS_DEAD_CRITERIA_RANGES[mot],
+          description: mot === 'time' ? 'Seconds' : 'Number of tries',
+        } as ArgumentSpec,
+      })),
+      run: (_s, args) => {
+        const defaults = ctx().security().radiusDefaults;
+        if (args.time !== undefined) defaults.deadCriteriaTimeSec = Number(args.time);
+        if (args.tries !== undefined) defaults.deadCriteriaTries = Number(args.tries);
+        return '';
+      },
+      undo: (_s, args) => {
+        const defaults = ctx().security().radiusDefaults;
+        const both = args.time === undefined && args.tries === undefined;
+        if (both || args.time !== undefined) defaults.deadCriteriaTimeSec = undefined;
+        if (both || args.tries !== undefined) defaults.deadCriteriaTries = undefined;
+        return '';
+      },
+    },
+    {
+      id: 'radius-server-directed-request',
+      path: ['radius-server', 'directed-request'],
+      description: 'Allow user to specify the RADIUS server to use with @server',
+      undoDescription: 'Disable directed-request',
+      modes: MODES, minPrivilege: 15,
+      options: [{ keyword: 'restricted', description: 'Restrict queries to directed request servers only' }],
+      run: (_s, args) => {
+        ctx().security().radiusDefaults.directedRequest = { restricted: args.restricted !== undefined };
+        return '';
+      },
+      undo: (_s, args) => {
+        const defaults = ctx().security().radiusDefaults;
+        if (args.restricted !== undefined && defaults.directedRequest) defaults.directedRequest.restricted = false;
+        else defaults.directedRequest = undefined;
+        return '';
+      },
+    },
+    {
+      id: 'tacacs-server-directed-request',
+      path: ['tacacs-server', 'directed-request'],
+      description: 'Allow user to specify the TACACS+ server to use with @server',
+      undoDescription: 'Send the entire string to the default server',
+      modes: MODES, minPrivilege: 15,
+      options: [
+        { keyword: 'restricted', description: 'Restrict queries to directed request servers only' },
+        { keyword: 'no-truncate', description: 'Do not truncate the @hostname from the username' },
+      ],
+      run: (_s, args) => {
+        ctx().security().tacacsDefaults.directedRequest = {
+          restricted: args.restricted !== undefined, noTruncate: args['no-truncate'] !== undefined,
+        };
+        return '';
+      },
+      undo: () => { ctx().security().tacacsDefaults.directedRequest = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-retry-method-reorder',
+      path: ['radius-server', 'retry', 'method', 'reorder'],
+      description: 'Reorder RADIUS traffic retries among the server group',
+      undoDescription: 'Do not reorder retries',
+      modes: MODES, minPrivilege: 15,
+      run: () => { ctx().security().radiusDefaults.retryReorder = true; return ''; },
+      undo: () => { ctx().security().radiusDefaults.retryReorder = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-transaction-max-tries',
+      path: ['radius-server', 'transaction', 'max-tries', {
+        name: 'nombre', type: 'INT', range: [1, 2147483647],
+        description: 'Total number of transmissions per transaction',
+      }],
+      description: 'Maximum number of transmissions per RADIUS transaction',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => { ctx().security().radiusDefaults.transactionMaxTries = Number(args.nombre); return ''; },
+      undo: () => { ctx().security().radiusDefaults.transactionMaxTries = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-load-balance',
+      path: ['radius-server', 'load-balance', 'method', 'least-outstanding'],
+      description: 'Balance the global RADIUS server group by least outstanding transactions',
+      modes: MODES, minPrivilege: 15,
+      options: [
+        {
+          keyword: 'batch-size', description: 'Number of transactions assigned per batch',
+          argument: { name: 'batch-size', type: 'INT', range: [1, 2147483647], description: 'Transactions per batch (default 25)' },
+        },
+        { keyword: 'ignore-preferred-server', description: 'Do not reuse the server of the AAA session' },
+      ],
+      run: (_s, args) => {
+        ctx().security().radiusDefaults.loadBalance = {
+          batchSize: args['batch-size'] !== undefined ? Number(args['batch-size']) : DEFAULT_LOAD_BALANCE_BATCH,
+          ignorePreferredServer: args['ignore-preferred-server'] !== undefined,
+        };
+        return '';
+      },
+    },
+    {
+      id: 'radius-server-load-balance-no',
+      path: ['radius-server', 'load-balance'],
+      description: 'Balance the global RADIUS server group by least outstanding transactions',
+      undoDescription: 'Disable RADIUS server load balancing',
+      modes: MODES, minPrivilege: 15,
+      existsOnlyNegated: true,
+      run: () => { throw new CliIncomplete(); },
+      undo: () => { ctx().security().radiusDefaults.loadBalance = undefined; return ''; },
+    },
+    domainStrippingSpec('radius-server-domain-stripping', 'radius-server', 'RADIUS',
+      () => ctx().security().radiusStripping),
+    domainStrippingSpec('tacacs-server-domain-stripping', 'tacacs-server', 'TACACS+',
+      () => ctx().security().tacacsStripping),
     globalRadius('radius-server-auth-port', 'auth-port', RADIUS_RANGES['auth-port'],
       'UDP port for RADIUS authentication server', 'Port number',
       (n) => { ctx().security().radiusDefaults.authPort = n; },

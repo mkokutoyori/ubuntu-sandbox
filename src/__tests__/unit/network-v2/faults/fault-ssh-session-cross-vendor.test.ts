@@ -26,6 +26,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { allowLegacyIosSshServer } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -110,7 +111,7 @@ async function connectedTo(vendor: Vendor): Promise<Lab> {
   t.setInput(`ssh -o StrictHostKeyChecking=accept-new ${user}@10.0.0.2`);
   t.handleKey(key('Enter'));
   await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf(password);
     t.handleKey(key('Enter'));
     await flush();
@@ -119,8 +120,8 @@ async function connectedTo(vendor: Vendor): Promise<Lab> {
 }
 
 async function type(t: TerminalSession, line: string): Promise<void> {
-  t.foreground.setInput(line);
-  t.foreground.setInputBuf(line);
+  t.setInput(line);
+  t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
 }
@@ -297,6 +298,7 @@ describe('a Cisco router as the CLIENT', () => {
     const sw = new GenericSwitch('switch-generic', 'SW', 8, 0, 0);
     const srv = new LinuxServer('linux-server', 'SRV');
     srv.getPorts()[0].configureIP(new IPAddress('10.0.0.3'), MASK);
+    allowLegacyIosSshServer(srv);
     new Cable('c1').connect(r.getPorts()[0], sw.getPorts()[0]);
     const cable = new Cable('c2');
     cable.connect(srv.getPorts()[0], sw.getPorts()[1]);
@@ -309,7 +311,7 @@ describe('a Cisco router as the CLIENT', () => {
     t.setInput('ssh -l alice 10.0.0.3');
     t.handleKey(key('Enter'));
     await flush();
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('secret');
       t.handleKey(key('Enter'));
       await flush();

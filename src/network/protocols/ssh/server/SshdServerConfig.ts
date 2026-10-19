@@ -1,4 +1,5 @@
-import { permitOpenAllows } from '../SshPureUtils';
+import type { SshServerConfig } from './ISshServerContext';
+import { addressListMatches, globMatch, permitOpenAllows } from '../SshPureUtils';
 export type SshdAddressFamily = 'any' | 'inet' | 'inet6';
 export type SshdPermitRootLogin = 'yes' | 'no' | 'prohibit-password' | 'forced-commands-only';
 export type SshdLogLevel = 'QUIET' | 'FATAL' | 'ERROR' | 'INFO' | 'VERBOSE' | 'DEBUG' | 'DEBUG1' | 'DEBUG2' | 'DEBUG3';
@@ -34,6 +35,7 @@ export interface SshdMatchOverrides {
   chrootDirectory?: string;
   acceptEnv?: readonly string[];
   allowAgentForwarding?: boolean;
+  permitTty?: boolean;
   gatewayPorts?: SshdGatewayPorts;
   clientAliveIntervalSeconds?: number;
   clientAliveCountMax?: number;
@@ -42,6 +44,11 @@ export interface SshdMatchOverrides {
   denyUsers?: readonly string[];
   allowGroups?: readonly string[];
   denyGroups?: readonly string[];
+  authorizedKeysFile?: readonly string[];
+  authorizedPrincipalsFile?: string | null;
+  trustedUserCaKeys?: string | null;
+  revokedKeys?: string | null;
+  caSignatureAlgorithms?: readonly string[];
 }
 
 export interface SshdMatchBlock {
@@ -64,14 +71,24 @@ export interface SshdEffectiveView {
   readonly forceCommand: string | null;
   readonly acceptEnv: readonly string[];
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly gatewayPorts: SshdGatewayPorts;
   readonly clientAliveIntervalSeconds: number;
   readonly clientAliveCountMax: number;
   readonly printMotd: boolean;
+  readonly authorizedKeysFile: readonly string[];
+  readonly authorizedPrincipalsFile: string | null;
+  readonly trustedUserCaKeys: string | null;
+  readonly revokedKeys: string | null;
+  readonly caSignatureAlgorithms: readonly string[];
 }
 
+const DEFAULT_CA_SIGNATURE_ALGORITHMS = [
+  'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'rsa-sha2-512', 'rsa-sha2-256',
+];
+
 export interface SshdSubsystems {
-  readonly sftp: string;
+  readonly sftp: string | null;
   readonly extras: ReadonlyMap<string, string>;
 }
 
@@ -90,9 +107,11 @@ export interface SshdServerConfigSnapshot {
   readonly maxSessions: number;
   readonly maxStartups: SshdMaxStartups;
   readonly loginGraceTimeSeconds: number;
+  readonly rekeyLimit: string;
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly allowStreamLocalForwarding: boolean;
   readonly x11Forwarding: boolean;
   readonly x11DisplayOffset: number;
@@ -125,6 +144,12 @@ export interface SshdServerConfigSnapshot {
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
+  readonly authorizedKeysFile: readonly string[];
+  readonly authorizedPrincipalsFile: string | null;
+  readonly trustedUserCaKeys: string | null;
+  readonly hostCertificates: readonly string[];
+  readonly revokedKeys: string | null;
+  readonly caSignatureAlgorithms: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -162,53 +187,26 @@ const YES_NO = (v: string | undefined, fallback: boolean): boolean => {
   return fallback;
 };
 
-function globMatch(pattern: string, value: string): boolean {
-  const reSrc = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-  return new RegExp(reSrc).test(value);
+function userPatternMatches(pattern: string, user: string, address: string): boolean {
+  const at = pattern.indexOf('@');
+  if (at < 0) return globMatch(pattern, user);
+  return globMatch(pattern.slice(0, at), user) && address !== '' && addressListMatches(pattern.slice(at + 1), address);
 }
 
-function ipv4ToUint32(ip: string): number | null {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return null;
-  let acc = 0;
-  for (const p of parts) {
-    const n = Number.parseInt(p, 10);
-    if (!Number.isFinite(n) || n < 0 || n > 255 || String(n) !== p) return null;
-    acc = ((acc << 8) | n) >>> 0;
-  }
-  return acc;
-}
-
-function singleAddressMatches(pattern: string, ip: string): boolean {
-  if (pattern === '*' || pattern === 'any') return true;
-  if (pattern === ip) return true;
-  if (pattern.includes('/')) {
-    const [base, bitsStr] = pattern.split('/');
-    const bits = Number.parseInt(bitsStr, 10);
-    const a = ipv4ToUint32(base);
-    const b = ipv4ToUint32(ip);
-    if (a === null || b === null || !Number.isFinite(bits) || bits < 0 || bits > 32) return false;
-    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-    return (a & mask) === (b & mask);
-  }
-  if (pattern.includes('*') || pattern.includes('?')) return globMatch(pattern, ip);
-  return false;
-}
-
-function addressListMatches(patternList: string, ip: string): boolean {
-  const tokens = patternList.split(',').map(s => s.trim()).filter(Boolean);
-  if (tokens.length === 0) return false;
-  let anyPositive = false;
-  let matchedPositive = false;
-  for (const t of tokens) {
-    if (t.startsWith('!')) {
-      if (singleAddressMatches(t.slice(1), ip)) return false;
-    } else {
-      anyPositive = true;
-      if (singleAddressMatches(t, ip)) matchedPositive = true;
-    }
-  }
-  return anyPositive ? matchedPositive : true;
+export function handlerConfigOf(cfg: SshdServerConfig): SshServerConfig {
+  return {
+    listenPort: cfg.ports[0] ?? 22,
+    maxAuthTries: cfg.maxAuthTries,
+    maxSessions: cfg.maxSessions,
+    permitRootLogin: cfg.permitRootLogin !== 'no',
+    passwordAuthentication: cfg.passwordAuthentication,
+    pubkeyAuthentication: cfg.pubkeyAuthentication,
+    kbdInteractiveAuthentication: cfg.kbdInteractiveAuthentication,
+    clientAliveInterval: cfg.clientAliveIntervalSeconds,
+    clientAliveCountMax: cfg.clientAliveCountMax,
+    loginGraceTime: cfg.loginGraceTimeSeconds,
+    maxStartups: cfg.maxStartups,
+  };
 }
 
 export class SshdServerConfig implements SshdServerConfigSnapshot {
@@ -226,9 +224,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly maxSessions: number;
   readonly maxStartups: SshdMaxStartups;
   readonly loginGraceTimeSeconds: number;
+  readonly rekeyLimit: string;
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly allowStreamLocalForwarding: boolean;
   readonly x11Forwarding: boolean;
   readonly x11DisplayOffset: number;
@@ -261,6 +261,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
+  readonly authorizedKeysFile: readonly string[];
+  readonly authorizedPrincipalsFile: string | null;
+  readonly trustedUserCaKeys: string | null;
+  readonly hostCertificates: readonly string[];
+  readonly revokedKeys: string | null;
+  readonly caSignatureAlgorithms: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
   private constructor(s: SshdServerConfigSnapshot) {
@@ -278,9 +284,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.maxSessions = s.maxSessions;
     this.maxStartups = s.maxStartups;
     this.loginGraceTimeSeconds = s.loginGraceTimeSeconds;
+    this.rekeyLimit = s.rekeyLimit;
     this.permitEmptyPasswords = s.permitEmptyPasswords;
     this.allowTcpForwarding = s.allowTcpForwarding;
     this.allowAgentForwarding = s.allowAgentForwarding;
+    this.permitTty = s.permitTty;
     this.allowStreamLocalForwarding = s.allowStreamLocalForwarding;
     this.x11Forwarding = s.x11Forwarding;
     this.x11DisplayOffset = s.x11DisplayOffset;
@@ -313,6 +321,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.forceCommand = s.forceCommand;
     this.chrootDirectory = s.chrootDirectory;
     this.permitOpen = s.permitOpen;
+    this.authorizedKeysFile = s.authorizedKeysFile;
+    this.authorizedPrincipalsFile = s.authorizedPrincipalsFile;
+    this.trustedUserCaKeys = s.trustedUserCaKeys;
+    this.hostCertificates = s.hostCertificates;
+    this.revokedKeys = s.revokedKeys;
+    this.caSignatureAlgorithms = s.caSignatureAlgorithms;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -332,9 +346,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       maxSessions: 10,
       maxStartups: { start: 10, rate: 30, full: 100 },
       loginGraceTimeSeconds: 120,
+      rekeyLimit: 'default none',
       permitEmptyPasswords: false,
       allowTcpForwarding: 'yes',
       allowAgentForwarding: true,
+      permitTty: true,
       allowStreamLocalForwarding: true,
       x11Forwarding: false,
       x11DisplayOffset: 10,
@@ -354,7 +370,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       syslogFacility: 'AUTH',
       bannerPath: null,
       motdPath: '/etc/motd',
-      subsystems: { sftp: '/usr/lib/openssh/sftp-server', extras: new Map() },
+      subsystems: { sftp: null, extras: new Map() },
       allowUsers: Object.freeze([]),
       denyUsers: Object.freeze([]),
       allowGroups: Object.freeze([]),
@@ -367,6 +383,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       forceCommand: null,
       chrootDirectory: null,
       permitOpen: Object.freeze(['any']),
+      authorizedKeysFile: Object.freeze(['.ssh/authorized_keys', '.ssh/authorized_keys2']),
+      authorizedPrincipalsFile: null,
+      trustedUserCaKeys: null,
+      hostCertificates: Object.freeze([]),
+      revokedKeys: null,
+      caSignatureAlgorithms: Object.freeze([...DEFAULT_CA_SIGNATURE_ALGORITHMS]),
       matchBlocks: Object.freeze([]),
     });
   }
@@ -399,6 +421,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   withPermitEmptyPasswords(v: boolean): SshdServerConfig { return this.mutate({ permitEmptyPasswords: v }); }
   withAllowTcpForwarding(v: SshdAllowTcpForwarding): SshdServerConfig { return this.mutate({ allowTcpForwarding: v }); }
   withAllowAgentForwarding(v: boolean): SshdServerConfig { return this.mutate({ allowAgentForwarding: v }); }
+  withPermitTty(v: boolean): SshdServerConfig { return this.mutate({ permitTty: v }); }
   withX11Forwarding(v: boolean): SshdServerConfig { return this.mutate({ x11Forwarding: v }); }
   withGatewayPorts(v: SshdGatewayPorts): SshdServerConfig { return this.mutate({ gatewayPorts: v }); }
   withClientAlive(intervalSeconds: number, countMax: number): SshdServerConfig {
@@ -435,6 +458,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   }
 
   isUserAllowed(user: string, groups: readonly string[], ctx?: { address?: string; host?: string }): boolean {
+    return this.userRefusal(user, groups, ctx) === null;
+  }
+
+  userRefusal(
+    user: string, groups: readonly string[], ctx?: { address?: string; host?: string },
+  ): 'DenyUsers' | 'DenyGroups' | 'AllowUsers' | 'AllowGroups' | null {
     let denyUsers = this.denyUsers;
     let denyGroups = this.denyGroups;
     let allowUsers = this.allowUsers;
@@ -446,14 +475,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       if (block.overrides.allowUsers)  allowUsers  = block.overrides.allowUsers;
       if (block.overrides.allowGroups) allowGroups = block.overrides.allowGroups;
     }
-    if (denyUsers.some(p => globMatch(p, user))) return false;
-    if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
-    if (allowUsers.length > 0 && !allowUsers.some(p => globMatch(p, user))) {
-      if (allowGroups.length === 0 || !allowGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
-    } else if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-      if (allowUsers.length === 0) return false;
-    }
-    return true;
+    const address = ctx?.address ?? '';
+    if (denyUsers.some(p => userPatternMatches(p, user, address))) return 'DenyUsers';
+    if (allowUsers.length > 0 && !allowUsers.some(p => userPatternMatches(p, user, address))) return 'AllowUsers';
+    if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return 'DenyGroups';
+    if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) return 'AllowGroups';
+    return null;
   }
 
   effectiveFor(ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): SshdEffectiveView {
@@ -472,10 +499,16 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       forceCommand: this.forceCommand,
       acceptEnv: this.acceptEnv,
       allowAgentForwarding: this.allowAgentForwarding,
+      permitTty: this.permitTty,
       gatewayPorts: this.gatewayPorts,
       clientAliveIntervalSeconds: this.clientAliveIntervalSeconds,
       clientAliveCountMax: this.clientAliveCountMax,
       printMotd: this.printMotd,
+      authorizedKeysFile: this.authorizedKeysFile,
+      authorizedPrincipalsFile: this.authorizedPrincipalsFile,
+      trustedUserCaKeys: this.trustedUserCaKeys,
+      revokedKeys: this.revokedKeys,
+      caSignatureAlgorithms: this.caSignatureAlgorithms,
     };
     for (const block of this.matchBlocks) {
       if (!this.matchApplies(block.criteria, ctx)) continue;
@@ -511,7 +544,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     return requested === 'localhost' ? '127.0.0.1' : requested;
   }
 
-  private matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
+  matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
     for (const c of criteria) {
       switch (c.keyword) {
         case 'User':       if (!globMatch(c.value, ctx.user)) return false; break;
@@ -578,9 +611,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     lines.push(`MaxSessions ${this.maxSessions}`);
     lines.push(`MaxStartups ${this.maxStartups.start}:${this.maxStartups.rate}:${this.maxStartups.full}`);
     lines.push(`LoginGraceTime ${this.loginGraceTimeSeconds}`);
+    if (this.rekeyLimit !== 'default none') lines.push(`RekeyLimit ${this.rekeyLimit}`);
     lines.push(`PermitEmptyPasswords ${this.permitEmptyPasswords ? 'yes' : 'no'}`);
     lines.push(`AllowTcpForwarding ${this.allowTcpForwarding}`);
     lines.push(`AllowAgentForwarding ${this.allowAgentForwarding ? 'yes' : 'no'}`);
+    lines.push(`PermitTTY ${this.permitTty ? 'yes' : 'no'}`);
     lines.push(`X11Forwarding ${this.x11Forwarding ? 'yes' : 'no'}`);
     lines.push(`GatewayPorts ${this.gatewayPorts}`);
     lines.push(`ClientAliveInterval ${this.clientAliveIntervalSeconds}`);
@@ -598,7 +633,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     if (this.allowGroups.length) lines.push(`AllowGroups ${this.allowGroups.join(' ')}`);
     if (this.denyGroups.length)  lines.push(`DenyGroups ${this.denyGroups.join(' ')}`);
     if (this.acceptEnv.length)   lines.push(`AcceptEnv ${this.acceptEnv.join(' ')}`);
-    lines.push(`Subsystem sftp ${this.subsystems.sftp}`);
+    if (this.subsystems.sftp !== null) lines.push(`Subsystem sftp ${this.subsystems.sftp}`);
     for (const [name, cmd] of this.subsystems.extras) lines.push(`Subsystem ${name} ${cmd}`);
     for (const block of this.matchBlocks) {
       lines.push(`Match ${block.criteria.map(c => `${c.keyword} ${c.value}`).join(' ')}`);
@@ -619,8 +654,11 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'permitrootlogin': return cfg.withPermitRootLogin(value as SshdPermitRootLogin);
     case 'passwordauthentication': return cfg.withPasswordAuth(YES_NO(value, true));
     case 'pubkeyauthentication': return cfg.withPubkeyAuth(YES_NO(value, true));
-    case 'kbdinteractiveauthentication': return cfg.withKbdInteractive(YES_NO(value, false));
-    case 'challengeresponseauthentication': return cfg.mutate({ challengeResponseAuthentication: YES_NO(value, false) });
+    case 'kbdinteractiveauthentication':
+    case 'challengeresponseauthentication': {
+      const enabled = YES_NO(value, false);
+      return cfg.mutate({ kbdInteractiveAuthentication: enabled, challengeResponseAuthentication: enabled });
+    }
     case 'gssapiauthentication': return cfg.mutate({ gssapiAuthentication: YES_NO(value, false) });
     case 'hostbasedauthentication': return cfg.mutate({ hostbasedAuthentication: YES_NO(value, false) });
     case 'maxauthtries': return cfg.withMaxAuthTries(parseInt(value, 10) || 6);
@@ -633,6 +671,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'permitemptypasswords': return cfg.withPermitEmptyPasswords(YES_NO(value, false));
     case 'allowtcpforwarding': return cfg.withAllowTcpForwarding(value as SshdAllowTcpForwarding);
     case 'allowagentforwarding': return cfg.withAllowAgentForwarding(YES_NO(value, true));
+    case 'permittty': return cfg.withPermitTty(YES_NO(value, true));
     case 'allowstreamlocalforwarding': return cfg.mutate({ allowStreamLocalForwarding: YES_NO(value, true) });
     case 'x11forwarding': return cfg.withX11Forwarding(YES_NO(value, false));
     case 'x11displayoffset': return cfg.mutate({ x11DisplayOffset: parseInt(value, 10) || 10 });
@@ -641,6 +680,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'clientaliveinterval': return cfg.withClientAlive(parseInt(value, 10) || 0, cfg.clientAliveCountMax);
     case 'clientalivecountmax': return cfg.withClientAlive(cfg.clientAliveIntervalSeconds, parseInt(value, 10) || 3);
     case 'printmotd': return cfg.withPrintMotd(YES_NO(value, true));
+    case 'rekeylimit': return cfg.mutate({ rekeyLimit: value.trim() });
     case 'printlastlog': return cfg.mutate({ printLastLog: YES_NO(value, true) });
     case 'usedns': return cfg.withUseDns(YES_NO(value, false));
     case 'uselogin': return cfg.mutate({ useLogin: YES_NO(value, false) });
@@ -658,7 +698,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'denyusers':   return cfg.withDenyUsers(value.split(/\s+/));
     case 'allowgroups': return cfg.withAllowGroups(value.split(/\s+/));
     case 'denygroups':  return cfg.withDenyGroups(value.split(/\s+/));
-    case 'acceptenv':   return cfg.withAcceptEnv(value.split(/\s+/));
+    case 'acceptenv':   return cfg.withAcceptEnv([...cfg.acceptEnv, ...value.split(/\s+/)]);
     case 'ciphers':     return cfg.withCiphers(value.split(','));
     case 'macs':        return cfg.withMacs(value.split(','));
     case 'kexalgorithms': return cfg.withKexAlgorithms(value.split(','));
@@ -668,8 +708,18 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
       return cfg.withSubsystem(name, rest.join(' '));
     }
     case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
+    case 'authorizedkeysfile': return cfg.mutate({ authorizedKeysFile: Object.freeze(value.split(/\s+/).filter(Boolean)) });
+    case 'authorizedprincipalsfile': return cfg.mutate({ authorizedPrincipalsFile: value === 'none' ? null : value });
+    case 'hostcertificate': return cfg.mutate({ hostCertificates: Object.freeze([...cfg.hostCertificates, value]) });
+    case 'trustedusercakeys': return cfg.mutate({ trustedUserCaKeys: value === 'none' ? null : value });
+    case 'revokedkeys': return cfg.mutate({ revokedKeys: value === 'none' ? null : value });
+    case 'casignaturealgorithms': return cfg.mutate({ caSignatureAlgorithms: parseCaSignatureAlgorithms(value) });
     default: return cfg;
   }
+}
+
+function parseCaSignatureAlgorithms(value: string): readonly string[] {
+  return Object.freeze(value.split(',').map((name) => name.trim()).filter(Boolean));
 }
 
 function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string): void {
@@ -677,8 +727,8 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'permitrootlogin': o.permitRootLogin = value as SshdPermitRootLogin; break;
     case 'passwordauthentication': o.passwordAuthentication = YES_NO(value, true); break;
     case 'pubkeyauthentication': o.pubkeyAuthentication = YES_NO(value, true); break;
-    case 'kbdinteractiveauthentication': o.kbdInteractiveAuthentication = YES_NO(value, false); break;
-    case 'challengeresponseauthentication': o.challengeResponseAuthentication = YES_NO(value, false); break;
+    case 'kbdinteractiveauthentication': o.kbdInteractiveAuthentication = YES_NO(value, false); o.challengeResponseAuthentication = o.kbdInteractiveAuthentication; break;
+    case 'challengeresponseauthentication': o.kbdInteractiveAuthentication = YES_NO(value, false); o.challengeResponseAuthentication = o.kbdInteractiveAuthentication; break;
     case 'maxauthtries': o.maxAuthTries = parseInt(value, 10) || 6; break;
     case 'maxsessions': o.maxSessions = parseInt(value, 10) || 10; break;
     case 'allowtcpforwarding': o.allowTcpForwarding = value as SshdAllowTcpForwarding; break;
@@ -689,6 +739,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'chrootdirectory': o.chrootDirectory = value; break;
     case 'acceptenv': o.acceptEnv = Object.freeze(value.split(/\s+/)); break;
     case 'allowagentforwarding': o.allowAgentForwarding = YES_NO(value, true); break;
+    case 'permittty': o.permitTty = YES_NO(value, true); break;
     case 'gatewayports': o.gatewayPorts = value as SshdGatewayPorts; break;
     case 'clientaliveinterval': o.clientAliveIntervalSeconds = parseInt(value, 10) || 0; break;
     case 'clientalivecountmax': o.clientAliveCountMax = parseInt(value, 10) || 3; break;
@@ -697,6 +748,11 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'denyusers':   o.denyUsers  = Object.freeze(value.split(/\s+/)); break;
     case 'allowgroups': o.allowGroups = Object.freeze(value.split(/\s+/)); break;
     case 'denygroups':  o.denyGroups  = Object.freeze(value.split(/\s+/)); break;
+    case 'authorizedkeysfile': o.authorizedKeysFile = Object.freeze(value.split(/\s+/).filter(Boolean)); break;
+    case 'authorizedprincipalsfile': o.authorizedPrincipalsFile = value === 'none' ? null : value; break;
+    case 'trustedusercakeys': o.trustedUserCaKeys = value === 'none' ? null : value; break;
+    case 'revokedkeys': o.revokedKeys = value === 'none' ? null : value; break;
+    case 'casignaturealgorithms': o.caSignatureAlgorithms = parseCaSignatureAlgorithms(value); break;
   }
 }
 

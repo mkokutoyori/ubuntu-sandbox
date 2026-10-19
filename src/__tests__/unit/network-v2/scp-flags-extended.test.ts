@@ -1,6 +1,14 @@
+/**
+ * Sonde -- la ligne de commande de `scp` (getopt "12346ABCOTdfpqrtvBCc:F:J:P:S:i:l:o:")
+ * et les copies entre deux chemins locaux, qui n'ouvrent aucune connexion.
+ *
+ * Mesure : `parseScpCommandLine` et `runScpClient` sont NOUVEAUX et remplacent
+ * `parseScpArgs`/`ScpSession` ; le fichier ne se charge pas sur la base. TEMOIN : le cas
+ * `copies a file between two local paths` prouve que le laboratoire est sain.
+ */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseScpArgs } from '@/network/protocols/ssh/Scp';
-import { ScpSession } from '@/network/protocols/ssh/scp/ScpSession';
+import { parseScpCommandLine } from '@/network/protocols/ssh/scp/ScpCommandLine';
+import { runScpClient, type ScpClientHost } from '@/network/protocols/ssh/scp/ScpClientCommand';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { VfsSftpFileSystem } from '@/network/protocols/ssh/sftp/VfsSftpFileSystem';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -14,104 +22,100 @@ beforeEach(() => {
   Logger.reset();
 });
 
-describe('parseScpArgs — extended OpenSSH flags', () => {
-  it('parses -q -v -C -T -p flags', () => {
-    const r = parseScpArgs(['-q', '-v', '-C', '-T', '-p', '/a', 'u@h:/b'])!;
-    expect(r.quiet).toBe(true);
-    expect(r.verbose).toBe(true);
-    expect(r.compression).toBe(true);
-    expect(r.skipFilenameCheck).toBe(true);
-    expect(r.preserve).toBe(true);
+function parsed(args: string[]) {
+  const outcome = parseScpCommandLine(args);
+  if (outcome.kind !== 'parsed') throw new Error('rejected');
+  return outcome.line;
+}
+
+describe('parseScpCommandLine', () => {
+  it('parses bundled switches and counts -v', () => {
+    const line = parsed(['-qvvrp', '/a', 'u@h:/b']);
+    expect(line.quiet).toBe(true);
+    expect(line.recursive).toBe(true);
+    expect(line.preserve).toBe(true);
+    expect(line.verbosity).toBe(2);
   });
 
-  it('parses -l bandwidth-limit and -J jumphost', () => {
-    const r = parseScpArgs(['-l', '500', '-J', 'bastion@10.0.0.99', '/a', 'u@h:/b'])!;
-    expect(r.bandwidthLimitKbps).toBe(500);
-    expect(r.jumpHost).toBe('bastion@10.0.0.99');
+  it('turns -P into the ssh -p and forwards -i, -F, -J, -o and -c to ssh', () => {
+    const line = parsed(['-P', '2222', '-i', 'k', '-F', 'cfg', '-J', 'j@b', '-oUserKnownHostsFile=/dev/null', '-c', 'aes128-ctr', '/a', 'u@h:/b']);
+    expect(line.sshArguments).toEqual(['-p', '2222', '-i', 'k', '-F', 'cfg', '-J', 'j@b', '-o', 'UserKnownHostsFile=/dev/null', '-c', 'aes128-ctr']);
   });
 
-  it('parses -o key=value options into a map', () => {
-    const r = parseScpArgs([
-      '-o', 'StrictHostKeyChecking=no',
-      '-o', 'UserKnownHostsFile=/dev/null',
-      '/a', 'u@h:/b',
-    ])!;
-    expect(r.options.get('StrictHostKeyChecking')).toBe('no');
-    expect(r.options.get('UserKnownHostsFile')).toBe('/dev/null');
+  it('reads -l as a bandwidth in kbit/s and refuses a value that is not a number', () => {
+    expect(parsed(['-l', '500', '/a', 'u@h:/b']).limitKbit).toBe(500);
+    expect(parseScpCommandLine(['-l', 'abc', '/a', 'u@h:/b'])).toEqual({ kind: 'rejected', diagnostic: 'scp: bad bandwidth limit: abc' });
   });
 
-  it('rejects -l with invalid value gracefully (left as null)', () => {
-    const r = parseScpArgs(['-l', 'abc', '/a', 'u@h:/b'])!;
-    expect(r.bandwidthLimitKbps).toBeNull();
+  it('-B becomes BatchMode and -3 asks for the relay through the client', () => {
+    const line = parsed(['-B', '-3', 'a@h:/x', 'b@k:/y']);
+    expect(line.sshArguments).toEqual(['-o', 'BatchMode=yes']);
+    expect(line.viaClient).toBe(true);
   });
 
-  it('preserve flag is parsed (was previously checked via args.includes)', () => {
-    const r1 = parseScpArgs(['-p', '/a', 'u@h:/b'])!;
-    const r2 = parseScpArgs(['/a', 'u@h:/b'])!;
-    expect(r1.preserve).toBe(true);
-    expect(r2.preserve).toBe(false);
-  });
-});
-
-describe('parseScpArgs — multi-source positional', () => {
-  it('puts every positional except the last into sources[]', () => {
-    const r = parseScpArgs(['a.txt', 'b.txt', 'c.txt', 'u@h:/dst'])!;
-    expect(r.sources.map((s) => s.path)).toEqual(['a.txt', 'b.txt', 'c.txt']);
-    expect(r.destination.path).toBe('/dst');
-    expect(r.source.path).toBe('a.txt');
+  it('keeps every operand but the options, and needs at least two', () => {
+    expect(parsed(['a.txt', 'b.txt', 'c.txt', 'u@h:/dst']).operands).toEqual(['a.txt', 'b.txt', 'c.txt', 'u@h:/dst']);
+    expect(parseScpCommandLine(['only'])).toEqual({ kind: 'rejected', diagnostic: null });
   });
 
-  it('single source still works (back-compat)', () => {
-    const r = parseScpArgs(['/a', 'u@h:/b'])!;
-    expect(r.sources).toHaveLength(1);
-    expect(r.sources[0].path).toBe('/a');
+  it('refuses an unknown option and a missing argument with the getopt wording', () => {
+    expect(parseScpCommandLine(['-x', 'a', 'b'])).toEqual({ kind: 'rejected', diagnostic: "scp: invalid option -- 'x'" });
+    expect(parseScpCommandLine(['-P'])).toEqual({ kind: 'rejected', diagnostic: "scp: option requires an argument -- 'P'" });
   });
 });
 
-describe('ScpSession — multi-source upload to a remote directory', () => {
-  it('copies a.txt + b.txt into /tmp/ on the remote', () => {
-    const localVfs = new VirtualFileSystem();
-    const remoteVfs = new VirtualFileSystem();
-    localVfs.writeFile('/src/a.txt', 'AAA', 0, 0, 0o022);
-    localVfs.writeFile('/src/b.txt', 'BBB', 0, 0, 0o022);
-    remoteVfs.mkdirp('/tmp', 0o755, 0, 0);
-    const local = new VfsSftpFileSystem(localVfs, { uid: 0, gid: 0, umask: 0o022 });
-    const remote = new VfsSftpFileSystem(remoteVfs, { uid: 0, gid: 0, umask: 0o022 });
-    const session = new ScpSession({
-      args: ['/src/a.txt', '/src/b.txt', 'u@h:/tmp'],
-      local: { fs: local, cwd: '/' },
-      resolveRemote: () => remote,
-    });
-    const r = session.run();
-    expect(r.exitCode).toBe(0);
-    expect(remoteVfs.readFile('/tmp/a.txt')).toBe('AAA');
-    expect(remoteVfs.readFile('/tmp/b.txt')).toBe('BBB');
-  });
-});
+function hostOver(vfs: VirtualFileSystem): ScpClientHost {
+  return {
+    local: new VfsSftpFileSystem(vfs, { uid: 0, gid: 0, umask: 0o022 }),
+    cwd: '/',
+    usage: 'usage: scp',
+    umask: 0o022,
+    sshPrograms: ['ssh'],
+    connect: () => Promise.reject(new Error('a local copy must not connect')),
+  };
+}
 
-describe('ScpSession — quiet and summary formatting', () => {
-  function makeSession(args: string[]) {
-    const localVfs = new VirtualFileSystem();
-    const remoteVfs = new VirtualFileSystem();
-    localVfs.writeFile('/tmp/payload.txt', 'hello-scp-world', 0, 0, 0o022);
-    const local = new VfsSftpFileSystem(localVfs, { uid: 0, gid: 0, umask: 0o022 });
-    const remote = new VfsSftpFileSystem(remoteVfs, { uid: 0, gid: 0, umask: 0o022 });
-    return new ScpSession({
-      args,
-      local: { fs: local, cwd: '/' },
-      resolveRemote: () => remote,
-    });
-  }
-
-  it('-q suppresses the progress summary line', () => {
-    const r = makeSession(['-q', '/tmp/payload.txt', 'u@h:/tmp/payload.txt']).run();
-    expect(r.exitCode).toBe(0);
-    expect(r.output).toBe('');
+describe('runScpClient between two local paths', () => {
+  it('copies a file between two local paths (witness)', async () => {
+    const vfs = new VirtualFileSystem();
+    vfs.writeFile('/tmp/payload.txt', 'hello-scp-world', 0, 0, 0o022);
+    const result = await runScpClient(['/tmp/payload.txt', '/tmp/copy.txt'], hostOver(vfs), undefined);
+    expect(result.exitCode).toBe(0);
+    expect(vfs.readFile('/tmp/copy.txt')).toBe('hello-scp-world');
   });
 
-  it('default (no -q) renders a properly scaled progress line', () => {
-    const r = makeSession(['/tmp/payload.txt', 'u@h:/tmp/payload.txt']).run();
-    expect(r.exitCode).toBe(0);
-    expect(r.output).toMatch(/^payload\.txt\s+100%\s+15\s+15B\/s\s+00:00$/);
+  it('prints the meter unless -q, scaled to the size', async () => {
+    const vfs = new VirtualFileSystem();
+    vfs.writeFile('/tmp/payload.txt', 'hello-scp-world', 0, 0, 0o022);
+    const loud = await runScpClient(['/tmp/payload.txt', '/tmp/out.txt'], hostOver(vfs), undefined);
+    expect(loud.output).toMatch(/^payload\.txt\s+100%\s+15\s+15B\/s\s+00:00$/);
+    const quiet = await runScpClient(['-q', '/tmp/payload.txt', '/tmp/out2.txt'], hostOver(vfs), undefined);
+    expect(quiet.output).toBe('');
+  });
+
+  it('copies two files into a directory and refuses a target that is not one', async () => {
+    const vfs = new VirtualFileSystem();
+    vfs.writeFile('/src/a.txt', 'AAA', 0, 0, 0o022);
+    vfs.writeFile('/src/b.txt', 'BBB', 0, 0, 0o022);
+    vfs.mkdirp('/tmp', 0o755, 0, 0);
+    const ok = await runScpClient(['/src/a.txt', '/src/b.txt', '/tmp'], hostOver(vfs), undefined);
+    expect(ok.exitCode).toBe(0);
+    expect(vfs.readFile('/tmp/b.txt')).toBe('BBB');
+    const refused = await runScpClient(['/src/a.txt', '/src/b.txt', '/tmp/a.txt'], hostOver(vfs), undefined);
+    expect(refused).toEqual({ output: 'scp: /tmp/a.txt: Not a directory', exitCode: 1 });
+  });
+
+  it('reports a missing source and exits 1', async () => {
+    const vfs = new VirtualFileSystem();
+    vfs.mkdirp('/tmp', 0o755, 0, 0);
+    const result = await runScpClient(['/tmp/ghost', '/tmp/out'], hostOver(vfs), undefined);
+    expect(result).toEqual({ output: 'scp: /tmp/ghost: No such file or directory', exitCode: 1 });
+  });
+
+  it('prints the usage after the diagnostic when the command line is wrong', async () => {
+    const vfs = new VirtualFileSystem();
+    const result = await runScpClient(['-x', 'a', 'b'], hostOver(vfs), undefined);
+    expect(result.output).toBe("scp: invalid option -- 'x'\nusage: scp");
+    expect(result.exitCode).toBe(1);
   });
 });

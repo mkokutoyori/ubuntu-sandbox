@@ -2,6 +2,7 @@ import { formatLocalTime } from '../system/SystemInfo';
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type LoginctlSignal = 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT';
 
@@ -44,8 +45,8 @@ function synthSession(r: UtmpRecord): SshSession {
   } as unknown as SshSession;
 }
 
-function pad(s: string, w: number): string { return s.padEnd(w); }
-function padLeft(s: string, w: number): string { return s.padStart(w); }
+function pad(s: string, w: number): string { return padToWidth(s, w); }
+function padLeft(s: string, w: number): string { return padToWidth(s, w, 'right'); }
 
 export function loginctlSessionId(s: SshSession, index: number): string {
   const pid = (s as { shellPid?: number }).shellPid ?? s.sshdPid ?? 0;

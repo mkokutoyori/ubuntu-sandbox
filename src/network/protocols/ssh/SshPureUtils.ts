@@ -10,6 +10,7 @@ import { SshFingerprint } from './SshFingerprint';
 import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from './SshConnectOptions';
 import { SshHostKey, type SshKeyAlgorithm } from './SshHostKey';
 import { hmac, SHA1, sha1, bytesToBase64, base64ToBytes, utf8ToBytes } from '@/crypto';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface KnownHostEntry {
   readonly host: string;
@@ -33,6 +34,8 @@ export interface AuthorizedKeyOptions {
   readonly restrict?: boolean;
   readonly environment?: ReadonlyArray<readonly [string, string]>;
   readonly permitOpen?: readonly string[];
+  readonly certAuthority?: boolean;
+  readonly principals?: string;
   readonly unsupported?: readonly string[];
 }
 
@@ -134,6 +137,15 @@ export function parseSshConfigBlock(block: string): SshHostConfig {
   };
 }
 
+export function sshWildcardMatches(pattern: string, text: string): boolean {
+  if (pattern === text) return true;
+  if (!pattern.includes('*') && !pattern.includes('?')) return false;
+  const re = new RegExp(
+    '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+  );
+  return re.test(text);
+}
+
 export function expandTilde(path: string, homeDir: string): string {
   if (path === '~') return homeDir;
   if (path.startsWith('~/')) return `${homeDir}/${path.slice(2)}`;
@@ -190,7 +202,7 @@ function splitAuthorizedKeyLine(line: string): { optionsRaw: string | null; algo
   return { optionsRaw, algorithm, material, comment: commentParts.join(' ') };
 }
 
-function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
+export function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
   const opts: { -readonly [K in keyof AuthorizedKeyOptions]: AuthorizedKeyOptions[K] } = {};
   const env: Array<readonly [string, string]> = [];
   const permitOpen: string[] = [];
@@ -202,6 +214,8 @@ function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
     const val = valRaw.replace(/^"|"$/g, '');
     switch (key) {
       case 'command': opts.command = val; break;
+      case 'cert-authority': opts.certAuthority = true; break;
+      case 'principals': opts.principals = val; break;
       case 'from': opts.from = val; break;
       case 'no-pty': opts.noPty = true; break;
       case 'no-port-forwarding': opts.noPortForwarding = true; break;
@@ -257,12 +271,12 @@ export function formatTransferProgress(name: string, bytes: number): string {
   const padded = padOrTruncate(name, 40);
   const size = formatHumanSize(bytes);
   const speed = `${formatHumanSize(bytes)}/s`;
-  return `${padded} 100% ${size.padStart(8, ' ')}   ${speed.padStart(9, ' ')}   00:00`;
+  return `${padded} 100% ${padToWidth(size, 8, 'right')}   ${padToWidth(speed, 9, 'right')}   00:00`;
 }
 
 function padOrTruncate(name: string, width: number): string {
   if (name.length === width) return name;
-  if (name.length < width) return name.padEnd(width, ' ');
+  if (name.length < width) return padToWidth(name, width);
   // Truncate keeping the trailing portion (so the basename stays visible).
   return '...' + name.slice(name.length - (width - 3));
 }
@@ -296,7 +310,7 @@ export function formatLsLongEntry(entry: FormattableDirEntry): string {
   const typeChar =
     entry.type === 'directory' ? 'd' : entry.type === 'symlink' ? 'l' : '-';
   const perms = formatPermBits(entry.mode);
-  const size = String(entry.size).padStart(8, ' ');
+  const size = padToWidth(String(entry.size), 8, 'right');
   const date = formatMtime(entry.mtime);
   return `${typeChar}${perms}  1 ${entry.uid} ${entry.gid} ${size} ${date} ${entry.name}`;
 }
@@ -335,7 +349,7 @@ function formatMtime(mtime: number): string {
     'Dec',
   ];
   const month = months[d.getUTCMonth()];
-  const day = String(d.getUTCDate()).padStart(2, ' ');
+  const day = padToWidth(String(d.getUTCDate()), 2, 'right');
   const hh = String(d.getUTCHours()).padStart(2, '0');
   const mm = String(d.getUTCMinutes()).padStart(2, '0');
   return `${month} ${day} ${hh}:${mm}`;
@@ -356,6 +370,55 @@ export interface KeySource {
   readonly host?: string;
 }
 
+export function globMatch(pattern: string, value: string): boolean {
+  const reSrc = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(reSrc).test(value);
+}
+
+function ipv4ToUint32(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let acc = 0;
+  for (const p of parts) {
+    const n = Number.parseInt(p, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 255 || String(n) !== p) return null;
+    acc = ((acc << 8) | n) >>> 0;
+  }
+  return acc;
+}
+
+function singleAddressMatches(pattern: string, ip: string): boolean {
+  if (pattern === '*' || pattern === 'any') return true;
+  if (pattern === ip) return true;
+  if (pattern.includes('/')) {
+    const [base, bitsStr] = pattern.split('/');
+    const bits = Number.parseInt(bitsStr, 10);
+    const a = ipv4ToUint32(base);
+    const b = ipv4ToUint32(ip);
+    if (a === null || b === null || !Number.isFinite(bits) || bits < 0 || bits > 32) return false;
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return (a & mask) === (b & mask);
+  }
+  if (pattern.includes('*') || pattern.includes('?')) return globMatch(pattern, ip);
+  return false;
+}
+
+export function addressListMatches(patternList: string, ip: string): boolean {
+  const tokens = patternList.split(',').map(s => s.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  let anyPositive = false;
+  let matchedPositive = false;
+  for (const t of tokens) {
+    if (t.startsWith('!')) {
+      if (singleAddressMatches(t.slice(1), ip)) return false;
+    } else {
+      anyPositive = true;
+      if (singleAddressMatches(t, ip)) matchedPositive = true;
+    }
+  }
+  return anyPositive ? matchedPositive : true;
+}
+
 export function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern: string): boolean {
   let allowed = false;
   for (const raw of pattern.split(',')) {
@@ -363,8 +426,7 @@ export function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, p
     if (!p) continue;
     const negate = p.startsWith('!');
     const body = negate ? p.slice(1) : p;
-    const re = new RegExp('^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-    if (re.test(sourceIp) || re.test(sourceHost)) {
+    if (singleAddressMatches(body, sourceIp) || (sourceHost !== '' && globMatch(body, sourceHost))) {
       if (negate) return false;
       allowed = true;
     }
@@ -384,7 +446,7 @@ export function findAdmittedKey(
 ): AuthorizedKey | null {
   for (const line of authorizedKeys.split('\n')) {
     const key = parseAuthorizedKeysLine(line);
-    if (key && key.material === material && authorizedKeyAdmits(key, source)) return key;
+    if (key && key.material === material && key.options?.certAuthority !== true && authorizedKeyAdmits(key, source)) return key;
   }
   return null;
 }

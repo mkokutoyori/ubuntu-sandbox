@@ -15,6 +15,7 @@
  *   formatter) converts back to a display string.
  */
 
+import { renderTable, type TableColumn, padToWidth } from '../shells/cli/TextTable';
 import { registeredDisplay } from '@/powershell/runtime/PSExpansion';
 import { formatDouble } from '@/powershell/runtime/dotnetNumber';
 import { formatTimeSpan, isTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
@@ -623,6 +624,7 @@ export function formatTable(objects: PSObject[], args: string): string {
 
   const tokens = tokenizeArgs(args);
   let properties: string[] | null = null;
+  let hideHeaders = false;
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i].toLowerCase();
@@ -636,6 +638,8 @@ export function formatTable(objects: PSObject[], args: string): string {
       i--;
     } else if (t === '-autosize') {
       // AutoSize is the default behavior
+    } else if (t === '-hidetableheaders') {
+      hideHeaders = true;
     } else if (!t.startsWith('-')) {
       // Bare property names accumulate across multiple tokens
       // (e.g. `Format-Table Name, Description` → ["Name,", "Description"]).
@@ -660,38 +664,21 @@ export function formatTable(objects: PSObject[], args: string): string {
     return { raw, text: renderPSCellValue(raw) };
   };
 
-  // Calculate column widths
-  const widths: Record<string, number> = {};
-  for (const col of columns) {
-    widths[col] = col.length;
-  }
-  for (const obj of objects) {
-    for (const col of columns) {
-      const { text } = cellValue(obj, col);
-      widths[col] = Math.max(widths[col], text.length);
-    }
-  }
-
-  // Build table
-  const lines: string[] = [];
-  const headerLine = columns.map(c => c.padEnd(widths[c])).join('  ');
-  const sepLine = columns.map(c => '-'.repeat(widths[c])).join('  ');
-  lines.push('');
-  lines.push(headerLine);
-  lines.push(sepLine);
-
-  for (const obj of objects) {
-    const row = columns.map(col => {
-      const { raw, text } = cellValue(obj, col);
-      // Right-align numbers and Date values (PS convention)
-      if (typeof raw === 'number' || raw instanceof Date) return text.padStart(widths[col]);
-      return text.padEnd(widths[col]);
-    }).join('  ');
-    lines.push(row);
-  }
-  lines.push('');
-
-  return lines.join('\n');
+  const cells = objects.map(obj => columns.map(col => cellValue(obj, col)));
+  const numeric = columns.map((_, index) => {
+    const raws = cells.map(row => row[index].raw).filter(raw => raw !== null && raw !== undefined && raw !== '');
+    return raws.length > 0 && raws.every(raw => typeof raw === 'number' || raw instanceof Date);
+  });
+  const tableColumns: Array<TableColumn<number>> = columns.map((col, index) => ({
+    header: col,
+    align: numeric[index] ? 'right' : 'left',
+    value: (rowIndex) => cells[rowIndex][index].text,
+  }));
+  const body = renderTable(
+    objects.map((_, rowIndex) => rowIndex), tableColumns,
+    hideHeaders ? { gap: 1, rule: false, header: false, padTrailing: true } : { gap: 1, rule: true, ruleFitsHeader: true, padTrailing: true },
+  );
+  return ['', ...body, ''].join('\n');
 }
 
 /**
@@ -728,7 +715,7 @@ export function formatList(objects: PSObject[], args: string): string {
     const maxKeyLen = Math.max(...keys.map(k => k.length));
     const pairs = keys.map(k => {
       const key = Object.keys(obj).find(ok => ok.toLowerCase() === k.toLowerCase()) || k;
-      return `${k.padEnd(maxKeyLen)} : ${renderPSCellValue(obj[key])}`;
+      return `${padToWidth(k, maxKeyLen)} : ${renderPSCellValue(obj[key])}`;
     });
     blocks.push(pairs.join('\n'));
   }
@@ -753,6 +740,8 @@ export function formatDefault(objects: PSObject[]): string {
   if (serverManager !== null) return serverManager;
   const partitions = partitionDiskGroups(objects);
   if (partitions !== null) return partitions;
+  const members = memberDefinitionView(objects);
+  if (members !== null) return members;
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
@@ -764,6 +753,17 @@ export function formatDefault(objects: PSObject[]): string {
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+function memberDefinitionView(objects: PSObject[]): string | null {
+  const owner = (entry: PSObject): string | undefined => (entry as Record<string, unknown>).__memberOf__ as string | undefined;
+  if (objects.some(entry => owner(entry) === undefined)) return null;
+  const groups = new Map<string, PSObject[]>();
+  for (const entry of objects) {
+    const key = owner(entry) as string;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  return [...groups].map(([typeName, rows]) => `\n   TypeName: ${typeName}\n${formatTable(rows, '')}`).join('\n');
 }
 
 function matchInfoView(objects: PSObject[]): string | null {
@@ -854,12 +854,12 @@ const FEATURE_NAME_W = 27;
 function serverManagerView(objects: PSObject[]): string | null {
   const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
   if (lower.has('installstate') && lower.has('installed') && lower.has('displayname')) {
-    const header = 'Display Name'.padEnd(FEATURE_DISPLAY_W)
-      + 'Name'.padEnd(FEATURE_NAME_W) + 'Install State';
+    const header = padToWidth('Display Name', FEATURE_DISPLAY_W)
+      + padToWidth('Name', FEATURE_NAME_W) + 'Install State';
     const rows = objects.map((o) => {
       const box = o.Installed === true ? '[X]' : '[ ]';
-      return `${box} ${String(o.DisplayName ?? '')}`.padEnd(FEATURE_DISPLAY_W)
-        + String(o.Name ?? '').padEnd(FEATURE_NAME_W) + String(o.InstallState ?? '');
+      return padToWidth(`${box} ${String(o.DisplayName ?? '')}`, FEATURE_DISPLAY_W)
+        + padToWidth(String(o.Name ?? ''), FEATURE_NAME_W) + String(o.InstallState ?? '');
     });
     return [header, '-'.repeat(header.length), ...rows].join('\n');
   }
@@ -869,9 +869,9 @@ function serverManagerView(objects: PSObject[]): string | null {
       const result = o.FeatureResult;
       const noms = Array.isArray(result) ? result.map(String) : [];
       const list = noms.length > 0 ? `{${noms.join(', ')}}` : '{}';
-      return `${(o.Success === true ? 'True' : 'False').padEnd(8)}`
-        + `${String(o.RestartNeeded ?? 'No').padEnd(15)}`
-        + `${String(o.ExitCode ?? '').padEnd(15)}${list}`;
+      return `${padToWidth(o.Success === true ? 'True' : 'False', 8)}`
+        + `${padToWidth(String(o.RestartNeeded ?? 'No'), 15)}`
+        + `${padToWidth(String(o.ExitCode ?? ''), 15)}${list}`;
     });
     return [header, '------- -------------- ---------      --------------', ...rows].join('\n');
   }
@@ -906,6 +906,9 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   }
   if (lower.has('hostname') && lower.has('recordtype') && lower.has('timestamp') && lower.has('recorddata')) {
     return ['HostName', 'RecordType', 'Type', 'Timestamp', 'TimeToLive', 'RecordData'];
+  }
+  if (lower.has('commandtype') && lower.has('name') && lower.has('version') && lower.has('source') && lower.has('scriptblock')) {
+    return ['CommandType', 'Name', 'Version', 'Source'];
   }
   // Service object: Status / Name / DisplayName
   if (lower.has('status') && lower.has('name') && lower.has('displayname')) {

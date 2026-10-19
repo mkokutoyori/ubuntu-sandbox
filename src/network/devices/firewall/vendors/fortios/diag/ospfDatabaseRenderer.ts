@@ -1,6 +1,7 @@
 import type {
   OspfLsaFacts, OspfAreaFacts, OspfDatabaseFacts, OspfInterfaceFacts,
 } from '../../../routing/DynamicRoutingTypes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const SECTION_TITLE: Readonly<Record<number, string>> = Object.freeze({
   1: 'Router Link States',
@@ -25,8 +26,8 @@ function hex(value: number, width: number): string {
 }
 
 function lsaRow(lsa: OspfLsaFacts): string {
-  const common = lsa.linkStateId.padEnd(15)
-    + `${lsa.advertisingRouter.padEnd(15)} ${String(lsa.lsAge).padStart(4)}`
+  const common = padToWidth(lsa.linkStateId, 15)
+    + `${padToWidth(lsa.advertisingRouter, 15)} ${padToWidth(String(lsa.lsAge), 4, 'right')}`
     + ` 0x${hex(lsa.lsSequenceNumber, 8)} 0x${hex(lsa.checksum, 4)}`;
 
   if (lsa.lsType === 1) return `${common} ${lsa.linkCount ?? 0}`;

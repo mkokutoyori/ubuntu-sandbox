@@ -23,6 +23,7 @@ import {
   buildNeighJsonEntry,
   toJsonText,
 } from './commands/net/IpJsonFormat';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Network Context Interface ──────────────────────────────────────
 
@@ -115,7 +116,7 @@ export interface IpLinkOpsContext {
   release(iface: string): string;
   bondOption(bond: string, key: string, value: string): boolean;
   addVeth(name: string, peerName: string): string;
-  addVlan(name: string, parent: string, vid: number): string;
+  addVlan(name: string, parent: string, vid: number, mvrp?: boolean): string;
   deleteLink(name: string): string;
 }
 
@@ -694,9 +695,9 @@ function statsLines(info: IpInterfaceInfo): string[] {
   const errorsOut = c.errorsOut ?? 0;
   return [
     '    RX:  bytes packets errors dropped  missed   mcast',
-    `    ${String(c.bytesIn).padStart(5)}${String(c.framesIn).padStart(8)}${String(errorsIn).padStart(7)}${'0'.padStart(8)}${'0'.padStart(8)}${'0'.padStart(8)}`,
+    `    ${padToWidth(String(c.bytesIn), 5, 'right')}${padToWidth(String(c.framesIn), 8, 'right')}${padToWidth(String(errorsIn), 7, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}`,
     '    TX:  bytes packets errors dropped carrier collsns',
-    `    ${String(c.bytesOut).padStart(5)}${String(c.framesOut).padStart(8)}${String(errorsOut).padStart(7)}${'0'.padStart(8)}${'0'.padStart(8)}${'0'.padStart(8)}`,
+    `    ${padToWidth(String(c.bytesOut), 5, 'right')}${padToWidth(String(c.framesOut), 8, 'right')}${padToWidth(String(errorsOut), 7, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}${padToWidth('0', 8, 'right')}`,
   ];
 }
 
@@ -764,7 +765,7 @@ function briefSelection(ctx: IpNetworkContext, args: string[]): string[] {
 
 function briefColumns(info: IpInterfaceInfo, c: IpColorizer): string {
   const { state } = formeLien(info);
-  return `${c.ifname(`${info.name.padEnd(16)} `)}${c.operstate(state, `${state.padEnd(14)} `)}`;
+  return `${c.ifname(`${padToWidth(info.name, 16)} `)}${c.operstate(state, `${padToWidth(state, 14)} `)}`;
 }
 
 function briefAddresses(info: IpInterfaceInfo, c: IpColorizer): string[] {
@@ -796,7 +797,7 @@ function ipLinkBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): str
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
     const drapeaux = `<${computeIfaceFlags(info).join(',')}>`;
-    lines.push(`${briefColumns(info, c)}${(info.mac ?? '').padEnd(17)} ${drapeaux} `);
+    lines.push(`${briefColumns(info, c)}${padToWidth(info.mac ?? '', 17)} ${drapeaux} `);
   }
   return lines.join('\n');
 }
@@ -961,9 +962,11 @@ function ipLinkAdd(ctx: IpNetworkContext, args: string[]): string {
   let type: string | null = null;
   let peerName: string | null = null;
   let vlanId: number | undefined;
+  let mvrp = false;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'name' && args[i + 1]) { name = args[++i]; }
+    if (args[i] === 'mvrp' && args[i + 1]) { mvrp = args[++i] === 'on'; }
+    else if (args[i] === 'name' && args[i + 1]) { name = args[++i]; }
     else if (args[i] === 'link' && args[i + 1]) { linkDev = args[++i]; }
     else if (args[i] === 'type' && args[i + 1]) { type = args[++i]; }
     else if (args[i] === 'peer' && args[i + 1] === 'name' && args[i + 2]) { peerName = args[i + 2]; i += 2; }
@@ -986,7 +989,7 @@ function ipLinkAdd(ctx: IpNetworkContext, args: string[]): string {
   if (type === 'vlan') {
     if (!linkDev) return 'Error: vlan requires "link DEV".';
     if (vlanId === undefined || isNaN(vlanId)) return 'Error: vlan requires "id VLANID".';
-    return linkOps.addVlan(name, linkDev, vlanId);
+    return linkOps.addVlan(name, linkDev, vlanId, mvrp);
   }
 
   return `Error: unknown link type "${type}", try "ip link help".`;
@@ -1297,9 +1300,111 @@ function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
   return `Command "${args[0]}" is unknown, try "ip route help".`;
 }
 
+interface RouteSelector {
+  prefix?: { network: number; cidr: number; mode: 'exact' | 'root' | 'match' };
+  dev?: string;
+  via?: string;
+  src?: string;
+  proto?: string;
+  scope?: string;
+  metric?: number;
+  type?: string;
+}
+
+function ipv4Number(text: string): number | null {
+  const parts = text.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+function prefixMask(cidr: number): number {
+  return cidr === 0 ? 0 : (0xffffffff << (32 - cidr)) >>> 0;
+}
+
+function parseRouteSelector(args: string[]): RouteSelector | string {
+  const selector: RouteSelector = {};
+  const garbage = (word: string): string => `Error: either "to" is duplicate, or "${word}" is a garbage.`;
+  const prefixOf = (text: string, mode: 'exact' | 'root' | 'match'): string | null => {
+    const slash = text.indexOf('/');
+    const address = text === 'default' ? '0.0.0.0' : text.slice(0, slash === -1 ? undefined : slash);
+    const network = ipv4Number(address);
+    const cidr = text === 'default' ? 0 : slash === -1 ? 32 : Number(text.slice(slash + 1));
+    if (network === null || !Number.isInteger(cidr) || cidr < 0 || cidr > 32) return text;
+    selector.prefix = { network: (network & prefixMask(cidr)) >>> 0, cidr, mode };
+    return null;
+  };
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i];
+    const value = args[i + 1];
+    switch (word) {
+      case 'table': i++; break;
+      case 'dev': case 'oif': if (value === undefined) return garbage(word); selector.dev = value; i++; break;
+      case 'via': if (value === undefined) return garbage(word); selector.via = value; i++; break;
+      case 'src': if (value === undefined) return garbage(word); selector.src = value; i++; break;
+      case 'proto': case 'protocol': if (value === undefined) return garbage(word); selector.proto = value; i++; break;
+      case 'scope': if (value === undefined) return garbage(word); selector.scope = value; i++; break;
+      case 'type': if (value === undefined) return garbage(word); selector.type = value; i++; break;
+      case 'metric': case 'priority': case 'preference': {
+        const metric = Number(value);
+        if (!Number.isInteger(metric)) return `Error: argument "${value ?? ''}" is wrong: invalid metric`;
+        selector.metric = metric;
+        i++;
+        break;
+      }
+      case 'root': case 'match': case 'exact': case 'to': {
+        if (value === undefined) return garbage(word);
+        const mode = word === 'to' ? 'exact' : word;
+        const bad = prefixOf(value, mode);
+        if (bad !== null) return `Error: any valid prefix is expected rather than "${bad}".`;
+        i++;
+        break;
+      }
+      default: {
+        const bad = prefixOf(word, 'exact');
+        if (bad !== null) return garbage(word);
+      }
+    }
+  }
+  return selector;
+}
+
+function routeProto(route: IpRouteEntry): string {
+  if (route.type === 'connected') return 'kernel';
+  if (route.type === 'default' && route.isDHCP) return 'dhcp';
+  return 'static';
+}
+
+function routeScope(route: IpRouteEntry): string {
+  if (route.type === 'connected') return 'link';
+  return route.nextHop ? 'global' : 'link';
+}
+
+function routeMatches(route: IpRouteEntry, selector: RouteSelector): boolean {
+  const prefix = selector.prefix;
+  if (prefix !== undefined) {
+    const network = ipv4Number(route.network);
+    if (network === null) return false;
+    if (prefix.mode === 'exact' && !(route.cidr === prefix.cidr && network === prefix.network)) return false;
+    if (prefix.mode === 'root'
+      && !(route.cidr >= prefix.cidr && ((network & prefixMask(prefix.cidr)) >>> 0) === prefix.network)) return false;
+    if (prefix.mode === 'match'
+      && !(route.cidr <= prefix.cidr && ((prefix.network & prefixMask(route.cidr)) >>> 0) === network)) return false;
+  }
+  if (selector.dev !== undefined && route.iface !== selector.dev) return false;
+  if (selector.via !== undefined && route.nextHop !== selector.via) return false;
+  if (selector.src !== undefined && route.srcIp !== selector.src) return false;
+  if (selector.proto !== undefined && routeProto(route) !== selector.proto) return false;
+  if (selector.scope !== undefined && routeScope(route) !== selector.scope) return false;
+  if (selector.metric !== undefined && route.metric !== selector.metric) return false;
+  if (selector.type !== undefined && selector.type !== 'unicast') return false;
+  return true;
+}
+
 function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   const tableId = parseTableArg(args);
-  const table = ctx.getRoutingTable(tableId);
+  const selector = parseRouteSelector(args);
+  if (typeof selector === 'string') return selector;
+  const table = ctx.getRoutingTable(tableId).filter((route) => routeMatches(route, selector));
   if (table.length === 0) return opts.json ? toJsonText([], opts.pretty) : '';
 
   // Sort: connected first, then static, then default

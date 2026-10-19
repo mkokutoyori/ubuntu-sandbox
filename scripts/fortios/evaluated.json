@@ -1,0 +1,34 @@
+{
+ "firewall policy": [
+  "srcaddr6-negate",
+  "dstaddr6-negate",
+  "tos",
+  "tos-mask",
+  "tos-negate",
+  "policy-expiry",
+  "policy-expiry-date-utc",
+  "policy-expiry-date",
+  "send-deny-packet",
+  "tcp-mss-sender",
+  "tcp-mss-receiver",
+  "schedule-timeout",
+  "diffserv-forward",
+  "diffserv-reverse",
+  "diffservcode-forward",
+  "diffservcode-rev",
+  "diffserv-copy",
+  "match-vip-only",
+  "timeout-send-rst",
+  "traffic-shaper",
+  "traffic-shaper-reverse",
+  "per-ip-shaper"
+ ],
+ "firewall vip": [
+  "src-filter",
+  "status"
+ ],
+ "firewall address": [
+  "macaddr",
+  "cache-ttl"
+ ]
+}

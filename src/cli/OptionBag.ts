@@ -1,4 +1,4 @@
-import { argumentAccepts, resolveEnumValue } from './ArgumentTypes';
+import { argumentAccepts, resolveEnumValue, formTail } from './ArgumentTypes';
 import type { ArgumentSpec } from './ArgumentTypes';
 
 /**
@@ -225,6 +225,10 @@ export function pendingOptionArgument(
     for (const place of placesOf(option, choix)) {
       const brut = typed[index + 1];
       if (brut === undefined) return place.optional ? undefined : place;
+      if (place.type === 'REST') {
+        const tail = formTail(place, typed.slice(index + 1));
+        return tail?.kind === 'pending' ? tail.place : undefined;
+      }
       if (place.optional && !argumentAccepts(place, brut)) break;
       index++;
     }

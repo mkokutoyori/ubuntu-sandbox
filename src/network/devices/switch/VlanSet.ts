@@ -1,7 +1,8 @@
 import { boundedInteger } from '@/cli/ArgumentTypes';
+import { VID_MAX_CONFIGURABLE } from '../../layers/link/vlan/VlanId';
 
 export const VLAN_MIN = 1;
-export const VLAN_MAX = 4094;
+export const VLAN_MAX = VID_MAX_CONFIGURABLE;
 const VLAN_RANGE_SIZE = VLAN_MAX - VLAN_MIN + 1;
 
 function inRange(vlan: number): boolean {

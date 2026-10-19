@@ -45,7 +45,7 @@ async function afterOneLogin(): Promise<LinuxServer> {
   new Cable('c1').connect(pc.getPorts()[0], srv.getPorts()[0]);
   pc.powerOn(); srv.powerOn();
 
-  await pc.executeCommand('ssh alice@10.0.0.2 hostname', 'alice\n');
+  await pc.executeCommand('ssh alice@10.0.0.2 sleep 60', 'alice\n');
   return srv;
 }
 
@@ -56,14 +56,25 @@ function sshdPidFrom(psOutput: string): string {
   return line!.trim().split(/\s+/)[1];
 }
 
+/*
+ * Depuis qu'un fils sshd sert chaque connexion (sshd.c fait un fork par
+ * connexion acceptee), « Accepted … » porte le pid de ce fils, visible dans
+ * `ps` sous `sshd: alice [priv]` tant que la session vit -- plus celui de
+ * l'ecouteur. La session est donc tenue (`sleep 60`) : une commande qui se
+ * termine rend son fils, comme sur une vraie machine.
+ */
 describe('sshd is the same process everywhere it is named', () => {
   it('the pid in auth.log is the pid `ps` shows', async () => {
     const srv = await afterOneLogin();
 
-    const pid = sshdPidFrom(await srv.executeCommand('ps aux'));
+    const ps = await srv.executeCommand('ps aux');
     const auth = await srv.executeCommand('cat /var/log/auth.log');
+    const accepted = /sshd\[(\d+)\]: Accepted password for alice/.exec(auth)?.[1];
 
-    expect(auth).toContain(`sshd[${pid}]: Accepted password for alice`);
+    expect(accepted, 'the login must have been logged').toBeDefined();
+    expect(accepted).not.toBe(sshdPidFrom(ps));
+    expect(ps.split('\n').filter((line) => line.includes('sshd: alice')).map((line) => line.trim().split(/\s+/)[1]))
+      .toContain(accepted);
   });
 
   it('no line names an sshd that does not exist', async () => {

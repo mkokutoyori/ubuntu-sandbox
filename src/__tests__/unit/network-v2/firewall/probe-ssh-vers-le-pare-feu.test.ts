@@ -135,7 +135,7 @@ async function ouvrirSsh(
 
 const transcript = (h: TerminalSession): string => h.lines.map((l) => l.text).join('\n');
 
-const surLePareFeu = (h: TerminalSession): boolean => /FGT\b.*#/.test(h.foreground.getPrompt());
+const surLePareFeu = (h: TerminalSession): boolean => /FGT\b.*#/.test(h.getPrompt());
 
 async function laboratoire(allowaccess = 'ping https ssh') {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
@@ -315,7 +315,7 @@ describe('ce que le correctif ne doit pas casser — les NON-REGRESSIONS', () =>
   it('un routeur Cisco reste joignable depuis Windows', async () => {
     const { posteWindows } = await laboratoire();
 
-    expect(await posteWindows.executeCommand(`ssh bob@${ROUTEUR}`))
+    expect(await posteWindows.executeCommand(`ssh bob@${ROUTEUR}`, SECRET))
       .toMatch(/R1#/);
   });
 

@@ -16,6 +16,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import {
   fhrpShowMatches, fhrpShowSpecs, HSRP_SHOW_GRAMMAR,
 } from './fhrpShowFilter';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface HsrpCtx {
   r(): Router;
@@ -80,10 +81,10 @@ function renderBrief(router: Router, groups: HsrpGroup[]): string {
     rows.push(
       // IOS abrège le nom (`Gi0/0`) dans cette vue ; le tronquer donnait
       // `GigabitEthe`, qui ne désigne aucune interface et ne se retape pas.
-      `${iosShortInterfaceName(g.iface).slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
-      `${String(g.priority).padEnd(4)}${g.preempt ? 'P' : ' '} ` +
-      `${state.padEnd(8)} ${activeRouterLabel(router, g).padEnd(15)} ` +
-      `${standbyRouterLabel(router, g).padEnd(15)} ${g.vip ?? 'unknown'}`);
+      `${padToWidth(iosShortInterfaceName(g.iface).slice(0, 11), 12)}${padToWidth(String(g.group), 5)}` +
+      `${padToWidth(String(g.priority), 4)}${g.preempt ? 'P' : ' '} ` +
+      `${padToWidth(state, 8)} ${padToWidth(activeRouterLabel(router, g), 15)} ` +
+      `${padToWidth(standbyRouterLabel(router, g), 15)} ${g.vip ?? 'unknown'}`);
   }
   return rows.join('\n');
 }

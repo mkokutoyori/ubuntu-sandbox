@@ -71,6 +71,13 @@ export enum PSTokenType {
   SEMICOLON       = 'SEMICOLON',      // ;
   NEWLINE         = 'NEWLINE',        // \n  (significant as statement terminator)
   AMPERSAND       = 'AMPERSAND',      // &  (call operator / background)
+  AND_AND         = 'AND_AND',        // && (pipeline chain, PowerShell 7)
+  OR_OR           = 'OR_OR',          // || (pipeline chain, PowerShell 7)
+  QUESTION        = 'QUESTION',       // ?  (ternary operator, PowerShell 7)
+  NULL_COALESCE   = 'NULL_COALESCE',  // ?? (PowerShell 7)
+  NULL_COALESCE_ASSIGN = 'NULL_COALESCE_ASSIGN', // ??= (PowerShell 7)
+  NULL_COND_DOT   = 'NULL_COND_DOT',  // ?. (PowerShell 7.1)
+  NULL_COND_INDEX = 'NULL_COND_INDEX',// ?[ (PowerShell 7.1)
 
   // ── Grouping ───────────────────────────────────────────────────────────
   LPAREN          = 'LPAREN',         // (
@@ -102,8 +109,8 @@ export const PS_COMPARISON_OPS = new Set([
   'ieq', 'ine', 'igt', 'ige', 'ilt', 'ile',   // case-insensitive variants
   'like', 'notlike', 'clike', 'cnotlike', 'ilike', 'inotlike',
   'match', 'notmatch', 'cmatch', 'cnotmatch', 'imatch', 'inotmatch',
-  'contains', 'notcontains', 'ccontains', 'cnotcontains',
-  'in', 'notin',
+  'contains', 'notcontains', 'ccontains', 'cnotcontains', 'icontains', 'inotcontains',
+  'in', 'notin', 'cin', 'cnotin', 'iin', 'inotin',
   'is', 'isnot',
   'as',
 ]);
@@ -186,6 +193,8 @@ export interface PSToken {
    * that keeps the case the operator wrote.
    */
   text?: string;
+  /** Offset just past the token in the source, set by the lexer. */
+  end?: number;
 }
 
 /** Convenience factory. */

@@ -8,7 +8,6 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { readSshdConfig } from './SshdConfigText';
 import { UBUNTU_2204_SSHD_CONFIG } from './UbuntuSshdConfigFile';
@@ -24,6 +23,8 @@ import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
 import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
+import { certificateOfMaterial, plainKeyOfMaterial } from './UserCertificateAdmission';
+import { SshdCertificateService } from './SshdCertificateService';
 import { SshUserContext } from '../SshUserContext';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
@@ -33,31 +34,32 @@ import {
   type SshServerConfig,
 } from './ISshServerContext';
 import {
-  parseSshdConfig,
-  type SshdConfig,
-} from './SshSshdConfig';
-import {
   SshServerEventBus,
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdPam } from './SshdPam';
-import { SshdServerConfig } from './SshdServerConfig';
+import { SshdServerConfig, handlerConfigOf } from './SshdServerConfig';
 import type {
-  DirectTcpipOutcome, DirectTcpipRequest, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
+  DirectTcpipOutcome, DirectTcpipRequest, HostCertificateBinding, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
 } from './ISshServerContext';
 import { parseRekeyLimit } from '../transport/RekeyLimit';
+import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
+import { configuredHostKeyPaths, hostKeyFromFile, provisionHostKeyFiles, type HostKeyFileAccess } from './SshdHostKeyFiles';
 import {
-  findAdmittedKey, permitOpenAllows,
+  findAdmittedKey, permitOpenAllows, sshWildcardMatches,
   type AuthorizedKey, type AuthorizedKeyOptions, type KeySource,
 } from '../SshPureUtils';
 import { parseDialAddress, socketStream } from '@/network/tcp/dial';
 import { isDialFailure } from '@/network/tcp/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
-import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
+import { SshdAccessPolicy } from './SshdAccessPolicy';
+import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
+import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshInteractiveShell } from './SshInteractiveShell';
-import { SubShellStack } from '@/shell/SubShellStack';
+import { SubShellStack, type SubShellStackStep } from '@/shell/SubShellStack';
+import { NestedSshLogin, type NestedSshLaunch } from '@/shell/NestedSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
@@ -65,6 +67,7 @@ import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch'
 import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklogs';
+import { formatLoginDate } from '../loginBanner';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -76,6 +79,9 @@ const DEFAULT_FAIL2BAN_JAIL_LOCAL =
   '[sshd]\nenabled = true\nmaxretry = 5\nbantime = 300\nfindtime = 60\n';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
+const DEFAULT_HOST_KEY_PATHS = [
+  '/etc/ssh/ssh_host_rsa_key', '/etc/ssh/ssh_host_ecdsa_key', '/etc/ssh/ssh_host_ed25519_key',
+];
 const ETC_SSH_DIR = '/etc/ssh';
 const SSHD_CONFIG_DROP_IN_DIR = '/etc/ssh/sshd_config.d';
 
@@ -85,30 +91,13 @@ function joinLines(lines: readonly string[]): string {
   return lines.join('\n') + '\n';
 }
 
-function matchesUserPattern(pattern: string, user: string): boolean {
-  if (pattern === user || pattern === '*') return true;
-  const re = new RegExp(
-    '^' +
-      pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.') +
-      '$',
-  );
-  return re.test(user);
-}
 
 export interface LinuxSshServerContextOptions {
   /** Pre-wired event bus. If omitted a fresh one is created. */
   bus?: ISshServerEventBus;
   /** Enable /var/log/auth.log production. Default: true. */
   enableSyslog?: boolean;
-  /** Enable fail2ban-style auth throttling. Default: true. */
-  enableThrottler?: boolean;
-  /** Throttler tuning — only consulted when enableThrottler is true. */
-  throttlerThreshold?: number;
-  throttlerWindowMs?: number;
-  throttlerBlockMs?: number;
+  fail2ban?: Fail2banAgent | null;
   /**
    * The LinuxMachine this context serves. Passed through to
    * `createInteractiveShell()` so SshServerHandler can offer real-time
@@ -123,14 +112,14 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
-  readonly sshdConfig: SshdConfig;
+  readonly sshdConfig: SshdServerConfig;
   readonly events: ISshServerEventBus;
-  private readonly throttler: SshAuthThrottler | null;
   readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
   readonly rawConfig: string;
   readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
   private cachedEffective: SshdServerConfig | null = null;
+  private cachedPolicy: SshdAccessPolicy | null = null;
   private readonly device: unknown;
   private readonly rootLoginOverride: boolean | undefined;
 
@@ -156,12 +145,16 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.sshdConfig = this.loadOrGenerateSshdConfig();
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
-      ...this.sshdConfig,
-      permitRootLogin: this.sshdConfig.permitRootLogin !== 'no',
+      ...handlerConfigOf(this.sshdConfig),
       ...config,
     });
     this.auth = this.buildAuthContext();
     this.events = opts.bus ?? new SshServerEventBus();
+    this.events.on('auth_success', (event) => {
+      if (event.kind === 'auth_success' && this.device instanceof LinuxMachine) {
+        this.device.sshConnectionAuthenticated(event.ip, event.port, event.user);
+      }
+    });
     this.device = opts.device ?? null;
     this.rootLoginOverride = config.permitRootLogin;
 
@@ -169,7 +162,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.syslogger = (opts.enableSyslog ?? true)
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostnameSource,
-          port: this.sshdConfig.listenPort,
+          port: this.sshdConfig.ports[0] ?? 22,
           // The pid of the REAL sshd in this machine's process table, not
           // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
           // `journalctl -u ssh` describe one daemon and must name it the
@@ -180,80 +173,60 @@ export class LinuxSshServerContext implements ISshServerContext {
           // `journalctl -u sshd`, not just in /var/log/auth.log.
           logMgr: this.executor?.logMgr,
           logLevel: () => this.effectiveSshdServerConfig().logLevel,
+          pidFor: (ip, port) => this.connectionPid(ip, port),
         })
       : null;
 
-    // Fail2ban jail (sshd) — constructed before the throttler so its
-    // `auth_failure` subscription (the "Found <ip>" line) observes each
-    // attempt before the throttler's own handler synchronously re-emits
-    // `auth_throttled` on the attempt that crosses the threshold — real
-    // fail2ban.log always shows every `Found` line before the `Ban`
-    // line it triggers, never after.
-    this.fail2ban = this.executor
-      ? new Fail2banAgent(
-          this.events,
-          {
-            execute: (args) => ({ exitCode: this.executor!.iptables.execute(args).exitCode }),
-            hasChain: (name) => this.executor!.iptables.hasChain('filter', name),
-          },
-          {
-            appendLog: (line) => {
-              const prev = this.vfs.readFile('/var/log/fail2ban.log') ?? '';
-              this.vfs.writeFile('/var/log/fail2ban.log', prev + line + '\n', 0, 0, 0o022);
+    const jailHost = this.executor;
+    if (opts.fail2ban !== undefined) {
+      this.fail2ban = opts.fail2ban;
+      this.fail2ban?.attach(this.events);
+    } else {
+      this.fail2ban = jailHost
+        ? new Fail2banAgent(
+            this.events,
+            {
+              execute: (args) => ({ exitCode: jailHost.iptables.execute(args).exitCode }),
+              hasChain: (name) => jailHost.iptables.hasChain('filter', name),
             },
-          },
-          {
-            journal: {
-              log: (action) => this.executor!.logMgr.logDaemon('fail2ban-server', action, undefined, 'fail2ban'),
+            {
+              appendLog: (line) => {
+                const prev = this.vfs.readFile('/var/log/fail2ban.log') ?? '';
+                this.vfs.writeFile('/var/log/fail2ban.log', prev + line + '\n', 0, 0, 0o022);
+              },
             },
-          },
-        )
-      : null;
-
-    const jail = this.loadFail2banJailConfig();
-    this.throttler = (opts.enableThrottler ?? true)
-      ? new SshAuthThrottler(this.events, {
-          threshold: opts.throttlerThreshold ?? jail.maxretry,
-          windowMs: opts.throttlerWindowMs ?? jail.findtimeSeconds * 1000,
-          blockMs: opts.throttlerBlockMs ?? jail.bantimeSeconds * 1000,
-        })
-      : null;
-
-
+            {
+              jail: this.loadFail2banJailConfig(),
+              isActive: () => jailHost.serviceMgr.isActive('fail2ban'),
+              journal: {
+                log: (action) => jailHost.logMgr.logDaemon('fail2ban-server', action, undefined, 'fail2ban'),
+              },
+            },
+          )
+        : null;
+    }
 
     this.rawConfig = readSshdConfig(this.vfs);
   }
 
-  /** Tell SshServerHandler whether the source IP is currently rate-limited. */
-  isClientBlocked(ip: string): boolean {
-    return this.throttler?.isBlocked(ip) ?? false;
-  }
-
-  /** Currently-banned IPs (fail2ban-client status backend). */
   bannedIps(): string[] {
-    return this.throttler?.bannedIps() ?? [];
+    return [...(this.fail2ban?.bannedIps() ?? [])];
   }
 
-  /**
-   * `fail2ban-client set <jail> unbanip <ip>` — lift the ban immediately,
-   * both at the iptables layer (Fail2banAgent) and the SSH-protocol
-   * layer (the throttler's own block), regardless of remaining time.
-   * Returns false when the IP was not actually banned.
-   */
   unbanIp(ip: string): boolean {
-    const wasBanned = this.fail2ban?.forceUnban(ip) ?? false;
-    this.throttler?.unblock(ip);
-    return wasBanned;
+    return this.fail2ban?.forceUnban(ip) ?? false;
   }
 
-  /** `fail2ban-client get <jail> bantime` — configured ban duration, in seconds. */
+  rereadFail2banJail(): void {
+    this.fail2ban?.reconfigure(this.loadFail2banJailConfig());
+  }
+
   bantimeSeconds(): number {
     return this.fail2ban?.bantimeSeconds() ?? 0;
   }
 
-  /** Total recorded auth failures across the throttler's lifetime. */
   totalAuthFailures(): number {
-    return this.throttler?.totalFailures() ?? 0;
+    return this.fail2ban?.totalFailed() ?? 0;
   }
 
   /** PermitEmptyPasswords gate consulted by SshServerHandler. */
@@ -261,17 +234,15 @@ export class LinuxSshServerContext implements ISshServerContext {
     return this.sshdConfig.permitEmptyPasswords;
   }
 
-  /** Detach reactive subscribers (logger, throttler) from the bus. */
   shutdown(): void {
     this.syslogger?.dispose();
-    this.throttler?.dispose();
   }
 
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
   reloadConfig(): LinuxSshServerContext {
     return new LinuxSshServerContext(
       this.vfs, this.userManager, this.hostnameSource, {}, this.executor, this.fullExecutor,
-      { device: this.device },
+      { device: this.device, fail2ban: this.fail2ban },
     );
   }
 
@@ -296,6 +267,13 @@ export class LinuxSshServerContext implements ISshServerContext {
   effectiveSshdServerConfig(): SshdServerConfig {
     if (!this.cachedEffective) this.cachedEffective = SshdServerConfig.parse(this.rawConfig);
     return this.cachedEffective;
+  }
+
+  private accessPolicy(): SshdAccessPolicy {
+    this.cachedPolicy ??= SshdAccessPolicy.over(
+      this.effectiveSshdServerConfig(), (user) => this.userManager.getUserGroups(user).map((g) => g.name),
+    );
+    return this.cachedPolicy;
   }
 
   async openDirectTcpip(request: DirectTcpipRequest): Promise<DirectTcpipOutcome> {
@@ -323,7 +301,11 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   transportPolicy(): SshTransportPolicy {
     const rekeyLimit = parseRekeyLimit(this.sshdConfig.rekeyLimit);
-    return rekeyLimit === null ? {} : { algorithms: { rekeyLimit } };
+    const algorithms = {
+      ...sshdAlgorithmPreferences(this.rawConfig),
+      ...(rekeyLimit === null ? {} : { rekeyLimit }),
+    };
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
   }
 
   accountNames(): SftpAccountNames {
@@ -359,21 +341,127 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   admittedKey(user: string, publicKey: string, source: KeySource): AuthorizedKey | null {
-    if (!this.userAllowed(user, 'publickey')) return null;
+    if (!this.userAllowed(user, 'publickey', source.ip)) return null;
     if (!this.config.pubkeyAuthentication) return null;
     const userEntry = this.userManager.getUser(user);
     if (!userEntry) return null;
-    if (this.sshdConfig.strictModes && this.firstStrictModesViolation(userEntry.uid, userEntry.home) !== null) {
-      return null;
+    const violation = this.sshdConfig.strictModes
+      ? this.firstStrictModesViolation(userEntry.uid, userEntry.home)
+      : null;
+    if (violation !== null && source.ip !== '') {
+      this.events.emit({
+        kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation,
+        subject: violation === AUTHORIZED_KEYS_PATH(userEntry.home) ? 'file' : 'directory', port: this.clientPort(source.ip),
+      });
     }
-    const content = this.vfs.readFile(AUTHORIZED_KEYS_PATH(userEntry.home));
+    const content = violation === null ? this.vfs.readFile(AUTHORIZED_KEYS_PATH(userEntry.home)) : null;
+    const certificate = certificateOfMaterial(publicKey);
+    if (certificate !== null) {
+      return this.certificates().admit(user, userEntry, certificate, source,
+        content === null ? null : { path: AUTHORIZED_KEYS_PATH(userEntry.home), text: content });
+    }
+    const plain = plainKeyOfMaterial(publicKey);
+    if (plain !== null && this.certificates().revocationRefusal(user, plain, source) !== null) return null;
     return content ? findAdmittedKey(content, publicKey, source) : null;
   }
 
+  private certificateService: SshdCertificateService | null = null;
+
+  private certificates(): SshdCertificateService {
+    this.certificateService ??= new SshdCertificateService({
+      config: () => this.effectiveSshdServerConfig(),
+      groupsOf: (user) => this.userManager.getUserGroups(user).map((group) => group.name),
+      readFile: (path) => this.vfs.readFile(path),
+      emit: (event) => this.events.emit(event),
+    });
+    return this.certificateService;
+  }
+
   forcedCommand(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null {
-    const groups = this.userManager.getUserGroups(user.username).map((g) => g.name);
-    const view = this.effectiveSshdServerConfig().effectiveFor({ user: user.username, groups, address: clientIp });
-    return view.forceCommand ?? keyOptions?.command ?? null;
+    return this.accessPolicy().forceCommand(user.username, clientIp) ?? keyOptions?.command ?? null;
+  }
+
+  sftpSessionRoot(user: SshUserContext): string {
+    const fs = this.getFilesystem(user);
+    return fs.getEntryType(user.homeDirectory) === 'directory' ? user.homeDirectory : '/';
+  }
+
+  sftpService(
+    user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null,
+  ): SftpServicePlan {
+    const subsystems = this.effectiveSshdServerConfig().subsystems;
+    const forced = this.forcedCommand(user, clientIp, keyOptions);
+    let commandLine: string;
+    if (forced !== null) {
+      commandLine = forced;
+    } else if (launch.kind === 'command') {
+      commandLine = launch.command;
+    } else {
+      const configured = launch.name === 'sftp' ? subsystems.sftp : subsystems.extras.get(launch.name) ?? null;
+      if (configured === null || launch.name !== 'sftp') return { kind: 'unavailable' };
+      commandLine = configured;
+    }
+    const chroot = this.chrootDirectoryFor(user.username);
+    if (chroot !== null) {
+      const violation = this.chrootViolation(chroot);
+      if (violation !== null) {
+        this.events.emit({ kind: 'session_fatal', user: user.username, text: violation });
+        return { kind: 'exits', stdout: '', stderr: '', exitCode: 255 };
+      }
+    }
+    if (isInternalSftp(commandLine)) return this.servePlan('internal-sftp', commandLine);
+    const refusal = this.loginShellRefusal(user);
+    if (refusal !== null) return { kind: 'exits', stdout: refusal.output, stderr: '', exitCode: refusal.exitCode };
+    const program = commandLine.trim().split(/\s+/)[0] ?? '';
+    const insideRoot = chroot === null ? program : `${chroot.replace(/\/$/, '')}${program}`;
+    const shell = (this.userManager.getUser(user.username)?.shell ?? '/bin/bash');
+    const shellName = shell.slice(shell.lastIndexOf('/') + 1);
+    const absent = this.vfs.resolveInode(insideRoot, true) === null;
+    if (absent || (this.vfs.resolveInode(insideRoot, true)!.permissions & 0o111) === 0) {
+      const reason = absent ? 'No such file or directory' : 'Permission denied';
+      const dash = shellName === 'sh' || shellName === 'dash';
+      const stderr = dash
+        ? `${shellName}: 1: ${program}: ${absent ? 'not found' : 'Permission denied'}\n`
+        : `${shellName}: line 1: ${program}: ${reason}\n`;
+      return { kind: 'exits', stdout: '', stderr, exitCode: absent ? 127 : 126 };
+    }
+    if (sftpProgramOf(program) === 'sftp-server') return this.servePlan('sftp-server', commandLine);
+    return {
+      kind: 'runs',
+      run: async () => {
+        const result = await this.getShell(user, user.homeDirectory).execute(commandLine);
+        return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+      },
+    };
+  }
+
+  private servePlan(program: 'sftp-server' | 'internal-sftp', commandLine: string): SftpServicePlan {
+    const parsed = parseSftpServerArguments(splitCommandWords(commandLine).slice(1));
+    if (parsed.kind === 'serve') return { kind: 'serve', program, options: parsed.options, diagnostics: parsed.diagnostics };
+    if (parsed.kind === 'fatal') return { kind: 'exits', stdout: '', stderr: `${parsed.message}\n`, exitCode: 255 };
+    return { kind: 'exits', stdout: '', stderr: `${SFTP_SERVER_USAGE}\n`, exitCode: 1 };
+  }
+
+  private chrootViolation(chroot: string): string | null {
+    const parts = chroot.split('/').filter((part) => part !== '');
+    let path = '';
+    for (const part of ['', ...parts]) {
+      path = part === '' ? '/' : `${path === '/' ? '' : path}/${part}`;
+      const inode = this.vfs.resolveInode(path, true);
+      if (inode === null) return `chroot directory "${chroot}" does not exist`;
+      if (inode.uid !== 0 || (inode.permissions & 0o022) !== 0) {
+        return `bad ownership or modes for chroot directory${path === chroot ? '' : ' component'} "${path}"`;
+      }
+    }
+    return null;
+  }
+
+  loginShellRefusal(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null {
+    const shell = this.userManager.getUser(user.username)?.shell ?? '/bin/bash';
+    const program = shell.slice(shell.lastIndexOf('/') + 1);
+    if (program === 'nologin') return { output: 'This account is currently not available.\n', exitCode: 1 };
+    if (program === 'false') return { output: '', exitCode: 1 };
+    return null;
   }
 
   rootMayLogIn(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean {
@@ -385,10 +473,15 @@ export class LinuxSshServerContext implements ISshServerContext {
     return policy === 'forced-commands-only' && keyForcesCommand !== false;
   }
 
+  bannerFor(user: string, clientIp: string): string | null {
+    const path = this.accessPolicy().bannerPath(user, clientIp);
+    return path === null ? null : this.vfs.readFile(path);
+  }
+
   /** Banner text shown before authentication (SSH-07-R8). */
   getBanner(): string | null {
-    if (!this.sshdConfig.banner) return null;
-    return this.vfs.readFile(this.sshdConfig.banner);
+    if (!this.sshdConfig.bannerPath) return null;
+    return this.vfs.readFile(this.sshdConfig.bannerPath);
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
@@ -420,9 +513,81 @@ export class LinuxSshServerContext implements ISshServerContext {
     return cfg.chrootDirectory;
   }
 
+  accountLocked(user: string): boolean {
+    if (this.effectiveSshdServerConfig().usePam) return false;
+    const entry = this.userManager.getUser(user) as { locked?: boolean; password?: string } | undefined;
+    if (entry?.locked === true || entry?.password === '!') return true;
+    const shadow = this.vfs.readFile('/etc/shadow') ?? '';
+    const line = shadow.split('\n').find((l) => l.startsWith(`${user}:`));
+    return line !== undefined && (line.split(':')[1] ?? '').startsWith('!');
+  }
+
+  holdSession(user: SshUserContext, clientIp: string, seconds: number): void {
+    if (this.device instanceof LinuxMachine) {
+      this.device.scheduleSshLogout(user.username, clientIp, seconds, true, this.clientPort(clientIp));
+    }
+  }
+
+  ptyPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noPty === true) return false;
+    return this.accessPolicy().permitsTty(user.username, clientIp);
+  }
+
+  agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noAgentForwarding === true) return false;
+    return this.accessPolicy().agentForwarding(user.username, clientIp);
+  }
+
+  maxAuthTriesFor(user: string, clientIp: string): number {
+    return this.accessPolicy().maxAuthTries(user, clientIp);
+  }
+
+  authMethodEnabled(user: string, clientIp: string, method: 'password' | 'publickey' | 'keyboard-interactive'): boolean {
+    return this.accessPolicy().methodEnabled(user, clientIp, method);
+  }
+
+  availableMethodsFor(user: string, clientIp: string): readonly AuthMethodType[] {
+    return this.accessPolicy().availableMethods(user, clientIp, {
+      publickey: this.config.pubkeyAuthentication,
+      password: this.config.passwordAuthentication,
+      keyboardInteractive: this.config.kbdInteractiveAuthentication,
+    });
+  }
+
+  userPolicyRefusal(user: string, address: string): string | null {
+    return this.accessPolicy().refusal(user, address);
+  }
+
+  acceptsEnvironment(name: string): boolean {
+    return this.effectiveSshdServerConfig().acceptEnv.some((pattern) => sshWildcardMatches(pattern, name));
+  }
+
+  private applyExecEnvironment(
+    session: { readonly env: Map<string, string> },
+    user: SshUserContext,
+    exec: NonNullable<Parameters<ISshServerContext['getShell']>[2]>['exec'] & object,
+  ): void {
+    for (const [name, value] of exec.environment) session.env.set(name, value);
+    if (this.effectiveSshdServerConfig().permitUserEnvironment) {
+      const file = this.vfs.readFile(`${user.homeDirectory}/.ssh/environment`) ?? '';
+      for (const line of file.split('\n')) {
+        const entry = /^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*?)\s*$/.exec(line);
+        if (entry) session.env.set(entry[1], entry[2]);
+      }
+    }
+    for (const [name, value] of exec.keyOptions?.environment ?? []) session.env.set(name, value);
+    if (exec.pty === null || exec.keyOptions?.noPty === true) {
+      session.env.set('SSH_NO_TTY', '1');
+      return;
+    }
+    session.env.set('COLUMNS', String(exec.pty.columns));
+    session.env.set('LINES', String(exec.pty.rows));
+    session.env.set('TERM', exec.pty.term);
+  }
+
   getShell(
     userCtx: SshUserContext, cwd: string,
-    opts?: { interactive?: boolean; clientIp?: string; clientPort?: number },
+    opts?: Parameters<ISshServerContext['getShell']>[2],
   ): ILinuxShell {
     // Real per-session isolation: a dedicated LinuxShellSession (its own
     // cwd/env/su-stack, exactly like a real pty) so commands run as the
@@ -443,6 +608,15 @@ export class LinuxSshServerContext implements ISshServerContext {
       const startCwd = this.vfs.exists(cwd) ? cwd : '/';
       const session = device.openShellSession({ user: userCtx.username, cwd: startCwd });
       const serverIp = firstConfiguredIp(device as unknown as Equipment) ?? '0.0.0.0';
+      if (opts?.exec) {
+        device.takeSessionHold();
+        this.applyExecEnvironment(session, userCtx, opts.exec);
+      }
+      const agentSocket = opts?.agent === undefined ? null : device.bindForwardedAgent(userCtx.username, opts.agent);
+      if (agentSocket !== null) session.env.set('SSH_AUTH_SOCK', agentSocket.path);
+      const ptyRc = opts?.exec && opts.exec.pty !== null && opts.exec.keyOptions?.noPty !== true
+        ? this.vfs.readFile(`${userCtx.homeDirectory}/.bashrc`) ?? ''
+        : '';
       if (opts?.clientIp) {
         const clientPort = opts.clientPort ?? 0;
         session.env.set('SSH_CONNECTION', `${opts.clientIp} ${clientPort} ${serverIp} 22`);
@@ -456,21 +630,55 @@ export class LinuxSshServerContext implements ISshServerContext {
         user: userCtx.username,
         primaryKind: 'bash',
       });
+      const nestedSsh = new NestedSshLogin();
+      let challengeOwner: 'login' | 'stack' | null = null;
+      const stepResult = (
+        output: readonly string[], exitCode: number, pendingInput: SubShellStackStep['pendingInput'],
+        owner: 'login' | 'stack',
+      ) => {
+        challengeOwner = pendingInput === undefined ? null : owner;
+        return { stdout: joinLines(output), stderr: '', exitCode, ...(pendingInput ? { pendingInput } : {}) };
+      };
+      const loginResult = (launch: NestedSshLaunch) => {
+        const banner = launch.childShell ? subShells.push(launch.childShell) : [];
+        return stepResult([...launch.output, ...banner], 0, launch.pendingInput, 'login');
+      };
       const EXIT_WORDS = new Set(['exit', 'logout']);
       return {
         streamSession: session,
-        execute: async (line: string) => {
-          if (subShells.active) {
-            const routed = await subShells.process(line);
-            return { stdout: joinLines(routed.output), stderr: '', exitCode: routed.exitCode };
+        loginShellKind: 'bash',
+        takeSessionHold: () => device.takeSessionHold(),
+        provideInput: async (value: string) => {
+          if (challengeOwner === 'stack' && subShells.active) {
+            const routed = await subShells.answer(value);
+            return stepResult(routed.output, routed.exitCode, routed.pendingInput, 'stack');
           }
+          return loginResult(await nestedSsh.answer(value));
+        },
+        execute: async (line: string, onProgress?: (text: string) => void, stdin?: string) => {
+          if (subShells.active) {
+            const routed = await subShells.process(line, onProgress);
+            return stepResult(routed.output, routed.exitCode, routed.pendingInput, 'stack');
+          }
+          nestedSsh.abandon();
+          challengeOwner = null;
           if (EXIT_WORDS.has(line.trim().toLowerCase())) {
             const left = device.handleExitInSession(session);
             return { stdout: 'logout\n', stderr: '', exitCode: 0, sessionEnded: !left.inSu };
           }
           const launched = subShells.launch(line);
           if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };
-          const stdout = await device.executeCommandInSession(line, session, { color: interactive });
+          if (interactive) {
+            const ssh = await nestedSsh.launch(line, {
+              defaultUser: session.user,
+              sourceIp: serverIp,
+              sourceHostname: device.getSshHostname(),
+              sourceDevice: device as unknown as Equipment,
+            });
+            if (ssh) return loginResult(ssh);
+          }
+          const toRun = ptyRc.trim() ? `${ptyRc}\n${line}` : line;
+          const stdout = await device.executeCommandInSession(toRun, session, { color: interactive, stdin });
           // The shell session's own `$?`, captured by the command pipeline.
           // Guessing it from the output text used to report success for
           // anything the pattern missed — `false`, a failing grep, a
@@ -481,11 +689,17 @@ export class LinuxSshServerContext implements ISshServerContext {
         // resolve against its cwd rather than the device-wide one.
         getCompletions: (line: string) =>
           [...(subShells.getCompletions(line) ?? device.getCompletionsForSession(line, session))],
+        getCompletionsAsync: (line: string) => subShells.getCompletionsAsync(line),
+        interrupt: () => subShells.interruptForeground(),
+        editorRelay: () => subShells.editorRelay(),
         isNested: () => subShells.active,
         // The engine runs here, on this channel's own session: the file
         // it opens, the permissions it obeys and the swap file it drops
         // are the remote's, not the client's.
-        setWindowSize: (rows: number, cols: number) => { session.windowSize = { rows, cols }; },
+        setWindowSize: (rows: number, cols: number) => {
+          session.windowSize = { rows, cols };
+          subShells.resize(rows, cols);
+        },
         openEditor: (commandLine: string) => {
           installDefaultEditors();
           const launch = parseEditorLaunch(commandLine);
@@ -519,7 +733,9 @@ export class LinuxSshServerContext implements ISshServerContext {
         // close); a one-shot exec ran its single command to completion,
         // so its shell exits normally instead.
         dispose: () => {
+          nestedSsh.abandon();
           subShells.dispose();
+          agentSocket?.release();
           device.closeShellSession(session, { graceful: !interactive });
         },
       };
@@ -568,10 +784,19 @@ export class LinuxSshServerContext implements ISshServerContext {
     const policy = this.effectiveSshdServerConfig();
     if (session !== undefined && this.hushLogin(session.user)) return '';
     const pam = this.sshdPam();
-    if (pam !== null && session !== undefined) return pam.sessionMessages({ ip: session.ip, port: session.port }).join('');
-    if (!policy.printMotd) return '';
+    if (pam !== null && session !== undefined) {
+      return `${pam.sessionMessages({ ip: session.ip, port: session.port }).join('')}${this.previousLoginLine(session.user, policy.printLastLog)}`;
+    }
+    const lastLogin = session === undefined ? '' : this.previousLoginLine(session.user, policy.printLastLog);
+    if (!policy.printMotd) return lastLogin;
     const motd = this.vfs.readFile('/etc/motd');
-    return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
+    return `${lastLogin}${motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`}`;
+  }
+
+  private previousLoginLine(user: string, printLastLog: boolean): string {
+    const previous = this.executor?.lastlog.getPrevious(user);
+    if (!printLastLog || previous === undefined) return '';
+    return `Last login: ${formatLoginDate(new Date(previous.when))} from ${previous.sourceHost}\n`;
   }
 
   private hushLogin(user: string): boolean {
@@ -587,7 +812,8 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   recordLogin(user: string, fromIp: string): void {
     this.openPamSession(user, fromIp);
-    this.executor?.lastlog.record(user, fromIp, 'pts/0');
+    if (this.device instanceof LinuxMachine) this.device.openSshSessionRecord(user, fromIp, fromIp);
+    else this.executor?.lastlog.record(user, fromIp, 'pts/0');
   }
 
   clientPort(fromIp: string): number | undefined {
@@ -686,33 +912,43 @@ export class LinuxSshServerContext implements ISshServerContext {
     return { ...defaults, ...values };
   }
 
-  private loadOrGenerateHostKey(): SshHostKey {
-    const pub = this.vfs.readFile(HOST_KEY_PUB_PATH);
-    const priv = this.vfs.readFile(HOST_KEY_PATH);
-    if (pub && priv) {
-      const material = pub.trim().split(/\s+/)[1] ?? pub.trim();
-      return SshHostKey.fromFiles(material, priv.trim(), 'ssh-ed25519');
-    }
-    const generated = SshHostKey.generate(hostnameOf(this.hostnameSource));
-    this.vfs.writeFile(
-      HOST_KEY_PUB_PATH,
-      generated.publicKeyLine + '\n',
-      0,
-      0,
-      0o022,
-    );
-    this.vfs.chmod(HOST_KEY_PUB_PATH, 0o644);
-    // Persist a stable opaque private key blob (no real crypto — see C-02).
-    this.vfs.writeFile(HOST_KEY_PATH, generated.privateKeyBlob, 0, 0, 0o022);
-    this.vfs.chmod(HOST_KEY_PATH, 0o600);
-    return generated;
+  private hostKeyFiles(): HostKeyFileAccess {
+    return {
+      exists: (path) => this.vfs.exists(path),
+      read: (path) => this.vfs.readFile(path),
+      write: (path, content, secret) => {
+        this.vfs.writeFile(path, content, 0, 0, 0o022);
+        this.vfs.chmod(path, secret ? 0o600 : 0o644);
+      },
+      writeDeferred: (path, produce, secret, declaredSize) => {
+        this.vfs.createDeferredFileAt(path, produce, secret ? 0o600 : 0o644, 0, 0, declaredSize);
+      },
+    };
   }
 
-  private loadOrGenerateSshdConfig(): SshdConfig {
-    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return parseSshdConfig(readSshdConfig(this.vfs));
+  additionalHostKeys(): SshHostKey[] {
+    const paths = configuredHostKeyPaths(this.rawConfig, DEFAULT_HOST_KEY_PATHS);
+    return paths
+      .filter((path) => path !== HOST_KEY_PATH)
+      .flatMap((path) => hostKeyFromFile(this.hostKeyFiles(), path) ?? []);
+  }
+
+  hostCertificates(): HostCertificateBinding[] {
+    return this.certificates().hostCertificates([this.hostKey, ...this.additionalHostKeys()]);
+  }
+
+  private loadOrGenerateHostKey(): SshHostKey {
+    provisionHostKeyFiles(this.hostKeyFiles(), ETC_SSH_DIR, '/', hostnameOf(this.hostnameSource));
+    const pub = this.vfs.readFile(HOST_KEY_PUB_PATH) ?? '';
+    const priv = this.vfs.readFile(HOST_KEY_PATH) ?? '';
+    return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
+  }
+
+  private loadOrGenerateSshdConfig(): SshdServerConfig {
+    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return SshdServerConfig.parse(readSshdConfig(this.vfs));
     this.vfs.writeFile(SSHD_CONFIG_PATH, UBUNTU_2204_SSHD_CONFIG, 0, 0, 0o022);
     this.vfs.chmod(SSHD_CONFIG_PATH, 0o644);
-    return parseSshdConfig(readSshdConfig(this.vfs));
+    return SshdServerConfig.parse(readSshdConfig(this.vfs));
   }
 
   private pamAuth: SshdPam | null = null;
@@ -721,7 +957,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.executor === null || !this.effectiveSshdServerConfig().usePam) return null;
     this.pamAuth ??= new SshdPam(
       this.executor.pam,
-      () => ({ tag: 'sshd', pid: (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(), unit: 'ssh' }),
+      (peer) => ({
+        tag: 'sshd',
+        pid: this.connectionPid(peer.ip, peer.port) ?? (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(),
+        unit: 'ssh',
+      }),
       () => this.permitEmptyPasswords(),
       (user) => this.userManager.getUser(user) !== undefined,
       () => this.rootMayLogIn('password'),
@@ -737,14 +977,19 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   connectionEnded(fromIp: string, port: number | undefined): void {
     this.pamAuth?.end({ ip: fromIp, port });
+    if (this.device instanceof LinuxMachine) this.device.endSshConnectionProcess(fromIp, port);
+  }
+
+  private connectionPid(ip: string, port: number | undefined): number | undefined {
+    return this.device instanceof LinuxMachine ? this.device.sshConnectionPid(ip, port) : undefined;
   }
 
   private buildAuthContext(): ISshAuthContext {
     let attemptsLeft = this.config.maxAuthTries;
     const passwordAttempt = (user: string, password: string, peer: SshPeer | undefined): boolean => {
       attemptsLeft = Math.max(0, attemptsLeft - 1);
-      if (!this.userAllowed(user, 'password')) return false;
-      if (!this.config.passwordAuthentication) return false;
+      if (!this.userAllowed(user, 'password', peer?.ip)) return false;
+      if (!this.config.passwordAuthentication || !this.authMethodEnabled(user, peer?.ip ?? '', 'password')) return false;
       const pam = this.sshdPam();
       if (pam === null) return this.userManager.passwordMatches(user, password);
       if (!pam.isPasswordAuthenticationOpen(peer)) return false;
@@ -772,7 +1017,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       keyboardInteractive: (peer) => {
         if (!this.config.kbdInteractiveAuthentication || !this.effectiveSshdServerConfig().usePam) return null;
         const pam = this.sshdPam();
-        if (pam !== null) return pam.challenge(peer, (user) => this.userAllowed(user, 'password'));
+        if (pam !== null) return pam.challenge(peer, (user) => this.userAllowed(user, 'password', peer.ip));
         return {
           device: 'pam',
           name: '',
@@ -794,30 +1039,9 @@ export class LinuxSshServerContext implements ISshServerContext {
    *   4. AllowGroups — when set, at least one group must match.
    *   5. PermitRootLogin — root is gated last.
    */
-  private userAllowed(user: string, method: 'password' | 'publickey'): boolean {
+  private userAllowed(user: string, method: 'password' | 'publickey', address?: string): boolean {
     if (user === 'root' && !this.rootMayLogIn(method)) return false;
-
-    const { allowUsers, denyUsers, allowGroups, denyGroups } = this.sshdConfig;
-    if (denyUsers.some((p) => matchesUserPattern(p, user))) return false;
-    if (allowUsers.length > 0 && !allowUsers.some((p) => matchesUserPattern(p, user))) {
-      return false;
-    }
-
-    if (denyGroups.length > 0 || allowGroups.length > 0) {
-      const userGroups = this.userManager
-        .getUserGroups(user)
-        .map((g) => g.name);
-      if (denyGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))) {
-        return false;
-      }
-      if (
-        allowGroups.length > 0 &&
-        !allowGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))
-      ) {
-        return false;
-      }
-    }
-    return true;
+    return this.accessPolicy().refusal(user, address) === null;
   }
 
   /**

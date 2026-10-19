@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-09-25T23:30:41.083Z
+Generated: 2026-10-14T19:51:24.715Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -29,7 +29,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX725294N0
+  Processor board ID FTX480877BC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -57,7 +57,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX725294N0
+  Processor board ID FTX480877BC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -65,10 +65,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *23:30:41.000 UTC Fri Sep 25 2026
+  *19:51:24.000 UTC Wed Oct 14 2026
 
 [4/482] r1 R1> show calendar
-  23:30:41 UTC Fri Sep 25 2026
+  19:51:24 UTC Wed Oct 14 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -84,7 +84,7 @@ Total steps: 482
 
 [7/482] r1 R1> show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX725294N0
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX480877BC
 
 [8/482] r1 R1> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -429,7 +429,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE6182A1.828F5C28 (23:30:41.510 UTC Fri Sep 25 2026)
+  reference time is EE7A5BBD.3645A1CA (19:51:25.212 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -650,7 +650,7 @@ Total steps: 482
     interfaces     Interface status and configuration
     inventory      Display hardware inventory
     ip             IP information
-    ipv6           Display IPv6 interface state
+    ipv6           Dynamic Host Configuration Protocol
     key            Display key chain
     line           Display TTY lines
     lldp           Display LLDP information
@@ -663,7 +663,7 @@ Total steps: 482
     privilege      Display current privilege level
     processes      Display active processes
     queueing       Display interface queueing
-    radius         Display Radius stats
+    radius         Show RADIUS server group properties
     reload         Display reload schedule
     route-map      Display route-maps
     sessions       Display open outgoing connections
@@ -729,7 +729,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX725294N0
+  Processor board ID FTX480877BC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -737,10 +737,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *23:30:41.000 UTC Fri Sep 25 2026
+  *19:51:25.000 UTC Wed Oct 14 2026
 
 [81/482] r1 R1# show calendar
-  23:30:41 UTC Fri Sep 25 2026
+  19:51:25 UTC Wed Oct 14 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -748,6 +748,7 @@ Total steps: 482
     Interface    User               Mode         Idle     Peer Address
 
 [83/482] r1 R1# show history
+  show hosts
   show ip ssh
   show ssh
   show line
@@ -761,7 +762,6 @@ Total steps: 482
   ping
   traceroute
   telnet 10.0.0.2
-  ssh -l admin 10.0.0.2
   enable
   show privilege
   show version
@@ -771,7 +771,7 @@ Total steps: 482
 
 [84/482] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX725294N0
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX480877BC
 
 [85/482] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1045,7 +1045,7 @@ Total steps: 482
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           179        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1055,7 +1055,7 @@ Total steps: 482
   Entry address(es):
   Platform: Cisco 2911,  Capabilities: Router
   Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
-  Holdtime : 180 sec
+  Holdtime : 179 sec
   
   Version :
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
@@ -1180,10 +1180,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 23:30:41.078: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 23:30:41.078: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 23:30:41.080: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 23:30:41.080: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:51:24.710: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:51:24.711: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:51:24.712: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:51:24.712: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [119/482] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1195,7 +1195,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 100 (1/100 of seconds), resolution is 4001
-  reference time is EE6182A2.220C49BA (23:30:42.133 UTC Fri Sep 25 2026)
+  reference time is EE7A5BBD.EA3D70A3 (19:51:25.915 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1246,7 +1246,7 @@ Total steps: 482
 [126/482] r1 R1# show platform
   Cisco ISR 2911
     PID: CISCO2911/K9
-    S/N: FTX725294N0
+    S/N: FTX480877BC
 
 [127/482] r1 R1# show license
   Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority
@@ -1255,7 +1255,7 @@ Total steps: 482
 
 [128/482] r1 R1# show license udi
   Device#   PID                   SN
-  *0        CISCO2911/K9          FTX725294N0
+  *0        CISCO2911/K9          FTX480877BC
 
 [129/482] r1 R1# show boot
   BOOT variable = 
@@ -1333,6 +1333,10 @@ Total steps: 482
   SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
   Minimum expected Diffie Hellman key size : 1024 bits
+  Hostkey Algorithms:x509v3-ssh-rsa,ssh-rsa
+  Encryption Algorithms:aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  MAC Algorithms:hmac-sha1,hmac-sha1-96
+  KEX Algorithms:diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1
 
 [139/482] r1 R1# show ssh
   %No SSHv2 server connections running.
@@ -1386,7 +1390,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX725294N0
+  Processor board ID FTX480877BC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1564,8 +1568,10 @@ Total steps: 482
   
   
   ------------------ show ip dhcp binding ------------------
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -1590,10 +1596,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 23:30:41.078: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 23:30:41.078: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 23:30:41.080: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 23:30:41.080: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:51:24.710: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:51:24.711: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:51:24.712: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:51:24.712: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [146/482] r1 R1# show diag
   Slot 0:
@@ -1603,7 +1609,7 @@ Total steps: 482
           Hardware Revision        : 1.0
           Part Number              : CISCO2911/K9
           Board Revision           : 1.0
-          PCB Serial Number        : FTX725294N0
+          PCB Serial Number        : FTX480877BC
 
 [147/482] r1 R1# show idprom backplane
           ^
@@ -1676,7 +1682,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1685,7 +1691,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1694,7 +1700,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1703,7 +1709,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1712,7 +1718,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1721,7 +1727,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1730,7 +1736,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1739,7 +1745,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1748,7 +1754,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1757,7 +1763,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1766,7 +1772,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1775,7 +1781,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1784,7 +1790,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1793,7 +1799,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1802,7 +1808,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1811,7 +1817,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1820,7 +1826,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1829,7 +1835,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1838,7 +1844,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1847,7 +1853,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1856,7 +1862,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1865,7 +1871,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config-vrf)# do show clock
-  *23:30:42.000 UTC Fri Sep 25 2026
+  *19:51:26.000 UTC Wed Oct 14 2026
 
 [221/482] r1 R1(config-vrf)# exit
 <empty>
@@ -1956,7 +1962,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX725294N0
+  Processor board ID FTX480877BC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2068,6 +2074,7 @@ Total steps: 482
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
+    icmp               ICMP options
     local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
@@ -2100,13 +2107,13 @@ Total steps: 482
     cdp            Enable CDP globally
     class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
-    crypto         Encryption module
+    crypto         Restore the default DF bit handling
     enable         Set enable secret
     event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
     ip             Disable IP routing
-    ipv6           IPv6 interface subcommands
+    ipv6           Remove the IPv6 prefix pool
     key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally
@@ -2138,7 +2145,7 @@ Total steps: 482
     gdoi         Define a GDOI GET-VPN group
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Define an IKE policy
+    isakmp       Enable ISAKMP
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
@@ -2194,6 +2201,7 @@ Total steps: 482
     allow               Allow processing of packets
     authenticate        Authenticate time sources
     authentication-key  Authentication key for trusted time sources
+    broadcastdelay      Estimated round-trip delay between broadcast client and server
     logging             Enable NTP message logging
     master              Act as NTP master clock
     peer                Configure NTP peer
@@ -2216,7 +2224,7 @@ Total steps: 482
 
 [266/482] r1 R1-CORE(config)# aaa ?
     accounting      For exec (shell) commands
-    authentication  Authentication configurations parameters
+    authentication  Message to display at user login
     authorization   For exec (shell) commands
     group           AAA server-group definitions
     local           AAA local authentication parameters
@@ -2287,7 +2295,7 @@ Total steps: 482
     nat                 Mark interface as NAT inside
     nbar                Enable NBAR protocol discovery
     nhrp                NHRP configuration
-    ospf                Enable BFD on this OSPF interface
+    ospf                OSPF interface configuration
     pim                 PIM interface configuration
     policy              Apply PBR on interface
     proxy-arp           Enable proxy ARP
@@ -2642,8 +2650,8 @@ Total steps: 482
   
   Current configuration : 1566 bytes
   !
-  ! Last configuration change at 00:30:43 CEST Sat Sep 26 2026 by console
-  ! NVRAM config last updated at 00:30:43 CEST Sat Sep 26 2026 by console
+  ! Last configuration change at 20:51:27 CEST Wed Oct 14 2026 by console
+  ! NVRAM config last updated at 20:51:26 CEST Wed Oct 14 2026 by console
   !
   no service password-encryption
   no service config
@@ -2845,8 +2853,8 @@ Total steps: 482
   
   Current configuration : 2060 bytes
   !
-  ! Last configuration change at 00:30:43 CEST Sat Sep 26 2026 by console
-  ! NVRAM config last updated at 00:30:43 CEST Sat Sep 26 2026 by console
+  ! Last configuration change at 20:51:27 CEST Wed Oct 14 2026 by console
+  ! NVRAM config last updated at 20:51:26 CEST Wed Oct 14 2026 by console
   !
   service password-encryption
   no service config

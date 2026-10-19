@@ -47,12 +47,10 @@
  *     Il prouve que le laboratoire, le compte et le serveur sont bons,
  *     donc qu'une session muette est un chemin manquant et non un
  *     laboratoire casse.
- *   - sans justificatif, la banniere Windows est toujours rendue :
- *     NON-REGRESSION, et c'est la limite assumee de ce lot. Un `ssh
- *     <hote>' sans rien a offrir garde la confiance qu'il a toujours eue
- *     -- c'est ce dont vit `windows-lan-ssh-suite' -- alors qu'un secret
- *     FAUX, lui, est desormais refuse. La ligne est tracee la : ne rien
- *     offrir n'est pas offrir n'importe quoi.
+ *   - avec le mot de passe, la banniere Windows est rendue : TEMOIN. La
+ *     limite assumee par ce lot (un `ssh <hote>' sans rien a offrir etait
+ *     accepte) est levee avec le client en memoire : sans justificatif, la
+ *     session est refusee, et ce refus est le dernier cas du fichier.
  *   - la session se ferme UNE fois, en nommant l'hote tel qu'il a ete
  *     saisi : passe AVANT comme APRES, et c'est pourquoi il est ecrit.
  *     AVANT il passe A VIDE -- aucune session ne se terminait vraiment.
@@ -126,12 +124,19 @@ beforeEach(() => {
 describe('une session SSH interactive vers Windows execute vraiment', () => {
   it('temoin : `ssh <compte>@<windows> hostname` rend le nom du poste', async () => {
     const { client } = await lab();
-    expect(await client.executeCommand(`ssh User@${WIN_IP} hostname`)).toContain('WIN1');
+    expect(await client.executeCommand(`ssh User@${WIN_IP} hostname`, 'user')).toContain('WIN1');
   }, 30000);
 
-  it('non-regression : sans justificatif, la banniere Windows est toujours rendue', async () => {
+  it('avec le mot de passe, la banniere Windows est rendue', async () => {
     const { client } = await lab();
-    expect(await client.executeCommand(`ssh User@${WIN_IP}`)).toContain('Microsoft Windows');
+    expect(await client.executeCommand(`ssh User@${WIN_IP}`, 'user')).toContain('Microsoft Windows');
+  }, 30000);
+
+  it('sans aucun justificatif, la session est refusee et aucune banniere n\'est rendue', async () => {
+    const { client } = await lab();
+    const out = await client.executeCommand(`ssh User@${WIN_IP}`);
+    expect(out).toContain('Permission denied');
+    expect(out).not.toContain('Microsoft Windows');
   }, 30000);
 
   it('Windows vers Windows : la commande saisie est reellement executee', async () => {

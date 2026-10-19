@@ -162,6 +162,8 @@ describe('SSH edge cases — redirection, pipes, banners, output formatting', ()
   test('§E10 — Windows→Linux: /etc/issue.net is shown pre-prompt', async () => {
     const { winA, linuxSrv } = await buildLan();
     await linuxSrv.executeCommand('echo "AUTHORIZED USE ONLY" > /etc/issue.net');
+    await linuxSrv.executeCommand('echo "Banner /etc/issue.net" >> /etc/ssh/sshd_config');
+    await linuxSrv.executeCommand('systemctl reload ssh');
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
@@ -522,13 +524,13 @@ describe('SSH edge cases — redirection, pipes, banners, output formatting', ()
   test('§E46 — exec mode `ssh user@host ls /tmp` returns the listing', async () => {
     const { winA, linuxSrv } = await buildLan();
     await linuxSrv.executeCommand('echo body > /tmp/listme.txt');
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 ls /tmp');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 ls /tmp', 'alice');
     expect(out).toMatch(/listme\.txt/);
   });
 
   test('§E47 — exec mode: long output is fully returned', async () => {
     const { winA } = await buildLan();
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 cat /etc/passwd');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 cat /etc/passwd', 'alice');
     expect(out.split('\n').length).toBeGreaterThan(2);
   });
 

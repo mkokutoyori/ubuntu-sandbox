@@ -17,6 +17,7 @@ import { parseGnuDate } from '../../../core/time/GnuDateInput';
 import { TimeZone } from '../../../core/time/TimeZone';
 import { abreviationA, decalageA } from '../time/TimezoneDatabase';
 import { IDLE_LOAD_AVERAGE } from './LoadAverage';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 
 
@@ -189,12 +190,12 @@ function strftime(fmt: string, d: Date, rendu: DateRendering = UTC_RENDERING): s
     'C': two(Math.floor(Y / 100)),
     'm': two(M + 1),
     'd': two(D),
-    'e': String(D).padStart(2, ' '),
+    'e': padToWidth(String(D), 2, 'right'),
     'j': String(dayOfYear(d)).padStart(3, '0'),
     'H': two(H),
-    'k': String(H).padStart(2, ' '),
+    'k': padToWidth(String(H), 2, 'right'),
     'I': two(I12),
-    'l': String(I12).padStart(2, ' '),
+    'l': padToWidth(String(I12), 2, 'right'),
     'M': two(m),
     'S': two(S),
     'p': p,

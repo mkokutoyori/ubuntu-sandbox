@@ -894,6 +894,7 @@ function reviveWindowsUsers(users: readonly WindowsUser[]): WindowsUser[] {
     passwordLastSet: new Date(u.passwordLastSet),
     lastLogon: u.lastLogon === null ? null : new Date(u.lastLogon),
     lockedUntil: u.lockedUntil === null ? null : new Date(u.lockedUntil),
+    accountExpires: u.accountExpires == null ? null : new Date(u.accountExpires),
   }));
 }
 

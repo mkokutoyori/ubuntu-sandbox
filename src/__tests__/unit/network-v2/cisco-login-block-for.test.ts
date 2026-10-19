@@ -155,7 +155,7 @@ function launchOpts(pc: LinuxPC, sourceIp: string): SshLaunchOptions {
   return {
     defaultUser: 'root',
     sourceIp,
-    wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
+    sourceDevice: pc,
   };
 }
 
@@ -274,7 +274,6 @@ describe('§B — 5e échec SSH déclenche le blocage immédiat et ferme la conn
 
     await sshAttempt(term, CISCO_IP, 'WrongPassword');
     expect(term.currentInputMode.type).not.toBe('password');
-    expect(term.foreground).toBe(term);
   });
 
   it("une fois bloqué, une NOUVELLE tentative de connexion SSH est refusée immédiatement, sans prompt de mot de passe", async () => {

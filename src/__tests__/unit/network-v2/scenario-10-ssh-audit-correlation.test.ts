@@ -41,6 +41,8 @@ async function buildLab(): Promise<Lab> {
   return { client, lxsrv, winsrv, sw };
 }
 
+const dotted = (mac: string): string => { const h = mac.toLowerCase().replace(/[^0-9a-f]/g, ''); return `${h.slice(0, 4)}.${h.slice(4, 8)}.${h.slice(8, 12)}`; };
+
 describe('Scenario 10 — Audit centralisé des accès SSH multi-équipements', () => {
   beforeEach(() => {
     resetCounters();
@@ -101,9 +103,9 @@ describe('Scenario 10 — Audit centralisé des accès SSH multi-équipements', 
     const lxMac = lxsrv.getPorts()[0].getMAC().toString().toLowerCase();
     const winMac = winsrv.getPorts()[0].getMAC().toString().toLowerCase();
     const mac = (await sw.executeCommand('show mac address-table')).toLowerCase();
-    expect(mac).toContain(clientMac);
-    expect(mac).toContain(lxMac);
-    expect(mac).toContain(winMac);
+    expect(mac.toLowerCase()).toContain(dotted(clientMac));
+    expect(mac.toLowerCase()).toContain(dotted(lxMac));
+    expect(mac.toLowerCase()).toContain(dotted(winMac));
 
     const counters = await sw.executeCommand('show interfaces counters');
     expect(counters).toMatch(/InOctets|InUcastPkts/i);
@@ -133,6 +135,6 @@ describe('Scenario 10 — Audit centralisé des accès SSH multi-équipements', 
 
     const clientMac = client.getPorts()[0].getMAC().toString().toLowerCase();
     const macTable = (await sw.executeCommand('show mac address-table')).toLowerCase();
-    expect(macTable).toContain(clientMac);
+    expect(macTable.toLowerCase()).toContain(dotted(clientMac));
   });
 });

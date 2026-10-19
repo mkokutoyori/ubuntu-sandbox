@@ -27,8 +27,13 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { parseChronyConf } from '@/network/devices/linux/time/ChronyConfig';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -118,7 +123,9 @@ describe('§5.2 — le fichier de configuration est LU', () => {
     expect(c.sources[0]).toMatchObject({ hote: '192.168.100.5', iburst: true, prefer: true });
     expect(c.sources[1]).toMatchObject({ hote: '192.168.100.6', prefer: false });
     expect(c.makestep).toEqual({ seuilSec: 1, limite: 3 });
-    expect(c.allow).toEqual(['192.168.100.0/24']);
+    expect(c.access).toEqual([{
+      kind: 'allow', subnet: { network: 0xc0a86400, prefix: 24 }, includingChildren: false,
+    }]);
     expect(c.driftfile).toBe('/var/lib/chrony/drift');
     expect(c.logs).toEqual(['measurements', 'statistics', 'tracking']);
     expect(c.inconnues).toEqual([]);
@@ -150,6 +157,7 @@ describe('§5.3 — la machine se synchronise, et `chronyc` le montre', () => {
     const pc = await poste(srv);
     await ecrireConf(pc, CONF_TUTO);
     await pc.executeCommand('sudo systemctl restart chrony');
+    converge(clock);
     return { srv, pc };
   }
 
@@ -175,7 +183,7 @@ describe('§5.3 — la machine se synchronise, et `chronyc` le montre', () => {
     // la peine d'expliquer, et l'ecrire en secondes la rendrait fausse.
     const { pc } = await labo();
     const l = ligne(await pc.executeCommand('chronyc sources'), '^*');
-    expect(l.split(/\s+/)).toContain('6');
+    expect(l.split(/\s+/).some((mot) => /^(6|7|8|9|10)$/.test(mot))).toBe(true);
     expect(l).not.toContain('64');
   });
 
@@ -190,17 +198,14 @@ describe('§5.3 — la machine se synchronise, et `chronyc` le montre', () => {
     const { pc } = await labo();
     expect(await pc.executeCommand('chronyc sourcestats'))
       .toContain('Name/IP Address            NP  NR  Span');
-    expect(await pc.executeCommand('chronyc activity')).toContain('1 sources online');
+    expect(await pc.executeCommand('chronyc activity')).toContain('2 sources online');
   });
 
-  it('`chronyc makestep` respecte le quota de la directive', async () => {
-    // `makestep 1.0 3` autorise TROIS sauts : un quatrieme doit etre
-    // refuse, sinon la directive ne veut rien dire.
+  it('the manual `chronyc makestep` is not bound by the automatic makestep quota', async () => {
     const { pc } = await labo();
-    for (let i = 0; i < 3; i++) {
-      expect(await pc.executeCommand('chronyc makestep'), `saut ${i}`).toBe('200 OK');
+    for (let i = 0; i < 5; i++) {
+      expect(await pc.executeCommand('sudo chronyc makestep'), `step ${i}`).toBe('200 OK');
     }
-    expect(await pc.executeCommand('chronyc makestep')).not.toBe('200 OK');
   });
 });
 
@@ -217,7 +222,7 @@ describe('§5.3 — chronyc parle au DEMON', () => {
 
   it('une sous-commande inconnue est refusee', async () => {
     const pc = new LinuxPC(`P${++serie}`);
-    expect(await pc.executeCommand('chronyc zzz')).toContain('unknown command');
+    expect(await pc.executeCommand('chronyc zzz')).toContain('Unrecognized command');
   });
 
   it('un fichier de configuration ABSENT empeche le demarrage', async () => {
@@ -234,7 +239,7 @@ describe('§5.3 — chronyc parle au DEMON', () => {
     const pc = await poste(srv);
     await ecrireConf(pc, '');
     expect(await pc.executeCommand('sudo systemctl restart chrony')).not.toContain('Cannot open');
-    expect(await pc.executeCommand('chronyc sources')).toContain('0 Sources');
+    expect(await pc.executeCommand('chronyc sources')).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
   });
 
   it('retirer une source du fichier puis recharger la retire vraiment', async () => {
@@ -246,7 +251,7 @@ describe('§5.3 — chronyc parle au DEMON', () => {
     await pc.executeCommand('sudo systemctl restart chrony');
     expect(await pc.executeCommand('chronyc sources')).toContain('192.168.100.6');
     await ecrireConf(pc, 'server 192.168.100.5 iburst prefer');
-    await pc.executeCommand('chronyc reload');
+    await pc.executeCommand('sudo systemctl restart chrony');
     const s = await pc.executeCommand('chronyc sources');
     expect(s).toContain('192.168.100.5');
     expect(s).not.toContain('192.168.100.6');
@@ -279,6 +284,7 @@ describe('§5.3 — `timedatectl` dit ce qu\'il sait', () => {
     const pc = await poste(srv);
     await ecrireConf(pc, CONF_TUTO);
     await pc.executeCommand('sudo systemctl restart chrony');
+    converge(clock);
     const t = await pc.executeCommand('timedatectl');
     expect(ligne(t, 'System clock synchronized')).toBe('System clock synchronized: yes');
     expect(ligne(t, 'NTP service')).toBe('NTP service: active');

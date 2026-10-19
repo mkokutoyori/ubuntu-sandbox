@@ -63,22 +63,22 @@ describe('connection-line-logic', () => {
   describe('cables leaving one device by the same face', () => {
     const centres = (count: number) => [
       { x: 100, y: 100 },
-      ...Array.from({ length: count }, (_, i) => ({ x: 500, y: 60 + i * 40 })),
+      ...Array.from({ length: count }, (_, i) => ({ x: 500, y: 60 + i * 110 })),
     ];
     const face = (count: number) => Array.from({ length: count }, (_, i) => ({
       id: `c${i}`,
       sourceDeviceId: 'A',
       targetDeviceId: `B${i}`,
       source: { x: 100, y: 100 },
-      target: { x: 500, y: 60 + i * 40 },
+      target: { x: 500, y: 60 + i * 110 },
       sourceInterface: `Gi0/${i}`,
       targetInterface: 'eth0',
     }));
 
-    it('gives a lone cable no lane at all', () => {
+    it('straightens a lone cable towards its far end instead of leaving it a jog', () => {
       const routes = computeCableRoutes(face(1), centres(1));
-      expect(routes.get('c0')!.sourceLane).toBe(0);
-      expect(routes.get('c0')!.targetLane).toBe(0);
+      const { points } = routes.get('c0')!;
+      expect(points[0].y).toBeCloseTo(points[3].y, 6);
     });
 
     it('centres the fan on the direct route', () => {

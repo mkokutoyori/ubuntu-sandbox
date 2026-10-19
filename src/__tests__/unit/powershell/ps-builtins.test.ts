@@ -106,8 +106,8 @@ describe('Compare-Object', () => {
       'r',
     ) as Array<{ InputObject: number; SideIndicator: string }>;
     expect(r).toEqual([
-      { InputObject: 1, SideIndicator: '<=' },
       { InputObject: 4, SideIndicator: '=>' },
+      { InputObject: 1, SideIndicator: '<=' },
     ]);
   });
 

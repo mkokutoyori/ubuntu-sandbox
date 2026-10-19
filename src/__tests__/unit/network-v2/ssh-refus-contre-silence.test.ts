@@ -90,7 +90,7 @@ function key(k: string): KeyEvent {
 }
 
 async function typeLine(session: TerminalSession, line: string): Promise<void> {
-  const foreground = session.foreground;
+  const foreground = session;
   foreground.setInput(line);
   foreground.setInputBuf(line);
   session.handleKey(key('Enter'));

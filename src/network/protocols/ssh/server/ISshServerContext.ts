@@ -8,9 +8,11 @@
  */
 
 import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
-import type { ISshAuthContext } from '../auth/ISshAuthMethod';
+import type { AgentPort } from '../agent/AgentService';
+import type { ISshAuthContext, AuthMethodType } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
+import type { SshCertificate } from '../certificate/SshCertificate';
 import type { SshUserContext } from '../SshUserContext';
 import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshInteractiveShell } from './SshInteractiveShell';
@@ -28,6 +30,7 @@ export interface SshServerConfig {
   readonly passwordAuthentication: boolean;
   readonly pubkeyAuthentication: boolean;
   readonly kbdInteractiveAuthentication?: boolean;
+  readonly authMethodOrder?: readonly ('publickey' | 'keyboard' | 'password')[];
   readonly clientAliveInterval?: number;
   readonly clientAliveCountMax?: number;
   readonly loginGraceTime?: number;
@@ -36,7 +39,8 @@ export interface SshServerConfig {
 
 export interface ILinuxShell {
   readonly streamSession?: unknown;
-  execute(line: string): Promise<{
+  takeSessionHold?(): number;
+  execute(line: string, onProgress?: (text: string) => void, stdin?: string): Promise<{
     stdout: string;
     stderr: string;
     exitCode: number;
@@ -70,6 +74,10 @@ export interface ILinuxShell {
    * remote offers no completion (docs/PRD-SSH-Unification.md §4bis B1).
    */
   getCompletions?(line: string): string[];
+  /** Completion that needs a round trip (a nested hop's own candidates). */
+  getCompletionsAsync?(line: string): Promise<string[] | null>;
+  /** Ctrl+C reaching a job that runs below this shell (a nested hop). */
+  interrupt?(): boolean;
   /**
    * True when `?` is a help key on this remote rather than an ordinary
    * character — a network CLI, not a POSIX shell where `?` is a glob.
@@ -85,6 +93,12 @@ export interface ILinuxShell {
    * (docs/PRD-SSH-Unification.md §4bis B4). Defaults to true.
    */
   readonly posixShell?: boolean;
+  /**
+   * Which login shell the channel lands on (`bash`, `cmd`, `cisco-ios`,
+   * `huawei-vrp`): announced to the client, which would otherwise have to
+   * read it off the peer machine.
+   */
+  readonly loginShellKind?: string;
   /**
    * The remote's own prompt as it stands right now. Read after each line,
    * since the command may have changed it (`cd`, `enable`,
@@ -114,6 +128,12 @@ export interface ILinuxShell {
    * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
    */
   openEditor?(commandLine: string): EditorSession | null;
+  /**
+   * The editor a nested hop would open, reached through that hop's own
+   * channel: this shell only relays keystrokes and screens, as the `ssh`
+   * client of an intermediate host relays its pty.
+   */
+  editorRelay?(): EditorRelay | null;
   /** The client's terminal changed size (window-change, RFC 4254 §6.7). */
   setWindowSize?(rows: number, cols: number): void;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
@@ -128,8 +148,16 @@ export interface SshTransportPolicy {
   readonly extInfo?: boolean;
 }
 
+export interface HostCertificateBinding {
+  readonly certificate: SshCertificate;
+  readonly hostKey: SshHostKey;
+}
+
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
+  readonly connectionLimitScope?: object;
+  additionalHostKeys?(): SshHostKey[];
+  hostCertificates?(): HostCertificateBinding[];
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem;
@@ -141,8 +169,17 @@ export interface ISshServerContext {
    */
   getShell(
     userCtx: SshUserContext, cwd: string,
-    opts?: { interactive?: boolean; clientIp?: string; clientPort?: number },
+    opts?: {
+      interactive?: boolean; clientIp?: string; clientPort?: number; agent?: AgentPort;
+      exec?: { readonly environment: ReadonlyMap<string, string>; readonly pty: { term: string; columns: number; rows: number } | null; readonly keyOptions: AuthorizedKeyOptions | null };
+    },
   ): ILinuxShell;
+  acceptsEnvironment?(name: string): boolean;
+  userPolicyRefusal?(user: string, address: string): string | null;
+  ptyPermitted?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean;
+  agentForwardingPermitted?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean;
+  accountLocked?(user: string): boolean;
+  holdSession?(user: SshUserContext, clientIp: string, seconds: number): void;
   /**
    * Optional per-channel real-time job runtime (streaming `ping`, Ctrl+C
    * interrupt). SshServerHandler constructs one per `shell_open` and tries
@@ -206,6 +243,7 @@ export interface ISshServerContext {
    * SSH_MSG_USERAUTH_BANNER).
    */
   getBanner?(): string | null;
+  bannerFor?(user: string, clientIp: string): string | null;
   serverIdentification?(): string;
   transportPolicy?(): SshTransportPolicy;
   transportEstablished?(clientIp: string, algorithms: NegotiatedAlgorithms): void;
@@ -214,9 +252,16 @@ export interface ISshServerContext {
   accountNames?(): SftpAccountNames;
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
+  originalCommandLine?(forced: string, asked: string): string;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
+  loginShellRefusal?(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null;
   subsystemAdmitted?(name: string, user: SshUserContext): boolean;
+  sftpService?(user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null): SftpServicePlan;
+  sftpSessionRoot?(user: SshUserContext): string;
   readonly maxAuthTriesDisconnect?: string;
+  maxAuthTriesFor?(user: string, clientIp: string): number;
+  authMethodEnabled?(user: string, clientIp: string, method: 'password' | 'publickey' | 'keyboard-interactive'): boolean;
+  availableMethodsFor?(user: string, clientIp: string): readonly AuthMethodType[];
 }
 
 export interface DirectTcpipRequest {
@@ -228,6 +273,8 @@ export interface DirectTcpipRequest {
 }
 
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
+import type { SftpLaunch, SftpServicePlan } from './SftpServicePlan';
+import type { EditorRelay } from '@/shell/SubShellStack';
 
 export interface RemoteForwardRequest {
   readonly user: SshUserContext;

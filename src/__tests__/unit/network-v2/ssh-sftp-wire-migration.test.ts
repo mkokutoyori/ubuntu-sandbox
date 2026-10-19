@@ -22,7 +22,7 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '@/network/protocols/ssh/server/SshServerHandler';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SftpTestClient } from './sftpTestClient';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { decodeSftpWirePacket } from '@/network/protocols/ssh/sftp/SftpWireCodec';
 import { SshTransport } from '@/network/protocols/ssh/transport/SshTransport';
@@ -37,6 +37,8 @@ function buildTopology(files: Record<string, string> = {}) {
   const userManager = new LinuxUserManager(vfs);
   userManager.useradd('alice', { m: true, s: '/bin/bash' });
   userManager.setPassword('alice', 'secret');
+  vfs.mkdirp('/etc/ssh', 0o755, 0, 0);
+  vfs.writeFile('/etc/ssh/sshd_config', 'Subsystem sftp internal-sftp\n', 0, 0, 0o022);
   for (const [path, content] of Object.entries(files)) vfs.writeFile(path, content, 1000, 1000, 0o022);
   const context = new LinuxSshServerContext(vfs, userManager, 'remote-host', { permitRootLogin: true });
   const handler = new SshServerHandler(context);
@@ -64,7 +66,7 @@ function buildTopology(files: Record<string, string> = {}) {
 
   const connector: TcpConnector = async (host) => (host === REMOTE_IP ? client : null);
   const localVfs = new VirtualFileSystem();
-  const session = new SftpSession({
+  const session = new SftpTestClient({
     tcpConnector: connector,
     localVfs,
     localUser: 'root',
@@ -183,15 +185,15 @@ describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)',
     expect(wirePacketTypes(clientToServer)).toContain('SETSTAT');
 
     clientToServer.length = 0;
-    expect(session.stat('target.txt')).toContain('Size:');
-    expect(wirePacketTypes(clientToServer)).toContain('STAT');
+    expect(session.run('ls -l target.txt')).toContain('target.txt');
+    expect(wirePacketTypes(clientToServer).some((type) => type === 'STAT' || type === 'LSTAT')).toBe(true);
 
     clientToServer.length = 0;
     expect(session.rename('target.txt', 'renamed.txt')).toBe('');
-    expect(wirePacketTypes(clientToServer)).toContain('RENAME');
+    expect(wirePacketTypes(clientToServer)).toContain('EXTENDED');
 
     clientToServer.length = 0;
-    expect(session.rm('renamed.txt')).toBe('');
+    expect(session.rm('renamed.txt')).toBe('Removing /home/alice/renamed.txt');
     expect(wirePacketTypes(clientToServer)).toContain('REMOVE');
 
     clientToServer.length = 0;

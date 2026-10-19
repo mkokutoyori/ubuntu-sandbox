@@ -438,7 +438,6 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
     expect(policyOut).toContain('Diffie-Hellman group:   #14 (2048 bit)');
     // Durée de vie
     expect(policyOut).toContain('lifetime:               86400 seconds');
-    // La politique par défaut Cisco (priority 65535) doit aussi apparaître
-    expect(policyOut).toContain('Default protection suite');
+    expect(policyOut).not.toContain('Default protection suite');
   });
 });

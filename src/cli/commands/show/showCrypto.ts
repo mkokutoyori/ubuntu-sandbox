@@ -1,12 +1,12 @@
 import type { CommandSpec } from '../../CommandTable';
 
 export interface IpsecShowHost {
-  ipsecShow(method: string): string;
+  ipsecShow(method: string, ...args: string[]): string;
 }
 
-function ipsecText(device: unknown, method: string): string {
+function ipsecText(device: unknown, method: string, ...args: string[]): string {
   const host = device as IpsecShowHost | null;
-  return typeof host?.ipsecShow === 'function' ? host.ipsecShow(method) : 'IPSec not configured.';
+  return typeof host?.ipsecShow === 'function' ? host.ipsecShow(method, ...args) : 'IPSec not configured.';
 }
 
 export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
@@ -33,6 +33,32 @@ export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
     modes: ['user', 'privileged'],
     minPrivilege: 1,
     run: (session) => ipsecText(session.device, 'showCryptoISAKMPPolicy'),
+  },
+  {
+    id: 'show-crypto-isakmp-default-policy',
+    path: ['show', 'crypto', 'isakmp', 'default', 'policy'],
+    description: 'Display the default IKE policies in use',
+    modes: ['privileged'],
+    minPrivilege: 15,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMPDefaultPolicy'),
+  },
+  {
+    id: 'show-crypto-isakmp-peers',
+    path: ['show', 'crypto', 'isakmp', 'peers', { name: 'address', type: 'IP_ADDR', optional: true, description: 'Peer address' }],
+    description: 'Display the ISAKMP peers',
+    modes: ['privileged'],
+    minPrivilege: 15,
+    run: (session, args) => args.address === undefined
+      ? ipsecText(session.device, 'showCryptoISAKMPPeers')
+      : ipsecText(session.device, 'showCryptoISAKMPPeers', args.address),
+  },
+  {
+    id: 'show-crypto-ipsec-transform-set-default',
+    path: ['show', 'crypto', 'ipsec', 'transform-set', 'default'],
+    description: 'Display the default IPsec transform sets in use',
+    modes: ['privileged'],
+    minPrivilege: 15,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecTransformSetDefault'),
   },
   {
     id: 'show-crypto-isakmp',
@@ -108,11 +134,25 @@ export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
   },
   {
     id: 'show-crypto-session',
-    path: ['show', 'crypto', 'session'],
+    path: ['show', 'crypto', 'session', {
+      name: 'view', type: 'ENUM', optional: true,
+      values: [
+        { keyword: 'brief', description: 'One line per session' },
+        { keyword: 'detail', description: 'Detailed session information' },
+      ],
+    }],
     description: 'Display crypto session status',
     modes: ['user', 'privileged'],
     minPrivilege: 1,
-    run: (session) => ipsecText(session.device, 'showCryptoSession'),
+    run: (session, args) => ipsecText(session.device, 'showCryptoSession', args.view ?? 'plain'),
+  },
+  {
+    id: 'show-crypto-ipsec-sa-lifetime',
+    path: ['show', 'crypto', 'ipsec', 'security-association', 'lifetime'],
+    description: 'Display the security association lifetime',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecSALifetime'),
   },
   {
     id: 'show-crypto-ipsec-security-policy',

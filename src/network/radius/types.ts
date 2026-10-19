@@ -183,6 +183,22 @@ export interface RadiusUser {
   challenge?: { prompt: string };
 }
 
+export interface RadiusAttributePolicy {
+  nasIpAddress: string | null;
+  serviceTypeInLoginRequest: boolean;
+  serviceTypeMandatory: boolean;
+  serviceTypeSupportMultiple: boolean;
+  nasIdentifier: ((nasIp: string) => string) | null;
+  eventTimestampInAccounting: boolean;
+}
+
+export function defaultAttributePolicy(): RadiusAttributePolicy {
+  return {
+    nasIpAddress: null, serviceTypeInLoginRequest: false, serviceTypeMandatory: false,
+    serviceTypeSupportMultiple: false, nasIdentifier: null, eventTimestampInAccounting: false,
+  };
+}
+
 export interface RadiusClientConfig {
   enabled: boolean;
   servers: RadiusServerConfig[];
@@ -279,7 +295,7 @@ export function decryptUserPassword(cipherHex: string, secret: string, authentic
 }
 
 export function isPrintablePassword(s: string): boolean {
-  if (s.length === 0) return false;
+  if (s.length === 0) return true;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     if (c < 0x20 || c > 0x7e) return false;

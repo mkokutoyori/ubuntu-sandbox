@@ -7,6 +7,7 @@ import {
   SsRowPrinter, filterSubjectOf, socketViewOf, type SsOutputHost, type SsSocketView,
 } from './SsOutput';
 import { COLUMN, SsTable } from './SsTable';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface SsHost extends SsArgumentEnvironment, SsOutputHost {
   rows(): readonly KernelSocketRow[];
@@ -93,7 +94,7 @@ function summaryText(host: SsHost): { stdout: string; stderr: string } {
   const snmp = host.procFile('/proc/net/snmp');
   const established = snmp === null ? null : currentEstablished(snmp);
   if (established === null) stderr += 'ss: get_snmpstat: No such file or directory\n';
-  const cell = (value: number): string => String(value).padEnd(9);
+  const cell = (value: number): string => padToWidth(String(value), 9);
   const hashed = summary.tcp4 + summary.tcp6;
   const inet4 = summary.raw4 + summary.udp4 + summary.tcp4;
   const inet6 = summary.raw6 + summary.udp6 + summary.tcp6;

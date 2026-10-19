@@ -161,6 +161,12 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-tacacs-server':      { parent: 'config', clearOnExit: ['selectedTacacsServer'] },
   'config-aaa-group':          { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
   'config-ca-trustpoint':      { parent: 'config', clearOnExit: ['selectedPkiTrustpoint'] },
+  'config-ca-server':          { parent: 'config', clearOnExit: ['selectedPkiServer'] },
+  'config-ca-trustpool':       { parent: 'config', clearOnExit: [] },
+  'config-isakmp-group':       { parent: 'config', clearOnExit: ['selectedIsakmpGroup'] },
+  'config-crypto-ezvpn':       { parent: 'config', clearOnExit: ['selectedEzvpnTunnel'] },
+  'config-browser-proxy':      { parent: 'config', clearOnExit: ['selectedBrowserProxy'] },
+  'config-crypto-identity':    { parent: 'config', clearOnExit: ['selectedCryptoIdentity'] },
   'config-applet':             { parent: 'config', clearOnExit: ['selectedApplet'] },
   'config-flow-exporter':      { parent: 'config', clearOnExit: ['selectedFlowExporter'] },
   'config-flow-record':        { parent: 'config', clearOnExit: ['selectedFlowRecord'] },
@@ -174,7 +180,11 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-keychain-key':       { parent: 'config-keychain', clearOnExit: ['selectedKeyChainKey'] },
   'config-ssh-pubkey':         { parent: 'config' },
   'config-ssh-pubkey-user':    { parent: 'config-ssh-pubkey' },
+  'config-ssh-pubkey-server':  { parent: 'config-ssh-pubkey' },
   'config-ssh-pubkey-data':    { parent: 'config-ssh-pubkey-user' },
+  'config-pubkey-chain':       { parent: 'config' },
+  'config-pubkey-key':         { parent: 'config-pubkey-chain' },
+  'config-pubkey-data':        { parent: 'config-pubkey-key' },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────
@@ -202,7 +212,11 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-archive-log': { parent: 'config-archive' },
   'config-ssh-pubkey':      { parent: 'config' },
   'config-ssh-pubkey-user': { parent: 'config-ssh-pubkey' },
+  'config-ssh-pubkey-server': { parent: 'config-ssh-pubkey' },
   'config-ssh-pubkey-data': { parent: 'config-ssh-pubkey-user' },
+  'config-pubkey-chain': { parent: 'config' },
+  'config-pubkey-key': { parent: 'config-pubkey-chain' },
+  'config-pubkey-data': { parent: 'config-pubkey-key' },
   // Les trois sous-modes de la famille identite. Sans eux, un `exit`
   // depuis `config-tacacs-server` ne remontait nulle part : le shell y
   // restait, et TOUT ce qui suivait etait juge dans un mode ou seules

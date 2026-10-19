@@ -68,7 +68,7 @@ describe('ip6tables — real IPv6 address/CIDR matching', () => {
   });
 
   it('-d matches the destination address of an outbound rule the same way', async () => {
-    await server.executeCommand('ip6tables -A INPUT -s fd00::2/128 -j REJECT');
+    await server.executeCommand('ip6tables -A INPUT -p tcp -s fd00::2/128 -j REJECT');
     const out = await client1.executeCommand('nc -zv -w 1 fd00::1 22');
     expect(out).toMatch(/refused/i);
   });

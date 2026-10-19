@@ -33,6 +33,7 @@
 
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const CAL_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-1', dest: 'one', description: 'Display single month output (default)' },
@@ -71,7 +72,7 @@ function dayOfYearOfFirst(m: number, y: number): number {
 /** Centre `text` sur `width`, en complétant à droite jusqu'à `width`. */
 function centre(text: string, width: number): string {
   const left = Math.max(0, Math.floor((width - text.length) / 2));
-  return `${' '.repeat(left)}${text}`.padEnd(width, ' ');
+  return padToWidth(`${' '.repeat(left)}${text}`, width);
 }
 
 /**
@@ -84,9 +85,9 @@ export function monthGrid(month: number, year: number, julian = false, withYear 
   const cell = julian ? 3 : 2;
   const title = withYear ? `${MONTHS[month]} ${year}` : MONTHS[month];
   const header = julian
-    ? DAY_HEADER.split(' ').map((d) => d.padStart(3)).join(' ')
+    ? DAY_HEADER.split(' ').map((d) => padToWidth(d, 3, 'right')).join(' ')
     : DAY_HEADER;
-  const lines = [centre(title, width), header.padEnd(width, ' ')];
+  const lines = [centre(title, width), padToWidth(header, width)];
 
   const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
   const total = daysInMonth(month, year);
@@ -94,13 +95,13 @@ export function monthGrid(month: number, year: number, julian = false, withYear 
 
   let week: string[] = Array.from({ length: firstWeekday }, () => ' '.repeat(cell));
   for (let day = 1; day <= total; day++) {
-    week.push(String(base + day).padStart(cell));
+    week.push(padToWidth(String(base + day), cell, 'right'));
     if (week.length === 7) {
-      lines.push(week.join(' ').padEnd(width, ' '));
+      lines.push(padToWidth(week.join(' '), width));
       week = [];
     }
   }
-  if (week.length > 0) lines.push(week.join(' ').padEnd(width, ' '));
+  if (week.length > 0) lines.push(padToWidth(week.join(' '), width));
   // Mesuré : le corps fait TOUJOURS six semaines, complétées par des
   // lignes blanches (`cal 2 2026` en rend quatre pleines puis deux
   // vides). C'est ce qui garde les bandes de `-3` et d'une année
@@ -115,7 +116,7 @@ function band(grids: string[][]): string[] {
   const width = grids[0][0].length;
   const out: string[] = [];
   for (let row = 0; row < height; row++) {
-    out.push(grids.map((g) => (g[row] ?? '').padEnd(width, ' ')).join('  ') + '  ');
+    out.push(grids.map((g) => padToWidth(g[row] ?? '', width)).join('  ') + '  ');
   }
   return out;
 }

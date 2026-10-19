@@ -177,7 +177,7 @@ async function flush(times = 8): Promise<void> {
 
 /** Type a line at the active prompt and press Enter. */
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));
@@ -253,7 +253,7 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
   test('ssh user@linuxA: terminal lands in the remote prompt after password', async () => {
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
     // After the push, the prompt belongs to the Linux remote — not C:\
-    expect(term.foreground.getPrompt()).toMatch(/user@linuxA:~\$/);
+    expect(term.getPrompt()).toMatch(/user@linuxA:~\$/);
     // Banner + remote shell visible; no "Connection to … closed" yet.
     expectExcludes(term, /Connection to 10\.0\.0\.1 closed/);
   });
@@ -279,14 +279,14 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
 
   test('exit in the remote shell pops back to cmd.exe with the closing line', async () => {
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    expect(term.foreground.getPrompt()).toMatch(/user@linuxA/);
+    expect(term.getPrompt()).toMatch(/user@linuxA/);
     await type(term, 'exit');
-    expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
     expectContains(term, /Connection to 10\.0\.0\.1 closed/);
   });
 
   test('Permission denied is surfaced without entering a sub-shell', async () => {
-    await type(term, 'ssh root@10.0.0.1'); // default PermitRootLogin no
+    await sshLogin(term, 'ssh root@10.0.0.1', 'admin');
     expectContains(term, /Permission denied/);
     // Prompt stays on Windows — no sub-shell was pushed.
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
@@ -419,7 +419,7 @@ describe('§5 — User identity travels through the SSH push', () => {
     const term = row.build();
     await term.init();
     await sshLogin(term, row.cmd, row.pw);
-    expect(term.foreground.getPrompt()).toMatch(row.promptRe);
+    expect(term.getPrompt()).toMatch(row.promptRe);
   });
 });
 
@@ -465,13 +465,13 @@ describe('§7 — Device-level exec mode regression guard', () => {
   beforeEach(async () => { lan = await buildXLan(); });
 
   test('device.executeCommand("ssh User@winB") still returns banner + closed', async () => {
-    const out = await lan.winA.executeCommand('ssh User@10.0.0.4');
+    const out = await lan.winA.executeCommand('ssh User@10.0.0.4', 'user');
     expect(out).toMatch(/Microsoft Windows/);
     expect(out).toMatch(/Connection to 10\.0\.0\.4 closed/);
   });
 
   test('exec mode (ssh user@host hostname) still returns the remote hostname', async () => {
-    const out = await lan.winA.executeCommand('ssh user@10.0.0.1 hostname');
+    const out = await lan.winA.executeCommand('ssh user@10.0.0.1 hostname', 'admin');
     expect(out).toMatch(/linuxA/);
   });
 });

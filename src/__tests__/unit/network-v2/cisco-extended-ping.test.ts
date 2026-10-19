@@ -51,7 +51,7 @@ async function settle(n = 40): Promise<void> {
  * the operator cannot reach.
  */
 async function answer(term: CiscoTerminalSession, value: string): Promise<void> {
-  const fg = term.foreground as unknown as {
+  const fg = term as unknown as {
     setInput: (v: string) => void; setInputBuf: (v: string) => void;
     handleKey: (e: unknown) => void; currentInputMode: { type: string };
   };

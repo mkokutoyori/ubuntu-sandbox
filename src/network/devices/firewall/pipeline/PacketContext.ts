@@ -28,6 +28,7 @@ export type VerdictReason =
   | 'utm-application'
   | 'utm-dns'
   | 'utm-file-type'
+  | 'utm-ips'
   | 'auth-required'
   | 'ha-subordinate'
   | 'zone-mismatch'
@@ -35,7 +36,8 @@ export type VerdictReason =
   | 'ttl-expired'
   | 'mtu-exceeded-df'
   | 'dos-anomaly'
-  | 'reverse-path-failed';
+  | 'reverse-path-failed'
+  | 'shaper-exceeded';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 
@@ -67,6 +69,7 @@ export interface PacketContext {
   vdom?: string;
   bridged?: boolean;
   readonly ingressFrameDestination?: MACAddress;
+  readonly ingressFrameSource?: MACAddress;
 
   packet: FirewallPacket;
   readonly originalPacket: FirewallPacket;
@@ -102,6 +105,7 @@ export interface PacketContextInit {
   isFirstPacket?: boolean;
   simulated?: boolean;
   ingressFrameDestination?: MACAddress;
+  ingressFrameSource?: MACAddress;
 }
 
 let nextContextId = 1;
@@ -117,6 +121,7 @@ export function makePacketContext(init: PacketContextInit): PacketContext {
     isFirstPacket: init.isFirstPacket ?? true,
     simulated: init.simulated ?? false,
     ingressFrameDestination: init.ingressFrameDestination,
+    ingressFrameSource: init.ingressFrameSource,
     trace: [],
   };
 }

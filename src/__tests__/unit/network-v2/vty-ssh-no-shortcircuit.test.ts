@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { interoperateWithIos15 } from './iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -29,6 +30,7 @@ async function configureCisco(router: CiscoRouter, ip: string): Promise<void> {
     'ip domain-name lab.local', 'crypto key generate rsa modulus 2048',
     'end',
   ]) await router.executeCommand(cmd);
+  await interoperateWithIos15(router);
 }
 
 async function configureHuawei(router: HuaweiRouter, ip: string): Promise<void> {
@@ -43,6 +45,7 @@ async function configureHuawei(router: HuaweiRouter, ip: string): Promise<void> 
     'stelnet server enable',
     'quit',
   ]) await router.executeCommand(cmd);
+  await interoperateWithIos15(router);
 }
 
 function buildPc(): LinuxPC {
@@ -51,12 +54,8 @@ function buildPc(): LinuxPC {
   return pc;
 }
 
-function wireProbeOf(pc: LinuxPC): NonNullable<SshLaunchOptions['wireProbe']> {
-  return (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port);
-}
-
 function launchOpts(pc: LinuxPC): SshLaunchOptions {
-  return { defaultUser: 'root', sourceIp: PC_IP, wireProbe: wireProbeOf(pc) };
+  return { defaultUser: 'root', sourceIp: PC_IP, sourceDevice: pc };
 }
 
 beforeEach(() => {
@@ -106,7 +105,7 @@ describe('interactive ssh launch reads its verdict from the wire (no VTY short-c
 
     expect(attempt?.kind).toBe('error');
     const output = attempt?.result.output.join('\n') ?? '';
-    expect(output).toMatch(/Connection timed out/);
+    expect(output).toMatch(/No route to host/);
   });
 
   it('times out when the router interface is administratively shut down', async () => {
@@ -124,26 +123,11 @@ describe('interactive ssh launch reads its verdict from the wire (no VTY short-c
     const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc));
 
     expect(attempt?.kind).toBe('error');
-    expect(attempt?.result.output.join('\n')).toMatch(/Connection timed out/);
-  });
-
-  it('keeps the registry behaviour for legacy callers that inject no wire probe', async () => {
-    const pc = buildPc();
-    const cisco = new CiscoRouter('cisco1', 0, 0);
-    const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
-    new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
-    await configureCisco(cisco, CISCO_IP);
-
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, {
-      defaultUser: 'root',
-      sourceIp: PC_IP,
-    });
-
-    expect(attempt?.kind).toBe('pending');
+    expect(attempt?.result.output.join('\n')).toMatch(/No route to host/);
   });
 });
 
-describe('the bash terminal adapter injects the wire probe', () => {
+describe('the bash terminal adapter launches from its own device', () => {
   it('surfaces the password prompt for a cabled router', async () => {
     const pc = buildPc();
     const cisco = new CiscoRouter('cisco1', 0, 0);
@@ -158,7 +142,7 @@ describe('the bash terminal adapter injects the wire probe', () => {
     expect(result.pendingInput?.kind).toBe('password');
   });
 
-  it('prints the timeout error when the router is not cabled', async () => {
+  it('prints the no-route error when the router is not cabled', async () => {
     const pc = buildPc();
     const cisco = new CiscoRouter('cisco1', 0, 0);
     const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
@@ -169,6 +153,6 @@ describe('the bash terminal adapter injects the wire probe', () => {
     const result = await shell.processLine(`ssh admin@${CISCO_IP}`);
 
     expect(result.pendingInput).toBeUndefined();
-    expect(result.output.join('\n')).toMatch(/Connection timed out/);
+    expect(result.output.join('\n')).toMatch(/No route to host/);
   });
 });

@@ -562,7 +562,7 @@ describe('iptables', () => {
     it('should support REDIRECT target', async () => {
       await server.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080');
       const out = await server.executeCommand('iptables -t nat -S PREROUTING');
-      expect(out).toContain('--to-port 8080');
+      expect(out).toContain('--to-ports 8080');
     });
 
     it('should support RETURN target', async () => {
@@ -1118,6 +1118,11 @@ describe('iptables', () => {
         direction: 'in', protocol: 6,
         srcIP: '10.0.0.1', dstIP: '192.168.1.1',
         srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+      ipt.filterPacket({
+        direction: 'out', protocol: 6,
+        srcIP: '192.168.1.1', dstIP: '10.0.0.1',
+        srcPort: 80, dstPort: 1234, iface: 'eth0',
       });
 
       // Now set strict rules: only allow ESTABLISHED

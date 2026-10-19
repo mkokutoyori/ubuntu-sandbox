@@ -56,7 +56,9 @@ export class WindowsAccountsPolicy {
 
   apply(flag: string, raw: string): string {
     const value = raw.trim();
-    const numOrNever = (v: string): number => v.toLowerCase() === 'never' ? -1 : Number.parseInt(v, 10);
+    const unlimited = ['never', 'unlimited', 'no'].includes(value.toLowerCase());
+    const numOrNever = (v: string): number => unlimited ? -1 : Number.parseInt(v, 10);
+    if (!unlimited && !/^\d+$/.test(value)) return 'The command syntax is invalid.\n\nMore help is available by typing NET HELPMSG 3500.';
     switch (flag.toLowerCase()) {
       case 'forcelogoff':       this.state.forceLogoffMinutes = numOrNever(value); break;
       case 'minpwage':          this.state.minPasswordAge = Number.parseInt(value, 10); break;

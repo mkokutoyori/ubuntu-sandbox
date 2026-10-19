@@ -109,14 +109,46 @@ nommées `…@ubuntu-sandbox.local` comme la RFC 4251 §6 le permet ; un client 
 les ignore (réponse `CHANNEL_FAILURE`). Elles sont listées dans
 `connection/SandboxExtensions.ts`.
 
+Fait aussi, depuis le lot D :
+
+- `auth-agent-req@openssh.com` et le canal `auth-agent@openssh.com` : le protocole
+  de l'agent (`draft-miller-ssh-agent`, `agent/AgentWire.ts`, `AgentService.ts`)
+  circule sur un vrai canal ; le serveur ne l'ouvre que si `AllowAgentForwarding`
+  (et l'option de clé `no-agent-forwarding`) le permettent, et `ssh-add -l` sur le
+  distant interroge l'agent de l'origine à travers ce canal ;
+- `window-change` est appliquée au terminal distant (taille vue par les éditeurs
+  et les programmes à écran) et transmise au saut quand un `ssh` imbriqué est
+  ouvert ;
+- `ssh -W hôte:port`, `ProxyCommand` et `ProxyJump` (`-J`) : chaque saut est une
+  session réelle, le suivant passe par un `direct-tcpip` ouvert sur la précédente,
+  y compris pour l'interactif du terminal (le serveur final voit l'adresse du
+  dernier saut, chaque sshd journalise sa connexion) ;
+- un `ssh` tapé dans un shell distant est lancé par CETTE machine, pas par le
+  terminal : l'invite de mot de passe revient par le canal (`pendingInput`), le saut
+  est une trame de la pile du serveur (`exit` la dépile), les frappes et Ctrl+C
+  descendent vers le saut, et un éditeur ouvert dans le saut y tourne
+  (le serveur intermédiaire relaie les messages d'éditeur vers le canal du saut,
+  comme le client `ssh` d'OpenSSH relaie son pty) ;
+- `MaxAuthTries` est évalué PAR UTILISATEUR (blocs `Match` compris) côté serveur.
+
 Manque :
 
 - **pas de stdin pour un `exec`** : la commande s'exécute dès la requête, sans
   attendre les octets que le client enverrait ensuite (`ssh h 'cat > f' < local`) ;
-- `window-change` est acquittée sans redimensionner le terminal distant ;
-- pas de transfert X11 (`x11-req`), pas de `auth-agent-req@openssh.com` sur ce
-  chemin, pas de multiplexage (`ControlMaster`), pas de `tun@openssh.com` ;
-- `subsystem` n'accepte que `sftp`.
+- pas de transfert X11 (`x11-req`), pas de multiplexage (`ControlMaster`), pas de
+  `tun@openssh.com` ;
+- `subsystem` n'accepte que `sftp` ;
+- les éditeurs relayés dans un saut passent par le protocole structuré du
+  simulateur (écrans sérialisés), pas par un flux d'octets de terminal : un client
+  OpenSSH réel n'en voit pas la différence parce qu'il ne les utilise pas.
+
+## scp
+
+Le serveur reconnaît `scp -t` / `scp -f` dans un `exec`. Le CLIENT parle le même
+protocole source/puits sur un canal `exec` ouvert vers le distant
+(`scp/ScpWireClient.ts`, `ScpWireCodec.ts`), avec le `umask` du puits et le
+comportement d'OpenSSH 8.9 (le protocole historique, pas SFTP) ; un
+`ForceCommand internal-sftp` le refuse, comme un vrai sshd.
 
 ## SFTP
 
@@ -145,9 +177,9 @@ La politique est celle du SERVEUR, et ses refus arrivent au moment de la
 connexion, dans les mots d'OpenSSH (`channel 0: open failed: administratively
 prohibited: open failed`).
 
-Reste l'ancien chemin `executeCommand` (`LinuxSshClient`/`SshForwardingTable`),
-qui compose depuis la pile du serveur sans passer par SSH et lit la politique en
-atteignant l'objet distant : voir « Reste à faire ».
+Le chemin `executeCommand` (`LinuxSshClient`) ouvre lui aussi ses redirections
+et ses sessions par des canaux ; `runSshClient`, qui composait depuis l'objet du
+serveur, n'existe plus.
 
 ## Comment c'est éprouvé
 
@@ -162,9 +194,6 @@ atteignant l'objet distant : voir « Reste à faire ».
 
 ## Reste à faire
 
-- stdin d'un `exec`, `window-change` effectif ;
-- le chemin `executeCommand` des redirections, avec le reste du repli en mémoire
-  de `runSshClient` (le même objet distant est lu pour la politique et pour
-  l'état) ;
+- stdin d'un `exec` ;
 - SFTP v4–v6 sur le texte des brouillons, quand il sera disponible ;
-- `hostbased`, GSSAPI, `zlib@openssh.com`.
+- `hostbased`, GSSAPI, `zlib@openssh.com`, X11, `ControlMaster`.

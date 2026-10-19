@@ -26,6 +26,7 @@ export function applyHeaderCommand(
     return '';
   }
   const form = args[1]?.toLowerCase();
+  if (form === undefined || ((form === 'information' || form === 'file') && args.length < 3)) return INCOMPLETE;
   if (form === 'information' && args.length > 2) {
     host.setHeader(kind, unquoted(args.slice(2).join(' ')));
     return '';

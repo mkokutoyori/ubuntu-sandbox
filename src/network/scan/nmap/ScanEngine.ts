@@ -34,8 +34,10 @@ function statelessKindOf(scanType: ScanType): StatelessScanKind | undefined {
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
 
 export interface UdpVerdict {
-  state: 'open' | 'closed' | 'open|filtered';
+  state: 'open' | 'closed' | 'filtered' | 'open|filtered';
   replyTtl?: number;
+  reason?: string;
+  reasonFrom?: string;
 }
 
 export interface HostState {
@@ -69,6 +71,8 @@ export interface ResolvedTarget {
 export interface HostProbes {
   /** Name to address. A lookup, never a liveness test. */
   resolveTarget(target: string): ResolvedTarget | null | Promise<ResolvedTarget | null>;
+  /** Time passing while the engine waits for answers before it retransmits. */
+  pause?(seconds: number): Promise<void>;
   /** Emits the discovery probes and reports what came back. */
   hostState(
     target: ResolvedTarget, discovery?: readonly DiscoveryProbe[],
@@ -315,9 +319,11 @@ function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): ProbedPort {
   const sent = PathClock.now();
-  const { state, replyTtl } = probes.udpState(ip, port, options.probeShape);
+  const verdict = probes.udpState(ip, port, options.probeShape);
+  const { state, replyTtl, reasonFrom } = verdict;
   const rttMs = state === 'open|filtered' ? undefined : PathClock.now() - sent;
-  const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
+  const reason = verdict.reason
+    ?? (state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response');
   let service = serviceName(port, 'udp');
   let version: string | undefined;
   if (options.versionScan && state === 'open' && versionScanAllowed(options, port)) {
@@ -327,7 +333,13 @@ function udpResult(
       version = detected.version;
     }
   }
-  return { result: { port, protocol: 'udp', state, service, version, reason, replyTtl }, rttMs };
+  return { result: { port, protocol: 'udp', state, service, version, reason, replyTtl, reasonFrom }, rttMs };
+}
+
+function isSilentRawProbe(options: NmapOptions, probes: HostProbes, probed: ProbedPort): boolean {
+  if (probed.result.reason !== 'no-response') return false;
+  if (probed.result.protocol === 'udp') return true;
+  return statelessKindOf(options.scanType) !== null && probes.statelessOutcome !== undefined;
 }
 
 function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'ports' | 'notShown'> {
@@ -520,12 +532,23 @@ async function scanHost(
   });
 
   const all: PortResult[] = [];
-  for (const port of scanned) {
-    const probed = options.scanType === 'udp'
-      ? udpResult(options, probes, info.ip, port)
-      : tcpResult(options, probes, info.ip, port, trace);
+  const probe = (port: number) => options.scanType === 'udp'
+    ? udpResult(options, probes, info.ip, port)
+    : tcpResult(options, probes, info.ip, port, trace);
+  const silent: number[] = [];
+  for (const [index, port] of scanned.entries()) {
+    const probed = probe(port);
     all.push(probed.result);
     if (probed.rttMs !== undefined) times = adjustTimeouts(times, probed.rttMs);
+    if (isSilentRawProbe(options, probes, probed)) silent.push(index);
+  }
+  if (silent.length > 0) {
+    await probes.pause?.(times.timeout / 1_000_000);
+    for (const index of silent) {
+      const again = probe(scanned[index]);
+      all[index] = again.result;
+      if (again.rttMs !== undefined) times = adjustTimeouts(times, again.rttMs);
+    }
   }
   const { ports, notShown } = partition(options, all);
   return {

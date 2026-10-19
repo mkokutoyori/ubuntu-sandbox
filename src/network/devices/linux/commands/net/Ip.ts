@@ -297,6 +297,7 @@ export function buildIpCtx(
       }));
     },
     addDefaultRoute(gateway: IPAddress, metric?: number, mode: 'add' | 'append' | 'replace' = 'add'): string {
+      if (!net.gatewayReachable(gateway)) return 'Error: Nexthop has invalid gateway.';
       return net.addDefaultRouteEntry(gateway, metric ?? 0, mode) ? '' : 'RTNETLINK answers: File exists';
     },
     addStaticRoute(

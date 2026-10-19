@@ -7,6 +7,7 @@
  */
 
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
+import { bytesToBase64 } from '@/crypto/encoding';
 
 export interface WinRmDialResult {
   ok: boolean;
@@ -104,12 +105,6 @@ export interface WinRmRunResult {
   ok: boolean;
   output?: string;
   error?: string;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
 }
 
 export function runWinRmRequest(opts: {

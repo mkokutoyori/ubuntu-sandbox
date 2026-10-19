@@ -8,10 +8,11 @@ import { IPv6Address, IPAddress } from '@/network/core/types';
 import { inetAton } from '@/network/core/InetAton';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import type { EchoRoute, PingResult, TraceSocketOptions } from '../../../EndHost';
+import type { EchoRoute, LocalSocketError, PingResult, TraceSocketOptions } from '../../../EndHost';
+import { strerror } from '@/network/core/Errno';
 import { reverseNameOf } from '../../network/ReverseName';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
-import { INT_MAX, IPUTILS_VERSION_LINE, LONG_MAX, strtolOrErr } from './IputilsCommon';
+import { INT_MAX, IPUTILS_VERSION_LINE, LONG_MAX, parseFlowOrErr, parseTosOrErr, strtolOrErr } from './IputilsCommon';
 import { SIGNAL_NUMBERS, type Signal } from '../../LinuxProcessManager';
 
 const DEFAULT_SIZE = 56;
@@ -31,12 +32,10 @@ const UNBUILDABLE: Readonly<Record<string, string>> = {
   e: 'a chosen ICMP identifier',
   l: 'a preload of unanswered probes',
   m: 'SO_MARK',
-  Q: 'a TOS byte on ICMP echo',
   r: 'SO_DONTROUTE',
   R: 'the IP record-route option',
   T: 'the IP timestamp option',
   U: 'user-to-user latency',
-  F: 'an IPv6 flow label',
   N: 'ICMPv6 node information queries',
 };
 
@@ -114,6 +113,8 @@ export interface ParsedPingArgs {
   broadcast: boolean;
   outstanding: boolean;
   mtuDisc?: 'do' | 'want' | 'dont';
+  tos?: number;
+  flowLabel?: number;
   flood: boolean;
 }
 
@@ -191,6 +192,16 @@ export function parsePingArgs(args: readonly string[], cmd: 'ping' | 'ping6' = '
       case 'O': parsed.outstanding = true; return null;
       case 'p': parsed.pattern = arg; return null;
       case 'q': parsed.quiet = true; return null;
+      case 'Q': {
+        const r = parseTosOrErr(cmd, arg!);
+        if ('error' in r) return fail(r.error);
+        parsed.tos = r.value; return null;
+      }
+      case 'F': {
+        const r = parseFlowOrErr(cmd, arg!);
+        if ('error' in r) return fail(r.error);
+        parsed.flowLabel = r.value; return null;
+      }
       case 's': {
         const r = strtolOrErr(cmd, arg!, 'invalid argument', 0n, BigInt(INT_MAX));
         if ('error' in r) return fail(r.error);
@@ -238,9 +249,20 @@ export interface EchoProbe {
   ident: number;
   timeoutMs: number;
   ttl?: number;
+  tos?: number;
   dataSize: number;
   df: boolean;
   socket: TraceSocketOptions;
+}
+
+export interface Echo6Probe {
+  ident: number;
+  timeoutMs: number;
+  neverFragment: boolean;
+  hopLimit?: number;
+  trafficClass?: number;
+  flowLabel?: number;
+  dataSize: number;
 }
 
 export interface PingHost {
@@ -255,7 +277,7 @@ export interface PingHost {
   reverseName(ip: string): string | null;
   allocateIdent(): number;
   echo(target: IPAddress, seq: number, probe: EchoProbe): Promise<PingResult>;
-  echo6(target: IPv6Address, seq: number, timeoutMs: number): Promise<PingResult>;
+  echo6(target: IPv6Address, seq: number, probe: Echo6Probe): Promise<PingResult>;
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -289,6 +311,13 @@ interface PingPlan {
   header: string;
   renderAddress: PingAddressRenderer;
   echo: (seq: number) => Promise<PingResult>;
+  localErrorText: (error: LocalSocketError) => string;
+}
+
+function renderLocalError(error: LocalSocketError, mtuSeparator: string): string {
+  return error.errno === 'EMSGSIZE'
+    ? `local error: message too long, mtu${mtuSeparator}${error.mtu ?? 0}`
+    : `local error: ${strerror(error.errno)}`;
 }
 
 export function createPing(
@@ -416,15 +445,13 @@ export function createPing(
       echo: async (seq) => {
         const path = host.route(address, socket);
         const mtu = path?.mtu ?? Number.MAX_SAFE_INTEGER;
-        if (mtuDisc === 'do' && packetSize > mtu) {
-          return { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: `local error: message too long, mtu=${mtu}` };
-        }
         const fits = packetSize <= mtu && !(path?.mtuLocked ?? false);
         return host.echo(address, seq, {
-          ident, timeoutMs: args.timeoutMs, ttl: args.ttl, dataSize: args.size,
+          ident, timeoutMs: args.timeoutMs, ttl: args.ttl, tos: args.tos, dataSize: args.size,
           df: mtuDisc === 'do' || (mtuDisc === 'want' && fits), socket,
         });
       },
+      localErrorText: (error) => renderLocalError(error, '='),
     };
   };
 
@@ -438,11 +465,16 @@ export function createPing(
     if (address === null) { emit(`${cmd}: ${target}: Name or service not known`); return 2; }
     if (!host.canReach6(address)) { emit(`${cmd}: connect: Network is unreachable`); return 2; }
     const resolved = address;
+    const ident = host.allocateIdent();
     return {
       label: target,
-      header: formatPing6Header(resolved, args.size, target === resolved.toString() ? undefined : target),
+      header: formatPing6Header(resolved, args.size, target === resolved.toString() ? undefined : target, args.flowLabel),
       renderAddress: (ip) => ip,
-      echo: (seq) => host.echo6(resolved, seq, args.timeoutMs),
+      echo: (seq) => host.echo6(resolved, seq, {
+        ident, timeoutMs: args.timeoutMs, neverFragment: args.mtuDisc === 'do', hopLimit: args.ttl, trafficClass: args.tos,
+        flowLabel: args.flowLabel, dataSize: args.size,
+      }),
+      localErrorText: (error) => renderLocalError(error, ': '),
     };
   };
 
@@ -452,16 +484,18 @@ export function createPing(
       ewmaUs8 = ewmaUs8 === undefined ? us * 8 : ewmaUs8 + us - Math.trunc(ewmaUs8 / 8);
     }
     if (args.flood) {
-      if (!r.success) dots += r.error !== undefined && formatPingReplyLine(r, args.size) !== null ? 'E' : '.';
+      if (!r.success) dots += r.localError !== undefined || (r.error !== undefined && formatPingReplyLine(r, args.size) !== null) ? 'E' : '.';
       return;
     }
     if (args.quiet) return;
     for (const notice of r.redirects ?? []) {
       emit(`${timestampPrefix(args.timestamp)}${formatPingRedirectLine(r.seq, notice, current.renderAddress)}`);
     }
-    if (r.error?.startsWith('local error')) { emit(`${cmd}: ${r.error}`); return; }
+    if (r.localError !== undefined) { emit(`${cmd}: ${current.localErrorText(r.localError)}`); return; }
     const line = formatPingReplyLine(r, args.size, current.renderAddress);
-    if (line !== null) emit(`${timestampPrefix(args.timestamp)}${line}`);
+    if (line === null) return;
+    emit(`${timestampPrefix(args.timestamp)}${line}`);
+    if (r.sendError !== undefined) emit(`${cmd}: sendmsg: ${strerror(r.sendError)}`);
   };
 
   const run = async (shouldStop: () => boolean): Promise<number> => {
@@ -528,12 +562,15 @@ export function pingHostOf(
     allocateIdent: () => ctx.net.allocateEchoIdent(),
     echo: async (target, seq, probe) => {
       const [result] = await ctx.net.pingSequence(target, 1, probe.timeoutMs, probe.ttl, {
-        dataSize: probe.dataSize, df: probe.df, firstSeq: seq, ident: probe.ident, socket: probe.socket,
+        dataSize: probe.dataSize, tos: probe.tos, df: probe.df, firstSeq: seq, ident: probe.ident, socket: probe.socket,
       });
       return result ?? { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '' };
     },
-    echo6: async (target, seq, timeoutMs) => {
-      const [result] = await ctx.net.ping6Sequence(target, 1, timeoutMs);
+    echo6: async (target, seq, probe) => {
+      const [result] = await ctx.net.ping6Sequence(target, 1, probe.timeoutMs, {
+        dataSize: probe.dataSize, neverFragment: probe.neverFragment, hopLimit: probe.hopLimit,
+        trafficClass: probe.trafficClass, flowLabel: probe.flowLabel, firstSeq: seq, ident: probe.ident,
+      });
       return { ...(result ?? { success: false, rttMs: 0, ttl: 0, bytes: 0, fromIP: '' }), seq };
     },
     sleep: timing.sleep,

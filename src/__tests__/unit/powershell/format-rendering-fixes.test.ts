@@ -102,7 +102,7 @@ describe('formatTable — Length column on DirectoryEntry rows', () => {
     ];
     const table = formatTable(rows, 'LastWriteTime, Name');
     // The date string ends right before the gap to Name
-    expect(table).toMatch(/5\/15\/2026 11:10 AM {2}a/);
+    expect(table).toMatch(/5\/15\/2026 11:10 AM a/);
   });
 });
 

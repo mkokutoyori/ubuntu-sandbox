@@ -288,8 +288,8 @@ juste :
 - **`debug condition`** existe, est **globale** comme sur IOS (elle
   s'applique aux debugs déjà armés et à venir), et une ligne qui ne porte
   aucune preuve est **écartée** plutôt que laissée passer.
-- **`no logging on` coupe tout** en gardant les drapeaux armés, ce qui
-  est exactement la sémantique d'IOS.
+- **`no logging on` garde la console seule** : le tampon et les sessions
+  `terminal monitor` se taisent, les drapeaux restent armés.
 - **La limitation de débit** existe et compte ce qu'elle jette.
 - **`terminal monitor` est per-session** et le canal debug le respecte.
 - **`debug` est refusé en mode utilisateur.**

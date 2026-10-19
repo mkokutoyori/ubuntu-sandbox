@@ -12,6 +12,7 @@
  */
 
 import { simulationDate } from '@/network/core/SystemClock';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type SessionTransport = 'ssh' | 'console' | 'serial' | 'rdp';
 
@@ -118,11 +119,11 @@ export class SshSession {
   toWRow(): string {
     const idle = formatIdle(this.idleSeconds());
     return [
-      this.user.padEnd(9),
-      this.tty.padEnd(9),
-      this.fromIp.padEnd(16),
-      this.loginHHMM().padEnd(8),
-      idle.padEnd(7),
+      padToWidth(this.user, 9),
+      padToWidth(this.tty, 9),
+      padToWidth(this.fromIp, 16),
+      padToWidth(this.loginHHMM(), 8),
+      padToWidth(idle, 7),
       '0.00s',
       '0.00s',
       this.currentCommand,
@@ -133,7 +134,7 @@ export class SshSession {
   toLastRow(): string {
     const dateStr = this.loginAt.toUTCString().replace(/^... /, '').slice(0, 21);
     const dur = this.closedAt ? `(${formatIdle(this.durationSeconds())})` : 'still logged in';
-    return `${this.user.padEnd(8)} ${this.tty.padEnd(12)} ${this.fromIp.padEnd(16)} ${dateStr}  ${dur}`;
+    return `${padToWidth(this.user, 8)} ${padToWidth(this.tty, 12)} ${padToWidth(this.fromIp, 16)} ${dateStr}  ${dur}`;
   }
 }
 

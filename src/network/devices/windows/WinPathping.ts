@@ -1,5 +1,6 @@
 import { IPAddress } from '../../core/types';
 import type { EndHost, PingResult, TracerouteHopResult } from '../EndHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const PATHPING_HELP = `
 Usage: pathping [-g host-list] [-h maximum_hops] [-i address] [-n]
@@ -55,7 +56,7 @@ export function formatPathpingHeader(target: IPAddress, maxHops: number, hostnam
 }
 
 export function formatPathpingDiscoveryHop(hop: number, ip: string, hostname?: string): string {
-  const num = String(hop).padStart(2);
+  const num = padToWidth(String(hop), 2, 'right');
   const addr = hostname ? `${hostname} [${ip}]` : ip;
   return `  ${num}  ${addr}`;
 }
@@ -84,13 +85,13 @@ export interface PathpingStatsRow {
 
 function fmtLossCell(lost: number, sent: number): string {
   const pct = sent > 0 ? Math.round((lost / sent) * 100) : 0;
-  return `${String(lost).padStart(2)}/${String(sent).padStart(3)} = ${String(pct).padStart(2)}%`;
+  return `${padToWidth(String(lost), 2, 'right')}/${padToWidth(String(sent), 3, 'right')} = ${padToWidth(String(pct), 2, 'right')}%`;
 }
 
 function fmtRttCell(rttMs?: number): string {
   if (rttMs === undefined) return '       ';
   const ms = Math.round(rttMs);
-  return (ms < 1 ? '<1ms' : `${ms}ms`).padStart(5);
+  return padToWidth(ms < 1 ? '<1ms' : `${ms}ms`, 5, 'right');
 }
 
 function fmtAddr(ip: string, hostname?: string): string {
@@ -102,14 +103,14 @@ export function formatPathpingTable(rows: readonly PathpingStatsRow[], sent: num
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (i === 0) {
-      out.push(`  ${String(row.hop).padStart(2)}                                           ${fmtAddr(row.ip, row.hostname)}`);
+      out.push(`  ${padToWidth(String(row.hop), 2, 'right')}                                           ${fmtAddr(row.ip, row.hostname)}`);
     } else {
       const rtt = fmtRttCell(row.rttMs);
       const src = fmtLossCell(row.sourceLost, row.sourceSent);
       const node = fmtLossCell(row.nodeLost, row.sourceSent);
       const link = fmtLossCell(row.linkLost, sent);
       out.push(`                                ${link}   |`);
-      out.push(`  ${String(row.hop).padStart(2)}   ${rtt}     ${src}     ${node}   ${fmtAddr(row.ip, row.hostname)}`);
+      out.push(`  ${padToWidth(String(row.hop), 2, 'right')}   ${rtt}     ${src}     ${node}   ${fmtAddr(row.ip, row.hostname)}`);
     }
   }
   return out;

@@ -68,13 +68,12 @@ describe('Scénario 1 — `sl` change réellement quelque chose', () => {
       .toContain('is not a valid size');
   });
 
-  it('`/r:` sur `sl` est la rétention, pas une machine distante', async () => {
+  it('`/rt:` est la rétention de `sl`, et `/r:` désigne la machine distante, refusée partout', async () => {
     const dc = new WindowsServer('DC01');
-    // La même lettre désigne deux choses selon le verbe. `sl /r:` doit
-    // donc être acceptée là où `qe /r:` est refusée.
-    expect(await dc.executeCmdCommand('wevtutil sl Application /r:true')).toBe('');
+    expect(await dc.executeCmdCommand('wevtutil sl Application /rt:true')).toBe('');
     expect(field(String(await dc.executeCmdCommand('wevtutil gl Application')), 'retention'))
       .toBe('true');
+    expect(await dc.executeCmdCommand('wevtutil sl Application /r:true')).toContain('is not recognized');
     expect(await dc.executeCmdCommand('wevtutil qe Application /r:AUTRE'))
       .toContain('is not recognized');
   });
@@ -93,7 +92,8 @@ describe('Scénario 2 — `cl /bu:` rend l\'effacement réversible', () => {
     expect(before).toContain('Event ID:');
 
     expect(await dc.executeCmdCommand('wevtutil cl Security /bu:C:\\Bak\\Sec.evtx')).toBe('');
-    expect(await records(dc, 'Security')).toBe(0);
+    expect(await records(dc, 'Security'), 'un journal Security effacé porte son 1102').toBe(1);
+    expect(String(await dc.executeCmdCommand('wevtutil qe Security /f:text'))).toContain('Event ID: 1102');
 
     const restored = String(await dc.executeCmdCommand(
       'wevtutil qe C:\\Bak\\Sec.evtx /lf:true /f:text'));

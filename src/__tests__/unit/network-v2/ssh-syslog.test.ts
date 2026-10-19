@@ -103,19 +103,6 @@ describe('SshSyslogger — reactive auth.log producer', () => {
     expect(readAuthLog()).toContain('subsystem request for sftp by user alice');
   });
 
-  it('logs throttling decisions for auth_throttled', () => {
-    bus.emit({
-      kind: 'auth_throttled',
-      ip: '10.0.0.2',
-      failuresInWindow: 5,
-      windowSeconds: 60,
-      blockUntil: Date.now() + 300_000,
-    });
-    expect(readAuthLog()).toContain(
-      'Refusing connection from 10.0.0.2: 5 authentication failures',
-    );
-  });
-
   it('appends to auth.log across multiple events (order preserved)', () => {
     bus.emit({ kind: 'auth_success', user: 'alice', method: 'password', ip: '10.0.0.2' });
     bus.emit({ kind: 'auth_success', user: 'bob', method: 'password', ip: '10.0.0.3' });

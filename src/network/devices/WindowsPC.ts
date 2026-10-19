@@ -14,6 +14,22 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { INTERNATIONAL_KEY, regionalFormatsFrom } from './windows/WindowsRegionalSettings';
+import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
+import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import type { TcpConnector } from '@/network/tcp/types';
+import { proxyJumpRequest } from './linux/network/LinuxSshClient';
+import { tunnelThrough } from './linux/network/SshProxyJump';
+import { WindowsSftpFSAdapter } from '@/network/protocols/ssh/sftp/WindowsSftpFSAdapter';
+import { SftpWireSession } from '@/network/protocols/ssh/sftp/SftpWireSession';
+import { attachSftpServer } from '@/network/protocols/ssh/sftp/server/LocalSftpServer';
+import { sftpProgramOf } from '@/network/protocols/ssh/server/SftpServicePlan';
+import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
+import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
+import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
+import { keygenAgentOf } from '@/network/protocols/ssh/keygen/KeygenAgentPort';
+import { missingIdentityWarnings, resolveClientInvocation, typedIdentityFiles, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
+import { sshClientAlgorithms, sshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { likeDate } from '@/powershell/runtime/dotnetDateTime';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -39,6 +55,8 @@ import {
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
+import { runW32tm } from './windows/WinW32tm';
+import { simulatedWait } from '../core/SimulatedWait';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
 import type { ARecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
@@ -46,28 +64,31 @@ import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/c
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
-import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
+import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
+import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
+import { WindowsSshServerContext, windowsPathOf, SSHD_EXECUTABLE } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
 import {
   TelnetClientSession, type TelnetClientTransport,
 } from '../protocols/telnet/TelnetClientSession';
-import { DUAL_STACK } from '../tcp/TcpStack';
+import { DUAL_STACK, wildcardAddressOf } from '../tcp/TcpStack';
 import type { TcpSocket } from '../tcp/TcpStack';
 import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
-import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
 import type { WinWireTarget } from './windows/network/WindowsSshClient';
 import {
-  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting,
+  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting, resolveSshTarget,
 } from '@/terminal/ssh/wireSshLogin';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { parseSshArgs } from '@/terminal/sessions/sshArgs';
 import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { LocalAgentPort, type AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import {
   runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
@@ -77,8 +98,15 @@ import {
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
-import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
-import { runWindowsScpClient } from './windows/network/WindowsScpClient';
+import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
+import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
+import { runSftpCommand, SftpClientSession, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
+import type { SftpPacketChannel } from '@/network/protocols/ssh/sftp/client/SftpWireClient';
+import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
+import { sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
+import { WireSftpFileSystem } from '@/network/protocols/ssh/sftp/WireSftpFileSystem';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
+import { runScpClient, type ScpClientHost } from '@/network/protocols/ssh/scp/ScpClientCommand';
 import { splitCmdArgs, separateCommandWord } from './windows/cmdline';
 import { BatchInterpreter } from '@/cmd/interpreter/BatchInterpreter';
 import { createWindowsBatchHost } from './windows/WindowsBatchHost';
@@ -86,6 +114,7 @@ import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy'
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import { PSInterpreter, PSRuntimeError, createClientCmdletOverlay } from '@/powershell/interpreter/PSInterpreter';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
@@ -110,11 +139,15 @@ import {
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
+import { createAuditIdentity } from './windows/eventlog/AuditIdentity';
+import type { WindowsLogonDetails } from './windows/events';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
+import { PrefixPolicyStore } from './windows/PrefixPolicyStore';
+import type { DestinationPolicy } from '../layers/internet/DestinationSelection';
 import { PortProxyEndpoint } from './windows/PortProxyEndpoint';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
@@ -122,7 +155,7 @@ import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { defaultHostClockPort, type HostClockPort } from '../core/time/HostClockPort';
 import { PathClock } from '../core/time/PathClock';
-import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
+import { PSRegistryProvider, parseRegistryAddress, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
@@ -237,7 +270,10 @@ import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { formatLocalTime } from './linux/system/SystemInfo';
-import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
+import { windowsZoneNameAt, windowsZoneOf } from '../core/time/WindowsTimeZones';
+import { TimeZone } from '../core/time/TimeZone';
+import { isDaylightSavingAt, observesDaylightSaving, standardOffsetMinutes } from '../core/time/TimeZoneRegistry';
+import { W32TIME_KEY } from './windows/W32TimeRegistry';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
 import { cmdTzutil } from './windows/WinTzutil';
@@ -274,6 +310,7 @@ import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
 import { netstatStatistics } from './windows/WinNetstatStatistics';
 import { showRoutePrint } from './windows/WinRoute';
 import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
@@ -283,6 +320,9 @@ import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
  */
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
+const S4U_LOGON: WindowsLogonDetails = {
+  processName: SSHD_EXECUTABLE, logonProcess: 'sshd', authenticationPackage: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0',
+};
 const DNS_CLIENT_SERVICE = 'Dnscache';
 
 /**
@@ -406,15 +446,46 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly doskey: DoskeyTable = new DoskeyTable();
   /** Per-device PowerShell shim state (functions, aliases, vars). */
   readonly psShimState: PsShimState = createShimState();
+  readonly psCoreShimState: PsShimState = createShimState();
   /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
   private psInterpreter: PSInterpreter | null = null;
+  private psCoreInterpreter: PSInterpreter | null = null;
 
   readonly rsatCapabilities = new Set<string>();
   readonly cmdletOverlay = createClientCmdletOverlay();
 
   getWindowsEdition(): 'client' | 'server' { return 'client'; }
 
-  getPowerShellInterpreter(): PSInterpreter {
+  private async runPowerShellCode(code: string, language: 'desktop' | 'core' = 'desktop'): Promise<string> {
+    const interpreter = this.getPowerShellInterpreter(language);
+    interpreter.beginInteractive(code);
+    for (;;) {
+      try {
+        return interpreter.resumeInteractive();
+      } catch (e) {
+        if (!(e instanceof NativeCommandNeedsAsync)) {
+          if (e instanceof PSRuntimeError) return e.message;
+          throw e;
+        }
+        const answer = await this.runProgram(e.commandLine, e.stdin ?? undefined);
+        interpreter.provideNativeResult({
+          output: translateNativeAnswer(e.command, answer.output, language === 'core'),
+          exitCode: answer.exitCode,
+          notRecognized: nativeNotRecognized(e.command, answer.output),
+        });
+      }
+    }
+  }
+
+  getPowerShellInterpreter(language: 'desktop' | 'core' = 'desktop'): PSInterpreter {
+    if (language === 'core') {
+      if (!this.psCoreInterpreter) {
+        this.psCoreInterpreter = new PSInterpreter(
+          createWindowsPSProviders(this), { edition: this.getWindowsEdition(), registry: this.cmdletOverlay, language: 'core' },
+        );
+      }
+      return this.psCoreInterpreter;
+    }
     if (!this.psInterpreter) {
       // No `shared` bag: the factory already defaults every store to this
       // device's own registry / event log / network tables, so `reg` and
@@ -434,6 +505,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private tcpSocketProjection: TcpSocketStateProjection | null = null;
   /** `netsh interface portproxy` rules — port-forwarding entries. */
   readonly portProxyTable: PortProxyTable = new PortProxyTable();
+  readonly prefixPolicies: PrefixPolicyStore = new PrefixPolicyStore();
   /** Reactive consumer: port-proxy events → socket-table listeners. */
   private readonly portProxyEndpoint = new PortProxyEndpoint(() => this.portProxyTable.list(), this.getTcpStack());
   /** Service manager (service lifecycle, dependencies) */
@@ -514,10 +586,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.fs = new WindowsFileSystem(name);
     this.fs.setClock(() => this.getSystemClockMs());
     this.seedVolumesFromHardware();
+    seedWindowsOpenSshFiles(this.fs);
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
+    this.eventLog.newEventLog('OpenSSH/Operational', 'OpenSSH');
     this.userMgr = new WindowsUserManager();
     this.userMgr.attachPolicy(this.accountsPolicy);
+    this.userMgr.attachMachine({
+      hostname: () => this.hostname,
+      timezone: () => this.identity.timezone,
+      directoryExists: (path) => this.fs.isDirectory(this.fs.normalizePath(path, 'C:\\')),
+      regionalFormats: () => regionalFormatsFrom(this.registry.getItemPropertyValues(INTERNATIONAL_KEY)),
+    });
     // Documents the real account roster (name/password/groups) next to the
     // other sample data files (numbers.txt) — driven entirely by userMgr so
     // it can never drift from the accounts that actually exist.
@@ -533,6 +613,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // celle qui horodate le journal, sans quoi un filtre temporel écarte
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
+    this.eventLog.describeBootEvents(this.hostname.toUpperCase());
+    this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
+    this.auditPolicy.attachChangeListener((subcategory, changes) => {
+      if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
+      this.securityAudit().auditPolicyChanged(subcategory, changes, this.userMgr.currentUser || 'Administrator');
+    });
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.winrm.onChange(() => this.startWinRmService());
@@ -584,7 +670,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   private auditRegistryChange(change: RegistryValueChange): void {
     if (!this.auditPolicy.isEnabled('Registry', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).registryValueModified(
+    this.securityAudit().registryValueModified(
       `${change.path}\\${change.name}`,
       change.previous === undefined ? '' : String(change.previous),
       String(change.next),
@@ -592,10 +678,29 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
   }
 
+  private securityAuditInstance: WindowsSecurityAudit | null = null;
+
+  /**
+   * Le journal d'audit de CETTE machine : un seul exemplaire, donc une
+   * seule identité (SID de machine, nom NetBIOS, sessions ouvertes) pour
+   * tous les événements qu'elle écrit.
+   */
+  securityAudit(): WindowsSecurityAudit {
+    this.securityAuditInstance ??= new WindowsSecurityAudit(
+      this.eventLog,
+      createAuditIdentity(
+        this.hostname.toUpperCase(),
+        (account) => this.userMgr.getUser(account)?.sid,
+        (group) => this.userMgr.getGroup(group)?.sid,
+      ),
+    );
+    return this.securityAuditInstance;
+  }
+
   /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
   auditScheduledTaskCreated(taskName: string, command: string): void {
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).scheduledTaskCreated(
+    this.securityAudit().scheduledTaskCreated(
       taskName, command, this.userMgr.currentUser || 'Administrator');
   }
 
@@ -604,9 +709,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * *après* le vidage. Sans cela, effacer ses traces ne laisserait
    * aucune trace, ce que Windows refuse par construction.
    */
-  auditLogCleared(logName: string): void {
-    new WindowsSecurityAudit(this.eventLog).auditLogCleared(
-      logName, this.userMgr.currentUser || 'Administrator');
+  auditLogCleared(logName: string, backupPath: string | null = null): void {
+    this.securityAudit().auditLogCleared(
+      logName, this.userMgr.currentUser || 'Administrator', backupPath);
   }
 
   /**
@@ -622,7 +727,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!this.auditPolicy.isEnabled('File System', 'success')) return;
     const who = this.userMgr.currentUser || 'Administrator';
     if (!this.fs.isAudited(absPath, who, access)) return;
-    new WindowsSecurityAudit(this.eventLog).objectAccessed(
+    this.securityAudit().objectAccessed(
       absPath, access, accessMask, who);
   }
 
@@ -636,21 +741,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   auditShareAdded(shareName: string, path: string): void {
     if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).shareAdded(
+    this.securityAudit().shareAdded(
       shareName, path, this.userMgr.currentUser || 'Administrator');
   }
 
   /** 5140 — un client a atteint un partage. */
   auditShareAccessed(shareName: string, path: string, user: string, sourceAddress: string): void {
     if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).shareAccessed(
+    this.securityAudit().shareAccessed(
       shareName, path, user, sourceAddress);
   }
 
   /** 4670 — les permissions d'un objet du système de fichiers ont changé. */
   auditPermissionChange(absPath: string, identity: string, permissions: string): void {
     if (!this.auditPolicy.isEnabled('File System', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).permissionChanged(
+    this.securityAudit().permissionChanged(
       absPath, identity, permissions, this.userMgr.currentUser || 'Administrator');
   }
 
@@ -730,8 +835,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return false;
   }
 
+  override destinationPolicy(): DestinationPolicy {
+    return this.prefixPolicies.policy();
+  }
+
   override powerOn(): void {
     super.powerOn();
+    this.prefixPolicies.boot();
     this.reconcileListeners();
     this.startScheduledTaskTicker();
   }
@@ -790,8 +900,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.procMgr.attachBus(bus, this.id);
     this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
-      bus, new WindowsSecurityAudit(this.eventLog), this.id, this.auditPolicy,
+      bus, this.securityAudit(), this.id, this.auditPolicy,
       () => this.isCommandLineAuditEnabled(),
+      (account) => this.userMgr.isAdmin(account),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
@@ -799,14 +910,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.getTcpStack(), this.procMgr);
-    this.servicePortProjection.declare({
-      ports: [22],
+    this.servicePortProjection.declareEndpoint({
       owner: { service: 'sshd' },
       active: () => this.svcMgr.isStarted('sshd'),
-      accept: () => (socket) => {
-        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-      },
-      families: DUAL_STACK,
+      endpoint: { open: (identity) => this.openSshdListeners(identity), close: () => this.closeSshdListeners() },
     });
     this.servicePortProjection.declare({
       ports: [445],
@@ -886,7 +993,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.servicePortProjection.declareEndpoint({
       owner: { service: 'W32Time' },
       active: () => this.getIsPoweredOn() && this.svcMgr.isStarted('W32Time'),
-      endpoint: { open: (identity) => this.openNtpPort(identity), close: () => this.udpClose(UDP_PORT_NTP) },
+      endpoint: { open: (identity) => this.openNtpPort(identity), close: () => this.closeNtpPort() },
     });
     this.servicePortProjection.declareEndpoint({
       owner: { service: 'iphlpsvc' },
@@ -1223,21 +1330,75 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
-  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  private sshdRuntime: { readonly context: WindowsSshServerContext; readonly ports: Set<number> } | null = null;
+
+  private sshdPortsOf(context: WindowsSshServerContext): number[] {
+    const ports = [...context.rawConfig.matchAll(/^\s*port\s+(\d+)/gim)].map((match) => Number(match[1]));
+    return ports.length === 0 ? [22] : ports;
+  }
+
+  private readonly sshPeerPorts = new Map<string, number>();
+
+  private openSshdListeners(identity: ListenerIdentity): void {
+    this.sshdRuntime ??= { context: this.buildSshServerContext(), ports: new Set() };
+    const runtime = this.sshdRuntime;
+    const stack = this.getTcpStack();
+    const desired = new Set(this.sshdPortsOf(runtime.context));
+    for (const port of [...runtime.ports]) {
+      if (desired.has(port)) continue;
+      for (const family of DUAL_STACK) stack.closeListener(port, wildcardAddressOf(family));
+      runtime.ports.delete(port);
+    }
+    for (const port of desired) {
+      if (runtime.ports.has(port)) continue;
+      for (const family of DUAL_STACK) {
+        stack.listen(port, {
+          identity,
+          onAccept: (socket) => {
+            this.sshPeerPorts.set(socket.remoteIp, socket.remotePort);
+            this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+          },
+        }, wildcardAddressOf(family));
+      }
+      runtime.ports.add(port);
+    }
+  }
+
+  private closeSshdListeners(): void {
+    const runtime = this.sshdRuntime;
+    if (runtime === null) return;
+    const stack = this.getTcpStack();
+    for (const port of runtime.ports) for (const family of DUAL_STACK) stack.closeListener(port, wildcardAddressOf(family));
+    this.sshdRuntime = null;
+  }
+
   getSshServerContext(): WindowsSshServerContext {
+    return this.sshdRuntime?.context ?? this.buildSshServerContext();
+  }
+
+  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  private buildSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
       getCwd: () => this.getCwd(),
       createVtyShell: (user: string) => this.createVtyShell(user),
+      runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),
+      bindForwardedAgent: (user: string, agent: AgentPort) => this.bindForwardedAgent(user, agent),
+      shellBanner: () => this.getSshMotd(),
+      clientPort: (fromIp: string) => this.sshPeerPorts.get(fromIp),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
     // — the SecurityAuditProjection turns each into a 4624 / 4625 in
     // the Security event log, matching what OpenSSH-for-Windows logs.
-    // Logon type 10 = RemoteInteractive, what sshd uses on real Windows.
-    (user, success) => {
+    // Win32-OpenSSH: S4U (LsaLogonUser, Network = type 3) for a key, LogonUserExExW
+    // (NETWORK_CLEARTEXT = type 8) for a password -- never type 10, which is RDP.
+    ({ user, success, method, failure }) => {
       this.getBus().publish({
         topic: 'windows.account.logon',
-        payload: { deviceId: this.id, account: user, success, logonType: 10 },
+        payload: {
+          deviceId: this.id, account: user, success, logonType: method === 'password' ? 8 : 3,
+          details: S4U_LOGON, ...(failure === undefined ? {} : { failure }),
+        },
       });
     },
     // Paired logoff hook — turns into 4634 (Logoff) in the Security
@@ -1248,7 +1409,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         payload: { deviceId: this.id, account: user, logonType: 10 },
       });
     },
-    () => this.getSshBanner());
+    () => this.getSshBanner(),
+    (message) => { this.eventLog.writeEventLog('OpenSSH/Operational', 'OpenSSH', 4, 'Information', `sshd: ${message}`); });
   }
 
   private _sshHost: CrossVendorSshHost | null = null;
@@ -1444,6 +1606,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
     if (result.ok && result.membership) {
       this.domainMembership = result.membership;
+      this.getW32Time().setType('NT5DS');
       if (opts.newName) this.setHostname(opts.newName);
       void this.registerHostInDomainDns();
     }
@@ -1568,6 +1731,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!result.ok) return result;
     this.domainMembership = null;
     this.domainSession = null;
+    this.getW32Time().setType('NTP');
     return { ok: true, message: '' };
   }
 
@@ -2094,7 +2258,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       '-------------------------------------------------------------------------\n';
     if (sessions.length === 0) return header + 'There are no entries in the list.';
     const rows = sessions.map(s =>
-      `\\\\${s.clientComputerName}`.padEnd(22) + s.user.padEnd(21) + ''.padEnd(18) + String(s.numOpens).padStart(5) + '  00:00:00',
+      padToWidth(`\\\\${s.clientComputerName}`, 22) + padToWidth(s.user, 21) + padToWidth('', 18) + padToWidth(String(s.numOpens), 5, 'right') + '  00:00:00',
     );
     return header + rows.join('\n') + '\nThe command completed successfully.';
   }
@@ -2228,10 +2392,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       let fileCount = 0, dirCount = 0, totalBytes = 0;
       for (const e of result.entries ?? []) {
         if (e.isDirectory) { lines.push(`    <DIR>          ${e.name}`); dirCount++; }
-        else { lines.push(`${String(e.size).padStart(14)} ${e.name}`); fileCount++; totalBytes += e.size; }
+        else { lines.push(`${padToWidth(String(e.size), 14, 'right')} ${e.name}`); fileCount++; totalBytes += e.size; }
       }
       lines.push(fileSummaryLine(fileCount, totalBytes));
-      lines.push(`${String(dirCount).padStart(16)} Dir(s)`);
+      lines.push(`${padToWidth(String(dirCount), 16, 'right')} Dir(s)`);
       return lines.join('\n');
     }
 
@@ -2489,7 +2653,46 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
-  private readonly sshAgent: SshAgent = new SshAgent();
+  private readonly forwardedAgents = new Map<string, AgentPort>();
+  private nextForwardedAgent = 1;
+
+  bindForwardedAgent(_user: string, agent: AgentPort): { readonly path: string; release(): void } {
+    const path = `\\\\.\\pipe\\openssh-ssh-agent-forwarded-${this.nextForwardedAgent++}`;
+    this.forwardedAgents.set(path, agent);
+    this.setEnvVar('SSH_AUTH_SOCK', path);
+    return {
+      path,
+      release: () => {
+        this.forwardedAgents.delete(path);
+        if (this.getEnvVar('SSH_AUTH_SOCK') === path) this.env.delete('SSH_AUTH_SOCK');
+      },
+    };
+  }
+
+  private runningAgent: SshAgent | null = null;
+  private agentWatched = false;
+
+  private agentOfRunningService(): SshAgent | null {
+    if (!this.agentWatched) {
+      this.agentWatched = true;
+      this.svcMgr.registerInstanceWatcher('ssh-agent', (event) => {
+        if (event.newState !== 'Running') this.runningAgent = null;
+      });
+    }
+    if (this.svcMgr.getService('ssh-agent')?.state !== 'Running') {
+      this.runningAgent = null;
+      return null;
+    }
+    this.runningAgent ??= new SshAgent();
+    return this.runningAgent;
+  }
+
+  sshAgentIfRunning(): AgentPort | undefined {
+    const forwarded = this.forwardedAgents.get(this.getEnvVar('SSH_AUTH_SOCK') ?? '');
+    if (forwarded !== undefined) return forwarded;
+    const agent = this.agentOfRunningService();
+    return agent === null ? undefined : new LocalAgentPort(agent);
+  }
 
   private userProfileDir(): string {
     return `C:\\Users\\${this.userMgr.currentUser}`;
@@ -2511,18 +2714,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
         isDirectory: (path: string) => this.fs.isDirectory(this.fs.normalizePath(path, this.cwd)),
         makePrivateDirectory: (path: string) => { this.fs.mkdirp(this.fs.normalizePath(path, this.cwd)); },
+        remove: (path: string) => { this.fs.deleteFile(this.fs.normalizePath(path, this.cwd)); },
       },
       sshDir: `${this.userProfileDir()}/.ssh`,
       hostKeyDir: 'C:\\ProgramData\\ssh',
       user: this.userMgr.currentUser,
       hostname: this.hostname,
       release: OPENSSH_WINDOWS_8_6,
+      agent: keygenAgentOf(this.sshAgentIfRunning()),
     };
   }
 
-  private agentHost(): SshAgentHost {
+  private agentHost(typedLines: string[]): SshAgentHost {
+    const agent = this.sshAgentIfRunning();
+    const disabled = this.svcMgr.getService('ssh-agent')?.startType === 'Disabled';
     return {
-      agent: this.sshAgent,
+      agent,
+      agentUnavailable: disabled
+        ? 'unable to start ssh-agent service, error :1058'
+        : 'Error connecting to agent: No such file or directory',
       reader: {
         readFile: (path: string) => {
           const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
@@ -2530,106 +2740,217 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
       },
       homeDir: this.userProfileDir(),
-      authSocket: `${this.userProfileDir()}\\AppData\\Local\\Temp\\ssh-${this.userMgr.currentUser}\\agent.1`,
       release: OPENSSH_WINDOWS_8_6,
-      agentUnreachable: () => (this.svcMgr.getService('ssh-agent')?.state === 'Running'
-        ? null
-        : 'Error connecting to agent: No such file or directory'),
       privateKeyMode: () => null,
-      setEnvironment: (name: string, value: string) => { this.setEnvVar(name, value); },
+      typedLine: () => typedLines.shift() ?? null,
     };
   }
 
-  private async openWireSsh(
-    target: WinWireTarget, password: string | undefined,
-  ): Promise<{
-    exec: ((command: string) => { output: string; exitCode: number } | null) | undefined;
-    shell: (() => { output: string; exitCode: number } | null) | undefined;
-    authRefused: boolean;
-    deniedMethods?: string;
-    negotiationFailure?: string;
-    close: () => void;
-  } | null> {
+  private cmdSshd(args: string[]): string {
+    const read = (path: string): string | null => {
+      const result = this.fs.readFile(windowsPathOf(path));
+      return result.ok ? result.content ?? '' : null;
+    };
+    const wildcards = new Set(['0.0.0.0', '::']);
+    const familyOf = (address: string): 'v4' | 'v6' => (address.includes(':') ? 'v6' : 'v4');
+    const result = runSshd(args, {
+      invokedAs: 'sshd',
+      platform: 'windows',
+      profile: WINDOWS_SSHD_PROFILE,
+      defaultConfigPath: 'C:\\ProgramData\\ssh\\sshd_config',
+      includeBase: 'C:\\ProgramData\\ssh',
+      version: OPENSSH_WINDOWS_8_6.clientVersion,
+      source: { readFile: read },
+      resolvePath: (path) => this.fs.normalizePath(windowsPathOf(path), this.getCwd()),
+      isPrivileged: () => this.userMgr.isCurrentUserAdmin(),
+      canReadHostKey: (path) => this.fs.exists(windowsPathOf(path)),
+      portTaken: (address, port) => this.getTcpStack().listListeners().some((listener) => (
+        listener.localPort === port && familyOf(listener.localIp) === familyOf(address)
+        && (listener.localIp === address || wildcards.has(listener.localIp) || wildcards.has(address))
+      )),
+      separationDirectoryMissing: () => null,
+      logDaemon: (level, message) => { this.noteSshdOperational(level === 'fatal' ? 'Error' : 'Warning', message); },
+      startDaemon: (request) => { this.startExtraSshDaemon(request); },
+    });
+    this.commandExitStatus = result.exitCode;
+    return result.output;
+  }
+
+  private startExtraSshDaemon(request: SshdDaemonRequest): void {
+    const process = this.procMgr.spawnProcess('sshd.exe', 4, 'NT AUTHORITY\\SYSTEM', {
+      commandLine: request.commandLine, systemOwned: true,
+    });
+    const stack = this.getTcpStack();
+    const identity = this.procMgr.identityOfImage('sshd.exe');
+    const opened: Array<{ port: number; address: string }> = [];
+    for (const port of request.ports) {
+      for (const family of DUAL_STACK) {
+        const address = wildcardAddressOf(family);
+        try {
+          stack.listen(port, {
+            identity: { ...identity, pid: process.pid },
+            onAccept: (socket) => {
+              this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+            },
+          }, address);
+          opened.push({ port, address });
+        } catch { /* port already bound */ }
+      }
+    }
+    const off = this.getBus().subscribe('windows.process.stopped', (event) => {
+      if (event.payload.deviceId !== this.id || event.payload.pid !== process.pid) return;
+      for (const entry of opened) stack.closeListener(entry.port, entry.address);
+      off();
+    });
+  }
+
+  private noteSshdOperational(level: 'Error' | 'Warning' | 'Information', message: string): void {
+    this.eventLog.writeEventLog('OpenSSH/Operational', 'OpenSSH', 4, level, `sshd: ${message}`);
+  }
+
+  private async openOutgoingSsh(args: string[], parsed: NonNullable<ReturnType<typeof parseSshArgs>>, live?: ITerminalIO): Promise<
+    | { readonly kind: 'refused'; readonly output: string }
+    | {
+      readonly kind: 'connected'; readonly session: SshSession; readonly dialogue: string; readonly typedHost: string;
+      readonly address: string; readonly user: string; readonly port: number;
+      readonly scripted: ScriptedTerminalIO; readonly password: string | undefined; readonly asks: boolean;
+      readonly release: () => void; readonly skippedLines: number; readonly forwardAgent: boolean;
+    }
+  > {
+    const localUser = this.userMgr.currentUser;
+    const jump = proxyJumpRequest(args);
+    const commandLine = splitSshCommandLine(jump === null ? args : jump.remaining);
+    const settings = resolveClientInvocation({
+      flags: posixClientFlags(commandLine.flags),
+      target: parsed.userAtHost,
+      fs: sshLocalFsFor(this),
+      localUser,
+      localHostName: this.hostname,
+      uid: 1000,
+      layout: windowsClientLayout(`/Users/${localUser}`),
+    });
+    const typedHost = settings.hostName;
+    const user = settings.user;
+    const port = settings.port;
+    if (this.firstConfiguredIp() === null) {
+      return { kind: 'refused', output: `ssh: connect to host ${typedHost} port ${port}: Network is unreachable` };
+    }
+    const hopSessions: SshSession[] = [];
+    const release = (): void => {
+      for (const session of [...hopSessions].reverse()) session.disconnect();
+    };
+    const stdin = this._scenarioStdin ?? '';
+    const strict = settings.strictHostKeyChecking ?? (live === undefined ? 'accept-new' : 'ask');
+    const asks = strict === 'ask';
+    const allLines = stdin.split('\n');
+    const hopCount = jump?.hops.length ?? 0;
+    const typedLines = allLines.slice(hopCount);
+    let connector: TcpConnector | undefined;
+    let dialHost = typedHost;
+    if (jump === null) {
+      const target = await resolveSshTarget(this, typedHost, port);
+      if (target.kind === 'failed') return { kind: 'refused', output: target.line };
+      dialHost = target.address;
+    } else {
+      const first = jump.hops[0];
+      const firstTarget = await resolveSshTarget(this, first.host, first.port ?? 22);
+      if (firstTarget.kind === 'failed') return { kind: 'refused', output: firstTarget.line };
+      let dial: TcpConnector = ((host: string, hostPort: number) => this.tcpConnect(host === first.host ? firstTarget.address : host, hostPort)) as TcpConnector;
+      const refusals: string[] = [];
+      for (const [index, hop] of jump.hops.entries()) {
+        const reached = await openWireSshConnection({
+          device: this, localUser, user: hop.user ?? localUser, host: hop.host, port: hop.port ?? 22,
+          io: silentConnectIo(), password: allLines[index] || undefined, credentialless: !allLines[index],
+          strict, connector: dial,
+        });
+        if (reached.kind !== 'connected') {
+          release();
+          return { kind: 'refused', output: reached.kind === 'auth-failed' ? `${hop.user ?? localUser}@${hop.host}: Permission denied (publickey,password).\nConnection closed by UNKNOWN port 65535` : 'Connection closed by UNKNOWN port 65535' };
+        }
+        hopSessions.push(reached.session);
+        dial = tunnelThrough(reached.session, refusals);
+      }
+      connector = dial;
+    }
+    const password = asks || live !== undefined ? undefined : typedLines[0] || undefined;
+    const scripted = new ScriptedTerminalIO(asks ? typedLines : typedLines.slice(1));
     const outcome = await openWireSshConnection({
       device: this,
-      localUser: this.userMgr.currentUser,
-      user: target.user,
-      host: target.host,
-      port: target.port,
-      io: silentConnectIo(),
+      localUser,
+      user,
+      host: dialHost,
+      port: port,
+      io: live ?? scripted,
       password,
-      credentialless: password === undefined,
-      identityFiles: target.identities,
-      algorithms: target.algorithms,
+      credentialless: live === undefined && !asks && password === undefined,
+      strict,
+      knownHosts: { user: settings.userKnownHostsFiles, global: settings.globalKnownHostsFiles },
+      hashKnownHosts: settings.hashKnownHosts,
+      identitiesOnly: settings.identitiesOnly,
+      quiet: parsed.quiet,
+      identityFiles: settings.identityFiles,
+      certificateFiles: settings.certificateFiles,
+      ...(settings.revokedHostKeys === undefined ? {} : { revokedHostKeys: settings.revokedHostKeys }),
+      authentication: sshClientAuthentication(settings.optionValues),
+      agent: this.sshAgentIfRunning(),
+      algorithms: sshClientAlgorithms(settings.optionValues),
+      ...(connector === undefined ? {} : { connector }),
     });
-    if (outcome.kind === 'auth-failed' && password !== undefined) {
-      return { exec: undefined, shell: undefined, authRefused: true, deniedMethods: outcome.methods, close: () => undefined };
+    const typedIdentities = typedIdentityFiles(commandLine.flags);
+    const local = sshLocalFsFor(this);
+    const identityNotices = missingIdentityWarnings(
+      settings.identityFiles, (file) => local.resolveInode(local.normalizePath(file, this.cwd)) !== null,
+      (file, index) => typedIdentities[index] ?? file);
+    const dialogue = [...identityNotices, ...scripted.transcript]
+      .filter((line) => asks || parsed.command === null || !line.startsWith('Warning: Permanently added'))
+      .map((line) => `${line}\n`).join('');
+    if (outcome.kind !== 'connected') release();
+    if (outcome.kind === 'auth-failed') {
+      const denial = `${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`;
+      return { kind: 'refused', output: live !== undefined || dialogue.split('\n').includes(denial) ? dialogue.replace(/\n$/, '') : `${dialogue}${denial}` };
     }
-    if (outcome.kind === 'rejected' && outcome.message.startsWith('Unable to negotiate')) {
-      return { exec: undefined, shell: undefined, authRefused: false, negotiationFailure: outcome.message, close: () => undefined };
-    }
-    if (outcome.kind !== 'connected') return null;
-    const { session } = outcome;
-    const close = () => session.disconnect();
-
-    if (target.command) {
-      const channel = session.openExecChannel(target.command);
-      if (!isOk(channel)) { close(); return null; }
-      const result = await channel.value.execute();
-      channel.value.close();
-      const settled = result === null
-        ? null
-        : { output: result.stdout, exitCode: result.exitCode };
-      return { exec: () => settled, shell: undefined, authRefused: false, close };
-    }
-
-    const channel = session.openShellChannel();
-    if (!isOk(channel)) { close(); return null; }
-    const shell = channel.value;
-    const settled = await relayScriptedShell(
-      shell, this._scenarioStdin ?? '', password === undefined ? 0 : 1);
-    shell.close();
-    return { exec: undefined, shell: () => settled, authRefused: false, close };
+    if (outcome.kind === 'host-key-changed') return { kind: 'refused', output: `${dialogue}Host key verification failed.` };
+    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return { kind: 'refused', output: `${dialogue}${outcome.message}` };
+    if (outcome.kind !== 'connected') return { kind: 'refused', output: '' };
+    hopSessions.push(outcome.session);
+    return {
+      kind: 'connected', session: outcome.session, release, dialogue, typedHost, address: dialHost, user, port,
+      scripted, password, asks, skippedLines: hopCount, forwardAgent: settings.forwardAgent,
+    };
   }
 
   private async cmdSsh(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
     const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
     if (withoutSession) return withoutSession.output;
-    const user = this.userMgr.currentUser;
-    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
-    const target = winWireExecTarget(args, user);
-    const password = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
-    const reach = target === null
-      ? undefined
-      : await wireReachOutcomeRetransmitting(this, target.host, target.port);
-    const wire = target && reach === 'open' ? await this.openWireSsh(target, password) : null;
-    if (wire?.negotiationFailure !== undefined) return wire.negotiationFailure;
-    return runWindowsSshClient({
-      args,
-      wireOutcome: reach,
-      sourceDevice: this,
-      sourceHostname: this.hostname,
-      sourceIp,
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localAgent: this.sshAgent,
-      execRelay: wire?.exec,
-      shellRelay: wire?.shell,
-      wireAuthRefused: wire?.authRefused,
-      wireDeniedMethods: wire?.deniedMethods,
-      wireAuthenticated: wire?.authRefused === false,
-      localFs: {
-        readFile: (p: string) => this.fs.readFile(p),
-        createFile: (p: string, c: string) => {
-          const dir = p.substring(0, p.lastIndexOf('\\'));
-          if (dir && !this.fs.exists(dir)) this.fs.mkdirp(dir);
-          return this.fs.createFile(p, c);
-        },
-      },
-    }).then(r => {
-      wire?.close();
-      return r.output;
-    });
+    const parsed = parseSshArgs(args);
+    if (parsed === null) { this.commandExitStatus = 255; return OPENSSH_WINDOWS_8_6.sshUsage; }
+    const opened = await this.openOutgoingSsh(args, parsed);
+    if (opened.kind === 'refused') { this.commandExitStatus = 255; return opened.output; }
+    const { session, release, dialogue, typedHost, scripted, password, asks, skippedLines, forwardAgent } = opened;
+    const forwardedAgent = forwardAgent ? this.sshAgentIfRunning() : undefined;
+    if (forwardedAgent !== undefined) session.forwardAgent(forwardedAgent);
+    const stdin = this._scenarioStdin ?? '';
+    try {
+      if (parsed.command !== null) {
+        const channel = session.openExecChannel(parsed.command, forwardedAgent === undefined ? undefined : { forwardAgent: true });
+        if (!isOk(channel)) return '';
+        const result = await channel.value.execute();
+        channel.value.close();
+        this.commandExitStatus = result?.exitCode ?? 0;
+        const body = `${result?.clientNotices ?? ''}${result?.stdout ?? ''}`;
+        return dialogue + (body && !body.endsWith('\n') ? `${body}\n` : body);
+      }
+      const channel = session.openShellChannel({ forwardAgent: forwardedAgent !== undefined });
+      if (!isOk(channel)) return '';
+      const settled = await relayScriptedShell(
+        channel.value, stdin, skippedLines + (asks ? scripted.consumed : password === undefined ? 0 : 1 + scripted.consumed), !parsed.quiet);
+      channel.value.close();
+      return [dialogue.replace(/\n$/, ''), settled.output, ...(parsed.quiet ? [] : [`Connection to ${typedHost} closed.`])]
+        .filter((part) => part.length > 0).join('\n');
+    } finally {
+      release();
+    }
   }
 
   private async runPathpingCommand(args: string[]): Promise<string> {
@@ -2646,35 +2967,99 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return lines.join('\n');
   }
 
-  private cmdSftp(args: string[]): Promise<string> {
-    const user = this.userMgr.currentUser;
-    let stdin: string | undefined;
-    if (args.length > 0 && args[args.length - 1].includes('\n')) {
-      stdin = args.pop();
-    }
-    return runWindowsSftpClient({
-      args,
-      stdin,
-      sourceDevice: this,
-      sourceHostname: this.hostname,
-      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localFs: this.fs,
-    }).then(r => r.output);
+  private async cmdSftp(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
+    const standardInput = args.length > 0 && args[args.length - 1].includes('\n') ? args.pop()! : '';
+    const result = await runSftpCommand(args, this.sftpCommandHost(), undefined, standardInput);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
   }
 
-  private cmdScp(args: string[]): Promise<string> {
+  async openSftpClientSession(args: string[], password: string, io: ITerminalIO | null = null): ReturnType<typeof SftpClientSession.open> {
+    const host: SftpCommandHost = { ...this.sftpCommandHost(), interactive: true, stderrIsTerminal: true };
+    this._scenarioStdin = password === '' ? undefined : password;
+    try {
+      return await SftpClientSession.open(args, host, password === '' ? undefined : password, io);
+    } finally {
+      this._scenarioStdin = undefined;
+    }
+  }
+
+  private sftpCommandHost(): SftpCommandHost {
     const user = this.userMgr.currentUser;
-    return runWindowsScpClient({
-      args,
-      sourceHostname: this.hostname,
-      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localFs: this.fs,
-      tcpConnector: (h, p) => this.tcpConnect(h, p) as ReturnType<import('../tcp/types').TcpConnector>,
-    }).then(r => r.output);
+    const home = `C:\\Users\\${user}`;
+    return {
+      local: new SftpLocalPort(
+        new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000), home, 0, true, home),
+      usage: OPENSSH_WINDOWS_8_6.sftpUsage,
+      sshPrograms: ['ssh', 'ssh.exe', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'],
+      interactive: false,
+      stderrIsTerminal: false,
+      timeZoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      listCommand: (rest) => (rest === '' ? 'dir' : `dir ${rest}`),
+      runShell: async (command) => {
+        const output = await this.executeCmdCommand(command ?? '');
+        return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+      },
+      attachServer: (program) => this.attachLocalSftpServer(program),
+      readBatch: (path) => {
+        const body = this.fs.readFile(path);
+        return body.ok && body.content !== undefined ? { content: body.content } : { failure: 'No such file or directory' };
+      },
+      connect: async (request) => {
+        const sshArguments = [...request.sshArguments, request.destination];
+        const parsed = parseSshArgs(sshArguments);
+        if (parsed === null) return { kind: 'refused', lines: [OPENSSH_WINDOWS_8_6.sftpUsage], exitCode: 1 };
+        const opened = await this.openOutgoingSsh(sshArguments, parsed, request.io ?? undefined);
+        if (opened.kind === 'refused') return { kind: 'refused', lines: opened.output === '' ? [] : [opened.output], exitCode: 255 };
+        const lines = opened.dialogue.replace(/\n$/, '').split('\n').filter((line) => line !== '');
+        const channel = opened.session.openSftpChannel(
+          request.serverCommand === null ? undefined : { kind: 'command', command: request.serverCommand });
+        if (!isOk(channel) || !(await channel.value.accepted())) {
+          opened.release();
+          return { kind: 'refused', lines: [...lines, 'subsystem request failed on channel 0'], exitCode: 255 };
+        }
+        return { kind: 'connected', channel: channel.value, release: opened.release, lines };
+      },
+    };
+  }
+
+  private attachLocalSftpServer(program: string): SftpPacketChannel | null {
+    const bare = !/[\\/]/.test(program);
+    const executable = /\.exe$/i.test(program) ? program : `${program}.exe`;
+    const candidate = bare ? `C:\\Windows\\System32\\OpenSSH\\${executable}` : this.fs.normalizePath(executable, this.cwd);
+    if (!this.fs.exists(candidate) || sftpProgramOf(program) !== 'sftp-server') return null;
+    const user = this.userMgr.currentUser;
+    const context = new SshUserContext(user, 1000, 1000, [1000], `/C:/Users/${user}`);
+    const files = new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000);
+    return attachSftpServer(new SftpWireSession({ vfs: files, userCtx: context, rootPath: `/C:/Users/${user}` }));
+  }
+
+  private async cmdScp(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
+    const user = this.userMgr.currentUser;
+    const host: ScpClientHost = {
+      local: new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000),
+      cwd: `C:\\Users\\${user}`,
+      usage: OPENSSH_WINDOWS_8_6.scpUsage,
+      umask: 0,
+      sshPrograms: ['ssh', 'ssh.exe', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'],
+      connect: async (request) => {
+        const sshArguments = [...request.sshArguments];
+        const parsed = parseSshArgs(sshArguments);
+        if (parsed === null) return { kind: 'refused', lines: [OPENSSH_WINDOWS_8_6.scpUsage], exitCode: 1 };
+        const opened = await this.openOutgoingSsh(sshArguments, parsed);
+        if (opened.kind === 'refused') return { kind: 'refused', lines: [opened.output], exitCode: 255 };
+        const lines = opened.dialogue.replace(/\n$/, '').split('\n').filter((line) => line !== '');
+        if (request.verbose) {
+          lines.unshift(`Executing: program C:\\Windows\\System32\\OpenSSH\\ssh.exe host ${opened.address}, user ${opened.user}, command ${request.remoteCommand}`);
+        }
+        return { kind: 'connected', session: opened.session, release: opened.release, lines };
+      },
+    };
+    const result = await runScpClient(args, host, undefined);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
   }
 
   private async cmdTelnet(args: string[]): Promise<string> {
@@ -3305,19 +3690,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
       case 'powershell.exe':
+        return runPowerShellShim({
+          executeCmdCommand: (l) => this.executeCmdCommand(l),
+          shimState: this.psShimState,
+          runFullPs: (code) => this.runPowerShellCode(code),
+        }, args, splitCmdArgs(expanded, true).slice(1));
       case 'pwsh':
       case 'pwsh.exe':
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
-          shimState: this.psShimState,
-          runFullPs: (code) => {
-            try {
-              return this.getPowerShellInterpreter().execute(code);
-            } catch (e) {
-              if (e instanceof PSRuntimeError) return e.message;
-              throw e;
-            }
-          },
+          shimState: this.psCoreShimState,
+          runFullPs: (code) => this.runPowerShellCode(code, 'core'),
         }, args, splitCmdArgs(expanded, true).slice(1));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
@@ -3574,11 +3957,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap':
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
-      case 'ssh-keygen':
+      case 'sshd':     return Promise.resolve(this.cmdSshd(args));
       case 'ssh-agent':
+        return this.runSshAgentTool(args);
       case 'ssh-add':
+        return runSshAddCommand(args, this.agentHost((this._scenarioStdin ?? '').split('\n'))).then((outcome) => outcome.output);
+      case 'ssh-keygen':
       case 'ssh-keyscan':
-        return Promise.resolve(this.runOpenSshTool(cmd, args));
+        return Promise.resolve(this.runOpenSshTool(cmd, args, stdin ?? this._scenarioStdin));
       case 'pathping': return this.runPathpingCommand(args);
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
@@ -3654,7 +4040,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private buildFileContext(): WinFileCommandContext {
     return {
-      fs: this.fs,
+      fs: guardedFileSystem(this.fs, principalOf(this.userMgr, this.userMgr.currentUser)),
       cwd: this.cwd,
       hostname: this.hostname,
       env: this.getEnvVars(),
@@ -3939,6 +4325,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
 
       portProxy: this.portProxyTable,
+      prefixPolicies: this.prefixPolicies,
+      isElevated: () => this.userMgr.isCurrentUserAdmin(),
       firewallRules: this.firewallRules,
       firewallProfiles: this.firewallProfiles,
       currentFirewallProfile: () =>
@@ -4036,11 +4424,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Returns null when the command is async (ping / tracert) or unknown —
    * callers fall back to executeCmdCommand() in that case.
    */
-  private runOpenSshTool(name: string, args: string[]): string {
+  private runOpenSshTool(name: string, args: string[], stdin: string | undefined = this._scenarioStdin): string {
     switch (name) {
-      case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost()).output;
-      case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
-      case 'ssh-add':    return runSshAddCommand(args, this.agentHost()).output;
+      case 'ssh-keygen': {
+        const keygen = runSshKeygenCommand(args, this.keygenHost(), stdin);
+        this.commandExitStatus = keygen.exitCode;
+        return keygen.interleaved ?? keygen.output;
+      }
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
@@ -4050,6 +4440,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
+  private runSshAgentTool(args: string[]): Promise<string> {
+    const pipe = '\\\\.\\pipe\\openssh-ssh-agent';
+    return runSshAgentCommand(args, {
+      release: OPENSSH_WINDOWS_8_6,
+      environment: (name) => this.getEnvVar(name),
+      start: () => ({ pid: 1, socket: pipe }),
+      kill: () => false,
+      runWith: async (argv) => ({ output: await this.executeCommand(argv.join(' ')), exitCode: 0 }),
+    }).then((outcome) => outcome.output);
+  }
+
   lastNativeExitCode(output: string): number {
     return this.commandExitStatus ?? commandExitCode(output);
   }
@@ -4057,8 +4458,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     this.commandExitStatus = null;
-    if (lower === 'ssh-keygen' || lower === 'ssh-agent'
-      || lower === 'ssh-add' || lower === 'ssh-keyscan') {
+    if (lower === 'ssh-keygen' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);
     }
     if (lower === 'systeminfo') return this.cmdSysteminfo();
@@ -4329,6 +4729,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * server side of the wire, so an SSH client only ever exchanges lines
    * and a prompt (docs/PRD-SSH-Unification.md §4bis B2).
    */
+  async runExecAs(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }> {
+    const sessionUser = this.userMgr.getUser(user)?.name ?? user;
+    const previous = this.userMgr.currentUser;
+    const batch = this.batchInterpreter();
+    const savedLevel = batch.getErrorLevel();
+    const savedCwd = this.cwd;
+    if (previous !== sessionUser) this.setCurrentUser(sessionUser);
+    batch.setErrorLevel(0);
+    this.buildFileContext().setCwd(`C:\\Users\\${sessionUser}`);
+    try {
+      const output = await this.executeCmdCommand(line, stdin);
+      const level = batch.getErrorLevel();
+      return { output, exitCode: level !== 0 ? level : this.lastNativeExitCode(output) };
+    } finally {
+      this.buildFileContext().setCwd(savedCwd);
+      batch.setErrorLevel(savedLevel);
+      if (previous !== sessionUser) this.setCurrentUser(previous);
+    }
+  }
+
   createVtyShell(user: string): {
     execute(rawInput: string): Promise<string>;
     getPrompt(): string;
@@ -4337,16 +4757,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     lastClearedScreen(): boolean;
     lastPendingInput(): { kind: 'password' | 'text'; promptText: string } | null;
     lastEndedSession(): boolean;
+    lastExitCode(): number;
     handleInput(value: string): Promise<string>;
   } | null {
     let stack: CrossVendorRemoteShell;
     installDefaultShells();
+    const previousUser = this.userMgr.currentUser;
+    const sessionOwner = this.userMgr.getUser(user)?.name ?? user;
+    if (previousUser !== sessionOwner) this.setCurrentUser(sessionOwner);
     try {
       stack = new CrossVendorRemoteShell({
         device: this, user, primaryKind: 'cmd',
       });
     } catch {
       return null;
+    } finally {
+      if (previousUser !== sessionOwner) this.setCurrentUser(previousUser);
     }
     // `cls` is a screen wipe, and the screen belongs to the client — so
     // the intent is remembered here and reported over the wire rather
@@ -4357,22 +4783,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // remote's own, so the remote is what says the session is over — a
     // client cannot tell that from the text alone.
     let ended = false;
-    const absorb = (result: { output: readonly string[]; clearScreen?: boolean; exit?: boolean;
+    let exitCode = 0;
+    const absorb = (result: { output: readonly string[]; clearScreen?: boolean; exit?: boolean; exitCode?: number;
       pendingInput?: { kind: 'password' | 'text'; promptText: string } }) => {
       cleared = result.clearScreen === true;
       pending = result.pendingInput ?? null;
       ended = result.exit === true;
+      exitCode = result.exitCode ?? 0;
       return result.output.join('\n');
     };
+    const sessionUser = this.userMgr.getUser(user)?.name ?? user;
+    const asSessionUser = async <T>(action: () => Promise<T> | T): Promise<T> => {
+      const previous = this.userMgr.currentUser;
+      if (previous === sessionUser) return action();
+      this.setCurrentUser(sessionUser);
+      try {
+        return await action();
+      } finally {
+        this.setCurrentUser(previous);
+      }
+    };
     return {
-      execute: async (rawInput: string) => absorb(await stack.processLine(rawInput)),
-      handleInput: async (value: string) => absorb(await stack.handleInput(value)),
+      execute: (rawInput: string) => asSessionUser(async () => absorb(await stack.processLine(rawInput))),
+      handleInput: (value: string) => asSessionUser(async () => absorb(await stack.handleInput(value))),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
       isNested: () => stack.depth > 1,
       lastClearedScreen: () => cleared,
       lastPendingInput: () => pending,
       lastEndedSession: () => ended,
+      lastExitCode: () => exitCode,
     };
   }
   setCwd(path: string): void { this.cwd = path; }
@@ -4565,6 +5005,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
       scanProbe: (ip, port, flags, shape) =>
         this.getTcpStack().scanProbeDetail(ip, port, flags, shape),
+      pause: simulatedWait,
+      sendIcmpTimestamp: (ip) => this.sendCraftedIcmpTimestamp(new IPAddress(ip)),
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
@@ -5934,6 +6376,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
+      this._ntpAgent.setProfile({ enforcesRootDistance: false });
     }
     return this._ntpAgent;
   }
@@ -5943,209 +6386,122 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
       agent.handleUdp(inPort, sourceIP as IPAddress, udp);
     }, identity.processName, { pid: identity.pid, service: identity.service });
+    if (this.ntpPortOpened) return;
+    this.ntpPortOpened = true;
+    this.getW32Time().applyConfiguration();
   }
 
-  /** Le service W32Time de cette machine (`PRD-NTP-Tutoriel.md` §5). */
+  private ntpPortOpened = false;
+
+  private closeNtpPort(): void {
+    this.udpClose(UDP_PORT_NTP);
+    this.ntpPortOpened = false;
+    this._w32time?.stop();
+  }
+
   private _w32time: W32TimeService | null = null;
   getW32Time(): W32TimeService {
     if (!this._w32time) {
       this._w32time = new W32TimeService({
         ntp: () => this.getNtpAgent(),
-        sourceDomaine: () => {
-          const store = this.getDirectoryStore();
-          const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-          return store && pdc && pdc !== this.getHostname() ? store.ipForDc(pdc) : null;
+        registry: this.registry,
+        isServerEdition: () => this.getDeviceType() === 'windows-server',
+        isDomainMember: () => this.domainMembership !== null || this.getDirectoryStore() !== null,
+        domainSource: () => this.w32DomainSource(),
+        resolve: (name) => this.resolveHostnameSync(name)?.toString() ?? null,
+        isServiceRunning: () => this.getIsPoweredOn() && this.svcMgr.isStarted('W32Time'),
+        writeEvent: (id, level, message) => {
+          this.eventLog.writeEventLog('System', 'Microsoft-Windows-Time-Service', id, level, message);
         },
+        onSynchronised: (listener) => this.getBus().subscribe('ntp.synced', (event) => {
+          if (event.payload.deviceId === this.id) listener(event.payload.serverIp);
+        }),
       });
     }
     return this._w32time;
   }
 
-  /** Le nom de la source affichee : une adresse, un FQDN, ou l'horloge locale. */
-  private w32Source(): string {
-    const w32 = this.getW32Time();
+  private w32MonitorTargets(domain: string | undefined, computers: readonly string[]): Array<{ name: string; address: string; pdc: boolean }> {
+    const targets: Array<{ name: string; address: string; pdc: boolean }> = [];
+    for (const entry of computers) {
+      const pdc = entry.startsWith('*');
+      const name = pdc ? entry.slice(1) : entry;
+      const address = this.resolveHostnameSync(name)?.toString();
+      if (address) targets.push({ name, address, pdc });
+    }
+    if (computers.length > 0) return targets;
     const store = this.getDirectoryStore();
-    if (store && w32.getFlags() === 'domhier') {
+    if (!store || (domain !== undefined && domain.toLowerCase() !== store.dnsName.toLowerCase())) return targets;
+    const pdcName = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+    for (const controller of store.listDomainControllers()) {
+      const name = controller.name.replace(/\$$/, '');
+      const address = name === this.getHostname() ? '127.0.0.1' : store.ipForDc(name);
+      if (address) targets.push({ name: `${name}.${store.dnsName}`, address, pdc: name === pdcName });
+    }
+    return targets;
+  }
+
+  private w32TimeZone(): { standardName: string; daylightName: string; standardBias: number; daylightBias: number; state: 'STANDARD' | 'DAYLIGHT' | 'UNUSED' } {
+    const zone = windowsZoneOf(this.identity.timezone);
+    const parsed = TimeZone.parse(zone.iana);
+    const now = simulationNowMs();
+    const observes = parsed !== null && observesDaylightSaving(parsed, now);
+    const standardBias = parsed === null ? 0 : -standardOffsetMinutes(parsed, now);
+    const standardName = zone.id === 'UTC' ? 'Coordinated Universal Time' : zone.id;
+    if (!observes) return { standardName, daylightName: standardName, standardBias, daylightBias: standardBias, state: 'UNUSED' };
+    return {
+      standardName, daylightName: standardName.replace(/Standard Time$/, 'Daylight Time'),
+      standardBias, daylightBias: standardBias - 60,
+      state: isDaylightSavingAt(parsed!, now) ? 'DAYLIGHT' : 'STANDARD',
+    };
+  }
+
+  private registerW32Time(): void {
+    this.getW32Time().registry.seed({ serverEdition: this.getDeviceType() === 'windows-server', domainMember: this.domainMembership !== null });
+    this.svcMgr.setStartType('W32Time', 'Automatic', true);
+    this.svcMgr.startService('W32Time', true);
+  }
+
+  private unregisterW32Time(): void {
+    this.svcMgr.stopService('W32Time', true);
+    this.svcMgr.setStartType('W32Time', 'Disabled', true);
+    for (const key of ['Parameters', 'Config', 'TimeProviders']) {
+      const address = parseRegistryAddress(`${W32TIME_KEY}\\${key}`);
+      if (address !== null) this.registry.deleteKey(address);
+    }
+    this._w32time = null;
+  }
+
+  private w32DomainSource(): { name: string; address: string } | null {
+    const store = this.getDirectoryStore();
+    if (store) {
       const pdc = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-      return pdc && pdc !== this.getHostname() ? `${pdc}.${store.dnsName},0x9` : 'Local CMOS Clock';
+      const address = pdc && pdc !== this.getHostname() ? store.ipForDc(pdc) : null;
+      return address ? { name: `${pdc}.${store.dnsName}`, address } : null;
     }
-    const cfg = this.getNtpAgent().getConfig();
-    if (cfg.refIdentifier === 'LOCL' && this.getNtpAgent().isSynced()) return 'Local CMOS Clock';
-    if (cfg.refIdentifier && cfg.refIdentifier !== '.INIT.' && this.getNtpAgent().isSynced()) {
-      return cfg.refIdentifier;
-    }
-    const premier = w32.getPeers()[0];
-    return premier ? `${premier.hote},${premier.drapeau}` : 'Local CMOS Clock';
+    const membership = this.domainMembership;
+    if (!membership) return null;
+    const address = this.resolveHostnameSync(membership.dcAddress)?.toString() ?? null;
+    return address ? { name: membership.dcAddress, address } : null;
   }
 
-  /**
-   * `w32tm` (`docs/PRD-NTP-Tutoriel.md` §5).
-   *
-   * La commande etait un talon d'une seule branche : toute sous-commande
-   * autre que `/query /status` renvoyait la CHAINE LITTERALE
-   * `w32tm /query /status`, et `/query /status` lui-meme etait un bloc
-   * fixe ou `Stratum: 3` etait ecrit en dur sur une machine
-   * n'interrogeant personne.
-   */
-  private cmdW32tm(args: string[]): string {
-    const bas = args.map((a) => a.toLowerCase());
-    const w32 = this.getW32Time();
-    const agent = this.getNtpAgent();
-
-    if (bas[0] === '/query') return this.cmdW32tmQuery(bas.slice(1));
-
-    if (bas[0] === '/config') {
-      const lire = (nom: string): string | undefined => {
-        const a = args.find((x) => x.toLowerCase().startsWith(`/${nom}:`));
-        return a?.slice(nom.length + 2).replace(/^"|"$/g, '');
-      };
-      const r = w32.configure({
-        manualpeerlist: lire('manualpeerlist'),
-        syncfromflags: lire('syncfromflags'),
-        reliable: lire('reliable'),
-        update: bas.includes('/update'),
-      });
-      if (r.ok === false) return `${r.erreur}\n\nThe command failed to complete successfully.`;
-      return 'The command completed successfully.';
-    }
-
-    if (bas[0] === '/resync') {
-      const r = w32.resync();
-      if (r.ok === false) return `${r.erreur}\n\nThe command failed to complete successfully.`;
-      return 'Sending resync command to local computer\nThe command completed successfully.';
-    }
-
-    if (bas[0] === '/stripchart') {
-      const cible = args.find((a) => a.toLowerCase().startsWith('/computer:'))?.slice(10);
-      if (!cible) return 'The parameter is incorrect.';
-      const nEch = parseInt(
-        args.find((a) => a.toLowerCase().startsWith('/samples:'))?.slice(9) ?? '5', 10);
-      return this.w32Stripchart(cible, Number.isFinite(nEch) ? nEch : 5);
-    }
-
-    if (bas[0] === '/monitor') {
-      // Elle interroge TOUS les controleurs du domaine : sans domaine,
-      // le vrai outil le dit plutot que de rendre une liste vide.
-      const store = this.getDirectoryStore();
-      if (!store) return 'Error: 0x800706BA - The RPC server is unavailable.';
-      const pdc = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-      return [
-        `${pdc}.${store.dnsName} *** PDC ***[${'127.0.0.1'}:123]:`,
-        `    ICMP: 0ms delay`,
-        `    NTP: +0.0000000s offset from ${pdc}.${store.dnsName}`,
-        `        RefID: ${agent.getConfig().refIdentifier || 'LOCL'}`,
-        `        Stratum: ${agent.getStratum()}`,
-      ].join('\n');
-    }
-
-    return [
-      'w32tm [/? | /register | /unregister ]',
-      '      /query [/computer:<target>] {/source | /configuration | /peers | /status}',
-      '      /config [/computer:<target>] [/update] [/manualpeerlist:<peers>]',
-      '              [/syncfromflags:<source>] [/reliable:(YES|NO)]',
-      '      /resync [/computer:<target>] [/nowait] [/rediscover] [/force]',
-      '      /stripchart /computer:<target> [/samples:<count>]',
-      '      /monitor [/domain:<domain>]',
-    ].join('\n');
-  }
-
-  /** Les quatre formes de `w32tm /query`, chacune une vue distincte. */
-  private cmdW32tmQuery(sous: string[]): string {
-    const agent = this.getNtpAgent();
-    const w32 = this.getW32Time();
-    const cfg = agent.getConfig();
-    const quoi = sous.find((s) => s.startsWith('/')) ?? '';
-
-    if (quoi === '/source') return this.w32Source();
-
-    if (quoi === '/peers') {
-      const pairs = w32.getPeers();
-      if (pairs.length === 0) return '#Peers: 0';
-      const blocs = pairs.map((p) => {
-        const a = agent.getAssociation(p.hote);
-        const joignable = (a?.reach ?? 0) !== 0;
-        return [
-          `Peer: ${p.hote},${p.drapeau}`,
-          `State: ${joignable ? 'Active' : 'Pending'}`,
-          `Time Remaining: ${(a?.pollSec ?? 64).toFixed(7)}s`,
-          `Mode: ${p.mode === 'peer' ? '1 (Symmetric Active)' : '3 (Client)'}`,
-          `Stratum: ${a && joignable ? `${a.stratum} (secondary reference - syncd by (S)NTP)` : '0 (unspecified)'}`,
-          `PeerPoll Interval: ${Math.round(Math.log2(a?.pollSec ?? 64))} (${a?.pollSec ?? 64}s)`,
-          `HostPoll Interval: ${Math.round(Math.log2(a?.pollSec ?? 64))} (${a?.pollSec ?? 64}s)`,
-        ].join('\n');
-      });
-      return [`#Peers: ${pairs.length}`, '', ...blocs].join('\n');
-    }
-
-    if (quoi === '/configuration') {
-      return [
-        '[Configuration]',
-        '',
-        `EventLogFlags: 2 (Local)`,
-        `AnnounceFlags: ${w32.isReliable() ? '5' : '10'} (Local)`,
-        `TimeJumpAuditOffset: 28800 (Local)`,
-        `MinPollInterval: 6 (Local)`,
-        `MaxPollInterval: 10 (Local)`,
-        '',
-        '[TimeProviders]',
-        '',
-        'NtpClient (Local)',
-        `DllName: C:\\WINDOWS\\SYSTEM32\\w32time.DLL (Local)`,
-        `Enabled: 1 (Local)`,
-        `InputProvider: 1 (Local)`,
-        `NtpServer: ${w32.getPeers().map((p) => `${p.hote},${p.drapeau}`).join(' ') || '(none)'} (Local)`,
-        `Type: ${w32.getFlags().toUpperCase() === 'MANUAL' ? 'NTP' : 'NT5DS'} (Local)`,
-      ].join('\n');
-    }
-
-    // `/status`, et le defaut.
-    const best = [...cfg.associations.values()].find((a) => a.preferred);
-    const synced = agent.isSynced();
-    return [
-      `Leap Indicator: 0(no warning)`,
-      `Stratum: ${synced ? cfg.localStratum : 0} (${!synced ? 'unspecified' : cfg.localStratum === 1 ? 'primary reference - syncd by radio clock' : 'secondary reference - syncd by (S)NTP'})`,
-      `Precision: -23 (119.209ns per tick)`,
-      `Root Delay: ${((best ? Math.abs(best.delayMs) : 0) / 1000).toFixed(7)}s`,
-      `Root Dispersion: ${((best ? best.dispersionMs : 0) / 1000).toFixed(7)}s`,
-      `ReferenceId: ${w32ReferenceId(cfg.refIdentifier)}`,
-      `Last Successful Sync Time: ${cfg.lastSyncMs ? new Date(cfg.lastSyncMs).toUTCString() : 'unspecified'}`,
-      `Source: ${this.w32Source()}`,
-      `Poll Interval: ${Math.round(Math.log2(best?.pollSec ?? 64))} (${best?.pollSec ?? 64}s)`,
-    ].join('\n');
-  }
-
-  /**
-   * `w32tm /stripchart` — mesurer l'ecart en direct.
-   *
-   * Chaque echantillon est une VRAIE interrogation : l'ecart imprime est
-   * celui que l'agent vient de calculer, pas une suite de nombres
-   * plausibles. Une cible injoignable donne la ligne d'erreur du vrai
-   * outil, ce qui est le seul resultat utile d'un test de connectivite.
-   */
-  private w32Stripchart(cible: string, nEchantillons: number): string {
-    const agent = this.getNtpAgent();
-    const deja = agent.getAssociation(cible) !== undefined;
-    if (!deja) agent.addServer(cible);
-    const lignes = [
-      `Tracking ${cible} [${cible}:123].`,
-      `Collecting ${nEchantillons} samples.`,
-      `The current time is ${simulationDate().toUTCString()}.`,
-    ];
-    for (let i = 0; i < nEchantillons; i++) {
-      agent.pollAll();
-      const a = agent.getAssociation(cible);
-      const h = simulationDate();
-      const p = (n: number) => String(n).padStart(2, '0');
-      const heure = `${p(h.getUTCHours())}:${p(h.getUTCMinutes())}:${p(h.getUTCSeconds())}`;
-      if (!a || a.reach === 0) {
-        lignes.push(`${heure}, error: 0x800705B4 - This operation returned because the timeout period expired.`);
-      } else {
-        const s = a.offsetMs / 1000;
-        lignes.push(`${heure}, ${s >= 0 ? '+' : '-'}${Math.abs(s).toFixed(7)}s`);
-      }
-    }
-    if (!deja) agent.removeServer(cible);
-    return lignes.join('\n');
+  private cmdW32tm(args: string[]): Promise<string> {
+    const store = this.getDirectoryStore();
+    return runW32tm(args, {
+      service: this.getW32Time(),
+      agent: this.getNtpAgent(),
+      hostname: this.getHostname(),
+      timezone: this.identity.timezone,
+      isAdministrator: this.userMgr.isCurrentUserAdmin(),
+      serviceRunning: this.svcMgr.isStarted('W32Time'),
+      resolve: (name) => this.resolveHostnameSync(name)?.toString() ?? null,
+      wait: simulatedWait,
+      monitorTargets: (domain, computers) => this.w32MonitorTargets(domain, computers),
+      remote: (computer, line) => this.runRemoteCommand(computer, line),
+      timeZone: () => this.w32TimeZone(),
+      register: () => this.registerW32Time(),
+      unregister: () => this.unregisterW32Time(),
+    });
   }
 
   /**
@@ -6426,6 +6782,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const rebuilt = defaultFirewallProfiles();
     for (const [key, value] of rebuilt) this.firewallProfiles.set(key, value);
     return this.firewallProfiles.get(name)!;
+  }
+
+  protected override filtersLoopbackTraffic(): boolean {
+    return false;
   }
 
   protected override firewallFilter(

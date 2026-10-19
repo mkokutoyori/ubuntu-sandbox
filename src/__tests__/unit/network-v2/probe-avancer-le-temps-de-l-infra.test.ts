@@ -69,8 +69,8 @@ describe('advancing the time of a whole infrastructure', () => {
   it('witness: the lab learns two MAC addresses and the neighbour is reachable', async () => {
     const { sw, a } = await lab();
     const table = await macTable(sw);
-    expect(table).toContain('FastEthernet0/1');
-    expect(table).toContain('FastEthernet0/2');
+    expect(table).toContain('Fa0/1');
+    expect(table).toContain('Fa0/2');
     expect(await a.executeCommand('ip neigh')).toContain('REACHABLE');
   });
 
@@ -83,7 +83,7 @@ describe('advancing the time of a whole infrastructure', () => {
   it('keeps a MAC entry younger than the aging time', async () => {
     const { sw } = await lab();
     await clock.advance(2 * 60_000);
-    expect(await macTable(sw)).toContain('FastEthernet0/2');
+    expect(await macTable(sw)).toContain('Fa0/2');
   });
 
   it('turns a neighbour entry STALE after a minute', async () => {

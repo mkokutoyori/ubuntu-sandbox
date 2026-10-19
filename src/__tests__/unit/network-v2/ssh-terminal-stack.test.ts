@@ -4,7 +4,7 @@
  * Everything goes either through:
  *   - `device.executeCommand(line)`   → the bash interpreter side of the
  *     device (where `ssh` is a stub returning Connection refused), AND
- *   - the real SSH stack (`SshSession`, `SftpSession`) wired onto the
+ *   - the real SSH stack (`SshSession`, `SftpTestClient`) wired onto the
  *     device's TCP connector — this exercises the same code paths the
  *     UI's `connectAndEnterSsh` uses, but in pure programmatic form.
  *
@@ -27,7 +27,7 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SftpTestClient } from './sftpTestClient';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -160,7 +160,7 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     // mode prints just the command's output (no banner) — here, the
     // remote's /etc/hostname.
     const out = await lan.pc1.executeCommand(`ssh -o StrictHostKeyChecking=accept-new alice@${PC2_IP} hostname`, 'admin\n');
-    expect(out.trim()).toBe(lan.pc2.getHostname());
+    expect(out.trim().split('\n').pop()).toBe(lan.pc2.getHostname());
     expect(out).not.toMatch(/Connection refused/);
   });
 
@@ -347,16 +347,16 @@ describe('SSH terminal — multi-host scenarios', () => {
 
 // ── 4. SFTP over the same stack ────────────────────────────────────────
 
-describe('SSH terminal — SftpSession transfers', () => {
+describe('SSH terminal — SftpTestClient transfers', () => {
   let lan: Lan;
-  let sftp: SftpSession;
+  let sftp: SftpTestClient;
   let localVfs: VirtualFileSystem;
 
   beforeEach(async () => {
     lan = await buildLan();
     localVfs = new VirtualFileSystem();
     localVfs.writeFile('/root/source.txt', 'payload-content\n', 0, 0, 0o022);
-    sftp = new SftpSession({
+    sftp = new SftpTestClient({
       tcpConnector: tcpConnectorOf(lan.pc1),
       localVfs,
       localUser: 'root',
@@ -398,7 +398,7 @@ describe('SSH terminal — SftpSession transfers', () => {
 
   it('removes a remote file with rm', () => {
     vfsOf(lan.pc2).writeFile('/home/user/doomed.txt', 'x', 1000, 1000, 0o022);
-    expect(sftp.rm('doomed.txt')).toBe('');
+    expect(sftp.rm('doomed.txt')).toBe('Removing /home/user/doomed.txt');
     expect(vfsOf(lan.pc2).exists('/home/user/doomed.txt')).toBe(false);
   });
 

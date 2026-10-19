@@ -1,6 +1,7 @@
 import type { WinFileCommandContext } from './WinFileCommands';
 import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
 import { fileDateTime } from './WinDir';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const WHERE_HELP = [
   'WHERE [/R dir] [/Q] [/F] [/T] pattern...',
@@ -168,7 +169,7 @@ function render(ctx: WinFileCommandContext, path: string, options: WhereOptions)
   if (!options.details) return shown;
   const entry = ctx.fs.resolve(ctx.fs.normalizePath(path, ctx.cwd));
   if (entry === null || entry.type !== 'file') return shown;
-  return `${String(entry.size).padStart(10)}  ${fileDateTime(entry.mtime, ctx.timezone)}  ${shown}`;
+  return `${padToWidth(String(entry.size), 10, 'right')}  ${fileDateTime(entry.mtime, ctx.timezone)}  ${shown}`;
 }
 
 export function cmdWhere(ctx: WinFileCommandContext, args: string[]): string {

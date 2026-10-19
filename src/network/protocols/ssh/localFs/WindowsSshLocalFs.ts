@@ -28,6 +28,11 @@ function toWindows(path: string): string {
   return `C:\\${trimmed.split('/').filter(Boolean).join('\\')}`;
 }
 
+export function sshPathOfWindowsPath(path: string): string {
+  const withoutDrive = path.replace(/^[A-Za-z]:/, '');
+  return `/${withoutDrive.split(/[\\/]+/).filter(Boolean).join('/')}`;
+}
+
 function inodeType(type: string): SshLocalInode['type'] {
   return type === 'directory' ? 'directory' : 'file';
 }

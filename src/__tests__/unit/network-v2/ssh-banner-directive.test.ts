@@ -61,12 +61,13 @@ describe('SSH server — Banner directive', () => {
     expect(out).toMatch(/Welcome to Ubuntu/);
   });
 
-  it('no Banner directive falls back to /etc/issue.net (legacy default)', async () => {
+  it('no Banner directive shows nothing: OpenSSH defaults to Banner none', async () => {
     const { pc, srv } = await buildPair();
     srvVfs(srv).writeFile('/etc/issue.net', 'LEGACY ISSUE LINE\n', 0, 0, 0o022);
     await reload(srv, 'PasswordAuthentication yes\n');
 
     const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
-    expect(out).toMatch(/LEGACY ISSUE LINE/);
+    expect(out).not.toMatch(/LEGACY ISSUE LINE/);
+    expect(out).toMatch(/Welcome to Ubuntu/);
   });
 });

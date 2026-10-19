@@ -296,7 +296,7 @@ describe('SFTP v3 tel que le lit sftp-client.c', () => {
 
   it('VERSION annonce l\'extension statvfs@openssh.com, qui est ce qui permet `df`', () => {
     const reply = build().handle({ type: 'INIT', version: 3 });
-    expect(reply).toMatchObject({ type: 'VERSION', version: 3, extensions: [{ name: 'statvfs@openssh.com', data: '2' }] });
+    expect(reply).toMatchObject({ type: 'VERSION', version: 3, extensions: expect.arrayContaining([{ name: 'statvfs@openssh.com', data: '2' }]) });
   });
 
   it('les attributs v3 ne portent ni champ de type ni drapeau de brouillon : le type est dans les bits de mode', () => {

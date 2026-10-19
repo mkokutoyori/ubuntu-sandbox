@@ -22,26 +22,39 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress, SubnetMask } from '../../../../core/types';
+import { renderTable, type TableColumn } from '../../../shells/cli/TextTable';
+
+interface KernelRouteRow {
+  destination: string; gateway: string; genmask: string; flags: string; metric: string; iface: string;
+}
+
+const KERNEL_ROUTE_COLUMNS: ReadonlyArray<TableColumn<KernelRouteRow>> = [
+  { header: 'Destination', width: 15, value: (r) => r.destination },
+  { header: 'Gateway', width: 15, value: (r) => r.gateway },
+  { header: 'Genmask', width: 15, value: (r) => r.genmask },
+  { header: 'Flags', width: 5, value: (r) => r.flags },
+  { header: 'Metric', width: 6, value: (r) => r.metric },
+  { header: 'Ref', width: 6, value: () => '0' },
+  { header: 'Use', width: 3, align: 'right', value: () => '0' },
+  { header: 'Iface', value: (r) => r.iface },
+];
 
 function showRouteTable(ctx: LinuxCommandContext, numeric: boolean): string {
-  const table = ctx.net.getRoutingTable();
-  const lines = [
-    'Kernel IP routing table',
-    'Destination     Gateway         Genmask         Flags Metric Ref    Use Iface',
-  ];
-  for (const r of table) {
+  const rows = ctx.net.getRoutingTable().map((r): KernelRouteRow => {
     const isDefault = r.type === 'default';
-    const dest = isDefault && !numeric ? 'default' : r.network.toString();
-    const gw = r.nextHop ? r.nextHop.toString() : '0.0.0.0';
-    const mask = r.mask.toString();
     let flags = 'U';
     if (r.nextHop) flags += 'G';
     if (r.mask.toCIDR() === 32 && r.type !== 'default') flags += 'H';
-    lines.push(
-      `${dest.padEnd(16)}${gw.padEnd(16)}${mask.padEnd(16)}${flags.padEnd(6)}${String(r.metric ?? 0).padEnd(7)}0      0 ${r.iface}`,
-    );
-  }
-  return lines.join('\n');
+    return {
+      destination: isDefault && !numeric ? 'default' : r.network.toString(),
+      gateway: r.nextHop ? r.nextHop.toString() : '0.0.0.0',
+      genmask: r.mask.toString(),
+      flags,
+      metric: String(r.metric ?? 0),
+      iface: r.iface,
+    };
+  });
+  return ['Kernel IP routing table', ...renderTable(rows, KERNEL_ROUTE_COLUMNS, { gap: 1, rule: false })].join('\n');
 }
 
 /** Parse a destination that may carry CIDR notation (`10.0.0.0/16`) or a bare address. */
@@ -94,7 +107,9 @@ function parseRouteTarget(args: string[], isHost: boolean): ParsedTarget | null 
 function ipconfigRouteAdd(ctx: LinuxCommandContext, args: string[]): string {
   if (args[0] === 'default' && args[1] === 'gw' && args[2]) {
     try {
-      ctx.net.setDefaultGateway(new IPAddress(args[2]));
+      const gateway = new IPAddress(args[2]);
+      if (!ctx.net.gatewayReachable(gateway)) return 'SIOCADDRT: Network is unreachable';
+      ctx.net.setDefaultGateway(gateway);
       return '';
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

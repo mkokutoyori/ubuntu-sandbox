@@ -68,6 +68,7 @@ export interface ShellLineResult {
    * having to know which terminal it lives in.
    */
   readonly pendingInput?: PendingInputDirective;
+  readonly exitCode?: number;
 }
 
 /** A directive that asks the host terminal to collect one input value. */
@@ -117,7 +118,7 @@ export interface IShell extends IShellBase {
   getDeactivationBanner(): readonly string[];
 
   /** Run one user-typed line; the result drives stack & display updates. */
-  processLine(line: string): Promise<ShellLineResult> | ShellLineResult;
+  processLine(line: string, onProgress?: (text: string) => void): Promise<ShellLineResult> | ShellLineResult;
 
   /**
    * Called by the host terminal after a `pendingInput` directive has been

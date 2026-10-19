@@ -81,7 +81,7 @@ async function ouvrirSsh(
 
 const transcript = (h: TerminalSession): string => h.lines.map((l) => l.text).join('\n');
 
-const resteLocal = (h: TerminalSession): boolean => /^C:\\/.test(h.foreground.getPrompt());
+const resteLocal = (h: TerminalSession): boolean => /^C:\\/.test(h.getPrompt());
 
 /** Un pair joignable dont le magasin de comptes est hors de portee. */
 function masquerLeMagasin(peer: object): void {

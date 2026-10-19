@@ -98,8 +98,8 @@ async function typeInside(terminal: TerminalSession, line: string): Promise<void
 }
 
 async function answerPassword(terminal: TerminalSession, password: string): Promise<void> {
-  for (let i = 0; i < 10 && terminal.foreground.currentInputMode.type !== 'password'; i++) await tick();
-  if (terminal.foreground.currentInputMode.type === 'password') {
+  for (let i = 0; i < 10 && terminal.currentInputMode.type !== 'password'; i++) await tick();
+  if (terminal.currentInputMode.type === 'password') {
     terminal.setPasswordBuf(password);
     terminal.handleKey(key('Enter'));
   }
@@ -122,7 +122,7 @@ describe('the Windows terminal, at the cmd prompt', () => {
     await answerPassword(terminal, SECRET);
 
     expect(transcript(terminal)).toContain(`Unable to negotiate with ${ROUTER} port 22: no matching key exchange method found`);
-    expect(terminal.foreground.getPrompt()).toMatch(/^C:\\/);
+    expect(terminal.getPrompt()).toMatch(/^C:\\/);
   });
 
   it('enters the router once the legacy algorithms are asked for', async () => {
@@ -131,7 +131,7 @@ describe('the Windows terminal, at the cmd prompt', () => {
     await type(terminal, `ssh ${LEGACY} admin@${ROUTER}`);
     await answerPassword(terminal, SECRET);
 
-    expect(terminal.foreground.getPrompt()).toMatch(/^R1[>#]/);
+    expect(terminal.getPrompt()).toMatch(/^R1[>#]/);
   });
 
   it('takes the account from -l when the target has no user@', async () => {
@@ -139,7 +139,7 @@ describe('the Windows terminal, at the cmd prompt', () => {
     const terminal = await windowsTerminal(win);
     await type(terminal, `ssh ${LEGACY} -l admin ${ROUTER}`);
 
-    expect(terminal.foreground.currentInputMode).toMatchObject({ type: 'password', promptText: `admin@${ROUTER}'s password: ` });
+    expect(terminal.currentInputMode).toMatchObject({ type: 'password', promptText: `(admin@${ROUTER}) Password: ` });
   });
 });
 
@@ -157,7 +157,7 @@ describe('PowerShell, whose ssh goes through the shell launcher', () => {
     await answerPassword(terminal, SECRET);
 
     expect(transcript(terminal)).toContain('Unable to negotiate');
-    expect(terminal.foreground.getPrompt()).toMatch(/^PS /);
+    expect(terminal.getPrompt()).toMatch(/^PS /);
   });
 
   it('enters the router once the legacy algorithms are asked for', async () => {
@@ -166,7 +166,7 @@ describe('PowerShell, whose ssh goes through the shell launcher', () => {
     await typeInside(terminal, `ssh ${LEGACY} -o StrictHostKeyChecking=accept-new admin@${ROUTER}`);
     await answerPassword(terminal, SECRET);
 
-    expect(terminal.foreground.getPrompt()).toMatch(/^R1[>#]/);
+    expect(terminal.getPrompt()).toMatch(/^R1[>#]/);
   });
 
   it('asks the password of the account given by -l', async () => {
@@ -174,7 +174,7 @@ describe('PowerShell, whose ssh goes through the shell launcher', () => {
     const terminal = await powershell(win);
     await typeInside(terminal, `ssh ${LEGACY} -l admin ${ROUTER}`);
 
-    expect(terminal.foreground.currentInputMode).toMatchObject({ type: 'password', promptText: `admin@${ROUTER}'s password: ` });
+    expect(terminal.currentInputMode).toMatchObject({ type: 'password', promptText: `admin@${ROUTER}'s password: ` });
   });
 });
 
@@ -207,7 +207,7 @@ describe('the second hop of an SSH session', () => {
     const { win } = await lab();
     const terminal = await insideServer(win);
 
-    expect(terminal.foreground.getPrompt()).toMatch(/^alice@srv:/);
+    expect(terminal.getPrompt()).toMatch(/^alice@srv:/);
   });
 
   it('reads -o and enters the router instead of taking -o for the host name', async () => {
@@ -217,7 +217,7 @@ describe('the second hop of an SSH session', () => {
     await answerPassword(terminal, SECRET);
 
     expect(transcript(terminal)).not.toContain('connect to host -o');
-    expect(terminal.foreground.getPrompt()).toMatch(/^R1[>#]/);
+    expect(terminal.getPrompt()).toMatch(/^R1[>#]/);
   });
 
   it('says the negotiation failed instead of a permission denial when the defaults do not fit', async () => {

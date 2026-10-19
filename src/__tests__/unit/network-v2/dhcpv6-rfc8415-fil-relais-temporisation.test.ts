@@ -347,7 +347,7 @@ describe('Reconfigure depuis un serveur d hote', () => {
     srv.getPorts()[0].configureIP(new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
     srv.getPorts()[0].enableIPv6();
     srv.getPorts()[0].configureIPv6(new IPv6Address('2001:db8:1::1'), 64);
-    await srv.executeCommand(`printf '%s' ${JSON.stringify('subnet6 2001:db8:1::/64 { range6 2001:db8:1::100 2001:db8:1::110; }\n')} > /etc/dhcp/dhcpd6.conf`);
+    await srv.executeCommand(`printf '%b' ${JSON.stringify('subnet6 2001:db8:1::/64 { range6 2001:db8:1::100 2001:db8:1::110; }\n')} > /etc/dhcp/dhcpd6.conf`);
     await srv.executeCommand('printf \'INTERFACESv6="eth0"\\n\' > /etc/default/isc-dhcp-server');
     await srv.executeCommand('systemctl start isc-dhcp-server6');
     srv.dhcpd6.getEngine().configurePoolReconfigure('2001:db8:1::/64', true);

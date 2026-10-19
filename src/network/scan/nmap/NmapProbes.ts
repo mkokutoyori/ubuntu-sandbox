@@ -6,8 +6,9 @@ import {
   SCAN_PROBE_FLAGS, readStatelessReply,
   type ScanProbeFlags, type StatelessScanKind,
 } from './StatelessScans';
-import { IP_PROTO_UDP, IPAddress, IPv6Address } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { ICMP_UNREACH_PORT } from '@/network/core/IcmpErrors';
+import { readUdpProbeOutcome } from '../UdpProbeOutcome';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import {
   grabUdpListener, grabUdpBanner,
@@ -48,6 +49,8 @@ export interface ScanHost {
     ip: string, port: number, flags: ScanProbeFlags, shape?: ScanProbeShape,
   ): StatelessProbeDetail;
   sendRawIpProbe?(ip: string, protocol: number): boolean;
+  sendIcmpTimestamp?(ip: string): boolean;
+  pause?(seconds: number): Promise<void>;
   /**
    * Ce que `arpping()` demande a la machine. Les TROIS issues sont
    * distinctes : `null` veut dire que la cible n'est pas sur ce segment,
@@ -244,14 +247,36 @@ function protoPingDiscovery(
   return { up: false };
 }
 
+function timestampDiscovery(host: ScanHost, ip: string): Discovery {
+  const device = host.device;
+  if (!device || !host.sendIcmpTimestamp || ip.includes(':')) return { up: false };
+  let answered: Discovery = { up: false };
+  const started = PathClock.now();
+  const stop = device.getBus().subscribe('host.icmp.timestamp-reply', (event) => {
+    const p = event.payload;
+    if (p.deviceId !== device.getId() || p.fromIp !== ip) return;
+    answered = { up: true, latencyMs: PathClock.now() - started, reason: 'timestamp-reply' };
+  });
+  try {
+    host.sendIcmpTimestamp(ip);
+  } finally {
+    stop();
+  }
+  return answered;
+}
+
 async function runDiscoveryPlan(
   host: ScanHost, ip: string, plan: readonly DiscoveryProbe[],
 ): Promise<Discovery> {
+  let first: Discovery | undefined;
   for (const probe of plan) {
     let found: Discovery;
     switch (probe.kind) {
       case 'icmp-echo':
         found = await echoDiscovery(host, ip);
+        break;
+      case 'icmp-timestamp':
+        found = timestampDiscovery(host, ip);
         break;
       case 'tcp-syn':
         found = tcpPingDiscovery(host, ip, probe.ports ?? [], SCAN_PROBE_FLAGS.syn);
@@ -268,9 +293,9 @@ async function runDiscoveryPlan(
       default:
         found = protoPingDiscovery(host, ip, probe.protocols ?? []);
     }
-    if (found.up) return found;
+    if (found.up && !first) first = found;
   }
-  return { up: false };
+  return first ?? { up: false };
 }
 
 async function discoverHost(
@@ -338,38 +363,34 @@ function isNumericAddress(target: string): boolean {
  * port; codes 0, 1, 2, 9, 10 and 13 filter it. Silence leaves the port
  * open|filtered, and a datagram coming back opens it.
  */
+const UDP_FILTERING_ICMP: ReadonlyMap<number, string> = new Map([
+  [0, 'net-unreach'], [1, 'host-unreach'], [2, 'proto-unreach'],
+  [9, 'admin-prohibited'], [10, 'admin-prohibited'], [13, 'admin-prohibited'],
+]);
+
 function probeUdpPort(
   host: ScanHost, ip: string, port: number, shape: ScanProbeShape = {},
 ): UdpVerdict {
-  const device = host.device;
-  if (!device) return { state: 'open|filtered' };
-
-  let verdict: UdpVerdict = { state: 'open|filtered' };
-  const stop = device.getBus().subscribe('host.icmp.unreachable', (event) => {
-    const p = event.payload;
-    if (p.deviceId !== device.getId()) return;
-    if (p.fromIp !== ip) return;
-    if (p.origProtocol !== undefined && p.origProtocol !== IP_PROTO_UDP) return;
-    if (p.origDestPort !== undefined && p.origDestPort !== port) return;
-    verdict = p.icmpCode === ICMP_UNREACH_PORT
-      ? { state: 'closed', replyTtl: p.ttl }
-      : { state: 'open|filtered' };
+  let sent = true;
+  const outcome = readUdpProbeOutcome(host.device, ip, port, () => {
+    try {
+      host.sendUdpProbe(ip, port, shape.sourcePort ?? UDP_PROBE_SOURCE_PORT, {
+        ttl: shape.ttl,
+        badChecksum: shape.badChecksum,
+        sourceIp: shape.sourceIp === undefined
+          ? undefined : new IPAddress(shape.sourceIp),
+        payload: shape.payload,
+      });
+    } catch {
+      sent = false;
+    }
   });
-
-  try {
-    host.sendUdpProbe(ip, port, shape.sourcePort ?? UDP_PROBE_SOURCE_PORT, {
-      ttl: shape.ttl,
-      badChecksum: shape.badChecksum,
-      sourceIp: shape.sourceIp === undefined
-        ? undefined : new IPAddress(shape.sourceIp),
-      payload: shape.payload,
-    });
-  } catch {
-    stop();
-    return { state: 'open|filtered' };
-  }
-  stop();
-  return verdict;
+  if (outcome === null || !sent) return { state: 'open|filtered' };
+  if (outcome.icmpCode === ICMP_UNREACH_PORT) return { state: 'closed', replyTtl: outcome.ttl };
+  const reason = outcome.icmpCode === undefined ? undefined : UDP_FILTERING_ICMP.get(outcome.icmpCode);
+  return reason === undefined
+    ? { state: 'open|filtered' }
+    : { state: 'filtered', reason, replyTtl: outcome.ttl, ...(outcome.icmpFrom === ip ? {} : { reasonFrom: outcome.icmpFrom }) };
 }
 
 /**
@@ -492,6 +513,7 @@ export function buildScanProbes(
       const detail = host.scanProbe(ip, port, flags ?? SCAN_PROBE_FLAGS[kind], shape);
       return { ...readStatelessReply(kind, detail.reply), ...replyOrigin(detail, ip) };
     },
+    pause: host.pause,
     udpState(ip: string, port: number, shape?: ScanProbeShape) {
       return probeUdpPort(host, ip, port, shape);
     },

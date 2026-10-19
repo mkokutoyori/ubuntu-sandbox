@@ -298,7 +298,7 @@ describe('TP 10 — freiner les tentatives', () => {
     const attempt = (secret: string) => (from.device as unknown as Cli).executeCommand(BY_PASSWORD(ADMIN, secret, target.ip, 'show clock'));
     expect(await attempt('wrong')).toContain('Permission denied');
     expect(await attempt('wrong')).toContain('Permission denied');
-    expect(await attempt(SECRET)).toContain('Quiet-Mode');
+    expect(await attempt(SECRET)).toContain('Connection refused');
     expect(await ios.executeCommand('show login')).toContain('Router presently in Quiet-Mode.');
   });
 
@@ -490,7 +490,7 @@ describe('TP 15 — auditer le parc depuis un seul poste', () => {
     await pc.executeCommand(`cat > /tmp/audit-ssh.sh <<'EOF'\n${script}\nEOF`);
     await pc.executeCommand('chmod +x /tmp/audit-ssh.sh');
     const report = await pc.executeCommand('/tmp/audit-ssh.sh');
-    expect(report).toMatch(/== lsrv\s+LISTEN[^\n]*:22/);
+    expect(report).toMatch(/== lsrv\s+(Warning: Permanently added[^\n]*\n)?LISTEN[^\n]*:22/);
     expect(report).toMatch(/== ior[\s\S]*SSH Enabled - version 2\.0/);
     expect(report).toMatch(/== vrr[\s\S]*Stelnet server\s+: Enable/);
     expect(report).toMatch(/== fgt[\s\S]*set allowaccess ping ssh/);

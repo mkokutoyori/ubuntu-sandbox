@@ -21,6 +21,7 @@ import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { buildHttpsServerConfig } from './IisHttpsBinding';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
+import { binaryStringToBytes } from '@/crypto/encoding';
 
 export interface IisOpResult { ok: boolean; message: string }
 export interface WebsiteInfo {
@@ -69,11 +70,6 @@ const DEFAULT_PHYSICAL_PATH = 'C:\\inetpub\\wwwroot';
 const DEFAULT_DOCUMENT = 'iisstart.htm';
 const DEFAULT_PAGE = '<html><head><title>IIS Windows Server</title></head><body><h1>IIS Windows Server</h1><p>This is the default web site.</p></body></html>';
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 interface SiteState extends WebsiteInfo {
   server: Http1ServerSession | null;

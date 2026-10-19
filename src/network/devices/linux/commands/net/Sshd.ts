@@ -1,68 +1,44 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { validateSshdConfig } from '@/network/protocols/ssh/server/SshSshdConfig';
-import { SshdServerConfig } from '@/network/protocols/ssh/server/SshdServerConfig';
-import { readSshdConfig } from '@/network/protocols/ssh/server/SshdConfigText';
+import { runSshd, type SshdCommandHost, type SshdCommandResult } from '@/network/protocols/ssh/server/SshdCommand';
+import { LINUX_SSHD_PROFILE } from '@/network/protocols/ssh/server/SshdDump';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 
-/**
- * `sshd -t [-f FILE]` / `sshd -T` — configuration self-test and effective-
- * config dump, as run by `systemctl reload ssh` before applying a change,
- * or interactively (including from an editor's `:!sshd -t -f %`).
- */
 export const sshdCommand: LinuxCommand = {
   name: 'sshd',
   package: 'openssh-server',
   needsNetworkContext: true,
-  usage: 'sshd -t [-f config_file] | sshd -T',
-  help: 'Test the sshd configuration file syntax (-t) or print the effective configuration (-T).',
+  usage: 'sshd [-46DdeGiqTtV] [-C connection_spec] [-c host_cert_file] [-E log_file] [-f config_file] [-g login_grace_time] [-h host_key_file] [-o option] [-p port] [-u len]',
+  help: 'OpenSSH daemon: test the configuration (-t), dump the effective configuration (-T), or start a daemon (-D, -p).',
   run(ctx: LinuxCommandContext, args: string[]): string {
     return sshdRun(ctx, args).output;
   },
-  runWithStatus(ctx: LinuxCommandContext, args: string[]) {
+  runWithStatusSync(ctx: LinuxCommandContext, args: string[]): SshdCommandResult {
+    return sshdRun(ctx, args);
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<SshdCommandResult> {
     return Promise.resolve(sshdRun(ctx, args));
   },
 };
 
-function sshdRun(ctx: LinuxCommandContext, args: string[]): { output: string; exitCode: number } {
-  let configPath = '/etc/ssh/sshd_config';
-  let testOnly = false;
-  let dumpEffective = false;
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-f') { configPath = args[++i] ?? configPath; continue; }
-    if (a === '-t') { testOnly = true; continue; }
-    if (a === '-T') { dumpEffective = true; continue; }
-  }
-
-  if (testOnly || dumpEffective) {
-    const absPath = ctx.executor.vfs.normalizePath(configPath, ctx.executor.getCwd());
-    const raw = ctx.executor.vfs.readFile(absPath);
-    if (raw === null) {
-      return { output: `sshd: no such file or directory: ${configPath}`, exitCode: 1 };
-    }
-    const verdict = validateSshdConfig(raw, absPath);
-    if (!verdict.ok) return { output: verdict.errors.join('\n'), exitCode: 1 };
-    if (ctx.executor.userMgr.currentUid !== 0) return { output: 'sshd: no hostkeys available -- exiting.', exitCode: 1 };
-    if (testOnly) return { output: '', exitCode: 0 };
-    const cfg = SshdServerConfig.parse(readSshdConfig(ctx.executor.vfs, absPath));
-    const lines = [
-      `port ${cfg.ports[0] ?? 22}`,
-      `permitrootlogin ${cfg.permitRootLogin}`,
-      `passwordauthentication ${cfg.passwordAuthentication ? 'yes' : 'no'}`,
-      `pubkeyauthentication ${cfg.pubkeyAuthentication ? 'yes' : 'no'}`,
-      `kbdinteractiveauthentication ${cfg.kbdInteractiveAuthentication ? 'yes' : 'no'}`,
-      `maxauthtries ${cfg.maxAuthTries}`,
-      `maxsessions ${cfg.maxSessions}`,
-      `x11forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
-      `usepam ${cfg.usePam ? 'yes' : 'no'}`,
-      `printmotd ${cfg.printMotd ? 'yes' : 'no'}`,
-      `permitemptypasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
-      `allowtcpforwarding ${cfg.allowTcpForwarding}`,
-      `clientaliveinterval ${cfg.clientAliveIntervalSeconds}`,
-      `clientalivecountmax ${cfg.clientAliveCountMax}`,
-    ];
-    return { output: lines.join('\n'), exitCode: 0 };
-  }
-
-  return { output: 'usage: sshd [-t | -T] [-f config_file]', exitCode: 1 };
+function sshdRun(ctx: LinuxCommandContext, args: string[]): SshdCommandResult {
+  const executor = ctx.executor;
+  const vfs = executor.vfs;
+  const host: SshdCommandHost = {
+    invokedAs: ctx.invokedAs ?? 'sshd',
+    platform: 'linux',
+    profile: LINUX_SSHD_PROFILE,
+    defaultConfigPath: '/etc/ssh/sshd_config',
+    includeBase: '/etc/ssh',
+    version: OPENSSH_UBUNTU_22_04.clientVersion,
+    source: vfs,
+    resolvePath: (path) => vfs.normalizePath(path, executor.getCwd()),
+    isPrivileged: () => executor.userMgr.currentUid === 0,
+    canReadHostKey: (path) => vfs.exists(vfs.normalizePath(path, executor.getCwd())),
+    portTaken: (address, port) => ctx.sshDaemon?.portTaken(address, port) ?? false,
+    separationDirectoryMissing: () => (vfs.exists('/run/sshd') ? null : '/run/sshd'),
+    logDaemon: (level, message) => ctx.sshDaemon?.logDaemon(level, message),
+    startDaemon: (request) => { ctx.sshDaemon?.start(request); },
+  };
+  return runSshd(args, host);
 }

@@ -18,6 +18,7 @@ export class PamServiceSession {
   maxTriesReached = false;
   sessionOpen = false;
   sessionMessages: string[] = [];
+  accountMessages: string[] = [];
 
   constructor(pam: LinuxPam, service: string, options: PamTransactionOptions, subject: PamSessionSubject) {
     this.user = subject.user;

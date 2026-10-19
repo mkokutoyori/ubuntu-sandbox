@@ -22,6 +22,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Les constantes, relevées sur glibc x86_64. */
 const STATIC_CONF: Readonly<Record<string, string>> = {
@@ -84,7 +85,7 @@ export function runGetconf(ctx: LinuxCommandContext, args: string[]): { output: 
 
   if (args.includes('-a') || args.includes('--all')) {
     const names = Object.keys(all).sort();
-    return { output: names.map((n) => `${n.padEnd(35)}${all[n]}`).join('\n'), exitCode: 0 };
+    return { output: names.map((n) => `${padToWidth(n, 35)}${all[n]}`).join('\n'), exitCode: 0 };
   }
 
   if (positional.length === 0) {

@@ -1,0 +1,1756 @@
+{
+  "version": 1,
+  "projectName": "SSH_TP_LAN",
+  "exportedAt": "2026-10-16T16:12:05.480Z",
+  "devices": [
+    {
+      "id": "1792166688448-1",
+      "type": "windows-pc",
+      "name": "PC1",
+      "x": 93.08074951171875,
+      "y": 90.01041793823242,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:01",
+          "ipAddress": "192.168.30.3",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:02"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:03"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:04"
+        }
+      ],
+      "defaultGateway": "192.168.30.1"
+    },
+    {
+      "id": "1792166688448-2",
+      "type": "linux-pc",
+      "name": "PC2",
+      "x": 307.6363050672743,
+      "y": 27.565973493787983,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:05",
+          "ipAddress": "192.168.30.5",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:06"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:07"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:08"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "hostname": "WORKSTATION-PC2",
+      "defaultGateway": "192.168.30.1",
+      "files": [
+        {
+          "path": "/etc/hostname",
+          "content": "WORKSTATION-PC2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/hosts",
+          "content": "127.0.0.1\tlocalhost\n127.0.1.1\tWORKSTATION-PC2\n\n# The following lines are desirable for IPv6 capable hosts\n::1\tlocalhost ip6-localhost ip6-loopback\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 438
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "nameserver 192.168.30.10\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20734:0:99999:7:::\ndaemon:!*:20734:0:99999:7:::\nnobody:!*:20734:0:99999:7:::\nuser:$6$simulated$admin:20734:0:99999:7:::\nalice:$6$simulated$alice:20734:0:99999:7:::\nbob:$6$simulated$bob:20734:0:99999:7:::\ncarl:$6$simulated$carl:20734:0:99999:7:::\ndave:$6$simulated$dave:20734:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/logrotate.conf",
+          "content": "# see \"man logrotate\" for details\nweekly\nrotate 4\ncreate\n\n/var/log/syslog\n/var/log/auth.log\n{\n\trotate 4\n\tweekly\n\tmissingok\n\tnotifempty\n}\n\ninclude /etc/logrotate.d\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20734:0:99999:7:::\ndaemon:!*:20734:0:99999:7:::\nnobody:!*:20734:0:99999:7:::\nuser:$6$simulated$admin:20734:0:99999:7:::\nalice:$6$simulated$alice:20734:0:99999:7:::\nbob:$6$simulated$bob:20734:0:99999:7:::\ncarl:$6$simulated$carl:20734:0:99999:7:::\ndave:$6$simulated$dave:20734:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/home/user/.ssh/known_hosts",
+          "content": "192.168.30.4 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUgsDUsT/qYWWs1NNXS1tKDHECb4vEackn0AFVvPUGO\n",
+          "uid": 1000,
+          "gid": 1000,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.eth0.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.30.5;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.30.1;\n  option domain-name-servers 192.168.30.10;\n  option dhcp-server-identifier 192.168.30.1;\n  renew 1791705355 Sunday 2026-10-11 07:55:55.832;\n  rebind 1791834955 Monday 2026-10-12 19:55:55.832;\n  expire 1791878155 Tuesday 2026-10-13 07:55:55.832;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.30.5;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.30.1;\n  option domain-name-servers 192.168.30.10;\n  option dhcp-server-identifier 192.168.30.1;\n  renew 1791705355 Sunday 2026-10-11 07:55:55.832;\n  rebind 1791834955 Monday 2026-10-12 19:55:55.832;\n  expire 1791878155 Tuesday 2026-10-13 07:55:55.832;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "directories": [
+        {
+          "path": "/home/user/.ssh",
+          "uid": 1000,
+          "gid": 1000,
+          "mode": 493
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-3",
+      "type": "windows-server",
+      "name": "WinServer1",
+      "x": 403.41408284505206,
+      "y": 21.010417938232422,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:09"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:0a"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:0b"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:0c"
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-4",
+      "type": "router-cisco",
+      "name": "MAIN_RT02",
+      "x": 474.44444444444457,
+      "y": 342.11111111111114,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet0/0",
+          "mac": "02:00:00:00:00:0d",
+          "ipAddress": "192.168.30.2",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:0e",
+          "ipAddress": "10.0.10.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:0f",
+          "isUp": false
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 734 bytes\n!\n! Last configuration change at 16:04:48 UTC Fri Oct 16 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_RT02\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n ip address 192.168.30.2 255.255.255.0\n!\ninterface GigabitEthernet0/1\n ip address 10.0.10.1 255.255.255.0\n!\ninterface GigabitEthernet0/2\n no ip address\n shutdown\n!\nrouter ospf 1\n router-id 192.168.30.2\n network 10.0.10.0 0.0.0.255 area 0\n network 192.168.30.0 0.0.0.255 area 0\n!\nno logging on\n!\nend"
+    },
+    {
+      "id": "1792166688448-5",
+      "type": "router-cisco",
+      "name": "MAIN_RT01",
+      "x": 87.08074951171875,
+      "y": 295.0104179382324,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet0/0",
+          "mac": "02:00:00:00:00:10",
+          "ipAddress": "192.168.30.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:11",
+          "ipAddress": "10.0.20.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:12",
+          "isUp": false
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 916 bytes\n!\n! Last configuration change at 16:04:48 UTC Fri Oct 16 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_RT01\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\nip dhcp excluded-address 192.168.30.1\nip dhcp excluded-address 192.168.30.10\n!\nip dhcp pool LAN\n network 192.168.30.0 255.255.255.0\n default-router 192.168.30.1\n dns-server 192.168.30.10\n lease 4\n!\ninterface GigabitEthernet0/0\n ip address 192.168.30.1 255.255.255.0\n!\ninterface GigabitEthernet0/1\n ip address 10.0.20.1 255.255.255.0\n!\ninterface GigabitEthernet0/2\n no ip address\n shutdown\n!\nrouter ospf 1\n router-id 192.168.30.1\n network 192.168.30.0 0.0.0.255 area 0\n network 10.0.20.0 0.0.0.255 area 0\n!\nend"
+    },
+    {
+      "id": "1792166688448-6",
+      "type": "switch-cisco",
+      "name": "MAIN_SW01",
+      "x": 505.4140828450521,
+      "y": 192.12152904934354,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "FastEthernet0/1",
+          "mac": "02:00:00:00:00:13",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/2",
+          "mac": "02:00:00:00:00:14",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/3",
+          "mac": "02:00:00:00:00:15",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/4",
+          "mac": "02:00:00:00:00:16",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/5",
+          "mac": "02:00:00:00:00:17",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/6",
+          "mac": "02:00:00:00:00:18",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/7",
+          "mac": "02:00:00:00:00:19",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/8",
+          "mac": "02:00:00:00:00:1a",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/9",
+          "mac": "02:00:00:00:00:1b",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/10",
+          "mac": "02:00:00:00:00:1c",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/11",
+          "mac": "02:00:00:00:00:1d",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/12",
+          "mac": "02:00:00:00:00:1e",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/13",
+          "mac": "02:00:00:00:00:1f",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/14",
+          "mac": "02:00:00:00:00:20",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/15",
+          "mac": "02:00:00:00:00:21",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/16",
+          "mac": "02:00:00:00:00:22",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/17",
+          "mac": "02:00:00:00:00:23",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/18",
+          "mac": "02:00:00:00:00:24",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/19",
+          "mac": "02:00:00:00:00:25",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/20",
+          "mac": "02:00:00:00:00:26",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/21",
+          "mac": "02:00:00:00:00:27",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/22",
+          "mac": "02:00:00:00:00:28",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/23",
+          "mac": "02:00:00:00:00:29",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/24",
+          "mac": "02:00:00:00:00:2a",
+          "speed": 100
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:2b"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:2c"
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1813 bytes\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_SW01\n!\ninterface FastEthernet0/1\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/2\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/3\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/4\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/5\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/6\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/7\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/8\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/9\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/10\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/11\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/12\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/13\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/14\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/15\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/16\n!\ninterface FastEthernet0/17\n!\ninterface FastEthernet0/18\n!\ninterface FastEthernet0/19\n!\ninterface FastEthernet0/20\n!\ninterface FastEthernet0/21\n!\ninterface FastEthernet0/22\n!\ninterface FastEthernet0/23\n!\ninterface FastEthernet0/24\n!\ninterface GigabitEthernet0/1\n!\ninterface GigabitEthernet0/2\n!\ninterface Vlan1\n no ip address\n shutdown\n!\nspanning-tree mode pvst\nport-channel load-balance src-dst-ip\n!\nend"
+    },
+    {
+      "id": "1792166688448-7",
+      "type": "windows-pc",
+      "name": "PC3",
+      "x": 89.08074951171875,
+      "y": 189.01041793823242,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:2d",
+          "ipAddress": "192.168.30.4",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:2e"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:2f"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:30"
+        }
+      ],
+      "defaultGateway": "192.168.30.1",
+      "files": [
+        {
+          "path": "C:\\Users\\User\\.ssh\\known_hosts",
+          "content": "192.168.30.5 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICz6hpO6JcCBL6eIVD4kAtaUw3A90KMKS7jPZJbD5dH+\n"
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-8",
+      "type": "router-cisco",
+      "name": "MAIN_RT_HO",
+      "x": 576.0807495117188,
+      "y": 405.0104179382324,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet0/0",
+          "mac": "02:00:00:00:00:61",
+          "ipAddress": "10.0.10.2",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:62"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:63",
+          "isUp": false
+        },
+        {
+          "name": "GigabitEthernet0/1.10",
+          "mac": "02:00:00:00:00:62",
+          "ipAddress": "192.168.10.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/1.20",
+          "mac": "02:00:00:00:00:62",
+          "ipAddress": "192.168.20.1",
+          "subnetMask": "255.255.255.0"
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1209 bytes\n!\n! Last configuration change at 16:07:04 UTC Fri Oct 16 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_RT_HO\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\nip dhcp excluded-address 192.168.20.1\nip dhcp excluded-address 192.168.10.1\n!\nip dhcp pool SALES\n network 192.168.10.0 255.255.255.0\n default-router 192.168.10.1\n lease 4\n!\nip dhcp pool IT\n network 192.168.20.0 255.255.255.0\n default-router 192.168.20.1\n lease 4\n!\ninterface GigabitEthernet0/0\n ip address 10.0.10.2 255.255.255.0\n!\ninterface GigabitEthernet0/1\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n shutdown\n!\ninterface GigabitEthernet0/1.10\n encapsulation dot1q 10\n ip address 192.168.10.1 255.255.255.0\n!\ninterface GigabitEthernet0/1.20\n encapsulation dot1q 20\n ip address 192.168.20.1 255.255.255.0\n!\nrouter ospf 1\n router-id 192.168.20.1\n network 192.168.10.0 0.0.0.255 area 0\n network 192.168.20.0 0.0.0.255 area 0\n network 10.0.10.0 0.0.0.255 area 0\n!\nno logging on\n!\nend"
+    },
+    {
+      "id": "1792166688448-9",
+      "type": "windows-pc",
+      "name": "PC4",
+      "x": 651.3585171169706,
+      "y": 36.67708460489909,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:67"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:68"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:69"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:6a"
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-a",
+      "type": "linux-pc",
+      "name": "PC5",
+      "x": 523.9140726725261,
+      "y": 37.56597349378798,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:6b"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:6c"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:6d"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:6e"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "files": [
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-b",
+      "type": "linux-pc",
+      "name": "PC6",
+      "x": 1000.5807393391927,
+      "y": 52.677084604899086,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:6f",
+          "ipAddress": "192.168.10.3",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:70"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:71"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:72"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "192.168.10.1",
+      "files": [
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.eth0.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.10.3;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.10.1;\n  option dhcp-server-identifier 192.168.10.1;\n  renew 1791724073 Sunday 2026-10-11 13:07:53.398;\n  rebind 1791853673 Tuesday 2026-10-13 01:07:53.398;\n  expire 1791896873 Tuesday 2026-10-13 13:07:53.398;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.10.3;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.10.1;\n  option dhcp-server-identifier 192.168.10.1;\n  renew 1791724073 Sunday 2026-10-11 13:07:53.398;\n  rebind 1791853673 Tuesday 2026-10-13 01:07:53.398;\n  expire 1791896873 Tuesday 2026-10-13 13:07:53.398;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-c",
+      "type": "switch-cisco",
+      "name": "MAIN_SW_HO",
+      "x": 935.3585171169705,
+      "y": 270.3437512715657,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "FastEthernet0/1",
+          "mac": "02:00:00:00:00:73",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/2",
+          "mac": "02:00:00:00:00:74",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/3",
+          "mac": "02:00:00:00:00:75",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/4",
+          "mac": "02:00:00:00:00:76",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/5",
+          "mac": "02:00:00:00:00:77",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/6",
+          "mac": "02:00:00:00:00:78",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/7",
+          "mac": "02:00:00:00:00:79",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/8",
+          "mac": "02:00:00:00:00:7a",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/9",
+          "mac": "02:00:00:00:00:7b",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/10",
+          "mac": "02:00:00:00:00:7c",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/11",
+          "mac": "02:00:00:00:00:7d",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/12",
+          "mac": "02:00:00:00:00:7e",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/13",
+          "mac": "02:00:00:00:00:7f",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/14",
+          "mac": "02:00:00:00:00:80",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/15",
+          "mac": "02:00:00:00:00:81",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/16",
+          "mac": "02:00:00:00:00:82",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/17",
+          "mac": "02:00:00:00:00:83",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/18",
+          "mac": "02:00:00:00:00:84",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/19",
+          "mac": "02:00:00:00:00:85",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/20",
+          "mac": "02:00:00:00:00:86",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/21",
+          "mac": "02:00:00:00:00:87",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/22",
+          "mac": "02:00:00:00:00:88",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/23",
+          "mac": "02:00:00:00:00:89",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/24",
+          "mac": "02:00:00:00:00:8a",
+          "speed": 100
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:8b"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:8c"
+        }
+      ],
+      "vlans": [
+        {
+          "id": 10,
+          "name": "SALES"
+        },
+        {
+          "id": 20,
+          "name": "IT"
+        }
+      ],
+      "switchports": [
+        {
+          "name": "FastEthernet0/1",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/2",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/3",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/4",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/5",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/6",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/7",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/8",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/9",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/10",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/24",
+          "mode": "trunk"
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 2388 bytes\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_SW_HO\n!\ninterface FastEthernet0/1\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/2\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/3\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/4\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/5\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/6\n description \"Un des port du vlan des IT\"\n switchport mode access\n switchport access vlan 20\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/7\n description \"Un des port du vlan des IT\"\n switchport mode access\n switchport access vlan 20\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/8\n description \"Un des port du vlan des IT\"\n switchport mode access\n switchport access vlan 20\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/9\n description \"Un des port du vlan des IT\"\n switchport mode access\n switchport access vlan 20\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/10\n description \"Un des port du vlan des IT\"\n switchport mode access\n switchport access vlan 20\n spanning-tree portfast\n spanning-tree bpdufilter enable\n!\ninterface FastEthernet0/11\n!\ninterface FastEthernet0/12\n!\ninterface FastEthernet0/13\n!\ninterface FastEthernet0/14\n!\ninterface FastEthernet0/15\n!\ninterface FastEthernet0/16\n!\ninterface FastEthernet0/17\n!\ninterface FastEthernet0/18\n!\ninterface FastEthernet0/19\n!\ninterface FastEthernet0/20\n!\ninterface FastEthernet0/21\n!\ninterface FastEthernet0/22\n!\ninterface FastEthernet0/23\n!\ninterface FastEthernet0/24\n switchport mode trunk\n switchport trunk allowed vlan 10,20\n switchport trunk encapsulation dot1q\n!\ninterface GigabitEthernet0/1\n!\ninterface GigabitEthernet0/2\n!\ninterface Vlan1\n no ip address\n shutdown\n!\nvlan 10\n name SALES\n!\nvlan 20\n name IT\n!\nspanning-tree mode pvst\nport-channel load-balance src-dst-ip\n!\nend"
+    },
+    {
+      "id": "1792166688448-d",
+      "type": "windows-pc",
+      "name": "PC7",
+      "x": 1090.2474060058594,
+      "y": 58.89930682712131,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:8d"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:8e"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:8f"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:90"
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-e",
+      "type": "linux-pc",
+      "name": "PC8",
+      "x": 1094.0251837836374,
+      "y": 260.2326401604547,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:91",
+          "ipAddress": "192.168.10.2",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:92"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:93"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:94"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "192.168.10.1",
+      "files": [
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.eth0.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.10.2;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.10.1;\n  option dhcp-server-identifier 192.168.10.1;\n  renew 1791724519 Sunday 2026-10-11 13:15:19.293;\n  rebind 1791854119 Tuesday 2026-10-13 01:15:19.293;\n  expire 1791897319 Tuesday 2026-10-13 13:15:19.293;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.10.2;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.10.1;\n  option dhcp-server-identifier 192.168.10.1;\n  renew 1791724519 Sunday 2026-10-11 13:15:19.293;\n  rebind 1791854119 Tuesday 2026-10-13 01:15:19.293;\n  expire 1791897319 Tuesday 2026-10-13 13:15:19.293;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-f",
+      "type": "linux-pc",
+      "name": "PC9",
+      "x": 874.6918504503038,
+      "y": 493.0104179382324,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:97",
+          "ipAddress": "192.168.20.2",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:98"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:99"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:9a"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "192.168.20.1",
+      "files": [
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nuser:$6$simulated$admin:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.eth0.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.20.2;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.20.1;\n  option dhcp-server-identifier 192.168.20.1;\n  renew 1791715347 Sunday 2026-10-11 10:42:27.324;\n  rebind 1791844947 Monday 2026-10-12 22:42:27.324;\n  expire 1791888147 Tuesday 2026-10-13 10:42:27.324;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.20.2;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.20.1;\n  option dhcp-server-identifier 192.168.20.1;\n  renew 1791715347 Sunday 2026-10-11 10:42:27.324;\n  rebind 1791844947 Monday 2026-10-12 22:42:27.324;\n  expire 1791888147 Tuesday 2026-10-13 10:42:27.324;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-g",
+      "type": "windows-pc",
+      "name": "PC10",
+      "x": 1086.5807393391926,
+      "y": 169.45486238267685,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:9b"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:9c"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:9d"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:9e"
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-h",
+      "type": "linux-server",
+      "name": "Server1",
+      "x": 749.3585272894966,
+      "y": 32.7881957160102,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:a3",
+          "ipAddress": "192.168.20.3",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:a4"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:a5"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:a6"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "hostname": "SRV-WEB-IT",
+      "defaultGateway": "192.168.20.1",
+      "files": [
+        {
+          "path": "/etc/hostname",
+          "content": "SRV-WEB-IT\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/hosts",
+          "content": "127.0.0.1\tlocalhost\n127.0.1.1\tSRV-WEB-IT\n\n# The following lines are desirable for IPv6 capable hosts\n::1\tlocalhost ip6-localhost ip6-loopback\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 438
+        },
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.eth0.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.20.3;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.20.1;\n  option dhcp-server-identifier 192.168.20.1;\n  renew 1791725851 Sunday 2026-10-11 13:37:31.440;\n  rebind 1791855451 Tuesday 2026-10-13 01:37:31.440;\n  expire 1791898651 Tuesday 2026-10-13 13:37:31.440;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dhcp/dhclient.leases",
+          "content": "lease {\n  interface \"eth0\";\n  fixed-address 192.168.20.3;\n  option subnet-mask 255.255.255.0;\n  option routers 192.168.20.1;\n  option dhcp-server-identifier 192.168.20.1;\n  renew 1791725851 Sunday 2026-10-11 13:37:31.440;\n  rebind 1791855451 Tuesday 2026-10-13 01:37:31.440;\n  expire 1791898651 Tuesday 2026-10-13 13:37:31.440;\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "nginx",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-i",
+      "type": "router-cisco",
+      "name": "MAIN_RT_AKWA",
+      "x": 96.08074951171875,
+      "y": 722.0104179382324,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet0/0",
+          "mac": "02:00:00:00:00:a7"
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:a8"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:a9",
+          "isUp": false
+        },
+        {
+          "name": "GigabitEthernet0/0.30",
+          "mac": "02:00:00:00:00:a7",
+          "ipAddress": "192.168.40.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/0.40",
+          "mac": "02:00:00:00:00:a7",
+          "ipAddress": "192.168.50.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/0.50",
+          "mac": "02:00:00:00:00:a7",
+          "ipAddress": "192.168.60.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/0.99",
+          "mac": "02:00:00:00:00:a7",
+          "ipAddress": "10.0.20.2",
+          "subnetMask": "255.255.255.0"
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1562 bytes\n!\n! Last configuration change at 16:04:48 UTC Fri Oct 16 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_RT_AKWA\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\nip dhcp excluded-address 192.168.40.1\nip dhcp excluded-address 192.168.50.1\nip dhcp excluded-address 192.168.60.1\n!\nip dhcp pool CUSTOMER_CARE\n network 192.168.40.0 255.255.255.0\n default-router 192.168.40.1\n lease 4\n!\nip dhcp pool CASH_VAULT\n network 192.168.50.0 255.255.255.0\n default-router 192.168.50.1\n lease 4\n!\nip dhcp pool ACCESS_CONTROL\n network 192.168.60.0 255.255.255.0\n default-router 192.168.60.1\n lease 5\n!\ninterface GigabitEthernet0/0\n no ip address\n!\ninterface GigabitEthernet0/1\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n shutdown\n!\ninterface GigabitEthernet0/0.30\n encapsulation dot1q 30\n ip address 192.168.40.1 255.255.255.0\n!\ninterface GigabitEthernet0/0.40\n encapsulation dot1q 40\n ip address 192.168.50.1 255.255.255.0\n!\ninterface GigabitEthernet0/0.50\n encapsulation dot1q 50\n ip address 192.168.60.1 255.255.255.0\n!\ninterface GigabitEthernet0/0.99\n encapsulation dot1q 99\n ip address 10.0.20.2 255.255.255.0\n!\nrouter ospf 1\n router-id 192.168.60.1\n network 192.168.40.0 0.0.0.255 area 0\n network 192.168.50.0 0.0.0.255 area 0\n network 192.168.60.0 0.0.0.255 area 0\n network 10.0.20.0 0.0.0.255 area 0\n!\nend"
+    },
+    {
+      "id": "1792166688448-j",
+      "type": "switch-cisco",
+      "name": "MAIN_SW_AKWA",
+      "x": 351.1918606228299,
+      "y": 725.7881957160103,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "FastEthernet0/1",
+          "mac": "02:00:00:00:00:aa",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/2",
+          "mac": "02:00:00:00:00:ab",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/3",
+          "mac": "02:00:00:00:00:ac",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/4",
+          "mac": "02:00:00:00:00:ad",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/5",
+          "mac": "02:00:00:00:00:ae",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/6",
+          "mac": "02:00:00:00:00:af",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/7",
+          "mac": "02:00:00:00:00:b0",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/8",
+          "mac": "02:00:00:00:00:b1",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/9",
+          "mac": "02:00:00:00:00:b2",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/10",
+          "mac": "02:00:00:00:00:b3",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/11",
+          "mac": "02:00:00:00:00:b4",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/12",
+          "mac": "02:00:00:00:00:b5",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/13",
+          "mac": "02:00:00:00:00:b6",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/14",
+          "mac": "02:00:00:00:00:b7",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/15",
+          "mac": "02:00:00:00:00:b8",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/16",
+          "mac": "02:00:00:00:00:b9",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/17",
+          "mac": "02:00:00:00:00:ba",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/18",
+          "mac": "02:00:00:00:00:bb",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/19",
+          "mac": "02:00:00:00:00:bc",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/20",
+          "mac": "02:00:00:00:00:bd",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/21",
+          "mac": "02:00:00:00:00:be",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/22",
+          "mac": "02:00:00:00:00:bf",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/23",
+          "mac": "02:00:00:00:00:c0",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/24",
+          "mac": "02:00:00:00:00:c1",
+          "speed": 100
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:c2"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:c3"
+        }
+      ],
+      "vlans": [
+        {
+          "id": 30,
+          "name": "CUSTOMER_CARE"
+        },
+        {
+          "id": 40,
+          "name": "CASH_VAULT"
+        },
+        {
+          "id": 50,
+          "name": "ACCESS_CONTROL"
+        },
+        {
+          "id": 99,
+          "name": "DATA_TRANSIT"
+        }
+      ],
+      "switchports": [
+        {
+          "name": "FastEthernet0/1",
+          "accessVlan": 30
+        },
+        {
+          "name": "FastEthernet0/2",
+          "accessVlan": 30
+        },
+        {
+          "name": "FastEthernet0/3",
+          "accessVlan": 30
+        },
+        {
+          "name": "FastEthernet0/4",
+          "accessVlan": 30
+        },
+        {
+          "name": "FastEthernet0/5",
+          "accessVlan": 30
+        },
+        {
+          "name": "FastEthernet0/6",
+          "accessVlan": 30
+        },
+        {
+          "name": "FastEthernet0/7",
+          "accessVlan": 40
+        },
+        {
+          "name": "FastEthernet0/8",
+          "accessVlan": 40
+        },
+        {
+          "name": "FastEthernet0/9",
+          "accessVlan": 40
+        },
+        {
+          "name": "FastEthernet0/10",
+          "accessVlan": 40
+        },
+        {
+          "name": "FastEthernet0/11",
+          "accessVlan": 40
+        },
+        {
+          "name": "FastEthernet0/12",
+          "accessVlan": 40
+        },
+        {
+          "name": "FastEthernet0/13",
+          "accessVlan": 50
+        },
+        {
+          "name": "FastEthernet0/14",
+          "accessVlan": 50
+        },
+        {
+          "name": "FastEthernet0/15",
+          "accessVlan": 50
+        },
+        {
+          "name": "FastEthernet0/16",
+          "accessVlan": 50
+        },
+        {
+          "name": "FastEthernet0/17",
+          "accessVlan": 50
+        },
+        {
+          "name": "FastEthernet0/18",
+          "accessVlan": 50
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "accessVlan": 99
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mode": "trunk",
+          "accessVlan": 99
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 2203 bytes\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname MAIN_SW_AKWA\n!\ninterface FastEthernet0/1\n switchport mode access\n switchport access vlan 30\n!\ninterface FastEthernet0/2\n switchport mode access\n switchport access vlan 30\n!\ninterface FastEthernet0/3\n switchport mode access\n switchport access vlan 30\n!\ninterface FastEthernet0/4\n switchport mode access\n switchport access vlan 30\n!\ninterface FastEthernet0/5\n switchport mode access\n switchport access vlan 30\n!\ninterface FastEthernet0/6\n switchport mode access\n switchport access vlan 30\n!\ninterface FastEthernet0/7\n switchport mode access\n switchport access vlan 40\n!\ninterface FastEthernet0/8\n switchport mode access\n switchport access vlan 40\n!\ninterface FastEthernet0/9\n switchport mode access\n switchport access vlan 40\n!\ninterface FastEthernet0/10\n switchport mode access\n switchport access vlan 40\n!\ninterface FastEthernet0/11\n switchport mode access\n switchport access vlan 40\n!\ninterface FastEthernet0/12\n switchport mode access\n switchport access vlan 40\n!\ninterface FastEthernet0/13\n switchport mode access\n switchport access vlan 50\n!\ninterface FastEthernet0/14\n switchport mode access\n switchport access vlan 50\n!\ninterface FastEthernet0/15\n switchport mode access\n switchport access vlan 50\n!\ninterface FastEthernet0/16\n switchport mode access\n switchport access vlan 50\n!\ninterface FastEthernet0/17\n switchport mode access\n switchport access vlan 50\n!\ninterface FastEthernet0/18\n switchport mode access\n switchport access vlan 50\n!\ninterface FastEthernet0/19\n!\ninterface FastEthernet0/20\n!\ninterface FastEthernet0/21\n!\ninterface FastEthernet0/22\n!\ninterface FastEthernet0/23\n!\ninterface FastEthernet0/24\n!\ninterface GigabitEthernet0/1\n switchport mode access\n switchport access vlan 99\n switchport trunk encapsulation dot1q\n!\ninterface GigabitEthernet0/2\n switchport mode trunk\n switchport trunk allowed vlan 30,40,50,99\n switchport trunk encapsulation dot1q\n!\ninterface Vlan1\n no ip address\n shutdown\n!\nvlan 30\n name CUSTOMER_CARE\n!\nvlan 40\n name CASH_VAULT\n!\nvlan 50\n name ACCESS_CONTROL\n!\nvlan 99\n name DATA_TRANSIT\n!\nspanning-tree mode pvst\nport-channel load-balance src-dst-ip\nno logging on\n!\nend"
+    },
+    {
+      "id": "1792166688448-k",
+      "type": "linux-server",
+      "name": "Server2",
+      "x": 93.08074951171875,
+      "y": 440.0104179382324,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:c4"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:c5"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:c6"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:c7"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "files": [
+        {
+          "path": "/etc/shadow",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 416
+        },
+        {
+          "path": "/etc/shadow-",
+          "content": "root:$6$simulated$admin:20738:0:99999:7:::\ndaemon:!*:20738:0:99999:7:::\nnobody:!*:20738:0:99999:7:::\nalice:$6$simulated$alice:20738:0:99999:7:::\nbob:$6$simulated$bob:20738:0:99999:7:::\ncarl:$6$simulated$carl:20738:0:99999:7:::\ndave:$6$simulated$dave:20738:0:99999:7:::\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "apt-daily",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "apt-daily-upgrade",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "motd-news",
+          "enabled": "disabled",
+          "active": true
+        },
+        {
+          "name": "systemd-tmpfiles-clean",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-l",
+      "type": "windows-pc",
+      "name": "PC11",
+      "x": 94.08074951171875,
+      "y": 637.0104179382324,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:c8",
+          "ipAddress": "192.168.50.2",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:c9"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:ca"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:cb"
+        }
+      ],
+      "hostname": "WORKSTATION-BSM",
+      "defaultGateway": "192.168.50.1",
+      "files": [
+        {
+          "path": "C:\\Windows\\System32\\drivers\\etc\\hosts",
+          "content": "# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This is a sample HOSTS file used by Microsoft TCP/IP for Windows.\n#\n# This file contains the mappings of IP addresses to host names. Each\n# entry should be kept on an individual line. The IP address should\n# be placed in the first column followed by the corresponding host name.\n# The IP address and the host name should be separated by at least one\n# space.\n#\n# Additionally, comments (such as these) may be inserted on individual\n# lines or following the machine name denoted by a '#' symbol.\n#\n# For example:\n#\n#      102.54.94.97     rhino.acme.com          # source server\n#       38.25.63.10     x.acme.com              # x client host\n\n# localhost name resolution is handled within DNS itself.\n127.0.0.1       localhost\n::1             localhost\n127.0.0.1       WORKSTATION-BSM\n"
+        }
+      ]
+    },
+    {
+      "id": "1792166688448-m",
+      "type": "windows-server",
+      "name": "WinServer3",
+      "x": 92.96963840060764,
+      "y": 536.2326401604546,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:cc"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:cd"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:ce"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:cf"
+        }
+      ],
+      "windowsFeatures": {
+        "installed": [
+          "AD-Domain-Services",
+          "DNS",
+          "Web-Server",
+          "RSAT-AD-PowerShell"
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "sourceDeviceId": "1792166688448-7",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-6",
+      "targetInterfaceId": "FastEthernet0/1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-6",
+      "sourceInterfaceId": "FastEthernet0/2",
+      "targetDeviceId": "1792166688448-1",
+      "targetInterfaceId": "eth0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-2",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-6",
+      "targetInterfaceId": "FastEthernet0/3",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-3",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-6",
+      "targetInterfaceId": "FastEthernet0/4",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-4",
+      "sourceInterfaceId": "GigabitEthernet0/0",
+      "targetDeviceId": "1792166688448-6",
+      "targetInterfaceId": "FastEthernet0/5",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-5",
+      "sourceInterfaceId": "GigabitEthernet0/0",
+      "targetDeviceId": "1792166688448-6",
+      "targetInterfaceId": "FastEthernet0/6",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-8",
+      "sourceInterfaceId": "GigabitEthernet0/0",
+      "targetDeviceId": "1792166688448-4",
+      "targetInterfaceId": "GigabitEthernet0/1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-c",
+      "sourceInterfaceId": "FastEthernet0/1",
+      "targetDeviceId": "1792166688448-9",
+      "targetInterfaceId": "eth0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-c",
+      "sourceInterfaceId": "FastEthernet0/2",
+      "targetDeviceId": "1792166688448-a",
+      "targetInterfaceId": "eth0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-c",
+      "sourceInterfaceId": "FastEthernet0/3",
+      "targetDeviceId": "1792166688448-b",
+      "targetInterfaceId": "eth0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-e",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-c",
+      "targetInterfaceId": "FastEthernet0/4",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-d",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-c",
+      "targetInterfaceId": "FastEthernet0/5",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-8",
+      "sourceInterfaceId": "GigabitEthernet0/1",
+      "targetDeviceId": "1792166688448-c",
+      "targetInterfaceId": "FastEthernet0/24",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-f",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-c",
+      "targetInterfaceId": "FastEthernet0/6",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-g",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-c",
+      "targetInterfaceId": "FastEthernet0/7",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-h",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-c",
+      "targetInterfaceId": "FastEthernet0/8",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-j",
+      "sourceInterfaceId": "GigabitEthernet0/1",
+      "targetDeviceId": "1792166688448-5",
+      "targetInterfaceId": "GigabitEthernet0/1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-j",
+      "sourceInterfaceId": "GigabitEthernet0/2",
+      "targetDeviceId": "1792166688448-i",
+      "targetInterfaceId": "GigabitEthernet0/0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-k",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-j",
+      "targetInterfaceId": "FastEthernet0/1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-l",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-j",
+      "targetInterfaceId": "FastEthernet0/8",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1792166688448-m",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1792166688448-j",
+      "targetInterfaceId": "FastEthernet0/15",
+      "type": "ethernet"
+    }
+  ]
+}

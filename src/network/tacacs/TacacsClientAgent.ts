@@ -175,14 +175,21 @@ export class TacacsClientAgent {
   }
 
   accountCommand(username: string, command: string, flags: TacacsAcctFlag[], serverIp?: string): Promise<TacacsAcctStatus | 'timeout'> {
+    return this.account(username, flags, [`service=shell`, `cmd=${command}`], {}, serverIp);
+  }
+
+  account(
+    username: string, flags: TacacsAcctFlag[], args: string[],
+    session: { port?: string; remoteAddress?: string; privLvl?: number } = {}, serverIp?: string,
+  ): Promise<TacacsAcctStatus | 'timeout'> {
     const server = this.selectServer(serverIp);
     if (!server) return Promise.resolve('timeout');
     const sessionId = this.nextSession();
     const body: TacacsBody = {
       type: 'tacacs-acct-request',
-      flags, authenMethod: 6, privLvl: 1, authenType: 'ascii', service: 'login',
-      user: username, port: 'tty0', remoteAddress: '0.0.0.0',
-      args: [`service=shell`, `cmd=${command}`],
+      flags, authenMethod: 6, privLvl: session.privLvl ?? 1, authenType: 'ascii', service: 'login',
+      user: username, port: session.port ?? 'tty0', remoteAddress: session.remoteAddress ?? '0.0.0.0',
+      args,
     };
     return this.exchange<TacacsAcctStatus | 'timeout'>(
       server, sessionId, 3, body,

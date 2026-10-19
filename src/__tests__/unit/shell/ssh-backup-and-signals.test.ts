@@ -54,7 +54,7 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
 
 async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf(pw); t.handleKey(key('Enter')); await flush();
   }
 }
@@ -118,7 +118,7 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     await typeSub(t, 'rman target /');
     await typeSub(t, 'BACKUP DATABASE;');
     await typeSub(t, 'LIST BACKUP;');
-    expect(t.foreground.getPrompt()).toMatch(/^RMAN>/);
+    expect(t.getPrompt()).toMatch(/^RMAN>/);
   });
 
   // ─── Signals / process control ─────────────────────────────────────
@@ -166,8 +166,8 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     await t1.init(); await t2.init();
     await winSshLogin(t1, 'ssh alice@10.0.0.3', 'alice');
     await winSshLogin(t2, 'ssh bob@10.0.0.3', 'bob');
-    expect(t1.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
-    expect(t2.foreground.getPrompt()).toMatch(/bob@linuxSrv/);
+    expect(t1.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t2.getPrompt()).toMatch(/bob@linuxSrv/);
   });
 
   test('§BK10 — Both SSH sessions execute independently (cd in one not seen in the other)', async () => {
@@ -178,8 +178,8 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     await winSshLogin(t1, 'ssh alice@10.0.0.3', 'alice');
     await winSshLogin(t2, 'ssh alice@10.0.0.3', 'alice');
     await typeSub(t1, 'cd /tmp');
-    expect(t1.foreground.getPrompt()).toMatch(/\/tmp/);
-    expect(t2.foreground.getPrompt()).not.toMatch(/\/tmp/);
+    expect(t1.getPrompt()).toMatch(/\/tmp/);
+    expect(t2.getPrompt()).not.toMatch(/\/tmp/);
   });
 
   // ─── Locale and encoding ───────────────────────────────────────────
@@ -299,7 +299,7 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh newdba@10.0.0.3', 'dba-pass');
-    expect(t.foreground.getPrompt()).toMatch(/newdba@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/newdba@linuxSrv/);
   });
 
   test('§BK22 — Power-cycle remote, then reconnect works', async () => {
@@ -309,7 +309,7 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('§BK23 — sshd reload picks up sshd_config Port change', async () => {
@@ -334,7 +334,8 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh root@10.0.0.3');
+    t.setPasswordBuf('root'); t.handleKey(key('Enter')); await flush();
     const log = await linuxSrv.executeCommand('cat /var/log/auth.log');
-    expect(log).toMatch(/Failed|denied|root/);
+    expect(log).toMatch(/Failed password for root from 10\.0\.0\.4/);
   });
 });

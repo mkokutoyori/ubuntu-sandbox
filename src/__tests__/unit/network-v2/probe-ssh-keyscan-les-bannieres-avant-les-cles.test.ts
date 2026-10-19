@@ -62,16 +62,16 @@ async function lab(): Promise<{ pc: LinuxPC; win: WindowsPC }> {
 }
 
 const isBanner = (line: string): boolean => line.startsWith('# 10.0.0.2:22 SSH-2.0-');
-const isKey = (line: string): boolean => line.startsWith('10.0.0.2 ssh-ed25519 ');
+const isKey = (line: string): boolean => /^10\.0\.0\.2 (ssh-rsa|ecdsa-sha2-nistp256|ssh-ed25519) /.test(line);
 
 describe('on the Linux terminal', () => {
-  it('writes the five banners, then the key', async () => {
+  it('writes the five banners, then the three host keys the server holds', async () => {
     const { pc } = await lab();
     const lines = (await pc.executeCommand('ssh-keyscan 10.0.0.2')).split('\n');
 
     expect(lines.filter(isBanner)).toHaveLength(5);
     expect(lines.slice(0, 5).every(isBanner)).toBe(true);
-    expect(isKey(lines[5])).toBe(true);
+    expect(lines.slice(5).map((line) => line.split(' ')[1])).toEqual(['ssh-rsa', 'ecdsa-sha2-nistp256', 'ssh-ed25519']);
   });
 
   it('ends on a key line', async () => {
@@ -85,8 +85,8 @@ describe('on the Linux terminal', () => {
     const { pc } = await lab();
     const lines = (await pc.executeCommand('ssh-keyscan 10.0.0.2 2>/dev/null')).split('\n');
 
-    expect(lines).toHaveLength(1);
-    expect(isKey(lines[0])).toBe(true);
+    expect(lines).toHaveLength(3);
+    expect(lines.every(isKey)).toBe(true);
   });
 
   it('writes one banner then one key for a single key type', async () => {

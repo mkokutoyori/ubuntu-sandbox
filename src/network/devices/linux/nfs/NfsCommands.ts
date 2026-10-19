@@ -1,5 +1,6 @@
 import type { ExportClient, ExportEntry } from '@/network/nfs/ExportTable';
 import type { MountEntryRecord } from '@/network/nfs/wire/NfsTypes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface ExportfsOutcome {
   readonly output: string;
@@ -22,7 +23,7 @@ function optionText(client: ExportClient): string {
 }
 
 function padPath(path: string): string {
-  return path.length >= 14 ? `${path}\t` : path.padEnd(14) + '\t';
+  return path.length >= 14 ? `${path}\t` : padToWidth(path, 14) + '\t';
 }
 
 export function renderExportList(entries: readonly ExportEntry[], verbose: boolean): string {

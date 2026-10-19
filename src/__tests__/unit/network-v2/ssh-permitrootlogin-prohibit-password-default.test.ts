@@ -41,7 +41,7 @@ describe('PermitRootLogin prohibit-password by default', () => {
   it('the image writes the OpenSSH default', async () => {
     const { srv } = await buildLab();
     expect(await srv.executeCommand('grep "PermitRootLogin" /etc/ssh/sshd_config')).toMatch(/^#PermitRootLogin prohibit-password$/m);
-    expect(await srv.executeCommand('sshd -T')).toMatch(/^permitrootlogin prohibit-password$/m);
+    expect(await srv.executeCommand('sshd -T')).toMatch(/^permitrootlogin without-password$/m);
   });
 
   it('root logs in with a key on the direct path', async () => {
@@ -81,6 +81,6 @@ describe('PermitRootLogin prohibit-password by default', () => {
 
   it('sshd -T reports the effective value', async () => {
     const { srv } = await buildLab();
-    expect(await srv.executeCommand('sshd -T')).toMatch(/^permitrootlogin prohibit-password$/m);
+    expect(await srv.executeCommand('sshd -T')).toMatch(/^permitrootlogin without-password$/m);
   });
 });

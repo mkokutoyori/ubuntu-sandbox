@@ -62,7 +62,7 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
   it('ssh-copy-id déploie la clé avec ~/.ssh 0700 et authorized_keys 0600', async () => {
     const { pc, srv } = await buildLan();
     await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-    const copyOut = await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+    const copyOut = await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
     expect(copyOut).toMatch(/Number of key\(s\) added: 1/);
 
     const sshDir = srvVfs(srv).resolveInode('/home/alice/.ssh', true);
@@ -79,7 +79,7 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
   it('le contenu d\'authorized_keys est exactement la clé publique du client', async () => {
     const { pc, srv } = await buildLan();
     await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-    await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
 
     const pub = (await pc.executeCommand('cat ~/.ssh/id_rsa.pub')).trim();
     const stored = srvVfs(srv).readFile('/home/alice/.ssh/authorized_keys') ?? '';
@@ -89,7 +89,7 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
   it('ssh whoami réussit sans interaction mot de passe', async () => {
     const { pc, srv } = await buildLan();
     await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-    await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
 
     const out = await pc.executeCommand(
       'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
@@ -103,14 +103,14 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
   it('sftp se connecte avec la même clé, sans mot de passe', async () => {
     const { pc, srv } = await buildLan();
     await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-    await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
 
     const pcVfs = (pc as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
     pcVfs.writeFile('/root/sftp.cmds', 'ls /home/alice\nexit\n', 0, 0, 0o022);
     const out = await pc.executeCommand(
       'sftp -o PreferredAuthentications=publickey -o PasswordAuthentication=no -b /root/sftp.cmds alice@10.0.0.2',
     );
-    expect(out).toMatch(/Connected to 10\.0\.0\.2/);
+    expect(out).toContain('sftp> ls /home/alice');
     expect(out).not.toMatch(/Permission denied/i);
     expect(out).not.toMatch(/password/i);
     expect(srv).toBeDefined();
@@ -119,7 +119,7 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
   it('/var/log/auth.log du serveur trace `Accepted publickey for alice`', async () => {
     const { pc, srv } = await buildLan();
     await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-    await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
     await pc.executeCommand(
       'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
     );
@@ -131,7 +131,7 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
   it('repasser authorized_keys à 0644 fait échouer la connexion', async () => {
     const { pc, srv } = await buildLan();
     await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-    await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
 
     // Sanity : la connexion marche d'abord avec les permissions strictes.
     const ok = await pc.executeCommand(

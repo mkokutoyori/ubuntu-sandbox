@@ -30,6 +30,7 @@
  */
 
 import type { LinuxCommand } from '../LinuxCommand';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const USAGE = `Usage: fuser [-fuv] [-k [-i] [-SIGNAL]] NAME...
        fuser -l
@@ -117,8 +118,8 @@ export const fuserCommand: LinuxCommand = {
       if (parsed.verbose) {
         lignes.push('                     USER        PID ACCESS COMMAND');
         for (const d of detenteurs) {
-          lignes.push(`${chemin.padEnd(20)} ${d.user.padEnd(10)} ${String(d.pid).padStart(5)} `
-            + `${d.access.padEnd(6)} ${d.comm}`);
+          lignes.push(`${padToWidth(chemin, 20)} ${padToWidth(d.user, 10)} ${padToWidth(String(d.pid), 5, 'right')} `
+            + `${padToWidth(d.access, 6)} ${d.comm}`);
         }
       } else {
         // La forme courte : le nom suivi de deux-points sur l'erreur,

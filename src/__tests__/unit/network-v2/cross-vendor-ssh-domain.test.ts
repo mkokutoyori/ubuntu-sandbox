@@ -58,7 +58,7 @@ describe('§Q — SshdServerConfig immutable directive value object', () => {
     expect(cfg.syslogFacility).toBe('AUTH');
     expect(cfg.bannerPath).toBeNull();
     expect(cfg.motdPath).toBe('/etc/motd');
-    expect(cfg.subsystems.sftp).toMatch(/sftp-server/);
+    expect(cfg.subsystems.sftp).toBeNull();
     expect(cfg.allowUsers).toEqual([]);
     expect(cfg.denyUsers).toEqual([]);
     expect(cfg.allowGroups).toEqual([]);
@@ -575,7 +575,7 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
 
   test('LinuxMachine host config follows /etc/ssh/sshd_config edits', async () => {
     const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
-    await pc.executeCommand('echo "PermitRootLogin no\\nMaxAuthTries 2\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+    await pc.executeCommand('printf "PermitRootLogin no\\nMaxAuthTries 2\\n" | sudo tee /etc/ssh/sshd_config > /dev/null');
     const host = pc.getSshHost();
     expect(host.config.permitRootLogin).toBe('no');
     expect(host.config.maxAuthTries).toBe(2);

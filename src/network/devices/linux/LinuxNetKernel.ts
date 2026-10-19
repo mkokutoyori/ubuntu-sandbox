@@ -20,7 +20,7 @@ import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport, TcpExchangeSocketOptions, UdpConnectOptions } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, Echo6Options, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport, TcpExchangeSocketOptions, UdpConnectOptions } from '../EndHost';
 import type { Errno } from '../../core/Errno';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
@@ -106,6 +106,7 @@ export interface LinuxNetKernel {
     filter?: { nextHop?: IPAddress | null; metric?: number },
   ): boolean;
   setDefaultGateway(gw: IPAddress): void;
+  gatewayReachable(gw: IPAddress): boolean;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
   addDefaultRouteEntry(gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean;
@@ -165,6 +166,7 @@ export interface LinuxNetKernel {
     target: IPv6Address,
     count: number,
     timeoutMs?: number,
+    opts?: Echo6Options,
   ): Promise<PingResult[]>;
 
   traceroute(
@@ -203,6 +205,12 @@ export interface LinuxNetKernel {
     options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
   ): boolean;
 
+  /** A single ICMP timestamp request (type 13), for `nmap -PP`. */
+  sendCraftedIcmpTimestamp(
+    target: IPAddress,
+    options?: { sourceIp?: IPAddress; ttl?: number },
+  ): boolean;
+
   openSnmpSession(processName: string): SnmpClientSession | null;
 
   /**
@@ -223,7 +231,10 @@ export interface LinuxNetKernel {
     options?: UdpConnectOptions,
   ): ConnectedUdpSocket | Errno;
 
-  udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null;
+  udpListen(
+    port: number, processName: string, owner: { pid?: number; uid?: number },
+    onDatagram?: (payload: Uint8Array) => void,
+  ): Errno | null;
 
   routeException(target: IPAddress): RouteException | null;
 

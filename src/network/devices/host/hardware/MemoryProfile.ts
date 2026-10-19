@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 /**
  * MemoryProfile — domain model of a host's RAM and swap.
  *
@@ -154,22 +155,22 @@ export class MemoryProfile {
       : [this.totalKib, this.usedKib, this.freeKib, this.sharedKib,
          this.buffCacheKib, this.availableKib];
 
-    const header = ''.padEnd(FREE_LABEL_WIDTH) +
-      memCols.map((c) => c.padStart(FREE_COLUMN_WIDTH)).join('');
-    const memRow = 'Mem:'.padEnd(FREE_LABEL_WIDTH) +
-      memValues.map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join('');
-    const swapRow = 'Swap:'.padEnd(FREE_LABEL_WIDTH) +
+    const header = padToWidth('', FREE_LABEL_WIDTH) +
+      memCols.map((c) => padToWidth(c, FREE_COLUMN_WIDTH, 'right')).join('');
+    const memRow = padToWidth('Mem:', FREE_LABEL_WIDTH) +
+      memValues.map((v) => padToWidth(fmt(v), FREE_COLUMN_WIDTH, 'right')).join('');
+    const swapRow = padToWidth('Swap:', FREE_LABEL_WIDTH) +
       [this.swapTotalKib, this.swapUsedKib, this.swapFreeKib]
-        .map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join('');
+        .map((v) => padToWidth(fmt(v), FREE_COLUMN_WIDTH, 'right')).join('');
 
     const rows = [header, memRow, swapRow];
     if (total) {
       const totalKib = this.totalKib + this.swapTotalKib;
       const usedKib = this.usedKib + this.swapUsedKib;
       const freeKib = this.freeKib + this.swapFreeKib;
-      rows.push('Total:'.padEnd(FREE_LABEL_WIDTH) +
+      rows.push(padToWidth('Total:', FREE_LABEL_WIDTH) +
         [totalKib, usedKib, freeKib]
-          .map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join(''));
+          .map((v) => padToWidth(fmt(v), FREE_COLUMN_WIDTH, 'right')).join(''));
     }
     return rows.join('\n');
   }
@@ -177,7 +178,7 @@ export class MemoryProfile {
   /** Render `/proc/meminfo`. */
   toProcMeminfo(): string {
     const line = (key: string, kib: number): string =>
-      `${(key + ':').padEnd(16)}${String(kib).padStart(8)} kB`;
+      `${padToWidth(key + ':', 16)}${padToWidth(String(kib), 8, 'right')} kB`;
     return [
       line('MemTotal', this.totalKib),
       line('MemFree', this.freeKib),

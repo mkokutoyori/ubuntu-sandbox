@@ -1,4 +1,4 @@
-import { argumentAccepts, argumentSuggestions, argumentCompletableValues } from './ArgumentTypes';
+import { argumentAccepts, argumentSuggestions, argumentCompletableValues, formTail } from './ArgumentTypes';
 import type { ArgumentSpec } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
@@ -150,8 +150,11 @@ function suggestionsAt(
    * ICMP, qui precede les options et que la meme frappe refuse ensuite.
    */
   const sacCommence = (cursor.optionWords?.length ?? 0) > 0;
+  const queue = cursor.node.argument?.type === 'REST'
+    ? formTail(cursor.node.argument, cursor.restWords) : undefined;
   const declaree = enAttente ?? (cursor.node.argument?.type === 'REST'
-    ? sansLesFormesDejaTapees(cursor.node.argument, cursor.restWords)
+    ? (queue ? (queue.kind === 'pending' ? queue.place : undefined)
+      : sansLesFormesDejaTapees(cursor.node.argument, cursor.restWords))
     : (sacCommence ? undefined : table.argumentAt(cursor.node, session, AIDE)?.argument));
   /*
    * Une plage qui depend de l'etat est LUE, pas recopiee : sans cela
@@ -227,7 +230,7 @@ function suggestionsAt(
     ? (cursor.node.argument.restMinWords ?? 0) > cursor.restWords.length
     : argument?.type === 'REST' && (argument.restMinWords ?? 0) > 0;
   if (trigger === 'QUESTION_MARK' && ici && cursor.prefix.length === 0
-    && !enAttente && !restePartiel && !ici.existsOnlyNegated) {
+    && !enAttente && !restePartiel && queue?.kind !== 'pending' && !ici.existsOnlyNegated && !ici.requiresOneOption) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }
 

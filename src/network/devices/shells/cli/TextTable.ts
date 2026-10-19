@@ -37,7 +37,9 @@
  * style par famille plutôt qu'un style par constructeur.
  */
 
-export type ColumnAlign = 'left' | 'right';
+export type ColumnAlign = 'left' | 'right' | 'center';
+
+export type ColumnOverflow = 'spill' | 'truncate' | 'ellipsis' | 'wrap';
 
 export interface TableColumn<R> {
   /** L'intitulé, tel que la vraie machine l'écrit. */
@@ -61,6 +63,20 @@ export interface TableColumn<R> {
    */
   readonly measured?: (row: R) => boolean;
   readonly headerWidth?: number;
+  readonly minWidth?: number;
+  /**
+   * Première ligne d'un en-tête sur deux (`Hello`/`Max`/`Fwd` au-dessus
+   * de `Time`/`Age`/`Dly` dans `show spanning-tree bridge`) : rendue
+   * dans la même largeur et le même alignement que la colonne.
+   */
+  readonly superHeader?: string;
+  /**
+   * Plafond de la largeur AUTOMATIQUE. Sans `overflow`, une valeur plus
+   * large que le plafond déborde (`spill`) ; avec, elle est tronquée,
+   * suivie de `...`, ou coupée sur plusieurs lignes.
+   */
+  readonly maxWidth?: number;
+  readonly overflow?: ColumnOverflow;
 }
 
 export interface TableStyle {
@@ -84,6 +100,11 @@ export interface TableStyle {
    * n'en laissent pas, d'où le retrait par défaut.
    */
   readonly padTrailing?: boolean;
+  /** Caractère du filet : `-` par défaut, `=` pour `whoami`. */
+  readonly ruleChar?: string;
+  readonly ruleFitsHeader?: boolean;
+  /** Lignes écrites sous le tableau, calées sur ses colonnes (totaux). */
+  readonly footer?: ReadonlyArray<ReadonlyArray<string>>;
 }
 
 /**
@@ -128,24 +149,123 @@ export const VRP_RULED_TABLE: TableStyle = { gap: 2, rule: true };
  */
 export const NMAP_TABLE: TableStyle = { gap: 1, rule: false };
 
-function largeur<R>(col: TableColumn<R>, rows: readonly R[]): number {
+const ANSI_ESCAPE = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+function isWide(code: number): boolean {
+  return (code >= 0x1100 && code <= 0x115f)
+    || (code >= 0x2e80 && code <= 0xa4cf)
+    || (code >= 0xac00 && code <= 0xd7a3)
+    || (code >= 0xf900 && code <= 0xfaff)
+    || (code >= 0xfe30 && code <= 0xfe6f)
+    || (code >= 0xff00 && code <= 0xff60)
+    || (code >= 0xffe0 && code <= 0xffe6)
+    || (code >= 0x1f300 && code <= 0x1faff)
+    || (code >= 0x20000 && code <= 0x3fffd);
+}
+
+function isCombining(code: number): boolean {
+  return (code >= 0x0300 && code <= 0x036f) || (code >= 0x200b && code <= 0x200f) || code === 0xfe0f;
+}
+
+/**
+ * Largeur d'affichage d'un texte dans un terminal : les séquences ANSI
+ * ne comptent pas, un caractère combinant non plus, et une idéographie
+ * ou un emoji en prend deux. `String.length` compte des unités UTF-16,
+ * ce qui décale une colonne dès qu'un accent décomposé ou un caractère
+ * hors du plan de base y figure.
+ */
+export function displayWidth(text: string): number {
+  let width = 0;
+  for (const ch of text.replace(ANSI_ESCAPE, '')) {
+    const code = ch.codePointAt(0)!;
+    if (isCombining(code)) continue;
+    width += isWide(code) ? 2 : 1;
+  }
+  return width;
+}
+
+function sliceToWidth(text: string, limit: number): string {
+  let width = 0;
+  let out = '';
+  for (const ch of text) {
+    const next = width + displayWidth(ch);
+    if (next > limit) break;
+    out += ch;
+    width = next;
+  }
+  return out;
+}
+
+export function padToWidth(text: string, width: number, align: ColumnAlign = 'left'): string {
+  const missing = width - displayWidth(text);
+  if (missing <= 0) return text;
+  if (align === 'right') return ' '.repeat(missing) + text;
+  if (align === 'center') {
+    const before = Math.floor(missing / 2);
+    return ' '.repeat(before) + text + ' '.repeat(missing - before);
+  }
+  return text + ' '.repeat(missing);
+}
+
+function columnWidth<R>(
+  col: TableColumn<R>, rows: readonly R[], index: number, footer: ReadonlyArray<ReadonlyArray<string>> = [],
+): number {
   if (col.width !== undefined) return col.width;
-  return rows.reduce(
-    (m, r) => (col.measured?.(r) === false ? m : Math.max(m, col.value(r).length)),
-    col.header.length);
+  const fromRows = rows.reduce(
+    (m, r) => (col.measured?.(r) === false ? m : Math.max(m, ...col.value(r).split('\n').map(displayWidth))),
+    Math.max(displayWidth(col.header), displayWidth(col.superHeader ?? '')));
+  const natural = footer.reduce((m, cells) => Math.max(m, displayWidth(cells[index] ?? '')), fromRows);
+  const capped = col.maxWidth !== undefined && col.overflow !== undefined && col.overflow !== 'spill'
+    ? Math.min(natural, col.maxWidth) : natural;
+  return Math.max(capped, col.minWidth ?? 0);
+}
+
+function wrapToWidth(text: string, width: number): string[] {
+  const lines: string[] = [];
+  for (const paragraph of text.split('\n')) {
+    let current = '';
+    for (const word of paragraph.split(' ')) {
+      const candidate = current === '' ? word : `${current} ${word}`;
+      if (displayWidth(candidate) <= width) {
+        current = candidate;
+        continue;
+      }
+      if (current !== '') lines.push(current);
+      let rest = word;
+      while (displayWidth(rest) > width) {
+        const head = sliceToWidth(rest, width);
+        lines.push(head);
+        rest = rest.slice(head.length);
+      }
+      current = rest;
+    }
+    lines.push(current);
+  }
+  return lines;
+}
+
+function cellLines(text: string, width: number, overflow: ColumnOverflow | undefined): string[] {
+  const firstLine = (value: string): string => value.split('\n')[0];
+  if (overflow === 'wrap') return wrapToWidth(text, width);
+  if (overflow === 'truncate') return [sliceToWidth(firstLine(text), width)];
+  if (overflow === 'ellipsis') {
+    const line = firstLine(text);
+    return [displayWidth(line) <= width ? line : `${sliceToWidth(line, Math.max(0, width - 3))}...`];
+  }
+  return [firstLine(text)];
 }
 
 /**
  * Cale une cellule dans sa colonne.
  *
- * Une valeur PLUS LONGUE que sa colonne n'est jamais tronquée : sur une
- * vraie machine, un nom d'interface qui déborde pousse la suite de la
- * ligne plutôt que de disparaître, et perdre un caractère de donnée
- * pour sauver un alignement serait le mauvais échange.
+ * Une valeur PLUS LONGUE que sa colonne n'est jamais tronquée par
+ * défaut : sur une vraie machine, un nom d'interface qui déborde pousse
+ * la suite de la ligne plutôt que de disparaître, et perdre un
+ * caractère de donnée pour sauver un alignement serait le mauvais
+ * échange. Une colonne qui veut le contraire le déclare (`overflow`).
  */
 function caler(texte: string, w: number, align: ColumnAlign): string {
-  if (texte.length >= w) return texte;
-  return align === 'right' ? texte.padStart(w) : texte.padEnd(w);
+  return padToWidth(texte, w, align);
 }
 
 /**
@@ -159,23 +279,34 @@ export function renderTable<R>(
   columns: ReadonlyArray<TableColumn<R>>,
   style: TableStyle = IOS_TABLE,
 ): string[] {
-  const largeurs = columns.map((c) => largeur(c, rows));
-  const largeursEntete = columns.map((c, i) => c.headerWidth ?? largeurs[i]);
+  const widths = columns.map((c, i) => columnWidth(c, rows, i, style.footer));
+  const headerWidths = columns.map((c, i) => c.headerWidth ?? widths[i]);
   const sep = ' '.repeat(style.gap);
   const indent = style.indent ?? '';
-  const ligne = (
-    cellules: readonly string[], mesures: readonly number[] = largeurs,
-  ): string => {
-    const brut = indent + cellules.map((c, i) => caler(c, mesures[i], columns[i].align ?? 'left')).join(sep);
-    return style.padTrailing ? brut : brut.trimEnd();
+  const ruleChar = style.ruleChar ?? '-';
+  const joinCells = (cells: readonly string[], measures: readonly number[]): string => {
+    const raw = indent + cells.map((c, i) => caler(c, measures[i], columns[i].align ?? 'left')).join(sep);
+    return style.padTrailing ? raw : raw.trimEnd();
+  };
+  const physicalLines = (cells: readonly string[]): string[] => {
+    const split = cells.map((c, i) => cellLines(c, widths[i], columns[i].overflow));
+    const height = Math.max(1, ...split.map((lines) => lines.length));
+    return Array.from({ length: height }, (_, k) => joinCells(split.map((lines) => lines[k] ?? ''), widths));
   };
 
   const out: string[] = [];
   if (style.header !== false) {
-    out.push(ligne(columns.map((c) => c.header), largeursEntete));
+    if (columns.some((c) => c.superHeader !== undefined)) {
+      out.push(joinCells(columns.map((c) => c.superHeader ?? ''), headerWidths));
+    }
+    out.push(joinCells(columns.map((c) => c.header), headerWidths));
   }
-  if (style.rule) out.push(ligne(largeurs.map((w) => '-'.repeat(w))));
-  for (const r of rows) out.push(ligne(columns.map((c) => c.value(r))));
+  if (style.rule) {
+    const ruleWidths = style.ruleFitsHeader ? columns.map((c) => displayWidth(c.header)) : widths;
+    out.push(joinCells(ruleWidths.map((w) => ruleChar.repeat(w)), widths));
+  }
+  for (const r of rows) out.push(...physicalLines(columns.map((c) => c.value(r))));
+  for (const footer of style.footer ?? []) out.push(...physicalLines(footer));
   return out;
 }
 
@@ -225,4 +356,94 @@ export function renderCounterTable(
   // Écart nul : chaque largeur porte déjà son blanc, ce qui est la seule
   // façon de retrouver les bords 24/35/47/59/71 de la sortie réelle.
   return renderTable(rows, colonnes, FIXED_TABLE);
+}
+
+export interface KeyValueOptions {
+  /** Texte entre l'étiquette calée et la valeur : `' : '`, `': '`, `'  '`. */
+  readonly separator?: string;
+  /** Largeur imposée de l'étiquette ; sinon la plus large des étiquettes. */
+  readonly labelWidth?: number;
+  readonly indent?: string;
+  /** Les valeurs qui contiennent des retours à la ligne reviennent sous la colonne des valeurs. */
+  readonly alignContinuations?: boolean;
+}
+
+/**
+ * Le bloc « étiquette  valeur » (`net accounts`, `net user NAME`,
+ * `ipconfig /all`, `Format-List`) : les étiquettes sont calées à la
+ * même largeur, donc les valeurs commencent toutes à la même colonne.
+ * Une étiquette vide laisse la ligne de continuation d'une valeur
+ * multiple (une adresse DNS de plus) sous la colonne des valeurs.
+ */
+export function renderKeyValue(
+  entries: ReadonlyArray<readonly [string, string]>,
+  options: KeyValueOptions = {},
+): string[] {
+  const separator = options.separator ?? '  ';
+  const indent = options.indent ?? '';
+  const labelWidth = options.labelWidth
+    ?? entries.reduce((m, [label]) => Math.max(m, displayWidth(label)), 0);
+  const out: string[] = [];
+  for (const [label, value] of entries) {
+    const [first, ...rest] = value.split('\n');
+    out.push((indent + padToWidth(label, labelWidth) + separator + first).trimEnd());
+    for (const more of rest) {
+      const lead = options.alignContinuations === false ? '' : ' '.repeat(labelWidth + separator.length);
+      out.push((indent + lead + more).trimEnd());
+    }
+  }
+  return out;
+}
+
+export interface GridOptions {
+  /** Nombre de colonnes ; sinon déduit de `lineWidth`. */
+  readonly columns?: number;
+  /** Largeur de ligne à ne pas dépasser (80 par défaut). */
+  readonly lineWidth?: number;
+  /** Largeur imposée d'une colonne ; sinon le plus large élément plus `gap`. */
+  readonly cellWidth?: number;
+  readonly gap?: number;
+  /** `row` remplit ligne après ligne (`net user`), `column` colonne après colonne (`ls`). */
+  readonly fill?: 'row' | 'column';
+  readonly trimTrailing?: boolean;
+}
+
+/**
+ * Une liste d'éléments disposée en colonnes de même largeur
+ * (`net user`, `net localgroup`, `dir /w`, `ls`).
+ */
+export function renderGrid(items: readonly string[], options: GridOptions = {}): string[] {
+  if (items.length === 0) return [];
+  const gap = options.gap ?? 2;
+  const widest = items.reduce((m, item) => Math.max(m, displayWidth(item)), 0);
+  const cellWidth = options.cellWidth ?? widest + gap;
+  const columns = Math.max(1, options.columns ?? Math.floor((options.lineWidth ?? 80) / cellWidth));
+  const rowCount = Math.ceil(items.length / columns);
+  const out: string[] = [];
+  for (let row = 0; row < rowCount; row++) {
+    const cells: string[] = [];
+    for (let col = 0; col < columns; col++) {
+      const index = options.fill === 'column' ? col * rowCount + row : row * columns + col;
+      if (index < items.length) cells.push(padToWidth(items[index], cellWidth));
+    }
+    const line = cells.join('');
+    out.push(options.trimTrailing === false ? line : line.trimEnd());
+  }
+  return out;
+}
+
+/**
+ * Colonnes déclarées par leurs seules clés : pour un tableau dont les
+ * lignes sont déjà des enregistrements, `columnsFromKeys(['Name', 'Id'])`
+ * suffit. `overrides` ajuste l'une d'elles (alignement, largeur).
+ */
+export function columnsFromKeys<R extends Record<string, unknown>>(
+  keys: ReadonlyArray<keyof R & string>,
+  overrides: Partial<Record<keyof R & string, Partial<Omit<TableColumn<R>, 'header' | 'value'>>>> = {},
+): Array<TableColumn<R>> {
+  return keys.map((key) => ({
+    header: key,
+    value: (row: R) => String(row[key] ?? ''),
+    ...(overrides[key] ?? {}),
+  }));
 }

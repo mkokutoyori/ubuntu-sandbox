@@ -1,6 +1,6 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
-import type { CiscoSecurityConfig } from '../../router/security/CiscoSecurityConfig';
+import { DEFAULT_ACCOUNTING_JITTER_SEC, type CiscoSecurityConfig } from '../../router/security/CiscoSecurityConfig';
 
 const MODES = ['config'] as const;
 
@@ -48,6 +48,7 @@ export interface AaaHeadHost {
   security(): CiscoSecurityConfig;
   selectAaaGroup(name: string): void;
   setLocalAuthMaxFail(n: number): void;
+  placeAaaMessage(kind: 'banner' | 'fail-message', rest: string): string;
   parseMethodList(phase: AaaPhase, args: readonly string[]): string;
 }
 
@@ -192,7 +193,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       name: 'service', type: 'ENUM',
       description: PHASE_DESCRIPTIONS.accounting[1],
       values: AAA_SERVICE_VALUES.accounting.filter((v) => v.keyword !== 'commands'),
-    }, NOM_DE_LISTE, mot, METHODES],
+    }, NOM_DE_LISTE, mot, mot === 'none' ? { ...METHODES, optional: true } : METHODES],
     description,
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
@@ -201,7 +202,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
   }, {
     id: `aaa-accounting-commands-${mot}`,
     path: ['aaa', 'accounting', 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE,
-      mot, METHODES],
+      mot, mot === 'none' ? { ...METHODES, optional: true } : METHODES],
     description,
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
@@ -210,7 +211,83 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
     undo: (_s, args) => oublier('accounting', 'commands', [args.liste]),
   }];
 
+  const accounting = () => sec().accounting;
+  const accountingFlag = (
+    id: string, path: string[], field: 'suppressNullUsername' | 'sendStopAlways' | 'sendStopOnAuthFailure' | 'sendStopOnSuccessRemote',
+    description: string, undoDescription: string,
+  ): CommandSpec => ({
+    id, path: ['aaa', 'accounting', ...path], description, undoDescription,
+    modes: MODES, minPrivilege: 15,
+    run: () => { accounting()[field] = true; return ''; },
+    undo: () => { accounting()[field] = false; return ''; },
+  });
+  const accountingOptionSpecs: CommandSpec[] = [
+    {
+      id: 'aaa-accounting-update',
+      path: ['aaa', 'accounting', 'update'],
+      description: 'Enable accounting update records',
+      undoDescription: 'Disable accounting update records',
+      modes: MODES, minPrivilege: 15,
+      options: [
+        { keyword: 'newinfo', description: 'Send an update record when there is new accounting information' },
+        {
+          keyword: 'periodic', description: 'Send update records periodically',
+          argument: { name: 'minutes', type: 'INT', range: [1, 71582788], description: 'Interval in minutes' },
+        },
+        {
+          keyword: 'jitter', description: 'Jitter of the periodic records',
+          choices: [{
+            keyword: 'maximum', description: 'Maximum jitter',
+            argument: { name: 'jitter-seconds', type: 'INT', range: [0, 2147483], description: 'Maximum jitter in seconds (0 turns jitter off)' },
+          }],
+        },
+      ],
+      run: (_s, args) => {
+        const a = accounting();
+        a.updateEnabled = true;
+        a.updateNewinfo = args.newinfo !== undefined;
+        a.updatePeriodicMinutes = args.minutes === undefined ? null : Number(args.minutes);
+        if (args['jitter-seconds'] !== undefined) a.jitterMaxSec = Number(args['jitter-seconds']);
+        return '';
+      },
+      undo: () => {
+        const a = accounting();
+        a.updateEnabled = false; a.updateNewinfo = false; a.updatePeriodicMinutes = null;
+        return '';
+      },
+    },
+    {
+      id: 'aaa-accounting-jitter',
+      path: ['aaa', 'accounting', 'jitter', 'maximum', {
+        name: 'seconds', type: 'INT', range: [0, 2147483], description: 'Maximum jitter in seconds (0 turns jitter off)',
+      }],
+      description: 'Set the maximum jitter of periodic accounting records',
+      undoDescription: 'Restore the default jitter of 300 seconds',
+      modes: MODES, minPrivilege: 15,
+      run: (_s, args) => { accounting().jitterMaxSec = Number(args.seconds); return ''; },
+      undo: () => { accounting().jitterMaxSec = DEFAULT_ACCOUNTING_JITTER_SEC; return ''; },
+      undoOmitsArguments: true,
+    },
+    {
+      id: 'no-aaa-accounting-jitter',
+      path: ['aaa', 'accounting', 'jitter'],
+      description: 'Restore the default jitter of 300 seconds',
+      modes: MODES, minPrivilege: 15,
+      existsOnlyNegated: true,
+      run: () => '% Incomplete command.',
+      undo: () => { accounting().jitterMaxSec = DEFAULT_ACCOUNTING_JITTER_SEC; return ''; },
+    },
+    accountingFlag('aaa-accounting-suppress-null-username', ['suppress', 'null-username'], 'suppressNullUsername',
+      'Do not send accounting records for users with a null username', 'Send accounting records for users with a null username'),
+    accountingFlag('aaa-accounting-send-stop-always', ['send', 'stop-record', 'always'], 'sendStopAlways',
+      'Send a stop record even if no start record was sent', 'Send a stop record only after a start record'),
+    accountingFlag('aaa-accounting-send-stop-auth-failure', ['send', 'stop-record', 'authentication', 'failure'], 'sendStopOnAuthFailure',
+      'Send a stop record for calls that fail to authenticate', 'Stop sending stop records for failed authentications'),
+    accountingFlag('aaa-accounting-send-stop-auth-success', ['send', 'stop-record', 'authentication', 'success', 'remote-server'], 'sendStopOnSuccessRemote',
+      'Send a stop record for calls authenticated by the remote server', 'Stop sending stop records for remotely authenticated calls'),
+  ];
   return [
+    ...accountingOptionSpecs,
     {
       id: 'aaa-new-model',
       path: ['aaa', 'new-model'],
@@ -260,6 +337,49 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       undo: (_s, args) => { sec().aaaGroups.delete(args.nom); return ''; },
     },
     {
+      id: 'aaa-authentication-attempts-login',
+      path: ['aaa', 'authentication', 'attempts', 'login', {
+        name: 'nombre', type: 'INT', range: [1, 25],
+        description: 'Number of login attempts before the line is closed',
+      }],
+      description: 'Set the maximum number of failed login attempts on a line',
+      undoDescription: 'Restore the default number of login attempts',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!sec().aaaNewModel) return '% AAA is not enabled: "aaa new-model" must be configured first';
+        sec().loginAttempts = Number(args.nombre);
+        return '';
+      },
+      undo: () => { sec().loginAttempts = undefined; return ''; },
+    },
+    {
+      id: 'aaa-authentication-suppress-null-username',
+      path: ['aaa', 'authentication', 'suppress', 'null-username'],
+      description: 'Do not send an Access Request with a blank username to the RADIUS server',
+      undoDescription: 'Allow an Access Request with a blank username to be sent to the RADIUS server',
+      modes: MODES, minPrivilege: 15,
+      run: () => { sec().suppressNullUsername = true; return ''; },
+      undo: () => { sec().suppressNullUsername = false; return ''; },
+    },
+    {
+      id: 'aaa-max-sessions',
+      path: ['aaa', 'max-sessions', {
+        name: 'nombre', type: 'INT', range: [1024, 64000],
+        description: 'Estimated maximum number of AAA sessions',
+      }],
+      description: 'Set the maximum number of simultaneous AAA connections',
+      undoDescription: 'Restore the platform default',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!sec().aaaNewModel) return '% AAA is not enabled: "aaa new-model" must be configured first';
+        sec().aaaMaxSessions = Number(args.nombre);
+        return '';
+      },
+      undo: () => { sec().aaaMaxSessions = undefined; return ''; },
+    },
+    {
       id: 'aaa-local-max-fail',
       path: ['aaa', 'local', 'authentication', 'attempts', 'max-fail', {
         name: 'nombre', type: 'INT',
@@ -276,6 +396,49 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       },
       undo: () => { sec().localAuthMaxFailAttempts = undefined; return ''; },
     },
+    ...(['banner', 'fail-message'] as const).map((kind): CommandSpec => ({
+      id: `aaa-authentication-${kind}`,
+      path: ['aaa', 'authentication', kind, {
+        name: 'texte', type: 'REST', literal: 'LINE',
+        description: 'Message text, delimited by any character',
+      }],
+      description: kind === 'banner'
+        ? 'Message to display at user login'
+        : 'Message to display when a user fails login',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => ctx().placeAaaMessage(kind, args.texte ?? ''),
+      undo: () => {
+        if (kind === 'banner') sec().aaaLoginBanner = undefined;
+        else sec().aaaFailMessage = undefined;
+        return '';
+      },
+    })),
+    ...([
+      ['username-prompt', 'Text displayed when prompting for a username'],
+      ['password-prompt', 'Text displayed when prompting for a password'],
+    ] as const).map(([kind, description]): CommandSpec => ({
+      id: `aaa-authentication-${kind}`,
+      path: ['aaa', 'authentication', kind, {
+        name: 'texte', type: 'REST', literal: 'LINE',
+        description: 'Prompt text; double quotes keep spaces',
+      }],
+      description,
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        const brut = (args.texte ?? '').trim();
+        const texte = /^(["\u201c]).*(["\u201d])$/.test(brut) ? brut.slice(1, -1) : brut;
+        if (kind === 'username-prompt') sec().aaaUsernamePrompt = texte;
+        else sec().aaaPasswordPrompt = texte;
+        return '';
+      },
+      undo: () => {
+        if (kind === 'username-prompt') sec().aaaUsernamePrompt = undefined;
+        else sec().aaaPasswordPrompt = undefined;
+        return '';
+      },
+    })),
     phase('authentication'),
     phase('authorization'),
     phase('accounting'),

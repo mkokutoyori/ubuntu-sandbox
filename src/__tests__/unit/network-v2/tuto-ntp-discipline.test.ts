@@ -49,8 +49,13 @@ import {
   SEUIL_SAUT_MS, SEUIL_SORTIE_MS, SEUIL_PANIQUE_MS, PPM_MAX,
   type EtatHorloge,
 } from '@/network/ntp/discipline';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -219,13 +224,15 @@ describe('l\'etat est LU par les vues', () => {
     for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
       'ntp server 10.0.0.1', 'end']) await cli.executeCommand(c);
+    converge(clock, 1_200_000);
     return { srv, cli };
   }
 
   it('un decalage credible au demarrage est adopte', async () => {
     const { cli } = await laboDecale(5_000);
     expect(await cli.executeCommand('show ntp status')).toMatch(/stratum 3/);
-    expect(cli.getNtpAgent().getDerniereDecision()).toBe('step');
+    expect(cli.getNtpAgent().getEtatHorloge().sautsFaits).toBeGreaterThanOrEqual(1);
+    expect(Math.abs(cli.getNtpAgent().getOffsetMs() - 5_000)).toBeLessThan(50);
   });
 
   it('un decalage invraisemblable fait PANIQUER, et la vue le dit', async () => {
@@ -243,7 +250,7 @@ describe('l\'etat est LU par les vues', () => {
     // Synchronise d'abord, puis le serveur saute d'une demi-seconde.
     expect(await cli.executeCommand('show ntp status')).toMatch(/stratum 3/);
     (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 500;
-    cli.getNtpAgent().pollAll();
+    converge(clock, 400_000);
     expect(cli.getNtpAgent().getDerniereDecision()).toBe('spike');
     expect(await cli.executeCommand('show ntp status'))
       .toContain("loopfilter state is 'SPIK'");
@@ -254,7 +261,7 @@ describe('l\'etat est LU par les vues', () => {
     const { srv, cli } = await laboDecale(0);
     const avant = cli.getNtpAgent().getEtatHorloge().offsetApplique;
     (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 900;
-    cli.getNtpAgent().pollAll();
+    converge(clock, 400_000);
     expect(cli.getNtpAgent().getEtatHorloge().offsetApplique).toBe(avant);
   });
 });
@@ -272,16 +279,17 @@ describe('§5.4 — `chronyc makestep` force le saut', () => {
     await pc.executeCommand(
       "printf 'server 10.0.3.1 iburst\\nmakestep 1.0 3\\n' | sudo tee /etc/chrony/chrony.conf");
     await pc.executeCommand('sudo systemctl restart chrony');
+    converge(clock);
 
     // Le serveur decale de deux secondes APRES la synchronisation :
     // au-dela du seuil de `makestep`, et la machine est deja SYNC.
     (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 2_000;
     const agent = (pc as unknown as { getNtpAgent(): import('@/network/ntp/NtpAgent').NtpAgent })
       .getNtpAgent();
-    agent.pollAll();
+    converge(clock, 130_000);
     const ecarte = agent.getEtatHorloge().offsetApplique;
 
-    expect(await pc.executeCommand('chronyc makestep')).toBe('200 OK');
+    expect(await pc.executeCommand('sudo chronyc makestep')).toBe('200 OK');
     // Ce qui compte est que l'ecart soit RATTRAPE, pas le libelle de la
     // derniere decision : la commande reinterroge apres avoir saute, et
     // cette mesure-la ne trouve plus rien a corriger — elle glisse de

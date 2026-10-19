@@ -171,7 +171,7 @@ describe('un utilisateur INCONNU est une tentative comme une autre', () => {
     await ghostAttempt(host);
     await ghostAttempt(host);
 
-    expect(await rightAttempt(host)).toMatch(/Quiet-Mode/);
+    expect(await rightAttempt(host)).toMatch(/Connection refused/);
   });
 });
 
@@ -187,6 +187,6 @@ describe('ce que le correctif ne doit pas emporter', () => {
     await wrongAttempt(host);
     await wrongAttempt(host);
 
-    expect(await rightAttempt(host)).toMatch(/refused|Quiet-Mode/i);
+    expect(await rightAttempt(host)).toMatch(/Connection refused/);
   });
 });

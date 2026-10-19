@@ -131,6 +131,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
       bootfile: offer.file.length > 0 ? offer.file : undefined,
       netbiosServers: strArray(offer.getOption(DHCP_OPTION.NETBIOS_NAME_SERVER)),
       netbiosNodeType: str(offer.getOption(DHCP_OPTION.NETBIOS_NODE_TYPE)) ?? undefined,
+      ntpServers: strArray(offer.getOption(DHCP_OPTION.NTP_SERVERS)),
     };
     return {
       ip: offer.yiaddr,

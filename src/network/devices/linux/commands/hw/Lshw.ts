@@ -1,6 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const KNOWN_CLASSES = new Set([
   'system', 'bus', 'memory', 'processor', 'cpu', 'address', 'storage', 'disk',
@@ -84,7 +85,7 @@ function renderText(profile: HardwareProfile, filter: string | null): string {
 function renderShort(profile: HardwareProfile, filter: string | null): string {
   const lines = ['H/W path        Device      Class          Description', '=========================================================='];
   for (const e of entries(profile, filter)) {
-    lines.push(`/0/${e.id.padEnd(10)} ${''.padEnd(11)} ${e.class.padEnd(14)} ${e.description}`);
+    lines.push(`/0/${padToWidth(e.id, 10)} ${padToWidth('', 11)} ${padToWidth(e.class, 14)} ${e.description}`);
   }
   return lines.join('\n');
 }

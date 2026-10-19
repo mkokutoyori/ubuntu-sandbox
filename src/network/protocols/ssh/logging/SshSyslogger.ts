@@ -26,6 +26,7 @@ import type {
 } from '../server/SshServerEvent';
 
 import type { SshdLogLevel } from '@/network/protocols/ssh/server/SshdServerConfig';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const VERBOSE_LEVELS: ReadonlySet<SshdLogLevel> = new Set(['VERBOSE', 'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3']);
 
@@ -41,6 +42,8 @@ export interface SshSysloggerOptions {
   readonly hostname: HostnameSource;
   /** PID printed inside `sshd[<pid>]`. Defaults to a random high value. */
   readonly sshdPid?: number;
+  /** PID of the process serving the connection from this peer, when one is known. */
+  readonly pidFor?: (ip: string, port: number | undefined) => number | undefined;
   /** SSH listening port shown in `port <n> ssh2`. Defaults to 22. */
   readonly port?: number;
   /** Optional clock override for deterministic tests. */
@@ -54,6 +57,7 @@ export interface SshSysloggerOptions {
    */
   readonly logMgr?: LinuxLogManager;
   readonly logLevel?: () => SshdLogLevel;
+  readonly sink?: (message: string) => void;
 }
 
 /**
@@ -64,23 +68,27 @@ export interface SshSysloggerOptions {
 export class SshSyslogger {
   private readonly hostnameSource: HostnameSource;
   private readonly sshdPid: number;
+  private readonly pidFor: (ip: string, port: number | undefined) => number | undefined;
   private readonly port: number;
   private readonly clock: () => Date;
   private readonly logMgr: LinuxLogManager | null;
   private readonly logLevel: () => SshdLogLevel;
+  private readonly sink: ((message: string) => void) | null;
   private readonly unsubscribe: () => void;
 
   constructor(
-    private readonly vfs: VirtualFileSystem,
+    private readonly vfs: VirtualFileSystem | null,
     bus: ISshServerEventBus,
     opts: SshSysloggerOptions,
   ) {
     this.hostnameSource = opts.hostname;
     this.sshdPid = opts.sshdPid ?? 1000 + Math.floor(Math.random() * 9000);
+    this.pidFor = opts.pidFor ?? (() => undefined);
     this.port = opts.port ?? 22;
     this.clock = opts.clock ?? (() => simulationDate());
     this.logMgr = opts.logMgr ?? null;
     this.logLevel = opts.logLevel ?? (() => 'INFO');
+    this.sink = opts.sink ?? null;
     this.unsubscribe = bus.on('*', (e) => this.handle(e));
   }
 
@@ -91,16 +99,38 @@ export class SshSyslogger {
 
   // ─── private ───────────────────────────────────────────────────────
 
+  private connectionPid(event: SshServerEvent): number {
+    const peer = 'peer' in event && event.peer !== undefined ? event.peer : 'ip' in event ? event : undefined;
+    return (peer === undefined ? undefined : this.pidFor(peer.ip, peer.port)) ?? this.sshdPid;
+  }
+
   private handle(event: SshServerEvent): void {
+    const pid = this.connectionPid(event);
     if (event.kind === 'client_disconnected') {
-      for (const line of this.disconnectLines(event)) this.append(line);
+      for (const line of this.disconnectLines(event)) this.append(line, 'sshd', pid);
+      return;
+    }
+    if (event.kind === 'session_fatal') {
+      this.append(`fatal: ${event.text} [postauth]`, 'sshd', pid);
+      return;
+    }
+    if (event.kind === 'auth_log') {
+      if (event.level === 'verbose' && !VERBOSE_LEVELS.has(this.logLevel())) return;
+      this.append(event.level === 'error' ? `error: ${event.text}` : event.text, 'sshd', pid);
+      return;
+    }
+    if (event.kind === 'sftp_log') {
+      this.append(event.text, event.program, event.pid);
       return;
     }
     const message = this.format(event);
     if (!message) return;
-    this.append(message);
+    this.append(message, 'sshd', pid);
+    if (event.kind === 'auth_failure' && event.reason === 'max_auth_tries') {
+      this.append(`Disconnecting authenticating user ${event.user} ${event.ip} port ${event.port ?? this.port}: Too many authentication failures [preauth]`, 'sshd', pid);
+    }
     if (event.kind === 'auth_failure' && (event.reason === 'account_expired' || event.reason === 'pam_account_denied')) {
-      this.append(`fatal: Access denied for user ${event.user} by PAM account configuration [preauth]`);
+      this.append(`fatal: Access denied for user ${event.user} by PAM account configuration [preauth]`, 'sshd', pid);
     }
   }
 
@@ -115,6 +145,10 @@ export class SshSyslogger {
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port} rdomain ""`;
 
       case 'auth_success': {
+        if (event.method === 'publickey' && event.keyType && event.keyFingerprint && event.certificate) {
+          const { keyId, serial, caType, caFingerprint } = event.certificate;
+          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint} ID ${keyId} (serial ${serial}) CA ${caType} ${caFingerprint}`;
+        }
         if (event.method === 'publickey' && event.keyType && event.keyFingerprint) {
           return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint}`;
         }
@@ -126,6 +160,10 @@ export class SshSyslogger {
           return `error: PAM: ${event.detail ?? 'Authentication failure'} for ${event.user} from ${event.ip}`;
         }
         if (event.reason === 'password_expired') return null;
+        if (event.reason === 'publickey_query' && !VERBOSE_LEVELS.has(this.logLevel())) return null;
+        if (event.reason === 'max_auth_tries') {
+          return `error: maximum authentication attempts exceeded for ${event.validUser === false ? 'invalid user ' : ''}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2 [preauth]`;
+        }
         const method = event.method ?? 'unknown';
         const qualite = event.validUser === false ? 'invalid user ' : '';
         return `Failed ${method} for ${qualite}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
@@ -138,7 +176,7 @@ export class SshSyslogger {
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;
 
       case 'auth_strict_modes_refused':
-        return `Authentication refused: bad ownership or modes for file ${event.path}`;
+        return `Authentication refused: bad ownership or modes for ${event.subject} ${event.path}`;
 
       case 'auth_policy_refused': {
         const r = event.reason;
@@ -157,11 +195,11 @@ export class SshSyslogger {
         if (/DenyGroups/i.test(r)) {
           return `User ${event.user} from ${event.ip} not allowed because a group is listed in DenyGroups`;
         }
+        if (/account locked/i.test(r)) {
+          return `User ${event.user} not allowed because account is locked`;
+        }
         return null;
       }
-
-      case 'auth_throttled':
-        return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;
 
       case 'client_disconnected':
         return null;
@@ -207,7 +245,12 @@ export class SshSyslogger {
     return lines;
   }
 
-  private append(message: string): void {
+  private append(message: string, tag = 'sshd', pid = this.sshdPid): void {
+    if (this.sink !== null) {
+      this.sink(message);
+      return;
+    }
+    if (this.vfs === null) return;
     // When wired to a LinuxLogManager the journal owns BOTH the on-disk
     // `/var/log/auth.log` (via addEntry → appendToLogFile) and the live
     // `journalctl` feed — writing the file again here would duplicate
@@ -218,11 +261,11 @@ export class SshSyslogger {
       // tag = 'sshd' (syslog identifier) but unit = 'ssh' (systemd
       // unit name on Ubuntu), so `journalctl -u ssh` returns these
       // and the file line still reads `… sshd[<pid>]: …`.
-      this.logMgr.logAuth('sshd', message, this.sshdPid, 'ssh');
+      this.logMgr.logAuth(tag, message, pid, 'ssh');
       return;
     }
     if (!this.vfs.exists(LOG_DIR)) this.vfs.mkdirp(LOG_DIR, 0o755, 0, 0);
-    const line = `${this.timestamp()} ${hostnameOf(this.hostnameSource)} sshd[${this.sshdPid}]: ${message}\n`;
+    const line = `${this.timestamp()} ${hostnameOf(this.hostnameSource)} ${tag}[${pid}]: ${message}\n`;
     const existing = this.vfs.readFile(AUTH_LOG_PATH) ?? '';
     this.vfs.writeFile(AUTH_LOG_PATH, existing + line, 0, 0, 0o022);
   }
@@ -231,7 +274,7 @@ export class SshSyslogger {
   private timestamp(): string {
     const now = this.clock();
     const mon = MONTHS[now.getUTCMonth()];
-    const day = String(now.getUTCDate()).padStart(2, ' ');
+    const day = padToWidth(String(now.getUTCDate()), 2, 'right');
     const hh = String(now.getUTCHours()).padStart(2, '0');
     const mm = String(now.getUTCMinutes()).padStart(2, '0');
     const ss = String(now.getUTCSeconds()).padStart(2, '0');

@@ -21,6 +21,7 @@ export type ParseResult =
 
 export interface TokenizeOptions {
   readonly escapesAnyCharacter?: boolean;
+  readonly singleQuotes?: boolean;
 }
 
 /**
@@ -51,6 +52,8 @@ export function tokenizeWithPositions(
   const starts: number[] = [];
   let current = '';
   let quoted = false;
+  let singleQuoted = false;
+  const singleQuotes = options?.singleQuotes === true;
   let started = false;
   let escaped = false;
   let debut = 0;
@@ -74,13 +77,19 @@ export function tokenizeWithPositions(
       at++;
       continue;
     }
-    if (character === '"') {
+    if (singleQuotes && character === "'" && !quoted) {
+      singleQuoted = !singleQuoted;
+      current += character;
+      started = true;
+      continue;
+    }
+    if (character === '"' && !singleQuoted) {
       quoted = !quoted;
       current += character;
       started = true;
       continue;
     }
-    if (!quoted && /\s/.test(character)) {
+    if (!quoted && !singleQuoted && /\s/.test(character)) {
       if (started) flush();
       continue;
     }
@@ -146,6 +155,7 @@ export function parseCommand(
 
   let node = table.rootNode();
   const args: Record<string, string> = {};
+  let optionGiven = false;
 
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
@@ -214,6 +224,7 @@ export function parseCommand(
         };
       }
       Object.assign(args, verdict.args);
+      optionGiven = Object.keys(verdict.args).length > 0;
       break;
     }
 
@@ -237,6 +248,9 @@ export function parseCommand(
   if (spec.existsOnlyNegated && !negated) {
     return { status: 'incomplete', consumed: tokens.length };
   }
+  if (spec.requiresOneOption && !negated && !optionGiven) {
+    return { status: 'incomplete', consumed: tokens.length };
+  }
   if (!table.isReachable(spec, session)) {
     return {
       status: 'invalid', token: tokens[tokens.length - 1],
@@ -254,15 +268,15 @@ export function keywordMatches(
 ): TreeNode[] {
   const lowered = token.toLowerCase();
   const children = [...node.children.values()];
-  const reachable = children.filter(child => subtreeReachable(child, table, session));
+  const commencent = children
+    .filter(child => child.keyword?.toLowerCase().startsWith(lowered))
+    .filter(child => subtreeReachable(child, table, session));
 
-  const exact = reachable.find(child => child.keyword?.toLowerCase() === lowered);
+  const exact = commencent.find(child => child.keyword?.toLowerCase() === lowered);
   if (exact) return [exact];
 
   if (children.some(child => child.keyword?.toLowerCase() === lowered)) return [];
 
-  const commencent = reachable
-    .filter(child => child.keyword?.toLowerCase().startsWith(lowered));
   if (commencent.length <= 1) return commencent;
 
   const duMode = commencent.filter(

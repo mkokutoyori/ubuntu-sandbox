@@ -40,8 +40,13 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -64,6 +69,7 @@ async function labCisco(confSw: string[] = ['ntp server 10.0.0.1']) {
     'switchport access vlan 10', 'exit',
     'interface Vlan10', 'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
     ...confSw, 'end']) await s.executeCommand(c);
+  converge(clock);
   return { r, s };
 }
 
@@ -81,6 +87,7 @@ async function labHuawei(confSw: string[] = ['ntp-service unicast-server 10.0.0.
     'port default vlan 10', 'quit',
     'interface Vlanif10', 'ip address 10.0.0.2 255.255.255.0', 'undo shutdown', 'quit',
     ...confSw, 'return']) await s.executeCommand(c);
+  converge(clock);
   return { r, s };
 }
 

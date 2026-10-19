@@ -2,6 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { packageRecords, type DpkgState } from '../../packages/PackageState';
 import { packageHostOf } from './Apt';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const LIST_HEADER = [
   'Desired=Unknown/Install/Remove/Purge/Hold',
@@ -29,7 +30,7 @@ function runDpkg(ctx: LinuxCommandContext, args: string[]): { output: string; ex
     return { output: patterns.map((p) => `dpkg-query: no packages found matching ${p}`).join('\n'), exitCode: 1 };
   }
   const lines = kept.map(({ entry, state }) =>
-    `${LIST_FLAGS[state]}  ${entry.name.padEnd(19)} ${entry.version.padEnd(16)} ${entry.arch.padEnd(12)} ${entry.summary}`);
+    `${LIST_FLAGS[state]}  ${padToWidth(entry.name, 19)} ${padToWidth(entry.version, 16)} ${padToWidth(entry.arch, 12)} ${entry.summary}`);
   return { output: [...LIST_HEADER, ...lines].join('\n'), exitCode: 0 };
 }
 
