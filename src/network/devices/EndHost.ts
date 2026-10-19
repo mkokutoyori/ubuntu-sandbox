@@ -2841,6 +2841,11 @@ export abstract class EndHost extends Equipment {
     // This allows NAT devices to redirect packets addressed to themselves
     // to a different destination (e.g. port forwarding / DNAT).
     const preNat = this.evaluatePreRouting(portName, ipPkt);
+    if (preNat?.action === 'DROP') {
+      Logger.info(this.id, 'ipv4:nat-dropped',
+        `${this.name}: nat PREROUTING drop ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
+      return;
+    }
     if (preNat && preNat.action === 'DNAT' && preNat.address) {
       try {
         const { ip, port } = parseNatAddress(preNat.address);
@@ -2975,6 +2980,11 @@ export abstract class EndHost extends Equipment {
     let fwdPkt: IPv4Packet = decision.packet;
 
     const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
+    if (natResult?.action === 'DROP') {
+      Logger.info(this.id, 'ipv4:nat-dropped',
+        `${this.name}: nat POSTROUTING drop ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${inPort}→${outPortName}`);
+      return;
+    }
     if (natResult) {
       if (natResult.action === 'MASQUERADE') {
         const outPortIP = route.port.getIPAddress();
@@ -4089,6 +4099,7 @@ export abstract class EndHost extends Equipment {
         tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
         destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '', ipBytes,
       );
+      if (outputNat?.action === 'DROP') return false;
       if (outputNat?.action === 'REDIRECT') {
         // No --to-destination to read: real Linux maps a locally-generated
         // packet's destination to loopback (there is no "incoming
@@ -6092,6 +6103,7 @@ export abstract class EndHost extends Equipment {
     // ── PREROUTING: evaluate ip6tables DNAT rules before the local-
     // destination check, symmetrically to handleIPv4's evaluatePreRouting.
     const preNat6 = this.evaluatePreRouting6(portName, ipv6);
+    if (preNat6?.action === 'DROP') return;
     if (preNat6 && preNat6.action === 'DNAT' && preNat6.address) {
       try {
         const newDst = new IPv6Address(preNat6.address.split(']:')[0].replace(/^\[/, ''));

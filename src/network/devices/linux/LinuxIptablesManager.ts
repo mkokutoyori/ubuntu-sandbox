@@ -389,9 +389,11 @@ const TABLE_BUILTIN_CHAINS: Record<TableName, string[]> = {
 // ─── NAT result ────────────────────────────────────────────────────
 
 export interface NatResult {
-  action: 'MASQUERADE' | 'DNAT' | 'SNAT' | 'REDIRECT';
+  action: 'MASQUERADE' | 'DNAT' | 'SNAT' | 'REDIRECT' | 'DROP';
   address?: string;   // for DNAT: "ip:port", for SNAT: "ip", for REDIRECT: "port"
 }
+
+type ChainOutcome = FirewallVerdict | NatResult;
 
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
 const PROTOCOL_NUMBERS: Readonly<Record<string, number>> = {
@@ -419,6 +421,10 @@ const NAT_TARGET_HOOKS: Record<string, string[]> = {
   REDIRECT: ['PREROUTING', 'OUTPUT'],
   SNAT: ['POSTROUTING', 'INPUT'],
   MASQUERADE: ['POSTROUTING'],
+};
+
+const TARGET_TABLE: Readonly<Record<string, TableName>> = {
+  DNAT: 'nat', REDIRECT: 'nat', SNAT: 'nat', MASQUERADE: 'nat', REJECT: 'filter',
 };
 
 // ─── Manager ─────────────────────────────────────────────────────────
@@ -531,7 +537,8 @@ export class LinuxIptablesManager {
                     : pkt.direction === 'out' ? 'OUTPUT'
                     : 'FORWARD';
     const chain = filterTable.chains.get(chainName)!;
-    const verdict = this.evaluateChain(filterTable, chain, pkt, 0, entry.state);
+    const outcome = this.evaluateChain(filterTable, chain, pkt, 0, entry.state);
+    const verdict = typeof outcome === 'string' ? outcome : 'drop';
     if (verdict === 'accept') this.connections.confirm(entry);
     return verdict;
   }
@@ -569,35 +576,9 @@ export class LinuxIptablesManager {
     const chain = natTable.chains.get(hook);
     if (!chain) return null;
 
-    const bytes = pkt.ipPacketBytes ?? 0;
-    const state = this.connections.classify(pkt);
-    for (const rule of chain.rules) {
-      if (this.ruleMatchesPacket(rule, pkt, state)) {
-        rule.pkts++;
-        rule.bytes += bytes;
-
-        switch (rule.target) {
-          case 'MASQUERADE':
-            return { action: 'MASQUERADE' };
-          case 'DNAT': {
-            const toDest = rule.targetOptions['--to-destination'] || '';
-            return { action: 'DNAT', address: toDest };
-          }
-          case 'SNAT': {
-            const toSrc = rule.targetOptions['--to-source'] || '';
-            return { action: 'SNAT', address: toSrc };
-          }
-          case 'REDIRECT': {
-            const toPort = rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '';
-            return { action: 'REDIRECT', address: toPort };
-          }
-          default: continue;
-        }
-      }
-    }
-    chain.pkts++;
-    chain.bytes += bytes;
-    return null;
+    const outcome = this.evaluateChain(natTable, chain, pkt, 0, this.connections.classify(pkt));
+    if (typeof outcome !== 'string') return outcome;
+    return outcome === 'accept' ? null : { action: 'DROP' };
   }
 
   track(pkt: PacketInfo, subject: object): TrackedEntry {
@@ -614,7 +595,7 @@ export class LinuxIptablesManager {
    * decided the packet's fate (ACCEPT/DROP/REJECT). terminated=false means the
    * chain was exhausted without a terminal decision (equivalent to RETURN).
    */
-  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number, state: ConnectionState): FirewallVerdict {
+  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number, state: ConnectionState): ChainOutcome {
     if (depth > 20) return 'accept';
 
     const innerResult = this.evaluateChainInner(table, chain, pkt, depth, state);
@@ -631,7 +612,7 @@ export class LinuxIptablesManager {
    * Inner chain evaluation. Returns null if the chain was exhausted (RETURN behavior),
    * or a FirewallVerdict if a terminal decision was made.
    */
-  private evaluateChainInner(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number, state: ConnectionState): FirewallVerdict | null {
+  private evaluateChainInner(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number, state: ConnectionState): ChainOutcome | null {
     if (depth > 20) return 'accept';
 
     const bytes = pkt.ipPacketBytes ?? 0;
@@ -660,6 +641,10 @@ export class LinuxIptablesManager {
             this.lastRejectWith = rule.targetOptions['--reject-with'] ?? null;
             return 'reject';
           case 'RETURN': return null; // return to calling chain
+          case 'MASQUERADE': return { action: 'MASQUERADE' };
+          case 'DNAT': return { action: 'DNAT', address: rule.targetOptions['--to-destination'] || '' };
+          case 'SNAT': return { action: 'SNAT', address: rule.targetOptions['--to-source'] || '' };
+          case 'REDIRECT': return { action: 'REDIRECT', address: rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '' };
           case 'LOG':
             this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
             continue; // LOG doesn't terminate; continue to next rule
@@ -1404,12 +1389,14 @@ export class LinuxIptablesManager {
     table: IptablesTable, chainName: string, target: string,
     op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
   ): string | null {
-    if (table.name !== 'nat') return null;
+    const refusal = `${this.banner}:  ${op} failed (Invalid argument): rule in chain ${chainName}`;
+    const requiredTable = TARGET_TABLE[target];
+    if (requiredTable !== undefined && requiredTable !== table.name) return refusal;
     const allowedChains = NAT_TARGET_HOOKS[target];
     if (!allowedChains) return null;
     if (!TABLE_BUILTIN_CHAINS.nat.includes(chainName)) return null;
     if (allowedChains.includes(chainName)) return null;
-    return `iptables v1.8.7 (nf_tables):  ${op} failed (Invalid argument): rule in chain ${chainName}`;
+    return refusal;
   }
 
   // ─── -D ────────────────────────────────────────────────────────
