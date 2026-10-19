@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -612,6 +612,36 @@ def gen_search(seed, count):
         cases.append({"id": "sea%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
     return cases
 
+HELP_OPENERS = [["C-g"], ["C-g"], ["C-g"], ["C-w", "C-g"], ["C-\\", "C-g"], ["C-\\", "x", "Enter", "C-g"], ["C-o", "C-g"], ["C-r", "C-g"], ["C-x", "C-g"]]
+HELP_KEYS = ["Up", "Down", "Up", "Down", "Down", "PageUp", "PageDown", "PageDown", "Home", "End", "Left", "Right", "Space", "Enter", "Tab", "BSpace", "C-p", "C-n", "C-y", "C-v", "C-v", "C-l",
+             "M-\\", "M-/", "M-Up", "M-Down", "x", "q", "e", "b", "-", "?", "s", "n", "N", "w", "/", "z", "7", "C-a", "C-e", "C-b", "C-f", "C-k", "C-u", "C-j", "C-o", "C-d", "M-x", "M-c", "M-n", "M-z", "M-a", "M-u", "M-b", "M-f", "M-w", "M-q", "DC"]
+
+def help_search(r):
+    kind = r.random()
+    term = r.choice(["he", "key", "the", "zzz", "Replace", "M-", "^", "file", "bar", "  ", "Enter"])
+    if kind < 0.4:
+        return [r.choice(["C-w", "w", "/", "C-f"]), term, "Enter"]
+    if kind < 0.6:
+        return ["C-q", term, "Enter"]
+    if kind < 0.75:
+        return [r.choice(["M-w", "M-q", "n", "N", "C-w"]), "Enter"] if r.random() < 0.5 else [r.choice(["M-w", "M-q", "n", "N"])]
+    return [r.choice(["C-w", "C-q"]), "C-c"]
+
+def gen_help(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        rows, cols = r.choice([(24, 80), (24, 80), (12, 50), (8, 30), (10, 40), (30, 100), (24, 120), (14, 60), (20, 39), (7, 80), (6, 70), (5, 60), (40, 74), (24, 41), (24, 38)])
+        flags = r.sample(["-R", "-p", "-t", "-v", "-x", "-0", "-e", "-_", "-%", "-S", "-l", "-c", "-i"], r.choice([0, 0, 0, 1, 1, 2]))
+        opener = r.choice(HELP_OPENERS)
+        while "-v" in flags and "C-r" in opener:
+            opener = r.choice(HELP_OPENERS)
+        steps = list(opener)
+        for _ in range(r.randint(1, 8)):
+            steps.extend(help_search(r) if r.random() < 0.3 else [r.choice(HELP_KEYS)])
+        cases.append({"id": "hlp%d-%d" % (seed, i), "text": ["alpha beta", "gamma"], "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -637,6 +667,8 @@ def gen(seed, count, corpus):
         return gen_undo2(seed, count)
     if corpus == "search":
         return gen_search(seed, count)
+    if corpus == "help":
+        return gen_help(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
@@ -673,7 +705,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))

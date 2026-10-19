@@ -42,7 +42,7 @@ describe('Scénario — ^G ouvre une aide réelle, ^C reste la position du curse
     expect(nano.statusMessage).toBe('[ line  1/2 (50%), col  1/ 4 ( 25%), char  0/4 ( 0%) ]');
   });
 
-  it('^X (ou Échap) referme l\'aide et revient exactement où on était', () => {
+  it('^X referme l\'aide et revient exactement où on était', () => {
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'ab\n' });
     const nano = new NanoEngine(fs, '/tmp/x.txt', 'ab\n', false);
     press(nano, 'ArrowRight');

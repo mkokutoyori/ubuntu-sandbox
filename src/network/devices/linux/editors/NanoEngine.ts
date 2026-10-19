@@ -20,9 +20,11 @@ import {
   paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
 } from './nano/NanoJustify';
 import type { NanoMenuName } from './nano/NanoMenus';
+import { helpAction, unboundKeyMessage } from './nano/NanoHelpKeys';
+import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
-import type { EditorScreen } from './screen/EditorScreen';
+import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type NanoMode =
@@ -40,6 +42,7 @@ const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 
   k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
 };
 
+const CONTROL_MOTIONS: Readonly<Record<string, string>> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
 const STATUS_LINGER_KEYS = 20;
 const PAUSE_MILLIS = 1800;
 const VIEW_WARNING_MILLIS = 600;
@@ -57,6 +60,8 @@ export interface NanoLaunchOptions {
   readonly settings?: NanoSettings;
   readonly start?: NanoStart | null;
   readonly displayName?: string;
+  readonly helpTitle?: string;
+  readonly staleFooter?: ScreenRow;
 }
 
 export interface PendingReplaceMatch {
@@ -130,6 +135,7 @@ export class NanoEngine {
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
   private set _statusMessage(value: string) {
+    this.staleFooter = null;
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
     this.statusAlert = messageLevel(value) >= MESSAGE_LEVEL.ahem;
@@ -146,6 +152,9 @@ export class NanoEngine {
   private marginPending = false;
   readonly settings: NanoSettings;
   private readonly live: { -readonly [K in keyof NanoSettings]: NanoSettings[K] };
+  private readonly helpTitle: string | null;
+  private staleFooter: ScreenRow | null;
+  private helpViewer: NanoEngine | null = null;
   private _readOnly: boolean;
   private titleName: string;
   private bufferPath: string;
@@ -173,6 +182,7 @@ export class NanoEngine {
   private caseSensitive = false;
   private searchDir: 'forward' | 'backward' = 'forward';
   private searchAnswer = '';
+  private searchDefaultText = '';
   private lastSearchTerm = '';
   private searchHistory: string[] = [];
   private replaceHistory: string[] = [];
@@ -208,6 +218,8 @@ export class NanoEngine {
     showLineNumbers = false,
     launch: NanoLaunchOptions = {},
   ) {
+    this.helpTitle = launch.helpTitle ?? null;
+    this.staleFooter = launch.staleFooter ?? null;
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
     this.launchIdentity = launch.identity;
     const typedName = launch.displayName ?? filePath;
@@ -239,7 +251,7 @@ export class NanoEngine {
     this.ensureTrailingBlankLine();
     if (opening.alert !== null) this._statusMessage = `[ ${opening.alert} ]`;
     else if (!named) {
-      if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
+      if (!this.live.nohelp && this.helpTitle === null) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
     } else if (unread) this._statusMessage = '';
     else if (isNewFile) this._statusMessage = '[ New File ]';
     else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
@@ -289,7 +301,7 @@ export class NanoEngine {
     return this.linesArr.length > 1 && !this.live.nonewlines ? this.linesArr.slice(0, -1) : this.linesArr;
   }
   get bufferLines(): readonly string[] { return this.linesArr; }
-  get mode(): NanoMode { return this._mode; }
+  get mode(): NanoMode { return this.helpViewer !== null ? 'help' : this._mode; }
   get cursorLine(): number { return this._cursorLine; }
   get cursorCol(): number { return this._cursorCol; }
   get modified(): boolean { return this._modified; }
@@ -306,34 +318,7 @@ export class NanoEngine {
   get caseSensitiveSearch(): boolean { return this.caseSensitive; }
   /** Real nano's M-B toggle inside the search prompt (default: forward). */
   get searchDirection(): 'forward' | 'backward' { return this.searchDir; }
-  /** A compact reference of the bindings this engine actually implements — shown by ^G. */
-  get helpText(): string {
-    return [
-      'GNU nano Help Text',
-      '',
-      'The nano editor is a small, free text editor.',
-      '',
-      'Key bindings:',
-      '  ^G  Display this help text',
-      '  ^X  Exit / close a prompt',
-      '  ^O  Write the current buffer to disk',
-      '  ^R  Insert another file at the cursor',
-      '  ^T  Insert the output of a shell command',
-      '  ^W  Search for text (M-C case sensitive, M-R regexp, M-B backwards)',
-      '  ^\\  Search and replace text',
-      '  ^K  Cut the current line',
-      '  ^U  Paste the last cut text',
-      '  ^J  Justify the current paragraph',
-      '  ^_  Go to a specific line and column',
-      '  ^C  Show the current cursor position',
-      '  ^Y  Scroll up one page',
-      '  ^V  Scroll down one page',
-      '  M-U Undo the last action',
-      '  M-E Redo the last undone action',
-      '',
-      'Press ^X to close this help screen.',
-    ].join('\n');
-  }
+  get helpText(): string { return this.helpViewer === null ? '' : this.helpViewer.bufferLines.join('\n'); }
   get searchQuery(): string { return this.searchAnswer; }
   get filePath(): string { return this.bufferPath; }
   get swapFilePath(): string { return this.lockPath; }
@@ -352,6 +337,11 @@ export class NanoEngine {
 
   applyKey(k: EditorKeyInput): void {
     if (this._exited) return;
+    if (this.live.preserve && k.ctrl && (k.key.toLowerCase() === 'q' || k.key.toLowerCase() === 's')) return;
+    if (this.helpViewer !== null) {
+      this.keyInHelp(k);
+      return;
+    }
     this.pauseNote = null;
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
@@ -367,8 +357,13 @@ export class NanoEngine {
     if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     const cursorBefore = { line: this._cursorLine, col: this._cursorCol };
-    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') this.toggleHelpInPrompt();
-    else this.dispatchKey(k);
+    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') {
+      if (this.helpTitle === null) this.toggleHelpInPrompt();
+    } else if (wasPrompting && k.ctrl && k.key.toLowerCase() === 'g' && this.helpMenuOfPrompt() !== null) {
+      this.openHelp(this.helpMenuOfPrompt()!);
+    } else {
+      this.dispatchKey(k);
+    }
     if (this.searchSpotlight === null && this.isPrompting()) this.searchSpotlight = carriedSpotlight;
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
@@ -399,8 +394,8 @@ export class NanoEngine {
   }
 
   private minibarInfo(messageExpired: boolean): MinibarInfo | null {
-    const prompting = this.isPrompting() || this._mode === 'help';
-    if (!this.minibarMode() || prompting) return null;
+    const prompting = this.isPrompting();
+    if (!this.minibarMode() || prompting || this.helpTitle !== null) return null;
     if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
     const text = this.line(this._cursorLine);
     const code = this._cursorCol < text.length
@@ -443,7 +438,7 @@ export class NanoEngine {
   private searchPromptLabel(replacing: boolean): string {
     const replaceNote = replacing ? (this.markLine === null ? ' (to replace)' : ' (to replace) in selection') : '';
     return `Search${this.caseSensitive ? ' [Case Sensitive]' : ''}${this.useRegex ? ' [Regexp]' : ''}`
-      + `${this.searchDir === 'backward' ? ' [Backwards]' : ''}${replaceNote}${this.searchDefaultNote()}`;
+      + `${this.searchDir === 'backward' ? ' [Backwards]' : ''}${replaceNote}${this.searchDefaultText}`;
   }
 
   private searchDefaultNote(): string {
@@ -510,6 +505,7 @@ export class NanoEngine {
   }
 
   get screen(): EditorScreen {
+    if (this.helpViewer !== null) return this.helpViewer.screen;
     const live = this.paintScreen(false);
     if (this.pauseNote !== null) return { ...live, hold: { millis: this.pauseMillis, then: this.paintScreen(true) } };
     const level = messageLevel(this.statusText);
@@ -527,7 +523,7 @@ export class NanoEngine {
   }
 
   private bareDisplay(): boolean {
-    return this.minibarMode() || this.zeroMode();
+    return this.helpTitle === null && (this.minibarMode() || this.zeroMode());
   }
 
   private paintScreen(messageExpired: boolean): EditorScreen {
@@ -543,10 +539,11 @@ export class NanoEngine {
       tabsize: this.live.tabsize,
       softwrap: this.live.softwrap,
       title: {
-        name: this._mode === 'help' ? 'Main nano help text' : this.titleName === '' ? 'New Buffer' : this.titleName,
-        state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
+        name: this.titleName === '' ? 'New Buffer' : this.titleName,
+        state: this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
         branding: 'GNU nano 7.2',
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
+        heading: this.helpTitle ?? undefined,
       },
       status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore, raw: this.statusRaw },
       minibar: this.minibarInfo(messageExpired),
@@ -555,12 +552,16 @@ export class NanoEngine {
         ? { question: 'Save modified buffer? ', withAll: false }
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
-      menu: this._mode === 'help' ? 'help' : prompt === null ? 'main' : prompt.menu,
-      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view },
+      menu: this.helpTitle !== null ? (prompt === null ? 'help' : 'search-in-help') : prompt === null ? 'main' : prompt.menu,
+      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.live.preserve },
       pause: messageExpired ? null : this.pauseNote,
       pauseKeepsMenu: this.pauseKeepsMenu,
-      helpLines: this._mode === 'help' ? this.helpText.split('\n') : null,
     });
+    if (this.staleFooter !== null && this._mode === 'edit' && this.statusText === '') {
+      const rows = [...screen.rows];
+      rows[this.window.layout.statusRow] = this.staleFooter;
+      return { ...screen, rows };
+    }
     if (this._mode !== 'confirm' || !this.confirmation!.startup) return screen;
     const footerFrom = this.window.layout.statusRow;
     return { ...screen, rows: screen.rows.map((row, index) => (index < footerFrom ? { text: '', spans: [] } : row)) };
@@ -667,6 +668,7 @@ export class NanoEngine {
   }
 
   private wipeStatus(): void {
+    this.staleFooter = null;
     this.statusText = '';
     this.statusCountdown = 0;
     this.statusAlert = false;
@@ -679,6 +681,7 @@ export class NanoEngine {
   }
 
   resize(rows: number, cols: number): void {
+    this.helpViewer?.resize(rows, cols);
     if (this.sized && (rows !== this.window.rows || cols !== this.window.cols)) {
       this.wipeStatus();
       this.markFlagHidden = false;
@@ -722,7 +725,7 @@ export class NanoEngine {
 
   private dispatchKey(k: EditorKeyInput): void {
     switch (this._mode) {
-      case 'edit': return this.applyEditKey(k);
+      case 'edit': return this.helpTitle === null ? this.applyEditKey(k) : this.applyHelpViewerKey(k);
       case 'save-prompt': return this.applySavePromptKey(k);
       case 'exit-save-prompt': return this.applyExitSavePromptKey(k);
       case 'confirm': return this.applyConfirmKey(k);
@@ -731,7 +734,6 @@ export class NanoEngine {
       case 'replace-with': return this.applyReplaceWithKey(k);
       case 'replace-confirm': return this.applyReplaceConfirmKey(k);
       case 'goto-line': return this.applyGotoLineKey(k);
-      case 'help': return this.applyHelpKey(k);
       case 'execute-prompt': return this.applyExecutePromptKey(k);
       case 'read-file-prompt': return this.applyReadFilePromptKey(k);
     }
@@ -1058,8 +1060,8 @@ export class NanoEngine {
     if (k.key === 'ArrowLeft') { this.jumpWordLeft(); return; }
     if (k.key === 'ArrowRight') { this.jumpWordRight(); return; }
     const key = k.key.toLowerCase();
-    const emacs: Record<string, string> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
-    if (emacs[key]) { this.applyEditKey({ ...k, key: emacs[key], ctrl: false }); return; }
+    const motion = CONTROL_MOTIONS[key];
+    if (motion) { this.applyEditKey({ ...k, key: motion, ctrl: false }); return; }
     if (key === 'r' && this.refuseWhenRestricted()) return;
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
@@ -1098,24 +1100,16 @@ export class NanoEngine {
         }
         return;
       case 'w': // Where Is (search)
-        this.searchAnswer = '';
-        this.searchDir = 'forward';
-        this._promptCursor = 0;
-        this._mode = 'search';
-        this.resetHistoryRecall();
+        this.beginSearchPrompt(false);
         return;
       case '\\': // Replace
         this.beginReplacePrompt();
         return;
       case 'q':
-        this.searchAnswer = '';
-        this.searchDir = 'backward';
-        this._promptCursor = 0;
-        this._mode = 'search';
-        this.resetHistoryRecall();
+        this.beginSearchPrompt(true);
         return;
       case 'g': // Get Help
-        this._mode = 'help';
+        this.openHelp('main');
         return;
       case 'c': { // Cur Pos
         this._statusMessage = this.locationMessage();
@@ -1179,7 +1173,7 @@ export class NanoEngine {
     if (this.movePage(true) > 0) {
       const last = this.linesArr.length - 1;
       this._cursorLine = last;
-      this._cursorCol = this.line(last).length;
+      this._cursorCol = this.helpTitle !== null ? 0 : this.line(last).length;
       this.verticalKey = false;
       this.manner = 'flowing';
       return;
@@ -1323,6 +1317,10 @@ export class NanoEngine {
       this._statusMessage = '[ No linter is defined for this type of file ]';
       return;
     }
+    if (key === 'f') {
+      this._statusMessage = '[ No formatter is defined for this type of file ]';
+      return;
+    }
     if (key === 'w') {
       this.wipeStatus();
       this.researchWith(false);
@@ -1359,7 +1357,7 @@ export class NanoEngine {
   private toLastLine(): void {
     this.manner = 'flowing';
     this._cursorLine = this.linesArr.length - 1;
-    this._cursorCol = this.line(this._cursorLine).length;
+    this._cursorCol = this.helpTitle !== null ? 0 : this.line(this._cursorLine).length;
   }
 
   // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
@@ -1736,15 +1734,17 @@ export class NanoEngine {
       if (this.cutBuffer !== null) this.insertIntoPromptField(get, set, this.cutBuffer[0]);
       return true;
     }
-    if (k.key === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
-    if (k.key === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
-    if (k.key === 'Home') { this._promptCursor = 0; return true; }
-    if (k.key === 'End') { this._promptCursor = text.length; return true; }
-    if (k.key === 'Delete') {
+    const motion = k.ctrl && !k.alt ? CONTROL_MOTIONS[k.key.toLowerCase()] : undefined;
+    const name = motion ?? k.key;
+    if (name === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
+    if (name === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
+    if (name === 'Home') { this._promptCursor = 0; return true; }
+    if (name === 'End') { this._promptCursor = text.length; return true; }
+    if (name === 'Delete') {
       if (this._promptCursor < text.length) set(text.slice(0, this._promptCursor) + text.slice(this._promptCursor + 1));
       return true;
     }
-    if (k.key === 'Backspace') {
+    if (name === 'Backspace') {
       if (this._promptCursor > 0) {
         set(text.slice(0, this._promptCursor - 1) + text.slice(this._promptCursor));
         this._promptCursor--;
@@ -1772,7 +1772,7 @@ export class NanoEngine {
   }
 
   private isPrompting(): boolean {
-    return this._mode !== 'edit' && this._mode !== 'help';
+    return this._mode !== 'edit';
   }
 
   private writeTarget(name: string): string {
@@ -2091,9 +2091,114 @@ export class NanoEngine {
 
   // ── Help (^G) ────────────────────────────────────────────────────
 
-  private applyHelpKey(k: EditorKeyInput): void {
-    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'x')) {
-      this._mode = 'edit';
+  private helpMenuOfPrompt(): HelpMenu | null {
+    switch (this._mode) {
+      case 'search': return 'search';
+      case 'replace-search': return 'replace';
+      case 'replace-with': return 'replace-with';
+      case 'goto-line': return 'goto';
+      case 'save-prompt': return 'write';
+      case 'read-file-prompt': return 'insert';
+      case 'execute-prompt': return 'execute';
+      default: return null;
+    }
+  }
+
+  private openHelp(menu: HelpMenu): void {
+    const rows = this.window.rows;
+    const cols = this.window.cols;
+    const page = helpPage(
+      menu,
+      { restricted: this.live.restricted, preserve: this.live.preserve, saveonexit: this.live.saveonexit, view: this._readOnly },
+      { columns: cols, rows, leadingBlank: (this.live.minibar || !this.live.emptyline) && rows > 6 },
+    );
+    const settings = defaultNanoSettings({
+      ...this.live,
+      tabsize: 8,
+      linenumbers: false,
+      nohelp: false,
+      zero: false,
+      view: false,
+      restricted: false,
+      nonewlines: true,
+      locking: false,
+      constantshow: false,
+      stateflags: false,
+    });
+    const tiny = this.footerKeepsStaleText();
+    const viewer = new NanoEngine(this.fs, '', page.lines.join('\n'), false, false, undefined, false, {
+      identity: this.launchIdentity,
+      settings,
+      helpTitle: page.title,
+      staleFooter: tiny ? this.paintScreen(false).rows[this.window.layout.statusRow] : undefined,
+    });
+    viewer.lastSearchTerm = this.lastSearchTerm;
+    viewer.searchHistory = this.searchHistory;
+    viewer.replaceHistory = this.replaceHistory;
+    viewer.resize(rows, cols);
+    this.helpViewer = viewer;
+    this.wipeStatus();
+  }
+
+  private footerKeepsStaleText(): boolean {
+    return this.window.layout.barsFrom === null && this.window.rows > 1 && !this.live.nohelp && !this.live.zero;
+  }
+
+  private keyInHelp(k: EditorKeyInput): void {
+    const viewer = this.helpViewer!;
+    viewer.applyKey(k);
+    if (!viewer.exited) return;
+    const footer = viewer.screen.rows[this.window.layout.statusRow];
+    this.lastSearchTerm = viewer.lastSearchTerm;
+    this.helpViewer = null;
+    this.wipeStatus();
+    if (this.footerKeepsStaleText()) this.staleFooter = footer;
+    if (this.reportsPositionAsMessage() && this._mode === 'edit') this._statusMessage = this.locationMessage();
+  }
+
+  private applyHelpViewerKey(k: EditorKeyInput): void {
+    const action = helpAction(k, this.live.preserve);
+    switch (action) {
+      case 'scroll-up':
+        this.scrollView(false, 1);
+        return;
+      case 'scroll-down':
+        if (this.window.edittop + this.window.editRows - 1 < this.linesArr.length - 1) this.scrollView(true, 1);
+        return;
+      case 'page-up':
+        this.pageUp();
+        return;
+      case 'page-down':
+        this.pageDown();
+        return;
+      case 'first-line':
+        this.toFirstLine();
+        return;
+      case 'last-line':
+        this.toLastLine();
+        return;
+      case 'search-forward':
+        this.beginSearchPrompt(false);
+        return;
+      case 'search-backward':
+        this.beginSearchPrompt(true);
+        return;
+      case 'find-next':
+        this.wipeStatus();
+        this.researchWith(false);
+        return;
+      case 'find-previous':
+        this.wipeStatus();
+        this.researchWith(true);
+        return;
+      case 'refresh':
+        return;
+      case 'exit':
+        this._exited = true;
+        return;
+      default:
+        this._statusMessage = `[ ${unboundKeyMessage(k)} ]`;
+        this.statusCountdown = 1;
     }
   }
 
@@ -2305,7 +2410,9 @@ export class NanoEngine {
 
   private applySearchKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
+    const inHelp = this.helpTitle !== null;
     if (k.alt && (key === 'c' || key === 'r' || key === 'b')) {
+      if (inHelp) return;
       if (key === 'c') this.caseSensitive = !this.caseSensitive;
       else if (key === 'r') this.useRegex = !this.useRegex;
       else this.searchDir = this.searchDir === 'forward' ? 'backward' : 'forward';
@@ -2313,12 +2420,13 @@ export class NanoEngine {
       return;
     }
     if (k.ctrl && key === 'r') {
+      if (inHelp) return;
       this.resetHistoryRecall();
       if (this._readOnly) this.pauseWith('Key is invalid in view mode', VIEW_WARNING_MILLIS, true);
       else this._mode = this._mode === 'search' ? 'replace-search' : 'search';
       return;
     }
-    if (k.ctrl && key === 't' && this._mode === 'search') {
+    if (k.ctrl && key === 't' && this._mode === 'search' && !inHelp) {
       this.resetHistoryRecall();
       this.gotoLineBuffer = this.searchAnswer;
       this._promptCursor = this.gotoLineBuffer.length;
@@ -2344,11 +2452,21 @@ export class NanoEngine {
     this.applyPromptFieldKey(k, () => this.searchAnswer, (value) => { this.searchAnswer = value; });
   }
 
+  private beginSearchPrompt(backwards: boolean): void {
+    this.searchDefaultText = this.searchDefaultNote();
+    this.searchAnswer = '';
+    this.searchDir = backwards ? 'backward' : 'forward';
+    this._promptCursor = 0;
+    this._mode = 'search';
+    this.resetHistoryRecall();
+  }
+
   private beginReplacePrompt(): void {
     if (this._readOnly) {
       this._statusMessage = '[ Key is invalid in view mode ]';
       return;
     }
+    this.searchDefaultText = this.searchDefaultNote();
     this.searchAnswer = '';
     this.searchDir = 'forward';
     this._promptCursor = 0;
@@ -2493,13 +2611,14 @@ export class NanoEngine {
   private startReplaceRun(): void {
     const origin = this.replaceOrigin!;
     this.replaceOrigin = null;
+    const pattern = this.lastSearchTerm === origin.pattern.needle ? origin.pattern : this.compileSearch(this.lastSearchTerm) ?? origin.pattern;
     const backwards = this.searchDir === 'backward';
     const marked = this.markLine !== null;
     const run: ReplaceRun = {
-      pattern: origin.pattern,
+      pattern,
       replacement: this.replaceWithBuffer,
       backwards,
-      circuit: new SearchCircuit(origin.pattern, backwards),
+      circuit: new SearchCircuit(pattern, backwards),
       begin: { line: origin.line, col: origin.col },
       edittop: origin.edittop,
       firstcolumn: origin.firstcolumn,

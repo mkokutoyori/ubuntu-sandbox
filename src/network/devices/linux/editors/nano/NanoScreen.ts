@@ -35,7 +35,7 @@ export interface NanoScreenInput {
   readonly spotlight: { readonly line: number; readonly start: number; readonly end: number } | null;
   readonly tabsize: number;
   readonly softwrap: boolean;
-  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null };
+  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null; readonly heading?: string };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean; readonly raw?: boolean } | null;
   readonly minibar: MinibarInfo | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
@@ -44,7 +44,6 @@ export interface NanoScreenInput {
   readonly menuOptions: MenuOptions;
   readonly pause: string | null;
   readonly pauseKeepsMenu?: boolean;
-  readonly helpLines: readonly string[] | null;
 }
 
 class Canvas {
@@ -89,6 +88,14 @@ const SPACE_ROW: ScreenRow = { text: '', spans: [] };
 function clipped(text: string, width: number, tabsize: number): string {
   const end = actualX(text, width, tabsize);
   return text.slice(0, end);
+}
+
+function headingRow(cols: number, heading: string, tabsize: number): ScreenRow {
+  const canvas = new Canvas(cols);
+  const width = breadth(heading, tabsize);
+  canvas.put(Math.max(0, Math.ceil((cols - width) / 2)), heading);
+  canvas.mark(0, cols, 'reverse');
+  return canvas.fullRow();
 }
 
 export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null = null): ScreenRow {
@@ -247,20 +254,6 @@ function editRows(input: NanoScreenInput): ScreenRow[] {
   return rows;
 }
 
-function helpRows(input: NanoScreenInput): ScreenRow[] {
-  const height = input.window.editRows;
-  const rows: ScreenRow[] = [];
-  for (const line of input.helpLines ?? []) {
-    if (rows.length >= height) break;
-    const shown = displayString(line, 0, input.window.cols, { isData: false, isPrompt: false, softwrap: false, tabsize: input.tabsize });
-    const canvas = new Canvas(input.window.cols);
-    canvas.putCells(0, shown.cells);
-    rows.push(canvas.row());
-  }
-  while (rows.length < height) rows.push(SPACE_ROW);
-  return rows;
-}
-
 function statusRow(cols: number, status: { text: string; alert: boolean; more?: boolean; raw?: boolean } | null, tabsize: number): ScreenRow {
   if (status === null) return SPACE_ROW;
   if (status.raw === true) {
@@ -406,9 +399,9 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   const rows: ScreenRow[] = new Array(window.rows).fill(SPACE_ROW);
   let cursorAt: { row: number; col: number } | null = null;
 
-  if (layout.titleRows > 0) rows[0] = titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags);
+  if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? headingRow(cols, input.title.heading, tabsize) : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags);
 
-  const body = input.helpLines === null ? editRows(input) : helpRows(input);
+  const body = editRows(input);
   const bodyTop = layout.editFrom;
   body.forEach((row, index) => { if (bodyTop + index < rows.length) rows[bodyTop + index] = row; });
 
@@ -434,10 +427,8 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   } else {
     footerStatus = input.minibar !== null ? minibarRow(cols, input.minibar, tabsize) : statusRow(cols, input.status, tabsize);
     bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions);
-    if (input.helpLines === null) {
-      const place = window.place(input.cursor);
-      cursorAt = { row: bodyTop + place.row, col: window.margin + place.column };
-    }
+    const place = window.place(input.cursor);
+    cursorAt = { row: bodyTop + place.row, col: window.margin + place.column };
   }
 
   const footerHasContent = input.pause !== null || input.yesNo !== null || input.prompt !== null || input.status !== null || input.minibar !== null;

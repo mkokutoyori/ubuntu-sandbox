@@ -34,12 +34,14 @@ const NAMED: Record<string, Partial<EditorKeyInput> & { key: string }> = {
   Home: { key: 'Home' }, End: { key: 'End' }, PageUp: { key: 'PageUp' }, PageDown: { key: 'PageDown' },
   Enter: { key: 'Enter' }, Tab: { key: 'Tab' }, BSpace: { key: 'Backspace' }, DC: { key: 'Delete' },
   'C-Left': { key: 'ArrowLeft', ctrl: true }, 'C-Right': { key: 'ArrowRight', ctrl: true },
-  'M-Up': { key: 'ArrowUp', alt: true }, 'M-Down': { key: 'ArrowDown', alt: true },
+  'M-Up': { key: 'ArrowUp', alt: true }, 'M-Down': { key: 'ArrowDown', alt: true }, Space: { key: ' ' },
 };
 
 export function nanoKeysOf(step: string): EditorKeyInput[] {
   const named = NAMED[step];
   if (named) return [editorKey(named.key, named)];
+  const functionKey = /^F(\d{1,2})$/.exec(step);
+  if (functionKey) return [editorKey(step)];
   const control = /^C-(.)$/.exec(step);
   if (control) return [editorKey(control[1], { ctrl: true })];
   const meta = /^M-(.)$/.exec(step);
