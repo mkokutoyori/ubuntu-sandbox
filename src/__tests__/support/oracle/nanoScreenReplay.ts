@@ -34,6 +34,7 @@ const NAMED: Record<string, Partial<EditorKeyInput> & { key: string }> = {
   Home: { key: 'Home' }, End: { key: 'End' }, PageUp: { key: 'PageUp' }, PageDown: { key: 'PageDown' },
   Enter: { key: 'Enter' }, Tab: { key: 'Tab' }, BSpace: { key: 'Backspace' }, DC: { key: 'Delete' },
   'C-Left': { key: 'ArrowLeft', ctrl: true }, 'C-Right': { key: 'ArrowRight', ctrl: true },
+  'C-Up': { key: 'ArrowUp', ctrl: true }, 'C-Down': { key: 'ArrowDown', ctrl: true },
   'M-Up': { key: 'ArrowUp', alt: true }, 'M-Down': { key: 'ArrowDown', alt: true }, Space: { key: ' ' },
 };
 
