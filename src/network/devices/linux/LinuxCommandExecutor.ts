@@ -356,7 +356,7 @@ function parseSudoLead(args: readonly string[]): {
 const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
-  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl',
+  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -3581,7 +3581,7 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       color: this.displayColor,
-      isPiped: outputPiped,
+      isPiped: outputPiped || this.childShellRunning,
       envOverride: this.envOverride ?? undefined,
       openRefusal: (absPath: string) => this.openRefusal(absPath),
       zone: this.localZone(),
@@ -3600,6 +3600,8 @@ export class LinuxCommandExecutor {
    */
   /** Exit code of the most recent execute() call. Cleared per call. */
   lastExitCode = 0;
+  private lastRawOutput: string | null = null;
+  private childShellRunning = false;
 
   sessionHoldSeconds = 0;
 
@@ -3701,6 +3703,19 @@ export class LinuxCommandExecutor {
     this.jobTable = b.jobTable;
     this.lastExitCode = b.lastExitCode;
     this.windowSize = b.windowSize;
+  }
+
+  executeChild(input: string, stdin?: string): { output: string; status: number } {
+    this.lastRawOutput = null;
+    this.execInput = stdin;
+    this.childShellRunning = true;
+    try {
+      const text = this.execute(input);
+      return { output: this.lastRawOutput ?? text, status: this.lastExitCode };
+    } finally {
+      this.execInput = undefined;
+      this.childShellRunning = false;
+    }
   }
 
   execute(input: string): string {
@@ -3813,6 +3828,7 @@ export class LinuxCommandExecutor {
     }
 
     this.lastExitCode = result.exitCode ?? 0;
+    this.lastRawOutput = result.output;
 
     // A terminal does not echo a trailing blank line after a command
     // (e.g. `echo x` shows one line, not two). Drop a single trailing
@@ -6235,7 +6251,7 @@ export class LinuxCommandExecutor {
         const registryResult = this._registryCommandHook?.(cmd, args, stdin);
         if (registryResult) return registryResult;
 
-        return { output: `${cmd}: command not found`, exitCode: 127 };
+        return { output: `${this.childShellRunning ? 'bash: line 1: ' : ''}${cmd}: command not found`, exitCode: 127 };
       }
     }
   }

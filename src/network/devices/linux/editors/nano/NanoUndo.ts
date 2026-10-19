@@ -1,5 +1,5 @@
 export type UndoKind =
-  | 'ADD' | 'ENTER' | 'BACK' | 'DEL' | 'JOIN' | 'REPLACE' | 'SPLIT' | 'ZAP' | 'CUT' | 'CUT_TO_EOF' | 'PASTE' | 'INSERT'
+  | 'ADD' | 'ENTER' | 'BACK' | 'DEL' | 'JOIN' | 'REPLACE' | 'SPLIT' | 'ZAP' | 'CUT' | 'CUT_TO_EOF' | 'PASTE' | 'INSERT' | 'FILTER'
   | 'COUPLE' | 'INDENT' | 'UNINDENT' | 'COMMENT' | 'UNCOMMENT';
 
 export type LastAction = UndoKind | 'OTHER' | 'COPY';
@@ -44,6 +44,7 @@ const NAMES: Readonly<Record<UndoKind, string | null>> = {
   CUT_TO_EOF: 'cut',
   PASTE: 'paste',
   INSERT: 'insertion',
+  FILTER: 'filtering',
   COUPLE: null,
   INDENT: 'indent',
   UNINDENT: 'unindent',

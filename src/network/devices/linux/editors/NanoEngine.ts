@@ -1,8 +1,8 @@
-import type { EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
+import type { ChildShellRun, EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
-import { decodeFile, LINE_END, type NanoFileFormat } from './nano/NanoFormat';
+import { decodeFile, LINE_END, type DecodedFile, type NanoFileFormat } from './nano/NanoFormat';
 import { directoryNameOf, fullPathOf, openingFor } from './nano/NanoOpening';
 import { NanoUndoStack, type UndoKind, type UndoRestore } from './nano/NanoUndo';
 import {
@@ -172,6 +172,7 @@ export class NanoEngine {
   private saveFileNameBuffer: string;
   private gotoLineBuffer = '';
   private executeCmdBuffer = '';
+  private executeHistory: string[] = [];
   private readFileBuffer = '';
   /** Cursor position within whichever single-line prompt field is
    *  currently active (search/replace/save-name/goto-line/execute/
@@ -482,6 +483,16 @@ export class NanoEngine {
 
   private readFileLabel(): string {
     return `File to insert${this.live.noconvert ? ' unconverted' : ''} [from ./]`;
+  }
+
+  private saveInPlace(): void {
+    if (this.titleName === '') {
+      this.beginWriteOut(false);
+      return;
+    }
+    this.exitAfterSave = false;
+    this.writeMethod = 'overwrite';
+    this.writeBuffer(this.titleName, this.writeTarget(this.titleName), false, false);
   }
 
   private writeOutLabel(): string {
@@ -1075,7 +1086,7 @@ export class NanoEngine {
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
     // read-only, since every one of them would mutate the buffer.
-    if (this._readOnly && (key === 'o' || key === 'k' || key === 'u' || key === '\\'
+    if (this._readOnly && (key === 'o' || key === 's' || key === 'k' || key === 'u' || key === '\\'
       || key === 'j' || key === 'r' || key === 't')) {
       this._statusMessage = '[ Key is invalid in view mode ]';
       return;
@@ -1083,6 +1094,9 @@ export class NanoEngine {
     switch (key) {
       case 'o':
         this.beginWriteOut(false);
+        return;
+      case 's':
+        this.saveInPlace();
         return;
       case 'x': // Exit
         if (!this._modified) this.finishExit(true);
@@ -1140,6 +1154,7 @@ export class NanoEngine {
         this.executeCmdBuffer = '';
         this._promptCursor = 0;
         this._mode = 'execute-prompt';
+        this.resetHistoryRecall();
         return;
       case 'y': // Prev Page
         this.pageUp();
@@ -2235,21 +2250,116 @@ export class NanoEngine {
 
   private applyExecutePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      if (this.executeCmdBuffer === '') {
-        this.cancelPrompt();
-        return;
-      }
-      const output = this.fs.runShellCommand(this.executeCmdBuffer);
-      this._mode = 'edit';
-      const body = output.endsWith('\n') ? output.slice(0, -1) : output;
-      if (body.length > 0) this.pasteIntoBuffer(body);
+      this.runExecuteCommand();
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this.resetHistoryRecall();
       this.cancelPrompt();
       return;
     }
+    if (k.alt && k.key === '\\') {
+      this.togglePipeMark();
+      return;
+    }
+    if (k.ctrl && !k.alt && this.runExecuteShortcut(k.key.toLowerCase())) return;
+    if (this.recallHistory(k, this.executeHistory, () => this.executeCmdBuffer, (v) => { this.executeCmdBuffer = v; })) return;
     this.applyPromptFieldKey(k, () => this.executeCmdBuffer, (v) => { this.executeCmdBuffer = v; });
+  }
+
+  private togglePipeMark(): void {
+    const piped = this.executeCmdBuffer.startsWith('|');
+    this.executeCmdBuffer = piped ? this.executeCmdBuffer.slice(1) : `|${this.executeCmdBuffer}`;
+    this._promptCursor = piped ? Math.max(0, this._promptCursor - 1) : this._promptCursor + 1;
+  }
+
+  private runExecuteShortcut(key: string): boolean {
+    if (key === 'x') {
+      this.resetHistoryRecall();
+      this.readFileBuffer = this.executeCmdBuffer;
+      this._promptCursor = Math.min(this._promptCursor, this.readFileBuffer.length);
+      this._mode = 'read-file-prompt';
+      return true;
+    }
+    if (key !== 's' && key !== 't' && key !== 'y' && key !== 'o' && key !== 'j' && key !== 'v') return false;
+    this.resetHistoryRecall();
+    this._mode = 'edit';
+    if (key === 's' || key === 't') this._statusMessage = '[ Error invoking "spell" ]';
+    else if (key === 'y') this._statusMessage = '[ No linter is defined for this type of file ]';
+    else if (key === 'o') this._statusMessage = '[ No formatter is defined for this type of file ]';
+    else if (key === 'j') this.justifyText(true);
+    else this.cutTillEnd();
+    return true;
+  }
+
+  private runChildShell(command: string, stdin?: string): ChildShellRun {
+    return this.fs.runChildShell?.(command, stdin)
+      ?? { output: stdin === undefined ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, stdin), status: 0 };
+  }
+
+  private reportCommandFailure(output: string): void {
+    const lines = output.split('\n');
+    if (lines[lines.length - 1] === '') lines.pop();
+    const last = lines[lines.length - 1] ?? '';
+    const cut = last.indexOf(': ');
+    this._statusMessage = `[ Error: ${cut < 0 ? '---' : last.slice(cut + 2)} ]`;
+    if (this.undo.modified) this._modified = true;
+    this.clearMark();
+  }
+
+  private runExecuteCommand(): void {
+    const command = this.executeCmdBuffer;
+    this.resetHistoryRecall();
+    this._mode = 'edit';
+    if (command === '') {
+      this.cancelPrompt();
+      return;
+    }
+    this.rememberInHistory(this.executeHistory, command);
+    if (command.startsWith('|')) this.pipeThroughCommand(command.slice(1));
+    else this.insertCommandOutput(command);
+    if (this.minibarMode()) this.reportSizePending = true;
+  }
+
+  private insertCommandOutput(command: string): void {
+    const run = this.runChildShell(command);
+    if (run.status !== 0) {
+      this.reportCommandFailure(run.output);
+      return;
+    }
+    this.insertDecoded(decodeFile(run.output, !this.live.noconvert, false));
+  }
+
+  private pipeThroughCommand(command: string): void {
+    const region = this.getMarkedRegion();
+    const text = region === null ? this.linesArr.join('\n') : this.extractRegionText(region);
+    const run = this.runChildShell(command, text);
+    if (run.status !== 0) {
+      this.reportCommandFailure('');
+      return;
+    }
+    const decoded = decodeFile(run.output, !this.live.noconvert, false);
+    const wasLine = this._cursorLine;
+    this.undoBegin('FILTER');
+    if (region === null) {
+      this.linesArr = [''];
+      this._cursorLine = 0;
+      this._cursorCol = 0;
+      this.insertText(decoded.lines.join('\n'));
+      this.ensureTrailingBlankLine();
+      this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
+      this._cursorCol = 0;
+    } else {
+      this.excise(region);
+      this.insertText(decoded.lines.join('\n'));
+      this.ensureTrailingBlankLine();
+      this.manner = 'flowing';
+    }
+    this.clearMark();
+    this.undoFinish();
+    this._modified = true;
+    if (this.minibarMode()) this.reportSizePending = true;
+    this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'} ]`;
   }
 
   // ── Read File (^R) — insert a file's content at the cursor ───────
@@ -2268,6 +2378,12 @@ export class NanoEngine {
     }
     if (k.alt && k.key.toLowerCase() === 'n') {
       this.live.noconvert = !this.live.noconvert;
+      return;
+    }
+    if (k.ctrl && !k.alt && k.key.toLowerCase() === 'x' && !this.live.restricted) {
+      this.executeCmdBuffer = this.readFileBuffer;
+      this._promptCursor = Math.min(this._promptCursor, this.executeCmdBuffer.length);
+      this._mode = 'execute-prompt';
       return;
     }
     this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
@@ -2314,7 +2430,10 @@ export class NanoEngine {
       this._statusMessage = `[ "${name}" is ${kind === 'directory' ? 'a directory' : kind === 'device' ? 'a device file' : 'a FIFO'} ]`;
       return;
     }
-    const decoded = decodeFile(this.fs.readFile(name) ?? '', !this.live.noconvert, false);
+    this.insertDecoded(decodeFile(this.fs.readFile(name) ?? '', !this.live.noconvert, false));
+  }
+
+  private insertDecoded(decoded: DecodedFile): void {
     const was = { line: this._cursorLine, col: this._cursorCol };
     const wasScreenful = this.screenfulMark();
     this.undoBegin('INSERT');
@@ -2322,6 +2441,7 @@ export class NanoEngine {
     this.undoFinish();
     if (this.lessThanScreenful(wasScreenful)) this.manner = 'flowing';
     if (this._cursorLine !== was.line || this._cursorCol !== was.col) this._modified = true;
+    if (this.minibarMode()) this.reportSizePending = true;
     this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
   }
 

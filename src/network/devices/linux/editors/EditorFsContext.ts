@@ -14,6 +14,11 @@ export interface EditorIdentity {
 
 export type EditorPathKind = 'missing' | 'file' | 'directory' | 'device' | 'fifo';
 
+export interface ChildShellRun {
+  readonly output: string;
+  readonly status: number;
+}
+
 export interface EditorFsContext {
   identity?(): EditorIdentity;
   /** Resolve a (possibly relative) path against the current working directory. */
@@ -38,4 +43,5 @@ export interface EditorFsContext {
    * stdout. Used by vim's `:%!cmd` buffer filter (e.g. `:%!sort`).
    */
   filterThroughShell(cmd: string, input: string): string;
+  runChildShell?(cmd: string, stdin?: string): ChildShellRun;
 }

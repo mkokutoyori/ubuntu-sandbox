@@ -1,4 +1,4 @@
-import type { EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
+import type { ChildShellRun, EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
 
 /**
  * Minimal in-memory EditorFsContext for unit tests. Not used in
@@ -28,6 +28,7 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   private shellLog: string[] = [];
   private shellHandler: (cmd: string) => string;
   private filterHandler?: (cmd: string, input: string) => string;
+  private childShell?: (cmd: string, stdin: string | undefined) => ChildShellRun;
 
   constructor(
     initial: Record<string, string> = {},
@@ -113,6 +114,15 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     this.shellLog.push(`${cmd} (filter)`);
     if (this.filterHandler) return this.filterHandler(cmd, input);
     return builtinFilter(cmd, input) ?? input;
+  }
+
+  runChildShell(cmd: string, stdin?: string): ChildShellRun {
+    if (this.childShell) return this.childShell(cmd, stdin);
+    return { output: stdin === undefined ? this.runShellCommand(cmd) : this.filterThroughShell(cmd, stdin), status: 0 };
+  }
+
+  useChildShell(handler: (cmd: string, stdin: string | undefined) => ChildShellRun): void {
+    this.childShell = handler;
   }
 
   /** Test helper: inspect every path currently present in the fake FS. */
