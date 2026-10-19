@@ -245,8 +245,34 @@ function shouldCmdlet(): ICmdlet {
   };
 }
 
+function testExecutableCmdlet(): ICmdlet {
+  return {
+    name: 'testexe',
+    aliases: [],
+    reportsExitCode: true,
+    parameters: ['returncode', 'echoargs', 'stderr'],
+    execute(ctx: CmdletContext): PSValue {
+      const returnCode = ctx.named['returncode'];
+      if (returnCode !== undefined) {
+        const text = psValueToString(returnCode);
+        return ctx.runtime.acceptNativeResult({ output: text, exitCode: Number.parseInt(text, 10) });
+      }
+      const echoed = ctx.named['echoargs'];
+      if (echoed !== undefined) {
+        const args = [echoed, ...ctx.positional].map(value => psValueToString(value));
+        return ctx.runtime.acceptNativeResult({
+          output: args.map((value, index) => `Arg ${index} is <${value}>`).join('\n'),
+          exitCode: 0,
+        });
+      }
+      return ctx.runtime.acceptNativeResult({ output: '', exitCode: 1 });
+    },
+  };
+}
+
 export function createPesterCmdlets(session: PesterSession): ICmdlet[] {
   return [
+    testExecutableCmdlet(),
     describeLike('describe', session),
     describeLike('context', session),
     itCmdlet(session),

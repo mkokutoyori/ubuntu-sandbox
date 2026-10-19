@@ -119,6 +119,10 @@ const BUILTIN_ENUMS: ReadonlyArray<{ name: string; fullName: string; flags: bool
     members: [['SilentlyContinue', 0], ['Stop', 1], ['Continue', 2], ['Inquire', 3], ['Ignore', 4], ['Suspend', 5], ['Break', 6]],
   },
   {
+    name: 'ErrorCategory', fullName: 'System.Management.Automation.ErrorCategory', flags: false,
+    members: [['NotSpecified', 0], ['OpenError', 1], ['CloseError', 2], ['DeviceError', 3], ['DeadlockDetected', 4], ['InvalidArgument', 5], ['InvalidData', 6], ['InvalidOperation', 7], ['InvalidResult', 8], ['InvalidType', 9], ['MetadataError', 10], ['NotImplemented', 11], ['NotInstalled', 12], ['ObjectNotFound', 13], ['OperationStopped', 14], ['OperationTimeout', 15], ['SyntaxError', 16], ['ParserError', 17], ['PermissionDenied', 18], ['ResourceBusy', 19], ['ResourceExists', 20], ['ResourceUnavailable', 21], ['ReadError', 22], ['WriteError', 23], ['FromStdErr', 24], ['SecurityError', 25], ['ProtocolError', 26], ['ConnectionError', 27], ['AuthenticationError', 28], ['LimitsExceeded', 29], ['QuotaExceeded', 30], ['NotEnabled', 31]],
+  },
+  {
     name: 'ConfirmImpact', fullName: 'System.Management.Automation.ConfirmImpact', flags: false,
     members: [['None', 0], ['Low', 1], ['Medium', 2], ['High', 3]],
   },

@@ -405,7 +405,6 @@ export class PSRuntime {
   private readonly conversion: ConversionOptions;
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
-  private warningLines = 0;
   private nativeReplay: { results: NativeResult[]; cursor: number } | null = null;
   private interactive: {
     statements: PSStatement[]; traps: PSTrapStatement[];
@@ -423,8 +422,8 @@ export class PSRuntime {
    * display in canonical Format-Table layout instead of the
    * `Key=Value; ...` hashtable form psValueToString produces.
    */
-  private emittedSince(lines: number, warnings: number): boolean {
-    return this.outputLines.length - lines > this.warningLines - warnings;
+  private emittedSince(lines: number, streamed: number): boolean {
+    return this.outputLines.length - lines > this.streams.linesWritten - streamed;
   }
 
   private renderValue(result: PSValue): void {
@@ -779,10 +778,10 @@ export class PSRuntime {
 
     const runOne = (stmt: PSStatement) => {
       const before = this.outputLines.length;
-      const warningsBefore = this.warningLines;
+      const streamedBefore = this.streams.linesWritten;
       const result = this.execStatement(stmt, env);
-      const emitted = this.emittedSince(before, warningsBefore);
-      if (!emitted && result !== null && result !== undefined
+      const emitted = this.emittedSince(before, streamedBefore);
+      if ((!emitted || stmt.type === 'PipelineChain') && result !== null && result !== undefined
           && stmt.type !== 'AssignmentStatement'
           && stmt.type !== 'FunctionDefinition') {
         this.renderValue(result);
@@ -871,10 +870,10 @@ export class PSRuntime {
     if (!block.body) return;
     for (const s of block.body.statements) {
       const before = this.outputLines.length;
-      const warningsBefore = this.warningLines;
+      const streamedBefore = this.streams.linesWritten;
       const r = this.execStatement(s, env);
-      const emitted = this.emittedSince(before, warningsBefore);
-      if (!emitted && r !== null && r !== undefined
+      const emitted = this.emittedSince(before, streamedBefore);
+      if ((!emitted || s.type === 'PipelineChain') && r !== null && r !== undefined
           && s.type !== 'AssignmentStatement'
           && s.type !== 'FunctionDefinition') {
         this.renderValue(r);
@@ -939,10 +938,10 @@ export class PSRuntime {
 
   private runInteractiveStatement(stmt: PSStatement, env: PSEnvironment): void {
     const wasEmpty = this.outputLines.length;
-    const warningsBefore = this.warningLines;
+    const streamedBefore = this.streams.linesWritten;
     const result = this.execStatement(stmt, env);
-    const didOutput = this.emittedSince(wasEmpty, warningsBefore);
-    if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
+    const didOutput = this.emittedSince(wasEmpty, streamedBefore);
+    if ((!didOutput || stmt.type === 'PipelineChain') && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
       this.renderValue(result);
     }
   }
@@ -1054,8 +1053,8 @@ export class PSRuntime {
   execStatement(node: PSStatement, env: PSEnvironment): PSValue {
     let result: PSValue;
     switch (node.type) {
-      case 'PipelineStatement':   result = this.execPipelineStmt(node as PSPipelineStatement, env); break;
-      case 'AssignmentStatement': result = this.execAssignment(node as PSAssignmentStatement, env); break;
+      case 'PipelineStatement':   result = this.keepingStatus(() => this.execPipelineStmt(node as PSPipelineStatement, env)); break;
+      case 'AssignmentStatement': result = this.keepingStatus(() => this.execAssignment(node as PSAssignmentStatement, env)); break;
       case 'IfStatement':         result = this.execIf(node as PSIfStatement, env); break;
       case 'WhileStatement':      result = this.execWhile(node as PSWhileStatement, env); break;
       case 'DoWhileStatement':    result = this.execDoWhile(node as PSDoWhileStatement, env); break;
@@ -2185,6 +2184,9 @@ export class PSRuntime {
     if (tname === 'powershell' || tname === 'system.management.automation.powershell') {
       return this.getMember({ create: () => createPowerShellHost(() => this.openHostSession()) } as unknown as PSValue, node.member.toLowerCase());
     }
+    if (tname === 'errorrecord' || tname === 'system.management.automation.errorrecord') {
+      return this.getMember(this.errorRecordStatics() as unknown as PSValue, node.member.toLowerCase());
+    }
     if (tname === 'psparser' || tname === 'system.management.automation.psparser') {
       return this.getMember(psParserStatics(this.lexer, this.parser) as unknown as PSValue, node.member.toLowerCase());
     }
@@ -2448,7 +2450,7 @@ export class PSRuntime {
       const before = this.outputLines.length;
       for (const stmt of stmtList.statements) {
         const linesBefore = this.outputLines.length;
-        const warningsBefore = this.warningLines;
+        const streamedBefore = this.streams.linesWritten;
         let result: PSValue = null;
         let broke = false;
         try {
@@ -2457,7 +2459,7 @@ export class PSRuntime {
           if (e instanceof BreakSignal) { broke = true; }
           else { this.outputLines.splice(before); throw e; }
         }
-        const didEmit = this.emittedSince(linesBefore, warningsBefore);
+        const didEmit = this.emittedSince(linesBefore, streamedBefore);
         if (!didEmit && result !== null && result !== undefined
             && stmt.type !== 'AssignmentStatement'
             && stmt.type !== 'FunctionDefinition') {
@@ -2543,11 +2545,28 @@ export class PSRuntime {
     try {
       this.execTryClauses(node, env, run);
     } catch (e) {
-      if (e instanceof ReturnSignal) e.emitted.unshift(...emitted);
-      else for (const value of emitted) this.outputLines.push(psValueToString(value));
+      this.releaseOnUnwind(emitted, e);
       throw e;
     }
     return this.aggregateCaptured(emitted);
+  }
+
+  private errorRecordStatics(): Record<string, PSValue> {
+    const construct = (exception: PSValue, errorId: PSValue, category: PSValue, target: PSValue): PSValue => {
+      const carrier = exception !== null && typeof exception === 'object' ? exception as Record<string, PSValue> : null;
+      const message = carrier === null ? psValueToString(exception) : String(carrier['Message'] ?? '');
+      const exceptionType = carrier !== null && typeof carrier['__type__'] === 'string' ? String(carrier['__type__']) : RUNTIME_EXCEPTION;
+      return newErrorRecord({
+        message, exceptionType, fullyQualifiedErrorId: errorId === null || errorId === undefined ? '' : psValueToString(errorId),
+        category: category === null || category === undefined ? 'NotSpecified' : psValueToString(category), targetObject: target ?? null,
+      }) as unknown as PSValue;
+    };
+    return { new: construct } as unknown as Record<string, PSValue>;
+  }
+
+  private releaseOnUnwind(values: PSValue[], signal: unknown): void {
+    if (signal instanceof ReturnSignal) signal.emitted.unshift(...values);
+    else for (const value of values) this.outputLines.push(psValueToString(value));
   }
 
   private execTryClauses(node: PSTryStatement, env: PSEnvironment, renderBody: (body: PSScriptBlock) => void): void {
@@ -2632,14 +2651,28 @@ export class PSRuntime {
 
   private execPipelineChain(node: PSPipelineChainStatement, env: PSEnvironment): PSValue {
     const outputs: PSValue[] = [];
-    const collect = (value: PSValue): void => {
-      if (value === null || value === undefined) return;
+    const run = (statement: PSStatement): void => {
+      let value: PSValue = null;
+      const linesBefore = this.outputLines.length;
+      const streamedBefore = this.streams.linesWritten;
+      try {
+        value = this.execStatement(statement, env);
+      } catch (e) {
+        if (!this.reportStatementFailure(e, env)) throw e;
+        this.setStatus(false);
+      }
+      if (value === null || value === undefined || this.emittedSince(linesBefore, streamedBefore)) return;
       if (Array.isArray(value)) outputs.push(...value);
       else outputs.push(value);
     };
-    collect(this.execStatement(node.left, env));
-    const succeeded = this.isTruthy(env.get('?') ?? true);
-    if (node.operator === '&&' ? succeeded : !succeeded) collect(this.execStatement(node.right, env));
+    try {
+      run(node.left);
+      const succeeded = this.isTruthy(env.get('?') ?? true);
+      if (node.operator === '&&' ? succeeded : !succeeded) run(node.right);
+    } catch (e) {
+      this.releaseOnUnwind(outputs, e);
+      throw e;
+    }
     if (outputs.length === 0) return null;
     return outputs.length === 1 ? outputs[0] : outputs;
   }
@@ -2803,22 +2836,26 @@ export class PSRuntime {
   ): PSValue {
     let pipeInput: PSValue = input;
     let result: PSValue = null;
+    let failedStage = false;
     for (let i = from; i < to; i++) {
       const printedByThisStage = this.outputLines.length;
       const isLast = i === to - 1 && final;
       const consumedByNext = i < to - 1 || !final;
       const restore = i === commands.length - 1 ? null : this.streams.hideEnclosingCollectors();
+      const statusWritesBefore = this.statusWrites;
       try {
         result = this.execRedirected(commands[i], env, pipeInput);
       } finally {
         restore?.();
       }
+      if (this.statusWrites !== statusWritesBefore && this.global.get('?') === false) failedStage = true;
       const valueIsConsumed = consumedByNext && !isLast && result !== null && result !== undefined;
       if (valueIsConsumed) this.outputLines.splice(printedByThisStage);
       const variable = this.pipelineVariableOf(commands[i], env);
       if (variable !== null && i < to - 1) return this.flowPerItem(commands, i + 1, to, result, variable, env, final);
       pipeInput = result;
     }
+    if (failedStage) this.setStatus(false);
     return result;
   }
 
@@ -3135,7 +3172,7 @@ export class PSRuntime {
 
   acceptNativeResult(result: NativeResult): PSValue {
     if (result.notRecognized === true) {
-      this.global.set('?', false);
+      this.setStatus(false);
       const missing = new PSRuntimeError(result.output, 'System.Management.Automation.CommandNotFoundException');
       missing.commandName = /^The term '([^']*)'/.exec(result.output)?.[1];
       throw missing;
@@ -3146,7 +3183,7 @@ export class PSRuntime {
 
   setLastExitCode(code: number): void {
     this.global.set('LASTEXITCODE', code);
-    this.global.set('?', code === 0);
+    this.setStatus(code === 0);
   }
 
   private rawArguments(
@@ -3256,7 +3293,7 @@ export class PSRuntime {
     const didEmit = this.outputLines.length - linesBefore > this.streams.linesWritten - streamLinesBefore;
     const isVoidAssign = this.lastStmtVoid;
     this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
-    if (!didEmit && result !== null && result !== undefined
+    if ((!didEmit || stmt.type === 'PipelineChain') && result !== null && result !== undefined
         && !isVoidAssign
         && stmt.type !== 'AssignmentStatement'
         && stmt.type !== 'FunctionDefinition') {
@@ -3322,8 +3359,11 @@ export class PSRuntime {
     env: PSEnvironment,
     pipeInput: PSValue,
   ): PSValue {
+    const errorsBefore = this.errorsWritten;
     try {
-      return this.callUserFunctionBody(fn, named, positional, env, pipeInput);
+      const output = this.callUserFunctionBody(fn, named, positional, env, pipeInput);
+      this.setStatus(this.errorsWritten === errorsBefore);
+      return output;
     } catch (error) {
       if (error instanceof PSRuntimeError && error.commandName === undefined && !error.thrownFromThrowStatement) {
         error.commandName = fn.declaredName;
@@ -3446,7 +3486,7 @@ export class PSRuntime {
             }
             try { results.push(...this.runBlockCapture(processBlock, scope)); }
             catch (error) {
-              if (error instanceof ReturnSignal) { results.push(...this.returnedValues(error)); break; }
+              if (error instanceof ReturnSignal) { results.push(...this.returnedValues(error)); continue; }
               if (error instanceof BreakSignal) break;
               throw error;
             }
@@ -3689,7 +3729,7 @@ export class PSRuntime {
     if (!cmdlet) {
       const replayed = this.takeNativeResult();
       if (replayed !== null) return this.acceptNativeResult(replayed);
-      this.global.set('?', false);
+      this.setStatus(false);
       if (programStem === null && !isNativeProgramName(name)) {
         const missing = this.notFound(name);
         if (silentlyCont) { failedWith(missing); return null; }
@@ -3717,6 +3757,7 @@ export class PSRuntime {
     const emittedValues: PSValue[] = [];
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
     const perItem = this.pipelineItemsFor(cmdlet, cmdletNamed, pipeInput);
+    const errorsBefore = this.errorsWritten;
     let result: PSValue;
     try {
       if (perItem) {
@@ -3733,11 +3774,11 @@ export class PSRuntime {
           positional, cmdletNamed, pipeInput, env, emittedValues, errorAction, cmdletDisplayName, common);
         result = cmdlet.execute(ctx);
       }
-      this.global.set('?', true);
+      if (cmdlet.reportsExitCode !== true) this.setStatus(this.errorsWritten === errorsBefore);
       result = adoptMachineDates(result, this.providers);
       for (let i = 0; i < emittedValues.length; i++) emittedValues[i] = adoptMachineDates(emittedValues[i], this.providers);
     } catch (err) {
-      this.global.set('?', false);
+      this.setStatus(false);
       if (err instanceof PSRuntimeError && err.commandName === undefined && !err.thrownFromThrowStatement) { err.commandName = cmdletDisplayName; err.commandKind = 'cmdlet'; }
       if (silentlyCont) { failedWith(err); return null; }
       throw err;
@@ -3782,7 +3823,6 @@ export class PSRuntime {
       const variable = { warning: 'WarningPreference', verbose: 'VerbosePreference', debug: 'DebugPreference' }[kind];
       throw preferenceStopError(variable, message);
     }
-    if (kind === 'warning') this.warningLines++;
   }
 
   private writeInformation(data: PSValue, tags: readonly string[], env: PSEnvironment, commonPrefs: Record<string, PSValue>): void {
@@ -3795,8 +3835,24 @@ export class PSRuntime {
     if (preference === 'Stop') throw preferenceStopError('InformationPreference', psValueToString(data));
   }
 
+  private errorsWritten = 0;
+  private statusWrites = 0;
+
+  private setStatus(succeeded: boolean): void {
+    this.statusWrites++;
+    this.global.set('?', succeeded);
+  }
+
+  private keepingStatus<T>(run: () => T): T {
+    const before = this.statusWrites;
+    const result = run();
+    if (this.statusWrites === before) this.global.set('?', true);
+    return result;
+  }
+
   private writeErrorRecord(record: Record<string, PSValue>, cmdletDisplayName: string, errorAction: string): void {
     if (errorAction === 'ignore') return;
+    this.errorsWritten++;
     const exception = record.Exception as Record<string, PSValue> | null | undefined;
     const message = String(exception?.Message ?? record.Message ?? '');
     const category = String((record.CategoryInfo as Record<string, PSValue> | undefined)?.Category ?? 'NotSpecified');
@@ -4620,12 +4676,12 @@ export class PSRuntime {
   }
 
   private isPureValueNode(node: PSExpression, _env?: PSEnvironment): boolean {
-    switch (node.type) {
+    switch (node.type as PSExpression['type'] | 'StatementExpression') {
       case 'ArrayExpression': case 'HashtableExpression': case 'RangeExpression':
       case 'BinaryExpression': case 'UnaryExpression': case 'MemberExpression':
       case 'StaticMemberExpression': case 'IndexExpression': case 'InvocationExpression':
       case 'CastExpression': case 'SubExpression': case 'PipelineExpression':
-      case 'ScriptBlock': case 'TernaryExpression':
+      case 'ScriptBlock': case 'TernaryExpression': case 'StatementExpression':
         return true;
       case 'LiteralExpression': {
         const k = (node as PSLiteralExpression).kind;
