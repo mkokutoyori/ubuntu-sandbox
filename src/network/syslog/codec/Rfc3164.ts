@@ -1,4 +1,4 @@
-import { formatTimestamp3164, parseTimestamp3164, parseTimestamp3339, type SyslogTime, type Timestamp3164Options } from './SyslogTime';
+import { applyDefaultTimeZone, formatTimestamp3164, parseTimestamp3164, parseTimestamp3339, type SyslogTime, type Timestamp3164Options } from './SyslogTime';
 
 export const MAX_TAG_SIZE = 512;
 export const MAX_HOSTNAME_SIZE = 512;
@@ -40,6 +40,7 @@ export interface LegacyParseInput {
   readonly ignoreDate: boolean;
   readonly parseHostname: boolean;
   readonly invalidFacility: boolean;
+  readonly defaultTimeZone?: string | null;
 }
 
 export interface LegacyParseResult {
@@ -86,13 +87,13 @@ export function parseLegacyBody(input: LegacyParseInput, options: LegacyParserOp
   } else {
     const legacy = parseTimestamp3164(rest, input.receivedAt, tsOptions);
     if (legacy !== null) {
-      timestamp = legacy.time;
+      timestamp = input.defaultTimeZone ? applyDefaultTimeZone(legacy.time, input.defaultTimeZone) : legacy.time;
       rest = rest.slice(legacy.consumed);
       foundTimestamp = true;
     } else if (rest[0] === ' ' && rest.length > 1) {
       const slightlyMalformed = parseTimestamp3164(rest.slice(1), input.receivedAt, tsOptions);
       if (slightlyMalformed !== null) {
-        timestamp = slightlyMalformed.time;
+        timestamp = input.defaultTimeZone ? applyDefaultTimeZone(slightlyMalformed.time, input.defaultTimeZone) : slightlyMalformed.time;
         rest = rest.slice(1 + slightlyMalformed.consumed);
         foundTimestamp = true;
       }

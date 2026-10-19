@@ -1,7 +1,7 @@
 import {
   DEFAULT_PRI, FACILITY_TEXT, LOG_FACILITY_INVALID, LOG_PRI_INVALID, SEVERITY_TEXT, facilityOf, normalizePri, parsePri, severityOf,
 } from '@/network/syslog/codec/SyslogPriority';
-import type { SyslogTime } from '@/network/syslog/codec/SyslogTime';
+import { syslogTimeToUnixSeconds, type SyslogTime } from '@/network/syslog/codec/SyslogTime';
 
 export const MAX_PROGRAM_NAME_BUFFER = 16;
 
@@ -18,7 +18,8 @@ export interface ReceiveInfo {
   readonly parseHostname?: boolean;
   readonly ignoreDate?: boolean;
   readonly noPriInRaw?: boolean;
-  readonly defaultTimeZone?: string;
+  readonly defaultTimeZone?: string | null;
+  readonly mark?: boolean;
   readonly localHostName: string;
 }
 
@@ -47,6 +48,8 @@ export class RsyslogMessage {
   readonly ignoreDate: boolean;
   readonly noPriInRaw: boolean;
   readonly localHostName: string;
+  readonly defaultTimeZone: string | null;
+  readonly mark: boolean;
   rulesetName: string | null = null;
   cee: { [key: string]: JsonValue } = {};
   localVariables: { [key: string]: JsonValue } = {};
@@ -65,6 +68,8 @@ export class RsyslogMessage {
     this.ignoreDate = info.ignoreDate === true;
     this.noPriInRaw = info.noPriInRaw === true;
     this.localHostName = info.localHostName;
+    this.defaultTimeZone = info.defaultTimeZone ?? null;
+    this.mark = info.mark === true;
     this.msg = info.rawMsg;
   }
 
@@ -105,6 +110,10 @@ export class RsyslogMessage {
 
   get rawMsgAfterPri(): string {
     return this.rawMsg.slice(this.offAfterPri);
+  }
+
+  get receivedAtSeconds(): number {
+    return syslogTimeToUnixSeconds(this.receivedAt);
   }
 
   get hostnameOrSender(): string {

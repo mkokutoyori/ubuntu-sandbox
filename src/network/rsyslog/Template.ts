@@ -1,6 +1,6 @@
 import { formatTimestamp3164, formatTimestamp3339 } from '@/network/syslog/codec/SyslogTime';
 import { posixToJsSource } from '@/network/devices/linux/regex/PosixRegex';
-import { jsonEscape } from './Json';
+import { jsonEscape, jsonGet } from './Json';
 import type { JsonValue, RsyslogMessage } from './Message';
 import { baseProperty, describeProperty, type DateFormat, type PropertyDescriptor, type RenderContext } from './Properties';
 
@@ -1079,7 +1079,7 @@ export function renderTemplate(template: Template, message: RsyslogMessage, cont
 export function renderTemplateJson(template: Template, message: RsyslogMessage, context: RenderContext): JsonValue {
   if (template.kind === 'subtree') {
     const descriptor = template.subtree ?? describeProperty('');
-    const root = descriptor.name === '' ? message.cee : readTree(message.cee, descriptor.name);
+    const root = descriptor.name === '' ? message.cee : readTree(message.cee, descriptor.name, context.caseSensitiveVariables === true);
     return root === undefined ? {} : root;
   }
   const result: { [key: string]: JsonValue } = {};
@@ -1092,7 +1092,7 @@ export function renderTemplateJson(template: Template, message: RsyslogMessage, 
     const id = entry.descriptor.id;
     if (id === 'cee' || id === 'local-var' || id === 'global-var') {
       const source = id === 'cee' ? message.cee : id === 'local-var' ? message.localVariables : context.globalVariables;
-      const found = readTree(source, entry.descriptor.name);
+      const found = readTree(source, entry.descriptor.name, context.caseSensitiveVariables === true);
       if (found !== undefined) result[entry.fieldName] = found;
       else if (entry.options.mandatory) result[entry.fieldName] = null;
       continue;
@@ -1103,13 +1103,6 @@ export function renderTemplateJson(template: Template, message: RsyslogMessage, 
   return result;
 }
 
-function readTree(root: { [key: string]: JsonValue }, path: string): JsonValue | undefined {
-  let current: JsonValue = root;
-  for (const segment of path.split('!').filter((part) => part.length > 0)) {
-    if (current === null || typeof current !== 'object' || Array.isArray(current)) return undefined;
-    const next: JsonValue | undefined = current[segment];
-    if (next === undefined) return undefined;
-    current = next;
-  }
-  return current;
+function readTree(root: { [key: string]: JsonValue }, path: string, caseSensitive: boolean): JsonValue | undefined {
+  return jsonGet(root, path, caseSensitive);
 }

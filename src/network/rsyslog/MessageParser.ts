@@ -125,6 +125,7 @@ export class Rfc3164Parser implements MessageParserModule {
       ignoreDate: message.ignoreDate,
       parseHostname: message.parseHostname,
       invalidFacility: message.hasInvalidFacility,
+      defaultTimeZone: message.defaultTimeZone,
     }, this.settings);
     if (result.discard) {
       message.discarded = true;

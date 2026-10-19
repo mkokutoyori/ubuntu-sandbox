@@ -17,6 +17,7 @@ export interface RenderContext {
   localHostName(): string;
   uptimeSeconds(): number;
   globalVariables: { [key: string]: JsonValue };
+  caseSensitiveVariables?: boolean;
 }
 
 export type PropertyId =
@@ -149,9 +150,9 @@ export function messageAsJson(message: RsyslogMessage): { [key: string]: JsonVal
   };
 }
 
-function variableText(root: { [key: string]: JsonValue }, path: string): string {
+function variableText(root: { [key: string]: JsonValue }, path: string, caseSensitive: boolean): string {
   if (path === '' || path === '!') return jsonText(root);
-  const value = jsonGet(root, path);
+  const value = jsonGet(root, path, caseSensitive);
   return value === undefined ? '' : jsonToString(value);
 }
 
@@ -192,9 +193,9 @@ export function baseProperty(
     case 'all-json-plain': return Object.keys(message.cee).length === 0 ? '{}' : jsonText(message.cee, true);
     case 'bom': return 'ï»¿';
     case 'uptime': return String(Math.floor(context.uptimeSeconds()));
-    case 'cee': return variableText(message.cee, descriptor.name);
-    case 'local-var': return variableText(message.localVariables, descriptor.name);
-    case 'global-var': return variableText(context.globalVariables, descriptor.name);
+    case 'cee': return variableText(message.cee, descriptor.name, context.caseSensitiveVariables === true);
+    case 'local-var': return variableText(message.localVariables, descriptor.name, context.caseSensitiveVariables === true);
+    case 'global-var': return variableText(context.globalVariables, descriptor.name, context.caseSensitiveVariables === true);
     case 'invalid': return '**INVALID PROPERTY NAME**';
     default: return nowText(descriptor.id, context);
   }

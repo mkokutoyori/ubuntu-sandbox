@@ -1,10 +1,11 @@
 export type Errno =
-  | 'EPERM' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
+  | 'EPERM' | 'ENOENT' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
   | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
-  | 'EOPNOTSUPP' | 'EPROTO' | 'ETIMEDOUT';
+  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EPERM: { number: 1, text: 'Operation not permitted' },
+  ENOENT: { number: 2, text: 'No such file or directory' },
   EACCES: { number: 13, text: 'Permission denied' },
   EADDRINUSE: { number: 98, text: 'Address already in use' },
   EADDRNOTAVAIL: { number: 99, text: 'Cannot assign requested address' },
@@ -18,7 +19,9 @@ const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   ENONET: { number: 64, text: 'Machine is not on the network' },
   ENOPROTOOPT: { number: 92, text: 'Protocol not available' },
   EOPNOTSUPP: { number: 95, text: 'Operation not supported' },
+  EPIPE: { number: 32, text: 'Broken pipe' },
   EPROTO: { number: 71, text: 'Protocol error' },
+  ECONNRESET: { number: 104, text: 'Connection reset by peer' },
   ETIMEDOUT: { number: 110, text: 'Connection timed out' },
 };
 
