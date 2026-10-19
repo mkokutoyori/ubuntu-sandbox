@@ -26,6 +26,7 @@ import type {
 } from '../server/SshServerEvent';
 
 import type { SshdLogLevel } from '@/network/protocols/ssh/server/SshdServerConfig';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const VERBOSE_LEVELS: ReadonlySet<SshdLogLevel> = new Set(['VERBOSE', 'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3']);
 
@@ -273,7 +274,7 @@ export class SshSyslogger {
   private timestamp(): string {
     const now = this.clock();
     const mon = MONTHS[now.getUTCMonth()];
-    const day = String(now.getUTCDate()).padStart(2, ' ');
+    const day = padToWidth(String(now.getUTCDate()), 2, 'right');
     const hh = String(now.getUTCHours()).padStart(2, '0');
     const mm = String(now.getUTCMinutes()).padStart(2, '0');
     const ss = String(now.getUTCSeconds()).padStart(2, '0');

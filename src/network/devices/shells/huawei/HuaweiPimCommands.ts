@@ -19,6 +19,7 @@ import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import { hms } from '@/lib/format';
 import { HUAWEI_ERRORS } from '../cli-utils';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface HuaweiPimContext {
   r(): Router;
@@ -173,7 +174,7 @@ export function registerHuaweiPimDisplayCommands(trie: CommandTrie, getRouter: (
       const uptime = hms(now - n.upSinceMs);
       const expires = hms(Math.max(0, n.helloHoldSec * 1000 - (now - n.lastHeardMs)));
       lines.push(
-        ` ${n.neighborIp.padEnd(16)}${n.iface.padEnd(21)}${uptime.padEnd(9)}${expires.padEnd(9)}${String(n.drPriority).padEnd(12)}N`);
+        ` ${padToWidth(n.neighborIp, 16)}${padToWidth(n.iface, 21)}${padToWidth(uptime, 9)}${padToWidth(expires, 9)}${padToWidth(String(n.drPriority), 12)}N`);
     }
     return lines.join('\n');
   });
@@ -198,7 +199,7 @@ export function registerHuaweiPimDisplayCommands(trie: CommandTrie, getRouter: (
       const port = r.getPort(name);
       const up = port?.getIsUp() && port?.isConnected();
       lines.push(
-        ` ${name.padEnd(20)}${(up ? 'up' : 'down').padEnd(6)}${String(a.listNeighbors(name).length).padEnd(7)}${String(rt.helloIntervalSec).padEnd(11)}${String(rt.drPriority).padEnd(11)}${rt.designatedRouterIp ?? '0.0.0.0'}`);
+        ` ${padToWidth(name, 20)}${padToWidth(up ? 'up' : 'down', 6)}${padToWidth(String(a.listNeighbors(name).length), 7)}${padToWidth(String(rt.helloIntervalSec), 11)}${padToWidth(String(rt.drPriority), 11)}${rt.designatedRouterIp ?? '0.0.0.0'}`);
     }
     if (anyDense) {
       lines.push('');

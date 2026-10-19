@@ -30,6 +30,7 @@ import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatus
 import { lldpCapabilityLetters, type LldpAutoNegotiation } from '@/network/lldp/types';
 import { MACAddress } from '@/network/core/types';
 import type { LldpNeighbor } from '@/network/lldp/LldpAgent';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * Minimal device surface these show helpers read real state from.
@@ -332,7 +333,7 @@ export function showInventory(
   const c = CISCO_HARDWARE_PROFILES[profile];
   return [
     `NAME: "${c.pid} chassis", DESCR: "${c.description}"`,
-    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${chassisSerial(c, deviceId ?? hostname)}`,
+    `PID: ${padToWidth(c.pid, 20)}, VID: V01  , SN: ${chassisSerial(c, deviceId ?? hostname)}`,
   ].join('\n');
 }
 
@@ -505,10 +506,10 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       return e && agent ? agent.holdtimeRemainingSec(e) : 180;
     };
     const rows = ns.map((n) =>
-      `${n.remoteHost.slice(0, 16).padEnd(16)} ${shortIf(n.localPort).slice(0, 17).padEnd(17)} ` +
-      `${String(resteHold(n)).padEnd(10)} ` +
-      `${n.remoteCapability.charAt(0).padEnd(11)} ` +
-      `${n.remotePlatform.slice(0, 9).padEnd(9)} ${shortIf(n.remotePort)}`);
+      `${padToWidth(n.remoteHost.slice(0, 16), 16)} ${padToWidth(shortIf(n.localPort).slice(0, 17), 17)} ` +
+      `${padToWidth(String(resteHold(n)), 10)} ` +
+      `${padToWidth(n.remoteCapability.charAt(0), 11)} ` +
+      `${padToWidth(n.remotePlatform.slice(0, 9), 9)} ${shortIf(n.remotePort)}`);
     return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
   const cfg = dev.getCdpAgent?.()?.getConfig();
@@ -692,9 +693,9 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
       return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${learned.length}`;
     }
     const rows = learned.map((n) =>
-      `${(n.systemName ?? '').padEnd(20)}${ciscoShortInterfaceName(n.localPort).padEnd(15)}` +
-      `${String(agent?.ttlRemainingSec(n) ?? n.ttlSec).padEnd(11)}` +
-      `${lldpCapabilityLetters(n.remoteCapabilities ?? []).padEnd(16)}${n.portId}`);
+      `${padToWidth(n.systemName ?? '', 20)}${padToWidth(ciscoShortInterfaceName(n.localPort), 15)}` +
+      `${padToWidth(String(agent?.ttlRemainingSec(n) ?? n.ttlSec), 11)}` +
+      `${padToWidth(lldpCapabilityLetters(n.remoteCapabilities ?? []), 16)}${n.portId}`);
     return [...LLDP_CAP_LEGEND,
       'Device ID           Local Intf     Hold-time  Capability      Port ID',
       ...rows, '', `Total entries displayed: ${learned.length}`].join('\n');
@@ -1011,7 +1012,7 @@ export function showNtpAuthenticationKeys(dev?: ShowStateDevice): string {
   const entete = 'Key  Algorithm  Md5 Key';
   if (!ntp || ntp.getConfig().authKeys.size === 0) return entete;
   const lignes = [...ntp.getConfig().authKeys.values()].map(
-    (k) => `${String(k.id).padEnd(5)}${k.algo.padEnd(11)}${k.key}`);
+    (k) => `${padToWidth(String(k.id), 5)}${padToWidth(k.algo, 11)}${k.key}`);
   return [entete, ...lignes].join('\n');
 }
 
@@ -1061,8 +1062,8 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
     const marker = a.preferred && joignable ? '*' : a.prefer && joignable ? '+' : ' ';
     const since = a.lastReplyMs ? Math.floor((simulationNowMs() - a.lastReplyMs) / 1000) : 999;
     rows.push(
-      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
-      `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
+      `${marker}~${padToWidth(a.serverIp, 15)} ${padToWidth(a.stratum < 16 ? a.serverIp : '.INIT.', 13)} ${padToWidth(String(a.stratum), 3)} ${padToWidth(String(since), 5)} ${padToWidth(String(a.pollSec), 4)} ${a.reach.toString(8).padStart(3, '0')} ` +
+      `${padToWidth(a.delayMs.toFixed(1), 5, 'right')} ${padToWidth(a.offsetMs.toFixed(1), 6, 'right')} ${padToWidth(a.dispersionMs.toFixed(1), 5, 'right')}`,
     );
   }
   return [header, ...rows, legende].join('\n');
@@ -1269,7 +1270,7 @@ export function showSshSessions(registre?: {
   }
   const entete = 'Connection Version Mode Encryption           Hmac                  State                 Username';
   const rangs = actives.flatMap((s) => (['IN', 'OUT'] as const).map((mode) =>
-    `${String(s.lineIndex).padEnd(11)}2.0     ${mode.padEnd(5)}${s.cipher.padEnd(21)}${s.hmac.padEnd(22)}Session started       ${s.user}`));
+    `${padToWidth(String(s.lineIndex), 11)}2.0     ${padToWidth(mode, 5)}${padToWidth(s.cipher, 21)}${padToWidth(s.hmac, 22)}Session started       ${s.user}`));
   return [entete, ...rangs, finV1].join('\n');
 }
 
@@ -1302,7 +1303,7 @@ export function showHosts(router?: ShowHostsDevice): string {
   lines.push('Host                      Port  Flags      Age Type   Address(es)');
   for (const e of hosts?.entries() ?? []) {
     const drapeaux = `(${e.permanent ? 'perm' : 'temp'}, OK)`;
-    lines.push(`${e.name.padEnd(26)}None  ${drapeaux.padEnd(11)}${String(e.ageSeconds).padEnd(4)}IP     ${e.ips.join(' ')}`);
+    lines.push(`${padToWidth(e.name, 26)}None  ${padToWidth(drapeaux, 11)}${padToWidth(String(e.ageSeconds), 4)}IP     ${e.ips.join(' ')}`);
   }
   return lines.join('\n');
 }
@@ -1336,7 +1337,7 @@ export function showVrf(router?: unknown): string {
   for (const vrf of vrfs.values()) {
     const rd = vrf.rd ?? '<not set>';
     const ifaces = [...vrf.interfaces].join(', ') || '<none>';
-    lines.push(`  ${vrf.name.padEnd(33)}${rd.padEnd(22)}${'ipv4'.padEnd(12)}${ifaces}`);
+    lines.push(`  ${padToWidth(vrf.name, 33)}${padToWidth(rd, 22)}${padToWidth('ipv4', 12)}${ifaces}`);
   }
   return lines.join('\n');
 }
@@ -1381,7 +1382,7 @@ export function showVrfInterfaces(router?: unknown): string {
   for (const vrf of vrfs.values()) {
     for (const iface of vrf.interfaces) {
       const ip = addr?.(iface)?.getIPAddress?.();
-      lines.push(`${iface.padEnd(23)}${vrf.name.padEnd(33)}${'up'.padEnd(9)}${ip ? String(ip) : '<not set>'}`);
+      lines.push(`${padToWidth(iface, 23)}${padToWidth(vrf.name, 33)}${padToWidth('up', 9)}${ip ? String(ip) : '<not set>'}`);
     }
   }
   return lines.join('\n');
@@ -1397,7 +1398,7 @@ export function showAdjacency(router: AdjacencySource): string {
   if (!arp || arp.size === 0) return header;
   const lines = [header];
   for (const [ip, entry] of arp) {
-    lines.push(`IP       ${entry.iface.padEnd(26)}${ip}(${entry.mac})`);
+    lines.push(`IP       ${padToWidth(entry.iface, 26)}${ip}(${entry.mac})`);
   }
   return lines.join('\n');
 }
@@ -1422,7 +1423,7 @@ export interface FileSystemUsage {
 
 export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number): string {
   const row = (mark: string, size: string, free: string, type: string, prefix: string) =>
-    `${mark}${size.padStart(12)}${free.padStart(12)}  ${type.padStart(8)}     rw   ${prefix}`;
+    `${mark}${padToWidth(size, 12, 'right')}${padToWidth(free, 12, 'right')}  ${padToWidth(type, 8, 'right')}     rw   ${prefix}`;
   return [
     'File Systems:',
     '',
@@ -1599,8 +1600,8 @@ export function showTcpBrief(stack?: TcpBriefSource | null): string {
   ];
 
   return [header, ...rows.map(row =>
-    `${tcbHandle(row).padEnd(10)}${row.local.padEnd(24)}`
-    + `${row.foreign.padEnd(23)}${row.state}`)].join('\n');
+    `${padToWidth(tcbHandle(row), 10)}${padToWidth(row.local, 24)}`
+    + `${padToWidth(row.foreign, 23)}${row.state}`)].join('\n');
 }
 
 export function showSockets(): string {

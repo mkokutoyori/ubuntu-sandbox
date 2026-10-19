@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const HALF_YEAR_MS = (365 * 24 * 60 * 60 / 2) * 1000;
 const SCALE_UNITS = ['', 'K', 'M', 'G', 'T', 'P', 'E'];
@@ -33,7 +34,7 @@ export function scaledSize(bytes: number): string {
 export function listingTime(mtimeMs: number, nowMs: number, zoneOffsetMinutes = 0): string {
   const when = new Date(mtimeMs + zoneOffsetMinutes * 60_000);
   const month = MONTHS[when.getUTCMonth()];
-  const day = String(when.getUTCDate()).padStart(2, ' ');
+  const day = padToWidth(String(when.getUTCDate()), 2, 'right');
   if (nowMs - HALF_YEAR_MS < mtimeMs && nowMs >= mtimeMs) {
     return `${month} ${day} ${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}`;
   }
@@ -62,6 +63,6 @@ export function formatListing(
     : names;
   const userWidth = Math.max(resolved.user.length, 8);
   const groupWidth = Math.max(resolved.group.length, 8);
-  const size = siUnits ? scaledSize(entry.size).padStart(8, ' ') : String(entry.size).padStart(8, ' ');
-  return `${strmode(entry.mode)} ${resolved.links.padStart(3, ' ')} ${resolved.user.padEnd(userWidth, ' ')} ${resolved.group.padEnd(groupWidth, ' ')} ${size} ${listingTime(entry.mtimeMs, nowMs, zoneOffsetMinutes)} ${name}`;
+  const size = siUnits ? padToWidth(scaledSize(entry.size), 8, 'right') : padToWidth(String(entry.size), 8, 'right');
+  return `${strmode(entry.mode)} ${padToWidth(resolved.links, 3, 'right')} ${padToWidth(resolved.user, userWidth)} ${padToWidth(resolved.group, groupWidth)} ${size} ${listingTime(entry.mtimeMs, nowMs, zoneOffsetMinutes)} ${name}`;
 }

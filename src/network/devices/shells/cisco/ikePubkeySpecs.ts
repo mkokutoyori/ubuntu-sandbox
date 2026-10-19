@@ -3,6 +3,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import type { IkeKeyUsage, IkePeerKey, IkePubkeyChain } from '../../router/security/IkePubkeyChain';
 import { decodeRsaPublicKey, groupedHex } from '../../../ipsec/RsaPublicKeyDer';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type IkePubkeyMode = 'config-pubkey-chain' | 'config-pubkey-key' | 'config-pubkey-data';
 
@@ -48,8 +49,8 @@ export function renderPubkeyChain(chain: IkePubkeyChain, filter: { address?: str
     return [
       'Codes: M - Manually Configured, C - Extracted from certificate',
       '',
-      `${'Code'.padEnd(5)}${'Usage'.padEnd(11)}${'IP-address'.padEnd(16)}${'Keyring'.padEnd(8)}Name`,
-      ...keys.map((key) => `${'M'.padEnd(5)}${usageLabel(key.usage).padEnd(11)}${(key.kind === 'addressed' ? key.name : key.address ?? '').padEnd(16)}${'default'.padEnd(8)}${key.kind === 'named' ? key.name : ''}`.trimEnd()),
+      `${padToWidth('Code', 5)}${padToWidth('Usage', 11)}${padToWidth('IP-address', 16)}${padToWidth('Keyring', 8)}Name`,
+      ...keys.map((key) => `${padToWidth('M', 5)}${padToWidth(usageLabel(key.usage), 11)}${padToWidth(key.kind === 'addressed' ? key.name : key.address ?? '', 16)}${padToWidth('default', 8)}${key.kind === 'named' ? key.name : ''}`.trimEnd()),
     ].join('\n');
   }
   return keys.map((key) => [

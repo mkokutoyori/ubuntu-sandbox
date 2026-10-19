@@ -27,6 +27,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import type { SmbConnection } from './server/smb/SmbClient';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface NetUseEntry {
   /** Drive letter (`Z:`), or empty for a deviceless connection. */
@@ -124,7 +125,7 @@ function listConnections(ctx: WinCommandContext, store: Map<string, NetUseEntry>
     return header + `There are no entries in the list.`;
   }
   const rows = Array.from(store.values()).map(e =>
-    `${observedStatus(e).padEnd(13)}${e.local.padEnd(10)}${e.remote.padEnd(26)}Microsoft Windows Network`,
+    `${padToWidth(observedStatus(e), 13)}${padToWidth(e.local, 10)}${padToWidth(e.remote, 26)}Microsoft Windows Network`,
   );
   return header + rows.join('\n') + `\nThe command completed successfully.`;
 }

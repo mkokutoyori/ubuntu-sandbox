@@ -22,6 +22,7 @@ import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 import { parseAreaId, type LSAHeader, type OSPFNeighbor } from '@/network/ospf/types';
 import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const VRP_IMPORTABLE_PROTOCOLS = new Set([
   'direct', 'connected', 'static', 'rip', 'isis', 'bgp', 'ospf', 'unr',
@@ -822,7 +823,7 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
     const links = getRouter()._getOSPFExtraConfig().shamLinks;
     if (!links || links.size === 0) return 'No OSPF sham-links configured.';
     const out: string[] = ['Sham-Link  Area  Source           Destination'];
-    for (const [, l] of links) out.push(` ${l.areaId.padEnd(10)} ${l.source.padEnd(16)} ${l.destination}`);
+    for (const [, l] of links) out.push(` ${padToWidth(l.areaId, 10)} ${padToWidth(l.source, 16)} ${l.destination}`);
     return out.join('\n');
   });
   trie.register('display ospf error', 'Display OSPF error statistics', () => 'OSPF errors: 0');
@@ -873,12 +874,12 @@ function displayOspfNeighborQueue(
       const queue = queueOf(ospf, neighbor);
       if (queue.length === 0) continue;
       lines.push(`  The Router's Neighbor is Router ID ${neighbor.routerId}  Address ${neighbor.ipAddress}`);
-      lines.push(`  Interface ${iface.ipAddress.padEnd(17)}Area ${iface.areaId}`);
+      lines.push(`  Interface ${padToWidth(iface.ipAddress, 17)}Area ${iface.areaId}`);
       lines.push(`  ${list} list:`);
       lines.push('       Type       LinkState ID      AdvRouter         Sequence   Age');
       for (const lsa of queue) {
-        lines.push(`       ${vrpLsaTypeName(lsa.lsType).padEnd(11)}${lsa.linkStateId.padEnd(18)}`
-          + `${lsa.advertisingRouter.padEnd(18)}${lsa.lsSequenceNumber.toString(16).padStart(8, '0').padEnd(11)}${lsa.lsAge}`);
+        lines.push(`       ${padToWidth(vrpLsaTypeName(lsa.lsType), 11)}${padToWidth(lsa.linkStateId, 18)}`
+          + `${padToWidth(lsa.advertisingRouter, 18)}${padToWidth(lsa.lsSequenceNumber.toString(16).padStart(8, '0'), 11)}${lsa.lsAge}`);
       }
     }
   }
@@ -901,8 +902,8 @@ function displayOspfBrief(router: Router): string {
     const lsaCount = areaDB?.size ?? 0;
     const adjCount = ospf.getFullNeighborCount();
     lines.push(
-      ` ${areaId.padEnd(8)}${area.type.padEnd(7)}${String(area.interfaces.length).padEnd(8)}` +
-      `${String(adjCount).padEnd(6)}${lsaCount}`
+      ` ${padToWidth(areaId, 8)}${padToWidth(area.type, 7)}${padToWidth(String(area.interfaces.length), 8)}` +
+      `${padToWidth(String(adjCount), 6)}${lsaCount}`
     );
   }
 
@@ -924,7 +925,7 @@ function displayOspfPeer(router: Router): string {
   for (const n of neighbors) {
     const iface = ospf.getInterface(n.iface);
     lines.push(
-      ` ${(iface?.areaId ?? '-').padEnd(11)}${n.iface.padEnd(16)}${n.routerId.padEnd(16)}${n.state}`
+      ` ${padToWidth(iface?.areaId ?? '-', 11)}${padToWidth(n.iface, 16)}${padToWidth(n.routerId, 16)}${n.state}`
     );
   }
 
@@ -948,9 +949,9 @@ function displayOspfLsdb(router: Router): string {
 
     for (const [, lsa] of areaDB) {
       lines.push(
-        ` ${vrpLsaTypeName(lsa.lsType).padEnd(10)}` +
-        `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-        `${String(lsa.lsAge).padEnd(6)}${String(lsa.length).padEnd(6)}` +
+        ` ${padToWidth(vrpLsaTypeName(lsa.lsType), 10)}` +
+        `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+        `${padToWidth(String(lsa.lsAge), 6)}${padToWidth(String(lsa.length), 6)}` +
         `0x${lsa.lsSequenceNumber.toString(16)}`
       );
     }
@@ -1028,9 +1029,9 @@ function displayOspfLsdbTyped(router: Router, lsType: number): string {
     for (const [, lsa] of areaDB) {
       if (lsa.lsType !== lsType) continue;
       lines.push(
-        ` ${vrpLsaTypeName(lsa.lsType).padEnd(10)}` +
-        `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
-        `${String(lsa.lsAge).padEnd(6)}${String(lsa.length).padEnd(6)}` +
+        ` ${padToWidth(vrpLsaTypeName(lsa.lsType), 10)}` +
+        `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+        `${padToWidth(String(lsa.lsAge), 6)}${padToWidth(String(lsa.length), 6)}` +
         `0x${lsa.lsSequenceNumber.toString(16)}`
       );
     }
@@ -1055,7 +1056,7 @@ function displayOspfInterfaceBrief(router: Router): string {
     const state = iface.state;
     const nbrs = iface.neighbors.size;
     lines.push(
-      `${name.padEnd(16)}${String(pid).padEnd(6)}${area.padEnd(16)}${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${nbrs}`
+      `${padToWidth(name, 16)}${padToWidth(String(pid), 6)}${padToWidth(area, 16)}${padToWidth(ipMask, 19)}${padToWidth(String(cost), 6)}${padToWidth(state, 6)}${nbrs}`
     );
   }
 
@@ -1144,7 +1145,7 @@ function displayOspfAbrAsbr(router: Router): string {
   lines.push('Router         Type');
   for (const [rid, info] of borderRouters) {
     const typeStr = info.isABR && info.isASBR ? 'ABR/ASBR' : info.isABR ? 'ABR' : 'ASBR';
-    lines.push(`${rid.padEnd(15)}${typeStr}`);
+    lines.push(`${padToWidth(rid, 15)}${typeStr}`);
   }
 
   return lines.join('\n');
@@ -1209,7 +1210,7 @@ export function displayOspfRouting(router: Router): string {
     count++;
     const dest = `${r.network.toString()}/${maskToCIDR(r.mask.toString())}`;
     const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
-    rows.push(`${dest.padEnd(19)}${String(r.metric).padEnd(6)}${'Transit'.padEnd(11)}${nh.padEnd(16)}${ospf.getRouterId().padEnd(16)}0.0.0.0`);
+    rows.push(`${padToWidth(dest, 19)}${padToWidth(String(r.metric), 6)}${padToWidth('Transit', 11)}${padToWidth(nh, 16)}${padToWidth(ospf.getRouterId(), 16)}0.0.0.0`);
   }
   const lines = [
     `OSPF Process ${ospf.getProcessId()} with Router ID ${ospf.getRouterId()}`,
@@ -1237,7 +1238,7 @@ function displayOspfv3Peer(router: Router): string {
     'Neighbor ID     Pri   State           Interface',
   ];
   for (const n of neighbors) {
-    lines.push(`${n.routerId.padEnd(16)}${String(n.priority).padEnd(6)}${n.state.toUpperCase().padEnd(16)}${n.iface}`);
+    lines.push(`${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}${padToWidth(n.state.toUpperCase(), 16)}${n.iface}`);
   }
   return lines.join('\n');
 }

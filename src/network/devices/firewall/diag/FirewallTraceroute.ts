@@ -1,6 +1,7 @@
 import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
 import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
 import { hostAddressOf, type FirewallPingDeps } from './FirewallPing';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const TRACEROUTE_MAX_HOPS = 32;
 export const TRACEROUTE_PROBES = 3;
@@ -15,8 +16,8 @@ export function tracerouteHopLine(
   hop: number, from: string | undefined, probes: readonly string[],
 ): string {
   return from === undefined
-    ? `${String(hop).padStart(2)}  * * *`
-    : `${String(hop).padStart(2)}  ${from}  ${probes.join('  ')}`;
+    ? `${padToWidth(String(hop), 2, 'right')}  * * *`
+    : `${padToWidth(String(hop), 2, 'right')}  ${from}  ${probes.join('  ')}`;
 }
 
 interface HopAwaited {

@@ -33,7 +33,7 @@ import {
   analyserVariables, analyserListeAssociations, pointageDepuisSelect,
   NOMS_ERREURS_CONTROLE,
 } from '@/network/ntp/control';
-import { renderTable, FIXED_TABLE } from '@/network/devices/shells/cli/TextTable';
+import { renderTable, FIXED_TABLE, padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * L'en-tete du tableau des pairs, mesure sur une sortie reelle.
@@ -171,7 +171,7 @@ function listerAssociations(agent: Agent, cible: string): string {
   if (liste.error) return refus(liste.status);
   const entrees = analyserListeAssociations(liste.data);
   const lignes = entrees.map((e, i) =>
-    `${String(i + 1).padStart(3)} ${String(e.id).padStart(5)}  `
+    `${padToWidth(String(i + 1), 3, 'right')} ${padToWidth(String(e.id), 5, 'right')}  `
     + `${e.status.toString(16).padStart(4, '0')}  `
     + `${pointageDepuisSelect((e.status >> 8) & 0x7) === '*' ? 'sys.peer' : 'candidate'}`);
   return ['ind assid status  conf reach auth condition  last_event cnt',

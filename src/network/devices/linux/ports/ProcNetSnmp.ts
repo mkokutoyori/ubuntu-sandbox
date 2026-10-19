@@ -1,6 +1,7 @@
 import { tcpTotals, type ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
 import { snmpSnapshot, type SnmpSnapshot } from '../../../layers/internet/SnmpSnapshot';
 import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts } from '../LinuxIpv4Settings';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface LinuxSnmpSnapshot extends SnmpSnapshot {
   kernel: KernelIpFacts;
@@ -240,7 +241,7 @@ const UDP_LITE6_COLUMNS: readonly Column[] = [
 const NAME_WIDTH = 32;
 
 function snmp6Row(name: string, value: number): string {
-  return `${name.padEnd(NAME_WIDTH)}\t${value}`;
+  return `${padToWidth(name, NAME_WIDTH)}\t${value}`;
 }
 
 function snmp6Rows(columns: readonly Column[], c: ProtocolCounters): string[] {

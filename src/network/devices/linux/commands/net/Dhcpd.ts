@@ -4,6 +4,7 @@ import { makeArgCompleter } from '../completionHelpers';
 import {
   DHCPD_BANNER, DHCPD_BINARY, DHCPD_CONF_PATH, DHCPD_LEASES_PATH, DHCPD_VERSION, DHCPD6_LEASES_PATH,
 } from '../../dhcp/DhcpdFiles';
+import { renderTableText, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 const UNIT = 'isc-dhcp-server';
 
@@ -105,12 +106,10 @@ export const dhcpLeaseListCommand: LinuxCommand = {
     const rows = leases.map(l => [
       l.mac, l.ip, l.hostname ?? '-NA-', l.ends,
     ]);
-    const head = ['MAC', 'IP', 'hostname', 'valid until'];
-    const widths = head.map((title, index) =>
-      Math.max(title.length, ...rows.map(row => row[index].length)));
-    const line = (cells: readonly string[]) =>
-      cells.map((cell, index) => cell.padEnd(widths[index])).join(' ').trimEnd();
-    return [line(head), widths.map(w => '='.repeat(w)).join(' '), ...rows.map(line)].join('\n');
+    const columns: TableColumn<string[]>[] = ['MAC', 'IP', 'hostname', 'valid until'].map((header, index) => ({
+      header, value: (row) => row[index],
+    }));
+    return renderTableText(rows, columns, { gap: 1, rule: true, ruleChar: '=' });
   },
 };
 

@@ -29,6 +29,7 @@ import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor'
 import { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
 import { DeviceConfigRegistry } from './session/DeviceConfigRegistry';
 import type { Equipment } from '@/network';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export class ReactiveRmanSubShell implements ISubShell {
   readonly kind = 'rman';
@@ -225,11 +226,11 @@ export class ReactiveRmanSubShell implements ISubShell {
           this._push('---- ------ -------------- ------------ --------------- ----------');
           for (const f of e.files) {
             this._push([
-              String(f.fileNo).padEnd(4),
-              f.status.padEnd(6),
-              String(f.markedCorrupt).padEnd(14),
-              String(f.emptyBlocks).padEnd(12),
-              String(f.blocksExamined).padEnd(15),
+              padToWidth(String(f.fileNo), 4),
+              padToWidth(f.status, 6),
+              padToWidth(String(f.markedCorrupt), 14),
+              padToWidth(String(f.emptyBlocks), 12),
+              padToWidth(String(f.blocksExamined), 15),
               String(f.highScn),
             ].join(' '));
             this._push(`File Name: ${f.path}`);

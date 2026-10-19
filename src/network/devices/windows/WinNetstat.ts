@@ -1,7 +1,7 @@
 import type { SocketEntry } from '../../core/SocketTable';
 import { IPAddress, IPv6Address } from '../../core/types';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
-import { renderTable, type TableColumn, type TableStyle } from '../shells/cli/TextTable';
+import { renderTable, type TableColumn, type TableStyle, padToWidth } from '../shells/cli/TextTable';
 import type { NetstatProtocolFilter } from './WinNetstatStatistics';
 import { HOST_OFFLOAD_STATE, appliedSettingOf, netTcpStateOf } from './netTcpConnection';
 
@@ -281,12 +281,12 @@ class ForeignNames {
 
 function interfaceStatistics(counters: NetstatLinkCounters): string {
   const row = (label: string, received: number, sent: number | null) =>
-    `${label.padEnd(24)}${String(received).padStart(12)}${sent === null ? '' : String(sent).padStart(16)}`;
+    `${padToWidth(label, 24)}${padToWidth(String(received), 12, 'right')}${sent === null ? '' : padToWidth(String(sent), 16, 'right')}`;
   return [
     '',
     'Interface Statistics',
     '',
-    `${''.padEnd(24)}${'Received'.padStart(12)}${'Sent'.padStart(16)}`,
+    `${padToWidth('', 24)}${padToWidth('Received', 12, 'right')}${padToWidth('Sent', 16, 'right')}`,
     '',
     row('Bytes', counters.bytesIn, counters.bytesOut),
     row('Unicast packets', counters.framesIn, counters.framesOut),

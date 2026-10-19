@@ -1,6 +1,7 @@
 import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGetopt';
 import type { HostClock } from '../audit/tools/AuditHostClock';
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const LOGGER_VERSION = 'util-linux 2.39.3';
 
@@ -295,7 +296,7 @@ export function runLogger(host: LoggerHost, argv: string[], program = 'logger'):
     const tm = host.clock.localTime(Math.floor(host.nowMicros() / 1_000_000));
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const two = (n: number): string => String(n).padStart(2, '0');
-    return `${months[tm.mon]} ${String(tm.mday).padStart(2, ' ')} ${two(tm.hour)}:${two(tm.min)}:${two(tm.sec)}`;
+    return `${months[tm.mon]} ${padToWidth(String(tm.mday), 2, 'right')} ${two(tm.hour)}:${two(tm.min)}:${two(tm.sec)}`;
   };
 
   const hasStructuredId = (list: StructuredData[], id: string): boolean => list.some((entry) => entry.id === id);

@@ -1,8 +1,9 @@
 import type { Port } from '@/network/hardware/Port';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 function pair(leftLabel: string, left: number, rightLabel: string, right: number): string {
-  return `  ${`${leftLabel}:`.padEnd(26)}${String(left).padStart(3)},`
-    + `  ${`${rightLabel}:`.padEnd(26)}${String(right).padStart(3)}`;
+  return `  ${padToWidth(`${leftLabel}:`, 26)}${padToWidth(String(left), 3, 'right')},`
+    + `  ${padToWidth(`${rightLabel}:`, 26)}${padToWidth(String(right), 3, 'right')}`;
 }
 
 function direction(
@@ -13,8 +14,8 @@ function direction(
   return [
     `${sens}:  ${frames} packets, ${bytes} bytes`,
     pair('Unicast', unicast, 'Multicast', multicast),
-    `  ${'Broadcast:'.padEnd(26)}${String(broadcast).padStart(3)},`
-      + `  ${'Jumbo:'.padEnd(26)}  -`,
+    `  ${padToWidth('Broadcast:', 26)}${padToWidth(String(broadcast), 3, 'right')},`
+      + `  ${padToWidth('Jumbo:', 26)}  -`,
     pair('Discard', discards, 'Total Error', errors),
   ];
 }
@@ -48,7 +49,7 @@ export function vrpInterfaceCounterLines(port: Port): string[] {
     ...direction('Output', c.framesOut, c.bytesOut,
       c.framesOut - c.broadcastOut - c.multicastOut, c.multicastOut, c.broadcastOut,
       c.dropsOut, c.errorsOut),
-    `    Input bandwidth utilization  : ${String(utilisation(r.inBitsPerSec, port)).padStart(4)}%`,
-    `    Output bandwidth utilization : ${String(utilisation(r.outBitsPerSec, port)).padStart(4)}%`,
+    `    Input bandwidth utilization  : ${padToWidth(String(utilisation(r.inBitsPerSec, port)), 4, 'right')}%`,
+    `    Output bandwidth utilization : ${padToWidth(String(utilisation(r.outBitsPerSec, port)), 4, 'right')}%`,
   ];
 }

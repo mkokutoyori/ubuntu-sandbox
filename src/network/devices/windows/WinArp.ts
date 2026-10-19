@@ -11,6 +11,7 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress, MACAddress } from '../../core/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const ARP_HELP = `
 Displays and modifies the IP-to-Physical address translation tables used by
@@ -180,7 +181,7 @@ function handleShow(ctx: WinCommandContext, flags: WinArpFlags): string {
     lines.push(`Interface: ${ifaceIP} --- 0x${ctx.adapterIdentityOf(iface).ifIndex.toString(16)}`);
     lines.push('  Internet Address      Physical Address      Type');
     for (const e of ifEntries) {
-      lines.push(`  ${e.ip.padEnd(22)}${e.mac.padEnd(22)}${e.type}`);
+      lines.push(`  ${padToWidth(e.ip, 22)}${padToWidth(e.mac, 22)}${e.type}`);
     }
   }
   return lines.join('\n');

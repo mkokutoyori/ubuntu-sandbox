@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export class ReportTime {
   constructor(readonly epochSeconds: number, readonly nanoseconds?: number) {}
 }
@@ -19,7 +20,7 @@ function signedFixed(value: number, precision: number): string {
 }
 
 function pad(text: string, width: number): string {
-  return text.padStart(width);
+  return padToWidth(text, width, 'right');
 }
 
 export function formatSeconds(value: number): string {
@@ -177,7 +178,7 @@ export function printReport(template: string, values: readonly ReportValue[], cs
       case 'd': out += pad(String(asNumber(value)), width); break;
       case 'f': out += pad(sign ? signedFixed(asNumber(value), precision) : fixed(asNumber(value), precision), width); break;
       case 'o': out += pad(asNumber(value).toString(8), width); break;
-      case 's': out += sign ? String(value).padEnd(width) : String(value).padStart(width); break;
+      case 's': out += sign ? padToWidth(String(value), width) : padToWidth(String(value), width, 'right'); break;
       default: break;
     }
     field++;

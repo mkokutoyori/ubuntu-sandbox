@@ -24,6 +24,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Poids relatif de chaque région d'un processus ELF ordinaire. */
 const LAYOUT: ReadonlyArray<{ share: number; mode: string; label: 'exe' | 'anon' | 'stack' | 'lib' }> = [
@@ -79,17 +80,17 @@ export function runPmap(ctx: LinuxCommandContext, args: string[]): { output: str
           : region.label === 'stack' ? '  [ stack ]' : '  [ anon ]';
       if (extended) {
         const rss = Math.round(rssKib * region.share);
-        out.push(`${hex12(address)} ${String(kib).padStart(7)} ${String(rss).padStart(7)} `
-          + `${String(region.mode.includes('w') ? rss : 0).padStart(7)} ${region.mode} ${mapping}`);
+        out.push(`${hex12(address)} ${padToWidth(String(kib), 7, 'right')} ${padToWidth(String(rss), 7, 'right')} `
+          + `${padToWidth(String(region.mode.includes('w') ? rss : 0), 7, 'right')} ${region.mode} ${mapping}`);
       } else {
-        out.push(`${hex12(address)} ${String(kib).padStart(6)}K ${region.mode} ${mapping}`);
+        out.push(`${hex12(address)} ${padToWidth(String(kib), 6, 'right')}K ${region.mode} ${mapping}`);
       }
       address += (kib + 4) * 1024;
     });
 
     out.push(extended
-      ? `----------------  ------  ------  ------\ntotal kB         ${String(totalKib).padStart(7)} ${String(rssKib).padStart(7)}       0`
-      : ` total ${String(totalKib).padStart(16)}K`);
+      ? `----------------  ------  ------  ------\ntotal kB         ${padToWidth(String(totalKib), 7, 'right')} ${padToWidth(String(rssKib), 7, 'right')}       0`
+      : ` total ${padToWidth(String(totalKib), 16, 'right')}K`);
   }
 
   // Sortie 42 quand aucun PID n'a pu être lu — relevée sur le vrai binaire.

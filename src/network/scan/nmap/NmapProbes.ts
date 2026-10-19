@@ -6,8 +6,9 @@ import {
   SCAN_PROBE_FLAGS, readStatelessReply,
   type ScanProbeFlags, type StatelessScanKind,
 } from './StatelessScans';
-import { IP_PROTO_UDP, IPAddress, IPv6Address } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { ICMP_UNREACH_PORT } from '@/network/core/IcmpErrors';
+import { readUdpProbeOutcome } from '../UdpProbeOutcome';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import {
   grabUdpListener, grabUdpBanner,
@@ -362,38 +363,34 @@ function isNumericAddress(target: string): boolean {
  * port; codes 0, 1, 2, 9, 10 and 13 filter it. Silence leaves the port
  * open|filtered, and a datagram coming back opens it.
  */
+const UDP_FILTERING_ICMP: ReadonlyMap<number, string> = new Map([
+  [0, 'net-unreach'], [1, 'host-unreach'], [2, 'proto-unreach'],
+  [9, 'admin-prohibited'], [10, 'admin-prohibited'], [13, 'admin-prohibited'],
+]);
+
 function probeUdpPort(
   host: ScanHost, ip: string, port: number, shape: ScanProbeShape = {},
 ): UdpVerdict {
-  const device = host.device;
-  if (!device) return { state: 'open|filtered' };
-
-  let verdict: UdpVerdict = { state: 'open|filtered' };
-  const stop = device.getBus().subscribe('host.icmp.unreachable', (event) => {
-    const p = event.payload;
-    if (p.deviceId !== device.getId()) return;
-    if (p.fromIp !== ip) return;
-    if (p.origProtocol !== undefined && p.origProtocol !== IP_PROTO_UDP) return;
-    if (p.origDestPort !== undefined && p.origDestPort !== port) return;
-    verdict = p.icmpCode === ICMP_UNREACH_PORT
-      ? { state: 'closed', replyTtl: p.ttl }
-      : { state: 'open|filtered' };
+  let sent = true;
+  const outcome = readUdpProbeOutcome(host.device, ip, port, () => {
+    try {
+      host.sendUdpProbe(ip, port, shape.sourcePort ?? UDP_PROBE_SOURCE_PORT, {
+        ttl: shape.ttl,
+        badChecksum: shape.badChecksum,
+        sourceIp: shape.sourceIp === undefined
+          ? undefined : new IPAddress(shape.sourceIp),
+        payload: shape.payload,
+      });
+    } catch {
+      sent = false;
+    }
   });
-
-  try {
-    host.sendUdpProbe(ip, port, shape.sourcePort ?? UDP_PROBE_SOURCE_PORT, {
-      ttl: shape.ttl,
-      badChecksum: shape.badChecksum,
-      sourceIp: shape.sourceIp === undefined
-        ? undefined : new IPAddress(shape.sourceIp),
-      payload: shape.payload,
-    });
-  } catch {
-    stop();
-    return { state: 'open|filtered' };
-  }
-  stop();
-  return verdict;
+  if (outcome === null || !sent) return { state: 'open|filtered' };
+  if (outcome.icmpCode === ICMP_UNREACH_PORT) return { state: 'closed', replyTtl: outcome.ttl };
+  const reason = outcome.icmpCode === undefined ? undefined : UDP_FILTERING_ICMP.get(outcome.icmpCode);
+  return reason === undefined
+    ? { state: 'open|filtered' }
+    : { state: 'filtered', reason, replyTtl: outcome.ttl, ...(outcome.icmpFrom === ip ? {} : { reasonFrom: outcome.icmpFrom }) };
 }
 
 /**

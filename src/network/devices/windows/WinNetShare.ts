@@ -17,6 +17,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import type { SmbShare } from './server/smb/SmbTypes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 function listShares(shares: SmbShare[]): string {
   const lines: string[] = [];
@@ -25,7 +26,7 @@ function listShares(shares: SmbShare[]): string {
   lines.push('');
   lines.push('-------------------------------------------------------------------------------');
   for (const e of shares) {
-    lines.push(`${e.name.padEnd(13)}${e.path.padEnd(32)}${e.description}`);
+    lines.push(`${padToWidth(e.name, 13)}${padToWidth(e.path, 32)}${e.description}`);
   }
   lines.push('The command completed successfully.');
   return lines.join('\n');

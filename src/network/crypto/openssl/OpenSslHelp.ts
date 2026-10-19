@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 const STANDARD_COMMANDS: readonly string[] = [
   'asn1parse', 'ca', 'ciphers', 'cmp', 'cms', 'crl',
   'crl2pkcs7', 'dgst', 'dhparam', 'dsa', 'dsaparam', 'ec',
@@ -40,7 +41,7 @@ const COLUMN_WIDTH = 18;
 function columns(names: readonly string[]): string[] {
   const rows: string[] = [];
   for (let i = 0; i < names.length; i += COLUMNS) {
-    rows.push(names.slice(i, i + COLUMNS).map((name) => name.padEnd(COLUMN_WIDTH)).join(''));
+    rows.push(names.slice(i, i + COLUMNS).map((name) => padToWidth(name, COLUMN_WIDTH)).join(''));
   }
   return rows;
 }

@@ -18,6 +18,7 @@ import {
   DEFAULT_SFTP_SERVER_OPTIONS, SFTP_WRITING_REQUESTS, logLevelAtLeast, requestPermitted,
   type SftpLogLevel, type SftpServerOptions,
 } from './server/SftpServerOptions';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const STATVFS_EXTENSION = 'statvfs@openssh.com';
 export const STATVFS_BLOCK_SIZE = 4096;
@@ -65,7 +66,7 @@ function attrsFrom(a: SftpFileAttrs, version: number): SftpWireAttrs {
 function listingTime(mtime: number, now: number): string {
   const when = new Date(mtime);
   const month = LISTING_MONTHS[when.getUTCMonth()];
-  const day = String(when.getUTCDate()).padStart(2, ' ');
+  const day = padToWidth(String(when.getUTCDate()), 2, 'right');
   if (Math.abs(now - mtime) < SIX_MONTHS_MS) {
     return `${month} ${day} ${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}`;
   }
@@ -80,7 +81,7 @@ function longnameOf(e: SftpDirEntry, names: SftpAccountNames, now: number): stri
   const links = e.type === 'directory' ? 2 : 1;
   const user = names.user(e.uid);
   const group = names.group(e.gid);
-  return `${kind}${bits} ${String(links).padStart(3, ' ')} ${user.padEnd(Math.max(user.length, 8), ' ')} ${group.padEnd(Math.max(group.length, 8), ' ')} ${String(e.size).padStart(8, ' ')} ${listingTime(e.mtime, now)} ${e.name}`;
+  return `${kind}${bits} ${padToWidth(String(links), 3, 'right')} ${padToWidth(user, Math.max(user.length, 8))} ${padToWidth(group, Math.max(group.length, 8))} ${padToWidth(String(e.size), 8, 'right')} ${listingTime(e.mtime, now)} ${e.name}`;
 }
 
 function writeAt(buffer: string, offset: number, data: string): string {

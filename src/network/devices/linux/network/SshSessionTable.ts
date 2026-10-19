@@ -14,6 +14,7 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { SshSession, type SshSessionInit } from './SshSession';
 import type { UtmpSync } from './UtmpSync';
 import { IDLE_LOAD_AVERAGE } from '../system/LoadAverage';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export class SshSessionTable {
   private active = new Map<string, SshSession>();
@@ -90,7 +91,7 @@ export class SshSessionTable {
   /** Render `who` — one line per active session. */
   renderWho(): string {
     return this.list().map(s =>
-      `${s.user.padEnd(8)} ${s.tty.padEnd(8)} ` +
+      `${padToWidth(s.user, 8)} ${padToWidth(s.tty, 8)} ` +
       `${s.loginAt.toISOString().slice(0, 16).replace('T', ' ')} (${s.fromIp})`,
     ).join('\n');
   }

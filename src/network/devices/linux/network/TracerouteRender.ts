@@ -1,4 +1,5 @@
 import type { TracerouteHop } from '../LinuxNetKernel';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const TRACEROUTE_VERSION_TEXT = 'Modern traceroute for Linux, version 2.1.0\n'
   + 'Copyright (c) 2016  Dmitry Butskoy,   License: GPL v2 or any later';
@@ -40,7 +41,7 @@ function addressText(ip: string, options: TracerouteRenderOptions): string {
 }
 
 export function tracerouteHopLine(hop: TracerouteHop, options: TracerouteRenderOptions): string {
-  let line = `${String(hop.hop).padStart(2, ' ')} `;
+  let line = `${padToWidth(String(hop.hop), 2, 'right')} `;
   const probes = hop.probes ?? [];
   let previousIp: string | undefined;
   probes.forEach((probe, index) => {

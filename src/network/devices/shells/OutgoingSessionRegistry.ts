@@ -1,4 +1,5 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type OutgoingProtocol = 'telnet' | 'ssh';
 
@@ -77,9 +78,9 @@ export function renderSessions(reg: OutgoingSessionRegistry): string {
   for (const s of list) {
     const star = s.conn === active ? '*' : ' ';
     lines.push(
-      `${star}${String(s.conn).padStart(3)} ${s.host.padEnd(19)} ` +
-      `${s.address.padEnd(19)} ${String(s.bytes).padStart(4)} ` +
-      `${idle(s.lastActiveMs).padStart(5)} ${s.host}`,
+      `${star}${padToWidth(String(s.conn), 3, 'right')} ${padToWidth(s.host, 19)} ` +
+      `${padToWidth(s.address, 19)} ${padToWidth(String(s.bytes), 4, 'right')} ` +
+      `${padToWidth(idle(s.lastActiveMs), 5, 'right')} ${s.host}`,
     );
   }
   return lines.join('\n');

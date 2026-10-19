@@ -13,6 +13,7 @@ import { WindowsFileSystem } from './WindowsFileSystem';
 import {
   filterFind, filterFindstr, parseFindArguments, parseFindstrArguments, textLines,
 } from './FindText';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -195,11 +196,11 @@ export function cmdTasklist(ctx: WinFileCommandContext): string {
   ];
 
   for (const [name, pid, session, mem] of processes) {
-    const nameStr = String(name).padEnd(25);
-    const pidStr = String(pid).padStart(8);
-    const sessStr = String(session).padEnd(16);
+    const nameStr = padToWidth(String(name), 25);
+    const pidStr = padToWidth(String(pid), 8, 'right');
+    const sessStr = padToWidth(String(session), 16);
     const memStr = (Number(mem) / 1024).toFixed(0) + ' K';
-    lines.push(`${nameStr} ${pidStr} ${sessStr} ${memStr.padStart(11)}`);
+    lines.push(`${nameStr} ${pidStr} ${sessStr} ${padToWidth(memStr, 11, 'right')}`);
   }
 
   return lines.join('\n');

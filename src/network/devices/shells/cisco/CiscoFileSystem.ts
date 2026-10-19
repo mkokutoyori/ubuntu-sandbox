@@ -33,6 +33,7 @@
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface CiscoFile {
   name: string;
@@ -251,7 +252,7 @@ export class CiscoFileSystem {
       if (prefixe !== '' && !f.name.startsWith(prefixe)) continue;
       const affiche = prefixe === '' ? f.name : f.name.slice(prefixe.length);
       const mode = f.directory ? 'drwx' : '-rwx';
-      lignes.push(`${String(i).padStart(5)}  ${mode}  ${String(f.size).padStart(11)}`
+      lignes.push(`${padToWidth(String(i), 5, 'right')}  ${mode}  ${padToWidth(String(f.size), 11, 'right')}`
         + `  ${fmtDate(f.modified, this.offsetMin())}  ${affiche}`);
       i++;
     }
@@ -264,7 +265,7 @@ export class CiscoFileSystem {
     const lignes = ['Directory of flash:/', ''];
     let i = 1;
     for (const f of this.flash.values()) {
-      lignes.push(`    ${i}  -rwx     ${String(f.size).padStart(8, ' ')}`
+      lignes.push(`    ${i}  -rwx     ${padToWidth(String(f.size), 8, 'right')}`
         + `   ${fmtDate(f.modified, this.offsetMin())}  ${f.name}`);
       i++;
     }
@@ -296,7 +297,7 @@ export class CiscoFileSystem {
       ].join('\n');
     }
     const largeur = 20;
-    const champ = (nom: string, valeur: string) => `${nom.padEnd(largeur)}: ${valeur}`;
+    const champ = (nom: string, valeur: string) => `${padToWidth(nom, largeur)}: ${valeur}`;
     return [
       champ('BOOT path-list', chaine),
       champ('Config file', 'flash:/config.text'),

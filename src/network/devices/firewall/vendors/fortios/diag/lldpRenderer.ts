@@ -6,6 +6,7 @@ import {
   type LldpChassisIdSubtype, type LldpPortIdSubtype,
   type LldpInterfaceNumbering, type LldpManagementAddressFamily,
 } from '@/network/lldp/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const CHASSIS_WORD: Partial<Record<LldpChassisIdSubtype, string>> = {
   macAddress: 'interface-mac',
@@ -134,8 +135,8 @@ export function renderLldpNeighborSummary(
   const rows: string[] = [];
   for (const p of ports) {
     for (const n of agent.getNeighborsOnPort(p)) {
-      rows.push(`${p.padEnd(16)}${(n.systemName ?? '-').padEnd(24)}` +
-        `${n.portId.padEnd(24)}${agent.ttlRemainingSec(n)}`);
+      rows.push(`${padToWidth(p, 16)}${padToWidth(n.systemName ?? '-', 24)}` +
+        `${padToWidth(n.portId, 24)}${agent.ttlRemainingSec(n)}`);
     }
   }
   return ['port            neighbor                port                    ttl', ...rows]

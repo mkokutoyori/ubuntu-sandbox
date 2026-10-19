@@ -45,8 +45,8 @@ import type {
 // ─── Operator precedence (higher = tighter binding) ──────────────────────────
 
 const PRECEDENCE: Record<string, number> = {
-  '-or': 1, '-xor': 2, '-and': 3,
-  '-band': 4, '-bor': 4, '-bxor': 4,
+  '-or': 1, '-xor': 1, '-and': 1,
+  '-band': 4, '-bor': 4, '-bxor': 4, '-shl': 4, '-shr': 4,
   '-eq': 5, '-ne': 5, '-gt': 5, '-ge': 5, '-lt': 5, '-le': 5,
   '-ceq': 5, '-cne': 5, '-cgt': 5, '-cge': 5, '-clt': 5, '-cle': 5,
   '-ieq': 5, '-ine': 5, '-igt': 5, '-ige': 5, '-ilt': 5, '-ile': 5,
@@ -54,13 +54,14 @@ const PRECEDENCE: Record<string, number> = {
   '-clike': 5, '-cnotlike': 5, '-cmatch': 5, '-cnotmatch': 5,
   '-ilike': 5, '-inotlike': 5, '-imatch': 5, '-inotmatch': 5,
   '-contains': 5, '-notcontains': 5, '-in': 5, '-notin': 5,
+  '-ccontains': 5, '-cnotcontains': 5, '-icontains': 5, '-inotcontains': 5,
+  '-cin': 5, '-cnotin': 5, '-iin': 5, '-inotin': 5,
   '-is': 5, '-isnot': 5, '-as': 5,
   '-replace': 6, '-creplace': 6, '-ireplace': 6,
   '-split': 6, '-csplit': 6, '-isplit': 6,
   '-join': 6,
   '-f': 6,
   ',': 7,
-  '-shl': 8, '-shr': 8,
   '+': 9, '-': 9,
   '*': 10, '/': 10, '%': 10,
 };
@@ -78,23 +79,27 @@ const BAREWORD_GLUE: ReadonlySet<PSTokenType> = new Set([
 export class PSParser {
   private tokens: PSToken[] = [];
   private pos: number = 0;
+  private source: string | null = null;
   /** Set to true inside @(...) so parseCommand() does not consume commas. */
   private insideArrayLiteral = false;
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
-  parse(tokens: PSToken[]): PSProgram {
+  parse(tokens: PSToken[], source?: string): PSProgram {
+    this.source = source ?? null;
     this.tokens = tokens;
     this.pos = 0;
     this.skipTerminators();
     // Top-level param() block (.ps1 files): `param([string]$X = "default")` at
     // the very top of the file binds caller args before the body runs.
     let paramBlock: PSParamBlock | null = null;
+    const beforeAttributes = this.pos;
     while (this.check(PSTokenType.LBRACKET)
            && this.peekAt(1)?.type === PSTokenType.WORD) {
       this.skipBracketAttribute();
       this.skipTerminators();
     }
+    if (!this.checkValue(PSTokenType.WORD, 'param')) this.pos = beforeAttributes;
     if (this.checkValue(PSTokenType.WORD, 'param')) {
       paramBlock = this.parseParamBlock();
       this.skipTerminators();
@@ -125,9 +130,33 @@ export class PSParser {
     return makeStatementList(statements, pos);
   }
 
+  private parseAttributedTypeDefinition(): PSStatement | null {
+    if (!this.check(PSTokenType.LBRACKET) || this.peekAt(1)?.type !== PSTokenType.WORD) return null;
+    const saved = this.pos;
+    const attributes: PSAttribute[] = [];
+    try {
+      while (this.check(PSTokenType.LBRACKET) && this.peekAt(1)?.type === PSTokenType.WORD) {
+        attributes.push(this.parseBracketAttribute());
+        this.skipTerminators();
+      }
+    } catch {
+      this.pos = saved;
+      return null;
+    }
+    if (this.checkValue(PSTokenType.WORD, 'enum')) {
+      const definition = this.parseEnumDef();
+      definition.attributes = attributes;
+      return definition;
+    }
+    this.pos = saved;
+    return null;
+  }
+
   // ─── Statement dispatcher ──────────────────────────────────────────────────
 
   private parseStatement(): PSStatement {
+    const attributedType = this.parseAttributedTypeDefinition();
+    if (attributedType !== null) return attributedType;
     const tok = this.peek();
 
     // ── Labeled loop: :label for/while/foreach/do ──
@@ -443,7 +472,7 @@ export class PSParser {
     // it as a real unary expression so the runtime doesn't dispatch a `not`
     // cmdlet.
     if (tok.type === PSTokenType.PARAMETER
-        && (tok.value === 'not' || tok.value === 'bnot')) {
+        && (tok.value === 'not' || tok.value === 'bnot' || tok.value === 'join' || tok.value === 'split')) {
       return this.parseExpression(0);
     }
 
@@ -471,14 +500,13 @@ export class PSParser {
     //
     // NUMBER/STRING/etc. heads use COMMA_PREC so that a literal comma in
     // contexts like @(1, 2, 3) is left for the outer @() loop to consume.
-    const COMMA_PREC = PRECEDENCE[','];
     if (tok.type === PSTokenType.VARIABLE) {
       return this.parseExpression(0);
     }
     if (tok.type === PSTokenType.NUMBER
         || tok.type === PSTokenType.STRING_SINGLE
         || tok.type === PSTokenType.STRING_DOUBLE) {
-      return this.parseExpression(COMMA_PREC);
+      return this.parseExpression(this.insideArrayLiteral ? PRECEDENCE[','] : 0);
     }
 
     if (tok.type === PSTokenType.WORD) {
@@ -1232,7 +1260,7 @@ export class PSParser {
   private parseScriptBlock(): PSScriptBlock {
     const pos = this.pos_();
     this.skipTerminators();
-    this.expect(PSTokenType.LBRACE);
+    const openBrace = this.expect(PSTokenType.LBRACE);
     this.skipTerminators();
 
     let paramBlock: PSParamBlock | null = null;
@@ -1240,16 +1268,18 @@ export class PSParser {
     let body = null;
 
     // Skip function-level attribute declarations like [CmdletBinding()] before param()
+    const blockAttributes: PSAttribute[] = [];
     while (this.check(PSTokenType.LBRACKET)
            && this.peekAt(1)?.type === PSTokenType.WORD
            && !this.check(PSTokenType.RBRACE)) {
-      this.skipBracketAttribute();
+      blockAttributes.push(this.parseBracketAttribute());
       this.skipTerminators();
     }
 
     // param() block at the very start of the script block
     if (this.checkValue(PSTokenType.WORD, 'param')) {
       paramBlock = this.parseParamBlock();
+      paramBlock.attributes = blockAttributes;
       this.skipTerminators();
     }
 
@@ -1272,8 +1302,9 @@ export class PSParser {
       body = this.parseStatementList(() => this.check(PSTokenType.RBRACE));
     }
 
-    this.expect(PSTokenType.RBRACE);
+    const closeBrace = this.expect(PSTokenType.RBRACE);
     const sb = makeScriptBlock(body, paramBlock, pos);
+    if (this.source !== null) sb.sourceText = this.source.slice(openBrace.position.offset + 1, closeBrace.position.offset).trim();
     sb.beginBlock = beginBlock;
     sb.processBlock = processBlock;
     sb.endBlock = endBlock;
@@ -1463,6 +1494,11 @@ export class PSParser {
       this.advance();
       return makeUnary('-bnot' as PSUnaryOperator, this.parseUnaryExpression(), pos);
     }
+    if (this.checkValue(PSTokenType.PARAMETER, 'join') || this.checkValue(PSTokenType.PARAMETER, 'split')) {
+      const operator = `-${this.advance().value}` as PSUnaryOperator;
+      this.skipTerminators();
+      return makeUnary(operator, this.parseUnaryExpression(), pos);
+    }
 
     // Unary comma — `,expr` is a single-element array wrapping expr
     // (PowerShell idiom: `,$x`, `,@(1,2,3)` to emit an array as ONE
@@ -1637,14 +1673,14 @@ export class PSParser {
         const pos = this.pos_();
         this.advance();
         const target = expr as PSVariableExpression;
-        expr = makeAssignment(target, '+=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
+        expr = { ...makeAssignment(target, '+=', makeLiteral(1, '1', 'number', pos), pos), postfix: true } as unknown as PSExpression;
         continue;
       }
       if (this.check(PSTokenType.DECREMENT)) {
         const pos = this.pos_();
         this.advance();
         const target = expr as PSVariableExpression;
-        expr = makeAssignment(target, '-=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
+        expr = { ...makeAssignment(target, '-=', makeLiteral(1, '1', 'number', pos), pos), postfix: true } as unknown as PSExpression;
         continue;
       }
 
@@ -1822,25 +1858,7 @@ export class PSParser {
   }
 
   private makeNumberLiteral(raw: string, pos: SourcePosition): PSLiteralExpression {
-    let value: number;
-    if (raw.startsWith('0x') || raw.startsWith('0X')) {
-      value = parseInt(raw, 16);
-    } else if (raw.endsWith('KB') || raw.endsWith('kb')) {
-      value = parseFloat(raw) * 1024;
-    } else if (raw.endsWith('MB') || raw.endsWith('mb')) {
-      value = parseFloat(raw) * 1024 * 1024;
-    } else if (raw.endsWith('GB') || raw.endsWith('gb')) {
-      value = parseFloat(raw) * 1024 ** 3;
-    } else if (raw.endsWith('TB') || raw.endsWith('tb')) {
-      value = parseFloat(raw) * 1024 ** 4;
-    } else if (raw.endsWith('PB') || raw.endsWith('pb')) {
-      value = parseFloat(raw) * 1024 ** 5;
-    } else if (raw.endsWith('L') || raw.endsWith('l')) {
-      value = parseInt(raw, 10);
-    } else {
-      value = parseFloat(raw);
-    }
-    return makeLiteral(value, raw, 'number', pos);
+    return makeLiteral(parseNumberLiteral(raw) as unknown as number, raw, 'number', pos);
   }
 
   // ─── Argument list (method calls) ──────────────────────────────────────────
@@ -1859,4 +1877,5 @@ export class PSParser {
 }
 
 // Lazy import of PSLexer to avoid circular deps — used only for parsing SUBEXPR content
+import { parseNumberLiteral } from '@/powershell/runtime/semantics/PSLiteral';
 import { PSLexer as PSLexer_ } from '@/powershell/lexer/PSLexer';

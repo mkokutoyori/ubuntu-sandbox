@@ -27,6 +27,7 @@ export { isValidIosAclNumber } from './aclHeadSpecs';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import type { ACLEngine } from '../../router/ACLEngine';
 import type { AclEntryHost } from './aclSubmodeSpecs';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Extended Shell Context for ACL modes ────────────────────────────
 
@@ -735,7 +736,7 @@ function formatACLEntry(
     // Une liste STANDARD aligne son adresse : IOS écrit `deny   10.1.1.1`
     // en calant l'action sur la largeur de `permit`. La liste ÉTENDUE ne
     // le fait PAS (`deny ip any any`), et la même capture le montre.
-    return `${pourAffichage ? action.padEnd(6) : action} ${addr}${tail}`;
+    return `${pourAffichage ? padToWidth(action, 6) : action} ${addr}${tail}`;
   }
   const proto = entry.protocol || 'ip';
   const src = entry.srcObjectGroup

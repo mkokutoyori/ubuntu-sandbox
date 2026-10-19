@@ -13,8 +13,11 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { languageEquals } from '@/powershell/runtime/semantics/PSCompare';
+import { describeScalarType } from '@/powershell/runtime/semantics/PSTypes';
 import { hasWildcard, wildcardMatches } from '@/powershell/runtime/PSWildcard';
 import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const GROUP_KEY_DELIMITER = '\u0000';
 
@@ -485,7 +488,8 @@ export class SortObjectCmdlet implements ICmdlet {
     if (uniq) {
       const seen = new Set<string>();
       result = sorted.filter(item => {
-        const key = keyArgs.map(k => psValueToString(keyVal(item, k))).join(GROUP_KEY_DELIMITER);
+        const joined = keyArgs.map(k => psValueToString(keyVal(item, k))).join(GROUP_KEY_DELIMITER);
+        const key = ci ? joined.toLowerCase() : joined;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -622,57 +626,125 @@ function flattenPropertyNames(raw: PSValue): string[] {
   return toArray(raw).map(v => psValueToString(v)).filter(n => n.length > 0);
 }
 
-function propertyKey(v: PSValue, props: string[]): string {
-  const src = (v ?? {}) as Record<string, PSValue>;
-  return props
-    .map(p => {
-      const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
-      return psValueToString(src[key] ?? null);
-    })
-    .join(GROUP_KEY_DELIMITER);
+interface CompareEntry {
+  readonly value: PSValue;
+  readonly keys: PSValue[];
 }
 
-function projectProperties(v: PSValue, props: string[]): Record<string, PSValue> {
-  const src = (v ?? {}) as Record<string, PSValue>;
-  const out: Record<string, PSValue> = {};
-  for (const p of props) {
-    const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
-    out[key] = src[key] ?? null;
+const COMPARE_CONTEXT = { toDate: () => null };
+
+function sameKey(first: PSValue, second: PSValue, caseSensitive: boolean): boolean {
+  try {
+    return languageEquals(first, second, !caseSensitive, COMPARE_CONTEXT);
+  } catch {
+    return psValueToString(first) === psValueToString(second);
   }
-  return out;
 }
 
 export class CompareObjectCmdlet implements ICmdlet {
   readonly name = 'compare-object';
-  readonly parameters = ['ReferenceObject', 'DifferenceObject', 'Property', 'IncludeEqual', 'ExcludeDifferent', 'PassThru', 'CaseSensitive'] as const;
+  readonly parameters = ['ReferenceObject', 'DifferenceObject', 'SyncWindow', 'Property', 'ExcludeDifferent', 'IncludeEqual', 'PassThru', 'Culture', 'CaseSensitive'] as const;
   readonly aliases = ['diff', 'compare'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const ref             = toArray(ctx.named['referenceobject']);
-    const diff            = toArray(ctx.named['differenceobject'] ?? ctx.positional[0]);
-    const includeEqual    = isTruthy(ctx.named['includeequal'] ?? false);
+    const positional = [...ctx.positional];
+    const reference = toArray(ctx.named['referenceobject'] ?? positional.shift());
+    const difference = toArray(ctx.named['differenceobject'] ?? positional.shift() ?? ctx.pipeInput);
     const excludeDifferent = isTruthy(ctx.named['excludedifferent'] ?? false);
-    const passThru        = isTruthy(ctx.named['passthru'] ?? false);
-    const props           = ctx.named['property'] !== undefined ? flattenPropertyNames(ctx.named['property']) : [];
+    const explicitEqual = ctx.named['includeequal'];
+    const includeEqual = explicitEqual !== undefined ? isTruthy(explicitEqual) : excludeDifferent;
+    const passThru = isTruthy(ctx.named['passthru'] ?? false);
+    const caseSensitive = isTruthy(ctx.named['casesensitive'] ?? false);
+    const syncWindow = ctx.named['syncwindow'] !== undefined ? Number(ctx.named['syncwindow']) : Number.MAX_SAFE_INTEGER;
+    const props = ctx.named['property'] !== undefined ? flattenPropertyNames(ctx.named['property']) : [];
 
-    const keyOf = (v: PSValue): string => props.length > 0 ? propertyKey(v, props) : psValueToString(v);
-    const project = (v: PSValue, side: string): Record<string, PSValue> => {
-      if (props.length === 0) return { InputObject: v, SideIndicator: side };
-      const base = passThru ? (v ?? {}) as Record<string, PSValue> : projectProperties(v, props);
-      return { ...base, SideIndicator: side };
+    const entryOf = (value: PSValue): CompareEntry => {
+      if (props.length === 0) return { value, keys: [value] };
+      const source = (value ?? {}) as Record<string, PSValue>;
+      return {
+        value,
+        keys: props.map(name => source[Object.keys(source).find(k => k.toLowerCase() === name.toLowerCase()) ?? name] ?? null),
+      };
     };
+    const matches = (first: CompareEntry, second: CompareEntry): boolean =>
+      first.keys.every((key, index) => sameKey(key, second.keys[index], caseSensitive));
 
     const out: Record<string, PSValue>[] = [];
-    const refSet  = new Set(ref.map(keyOf));
-    const diffSet = new Set(diff.map(keyOf));
+    const emit = (entry: CompareEntry, side: string): void => {
+      if (passThru) {
+        const base = entry.value !== null && typeof entry.value === 'object' && !Array.isArray(entry.value)
+          ? { ...(entry.value as Record<string, PSValue>) } : { InputObject: entry.value };
+        out.push({ ...base, SideIndicator: side });
+      } else if (props.length === 0) {
+        out.push({ InputObject: entry.value, SideIndicator: side });
+      } else {
+        const projected: Record<string, PSValue> = {};
+        props.forEach((name, index) => { projected[name] = entry.keys[index]; });
+        out.push({ ...projected, SideIndicator: side });
+      }
+    };
+    const emitMatch = (entry: CompareEntry): void => { if (includeEqual) emit(entry, '=='); };
+    const emitDifferenceOnly = (entry: CompareEntry): void => { if (!excludeDifferent) emit(entry, '=>'); };
+    const emitReferenceOnly = (entry: CompareEntry): void => { if (!excludeDifferent) emit(entry, '<='); };
 
-    if (!excludeDifferent) {
-      for (const v of ref)  if (!diffSet.has(keyOf(v))) out.push(project(v, '<='));
-      for (const v of diff) if (!refSet.has(keyOf(v)))  out.push(project(v, '=>'));
+    const referenceEntries = reference.map(entryOf);
+    const differenceEntries = difference.map(entryOf);
+    if (referenceEntries.length === 0) {
+      differenceEntries.forEach(emitDifferenceOnly);
+      return out;
     }
-    if (includeEqual) {
-      for (const v of ref) if (diffSet.has(keyOf(v))) out.push(project(v, '=='));
+
+    const referenceBacklog: CompareEntry[] = [];
+    const differenceBacklog: CompareEntry[] = [];
+    let referenceIndex = 0;
+    const removeMatch = (target: CompareEntry | null, list: CompareEntry[]): CompareEntry | null => {
+      if (target === null) return null;
+      const at = list.findIndex(candidate => matches(target, candidate));
+      return at < 0 ? null : list.splice(at, 1)[0];
+    };
+    const process = (incoming: CompareEntry | null): void => {
+      let referenceEntry: CompareEntry | null = referenceIndex < referenceEntries.length ? referenceEntries[referenceIndex++] : null;
+      let differenceEntry = incoming;
+      if (referenceEntry !== null && differenceEntry !== null && matches(referenceEntry, differenceEntry)) {
+        emitMatch(referenceEntry);
+        return;
+      }
+      const referenceMatch = removeMatch(differenceEntry, referenceBacklog);
+      if (referenceMatch !== null) {
+        emitMatch(referenceMatch);
+        differenceEntry = null;
+      }
+      const differenceMatch = removeMatch(referenceEntry, differenceBacklog);
+      if (differenceMatch !== null && referenceEntry !== null) {
+        emitMatch(referenceEntry);
+        referenceEntry = null;
+      }
+      if (differenceEntry !== null) {
+        if (syncWindow > 0) {
+          while (differenceBacklog.length >= syncWindow) emitDifferenceOnly(differenceBacklog.shift() as CompareEntry);
+          differenceBacklog.push(differenceEntry);
+        } else {
+          emitDifferenceOnly(differenceEntry);
+        }
+      }
+      if (referenceEntry !== null) {
+        if (syncWindow > 0) {
+          while (referenceBacklog.length >= syncWindow) emitReferenceOnly(referenceBacklog.shift() as CompareEntry);
+          referenceBacklog.push(referenceEntry);
+        } else {
+          emitReferenceOnly(referenceEntry);
+        }
+      }
+    };
+
+    if (differenceEntries.length === 0) {
+      process(null);
+    } else {
+      differenceEntries.forEach(process);
     }
+    while (referenceIndex < referenceEntries.length) process(null);
+    differenceBacklog.forEach(emitDifferenceOnly);
+    referenceBacklog.forEach(emitReferenceOnly);
     return out;
   }
 }
@@ -913,7 +985,7 @@ export class FormatWideCmdlet implements ICmdlet {
     const width = Math.max(1, ...cells.map(c => c.length)) + 2;
     const lines: string[] = [];
     for (let i = 0; i < cells.length; i += cols) {
-      lines.push(cells.slice(i, i + cols).map(c => c.padEnd(width)).join('').replace(/\s+$/, ''));
+      lines.push(cells.slice(i, i + cols).map(c => padToWidth(c, width)).join('').replace(/\s+$/, ''));
     }
     return lines.join('\n');
   }
@@ -931,6 +1003,30 @@ export class FormatCustomCmdlet implements ICmdlet {
 
 // ─── Get-Member ───────────────────────────────────────────────────────────
 
+function memberTypeAlias(value: PSValue): string {
+  if (value === null || value === undefined) return 'System.Object';
+  const described = describeScalarType(value);
+  if (described === null) {
+    if (value instanceof Date) return 'datetime';
+    if (Array.isArray(value)) return 'System.Object[]';
+    if (typeof value === 'object' && (value as Record<string, unknown>).__pscustomobject__ === true) return 'System.Management.Automation.PSCustomObject';
+    return 'hashtable';
+  }
+  const aliases: Record<string, string> = {
+    'System.Int32': 'int', 'System.Int64': 'long', 'System.Double': 'double', 'System.String': 'string',
+    'System.Boolean': 'bool', 'System.Decimal': 'decimal', 'System.Byte': 'byte', 'System.Char': 'char',
+    'System.Single': 'float', 'System.Int16': 'short', 'System.UInt32': 'uint32', 'System.UInt64': 'uint64',
+  };
+  return aliases[described.fullName] ?? described.fullName;
+}
+
+const OBJECT_METHODS: ReadonlyArray<readonly [string, string]> = [
+  ['Equals', 'bool Equals(System.Object obj)'],
+  ['GetHashCode', 'int GetHashCode()'],
+  ['GetType', 'type GetType()'],
+  ['ToString', 'string ToString()'],
+];
+
 export class GetMemberCmdlet implements ICmdlet {
   readonly name = 'get-member';
   readonly parameters = ['Name', 'InputObject', 'MemberType', 'Static', 'Force', 'View'] as const;
@@ -938,47 +1034,67 @@ export class GetMemberCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const input = toArray(ctx.named['inputobject'] ?? ctx.pipeInput);
-    if (input.length === 0) return [];
-    const sample = input[0];
+    if (input.length === 0) {
+      ctx.emitError('Get-Member : You must specify an object for the Get-Member cmdlet.');
+      return null;
+    }
     const filter = ctx.named['membertype'] ? psValueToString(ctx.named['membertype']).toLowerCase() : null;
-    const nameF  = ctx.named['name'] ? psValueToString(ctx.named['name']).toLowerCase() : null;
+    const nameFilter = ctx.named['name'] ? toArray(ctx.named['name']).map(n => psValueToString(n)) : [];
 
     type Mem = { Name: string; MemberType: string; Definition: string };
-    let members: Mem[];
+    const shown = new Set<string>();
+    const out: PSValue[] = [];
+    for (const sample of input) {
+      const described = sample === null || sample === undefined ? null : describeScalarType(sample);
+      const typeName = described !== null ? described.fullName
+        : sample instanceof Date ? 'System.DateTime'
+        : Array.isArray(sample) ? 'System.Object[]'
+        : sample !== null && typeof sample === 'object' && (sample as Record<string, unknown>).__pscustomobject__ === true
+          ? 'System.Management.Automation.PSCustomObject'
+          : sample !== null && typeof sample === 'object' && typeof (sample as Record<string, unknown>).__type__ === 'string'
+            ? String((sample as Record<string, unknown>).__type__)
+            : 'System.Collections.Hashtable';
+      if (shown.has(typeName)) continue;
+      shown.add(typeName);
 
-    if (typeof sample === 'string') {
-      // .NET System.String surface — enough that `"x" | Get-Member -Name
-      // Substring` resolves (was dumping per-char index "properties").
-      members = [
-        { Name: 'Length', MemberType: 'Property', Definition: 'int Length {get;}' },
-        ...['Contains', 'EndsWith', 'IndexOf', 'Insert', 'PadLeft', 'PadRight',
-            'Remove', 'Replace', 'Split', 'StartsWith', 'Substring', 'ToCharArray',
-            'ToLower', 'ToUpper', 'Trim', 'TrimEnd', 'TrimStart']
-          .map(m => ({ Name: m, MemberType: 'Method', Definition: `string ${m}()` })),
-      ];
-    } else if (typeof sample === 'number' || typeof sample === 'boolean') {
-      members = ['CompareTo', 'Equals', 'GetHashCode', 'GetType', 'ToString']
-        .map(m => ({ Name: m, MemberType: 'Method', Definition: `${typeof sample} ${m}()` }));
-    } else if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) {
-      const rec = sample as Record<string, PSValue>;
-      // A [pscustomobject] exposes NoteProperty members; a plain hashtable
-      // exposes Property members (psCast tags the former).
-      const propKind = (rec as Record<string, unknown>).__pscustomobject__
-        ? 'NoteProperty' : 'Property';
-      members = Object.keys(rec)
-        .filter(k => !k.startsWith('__'))
-        .map(k => typeof rec[k] === 'function'
-          ? { Name: k, MemberType: 'Method',   Definition: `System.Object ${k}()` }
-          : { Name: k, MemberType: propKind,   Definition: `${typeof rec[k]} ${k}` });
-    } else {
-      members = [];
+      let members: Mem[];
+      if (typeof sample === 'string') {
+        members = [
+          { Name: 'Length', MemberType: 'Property', Definition: 'int Length {get;}' },
+          ...['Contains', 'EndsWith', 'IndexOf', 'Insert', 'PadLeft', 'PadRight',
+              'Remove', 'Replace', 'Split', 'StartsWith', 'Substring', 'ToCharArray',
+              'ToLower', 'ToUpper', 'Trim', 'TrimEnd', 'TrimStart']
+            .map(m => ({ Name: m, MemberType: 'Method', Definition: `string ${m}()` })),
+          ...OBJECT_METHODS.map(([n, d]) => ({ Name: n, MemberType: 'Method', Definition: d })),
+        ];
+      } else if (sample !== null && typeof sample === 'object' && !Array.isArray(sample) && !(sample instanceof Date) && described === null) {
+        const rec = sample as Record<string, PSValue>;
+        const custom = (rec as Record<string, unknown>).__pscustomobject__ === true;
+        members = [
+          ...OBJECT_METHODS.map(([n, d]) => ({ Name: n, MemberType: 'Method', Definition: d })),
+          ...Object.keys(rec)
+            .filter(k => !k.startsWith('__'))
+            .map(k => typeof rec[k] === 'function'
+              ? { Name: k, MemberType: 'Method', Definition: `System.Object ${k}()` }
+              : { Name: k, MemberType: custom ? 'NoteProperty' : 'Property', Definition: `${memberTypeAlias(rec[k])} ${k}=${psValueToString(rec[k])}` }),
+        ];
+      } else {
+        members = OBJECT_METHODS.map(([n, d]) => ({ Name: n, MemberType: 'Method', Definition: d }));
+      }
+
+      const matchesType = (mt: string): boolean => !filter || mt.toLowerCase() === filter || (filter === 'properties' && /property$/i.test(mt)) || filter === 'all';
+      const matchesName = (name: string): boolean => nameFilter.length === 0 || nameFilter.some(p => wildcardMatches(p, name));
+      members
+        .filter(m => matchesType(m.MemberType) && matchesName(m.Name))
+        .sort((a, b) => a.MemberType.toLowerCase() < b.MemberType.toLowerCase() ? -1
+          : a.MemberType.toLowerCase() > b.MemberType.toLowerCase() ? 1
+          : a.Name.toLowerCase() < b.Name.toLowerCase() ? -1 : a.Name.toLowerCase() > b.Name.toLowerCase() ? 1 : 0)
+        .forEach(m => {
+          const entry: Record<string, PSValue> = { ...m };
+          Object.defineProperty(entry, '__memberOf__', { value: typeName, enumerable: false });
+          out.push(entry);
+        });
     }
-
-    const matchType = (mt: string) => !filter || mt.toLowerCase() === filter;
-
-    return members
-      .filter(m => matchType(m.MemberType))
-      .filter(m => !nameF || m.Name.toLowerCase() === nameF)
-      .map(m => ({ ...m })) as PSValue[];
+    return out;
   }
 }

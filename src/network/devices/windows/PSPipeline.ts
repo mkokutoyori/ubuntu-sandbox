@@ -15,7 +15,7 @@
  *   formatter) converts back to a display string.
  */
 
-import { renderTable, type TableColumn } from '../shells/cli/TextTable';
+import { renderTable, type TableColumn, padToWidth } from '../shells/cli/TextTable';
 import { registeredDisplay } from '@/powershell/runtime/PSExpansion';
 import { formatDouble } from '@/powershell/runtime/dotnetNumber';
 import { formatTimeSpan, isTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
@@ -715,7 +715,7 @@ export function formatList(objects: PSObject[], args: string): string {
     const maxKeyLen = Math.max(...keys.map(k => k.length));
     const pairs = keys.map(k => {
       const key = Object.keys(obj).find(ok => ok.toLowerCase() === k.toLowerCase()) || k;
-      return `${k.padEnd(maxKeyLen)} : ${renderPSCellValue(obj[key])}`;
+      return `${padToWidth(k, maxKeyLen)} : ${renderPSCellValue(obj[key])}`;
     });
     blocks.push(pairs.join('\n'));
   }
@@ -740,6 +740,8 @@ export function formatDefault(objects: PSObject[]): string {
   if (serverManager !== null) return serverManager;
   const partitions = partitionDiskGroups(objects);
   if (partitions !== null) return partitions;
+  const members = memberDefinitionView(objects);
+  if (members !== null) return members;
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
@@ -751,6 +753,17 @@ export function formatDefault(objects: PSObject[]): string {
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+function memberDefinitionView(objects: PSObject[]): string | null {
+  const owner = (entry: PSObject): string | undefined => (entry as Record<string, unknown>).__memberOf__ as string | undefined;
+  if (objects.some(entry => owner(entry) === undefined)) return null;
+  const groups = new Map<string, PSObject[]>();
+  for (const entry of objects) {
+    const key = owner(entry) as string;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  return [...groups].map(([typeName, rows]) => `\n   TypeName: ${typeName}\n${formatTable(rows, '')}`).join('\n');
 }
 
 function matchInfoView(objects: PSObject[]): string | null {
@@ -841,12 +854,12 @@ const FEATURE_NAME_W = 27;
 function serverManagerView(objects: PSObject[]): string | null {
   const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
   if (lower.has('installstate') && lower.has('installed') && lower.has('displayname')) {
-    const header = 'Display Name'.padEnd(FEATURE_DISPLAY_W)
-      + 'Name'.padEnd(FEATURE_NAME_W) + 'Install State';
+    const header = padToWidth('Display Name', FEATURE_DISPLAY_W)
+      + padToWidth('Name', FEATURE_NAME_W) + 'Install State';
     const rows = objects.map((o) => {
       const box = o.Installed === true ? '[X]' : '[ ]';
-      return `${box} ${String(o.DisplayName ?? '')}`.padEnd(FEATURE_DISPLAY_W)
-        + String(o.Name ?? '').padEnd(FEATURE_NAME_W) + String(o.InstallState ?? '');
+      return padToWidth(`${box} ${String(o.DisplayName ?? '')}`, FEATURE_DISPLAY_W)
+        + padToWidth(String(o.Name ?? ''), FEATURE_NAME_W) + String(o.InstallState ?? '');
     });
     return [header, '-'.repeat(header.length), ...rows].join('\n');
   }
@@ -856,9 +869,9 @@ function serverManagerView(objects: PSObject[]): string | null {
       const result = o.FeatureResult;
       const noms = Array.isArray(result) ? result.map(String) : [];
       const list = noms.length > 0 ? `{${noms.join(', ')}}` : '{}';
-      return `${(o.Success === true ? 'True' : 'False').padEnd(8)}`
-        + `${String(o.RestartNeeded ?? 'No').padEnd(15)}`
-        + `${String(o.ExitCode ?? '').padEnd(15)}${list}`;
+      return `${padToWidth(o.Success === true ? 'True' : 'False', 8)}`
+        + `${padToWidth(String(o.RestartNeeded ?? 'No'), 15)}`
+        + `${padToWidth(String(o.ExitCode ?? ''), 15)}${list}`;
     });
     return [header, '------- -------------- ---------      --------------', ...rows].join('\n');
   }

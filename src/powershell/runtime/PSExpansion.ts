@@ -10,6 +10,7 @@
 
 import type { PSEnvironment, PSValue } from './PSEnvironment';
 import { formatDouble } from './dotnetNumber';
+import { PSChar, PSNumber, formatNumeric } from './semantics/PSNumber';
 import { formatTimeSpan, isTimeSpan } from './dotnetTimeSpan';
 
 /** Callback type for evaluating a $(…) sub-expression string. */
@@ -184,6 +185,8 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'number') return formatDouble(value);
   if (typeof value === 'string') return value;
+  if (value instanceof PSNumber) return value.toString();
+  if (value instanceof PSChar) return value.toString();
   if (value instanceof Date) {
     // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM".
     const m   = value.getMonth() + 1;

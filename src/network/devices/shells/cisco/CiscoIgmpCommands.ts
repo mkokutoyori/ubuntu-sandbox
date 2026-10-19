@@ -9,6 +9,7 @@ import { isMulticastIpv4, isReservedMulticast, isV1CompatActive, isConfiguredGro
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { hms } from '@/lib/format';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -185,7 +186,7 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     for (const g of groups) {
       const rt = a.getInterfaceRuntime(g.iface);
       rows.push(
-        `${g.groupAddress.padEnd(17)}${g.iface.padEnd(25)}${hms(now - g.lastReportMs).padEnd(10)}${expiresIn(rt, g, now).padEnd(10)}${g.lastReporterIp ?? ''}`);
+        `${padToWidth(g.groupAddress, 17)}${padToWidth(g.iface, 25)}${padToWidth(hms(now - g.lastReportMs), 10)}${padToWidth(expiresIn(rt, g, now), 10)}${g.lastReporterIp ?? ''}`);
     }
     return rows.join('\n');
   });

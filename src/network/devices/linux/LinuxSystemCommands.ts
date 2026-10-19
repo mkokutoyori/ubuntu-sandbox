@@ -1,6 +1,7 @@
 import type { ShellContext } from './LinuxFileCommands';
 import type { MemoryProfile, StorageDevice } from '../host/hardware';
 import type { MountEntry } from './MountTable';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface DfContext extends ShellContext {
   mounts: readonly MountEntry[];
@@ -214,8 +215,8 @@ export function cmdDf(ctx: DfContext, args: string[]): string {
       ? 'Filesystem     Type     Size  Used Avail Use% Mounted on'
       : 'Filesystem     Type    1K-blocks     Used Available Use% Mounted on';
     const lines = rows.map(r => {
-      if (human) return `${r.fs.padEnd(15)} ${r.type.padEnd(8)} ${formatKbHuman(r.sizeKb).padStart(4)} ${formatKbHuman(r.usedKb).padStart(5)} ${formatKbHuman(r.availKb).padStart(5)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
-      return `${r.fs.padEnd(15)} ${r.type.padEnd(7)} ${String(r.sizeKb).padStart(9)} ${String(r.usedKb).padStart(8)} ${String(r.availKb).padStart(9)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
+      if (human) return `${padToWidth(r.fs, 15)} ${padToWidth(r.type, 8)} ${padToWidth(formatKbHuman(r.sizeKb), 4, 'right')} ${padToWidth(formatKbHuman(r.usedKb), 5, 'right')} ${padToWidth(formatKbHuman(r.availKb), 5, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
+      return `${padToWidth(r.fs, 15)} ${padToWidth(r.type, 7)} ${padToWidth(String(r.sizeKb), 9, 'right')} ${padToWidth(String(r.usedKb), 8, 'right')} ${padToWidth(String(r.availKb), 9, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
     });
     return [header, ...lines].join('\n');
   }
@@ -225,7 +226,7 @@ export function cmdDf(ctx: DfContext, args: string[]): string {
     const lines = rows.map((r) => {
       const free = Math.max(0, r.inodesTotal - r.inodesUsed);
       const pct = Math.min(100, Math.ceil((r.inodesUsed / Math.max(1, r.inodesTotal)) * 100));
-      return `${r.fs.padEnd(15)} ${String(r.inodesTotal).padStart(6)}  ${String(r.inodesUsed).padStart(5)}  ${String(free).padStart(6)}  ${String(pct).padStart(3)}% ${r.mount}`;
+      return `${padToWidth(r.fs, 15)} ${padToWidth(String(r.inodesTotal), 6, 'right')}  ${padToWidth(String(r.inodesUsed), 5, 'right')}  ${padToWidth(String(free), 6, 'right')}  ${padToWidth(String(pct), 3, 'right')}% ${r.mount}`;
     });
     return [header, ...lines].join('\n');
   }
@@ -234,8 +235,8 @@ export function cmdDf(ctx: DfContext, args: string[]): string {
     ? 'Filesystem      Size  Used Avail Use% Mounted on'
     : 'Filesystem     1K-blocks     Used Available Use% Mounted on';
   const lines = rows.map(r => {
-    if (human) return `${r.fs.padEnd(15)} ${formatKbHuman(r.sizeKb).padStart(4)} ${formatKbHuman(r.usedKb).padStart(5)} ${formatKbHuman(r.availKb).padStart(5)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
-    return `${r.fs.padEnd(15)} ${String(r.sizeKb).padStart(9)} ${String(r.usedKb).padStart(8)} ${String(r.availKb).padStart(9)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
+    if (human) return `${padToWidth(r.fs, 15)} ${padToWidth(formatKbHuman(r.sizeKb), 4, 'right')} ${padToWidth(formatKbHuman(r.usedKb), 5, 'right')} ${padToWidth(formatKbHuman(r.availKb), 5, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
+    return `${padToWidth(r.fs, 15)} ${padToWidth(String(r.sizeKb), 9, 'right')} ${padToWidth(String(r.usedKb), 8, 'right')} ${padToWidth(String(r.availKb), 9, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
   });
   return [header, ...lines].join('\n');
 }

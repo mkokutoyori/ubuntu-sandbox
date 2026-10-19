@@ -1,4 +1,5 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export const UDP_PORT_SYSLOG = 514;
 
 export type SyslogSeverityName =
@@ -181,7 +182,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export function bsdTimestamp(dateMs: number): string {
   const d = new Date(dateMs);
-  const day = d.getUTCDate().toString().padStart(2, ' ');
+  const day = padToWidth(d.getUTCDate().toString(), 2, 'right');
   const hh = d.getUTCHours().toString().padStart(2, '0');
   const mm = d.getUTCMinutes().toString().padStart(2, '0');
   const ss = d.getUTCSeconds().toString().padStart(2, '0');

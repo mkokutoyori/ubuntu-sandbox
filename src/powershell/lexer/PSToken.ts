@@ -102,8 +102,8 @@ export const PS_COMPARISON_OPS = new Set([
   'ieq', 'ine', 'igt', 'ige', 'ilt', 'ile',   // case-insensitive variants
   'like', 'notlike', 'clike', 'cnotlike', 'ilike', 'inotlike',
   'match', 'notmatch', 'cmatch', 'cnotmatch', 'imatch', 'inotmatch',
-  'contains', 'notcontains', 'ccontains', 'cnotcontains',
-  'in', 'notin',
+  'contains', 'notcontains', 'ccontains', 'cnotcontains', 'icontains', 'inotcontains',
+  'in', 'notin', 'cin', 'cnotin', 'iin', 'inotin',
   'is', 'isnot',
   'as',
 ]);

@@ -4,6 +4,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { VxlanAgent } from '../../../vxlan/VxlanAgent';
 import { hms } from '@/lib/format';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface IfCtx {
   getSelectedInterface(): string | null;
@@ -77,7 +78,7 @@ export function registerHuaweiVxlanDisplayCommands(trie: CommandTrie, ctx: ShowC
       for (const vni of Array.from(i.vnis).sort((x, y) => x - y)) {
         const peers = a.listRemoteVteps(vni).length;
         rows.push(
-          `${String(vni).padEnd(11)}${i.name.padEnd(12)}${(i.localVtepIp ?? 'unconfigured').padEnd(17)}${String(peers).padEnd(7)}${i.enabled ? 'active' : 'inactive'}`,
+          `${padToWidth(String(vni), 11)}${padToWidth(i.name, 12)}${padToWidth(i.localVtepIp ?? 'unconfigured', 17)}${padToWidth(String(peers), 7)}${i.enabled ? 'active' : 'inactive'}`,
         );
       }
     }
@@ -98,7 +99,7 @@ export function registerHuaweiVxlanDisplayCommands(trie: CommandTrie, ctx: ShowC
       const iface = Array.from(a.getConfig().interfaces.values()).find((i) => i.vnis.has(p.vni))?.name ?? 'Nve1';
       const age = p.lastSeenMs > 0 ? hms(simulationNowMs() - p.lastSeenMs) : 'never';
       rows.push(
-        `${p.remoteVtepIp.padEnd(17)}${String(p.vni).padEnd(11)}${iface.padEnd(12)}${age.padEnd(10)}${String(p.packetsIn).padEnd(10)}${p.packetsOut}`,
+        `${padToWidth(p.remoteVtepIp, 17)}${padToWidth(String(p.vni), 11)}${padToWidth(iface, 12)}${padToWidth(age, 10)}${padToWidth(String(p.packetsIn), 10)}${p.packetsOut}`,
       );
     }
     if (rows.length === 1) rows.push('No VXLAN tunnel entries.');
@@ -111,7 +112,7 @@ export function registerHuaweiVxlanDisplayCommands(trie: CommandTrie, ctx: ShowC
     const rows = ['VNI        MAC Address        Remote-VTEP       Age'];
     for (const e of a.listMacTable()) {
       const age = e.lastSeenMs > 0 ? hms(simulationNowMs() - e.lastSeenMs) : 'never';
-      rows.push(`${String(e.vni).padEnd(11)}${e.mac.padEnd(19)}${e.remoteVtepIp.padEnd(18)}${age}`);
+      rows.push(`${padToWidth(String(e.vni), 11)}${padToWidth(e.mac, 19)}${padToWidth(e.remoteVtepIp, 18)}${age}`);
     }
     if (rows.length === 1) rows.push('No VXLAN MAC entries.');
     return rows.join('\n');

@@ -3,6 +3,7 @@ import type { PamConversationFlow, PamHandle } from '../PamHandle';
 import type { LinuxPamHost, PamLastlogRecord } from '../PamLinuxHost';
 import type { PamModuleImplementation } from '../PamModule';
 import { PamFlag, PamReturn } from '../PamReturnCode';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const LOGIN_DEFS = '/etc/login.defs';
 const DEFAULT_INACTIVE_DAYS = 90;
@@ -64,7 +65,7 @@ function lastlogUidMax(pamh: PamHandle<LinuxPamHost>): number {
 function formatDate(pamh: PamHandle<LinuxPamHost>, seconds: number): string {
   const time = pamh.host.localTime(seconds * 1000);
   const pad = (value: number): string => String(value).padStart(2, '0');
-  const day = String(time.day).padStart(2, ' ');
+  const day = padToWidth(String(time.day), 2, 'right');
   return ` ${WEEKDAYS[time.weekday]} ${MONTHS[time.month]} ${day} ${pad(time.hour)}:${pad(time.minute)}:${pad(time.second)} ${time.abbreviation} ${time.year}`;
 }
 

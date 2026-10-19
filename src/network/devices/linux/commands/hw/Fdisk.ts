@@ -3,6 +3,7 @@ import type { StorageDevice, DiskPartition } from '@/network/devices/host/hardwa
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface Options {
   list: boolean;
@@ -75,7 +76,7 @@ function renderDisk(disk: StorageDevice): string {
     if (boot === '*') bootSet = true;
     const sizeStr = humanSize(p.sizeBytes);
     const type = fsToType(p.fsType);
-    lines.push(`${devNode(disk, p).padEnd(11)}${boot.padEnd(3)}${String(start).padStart(10)} ${String(end).padStart(9)} ${String(sectors).padStart(9)} ${sizeStr.padStart(5)} ${type.id} ${type.name}`);
+    lines.push(`${padToWidth(devNode(disk, p), 11)}${padToWidth(boot, 3)}${padToWidth(String(start), 10, 'right')} ${padToWidth(String(end), 9, 'right')} ${padToWidth(String(sectors), 9, 'right')} ${padToWidth(sizeStr, 5, 'right')} ${type.id} ${type.name}`);
     cursor = end + 1;
   }
   return lines.join('\n');

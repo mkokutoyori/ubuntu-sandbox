@@ -66,6 +66,7 @@ import type { IShell } from '@/shell/IShell';
 import { verifyRemoteCredentials } from '@/terminal/ssh/remoteCredentials';
 import { parseRunasArgs, validateRunasUser, runasIncorrectPasswordMessage } from '@/network/devices/windows/WinRunas';
 import type { RunasUserSource } from '@/network/devices/windows/WinRunas';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -542,16 +543,16 @@ export class WindowsTerminalSession extends TerminalSession {
         while (!ctx.cancelled()) {
           const ip = dev.resolveHostnameSync(target);
           if (!ip) {
-            ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ''.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+            ctx.sink.line(padToWidth('localhost', 13) + ' ' + padToWidth(target, 15) + ' ' + padToWidth('', 15) + '  ' + padToWidth('32', 5, 'right') + '  ' + padToWidth('TimedOut', 8, 'right'));
           } else {
             const ipStr = ip.toString();
             const ping = dev.sendPingProbeSync(ip);
             if (ping.success) {
               const egress = dev.getEgressFor(ip);
               const src = egress?.sourceIp.toString() ?? 'localhost';
-              ctx.sink.line(src.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + String(Math.max(1, Math.round(ping.rttMs))).padStart(8));
+              ctx.sink.line(padToWidth(src, 13) + ' ' + padToWidth(target, 15) + ' ' + padToWidth(ipStr, 15) + '  ' + padToWidth('32', 5, 'right') + '  ' + padToWidth(String(Math.max(1, Math.round(ping.rttMs))), 8, 'right'));
             } else {
-              ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+              ctx.sink.line(padToWidth('localhost', 13) + ' ' + padToWidth(target, 15) + ' ' + padToWidth(ipStr, 15) + '  ' + padToWidth('32', 5, 'right') + '  ' + padToWidth('TimedOut', 8, 'right'));
             }
           }
           await ctx.delay(Math.max(100, delaySec * 1000));

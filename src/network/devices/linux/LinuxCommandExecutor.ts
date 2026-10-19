@@ -262,6 +262,7 @@ import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Commands that commonly read from stdin when piped. */
 const PROXY_COMMAND_CLOSED = 'Connection closed by UNKNOWN port 65535';
@@ -453,6 +454,25 @@ interface TransferWireOptions {
 type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly string[]) => HostKeyProbeResult | null;
 
 const HOST_KEY_ADDED_NOTICE = 'Warning: Permanently added';
+
+function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: string; stdinPath?: string } {
+  const argv: string[] = [];
+  let stdoutPath: string | undefined;
+  let stdinPath: string | undefined;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const out = /^1?(>>?)(.*)$/.exec(token);
+    const input = /^<(.*)$/.exec(token);
+    if (out) {
+      stdoutPath = out[2] !== '' ? out[2] : tokens[++i];
+    } else if (input) {
+      stdinPath = input[1] !== '' ? input[1] : tokens[++i];
+    } else {
+      argv.push(token);
+    }
+  }
+  return { argv, stdoutPath, stdinPath };
+}
 
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
@@ -1099,11 +1119,11 @@ export class LinuxCommandExecutor {
       if (!info) continue;
       const c = info.counters;
       lignes.push(
-        `${(nom + ':').padStart(7)}${String(c.bytesIn).padStart(9)}`
-        + `${String(c.framesIn).padStart(8)}${String(c.errorsIn ?? 0).padStart(5)}`
+        `${padToWidth(nom + ':', 7, 'right')}${padToWidth(String(c.bytesIn), 9, 'right')}`
+        + `${padToWidth(String(c.framesIn), 8, 'right')}${padToWidth(String(c.errorsIn ?? 0), 5, 'right')}`
         + '    0    0     0          0         0'
-        + `${String(c.bytesOut).padStart(9)}${String(c.framesOut).padStart(8)}`
-        + `${String(c.errorsOut ?? 0).padStart(5)}`
+        + `${padToWidth(String(c.bytesOut), 9, 'right')}${padToWidth(String(c.framesOut), 8, 'right')}`
+        + `${padToWidth(String(c.errorsOut ?? 0), 5, 'right')}`
         + '    0    0     0       0          0',
       );
     }
@@ -1117,11 +1137,11 @@ export class LinuxCommandExecutor {
     const rows = entries.map((n) => {
       const flag = n.state === 'PERMANENT' ? '0x6' : '0x2';
       return [
-        n.ip.padEnd(16),
-        '0x1'.padEnd(11),
-        flag.padEnd(11),
-        n.mac.padEnd(21),
-        '*'.padEnd(8),
+        padToWidth(n.ip, 16),
+        padToWidth('0x1', 11),
+        padToWidth(flag, 11),
+        padToWidth(n.mac, 21),
+        padToWidth('*', 8),
         n.iface,
       ].join(' ');
     });
@@ -2624,7 +2644,7 @@ export class LinuxCommandExecutor {
     const reason = typeof kind === 'number'
       ? `${kind} incorrect password attempt${kind === 1 ? '' : 's'} ; `
       : kind === 'success' ? '' : kind === 'not-in-sudoers' ? 'user NOT in sudoers ; ' : 'command not allowed ; ';
-    const text = `${auth.invokingUser.padStart(8)} : ${reason}TTY=${SU_TTY_NAME} ; PWD=${this.cwd} ; USER=${auth.runasUser} ; COMMAND=/usr/bin/${cmdStr}`;
+    const text = `${padToWidth(auth.invokingUser, 8, 'right')} : ${reason}TTY=${SU_TTY_NAME} ; PWD=${this.cwd} ; USER=${auth.runasUser} ; COMMAND=/usr/bin/${cmdStr}`;
     this.logMgr.logAuth('sudo', text, 0);
     if (auth.logfile) {
       const existingCustom = this.vfs.readFile(auth.logfile) ?? '';
@@ -3157,11 +3177,15 @@ export class LinuxCommandExecutor {
     const noNetworkWork: Promise<unknown> = Promise.resolve();
     let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
-      const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
+      const { argv: netArgv, stdoutPath, stdinPath } = splitRedirections(
+        simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
+      if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
+      const netStdin = stdinPath === undefined ? undefined
+        : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
       const pending = netArgv.length > 0
-        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined))
+        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
         : null;
       this.runningBackgroundJobPid = null;
       if (pending) {
@@ -3389,7 +3413,7 @@ export class LinuxCommandExecutor {
         : this.jobTable.isPrevious(job.id) ? '-' : ' ';
       const label = job.state === 'Done' ? 'Done'
         : job.state === 'Killed' ? `Killed` : `Exit ${job.exitCode ?? 1}`;
-      out.push(`[${job.id}]${marker}  ${label.padEnd(20)}${stripTrailingAmp(job.command)}`);
+      out.push(`[${job.id}]${marker}  ${padToWidth(label, 20)}${stripTrailingAmp(job.command)}`);
       // Notified but NOT reaped here — see reapDueBackgroundJobs, which
       // cleans this job up on the *next* command so the zombie window
       // stays genuinely observable in between.
@@ -4769,6 +4793,31 @@ export class LinuxCommandExecutor {
     return reason;
   }
 
+  private readonly lateStdout = new Map<number, {
+    file?: { path: string; uid: number; gid: number; umask: number };
+    pending: string[];
+  }>();
+
+  private appendLateStdout(file: { path: string; uid: number; gid: number; umask: number }, text: string): void {
+    this.vfs.writeFile(file.path, text, file.uid, file.gid, file.umask, true, undefined, false);
+  }
+
+  emitLateStdout(pid: number, text: string): void {
+    if (text === '') return;
+    if (!this.processMgr.get(pid)) {
+      this.lateStdout.delete(pid);
+      return;
+    }
+    const sink = this.lateStdout.get(pid) ?? { pending: [] };
+    this.lateStdout.set(pid, sink);
+    if (sink.file) this.appendLateStdout(sink.file, text);
+    else sink.pending.push(text);
+  }
+
+  private ioContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
+    return this.buildIOContext();
+  }
+
   /** Build an IOContext for the bash interpreter. */
   private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
     return {
@@ -4789,6 +4838,13 @@ export class LinuxCommandExecutor {
       },
       resolvePath: (path: string) => {
         return this.vfs.normalizePath(path, this.cwd);
+      },
+      bindBackgroundStdout: (pid: number, path: string) => {
+        const sink = this.lateStdout.get(pid) ?? { pending: [] };
+        sink.file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
+        this.lateStdout.set(pid, sink);
+        const pending = sink.pending.splice(0);
+        for (const text of pending) this.appendLateStdout(sink.file, text);
       },
       stat: (path: string) => {
         const absPath = this.vfs.normalizePath(path, this.cwd);
@@ -6233,7 +6289,7 @@ export class LinuxCommandExecutor {
     const start = this.commandHistory.length - count;
     const lines: string[] = [];
     for (let i = start; i < this.commandHistory.length; i++) {
-      const num = (i + 1).toString().padStart(5);
+      const num = padToWidth((i + 1).toString(), 5, 'right');
       lines.push(`${num}  ${this.commandHistory[i]}`);
     }
     return { output: lines.join('\n'), exitCode: 0 };
@@ -7919,7 +7975,7 @@ export class LinuxCommandExecutor {
       if (filterUser !== null && p.user !== filterUser) continue;
       if (filterInet === null) {
         // cwd entry — the canonical first row real lsof prints.
-        lines.push(`${p.comm.padEnd(10)} ${String(p.pid).padStart(5)}  ${p.user.padEnd(6)} cwd    DIR    8,1     4096    2 ${p.cwd ?? '/'}`);
+        lines.push(`${padToWidth(p.comm, 10)} ${padToWidth(String(p.pid), 5, 'right')}  ${padToWidth(p.user, 6)} cwd    DIR    8,1     4096    2 ${p.cwd ?? '/'}`);
       }
     }
 
@@ -7939,7 +7995,7 @@ export class LinuxCommandExecutor {
       const target = entry.remoteAddress === '*'
         ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
         : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`;
-      lines.push(`${owner.name.slice(0, 9).padEnd(10)} ${String(owner.pid).padStart(5)}  ${user.padEnd(6)} ${String(owner.fd).padStart(3)}u  ${ipv} ${String(entry.id).padStart(5)}      0t0  ${entry.protocol.toUpperCase()} ${target}`);
+      lines.push(`${padToWidth(owner.name.slice(0, 9), 10)} ${padToWidth(String(owner.pid), 5, 'right')}  ${padToWidth(user, 6)} ${padToWidth(String(owner.fd), 3, 'right')}u  ${ipv} ${padToWidth(String(entry.id), 5, 'right')}      0t0  ${entry.protocol.toUpperCase()} ${target}`);
     }
 
     // Log files whose name was removed while rsyslog still holds them open
@@ -7951,8 +8007,8 @@ export class LinuxCommandExecutor {
       for (const held of this.logMgr.deletedLogHandles()) {
         if (filterPid !== null && rsyslog?.pid !== filterPid) continue;
         if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
-        const pid = String(rsyslog?.pid ?? 0).padStart(5);
-        const user = (rsyslog?.user ?? 'root').padEnd(6);
+        const pid = padToWidth(String(rsyslog?.pid ?? 0), 5, 'right');
+        const user = padToWidth(rsyslog?.user ?? 'root', 6);
         // Le numéro vient de la table du processus, plus d'un `7w` inventé
         // ici : `lsof` et `/proc/<pid>/fd` doivent nommer le même
         // descripteur (§F9.3). Absent — un journal tenu par aucun processus
@@ -7961,8 +8017,8 @@ export class LinuxCommandExecutor {
           : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
             .find((d) => d.target === held.path)?.fd) ?? 7;
         lines.push(
-          `rsyslogd   ${pid}  ${user} ${heldFd}w     REG    8,1 ${String(held.lostBytes).padStart(8)} `
-          + `${String(nodeSeq++).padStart(4)} ${held.path} (deleted)`,
+          `rsyslogd   ${pid}  ${user} ${heldFd}w     REG    8,1 ${padToWidth(String(held.lostBytes), 8, 'right')} `
+          + `${padToWidth(String(nodeSeq++), 4, 'right')} ${held.path} (deleted)`,
         );
       }
     }

@@ -20,6 +20,7 @@ import type {
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const aliasSuffix = (aliases: string[]): string => aliases.map(a => ` ${a}`).join('');
 
@@ -39,10 +40,10 @@ export const GetentFormatter = {
   },
   host(e: NssHostEntry): string {
     const names = [e.canonicalName, ...e.aliases].join(' ');
-    return `${e.address.padEnd(16)}${names}`;
+    return `${padToWidth(e.address, 16)}${names}`;
   },
   ahosts(e: NssHostEntry): string[] {
-    const addr = e.address.padEnd(15);
+    const addr = padToWidth(e.address, 15);
     return [
       `${addr} STREAM ${e.canonicalName}`,
       `${addr} DGRAM`,
@@ -50,19 +51,19 @@ export const GetentFormatter = {
     ];
   },
   service(e: NssServiceEntry): string {
-    return `${e.name.padEnd(21)} ${e.port}/${e.protocol}${aliasSuffix(e.aliases)}`;
+    return `${padToWidth(e.name, 21)} ${e.port}/${e.protocol}${aliasSuffix(e.aliases)}`;
   },
   protocol(e: NssProtocolEntry): string {
-    return `${e.name.padEnd(21)} ${e.number}${aliasSuffix(e.aliases)}`;
+    return `${padToWidth(e.name, 21)} ${e.number}${aliasSuffix(e.aliases)}`;
   },
   network(e: NssNetworkEntry): string {
-    return `${e.name.padEnd(21)} ${e.network}${aliasSuffix(e.aliases)}`;
+    return `${padToWidth(e.name, 21)} ${e.network}${aliasSuffix(e.aliases)}`;
   },
   ethers(e: NssEthersEntry): string {
     return `${e.mac} ${e.hostname}`;
   },
   rpc(e: NssRpcEntry): string {
-    return `${e.name.padEnd(15)} ${e.number}${aliasSuffix(e.aliases)}`;
+    return `${padToWidth(e.name, 15)} ${e.number}${aliasSuffix(e.aliases)}`;
   },
   netgroup(e: NssNetgroupEntry): string {
     const tris = e.triples

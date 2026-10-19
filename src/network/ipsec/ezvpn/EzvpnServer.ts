@@ -1,5 +1,6 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 import type { BrowserProxySettings, IkeConfigReply, IkeConfigRequest } from '../IPSecTypes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface EzvpnGroup {
   readonly name: string;
@@ -262,7 +263,7 @@ export class EzvpnServer {
     for (const pool of pools) {
       const total = toNumber(pool.last) - toNumber(pool.first) + 1;
       const inUse = this.poolUsage(pool.name).size;
-      out.push(`${pool.name.padEnd(22)}${pool.first.padEnd(16)}${pool.last.padEnd(16)}${String(total - inUse).padEnd(6)}${inUse}`);
+      out.push(`${padToWidth(pool.name, 22)}${padToWidth(pool.first, 16)}${padToWidth(pool.last, 16)}${padToWidth(String(total - inUse), 6)}${inUse}`);
     }
     return out.join('\n');
   }

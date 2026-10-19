@@ -22,6 +22,12 @@ const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   ETIMEDOUT: { number: 110, text: 'Connection timed out' },
 };
 
+export interface MessageTooLong {
+  readonly origin: 'local';
+  readonly errno: 'EMSGSIZE';
+  readonly mtu: number;
+}
+
 export function strerror(errno: Errno): string {
   return LINUX_ERRNO[errno].text;
 }

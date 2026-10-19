@@ -13,6 +13,7 @@
  */
 
 import type { WindowsProcessManager, WindowsProcess } from './WindowsProcessManager';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface TasklistContext {
   processManager: WindowsProcessManager;
@@ -189,11 +190,11 @@ function formatBasic(procs: WindowsProcess[], format: OutputFormat, noHeader: bo
   const lines: string[] = [''];
   if (!noHeader) {
     lines.push(
-      'Image Name'.padEnd(COL_IMAGE) + ' ' +
-      'PID'.padStart(COL_PID) + ' ' +
-      'Session Name'.padEnd(COL_SESSION) + ' ' +
-      'Session#'.padStart(COL_SESSNUM) + ' ' +
-      'Mem Usage'.padStart(COL_MEM)
+      padToWidth('Image Name', COL_IMAGE) + ' ' +
+      padToWidth('PID', COL_PID, 'right') + ' ' +
+      padToWidth('Session Name', COL_SESSION) + ' ' +
+      padToWidth('Session#', COL_SESSNUM, 'right') + ' ' +
+      padToWidth('Mem Usage', COL_MEM, 'right')
     );
     lines.push(
       '='.repeat(COL_IMAGE) + ' ' +
@@ -206,11 +207,11 @@ function formatBasic(procs: WindowsProcess[], format: OutputFormat, noHeader: bo
 
   for (const p of procs) {
     lines.push(
-      p.name.padEnd(COL_IMAGE) + ' ' +
-      String(p.pid).padStart(COL_PID) + ' ' +
-      p.session.padEnd(COL_SESSION) + ' ' +
-      String(p.sessionId).padStart(COL_SESSNUM) + ' ' +
-      formatMem(p.wsK).padStart(COL_MEM)
+      padToWidth(p.name, COL_IMAGE) + ' ' +
+      padToWidth(String(p.pid), COL_PID, 'right') + ' ' +
+      padToWidth(p.session, COL_SESSION) + ' ' +
+      padToWidth(String(p.sessionId), COL_SESSNUM, 'right') + ' ' +
+      padToWidth(formatMem(p.wsK), COL_MEM, 'right')
     );
   }
   return lines.join('\n');
@@ -250,8 +251,8 @@ function formatSvc(procs: WindowsProcess[], format: OutputFormat, noHeader: bool
   const lines: string[] = [''];
   if (!noHeader) {
     lines.push(
-      'Image Name'.padEnd(COL_IMAGE) + ' ' +
-      'PID'.padStart(COL_PID) + ' ' +
+      padToWidth('Image Name', COL_IMAGE) + ' ' +
+      padToWidth('PID', COL_PID, 'right') + ' ' +
       'Services'
     );
     lines.push(
@@ -264,8 +265,8 @@ function formatSvc(procs: WindowsProcess[], format: OutputFormat, noHeader: bool
   for (const p of procs) {
     const svcNames = p.hostedServices.length > 0 ? p.hostedServices.join(', ') : 'N/A';
     lines.push(
-      p.name.padEnd(COL_IMAGE) + ' ' +
-      String(p.pid).padStart(COL_PID) + ' ' +
+      padToWidth(p.name, COL_IMAGE) + ' ' +
+      padToWidth(String(p.pid), COL_PID, 'right') + ' ' +
       svcNames
     );
   }
@@ -307,14 +308,14 @@ function formatVerbose(
   const lines: string[] = [''];
   if (!noHeader) {
     lines.push(
-      'Image Name'.padEnd(COL_IMAGE) + ' ' +
-      'PID'.padStart(COL_PID) + ' ' +
-      'Session Name'.padEnd(COL_SESSION) + ' ' +
-      'Session#'.padStart(COL_SESSNUM) + ' ' +
-      'Mem Usage'.padStart(COL_MEM) + ' ' +
-      'Status'.padEnd(COL_STATUS) + ' ' +
-      'User Name'.padEnd(COL_USER) + ' ' +
-      'CPU Time'.padStart(COL_CPUTIME) + ' ' +
+      padToWidth('Image Name', COL_IMAGE) + ' ' +
+      padToWidth('PID', COL_PID, 'right') + ' ' +
+      padToWidth('Session Name', COL_SESSION) + ' ' +
+      padToWidth('Session#', COL_SESSNUM, 'right') + ' ' +
+      padToWidth('Mem Usage', COL_MEM, 'right') + ' ' +
+      padToWidth('Status', COL_STATUS) + ' ' +
+      padToWidth('User Name', COL_USER) + ' ' +
+      padToWidth('CPU Time', COL_CPUTIME, 'right') + ' ' +
       'Window Title'
     );
     lines.push(
@@ -334,14 +335,14 @@ function formatVerbose(
     const owner = resolveOwnerWithHost(ctx, p);
     const windowTitle = p.windowTitle || 'N/A';
     lines.push(
-      p.name.padEnd(COL_IMAGE) + ' ' +
-      String(p.pid).padStart(COL_PID) + ' ' +
-      p.session.padEnd(COL_SESSION) + ' ' +
-      String(p.sessionId).padStart(COL_SESSNUM) + ' ' +
-      formatMem(p.wsK).padStart(COL_MEM) + ' ' +
-      p.status.padEnd(COL_STATUS) + ' ' +
-      owner.padEnd(COL_USER) + ' ' +
-      formatCpuTime(p.cpuSec).padStart(COL_CPUTIME) + ' ' +
+      padToWidth(p.name, COL_IMAGE) + ' ' +
+      padToWidth(String(p.pid), COL_PID, 'right') + ' ' +
+      padToWidth(p.session, COL_SESSION) + ' ' +
+      padToWidth(String(p.sessionId), COL_SESSNUM, 'right') + ' ' +
+      padToWidth(formatMem(p.wsK), COL_MEM, 'right') + ' ' +
+      padToWidth(p.status, COL_STATUS) + ' ' +
+      padToWidth(owner, COL_USER) + ' ' +
+      padToWidth(formatCpuTime(p.cpuSec), COL_CPUTIME, 'right') + ' ' +
       windowTitle
     );
   }

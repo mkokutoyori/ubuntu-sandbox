@@ -1,5 +1,6 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const SYNTAX = `The syntax of this command is:\n\nNET VIEW\n[\\\\computername [/CACHE] | [/ALL] | /DOMAIN[:domainname]]`;
 
@@ -52,7 +53,7 @@ export async function cmdNetView(ctx: WinCommandContext, args: string[]): Promis
   };
 
   const rows = offered.map(s =>
-    `${s.name.padEnd(12)}${s.type.padEnd(6)}${mountedAs(s.name).padEnd(9)}${s.comment}`.trimEnd(),
+    `${padToWidth(s.name, 12)}${padToWidth(s.type, 6)}${padToWidth(mountedAs(s.name), 9)}${s.comment}`.trimEnd(),
   );
   return header + rows.join('\n') + '\nThe command completed successfully.';
 }

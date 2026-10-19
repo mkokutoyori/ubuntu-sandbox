@@ -20,6 +20,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
 import { formatClock, formatCpuTime, formatBsdCpuTime, memPercent } from '../system/ProcFormat';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Context describing the calling interactive shell. */
 export interface PsContext {
@@ -421,7 +422,7 @@ function renderTable(list: ProcessInfo[], q: PsQuery, zone?: string): string {
 
 function padCell(text: string, col: { width: number } | null, last: boolean, align: 'l' | 'r'): string {
   if (last || !col || col.width === 0) return text;
-  return align === 'r' ? text.padStart(col.width) : text.padEnd(col.width);
+  return align === 'r' ? padToWidth(text, col.width, 'right') : padToWidth(text, col.width);
 }
 
 // ─── Public entry ─────────────────────────────────────────────────────

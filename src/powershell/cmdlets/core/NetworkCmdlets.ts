@@ -1565,6 +1565,12 @@ export class TestNetConnectionCmdlet implements ICmdlet {
     result.SourceAddress = egress?.sourceIp ?? '';
     if (detailed) result['NetRoute (NextHop)'] = egress?.nextHop ?? '';
     if (tcpTested) {
+      if (!tcpSucceeded && resolved !== '') {
+        ctx.emitWarning(`TCP connect to (${resolved} : ${port}) failed`);
+        if (!pingSucceeded) ctx.emitWarning(`Ping to ${resolved} failed with status: TimedOut`);
+        result.PingSucceeded = pingSucceeded;
+        result['PingReplyDetails (RTT)'] = `${rttMs} ms`;
+      }
       result.TcpTestSucceeded = tcpSucceeded;
     } else {
       result.PingSucceeded = pingSucceeded;

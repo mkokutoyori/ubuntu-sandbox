@@ -1,6 +1,7 @@
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { TlsServerStatistics, TlsStreamServerPort } from '@/network/crypto/openssl/OpenSslHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export class OpenSslSServerSubShell implements ISubShell {
   readonly kind = 'openssl-s_server';
@@ -74,7 +75,7 @@ function openSslErrorLine(code: string, func: string, reason: string, source: st
 }
 
 function formatStatistics(stats: TlsServerStatistics): string[] {
-  const field = (value: number): string => String(value).padStart(4, ' ');
+  const field = (value: number): string => padToWidth(String(value), 4, 'right');
   return [
     `${field(stats.itemsInCache)} items in the session cache`,
     `${field(0)} client connects (SSL_connect())`,

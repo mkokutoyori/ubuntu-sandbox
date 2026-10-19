@@ -4,6 +4,7 @@ import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
 import { uptimeHeader } from '../system/SystemInfo';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface WOptions {
   noHeader: boolean;
@@ -105,7 +106,7 @@ function synthSession(r: UtmpRecord): SshSession {
   } as unknown as SshSession;
 }
 
-function pad(s: string, w: number): string { return s.padEnd(w); }
+function pad(s: string, w: number): string { return padToWidth(s, w); }
 
 function fmtLogin(d: Date, zone?: string): string {
   return formatLocalTime('%H:%M', d.getTime(), zone);

@@ -44,6 +44,7 @@ import {
   type DhcpServerLeaseVM,
 } from './observables';
 import { isDhcpOptionCode, dhcpOptionValueIsValid } from './optionSyntax';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Default pending offer timeout from centralized constants */
 const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
@@ -1543,8 +1544,8 @@ export class DHCPServer implements IProtocolEngine {
       const fin = this.numberToIP(this.ipToNumber(pool.network) + total);
       lines.push(' 1 subnet is currently in the pool :');
       lines.push(' Current index        IP address range                    Leased/Excluded/Total');
-      lines.push(` ${debut.padEnd(20)} ${debut.padEnd(16)} - ${fin.padEnd(16)} `
-        + `${String(loues).padEnd(5)}/${String(exclus).padEnd(9)}/${total}`);
+      lines.push(` ${padToWidth(debut, 20)} ${padToWidth(debut, 16)} - ${padToWidth(fin, 16)} `
+        + `${padToWidth(String(loues), 5)}/${padToWidth(String(exclus), 9)}/${total}`);
     }
     const details = [
       `  Network          : ${pool.network || 'not configured'}/${cidr}`,
@@ -1606,7 +1607,7 @@ export class DHCPServer implements IProtocolEngine {
     for (const [ip, binding] of this.getBindings()) {
       const expStr = Number.isFinite(binding.leaseExpiration)
         ? new Date(binding.leaseExpiration).toLocaleString() : 'Infinite';
-      lines.push(`${ip.padEnd(17)}${binding.clientId.padEnd(24)}${expStr.padEnd(24)}${binding.type}`);
+      lines.push(`${padToWidth(ip, 17)}${padToWidth(binding.clientId, 24)}${padToWidth(expStr, 24)}${binding.type}`);
     }
     return lines.join('\n');
   }
@@ -1638,7 +1639,7 @@ export class DHCPServer implements IProtocolEngine {
       lines.push('No conflicts detected.');
     }
     for (const c of this.conflicts) {
-      lines.push(`${c.ipAddress.padEnd(18)}${c.detectionMethod.padEnd(19)}${new Date(c.detectionTime).toLocaleString()}`);
+      lines.push(`${padToWidth(c.ipAddress, 18)}${padToWidth(c.detectionMethod, 19)}${new Date(c.detectionTime).toLocaleString()}`);
     }
     return lines.join('\n');
   }

@@ -1,6 +1,7 @@
 import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGetopt';
 import type { HostClock } from '../audit/tools/AuditHostClock';
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const LASTLOG_RECORD_SIZE = 292;
 export const LASTLOG_FILE = '/var/log/lastlog';
@@ -156,7 +157,7 @@ function strftime(epoch: number, clock: HostClock): string {
   const offset = Math.round(Date.UTC(tm.year, tm.mon, tm.mday, tm.hour, tm.min, tm.sec) / 1000) - epoch;
   const minutes = Math.abs(Math.trunc(offset / 60));
   const zone = `${offset < 0 ? '-' : '+'}${two(Math.trunc(minutes / 60))}${two(minutes % 60)}`;
-  return `${days[tm.wday]} ${months[tm.mon]} ${String(tm.mday).padStart(2, ' ')} ${two(tm.hour)}:${two(tm.min)}:${two(tm.sec)} ${zone} ${tm.year}`;
+  return `${days[tm.wday]} ${months[tm.mon]} ${padToWidth(String(tm.mday), 2, 'right')} ${two(tm.hour)}:${two(tm.min)}:${two(tm.sec)} ${zone} ${tm.year}`;
 }
 
 export function runLastlog(host: LastlogHost, argv: string[], program = 'lastlog'): ToolResult {

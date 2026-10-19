@@ -4,6 +4,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import type { CiscoSecurityConfig } from '../../router/security/CiscoSecurityConfig';
 import { DEFAULT_INTERCEPT_SETTINGS, type TcpInterceptSettings, type InterceptConnection } from '../../router/security/TcpIntercept';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface TcpInterceptHost {
   security(): CiscoSecurityConfig;
@@ -56,15 +57,15 @@ function clock(milliseconds: number): string {
 function row(connection: InterceptConnection, now: number): string {
   const deadline = connection.finrstMs ?? connection.deadlineMs;
   return [
-    `${connection.client}:${connection.clientPort}`.padEnd(24), `${connection.server}:${connection.serverPort}`.padEnd(24),
-    connection.state.padEnd(10), clock(now - connection.createdMs).padEnd(10), clock(deadline - now).padEnd(10), connection.mode,
+    padToWidth(`${connection.client}:${connection.clientPort}`, 24), padToWidth(`${connection.server}:${connection.serverPort}`, 24),
+    padToWidth(connection.state, 10), padToWidth(clock(now - connection.createdMs), 10), padToWidth(clock(deadline - now), 10), connection.mode,
   ].join('').trimEnd();
 }
 
 export function renderInterceptConnections(sec: CiscoSecurityConfig): string {
   const now = simulationNowMs();
   const all = sec.tcpIntercept.list();
-  const header = ['Client'.padEnd(24), 'Server'.padEnd(24), 'State'.padEnd(10), 'Create'.padEnd(10), 'Timeout'.padEnd(10), 'Mode'].join('');
+  const header = [padToWidth('Client', 24), padToWidth('Server', 24), padToWidth('State', 10), padToWidth('Create', 10), padToWidth('Timeout', 10), 'Mode'].join('');
   const incomplete = all.filter((c) => c.state !== 'ESTAB');
   const established = all.filter((c) => c.state === 'ESTAB');
   return ['Incomplete:', header, ...incomplete.map((c) => row(c, now)), '',

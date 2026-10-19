@@ -7,6 +7,7 @@ import { formatKlistTime } from './Krb5Duration';
 import { unparsePrincipal, type Krb5Principal } from './Krb5Principal';
 import { KLIST_USAGE, emit, outputOf, type ToolOutput } from './Krb5ToolOutput';
 import type { Krb5Host } from './Krb5Host';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const KRB5_VERSION_STRING = 'Kerberos 5 version 1.19.2';
 
@@ -157,7 +158,7 @@ export async function runKlist(host: Krb5Host, args: readonly string[]): Promise
       out.exitCode = 1;
       return out;
     }
-    emit(out, 'stdout', `${unparsePrincipal(fromCcachePrincipal(cache.defaultPrincipal)).padEnd(30)} ${parsedName.type}:${path}\n`);
+    emit(out, 'stdout', `${padToWidth(unparsePrincipal(fromCcachePrincipal(cache.defaultPrincipal)), 30)} ${parsedName.type}:${path}\n`);
     return out;
   }
   if (flags.all && cache === null) {

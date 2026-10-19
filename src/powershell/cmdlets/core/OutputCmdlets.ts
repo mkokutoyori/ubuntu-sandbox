@@ -8,6 +8,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Write-Output / echo ───────────────────────────────────────────────────
 
@@ -152,13 +153,13 @@ export class OutStringCmdlet implements ICmdlet {
       // "Key=Value;" dump psValueToString produces.
       const keys = Object.keys(items[0] as Record<string, PSValue>);
       const w = 15;
-      const header = keys.map(k => k.padEnd(w)).join(' ');
+      const header = keys.map(k => padToWidth(k, w)).join(' ');
       const sep    = keys.map(() => '-'.repeat(w)).join(' ');
       const rows = items.map(it => {
         const rec = it as Record<string, PSValue>;
         return keys.map(k => {
           const kk = Object.keys(rec).find(x => x.toLowerCase() === k.toLowerCase()) ?? k;
-          return psValueToString(rec[kk] ?? '').padEnd(w);
+          return padToWidth(psValueToString(rec[kk] ?? ''), w);
         }).join(' ');
       });
       text = ['', header, sep, ...rows, ''].join('\n');

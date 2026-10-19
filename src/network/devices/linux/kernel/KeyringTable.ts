@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export type KeyringKind = 'user' | 'user-session' | 'session';
 
 export interface Keyring {
@@ -72,11 +73,11 @@ export class KeyringTable {
       lines.push([
         keyring.id.toString(16).padStart(8, '0'),
         flags,
-        String(1 + keyring.links.length).padStart(5),
+        padToWidth(String(1 + keyring.links.length), 5, 'right'),
         'perm',
         '3f030000',
-        String(keyring.uid).padStart(5),
-        String(keyring.gid).padStart(5),
+        padToWidth(String(keyring.uid), 5, 'right'),
+        padToWidth(String(keyring.gid), 5, 'right'),
         'keyring  ',
         `${keyring.description}: ${summary}`,
       ].join(' '));

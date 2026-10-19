@@ -4,6 +4,7 @@ import type { CpuSpec } from '../../host/hardware/CpuSpec';
 import type { KernelInfo } from '../../host/identity/KernelInfo';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
 import { twelveHourClock as fmtTimestamp } from '@/lib/format';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface MpstatArgs {
   intervalSeconds: number | null;
@@ -79,20 +80,20 @@ export function mpstatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec,
 
 export function mpstatColumnHeader(now: Date): string {
   const ts = fmtTimestamp(now);
-  return `${ts}  CPU` + COLUMNS.map((c) => c.padStart(8)).join('');
+  return `${ts}  CPU` + COLUMNS.map((c) => padToWidth(c, 8, 'right')).join('');
 }
 
 export function formatMpstatRow(now: Date, row: MpstatCpuRow): string {
   const ts = fmtTimestamp(now);
-  return `${ts}  ${row.label.padStart(3)}` + [
+  return `${ts}  ${padToWidth(row.label, 3, 'right')}` + [
     row.usr, row.nice, row.sys, row.iowait, row.irq, row.soft, row.steal, row.guest, row.gnice, row.idle,
-  ].map((v) => v.toFixed(2).padStart(8)).join('');
+  ].map((v) => padToWidth(v.toFixed(2), 8, 'right')).join('');
 }
 
 export function formatMpstatAverageRow(row: MpstatCpuRow): string {
-  return `Average:     ${row.label.padStart(3)}` + [
+  return `Average:     ${padToWidth(row.label, 3, 'right')}` + [
     row.usr, row.nice, row.sys, row.iowait, row.irq, row.soft, row.steal, row.guest, row.gnice, row.idle,
-  ].map((v) => v.toFixed(2).padStart(8)).join('');
+  ].map((v) => padToWidth(v.toFixed(2), 8, 'right')).join('');
 }
 
 export function sampleMpstat(args: MpstatArgs, pm: LinuxProcessManager, cpu: CpuSpec): MpstatCpuRow[] {

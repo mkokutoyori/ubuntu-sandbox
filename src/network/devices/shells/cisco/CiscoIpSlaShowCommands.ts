@@ -16,6 +16,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 
 import type { CommandSpec } from '@/cli/CommandTable';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export function formatIosTimestamp(epochMs: number): string {
   const date = new Date(epochMs);
@@ -200,7 +201,7 @@ function renderStatistics(
 }
 
 function column(text: string, width: number): string {
-  return text.length >= width ? `${text.slice(0, width - 1)} ` : text.padEnd(width);
+  return text.length >= width ? `${text.slice(0, width - 1)} ` : padToWidth(text, width);
 }
 
 function renderSummary(engine: IpSlaEngine, nowMs: number, idToken?: string): string {
@@ -371,9 +372,9 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
       '', 'Entry  SampleT                        CompT  Sense'];
     for (const runtime of operations) {
       for (const entry of runtime.history) {
-        lines.push(`${String(runtime.config.id).padEnd(7)}`
-          + `${formatIosTimestamp(entry.sampleTimeMs).padEnd(31)}`
-          + `${String(entry.rttMs === null ? 0 : Math.round(entry.rttMs)).padEnd(7)}`
+        lines.push(`${padToWidth(String(runtime.config.id), 7)}`
+          + `${padToWidth(formatIosTimestamp(entry.sampleTimeMs), 31)}`
+          + `${padToWidth(String(entry.rttMs === null ? 0 : Math.round(entry.rttMs)), 7)}`
           + `${RETURN_CODE_LABEL[entry.returnCode]}`);
       }
     }
@@ -406,7 +407,7 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     const lines = ['Entry Number    Target Entry    Target Entry Status'];
     for (const trigger of triggers) {
       const target = engine().getOperation(trigger.target);
-      lines.push(`${String(trigger.source).padEnd(16)}${String(trigger.target).padEnd(16)}`
+      lines.push(`${padToWidth(String(trigger.source), 16)}${padToWidth(String(trigger.target), 16)}`
         + `${target ? scheduleStatus(target) : 'Unknown'}`);
     }
     return lines.join('\n');

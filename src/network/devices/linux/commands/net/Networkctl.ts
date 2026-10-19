@@ -23,6 +23,7 @@ import {
   type LinkState,
   type LinkStateDeps,
 } from '../../net/LinkState';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const ACTION_VERBS = new Set([
   'up', 'down', 'renew', 'forcerenew', 'reconfigure', 'reload', 'delete',
@@ -114,7 +115,7 @@ function renderList(links: readonly LinkState[], opts: ParsedArgs): string {
 }
 
 function field(label: string, value: string): string {
-  return `${label.padStart(16)}: ${value}`;
+  return `${padToWidth(label, 16, 'right')}: ${value}`;
 }
 
 function renderLinkStatus(link: LinkState, ctx: LinuxCommandContext): string {

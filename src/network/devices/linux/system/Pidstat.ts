@@ -6,6 +6,7 @@ import type { KernelInfo } from '../../host/identity/KernelInfo';
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
 import { mpstatBanner } from './Mpstat';
 import { twelveHourClock as fmtTimestamp } from '@/lib/format';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type PidstatReport = 'cpu' | 'memory';
 
@@ -98,7 +99,7 @@ export function pidstatColumnHeader(args: PidstatArgs, now: Date): string {
 }
 
 function pad(value: string | number, width: number): string {
-  return String(value).padStart(width);
+  return padToWidth(String(value), width, 'right');
 }
 
 export function formatPidstatCpuRow(now: Date, row: PidstatCpuRow): string {
@@ -107,11 +108,11 @@ export function formatPidstatCpuRow(now: Date, row: PidstatCpuRow): string {
     ts,
     pad(row.uid, 5),
     pad(row.pid, 9),
-    row.usr.toFixed(2).padStart(7),
-    row.system.toFixed(2).padStart(7),
-    row.guest.toFixed(2).padStart(7),
-    row.wait.toFixed(2).padStart(7),
-    row.cpu.toFixed(2).padStart(7),
+    padToWidth(row.usr.toFixed(2), 7, 'right'),
+    padToWidth(row.system.toFixed(2), 7, 'right'),
+    padToWidth(row.guest.toFixed(2), 7, 'right'),
+    padToWidth(row.wait.toFixed(2), 7, 'right'),
+    padToWidth(row.cpu.toFixed(2), 7, 'right'),
     pad(row.cpuNumber, 5),
     `  ${row.command}`,
   ].join(' ');
@@ -123,11 +124,11 @@ export function formatPidstatMemRow(now: Date, row: PidstatMemRow): string {
     ts,
     pad(row.uid, 5),
     pad(row.pid, 9),
-    row.minfltPerSec.toFixed(2).padStart(8),
-    row.majfltPerSec.toFixed(2).padStart(8),
+    padToWidth(row.minfltPerSec.toFixed(2), 8, 'right'),
+    padToWidth(row.majfltPerSec.toFixed(2), 8, 'right'),
     pad(row.vszKib, 7),
     pad(row.rssKib, 7),
-    row.memPct.toFixed(2).padStart(6),
+    padToWidth(row.memPct.toFixed(2), 6, 'right'),
     `  ${row.command}`,
   ].join(' ');
 }
@@ -137,11 +138,11 @@ export function formatPidstatAverageCpuRow(row: PidstatCpuRow): string {
     'Average:',
     pad(row.uid, 5),
     pad(row.pid, 9),
-    row.usr.toFixed(2).padStart(7),
-    row.system.toFixed(2).padStart(7),
-    row.guest.toFixed(2).padStart(7),
-    row.wait.toFixed(2).padStart(7),
-    row.cpu.toFixed(2).padStart(7),
+    padToWidth(row.usr.toFixed(2), 7, 'right'),
+    padToWidth(row.system.toFixed(2), 7, 'right'),
+    padToWidth(row.guest.toFixed(2), 7, 'right'),
+    padToWidth(row.wait.toFixed(2), 7, 'right'),
+    padToWidth(row.cpu.toFixed(2), 7, 'right'),
     pad(row.cpuNumber, 5),
     `  ${row.command}`,
   ].join(' ');
@@ -152,11 +153,11 @@ export function formatPidstatAverageMemRow(row: PidstatMemRow): string {
     'Average:',
     pad(row.uid, 5),
     pad(row.pid, 9),
-    row.minfltPerSec.toFixed(2).padStart(8),
-    row.majfltPerSec.toFixed(2).padStart(8),
+    padToWidth(row.minfltPerSec.toFixed(2), 8, 'right'),
+    padToWidth(row.majfltPerSec.toFixed(2), 8, 'right'),
     pad(row.vszKib, 7),
     pad(row.rssKib, 7),
-    row.memPct.toFixed(2).padStart(6),
+    padToWidth(row.memPct.toFixed(2), 6, 'right'),
     `  ${row.command}`,
   ].join(' ');
 }

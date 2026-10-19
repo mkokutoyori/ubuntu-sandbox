@@ -103,6 +103,7 @@ import { buildActorState, lacpStateBits } from '@/network/lacp/types';
 import { LOAD_BALANCE_METHODS } from '@/network/lacp/loadBalance';
 import { formatVrpVlanList, parseVlanList } from '../switch/VlanSet';
 import { boundedInteger } from '@/cli/ArgumentTypes';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const VUES_SWITCH = [
   'user', 'system', 'interface', 'vlan', 'mst-region', 'port-group',
@@ -199,7 +200,7 @@ function vlanPortRows(tag: 'UT' | 'TG', cells: readonly string[]): string[] {
   const rows: string[] = [];
   for (let i = 0; i < cells.length; i += VLAN_PORTS_PER_ROW) {
     const chunk = cells.slice(i, i + VLAN_PORTS_PER_ROW);
-    const text = chunk.map((cell, k) => (k < chunk.length - 1 ? cell.padEnd(VLAN_PORT_CELL_WIDTH) : cell)).join('');
+    const text = chunk.map((cell, k) => (k < chunk.length - 1 ? padToWidth(cell, VLAN_PORT_CELL_WIDTH) : cell)).join('');
     rows.push(`${i === 0 ? `${tag}:` : ' '.repeat(tag.length + 1)}${text}`);
   }
   return rows;
@@ -828,7 +829,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         // Une description vide ne se rembourre pas : `<cr>` laissait
         // sinon la largeur de la colonne en blancs de fin de ligne.
         .map(c => (c.description
-          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          ? `  ${padToWidth(c.keyword, maxKw + 2)}${c.description}`
           : `  ${c.keyword}`))
         .join('\n');
     } finally {
@@ -2593,9 +2594,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         const port = this.swRef.getPort(nom);
         const cfg = this.swRef.getSwitchportConfig(nom);
         const up = !!(port?.getIsUp() && port?.isConnected());
-        rows.push(`${nom.padEnd(28)}${(up ? 'up' : 'down').padEnd(11)}`
-          + `${(cfg?.mode ?? 'access').padEnd(11)}${String(cfg?.accessVlan ?? 1).padEnd(6)}`
-          + `${(up ? '1000' : 'auto').padEnd(7)}${up ? 'full' : 'auto'}`);
+        rows.push(`${padToWidth(nom, 28)}${padToWidth(up ? 'up' : 'down', 11)}`
+          + `${padToWidth(cfg?.mode ?? 'access', 11)}${padToWidth(String(cfg?.accessVlan ?? 1), 6)}`
+          + `${padToWidth(up ? '1000' : 'auto', 7)}${up ? 'full' : 'auto'}`);
       }
       return rows.join('\n');
     });
@@ -2653,14 +2654,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
           const pvid = cfg.hybridPvid ?? 1;
           const unt = [...(cfg.hybridUntaggedVlans ?? [])].sort((a, b) => a - b).join(' ');
           const tag = [...(cfg.hybridTaggedVlans ?? [])].sort((a, b) => a - b).join(' ');
-          rows.push(`${p.padEnd(24)}${'hybrid'.padEnd(13)}${String(pvid).padEnd(6)}U: ${unt || '-'}  T: ${tag || '-'}`);
+          rows.push(`${padToWidth(p, 24)}${padToWidth('hybrid', 13)}${padToWidth(String(pvid), 6)}U: ${unt || '-'}  T: ${tag || '-'}`);
           continue;
         }
         const pvid = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
         const trunkList = cfg.mode === 'trunk'
           ? [...cfg.trunkAllowedVlans].sort((a, b) => a - b).join(' ')
           : '';
-        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}${trunkList || '-'}`);
+        rows.push(`${padToWidth(p, 24)}${padToWidth(cfg.mode, 13)}${padToWidth(String(pvid), 6)}${trunkList || '-'}`);
       }
       return rows.join('\n');
     });
@@ -2708,10 +2709,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `         Destinations : ${destinationsDistinctes(rows)}       Routes : ${rows.length}\n\n` +
         'Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface\n';
       const lines = rows.map(r => {
-        const dest = `${r.network}/${r.mask.toCIDR()}`.padEnd(20);
-        const proto = (r.proto === 'connected' ? 'Direct' : 'Static').padEnd(8);
-        const pre = String(r.proto === 'connected' ? 0 : r.preference ?? 60).padEnd(5);
-        const nh = (r.nextHop ? r.nextHop.toString() : r.network.toString()).padEnd(16);
+        const dest = padToWidth(`${r.network}/${r.mask.toCIDR()}`, 20);
+        const proto = padToWidth(r.proto === 'connected' ? 'Direct' : 'Static', 8);
+        const pre = padToWidth(String(r.proto === 'connected' ? 0 : r.preference ?? 60), 5);
+        const nh = padToWidth(r.nextHop ? r.nextHop.toString() : r.network.toString(), 16);
         return `${dest}${proto}${pre}0         D     ${nh}${r.iface}`;
       });
       return header + lines.join('\n');
@@ -3090,8 +3091,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
           p,
           '                        LACPDU               Marker',
           '             Sent       Received   Sent       Received',
-          `             ${String(stats.sent).padEnd(11)}${String(stats.received).padEnd(11)}`
-          + `${String(marqueur.responseSent).padEnd(11)}${marqueur.received}`,
+          `             ${padToWidth(String(stats.sent), 11)}${padToWidth(String(stats.received), 11)}`
+          + `${padToWidth(String(marqueur.responseSent), 11)}${marqueur.received}`,
         ].join('\n');
       });
       return blocks.join('\n\n');
@@ -3643,7 +3644,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `Instance Vlans Mapped`,
       ];
       for (const [instance, vlans] of [...(region?.instances ?? [])].sort((a, b) => a[0] - b[0])) {
-        lines.push(`${String(instance).padEnd(8)} ${formatVrpVlanList(vlans)}`);
+        lines.push(`${padToWidth(String(instance), 8)} ${formatVrpVlanList(vlans)}`);
       }
       return lines.join('\n');
     });
@@ -3680,7 +3681,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `  0          ${formatVrpVlanList(vlansMappedToInstanceZero(region?.instances ?? new Map()))}`,
       ];
       for (const [id, v] of [...(region?.instances ?? [])].sort((a, b) => a[0] - b[0])) {
-        lines.push(`  ${String(id).padEnd(11)}${formatVrpVlanList(v)}`);
+        lines.push(`  ${padToWidth(String(id), 11)}${formatVrpVlanList(v)}`);
       }
       return lines.join('\n');
     });
@@ -3882,11 +3883,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const name of this.swRef.getPortNames()) {
       const sec = this.swRef.getPort(name)?.getPortSecurity();
       if (!sec || !sec.isEnabled()) continue;
-      const action = sec.getViolationMode().padEnd(10);
-      const sticky = (sec.isStickyEnabled() ? 'Yes' : 'No').padEnd(6);
-      const secure = String(sec.getEntries().length).padEnd(7);
-      const viol = String(sec.getViolationCount()).padEnd(11);
-      rows.push(`Enabled          ${String(sec.getMaxMACAddresses()).padEnd(7)} ${action} ${sticky}  ${secure} ${viol} ${name}`);
+      const action = padToWidth(sec.getViolationMode(), 10);
+      const sticky = padToWidth(sec.isStickyEnabled() ? 'Yes' : 'No', 6);
+      const secure = padToWidth(String(sec.getEntries().length), 7);
+      const viol = padToWidth(String(sec.getViolationCount()), 11);
+      rows.push(`Enabled          ${padToWidth(String(sec.getMaxMACAddresses()), 7)} ${action} ${sticky}  ${secure} ${viol} ${name}`);
     }
     if (rows.length === 0) return 'Port-security is not enabled on any interface.';
     return [header, ...rows].join('\n');
@@ -3903,7 +3904,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (!this.swRef) return '';
     const ag = this.stpAgent();
     const header = ' MSTID  Port                        Role  STP State     Protection';
-    const mst = String(mstid ?? 0).padStart(6);
+    const mst = padToWidth(String(mstid ?? 0), 6, 'right');
     const rows: string[] = [];
     for (const p of this.swRef.getPortNames()) {
       if (only && p !== only) continue;
@@ -3922,7 +3923,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const guards = ag?.getPortGuards(p);
       const protection = guards?.bpduGuard ? 'BPDU'
         : guards?.portFast ? 'EDGE' : 'NONE';
-      rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} ${protection}`);
+      rows.push(`${mst}  ${padToWidth(p, 27)} ${role}  ${padToWidth(state, 13)} ${protection}`);
     }
     if (only && rows.length === 0) {
       return `Error: The port ${only} does not exist.`;
@@ -4002,7 +4003,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         ...t.members.map(m => {
           const info = liveByPort.get(m);
           const status = info?.selected ? 'Selected' : 'Unselect';
-          return `${m.padEnd(30)}${status.padEnd(12)}1`;
+          return `${padToWidth(m, 30)}${padToWidth(status, 12)}1`;
         }),
       ].join('\n');
     }
@@ -4026,20 +4027,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const etatActeur = info
         ? buildActorState(info.mode, info, agent?.rateOf(info) ?? false) : 0;
       lignes.push(
-        `${m.padEnd(29)}${(info?.selected ? 'Selected' : 'Unselect').padEnd(9)}`
-        + `${portTypeVrp(m).padEnd(9)}${String(info?.portPriority ?? 32768).padEnd(8)}`
-        + `${String(this.numeroPortVrp(m)).padEnd(7)}${String(id).padEnd(8)}`
-        + `${lacpStateBits(etatActeur).padEnd(10)}1`);
+        `${padToWidth(m, 29)}${padToWidth(info?.selected ? 'Selected' : 'Unselect', 9)}`
+        + `${padToWidth(portTypeVrp(m), 9)}${padToWidth(String(info?.portPriority ?? 32768), 8)}`
+        + `${padToWidth(String(this.numeroPortVrp(m)), 7)}${padToWidth(String(id), 8)}`
+        + `${padToWidth(lacpStateBits(etatActeur), 10)}1`);
     }
     lignes.push('', 'Partner:', tiret,
       'ActorPortName                SysPri   SystemID        PortPri PortNo PortKey PortState');
     for (const m of t.members) {
       const p = liveByPort.get(m)?.partner;
       lignes.push(
-        `${m.padEnd(29)}${String(p?.systemPriority ?? 0).padEnd(9)}`
-        + `${vrpMacFormat(p?.systemId ?? '00:00:00:00:00:00').padEnd(16)}`
-        + `${String(p?.portPriority ?? 0).padEnd(8)}${String(p?.portNumber ?? 0).padEnd(7)}`
-        + `${String(p?.key ?? 0).padEnd(8)}${lacpStateBits(p?.state ?? 0)}`);
+        `${padToWidth(m, 29)}${padToWidth(String(p?.systemPriority ?? 0), 9)}`
+        + `${padToWidth(vrpMacFormat(p?.systemId ?? '00:00:00:00:00:00'), 16)}`
+        + `${padToWidth(String(p?.portPriority ?? 0), 8)}${padToWidth(String(p?.portNumber ?? 0), 7)}`
+        + `${padToWidth(String(p?.key ?? 0), 8)}${lacpStateBits(p?.state ?? 0)}`);
     }
     return lignes.join('\n');
   }
@@ -4071,8 +4072,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       tiret,
       'PortName                      Status      Weight',
       tiret,
-      ...t.members.map(m => `${m.padEnd(30)}`
-        + `${(actifs.includes(m) ? 'UP' : 'DOWN').padEnd(12)}1`),
+      ...t.members.map(m => `${padToWidth(m, 30)}`
+        + `${padToWidth(actifs.includes(m) ? 'UP' : 'DOWN', 12)}1`),
       tiret,
       `The Number of Ports in Trunk : ${t.members.length}`,
       `The Number of UP Ports in Trunk : ${actifs.length}`,
@@ -4290,7 +4291,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const vlan of vlans) {
       const members = this.vlanMembers(sw, vlan.id);
       const rows = [...vlanPortRows('UT', members.untagged), ...vlanPortRows('TG', members.tagged)];
-      const head = `${String(vlan.id).padEnd(5)}common  `;
+      const head = `${padToWidth(String(vlan.id), 5)}common  `;
       if (rows.length === 0) lines.push(head.trimEnd());
       rows.forEach((row, i) => lines.push(`${i === 0 ? head : ' '.repeat(head.length)}${row}`));
     }
@@ -4298,8 +4299,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const vlan of vlans) {
       const learning = learningOff.has(vlan.id) ? 'disable' : 'enable';
       const description = vlan.description ?? `VLAN ${String(vlan.id).padStart(4, '0')}`;
-      lines.push(`${String(vlan.id).padEnd(5)}${'enable'.padEnd(8)}${'default'.padEnd(14)}`
-        + `${learning.padEnd(8)}${'disable'.padEnd(11)}${description}`);
+      lines.push(`${padToWidth(String(vlan.id), 5)}${padToWidth('enable', 8)}${padToWidth('default', 14)}`
+        + `${padToWidth(learning, 8)}${padToWidth('disable', 11)}${description}`);
     }
     return lines.join('\n');
   }
@@ -4472,7 +4473,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     ];
     for (const b of bindings) {
       lines.push(
-        ` ${b.macAddress.padEnd(15)}${b.ipAddress.padEnd(17)}${String(b.lease).padEnd(17)}${b.type.padEnd(11)}${String(b.vlan).padEnd(6)}${b.port}`,
+        ` ${padToWidth(b.macAddress, 15)}${padToWidth(b.ipAddress, 17)}${padToWidth(String(b.lease), 17)}${padToWidth(b.type, 11)}${padToWidth(String(b.vlan), 6)}${b.port}`,
       );
     }
     lines.push('----------------------------------------------------------------------------');
@@ -4935,7 +4936,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const rows = sessions.filter((s) => (filter === null ? true : s.id === filter));
     if (rows.length === 0) return `Error: Observe-port ${filter} does not exist.`;
     const lines = [' Index    : Interface'];
-    for (const s of rows) lines.push(` ${String(s.id).padEnd(8)} : ${s.destination ?? '-'}`);
+    for (const s of rows) lines.push(` ${padToWidth(String(s.id), 8)} : ${s.destination ?? '-'}`);
     return lines.join('\n');
   }
 

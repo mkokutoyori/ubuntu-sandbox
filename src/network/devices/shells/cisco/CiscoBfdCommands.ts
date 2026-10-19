@@ -5,6 +5,7 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import type { BfdSessionRuntime } from '../../../bfd/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -122,11 +123,11 @@ function bfdStateLabel(state: string): string {
 }
 
 function bfdNeighborRow(s: BfdSessionRuntime): string {
-  return `${s.neighborIp.padEnd(17)}` +
-    `${`${s.localDiscriminator}/${s.remoteDiscriminator}`.padEnd(10)}` +
-    `${(s.state === 'up' ? '1/Up' : `0/${s.state}`).padEnd(8)}` +
-    `${`${Math.round(s.desiredMinTxUs / 1000) * s.detectMultiplier}(${s.detectMultiplier})`.padEnd(15)}` +
-    `${bfdStateLabel(s.state).padEnd(10)}${s.iface}`;
+  return `${padToWidth(s.neighborIp, 17)}` +
+    `${padToWidth(`${s.localDiscriminator}/${s.remoteDiscriminator}`, 10)}` +
+    `${padToWidth(s.state === 'up' ? '1/Up' : `0/${s.state}`, 8)}` +
+    `${padToWidth(`${Math.round(s.desiredMinTxUs / 1000) * s.detectMultiplier}(${s.detectMultiplier})`, 15)}` +
+    `${padToWidth(bfdStateLabel(s.state), 10)}${s.iface}`;
 }
 
 function bfdNeighborDetail(s: BfdSessionRuntime, echo: boolean): string[] {

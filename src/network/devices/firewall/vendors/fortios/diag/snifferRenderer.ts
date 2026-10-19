@@ -5,6 +5,7 @@ import { icmpOf, portsOf, type CapturedFrame } from '../../../diag/PacketCapture
 import { decodeCaptured } from '../../../diag/SnifferFilter';
 import { hexGroups, hexRows } from '@/network/capture/HexDump';
 import type { TcpSegment } from '../../../../../tcp/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type SnifferTimestamps = 'relative' | 'absolute' | 'local';
 
@@ -68,7 +69,7 @@ function dumpedBytes(entry: CapturedFrame, verbosity: number): readonly number[]
 
 function hexLines(bytes: readonly number[]): string[] {
   return hexRows(bytes).map((row) =>
-    `0x${row.offset.toString(16).padStart(4, '0')}   ${hexGroups(row.bytes, 2, ' ').padEnd(39, ' ')}        ${row.ascii}`);
+    `0x${row.offset.toString(16).padStart(4, '0')}   ${padToWidth(hexGroups(row.bytes, 2, ' '), 39)}        ${row.ascii}`);
 }
 
 function describe(entry: CapturedFrame): string {

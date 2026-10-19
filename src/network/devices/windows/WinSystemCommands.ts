@@ -20,6 +20,7 @@ import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
 import { adapterDisplayName, type WindowsAdapterIdentity } from './netAdapter';
 import { aliasNotFound, parseWmicProperties, wmicQuery } from './Wmic';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Minimal process-manager surface needed by `start`. */
 export interface WinSystemProcessManager {
@@ -282,7 +283,7 @@ export function clockTimeWithCentiseconds(timezone = 'UTC', atMs = simulationNow
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
   const local = partsAt(zone, atMs);
   const centiseconds = String(Math.floor((atMs % 1000) / 10)).padStart(2, '0');
-  return `${String(local.hour).padStart(2, ' ')}:${String(local.minute).padStart(2, '0')}:${String(local.second).padStart(2, '0')}.${centiseconds}`;
+  return `${padToWidth(String(local.hour), 2, 'right')}:${String(local.minute).padStart(2, '0')}:${String(local.second).padStart(2, '0')}.${centiseconds}`;
 }
 
 // ─── start / setx ────────────────────────────────────────────────────
@@ -365,7 +366,7 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     ];
     for (const t of filtered) {
       const next = t.runAt ? fmtSchtasksDate(t.runAt) : 'N/A';
-      lines.push(`${t.taskName.padEnd(40)} ${next.padEnd(22)} ${t.state}`);
+      lines.push(`${padToWidth(t.taskName, 40)} ${padToWidth(next, 22)} ${t.state}`);
     }
     return lines.join('\n');
   }
@@ -533,7 +534,7 @@ function renderSchtasksList(ctx: WinSystemContext, tasks: WinScheduledTask[], ve
   for (const t of tasks) {
     const fields = schtasksFields(ctx, t, verbose);
     const width = Math.max(...fields.map(([k]) => k.length)) + 2;
-    for (const [k, v] of fields) out.push(`${(k + ':').padEnd(width)}${v}`);
+    for (const [k, v] of fields) out.push(`${padToWidth(k + ':', width)}${v}`);
     out.push('');
   }
   return out.join('\n');
@@ -623,7 +624,7 @@ export function cmdNbtstat(ctx: WinSystemContext, args: string[]): string {
       '',
       '       Name               Type         Status',
       '    ---------------------------------------------',
-      `    ${ctx.hostname.toUpperCase().padEnd(16)} <00>  UNIQUE      Registered`,
+      `    ${padToWidth(ctx.hostname.toUpperCase(), 16)} <00>  UNIQUE      Registered`,
       `    WORKGROUP        <00>  GROUP       Registered`,
       '',
     ].join('\n');
@@ -645,23 +646,23 @@ export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
 }
 
 function wmicNic(ctx: WinSystemContext): string {
-  const lignes = [`${'MACAddress'.padEnd(20)}${'Name'.padEnd(30)}NetEnabled`];
+  const lignes = [`${padToWidth('MACAddress', 20)}${padToWidth('Name', 30)}NetEnabled`];
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC()?.toWindowsString() ?? '';
     const affiche = adapterDisplayName(name, ctx.ports);
-    lignes.push(`${mac.padEnd(20)}${affiche.padEnd(30)}${port.isAdminDown() ? 'FALSE' : 'TRUE'}`);
+    lignes.push(`${padToWidth(mac, 20)}${padToWidth(affiche, 30)}${port.isAdminDown() ? 'FALSE' : 'TRUE'}`);
   }
   return lignes.join('\n');
 }
 
 function wmicNicConfig(ctx: WinSystemContext): string {
-  const lignes = [`${'IPAddress'.padEnd(24)}${'IPSubnet'.padEnd(20)}MACAddress`];
+  const lignes = [`${padToWidth('IPAddress', 24)}${padToWidth('IPSubnet', 20)}MACAddress`];
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC()?.toWindowsString() ?? '';
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     lignes.push(
-      `${(ip ? `{"${ip}"}` : '').padEnd(24)}${(mask ? `{"${mask}"}` : '').padEnd(20)}${mac}`,
+      `${padToWidth(ip ? `{"${ip}"}` : '', 24)}${padToWidth(mask ? `{"${mask}"}` : '', 20)}${mac}`,
     );
     void name;
   }

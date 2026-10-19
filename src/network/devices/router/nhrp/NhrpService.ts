@@ -1,4 +1,5 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface NhrpInterfaceConfig {
   ifName: string;
@@ -151,7 +152,7 @@ export class NhrpService {
     if (this.cache.length === 0) return 'IP-NHRP table contains no entries';
     const lines = ['Target            Via                NBMA Address        Interface'];
     for (const e of this.cache) {
-      lines.push(`${`${e.targetAddress}/${e.targetPrefixLen}`.padEnd(18)}${e.targetAddress.padEnd(19)}${e.nbmaAddress.padEnd(20)}${e.ifName}`);
+      lines.push(`${padToWidth(`${e.targetAddress}/${e.targetPrefixLen}`, 18)}${padToWidth(e.targetAddress, 19)}${padToWidth(e.nbmaAddress, 20)}${e.ifName}`);
     }
     return lines.join('\n');
   }

@@ -129,6 +129,7 @@ export const USERNAME_CONTINUATIONS: ReadonlyArray<{
  */
 
 import { AAA_SERVICES } from './aaaHeadSpecs';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
   authentication: [
     'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
@@ -1155,7 +1156,7 @@ export function buildIdentityShowCommands(
     ];
     for (const a of getDevice().getCredentialStore().list()) {
       if (!a.locked) continue;
-      lines.push(`${a.name.padEnd(22)}${a.lockReason ?? 'locked'}`);
+      lines.push(`${padToWidth(a.name, 22)}${a.lockReason ?? 'locked'}`);
     }
     return lines.join('\n');
   });
@@ -1183,8 +1184,8 @@ export function buildIdentityShowCommands(
       return lines.join('\n');
     }
     for (const [service, c] of trafic) {
-      lines.push(`     ${service.padEnd(18)}${String(c.starts).padStart(6)}`
-        + `${String(c.stops).padStart(9)}${String(c.failed).padStart(10)}`);
+      lines.push(`     ${padToWidth(service, 18)}${padToWidth(String(c.starts), 6, 'right')}`
+        + `${padToWidth(String(c.stops), 9, 'right')}${padToWidth(String(c.failed), 10, 'right')}`);
     }
     return lines.join('\n');
   });
@@ -1197,7 +1198,7 @@ export function buildIdentityShowCommands(
     const lines = [`Total sessions since last reload: ${active.length + past.length}`];
     if (active.length > 0) {
       lines.push('Session-Id Unique Id User       IP Address    Session Type');
-      for (const s of active) lines.push(`${s.id.padEnd(11)}1          ${s.user.padEnd(11)}${s.fromIp.padEnd(14)}${s.line}`);
+      for (const s of active) lines.push(`${padToWidth(s.id, 11)}1          ${padToWidth(s.user, 11)}${padToWidth(s.fromIp, 14)}${s.line}`);
     }
     return lines.join('\n');
   });
@@ -1284,7 +1285,7 @@ export function buildIdentityShowCommands(
     }
     for (const [k, g] of groups) {
       const user = k.split('@')[0];
-      lines.push(`${user.padEnd(11)}${g.ip.padEnd(14)}22    ${String(g.count).padEnd(7)}${new Date(g.last).toISOString().replace('T', ' ').slice(0, 19)}`);
+      lines.push(`${padToWidth(user, 11)}${padToWidth(g.ip, 14)}22    ${padToWidth(String(g.count), 7)}${new Date(g.last).toISOString().replace('T', ' ').slice(0, 19)}`);
     }
     return lines.join('\n');
   });
@@ -1412,7 +1413,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       if (prefixe && !dst.startsWith(`${prefixe}/`) && r.network.toString() !== prefixe) continue;
       const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
       const next = attachee ? 'attached' : r.nextHop!.toString();
-      lines.push(`${dst.padEnd(21)}${next.padEnd(21)}${r.iface ?? ''}`);
+      lines.push(`${padToWidth(dst, 21)}${padToWidth(next, 21)}${r.iface ?? ''}`);
     }
     return lines.join('\n');
   });

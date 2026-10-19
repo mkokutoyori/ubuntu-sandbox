@@ -3,6 +3,7 @@ import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { renderPhase } from './ScanPhases';
 import { renderTrace } from './Traceroute';
 import { isMeasured } from './TimeoutInfo';
+import { NMAP_TABLE, renderTable as renderColumns } from '@/network/devices/shells/cli/TextTable';
 
 /**
  * `num_to_string_sigdigits` (`output.cc:1362`) : arrondir a la puissance
@@ -92,11 +93,7 @@ function renderTable(host: HostReport, options: NmapOptions): string[] {
   if (host.ports.length === 0) return [];
   const { headers, cell } = columns(options);
   const rows = host.ports.map(cell);
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => r[i].length)));
-  const line = (cells: string[]): string =>
-    cells.map((c, i) => (i < cells.length - 1 ? c.padEnd(widths[i] + 1) : c)).join('').trimEnd();
-  return [line(headers), ...rows.map(line)];
+  return renderColumns(rows, headers.map((header, i) => ({ header, value: (r: string[]) => r[i] })), NMAP_TABLE);
 }
 
 function renderHost(host: HostReport, options: NmapOptions): string[] {

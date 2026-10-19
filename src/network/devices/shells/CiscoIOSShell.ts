@@ -257,6 +257,7 @@ import { showAdjacency } from './cisco/CiscoCommonShow';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { formatDhcpBindings } from '@/cli/commands/show/showIpDhcp';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 
 const VRF_ARGUMENTS:
@@ -2567,11 +2568,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       // ici : les lignes commençaient par une espace et débordaient de la
       // colonne annoncée, donc rien ne s'alignait sur l'en-tête.
       const COL = 15;
-      const head = `${'Interface'.padEnd(COL)}Route map`;
+      const head = `${padToWidth('Interface', COL)}Route map`;
       const rows: string[] = [];
-      if (local) rows.push(`${'Local'.padEnd(COL)}${local}`);
+      if (local) rows.push(`${padToWidth('Local', COL)}${local}`);
       for (const [iface, rm] of m) {
-        rows.push(`${iosShortInterfaceName(iface).padEnd(COL)}${rm}`);
+        rows.push(`${padToWidth(iosShortInterfaceName(iface), COL)}${rm}`);
       }
       return [head, ...rows].join('\n');
     });
@@ -2809,7 +2810,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return lines.join('\n');
     }
     for (const hop of hops) {
-      let line = `${String(hop.hop).padStart(3)} `;
+      let line = `${padToWidth(String(hop.hop), 3, 'right')} `;
       let lastAddress: string | undefined;
       let printed = false;
       for (const probe of hop.probes) {

@@ -55,6 +55,7 @@ import type { NtpAgent } from '../../../ntp/NtpAgent';
 import type { NtpVersion } from '../../../ntp/types';
 import { huaweiDisplayInterfaceName, type ErreurGrammaireVrp } from '../cli-utils';
 import { isValidIPv4 } from '../../../core/ip';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ── La grammaire ────────────────────────────────────────────────────
 
@@ -385,11 +386,11 @@ export function displayNtpServiceSessions(
     const marque = a.preferred && joignable ? '*' : a.prefer && joignable ? '+' : ' ';
     const depuis = a.lastReplyMs ? Math.floor((simulationNowMs() - a.lastReplyMs) / 1000) : 0;
     lignes.push(
-      `${marque}${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : 'LOCAL(0)').padEnd(15)} `
-      + `${String(a.stratum).padStart(2)} ${a.reach.toString(8).padStart(3, '0')} `
-      + `${String(a.pollSec).padStart(4)} ${String(depuis).padStart(4)} `
-      + `${a.offsetMs.toFixed(4).padStart(8)} ${Math.abs(a.delayMs).toFixed(4).padStart(7)} `
-      + `${a.dispersionMs.toFixed(3).padStart(6)}`,
+      `${marque}${padToWidth(a.serverIp, 15)} ${padToWidth(a.stratum < 16 ? a.serverIp : 'LOCAL(0)', 15)} `
+      + `${padToWidth(String(a.stratum), 2, 'right')} ${a.reach.toString(8).padStart(3, '0')} `
+      + `${padToWidth(String(a.pollSec), 4, 'right')} ${padToWidth(String(depuis), 4, 'right')} `
+      + `${padToWidth(a.offsetMs.toFixed(4), 8, 'right')} ${padToWidth(Math.abs(a.delayMs).toFixed(4), 7, 'right')} `
+      + `${padToWidth(a.dispersionMs.toFixed(3), 6, 'right')}`,
     );
     if (verbose) {
       // Ce que `verbose` ajoute et que le tableau ne peut pas porter :

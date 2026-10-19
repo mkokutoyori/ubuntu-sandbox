@@ -2,6 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { MemoryProfile } from '../../host/hardware/MemoryProfile';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface DstatGroups {
   time: boolean;
@@ -190,14 +191,14 @@ export function sampleDstat(ctx: DstatSampleContext, rate: DstatRateState): Dsta
 }
 
 function compact(n: number): string {
-  if (n < 1000) return `${Math.round(n)}B`.padStart(4);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(0)}k`.padStart(4);
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(0)}M`.padStart(4);
-  return `${(n / 1_000_000_000).toFixed(0)}G`.padStart(4);
+  if (n < 1000) return padToWidth(`${Math.round(n)}B`, 4, 'right');
+  if (n < 1_000_000) return padToWidth(`${(n / 1000).toFixed(0)}k`, 4, 'right');
+  if (n < 1_000_000_000) return padToWidth(`${(n / 1_000_000).toFixed(0)}M`, 4, 'right');
+  return padToWidth(`${(n / 1_000_000_000).toFixed(0)}G`, 4, 'right');
 }
 
 function fmtCpuPct(n: number): string {
-  return String(Math.round(n)).padStart(3);
+  return padToWidth(String(Math.round(n)), 3, 'right');
 }
 
 function fmtTs(d: Date): string {
@@ -226,7 +227,7 @@ export function formatDstatHeader(g: DstatGroups): string {
 
 export function formatDstatRow(sample: DstatSample, g: DstatGroups): string {
   const parts: string[] = [];
-  if (g.time) parts.push(fmtTs(sample.ts).padStart(14));
+  if (g.time) parts.push(padToWidth(fmtTs(sample.ts), 14, 'right'));
   if (g.cpu) parts.push(
     `${fmtCpuPct(sample.cpu.user)} ${fmtCpuPct(sample.cpu.system)} ${fmtCpuPct(sample.cpu.idle)} ` +
     `${fmtCpuPct(sample.cpu.wait)} ${fmtCpuPct(sample.cpu.steal)}`,
@@ -239,7 +240,7 @@ export function formatDstatRow(sample: DstatSample, g: DstatGroups): string {
   if (g.net) parts.push(`${compact(sample.net.recvBytesPerSec)} ${compact(sample.net.sendBytesPerSec)}`);
   if (g.paging) parts.push(`${compact(sample.paging.inKib * 1024)} ${compact(sample.paging.outKib * 1024)}`);
   if (g.system) parts.push(
-    `${String(sample.system.interruptsPerSec).padStart(4)} ${String(sample.system.ctxSwitchesPerSec).padStart(5)}`,
+    `${padToWidth(String(sample.system.interruptsPerSec), 4, 'right')} ${padToWidth(String(sample.system.ctxSwitchesPerSec), 5, 'right')}`,
   );
   return parts.join(' ');
 }

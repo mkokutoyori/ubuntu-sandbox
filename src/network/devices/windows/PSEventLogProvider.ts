@@ -14,6 +14,7 @@
 
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { bootSecurityEvents } from './eventlog/BootEvents';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type EntryType = 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit';
 
@@ -255,9 +256,9 @@ export class PSEventLogProvider {
       '  ------ ------ --------------        ------- ---',
     ];
     for (const [, meta] of this.logs) {
-      const entries = String(meta.entries.length).padStart(7);
-      const maxK = String(meta.maxSizeKB).padStart(7);
-      lines.push(`${maxK}      0 ${meta.overflow.padEnd(22)}${entries} ${meta.logName}`);
+      const entries = padToWidth(String(meta.entries.length), 7, 'right');
+      const maxK = padToWidth(String(meta.maxSizeKB), 7, 'right');
+      lines.push(`${maxK}      0 ${padToWidth(meta.overflow, 22)}${entries} ${meta.logName}`);
     }
     return lines.join('\n') + '\n';
   }
@@ -394,11 +395,11 @@ export class PSEventLogProvider {
     ];
     for (const e of entries) {
       const time = this.formatTime(e.timeGenerated);
-      const type = e.entryType.substring(0, 11).padEnd(11);
-      const source = e.source.substring(0, 22).padEnd(22);
-      const id = String(e.eventId).padStart(10);
+      const type = padToWidth(e.entryType.substring(0, 11), 11);
+      const source = padToWidth(e.source.substring(0, 22), 22);
+      const id = padToWidth(String(e.eventId), 10, 'right');
       const msg = e.message.substring(0, 40) + (e.message.length > 40 ? '...' : '');
-      lines.push(`${String(e.index).padStart(7)} ${time} ${type} ${source} ${id} ${msg}`);
+      lines.push(`${padToWidth(String(e.index), 7, 'right')} ${time} ${type} ${source} ${id} ${msg}`);
     }
     return lines.join('\n') + '\n';
   }
@@ -682,7 +683,7 @@ export class PSEventLogProvider {
   getWinEventList(): string {
     const lines: string[] = ['', 'LogName                                  RecordCount', '-------                                  -----------'];
     for (const [, meta] of this.logs) {
-      lines.push(`${meta.logName.padEnd(41)}${String(meta.entries.length).padStart(11)}`);
+      lines.push(`${padToWidth(meta.logName, 41)}${padToWidth(String(meta.entries.length), 11, 'right')}`);
     }
     return lines.join('\n') + '\n';
   }
@@ -706,7 +707,7 @@ export class PSEventLogProvider {
       const level = e.entryType === 'Error' ? 'Error' :
         e.entryType === 'Warning' ? 'Warning' : 'Information';
       const msg = e.message.substring(0, 30) + '...';
-      lines.push(`${time.padEnd(32)}${String(e.eventId).padStart(4)} ${level.padEnd(17)}${msg}`);
+      lines.push(`${padToWidth(time, 32)}${padToWidth(String(e.eventId), 4, 'right')} ${padToWidth(level, 17)}${msg}`);
     }
     return lines.join('\n') + '\n';
   }

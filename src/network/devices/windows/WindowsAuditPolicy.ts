@@ -6,6 +6,7 @@ import {
   subcategoriesForCategory,
   type AuditSubcategoryDef,
 } from './WindowsAuditCategoryCatalog';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface AuditSetting {
   success: boolean;
@@ -215,7 +216,7 @@ export class WindowsAuditPolicy {
     return [
       'System audit policy',
       'Category/Subcategory                     Setting',
-      `  ${subcategory.padEnd(40)}${settingLabel(s)}`,
+      `  ${padToWidth(subcategory, 40)}${settingLabel(s)}`,
     ].join('\n');
   }
 
@@ -225,7 +226,7 @@ export class WindowsAuditPolicy {
       lines.push(category);
       for (const def of subcategoriesForCategory(category)) {
         const s = this.subcategories.get(def.name.toLowerCase())!;
-        lines.push(`  ${def.name.padEnd(40)}${settingLabel(s)}`);
+        lines.push(`  ${padToWidth(def.name, 40)}${settingLabel(s)}`);
       }
     }
     return lines.join('\n');
@@ -277,7 +278,7 @@ export class WindowsAuditPolicy {
     return [
       'System audit policy',
       'Option                                   Value',
-      `${key.padEnd(41)}${this.options[key] ? 'Enabled' : 'Disabled'}`,
+      `${padToWidth(key, 41)}${this.options[key] ? 'Enabled' : 'Disabled'}`,
     ].join('\n');
   }
 

@@ -31,6 +31,7 @@ import {
 import { projectSnmpServiceOntoAgent } from '../../../snmp/snmpProjection';
 import { getSnmpAgent } from '../../../equipment/RouterServiceCapabilities';
 import type { SnmpService } from '../../router/management/SnmpService';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export function displayLocalUser(device: unknown): string {
   const accounts = getCredentialStore(device)?.list() ?? [];
@@ -43,7 +44,7 @@ export function displayLocalUser(device: unknown): string {
     ? ['  (no local users configured)']
     : accounts.map((a) => {
         const services = a.serviceTypes.length > 0 ? a.serviceTypes.join(',') : '-';
-        return `  ${a.name.padEnd(24)}${a.disabled ? 'B' : 'A'}      ${services.padEnd(9)} ${a.privilege}`;
+        return `  ${padToWidth(a.name, 24)}${a.disabled ? 'B' : 'A'}      ${padToWidth(services, 9)} ${a.privilege}`;
       });
   return [...head, ...rows,
     '  ----------------------------------------------------------------------',
@@ -93,7 +94,7 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
 
 export function displayTelnetServerStatusVrp(device: unknown): string {
   const telnet = getManagementService(device)?.getTelnet();
-  const row = (label: string, value: string | number): string => ` ${label.padEnd(41)}:${value}`;
+  const row = (label: string, value: string | number): string => ` ${padToWidth(label, 41)}:${value}`;
   const sourceIp = telnet?.source
     ? (device as { getPort?: (name: string) => { getIPAddress(): { toString(): string } | null } | undefined })
       .getPort?.(telnet.source)?.getIPAddress()?.toString()
@@ -130,7 +131,7 @@ export function displaySshServerSessionVrp(device: unknown): string {
     const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
     const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
     const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
-    return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+    return `${padToWidth((i + 1).toString(), 6)} ${ssh.version}    ${h}:${m}:${sec}  ${padToWidth(s.user, 10)} ${s.fromIp}`;
   });
   return [header, ...rows].join('\n');
 }

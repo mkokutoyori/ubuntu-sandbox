@@ -1,11 +1,12 @@
 import type { SnmpSnapshot } from '../../layers/internet/SnmpSnapshot';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type NetstatProtocolFilter = 'ip' | 'ipv6' | 'icmp' | 'icmpv6' | 'tcp' | 'tcpv6' | 'udp' | 'udpv6';
 
 const VALUE_COLUMN = 36;
 
 function pair(label: string, value: number): string {
-  return `  ${label.padEnd(VALUE_COLUMN)}= ${value}`;
+  return `  ${padToWidth(label, VALUE_COLUMN)}= ${value}`;
 }
 
 interface IpBlockCounters {
@@ -79,7 +80,7 @@ function ipv6Block(s: SnmpSnapshot): string[] {
 const ICMP_LABEL_COLUMN = 24;
 
 function icmpRow(label: string, received: number, sent: number): string {
-  return `  ${label.padEnd(ICMP_LABEL_COLUMN)}${String(received).padEnd(12)}${sent}`;
+  return `  ${padToWidth(label, ICMP_LABEL_COLUMN)}${padToWidth(String(received), 12)}${sent}`;
 }
 
 function icmpv4Block(s: SnmpSnapshot): string[] {
@@ -87,7 +88,7 @@ function icmpv4Block(s: SnmpSnapshot): string[] {
   return [
     'ICMPv4 Statistics',
     '',
-    `  ${''.padEnd(ICMP_LABEL_COLUMN)}${'Received'.padEnd(12)}Sent`,
+    `  ${padToWidth('', ICMP_LABEL_COLUMN)}${padToWidth('Received', 12)}Sent`,
     icmpRow('Messages', c.icmpInMsgs, c.icmpOutMsgs),
     icmpRow('Errors', c.icmpInErrors, c.icmpOutErrors),
     icmpRow('Destination Unreachable', c.icmpInDestUnreachs, c.icmpOutDestUnreachs),
@@ -130,7 +131,7 @@ function icmpv6Block(s: SnmpSnapshot): string[] {
   return [
     'ICMPv6 Statistics',
     '',
-    `  ${''.padEnd(ICMP_LABEL_COLUMN)}${'Received'.padEnd(12)}Sent`,
+    `  ${padToWidth('', ICMP_LABEL_COLUMN)}${padToWidth('Received', 12)}Sent`,
     icmpRow('Messages', c.icmp6InMsgs, c.icmp6OutMsgs),
     icmpRow('Errors', 0, 0),
     ...ICMPV6_ROWS.map(([label, type]) => icmpRow(label, c.icmp6InTypes[type], c.icmp6OutTypes[type])),

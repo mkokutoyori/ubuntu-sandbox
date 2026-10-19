@@ -18,6 +18,7 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { HuaweiShellContext } from './HuaweiConfigCommands';
 import { isValidIPv4, tryIpToUint32 } from '../../../core/ip';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const stripQ = (s: string) => s?.replace(/^["']|["']$/g, '') ?? '';
 const validPort = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
@@ -269,7 +270,7 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
     lines.push(' Index  Pool Name   Start IP         End IP');
     let i = 0;
     for (const [, p] of pools) {
-      lines.push(` ${String(i++).padEnd(7)}${p.name.padEnd(12)}${p.startIP.padEnd(17)}${p.endIP}`);
+      lines.push(` ${padToWidth(String(i++), 7)}${padToWidth(p.name, 12)}${padToWidth(p.startIP, 17)}${p.endIP}`);
     }
     return lines.join('\n');
   });
@@ -277,7 +278,7 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
     const engine = getRouter()._getNATEngine() as any;
     const m = engine.dnsMappings as Array<{ domain: string; globalIP: string; port: number; proto: string }> | undefined;
     if (!m || m.length === 0) return 'No NAT DNS mappings configured.';
-    return m.map(x => ` ${x.domain.padEnd(24)}${x.globalIP.padEnd(17)}${x.port}/${x.proto}`).join('\n');
+    return m.map(x => ` ${padToWidth(x.domain, 24)}${padToWidth(x.globalIP, 17)}${x.port}/${x.proto}`).join('\n');
   });
 }
 
@@ -295,7 +296,7 @@ function displayNATStatic(router: Router): string {
     const proto = e.protocol ?? '---';
     const gp = e.globalPort != null ? String(e.globalPort) : '---';
     const lp = e.localPort != null ? String(e.localPort) : '---';
-    lines.push(` ${e.globalIP.padEnd(17)}${e.localIP.padEnd(18)}${proto.padEnd(10)}${gp.padEnd(7)}${lp}`);
+    lines.push(` ${padToWidth(e.globalIP, 17)}${padToWidth(e.localIP, 18)}${padToWidth(proto, 10)}${padToWidth(gp, 7)}${lp}`);
   }
   return lines.join('\n');
 }
@@ -313,7 +314,7 @@ function displayNATOutbound(router: Router): string {
     const type = r.type === 'overload' ? 'easy-ip overload' : 'pool';
     const pool = r.poolName ?? '---';
     const noPat = (r as any).noPat ? 'no-pat' : '';
-    lines.push(` ${String(r.aclId).padEnd(10)}${type.padEnd(10)}${pool.padEnd(20)}${noPat}`);
+    lines.push(` ${padToWidth(String(r.aclId), 10)}${padToWidth(type, 10)}${padToWidth(pool, 20)}${noPat}`);
   }
   return lines.join('\n');
 }
@@ -324,7 +325,7 @@ function displayNATServer(router: Router): string {
   if (entries.length === 0) return ' (no NAT server entries configured)';
   const lines = [' Proto  Global IP:Port              Inside IP:Port'];
   for (const e of entries) {
-    lines.push(` ${(e.protocol ?? '---').padEnd(6)} ${e.globalIP}:${e.globalPort ?? 0}              ${e.localIP}:${e.localPort ?? 0}`);
+    lines.push(` ${padToWidth(e.protocol ?? '---', 6)} ${e.globalIP}:${e.globalPort ?? 0}              ${e.localIP}:${e.localPort ?? 0}`);
   }
   return lines.join('\n');
 }
@@ -340,7 +341,7 @@ function displayNATSession(router: Router): string {
     lines.push(' Proto  Inside Local           Inside Global          Outside Global');
     lines.push(' ' + '-'.repeat(75));
     for (const s of sessions) {
-      lines.push(` ${s.proto.padEnd(7)}${s.insideLocal.padEnd(23)}${s.insideGlobal.padEnd(23)}${s.outsideGlobal}`);
+      lines.push(` ${padToWidth(s.proto, 7)}${padToWidth(s.insideLocal, 23)}${padToWidth(s.insideGlobal, 23)}${s.outsideGlobal}`);
     }
   }
   return lines.join('\n');

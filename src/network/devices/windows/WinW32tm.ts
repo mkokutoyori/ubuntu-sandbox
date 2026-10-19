@@ -6,6 +6,7 @@ import {
   W32TIME_PARAMETERS_KEY, W32TIME_CONFIG_KEY, W32TIME_NTP_CLIENT_KEY, W32TIME_NTP_SERVER_KEY, W32TIME_KEY,
 } from './W32TimeRegistry';
 import type { W32TimeService, W32Peer } from './W32TimeService';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface W32tmContext {
   readonly service: W32TimeService;
@@ -437,7 +438,7 @@ function dumpReg(parsed: Parsed, context: W32tmContext): string {
     const numeric = typeof value === 'number';
     const type = numeric ? 'REG_DWORD' : TYPE_NAMES.String;
     const data = numeric ? `0x${value.toString(16).padStart(8, '0')} (${value})` : String(value);
-    lines.push(`${name.padEnd(26)}${type.padEnd(20)}${data}`);
+    lines.push(`${padToWidth(name, 26)}${padToWidth(type, 20)}${data}`);
   }
   return lines.join('\n');
 }

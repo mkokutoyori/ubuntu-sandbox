@@ -4,6 +4,7 @@
  * P17): real session-table introspection/teardown, no graphical content.
  */
 import type { RdpSessionTable } from './server/rdp/RdpSession';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface RdpCommandContext {
   sessions: RdpSessionTable;
@@ -15,7 +16,7 @@ export function cmdQuerySession(ctx: RdpCommandContext): string {
   const header = ' SESSIONNAME       USERNAME                 ID  STATE   TYPE';
   if (sessions.length === 0) return header;
   const rows = sessions.map(s =>
-    ` rdp-tcp#${s.sessionId}          ${s.userName.padEnd(20)}     ${s.sessionId}  ${s.state.slice(0, 4)}    rdpwd`);
+    ` rdp-tcp#${s.sessionId}          ${padToWidth(s.userName, 20)}     ${s.sessionId}  ${s.state.slice(0, 4)}    rdpwd`);
   return [header, ...rows].join('\n');
 }
 

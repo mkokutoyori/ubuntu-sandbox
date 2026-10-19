@@ -11,6 +11,7 @@ import { EcnCodepoint } from '@/network/core/IpHeaderFields';
 import {
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, IP_PROTO_TCP, IP_PROTO_UDP,
 } from '@/network/core/types';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface AddressNames {
   host(ip: string): string;
@@ -578,9 +579,9 @@ function cookedPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRe
     ? `ethertype 802.1Q (0x8100), length ${cookedLength(frame, cooked)}: vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ${inner}`
     : `${inner.slice(0, -2)}, length ${cookedLength(frame, cooked)}: `;
   if (cooked.version === 1) {
-    return opt.linkLevel ? `${packetType.padStart(3, ' ')} ${state.ether(frame.srcMac)} ${detail}` : '';
+    return opt.linkLevel ? `${padToWidth(packetType, 3, 'right')} ${state.ether(frame.srcMac)} ${detail}` : '';
   }
-  const head = `${frame.iface.padEnd(5, ' ')} ${packetType.padEnd(3, ' ')} `;
+  const head = `${padToWidth(frame.iface, 5)} ${padToWidth(packetType, 3)} `;
   if (!opt.linkLevel) return head;
   return `${head}ifindex ${cooked.index(frame.iface)} ${state.ether(frame.srcMac)} ${detail}`;
 }
@@ -624,7 +625,7 @@ export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: Tcpdump
       hex += chunk[j].toString(16).padStart(2, '0');
       if (j % 2 === 1) hex += ' ';
     }
-    hex = hex.trimEnd().padEnd(40, ' ');
+    hex = padToWidth(hex.trimEnd(), 40);
     const offset = '0x' + i.toString(16).padStart(4, '0') + ':';
     if (opt.hex === 'hexascii') {
       const ascii = chunk.map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.')).join('');
@@ -643,7 +644,7 @@ export function formatFrame(
   state.prev = frame;
   state.first ??= frame;
   state.count++;
-  const number = opt.packetNumbers ? `${String(state.count).padStart(5, ' ')}  ` : '';
+  const number = opt.packetNumbers ? `${padToWidth(String(state.count), 5, 'right')}  ` : '';
   const cooked = state.cooked;
   const link = cooked !== null
     ? cookedPrefix(frame, opt, state, cooked)

@@ -231,7 +231,10 @@ export interface LinuxNetKernel {
     options?: UdpConnectOptions,
   ): ConnectedUdpSocket | Errno;
 
-  udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null;
+  udpListen(
+    port: number, processName: string, owner: { pid?: number; uid?: number },
+    onDatagram?: (payload: Uint8Array) => void,
+  ): Errno | null;
 
   routeException(target: IPAddress): RouteException | null;
 

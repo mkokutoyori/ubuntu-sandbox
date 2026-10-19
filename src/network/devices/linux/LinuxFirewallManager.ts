@@ -27,6 +27,7 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import type { ListFormat } from './LinuxIptablesManager';
 import { IPAddress, IPv6Address } from '@/network/core/types';
+import { padToWidth, renderTable, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 // Re-export types from LinuxIptablesManager for backward compatibility
 export type { FirewallVerdict, PacketInfo } from './LinuxIptablesManager';
@@ -719,18 +720,8 @@ export class LinuxFirewallManager {
       return lines.join('\n');
     }
 
-    // Column widths
-    const toWidth = 27;
-    const actionWidth = 16;
-
-    // Header
-    const header = `${'To'.padEnd(toWidth)}${'Action'.padEnd(actionWidth)}From`;
-    const separator = `${'--'.padEnd(toWidth)}${'------'.padEnd(actionWidth)}----`;
-    lines.push(header);
-    lines.push(separator);
-
-    // Rules — show v4 first, then v6 (like real ufw)
     const orderedRules = this.getOrderedRules();
+    const rows: string[][] = [];
 
     orderedRules.forEach((rule, idx) => {
       const num = numbered ? `[ ${idx + 1}] ` : '';
@@ -745,8 +736,16 @@ export class LinuxFirewallManager {
       const actionStr = rule.route
         ? `${rule.action} ${dirStr}${ifaceTag}${outIfaceTag}`
         : `${rule.action} ${dirStr}${ifaceTag}`;
-      lines.push(`${num}${toStr.padEnd(toWidth)}${actionStr.padEnd(actionWidth)}${fromStr}`);
+      rows.push([num, toStr, actionStr, fromStr]);
     });
+
+    const columns: TableColumn<string[]>[] = [
+      { header: '', width: numbered ? 5 : 0 },
+      { header: 'To', width: 27 },
+      { header: 'Action', width: 16 },
+      { header: 'From' },
+    ].map((column, i) => ({ ...column, value: (cells: string[]) => cells[i] }));
+    lines.push(...renderTable(rows, columns, { gap: 0, rule: true, ruleFitsHeader: true }));
 
     return lines.join('\n');
   }
@@ -1629,7 +1628,7 @@ export class LinuxFirewallManager {
 
     const now = simulationDate();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const ts = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, ' ')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const ts = `${months[now.getMonth()]} ${padToWidth(String(now.getDate()), 2, 'right')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     const line = `${ts} localhost kernel: ${kernelMessage}`;
 
     const existing = this.vfs.readFile('/var/log/ufw.log');

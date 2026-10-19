@@ -1,4 +1,5 @@
 import { simulationDate } from '@/network/core/SystemClock';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface ArchivePath {
   path: string;
@@ -291,7 +292,7 @@ export class ArchiveService {
     const dernier = this.revisions.length;
     this.revisions.forEach((r, i) => {
       const marque = i === dernier - 1 ? ' <- Most Recent' : '';
-      lines.push(`   ${String(r.index).padEnd(9)}${r.path}${marque}`);
+      lines.push(`   ${padToWidth(String(r.index), 9)}${r.path}${marque}`);
     });
     return lines.join('\n');
   }

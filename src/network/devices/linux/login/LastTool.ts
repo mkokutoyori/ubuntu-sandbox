@@ -4,6 +4,7 @@ import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGe
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
 import { ctimeText, isoTimestamp, parseTimestamp } from './UtilLinuxTime';
 import { UT, UTMPX_SIZE, Utmpx } from './UtmpxRecord';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const UTIL_LINUX_VERSION = 'util-linux 2.39.3';
 
@@ -201,7 +202,7 @@ class LastRun {
             continue;
           }
         }
-        this.print(`\\${b.toString(8).padStart(3, ' ')}`);
+        this.print(`\\${padToWidth(b.toString(8), 3, 'right')}`);
         continue;
       }
       this.bytesOut.push(42, b ^ 0x40);

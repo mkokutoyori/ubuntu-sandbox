@@ -11,6 +11,7 @@ import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 import { MAX_PORT } from '../../../core/ports/PortNumber';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Les niveaux qu'EEM accepte derrière `priority` : l'indice EST la sévérité. */
 const EEM_SEVERITES: readonly string[] = [
@@ -410,10 +411,10 @@ export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter:
     lines.push('SrcIPaddress    DstIPaddress    Pr SrcP DstP  Pkts');
     for (const f of flows) {
       lines.push(
-        `${f.sourceIp.padEnd(15)} ${f.destinationIp.padEnd(15)} `
+        `${padToWidth(f.sourceIp, 15)} ${padToWidth(f.destinationIp, 15)} `
         + `${f.protocol.toString(16).padStart(2, '0')} `
         + `${f.sourcePort.toString(16).padStart(4, '0')} ${f.destinationPort.toString(16).padStart(4, '0')} `
-        + `${String(f.packets).padStart(5)}`,
+        + `${padToWidth(String(f.packets), 5, 'right')}`,
       );
     }
     return lines.join('\n');

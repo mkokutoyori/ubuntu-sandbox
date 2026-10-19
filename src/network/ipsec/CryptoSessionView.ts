@@ -1,3 +1,4 @@
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 export type CryptoSessionMode = 'plain' | 'brief' | 'detail';
 
 export interface SessionFlow {
@@ -68,11 +69,11 @@ function brief(sessions: readonly CryptoSession[]): string {
     'Status: A- Active, U - Up, D - Down, I - Idle, S - Standby, N - Negotiating',
     '        K - No IKE',
     'ivrf = (none)',
-    `${'Peer'.padEnd(20)}${'I/F'.padEnd(13)}${'Username'.padEnd(17)}${'Group/Phase1_id'.padEnd(25)}${'Uptime'.padEnd(9)}Status`,
+    `${padToWidth('Peer', 20)}${padToWidth('I/F', 13)}${padToWidth('Username', 17)}${padToWidth('Group/Phase1_id', 25)}${padToWidth('Uptime', 9)}Status`,
   ];
   for (const session of sessions) {
-    lines.push(`${session.peer.padEnd(20)}${abbreviated(session.interfaceName).padEnd(13)}${'-'.padEnd(17)}`
-      + `${session.phase1Id.padEnd(25)}${clock(session.uptimeSeconds).padEnd(9)}${statusCode(session)}`);
+    lines.push(`${padToWidth(session.peer, 20)}${padToWidth(abbreviated(session.interfaceName), 13)}${padToWidth('-', 17)}`
+      + `${padToWidth(session.phase1Id, 25)}${padToWidth(clock(session.uptimeSeconds), 9)}${statusCode(session)}`);
   }
   return lines.join('\n');
 }

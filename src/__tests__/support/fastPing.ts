@@ -40,12 +40,20 @@ export async function pingOnSimulatedClock(
   host: SchedulableHost,
   command: string,
 ): Promise<string> {
+  return (await timedOnSimulatedClock(host, command)).output;
+}
+
+export async function timedOnSimulatedClock(
+  host: SchedulableHost,
+  command: string,
+): Promise<{ output: string; elapsedMs: number }> {
   const clock = new VirtualTimeScheduler();
   host.setScheduler(clock);
   try {
-    return String(await clock.advanceUntilSettled(
+    const output = String(await clock.advanceUntilSettled(
       Promise.resolve(host.executeCommand(command)),
     ));
+    return { output, elapsedMs: clock.now() };
   } finally {
     host.setScheduler(null);
   }

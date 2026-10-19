@@ -61,6 +61,7 @@ import { dispatchControlPlaneIpv4 } from './router/controlPlaneIpv4';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const HUAWEI_UDP_OWNERS: ReadonlyMap<number, string> = new Map([
   [UDP_PORT_NTP, 'ntp'],
@@ -511,13 +512,13 @@ export class HuaweiRouter extends Router {
           const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
           const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
           const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
-          return `${(i + 1).toString().padEnd(6)} 2    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+          return `${padToWidth((i + 1).toString(), 6)} 2    ${h}:${m}:${sec}  ${padToWidth(s.user, 10)} ${s.fromIp}`;
         });
       return { output: `${[header, ...rows].join('\n')}\n`, exitCode: 0 };
     }
     if (/^display\s+local-user\s*$/i.test(cmd)) {
       const users = this._listLocalUsers();
-      return { output: `User-name              State   Type   Privilege\n${users.map(u => `${u.name.padEnd(22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
+      return { output: `User-name              State   Type   Privilege\n${users.map(u => `${padToWidth(u.name, 22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
     }
     if (/^display\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
       return { output: `${displayInterfaceBrief(this)}\n`, exitCode: 0 };

@@ -82,6 +82,7 @@ import { PkiKeyPair } from '../pki/PkiKeyPair';
 import { verificationToIkeReason } from './IkeCertAuthConfig';
 import type { X509Certificate } from '../pki/X509Certificate';
 import { DdnsResolver } from './DdnsResolver';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 
 // Forward reference — resolved at runtime to avoid circular imports
@@ -4477,7 +4478,7 @@ export class IPSecEngine implements IProtocolEngine {
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {
       lines.push(
-        `${sa.peerIP.padEnd(16)}${sa.localIP.padEnd(16)}${sa.status.padEnd(15)}${String(this.connIdOf(sa)).padEnd(8)}ACTIVE`,
+        `${padToWidth(sa.peerIP, 16)}${padToWidth(sa.localIP, 16)}${padToWidth(sa.status, 15)}${padToWidth(String(this.connIdOf(sa)), 8)}ACTIVE`,
       );
     }
     return lines.join('\n');
@@ -4852,7 +4853,7 @@ export class IPSecEngine implements IProtocolEngine {
     ];
     let tid = 1;
     for (const [, sa] of this.ikev2SADB) {
-      lines.push(`${String(tid++).padEnd(10)}${sa.localIP.padEnd(22)}${sa.peerIP.padEnd(22)}none/none            ${sa.status.padEnd(13)}${sa.role}`);
+      lines.push(`${padToWidth(String(tid++), 10)}${padToWidth(sa.localIP, 22)}${padToWidth(sa.peerIP, 22)}none/none            ${padToWidth(sa.status, 13)}${sa.role}`);
     }
     return lines.join('\n');
   }
@@ -5050,7 +5051,7 @@ export class IPSecEngine implements IProtocolEngine {
       const dst = sp.dstAddress ? `${sp.dstAddress}/${sp.dstWildcard || '0.0.0.0'}` : 'any';
       const proto = sp.protocol === 0 ? 'any' : String(sp.protocol);
       lines.push(
-        `${String(sp.id).padEnd(6)}${sp.direction.padEnd(11)}${sp.action.padEnd(10)}${src.padEnd(22)}${dst.padEnd(22)}${proto}`
+        `${padToWidth(String(sp.id), 6)}${padToWidth(sp.direction, 11)}${padToWidth(sp.action, 10)}${padToWidth(src, 22)}${padToWidth(dst, 22)}${proto}`
       );
     }
     return lines.join('\n');
@@ -5118,7 +5119,7 @@ export class IPSecEngine implements IProtocolEngine {
     if (this.preSharedKeys.size === 0) return 'No pre-shared keys configured.';
     const lines: string[] = ['Keychain  Hostname / Address   Preshared Key'];
     for (const [ident, e] of this.preSharedKeys) {
-      lines.push(`default   ${ident.padEnd(21)}${e.key.replace(/./g, '*')}`);
+      lines.push(`default   ${padToWidth(ident, 21)}${e.key.replace(/./g, '*')}`);
     }
     return lines.join('\n');
   }

@@ -6,6 +6,7 @@ import type { KernelInfo } from '../../host/identity/KernelInfo';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
 import { mpstatBanner, sampleMpstat } from './Mpstat';
 import { pad2 } from '@/lib/format';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface IostatArgs {
   intervalSeconds: number | null;
@@ -122,12 +123,12 @@ export function iostatTimestamp(now: Date): string {
 }
 
 export function iostatCpuHeader(): string {
-  return 'avg-cpu:' + CPU_COLUMNS.map((c) => c.padStart(8)).join('');
+  return 'avg-cpu:' + CPU_COLUMNS.map((c) => padToWidth(c, 8, 'right')).join('');
 }
 
 export function formatIostatCpuRow(row: IostatCpuRow): string {
   return ' '.repeat(8) + [row.user, row.nice, row.system, row.iowait, row.steal, row.idle]
-    .map((v) => v.toFixed(2).padStart(8)).join('');
+    .map((v) => padToWidth(v.toFixed(2), 8, 'right')).join('');
 }
 
 function defaultDeviceLabels(megabytes: boolean): string[] {
@@ -146,19 +147,19 @@ function extendedDeviceLabels(megabytes: boolean): string[] {
 
 export function iostatDeviceHeader(args: IostatArgs): string {
   const labels = args.extended ? extendedDeviceLabels(args.megabytes) : defaultDeviceLabels(args.megabytes);
-  return 'Device'.padEnd(13) + labels.map((l) => l.padStart(12)).join('');
+  return padToWidth('Device', 13) + labels.map((l) => padToWidth(l, 12, 'right')).join('');
 }
 
 export function formatIostatDeviceRow(args: IostatArgs, row: IostatDeviceRow): string {
   if (args.extended) {
-    const zeros = new Array(EXTENDED_COLUMNS.length).fill(0).map((v) => v.toFixed(2).padStart(12)).join('');
-    return row.device.padEnd(13) + zeros;
+    const zeros = new Array(EXTENDED_COLUMNS.length).fill(0).map((v) => padToWidth(v.toFixed(2), 12, 'right')).join('');
+    return padToWidth(row.device, 13) + zeros;
   }
   const rates = [row.tps, row.readPerSec, row.writtenPerSec, row.discardedPerSec]
-    .map((v) => v.toFixed(2).padStart(12)).join('');
+    .map((v) => padToWidth(v.toFixed(2), 12, 'right')).join('');
   const totals = [row.readTotal, row.writtenTotal, row.discardedTotal]
-    .map((v) => String(v).padStart(12)).join('');
-  return row.device.padEnd(13) + rates + totals;
+    .map((v) => padToWidth(String(v), 12, 'right')).join('');
+  return padToWidth(row.device, 13) + rates + totals;
 }
 
 export function sampleIostatCpu(pm: LinuxProcessManager, cpu: CpuSpec): IostatCpuRow {

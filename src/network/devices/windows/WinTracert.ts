@@ -3,6 +3,7 @@ import { IPAddress, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
 import { winUnreachText } from './WinPing';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 function isIPv6Literal(target: string): boolean {
   try { new IPv6Address(target); return true; } catch { return false; }
@@ -155,11 +156,11 @@ const TRACERT_TIMEOUT_CELL = '     *   ';
 
 function tracertTimeCell(rttMs: number | undefined): string {
   const ms = Math.round(rttMs ?? 0);
-  return `${ms < 1 ? '<1' : String(ms)} ms`.padStart(9);
+  return padToWidth(`${ms < 1 ? '<1' : String(ms)} ms`, 9, 'right');
 }
 
 export function formatWinTracertHop(hop: TracertHopView, nameOf?: (ip: string) => string | null): string {
-  const num = String(hop.hop).padStart(3);
+  const num = padToWidth(String(hop.hop), 3, 'right');
   const shown = (ip: string) => {
     const name = nameOf?.(ip) ?? null;
     return name === null ? ip : `${name} [${ip}]`;

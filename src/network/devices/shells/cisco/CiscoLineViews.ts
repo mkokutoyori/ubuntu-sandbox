@@ -1,5 +1,5 @@
 
-import { renderTableText, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
+import { renderTableText, type TableColumn, FIXED_TABLE, padToWidth } from '../cli/TextTable';
 
 export interface LigneTty {
   readonly tty: number;
@@ -47,7 +47,7 @@ export function delaiExec(r: ReglagesLigne): string {
 }
 
 const COLONNES: ReadonlyArray<TableColumn<LigneTty>> = [
-  { header: '   Tty', width: 6, align: 'right', value: (l) => (l.courante ? '*' : ' ') + String(l.tty).padStart(5) },
+  { header: '   Tty', width: 6, align: 'right', value: (l) => (l.courante ? '*' : ' ') + padToWidth(String(l.tty), 5, 'right') },
   { header: ' Typ', width: 4, value: (l) => ' ' + l.type },
   { header: '     Tx/Rx', width: 10, value: () => '          ' },
   { header: ' A', width: 2, value: () => '  ' },
@@ -78,9 +78,9 @@ export function blocDetailLigne(
     `Capabilities: ${l.type === 'VTY' ? 'none' : 'none'}`,
     'Modem state: Ready',
     'Special Chars: Escape  Hold  Stop  Start  Disconnect  Activation',
-    `               ${caractereEchappement(r).padEnd(7)}none  -     -      none        none`,
+    `               ${padToWidth(caractereEchappement(r), 7)}none  -     -      none        none`,
     'Timeouts:      Idle EXEC    Idle Session   Modem Answer  Session   Dispatch',
-    `               ${delaiExec(r).padEnd(13)}${delaiSession(r).padEnd(15)}none          not set   not set`,
+    `               ${padToWidth(delaiExec(r), 13)}${padToWidth(delaiSession(r), 15)}none          not set   not set`,
     '                              Idle Session Disconnect Warning',
     '                                never',
     '                              Login-sequence User Response',

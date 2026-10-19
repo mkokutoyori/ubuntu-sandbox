@@ -8,6 +8,7 @@ import { ShellContext, expandGlob } from './LinuxFileCommands';
 import { runAwk, type AwkHost } from './awk';
 import { runSed, type SedFileIO } from './sed';
 import { compilePosix } from './regex/PosixRegex';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export type GrepVariant = 'grep' | 'egrep' | 'fgrep';
 
@@ -436,7 +437,7 @@ export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string
   // wc right-pads each metric column to 7 chars (real coreutils).
   const formatRow = (s: Stats, filename?: string): string => {
     const parts: string[] = [];
-    const push = (n: number) => parts.push(String(n).padStart(7));
+    const push = (n: number) => parts.push(padToWidth(String(n), 7, 'right'));
     if (countLines) push(s.lines);
     if (countWords) push(s.words);
     if (countChars) push(s.chars);
@@ -826,7 +827,7 @@ export function cmdUniq(ctx: ShellContext, args: string[], stdin?: string): stri
   for (const r of runs) {
     if (onlyDup && r.count < 2) continue;
     if (onlyUniq && r.count > 1) continue;
-    out.push(countMode ? `${String(r.count).padStart(7)} ${r.line}` : r.line);
+    out.push(countMode ? `${padToWidth(String(r.count), 7, 'right')} ${r.line}` : r.line);
   }
   return out.join('\n');
 }

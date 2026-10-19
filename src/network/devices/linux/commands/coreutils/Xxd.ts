@@ -1,6 +1,7 @@
 import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 function xxdDump(bytes: Uint8Array): string {
   const lines: string[] = [];
@@ -13,7 +14,7 @@ function xxdDump(bytes: Uint8Array): string {
       const b2 = i + 1 < chunk.length ? chunk[i + 1].toString(16).padStart(2, '0') : '';
       groups.push(b1 + b2);
     }
-    const hexPart = groups.map((g) => g.padEnd(4, ' ')).join(' ');
+    const hexPart = groups.map((g) => padToWidth(g, 4)).join(' ');
     let ascii = '';
     for (const b of chunk) ascii += b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.';
     lines.push(`${offset.toString(16).padStart(8, '0')}: ${hexPart}  ${ascii}`);

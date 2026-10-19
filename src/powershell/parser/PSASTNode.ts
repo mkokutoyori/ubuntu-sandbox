@@ -103,6 +103,7 @@ export interface PSAssignmentStatement extends ASTBase {
   target: PSVariableExpression | PSIndexExpression | PSMemberExpression;
   operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=';
   value: PSExpression;
+  postfix?: boolean;
 }
 
 // ─── if / elseif / else ───────────────────────────────────────────────────────
@@ -247,6 +248,7 @@ export interface PSEnumDefinition extends ASTBase {
   name: string;
   baseType: string | null;
   members: PSEnumMember[];
+  attributes?: PSAttribute[];
 }
 
 export interface PSEnumMember {
@@ -382,6 +384,7 @@ export interface PSScriptBlock extends ASTBase {
   endBlock: PSStatementList | null;
   /** If no begin/process/end, the body goes here */
   body: PSStatementList | null;
+  sourceText?: string;
 }
 
 // ─── param() block ────────────────────────────────────────────────────────────
@@ -417,7 +420,7 @@ export interface PSTypeLiteral extends ASTBase {
 
 // ─── Unary expressions ────────────────────────────────────────────────────────
 
-export type PSUnaryOperator = '-not' | '!' | '-bnot' | '+' | '-' | ',';
+export type PSUnaryOperator = '-not' | '!' | '-bnot' | '-join' | '-split' | '+' | '-' | ',';
 
 export interface PSUnaryExpression extends ASTBase {
   type: 'UnaryExpression';

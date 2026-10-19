@@ -140,6 +140,7 @@ import { boundedInteger } from '@/cli/ArgumentTypes';
 import { BGP_ATTRIBUTE_MAX, BGP_HOLD_TIME_MAX } from '@/network/bgp/attributes';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 import { RsaPeerPublicKeyEditor } from './huawei/HuaweiRsaPeerPublicKeyEditor';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -168,7 +169,7 @@ function renderHuaweiTcpStatus(router: Router): string {
   const lines = ['TCPCB       Local Address                Foreign Address           State'];
   if (tcp.length === 0) return [...lines, '(no TCP listeners)'].join('\n');
   for (const s of tcp) {
-    const local = `0.0.0.0:${s.port}`.padEnd(28);
+    const local = padToWidth(`0.0.0.0:${s.port}`, 28);
     lines.push(`0x00000000  ${local}0.0.0.0:0                 LISTEN  (${s.service})`);
   }
   return lines.join('\n');
@@ -179,7 +180,7 @@ function renderHuaweiSockets(router: Router): string {
   if (all.length === 0) return ' Active sockets: 0';
   const lines = [` Active sockets: ${all.length}`, ' Proto  Port   Service'];
   for (const s of all) {
-    lines.push(` ${s.protocol.padEnd(6)} ${String(s.port).padEnd(6)} ${s.service}`);
+    lines.push(` ${padToWidth(s.protocol, 6)} ${padToWidth(String(s.port), 6)} ${s.service}`);
   }
   return lines.join('\n');
 }
@@ -1110,7 +1111,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         // Une description vide ne se rembourre pas : `<cr>` laissait
         // sinon la largeur de la colonne en blancs de fin de ligne.
         .map(c => (c.description
-          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          ? `  ${padToWidth(c.keyword, maxKw + 2)}${c.description}`
           : `  ${c.keyword}`))
         .join('\n');
     } finally {
@@ -1356,8 +1357,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const bindings = this.r()._getInterfaceACLBindingsInternal() as Map<string, { inbound?: number | string | null; outbound?: number | string | null }>;
       const rows: string[] = [];
       for (const [iface, dirs] of bindings) {
-        if (dirs.inbound != null) rows.push(` ${iface.padEnd(18)} inbound    ${dirs.inbound}`);
-        if (dirs.outbound != null) rows.push(` ${iface.padEnd(18)} outbound   ${dirs.outbound}`);
+        if (dirs.inbound != null) rows.push(` ${padToWidth(iface, 18)} inbound    ${dirs.inbound}`);
+        if (dirs.outbound != null) rows.push(` ${padToWidth(iface, 18)} outbound   ${dirs.outbound}`);
       }
       if (rows.length === 0) return ' No traffic-filter applied on any interface.';
       return [' Interface          Direction  ACL', ...rows].join('\n');
@@ -1781,7 +1782,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [
         ' Type: D:Dynamic  S:Static',
         ' Domain-name-server           Type',
-        ...servers.map((s) => ` ${s.padEnd(29)}S`),
+        ...servers.map((s) => ` ${padToWidth(s, 29)}S`),
       ].join('\n');
     });
     t.register('display dns domain', 'Display DNS domain suffixes', () => {
@@ -1791,7 +1792,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [
         ' Type: D:Dynamic  S:Static',
         ' No.   Domain-name                             Type',
-        ...suffixes.map((s, i) => ` ${String(i + 1).padEnd(6)}${s.padEnd(40)}S`),
+        ...suffixes.map((s, i) => ` ${padToWidth(String(i + 1), 6)}${padToWidth(s, 40)}S`),
       ].join('\n');
     });
     t.register('display dns dynamic-host', 'Display the dynamic DNS cache', () => {
@@ -1800,7 +1801,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [
         ' No.  Host                     TTL         IpAddress',
         ...entrees.map((e, i) =>
-          ` ${String(i + 1).padEnd(5)}${e.name.padEnd(25)}${String(86400 - e.ageSeconds).padEnd(12)}${e.ips.join(' ')}`),
+          ` ${padToWidth(String(i + 1), 5)}${padToWidth(e.name, 25)}${padToWidth(String(86400 - e.ageSeconds), 12)}${e.ips.join(' ')}`),
       ].join('\n');
     });
 

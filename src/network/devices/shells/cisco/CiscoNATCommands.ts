@@ -569,6 +569,7 @@ import {
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import type { VrfHost } from './ciscoVrfStore';
 import { vrfInterfaceSpecs } from './vrfSpecs';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /*
  * Chaque forme de `clear ip nat translation` porte un refus qui EXPLIQUE
@@ -709,7 +710,7 @@ export function registerNATShowCommands(trie: CommandTrie, getRouter: () => Rout
     if (entries.length === 0) return 'No NAT entries.';
     const lines = ['Pro  Inside global          Inside local           Outside local          Outside global'];
     for (const e of entries) {
-      lines.push(`---  ${e.globalIP.padEnd(23)}${e.localIP.padEnd(23)}---                    ---`);
+      lines.push(`---  ${padToWidth(e.globalIP, 23)}${padToWidth(e.localIP, 23)}---                    ---`);
     }
     return lines.join('\n');
   });
@@ -757,24 +758,24 @@ export function showNATTranslations(router: Router): string {
   }
   const lines = [header];
   for (const e of entries) {
-    const proto = e.proto.padEnd(4);
-    const ig = e.insideGlobal.padEnd(23);
-    const il = e.insideLocal.padEnd(23);
-    const ol = e.outsideLocal.padEnd(23);
+    const proto = padToWidth(e.proto, 4);
+    const ig = padToWidth(e.insideGlobal, 23);
+    const il = padToWidth(e.insideLocal, 23);
+    const ol = padToWidth(e.outsideLocal, 23);
     const og = e.outsideGlobal;
     lines.push(`${proto} ${ig}${il}${ol}${og}`);
   }
   for (const ns of networkStatic) {
     const last = ns.localIP.split('.').slice(-1)[0];
     const prefix = ns.globalIP.split('.').slice(0, 3).join('.');
-    const exampleGlobal = `${prefix}.${last}`.padEnd(23);
-    const exampleLocal = ns.localIP.padEnd(23);
+    const exampleGlobal = padToWidth(`${prefix}.${last}`, 23);
+    const exampleLocal = padToWidth(ns.localIP, 23);
     const mask = cidrToMask(ns.prefixLen ?? 24);
     lines.push(`---  ${exampleGlobal}${exampleLocal}---                    ---`);
     lines.push(`     ${ns.globalIP}/${ns.prefixLen} mask ${mask}   ${ns.localIP}/${ns.prefixLen} mask ${mask}`);
   }
   for (const o of outsideStatic) {
-    lines.push(`---  ---                    ---                    ${o.outsideLocal.padEnd(23)}${o.outsideGlobal}`);
+    lines.push(`---  ---                    ---                    ${padToWidth(o.outsideLocal, 23)}${o.outsideGlobal}`);
   }
   return lines.join('\n');
 }
@@ -808,7 +809,7 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
   lines.push(header);
   const now = simulationNowMs();
   for (const e of entries) {
-    lines.push(`${e.proto.padEnd(4)} ${e.insideGlobal.padEnd(23)}${e.insideLocal.padEnd(23)}${e.outsideLocal.padEnd(23)}${e.outsideGlobal}`);
+    lines.push(`${padToWidth(e.proto, 4)} ${padToWidth(e.insideGlobal, 23)}${padToWidth(e.insideLocal, 23)}${padToWidth(e.outsideLocal, 23)}${e.outsideGlobal}`);
     if (e.createdAtMs !== undefined && e.lastUsedMs !== undefined && e.timeoutMs !== undefined) {
       const create = formatNatDuration(now - e.createdAtMs);
       const use = formatNatDuration(now - e.lastUsedMs);

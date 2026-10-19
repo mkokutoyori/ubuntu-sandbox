@@ -13,6 +13,7 @@
  */
 
 import type { WindowsDnsServerRole } from './server/dns/WindowsDnsServerRole';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface DnscmdContext {
   dns: WindowsDnsServerRole | null;
@@ -63,7 +64,7 @@ export function cmdDnscmd(ctx: DnscmdContext, rawArgs: string[]): string {
       if (!zone) return 'Command failed:\tstatus = 87\n';
       const records = ctx.dns.getRecords(zone);
       if (!records) return `DNS Server has encountered an error: Zone "${zone}" does not exist on this server.\nCommand failed:\tstatus = 9714\n`;
-      const lines = [`Zone ${zone} records:`, ...records.map(r => `${r.name.padEnd(40)}${String(r.ttl).padEnd(8)}${r.type.padEnd(8)}${r.text}`)];
+      const lines = [`Zone ${zone} records:`, ...records.map(r => `${padToWidth(r.name, 40)}${padToWidth(String(r.ttl), 8)}${padToWidth(r.type, 8)}${r.text}`)];
       return lines.join('\n');
     }
 

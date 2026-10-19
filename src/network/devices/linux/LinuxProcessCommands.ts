@@ -15,7 +15,7 @@ import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { runPs, transientSelfProcess } from './ps/PsCommand';
 import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
-import { renderTable, type TableColumn, type TableStyle } from '../shells/cli/TextTable';
+import { renderTable, type TableColumn, type TableStyle, padToWidth } from '../shells/cli/TextTable';
 
 function topCpuTime(ms: number): string {
   const min = Math.floor(ms / 60_000);
@@ -115,17 +115,17 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
     const mem = memPercent(p.rss);
     lines.push(
       [
-        String(p.pid).padStart(7),
-        p.user.padEnd(9),
-        String(p.priority).padStart(3),
-        String(p.nice).padStart(4),
-        String(p.vsize).padStart(7),
-        String(p.rss).padStart(6),
-        String(sharedKib(p)).padStart(6),
+        padToWidth(String(p.pid), 7, 'right'),
+        padToWidth(p.user, 9),
+        padToWidth(String(p.priority), 3, 'right'),
+        padToWidth(String(p.nice), 4, 'right'),
+        padToWidth(String(p.vsize), 7, 'right'),
+        padToWidth(String(p.rss), 6, 'right'),
+        padToWidth(String(sharedKib(p)), 6, 'right'),
         p.state[0],
-        pcpu.toFixed(1).padStart(5),
-        mem.padStart(5),
-        topCpuTime(p.cpuTime).padStart(9),
+        padToWidth(pcpu.toFixed(1), 5, 'right'),
+        padToWidth(mem, 5, 'right'),
+        padToWidth(topCpuTime(p.cpuTime), 9, 'right'),
         topCommand(p.comm),
       ].join(' '),
     );
@@ -864,16 +864,16 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
       // les deux se lisaient collés.
       const unitWidth = Math.max(20, ...timers.map((t) => t.unit.length + 1));
       const lines = [
-        'NEXT'.padEnd(30) + 'LEFT'.padEnd(10) + 'LAST'.padEnd(30)
-        + 'PASSED'.padEnd(10) + 'UNIT'.padEnd(unitWidth) + 'ACTIVATES',
+        padToWidth('NEXT', 30) + padToWidth('LEFT', 10) + padToWidth('LAST', 30)
+        + padToWidth('PASSED', 10) + padToWidth('UNIT', unitWidth) + 'ACTIVATES',
       ];
       for (const t of timers) {
         lines.push([
-          formatTimerDate(t.next, sm.zone()).padEnd(30),
-          formatTimerDelta(t.next, now).padEnd(10),
-          formatTimerDate(t.last, sm.zone()).padEnd(30),
-          formatTimerDelta(now, t.last).padEnd(10),
-          t.unit.padEnd(unitWidth),
+          padToWidth(formatTimerDate(t.next, sm.zone()), 30),
+          padToWidth(formatTimerDelta(t.next, now), 10),
+          padToWidth(formatTimerDate(t.last, sm.zone()), 30),
+          padToWidth(formatTimerDelta(now, t.last), 10),
+          padToWidth(t.unit, unitWidth),
           fullUnitName(t.activates),
         ].join(''));
       }
@@ -886,7 +886,7 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
       const sockets = sm.socketEntries();
       const lines = ['LISTEN                UNIT                ACTIVATES'];
       for (const s of sockets) {
-        lines.push(`${`0.0.0.0:${s.port}`.padEnd(22)}${s.unit.padEnd(20)}${fullUnitName(s.service)}`);
+        lines.push(`${padToWidth(`0.0.0.0:${s.port}`, 22)}${padToWidth(s.unit, 20)}${fullUnitName(s.service)}`);
       }
       lines.push('');
       lines.push(`${sockets.length} sockets listed.`);
