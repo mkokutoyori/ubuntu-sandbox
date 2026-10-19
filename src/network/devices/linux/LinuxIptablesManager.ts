@@ -22,7 +22,7 @@ import {
   IPAddress, IPv6Address, SubnetMask,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
 } from '../../core/types';
-import { rejectTypeOf } from '../../core/IcmpErrors';
+import { answersWithTcpReset, rejectTypeOf } from '../../core/IcmpErrors';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
@@ -1506,7 +1506,7 @@ export class LinuxIptablesManager {
     rule: IptablesRule, chainName: string, op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
   ): string | null {
     const argument = rule.target === 'REJECT' ? rule.targetOptions['--reject-with'] : undefined;
-    if (argument === undefined || rejectTypeOf(this.family, argument)?.code !== null) return null;
+    if (argument === undefined || !answersWithTcpReset(this.family, argument)) return null;
     const onlyTcp = !rule.negProtocol && protocolNumberOf(rule.protocol) === IP_PROTO_TCP;
     return onlyTcp ? null : `${this.banner}:  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }

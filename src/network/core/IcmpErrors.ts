@@ -92,6 +92,10 @@ export function rejectTypeOf(family: 4 | 6, argument: string): RejectType | null
   return table.find((type) => type.name.startsWith(lowered) || type.alias.startsWith(lowered)) ?? null;
 }
 
+export function answersWithTcpReset(family: 4 | 6, argument: string): boolean {
+  return rejectTypeOf(family, argument)?.code === null;
+}
+
 export const ICMPV6_EXCEEDED_HOP_LIMIT = 0;
 export const ICMPV6_EXCEEDED_REASSEMBLY = 1;
 
