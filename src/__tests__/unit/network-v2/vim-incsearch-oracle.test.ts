@@ -21,9 +21,9 @@
  * a son premier octet apres une saisie incrementale tant que le curseur ne bouge pas.
  *
  * Mesure avec `git stash push -- src/network src/components` : le moteur precedent ne fait rien pendant la frappe,
- * les 3 fichiers tombent avant ; apres, il reste 12 + 8 cas du corpus `is` et 4 du corpus `isex`, listes ci-dessous.
+ * les 3 fichiers tombent avant ; apres, il reste 12 + 7 cas du corpus `is` et 2 du corpus `isex`, listes ci-dessous (ise2-109, ise2-178 et is3-71 passent depuis le traducteur de motifs).
  * Les seeds 2 et 3 (`is`) et 2 (`isex`) ont ete enregistres apres tout ajustement, sans que les echecs de seed 3 et de
- * isex 2 aient guide un reglage : 8 divergences sur 300 et 4 sur 200.
+ * isex 2 aient guide un reglage : 7 divergences sur 300 et 2 sur 200.
  *
  * Divergences connues, mesurees et NON portees (UNPORTED_CASES), aucune n'est epinglee comme contrat : un cas de la
  * liste qui se met a passer fait echouer le test pour qu'on le retire.  Les causes identifiees (une partie des cas
@@ -39,8 +39,8 @@ import { replayScreenCase, type ScreenCase } from '../../support/oracle/vimScree
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
   'is2-46', 'is2-75', 'is2-80', 'is2-93', 'is2-95', 'is2-164', 'is2-202', 'is2-227', 'is2-254', 'is2-260', 'is2-274', 'is2-284',
-  'is3-47', 'is3-71', 'is3-169', 'is3-214', 'is3-226', 'is3-228', 'is3-256', 'is3-299',
-  'ise2-91', 'ise2-109', 'ise2-178', 'ise2-188',
+  'is3-47', 'is3-169', 'is3-214', 'is3-226', 'is3-228', 'is3-256', 'is3-299',
+  'ise2-91', 'ise2-188',
 ]);
 
 const dir = 'src/__tests__/support/oracle/vim-incsearch';

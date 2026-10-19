@@ -767,6 +767,35 @@ terminateur » est partage par tout le simulateur ; le remplacer par un
 flux d'octets avec un terminateur explicite est un lot en soi, et le
 corpus `exec` evite ces cas (`EXEC_FILTERS`).
 
+### [vim] Motifs : quelques manquements mesures apres le traducteur `VimRegex`
+Mesure avec les labos `vim-pattern-oracle.test.ts` (7661 cas enregistres
+sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
+- **Retour arriere JavaScript** : `\V\>-\{-2,3}-\|\(b\%(\X\)\@=\|\f\+\_D\{-2,3}\|\L\?\)\{-1,}\(\A\{2,}\K\*\)\{-2,3}\[[:space:]o]\{2}`
+  sur un tampon de huit lignes occupe `RegExp.exec` pendant 128 s ; l'automate
+  de vim repond sans delai (aucune occurrence). Un motif a quantificateurs
+  imbriques ambigus gele donc l'editeur. Le cas est retire du corpus
+  (rnd22-202). Pas de borne de temps possible sur un `RegExp` synchrone : il
+  faut un second moteur (simulation de Thompson avec priorites) pour les motifs
+  sans reference arriere, ou une estimation de la hauteur d'etoile a la
+  traduction qui refuse avec E363 comme vim le fait pour sa memoire.
+- **`:s` multi-ligne** : `%s/\n//` et `%s/$\n^/+/` ne trouvent rien (8 cas non
+  portes) ; vim joint les lignes. `applyVimReplacement` ne lit pas non plus `\r`
+  (coupure de ligne), `\n` (NUL), `\t`, `~`, `\u \U \l \L \e \E` ni `\=`.
+- **`:g`** n'execute que `d` et `s///` : toute autre commande (`:g/x/normal dd`,
+  `m0`, `t.`, `j`) est ignoree sans message. Le moteur n'a pas d'identite de
+  ligne a marquer comme `ml_setmarked` ; ni `:g` ni `:s` ne disent « N fewer
+  lines » ou ne respectent 'report' (l'option n'existe pas : `:s` annonce
+  toujours le compte, vim seulement au-dela de 2).
+- **Classe de mot ecrite quatre fois** : `isKeywordChar` (`VimCursor`, a present
+  aussi pour la recherche et `\k \<`), `VimEngine.charClass` (`cw dw ce`, ASCII seul :
+  `cw` sur `é` traite la lettre comme une ponctuation alors que `w` la saute
+  comme un mot), `VimEditing.backspaceClass` et le motif de `VimRegex`.
+  'iskeyword' n'existe pas ; remplacer les quatre par une seule table lue sur
+  l'option.
+- **'smartcase'** est absent de la table des options ; `\%V` en bloc compte des
+  colonnes de caracteres ; `\@123<=` borne la remontee en caracteres ; `[[=e=]]`
+  utilise la decomposition Unicode.
+
 ---
 
 ## Gestion (SNMP, NTP, syslog)
