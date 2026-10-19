@@ -8,12 +8,12 @@
  *     backslashed forms are literal.
  *   - Fixed (`-F`): the pattern is a literal string, no metacharacters.
  *
- * JavaScript's RegExp engine is ERE-like, so ERE is mostly pass-through
- * (we still translate POSIX bracket classes like `[[:alpha:]]` and the
- * GNU word boundaries `\< \> \b`), while BRE requires swapping which
- * metacharacters are escaped. Bracket expressions `[...]` are scanned as
- * a unit so their contents are never mis-translated.
+ * ERE is parsed by PosixEre (glibc grammar and error texts); BRE requires
+ * swapping which metacharacters are escaped. Bracket expressions `[...]`
+ * are scanned as a unit so their contents are never mis-translated.
  */
+
+import { ereToJsSource } from './PosixEre';
 
 export interface PosixRegexOptions {
   extended?: boolean;     // ERE when true, BRE when false
@@ -70,30 +70,6 @@ function readBracket(src: string, start: number): { text: string; next: number }
   return { text: out, next: i + 1 };
 }
 
-function translateEre(pattern: string): string {
-  let out = '';
-  let i = 0;
-  while (i < pattern.length) {
-    const c = pattern[i];
-    if (c === '[') {
-      const b = readBracket(pattern, i);
-      out += b.text;
-      i = b.next;
-      continue;
-    }
-    if (c === '\\') {
-      const n = pattern[i + 1];
-      if (n === '<' || n === '>') { out += '\\b'; i += 2; continue; }
-      out += '\\' + (n ?? '');
-      i += 2;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
 function translateBre(pattern: string): string {
   let out = '';
   let i = 0;
@@ -138,7 +114,7 @@ function translateBre(pattern: string): string {
 /** Build the JS source string (without anchors/flags) for a POSIX pattern. */
 export function posixToJsSource(pattern: string, opts: PosixRegexOptions): string {
   if (opts.fixed) return escapeLiteral(pattern);
-  return opts.extended ? translateEre(pattern) : translateBre(pattern);
+  return opts.extended ? ereToJsSource(pattern, opts.ignoreCase === true) : translateBre(pattern);
 }
 
 /**
@@ -153,6 +129,7 @@ export function compilePosix(pattern: string, opts: PosixRegexOptions): RegExp {
   let flags = '';
   if (opts.global) flags += 'g';
   if (opts.ignoreCase) flags += 'i';
+  if (opts.extended && !opts.fixed) flags += 'u';
   if (opts.multiline) flags += 'm';
   try {
     return new RegExp(body, flags);

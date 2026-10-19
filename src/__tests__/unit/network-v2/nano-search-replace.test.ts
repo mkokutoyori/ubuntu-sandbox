@@ -122,15 +122,14 @@ describe('Scénario 3 — Ctrl+\\ remplacement avec confirmation Y/N/A', () => {
 });
 
 describe('Scénario 3 — limites documentées de nano vis-à-vis de vim', () => {
-  it('a regex replacement text is always literal — no \\1 backreference support (unlike vim)', () => {
+  it('a regex replacement expands \\1 to \\9 from the groups, and keeps \\0 and a number beyond the groups literal', () => {
     const nano = newEngine('abc123\n');
     ctrl(nano, '\\');
     altR(nano);
     typeText(nano, '([0-9]+)'); press(nano, 'Enter');
-    typeText(nano, String.raw`[\1]`); press(nano, 'Enter');
+    typeText(nano, String.raw`[\1\0\2]`); press(nano, 'Enter');
     press(nano, 'a');
-    // Real nano inserts the replacement text verbatim — \1 is NOT expanded.
-    expect(nano.lines[0]).toBe(String.raw`abc[\1]`);
+    expect(nano.lines[0]).toBe(String.raw`abc[123\0\2]`);
   });
 
   it('replacing a whole-line regex match with an empty string blanks the line but does NOT remove it (unlike vim :g/pat/d)', () => {

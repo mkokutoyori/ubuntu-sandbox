@@ -42,6 +42,7 @@ export interface NanoScreenInput {
   readonly menu: NanoMenuName;
   readonly menuOptions: MenuOptions;
   readonly pause: string | null;
+  readonly pauseKeepsMenu?: boolean;
   readonly helpLines: readonly string[] | null;
 }
 
@@ -179,7 +180,7 @@ function drawDataRow(
     }
   }
   const light = input.spotlight;
-  let spotlit: { column: number; cells: readonly string[] } | null = null;
+  let spotlit: { column: number; cells: readonly string[]; overshoots: boolean } | null = null;
   if (light !== null && light.line === lineIndex) {
     const from = Math.max(light.start, display.fromX);
     const to = Math.min(light.end, display.tillX);
@@ -189,8 +190,14 @@ function drawDataRow(
       const word = displayString(text, wideness(text, from, input.tabsize), wideness(text, to, input.tabsize) - wideness(text, from, input.tabsize), {
         isData: false, isPrompt: false, softwrap: false, tabsize: input.tabsize,
       });
-      spotlit = { column: margin + start, cells: word.cells.slice(0, Math.max(0, window.cols - margin - start)) };
+      const overshoots = !input.softwrap && wideness(text, light.end, input.tabsize) - fromCol > window.editCols;
+      spotlit = { column: margin + start, cells: word.cells.slice(0, Math.max(0, window.cols - margin - start)), overshoots };
       canvas.mark(margin + start, margin + end, 'reverse');
+    } else if (light.start === light.end && light.start >= display.fromX && light.start <= display.tillX) {
+      const start = Math.max(0, wideness(text, light.start, input.tabsize) - fromCol);
+      const blanked = canvas.cells[margin + start + 1] === CONTINUATION ? 2 : 1;
+      spotlit = { column: margin + start, cells: new Array<string>(blanked).fill(' '), overshoots: false };
+      canvas.mark(margin + start, margin + start + 1, 'reverse');
     }
   }
   if (sidescrolled && fromCol > 0 && display.cells.length > 0) {
@@ -201,7 +208,13 @@ function drawDataRow(
     canvas.put(window.cols - 1, '>');
     canvas.mark(window.cols - 1, window.cols, 'reverse');
   }
-  if (spotlit !== null) canvas.putCells(spotlit.column, spotlit.cells);
+  if (spotlit !== null) {
+    canvas.putCells(spotlit.column, spotlit.cells);
+    if (spotlit.overshoots) {
+      canvas.put(window.cols - 1, '>');
+      canvas.mark(window.cols - 1, window.cols, 'reverse');
+    }
+  }
   void spanEnd;
   return canvas.row();
 }
@@ -402,7 +415,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   let bars: [ScreenRow, ScreenRow] | null = null;
   if (input.pause !== null) {
     footerStatus = statusRow(cols, { text: input.pause, alert: true }, tabsize);
-    bars = [SPACE_ROW, SPACE_ROW];
+    bars = input.pauseKeepsMenu === true ? shortcutRows(cols, input.menu, tabsize, input.menuOptions) : [SPACE_ROW, SPACE_ROW];
     cursorAt = { row: -1, col: footerStatus.text.trimEnd().length };
   } else if (input.yesNo !== null) {
     const question = clipped(input.yesNo.question, cols - 1, tabsize);
