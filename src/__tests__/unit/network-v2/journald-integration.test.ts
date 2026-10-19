@@ -8,15 +8,12 @@
  * old command also left the pid out of the line unless -i was given.
  */
 import { describe, it, expect } from 'vitest';
-import { EventBus } from '@/events/EventBus';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 function host(): LinuxCommandExecutor {
-  const exec = new LinuxCommandExecutor(true);
-  exec.attachEventBus(new EventBus(), 'journald-integration');
-  return exec;
+  return (new LinuxServer('linux-server', 'journald-integration') as unknown as { executor: LinuxCommandExecutor }).executor;
 }
 
 function journalFiles(exec: LinuxCommandExecutor): string[] {

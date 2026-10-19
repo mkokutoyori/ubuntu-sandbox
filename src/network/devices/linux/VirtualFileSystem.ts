@@ -92,6 +92,24 @@ export interface INode {
   aclGroups?: Map<string, number>;
 }
 
+export interface AppendCreation {
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly directoryMode: number;
+  readonly directoryUid: number;
+  readonly directoryGid: number;
+  readonly createDirectories: boolean;
+}
+
+export interface AppendDescriptor {
+  readonly path: string;
+  lostLines: number;
+  lostBytes: number;
+  readonly unlinked: boolean;
+  append(text: string): string | null;
+}
+
 export interface DirEntry {
   name: string;
   inode: INode;
@@ -910,6 +928,63 @@ export class VirtualFileSystem {
     }
 
     return false;
+  }
+
+  openAppend(path: string, creation: AppendCreation): AppendDescriptor | { readonly error: string } {
+    const canonical = this.canonicalKey(path);
+    if (this.remoteFor(path)) return { error: 'Operation not supported' };
+    let inode = this.resolveInode(path);
+    if (inode === null) {
+      if (this.isReadOnly(path)) return { error: 'Read-only file system' };
+      const slash = canonical.lastIndexOf('/');
+      const directory = slash <= 0 ? '/' : canonical.slice(0, slash);
+      const parent = this.resolveInode(directory);
+      if (parent === null) {
+        if (!creation.createDirectories) return { error: 'No such file or directory' };
+        if (!this.mkdirp(directory, creation.directoryMode, 0, 0)) return { error: 'Permission denied' };
+        this.chown(directory, creation.directoryUid, creation.directoryGid);
+      } else if (parent.type !== 'directory') {
+        return { error: 'Not a directory' };
+      }
+      if (!this.fitsInode()) return { error: 'No space left on device' };
+      inode = this.createFileAt(canonical, '', creation.mode, 0, 0);
+      if (inode === null) return { error: 'Permission denied' };
+      inode.uid = creation.uid;
+      inode.gid = creation.gid;
+      this.emitWrite({ path: canonical, previous: '', current: '', created: true, truncated: false });
+    } else {
+      if (inode.type === 'directory') return { error: 'Is a directory' };
+    }
+    const held = inode;
+    const descriptor: AppendDescriptor = {
+      path: canonical,
+      lostLines: 0,
+      lostBytes: 0,
+      get unlinked(): boolean { return held.linkCount <= 0; },
+      append: (text: string): string | null => {
+        if (held.type === 'chardev') return held.deviceType === 'null' ? null : 'Invalid argument';
+        if (held.generator) {
+          if (held.writer === undefined) return null;
+          return held.writer(text) ? null : 'Invalid argument';
+        }
+        if (held.type !== 'file') return 'Invalid argument';
+        if (held.immutable) return 'Operation not permitted';
+        if (held.linkCount <= 0) {
+          descriptor.lostLines += 1;
+          descriptor.lostBytes += text.length;
+          return null;
+        }
+        if (!this.fitsBytes(text.length)) return 'No space left on device';
+        if (this.isReadOnly(canonical)) return 'Read-only file system';
+        const previous = held.content;
+        held.content += text;
+        held.size = held.content.length;
+        held.mtime = this.nowMs();
+        this.emitWrite({ path: canonical, previous, current: held.content, created: false, truncated: false });
+        return null;
+      },
+    };
+    return descriptor;
   }
 
   /**

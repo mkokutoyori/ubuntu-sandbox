@@ -1,11 +1,12 @@
 export type Errno =
-  | 'EPERM' | 'ENOENT' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
+  | 'EPERM' | 'ENOENT' | 'ENODEV' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
   | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
   | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EPERM: { number: 1, text: 'Operation not permitted' },
   ENOENT: { number: 2, text: 'No such file or directory' },
+  ENODEV: { number: 19, text: 'No such device' },
   EACCES: { number: 13, text: 'Permission denied' },
   EADDRINUSE: { number: 98, text: 'Address already in use' },
   EADDRNOTAVAIL: { number: 99, text: 'Cannot assign requested address' },

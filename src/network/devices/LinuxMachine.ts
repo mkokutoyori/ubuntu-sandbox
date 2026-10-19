@@ -50,13 +50,15 @@ import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
-import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
+import { LinuxRsyslogDaemon, RSYSLOG_BINARY_MODULES, RSYSLOG_MODULE_DIRECTORY } from './linux/syslog/LinuxRsyslogDaemon';
+import { LinuxRsyslogHost, type RsyslogUdpEndpoint } from './linux/syslog/LinuxRsyslogHost';
+import { ClockTimers } from './linux/syslog/ClockTimers';
+import { reverseNameOf } from './linux/network/ReverseName';
+import { readResolverIP } from './linux/commands/dns/resolverIP';
 import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
 import { runJournalctl } from './linux/journal/JournalctlTool';
 import { cursorOf } from './linux/journal/JournalRecord';
-import { SyslogStreamDecoder } from '@/network/syslog/codec/Framing';
 import { RSYSLOG_SEEDED_FILES, RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN } from './linux/syslog/RsyslogFiles';
-import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
 import { LinuxChronyService, CHRONY_CONF_PATH } from './linux/time/LinuxChronyService';
@@ -1563,136 +1565,144 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
-  /**
-   * rsyslog en RECEPTEUR.
-   *
-   * Mesure : `rsyslogd` existe, `systemctl status rsyslog` repond
-   * `active`, `/var/log/syslog` se remplit — et `/etc/rsyslog.conf`
-   * N'EXISTE PAS, `/etc/rsyslog.d/` non plus, rien n'ecoute sur 514. Un
-   * routeur configure avec `logging host` posait donc de vrais
-   * datagrammes sur le fil que personne ne recevait : la
-   * centralisation, qui est le sujet meme d'un cours syslog, n'avait
-   * aucun support.
-   */
-  rsyslogService: LinuxRsyslogService | null = null;
+  rsyslogDaemon: LinuxRsyslogDaemon | null = null;
+  private rsyslogHost: LinuxRsyslogHost | null = null;
+  private rsyslogTimers: ClockTimers | null = null;
+  private rsyslogSignalTrap: (() => void) | null = null;
 
   private installerRsyslog(vfs: typeof this.executor.vfs): void {
-    for (const [chemin, contenu] of RSYSLOG_SEEDED_FILES) {
-      if (!vfs.exists(chemin)) vfs.writeFile(chemin, contenu, 0, 0, 0o022, true);
+    for (const [path, content] of RSYSLOG_SEEDED_FILES) {
+      if (!vfs.exists(path)) vfs.writeFile(path, content, 0, 0, 0o022, true);
     }
     if (!vfs.exists(RSYSLOG_ROTATE_PATH)) {
       vfs.writeFile(RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN, 0, 0, 0o022, true);
       vfs.chmod(RSYSLOG_ROTATE_PATH, 0o755);
     }
-    this.rsyslogService = new LinuxRsyslogService({
-      lireFichier: (p) => vfs.readFile(p) ?? null,
-      ecrireLigne: (p, l) => this.executor.logMgr.appendLine(p, l),
-      listerRepertoire: (p) => vfs.listDirectory(p)?.map((e) => e.name) ?? [],
-      // L'ecoute est REELLE : `udpBindAddress` pose la socket que `ss`
-      // lit ET le recepteur qui traite le datagramme. Inscrire l'une
-      // sans l'autre est exactement le defaut que ce lot referme.
-      ecouterUdp: (port, onDatagram) => {
-        // `udpBind` et non `udpBindAddress` : la livraison cherche
-        // d'abord un service lie a UNE adresse (`192.168.100.50:514`) et
-        // ne retombe sur la table par PORT qu'ensuite. Un rsyslog ecoute
-        // sur toutes les interfaces, donc c'est cette seconde table qui
-        // le concerne — lie a `0.0.0.0:514`, il apparaissait dans `ss` et
-        // ne recevait rien, la cle cherchee etant l'adresse de
-        // destination du datagramme.
-        this.udpBind(port, (d) => {
-          // Ce simulateur transporte des PDU STRUCTUREES et non des
-          // octets — convention de tout le depot. Un emetteur interne
-          // (`SyslogAgent`) pose donc un `SyslogPacket` et non une
-          // chaine ; on reconstruit la ligne RFC 3164 depuis ses champs
-          // plutot que d'exiger une serialisation qui n'existe nulle
-          // part. Une charge deja textuelle (un `logger` distant, un
-          // test) reste acceptee telle quelle.
-          const p = d.udp.payload as unknown;
-          let charge = '';
-          if (typeof p === 'string') charge = p;
-          else if (p instanceof Uint8Array) charge = new TextDecoder().decode(p);
-          else if (p && typeof p === 'object' && (p as { type?: string }).type === 'syslog') {
-            const s2 = p as { facility: number; severity: number; hostname: string;
-                              tag: string; message: string; timestamp: string };
-            charge = `<${s2.facility * 8 + s2.severity}>${s2.timestamp} `
-              + `${s2.hostname} ${s2.tag} ${s2.message}`;
-          }
-          if (charge) onDatagram(d.sourceIP.toString(), charge);
-        }, 'rsyslogd');
-        return () => this.udpClose(port);
-      },
-      ecouterTcp: (port, onMessage) => {
-        const stack = this.getTcpStack();
-        try {
-          stack.listen(port, {
-            identity: { processName: 'rsyslogd' },
-            onAccept: (socket) => {
-              const framing = new SyslogStreamDecoder((message) => onMessage(socket.remoteIp, message));
-              (socket as unknown as TcpStream).onData((data) => framing.push(data));
-            },
-          });
-        } catch {
-          return null;
-        }
-        return () => stack.closeListener(port);
-      },
+    for (const module of RSYSLOG_BINARY_MODULES) {
+      const path = `${RSYSLOG_MODULE_DIRECTORY}/${module}.so`;
+      if (!vfs.exists(path)) vfs.writeFile(path, '', 0, 0, 0o022, true);
+    }
+    const executor = this.executor;
+    const timers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
+    this.rsyslogTimers = timers;
+    executor.onClockAdvanced(() => timers.pump());
+    const mainPid = (): number => executor.serviceMgr.status('rsyslog')?.mainPid ?? 0;
+    const host = new LinuxRsyslogHost({
+      vfs,
+      timers,
+      journal: executor.logMgr.syslogSocket,
+      localSockets: executor.localDatagramSockets,
+      udp: this as unknown as RsyslogUdpEndpoint,
+      tcp: () => this.getTcpStack(),
+      holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
+      wallMs: () => this.getSystemClockMs(),
+      monotonicMs: () => this.getMonotonicClockMs(),
+      bootTimeMs: () => executor.lifecycle.bootedAt()?.getTime() ?? this.getSystemClockMs(),
       hostname: () => this.getHostname(),
-      maintenant: () => this.getSystemClockMs(),
-      fuseau: () => this.executor.identity.timezone,
+      domainName: () => null,
+      timezone: () => executor.identity.timezone,
+      environment: () => undefined,
+      localAddresses: () => this.localAddressTexts(),
+      addressesOfDevice: (device) => this.addressTextsOf(device),
+      uidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getUser(name)?.uid ?? null),
+      gidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getGroup(name)?.gid ?? null),
+      userExists: (name) => executor.userMgr.getUser(name) !== undefined,
+      terminals: () => {
+        this.ensureLocalConsoleSession();
+        return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
+      },
+      resolveAddresses: (name) => executor.resolveHostAddresses(name),
+      reverseName: (address) => reverseNameOf(executor.nss, address),
+      servicePort: (name, protocol) => executor.resolveServicePort(name, protocol),
+      querySrv: (name) => {
+        const resolver = readResolverIP(executor);
+        const server = resolver === '' ? null : parseDnsServerLiteral(resolver);
+        return server === null ? null : this.queryDnsServerSync(server, name, 'SRV');
+      },
+      processDetails: (pid) => {
+        const process = executor.processMgr.get(pid);
+        return process === undefined ? null : { comm: process.comm, exe: process.exe ?? '', cmdline: process.command };
+      },
+      isAlive: (pid) => executor.processMgr.get(pid) !== undefined,
+      daemonPid: mainPid,
+      ipv6Enabled: () => true,
+      submitLibcSyslog: (priority, message) => { executor.logMgr.logAt(String(priority), 'rsyslogd', message, mainPid()); },
+      setConsoleLogLevel: (level) => { executor.logMgr.consoleLogLevel = level; return null; },
+      restoreConsoleLogLevel: () => { executor.logMgr.consoleLogLevel = 4; },
     });
-    this.executor.registerServiceSocketServer('rsyslog', this.rsyslogService);
-    this.executor.rsyslogService = this.rsyslogService;
-    this.rsyslogService.recharger();
+    this.rsyslogHost = host;
+    const daemon = new LinuxRsyslogDaemon(host, mainPid, (path) => vfs.exists(path));
+    this.rsyslogDaemon = daemon;
+    executor.rsyslogDaemon = daemon;
+    executor.registerServiceSocketServer('rsyslog', daemon);
 
-    // La coherence entre l'ETAT DU SERVICE et l'ETAT DES FICHIERS : une
-    // configuration fautive REFUSE le demarrage et le rechargement au
-    // lieu de laisser une unite `active` derriere un demon qui n'a rien
-    // lu. C'est le meme contrat que nginx et sshd tiennent deja.
-    this.executor.serviceMgr.registerConfigCheck('rsyslog', () => {
-      const svc = this.rsyslogService;
-      if (!svc) return { ok: true };
-      const manquant = checkRsyslogCriticalFiles({
-        exists: (p) => this.executor.vfs.exists(p),
-        readFile: (p) => this.executor.vfs.readFile(p),
-      });
-      if (!manquant.ok) return { ok: false, error: manquant.error ?? 'rsyslogd: configuration error' };
-      const v = svc.verifierConfiguration();
-      if (v.verdict === 'ok') return { ok: true };
-      return { ok: false, error: v.erreur, verbatim: true };
+    executor.serviceMgr.registerConfigCheck('rsyslog', () => {
+      if (daemon.isRunning) return { ok: true };
+      const verification = daemon.verify();
+      if (verification.fatalCode === null) return { ok: true };
+      return {
+        ok: false,
+        error: [...verification.lines, `rsyslogd: run failed with error ${verification.fatalCode} (see rsyslog.conf(5) manpage for error list)`].join('\n'),
+        verbatim: true,
+      };
     });
 
-    // Demarrer, arreter et recharger OUVRENT et FERMENT les sockets pour
-    // de bon. Sans cela, `systemctl stop rsyslog` laisserait le port 514
-    // ouvert et la machine continuerait de recevoir apres l'arret.
-    this.executor.serviceMgr.onLifecycle((event, name) => {
+    const startDaemon = (): void => {
+      if (daemon.isRunning) return;
+      if (!daemon.start().started) return;
+      this.rsyslogSignalTrap?.();
+      this.rsyslogSignalTrap = executor.processMgr.trapSignal(mainPid(), 'SIGHUP', () => daemon.hup());
+      this.publishRsyslogPorts();
+    };
+    const stopDaemon = (): void => {
+      this.rsyslogSignalTrap?.();
+      this.rsyslogSignalTrap = null;
+      daemon.stop();
+      host.dispose();
+      executor.resyncServicePorts('rsyslog');
+    };
+    this.getBus().subscribe('linux.process.exited', (event) => {
+      if (daemon.isRunning && (event.payload as { pid: number }).pid === mainPid()) stopDaemon();
+    });
+    executor.serviceMgr.onLifecycle((event, name) => {
       if (name === 'lldpd') {
         this.setLldpEmission(event !== 'stop');
         return;
       }
       if (name !== 'rsyslog') return;
-      const svc = this.rsyslogService;
-      if (!svc) return;
-      if (event === 'stop') { svc.stopAll(); this.executor.resyncServicePorts('rsyslog'); return; }
-      svc.recharger();
-      this.publierPortsRsyslog();
-      this.executor.resyncServicePorts('rsyslog');
+      if (event === 'stop') { stopDaemon(); return; }
+      if (event === 'reload') { daemon.hup(); return; }
+      startDaemon();
+      executor.resyncServicePorts('rsyslog');
     });
-    this.publierPortsRsyslog();
+    if (executor.serviceMgr.status('rsyslog')?.state === 'active') startDaemon();
+    this.publishRsyslogPorts();
   }
 
-  /**
-   * Declarer a la table des sockets les ports que la CONFIGURATION
-   * demande. La liste vient du fichier et non d'une constante : c'est ce
-   * qui fait qu'un `imudp` decommente puis recharge ouvre vraiment 514,
-   * et qu'un `imudp` recommente le referme.
-   */
-  private publierPortsRsyslog(): void {
-    const svc = this.rsyslogService;
-    if (!svc) return;
+  private publishRsyslogPorts(): void {
+    const daemon = this.rsyslogDaemon;
+    if (daemon === null) return;
     this.executor.serviceMgr.registerServiceListener('rsyslog', {
       processName: 'rsyslogd',
-      sockets: svc.listeningSockets(),
+      sockets: daemon.listeningSockets(),
     });
+  }
+
+  private localAddressTexts(): string[] {
+    const addresses = ['127.0.0.1', '::1'];
+    for (const port of this.getPorts()) {
+      const v4 = port.getIPAddress();
+      if (v4 !== null) addresses.push(v4.toString());
+      for (const entry of port.getIPv6Addresses()) addresses.push(entry.address.toString());
+    }
+    return addresses;
+  }
+
+  private addressTextsOf(device: string): string[] | null {
+    const port = this.getPort(device);
+    if (port === undefined) return null;
+    const v4 = port.getIPAddress();
+    return [...(v4 === null ? [] : [v4.toString()]), ...port.getIPv6Addresses().map((entry) => entry.address.toString())];
   }
 
   /** Le serveur nginx de cette machine — `null` avant l'amorçage. */

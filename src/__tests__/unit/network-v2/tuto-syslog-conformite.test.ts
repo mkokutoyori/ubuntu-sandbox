@@ -25,7 +25,6 @@ import { Logger } from '@/network/core/Logger';
 import {
   SYSLOG_FACILITY, SYSLOG_SEVERITY, priValue, shouldForward, syslogSeverityFromNum,
 } from '@/network/syslog/types';
-import { analyserMessageRecu } from '@/network/devices/linux/syslog/LinuxRsyslogService';
 
 beforeEach(() => {
   resetCounters();
@@ -34,6 +33,24 @@ beforeEach(() => {
   EquipmentRegistry.resetInstance();
   Logger.clear();
 });
+
+async function centralLab(senderCount = 1): Promise<{ collector: LinuxServer; senders: LinuxServer[] }> {
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+  const collector = new LinuxServer('linux-server', 'collecteur', 0, 0);
+  const senders = Array.from({ length: senderCount }, (_, i) => new LinuxServer('linux-server', `emetteur${i + 1}`, 0, 0));
+  [collector, ...senders].forEach((d, i) => { new Cable(`c${i}`).connect(d.getPorts()[0], sw.getPorts()[i]); });
+  collector.getPorts()[0].configureIP(new IPAddress('10.0.12.100'), new SubnetMask('255.255.255.0'));
+  senders.forEach((d, i) => d.getPorts()[0].configureIP(new IPAddress(`10.0.12.${i + 1}`), new SubnetMask('255.255.255.0')));
+  [collector, ...senders, sw].forEach((d) => d.powerOn());
+  await collector.executeCommand("sed -i 's/^#module(load=\"imudp\")/module(load=\"imudp\")/' /etc/rsyslog.conf");
+  await collector.executeCommand("sed -i 's/^#input(type=\"imudp\" port=\"514\")/input(type=\"imudp\" port=\"514\")/' /etc/rsyslog.conf");
+  await collector.executeCommand('systemctl restart rsyslog');
+  return { collector, senders };
+}
+
+function sendRaw(sender: LinuxServer, payload: string): void {
+  expect(sender.sendUdpDatagram(new IPAddress('10.0.12.100'), 514, 40514, payload)).toBe(true);
+}
 
 const refuse = (r: string) => /% Invalid input|% Incomplete|Unrecognized|Error:/.test(r);
 
@@ -66,13 +83,6 @@ describe('partie 1 : PRIORITY, facilities et severities', () => {
     expect(priValue(23, 0)).toBe(184);
     expect(priValue(4, 6)).toBe(38);
     expect(priValue(4, 4)).toBe(36);
-  });
-
-  it('<189> se decompose en local7 / notice', () => {
-    const m = analyserMessageRecu('<189>Aug  9 14:32:15 R1-PROD OSPF: adjacence');
-    expect(m.facilite).toBe('local7');
-    expect(m.severite).toBe(5);
-    expect(m.reste).toContain('OSPF: adjacence');
   });
 
   it('les 20 facilities nommees portent leur numero', () => {
@@ -426,18 +436,15 @@ describe('partie 6 : le collecteur central recoit vraiment', () => {
   }, 60_000);
 
   it('une regle `local7` dediee ecrit un fichier par equipement', async () => {
-    const s = new LinuxServer('linux-server', 'srv', 0, 0);
-    s.powerOn();
-    await s.executeCommand('mkdir -p /var/log/network');
-    await s.executeCommand(
-      "echo 'local7.*  /var/log/network/%FROMHOST-IP%.log' > /etc/rsyslog.d/10-network.conf");
-    await s.executeCommand('systemctl restart rsyslog');
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.0.12.1', '<189>Aug 11 05:00:00 R1 OSPF: adjacence formee');
-    svc.recevoir('10.0.12.2', '<189>Aug 11 05:00:01 R2 BGP: session etablie');
-    const un = await s.executeCommand('cat /var/log/network/10.0.12.1.log');
-    const deux = await s.executeCommand('cat /var/log/network/10.0.12.2.log');
+    const { collector, senders } = await centralLab(2);
+    await collector.executeCommand('mkdir -p /var/log/network');
+    await collector.executeCommand(
+      "printf 'template(name=\"PerHost\" type=\"string\" string=\"/var/log/network/%%FROMHOST-IP%%.log\")\\nlocal7.* ?PerHost\\n' > /etc/rsyslog.d/10-network.conf");
+    await collector.executeCommand('systemctl restart rsyslog');
+    sendRaw(senders[0], '<189>Aug 11 05:00:00 R1 OSPF: adjacence formee');
+    sendRaw(senders[1], '<189>Aug 11 05:00:01 R2 BGP: session etablie');
+    const un = await collector.executeCommand('cat /var/log/network/10.0.12.1.log');
+    const deux = await collector.executeCommand('cat /var/log/network/10.0.12.2.log');
     expect(un).toContain('OSPF: adjacence formee');
     expect(un, 'chaque fichier ne porte QUE son equipement').not.toContain('BGP');
     expect(deux).toContain('BGP: session etablie');
@@ -445,38 +452,25 @@ describe('partie 6 : le collecteur central recoit vraiment', () => {
   }, 30_000);
 
   it('le nom d\'hote porte par le message survit au collecteur', async () => {
-    const s = new LinuxServer('linux-server', 'srv', 0, 0);
-    s.powerOn();
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.0.12.1', '<189>Aug 11 05:00:00 R1-PROD OSPF: adjacence');
-    const l = await s.executeCommand('grep OSPF /var/log/syslog');
+    const { collector, senders } = await centralLab();
+    sendRaw(senders[0], '<189>Aug 11 05:00:00 R1-PROD OSPF: adjacence');
+    const l = await collector.executeCommand('grep OSPF /var/log/syslog');
     expect(l, '%HOSTNAME% est celui du message').toContain('R1-PROD');
     expect(l, 'l\'adresse source est %FROMHOST-IP%, un AUTRE champ').not.toContain('10.0.12.1');
   }, 30_000);
 
   it('sans nom d\'hote dans le message, l\'adresse source prend la place', async () => {
-    const s = new LinuxServer('linux-server', 'srv', 0, 0);
-    s.powerOn();
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.0.12.9', '<189>brut sans en-tete RFC 3164');
-    expect(await s.executeCommand('grep brut /var/log/syslog')).toContain('10.0.12.9');
+    const { collector, senders } = await centralLab();
+    sendRaw(senders[0], '<189>BRUT: sans en-tete RFC 3164');
+    expect(await collector.executeCommand('grep BRUT /var/log/syslog')).toContain('10.0.12.1');
   }, 30_000);
 });
 
 describe('partie 7 : chercher dans les logs', () => {
   it('`grep` retrouve les echecs d\'authentification recus', async () => {
-    const s = new LinuxServer('linux-server', 'srv', 0, 0);
-    s.powerOn();
-    await s.executeCommand("sed -i 's/^#module(load=\"imudp\")/module(load=\"imudp\")/' /etc/rsyslog.conf");
-    await s.executeCommand("sed -i 's/^#input(type=\"imudp\" port=\"514\")/input(type=\"imudp\" port=\"514\")/' /etc/rsyslog.conf");
-    await s.executeCommand('systemctl restart rsyslog');
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.0.12.1',
-      '<188>Aug 11 05:00:00 R1 SEC_LOGIN: %SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: root]');
-    expect(await s.executeCommand('grep LOGIN_FAILED /var/log/syslog')).toContain('root');
+    const { collector, senders } = await centralLab();
+    sendRaw(senders[0], '<188>Aug 11 05:00:00 R1 SEC_LOGIN: %SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: root]');
+    expect(await collector.executeCommand('grep LOGIN_FAILED /var/log/syslog')).toContain('root');
   }, 30_000);
 
   it('`show logging | include` isole une famille de messages (Cisco)', async () => {

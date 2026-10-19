@@ -238,6 +238,7 @@ import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
+import { LocalDatagramSockets } from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
@@ -602,8 +603,8 @@ export class LinuxCommandExecutor {
   nginxService: NginxControl | null = null;
   nfsService: LinuxNfsService | null = null;
   nfsMounts: NfsMountedFileSystem | null = null;
-  /** Le recepteur rsyslog — voir `docs/PRD-Rsyslog.md`. */
-  rsyslogService: import('./syslog/LinuxRsyslogService').LinuxRsyslogService | null = null;
+  rsyslogDaemon: import('./syslog/LinuxRsyslogDaemon').LinuxRsyslogDaemon | null = null;
+  readonly localDatagramSockets: LocalDatagramSockets;
 
   /** L'agent NTP de la machine — le MEME moteur que Cisco et Huawei. */
   ntpAgent: (() => import('../../ntp/NtpAgent').NtpAgent) | null = null;
@@ -764,6 +765,7 @@ export class LinuxCommandExecutor {
     this.lifecycle = lifecycle ?? new HostLifecycle();
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
+    this.localDatagramSockets = new LocalDatagramSockets(this.vfs);
     this.vfs.setClock(this.wallNow);
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
     const rootPartition = this.hardware.storage
@@ -1413,6 +1415,11 @@ export class LinuxCommandExecutor {
       open: (path: string) => {
         const p = this.rsyslogProcess();
         if (p && !(p.openFiles ?? []).some((f) => f.path === path)) p.addOpenFile(path, 'a');
+      },
+      close: (path: string) => {
+        const p = this.rsyslogProcess();
+        const held = (p?.openFiles ?? []).find((f) => f.path === path);
+        if (held) p?.closeOpenFile(held.fd);
       },
       closeAll: () => {
         const p = this.rsyslogProcess();
@@ -3236,10 +3243,23 @@ export class LinuxCommandExecutor {
 
   setSystemTime(epochMs: number): void {
     this.clockPort.set(epochMs);
+    this.notifyClockAdvanced();
   }
 
   stepClock(deltaMs: number): void {
-    if (deltaMs > 0) this.clockPort.step(deltaMs);
+    if (deltaMs <= 0) return;
+    this.clockPort.step(deltaMs);
+    this.notifyClockAdvanced();
+  }
+
+  private readonly clockListeners: Array<() => void> = [];
+
+  onClockAdvanced(listener: () => void): void {
+    this.clockListeners.push(listener);
+  }
+
+  private notifyClockAdvanced(): void {
+    for (const listener of this.clockListeners) listener();
   }
 
   private readonly waitScopes: number[] = [];

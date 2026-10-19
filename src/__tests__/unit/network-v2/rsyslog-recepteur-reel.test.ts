@@ -19,7 +19,6 @@ import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { analyserRsyslog, regleRetient } from '@/network/devices/linux/syslog/RsyslogConfig';
 
 beforeEach(() => {
   resetCounters();
@@ -41,47 +40,21 @@ async function activerImudp(s: LinuxServer): Promise<void> {
   await s.executeCommand('systemctl restart rsyslog');
 }
 
-describe('analyseur rsyslog', () => {
-  it('un `input` sans `module` chargé n\'ouvre RIEN', () => {
-    expect(analyserRsyslog('input(type="imudp" port="514")').ecoutes).toHaveLength(0);
-    expect(analyserRsyslog(
-      'module(load="imudp")\ninput(type="imudp" port="514")',
-    ).ecoutes).toEqual([{ protocole: 'udp', port: 514 }]);
-  });
+async function laboratoire(): Promise<{ collector: LinuxServer; sender: LinuxServer }> {
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+  const collector = serveur();
+  const sender = new LinuxServer('linux-server', 'emetteur', 0, 0);
+  [collector, sender].forEach((d, i) => { new Cable(`l${i}`).connect(d.getPorts()[0], sw.getPorts()[i]); });
+  collector.getPorts()[0].configureIP(new IPAddress('10.0.12.100'), new SubnetMask('255.255.255.0'));
+  sender.getPorts()[0].configureIP(new IPAddress('10.0.12.1'), new SubnetMask('255.255.255.0'));
+  [sender, sw].forEach((d) => d.powerOn());
+  await activerImudp(collector);
+  return { collector, sender };
+}
 
-  it('la forme historique `$ModLoad` / `$UDPServerRun` est lue aussi', () => {
-    const c = analyserRsyslog('$ModLoad imudp\n$UDPServerRun 514');
-    expect(c.ecoutes).toEqual([{ protocole: 'udp', port: 514 }]);
-  });
-
-  it('une regle nomme son fichier, un renvoi son transport', () => {
-    const c = analyserRsyslog('local7.*\t/var/log/net.log\n*.err @@10.0.0.1:514\n*.* @10.0.0.2');
-    expect(c.regles[0].fichier).toBe('/var/log/net.log');
-    expect(c.regles[1].renvoi).toEqual({ hote: '10.0.0.1', port: 514, tcp: true });
-    expect(c.regles[2].renvoi).toEqual({ hote: '10.0.0.2', port: 514, tcp: false });
-  });
-
-  it('`.info` retient info ET plus grave, pas seulement info', () => {
-    const r = analyserRsyslog('local7.info\t/var/log/x.log').regles[0];
-    expect(regleRetient(r, 'local7', 6), 'info').toBe(true);
-    expect(regleRetient(r, 'local7', 3), 'err est plus grave').toBe(true);
-    expect(regleRetient(r, 'local7', 7), 'debug est moins grave').toBe(false);
-    expect(regleRetient(r, 'auth', 6), 'autre facilite').toBe(false);
-  });
-
-  it('`.none` exclut, et c\'est ce qui separe syslog de auth.log', () => {
-    const r = analyserRsyslog('*.*;auth,authpriv.none\t-/var/log/syslog').regles[0];
-    expect(regleRetient(r, 'local7', 6)).toBe(true);
-    expect(regleRetient(r, 'auth', 6), 'auth doit etre EXCLU').toBe(false);
-    expect(regleRetient(r, 'authpriv', 3)).toBe(false);
-  });
-
-  it('`=info` retient EXACTEMENT info', () => {
-    const r = analyserRsyslog('local7.=info\t/var/log/x.log').regles[0];
-    expect(regleRetient(r, 'local7', 6)).toBe(true);
-    expect(regleRetient(r, 'local7', 3)).toBe(false);
-  });
-});
+function envoyer(sender: LinuxServer, charge: string): void {
+  expect(sender.sendUdpDatagram(new IPAddress('10.0.12.100'), 514, 40514, charge)).toBe(true);
+}
 
 describe('les fichiers de Debian sont la, et le service les lit', () => {
   it('`/etc/rsyslog.conf` et `/etc/rsyslog.d/` existent', async () => {
@@ -124,12 +97,12 @@ describe('l\'etat du service suit l\'etat des fichiers', () => {
     expect(await s.executeCommand('rsyslogd -N1')).toContain('unknown priority name "pasunniveau"');
   }, 30_000);
 
-  it('une configuration fautive fait ECHOUER le service', async () => {
+  it('une regle fautive est signalee et ignoree, le service demarre (rsyslogd.c : hadErrMsgs)', async () => {
     const s = serveur();
     await s.executeCommand("printf 'local7.pasunniveau\\t/var/log/x.log\\n' > /etc/rsyslog.d/99-bad.conf");
-    const out = await s.executeCommand('systemctl restart rsyslog');
-    expect(out).toContain('unknown priority name');
-    expect((await s.executeCommand('systemctl is-active rsyslog')).trim()).toBe('failed');
+    await s.executeCommand('systemctl restart rsyslog');
+    expect((await s.executeCommand('systemctl is-active rsyslog')).trim()).toBe('active');
+    expect(await s.executeCommand('grep "unknown priority name" /var/log/syslog')).toContain('"pasunniveau"');
   }, 30_000);
 
   it('un `/etc/rsyslog.conf` SUPPRIME nomme le fichier manquant', async () => {
@@ -140,12 +113,13 @@ describe('l\'etat du service suit l\'etat des fichiers', () => {
     expect(out).toContain('No such file or directory');
   }, 30_000);
 
-  it('un `/etc/rsyslog.conf` VIDE demarre — et n\'ecrit nulle part', async () => {
+  it('un `/etc/rsyslog.conf` VIDE n\'a aucune action : rsyslogd refuse de tourner (RS_RET_NO_ACTIONS)', async () => {
     const s = serveur();
     await s.executeCommand('> /etc/rsyslog.conf');
-    await s.executeCommand('systemctl restart rsyslog');
-    expect((await s.executeCommand('systemctl is-active rsyslog')).trim()).toBe('active');
-    expect(await s.executeCommand('ss -ulnp | grep 514')).toBe('');
+    const out = await s.executeCommand('systemctl restart rsyslog');
+    expect(out).toContain('there are no active actions configured');
+    expect(out).toContain('run failed with error -2103');
+    expect((await s.executeCommand('systemctl is-active rsyslog')).trim()).toBe('failed');
   }, 30_000);
 });
 
@@ -177,49 +151,36 @@ describe('un routeur Cisco envoie, le collecteur Linux recoit', () => {
   }, 60_000);
 
   it('le collecteur garde l\'horodatage et le nom portes par le message', async () => {
-    const s = serveur();
-    await activerImudp(s);
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.9.9.9', '<190>Jan  1 00:00:00 VIEUX-NOM TEST: corps du message');
-    const ligne = await s.executeCommand('grep VIEUX-NOM /var/log/syslog');
+    const { collector, sender } = await laboratoire();
+    envoyer(sender, '<190>Jan  1 00:00:00 VIEUX-NOM TEST: corps du message');
+    const ligne = await collector.executeCommand('grep VIEUX-NOM /var/log/syslog');
     expect(ligne).toContain('VIEUX-NOM');
     expect(ligne).toContain('TEST: corps du message');
     expect(ligne, '%TIMESTAMP% est %timereported%').toContain('Jan  1 00:00:00');
-    expect(ligne, 'l\'adresse source est %FROMHOST-IP%, absent du gabarit')
-      .not.toContain('10.9.9.9');
+    expect(ligne, 'l\'adresse source est %FROMHOST-IP%, absent du gabarit').not.toContain('10.0.12.1');
   }, 30_000);
 
   it('un message SANS en-tete exploitable prend l\'heure et la source du collecteur', async () => {
-    const s = serveur();
-    await activerImudp(s);
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.9.9.7', '<190>TEST: sans en-tete');
-    const ligne = await s.executeCommand('grep "sans en-tete" /var/log/syslog');
-    expect(ligne).toContain('10.9.9.7');
+    const { collector, sender } = await laboratoire();
+    envoyer(sender, '<190>TEST: sans en-tete');
+    const ligne = await collector.executeCommand('grep "sans en-tete" /var/log/syslog');
+    expect(ligne).toContain('10.0.12.1');
     expect(ligne).toMatch(/^[A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s/m);
   }, 30_000);
 
   it('un message SANS `<PRI>` n\'est pas jete', async () => {
-    const s = serveur();
-    await activerImudp(s);
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.8.8.8', 'message sans priorite');
-    expect(await s.executeCommand('grep 10.8.8.8 /var/log/syslog')).toContain('message sans priorite');
+    const { collector, sender } = await laboratoire();
+    envoyer(sender, 'message sans priorite');
+    expect(await collector.executeCommand('grep "sans priorite" /var/log/syslog')).toContain('message sans priorite');
   }, 30_000);
 
-  it('une regle `local7` dediee ecrit un fichier par equipement', async () => {
-    const s = serveur();
-    await s.executeCommand('mkdir -p /var/log/network');
-    await s.executeCommand(
-      "echo 'local7.*  /var/log/network/%FROMHOST-IP%.log' > /etc/rsyslog.d/10-network.conf",
+  it('un modele `?` dedie ecrit un fichier par equipement', async () => {
+    const { collector, sender } = await laboratoire();
+    await collector.executeCommand(
+      "printf 'template(name=\"PerHost\" type=\"string\" string=\"/var/log/network/%%FROMHOST-IP%%.log\")\\nlocal7.* ?PerHost\\n' > /etc/rsyslog.d/10-network.conf",
     );
-    await activerImudp(s);
-    const svc = (s as unknown as { executor: { rsyslogService: {
-      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
-    svc.recevoir('10.0.12.1', '<189>Aug 11 05:00:00 R1 OSPF: adjacence');
-    expect(await s.executeCommand('cat /var/log/network/10.0.12.1.log')).toContain('adjacence');
+    await collector.executeCommand('systemctl restart rsyslog');
+    envoyer(sender, '<189>Aug 11 05:00:00 R1 OSPF: adjacence');
+    expect(await collector.executeCommand('cat /var/log/network/10.0.12.1.log')).toContain('adjacence');
   }, 30_000);
 });

@@ -14,20 +14,16 @@ import type { JournalRecord } from './journal/JournalRecord';
 import { fieldValues } from './journal/JournalRecord';
 import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { SYSLOG_FACILITY } from '@/network/syslog/types';
+import { SyslogForwardSocket } from './syslog/SyslogForwardSocket';
+import type { AppendCreation, AppendDescriptor } from './VirtualFileSystem';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
   emerg: 0, emergency: 0, panic: 0, alert: 1, crit: 2, err: 3, error: 3,
   warning: 4, warn: 4, notice: 5, info: 6, debug: 7,
 };
-// ── Facility names ───────────────────────────────────────────────
-const FACILITY_NAMES: Record<string, number> = {
-  kern: 0, user: 1, mail: 2, daemon: 3,
-  auth: 4, syslog: 5, lpr: 6, news: 7,
-  uucp: 8, cron: 9, authpriv: 10, ftp: 11,
-  local0: 16, local1: 17, local2: 18,
-  local3: 19, local4: 20, local5: 21, local6: 22, local7: 23,
-};
+const FACILITY_NAMES: Record<string, number> = SYSLOG_FACILITY;
 
 // ── Journal entry ────────────────────────────────────────────────
 interface JournalEntry {
@@ -42,6 +38,9 @@ interface JournalEntry {
   pid: number;
   hostname: string;
   transport: string;
+  senderPid: number;
+  senderUid: number;
+  senderGid: number;
 }
 
 // ── Dmesg entry ──────────────────────────────────────────────────
@@ -67,13 +66,8 @@ export class LinuxLogManager {
   private dmesgBuffer: DmesgEntry[] = [];
   private bootTime: Date;
   private nextPid = 100;
-  /**
-   * Whether the syslog daemon (`rsyslog`) is running. When it is stopped
-   * the on-disk `/var/log/*` files stop receiving new lines — exactly as on
-   * a real host — while the systemd journal (kept in memory by journald)
-   * keeps recording, so `journalctl` still works.
-   */
-  private syslogDaemonActive = true;
+  readonly syslogSocket = new SyslogForwardSocket();
+  consoleLogLevel = 4;
   private busUnsub: Unsubscribe[] = [];
   private attachedBus: IEventBus | null = null;
   private attachedDeviceId: string | null = null;
@@ -172,30 +166,11 @@ export class LinuxLogManager {
     return kernelCommandLine(this.bootFacts.kernelRelease, this.bootFacts.rootPartition);
   }
 
-  /**
-   * Attach the device event bus so the syslog daemon's lifecycle drives
-   * file-logging coherence: stopping `rsyslog` freezes `/var/log/*`,
-   * starting it resumes them.
-   */
   attachBus(bus: IEventBus, deviceId?: string): void {
     for (const off of this.busUnsub) off();
+    this.busUnsub = [];
     this.attachedBus = bus;
     if (deviceId) this.attachedDeviceId = deviceId;
-    const isSyslog = (p: { name: string }): boolean =>
-      p.name === 'rsyslog' || p.name === 'syslog';
-    this.busUnsub = [
-      bus.subscribeWhere('linux.service.stopped', isSyslog, (e) => {
-        this.syslogDaemonActive = false;
-      }),
-      bus.subscribeWhere('linux.service.started', isSyslog, (e) => {
-        this.syslogDaemonActive = true;
-        this.reopenLogFiles();
-      }),
-      bus.subscribeWhere('linux.service.restarted', isSyslog, () => {
-        this.syslogDaemonActive = true;
-        this.reopenLogFiles();
-      }),
-    ];
   }
 
   /**
@@ -483,6 +458,9 @@ export class LinuxLogManager {
       displayPid: syslogPid !== null,
       hostname: text('_HOSTNAME') ?? this.currentHostname(),
       transport: text('_TRANSPORT') ?? '',
+      senderPid: number('_PID', 0),
+      senderUid: number('_UID', 0),
+      senderGid: number('_GID', 0),
     };
   }
 
@@ -491,8 +469,16 @@ export class LinuxLogManager {
   }
 
   private onJournalRecord(record: JournalRecord): void {
-    if (this.seeding) return;
     const entry = this.entryOf(record);
+    const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
+    this.syslogSocket.deliver({
+      text: `<${(entry.facility << 3) | entry.priority}>${fmtSyslogTimestamp(entry.timestamp, this.zoneName())} ${entry.tag}${pidPart}: ${entry.message}`,
+      pid: entry.senderPid,
+      uid: entry.senderUid,
+      gid: entry.senderGid,
+      receivedAtMs: entry.timestamp.getTime(),
+    });
+    if (this.seeding) return;
     if (entry.transport === 'kernel') {
       const dEntry: DmesgEntry = {
         offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
@@ -502,15 +488,7 @@ export class LinuxLogManager {
       this.dmesgBuffer.push(dEntry);
       this.emitToDmesgFollowers(dEntry);
     }
-    if (!this.syslogDaemonActive) return;
-
-    const facilityName = this.facilityName(entry.facility);
-    const logLine = this.formatSyslogLine(entry);
-
-    for (const file of this.routeLogFiles(facilityName, entry.priority)) {
-      this.appendToLogFile(file, logLine);
-    }
-
+    if (!this.syslogSocket.isAttached) return;
     if (this.attachedBus && this.attachedDeviceId) {
       const sevName = this.SEVERITY_NAME[entry.priority] ?? 'informational';
       this.attachedBus.publish({
@@ -530,110 +508,54 @@ export class LinuxLogManager {
     return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
   }
 
-  /**
-   * Log files rsyslog currently holds open, and how much has been written
-   * into one after its name was removed (docs/PRD-Pannes.md §F7.11).
-   *
-   * A daemon writes through a file DESCRIPTOR, not through a path. It opens
-   * `/var/log/syslog` once at start-up and keeps that descriptor for its
-   * whole life, so `rm` only removes the NAME: the inode stays alive
-   * because rsyslog still references it, every subsequent line lands in a
-   * file nobody can open any more, and the disk space is not freed. This
-   * is the single most common "I deleted the log and the disk is still
-   * full" incident, and until now the simulator did the opposite of it —
-   * `appendToLogFile` recreated the path on the very next line, which is
-   * what would happen only if the daemon reopened by name each time.
-   */
-  private readonly openLogFiles = new Map<string, { lostLines: number; lostBytes: number }>();
+  private readonly heldFiles = new Set<AppendDescriptor>();
+  private readonly namedDescriptors = new Map<string, AppendDescriptor>();
 
-  /**
-   * Le processus qui tient ces fichiers ouverts (§F9.3).
-   *
-   * Le descripteur d'un fichier journal appartient au PROCESSUS rsyslog,
-   * pas à ce gestionnaire : c'est ce qui fait que `/proc/<pid>/fd`, `lsof`
-   * et le plafond `RLIMIT_NOFILE` parlent du même. La comptabilité des
-   * octets perdus, elle, reste ici — c'est une propriété du démon, pas du
-   * noyau, et elle n'a rien à faire dans une table de descripteurs.
-   */
   private descriptorSink?: {
     open(path: string): void;
+    close(path: string): void;
     closeAll(): void;
   };
 
-  attachDescriptorSink(sink: { open(path: string): void; closeAll(): void }): void {
+  attachDescriptorSink(sink: { open(path: string): void; close(path: string): void; closeAll(): void }): void {
     this.descriptorSink = sink;
   }
 
-  /**
-   * Écrit une ligne brute dans un journal applicatif — celui d'un démon
-   * qui tient son propre format, pas celui de syslog. nginx en est le cas
-   * type : `access.log` est au format `combined`, sans préfixe de
-   * facilité ni horodatage syslog.
-   *
-   * Passe par le même chemin que les journaux système pour hériter du
-   * traitement du fichier supprimé sous un descripteur ouvert (§F7) et de
-   * la comptabilité de descripteurs.
-   */
+  holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | { readonly error: string } {
+    const opened = this.vfs.openAppend(path, creation);
+    if ('error' in opened) return opened;
+    this.heldFiles.add(opened);
+    this.descriptorSink?.open(opened.path);
+    return {
+      handle: opened,
+      release: () => {
+        this.heldFiles.delete(opened);
+        this.descriptorSink?.close(opened.path);
+      },
+    };
+  }
+
   appendLine(path: string, line: string): void {
-    this.appendToLogFile(path, line);
+    let descriptor = this.namedDescriptors.get(path);
+    if (descriptor !== undefined && descriptor.unlinked && this.vfs.exists(path)) {
+      this.heldFiles.delete(descriptor);
+      descriptor = undefined;
+    }
+    if (descriptor === undefined) {
+      const held = this.holdFile(path, { mode: 0o640, uid: 0, gid: 4, directoryMode: 0o755, directoryUid: 0, directoryGid: 0, createDirectories: true });
+      if ('error' in held) return;
+      descriptor = held.handle;
+      this.namedDescriptors.set(path, descriptor);
+    }
+    descriptor.append(`${line}\n`);
   }
 
-  private appendToLogFile(path: string, line: string): void {
-    const existing = this.vfs.readFile(path);
-    if (existing !== null) {
-      this.vfs.writeFile(path, existing + line + '\n', 0, 0, 0o022);
-      if (!this.openLogFiles.has(path)) {
-        this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
-        this.descriptorSink?.open(path);
-      }
-      return;
-    }
-
-    const held = this.openLogFiles.get(path);
-    if (held) {
-      // The descriptor outlived the name. The write succeeds — rsyslog has
-      // no way to notice — but it goes somewhere no path leads to, and the
-      // file stays absent until the daemon reopens it.
-      held.lostLines += 1;
-      held.lostBytes += line.length + 1;
-      return;
-    }
-
-    // Never opened: this is the daemon opening it for the first time, which
-    // really does create the file (syslog group = adm, gid 4).
-    this.vfs.createFileAt(path, line + '\n', 0o640, 0, 4);
-    this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
-    this.descriptorSink?.open(path);
-  }
-
-  /**
-   * What rsyslog is writing into a deleted inode right now — the answer
-   * `lsof +L1` gives an operator who cannot work out where the disk went.
-   * Empty when nothing has been unlinked under the daemon.
-   */
   deletedLogHandles(): Array<{ path: string; lostLines: number; lostBytes: number }> {
     const out: Array<{ path: string; lostLines: number; lostBytes: number }> = [];
-    for (const [path, held] of this.openLogFiles) {
-      if (held.lostLines > 0 && this.vfs.readFile(path) === null) {
-        out.push({ path, lostLines: held.lostLines, lostBytes: held.lostBytes });
-      }
+    for (const held of this.heldFiles) {
+      if (held.lostLines > 0 && held.unlinked) out.push({ path: held.path, lostLines: held.lostLines, lostBytes: held.lostBytes });
     }
     return out;
-  }
-
-  /**
-   * Drop every held descriptor, so the next line reopens by name and
-   * recreates the file. This is what `systemctl restart rsyslog` does (and
-   * what `logrotate`'s postrotate `kill -HUP` does for the same reason) —
-   * the only way back, and the reason the fix for a deleted log is to
-   * restart the daemon rather than to `touch` the file.
-   */
-  reopenLogFiles(): void {
-    // Un rsyslog qui redémarre est un processus NEUF : les descripteurs du
-    // précédent partent avec lui. Les laisser ferait apparaître dans `lsof`
-    // un descripteur appartenant à un pid mort.
-    this.descriptorSink?.closeAll();
-    this.openLogFiles.clear();
   }
 
   private parsePriority(spec: string): { facility: number; priority: number } | null {
@@ -658,38 +580,6 @@ export class LinuxLogManager {
 
   private currentHostname(): string {
     return kernelHostname(this.vfs);
-  }
-
-  /**
-   * Which files rsyslog copies a message into, per Debian's shipped
-   * `/etc/rsyslog.d/50-default.conf`.
-   *
-   * The catch-all line there is `*.*;auth,authpriv.none -/var/log/syslog`:
-   * authentication messages are deliberately EXCLUDED from syslog, because
-   * they can carry usernames and are given their own, more tightly
-   * permissioned file. Copying them into both meant every ssh login showed
-   * up twice on the same machine, and `/var/log/syslog` — the file people
-   * skim for "what is this host doing" — was full of auth noise that its
-   * real counterpart never contains.
-   */
-  private routeLogFiles(facilityName: string, priority: number): string[] {
-    const isAuth = facilityName === 'auth' || facilityName === 'authpriv';
-    const files = isAuth ? [] : ['/var/log/syslog'];
-    if (isAuth) files.push('/var/log/auth.log');
-    else if (facilityName === 'kern') files.push('/var/log/kern.log');
-    else if (facilityName === 'cron') files.push('/var/log/cron.log');
-    else if (facilityName === 'mail') {
-      files.push('/var/log/mail.log');
-      if (priority <= PRIORITY_NAMES.err) files.push('/var/log/mail.err');
-    }
-    return files;
-  }
-
-  private facilityName(facility: number): string {
-    for (const [name, num] of Object.entries(FACILITY_NAMES)) {
-      if (num === facility) return name;
-    }
-    return 'user';
   }
 
   // ── Boot message population ────────────────────────────────────
@@ -755,25 +645,6 @@ export class LinuxLogManager {
   }
 
   private writeInitialLogFiles(): void {
-    // /var/log/syslog - all non-auth entries
-    const syslogLines = this.journalEntries()
-      .filter(e => this.facilityName(e.facility) !== 'auth')
-      .map(e => this.formatSyslogLine(e));
-    this.vfs.createFileAt('/var/log/syslog', syslogLines.join('\n') + '\n', 0o640, 0, 4);
-
-    // /var/log/auth.log - auth facility
-    const authLines = this.journalEntries()
-      .filter(e => e.facility === FACILITY_NAMES['auth'])
-      .map(e => this.formatSyslogLine(e));
-    this.vfs.createFileAt('/var/log/auth.log', authLines.join('\n') + '\n', 0o640, 0, 4);
-
-    // /var/log/kern.log - kernel facility
-    const kernLines = this.journalEntries()
-      .filter(e => e.facility === FACILITY_NAMES['kern'])
-      .map(e => this.formatSyslogLine(e));
-    this.vfs.createFileAt('/var/log/kern.log', kernLines.join('\n') + '\n', 0o640, 0, 4);
-
-    // /var/log/boot.log - systemd + kernel boot messages
     const bootLines = this.journalEntries()
       .filter(e => e.tag === 'systemd' || e.tag === 'kernel')
       .map(e => this.formatSyslogLine(e));
