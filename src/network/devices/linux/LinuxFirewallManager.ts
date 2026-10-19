@@ -287,7 +287,7 @@ export class LinuxFirewallManager {
         // ufw's own deny rules, which contradicts the existing ping-block
         // test suite (linux-ufw.test.ts G8-16) that treats ICMP like any
         // other traffic, fully subject to ufw allow/deny.
-        if (/-p\s+icmp/.test(line)) continue;
+        if (/-p\s+icmp\s/.test(line) || /-p\s+icmpv6\s+--icmpv6-type\s+(destination-unreachable|packet-too-big|time-exceeded|parameter-problem|echo-request)\s/.test(line)) continue;
         if (v6) line = line.replace(/\bufw6-/g, 'ufw-');
         ipt.execute(line.split(/\s+/));
       }

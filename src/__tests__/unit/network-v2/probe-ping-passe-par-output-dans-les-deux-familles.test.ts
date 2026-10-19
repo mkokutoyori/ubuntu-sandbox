@@ -201,6 +201,7 @@ describe('the reply of an IPv6 host crosses its OUTPUT chain like the reply of a
   ])('IPv6 : %s on the reply, the pinger sees a loss and no error', async (_verdict, rule) => {
     const { a, b } = pair();
     await b.executeCommand(`sudo ${rule}`);
+    await b.executeCommand('sudo ip6tables -A OUTPUT -p icmpv6 --icmpv6-type neighbor-advertisement -j ACCEPT');
     const out = await pingOnSimulatedClock(a, 'ping -6 -c 1 -W 1 2001:db8::2');
     expect(out).not.toContain('bytes from');
     expect(out).not.toContain('From ');
@@ -223,7 +224,7 @@ describe('the reply of an IPv6 host crosses its OUTPUT chain like the reply of a
 
 describe('an error that comes from the other machine is not a refusal of the send', () => {
   it.each([
-    ['ip6tables -A INPUT -p icmpv6 -j REJECT', 'ping -6 -c 1 -W 1 2001:db8::2', 'From 2001:db8::2 icmp_seq=1 Destination unreachable: Port unreachable'],
+    ['ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j REJECT', 'ping -6 -c 1 -W 1 2001:db8::2', 'From 2001:db8::2 icmp_seq=1 Destination unreachable: Port unreachable'],
     ['iptables -A INPUT -p icmp -j REJECT', 'ping -c 1 -W 1 10.0.0.2', 'From 10.0.0.2 icmp_seq=1 Destination Port Unreachable'],
   ])('TEMOIN : %s on B -> « %s », and no sendmsg line', async (rule, command, line) => {
     const { a, b } = pair();

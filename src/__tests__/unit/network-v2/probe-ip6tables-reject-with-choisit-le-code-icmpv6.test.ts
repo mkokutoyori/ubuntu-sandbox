@@ -3,8 +3,8 @@
  * un type inconnu ou mal place est refuse a la saisie au lieu d'etre garde sans effet.
  *
  * Mesure de depart (88153d20, deux LinuxPC sur un lien, le serveur filtre) :
- *     ip6tables -A INPUT -p icmpv6 -j REJECT                              ->  ping -6 recoit « Administratively prohibited »
- *     ip6tables -A INPUT -p icmpv6 -j REJECT --reject-with icmp6-no-route ->  idem : le type est range et jamais lu
+ *     ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j REJECT   ->  ping -6 recoit « Administratively prohibited »
+ *     ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j REJECT --reject-with icmp6-no-route ->  idem : le type est range et jamais lu
  *     ip6tables -A INPUT -p udp --dport 5300 -j REJECT --reject-with icmp6-adm-prohibited -> « Port unreachable », jamais le code 1
  *     ip6tables -A INPUT -p tcp -j REJECT                                 ->  un RST, alors que le defaut de REJECT est l'ICMPv6
  *                                                                              « port unreachable » (tcp-reset doit etre demande)
@@ -96,7 +96,7 @@ describe('a REJECT on ICMPv6 answers with the code the type selects', () => {
     [' --reject-with icmp6-no', 'No route'],
   ])('ping -6 against `-j REJECT%s` reads « Destination unreachable: %s »', async (option, sentence) => {
     const { server, client } = lab();
-    expect(await server.executeCommand(`sudo ip6tables -A INPUT -p icmpv6 -j REJECT${option}`)).toBe('');
+    expect(await server.executeCommand(`sudo ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j REJECT${option}`)).toBe('');
     const out = await pingOnSimulatedClock(client, 'ping -6 -c 1 -W 1 fd00::1');
     expect(out).toContain(`From fd00::1 icmp_seq=1 Destination unreachable: ${sentence}`);
     expect(out).toContain('+1 errors');

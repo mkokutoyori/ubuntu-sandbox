@@ -172,7 +172,7 @@ describe('flood prints one character per failed probe : E for an error, a dot fo
 
   it('TEMOIN : a probe nobody answers is a dot', async () => {
     const { a, b } = pair();
-    await b.executeCommand('sudo ip6tables -A INPUT -p icmpv6 -j DROP');
+    await b.executeCommand('sudo ip6tables -A INPUT -p icmpv6 --icmpv6-type echo-request -j DROP');
     const out = await pingOnSimulatedClock(a, 'sudo ping -6 -f -c 2 -W 1 2001:db8::2');
     expect(out.split('\n')).toContain('..');
     expect(out).toContain('2 packets transmitted, 0 received, 100% packet loss');

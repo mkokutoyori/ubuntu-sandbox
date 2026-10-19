@@ -5404,10 +5404,7 @@ export abstract class EndHost extends Equipment {
     const nsPkt = createIPv6Packet(
       srcIP, route.nextHopIP.toSolicitedNodeMulticast(), IP_PROTO_ICMPV6, 255, ns, 24,
     );
-    this.sendFrame(port.getName(), {
-      srcMAC: port.getMAC(), dstMAC: route.nextHopIP.toSolicitedNodeMulticast().toMulticastMAC(),
-      etherType: ETHERTYPE_IPV6, payload: nsPkt,
-    });
+    this.sendNeighbourDiscovery(port.getName(), nsPkt, route.nextHopIP.toSolicitedNodeMulticast().toMulticastMAC());
   }
 
   tcpProbeSync(targetIP: IPAddress, port: number): boolean {
@@ -6121,23 +6118,11 @@ export abstract class EndHost extends Equipment {
       if (whole === null) return;
       ipv6 = whole;
       if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
-        // Neighbor Discovery (RFC 4861) must never be filtered — blocking it
-        // would break address resolution itself, taking the whole interface
-        // down rather than just the traffic an administrator meant to
-        // block. Everything else (ping, destination-unreachable relayed
-        // from elsewhere, etc.) goes through ip6tables INPUT like TCP/UDP.
-        const icmpv6 = ipv6.payload as ICMPv6Packet | undefined;
-        const isNeighborDiscovery = !!icmpv6 && (
-          icmpv6.icmpType === 'neighbor-solicitation' || icmpv6.icmpType === 'neighbor-advertisement'
-          || icmpv6.icmpType === 'router-solicitation' || icmpv6.icmpType === 'router-advertisement'
-        );
-        if (!isNeighborDiscovery) {
-          const icmpVerdict = this.firewallFilter6(portName, ipv6, 'in');
-          if (icmpVerdict === 'drop') return;
-          if (icmpVerdict === 'reject') {
-            this.sendIpv6Reject(portName, ipv6);
-            return;
-          }
+        const icmpVerdict = this.firewallFilter6(portName, ipv6, 'in');
+        if (icmpVerdict === 'drop') return;
+        if (icmpVerdict === 'reject') {
+          this.sendIpv6Reject(portName, ipv6);
+          return;
         }
         this.protocolCounters.ip6InDelivers++;
         this.handleICMPv6(portName, ipv6);
@@ -6435,12 +6420,7 @@ export abstract class EndHost extends Equipment {
       24, // NA size: 8 ICMPv6 + 16 target + option
     );
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC,
-      etherType: ETHERTYPE_IPV6,
-      payload: naPkt,
-    });
+    if (!this.sendNeighbourDiscovery(portName, naPkt, dstMAC)) return;
 
     Logger.debug(this.id, 'ndp:na-sent',
       `${this.name}: NA for ${ns.targetAddress} sent to ${dstIP}`);
@@ -6560,11 +6540,16 @@ export abstract class EndHost extends Equipment {
     const ns = createNeighborSolicitation(targetIP, port.getMAC());
     const nsPkt = createIPv6Packet(
       srcIP, targetIP.toSolicitedNodeMulticast(), IP_PROTO_ICMPV6, 255, ns, 24);
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC: targetIP.toSolicitedNodeMulticast().toMulticastMAC(),
-      etherType: ETHERTYPE_IPV6, payload: nsPkt,
-    });
+    return this.sendNeighbourDiscovery(portName, nsPkt, targetIP.toSolicitedNodeMulticast().toMulticastMAC());
+  }
+
+  private sendNeighbourDiscovery(portName: string, packet: IPv6Packet, dstMAC: MACAddress): boolean {
+    const port = this.ports.get(portName);
+    if (!port) return false;
+    const verdict = this.firewallFilter6(portName, packet, 'out');
+    if (verdict === 'reject') this.rejectOutgoing(packet);
+    if (verdict !== 'accept') return false;
+    this.sendFrame(portName, { srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV6, payload: packet });
     return true;
   }
 
@@ -6625,10 +6610,7 @@ export abstract class EndHost extends Equipment {
 
     const ns = createNeighborSolicitation(targetIP, port.getMAC());
     const nsPkt = createIPv6Packet(srcIP, targetIP, IP_PROTO_ICMPV6, 255, ns, 24);
-    this.sendFrame(entry.iface, {
-      srcMAC: port.getMAC(), dstMAC: entry.mac,
-      etherType: ETHERTYPE_IPV6, payload: nsPkt,
-    });
+    this.sendNeighbourDiscovery(entry.iface, nsPkt, entry.mac);
   }
 
   // ─── IPv6 Route Resolution (LPM) ────────────────────────────────
@@ -6664,7 +6646,7 @@ export abstract class EndHost extends Equipment {
   protected async sendPing6(
     portName: string,
     targetIP: IPv6Address,
-    targetMAC: MACAddress,
+    neighbour: () => Promise<MACAddress | null>,
     seq: number = 1,
     timeoutMs: number = 2000,
     opts?: Echo6Options,
@@ -6696,6 +6678,13 @@ export abstract class EndHost extends Equipment {
     if (verdict === 'reject') {
       this.rejectOutgoing(ipPkt);
     } else {
+      const targetMAC = await neighbour();
+      if (targetMAC === null) {
+        throw new IcmpErrorReply(
+          `Destination unreachable (from ${srcIP})`,
+          { from: srcIP.toString(), type: 'destination-unreachable', code: ICMPV6_UNREACH_ADDRESS },
+        );
+      }
       this.sendFrame(portName, {
         srcMAC: port.getMAC(), dstMAC: targetMAC,
         etherType: ETHERTYPE_IPV6, payload: ipPkt,
@@ -6706,6 +6695,11 @@ export abstract class EndHost extends Equipment {
       id: request.id, seq, target: targetIpStr, sentAt, timeoutMs, bytes: ipPkt.payloadLength,
       sendError: verdict === 'reject' ? 'EPERM' : undefined,
     });
+  }
+
+  private neighbourWhenNeeded(portName: string, nextHop: IPv6Address, timeoutMs: number): () => Promise<MACAddress | null> {
+    let resolution: Promise<MACAddress | null> | undefined;
+    return () => resolution ??= this.resolveNDP(portName, nextHop, timeoutMs).catch(() => null);
   }
 
   private echoRefusal6(port: Port, target: IPv6Address, opts?: Echo6Options): LocalSocketError | null {
@@ -6772,19 +6766,6 @@ export abstract class EndHost extends Equipment {
     };
   }
 
-  private unreachableResults6(source: IPv6Address | null, count: number, firstSeq: number): PingResult[] {
-    const from = source === null ? '' : source.toString();
-    const results: PingResult[] = [];
-    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      results.push({
-        success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: from,
-        error: `Destination unreachable (from ${from})`,
-        icmp6: { from, type: 'destination-unreachable', code: ICMPV6_UNREACH_ADDRESS },
-      });
-    }
-    return results;
-  }
-
   protected async executePing6Sequence(
     targetIP: IPv6Address,
     count: number = 4,
@@ -6808,15 +6789,9 @@ export abstract class EndHost extends Equipment {
       return this.pingEach(count, firstSeq, opts?.pauseAfterErrorReplyMs, async () => { throw new LocalSendError(refusal); });
     }
 
-    let nextHopMAC: MACAddress;
-    try {
-      nextHopMAC = await this.resolveNDP(portName, route.nextHopIP, timeoutMs);
-    } catch {
-      return this.unreachableResults6(selectIpv6SourceAddress(route.port, targetIP), count, firstSeq);
-    }
-
+    const neighbour = this.neighbourWhenNeeded(portName, route.nextHopIP, timeoutMs);
     return this.pingEach(
-      count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs, opts),
+      count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendPing6(portName, targetIP, neighbour, seq, timeoutMs, opts),
     );
   }
 
@@ -6875,7 +6850,7 @@ export abstract class EndHost extends Equipment {
     for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
       let result: PingResult;
       try {
-        result = await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs);
+        result = await this.sendPing6(portName, targetIP, async () => nextHopMAC, seq, timeoutMs);
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         result = { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: errorMsg };
@@ -6931,12 +6906,7 @@ export abstract class EndHost extends Equipment {
       16,
     );
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC: IPV6_ALL_ROUTERS_MULTICAST.toMulticastMAC(),
-      etherType: ETHERTYPE_IPV6,
-      payload: rsPkt,
-    });
+    if (!this.sendNeighbourDiscovery(portName, rsPkt, IPV6_ALL_ROUTERS_MULTICAST.toMulticastMAC())) return;
 
     Logger.debug(this.id, 'ndp:rs-sent',
       `${this.name}: Router Solicitation sent on ${portName}`);
