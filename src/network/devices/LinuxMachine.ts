@@ -54,7 +54,7 @@ import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
 import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
 import { runJournalctl } from './linux/journal/JournalctlTool';
 import { cursorOf } from './linux/journal/JournalRecord';
-import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
+import { SyslogStreamDecoder } from '@/network/syslog/codec/Framing';
 import { RSYSLOG_SEEDED_FILES, RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
@@ -1627,7 +1627,7 @@ export abstract class LinuxMachine extends EndHost
           stack.listen(port, {
             identity: { processName: 'rsyslogd' },
             onAccept: (socket) => {
-              const framing = new SyslogStreamFraming((message) => onMessage(socket.remoteIp, message));
+              const framing = new SyslogStreamDecoder((message) => onMessage(socket.remoteIp, message));
               (socket as unknown as TcpStream).onData((data) => framing.push(data));
             },
           });
