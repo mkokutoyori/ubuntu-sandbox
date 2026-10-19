@@ -123,6 +123,7 @@ import {
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
+  answersWithTcpReset,
   rejectTypeOf,
   udpSocketErrorFor,
   udpSocketErrorForV6,
@@ -1241,6 +1242,7 @@ export abstract class EndHost extends Equipment {
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
       neighbourResolved: (nextHopIp: string) => this.arpTable.has(nextHopIp),
       filterLocalSegment: (packet: IPv4Packet | IPv6Packet) => this.filterLocalDelivery(packet),
+      filterOutgoing: (egressName: string, packet: IPv4Packet | IPv6Packet) => this.filterOutgoingSegment(egressName, packet),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {
         const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
@@ -2734,7 +2736,7 @@ export abstract class EndHost extends Equipment {
    */
   protected evaluateNatOutput(
     _srcIP: string, _dstIP: IPAddress, _dstPort: number, _srcPort: number,
-    _protocol: number, _tentativeOutIface: string,
+    _protocol: number, _tentativeOutIface: string, _ipPacketBytes: number,
   ): { action: string; address?: string } | null {
     return null;
   }
@@ -3466,15 +3468,17 @@ export abstract class EndHost extends Equipment {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;
 
-    if (rejectWith === 'tcp-reset' && offendingPkt.protocol === IP_PROTO_TCP && offendingPkt.payload) {
-      this.tcpv2.sendResetForSegment(
-        offendingPkt.destinationIP.toString(), offendingPkt.sourceIP.toString(),
-        offendingPkt.payload as TcpSegment,
-      );
-      return;
-    }
+    if (this.rejectWithReset(offendingPkt, rejectWith)) return;
 
     this.sendICMPError(portName, offendingPkt, 'destination-unreachable', this.rejectCode(4, rejectWith));
+  }
+
+  private rejectWithReset(packet: IPv4Packet | IPv6Packet, rejectWith: string | null): boolean {
+    const family = packet.type === 'ipv6' ? 6 : 4;
+    const protocol = packet.type === 'ipv6' ? packet.nextHeader : packet.protocol;
+    if (rejectWith === null || protocol !== IP_PROTO_TCP || !answersWithTcpReset(family, rejectWith)) return false;
+    this.tcpv2.sendResetForSegment(packet.destinationIP.toString(), packet.sourceIP.toString(), packet.payload as TcpSegment);
+    return true;
   }
 
   private rejectCode(family: 4 | 6, rejectWith: string | null): number {
@@ -3482,9 +3486,18 @@ export abstract class EndHost extends Equipment {
     return code ?? (family === 6 ? ICMPV6_UNREACH_PORT : ICMP_UNREACH_PORT);
   }
 
+  private filterOutgoingSegment(egressName: string, packet: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject' {
+    const verdict = packet.type === 'ipv6'
+      ? this.firewallFilter6(egressName, packet, 'out')
+      : this.firewallFilter(egressName, packet, 'out');
+    if (verdict === 'reject') this.rejectOutgoing(packet);
+    return verdict;
+  }
+
   private rejectOutgoing(packet: IPv4Packet | IPv6Packet): void {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;
+    if (this.rejectWithReset(packet, rejectWith)) return;
     if (packet.type === 'ipv6') {
       this.sendICMPv6Error('lo', packet, 'destination-unreachable', this.rejectCode(6, rejectWith), {}, packet.sourceIP);
     } else {
@@ -3495,12 +3508,7 @@ export abstract class EndHost extends Equipment {
   private sendIpv6Reject(portName: string, offendingPkt: IPv6Packet): void {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;
-    if (rejectWith !== null && offendingPkt.nextHeader === IP_PROTO_TCP && rejectTypeOf(6, rejectWith)?.code === null) {
-      this.tcpv2.sendResetForSegment(
-        offendingPkt.destinationIP.toString(), offendingPkt.sourceIP.toString(), offendingPkt.payload as TcpSegment,
-      );
-      return;
-    }
+    if (this.rejectWithReset(offendingPkt, rejectWith)) return;
     this.sendICMPv6Unreachable(portName, offendingPkt, this.rejectCode(6, rejectWith));
   }
 
@@ -4064,6 +4072,10 @@ export abstract class EndHost extends Equipment {
     payloadBytes: number = 0,
     options: UdpEmissionOptions = {},
   ): boolean {
+    const carried = udpPayloadLength(payload, payloadBytes);
+    if (carried > UDP_MAX_PAYLOAD_OVER_IPV4) return false;
+    const ipBytes = ipv4HeaderBytesFor(options.ipOptions) + 8 + carried;
+
     // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
     // outbound traffic before the loopback/local-delivery decision below,
     // mirroring real Linux's early routing decision + LOCAL_OUT hook
@@ -4075,7 +4087,7 @@ export abstract class EndHost extends Equipment {
       const tentativeRoute = this.resolveRoute(destinationIP);
       const outputNat = this.evaluateNatOutput(
         tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
-        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '',
+        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '', ipBytes,
       );
       if (outputNat?.action === 'REDIRECT') {
         // No --to-destination to read: real Linux maps a locally-generated
@@ -4091,10 +4103,7 @@ export abstract class EndHost extends Equipment {
       }
     }
 
-    const carried = udpPayloadLength(payload, payloadBytes);
-    if (carried > UDP_MAX_PAYLOAD_OVER_IPV4) return false;
     const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + carried, payload };
-    const ipBytes = ipv4HeaderBytesFor(options.ipOptions) + udpBase.length;
     const dontFragment = options.df ?? this.udpDefaultDontFragment(destinationIP, ipBytes, options.iface);
     const flags = dontFragment ? IPV4_FLAG_DF : 0;
 
