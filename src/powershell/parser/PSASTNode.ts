@@ -414,6 +414,7 @@ export interface PSScriptBlock extends ASTBase {
   /** If no begin/process/end, the body goes here */
   body: PSStatementList | null;
   sourceText?: string;
+  extentText?: string;
 }
 
 // ─── param() block ────────────────────────────────────────────────────────────

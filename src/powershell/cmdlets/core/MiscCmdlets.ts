@@ -398,6 +398,7 @@ export class GetCommandCmdlet implements ICmdlet {
       Version: string;
       Source: string;
       Definition?: string;
+      ScriptBlock?: PSValue;
     };
     const rows: Row[] = [];
     for (const c of all) {
@@ -420,7 +421,9 @@ export class GetCommandCmdlet implements ICmdlet {
       }
     }
     for (const fn of ctx.runtime.listFunctions()) {
-      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '' });
+      const block = ctx.runtime.getFunctionBlock(fn);
+      const definition = block !== null && typeof block === 'object' ? (block as { sourceText?: string }).sourceText ?? '' : '';
+      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '', Definition: definition, ScriptBlock: block });
     }
 
     // -Name (positional or named): wildcard / exact, matched against the

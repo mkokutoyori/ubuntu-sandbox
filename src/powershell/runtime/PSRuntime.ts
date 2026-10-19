@@ -96,6 +96,8 @@ export class ContinueSignal { constructor(public readonly label?: string) {} }
 
 export { PSRuntimeError } from './PSRuntimeError';
 
+const COMMON_SWITCH_PARAMETERS: readonly string[] = ['verbose', 'debug', 'whatif', 'confirm'];
+
 function sourcePosition(source: string, offset: number): { line: number; column: number; lineText: string; message: string } {
   const before = source.slice(0, offset);
   const line = before.split('\n').length;
@@ -2061,6 +2063,10 @@ export class PSRuntime {
       : psValueToString(this.evalExpr(node.member as PSExpression, env)).toLowerCase();
 
     // ScriptBlock.GetNewClosure() — needs env to capture variables at call site
+    if (this.isScriptBlock(obj) && member === 'ast') {
+      const text = (obj as unknown as PSScriptBlock).extentText ?? '';
+      return { Extent: { Text: text, __type__: 'System.Management.Automation.Language.ScriptExtent' }, __type__: 'System.Management.Automation.Language.ScriptBlockAst' } as unknown as PSValue;
+    }
     if (this.isScriptBlock(obj) && member === 'getnewclosure') {
       const block = obj as PSScriptBlock;
       const snapshot = env.snapshot();
@@ -3517,7 +3523,10 @@ export class PSRuntime {
       try {
         this.runBlockCapture(clean, scope);
       } catch (error) {
-        if (!(error instanceof ReturnSignal)) throw error;
+        if (error instanceof ReturnSignal) return;
+        if (!(error instanceof PSRuntimeError) || error instanceof NativeCommandNeedsAsync) throw error;
+        const record = this.recordFailure(error);
+        this.streams.deliver('error', record, [this.describeFailure(error)]);
       }
     });
   }
@@ -3619,6 +3628,17 @@ export class PSRuntime {
     }
   }
 
+  private returnCommonSwitchArguments(named: Record<string, PSValue>, positional: PSValue[]): PSValue[] {
+    const returned: PSValue[] = [];
+    for (const key of COMMON_SWITCH_PARAMETERS) {
+      const value = named[key];
+      if (value === undefined || typeof value === 'boolean') continue;
+      returned.push(value);
+      named[key] = true;
+    }
+    return returned.length === 0 ? positional : [...returned, ...positional];
+  }
+
   private returnSwitchArguments(cmdlet: ICmdlet, named: Record<string, PSValue>, positional: PSValue[]): PSValue[] {
     const returned: PSValue[] = [];
     for (const switchName of cmdlet.switchParameters ?? []) {
@@ -3661,6 +3681,7 @@ export class PSRuntime {
     nativeArguments?: string[],
   ): PSValue {
     named = this.expandCommonParameterAliases(named);
+    positional = this.returnCommonSwitchArguments(named, positional);
     const { common, rest: cmdletNamed } = takeCommonParameters(named);
     delete cmdletNamed['whatif'];
     delete cmdletNamed['confirm'];
@@ -4087,6 +4108,7 @@ export class PSRuntime {
         })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
+      getFunctionBlock: (name) => (self.functions.get(name.toLowerCase())?.block ?? null) as unknown as PSValue,
       listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
       listUserAliases: () => [...self.userAliases.values()],

@@ -1235,6 +1235,8 @@ export class PSParser {
     }
 
     const body = this.parseScriptBlock();
+    const closing = this.tokens[this.pos - 1];
+    if (this.source !== null && closing.end !== undefined) body.extentText = this.source.slice(pos.offset, closing.end);
     if (inlineParams && !body.paramBlock) {
       body.paramBlock = { type: 'ParamBlock', attributes: [], parameters: inlineParams, position: pos };
     }
@@ -1513,6 +1515,7 @@ export class PSParser {
     const closeBrace = this.expect(PSTokenType.RBRACE);
     const sb = makeScriptBlock(body, paramBlock, pos);
     if (this.source !== null) sb.sourceText = this.source.slice(openBrace.position.offset + 1, closeBrace.position.offset).trim();
+    if (this.source !== null) sb.extentText = this.source.slice(openBrace.position.offset, closeBrace.position.offset + 1);
     sb.beginBlock = beginBlock;
     sb.processBlock = processBlock;
     sb.endBlock = endBlock;
