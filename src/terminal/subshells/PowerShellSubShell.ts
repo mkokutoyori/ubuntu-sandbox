@@ -331,7 +331,7 @@ export class PowerShellSubShell implements ISubShell {
 
   private formatInterpreterError(e: unknown, source: string): string {
     if (e instanceof PSParserError) return this.language === 'core' ? e.renderConcise(source) : e.render(source);
-    if (e instanceof PSRuntimeError && this.language === 'core') return `${e.conciseReason()}: ${e.message}`;
+    if (e instanceof PSRuntimeError) return this.interp.describeFailure(e);
     if (e instanceof Error) return e.message;
     return String(e);
   }

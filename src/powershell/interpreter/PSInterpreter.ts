@@ -97,6 +97,8 @@ export class PSInterpreter {
 
   resumeInteractive(): string { return this.runtime.resumeInteractive(); }
 
+  describeFailure(error: unknown): string { return this.runtime.describeFailure(error); }
+
   provideNativeResult(result: NativeResult): void { this.runtime.provideNativeResult(result); }
 
   getVariable(name: string): PSValue {

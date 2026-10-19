@@ -790,17 +790,26 @@ export class PSRuntime {
     };
 
     if (traps.length === 0) {
-      for (const stmt of stmts) runOne(stmt);
+      for (const stmt of stmts) {
+        try {
+          runOne(stmt);
+        } catch (e) {
+          if (!this.reportStatementFailure(e, env)) throw e;
+        }
+      }
       return;
     }
 
     for (const stmt of stmts) {
       try {
-        runOne(stmt);
+        this.withCatchScope(true, () => runOne(stmt));
       } catch (e) {
         if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = this.selectTrap(traps, e);
-        if (trap === null) throw e;
+        if (trap === null) {
+          if (this.reportStatementFailure(e, env)) continue;
+          throw e;
+        }
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
           this.runTrapBody(trap.body, env);
@@ -817,6 +826,45 @@ export class PSRuntime {
     const actualType = error instanceof PSRuntimeError ? error.exceptionType : RUNTIME_EXCEPTION;
     const typed = traps.find(trap => trap.exceptionType !== null && exceptionMatches(actualType, trap.exceptionType.replace(/^\[|\]$/g, '')));
     return typed ?? traps.find(trap => trap.exceptionType === null) ?? null;
+  }
+
+  private catchScopes = 0;
+
+  describeFailure(error: unknown): string {
+    if (!(error instanceof PSRuntimeError)) return error instanceof Error ? error.message : String(error);
+    const original = error.exceptionType.endsWith('.ActionPreferenceStopException')
+      ? (error.errorRecord?.Exception as Record<string, PSValue> | undefined)?.Message
+      : undefined;
+    const message = typeof original === 'string' ? original : error.message;
+    return this.edition === 'core' ? `${error.conciseReason()}: ${message}` : message;
+  }
+
+  private isStatementTerminating(error: unknown): error is PSRuntimeError {
+    return error instanceof PSRuntimeError
+      && !(error instanceof NativeCommandNeedsAsync)
+      && !error.thrownFromThrowStatement
+      && !error.exceptionType.endsWith('.ActionPreferenceStopException');
+  }
+
+  private reportStatementFailure(error: unknown, env: PSEnvironment): boolean {
+    if (this.interactive === null || this.catchScopes > 0 || !this.isStatementTerminating(error)) return false;
+    const action = psValueToString(env.get('ErrorActionPreference') ?? 'Continue').toLowerCase();
+    if (action === 'stop') return false;
+    if (action === 'ignore') return true;
+    const record = this.recordFailure(error);
+    if (action === 'silentlycontinue') return true;
+    this.streams.deliver('error', record, [this.describeFailure(error)]);
+    return true;
+  }
+
+  private withCatchScope<T>(active: boolean, body: () => T): T {
+    if (!active) return body();
+    this.catchScopes++;
+    try {
+      return body();
+    } finally {
+      this.catchScopes--;
+    }
   }
 
   private runTrapBody(block: PSScriptBlock, env: PSEnvironment): void {
@@ -877,7 +925,7 @@ export class PSRuntime {
           }
           throw e;
         }
-        if (!this.trapInteractive(run, e)) { this.interactive = null; this.nativeReplay = null; throw e; }
+        if (!this.trapInteractive(run, e) && !this.reportStatementFailure(e, this.global)) { this.interactive = null; this.nativeReplay = null; throw e; }
         if (run.index < 0) break;
       }
       run.index++;
@@ -965,7 +1013,13 @@ export class PSRuntime {
 
     if (traps.length === 0) {
       let last: PSValue = null;
-      for (const stmt of stmts) last = this.execStatement(stmt, env);
+      for (const stmt of stmts) {
+        try {
+          last = this.execStatement(stmt, env);
+        } catch (e) {
+          if (!this.reportStatementFailure(e, env)) throw e;
+        }
+      }
       return last;
     }
 
@@ -973,11 +1027,14 @@ export class PSRuntime {
     let last: PSValue = null;
     for (const stmt of stmts) {
       try {
-        last = this.execStatement(stmt, env);
+        last = this.withCatchScope(true, () => this.execStatement(stmt, env));
       } catch (e) {
         if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = this.selectTrap(traps, e);
-        if (trap === null) throw e;
+        if (trap === null) {
+          if (this.reportStatementFailure(e, env)) continue;
+          throw e;
+        }
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
           this.runTrapBody(trap.body, env);
@@ -2495,7 +2552,7 @@ export class PSRuntime {
 
   private execTryClauses(node: PSTryStatement, env: PSEnvironment, renderBody: (body: PSScriptBlock) => void): void {
     try {
-      renderBody(node.tryBody);
+      this.withCatchScope(node.catchClauses.length > 0, () => renderBody(node.tryBody));
     } catch (e) {
       // Control-flow signals (return / break / continue / exit) are not
       // errors and must not be caught by `catch` — they propagate out of
@@ -2703,6 +2760,18 @@ export class PSRuntime {
   }
 
   private execThrow(node: PSThrowStatement, env: PSEnvironment): PSValue {
+    try {
+      return this.throwValue(node, env);
+    } catch (e) {
+      if (this.interactive === null || !(e instanceof PSRuntimeError) || !e.thrownFromThrowStatement || this.catchScopes > 0) throw e;
+      const action = psValueToString(env.get('ErrorActionPreference') ?? 'Continue').toLowerCase();
+      if (action !== 'silentlycontinue' && action !== 'ignore') throw e;
+      if (action === 'silentlycontinue') this.recordFailure(e);
+      return null;
+    }
+  }
+
+  private throwValue(node: PSThrowStatement, env: PSEnvironment): PSValue {
     const val = node.value ? this.evalExpr(node.value, env) : new PSRuntimeError('ScriptHalted');
     if (val instanceof Error) throw val;
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
@@ -3067,7 +3136,7 @@ export class PSRuntime {
   acceptNativeResult(result: NativeResult): PSValue {
     if (result.notRecognized === true) {
       this.global.set('?', false);
-      const missing = new PSRuntimeError(result.output);
+      const missing = new PSRuntimeError(result.output, 'System.Management.Automation.CommandNotFoundException');
       missing.commandName = /^The term '([^']*)'/.exec(result.output)?.[1];
       throw missing;
     }
@@ -3154,11 +3223,17 @@ export class PSRuntime {
       if (stmt.type === 'TrapStatement') continue;
       const linesBefore = this.outputLines.length;
       try {
-        this.captureStatement(stmt, env, captured, printed);
+        this.withCatchScope(traps.length > 0, () => this.captureStatement(stmt, env, captured, printed));
       } catch (e) {
-        if (traps.length === 0 || e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
-        const trap = this.selectTrap(traps, e);
-        if (trap === null) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
+        const trap = traps.length === 0 ? null : this.selectTrap(traps, e);
+        if (trap === null) {
+          if (this.reportStatementFailure(e, env)) {
+            this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
+            continue;
+          }
+          throw e;
+        }
         this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
         env.set('_', this.recordFailure(e));
         try {
@@ -3732,6 +3807,7 @@ export class PSRuntime {
     if (errorAction === 'stop') {
       const stop = preferenceStopError('ErrorActionPreference', message);
       stop.errorRecord = record;
+      stop.commandName = cmdletDisplayName;
       throw stop;
     }
     this.streams.recordError(record);
