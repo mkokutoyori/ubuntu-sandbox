@@ -3,7 +3,7 @@ import { Getopt, GETOPT_END } from './getopt';
 import { b64DecodeLength, b64Ntop, b64Pton } from './base64';
 import {
   atoux, fromUtf8, isDigit, sscanfInt, startsWithIgnoreCase, strcasecmp, strtol, utf8,
-} from './cRuntime';
+} from '../../core/CRuntime';
 import { LdapRc, ldapErr2String } from './ldapErrors';
 import { LdifPut, type LdifPutType, ldifIsNotPrintable, ldifPut, LDIF_LINE_WIDTH, LDIF_LINE_WIDTH_MAX } from './ldif';
 import { dnToUfn, dnToDomain, explodeDnWithoutTypes } from './ldapDn';

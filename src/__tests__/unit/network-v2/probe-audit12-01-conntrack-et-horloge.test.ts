@@ -49,11 +49,11 @@ function serveur(): LinuxServer {
 }
 
 describe('Scénario 1 — `conntrack` répond, et refuse ce qui doit l\'être', () => {
-  it('sans commande, le binaire réclame une commande', async () => {
+  it('sans commande, le binaire écrit son aide', async () => {
     const s = serveur();
     const out = await s.executeCommand('conntrack');
-    expect(out).toContain('conntrack v1.4.7 (conntrack-tools)');
-    expect(out).toContain('missing command');
+    expect(out).toContain('Command line interface for the connection tracking system. Version 1.4.7');
+    expect(out).not.toContain('missing command');
   });
 
   it('`-L` rend le récapitulatif du vrai binaire', async () => {
@@ -110,7 +110,7 @@ describe('Scénario 2 — la table se remplit de trafic RÉEL', () => {
 
     // Les compteurs de `-S` sont les vrais, incrémentés au point
     // d'insertion — pas un affichage constant.
-    expect(await srv.executeCommand('conntrack -S')).not.toContain('insert=0 ');
+    expect((await srv.executeCommand('conntrack -S')).split('\n')[0]).not.toContain('insert=0 ');
 
     // Et `-F` vide vraiment.
     await srv.executeCommand('conntrack -F');

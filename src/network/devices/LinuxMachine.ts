@@ -36,7 +36,7 @@ import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { PortNumber } from '../core/ports/PortNumber';
-import { tcpFlagBits, type TcpSegment, type TcpWireOutcome } from '../tcp/types';
+import { noFlags, tcpFlagBits, type TcpSegment, type TcpWireOutcome } from '../tcp/types';
 import { tcpOptionKindNumber } from '../tcp/TcpOptionsCodec';
 import { ipv6PacketBytes } from '../layers/internet/Ipv6Ingress';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
@@ -103,8 +103,11 @@ import {
   type ICMPType,
   type ICMPv6Type,
   type TCPPacket,
+  type ICMPPacket,
+  type ICMPv6Packet,
   icmpTypeNumber,
   icmpv6TypeNumber,
+  ipv4HeaderBytesFor,
 } from '../core/types';
 
 // Linux kernel / userspace
@@ -160,6 +163,8 @@ import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 /** Le listener TNS d'Oracle — §P2c de docs/PRD-Sockets-Une-Seule-Verite.md. */
 const TNS_PORT = 1521;
 const STUB_DEVICE = 'lo';
+const TCP_BASE_HEADER_BYTES = 5 * 4;
+const BARE_SYN_IP_BYTES = ipv4HeaderBytesFor(undefined) + TCP_BASE_HEADER_BYTES;
 const TNS_BOOT_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
@@ -192,7 +197,8 @@ import type { DsRecordData, ResourceRecord, ResourceRecordData } from '../dns/wi
 import { decodeDnsMessage, encodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { X509Certificate } from '../pki/X509Certificate';
-import type { PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
+import type { PacketFacts, PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
+import { connectionTupleOf, type ConnectionTuple } from './linux/ConnectionTracker';
 
 // Façade + command registry
 import type { LinuxNetKernel, TracerouteHop } from './linux/LinuxNetKernel';
@@ -243,7 +249,7 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
-import { LINUX_ICMP_ERROR_QUOTE, type IcmpErrorQuote } from '../core/IcmpErrors';
+import { LINUX_ICMP_ERROR_QUOTE, isICMPErrorMessage, isICMPv6ErrorMessage, type IcmpErrorQuote } from '../core/IcmpErrors';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { PamDialogue } from './linux/pam/PamDialogue';
@@ -4469,25 +4475,9 @@ export abstract class LinuxMachine extends EndHost
     direction: 'in' | 'out' | 'forward',
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
-    const ports = this.extractPorts(ipPkt);
-    const icmp = ipPkt.payload as { type?: string; icmpType?: ICMPType; id?: number; code?: number } | undefined;
     return this.runFilterTable(this.executor.iptables, {
-      direction,
-      protocol: ipPkt.protocol,
-      srcIP: ipPkt.sourceIP.toString(),
-      dstIP: ipPkt.destinationIP.toString(),
-      srcPort: ports.srcPort,
-      dstPort: ports.dstPort,
-      iface: portName,
-      outIface: outPortName,
-      icmpType: icmp?.type === 'icmp' && icmp.icmpType !== undefined
-        ? icmpTypeNumber(icmp.icmpType) : undefined,
-      icmpCode: icmp?.type === 'icmp' ? icmp.code : undefined,
-      icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
-      fragmentOffset: ipPkt.fragmentOffset,
-      ipPacketBytes: ipPkt.totalLength,
-      ...this.tcpFacts(ipPkt.payload),
-    });
+      direction, iface: portName, outIface: outPortName, ...this.packetFacts(ipPkt),
+    }, ipPkt);
   }
 
   protected override firewallFilter6(
@@ -4496,26 +4486,62 @@ export abstract class LinuxMachine extends EndHost
     direction: 'in' | 'out' | 'forward',
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
+    return this.runFilterTable(this.executor.ip6tables, {
+      direction, iface: portName, outIface: outPortName, ...this.packetFacts6(ipv6Pkt),
+    }, ipv6Pkt);
+  }
+
+  private packetFacts(ipPkt: IPv4Packet): PacketFacts {
+    const ports = this.extractPorts(ipPkt);
+    const icmp = ipPkt.payload as { type?: string; icmpType?: ICMPType; id?: number; code?: number } | undefined;
+    return {
+      protocol: ipPkt.protocol,
+      srcIP: ipPkt.sourceIP.toString(),
+      dstIP: ipPkt.destinationIP.toString(),
+      srcPort: ports.srcPort,
+      dstPort: ports.dstPort,
+      icmpType: icmp?.type === 'icmp' && icmp.icmpType !== undefined
+        ? icmpTypeNumber(icmp.icmpType) : undefined,
+      icmpCode: icmp?.type === 'icmp' ? icmp.code : undefined,
+      icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
+      fragmentOffset: ipPkt.fragmentOffset,
+      ipPacketBytes: ipPkt.totalLength,
+      related: this.quotedTuple(ipPkt),
+      ...this.tcpFacts(ipPkt.payload),
+    };
+  }
+
+  private quotedTuple(ipPkt: IPv4Packet): ConnectionTuple | undefined {
+    if (!isICMPErrorMessage(ipPkt)) return undefined;
+    const quoted = (ipPkt.payload as ICMPPacket).originalPacket;
+    return quoted === undefined ? undefined : connectionTupleOf(this.packetFacts(quoted));
+  }
+
+  private quotedTuple6(ipv6Pkt: IPv6Packet): ConnectionTuple | undefined {
+    if (!isICMPv6ErrorMessage(ipv6Pkt)) return undefined;
+    const quoted = (ipv6Pkt.payload as ICMPv6Packet).invokingPacket;
+    return quoted === undefined ? undefined : connectionTupleOf(this.packetFacts6(quoted));
+  }
+
+  private packetFacts6(ipv6Pkt: import('../core/types').IPv6Packet): PacketFacts {
     const transport = ipv6Pkt.payload as {
       sourcePort?: number; destinationPort?: number;
       type?: string; icmpType?: ICMPv6Type; id?: number; code?: number;
     } | undefined;
-    return this.runFilterTable(this.executor.ip6tables, {
-      direction,
+    return {
       protocol: ipv6Pkt.nextHeader,
       srcIP: ipv6Pkt.sourceIP.toString(),
       dstIP: ipv6Pkt.destinationIP.toString(),
       srcPort: transport?.sourcePort ?? 0,
       dstPort: transport?.destinationPort ?? 0,
-      iface: portName,
-      outIface: outPortName,
       icmpType: transport?.type === 'icmpv6' && transport.icmpType !== undefined
         ? icmpv6TypeNumber(transport.icmpType) : undefined,
       icmpCode: transport?.type === 'icmpv6' ? transport.code : undefined,
       icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
       ipPacketBytes: ipv6PacketBytes(ipv6Pkt),
+      related: this.quotedTuple6(ipv6Pkt),
       ...this.tcpFacts(ipv6Pkt.payload),
-    });
+    };
   }
 
   private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[] } {
@@ -4528,9 +4554,9 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private runFilterTable(
-    manager: LinuxIptablesManager, pkt: PacketInfo,
+    manager: LinuxIptablesManager, pkt: PacketInfo, subject: object,
   ): 'accept' | 'drop' | 'reject' {
-    const verdict = manager.filterPacket(pkt);
+    const verdict = manager.filterPacket(pkt, subject);
     if (verdict === 'reject') this.lastRejectWith = manager.getLastRejectWith();
     if (verdict !== 'accept') {
       this.logIptablesDrop(pkt, verdict, pkt.iface, pkt.outIface);
@@ -4568,6 +4594,7 @@ export abstract class LinuxMachine extends EndHost
     const iface = ownPort?.getName() ?? this.getPorts()[0]?.getName() ?? '';
     return this.executor.iptables.filterPacket({
       direction: 'in', protocol: 6, srcIP, dstIP, srcPort: 0, dstPort, iface,
+      tcpFlags: tcpFlagBits({ ...noFlags(), syn: true }), tcpOptions: [], fragmentOffset: 0, ipPacketBytes: BARE_SYN_IP_BYTES,
     });
   }
 
@@ -4625,40 +4652,23 @@ export abstract class LinuxMachine extends EndHost
     inPort: string,
     outPort: string,
   ): { action: string; address?: string } | null {
-    const ports = this.extractPorts(ipPkt);
-    const pkt: PacketInfo = {
-      direction: 'forward',
-      protocol: ipPkt.protocol,
-      srcIP: ipPkt.sourceIP.toString(),
-      dstIP: ipPkt.destinationIP.toString(),
-      srcPort: ports.srcPort,
-      dstPort: ports.dstPort,
-      iface: inPort,
-      outIface: outPort,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'POSTROUTING');
+    return this.executor.iptables.evaluateNat({
+      direction: 'forward', iface: inPort, outIface: outPort, ...this.packetFacts(ipPkt),
+    }, 'POSTROUTING');
   }
 
   protected override evaluatePreRouting(
     inPort: string,
     ipPkt: IPv4Packet,
   ): { action: string; address?: string } | null {
-    const ports = this.extractPorts(ipPkt);
-    const pkt: PacketInfo = {
-      direction: 'in',
-      protocol: ipPkt.protocol,
-      srcIP: ipPkt.sourceIP.toString(),
-      dstIP: ipPkt.destinationIP.toString(),
-      srcPort: ports.srcPort,
-      dstPort: ports.dstPort,
-      iface: inPort,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'PREROUTING');
+    return this.executor.iptables.evaluateNat({
+      direction: 'in', iface: inPort, ...this.packetFacts(ipPkt),
+    }, 'PREROUTING');
   }
 
   protected override evaluateNatOutput(
     srcIP: string, dstIP: IPAddress, dstPort: number, srcPort: number,
-    protocol: number, tentativeOutIface: string,
+    protocol: number, tentativeOutIface: string, ipPacketBytes: number,
   ): { action: string; address?: string } | null {
     const pkt: PacketInfo = {
       direction: 'out',
@@ -4667,6 +4677,7 @@ export abstract class LinuxMachine extends EndHost
       dstIP: dstIP.toString(),
       srcPort, dstPort,
       iface: tentativeOutIface,
+      ipPacketBytes,
     };
     return this.executor.iptables.evaluateNat(pkt, 'OUTPUT');
   }
@@ -4675,17 +4686,9 @@ export abstract class LinuxMachine extends EndHost
     inPort: string,
     ipv6Pkt: import('../core/types').IPv6Packet,
   ): { action: string; address?: string } | null {
-    const transport = ipv6Pkt.payload as { sourcePort?: number; destinationPort?: number } | undefined;
-    const pkt: PacketInfo = {
-      direction: 'in',
-      protocol: ipv6Pkt.nextHeader,
-      srcIP: ipv6Pkt.sourceIP.toString(),
-      dstIP: ipv6Pkt.destinationIP.toString(),
-      srcPort: transport?.sourcePort ?? 0,
-      dstPort: transport?.destinationPort ?? 0,
-      iface: inPort,
-    };
-    return this.executor.ip6tables.evaluateNat(pkt, 'PREROUTING');
+    return this.executor.ip6tables.evaluateNat({
+      direction: 'in', iface: inPort, ...this.packetFacts6(ipv6Pkt),
+    }, 'PREROUTING');
   }
 
   // ─── OS Info ─────────────────────────────────────────────────────────

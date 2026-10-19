@@ -2736,7 +2736,7 @@ export abstract class EndHost extends Equipment {
    */
   protected evaluateNatOutput(
     _srcIP: string, _dstIP: IPAddress, _dstPort: number, _srcPort: number,
-    _protocol: number, _tentativeOutIface: string,
+    _protocol: number, _tentativeOutIface: string, _ipPacketBytes: number,
   ): { action: string; address?: string } | null {
     return null;
   }
@@ -4072,6 +4072,10 @@ export abstract class EndHost extends Equipment {
     payloadBytes: number = 0,
     options: UdpEmissionOptions = {},
   ): boolean {
+    const carried = udpPayloadLength(payload, payloadBytes);
+    if (carried > UDP_MAX_PAYLOAD_OVER_IPV4) return false;
+    const ipBytes = ipv4HeaderBytesFor(options.ipOptions) + 8 + carried;
+
     // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
     // outbound traffic before the loopback/local-delivery decision below,
     // mirroring real Linux's early routing decision + LOCAL_OUT hook
@@ -4083,7 +4087,7 @@ export abstract class EndHost extends Equipment {
       const tentativeRoute = this.resolveRoute(destinationIP);
       const outputNat = this.evaluateNatOutput(
         tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
-        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '',
+        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '', ipBytes,
       );
       if (outputNat?.action === 'REDIRECT') {
         // No --to-destination to read: real Linux maps a locally-generated
@@ -4099,10 +4103,7 @@ export abstract class EndHost extends Equipment {
       }
     }
 
-    const carried = udpPayloadLength(payload, payloadBytes);
-    if (carried > UDP_MAX_PAYLOAD_OVER_IPV4) return false;
     const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + carried, payload };
-    const ipBytes = ipv4HeaderBytesFor(options.ipOptions) + udpBase.length;
     const dontFragment = options.df ?? this.udpDefaultDontFragment(destinationIP, ipBytes, options.iface);
     const flags = dontFragment ? IPV4_FLAG_DF : 0;
 

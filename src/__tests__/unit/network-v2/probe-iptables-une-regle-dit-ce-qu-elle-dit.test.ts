@@ -797,23 +797,24 @@ describe('module options can be inverted, and an option the engine cannot decide
     expect(seen).toEqual(expected);
   });
 
-  it('! --state inverts the connection state : the first packet is new, the next one of the same flow is not', async () => {
+  it('! --state inverts the connection state : the first packet and its retransmission are new, the packet after the answer is not', async () => {
     const host = new LinuxPC('H', 0, 0);
     await host.executeCommand('sudo iptables -A INPUT -m state ! --state NEW -j DROP');
     const manager = managerOf(host, 4);
     const inbound = tcp(22, SYN);
     expect(manager.filterPacket(inbound)).toBe('accept');
-    expect(manager.filterPacket(inbound)).toBe('drop');
+    expect(manager.filterPacket(inbound)).toBe('accept');
+    manager.filterPacket(facts(TCP, { direction: 'out', srcIP: '10.0.0.1', dstIP: '10.0.0.2', srcPort: 22, dstPort: 40000, tcpFlags: SYN | ACK }));
+    expect(manager.filterPacket(tcp(22, ACK))).toBe('drop');
   });
 
   it('! --ctstate is the same on conntrack', async () => {
     const host = new LinuxPC('H', 0, 0);
     await host.executeCommand('sudo iptables -A INPUT -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP');
     const manager = managerOf(host, 4);
-    const inbound = tcp(22, SYN);
-    expect(manager.filterPacket(inbound)).toBe('drop');
-    manager.filterPacket({ ...tcp(40000, ACK, { srcPort: 22 }), direction: 'out', srcIP: '10.0.0.1', dstIP: '10.0.0.2' });
-    expect(manager.filterPacket(inbound)).toBe('accept');
+    expect(manager.filterPacket(tcp(22, SYN))).toBe('drop');
+    manager.filterPacket(facts(TCP, { direction: 'out', srcIP: '10.0.0.1', dstIP: '10.0.0.2', srcPort: 50000, dstPort: 22, tcpFlags: SYN }));
+    expect(manager.filterPacket(facts(TCP, { srcIP: '10.0.0.2', dstIP: '10.0.0.1', srcPort: 22, dstPort: 50000, tcpFlags: SYN | ACK }))).toBe('accept');
   });
 
   it('! --rcheck matches the source that is NOT in the list yet', async () => {
