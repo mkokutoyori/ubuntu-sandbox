@@ -17,8 +17,9 @@ import { buildNanoScreen } from './nano/NanoScreen';
 import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import {
   DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
-  paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
+  paragraphEnd, paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
 } from './nano/NanoJustify';
+import { nextBlockLine, nextWordSpot, previousBlockLine, previousWordSpot } from './nano/NanoMotion';
 import type { NanoMenuName } from './nano/NanoMenus';
 import { helpAction, unboundKeyMessage } from './nano/NanoHelpKeys';
 import { helpPage, type HelpMenu } from './nano/NanoHelpText';
@@ -155,6 +156,7 @@ export class NanoEngine {
   private readonly helpTitle: string | null;
   private staleFooter: ScreenRow | null;
   private helpViewer: NanoEngine | null = null;
+  private metaKeyUsed = false;
   private _readOnly: boolean;
   private titleName: string;
   private bufferPath: string;
@@ -338,6 +340,7 @@ export class NanoEngine {
   applyKey(k: EditorKeyInput): void {
     if (this._exited) return;
     if (this.live.preserve && k.ctrl && (k.key.toLowerCase() === 'q' || k.key.toLowerCase() === 's')) return;
+    if (k.alt) this.metaKeyUsed = true;
     if (this.helpViewer !== null) {
       this.keyInHelp(k);
       return;
@@ -1059,7 +1062,13 @@ export class NanoEngine {
     // below (which keys off the lowercased letter, not arrow names).
     if (k.key === 'ArrowLeft') { this.jumpWordLeft(); return; }
     if (k.key === 'ArrowRight') { this.jumpWordRight(); return; }
+    if (k.key === 'ArrowUp') { this.toPreviousBlock(); return; }
+    if (k.key === 'ArrowDown') { this.toNextBlock(); return; }
     const key = k.key.toLowerCase();
+    if (key === 'h' && this._cursorLine === 0 && this._cursorCol === 0 && !this.live.nohelp && !this._readOnly && this.markLine === null && !this.metaKeyUsed) {
+      this._statusMessage = '[ ^W = Ctrl+W    M-W = Alt+W ]';
+      return;
+    }
     const motion = CONTROL_MOTIONS[key];
     if (motion) { this.applyEditKey({ ...k, key: motion, ctrl: false }); return; }
     if (key === 'r' && this.refuseWhenRestricted()) return;
@@ -1187,62 +1196,18 @@ export class NanoEngine {
    * at the line's very edge) into the adjacent line. Crossing both in
    * a single press would skip past the last word of a line entirely.
    */
-  private isWordAt(line: number, col: number): boolean {
-    return isWordChar(this.line(line)[col], this.live.wordbounds, this.live.wordchars);
-  }
-
   private jumpWordLeft(): void {
     this.manner = 'flowing';
-    let line = this._cursorLine;
-    let col = this._cursorCol;
-    let seenWord = false;
-    let stepForward = false;
-    while (true) {
-      if (col === 0) {
-        if (line === 0) break;
-        line--;
-        col = this.line(line).length;
-      }
-      if (col > 0) col--;
-      if (this.isWordAt(line, col)) {
-        seenWord = true;
-        if (col === 0) break;
-      } else if (seenWord) {
-        stepForward = true;
-        break;
-      }
-    }
-    if (stepForward) col++;
-    this._cursorLine = line;
-    this._cursorCol = col;
+    const spot = previousWordSpot(this.linesArr, { line: this._cursorLine, col: this._cursorCol }, (character) => isWordChar(character, this.live.wordbounds, this.live.wordchars));
+    this._cursorLine = spot.line;
+    this._cursorCol = spot.col;
   }
 
   private jumpWordRight(): void {
     this.manner = 'flowing';
-    let line = this._cursorLine;
-    let col = this._cursorCol;
-    const startedOnWord = this.isWordAt(line, col);
-    let seenSpace = !startedOnWord;
-    let seenWord = startedOnWord;
-    while (line < this.linesArr.length - 1 || col < this.line(line).length) {
-      if (col >= this.line(line).length) {
-        line++;
-        col = 0;
-        seenSpace = true;
-      } else {
-        col++;
-      }
-      if (this.live.afterends) {
-        if (this.isWordAt(line, col)) seenWord = true;
-        else if (seenWord) break;
-      } else if (!this.isWordAt(line, col)) {
-        seenSpace = true;
-      } else if (seenSpace) {
-        break;
-      }
-    }
-    this._cursorLine = line;
-    this._cursorCol = col;
+    const spot = nextWordSpot(this.linesArr, { line: this._cursorLine, col: this._cursorCol }, (character) => isWordChar(character, this.live.wordbounds, this.live.wordchars), this.live.afterends);
+    this._cursorLine = spot.line;
+    this._cursorCol = spot.col;
   }
 
   private applyEditAltKey(k: EditorKeyInput): void {
@@ -1309,6 +1274,10 @@ export class NanoEngine {
       this.toLastLine();
       return;
     }
+    if (k.key === '(' || k.key === '9') { this.toParagraphBegin(); return; }
+    if (k.key === ')' || k.key === '0') { this.toParagraphEnd(); return; }
+    if (k.key === '7') { this.toPreviousBlock(); return; }
+    if (k.key === '8') { this.toNextBlock(); return; }
     if (key === 'r') {
       this.beginReplacePrompt();
       return;
@@ -1358,6 +1327,32 @@ export class NanoEngine {
     this.manner = 'flowing';
     this._cursorLine = this.linesArr.length - 1;
     this._cursorCol = this.helpTitle !== null ? 0 : this.line(this._cursorLine).length;
+  }
+
+  private toParagraphBegin(): void {
+    this._cursorLine = paragraphStart(this.linesArr, this._cursorLine, this.justifyContext());
+    this._cursorCol = 0;
+  }
+
+  private toParagraphEnd(): void {
+    const end = paragraphEnd(this.linesArr, this._cursorLine, this.justifyContext());
+    if (end < this.linesArr.length - 1) {
+      this._cursorLine = end + 1;
+      this._cursorCol = 0;
+    } else {
+      this._cursorLine = end;
+      this._cursorCol = this.line(end).length;
+    }
+  }
+
+  private toPreviousBlock(): void {
+    this._cursorLine = previousBlockLine(this.linesArr, this._cursorLine);
+    this._cursorCol = 0;
+  }
+
+  private toNextBlock(): void {
+    this._cursorLine = nextBlockLine(this.linesArr, this._cursorLine);
+    this._cursorCol = 0;
   }
 
   // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
@@ -1545,7 +1540,10 @@ export class NanoEngine {
     const range = this.markedLineRange();
     let top = range.top;
     while (top <= range.bottom && this.line(top) === '') top++;
-    if (top > range.bottom) return;
+    if (top > range.bottom) {
+      this.verticalKey = true;
+      return;
+    }
     this.undoBegin('INDENT');
     this.shiftLinesRight(top, range.bottom, this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t');
     this.undoFinish();
@@ -1556,7 +1554,10 @@ export class NanoEngine {
     const range = this.markedLineRange();
     let top = range.top;
     while (top <= range.bottom && whiteLength(this.line(top), this.live.tabsize) === 0) top++;
-    if (top > range.bottom) return;
+    if (top > range.bottom) {
+      this.verticalKey = true;
+      return;
+    }
     this.undoBegin('UNINDENT');
     for (let index = top; index <= range.bottom; index++) {
       const removed = whiteLength(this.line(index), this.live.tabsize);
@@ -1732,6 +1733,12 @@ export class NanoEngine {
     }
     if (k.ctrl && k.key.toLowerCase() === 'u') {
       if (this.cutBuffer !== null) this.insertIntoPromptField(get, set, this.cutBuffer[0]);
+      return true;
+    }
+    if (k.ctrl && !k.alt && (k.key === 'ArrowLeft' || k.key === 'ArrowRight')) {
+      const isWord = (character: string | undefined): boolean => isWordChar(character, false, this.live.wordchars);
+      const from = { line: 0, col: this._promptCursor };
+      this._promptCursor = (k.key === 'ArrowLeft' ? previousWordSpot([text], from, isWord) : nextWordSpot([text], from, isWord, this.live.afterends)).col;
       return true;
     }
     const motion = k.ctrl && !k.alt ? CONTROL_MOTIONS[k.key.toLowerCase()] : undefined;
@@ -2034,7 +2041,27 @@ export class NanoEngine {
       this.cancelPrompt();
       return;
     }
+    if (k.ctrl && !k.alt && this.jumpFromGotoPrompt(k.key.toLowerCase())) return;
     this.applyPromptFieldKey(k, () => this.gotoLineBuffer, (v) => { this.gotoLineBuffer = v; });
+  }
+
+  private jumpFromGotoPrompt(key: string): boolean {
+    if (key === 't' || key === '_') {
+      this.searchDefaultText = this.searchDefaultNote();
+      this.searchAnswer = this.gotoLineBuffer;
+      this.searchDir = 'forward';
+      this._promptCursor = Math.min(this._promptCursor, this.searchAnswer.length);
+      this._mode = 'search';
+      this.resetHistoryRecall();
+      return true;
+    }
+    if (key !== 'y' && key !== 'v' && key !== 'w' && key !== 'o') return false;
+    this._mode = 'edit';
+    if (key === 'y') this.toFirstLine();
+    else if (key === 'v') this.toLastLine();
+    else if (key === 'w') this.toParagraphBegin();
+    else this.toParagraphEnd();
+    return true;
   }
 
   private performGotoLine(input: string): void {
@@ -2048,7 +2075,7 @@ export class NanoEngine {
       return;
     }
     this.gotoLineNumbers(parsed.line, parsed.column);
-    this.manner = 'recentering';
+    if (parsed.line !== null) this.manner = 'recentering';
   }
 
   private applyStart(start: NanoStart): void {
@@ -2077,16 +2104,18 @@ export class NanoEngine {
     else if (messageLevel(this.statusText) <= MESSAGE_LEVEL.remark) this.wipeStatus();
   }
 
-  private gotoLineNumbers(line: number, column: number): void {
+  private gotoLineNumbers(line: number | null, column: number): void {
     const last = this.linesArr.length;
-    const wanted = line < 0 ? last + line + 1 : line === 0 ? this._cursorLine + 1 : line;
+    const wanted = line === null ? this._cursorLine + 1 : line < 0 ? last + line + 1 : line === 0 ? 1 : line;
     const target = Math.min(Math.max(1, wanted), last) - 1;
     const text = this.line(target);
     const displayColumn = column < 0
       ? wideness(text, text.length, this.live.tabsize) + column + 2
-      : column === 0 ? this.window.columnOf(this._cursorLine, this._cursorCol) + 1 : column;
+      : column === 0 ? this.placeWant + 1 : column;
     this._cursorLine = target;
     this._cursorCol = actualX(text, Math.max(0, displayColumn - 1), this.live.tabsize);
+    this.verticalKey = true;
+    this.placeWant = displayColumn - 1;
   }
 
   // ── Help (^G) ────────────────────────────────────────────────────
@@ -2206,6 +2235,10 @@ export class NanoEngine {
 
   private applyExecutePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
+      if (this.executeCmdBuffer === '') {
+        this.cancelPrompt();
+        return;
+      }
       const output = this.fs.runShellCommand(this.executeCmdBuffer);
       this._mode = 'edit';
       const body = output.endsWith('\n') ? output.slice(0, -1) : output;
@@ -2426,10 +2459,10 @@ export class NanoEngine {
       else this._mode = this._mode === 'search' ? 'replace-search' : 'search';
       return;
     }
-    if (k.ctrl && key === 't' && this._mode === 'search' && !inHelp) {
+    if (k.ctrl && (key === 't' || key === '_') && this._mode === 'search' && !inHelp) {
       this.resetHistoryRecall();
       this.gotoLineBuffer = this.searchAnswer;
-      this._promptCursor = this.gotoLineBuffer.length;
+      this._promptCursor = Math.min(this._promptCursor, this.gotoLineBuffer.length);
       this._mode = 'goto-line';
       return;
     }
@@ -2480,24 +2513,30 @@ export class NanoEngine {
   }
 
   private recallHistory(k: EditorKeyInput, history: string[], get: () => string, set: (value: string) => void): boolean {
-    const older = k.key === 'ArrowUp' || (k.ctrl && k.key.toLowerCase() === 'p');
-    const newer = k.key === 'ArrowDown' || (k.ctrl && k.key.toLowerCase() === 'n');
+    const plainArrow = !k.ctrl && !k.alt;
+    const older = (plainArrow && k.key === 'ArrowUp') || (k.ctrl && !k.alt && k.key.toLowerCase() === 'p');
+    const newer = (plainArrow && k.key === 'ArrowDown') || (k.ctrl && !k.alt && k.key.toLowerCase() === 'n');
     if (!older && !newer) return false;
+    let replaced = false;
+    const replace = (value: string): void => {
+      set(value);
+      replaced = true;
+    };
     if (older) {
       if (this.historyStash === null) this.historyPosition = history.length;
       if (this.historyPosition === history.length) this.historyStash = get();
       if (this.historyPosition !== null && this.historyPosition > 0) {
         this.historyPosition--;
-        set(history[this.historyPosition]);
+        replace(history[this.historyPosition]);
       }
     } else {
       if (this.historyPosition !== null && this.historyPosition < history.length) {
         this.historyPosition++;
-        set(this.historyPosition === history.length ? '' : history[this.historyPosition]);
+        replace(this.historyPosition === history.length ? '' : history[this.historyPosition]);
       }
-      if (this.historyPosition === history.length && this.historyStash !== null && get() === '') set(this.historyStash);
+      if (this.historyPosition === history.length && this.historyStash !== null && get() === '') replace(this.historyStash);
     }
-    this._promptCursor = get().length;
+    if (replaced) this._promptCursor = get().length;
     return true;
   }
 
