@@ -73,7 +73,7 @@ function integerLiteral(
   value *= multiplier;
   const kind = SUFFIX_KINDS[suffix];
   if (kind === 'decimal') return makeDecimal(value, 0);
-  if (kind === 'bigint') return new PSNumber('double', Number(value));
+  if (kind === 'bigint') return boxInteger('bigint', value);
   if (kind !== undefined) {
     if (fitsKind(kind, value)) return boxInteger(kind, value);
     return boxDouble(Number(value));

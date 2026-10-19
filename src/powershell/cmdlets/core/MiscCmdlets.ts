@@ -38,6 +38,10 @@ export class NewObjectCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const tname = psValueToString(ctx.named['typename'] ?? ctx.positional[0] ?? '').toLowerCase();
+    if (/(^|[.])(list|collection)\[.+\]$/.test(tname)) {
+      const initial = ctx.named['argumentlist'] ?? ctx.positional[1];
+      return ctx.runtime.executeForValue(`[${tname}]::new(${Array.isArray(initial) ? '@(' + initial.map(psValueToString).join(',') + ')' : ''})`);
+    }
     if (tname.includes('hashtable') || tname.includes('dictionary'))
       return {} as Record<string, PSValue>;
     if (tname.includes('arraylist') || tname.includes('list`1') || tname.includes('list<')) {

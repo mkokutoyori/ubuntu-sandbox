@@ -96,6 +96,9 @@ function numericSource(value: unknown): number | PSNumber | null {
 export function castToNumeric(
   kind: NumericKind, value: unknown, options: ConversionOptions = DESKTOP_CONVERSION,
 ): number | PSNumber {
+  if (kind === 'bigint' && typeof value === 'string' && DECIMAL_INTEGER.test(value.trim())) {
+    return boxInteger('bigint', BigInt(value.trim()));
+  }
   let source = numericSource(value);
   if (source === null && typeof value === 'string') {
     source = parseNumericString(value);

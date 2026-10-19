@@ -1,5 +1,5 @@
 export type IntegerKind =
-  'byte' | 'sbyte' | 'int16' | 'uint16' | 'int32' | 'uint32' | 'int64' | 'uint64';
+  'byte' | 'sbyte' | 'int16' | 'uint16' | 'int32' | 'uint32' | 'int64' | 'uint64' | 'bigint';
 export type NumericKind = IntegerKind | 'single' | 'double' | 'decimal';
 
 export interface KindInfo {
@@ -18,6 +18,7 @@ const INT_INFO: Readonly<Record<IntegerKind, KindInfo>> = {
   uint32: { name: 'UInt32', fullName: 'System.UInt32', min: 0n, max: 4294967295n },
   int64: { name: 'Int64', fullName: 'System.Int64', min: -(2n ** 63n), max: 2n ** 63n - 1n },
   uint64: { name: 'UInt64', fullName: 'System.UInt64', min: 0n, max: 2n ** 64n - 1n },
+  bigint: { name: 'BigInteger', fullName: 'System.Numerics.BigInteger', min: 0n, max: 0n },
 };
 
 const OTHER_INFO: Readonly<Record<'single' | 'double' | 'decimal', { name: string; fullName: string }>> = {
@@ -222,6 +223,7 @@ export function integerValueOf(value: PSNumber | number): bigint {
 }
 
 export function fitsKind(kind: IntegerKind, value: bigint): boolean {
+  if (kind === 'bigint') return true;
   const range = INT_INFO[kind];
   return value >= range.min && value <= range.max;
 }
@@ -231,7 +233,7 @@ export function boxInteger(kind: IntegerKind, value: bigint): number | PSNumber 
   if (kind === 'int64' && value >= BigInt(INT32_MIN) && value <= BigInt(INT32_MAX)) return new PSNumber('int64', value);
   if (kind === 'int64' && value > BigInt(INT32_MAX) && value <= BigInt(Number.MAX_SAFE_INTEGER)) return Number(value);
   if (kind === 'int64' && value < BigInt(INT32_MIN) && value >= -BigInt(Number.MAX_SAFE_INTEGER)) return Number(value);
-  if (kind === 'int64' || kind === 'uint64') return new PSNumber(kind, value);
+  if (kind === 'int64' || kind === 'uint64' || kind === 'bigint') return new PSNumber(kind, value);
   return new PSNumber(kind, Number(value));
 }
 
@@ -272,7 +274,7 @@ export type ArithmeticOperator = '+' | '-' | '*' | '/' | '%';
 
 type Operand = number | PSNumber;
 
-type OperationKind = 'int32' | 'uint32' | 'int64' | 'uint64';
+type OperationKind = 'int32' | 'uint32' | 'int64' | 'uint64' | 'bigint';
 
 function integerResult(kind: OperationKind, result: bigint): number | PSNumber {
   if (fitsKind(kind, result)) return boxInteger(kind, result);
@@ -311,12 +313,13 @@ function trimDecimal(value: PSNumber): PSNumber {
 }
 
 const OPERATION_RANK: Readonly<Record<NumericKind, number>> = {
-  byte: 1, sbyte: 1, int16: 1, uint16: 1, int32: 1, uint32: 2, int64: 3, uint64: 4,
+  byte: 1, sbyte: 1, int16: 1, uint16: 1, int32: 1, uint32: 2, int64: 3, uint64: 4, bigint: 4.5,
   single: 5, double: 6, decimal: 7,
 };
 
 function operationKind(left: Operand, right: Operand, lk: NumericKind, rk: NumericKind): OperationKind {
   const rank = Math.max(OPERATION_RANK[lk], OPERATION_RANK[rk]);
+  if (rank === 4.5) return 'bigint';
   if (rank === 1) return 'int32';
   if (rank === 3) return 'int64';
   const negative = (isNegativeSigned(left, lk) || isNegativeSigned(right, rk));
@@ -339,6 +342,7 @@ function integerOperation(op: ArithmeticOperator, kind: OperationKind, a: bigint
       return integerResult(kind, a % b);
     default:
       if (b === 0n) divideByZero();
+      if (kind === 'bigint') return integerResult(kind, a / b);
       if (a % b === 0n) return integerResult(kind, a / b);
       return boxDouble(Number(a) / Number(b));
   }
@@ -374,7 +378,7 @@ export function negate(value: Operand): Operand {
     return new PSNumber('decimal', -unscaled, scale);
   }
   if (kind === 'double' || kind === 'single') return boxDouble(-toDouble(value));
-  const wide: OperationKind = kind === 'int64' || kind === 'uint64' ? 'int64' : 'int32';
+  const wide: OperationKind = kind === 'bigint' ? 'bigint' : kind === 'int64' || kind === 'uint64' ? 'int64' : 'int32';
   return integerResult(wide, -integerValueOf(value));
 }
 

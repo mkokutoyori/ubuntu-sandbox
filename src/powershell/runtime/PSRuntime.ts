@@ -28,7 +28,7 @@ import {
   effectiveExecutionPolicy, scriptRefusal,
 } from '@/powershell/executionPolicy';
 import { isTimeSpan, makeTimeSpan, timeSpanMember, timeSpanStatics } from '@/powershell/runtime/dotnetTimeSpan';
-import { booleanMember, boxedNumberMember, charMember, numberMember } from '@/powershell/runtime/dotnetNumber';
+import { booleanMember, boxedNumberMember, charMember, formatNumber, numberMember } from '@/powershell/runtime/dotnetNumber';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime, timeZoneInfoStatics } from '@/powershell/runtime/dotnetDateTime';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
@@ -95,6 +95,25 @@ export class BreakSignal    { constructor(public readonly label?: string) {} }
 export class ContinueSignal { constructor(public readonly label?: string) {} }
 
 export { PSRuntimeError } from './PSRuntimeError';
+
+const GENERIC_COLLECTION = /^(?:system\.collections\.generic\.|collections\.generic\.)?list\[(.+)\]$|^(?:system\.collections\.objectmodel\.|collections\.objectmodel\.)collection\[(.+)\]$/i;
+
+const NUMERIC_CONVERSION_METHODS: Readonly<Record<string, NumericKind>> = {
+  tobyte: 'byte', tosbyte: 'sbyte', toint16: 'int16', touint16: 'uint16', toint32: 'int32', touint32: 'uint32',
+  toint64: 'int64', touint64: 'uint64', tosingle: 'single', todouble: 'double', todecimal: 'decimal',
+};
+
+function shortestDoubleText(value: number): string {
+  return String(value).replace(/e([+-])/, 'E$1');
+}
+
+function shortestSingleText(value: number): string {
+  for (let digits = 1; digits <= 9; digits++) {
+    const candidate = value.toPrecision(digits);
+    if (Math.fround(Number(candidate)) === value) return String(Number(candidate)).replace(/e([+-])/, 'E$1');
+  }
+  return String(value);
+}
 
 const COMMON_SWITCH_PARAMETERS: readonly string[] = ['verbose', 'debug', 'whatif', 'confirm'];
 
@@ -289,6 +308,20 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     maxvalue:  Number.MAX_VALUE as PSValue,
   } as Record<string, PSValue>,
 
+  single: {
+    parse:    (s: PSValue) => {
+      const n = Number.parseFloat(String(s));
+      if (!Number.isFinite(n)) throw new Error(`Cannot convert '${s}' to float`);
+      return new PSNumber('single', Math.fround(n)) as unknown as PSValue;
+    },
+    nan:      new PSNumber('single', Number.NaN) as unknown as PSValue,
+    epsilon:  new PSNumber('single', 1.401298464324817e-45) as unknown as PSValue,
+    minvalue: new PSNumber('single', -3.4028234663852886e38) as unknown as PSValue,
+    maxvalue: new PSNumber('single', 3.4028234663852886e38) as unknown as PSValue,
+    positiveinfinity: new PSNumber('single', Infinity) as unknown as PSValue,
+    negativeinfinity: new PSNumber('single', -Infinity) as unknown as PSValue,
+  } as Record<string, PSValue>,
+
   convert: {
     tostring:  (v: PSValue) => String(v ?? '') as PSValue,
     toint32:   (v: PSValue) => Number.parseInt(String(v), 10) as PSValue,
@@ -345,6 +378,8 @@ STATIC_TYPES['path'] = STATIC_TYPES['system.io.path'];
 STATIC_TYPES['system.string'] = STATIC_TYPES['string'];
 STATIC_TYPES['system.int32'] = STATIC_TYPES['int32'];
 STATIC_TYPES['int'] = STATIC_TYPES['int32'];
+STATIC_TYPES['float'] = STATIC_TYPES['single'];
+STATIC_TYPES['system.single'] = STATIC_TYPES['single'];
 STATIC_TYPES['system.int64'] = STATIC_TYPES['int64'];
 STATIC_TYPES['long'] = STATIC_TYPES['int64'];
 STATIC_TYPES['system.double'] = STATIC_TYPES['double'];
@@ -382,7 +417,7 @@ const makeStack = (): PSValue => {
 
 const makeListGeneric = (): PSValue => makeArrayList();
 
-const COLLECTION_TYPES = ['arraylist', 'system.collections.arraylist',
+const COLLECTION_TYPES = ['arraylist', 'system.collections.arraylist', 'collections.arraylist',
   'list', 'system.collections.generic.list[string]', 'system.collections.generic.list[int]',
   'system.collections.generic.list[object]'];
 const QUEUE_TYPES = ['queue', 'system.collections.queue'];
@@ -1779,7 +1814,7 @@ export class PSRuntime {
     // CastExpression { targetType } or TypeLiteral { typeName } — extract the type name directly.
     if (op === '-is' || op === '-isnot' || op === '-as') {
       const left = this.evalExpr(node.left, env);
-      const typeName = this.extractTypeName(node.right);
+      const typeName = this.extractTypeName(node.right, env);
       if (op === '-is')    return this.psIs(left, `[${typeName}]`);
       if (op === '-isnot') return !this.psIs(left, `[${typeName}]`);
       return this.psCast(left, typeName);
@@ -2190,6 +2225,9 @@ export class PSRuntime {
     if (tname === 'powershell' || tname === 'system.management.automation.powershell') {
       return this.getMember({ create: () => createPowerShellHost(() => this.openHostSession()) } as unknown as PSValue, node.member.toLowerCase());
     }
+    if (tname === 'languageprimitives' || tname === 'system.management.automation.languageprimitives') {
+      return this.getMember(this.languagePrimitiveStatics() as unknown as PSValue, node.member.toLowerCase());
+    }
     if (tname === 'errorrecord' || tname === 'system.management.automation.errorrecord') {
       return this.getMember(this.errorRecordStatics() as unknown as PSValue, node.member.toLowerCase());
     }
@@ -2205,6 +2243,12 @@ export class PSRuntime {
     const exceptionType = resolveExceptionType(node.typeName);
     if (exceptionType !== null && node.member.toLowerCase() === 'new') {
       return ((message?: PSValue) => makeExceptionObject(exceptionType, message === undefined || message === null ? defaultExceptionMessage(exceptionType) : String(message))) as unknown as PSValue;
+    }
+    const genericStatic = GENERIC_COLLECTION.exec(node.typeName.startsWith('[') ? stripTypeBrackets(node.typeName) : node.typeName);
+    if (genericStatic !== null && node.member.toLowerCase() === 'new') {
+      const kind = genericStatic[1] !== undefined ? 'List' : 'Collection';
+      return ((initial?: PSValue) => this.newGenericList(kind, genericStatic[1] ?? genericStatic[2],
+        Array.isArray(initial) ? initial : [])) as unknown as PSValue;
     }
     const typeObj = STATIC_TYPES[tname]
       // Generic list fallback: List[T] for any T
@@ -2555,6 +2599,18 @@ export class PSRuntime {
       throw e;
     }
     return this.aggregateCaptured(emitted);
+  }
+
+  private languagePrimitiveStatics(): Record<string, PSValue> {
+    const typeNameOf = (type: PSValue): string => {
+      const carrier = type !== null && typeof type === 'object' ? type as Record<string, PSValue> : null;
+      return carrier !== null && typeof carrier['FullName'] === 'string' ? String(carrier['FullName']) : stripTypeBrackets(psValueToString(type));
+    };
+    return {
+      convertto: (value: PSValue, type: PSValue) => this.psCast(value, typeNameOf(type)),
+      istrue: (value: PSValue) => this.isTruthy(value),
+      equals: (left: PSValue, right: PSValue, ignoreCase?: PSValue) => this.psEq(left, right, ignoreCase !== true),
+    } as unknown as Record<string, PSValue>;
   }
 
   private errorRecordStatics(): Record<string, PSValue> {
@@ -4169,6 +4225,11 @@ export class PSRuntime {
     if (enumType !== undefined) return this.guarded(() => this.castEnum(enumType, val));
     const scalar = this.castScalar(val, parseTypeName(typeName));
     if (scalar !== undefined) return scalar;
+    const genericCollection = GENERIC_COLLECTION.exec(typeName.startsWith('[') && typeName.endsWith(']') ? typeName.slice(1, -1) : typeName);
+    if (genericCollection !== null) {
+      const items = val === null || val === undefined ? [] : Array.isArray(val) ? val : [val];
+      return this.newGenericList(genericCollection[1] !== undefined ? 'List' : 'Collection', genericCollection[1] ?? genericCollection[2], items);
+    }
     switch (t) {
       case 'xml': {
         const xmlStr = String(val ?? '');
@@ -4401,6 +4462,8 @@ export class PSRuntime {
       case 'pscustomobject': case 'psobject': case 'system.management.automation.pscustomobject': case 'system.management.automation.psobject':
         return val !== null && typeof val === 'object' && (val as unknown as Record<string, unknown>)['__pscustomobject__'] === true;
       case 'scriptblock': case 'system.management.automation.scriptblock': return this.isScriptBlock(val);
+      case 'type': case 'system.type': case 'runtimetype': case 'system.runtimetype':
+        return val !== null && typeof val === 'object' && !Array.isArray(val) && 'IsValueType' in (val as Record<string, unknown>) && 'FullName' in (val as Record<string, unknown>);
       case 'timespan': case 'system.timespan': return val !== null && typeof val === 'object' && isTimeSpan(val as Record<string, PSValue>);
       default: {
         const declared = val !== null && typeof val === 'object' ? (val as Record<string, PSValue>)['__type__'] : undefined;
@@ -4416,6 +4479,12 @@ export class PSRuntime {
   }
 
   private describeType(obj: PSValue): { name: string; fullName: string } | null {
+    if (Array.isArray(obj) && typeof (obj as unknown as Record<string, unknown>)['__generic__'] === 'string') {
+      const generic = String((obj as unknown as Record<string, unknown>)['__generic__']);
+      const namespace = generic === 'List' ? 'System.Collections.Generic' : 'System.Collections.ObjectModel';
+      const element = typeSpecName(parseTypeName(String((obj as unknown as Record<string, unknown>)['__genericElement__'] ?? 'object'))).fullName;
+      return { name: `${generic}\`1`, fullName: `${namespace}.${generic}\`1[[${element}]]` };
+    }
     const scalar = describeScalarType(obj);
     if (scalar !== null) return scalar;
     if (obj instanceof Date) return { name: 'DateTime', fullName: 'System.DateTime' };
@@ -4435,13 +4504,53 @@ export class PSRuntime {
     return { name: 'Hashtable', fullName: 'System.Collections.Hashtable' };
   }
 
+  newGenericList(kind: 'List' | 'Collection', elementType: string, source: readonly PSValue[]): PSValue {
+    const list: PSValue[] = source.map(item => this.psCast(item, elementType));
+    Object.defineProperty(list, '__list__', { value: list, enumerable: true, configurable: true });
+    Object.defineProperty(list, '__generic__', { value: kind, enumerable: false, configurable: true });
+    Object.defineProperty(list, '__genericElement__', { value: elementType, enumerable: false, configurable: true });
+    Object.defineProperty(list, 'Count', { get: () => list.length, enumerable: false, configurable: true });
+    return list as unknown as PSValue;
+  }
+
+  private convertListElement(list: PSValue[], value: PSValue): PSValue {
+    const element = (list as unknown as Record<string, unknown>)['__genericElement__'];
+    return typeof element === 'string' ? this.psCast(value, element) : value;
+  }
+
+  private numericConversionMethod(value: number | PSNumber, member: string): PSValue {
+    const target = NUMERIC_CONVERSION_METHODS[member];
+    if (target !== undefined) {
+      return ((_provider?: PSValue) => this.guarded(() => castToNumeric(target, value, this.conversion))) as unknown as PSValue;
+    }
+    if (member !== 'tostring' || !this.conversion.core) return null;
+    const single = value instanceof PSNumber && value.kind === 'single';
+    const real = typeof value === 'number' ? !Number.isInteger(value) : single;
+    if (!real) return null;
+    const text = single ? shortestSingleText(Number((value as PSNumber).value)) : shortestDoubleText(value as number);
+    return ((format?: PSValue) => (format === undefined || format === null || String(format) === ''
+      ? text
+      : formatNumber(typeof value === 'number' ? value : value.toNumber(), String(format)))) as unknown as PSValue;
+  }
+
   getMember(obj: PSValue, member: string): PSValue {
     if (obj === null || obj === undefined) return null;
     if (member === 'gettype' && !(typeof obj === 'object' && !Array.isArray(obj) && 'gettype' in (obj as object))) {
       const described = this.describeType(obj);
-      if (described !== null) return () => makeTypeObject(described.name, described.fullName);
+      if (described !== null) {
+        const element = Array.isArray(obj) ? (obj as unknown as Record<string, unknown>)['__genericElement__'] : undefined;
+        return () => {
+          const typeObject = makeTypeObject(described.name, described.fullName) as unknown as Record<string, PSValue>;
+          if (typeof element === 'string') typeObject.getgenericarguments = (() => [this.typeLiteralObject(element)]) as unknown as PSValue;
+          return typeObject as unknown as PSValue;
+        };
+      }
     }
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
+    if ((typeof obj === 'number' || obj instanceof PSNumber)) {
+      const converting = this.numericConversionMethod(obj, member);
+      if (converting !== null) return converting;
+    }
     if (typeof obj === 'number')  return numberMember(obj, member);
     if (obj instanceof PSEnumValue) {
       const own = enumMember(obj, member);
@@ -4455,13 +4564,13 @@ export class PSRuntime {
     if (Array.isArray(obj) && (obj as unknown as Record<string, unknown>)['__list__'] !== undefined) {
       const list = obj as PSValue[];
       switch (member) {
-        case 'add':      return (v: PSValue) => { list.push(v); return null; };
+        case 'add':      return (v: PSValue) => { list.push(this.convertListElement(list, v)); return null; };
         case 'remove':   return (v: PSValue) => { const i = list.indexOf(v); if (i >= 0) list.splice(i, 1); return null; };
         case 'removeat': return (i: PSValue) => { list.splice(Number(i), 1); return null; };
         case 'count': case 'length': return list.length;
         case 'item':     return (i: PSValue) => list[Number(i)] ?? null;
         case 'toarray':  return [...list];
-        case 'insert':   return (i: PSValue, v: PSValue) => { list.splice(Number(i), 0, v); return null; };
+        case 'insert':   return (i: PSValue, v: PSValue) => { list.splice(Number(i), 0, this.convertListElement(list, v)); return null; };
         case 'clear':    return () => { list.splice(0); return null; };
         case 'contains': return (v: PSValue) => list.some(e => this.psEq(e, v, false));
         case 'indexof':  return (v: PSValue) => list.findIndex(e => this.psEq(e, v, false));
@@ -4689,12 +4798,12 @@ export class PSRuntime {
   }
 
   /** Extracts the type name string from a [TypeName] node (TypeLiteral or CastExpression wrapping an empty operand). */
-  private extractTypeName(node: PSExpression): string {
+  private extractTypeName(node: PSExpression, env: PSEnvironment): string {
     if (node.type === 'TypeLiteral')
       return (node as unknown as { typeName: string }).typeName;
     if (node.type === 'CastExpression')
       return (node as PSCastExpression).targetType;
-    return stripTypeBrackets(psValueToString(this.evalExpr(node, this.global)));
+    return stripTypeBrackets(psValueToString(this.evalExpr(node, env)));
   }
 
   private isPureValueNode(node: PSExpression, _env?: PSEnvironment): boolean {
