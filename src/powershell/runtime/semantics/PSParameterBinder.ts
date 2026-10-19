@@ -386,12 +386,20 @@ export function bindParameters(
   return { values, bound, extra: queue, common, shouldProcess };
 }
 
+export interface ParameterDescription {
+  readonly name: string;
+  readonly isSwitch: boolean;
+  readonly typeName: string | null;
+  readonly mandatory: boolean;
+  readonly position: number | null;
+}
+
 export function parameterModelsOf(
   declarations: readonly PSParamDeclaration[], host: BinderHost,
-): Array<{ name: string; isSwitch: boolean; typeName: string | null }> {
+): ParameterDescription[] {
   return declarations.map(d => {
     const model = modelOf(d, host);
-    return { name: model.name, isSwitch: model.isSwitch, typeName: model.typeName };
+    return { name: model.name, isSwitch: model.isSwitch, typeName: model.typeName, mandatory: model.mandatory, position: model.position };
   });
 }
 

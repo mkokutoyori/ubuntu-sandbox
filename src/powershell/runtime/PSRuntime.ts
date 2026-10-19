@@ -22,7 +22,8 @@ import { PSLexer }  from '@/powershell/lexer/PSLexer';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
-import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
+import { expandString, psValueToString, registeredDisplay } from '@/powershell/runtime/PSExpansion';
+import { commentBlockBefore } from '@/powershell/help/CommentHelp';
 import {
   type ProcessPolicyPort, PROCESS_POLICY_VARIABLE,
   effectiveExecutionPolicy, scriptRefusal,
@@ -37,7 +38,8 @@ import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
 import { stringMember } from './semantics/DotNetString';
 import { formatString } from './semantics/CompositeFormat';
 import { EnumType, PSEnumValue, builtinEnums, enumMember } from './semantics/PSEnum';
-import { bindParameters, cmdletBindingOf, unboundParameterValue, type BinderHost, type CmdletBindingInfo } from './semantics/PSParameterBinder';
+import { bindParameters, cmdletBindingOf, parameterModelsOf, unboundParameterValue, type BinderHost, type CmdletBindingInfo } from './semantics/PSParameterBinder';
+import type { FunctionSignature } from '@/powershell/help/FunctionHelp';
 import { StreamHub, actionPreferenceOf, displayLine, informationRecord, messageRecord, newErrorRecord, preferenceStopError, type ActionPreferenceName, type RedirectHandler, type StreamCollector, type StreamKind, type StreamSink } from './semantics/PSStreams';
 import { parseVariableTarget, preferenceAssignments, takeCommonParameters, type VariableTarget } from './semantics/PSCommonParameters';
 import { exceptionMatches, exceptionShortName, resolveExceptionType, makeExceptionObject, defaultExceptionMessage } from './semantics/PSExceptions';
@@ -555,6 +557,7 @@ export class PSRuntime {
   /** User-defined functions survive between execute() calls. */
   private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean; declaredName: string }>();
   private readonly functionSources = new Map<string, string>();
+  private readonly functionLeadingComments = new Map<string, string>();
 
   /** User-defined PowerShell classes. */
   private readonly userClasses = new Map<string, PSClassDefinition>();
@@ -806,6 +809,9 @@ export class PSRuntime {
       }
       if (depth === 0) {
         this.functionSources.set(name, code.slice(openAt, i));
+        const leading = commentBlockBefore(code, m.index);
+        if (leading !== null) this.functionLeadingComments.set(name, leading);
+        else this.functionLeadingComments.delete(name);
       }
     }
   }
@@ -935,6 +941,7 @@ export class PSRuntime {
 
   beginInteractive(code: string): void {
     this.outputLines = [];
+    this.indexFunctionSources(code);
     const ast = this.parseCached(code);
     const traps: PSTrapStatement[] = [];
     const statements: PSStatement[] = [];
@@ -3404,6 +3411,31 @@ export class PSRuntime {
     }
   }
 
+  private functionSignature(name: string): FunctionSignature | null {
+    const block = this.functions.get(name.toLowerCase())?.block;
+    if (block === undefined) return null;
+    const declarations = block.paramBlock?.parameters ?? [];
+    const host = this.binderHost(this.global);
+    return {
+      parameters: parameterModelsOf(declarations, host),
+      advanced: block.paramBlock === null || block.paramBlock === undefined
+        ? false
+        : cmdletBindingOf(declarations, block.paramBlock.attributes, host).advanced,
+      enumNames: typeName => this.enums.get(stripTypeBrackets(typeName).toLowerCase())?.names() ?? null,
+    };
+  }
+
+  private binderHost(evaluationEnv: PSEnvironment): BinderHost {
+    return {
+      evaluate: expression => this.evalExpr(expression, evaluationEnv),
+      cast: (value, typeName) => this.psCast(value, typeName),
+      invokeScript: (script, argument) => this.invokeScriptBlock(script as PSScriptBlock, {}, [], evaluationEnv, argument),
+      equal: (left, right, ignoreCase) => this.psEq(left, right, !ignoreCase),
+      scriptText: script => (script as PSScriptBlock).sourceText ?? '',
+      spell: key => this.typedParameterName(key),
+    };
+  }
+
   private bindParametersInto(
     target: PSEnvironment,
     block: PSScriptBlock,
@@ -3417,14 +3449,7 @@ export class PSRuntime {
       return { common: {}, binding: null, bound: {}, block };
     }
     const declarations = block.paramBlock.parameters;
-    const host: BinderHost = {
-      evaluate: expression => this.evalExpr(expression, evaluationEnv),
-      cast: (value, typeName) => this.psCast(value, typeName),
-      invokeScript: (script, argument) => this.invokeScriptBlock(script as PSScriptBlock, {}, [], evaluationEnv, argument),
-      equal: (left, right, ignoreCase) => this.psEq(left, right, !ignoreCase),
-      scriptText: script => (script as PSScriptBlock).sourceText ?? '',
-      spell: key => this.typedParameterName(key),
-    };
+    const host = this.binderHost(evaluationEnv);
     const attributes = block.paramBlock.attributes;
     const outcome = bindParameters(declarations, attributes, named, positional, host, {
       pipelineParameter,
@@ -3484,6 +3509,9 @@ export class PSRuntime {
   ): PSValue {
     const { block, isFilter } = fn;
     const commandName = fn.declaredName ?? '<ScriptBlock>';
+    if (fn.declaredName !== undefined && named['?'] !== undefined) {
+      return this.dispatchCmdlet('get-help', [fn.declaredName], {}, null, env);
+    }
     const hasNamedBlocks = !!(block.beginBlock || block.processBlock || block.endBlock || block.cleanBlock);
     const pipeItems: PSValue[] = pipeInput !== undefined && pipeInput !== null
       ? (Array.isArray(pipeInput) ? pipeInput : [pipeInput])
@@ -4213,7 +4241,22 @@ export class PSRuntime {
           description: c.description,
         })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
-      getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
+      getFunctionSource: (name) => self.functionSources.get(name.toLowerCase())
+        ?? self.functions.get(name.toLowerCase())?.block.sourceText ?? null,
+      defineFunction: (name, block) => {
+        const body = block as unknown as PSScriptBlock | null;
+        if (body === null || typeof body !== 'object' || body.type !== 'ScriptBlock') return false;
+        self.functions.set(name.toLowerCase(), { block: body, isFilter: false, declaredName: name });
+        self.functionLeadingComments.delete(name.toLowerCase());
+        return true;
+      },
+      removeFunction: (name) => {
+        self.functionSources.delete(name.toLowerCase());
+        self.functionLeadingComments.delete(name.toLowerCase());
+        return self.functions.delete(name.toLowerCase());
+      },
+      getFunctionLeadingComment: (name) => self.functionLeadingComments.get(name.toLowerCase()) ?? null,
+      getFunctionSignature: (name) => self.functionSignature(name),
       getFunctionBlock: (name) => (self.functions.get(name.toLowerCase())?.block ?? null) as unknown as PSValue,
       listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),

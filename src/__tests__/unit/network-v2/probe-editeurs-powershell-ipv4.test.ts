@@ -5,7 +5,7 @@ import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PSLexer } from '@/powershell/lexer/PSLexer';
-import { extractCommentHelp } from '@/powershell/cmdlets/core/MiscCmdlets';
+import { parseCommentHelp } from '@/powershell/help/CommentHelp';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
 beforeEach(() => {
@@ -155,16 +155,17 @@ describe('a token that starts with digits and carries a colon is a bare word', (
 
 describe('the last section of a comment-based help block is not lost', () => {
   const src = (tail: string) => [
-    'function T {', '<#', '.SYNOPSIS', 'Fait un truc',
-    '.DESCRIPTION', tail, '#>', '}',
+    '<#', '.SYNOPSIS', 'Fait un truc',
+    '.DESCRIPTION', tail, '#>',
   ].join('\n');
+  const extractCommentHelp = (raw: string) => parseCommentHelp(raw)!;
 
   it('a final section with no Z in it is captured whole', () => {
     // `\Z` n'est pas une ancre en JavaScript : c'est un Z litteral. La
     // derniere section n'etait donc gardee que si elle contenait cette
     // lettre — et tronquee dessus quand elle l'avait.
     expect(extractCommentHelp(src('Description finale sans la lettre interdite')))
-      .toEqual({ synopsis: 'Fait un truc', description: 'Description finale sans la lettre interdite' });
+      .toMatchObject({ synopsis: 'Fait un truc', description: 'Description finale sans la lettre interdite' });
   });
 
   it('a final section containing a Z is no longer cut at it', () => {

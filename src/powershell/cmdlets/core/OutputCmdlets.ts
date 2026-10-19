@@ -7,7 +7,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { psValueToString, registeredDisplay } from '@/powershell/runtime/PSExpansion';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 // ─── Write-Output / echo ───────────────────────────────────────────────────
@@ -172,7 +172,7 @@ export class OutStringCmdlet implements ICmdlet {
       : Array.isArray(raw) ? raw : [raw];
 
     const allObjects = items.length > 0
-      && items.every(v => v !== null && typeof v === 'object' && !Array.isArray(v));
+      && items.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && registeredDisplay(v) === null);
 
     let text: string;
     if (allObjects) {

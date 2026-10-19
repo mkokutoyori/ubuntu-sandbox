@@ -11,6 +11,7 @@
  *   - invokeBlock to evaluate a PSScriptBlock with a given $_ and named vars
  */
 
+import type { FunctionSignature } from '@/powershell/help/FunctionHelp';
 import type { PSValue, PSEnvironment } from '@/powershell/runtime/PSEnvironment';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
@@ -73,6 +74,10 @@ export interface IRuntimeRef {
   listEnvVars(): Array<{ Name: string; Value: string }>;
   getFunctionSource(name: string): string | null;
   getFunctionBlock(name: string): PSValue;
+  getFunctionLeadingComment(name: string): string | null;
+  getFunctionSignature(name: string): FunctionSignature | null;
+  defineFunction(name: string, block: PSValue): boolean;
+  removeFunction(name: string): boolean;
   /** Names of the functions this session has defined, for Get-Command. */
   listFunctions(): readonly string[];
   /** The session's command history, newest last, for Get-History. */
