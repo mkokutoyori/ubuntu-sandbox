@@ -17,6 +17,15 @@ export interface SyslogTime {
   readonly offsetMinute: number;
 }
 
+export function applyDefaultTimeZone(time: SyslogTime, offset: string): SyslogTime {
+  return {
+    ...time,
+    offsetMode: offset[0] as OffsetMode,
+    offsetHour: (offset.charCodeAt(1) - 48) * 10 + (offset.charCodeAt(2) - 48),
+    offsetMinute: (offset.charCodeAt(4) - 48) * 10 + (offset.charCodeAt(5) - 48),
+  };
+}
+
 export const TIME_TYPE_RFC3164: SyslogTimeType = 1;
 export const TIME_TYPE_RFC5424: SyslogTimeType = 2;
 
