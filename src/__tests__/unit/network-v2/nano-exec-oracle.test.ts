@@ -31,7 +31,7 @@
  * Non rejoue (liste dans docs/ASSESSMENT-EDITEURS-NON-PORTE.md) : M-F (nouveau tampon : un seul tampon par session), la mort du
  * shell par signal (« Cancelled »), les commandes dont la sortie depend de la machine ($HOME, `od` absent du simulateur) et les
  * filtres dont l'entree ou la sortie n'a pas de retour a la ligne final (le simulateur termine toujours par une fin de ligne la
- * sortie de `tr`, `cat`, `sort` ou d'un tube : `printf abc | cat` rend « abc\n »), ^S Enregistrer.
+ * sortie de `tr`, `cat`, `sort` ou d'un tube : `printf abc | cat` rend « abc\n »).
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';

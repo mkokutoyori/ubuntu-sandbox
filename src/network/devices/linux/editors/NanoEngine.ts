@@ -485,6 +485,16 @@ export class NanoEngine {
     return `File to insert${this.live.noconvert ? ' unconverted' : ''} [from ./]`;
   }
 
+  private saveInPlace(): void {
+    if (this.titleName === '') {
+      this.beginWriteOut(false);
+      return;
+    }
+    this.exitAfterSave = false;
+    this.writeMethod = 'overwrite';
+    this.writeBuffer(this.titleName, this.writeTarget(this.titleName), false, false);
+  }
+
   private writeOutLabel(): string {
     const selection = this.markLine !== null && !this.exitAfterSave && !this.live.restricted;
     const method = this.writeMethod;
@@ -1076,7 +1086,7 @@ export class NanoEngine {
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
     // read-only, since every one of them would mutate the buffer.
-    if (this._readOnly && (key === 'o' || key === 'k' || key === 'u' || key === '\\'
+    if (this._readOnly && (key === 'o' || key === 's' || key === 'k' || key === 'u' || key === '\\'
       || key === 'j' || key === 'r' || key === 't')) {
       this._statusMessage = '[ Key is invalid in view mode ]';
       return;
@@ -1084,6 +1094,9 @@ export class NanoEngine {
     switch (key) {
       case 'o':
         this.beginWriteOut(false);
+        return;
+      case 's':
+        this.saveInPlace();
         return;
       case 'x': // Exit
         if (!this._modified) this.finishExit(true);
