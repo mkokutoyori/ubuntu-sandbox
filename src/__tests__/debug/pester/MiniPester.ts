@@ -223,7 +223,7 @@ function shouldCmdlet(): ICmdlet {
         case 'throw': {
           ctx.runtime.setVariable('__pester_block__', actual);
           const outcome = isBlock(actual)
-            ? ctx.runtime.executeForValue("try { $null = & $__pester_block__; '__pester_nothrow__' } catch { $_ }")
+            ? (ctx.runtime.invokeScriptText("try { $null = & $__pester_block__; '__pester_nothrow__' } catch { $_ }", ctx.env).pop() ?? null)
             : '__pester_nothrow__';
           const thrown = outcome === '__pester_nothrow__' ? null : outcome as Record<string, PSValue>;
           const exceptionMessage = thrown === null ? '' : psValueToString((thrown.Exception as Record<string, PSValue> | undefined)?.Message ?? thrown.Message);

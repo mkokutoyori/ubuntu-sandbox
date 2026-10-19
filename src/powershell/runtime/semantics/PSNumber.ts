@@ -138,10 +138,10 @@ export function decimalFromNumber(value: number): PSNumber {
   return decimalFromText(text) ?? makeDecimal(BigInt(Math.round(value)), 0);
 }
 
-export function decimalFromText(text: string): PSNumber | null {
+export function decimalFromText(text: string, keepTrailingZeros = false): PSNumber | null {
   const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(text.trim());
   if (match === null || (match[2] === '' && (match[3] ?? '') === '')) return null;
-  const fraction = (match[3] ?? '').replace(/0+$/, '');
+  const fraction = keepTrailingZeros ? (match[3] ?? '') : (match[3] ?? '').replace(/0+$/, '');
   let unscaled = BigInt((match[2] || '0') + fraction);
   let scale = fraction.length;
   const exponent = match[4] === undefined ? 0 : Number(match[4]);

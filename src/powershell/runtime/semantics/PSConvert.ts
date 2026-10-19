@@ -143,7 +143,7 @@ function castToDecimal(source: number | PSNumber, original: unknown): number | P
     throw conversionFailure(original, 'System.Decimal', overflowText('decimal'));
   }
   if (typeof original === 'string') {
-    const parsed = decimalFromText(original.trim() === '' ? '0' : original);
+    const parsed = decimalFromText(original.trim() === '' ? '0' : original, true);
     if (parsed !== null) return parsed;
   }
   return boxAs('decimal', source);

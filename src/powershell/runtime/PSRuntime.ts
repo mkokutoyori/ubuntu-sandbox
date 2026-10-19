@@ -38,12 +38,15 @@ import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
 import { stringMember } from './semantics/DotNetString';
 import { formatString } from './semantics/CompositeFormat';
 import { EnumType, PSEnumValue, builtinEnums, enumMember } from './semantics/PSEnum';
+import { PSParserError } from '@/powershell/parser/PSParserError';
+import { PSLexerError } from '@/powershell/lexer/PSLexerError';
+import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleteness';
 import { bindParameters, cmdletBindingOf, parameterModelsOf, unboundParameterValue, type BinderHost, type CmdletBindingInfo } from './semantics/PSParameterBinder';
 import type { FunctionSignature } from '@/powershell/help/FunctionHelp';
 import { StreamHub, actionPreferenceOf, displayLine, informationRecord, messageRecord, newErrorRecord, preferenceStopError, type ActionPreferenceName, type RedirectHandler, type StreamCollector, type StreamKind, type StreamSink } from './semantics/PSStreams';
 import { parseVariableTarget, preferenceAssignments, takeCommonParameters, type VariableTarget } from './semantics/PSCommonParameters';
 import { exceptionMatches, exceptionShortName, resolveExceptionType, makeExceptionObject, defaultExceptionMessage } from './semantics/PSExceptions';
-import { PSChar, PSNumber, ArithmeticFault, compareNumbers, numericKindOf, type NumericKind } from './semantics/PSNumber';
+import { PSChar, PSNumber, ArithmeticFault, boxInteger, compareNumbers, integerRange, kindName, numericKindOf, type IntegerKind, type NumericKind } from './semantics/PSNumber';
 import { PSConversionError, castToChar, castToNumeric, truthiness, type ConversionOptions } from './semantics/PSConvert';
 import { bitwise, multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
 import { PASS_THROUGH_CMDLETS, unboxDeep } from './semantics/PSUnbox';
@@ -106,6 +109,7 @@ const NUMERIC_CONVERSION_METHODS: Readonly<Record<string, NumericKind>> = {
 };
 
 function shortestDoubleText(value: number): string {
+  if (Object.is(value, -0)) return '-0';
   return String(value).replace(/e([+-])/, 'E$1');
 }
 
@@ -384,6 +388,16 @@ STATIC_TYPES['float'] = STATIC_TYPES['single'];
 STATIC_TYPES['system.single'] = STATIC_TYPES['single'];
 STATIC_TYPES['system.int64'] = STATIC_TYPES['int64'];
 STATIC_TYPES['long'] = STATIC_TYPES['int64'];
+const INTEGER_STATIC_ALIASES: ReadonlyArray<readonly [string, IntegerKind]> = [
+  ['byte', 'byte'], ['sbyte', 'sbyte'], ['int16', 'int16'], ['short', 'int16'], ['uint16', 'uint16'], ['ushort', 'uint16'],
+  ['uint32', 'uint32'], ['uint', 'uint32'], ['uint64', 'uint64'], ['ulong', 'uint64'], ['int64', 'int64'], ['long', 'int64'],
+];
+for (const [alias, kind] of INTEGER_STATIC_ALIASES) {
+  const range = integerRange(kind);
+  const bounds = { minvalue: boxInteger(kind, range.min), maxvalue: boxInteger(kind, range.max) } as unknown as Record<string, PSValue>;
+  STATIC_TYPES[alias] = { ...STATIC_TYPES[alias], ...bounds };
+  STATIC_TYPES[`system.${kindName(kind).name.toLowerCase()}`] = STATIC_TYPES[alias];
+}
 STATIC_TYPES['system.double'] = STATIC_TYPES['double'];
 STATIC_TYPES['system.convert'] = STATIC_TYPES['convert'];
 STATIC_TYPES['security.principal.windowsbuiltinrole'] = {
@@ -1013,9 +1027,44 @@ export class PSRuntime {
   }
 
   /** Execute code and return the last produced PSValue (without stringification). Used by IEX. */
-  invokeScriptText(code: string, env: PSEnvironment = this.global): PSValue[] {
-    const ast = this.parser.parse(this.lexer.tokenize(code), code);
+  invokeScriptText(code: string, env: PSEnvironment = this.global, asCmdlet = true): PSValue[] {
+    let ast: PSProgram;
+    try {
+      ast = this.parser.parse(this.lexer.tokenize(code), code);
+    } catch (error) {
+      throw this.parseFailure(error, code, 0, asCmdlet);
+    }
     return this.runBlockCapture(ast.body, env);
+  }
+
+  parseFailure(error: unknown, code: string, shift: number, specific: boolean): unknown {
+    const parserError = error instanceof PSParserError ? error : null;
+    if (parserError === null && !(error instanceof PSLexerError)) return error;
+    const incomplete = parserError === null
+      ? powershellInputIsIncomplete(code)
+      : parserError.position !== undefined && parserError.position.offset - shift >= code.trimEnd().length;
+    const typeName = incomplete ? 'IncompleteParseException' : 'ParseException';
+    const reason = parserError?.reason ?? (error as PSLexerError).reason;
+    const failure = new PSRuntimeError(reason, `System.Management.Automation.${typeName}`);
+    const specificId = parserError !== null ? parserError.errorId : typeName;
+    failure.errorId = specific ? specificId : typeName;
+    if (specific) {
+      failure.commandName = 'Invoke-Expression';
+      failure.commandKind = 'cmdlet';
+    } else {
+      failure.innerFailure = { exceptionType: failure.exceptionType, errorId: specificId };
+    }
+    return failure;
+  }
+
+  private scriptBlockFromText(code: string): PSValue {
+    let block: PSValue;
+    try {
+      block = this.executeForValue(`{${code}\n}`);
+    } catch (error) {
+      throw this.parseFailure(error, code, 1, false);
+    }
+    return this.isScriptBlock(block) ? { ...(block as PSScriptBlock), sourceText: code } as unknown as PSValue : block;
   }
 
   private openHostSession(): PSRuntime {
@@ -2241,6 +2290,9 @@ export class PSRuntime {
     if (tname === 'powershell' || tname === 'system.management.automation.powershell') {
       return this.getMember({ create: () => createPowerShellHost(() => this.openHostSession()) } as unknown as PSValue, node.member.toLowerCase());
     }
+    if (tname === 'scriptblock' || tname === 'system.management.automation.scriptblock') {
+      return this.getMember({ create: (text: PSValue) => this.scriptBlockFromText(psValueToString(text)) } as unknown as PSValue, node.member.toLowerCase());
+    }
     if (tname === 'languageprimitives' || tname === 'system.management.automation.languageprimitives') {
       return this.getMember(this.languagePrimitiveStatics() as unknown as PSValue, node.member.toLowerCase());
     }
@@ -2284,7 +2336,7 @@ export class PSRuntime {
       throw new PSRuntimeError('Cannot index into a null array.', RUNTIME_EXCEPTION);
     }
     const idx = this.evalExpr(node.index,  env);
-    if (typeof obj === 'string') return this.indexSequence([...obj].map(ch => new PSChar(ch.charCodeAt(0)) as PSValue), idx);
+    if (typeof obj === 'string') return this.indexSequence(Array.from({ length: obj.length }, (_, position) => new PSChar(obj.charCodeAt(position)) as PSValue), idx);
     if (Array.isArray(obj)) return this.indexSequence(obj, idx);
     if (obj !== null && typeof obj === 'object') {
       const rec = obj as Record<string, PSValue>;
@@ -2695,7 +2747,15 @@ export class PSRuntime {
     if (e instanceof PSRuntimeError && e.errorRecord !== undefined) return e.errorRecord as Record<string, PSValue>;
     const message = e instanceof Error ? e.message : String(e);
     const exceptionType = e instanceof PSRuntimeError ? e.exceptionType : RUNTIME_EXCEPTION;
-    return newErrorRecord({ message, exceptionType, fullyQualifiedErrorId: this.errorIdOf(e, exceptionType) });
+    const record = newErrorRecord({ message, exceptionType, fullyQualifiedErrorId: this.errorIdOf(e, exceptionType) });
+    if (e instanceof PSRuntimeError && e.innerFailure !== undefined) {
+      const inner = e.innerFailure;
+      const innerRecord = newErrorRecord({ message, exceptionType: inner.exceptionType, fullyQualifiedErrorId: inner.errorId, category: 'ParserError' });
+      (record.Exception as Record<string, PSValue>).InnerException = {
+        ...makeExceptionObject(inner.exceptionType, message), ErrorRecord: innerRecord,
+      } as unknown as PSValue;
+    }
+    return record;
   }
 
   private errorIdOf(error: unknown, exceptionType: string): string {

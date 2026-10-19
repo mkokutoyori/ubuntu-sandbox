@@ -1124,7 +1124,10 @@ export class PSParser {
     const varTok = this.expect(PSTokenType.VARIABLE);
     const variable = makeVariable(varTok.value, varTok.position);
     this.expectWord('in');
-    this.skipTerminators();
+    this.skipNewlinesOnly();
+    if (this.check(PSTokenType.SEMICOLON)) {
+      throw new PSParserError("Missing expression after 'in' in foreach loop.", this.pos_(), 1, 'MissingForeachExpression');
+    }
     const collection = this.parseAssignmentRHS();
     this.skipTerminators();
     this.expect(PSTokenType.RPAREN);
@@ -1681,7 +1684,10 @@ export class PSParser {
         while (this.check(PSTokenType.COMMA)) {
           const comma = this.advance();
           this.skipTerminators();
-          if (this.isAtEnd()) throw new PSParserError("Missing expression after ','.", comma.position, 1, 'MissingExpressionAfterToken');
+          if (this.isAtEnd()) {
+            const afterComma = { ...comma.position, offset: comma.position.offset + 1, column: comma.position.column + 1 };
+            throw new PSParserError("Missing expression after ','.", afterComma, 1, 'MissingExpressionAfterToken');
+          }
           if (this.isTerminator() || this.check(PSTokenType.PIPE)) break;
           elements.push(this.exprToStatement(this.parseExpression(PRECEDENCE[','])));
         }
@@ -1761,6 +1767,9 @@ export class PSParser {
       return makeAssignment(operand, '-=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
     }
 
+    const signedNumber = this.foldSignIntoNumber();
+    if (signedNumber !== null) return signedNumber;
+
     // Unary + and - (arithmetic sign)
     if (this.check(PSTokenType.MINUS)) {
       this.advance();
@@ -1839,6 +1848,18 @@ export class PSParser {
     const args = this.parseArgumentList();
     this.expect(PSTokenType.RPAREN);
     return { type: 'InvocationExpression', callee: member, arguments: args, position: pos };
+  }
+
+  private foldSignIntoNumber(): PSExpression | null {
+    const sign = this.peek();
+    if (sign.type !== PSTokenType.MINUS && sign.type !== PSTokenType.PLUS) return null;
+    const number = this.peekAt(1);
+    if (number === undefined || number.type !== PSTokenType.NUMBER || number.position.offset !== sign.position.offset + 1) return null;
+    this.advance();
+    if (!/^[+-]/.test(number.value)) {
+      this.tokens[this.pos] = { ...number, value: (sign.type === PSTokenType.MINUS ? '-' : '+') + number.value };
+    }
+    return this.parsePostfixExpression();
   }
 
   private parsePostfixExpression(): PSExpression {
@@ -1954,6 +1975,9 @@ export class PSParser {
       if (this.check(PSTokenType.LBRACKET)) {
         const pos = this.pos_();
         this.advance();
+        if (this.check(PSTokenType.SEMICOLON)) {
+          throw new PSParserError('Missing array index expression.', this.pos_(), 1, 'MissingArrayIndexExpression');
+        }
         const index = this.parseExpression();
         this.expect(PSTokenType.RBRACKET);
         expr = makeIndex(expr, index, pos);
@@ -2151,7 +2175,9 @@ export class PSParser {
   }
 
   private makeNumberLiteral(raw: string, pos: SourcePosition): PSLiteralExpression {
-    return makeLiteral(parseNumberLiteral(raw, this.options) as unknown as number, raw, 'number', pos);
+    const value = parseNumberLiteral(raw, this.options);
+    if (value === null) throw new PSParserError(`The numeric constant ${raw} is not valid.`, pos, raw.length, 'BadNumericConstant');
+    return makeLiteral(value as unknown as number, raw, 'number', pos);
   }
 
   // ─── Argument list (method calls) ──────────────────────────────────────────

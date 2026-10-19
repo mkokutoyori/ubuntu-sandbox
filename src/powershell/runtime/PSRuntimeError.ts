@@ -5,6 +5,7 @@ export class PSRuntimeError extends Error {
   thrownFromThrowStatement = false;
   errorRecord?: Record<string, unknown>;
   errorId?: string;
+  innerFailure?: { exceptionType: string; errorId: string };
   commandKind?: 'cmdlet' | 'function';
 
   constructor(message: string, readonly exceptionType: string = RUNTIME_EXCEPTION) {

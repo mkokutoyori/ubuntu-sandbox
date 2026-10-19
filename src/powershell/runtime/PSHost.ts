@@ -4,7 +4,7 @@ import { PSRuntimeError } from './PSRuntimeError';
 import type { StreamKind, StreamSink } from './semantics/PSStreams';
 
 export interface HostSession {
-  invokeScriptText(code: string): PSValue[];
+  invokeScriptText(code: string, env?: undefined, asCmdlet?: boolean): PSValue[];
   setVariable(name: string, value: PSValue): void;
   errorRecord(error: unknown): PSValue;
   captureStreams(sink: StreamSink): void;
@@ -91,12 +91,16 @@ export function createPowerShellHost(openSession: () => HostSession): Record<str
         }
         if (carried !== null) active.setVariable('input', carried);
         const text = item.kind === 'script' ? item.text : commandLine(item, active, serial++, carried !== null);
-        carried = active.invokeScriptText(text);
+        carried = active.invokeScriptText(text, undefined, false);
       }
       if (carried !== null) outputs.push(...carried);
     } catch (error) {
       host.HadErrors = true;
-      const fatal = !(error instanceof PSRuntimeError) || error.thrownFromThrowStatement
+      const parseFailure = error instanceof PSRuntimeError && /\.(Incomplete)?ParseException$/.test(error.exceptionType);
+      if (parseFailure) {
+        (error as PSRuntimeError).commandName = undefined;
+      }
+      const fatal = !(error instanceof PSRuntimeError) || error.thrownFromThrowStatement || parseFailure
         || error.exceptionType.endsWith('.ActionPreferenceStopException');
       if (fatal) {
         state.State = 'Failed';

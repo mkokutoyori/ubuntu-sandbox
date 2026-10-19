@@ -19,6 +19,7 @@
 import { PSTokenType, PS_KEYWORDS, psToken } from './PSToken';
 import type { PSToken, SourcePosition } from './PSToken';
 import { PSLexerError } from './PSLexerError';
+import { scanNumericLiteral } from '@/powershell/runtime/semantics/PSLiteral';
 
 export interface PSLexerOptions {
   readonly core: boolean;
@@ -751,9 +752,15 @@ export class PSLexer {
 
     // If followed by a digit, this is a decimal start without leading zero (.5)
     if (!this.eof() && this.isDigit(this.ch())) {
-      let num = '.';
-      while (!this.eof() && this.isDigit(this.ch())) { num += this.ch(); this.advance(); }
-      return psToken(PSTokenType.NUMBER, num, start);
+      const dotAt = this.pos - 1;
+      const scanned = scanNumericLiteral(this.input, dotAt, this.options);
+      let text = '.';
+      if (scanned === null) {
+        while (!this.eof() && this.isWordChar(this.ch())) { text += this.ch(); this.advance(); }
+        return psToken(PSTokenType.WORD, text, start);
+      }
+      while (this.pos < dotAt + scanned.length) this.advance();
+      return psToken(PSTokenType.NUMBER, this.input.slice(dotAt, dotAt + scanned.length), start);
     }
 
     return psToken(PSTokenType.DOT, '.', start);
@@ -776,21 +783,6 @@ export class PSLexer {
     if (daysTimeSpan) {
       for (let i = 0; i < daysTimeSpan[0].length; i++) this.advance();
       return psToken(PSTokenType.WORD, daysTimeSpan[0], start);
-    }
-
-    // Hex: 0x...
-    if (first_ === '0' && (this.peek1() === 'x' || this.peek1() === 'X')) {
-      value += '0'; this.advance();
-      value += this.ch(); this.advance(); // x
-      while (!this.eof() && this.isHexDigit(this.ch())) { value += this.ch(); this.advance(); }
-      return psToken(PSTokenType.NUMBER, value, start);
-    }
-
-    if (this.options.core && first_ === '0' && (this.peek1() === 'b' || this.peek1() === 'B') && /[01]/.test(this.peek2() ?? '')) {
-      value += '0'; this.advance();
-      value += this.ch(); this.advance();
-      while (!this.eof() && (this.ch() === '0' || this.ch() === '1')) { value += this.ch(); this.advance(); }
-      return psToken(PSTokenType.NUMBER, value + this.scanCoreNumericSuffix(), start);
     }
 
     if (first_ >= '1' && first_ <= '6' && this.peek1() === '>') {
@@ -844,54 +836,14 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, word, start);
     }
 
-    if (!this.eof() && /^\d+$/.test(value)) {
-      const rest = this.input.slice(this.pos);
-      const identifier = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest);
-      const numericSuffix = this.options.core
-        ? /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdDuUsSyYnN]$|[uU][lLyYsS]$)/
-        : /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdD]$)/;
-      if (identifier && !numericSuffix.test(identifier[0])) {
-        let word = value;
-        while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
-        return psToken(PSTokenType.WORD, word, start);
-      }
+    const scanned = scanNumericLiteral(this.input, savedPos, this.options);
+    if (scanned === null) {
+      let word = value;
+      while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
+      return psToken(PSTokenType.WORD, word, start);
     }
-
-    // Decimal part
-    if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
-      value += '.'; this.advance();
-      while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
-    }
-    void savedPos;
-
-    // Exponent
-    if (!this.eof() && (this.ch() === 'e' || this.ch() === 'E')) {
-      value += this.ch(); this.advance();
-      if (!this.eof() && (this.ch() === '+' || this.ch() === '-')) { value += this.ch(); this.advance(); }
-      while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
-    }
-
-    // Type suffixes: KB, MB, GB, TB, PB, L
-    if (!this.eof()) {
-      const up2 = (this.ch() + (this.peek1() ?? '')).toUpperCase();
-      if (['KB', 'MB', 'GB', 'TB', 'PB'].includes(up2)) {
-        value += this.ch(); this.advance();
-        value += this.ch(); this.advance();
-      } else if (this.options.core) {
-        value += this.scanCoreNumericSuffix();
-      } else if (this.ch() === 'L' || this.ch() === 'l' || ((this.ch() === 'd' || this.ch() === 'D') && !this.isAlNum(this.peek1() ?? ' '))) {
-        value += this.ch(); this.advance();
-      }
-    }
-
-    return psToken(PSTokenType.NUMBER, value, start);
-  }
-
-  private scanCoreNumericSuffix(): string {
-    const match = /^(ul|uy|us|[lsyudn])(?![A-Za-z0-9_])/i.exec(this.input.slice(this.pos));
-    if (match === null) return '';
-    for (let i = 0; i < match[1].length; i++) this.advance();
-    return match[1];
+    while (this.pos < savedPos + scanned.length) this.advance();
+    return psToken(PSTokenType.NUMBER, this.input.slice(savedPos, savedPos + scanned.length), start);
   }
 
   /**
