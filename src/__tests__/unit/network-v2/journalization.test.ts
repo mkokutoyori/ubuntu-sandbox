@@ -249,7 +249,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('27. should write cron execution logs under daemon.info target patterns', async () => {
       const pc = setupLinuxHost();
       await pc.executeCommand('logger -p cron.info "CRON: hourly tasks scheduled"');
-      const cronLog = await pc.executeCommand('cat /var/log/cron.log');
+      const cronLog = await pc.executeCommand('cat /var/log/syslog');
       expect(cronLog).toContain('CRON: hourly tasks scheduled');
     });
 
@@ -1333,10 +1333,10 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       expect(syslog).toContain('SIGTERM sequence received');
     });
 
-    it('178. should log cron job start/stop transitions in /var/log/cron.log', async () => {
+    it('178. should log cron job start/stop transitions in /var/log/syslog', async () => {
       const pc = setupLinuxHost();
       await pc.executeCommand('logger -p cron.info "CRON: (root) CMD (backup.sh)"');
-      const cron = await pc.executeCommand('cat /var/log/cron.log');
+      const cron = await pc.executeCommand('cat /var/log/syslog');
       expect(cron).toContain('CMD (backup.sh)');
     });
 
@@ -1447,7 +1447,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('194. should isolate cron job execution failure traces clearly', async () => {
       const pc = setupLinuxHost();
       await pc.executeCommand('logger -p cron.err "CRON: failed to compile script syntax"');
-      const cron = await pc.executeCommand('cat /var/log/cron.log');
+      const cron = await pc.executeCommand('cat /var/log/syslog');
       expect(cron).toContain('failed to compile script syntax');
     });
 

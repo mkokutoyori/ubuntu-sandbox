@@ -1,7 +1,7 @@
 import { strtol } from '../../../../core/CRuntime';
 import { inetAton } from '../../../../core/InetAton';
 import {
-  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IPv6Address, type IPAddress,
+  IP_PROTO_DCCP, IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_SCTP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IPv6Address, type IPAddress,
 } from '../../../../core/types';
 import { IP_PROTO_GRE } from '../../../../gre/types';
 import type { TcpConntrackState } from '../../ConnectionTracker';
@@ -71,9 +71,6 @@ const PARAMETER_PROBLEM = 2;
 const TRY_HELP = "Try `conntrack -h' or 'conntrack --help' for more information.";
 
 const OPTSTRING = ':L::I::U::D::G::E::F::A::hVs:d:r:q:p:t:u:e:a:z[:]:{:}:m:i:f:o:n::g::c:b:C::Sj::w:l:<:>::(:):';
-
-const SCTP = 132;
-const DCCP = 33;
 
 const PROTOCOL_LETTERS: readonly (readonly [string, string, string])[] = [
   ['\u0001', 'sport', 'orig-port-src'], ['\u0002', 'dport', 'orig-port-dst'], ['\u0003', 'reply-port-src', 'reply-port-src'],
@@ -160,8 +157,8 @@ const PROTOCOL_OPTIONS_OF: Readonly<Record<number, readonly ProtocolOptionName[]
   [IP_PROTO_TCP]: STATE_PROTOCOL_OPTIONS,
   [IP_PROTO_UDP]: PORT_OPTIONS,
   [IP_PROTO_UDPLITE]: PORT_OPTIONS,
-  [SCTP]: STATE_PROTOCOL_OPTIONS,
-  [DCCP]: STATE_PROTOCOL_OPTIONS,
+  [IP_PROTO_SCTP]: STATE_PROTOCOL_OPTIONS,
+  [IP_PROTO_DCCP]: STATE_PROTOCOL_OPTIONS,
   [IP_PROTO_ICMP]: ['icmp-type', 'icmp-code', 'icmp-id'],
   [IP_PROTO_ICMPV6]: ['icmp-type', 'icmp-code', 'icmp-id'],
   [IP_PROTO_GRE]: KEY_OPTIONS,
@@ -173,7 +170,7 @@ const LEGAL_PROTOCOL_OPTIONS: ReadonlySet<ProtocolOptionName> = new Set<Protocol
 ]);
 
 const PROTOCOL_BY_NAME: Readonly<Record<string, number>> = {
-  tcp: IP_PROTO_TCP, udp: IP_PROTO_UDP, udplite: IP_PROTO_UDPLITE, sctp: SCTP, dccp: DCCP, icmp: IP_PROTO_ICMP,
+  tcp: IP_PROTO_TCP, udp: IP_PROTO_UDP, udplite: IP_PROTO_UDPLITE, sctp: IP_PROTO_SCTP, dccp: IP_PROTO_DCCP, icmp: IP_PROTO_ICMP,
   icmpv6: IP_PROTO_ICMPV6, gre: IP_PROTO_GRE,
 };
 
@@ -336,7 +333,7 @@ export function parseConntrack(args: readonly string[]): ConntrackParse {
       if (known === undefined || !known.includes(option)) return parameterProblem(`unknown option \`--${item.long}'`);
       protocolGiven.set(option, item.long ?? protocolEntry[1]);
       if (option === 'state') {
-        if (protocol === SCTP || protocol === DCCP) return unbuilt('the states of SCTP and DCCP');
+        if (protocol === IP_PROTO_SCTP || protocol === IP_PROTO_DCCP) return unbuilt('the states of SCTP and DCCP');
         const state = TCP_STATE_NAMES.get(value);
         if (state === undefined) return parameterProblem(`unknown TCP state \`${value}'`);
         tcpState = state;

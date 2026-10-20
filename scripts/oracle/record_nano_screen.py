@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -642,7 +642,159 @@ def gen_help(seed, count):
         cases.append({"id": "hlp%d-%d" % (seed, i), "text": ["alpha beta", "gamma"], "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
     return cases
 
+BLOCK_WORDS = ["alpha", "beta", "gamma", "delta", "eps", "zeta", "eta", "theta", "iota", "kappa"]
+BLOCK_PREFIXES = ["", "", "", "", "  ", "    ", "\t", "> ", "> > ", "# ", "// ", " > "]
+BLOCK_KEYS = ["M-(", "M-)", "M-9", "M-0", "M-7", "M-8", "C-Up", "C-Down", "M-{", "M-}", "Up", "Down", "Down", "Left", "Right", "Home", "End", "PageDown", "PageUp", "M-\\", "M-/", "C-Right", "C-Left"]
+GOTO_ANSWERS = ["3", "1", "9", "5,4", ",3", "0", "abc", "99", "2,99", "-1", "+2", "4,"]
+GOTO_KEYS = ["C-y", "C-v", "C-w", "C-o", "C-t", "C-c", "Enter", "Left", "C-k", "C-u"]
+
+def block_text(r):
+    lines = []
+    prefix = r.choice(BLOCK_PREFIXES)
+    for _ in range(r.randint(2, 6)):
+        if r.random() < 0.3:
+            lines.extend([""] * r.choice([1, 1, 2, 3]))
+            prefix = r.choice(BLOCK_PREFIXES)
+        if r.random() < 0.08:
+            lines.append(r.choice(["", " ", "  ", "\t"]))
+            continue
+        for _ in range(r.randint(1, 4)):
+            if r.random() < 0.15:
+                prefix = r.choice(BLOCK_PREFIXES)
+            lines.append(prefix + " ".join(r.choice(BLOCK_WORDS) for _ in range(r.randint(1, 5))))
+    if r.random() < 0.2:
+        lines.insert(0, "")
+    return lines
+
+def goto_flow(r):
+    kind = r.random()
+    if kind < 0.3:
+        return [r.choice(["C-_", "M-g"]), r.choice(GOTO_ANSWERS), "Enter"]
+    if kind < 0.55:
+        return [r.choice(["C-_", "M-g"]), r.choice(["C-y", "C-v", "C-w", "C-o"])]
+    if kind < 0.7:
+        return [r.choice(["C-_", "M-g"]), r.choice(GOTO_ANSWERS), r.choice(["C-y", "C-v", "C-w", "C-o"])]
+    if kind < 0.85:
+        return [r.choice(["C-_", "M-g"]), r.choice(["", "3", "x"]) or "C-t", "C-t"] + r.choice([[], ["C-t"], ["Enter"], ["foo", "Enter"]])
+    return [r.choice(["C-_", "M-g"]), r.choice(GOTO_KEYS)]
+
+PROMPT_JUMP_KEYS = ["C-y", "C-v", "C-w", "C-o", "C-t", "C-_", "M-g", "C-Left", "C-Right", "C-b", "C-f", "C-a", "C-e", "C-d", "C-h"]
+
+def prompt_flow(r):
+    opener = r.choice(["C-w", "C-w", "C-q"])
+    typed = r.choice([[], [], ["ab cd"], ["x"], ["foo bar baz"]])
+    return [opener] + typed + [r.choice(PROMPT_JUMP_KEYS) for _ in range(r.randint(1, 3))] + r.choice([[], ["Enter"], ["C-c"]])
+
+def without_main_prompts(steps):
+    kept = []
+    prompt = None
+    for step in steps:
+        if prompt is None:
+            if step in ("C-t", "C-o"):
+                continue
+            if step in ("C-_", "M-g"):
+                prompt = "goto"
+            elif step in ("C-w", "C-q"):
+                prompt = "search"
+        elif prompt == "goto":
+            if step in ("C-t", "C-_"):
+                prompt = "search"
+            elif step in ("C-y", "C-v", "C-w", "C-o", "Enter", "C-c"):
+                prompt = None
+        else:
+            if step in ("C-t", "C-_"):
+                prompt = "goto"
+            elif step in ("C-y", "C-v", "Enter", "C-c"):
+                prompt = None
+        kept.append(step)
+    return kept
+
+def gen_blocks(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = block_text(r)
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (8, 30), (6, 40)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-O", "-e", "-%", "-_", "-v", "-R", "-0", "-j"], r.choice([0, 0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(3, 10)):
+            roll = r.random()
+            if roll < 0.3:
+                steps.extend(goto_flow(r))
+            elif roll < 0.4:
+                steps.extend(prompt_flow(r))
+            else:
+                steps.append(r.choice(BLOCK_KEYS))
+        cases.append({"id": "blo%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": without_main_prompts(steps), "disk": True, "hidden": True})
+    return cases
+
+EXEC_COMMANDS = ["echo hi", "echo a; echo b", "printf 'x\\ny\\n'", "seq 1 3", "seq 1 14", "cat t.txt", "ls", "wc -l < t.txt", "true", "false", "exit 2", "echo err >&2",
+                 "cat missing.txt", "ls missing", "echo 'a: b'; false", "echo ''", "printf '\\n\\n'", "echo ABC | tr A-Z a-z", "zzz", "echo x > new.txt", "echo y >> t.txt", "rm -f new.txt"]
+EXEC_FILTERS = ["wc -l", "wc -c", "true", "false"]
+EXEC_KEYS = ["Up", "Down", "Left", "Right", "Home", "End", "PageDown", "PageUp", "M-\\", "M-/", "x", "M-a", "M-u", "M-e", "C-k", "C-u", "BSpace", "Enter", "M-(", "M-)"]
+
+def exec_flow(r, marked):
+    kind = r.random()
+    if kind < 0.45:
+        return ["C-t", r.choice(EXEC_COMMANDS), "Enter"]
+    if kind < 0.65:
+        filters = EXEC_FILTERS + ([] if marked else ["cat"])
+        return ["C-t", "M-\\", r.choice(filters), "Enter"]
+    if kind < 0.75:
+        return ["C-t", r.choice(["C-s", "C-y", "C-o", "C-j", "C-v", "C-c", "Enter"])]
+    if kind < 0.85:
+        return ["C-t", r.choice(["echo q", "ls", "x"]), r.choice(["C-x", "C-c"]), r.choice(["Enter", "C-c", "C-x"])]
+    if kind < 0.95:
+        return ["C-t"] + [r.choice(["Up", "Down", "Up"]) for _ in range(r.randint(1, 3))] + [r.choice(["Enter", "C-c"])]
+    return ["C-t", "M-\\", r.choice(["M-\\", "C-c"]), r.choice(["Enter", "C-c"])]
+
+def without_stray_exec_keys(steps):
+    kept = []
+    state = "main"
+    for step in steps:
+        if state == "main":
+            if step in ("C-s", "C-x", "C-o"):
+                continue
+            if step == "C-t":
+                state = "execute"
+        elif state == "execute":
+            if step in ("Enter", "C-c", "C-s", "C-t", "C-y", "C-o", "C-j", "C-v"):
+                state = "main"
+            elif step == "C-x":
+                state = "insert"
+        else:
+            if step in ("Enter", "C-c"):
+                state = "main"
+            elif step == "C-x":
+                state = "execute"
+        kept.append(step)
+    return kept
+
+def gen_exec(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (8, 30)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-A", "-%", "-_", "-e", "-0"], r.choice([0, 0, 0, 1, 1, 2]))
+        steps = []
+        marked = False
+        for _ in range(r.randint(2, 7)):
+            if r.random() < 0.6:
+                steps.extend(exec_flow(r, marked))
+            else:
+                key = r.choice(EXEC_KEYS)
+                if key == "M-a":
+                    marked = not marked
+                steps.append(key)
+        cases.append({"id": "exe%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": without_stray_exec_keys(steps), "disk": True, "hidden": True})
+    return cases
+
 def gen(seed, count, corpus):
+    if corpus == "exec":
+        return gen_exec(seed, count)
+    if corpus == "blocks":
+        return gen_blocks(seed, count)
     if corpus == "prompts":
         return gen_prompts(seed, count)
     if corpus == "cli":
@@ -705,7 +857,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))

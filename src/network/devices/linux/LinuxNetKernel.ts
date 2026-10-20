@@ -10,7 +10,7 @@
  * `createLinuxNetKernel(host)`. Because that factory lives as a method on
  * `LinuxMachine` (which extends `EndHost`), it can close over protected
  * members like `arpTable`, `dhcpClient`, `ipForwardEnabled`,
- * `masqueradeOnInterfaces`, `executePingSequence`, `executeTraceroute` and
+ * `executePingSequence`, `executeTraceroute` and
  * `extractPorts`.
  *
  * See `linux_gap.md` §7.3.
@@ -282,8 +282,6 @@ export interface LinuxNetKernel {
   // ─── Forwarding / NAT (router-layer) ─────────────────────────────
   setIpForward(enabled: boolean): void;
   isIpForwardEnabled(): boolean;
-  addMasqueradeInterface(iface: string): void;
-  removeMasqueradeInterface(iface: string): void;
 
   /** Parsed TCP/UDP port numbers from an IPv4 packet, for NAT/firewall. */
   extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number };

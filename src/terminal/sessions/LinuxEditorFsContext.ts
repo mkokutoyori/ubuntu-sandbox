@@ -1,6 +1,6 @@
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
-import type { EditorFsContext, EditorIdentity, EditorPathKind } from '@/network/devices/linux/editors/EditorFsContext';
+import type { ChildShellRun, EditorFsContext, EditorIdentity, EditorPathKind } from '@/network/devices/linux/editors/EditorFsContext';
 
 /**
  * Production EditorFsContext: wires NanoEngine/VimEngine to the real
@@ -63,12 +63,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
   }
 
   filterThroughShell(cmd: string, input: string): string {
-    const tmpPath = `/tmp/.vim-filter-${Math.floor(Math.random() * 1e9)}`;
-    this.writeFile(tmpPath, input);
-    try {
-      return this.dev.executeShellCommandSync(`${cmd} < ${tmpPath}`);
-    } finally {
-      this.deleteFile(tmpPath);
-    }
+    return this.runChildShell(cmd, input).output;
+  }
+
+  runChildShell(cmd: string, stdin?: string): ChildShellRun {
+    return this.dev.runChildShellForEditor(cmd, stdin, this.session);
   }
 }

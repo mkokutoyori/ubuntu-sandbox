@@ -1,21 +1,40 @@
-
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
+import { RSYSLOG_VERSION } from '@/network/rsyslog/engine/Log';
+import { RSYSLOG_CONFIG_PATH, UNCLEAN_CONFIG_ABORT_TEXT, runFailedText, type LinuxRsyslogDaemon } from '../../syslog/LinuxRsyslogDaemon';
 
 const RSYSLOGD_BINARY = '/usr/sbin/rsyslogd';
-const RSYSLOGD_VERSION = '8.2112.0';
+const PID_FILE = '/run/rsyslogd.pid';
 
-interface AvecRsyslog {
-  rsyslogService?: {
-    verifierConfiguration(): { verdict: 'ok' | 'faute'; erreur: string };
-    recharger(): void;
-    listeningPorts(): number[];
-  } | null;
+interface WithRsyslog {
+  rsyslogDaemon?: LinuxRsyslogDaemon | null;
 }
 
-function service(ctx: LinuxCommandContext) {
-  return (ctx.executor as unknown as AvecRsyslog).rsyslogService ?? null;
+function daemon(ctx: LinuxCommandContext): LinuxRsyslogDaemon | null {
+  return (ctx.executor as unknown as WithRsyslog).rsyslogDaemon ?? null;
+}
+
+function versionText(): string {
+  return [
+    `rsyslogd  ${RSYSLOG_VERSION} (aka 2021.12) compiled with:`,
+    '\tPLATFORM:\t\t\t\tx86_64-pc-linux-gnu',
+    '\tPLATFORM (lsb_release -d):\t\t',
+    '\tFEATURE_REGEXP:\t\t\t\tYes',
+    '\tGSSAPI Kerberos 5 support:\t\tYes',
+    '\tFEATURE_DEBUG (debug build, slow code):\tNo',
+    '\t32bit Atomic operations supported:\tYes',
+    '\t64bit Atomic operations supported:\tYes',
+    '\tmemory allocator:\t\t\tsystem default',
+    '\tRuntime Instrumentation (slow code):\tNo',
+    '\tuuid support:\t\t\t\tYes',
+    '\tsystemd support:\t\t\tYes',
+    '\tConfig file:\t\t\t\t/etc/rsyslog.conf',
+    `\tPID file:\t\t\t\t${PID_FILE}`,
+    '\tNumber of Bits in RainerScript integers: 64',
+    '',
+    'See https://www.rsyslog.com for more information.',
+  ].join('\n');
 }
 
 export const rsyslogdCommand: LinuxCommand = {
@@ -31,6 +50,7 @@ export const rsyslogdCommand: LinuxCommand = {
     { flag: '-N', description: 'Config check level (1 = verify and exit).', takesArg: true, argName: 'level' },
     { flag: '-v', description: 'Print version and exit.' },
     { flag: '-n', description: 'Run in foreground.' },
+    { flag: '-f', description: 'Read configuration from this file.', takesArg: true, argName: 'file' },
   ],
 
   run(ctx: LinuxCommandContext, args: string[]): string {
@@ -38,47 +58,26 @@ export const rsyslogdCommand: LinuxCommand = {
   },
 
   runWithStatusSync(ctx: LinuxCommandContext, args: string[]) {
-    if (args.includes('-v')) {
-      return {
-        output: [
-          `rsyslogd ${RSYSLOGD_VERSION} (aka 2021.12) compiled with:`,
-          '\tPLATFORM:\t\t\t\tx86_64-pc-linux-gnu',
-          '\tFEATURE_REGEXP:\t\t\t\tYes',
-          '\tGSSAPI Kerberos 5 support:\t\tYes',
-          '\tConfig file:\t\t\t\t/etc/rsyslog.conf',
-          '\tPID file:\t\t\t\t/var/run/rsyslogd.pid',
-          '',
-          'See https://www.rsyslog.com for more information.',
-        ].join('\n'),
-        exitCode: 0,
-      };
-    }
+    if (args.includes('-v')) return { output: versionText(), exitCode: 0 };
 
-    const verif = args.find((a) => /^-N\d*$/.test(a));
-    if (verif) {
-      const svc = service(ctx);
-      if (!svc) return { output: 'rsyslogd: no configuration available', exitCode: 1 };
-      const v = svc.verifierConfiguration();
-      if (v.verdict === 'faute') {
-        return {
-          output: [
-            v.erreur,
-            'rsyslogd: run failed with error -2207 (see rsyslog.conf(5) for details)',
-          ].join('\n'),
-          exitCode: 1,
-        };
-      }
-      return {
-        output: [
-          `rsyslogd: version ${RSYSLOGD_VERSION}, config validation run (level 1), master config /etc/rsyslog.conf`,
-          'rsyslogd: End of config validation run. Bye.',
-        ].join('\n'),
-        exitCode: 0,
-      };
+    const verify = args.find((argument) => /^-N\d*$/.test(argument));
+    if (verify !== undefined) {
+      const running = daemon(ctx);
+      if (running === null) return { output: 'rsyslogd: no configuration available', exitCode: 1 };
+      const configFlag = args.indexOf('-f');
+      const path = configFlag >= 0 && args[configFlag + 1] !== undefined ? args[configFlag + 1] : RSYSLOG_CONFIG_PATH;
+      const level = verify.length > 2 ? Number(verify.slice(2)) : 0;
+      if (level === 0) return { output: '', exitCode: 0 };
+      const result = running.verify(path);
+      const header = `rsyslogd: version ${RSYSLOG_VERSION}, config validation run (level ${level}), master config ${path}`;
+      if (result.fatalCode !== null) return { output: [header, ...result.lines, runFailedText(result.fatalCode)].join('\n'), exitCode: 1 };
+      if (result.hadErrors && result.abortOnUncleanConfig) return { output: [header, ...result.lines, UNCLEAN_CONFIG_ABORT_TEXT].join('\n'), exitCode: 2 };
+      if (result.hadErrors) return { output: [header, ...result.lines].join('\n'), exitCode: 1 };
+      return { output: [header, ...result.lines, 'rsyslogd: End of config validation run. Bye.'].join('\n'), exitCode: 0 };
     }
 
     return {
-      output: 'rsyslogd: pidfile \'/var/run/rsyslogd.pid\' and pid 1 already exist; use systemctl',
+      output: `rsyslogd: pidfile '${PID_FILE}' and pid 1 already exist; use systemctl`,
       exitCode: 1,
     };
   },

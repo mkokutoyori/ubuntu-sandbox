@@ -1177,7 +1177,7 @@ describe('iptables', () => {
         srcIP: '10.0.0.1', dstIP: '8.8.8.8',
         srcPort: 1234, dstPort: 80, iface: 'eth1', outIface: 'eth0',
       }, 'POSTROUTING');
-      expect(result).toEqual({ action: 'MASQUERADE' });
+      expect(result).toMatchObject({ action: 'MASQUERADE' });
     });
 
     it('should evaluate DNAT and return target address', async () => {
@@ -1189,7 +1189,7 @@ describe('iptables', () => {
         srcIP: '1.2.3.4', dstIP: '10.0.0.1',
         srcPort: 5555, dstPort: 8080, iface: 'eth0',
       }, 'PREROUTING');
-      expect(result).toEqual({ action: 'DNAT', address: '192.168.1.10:80' });
+      expect(result).toMatchObject({ action: 'DNAT', address: '192.168.1.10:80' });
     });
 
     it('should return null when no nat rule matches', async () => {

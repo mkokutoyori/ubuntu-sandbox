@@ -743,6 +743,59 @@ justement une.
 bouclage comme `LinuxMachine.createLoopbackPort()` le fait ; elle sera
 alors `hidden` et le filtre la rendra sans une ligne de plus.
 
+### [bash] La sortie d'une commande ne porte pas son retour a la ligne final, et la lecture de l'entree standard est une liste blanche
+Mesure avec l'invite `^T` de nano (`nano-exec-oracle.test.ts`), qui lance
+la commande comme un enfant du shell (`LinuxMachine.runChildShellForEditor`)
+et lit la sortie brute :
+- `printf abc | cat`, `tr a-z A-Z` ou `cat` sur une entree sans retour a
+  la ligne final rendent `abc\n` ; le vrai rend `abc`. Les commandes
+  « orientees lignes » (`writesLines`) ou un tube terminent toujours leur
+  sortie, et `sort -r` perd les lignes vides finales (« a\n\n » → « a\n »).
+- `ls` d'un enfant tient en une seule rangee de colonnes ; le vrai (sortie
+  sur un tube) rend un nom par ligne — corrige pour l'enfant seulement
+  (`ctx().isPiped`), pas pour un `ls` redirige vers un fichier.
+- `od` n'existe pas ; `$HOME` d'un `root` vaut `/home/user`.
+- L'entree standard n'atteint que les commandes de `readsStandardInput`
+  (`cat wc sort uniq head tail cut base64 dd less more rev nl xxd tac grep
+  sed awk tr`) : `{ cmd; } < fichier` ne la transmet a personne, et `cmd < f`
+  n'est pris en charge que pour une commande simple.
+- Un enfant sans terminal prefixe `command not found` par `bash: line 1: `
+  (`childShellRunning`) ; la ligne vaut toujours 1 et les autres erreurs du
+  shell (syntaxe, redirection) n'ont pas le prefixe.
+**Report** : le modele « la sortie d'une commande est un texte sans
+terminateur » est partage par tout le simulateur ; le remplacer par un
+flux d'octets avec un terminateur explicite est un lot en soi, et le
+corpus `exec` evite ces cas (`EXEC_FILTERS`).
+
+### [vim] Motifs : quelques manquements mesures apres le traducteur `VimRegex`
+Mesure avec les labos `vim-pattern-oracle.test.ts` (7661 cas enregistres
+sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
+- **Retour arriere JavaScript** : `\V\>-\{-2,3}-\|\(b\%(\X\)\@=\|\f\+\_D\{-2,3}\|\L\?\)\{-1,}\(\A\{2,}\K\*\)\{-2,3}\[[:space:]o]\{2}`
+  sur un tampon de huit lignes occupe `RegExp.exec` pendant 128 s ; l'automate
+  de vim repond sans delai (aucune occurrence). Un motif a quantificateurs
+  imbriques ambigus gele donc l'editeur. Le cas est retire du corpus
+  (rnd22-202). Pas de borne de temps possible sur un `RegExp` synchrone : il
+  faut un second moteur (simulation de Thompson avec priorites) pour les motifs
+  sans reference arriere, ou une estimation de la hauteur d'etoile a la
+  traduction qui refuse avec E363 comme vim le fait pour sa memoire.
+- **`:s` multi-ligne** : `%s/\n//` et `%s/$\n^/+/` ne trouvent rien (8 cas non
+  portes) ; vim joint les lignes. `applyVimReplacement` ne lit pas non plus `\r`
+  (coupure de ligne), `\n` (NUL), `\t`, `~`, `\u \U \l \L \e \E` ni `\=`.
+- **`:g`** n'execute que `d` et `s///` : toute autre commande (`:g/x/normal dd`,
+  `m0`, `t.`, `j`) est ignoree sans message. Le moteur n'a pas d'identite de
+  ligne a marquer comme `ml_setmarked` ; ni `:g` ni `:s` ne disent « N fewer
+  lines » ou ne respectent 'report' (l'option n'existe pas : `:s` annonce
+  toujours le compte, vim seulement au-dela de 2).
+- **Classe de mot ecrite quatre fois** : `isKeywordChar` (`VimCursor`, a present
+  aussi pour la recherche et `\k \<`), `VimEngine.charClass` (`cw dw ce`, ASCII seul :
+  `cw` sur `é` traite la lettre comme une ponctuation alors que `w` la saute
+  comme un mot), `VimEditing.backspaceClass` et le motif de `VimRegex`.
+  'iskeyword' n'existe pas ; remplacer les quatre par une seule table lue sur
+  l'option.
+- **'smartcase'** est absent de la table des options ; `\%V` en bloc compte des
+  colonnes de caracteres ; `\@123<=` borne la remontee en caracteres ; `[[=e=]]`
+  utilise la decomposition Unicode.
+
 ---
 
 ## Gestion (SNMP, NTP, syslog)
@@ -834,22 +887,6 @@ recherche n'a rendu l'equivalent pour un nom.
 **Report.** Le cas est le moins frequent des quatre et la valeur portee
 est plausible plutot qu'inventee — mais elle n'est pas mesuree, et c'est
 ecrit ici pour que personne ne la prenne pour telle.
-
-### [arp] un commutateur JETTE sur cache ARP froid, un routeur met en file
-**Constat.** `SwitchSvi.sendUdpDatagram` appelle `resolveArp` et rend
-`false` quand le cache est froid ; le datagramme est perdu.
-`Router.sendUdpDatagram` passe par `sendIpv4FrameArpAware`, qui MET EN
-FILE et emet des que la reponse arrive.
-
-**Mesure.** Meme laboratoire, meme collecteur : le premier message
-syslog d'un routeur part apres resolution, celui d'un commutateur est
-compte comme envoye et n'existe pas. Le cas de `syslog-protocol` visait
-d'ailleurs un collecteur INEXISTANT, ce qui masquait l'ecart.
-
-**Report.** Donner une file d'attente ARP a la SVI est un changement du
-plan de donnees du commutateur, distinct du lot syslog ; il demande son
-propre temoin (une premiere trame differee, pas perdue).
-
 
 ### [icmp] le pendant VRP est accepte et inerte, et son `undo` n'existe pas
 **Constat.** Cote Cisco, `no ip unreachables` est desormais honore par

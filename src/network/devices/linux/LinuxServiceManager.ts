@@ -12,6 +12,7 @@
  * have them recognized after `systemctl daemon-reload`.
  */
 
+import type { Signal } from './LinuxProcessManager';
 import { simulationNowMs } from '../../core/SystemClock';
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
@@ -1021,6 +1022,16 @@ export class LinuxServiceManager {
     }
     this.processMgr.deliverSignal(u.mainPid, 'SIGHUP');
     this.emitLifecycle('reload', u.name);
+    return { ok: true };
+  }
+
+  kill(name: string, signal: Signal): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    const u = unit.unit;
+    if (u.state !== 'active' || u.mainPid === undefined || !this.processMgr.kill(u.mainPid, signal)) {
+      return { ok: false, error: `Failed to kill unit ${fullUnitName(u.name)}: No such process`, verbatim: true };
+    }
     return { ok: true };
   }
 

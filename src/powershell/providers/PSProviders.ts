@@ -1494,6 +1494,11 @@ export interface INetworkProvider {
     subject: string; body: string; smtpServer: string; port?: number;
     useSsl?: boolean; credential?: { username: string; password: string };
   }): { ok: boolean; error?: string };
+  sendSyslogMessage?(opts: {
+    server: string; port: number; transport: 'udp' | 'tcp'; format: 'rfc3164' | 'rfc5424'; framing: 'octet-counting' | 'non-transparent';
+    facility: number; severity: number; hostname: string; appName: string; procId: string | null; msgId: string | null;
+    structuredData: readonly import('@/network/syslog/codec/StructuredData').StructuredDataElement[]; message: string; timestampMs?: number;
+  }): { ok: boolean; error?: string; wire?: string };
   /** Get-NetTCPConnection */
   getTcpConnections(): Array<{ localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }>;
   /**

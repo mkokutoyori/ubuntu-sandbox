@@ -47,8 +47,12 @@ export function isWhite(ch: string | undefined): boolean {
   return ch === ' ' || ch === '\t';
 }
 
-function isKeywordChar(ch: string): boolean {
-  return /[A-Za-z0-9_À-￿]/.test(ch);
+export const KEYWORD_CLASS = 'A-Za-z0-9_\\u00C0-\\u{10FFFF}';
+
+const KEYWORD_CHAR = new RegExp(`[${KEYWORD_CLASS}]`, 'u');
+
+export function isKeywordChar(ch: string): boolean {
+  return KEYWORD_CHAR.test(ch);
 }
 
 export function charClassAt(line: string, col: number, big: boolean): 0 | 1 | 2 {

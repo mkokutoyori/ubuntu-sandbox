@@ -11,9 +11,10 @@ import { buildScreen } from './vim/VimScreen';
 import type { ViewState } from './vim/VimWindow';
 import type { EditorScreen, ScreenStyle } from './screen/EditorScreen';
 import { textObject } from './vim/VimTextObjects';
-import { compileVimPattern } from './vim/VimPattern';
+import { compileVimPattern, type VimRegExp } from './vim/VimPattern';
+import { skipRegexp, type PatternContext } from './vim/VimRegex';
 import {
-  NO_OFFSET, findMatch, highlightSpans, identUnderCursor, matchesEverything, parseSearchInput, patternForIdent, resolveTarget, stepBack, stepForward,
+  NO_OFFSET, findMatch, highlightSpans, identUnderCursor, matchesEverything, parseSearchInput, patternForIdent, resolveTarget, searchPatternError, stepBack, stepForward,
   type HighlightSpan, type LastSearch,
 } from './vim/VimSearch';
 import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reindentLine, removeChars, roundedIndent, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
@@ -64,10 +65,8 @@ export interface PendingSubstMatch {
 }
 
 /** Search `line` for the next match of `regex` at or after column `fromCol`. */
-function execFrom(line: string, regex: RegExp, fromCol: number): RegExpExecArray | null {
-  const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
-  re.lastIndex = fromCol;
-  return re.exec(line);
+function execFrom(lines: readonly string[], lineIndex: number, regex: VimRegExp, fromCol: number): RegExpExecArray | null {
+  return regex.execLine(lines, lineIndex, fromCol);
 }
 
 /** Apply a vim-style replacement template (`\1`.._`\9`, `&`, `\&`, `\\`) against a JS match array. */
@@ -288,7 +287,8 @@ export class VimEngine {
   private originalDiskLines: string[] = [];
   private _readOnly = false;
   private readonly owner: string;
-  private substState: { rangeEnd: number; regex: RegExp; replacementTemplate: string; global: boolean; currentLine: number; currentCol: number; totalReplaced: number; linesTouched: Set<number> } | null = null;
+  private lastSubstituteReplacement: string | null = null;
+  private substState: { rangeEnd: number; regex: VimRegExp; replacementTemplate: string; global: boolean; currentLine: number; currentCol: number; totalReplaced: number; linesTouched: Set<number> } | null = null;
   private _pendingMatch: PendingSubstMatch | null = null;
 
   // Undo/redo — one snapshot per logical change (an entire insert session
@@ -1685,10 +1685,11 @@ export class VimEngine {
       return highlightSpans(
         this.linesArr, typed, this.options.bool('ignorecase'),
         Math.max(this.window.top, range?.first ?? 0), Math.min(this.window.top + this.window.height, range?.last ?? Number.MAX_SAFE_INTEGER),
+        this.patternContext(),
       );
     }
     if (!this.options.bool('hlsearch') || this.noHlsearch || this.lastSearch === null) return null;
-    return highlightSpans(this.linesArr, this.lastSearch.pattern, this.options.bool('ignorecase'), this.window.top, this.window.top + this.window.height);
+    return highlightSpans(this.linesArr, this.lastSearch.pattern, this.options.bool('ignorecase'), this.window.top, this.window.top + this.window.height, this.patternContext());
   }
 
   get screen(): EditorScreen {
@@ -2802,12 +2803,27 @@ export class VimEngine {
       }
       return { text, closed: false };
     };
-    const pattern = take();
+    const patternEnd = skipRegexp(s, at, delimiter);
+    const pattern = { text: s.slice(at, patternEnd), closed: patternEnd < s.length };
+    at = patternEnd + 1;
     if (!pattern.closed) return { pattern: pattern.text, replacement: '', flags: '' };
     const replacement = take();
     if (!replacement.closed) return { pattern: pattern.text, replacement: replacement.text, flags: '' };
     const flags = s.slice(at);
     return /^[a-zA-Z&]*$/.test(flags) ? { pattern: pattern.text, replacement: replacement.text, flags } : null;
+  }
+
+  private parseGlobalCmd(s: string): { inverse: boolean; pattern: string; command: string } | null {
+    const head = /^(g(?:l(?:o(?:b(?:a(?:l)?)?)?)?)?|v(?:g(?:l(?:o(?:b(?:a(?:l)?)?)?)?)?)?)(!)?\s*([^\w\s"|\\])/.exec(s);
+    if (head === null) return null;
+    const delimiter = head[3];
+    const start = head[0].length;
+    const end = skipRegexp(s, start, delimiter);
+    return {
+      inverse: head[1].startsWith('v') || head[2] === '!',
+      pattern: s.slice(start, end),
+      command: end < s.length ? s.slice(end + 1) : '',
+    };
   }
 
   protected executeExCommand(raw: string): void {
@@ -2836,12 +2852,15 @@ export class VimEngine {
       }
     }
 
-    const globalMatch = rest.match(/^g(!)?\/((?:\\.|[^/])*)\/(.*)$/);
-    if (globalMatch) {
-      const [, , pattern, cmd] = globalMatch;
-      if (pattern !== '') this.rememberSearchPattern(pattern);
+    const global = this.parseGlobalCmd(rest);
+    if (global !== null) {
+      if (global.pattern !== '') this.rememberSearchPattern(global.pattern);
+      if (this.refusesPattern(global.pattern, this.options.bool('ignorecase'))) {
+        this._mode = 'normal';
+        return;
+      }
       this.pushUndoSnapshot();
-      this.executeGlobal(rangeStart ?? 0, rangeEnd ?? this.linesArr.length - 1, pattern, cmd);
+      this.executeGlobal(rangeStart ?? 0, rangeEnd ?? this.linesArr.length - 1, global.pattern, global.command, global.inverse);
       this._mode = 'normal';
       return;
     }
@@ -2916,11 +2935,17 @@ export class VimEngine {
       }
       const s = rangeStart ?? this._cursorLine;
       const e = rangeEnd ?? this._cursorLine;
+      if (this.refusesPattern(pattern, this.substituteIgnoresCase(parsed.flags))) {
+        this._mode = 'normal';
+        return;
+      }
       if (parsed.flags.includes('c')) {
         this.startConfirmSubstitute(s, e, pattern, parsed.replacement, parsed.flags);
+        this.lastSubstituteReplacement = parsed.replacement;
       } else {
         this.pushUndoSnapshot();
         const result = this.executeSubstitute(s, e, pattern, parsed.replacement, parsed.flags);
+        this.lastSubstituteReplacement = parsed.replacement;
         if (result.count > 0) {
           this._modified = true;
           this.moveToFirstNonBlank(result.lastLine);
@@ -3058,8 +3083,44 @@ export class VimEngine {
 
   // ── :s substitution (non-interactive) ──────────────────────────────
 
+  private patternContext(): PatternContext {
+    const live = this._mode === 'visual' || this._mode === 'visual-line' || this._mode === 'visual-block';
+    return {
+      lines: this.linesArr,
+      tabstop: this.tabstop,
+      cursor: { line: this._cursorLine, col: this._cursorCol },
+      mark: (name) => this.patternMark(name),
+      lastSubstitute: this.lastSubstituteReplacement,
+      visual: live
+        ? { mode: this._mode as 'visual' | 'visual-line' | 'visual-block', anchor: { line: this.visualAnchorLine, col: this.visualAnchorCol }, cursor: { line: this._cursorLine, col: this._cursorCol } }
+        : this.lastVisual,
+    };
+  }
+
+  private patternMark(name: string): { line: number; col: number } | null {
+    if (name === "'" || name === '`') return this.lastJumpPosition;
+    if (name === '<' || name === '>') {
+      const area = this.lastVisual;
+      if (area === null) return null;
+      const forward = area.anchor.line < area.cursor.line || (area.anchor.line === area.cursor.line && area.anchor.col <= area.cursor.col);
+      return (name === '<') === forward ? area.anchor : area.cursor;
+    }
+    return this.marks.get(name) ?? null;
+  }
+
+  private substituteIgnoresCase(flags: string): boolean {
+    return flags.includes('i') || (this.options.bool('ignorecase') && !flags.includes('I'));
+  }
+
+  private refusesPattern(pattern: string, ignoreCase: boolean): boolean {
+    const error = searchPatternError(pattern, ignoreCase, this.patternContext());
+    if (error === null) return false;
+    this._message = error;
+    return true;
+  }
+
   private executeSubstitute(startLine: number, endLine: number, pattern: string, replacement: string, flags: string): { count: number; lines: number; lastLine: number } {
-    const regex = compileVimPattern(pattern, flags.includes('i'));
+    const regex = compileVimPattern(pattern, this.substituteIgnoresCase(flags), this.patternContext());
     let count = 0;
     let linesChanged = 0;
     let lastLine = -1;
@@ -3074,7 +3135,7 @@ export class VimEngine {
       let previousEnd = -1;
       let changed = false;
       for (;;) {
-        const m = execFrom(line, regex, from);
+        const m = execFrom(this.linesArr, li, regex, from);
         if (!m) break;
         const end = m.index + m[0].length;
         if (m[0].length === 0 && m.index === previousEnd) {
@@ -3097,16 +3158,16 @@ export class VimEngine {
 
   // ── :g/pattern/cmd global command ───────────────────────────────────
 
-  private executeGlobal(startLine: number, endLine: number, pattern: string, cmd: string): void {
-    const regex = compileVimPattern(pattern, false);
+  private executeGlobal(startLine: number, endLine: number, pattern: string, cmd: string, inverse: boolean): void {
+    const regex = compileVimPattern(pattern, this.options.bool('ignorecase'), this.patternContext());
     const lo = Math.max(0, Math.min(startLine, endLine));
     const hi = Math.min(this.linesArr.length - 1, Math.max(startLine, endLine));
     const matchingIndices: number[] = [];
     for (let i = lo; i <= hi; i++) {
-      if (regex.test(this.linesArr[i])) matchingIndices.push(i);
+      if ((regex.execLine(this.linesArr, i, 0) !== null) !== inverse) matchingIndices.push(i);
     }
     if (matchingIndices.length === 0) {
-      this._message = `E486: Pattern not found: ${pattern}`;
+      this._message = inverse ? `Pattern found in every line: ${pattern}` : `Pattern not found: ${pattern}`;
       return;
     }
     let deleted = 0;
@@ -3124,7 +3185,9 @@ export class VimEngine {
         if (parsed !== null) {
           const inner = parsed.pattern === '' ? pattern : parsed.pattern;
           this.rememberSearchPattern(inner);
-          if (this.executeSubstitute(idx, idx, inner, parsed.replacement, parsed.flags).count > 0) substituted = true;
+          const result = this.executeSubstitute(idx, idx, inner, parsed.replacement, parsed.flags);
+          this.lastSubstituteReplacement = parsed.replacement;
+          if (result.count > 0) substituted = true;
         }
       }
     }
@@ -3145,7 +3208,7 @@ export class VimEngine {
     this.pushUndoSnapshot();
     this.substState = {
       rangeEnd: Math.min(this.linesArr.length - 1, Math.max(startLine, endLine)),
-      regex: compileVimPattern(pattern, flags.includes('i')),
+      regex: compileVimPattern(pattern, this.substituteIgnoresCase(flags), this.patternContext()),
       replacementTemplate: replacement,
       global: flags.includes('g'),
       currentLine: Math.max(0, Math.min(startLine, endLine)),
@@ -3160,8 +3223,7 @@ export class VimEngine {
     const st = this.substState;
     if (!st) return false;
     while (st.currentLine <= st.rangeEnd) {
-      const line = this.linesArr[st.currentLine];
-      const m = execFrom(line, st.regex, st.currentCol);
+      const m = execFrom(this.linesArr, st.currentLine, st.regex, st.currentCol);
       if (m) {
         this._pendingMatch = {
           line: st.currentLine,
@@ -3379,7 +3441,7 @@ export class VimEngine {
     if (request !== null && request.pattern !== '') {
       found = findMatch(this.linesArr, start, request.pattern, {
         forward: request.forward, count: this.searchContext?.count ?? 1, wrapscan: this.options.bool('wrapscan'),
-        anchor: 'start', ignoreCase: this.options.bool('ignorecase'), acceptAtCursor: state.range !== null,
+        anchor: 'start', ignoreCase: this.options.bool('ignorecase'), acceptAtCursor: state.range !== null, context: this.patternContext(),
       });
       outside = found !== null && state.range !== null && (found.start.line < state.range.first || found.start.line > state.range.last);
       if (outside) found = null;
@@ -3435,7 +3497,7 @@ export class VimEngine {
     }
     const found = findMatch(this.linesArr, from, pattern, {
       forward, count: this.searchContext?.count ?? 1, wrapscan: this.options.bool('wrapscan'),
-      anchor: 'start', ignoreCase: this.options.bool('ignorecase'),
+      anchor: 'start', ignoreCase: this.options.bool('ignorecase'), context: this.patternContext(),
     });
     if (found === null) return;
     const questionMark = !this.searchDraftForward;
@@ -3533,10 +3595,11 @@ export class VimEngine {
   }
 
   private findSearchTarget(from: { line: number; col: number }, search: LastSearch, count: number): ReturnType<typeof resolveTarget> | null {
+    if (this.refusesPattern(search.pattern, this.options.bool('ignorecase'))) return null;
     const match = findMatch(this.linesArr, from, search.pattern, {
       forward: search.forward, count, wrapscan: this.options.bool('wrapscan'),
       anchor: search.offset.kind === 'end' ? 'end' : 'start',
-      ignoreCase: this.options.bool('ignorecase'),
+      ignoreCase: this.options.bool('ignorecase'), context: this.patternContext(),
     });
     if (!match) {
       this._message = this.searchFailure(search.pattern, search.forward);
@@ -3604,9 +3667,10 @@ export class VimEngine {
     if (op) this.takeCount();
     if (!this.lastSearch) { this._message = 'E35: No previous regular expression'; if (op) this.cancelOperator(); return; }
     const pattern = this.lastSearch.pattern;
+    if (this.refusesPattern(pattern, this.options.bool('ignorecase'))) { if (op) this.cancelOperator(); return; }
     const here = { line: this._cursorLine, col: this._cursorCol };
     const match = findMatch(this.linesArr, here, pattern, {
-      forward: !backward, count: 1, wrapscan: this.options.bool('wrapscan'), anchor: 'start', ignoreCase: this.options.bool('ignorecase'), acceptAtCursor: !backward,
+      forward: !backward, count: 1, wrapscan: this.options.bool('wrapscan'), anchor: 'start', ignoreCase: this.options.bool('ignorecase'), acceptAtCursor: !backward, context: this.patternContext(),
     });
     if (!match) { this._message = this.searchFailure(pattern, !backward); if (op) this.cancelOperator(); return; }
     const last = match.end.col > 0

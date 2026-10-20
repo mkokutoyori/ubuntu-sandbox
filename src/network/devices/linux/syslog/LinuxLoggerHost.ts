@@ -81,6 +81,21 @@ export function loggerHost(executor: LinuxCommandExecutor, stdinText: string | u
     processExists: (candidate) => executor.processMgr.get(candidate) !== undefined,
     sdBooted: () => true,
     connectUnix: (path, types) => {
+      if (executor.localDatagramSockets.isBound(path)) {
+        if (!(types & UDP)) return { error: 'Protocol wrong type for socket' };
+        return {
+          type: UDP,
+          connection: {
+            send: (bytes) => {
+              executor.localDatagramSockets.send(path, {
+                text: new TextDecoder().decode(bytes), pid, uid: ucred.uid, gid: ucred.gid, receivedAtMs: simulationNowMs(),
+              });
+              return null;
+            },
+            close: () => undefined,
+          },
+        };
+      }
       if (!JOURNAL_SOCKETS.has(path)) return NOT_FOUND;
       return types & UDP ? open() : { error: 'Protocol wrong type for socket' };
     },

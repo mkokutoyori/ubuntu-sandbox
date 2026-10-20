@@ -137,7 +137,7 @@ import { runAugenrules } from './audit/tools/AugenrulesTool';
 import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import {
-  STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
+  STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath, shippedCommandAt,
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts, type KernelIpFactsSource } from './LinuxIpv4Settings';
@@ -238,6 +238,7 @@ import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
+import { LocalDatagramSockets } from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
@@ -356,7 +357,7 @@ function parseSudoLead(args: readonly string[]): {
 const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
-  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl',
+  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -602,8 +603,8 @@ export class LinuxCommandExecutor {
   nginxService: NginxControl | null = null;
   nfsService: LinuxNfsService | null = null;
   nfsMounts: NfsMountedFileSystem | null = null;
-  /** Le recepteur rsyslog — voir `docs/PRD-Rsyslog.md`. */
-  rsyslogService: import('./syslog/LinuxRsyslogService').LinuxRsyslogService | null = null;
+  rsyslogDaemon: import('./syslog/LinuxRsyslogDaemon').LinuxRsyslogDaemon | null = null;
+  readonly localDatagramSockets: LocalDatagramSockets;
 
   /** L'agent NTP de la machine — le MEME moteur que Cisco et Huawei. */
   ntpAgent: (() => import('../../ntp/NtpAgent').NtpAgent) | null = null;
@@ -764,6 +765,7 @@ export class LinuxCommandExecutor {
     this.lifecycle = lifecycle ?? new HostLifecycle();
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
+    this.localDatagramSockets = new LocalDatagramSockets(this.vfs);
     this.vfs.setClock(this.wallNow);
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
     const rootPartition = this.hardware.storage
@@ -1413,6 +1415,11 @@ export class LinuxCommandExecutor {
       open: (path: string) => {
         const p = this.rsyslogProcess();
         if (p && !(p.openFiles ?? []).some((f) => f.path === path)) p.addOpenFile(path, 'a');
+      },
+      close: (path: string) => {
+        const p = this.rsyslogProcess();
+        const held = (p?.openFiles ?? []).find((f) => f.path === path);
+        if (held) p?.closeOpenFile(held.fd);
       },
       closeAll: () => {
         const p = this.rsyslogProcess();
@@ -3236,10 +3243,23 @@ export class LinuxCommandExecutor {
 
   setSystemTime(epochMs: number): void {
     this.clockPort.set(epochMs);
+    this.notifyClockAdvanced();
   }
 
   stepClock(deltaMs: number): void {
-    if (deltaMs > 0) this.clockPort.step(deltaMs);
+    if (deltaMs <= 0) return;
+    this.clockPort.step(deltaMs);
+    this.notifyClockAdvanced();
+  }
+
+  private readonly clockListeners: Array<() => void> = [];
+
+  onClockAdvanced(listener: () => void): void {
+    this.clockListeners.push(listener);
+  }
+
+  private notifyClockAdvanced(): void {
+    for (const listener of this.clockListeners) listener();
   }
 
   private readonly waitScopes: number[] = [];
@@ -3581,7 +3601,7 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       color: this.displayColor,
-      isPiped: outputPiped,
+      isPiped: outputPiped || this.childShellRunning,
       envOverride: this.envOverride ?? undefined,
       openRefusal: (absPath: string) => this.openRefusal(absPath),
       zone: this.localZone(),
@@ -3600,6 +3620,8 @@ export class LinuxCommandExecutor {
    */
   /** Exit code of the most recent execute() call. Cleared per call. */
   lastExitCode = 0;
+  private lastRawOutput: string | null = null;
+  private childShellRunning = false;
 
   sessionHoldSeconds = 0;
 
@@ -3701,6 +3723,19 @@ export class LinuxCommandExecutor {
     this.jobTable = b.jobTable;
     this.lastExitCode = b.lastExitCode;
     this.windowSize = b.windowSize;
+  }
+
+  executeChild(input: string, stdin?: string): { output: string; status: number } {
+    this.lastRawOutput = null;
+    this.execInput = stdin;
+    this.childShellRunning = true;
+    try {
+      const text = this.execute(input);
+      return { output: this.lastRawOutput ?? text, status: this.lastExitCode };
+    } finally {
+      this.execInput = undefined;
+      this.childShellRunning = false;
+    }
   }
 
   execute(input: string): string {
@@ -3813,6 +3848,7 @@ export class LinuxCommandExecutor {
     }
 
     this.lastExitCode = result.exitCode ?? 0;
+    this.lastRawOutput = result.output;
 
     // A terminal does not echo a trailing blank line after a command
     // (e.g. `echo x` shows one line, not two). Drop a single trailing
@@ -4299,6 +4335,7 @@ export class LinuxCommandExecutor {
     if (!cmd.startsWith('./') && !cmd.startsWith('/')) return null;
     const absPath = this.vfs.normalizePath(cmd, this.cwd);
     if (!this.vfs.exists(absPath)) return null;
+    if (this.shippedBinaryInvocation([cmd])[0] !== cmd) return null;
     // Le préambule de `dispatch()` émet l'`execve` — c'est lui que lit une
     // règle `auditctl -w <script> -p x`. Router ce script vers le jumeau
     // async faisait sauter ce préambule, donc la règle ne voyait plus rien
@@ -4313,6 +4350,13 @@ export class LinuxCommandExecutor {
     const commandLine = ['/bin/bash', absPath, ...args].join(' ');
     return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
       runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+  }
+
+  private shippedBinaryInvocation(argv: string[]): string[] {
+    if (!argv[0].startsWith('/')) return argv;
+    const path = this.vfs.normalizePath(argv[0], this.cwd);
+    const command = shippedCommandAt(path, this.vfs.readFile(path));
+    return command === null ? argv : [command, ...argv.slice(1)];
   }
 
   private dispatchFromInterpreter(
@@ -4338,6 +4382,7 @@ export class LinuxCommandExecutor {
       this.cwd = env['PWD'];
     }
     if (argv.length === 0) return { output: '', exitCode: 0 };
+    argv = this.shippedBinaryInvocation(argv);
     if (background) {
       const spawned = this.spawnBackgroundJob(argv.join(' '), false);
       if (!spawned) return { output: '', exitCode: 0 };
@@ -6235,7 +6280,7 @@ export class LinuxCommandExecutor {
         const registryResult = this._registryCommandHook?.(cmd, args, stdin);
         if (registryResult) return registryResult;
 
-        return { output: `${cmd}: command not found`, exitCode: 127 };
+        return { output: `${this.childShellRunning ? 'bash: line 1: ' : ''}${cmd}: command not found`, exitCode: 127 };
       }
     }
   }

@@ -469,6 +469,20 @@ export class LinuxProcessManager {
    *  trapped signal run its handler instead of the default action. */
   private trapHandlerHook: ((pid: number, signal: Signal) => 'terminated' | 'handled' | 'no-trap') | null = null;
 
+  private readonly daemonTraps = new Map<number, Map<Signal, () => void>>();
+
+  trapSignal(pid: number, signal: Signal, handler: () => void): () => void {
+    let traps = this.daemonTraps.get(pid);
+    if (traps === undefined) {
+      traps = new Map();
+      this.daemonTraps.set(pid, traps);
+    }
+    traps.set(signal, handler);
+    return () => {
+      this.daemonTraps.get(pid)?.delete(signal);
+    };
+  }
+
   attachSignalTrapHandler(fn: (pid: number, signal: Signal) => 'terminated' | 'handled' | 'no-trap'): void {
     this.trapHandlerHook = fn;
   }
@@ -505,6 +519,16 @@ export class LinuxProcessManager {
     // l'empile jusqu'à la sortie de `D`.
     if (this.uninterruptible.isBlocked(pid)) {
       this.uninterruptible.queue(pid, signal);
+      return true;
+    }
+
+    const daemonTrap = this.daemonTraps.get(pid)?.get(signal);
+    if (daemonTrap !== undefined) {
+      this.publish({
+        topic: 'linux.process.signalled',
+        payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, delivered: true },
+      });
+      daemonTrap();
       return true;
     }
 
@@ -739,6 +763,7 @@ export class LinuxProcessManager {
     // Le pid est recyclable : sans cet oubli, un futur processus héritant
     // du même numéro recevrait le `SIGKILL` destiné à son prédécesseur.
     this.uninterruptible.forget(pid);
+    this.daemonTraps.delete(pid);
     let reparented = 0;
     for (const child of this.processes.values()) {
       if (child.ppid === pid) {

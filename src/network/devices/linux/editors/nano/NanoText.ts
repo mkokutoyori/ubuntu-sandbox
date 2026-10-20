@@ -178,14 +178,14 @@ function parseNumber(text: string): number | null {
   return Number.isSafeInteger(value) ? value : null;
 }
 
-export function parseLineAndColumn(input: string): { line: number; column: number } | null {
+export function parseLineAndColumn(input: string): { line: number | null; column: number } | null {
   const text = input.replace(/^ +/, '');
   const separator = /[m,. /;]/.exec(text);
   if (separator === null) {
     const line = parseNumber(text);
     return line === null ? null : { line, column: 0 };
   }
-  let line = 0;
+  let line: number | null = null;
   if (separator.index > 0) {
     const first = parseNumber(text.slice(0, separator.index));
     if (first === null) return null;

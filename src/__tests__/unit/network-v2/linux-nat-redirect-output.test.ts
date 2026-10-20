@@ -13,14 +13,9 @@
  * "RULE_APPEND failed (Invalid argument): rule in chain INPUT", exit 4.
  *
  * REDIRECT-in-PREROUTING (redirecting a service to a different local port)
- * turns out to hit the same reply-path asymmetry Phase 5 documented for
- * cross-host DNAT, even though the destination address never changes: the
- * moment the destination PORT changes, the SYN-ACK's source port no longer
- * matches what the client dialed, so TcpStack's exact 4-tuple demux still
- * never recognizes the reply. The TCP case below stops at "the SYN reached
- * the redirected port", exactly like Phase 5's DNAT test, for the same
- * underlying reason — this isn't a same-host-only quirk of REDIRECT.
- * OUTPUT-chain UDP has no such demux requirement and round-trips for real.
+ * completes its handshake: conntrack remembers the redirection, so the
+ * SYN-ACK leaves under the port the client dialed.
+ * OUTPUT-chain UDP round-trips for real.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -108,11 +103,12 @@ describe('PRD-Port-Forwarding.md Phase 6 — REDIRECT in PREROUTING', () => {
     srv.getTcpStack().listen(8080, { onAccept: () => undefined });
     const halfOpen = watchHalfOpen(srv);
 
-    client.getTcpStack().connect('10.0.0.2', 80);
+    const socket = client.getTcpStack().connect('10.0.0.2', 80);
 
     expect(halfOpen).toHaveLength(1);
     expect(halfOpen[0].localPort).toBe(8080);
     expect(halfOpen[0].remoteIp).toBe('10.0.0.1');
+    expect(socket!.state).toBe('established');
   });
 
   it('with no matching REDIRECT rule, a SYN to an unlistened port is not accepted anywhere (no regression)', async () => {

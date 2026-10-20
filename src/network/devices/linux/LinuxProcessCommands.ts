@@ -667,6 +667,26 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
       return { output: '', exitCode: 0 };
     }
 
+    case 'kill': {
+      let signal: Signal = 'SIGTERM';
+      let target = '';
+      const rest = args.slice(1);
+      for (let index = 0; index < rest.length; index++) {
+        const word = rest[index];
+        const value = word === '-s' || word === '--signal' ? rest[++index] : word.startsWith('--signal=') ? word.slice('--signal='.length) : null;
+        if (value === null) {
+          if (!word.startsWith('-') && target === '') target = resolveUnitAlias(word.replace(/\.service$/, ''));
+          continue;
+        }
+        const parsed = parseSignalArg(value ?? '');
+        if (parsed === null) return { output: `Failed to parse signal string ${value}.`, exitCode: 1 };
+        signal = parsed;
+      }
+      if (target === '') return { output: 'Too few arguments.', exitCode: 1 };
+      const killed = sm.kill(target, signal);
+      return killed.ok ? { output: '', exitCode: 0 } : { output: killed.error ?? '', exitCode: 1 };
+    }
+
     case 'isolate': {
       if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
       const result = sm.isolate(unit);

@@ -20,11 +20,13 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import {
   IPAddress, IPv6Address, SubnetMask,
-  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
+  IP_PROTO_DCCP, IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_SCTP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, PORT_BEARING_PROTOCOLS,
 } from '../../core/types';
 import { answersWithTcpReset, rejectTypeOf } from '../../core/IcmpErrors';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
-import { ConnectionTracker, type ConnectionState, type ConnectionTuple, type TrackedEntry } from './ConnectionTracker';
+import { ConnectionTracker, type ConnectionState, type ConnectionTuple, type ErrorTranslation, type NatTranslation, type TrackedEntry } from './ConnectionTracker';
+import type { NatManipulation } from './NatMapping';
+import { NAT_ADDRESS_OPTION, natListing, natRangeOfTarget, natSaveOptions, type NatRange, type NatTargetName } from './NatRange';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -267,8 +269,6 @@ function icmpTypeSpecText(match: IcmpTypeMatch): string {
   return withCode ? `${match.type}/${match.codeMin}` : String(match.type);
 }
 
-const PORT_BEARING_PROTOCOLS: ReadonlySet<number> = new Set([IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, 132, 33]);
-
 const TARGET_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   ACCEPT: [], DROP: [], RETURN: [], NOTRACK: [],
   REJECT: ['--reject-with'],
@@ -337,6 +337,7 @@ interface IptablesRule {
   goto: boolean;
   target: string;         // 'ACCEPT', 'DROP', 'REJECT', 'LOG', chain name, etc.
   targetOptions: TargetOptions;
+  natRange: NatRange | null;
   matches: MatchExtension[];
   negSource: boolean;
   negDestination: boolean;
@@ -391,7 +392,26 @@ const TABLE_BUILTIN_CHAINS: Record<TableName, string[]> = {
 export interface NatResult {
   action: 'MASQUERADE' | 'DNAT' | 'SNAT' | 'REDIRECT' | 'DROP';
   address?: string;   // for DNAT: "ip:port", for SNAT: "ip", for REDIRECT: "port"
+  range?: NatRange | null;
 }
+
+export type NatHook = 'PREROUTING' | 'OUTPUT' | 'INPUT' | 'POSTROUTING';
+
+export interface NatHookContext {
+  readonly masqueradeAddress: string | null;
+  readonly redirectAddress: string | null;
+}
+
+export type NatHookOutcome =
+  | { readonly kind: 'drop' }
+  | { readonly kind: 'accept'; readonly translation: NatTranslation | null; readonly error: ErrorTranslation | null };
+
+const TARGET_FLAG_OPTIONS: ReadonlySet<string> = new Set([
+  '--random', '--random-fully', '--persistent', '--log-tcp-sequence', '--log-tcp-options', '--log-ip-options', '--log-uid',
+]);
+
+const NAT_TARGETS: ReadonlySet<string> = new Set(['DNAT', 'SNAT', 'MASQUERADE', 'REDIRECT']);
+const NAT_PORT_PROTOCOLS: ReadonlySet<number> = new Set([IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, IP_PROTO_SCTP, IP_PROTO_DCCP]);
 
 type ChainOutcome = FirewallVerdict | NatResult;
 
@@ -539,8 +559,58 @@ export class LinuxIptablesManager {
     const chain = filterTable.chains.get(chainName)!;
     const outcome = this.evaluateChain(filterTable, chain, pkt, 0, entry.state);
     const verdict = typeof outcome === 'string' ? outcome : 'drop';
-    if (verdict === 'accept') this.connections.confirm(entry);
+    if (verdict === 'accept' && pkt.direction !== 'forward' && !this.connections.confirm(entry)) return 'drop';
     return verdict;
+  }
+
+  track(pkt: PacketInfo, subject: object): TrackedEntry {
+    const known = this.attached.get(subject);
+    if (known !== undefined) return known;
+    const entry = this.connections.enter(pkt);
+    this.attached.set(subject, entry);
+    return entry;
+  }
+
+  carry(from: object, to: object): void {
+    const entry = this.attached.get(from);
+    if (entry !== undefined) this.attached.set(to, entry);
+  }
+
+  confirmForwarded(subject: object): boolean {
+    const entry = this.attached.get(subject);
+    return entry === undefined || this.connections.confirm(entry);
+  }
+
+  isTracked(subject: object): boolean {
+    return this.attached.has(subject);
+  }
+
+  natHook(
+    facts: () => PacketInfo, subject: object, hook: NatHook, context: NatHookContext,
+    decide: (state: ConnectionState) => NatResult | null,
+  ): NatHookOutcome {
+    const entry = this.attached.get(subject) ?? this.track(facts(), subject);
+    const manipulation: NatManipulation = hook === 'PREROUTING' || hook === 'OUTPUT' ? 'destination' : 'source';
+    if (entry.state === 'RELATED') return { kind: 'accept', translation: null, error: this.connections.errorTranslation(entry, manipulation) };
+    if (entry.state === 'NEW' && !this.connections.initialized(entry, manipulation)) {
+      const result = decide(entry.state);
+      if (result?.action === 'DROP') return { kind: 'drop' };
+      const range = result === null ? null : this.natRangeFor(result, context, facts());
+      if (range === 'drop') return { kind: 'drop' };
+      if (range === null) this.connections.bindUnchanged(entry, manipulation);
+      else this.connections.bind(entry, range, manipulation);
+    }
+    return { kind: 'accept', translation: this.connections.translation(entry, manipulation), error: null };
+  }
+
+  private natRangeFor(result: NatResult, context: NatHookContext, pkt: PacketInfo): NatRange | 'drop' | null {
+    const range = result.range ?? null;
+    if (range === null) return null;
+    if (result.action === 'DNAT' || result.action === 'SNAT') return range;
+    if (result.action === 'MASQUERADE' && pkt.srcIP === '0.0.0.0') return null;
+    const address = result.action === 'MASQUERADE' ? context.masqueradeAddress : context.redirectAddress;
+    if (address === null) return 'drop';
+    return { ...range, addresses: { min: new IPAddress(address), max: new IPAddress(address) } };
   }
 
   /**
@@ -570,23 +640,15 @@ export class LinuxIptablesManager {
    * routing decision instead of an arriving one).
    * Returns DNAT/SNAT/MASQUERADE/REDIRECT target info or null.
    */
-  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'OUTPUT' | 'POSTROUTING'): NatResult | null {
+  evaluateNat(pkt: PacketInfo, hook: NatHook, state?: ConnectionState): NatResult | null {
     const natTable = this.tables.get('nat');
     if (!natTable) return null;
     const chain = natTable.chains.get(hook);
     if (!chain) return null;
 
-    const outcome = this.evaluateChain(natTable, chain, pkt, 0, this.connections.classify(pkt));
+    const outcome = this.evaluateChain(natTable, chain, pkt, 0, state ?? this.connections.classify(pkt));
     if (typeof outcome !== 'string') return outcome;
     return outcome === 'accept' ? null : { action: 'DROP' };
-  }
-
-  track(pkt: PacketInfo, subject: object): TrackedEntry {
-    const known = this.attached.get(subject);
-    if (known !== undefined) return known;
-    const entry = this.connections.enter(pkt);
-    this.attached.set(subject, entry);
-    return entry;
   }
 
   /**
@@ -641,10 +703,10 @@ export class LinuxIptablesManager {
             this.lastRejectWith = rule.targetOptions['--reject-with'] ?? null;
             return 'reject';
           case 'RETURN': return null; // return to calling chain
-          case 'MASQUERADE': return { action: 'MASQUERADE' };
-          case 'DNAT': return { action: 'DNAT', address: rule.targetOptions['--to-destination'] || '' };
-          case 'SNAT': return { action: 'SNAT', address: rule.targetOptions['--to-source'] || '' };
-          case 'REDIRECT': return { action: 'REDIRECT', address: rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '' };
+          case 'MASQUERADE': return { action: 'MASQUERADE', range: rule.natRange };
+          case 'DNAT': return { action: 'DNAT', address: rule.targetOptions['--to-destination'] || '', range: rule.natRange };
+          case 'SNAT': return { action: 'SNAT', address: rule.targetOptions['--to-source'] || '', range: rule.natRange };
+          case 'REDIRECT': return { action: 'REDIRECT', address: rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '', range: rule.natRange };
           case 'LOG':
             this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
             continue; // LOG doesn't terminate; continue to next rule
@@ -998,7 +1060,7 @@ export class LinuxIptablesManager {
       inInterface: '', outInterface: '',
       sport: '', dport: '', negSport: false, negDport: false,
       tcpFlags: null, tcpOption: null, icmpType: null, protocolMatch: '', fragment: '', goto: false,
-      target: '', targetOptions: {}, matches: [],
+      target: '', targetOptions: {}, natRange: null, matches: [],
       negSource: false, negDestination: false, negProtocol: false,
       negInInterface: false, negOutInterface: false,
       pkts: 0, bytes: 0,
@@ -1168,7 +1230,7 @@ export class LinuxIptablesManager {
       const s = this.fmtMatch(m);
       if (s) parts.push(s);
     }
-    const t = this.fmtTargetExtras(r.targetOptions);
+    const t = r.natRange === null ? this.fmtTargetExtras(r.targetOptions) : natListing(r.target as NatTargetName, r.natRange);
     if (t) parts.push(t);
     return parts.length > 0 ? ' ' + parts.join(' ') : '';
   }
@@ -1284,7 +1346,11 @@ export class LinuxIptablesManager {
     }
     if (rule.target) {
       p.push(`${rule.goto ? '-g' : '-j'} ${rule.target}`);
-      for (const [opt, val] of Object.entries(rule.targetOptions)) p.push(`${opt} ${this.quote(val)}`);
+      if (rule.natRange === null) {
+        for (const [opt, val] of Object.entries(rule.targetOptions)) p.push(`${opt} ${this.quote(val)}`);
+      } else {
+        p.push(...natSaveOptions(rule.target as NatTargetName, rule.natRange));
+      }
     }
     return p.join(' ');
   }
@@ -1892,26 +1958,24 @@ export class LinuxIptablesManager {
           rule.target = args[i];
           i++;
           const allowed = TARGET_OPTIONS[rule.target] ?? [];
+          const optionCounts = new Map<string, number>();
           while (i < args.length && args[i].startsWith('--')) {
             const typed = args[i];
             const candidates = allowed.includes(typed) ? [typed] : allowed.filter((name) => name.startsWith(typed));
             if (candidates.length !== 1) break;
             const optName = candidates[0];
+            optionCounts.set(optName, (optionCounts.get(optName) ?? 0) + 1);
             i++;
-            if (i < args.length && !args[i].startsWith('-')) {
-              rule.targetOptions[optName] = args[i]; i++;
-            } else if (i < args.length && args[i].startsWith('--')) {
+            if (TARGET_FLAG_OPTIONS.has(optName)) {
+              rule.targetOptions[optName] = '';
+            } else if (i < args.length) {
               rule.targetOptions[optName] = args[i]; i++;
             } else {
               rule.targetOptions[optName] = '';
             }
           }
-          for (const opt of ['--to-source', '--to-destination']) {
-            const v = rule.targetOptions[opt];
-            if (v !== undefined && v !== '' && !this.validateNatTarget(v)) {
-              return `iptables v1.8.7: Bad IP address "${v}"`;
-            }
-          }
+          const natProblem = this.natTargetProblem(rule, optionCounts);
+          if (natProblem !== null) return natProblem;
           const rejectError = this.rejectWithError(rule);
           if (rejectError !== null) return rejectError;
           continue;
@@ -1977,25 +2041,42 @@ export class LinuxIptablesManager {
 
   // ─── Validation helpers ────────────────────────────────────────
 
-  /**
-   * `--to-source <adresse>[-<adresse>][:<port>[-<port>]]` : la plage
-   * d'adresses et la plage de ports sont facultatives, mais la premiere
-   * adresse ne l'est pas.
-   */
-  private validateNatTarget(spec: string): boolean {
+  private natTargetProblem(rule: IptablesRule, counts: ReadonlyMap<string, number>): string | null {
+    if (!NAT_TARGETS.has(rule.target)) return null;
     if (this.family === 6) {
-      // En IPv6 le port se met entre crochets (`[fd00::9]:80`) parce que
-      // l'adresse contient elle-meme des deux-points : les couper comme
-      // en IPv4 detruirait l'adresse.
-      const entre = /^\[(.+)\](?::\d+(?:-\d+)?)?$/.exec(spec);
-      const adresses = entre ? entre[1] : spec;
-      const bornes = adresses.split('-').filter((b) => b.length > 0);
-      return bornes.length > 0 && bornes.every((b) => this.tryParseV6(b) !== null);
+      for (const opt of ['--to-source', '--to-destination']) {
+        const v = rule.targetOptions[opt];
+        if (v !== undefined && v !== '' && !this.validateNatTarget(v)) return `iptables v1.8.7: Bad IP address "${v}"`;
+      }
+      return null;
     }
-    const [adresses] = spec.split(':');
+    const target = rule.target as NatTargetName;
+    const option = NAT_ADDRESS_OPTION[target];
+    const addressed = target === 'DNAT' || target === 'SNAT';
+    const given = rule.targetOptions[option];
+    if (given === '') return this.parameterProblem(`option "${option}" requires an argument`);
+    const protocol = protocolNumberOf(rule.protocol);
+    const parsed = natRangeOfTarget(target, {
+      toAddress: addressed ? given : undefined,
+      toPorts: addressed ? undefined : given,
+      random: '--random' in rule.targetOptions,
+      randomFully: '--random-fully' in rule.targetOptions,
+      persistent: '--persistent' in rule.targetOptions,
+      toAddressCount: counts.get(option) ?? 0,
+    }, protocol !== null && NAT_PORT_PROTOCOLS.has(protocol));
+    if (parsed.kind === 'problem') return this.parameterProblem(parsed.problem);
+    rule.natRange = parsed.range;
+    return null;
+  }
+
+  private validateNatTarget(spec: string): boolean {
+    // En IPv6 le port se met entre crochets (`[fd00::9]:80`) parce que
+    // l'adresse contient elle-meme des deux-points : les couper comme
+    // en IPv4 detruirait l'adresse.
+    const entre = /^\[(.+)\](?::\d+(?:-\d+)?)?$/.exec(spec);
+    const adresses = entre ? entre[1] : spec;
     const bornes = adresses.split('-').filter((b) => b.length > 0);
-    if (bornes.length === 0) return false;
-    return bornes.every((b) => this.ipToNumber(b) !== null);
+    return bornes.length > 0 && bornes.every((b) => this.tryParseV6(b) !== null);
   }
 
   private validateIPSpec(spec: string): boolean {

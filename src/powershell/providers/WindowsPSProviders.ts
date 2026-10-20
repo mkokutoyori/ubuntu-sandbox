@@ -2369,6 +2369,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
   sendMailMessage(opts: Parameters<WindowsPC['sendMailMessage']>[0]) { return this.pc.sendMailMessage(opts); }
+  sendSyslogMessage(opts: Parameters<WindowsPC['sendSyslogMessage']>[0]) { return this.pc.sendSyslogMessage(opts); }
   testPingProbe(target: string, count = 1) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;

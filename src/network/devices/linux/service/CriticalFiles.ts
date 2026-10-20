@@ -116,20 +116,6 @@ export function checkSshdCriticalFiles(probe: FileProbe): ConfigCheckResult {
  * différents. Ce tableau ne couvre que le premier ; le second est du
  * ressort de l'analyseur, qui seul peut lire le contenu.
  */
-/**
- * rsyslog refuse de demarrer sans son fichier principal, et le message
- * est le sien : `rsyslogd: error ... could not open config file`. Un
- * `/etc/rsyslog.conf` VIDE, lui, est legal — le demon demarre sans
- * regle et n'ecrit nulle part, ce qui est une panne differente et bien
- * reelle (les logs disparaissent sans que rien n'echoue).
- */
-export const RSYSLOG_CRITICAL_FILES: readonly CriticalRequirement[] = [
-  {
-    path: '/etc/rsyslog.conf',
-    onMissing: "rsyslogd: error: could not open config file '/etc/rsyslog.conf': No such file or directory",
-  },
-];
-
 export const NGINX_CRITICAL_FILES: readonly CriticalRequirement[] = [
   {
     path: '/etc/nginx/nginx.conf',
@@ -138,12 +124,6 @@ export const NGINX_CRITICAL_FILES: readonly CriticalRequirement[] = [
 ];
 
 /** Le fichier principal de nginx est-il là ? */
-/** Le pendant rsyslog de `checkNginxCriticalFiles`. */
-export function checkRsyslogCriticalFiles(probe: FileProbe): ConfigCheckResult {
-  const missing = firstMissingRequirement(probe, RSYSLOG_CRITICAL_FILES);
-  return missing ? { ok: false, error: missing } : { ok: true };
-}
-
 export function checkNginxCriticalFiles(probe: FileProbe): ConfigCheckResult {
   const missing = firstMissingRequirement(probe, NGINX_CRITICAL_FILES);
   return missing ? { ok: false, error: missing } : { ok: true };
@@ -231,6 +211,19 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   a2ensite: '/usr/sbin/a2ensite', a2dissite: '/usr/sbin/a2dissite',
   a2enmod: '/usr/sbin/a2enmod', a2dismod: '/usr/sbin/a2dismod',
 };
+
+const COMMAND_AT_PATH: ReadonlyMap<string, string> = new Map(
+  Object.entries(STANDARD_BIN_PATHS).map(([name, path]) => [canonicalBinPath(path), name]),
+);
+
+const SHIPPED_STUB_CONTENTS: ReadonlySet<string> = new Set(['#!/bin/sh\n']);
+
+export function shippedCommandAt(path: string, content: string | null): string | null {
+  if (content === null) return null;
+  const marked = /^#!\/bin\/bash\n# (\S+) binary stub\n$/.exec(content);
+  if (marked !== null) return marked[1];
+  return SHIPPED_STUB_CONTENTS.has(content) ? COMMAND_AT_PATH.get(canonicalBinPath(path)) ?? null : null;
+}
 
 export function resolveExePath(name: string): string {
   if (name.startsWith('/')) return name;
