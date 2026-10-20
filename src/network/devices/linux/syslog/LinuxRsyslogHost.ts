@@ -51,6 +51,7 @@ export interface LinuxRsyslogPlatform {
   supplementaryGidsOf(userName: string): number[];
   applyCredentials(uid: number, gid: number): void;
   restoreProcessLimits(): void;
+  runProgram(argv: readonly string[], uid: number, gid: number): number;
   setOpenFilesLimit(uid: number, limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
   wallMs(): number;
   monotonicMs(): number;
@@ -228,6 +229,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
     currentGid: () => this.credentials.gid,
     setUmask: (mask) => { this.credentials.umask = mask & 0o777; },
     setOpenFilesLimit: (limit) => this.platform.setOpenFilesLimit(this.credentials.uid, limit),
+    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid),
   };
 
   readonly files = {
@@ -242,6 +244,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
         directoryGid: options.directoryGid,
         createDirectories: options.createDirectories,
         failOnChownFailure: options.failOnChownFailure,
+        followSymlinks: options.followSymlinks,
         actor: { ...this.credentials, gids: this.credentials.groups },
       });
       if ('error' in held) return held;
@@ -250,6 +253,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
     read: (path: string): string | null => this.platform.vfs.readFile(path),
     exists: (path: string): boolean => this.platform.vfs.exists(path),
     isDirectory: (path: string): boolean => this.platform.vfs.getType(path) === 'directory',
+    isSymbolicLink: (path: string): boolean => this.platform.vfs.resolveInode(path, false)?.type === 'symlink',
     list: (directory: string): string[] =>
       (this.platform.vfs.listDirectory(directory) ?? []).map((entry) => entry.name).filter((name) => name !== '.' && name !== '..').sort(),
     glob: (pattern: string): string[] => this.platform.vfs.globExpand(pattern, '/'),

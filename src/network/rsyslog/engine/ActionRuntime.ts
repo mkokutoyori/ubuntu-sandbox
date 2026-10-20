@@ -66,6 +66,12 @@ export class ActionRuntime {
     this.definition.instance.teardown?.();
   }
 
+  commit(): void {
+    if (this.state !== 'ready') return;
+    const outcome = this.worker?.endTransaction?.();
+    if (outcome === 'suspended') this.enterRetry();
+  }
+
   resumeDelayMs(): number {
     if (this.state !== 'suspended') return 0;
     return Math.max(0, this.resumeAtSeconds * 1000 - this.services.host.clock.wallMs());

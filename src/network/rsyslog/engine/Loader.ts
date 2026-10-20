@@ -147,7 +147,7 @@ export class ConfigLoader implements ConfigSink {
     const settings = defaultGlobalSettings();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false,
+      rateLimits: new Map(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -172,6 +172,8 @@ export class ConfigLoader implements ConfigSink {
       rateLimiter: (spec) => this.createModuleRateLimiter(spec),
       netstreamDriverAvailable: (driver) => this.options.catalog.fileExists(`lmnsd_${driver}.so`),
       moduleDirectory: () => this.options.catalog.moduleDirectory(),
+      moduleFileAvailable: (fileName) => this.options.catalog.fileExists(fileName),
+      outchannel: (name) => this.config.outchannels.find((channel) => channel.name === name),
       moduleState: <T>(name: string, create: () => T): T => {
         if (!this.moduleStates.has(name)) this.moduleStates.set(name, create());
         return this.moduleStates.get(name) as T;
@@ -241,6 +243,40 @@ export class ConfigLoader implements ConfigSink {
       if (outcome === 'error') return null;
     }
     return list;
+  }
+
+  private legacyOutchannel(rest: string): string {
+    const comma = rest.indexOf(',');
+    const name = (comma < 0 ? rest : rest.slice(0, comma)).trimStart();
+    if (name === '') {
+      this.runtimeSink.error('Invalid config line: could not extract name - line ignored', RS_RET.NOT_FOUND);
+      return '';
+    }
+    let remaining = comma < 0 ? '' : rest.slice(comma + 1);
+    const skipComma = (): void => {
+      remaining = remaining.replace(/^\s+/, '');
+      if (remaining.startsWith(',')) remaining = remaining.slice(1);
+      remaining = remaining.replace(/^\s+/, '');
+    };
+    skipComma();
+    const fileEnd = remaining.search(/[ ,]/);
+    const fileTemplate = fileEnd < 0 ? remaining : remaining.slice(0, fileEnd);
+    remaining = fileEnd < 0 ? '' : remaining.slice(fileEnd);
+    let sizeLimit = 0;
+    let command: string | null = null;
+    if (remaining !== '') {
+      skipComma();
+      const digits = /^\d*/.exec(remaining)?.[0] ?? '';
+      sizeLimit = digits === '' ? 0 : Number(digits);
+      remaining = remaining.slice(digits.length);
+    }
+    if (remaining !== '') {
+      skipComma();
+      command = remaining;
+      remaining = '';
+    }
+    this.config.outchannels.push({ name, fileTemplate: fileTemplate === '' ? null : fileTemplate, sizeLimit, sizeLimitCommand: command });
+    return remaining;
   }
 
   private legacyAllowedSender(rest: string): string {
@@ -349,7 +385,7 @@ export class ConfigLoader implements ConfigSink {
     word('defaultruleset', (value) => { settings.defaultRuleset = value; });
     word('ruleset', (value) => this.setCurrentRuleset(value));
     this.registerDirective({ name: 'template', type: 'custom', apply: () => undefined, custom: (rest) => this.legacyTemplate(rest) });
-    this.registerDirective({ name: 'outchannel', type: 'custom', apply: () => undefined, custom: () => '' });
+    this.registerDirective({ name: 'outchannel', type: 'custom', apply: () => undefined, custom: (rest) => this.legacyOutchannel(rest) });
     this.registerDirective({ name: 'allowedsender', type: 'custom', apply: () => undefined, custom: (rest) => this.legacyAllowedSender(rest) });
     word('workdirectory', (value) => { settings.workDirectory = value; });
     word('localhostname', (value) => { settings.localHostNameOverride = value; });

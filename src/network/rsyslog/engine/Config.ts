@@ -1,7 +1,7 @@
 import type { Stmt } from '../config/Ast';
 import type { MessageParserModule } from '../MessageParser';
 import type { Template } from '../Template';
-import type { ActionModuleInstance, EngineModule, InputInstance, RuntimeLog, TemplateRequest } from './Modules';
+import type { ActionModuleInstance, EngineModule, InputInstance, OutChannel, RuntimeLog, TemplateRequest } from './Modules';
 import type { LocalClock } from './LocalClock';
 import type { SenderResolver } from './SenderResolver';
 import type { GlobalSettings, QueueSettings } from './Settings';
@@ -65,6 +65,7 @@ export interface LoadedConfig {
   readonly rulesets: Map<string, RulesetDefinition>;
   readonly modules: Map<string, EngineModule>;
   readonly inputs: InputRecord[];
+  readonly outchannels: OutChannel[];
   readonly actions: ActionDefinition[];
   readonly parsers: Map<string, MessageParserModule>;
   readonly rateLimits: Map<string, RateLimitDefinition>;

@@ -7,6 +7,7 @@ import type {
   TemplateRequest,
 } from '../engine/Modules';
 import type { RsyslogMessage } from '../Message';
+import { OmfileStream, type StreamSettings } from './OmfileStream';
 import { parseSelectorTemplate } from './SelectorTemplate';
 
 interface OmfileModuleConfig {
@@ -22,6 +23,7 @@ interface OmfileModuleConfig {
   permitPathEscape: boolean;
   restrictTemplateType: boolean;
   followSymlinks: boolean | null;
+  compressionDriver: 'zlib' | 'zstd';
 }
 
 interface OmfileLegacyState {
@@ -36,6 +38,11 @@ interface OmfileLegacyState {
   createDirectories: boolean;
   enableSync: boolean;
   defaultTemplate: string | null;
+  zipLevel: number;
+  flushIntervalSeconds: number;
+  asyncWriting: boolean;
+  flushOnTxEnd: boolean;
+  ioBufferSize: number;
 }
 
 const MODULE_PARAMS: readonly ParamDescriptor[] = [
@@ -67,7 +74,7 @@ function defaultModuleConfig(): OmfileModuleConfig {
   return {
     template: null, addLf: true, fileCreateMode: 0o644, directoryCreateMode: 0o700, fileUid: null, fileGid: null,
     directoryUid: null, directoryGid: null, dynafileDoNotSuspend: true, permitPathEscape: false, restrictTemplateType: false,
-    followSymlinks: null,
+    followSymlinks: null, compressionDriver: 'zlib',
   };
 }
 
@@ -75,6 +82,7 @@ function defaultLegacyState(): OmfileLegacyState {
   return {
     fileUid: null, fileGid: null, directoryUid: null, directoryGid: null, failOnChown: true, dynaFileCacheSize: 10,
     fileCreateMode: 0o644, directoryCreateMode: 0o700, createDirectories: true, enableSync: false, defaultTemplate: null,
+    zipLevel: 0, flushIntervalSeconds: 1, asyncWriting: false, flushOnTxEnd: true, ioBufferSize: 4096,
   };
 }
 
@@ -134,11 +142,23 @@ interface OmfileInstanceSettings {
   readonly restrictTemplateType: boolean;
   readonly isDevNull: boolean;
   readonly sizeLimit: number;
+  readonly sizeLimitCommand: string | null;
+  readonly sizeLimitPassFileName: boolean;
+  readonly zipLevel: number;
+  readonly veryRobustZip: boolean;
+  readonly driver: 'zlib' | 'zstd';
+  readonly asyncWriting: boolean;
+  readonly flushIntervalSeconds: number;
+  readonly flushOnTxEnd: boolean;
+  readonly ioBufferSize: number;
+  readonly sync: boolean;
+  readonly followSymlinks: boolean;
+  readonly followSymlinksExplicit: boolean;
 }
 
 interface CacheEntry {
   readonly name: string;
-  readonly handle: FileHandle;
+  readonly handle: OmfileStream;
   accessed: number;
   idleMinutes: number;
 }
@@ -147,7 +167,8 @@ class OmfileInstance implements ActionModuleInstance {
   readonly moduleName = 'omfile';
   readonly description: string;
   readonly templates: TemplateRequest[];
-  private handle: FileHandle | null = null;
+  private handle: OmfileStream | null = null;
+  private current: OmfileStream | null = null;
   private idleMinutes = 0;
   private readonly cache: CacheEntry[] = [];
   private clock = 0;
@@ -183,10 +204,18 @@ class OmfileInstance implements ActionModuleInstance {
     return {
       mode: s.fileMode, directoryMode: s.directoryMode, uid: s.fileUid, gid: s.fileGid, directoryUid: s.directoryUid,
       directoryGid: s.directoryGid, createDirectories: s.createDirectories, failOnChownFailure: s.failOnChown,
+      followSymlinks: s.followSymlinks,
     };
   }
 
-  private open(path: string): FileHandle | { error: string; reported: boolean } {
+  private openRaw(path: string): FileHandle | { error: string; reported: boolean } {
+    const settings = this.settings;
+    if (settings.followSymlinks && !settings.followSymlinksExplicit && this.context.settings.compatDefaultsSecure === 'warn' && this.context.host.files.isSymbolicLink(path)) {
+      this.context.runtime.warning(
+        `omfile: following symbolic link output file '${path}'; set action(type="omfile" followSymlinks="off") or global(compatibility.defaults.secure="strict") to reject final-component symlinks`,
+        RS_RET.NO_ERRCODE,
+      );
+    }
     const result = this.context.host.files.open(path, this.openOptions());
     for (const notice of result.notices ?? []) {
       if (notice.kind === 'directory-chown') {
@@ -201,6 +230,27 @@ class OmfileInstance implements ActionModuleInstance {
       return { error: result.error, reported: true };
     }
     return { error: result.error, reported: result.step === 'chown' };
+  }
+
+  private streamSettings(): StreamSettings {
+    const s = this.settings;
+    return {
+      ioBufferSize: Math.max(1, s.ioBufferSize), zipLevel: s.zipLevel, veryRobustZip: s.veryRobustZip, driver: s.driver,
+      asyncWriting: s.asyncWriting, flushIntervalSeconds: s.flushIntervalSeconds, sizeLimit: s.sizeLimit,
+      sizeLimitCommand: s.sizeLimitCommand, passFileName: s.sizeLimitPassFileName,
+    };
+  }
+
+  private open(path: string): OmfileStream | { error: string; reported: boolean } {
+    const first = this.openRaw(path);
+    if ('error' in first) return first;
+    return new OmfileStream(path, first, this.streamSettings(), {
+      open: () => this.openRaw(path),
+      size: (target) => this.context.host.files.statSize(target),
+      schedule: (callback, delayMs) => this.context.host.schedule(callback, delayMs),
+      run: (argv) => { this.context.host.process?.run?.(argv); },
+      report: (text, code) => this.context.runtime.error(text, code),
+    });
   }
 
   private validate(path: string): boolean {
@@ -218,7 +268,7 @@ class OmfileInstance implements ActionModuleInstance {
     return true;
   }
 
-  private dynamicHandle(path: string): FileHandle | 'discard' | 'error' {
+  private dynamicHandle(path: string): OmfileStream | 'discard' | 'error' {
     const existing = this.cache.find((entry) => entry.name === path);
     if (existing !== undefined) {
       existing.accessed = ++this.clock;
@@ -265,7 +315,7 @@ class OmfileInstance implements ActionModuleInstance {
 
   write(text: string, path: string): ActionOutcome {
     if (this.settings.isDevNull) return 'ok';
-    let handle: FileHandle;
+    let handle: OmfileStream;
     if (this.settings.dynamic) {
       const found = this.dynamicHandle(path);
       if (found === 'discard') return 'ok';
@@ -286,19 +336,26 @@ class OmfileInstance implements ActionModuleInstance {
       this.idleMinutes = 0;
       handle = this.handle;
     }
+    this.current = handle;
     const needsLf = this.settings.addLf && (text.length === 0 || !text.endsWith('\n'));
     const failure = handle.write(needsLf ? `${text}\n` : text);
     if (failure !== null) {
+      if (handle.lastFailure !== null) return 'fail';
       this.context.runtime.error(`omfile: write to '${handle.path}' failed: ${failure}`, RS_RET.FILE_OPEN_ERROR);
       this.closeHandle(handle);
       return 'suspended';
     }
-    handle.flush();
     return 'ok';
   }
 
-  private closeHandle(handle: FileHandle): void {
+  commit(): ActionOutcome {
+    if (this.settings.flushOnTxEnd) this.current?.flush();
+    return 'ok';
+  }
+
+  private closeHandle(handle: OmfileStream): void {
     if (this.handle === handle) this.handle = null;
+    if (this.current === handle) this.current = null;
     const index = this.cache.findIndex((entry) => entry.handle === handle);
     if (index >= 0) this.cache.splice(index, 1);
     handle.close();
@@ -307,11 +364,13 @@ class OmfileInstance implements ActionModuleInstance {
   createWorker(): ActionWorker {
     return {
       doAction: (args: ActionArguments, _message: RsyslogMessage) => this.write(args.strings[0] ?? '', args.strings[1] ?? ''),
+      endTransaction: () => this.commit(),
       close: () => undefined,
     };
   }
 
   hup(): void {
+    this.current = null;
     if (this.settings.dynamic) {
       for (const entry of this.cache) entry.handle.close();
       this.cache.length = 0;
@@ -341,6 +400,10 @@ function parseFileName(rest: string, context: ModuleContext): { name: string; te
   return { name, template, error: false };
 }
 
+function effectiveFollow(context: ModuleContext, explicit: boolean | null): boolean {
+  return explicit ?? context.settings.compatDefaultsSecure !== 'strict';
+}
+
 function buildSettings(
   context: ModuleContext, dynamic: boolean, fileName: string, templateName: string, overrides: Partial<OmfileInstanceSettings>,
 ): OmfileInstanceSettings {
@@ -351,27 +414,46 @@ function buildSettings(
     directoryGid: legacy.directoryGid, failOnChown: legacy.failOnChown, cacheSize: legacy.dynaFileCacheSize,
     closeTimeoutMinutes: dynamic ? 10 : 0, dynafileDoNotSuspend: moduleConfig(context).dynafileDoNotSuspend,
     permitPathEscape: moduleConfig(context).permitPathEscape, restrictTemplateType: moduleConfig(context).restrictTemplateType,
-    isDevNull: fileName === '/dev/null', sizeLimit: 0, ...overrides,
+    isDevNull: fileName === '/dev/null', sizeLimit: 0, sizeLimitCommand: null, sizeLimitPassFileName: true,
+    zipLevel: legacy.zipLevel, veryRobustZip: false, driver: moduleConfig(context).compressionDriver, asyncWriting: legacy.asyncWriting,
+    flushIntervalSeconds: legacy.flushIntervalSeconds, flushOnTxEnd: legacy.flushOnTxEnd, ioBufferSize: legacy.ioBufferSize,
+    sync: legacy.enableSync, followSymlinks: effectiveFollow(context, moduleConfig(context).followSymlinks),
+    followSymlinksExplicit: moduleConfig(context).followSymlinks !== null, ...overrides,
   };
 }
 
 function parseSelector(line: string, context: ModuleContext): SelectorParse {
-  let rest = line;
+  let rest = line.startsWith(':omfile:') ? line.slice(':omfile:'.length) : line;
+  const syncOverride: Partial<OmfileInstanceSettings> = rest.startsWith('-') ? { sync: false } : {};
   if (rest.startsWith('-')) rest = rest.slice(1);
   const first = rest[0];
   if (first === '$') {
-    context.runtime.error('output channels are not supported', RS_RET.ERR);
-    return { status: 'error' };
+    let name = '';
+    let index = 1;
+    while (index < rest.length && rest[index] !== ';' && rest[index] !== ' ' && name.length < 127) name += rest[index++];
+    const channel = context.outchannel(name);
+    if (channel === undefined) {
+      context.runtime.error(`outchannel '${name}' not found - ignoring action line`, RS_RET.NOT_FOUND);
+      return { status: 'error' };
+    }
+    if (channel.fileTemplate === null) {
+      context.runtime.error(`outchannel '${name}' has no file name template - ignoring action line`, RS_RET.ERR);
+      return { status: 'error' };
+    }
+    const template = parseSelectorTemplate(rest.slice(index), defaultTemplateName(context), context.runtime);
+    if (template === null) return { status: 'error' };
+    const overrides = { ...syncOverride, sizeLimit: channel.sizeLimit, sizeLimitCommand: channel.sizeLimitCommand, sizeLimitPassFileName: false };
+    return { status: 'ok', instance: new OmfileInstance(buildSettings(context, false, channel.fileTemplate, template, overrides), context), rest: '' };
   }
   if (first === '?') {
     const parsed = parseFileName(rest.slice(1), context);
     if (parsed.error) return { status: 'error' };
-    return { status: 'ok', instance: new OmfileInstance(buildSettings(context, true, parsed.name, parsed.template, {}), context), rest: '' };
+    return { status: 'ok', instance: new OmfileInstance(buildSettings(context, true, parsed.name, parsed.template, syncOverride), context), rest: '' };
   }
   if (first === '/' || first === '.') {
     const parsed = parseFileName(rest, context);
     if (parsed.error) return { status: 'error' };
-    return { status: 'ok', instance: new OmfileInstance(buildSettings(context, false, parsed.name, parsed.template, {}), context), rest: '' };
+    return { status: 'ok', instance: new OmfileInstance(buildSettings(context, false, parsed.name, parsed.template, syncOverride), context), rest: '' };
   }
   return { status: 'unprocessed' };
 }
@@ -423,7 +505,30 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
     closeTimeoutMinutes: closeTimeout ?? (dynamic ? 10 : 0),
     permitPathEscape: flag('dynafile.dangerouspermitpathescape') ?? module.permitPathEscape,
     sizeLimit: numberParam(values, 'rotation.sizelimit') ?? 0,
+    sizeLimitCommand: stringParam(values, 'rotation.sizelimitcommand') ?? null,
+    sizeLimitPassFileName: flag('rotation.sizelimitcommandpassfilename') ?? true,
+    zipLevel: numberParam(values, 'ziplevel') ?? 0,
+    veryRobustZip: flag('veryrobustzip') ?? false,
+    asyncWriting: flag('asyncwriting') ?? false,
+    flushIntervalSeconds: numberParam(values, 'flushinterval') ?? 1,
+    flushOnTxEnd: flag('flushontxend') ?? true,
+    ioBufferSize: numberParam(values, 'iobuffersize') ?? 4096,
+    sync: flag('sync') ?? false,
+    followSymlinks: effectiveFollow(context, flag('followsymlinks') ?? module.followSymlinks),
+    followSymlinksExplicit: flag('followsymlinks') !== undefined || module.followSymlinks !== null,
   });
+  const cryProvider = stringParam(values, 'cry.provider');
+  if (cryProvider !== undefined) {
+    const library = `lmcry_${cryProvider}`;
+    if (!context.moduleFileAvailable(`${library}.so`)) {
+      context.runtime.error(`omfile: could not load crypto provider '${library}' - encryption disabled`, RS_RET.CONF_PARSE_ERROR);
+      return null;
+    }
+  }
+  const sigProvider = stringParam(values, 'sig.provider');
+  if (sigProvider !== undefined && !context.moduleFileAvailable(`lmsig_${sigProvider}.so`)) {
+    context.runtime.error(`omfile: could not load signature provider 'lmsig_${sigProvider}' - signatures disabled`, RS_RET.CONF_PARSE_ERROR);
+  }
   if (dynamic && settings.restrictTemplateType) {
     const template = context.template(name);
     if (template === undefined || template.kind !== 'entries') {
@@ -438,11 +543,11 @@ function directives(): DirectiveRegistration[] {
   const set = (apply: (state: OmfileLegacyState, value: number | string) => void) => (value: number | string, context: ModuleContext): void => apply(legacyState(context), value);
   const list: DirectiveRegistration[] = [
     { name: 'dynafilecachesize', type: 'int', apply: set((s, v) => { s.dynaFileCacheSize = Math.max(1, Number(v)); }) },
-    { name: 'omfileziplevel', type: 'int', apply: () => undefined },
-    { name: 'omfileflushinterval', type: 'int', apply: () => undefined },
-    { name: 'omfileasyncwriting', type: 'binary', apply: () => undefined },
-    { name: 'omfileflushontxend', type: 'binary', apply: () => undefined },
-    { name: 'omfileiobuffersize', type: 'size', apply: () => undefined },
+    { name: 'omfileziplevel', type: 'int', apply: set((s, v) => { s.zipLevel = Number(v); }) },
+    { name: 'omfileflushinterval', type: 'int', apply: set((s, v) => { s.flushIntervalSeconds = Number(v); }) },
+    { name: 'omfileasyncwriting', type: 'binary', apply: set((s, v) => { s.asyncWriting = v === 1; }) },
+    { name: 'omfileflushontxend', type: 'binary', apply: set((s, v) => { s.flushOnTxEnd = v === 1; }) },
+    { name: 'omfileiobuffersize', type: 'size', apply: set((s, v) => { s.ioBufferSize = Number(v); }) },
     { name: 'dirowner', type: 'uid', apply: set((s, v) => { s.directoryUid = Number(v); }) },
     { name: 'dirownernum', type: 'int', apply: set((s, v) => { s.directoryUid = Number(v); }) },
     { name: 'dirgroup', type: 'gid', apply: set((s, v) => { s.directoryGid = Number(v); }) },
@@ -494,6 +599,13 @@ export const omfile: OutputModule = {
     config.permitPathEscape = flag('dynafile.dangerouspermitpathescape') ?? config.permitPathEscape;
     config.restrictTemplateType = flag('dynafile.restricttemplatetype') ?? config.restrictTemplateType;
     config.followSymlinks = flag('followsymlinks') ?? config.followSymlinks;
+    const driver = stringParam(values, 'compression.driver');
+    if (driver !== undefined) {
+      const lowered = driver.toLowerCase();
+      if (lowered.startsWith('zlib')) config.compressionDriver = 'zlib';
+      else if (lowered.startsWith('zstd')) config.compressionDriver = 'zstd';
+      else context.runtime.error("omfile: error: invalid compression.driver driver name - noch applying setting. Valid drivers: 'zlib' and 'zstd'.", RS_RET.CONF_PARSE_ERROR);
+    }
     for (const entry of params.entries) entry.used = true;
     return true;
   },

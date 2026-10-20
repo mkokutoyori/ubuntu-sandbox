@@ -105,6 +105,7 @@ export class LabHost implements RsyslogHost {
     read: (path: string): string | null => this.fileSystem.get(path) ?? null,
     exists: (path: string): boolean => this.fileSystem.has(path) || this.directories.has(path),
     isDirectory: (path: string): boolean => this.directories.has(path),
+    isSymbolicLink: (): boolean => false,
     list: (directory: string): string[] => {
       const prefix = directory.replace(/\/$/, '') + '/';
       return [...this.fileSystem.keys()].filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/')).map((path) => path.slice(prefix.length)).sort();

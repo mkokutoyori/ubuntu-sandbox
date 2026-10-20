@@ -68,11 +68,14 @@ export class RsyslogEngine implements InputSubmitter {
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
       const runtime = this.actions.get(definition.id) as ActionRuntime;
-      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message)));
+      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => runtime.commit()));
     }
   }
 
-  private newQueue(name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>): WorkerQueue<RsyslogMessage> {
+  private newQueue(
+    name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
+    endBatch: () => void = () => this.commitActions(),
+  ): WorkerQueue<RsyslogMessage> {
     return new WorkerQueue<RsyslogMessage>(
       name,
       settings,
@@ -81,9 +84,14 @@ export class RsyslogEngine implements InputSubmitter {
         localHour: () => this.renderContext().now().hour,
         nowMs: () => this.host.clock.wallMs(),
         report: (text) => this.internal(4, -1, text),
+        endBatch,
       },
       process,
     );
+  }
+
+  private commitActions(): void {
+    for (const runtime of this.actions.values()) runtime.commit();
   }
 
   private newLimiter(name: string, interval: number, burst: number, threshold: number): RateLimiter {

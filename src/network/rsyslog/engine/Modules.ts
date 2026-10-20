@@ -76,6 +76,15 @@ export interface ModuleContext {
   moduleState<T>(moduleName: string, create: () => T): T;
   netstreamDriverAvailable(driver: string): boolean;
   moduleDirectory(): string;
+  moduleFileAvailable(fileName: string): boolean;
+  outchannel(name: string): OutChannel | undefined;
+}
+
+export interface OutChannel {
+  readonly name: string;
+  readonly fileTemplate: string | null;
+  readonly sizeLimit: number;
+  readonly sizeLimitCommand: string | null;
 }
 
 export interface DirectiveRegistration {

@@ -114,6 +114,7 @@ export interface AppendCreation {
   readonly directoryGid: number | null;
   readonly createDirectories: boolean;
   readonly failOnChownFailure?: boolean;
+  readonly followSymlinks?: boolean;
   readonly actor?: AppendActor;
 }
 
@@ -964,6 +965,9 @@ export class VirtualFileSystem {
     const actor: AppendActor = creation.actor ?? { uid: 0, gid: 0, gids: [], umask: 0 };
     const notices: AppendNotice[] = [];
     if (this.remoteFor(path)) return { error: 'Operation not supported', notices };
+    if (creation.followSymlinks === false && this.resolveInode(path, false)?.type === 'symlink') {
+      return { error: 'Too many levels of symbolic links', notices };
+    }
     let inode = this.resolveInode(path);
     if (inode === null) {
       if (this.isReadOnly(path)) return { error: 'Read-only file system', notices };

@@ -94,9 +94,16 @@ function hash3(data: Uint8Array, position: number): number {
   return ((data[position] << 16) | (data[position + 1] << 8) | data[position + 2]) % 65537;
 }
 
-function deflateFixed(data: Uint8Array, level: number): number[] {
+function syncMarker(writer: BitWriter): void {
+  writer.bits(0, 1);
+  writer.bits(0, 2);
+  writer.alignToByte();
+  writer.raw(Uint8Array.of(0, 0, 0xff, 0xff));
+}
+
+function deflateFixed(data: Uint8Array, level: number, final = true, sync = false): number[] {
   const writer = new BitWriter();
-  writer.bits(1, 1);
+  writer.bits(final ? 1 : 0, 1);
   writer.bits(1, 2);
   const heads = new Map<number, number[]>();
   const limit = chainLimit(level);
@@ -150,13 +157,14 @@ function deflateFixed(data: Uint8Array, level: number): number[] {
     }
   }
   emitLiteral(256);
+  if (sync) syncMarker(writer);
   return writer.finish();
 }
 
-function deflateStored(data: Uint8Array): number[] {
+function deflateStored(data: Uint8Array, final = true, sync = false): number[] {
   const writer = new BitWriter();
   if (data.length === 0) {
-    writer.bits(1, 1);
+    writer.bits(final ? 1 : 0, 1);
     writer.bits(0, 2);
     writer.alignToByte();
     writer.raw(Uint8Array.of(0, 0, 0xff, 0xff));
@@ -164,13 +172,96 @@ function deflateStored(data: Uint8Array): number[] {
   }
   for (let offset = 0; offset < data.length; offset += MAX_STORED_BLOCK) {
     const block = data.subarray(offset, Math.min(offset + MAX_STORED_BLOCK, data.length));
-    writer.bits(offset + MAX_STORED_BLOCK >= data.length ? 1 : 0, 1);
+    writer.bits(final && offset + MAX_STORED_BLOCK >= data.length ? 1 : 0, 1);
     writer.bits(0, 2);
     writer.alignToByte();
     writer.raw(Uint8Array.of(block.length & 0xff, block.length >> 8, ~block.length & 0xff, (~block.length >> 8) & 0xff));
     writer.raw(block);
   }
+  if (sync) syncMarker(writer);
   return writer.finish();
+}
+
+function deflateSegment(data: Uint8Array, level: number, final: boolean, sync: boolean): number[] {
+  if (level === 0) return deflateStored(data, final, sync);
+  const compressed = deflateFixed(data, level, final, sync);
+  const stored = deflateStored(data, final, sync);
+  return compressed.length <= stored.length ? compressed : stored;
+}
+
+const CRC_TABLE: number[] = (() => {
+  const table: number[] = [];
+  for (let index = 0; index < 256; index++) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    table.push(value >>> 0);
+  }
+  return table;
+})();
+
+export function crc32(bytes: Uint8Array, seed = 0): number {
+  let value = ~seed >>> 0;
+  for (const byte of bytes) value = CRC_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8);
+  return ~value >>> 0;
+}
+
+const GZIP_PENDING_FLUSH_BYTES = 16384;
+
+export class GzipStreamWriter {
+  private headerWritten = false;
+  private readonly pending: Uint8Array[] = [];
+  private pendingBytes = 0;
+  private checksum = 0;
+  private total = 0;
+
+  constructor(private readonly level: number) {}
+
+  private header(): number[] {
+    const flags = this.level === 9 ? 2 : this.level === 1 ? 4 : 0;
+    return [0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, flags, 0x03];
+  }
+
+  private emit(final: boolean, sync: boolean): Uint8Array {
+    const out: number[] = [];
+    if (!this.headerWritten) {
+      out.push(...this.header());
+      this.headerWritten = true;
+    }
+    const data = new Uint8Array(this.pendingBytes);
+    let offset = 0;
+    for (const chunk of this.pending) {
+      data.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.pending.length = 0;
+    this.pendingBytes = 0;
+    if (data.length > 0 || final || sync) out.push(...deflateSegment(data, this.level, final, sync));
+    if (final) {
+      for (const shift of [0, 8, 16, 24]) out.push((this.checksum >>> shift) & 0xff);
+      for (const shift of [0, 8, 16, 24]) out.push((this.total >>> shift) & 0xff);
+    }
+    return Uint8Array.from(out);
+  }
+
+  write(data: Uint8Array, flush: boolean): Uint8Array {
+    this.checksum = crc32(data, this.checksum);
+    this.total = (this.total + data.length) >>> 0;
+    if (data.length > 0) {
+      this.pending.push(data);
+      this.pendingBytes += data.length;
+    }
+    if (flush || this.pendingBytes >= GZIP_PENDING_FLUSH_BYTES) return this.emit(false, true);
+    if (!this.headerWritten) {
+      this.headerWritten = true;
+      return Uint8Array.from(this.header());
+    }
+    return new Uint8Array(0);
+  }
+
+  finish(): Uint8Array {
+    if (!this.headerWritten && this.total === 0) return new Uint8Array(0);
+    return this.emit(true, false);
+  }
 }
 
 function zlibHeader(level: number): [number, number] {
@@ -187,11 +278,7 @@ function zlibHeader(level: number): [number, number] {
 
 export function zlibCompress(data: Uint8Array, level: number): Uint8Array {
   const clamped = Math.max(0, Math.min(9, level));
-  const body = clamped === 0 ? deflateStored(data) : (() => {
-    const compressed = deflateFixed(data, clamped);
-    const stored = deflateStored(data);
-    return compressed.length <= stored.length ? compressed : stored;
-  })();
+  const body = deflateSegment(data, clamped, true, false);
   const [cmf, flg] = zlibHeader(clamped);
   const checksum = adler32(data);
   const output = new Uint8Array(2 + body.length + 4);
@@ -315,12 +402,7 @@ function dynamicTables(reader: BitReader): { literal: HuffmanTable; distance: Hu
   return { literal: buildHuffman(lengths.slice(0, literalCount)), distance: buildHuffman(lengths.slice(literalCount)) };
 }
 
-export function zlibDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {
-  if (data.length < 6) throw new ZlibError('zlib stream too short');
-  if ((data[0] & 0x0f) !== 8 || ((data[0] << 8) | data[1]) % 31 !== 0) throw new ZlibError('invalid zlib header');
-  if ((data[1] & 0x20) !== 0) throw new ZlibError('preset dictionary not supported');
-  const reader = new BitReader(data, 2);
-  const output: number[] = [];
+function inflateBlocks(reader: BitReader, maxOutput: number, output: number[] = []): number[] {
   let final = false;
   while (!final) {
     final = reader.bits(1) === 1;
@@ -356,10 +438,88 @@ export function zlibDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INT
       throw new ZlibError('invalid block type');
     }
   }
-  const result = Uint8Array.from(output);
+  return output;
+}
+
+export function zlibDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {
+  if (data.length < 6) throw new ZlibError('zlib stream too short');
+  if ((data[0] & 0x0f) !== 8 || ((data[0] << 8) | data[1]) % 31 !== 0) throw new ZlibError('invalid zlib header');
+  if ((data[1] & 0x20) !== 0) throw new ZlibError('preset dictionary not supported');
+  const reader = new BitReader(data, 2);
+  const result = Uint8Array.from(inflateBlocks(reader, maxOutput));
   const trailerAt = reader.offset;
   if (trailerAt + 4 > data.length) throw new ZlibError('missing adler32 trailer');
   const expected = ((data[trailerAt] << 24) | (data[trailerAt + 1] << 16) | (data[trailerAt + 2] << 8) | data[trailerAt + 3]) >>> 0;
   if (adler32(result) !== expected) throw new ZlibError('adler32 mismatch');
   return result;
+}
+
+export function isGzip(data: Uint8Array): boolean {
+  return data.length >= 18 && data[0] === 0x1f && data[1] === 0x8b && data[2] === 0x08;
+}
+
+function afterZeroTerminated(data: Uint8Array, start: number): number {
+  let cursor = start;
+  while (cursor < data.length && data[cursor] !== 0) cursor++;
+  return cursor + 1;
+}
+
+export interface GzipDecoded {
+  readonly output: Uint8Array;
+  readonly complete: boolean;
+}
+
+function concatenate(parts: readonly Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+export function gzipDecompressTolerant(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): GzipDecoded {
+  const parts: Uint8Array[] = [];
+  let position = 0;
+  while (position < data.length) {
+    if (data.length - position < 18 || data[position] !== 0x1f || data[position + 1] !== 0x8b || data[position + 2] !== 0x08) {
+      throw new ZlibError('not in gzip format');
+    }
+    const flags = data[position + 3];
+    let cursor = position + 10;
+    if (flags & 0x04) cursor += 2 + (data[cursor] | (data[cursor + 1] << 8));
+    if (flags & 0x08) cursor = afterZeroTerminated(data, cursor);
+    if (flags & 0x10) cursor = afterZeroTerminated(data, cursor);
+    if (flags & 0x02) cursor += 2;
+    const reader = new BitReader(data, cursor);
+    const decoded: number[] = [];
+    try {
+      inflateBlocks(reader, maxOutput, decoded);
+    } catch (error) {
+      if (error instanceof ZlibError && error.message === 'unexpected end of deflate stream') {
+        parts.push(Uint8Array.from(decoded));
+        return { output: concatenate(parts), complete: false };
+      }
+      throw error;
+    }
+    const member = Uint8Array.from(decoded);
+    const trailer = reader.offset;
+    if (trailer + 8 > data.length) {
+      parts.push(member);
+      return { output: concatenate(parts), complete: false };
+    }
+    const expected = (data[trailer] | (data[trailer + 1] << 8) | (data[trailer + 2] << 16) | (data[trailer + 3] << 24)) >>> 0;
+    if (crc32(member) !== expected) throw new ZlibError('crc error');
+    parts.push(member);
+    position = trailer + 8;
+  }
+  return { output: concatenate(parts), complete: true };
+}
+
+export function gzipDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {
+  const decoded = gzipDecompressTolerant(data, maxOutput);
+  if (!decoded.complete) throw new ZlibError('unexpected end of file');
+  return decoded.output;
 }

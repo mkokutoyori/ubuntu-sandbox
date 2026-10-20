@@ -15,6 +15,7 @@ export interface OpenFileOptions {
   readonly directoryGid: number | null;
   readonly createDirectories: boolean;
   readonly failOnChownFailure: boolean;
+  readonly followSymlinks?: boolean;
 }
 
 export interface FileHandle {
@@ -39,6 +40,7 @@ export interface RsyslogFiles {
   read(path: string): string | null;
   exists(path: string): boolean;
   isDirectory(path: string): boolean;
+  isSymbolicLink(path: string): boolean;
   list(directory: string): string[];
   glob(pattern: string): string[];
   statSize(path: string): number | null;
@@ -177,6 +179,7 @@ export interface RsyslogProcess {
   userNameOf(uid: number): string | null;
   currentGid(): number;
   setUmask(mask: number): void;
+  run?(argv: readonly string[]): number;
   setOpenFilesLimit(limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
 }
 

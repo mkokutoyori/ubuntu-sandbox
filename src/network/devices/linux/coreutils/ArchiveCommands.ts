@@ -18,6 +18,7 @@
  * dependency, testable in isolation.
  */
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { gzipDecompressTolerant, isGzip } from '@/network/rsyslog/Zlib';
 
 import type { DirEntry, INode } from '../VirtualFileSystem';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -69,6 +70,7 @@ interface GzipBody {
   name: string;
   mtime: number;
   payload: string;
+  truncated?: boolean;
 }
 
 function packMembers(magic: string, members: ArchiveMember[]): string {
@@ -96,8 +98,18 @@ function packGzip(body: GzipBody): string {
   return `${GZ_MAGIC}\n${JSON.stringify(body)}`;
 }
 
+function unpackRealGzip(raw: string): GzipBody | null {
+  const bytes = Uint8Array.from(raw, (character) => character.charCodeAt(0) & 0xff);
+  if (!isGzip(bytes)) return null;
+  try {
+    const mtime = (bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24)) >>> 0;
+    const decoded = gzipDecompressTolerant(bytes);
+    return { name: '', mtime: mtime * 1000, payload: new TextDecoder().decode(decoded.output), truncated: !decoded.complete };
+  } catch { return null; }
+}
+
 function unpackGzip(raw: string): GzipBody | null {
-  if (!raw.startsWith(`${GZ_MAGIC}\n`)) return null;
+  if (!raw.startsWith(`${GZ_MAGIC}\n`)) return unpackRealGzip(raw);
   try {
     const body = JSON.parse(raw.slice(GZ_MAGIC.length + 1)) as GzipBody;
     return typeof body.payload === 'string' ? body : null;
@@ -430,6 +442,10 @@ export function cmdGzip(ctx: ArchiveCtx, args: string[],
       }
       if (invokedAs === 'zcat') {
         stdout.push(body.payload);
+        if (body.truncated === true) {
+          lines.push(`gzip: ${op}: unexpected end of file`);
+          exitCode = 1;
+        }
         continue;
       }
       if (!/\.(gz|tgz)$/.test(op)) {

@@ -1408,6 +1408,26 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
+  private runDaemonProgram(argv: readonly string[], uid: number, gid: number): number {
+    const um = this.executor.userMgr;
+    const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
+    um.currentUser = um.getUserByUid(uid)?.username ?? 'root';
+    um.currentUid = uid;
+    um.currentGid = gid;
+    this.executor.setCwd('/');
+    try {
+      const quoted = argv.map((argument) => `'${argument.replace(/'/g, `'\\''`)}'`).join(' ');
+      return this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status;
+    } catch {
+      return 1;
+    } finally {
+      um.currentUser = prev.user;
+      um.currentUid = prev.uid;
+      um.currentGid = prev.gid;
+      this.executor.setCwd(prev.cwd);
+    }
+  }
+
   private deliverCronMail(recipient: string, body: string): void {
     const entry = this.executor.userMgr.getUser(recipient);
     const host = this.getHostname();
@@ -1629,6 +1649,7 @@ export abstract class LinuxMachine extends EndHost
         executor.processMgr.setNofileLimit(uid, limit);
         return null;
       },
+      runProgram: (argv, uid, gid) => this.runDaemonProgram(argv, uid, gid),
       restoreProcessLimits: () => {
         for (const [uid, saved] of savedNofile) {
           executor.processMgr.setNofileHardLimit(uid, saved.hard);

@@ -6,6 +6,7 @@ export interface QueueHost {
   localHour(): number;
   nowMs(): number;
   report(text: string): void;
+  endBatch?(): void;
 }
 
 export type ProcessOutcome = 'done' | { readonly retryAfterMs: number };
@@ -105,6 +106,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       const step = this.current.next();
       if (step.done !== true) {
         const sleep = step.value;
+        this.host.endBatch?.();
         this.running = false;
         this.wake(sleep.sleepMs);
         return;
@@ -116,6 +118,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
         this.statistics.size = this.items.length;
         batched++;
         const batchEnded = this.items.length === 0 || batched >= this.settings.dequeueBatchSize;
+        if (batchEnded) this.host.endBatch?.();
         if (this.settings.dequeueSlowdown > 0 && batchEnded) {
           this.running = false;
           this.wake(Math.max(1, Math.ceil(this.settings.dequeueSlowdown / 1000)));
@@ -123,6 +126,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
         }
         if (batchEnded) batched = 0;
       } else {
+        this.host.endBatch?.();
         this.running = false;
         this.wake(Math.max(1, outcome.retryAfterMs));
         return;
