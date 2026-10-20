@@ -76,4 +76,22 @@ describe('a syslog datagram reaches the collector, and is unicast to it', () => 
     expect(dump).toContain(collector.getPort('eth0')!.getMAC().toString());
     expect(dump).not.toContain(MACAddress.broadcast().toString());
   }, 20000);
+
+  it('a switch with a cold ARP cache still delivers its FIRST message: the request is answered before the frame leaves', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8, 0, 0);
+    sw.powerOn();
+    collector = await makeCollector();
+    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, collector.getPort('eth0')!);
+    await type(sw as unknown as Cli, [
+      'enable', 'configure terminal',
+      'interface Vlan1', 'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'exit',
+      'logging host 10.0.0.9', 'end',
+    ]);
+
+    const dump = await collectorFor(sw as unknown as Cli,
+      ['configure terminal', 'interface FastEthernet0/2', 'shutdown', 'no shutdown', 'end']);
+
+    expect(dump).toMatch(/1 packet captured/);
+    expect(dump).toContain(collector.getPort('eth0')!.getMAC().toString());
+  }, 20000);
 });

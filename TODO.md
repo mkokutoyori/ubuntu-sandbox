@@ -888,22 +888,6 @@ recherche n'a rendu l'equivalent pour un nom.
 est plausible plutot qu'inventee — mais elle n'est pas mesuree, et c'est
 ecrit ici pour que personne ne la prenne pour telle.
 
-### [arp] un commutateur JETTE sur cache ARP froid, un routeur met en file
-**Constat.** `SwitchSvi.sendUdpDatagram` appelle `resolveArp` et rend
-`false` quand le cache est froid ; le datagramme est perdu.
-`Router.sendUdpDatagram` passe par `sendIpv4FrameArpAware`, qui MET EN
-FILE et emet des que la reponse arrive.
-
-**Mesure.** Meme laboratoire, meme collecteur : le premier message
-syslog d'un routeur part apres resolution, celui d'un commutateur est
-compte comme envoye et n'existe pas. Le cas de `syslog-protocol` visait
-d'ailleurs un collecteur INEXISTANT, ce qui masquait l'ecart.
-
-**Report.** Donner une file d'attente ARP a la SVI est un changement du
-plan de donnees du commutateur, distinct du lot syslog ; il demande son
-propre temoin (une premiere trame differee, pas perdue).
-
-
 ### [icmp] le pendant VRP est accepte et inerte, et son `undo` n'existe pas
 **Constat.** Cote Cisco, `no ip unreachables` est desormais honore par
 `sendICMPError`. Cote Huawei, les commandes equivalentes
