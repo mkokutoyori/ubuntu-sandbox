@@ -900,21 +900,36 @@ export function showNATStatistics(router: Router): string {
   const maxEntries = engine.getMaxEntries?.();
   const hasOverload = engine.getDynamicRules().some(r => r.type === 'overload');
 
-  const poolUsage: string[] = [];
-  if (pools > 0) {
-    poolUsage.push(`Pools:`);
-    for (const [, p] of engine.getPools()) {
-      const startN = p.startIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
-      const endN = p.endIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
-      const cap = (endN - startN + 1) || 1;
-      const used = engine.getSessions().filter(s => {
-        const n = s.globalIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
-        return n >= startN && n <= endN;
-      }).length;
-      const pct = Math.round((used * 100) / cap);
-      poolUsage.push(` ${p.name}: ${p.startIP} - ${p.endIP} — used ${used}/${cap} (${pct}%)`);
+  const addressNumber = (ip: string): number => ip.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
+  const maskOf = (p: { netmask?: string; prefixLength?: number }): string => {
+    if (p.netmask) return p.netmask;
+    const bits = p.prefixLength ?? 24;
+    const value = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff).join('.');
+  };
+  const mappingLines: string[] = [];
+  engine.getDynamicRules().forEach((rule, index) => {
+    const selector = rule.routeMap !== undefined ? `route-map ${rule.routeMap}` : `access-list ${rule.aclId}`;
+    const id = `[Id: ${index + 1}]`;
+    if (rule.type === 'overload') {
+      const ifName = rule.interfaceName ?? '';
+      const ifIp = router.getPort?.(ifName)?.getIPAddress?.()?.toString();
+      const refcount = sessions.filter(s => s.viaStatic !== true && s.globalIP === ifIp).length;
+      mappingLines.push(`${id} ${selector} interface ${ifName} refcount ${refcount}`);
+      return;
     }
-  }
+    const pool = rule.poolName !== undefined ? engine.getPool(rule.poolName) : undefined;
+    if (!pool) return;
+    const start = addressNumber(pool.startIP);
+    const end = addressNumber(pool.endIP);
+    const inPool = sessions.filter(s => s.viaStatic !== true && addressNumber(s.globalIP) >= start && addressNumber(s.globalIP) <= end);
+    const allocated = new Set(inPool.map(s => s.globalIP)).size;
+    const total = end - start + 1;
+    mappingLines.push(`${id} ${selector} pool ${pool.name}${rule.overload ? ' overload' : ''} refcount ${inPool.length}`);
+    mappingLines.push(` pool ${pool.name}: netmask ${maskOf(pool)}`);
+    mappingLines.push(`\tstart ${pool.startIP} end ${pool.endIP}`);
+    mappingLines.push(`\ttype generic, total addresses ${total}, allocated ${allocated} (${Math.round((allocated * 100) / total)}%), misses ${engine.getPoolMisses(pool.name)}`);
+  });
 
   const staticEntries = engine.getStaticEntries();
 
@@ -934,15 +949,12 @@ export function showNATStatistics(router: Router): string {
     ...(maxEntries != null ? [`max-entries ${maxEntries}`, ...(dynamicSessions >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
     `Static mappings:`,
     ...(staticEntries.length === 0 ? ['-- No static NAT entries configured --'] :
-      staticEntries.map(e =>
-        ` -- static  ${e.localIP}  ${e.globalIP}  refcount ${e.hitCount ?? 0}`
+      staticEntries.map(e => e.protocol
+        ? ` -- static  ${e.protocol} ${e.localIP} ${e.localPort ?? ''}  ${e.globalIP} ${e.globalPort ?? ''}  refcount ${e.hitCount ?? 0}`
+        : ` -- static  ${e.localIP}  ${e.globalIP}  refcount ${e.hitCount ?? 0}`
       )),
     `Dynamic mappings:`,
-    ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] :
-      engine.getDynamicRules().map(r =>
-        ` -- Inside Source [${r.routeMap !== undefined ? `route-map ${r.routeMap}` : `acl ${r.aclId}`}] ${r.type === 'overload' ? 'overload' : `pool ${r.poolName}`}`
-      )),
-    ...poolUsage,
+    ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] : ['-- Inside Source', ...mappingLines]),
     `Total doors: ${engine.getAlgDoors()}`,
     `Appl doors: ${engine.getAlgDoors()}`,
     `Normal doors: 0`,

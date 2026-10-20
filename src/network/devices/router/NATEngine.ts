@@ -352,6 +352,10 @@ export class NATEngine {
   removePool(name: string): void { this.pools.delete(name); }
   getPool(name: string): NatPool | undefined { return this.pools.get(name); }
 
+  private readonly poolMisses = new Map<string, number>();
+
+  getPoolMisses(name: string): number { return this.poolMisses.get(name) ?? 0; }
+
   addDynamicRule(rule: NatDynamicRule): void { this.dynamicRules.push(rule); }
 
   removeDynamicRule(aclId: string | number): void {
@@ -723,6 +727,7 @@ export class NATEngine {
             ? this.overloadPoolAddress(pool, proto)
             : this.allocatePoolAddress(pool, srcIP);
           if (poolIP === null) {
+            this.poolMisses.set(rule.poolName, (this.poolMisses.get(rule.poolName) ?? 0) + 1);
             // Exhausted for this rule — try the next dynamic rule rather
             // than counting a Miss here; the final `missCount++` below
             // covers the case where no rule at all can translate the packet.

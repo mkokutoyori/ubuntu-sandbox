@@ -96,7 +96,7 @@ describe('Scénario 15 (Cisco) — rapport d\'audit NAT complet', () => {
       expect(out).toMatch(/Outside interfaces:\s*GigabitEthernet0\/1/);
       expect(out).toMatch(/Inside interfaces:\s*GigabitEthernet0\/0/);
       expect(out).toMatch(/Hits:\s*\d+\s+Misses:\s*0/);
-      expect(out).toMatch(/Inside Source \[acl ACL-LAN-INTERNE\] overload/);
+      expect(out).toMatch(/-- Inside Source\n\[Id: 1\] access-list ACL-LAN-INTERNE interface GigabitEthernet0\/1 refcount \d+/);
     });
 
     it('affiche Peak translations (charge maximale observée)', async () => {
