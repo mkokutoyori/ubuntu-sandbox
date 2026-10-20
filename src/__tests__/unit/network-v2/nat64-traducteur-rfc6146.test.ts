@@ -10,8 +10,9 @@
  * IPv4 attendues et une somme TCP verifiee par recalcul independant.
  *
  * La RFC 7915 (traduction des en-tetes) ne fait pas partie de docs/rfc : la forme des en-tetes
- * (TOS, DF positionne, TTL, longueur) vient de la memoire de l'auteur et le dit. Limite : les
- * messages d'erreur ICMP ne sont pas traduits (seul l'echo l'est), un paquet fragmente non plus.
+ * (TOS, DF positionne, TTL, longueur, table des codes ICMP) vient de la memoire de l'auteur et le dit.
+ * Les messages d'erreur ICMP sont traduits avec le paquet qu'ils citent ; limite : un paquet fragmente
+ * ne l'est pas (la fragmentation IPv6 n'est pas modelisee par le plan de donnees).
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -232,5 +233,79 @@ describe('RFC 6146 section 3.4 and RFC 6052 section 3.1: what is translated', ()
     expect(translator.translate4to6(reply)).toEqual({ ok: false, reason: 'no-binding' });
     const other = createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), 47, 64, null, 0);
     expect(translator.translate6to4(other)).toEqual({ ok: false, reason: 'unsupported-protocol' });
+  });
+});
+
+describe('RFC 6146 / 7915 : error messages cross the translator with the packet they quote', () => {
+  const sent = (translator: Nat64Translator) => unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+  const icmpError4 = (original: IPv4Packet, icmpType: 'destination-unreachable' | 'time-exceeded', code: number, mtu?: number, from = SERVER) =>
+    createIPv4Packet(new IPAddress(from), new IPAddress(POOL), IP_PROTO_ICMP, 60,
+      { type: 'icmp', icmpType, code, id: 0, sequence: 0, dataSize: 0, originalPacket: original, ...(mtu === undefined ? {} : { mtu }) }, 8 + original.totalLength);
+
+  it('port unreachable from the server becomes destination unreachable code 4, quoting the IPv6 datagram', () => {
+    const { translator } = lab();
+    const forward = sent(translator);
+    const back = unwrap(translator.translate4to6(icmpError4(forward, 'destination-unreachable', 3)));
+    expect(back.nextHeader).toBe(IP_PROTO_ICMPV6);
+    expect(back.sourceIP.toString()).toBe(toServer());
+    expect(back.destinationIP.toString()).toBe(HOST_A);
+    expect(back.payload).toMatchObject({ type: 'icmpv6', icmpType: 'destination-unreachable', code: 4 });
+    const quoted = (back.payload as { invokingPacket: IPv6Packet }).invokingPacket;
+    expect(quoted.sourceIP.toString()).toBe(HOST_A);
+    expect(quoted.destinationIP.toString()).toBe(toServer());
+    expect(quoted.payload).toMatchObject({ sourcePort: 40000, destinationPort: 53 });
+  });
+
+  it('fragmentation needed becomes packet too big with the MTU grown by the header difference, 1280 at least', () => {
+    const { translator } = lab();
+    const forward = sent(translator);
+    const big = unwrap(translator.translate4to6(icmpError4(forward, 'destination-unreachable', 4, 1400)));
+    expect(big.payload).toMatchObject({ icmpType: 'packet-too-big', mtu: 1420 });
+    const small = unwrap(translator.translate4to6(icmpError4(forward, 'destination-unreachable', 4, 576)));
+    expect(small.payload).toMatchObject({ icmpType: 'packet-too-big', mtu: 1280 });
+  });
+
+  it('time exceeded keeps its code, the router that sent it is shown under the prefix', () => {
+    const { translator } = lab();
+    const forward = sent(translator);
+    const back = unwrap(translator.translate4to6(icmpError4(forward, 'time-exceeded', 0, undefined, OTHER)));
+    expect(back.sourceIP.toString()).toBe(toServer(OTHER));
+    expect(back.payload).toMatchObject({ icmpType: 'time-exceeded', code: 0 });
+  });
+
+  it('an IPv4 error with no matching code, or quoting a flow nobody opened, is dropped', () => {
+    const { translator } = lab();
+    const forward = sent(translator);
+    expect(translator.translate4to6(icmpError4(forward, 'destination-unreachable', 14))).toEqual({ ok: false, reason: 'unsupported-icmp' });
+    const stranger = createIPv4Packet(new IPAddress('203.0.113.99'), new IPAddress(SERVER), 17, 64,
+      { type: 'udp', sourcePort: 1, destinationPort: 2, length: 8, checksum: 0, payload: null } as UDPPacket, 8);
+    expect(translator.translate4to6(icmpError4(stranger, 'destination-unreachable', 3))).toEqual({ ok: false, reason: 'no-binding' });
+  });
+
+  it('an IPv6 host that cannot take a packet too big tells the server in IPv4 terms', () => {
+    const { translator } = lab();
+    unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    const fromServer = unwrap(translator.translate4to6(udp4(SERVER, POOL, 53, 40000)));
+    const error = createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), IP_PROTO_ICMPV6, 64,
+      { type: 'icmpv6', icmpType: 'packet-too-big', code: 0, mtu: 1400, invokingPacket: fromServer }, 8 + 40 + 8);
+    const out = unwrap(translator.translate6to4(error));
+    expect(out.protocol).toBe(IP_PROTO_ICMP);
+    expect(out.sourceIP.toString()).toBe(POOL);
+    expect(out.destinationIP.toString()).toBe(SERVER);
+    expect(out.payload).toMatchObject({ icmpType: 'destination-unreachable', code: 4, mtu: 1380 });
+    const quoted = (out.payload as { originalPacket: IPv4Packet }).originalPacket;
+    expect(quoted.sourceIP.toString()).toBe(SERVER);
+    expect(quoted.destinationIP.toString()).toBe(POOL);
+    expect(quoted.payload).toMatchObject({ sourcePort: 53, destinationPort: 40000 });
+  });
+
+  it('an IPv6 unreachable maps its code (address 3 to host 1, port 4 to port 3)', () => {
+    const { translator } = lab();
+    unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    const fromServer = unwrap(translator.translate4to6(udp4(SERVER, POOL, 53, 40000)));
+    const error = (code: number) => createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), IP_PROTO_ICMPV6, 64,
+      { type: 'icmpv6', icmpType: 'destination-unreachable', code, invokingPacket: fromServer }, 56);
+    expect(unwrap(translator.translate6to4(error(3))).payload).toMatchObject({ icmpType: 'destination-unreachable', code: 1 });
+    expect(unwrap(translator.translate6to4(error(4))).payload).toMatchObject({ icmpType: 'destination-unreachable', code: 3 });
   });
 });

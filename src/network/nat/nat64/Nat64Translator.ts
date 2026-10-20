@@ -1,6 +1,7 @@
 import {
   IPAddress, IPv6Address, IP_PROTO_ICMP, IP_PROTO_ICMPV6, createIPv4Packet, createIPv6Packet,
-  type ICMPPacket, type ICMPv6Packet, type IPv4Packet, type IPv6Packet, type TCPPacket, type UDPPacket,
+  type ICMPPacket, type ICMPType, type ICMPv6Packet, type ICMPv6Type, type IPv4Packet, type IPv6Packet,
+  type TCPPacket, type UDPPacket,
 } from '@/network/core/types';
 import { recomputeL4Checksum } from '@/network/nat/rewrite';
 import { isGlobalIpv4, type Nat64Prefix } from './Nat64Prefix';
@@ -66,6 +67,26 @@ export type Nat64DropReason =
   | 'not-in-prefix' | 'non-global-destination' | 'unsupported-protocol' | 'pool-exhausted'
   | 'no-binding' | 'filtered' | 'unsupported-icmp';
 
+const IPV6_MINIMUM_MTU = 1280;
+const IPV4_MINIMUM_MTU = 68;
+const HEADER_GROWTH = 20;
+const IPV6_HEADER_BYTES = 40;
+const ICMP_ERROR_HEADER_BYTES = 8;
+
+interface ErrorMapping<T> { readonly type: T; readonly code: number; readonly pointer?: number }
+
+const V4_UNREACHABLE_TO_V6: Readonly<Record<number, ErrorMapping<ICMPv6Type>>> = {
+  0: { type: 'destination-unreachable', code: 0 }, 1: { type: 'destination-unreachable', code: 0 },
+  2: { type: 'parameter-problem', code: 1, pointer: 6 }, 3: { type: 'destination-unreachable', code: 4 },
+  5: { type: 'destination-unreachable', code: 0 }, 6: { type: 'destination-unreachable', code: 0 },
+  7: { type: 'destination-unreachable', code: 0 }, 8: { type: 'destination-unreachable', code: 0 },
+  9: { type: 'destination-unreachable', code: 1 }, 10: { type: 'destination-unreachable', code: 1 },
+  11: { type: 'destination-unreachable', code: 0 }, 12: { type: 'destination-unreachable', code: 0 },
+  13: { type: 'destination-unreachable', code: 1 },
+};
+
+const V6_UNREACHABLE_TO_V4: Readonly<Record<number, number>> = { 0: 1, 1: 10, 2: 1, 3: 1, 4: 3 };
+
 export type Nat64Result<T> = { readonly ok: true; readonly packet: T } | { readonly ok: false; readonly reason: Nat64DropReason };
 
 interface Endpoint { readonly ip: string; readonly port: number }
@@ -109,6 +130,9 @@ export class Nat64Translator {
     const protocol = protocolOf(packet.nextHeader);
     if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
     const payload = packet.payload as TCPPacket | UDPPacket | ICMPv6Packet;
+    if (payload.type === 'icmpv6' && payload.icmpType !== 'echo-request' && payload.icmpType !== 'echo-reply') {
+      return this.translateError6to4(packet, remote, payload);
+    }
     const source = this.sourceEndpoint6(packet, payload);
     const destination = { ip: remote.toString(), port: this.destinationPort6(payload) };
     if (source === null) return { ok: false, reason: 'unsupported-icmp' };
@@ -132,6 +156,9 @@ export class Nat64Translator {
     const protocol = protocolOf(packet.protocol);
     if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
     const payload = packet.payload as TCPPacket | UDPPacket | ICMPPacket;
+    if (payload.type === 'icmp' && payload.icmpType !== 'echo-request' && payload.icmpType !== 'echo-reply') {
+      return this.translateError4to6(packet, payload);
+    }
     const remote: Endpoint | null = this.remoteEndpoint4(packet, payload);
     if (remote === null) return { ok: false, reason: 'unsupported-icmp' };
     const local: Endpoint = { ip: packet.destinationIP.toString(), port: this.localPort4(payload) };
@@ -302,6 +329,95 @@ export class Nat64Translator {
     } else if (state === 'v6-fin-v4-fin-rcv') {
       session.tcpState = 'trans';
     }
+  }
+
+  private translateError6to4(packet: IPv6Packet, remote: IPAddress, icmp: ICMPv6Packet): Nat64Result<IPv4Packet> {
+    const mapped = this.errorToV4(icmp);
+    const invoking = icmp.invokingPacket;
+    if (mapped === null || invoking === undefined) return { ok: false, reason: 'unsupported-icmp' };
+    const original = this.embedded6to4(invoking);
+    if (original === null) return { ok: false, reason: 'no-binding' };
+    const payload: ICMPPacket = {
+      type: 'icmp', icmpType: mapped.type, code: mapped.code, id: 0, sequence: 0, dataSize: 0,
+      originalPacket: original.packet, ...(mapped.mtu === undefined ? {} : { mtu: mapped.mtu }),
+    };
+    const out = createIPv4Packet(new IPAddress(original.binding.v4Address), remote, IP_PROTO_ICMP, packet.hopLimit, payload,
+      ICMP_ERROR_HEADER_BYTES + original.packet.totalLength, { tos: packet.trafficClass, flags: DF });
+    return { ok: true, packet: out };
+  }
+
+  private translateError4to6(packet: IPv4Packet, icmp: ICMPPacket): Nat64Result<IPv6Packet> {
+    const mapped = this.errorToV6(icmp);
+    const original = icmp.originalPacket;
+    if (mapped === null || original === undefined) return { ok: false, reason: 'unsupported-icmp' };
+    const embedded = this.embedded4to6(original);
+    if (embedded === null) return { ok: false, reason: 'no-binding' };
+    const payload: ICMPv6Packet = {
+      type: 'icmpv6', icmpType: mapped.type, code: mapped.code, invokingPacket: embedded.packet,
+      ...(mapped.mtu === undefined ? {} : { mtu: mapped.mtu }),
+      ...(mapped.pointer === undefined ? {} : { pointer: mapped.pointer }),
+    };
+    const out = createIPv6Packet(this.config.prefix.synthesize(packet.sourceIP), new IPv6Address(embedded.binding.v6Address),
+      IP_PROTO_ICMPV6, packet.ttl, payload, ICMP_ERROR_HEADER_BYTES + IPV6_HEADER_BYTES + embedded.packet.payloadLength,
+      { trafficClass: packet.tos });
+    return { ok: true, packet: out };
+  }
+
+  private errorToV4(icmp: ICMPv6Packet): { type: ICMPType; code: number; mtu?: number } | null {
+    if (icmp.icmpType === 'packet-too-big') {
+      return { type: 'destination-unreachable', code: 4, mtu: Math.max(IPV4_MINIMUM_MTU, (icmp.mtu ?? IPV6_MINIMUM_MTU) - HEADER_GROWTH) };
+    }
+    if (icmp.icmpType === 'time-exceeded') return { type: 'time-exceeded', code: icmp.code };
+    if (icmp.icmpType === 'destination-unreachable') {
+      const code = V6_UNREACHABLE_TO_V4[icmp.code];
+      return code === undefined ? null : { type: 'destination-unreachable', code };
+    }
+    if (icmp.icmpType === 'parameter-problem' && icmp.code === 1) return { type: 'destination-unreachable', code: 2 };
+    return null;
+  }
+
+  private errorToV6(icmp: ICMPPacket): { type: ICMPv6Type; code: number; mtu?: number; pointer?: number } | null {
+    if (icmp.icmpType === 'time-exceeded') return { type: 'time-exceeded', code: icmp.code };
+    if (icmp.icmpType !== 'destination-unreachable') return null;
+    if (icmp.code === 4) {
+      return { type: 'packet-too-big', code: 0, mtu: Math.max(IPV6_MINIMUM_MTU, (icmp.mtu ?? IPV6_MINIMUM_MTU) + HEADER_GROWTH) };
+    }
+    return V4_UNREACHABLE_TO_V6[icmp.code] ?? null;
+  }
+
+  private embedded4to6(original: IPv4Packet): { packet: IPv6Packet; binding: Nat64Binding } | null {
+    const protocol = protocolOf(original.protocol);
+    if (protocol === null) return null;
+    const inner = original.payload as TCPPacket | UDPPacket | ICMPPacket;
+    const port = inner.type === 'icmp' ? inner.id : inner.sourcePort;
+    const binding = this.bindings4.get(bindingKey4(protocol, { ip: original.sourceIP.toString(), port }));
+    if (binding === undefined) return null;
+    const payload = inner.type === 'icmp'
+      ? { type: 'icmpv6', icmpType: 'echo-request', code: 0, id: binding.v6Port, sequence: inner.sequence, dataSize: inner.dataSize } as ICMPv6Packet
+      : { ...inner, sourcePort: binding.v6Port };
+    const packet = createIPv6Packet(new IPv6Address(binding.v6Address), this.config.prefix.synthesize(original.destinationIP),
+      original.protocol === IP_PROTO_ICMP ? IP_PROTO_ICMPV6 : original.protocol, original.ttl, payload,
+      original.totalLength - original.ihl * 4, { trafficClass: original.tos });
+    recomputeL4Checksum(packet);
+    return { packet, binding };
+  }
+
+  private embedded6to4(invoking: IPv6Packet): { packet: IPv4Packet; binding: Nat64Binding } | null {
+    const protocol = protocolOf(invoking.nextHeader);
+    const remote = this.config.prefix.extract(invoking.sourceIP);
+    if (protocol === null || remote === null) return null;
+    const inner = invoking.payload as TCPPacket | UDPPacket | ICMPv6Packet;
+    const port = inner.type === 'icmpv6' ? (inner.id ?? 0) : inner.destinationPort;
+    const binding = this.bindings6.get(bindingKey6(protocol, { ip: invoking.destinationIP.toString(), port }));
+    if (binding === undefined) return null;
+    const payload = inner.type === 'icmpv6'
+      ? { type: 'icmp', icmpType: 'echo-reply', code: 0, id: binding.v4Port, sequence: inner.sequence ?? 0, dataSize: inner.dataSize ?? 56 } as ICMPPacket
+      : { ...inner, destinationPort: binding.v4Port };
+    const packet = createIPv4Packet(remote, new IPAddress(binding.v4Address),
+      invoking.nextHeader === IP_PROTO_ICMPV6 ? IP_PROTO_ICMP : invoking.nextHeader, invoking.hopLimit, payload,
+      invoking.payloadLength, { tos: invoking.trafficClass, flags: DF });
+    recomputeL4Checksum(packet);
+    return { packet, binding };
   }
 
   private translatePayload6to4(payload: TCPPacket | UDPPacket | ICMPv6Packet, sourcePort: number, destinationPort: number): unknown {

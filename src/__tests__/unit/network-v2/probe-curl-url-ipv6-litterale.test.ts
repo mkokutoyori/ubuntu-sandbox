@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
+import { WindowsPC } from '@/network/devices/WindowsPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -49,5 +50,21 @@ describe('curl with an IPv6 literal', () => {
     const { pc } = await lab();
     await pc.executeCommand("echo '2001:db8:1::2 v6only.example' >> /etc/hosts");
     expect(await pc.executeCommand("curl -s -m 5 http://v6only.example/")).toMatch(/nginx/i);
+  });
+});
+
+describe('curl on a Windows host with an IPv6 literal', () => {
+  it('fetches a page from an IPv6 literal and from a name that only has an AAAA record', async () => {
+    const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+    const pc = new WindowsPC('windows-pc', 'WIN', 0, 0);
+    const srv = new LinuxServer('linux-server', 'SRV', 0, 0);
+    new Cable('1').connect(pc.getPorts()[0], sw.getPorts()[0]);
+    new Cable('2').connect(srv.getPorts()[0], sw.getPorts()[1]);
+    await pc.executeCommand('netsh interface ipv6 add address "Ethernet0" 2001:db8:1::1/64');
+    await srv.executeCommand('ip -6 addr add 2001:db8:1::2/64 dev eth0');
+    await srv.executeCommand('systemctl start nginx');
+    expect(await pc.executeCommand('curl.exe -s -m 5 "http://[2001:db8:1::2]/"')).toMatch(/nginx/i);
+    await pc.executeCommand('echo 2001:db8:1::2 v6only.example >> C:\\Windows\\System32\\drivers\\etc\\hosts');
+    expect(await pc.executeCommand('curl.exe -s -m 5 http://v6only.example/')).toMatch(/nginx/i);
   });
 });

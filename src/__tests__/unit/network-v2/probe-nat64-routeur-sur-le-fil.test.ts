@@ -94,4 +94,18 @@ describe('NAT64 on the router data plane', () => {
     await pc.executeCommand(`curl -s -m 5 'http://[${SERVER_V6}]/'`);
     expect(await srv.executeCommand('arp -n')).toContain('203.0.113.8');
   });
+
+  it('a closed UDP port on the IPv4 server comes back as an ICMPv6 port unreachable quoting the IPv6 datagram', async () => {
+    const { pc, r } = await lab();
+    const seen: Array<{ code: number; quotedDestination: string }> = [];
+    r.getPort('GigabitEthernet0/0')!.attachTap(({ direction, frame }) => {
+      const packet = frame.payload as { type?: string; payload?: { type?: string; icmpType?: string; code?: number; invokingPacket?: { destinationIP: { toString(): string } } } };
+      const icmp = packet?.type === 'ipv6' ? packet.payload : undefined;
+      if (direction === 'out' && icmp?.type === 'icmpv6' && icmp.icmpType === 'destination-unreachable') {
+        seen.push({ code: icmp.code ?? -1, quotedDestination: icmp.invokingPacket?.destinationIP.toString() ?? '' });
+      }
+    });
+    await pc.executeCommand(`echo ping | nc -u -w 1 ${SERVER_V6} 9999`);
+    expect(seen).toEqual([{ code: 4, quotedDestination: SERVER_V6 }]);
+  });
 });
