@@ -1,5 +1,6 @@
-import { isWhite, type Pos } from './VimCursor';
-import { compileVimPattern } from './VimPattern';
+import { isKeywordChar, isWhite, type Pos } from './VimCursor';
+import { compileVimPattern, vimPatternError, type VimRegExp } from './VimPattern';
+import { skipRegexp, type PatternContext } from './VimRegex';
 
 export type OffsetKind = 'none' | 'line' | 'end' | 'start';
 
@@ -48,19 +49,9 @@ function parseOffset(text: string): SearchOffset {
 }
 
 export function parseSearchInput(input: string, delimiter: string): ParsedSearch {
-  let pattern = '';
-  let i = 0;
-  for (; i < input.length; i++) {
-    const c = input[i];
-    if (c === '\\' && i + 1 < input.length) {
-      pattern += c + input[i + 1];
-      i++;
-      continue;
-    }
-    if (c === delimiter) break;
-    pattern += c;
-  }
-  const rest = i < input.length ? input.slice(i + 1) : '';
+  const end = skipRegexp(input, 0, delimiter);
+  const pattern = delimiter === '?' ? input.slice(0, end).replace(/\\(\\?|.)/g, (all, next: string) => (next === '?' ? '?' : all)) : input.slice(0, end);
+  const rest = end < input.length ? input.slice(end + 1) : '';
   const semicolon = rest.indexOf(';');
   if (semicolon >= 0) {
     return { pattern, offset: parseOffset(rest.slice(0, semicolon)), chained: rest.slice(semicolon + 1) };
@@ -98,19 +89,30 @@ function posOf(lines: readonly string[], starts: readonly number[], offset: numb
   return { line: low, col: Math.min(offset - starts[low], (lines[low] ?? '').length) };
 }
 
-function* matchesFrom(text: string, regex: RegExp, from: number): Generator<Located> {
-  const global = new RegExp(regex.source, `gm${regex.flags.replace(/[gm]/g, '')}`);
-  global.lastIndex = from;
-  let match: RegExpExecArray | null;
-  while ((match = global.exec(text)) !== null) {
+function* matchesFrom(text: string, regex: VimRegExp, from: number, chain: 'search' | 'highlight'): Generator<Located> {
+  let position = from;
+  const lastLineEnd = text.length - 1;
+  while (position <= lastLineEnd) {
+    const match = regex.exec(text, position);
+    if (match === null || match.index > lastLineEnd) break;
+    const end = match.index + match[0].length;
     yield { index: match.index, length: match[0].length };
-    if (match[0].length === 0) global.lastIndex++;
-    if (global.lastIndex > text.length) break;
+    const next = match[0].length === 0 ? end + (text.codePointAt(end)! > 0xffff ? 2 : 1) : end;
+    if (chain === 'highlight') {
+      position = next;
+      continue;
+    }
+    if (text.slice(match.attemptIndex, match.attemptEnd).includes('\n')) {
+      position = text.indexOf('\n', match.attemptIndex) + 1;
+      continue;
+    }
+    const lineEnd = text.indexOf('\n', end);
+    position = next >= lineEnd ? lineEnd + 1 : next;
   }
 }
 
-function allMatches(text: string, regex: RegExp): Located[] {
-  return [...matchesFrom(text, regex, 0)];
+function allMatches(text: string, regex: VimRegExp): Located[] {
+  return [...matchesFrom(text, regex, 0, 'search')];
 }
 
 export interface FindOptions {
@@ -120,38 +122,27 @@ export interface FindOptions {
   readonly anchor: 'start' | 'end';
   readonly ignoreCase: boolean;
   readonly acceptAtCursor?: boolean;
+  readonly context?: PatternContext;
 }
 
-function reachableMatches(matches: readonly Located[], text: string): Located[] {
-  const kept: Located[] = [];
-  let lineStart = -1;
-  let seenInLine = false;
-  for (const match of matches) {
-    const begin = match.index === 0 ? 0 : text.lastIndexOf('\n', match.index - 1) + 1;
-    if (begin !== lineStart) {
-      lineStart = begin;
-      seenInLine = false;
-    }
-    const onLineEnd = match.index === text.length || text[match.index] === '\n';
-    if (!(onLineEnd && seenInLine)) kept.push(match);
-    seenInLine = true;
-  }
-  return kept;
+export function searchPatternError(pattern: string, ignoreCase: boolean, context: PatternContext | null = null): string | null {
+  return pattern === '' ? null : vimPatternError(pattern, ignoreCase, context);
 }
 
 export function findMatch(lines: readonly string[], from: Pos, pattern: string, options: FindOptions): MatchResult | null {
   if (pattern === '') return null;
-  const regex = compileVimPattern(pattern, options.ignoreCase);
-  const text = lines.join('\n');
+  const regex = compileVimPattern(pattern, options.ignoreCase, options.context ?? null);
+  const text = `${lines.join('\n')}\n`;
   const starts = lineStarts(lines);
   const origin = offsetOf(starts, from);
-  const matches = reachableMatches(allMatches(text, regex), text);
+  const matches = allMatches(text, regex);
   if (matches.length === 0) return null;
 
   const onLineEnd = (m: Located): boolean => m.index === text.length || text[m.index] === '\n';
+  const lineBegin = (index: number): number => (index === 0 ? 0 : text.lastIndexOf('\n', index - 1) + 1);
   const key = (m: Located): number => {
     if (options.anchor === 'end') return m.index + Math.max(0, m.length - 1);
-    return options.forward && onLineEnd(m) ? m.index - 1 : m.index;
+    return options.forward && onLineEnd(m) ? Math.max(m.index - 1, lineBegin(m.index)) : m.index;
   };
   const ahead = options.forward
     ? matches.filter((m) => (options.acceptAtCursor ? key(m) >= origin : key(m) > origin))
@@ -215,7 +206,7 @@ export function resolveTarget(lines: readonly string[], match: MatchResult, offs
 }
 
 function isKeyword(ch: string | undefined): boolean {
-  return ch !== undefined && /[A-Za-z0-9_À-￿]/.test(ch);
+  return ch !== undefined && isKeywordChar(ch);
 }
 
 export interface IdentUnderCursor {
@@ -263,14 +254,14 @@ export interface HighlightSpan {
 }
 
 export function highlightSpans(
-  lines: readonly string[], pattern: string, ignoreCase: boolean, first: number, last: number,
+  lines: readonly string[], pattern: string, ignoreCase: boolean, first: number, last: number, context: PatternContext | null = null,
 ): Map<number, HighlightSpan[]> {
   const found = new Map<number, HighlightSpan[]>();
   if (pattern === '' || first > last || first >= lines.length) return found;
-  const text = lines.join('\n');
+  const text = `${lines.join('\n')}\n`;
   const starts = lineStarts(lines);
   const bottom = Math.min(last, lines.length - 1);
-  for (const located of matchesFrom(text, compileVimPattern(pattern, ignoreCase), starts[first])) {
+  for (const located of matchesFrom(text, compileVimPattern(pattern, ignoreCase, context), starts[first], 'highlight')) {
     const start = posOf(lines, starts, located.index);
     if (start.line > bottom) break;
     const end = posOf(lines, starts, located.index + located.length);
