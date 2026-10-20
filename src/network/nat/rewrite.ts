@@ -113,3 +113,20 @@ export function rewriteNatAddress(
 ): IPv4Packet {
   return target === 'src' ? rewriteSrcIP(pkt, ip, port) : rewriteDestIP(pkt, ip, port);
 }
+
+export interface QuotedRewrite {
+  readonly target: 'src' | 'dst';
+  readonly ip: string;
+  readonly port?: number;
+}
+
+export function rewriteIcmpError(
+  pkt: IPv4Packet, quoted: QuotedRewrite, outer: { readonly target: 'src' | 'dst'; readonly ip: string },
+): IPv4Packet {
+  const icmp = pkt.payload as ICMPPacket;
+  const original = icmp.originalPacket;
+  const carrier = original === undefined
+    ? pkt
+    : { ...pkt, payload: { ...icmp, originalPacket: rewriteNatAddress(original, quoted.target, quoted.ip, quoted.port) } };
+  return rewriteNatAddress(carrier, outer.target, outer.ip);
+}

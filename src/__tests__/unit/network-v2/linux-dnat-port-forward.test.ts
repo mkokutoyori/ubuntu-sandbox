@@ -13,19 +13,16 @@
  * `iptables -t nat -A PREROUTING ... -j DNAT --to-destination`) to a
  * separate internal server actually listening.
  *
- * The TCP tests deliberately stop at "the server accepts the redirected
- * SYN on the right port", not "the client's socket reaches established":
- * this engine has no reply-path un-NAT/conntrack (PRD-Iptables-UFW.md's
- * own already-documented, explicitly out-of-scope limitation — confirmed
- * empirically here too, not just for the same-host case that document
- * names), so the server's SYN-ACK leaves with its own real address
- * (192.168.10.10:80) instead of the public one the client dialed
- * (203.0.113.1:8080), and TcpStack's socket demux — an exact
- * (localIp,localPort,remoteIp,remotePort) match — never recognizes it as
- * the client's pending connection. UDP has no such demux requirement
- * (`udpBind`'s listener accepts a datagram from any source), so the round
- * trip genuinely completes: the internal server can reply straight to the
- * client's real address and the client receives it, real checksum and all.
+ * The TCP tests go to the end of the handshake. The gateway's conntrack
+ * remembers the rewrite, so the server's SYN-ACK leaves as
+ * 192.168.10.10:80 and is rewritten back to the 203.0.113.1:8080 the client
+ * dialed, which TcpStack's exact socket demux (localIp, localPort,
+ * remoteIp, remotePort) recognizes as the answer to its pending connection.
+ * They used to stop at "the server accepts the redirected SYN": there was no
+ * reply-path un-NAT, so the SYN-ACK kept its real source and the client's
+ * socket stayed in syn-sent. UDP has no such demux requirement (`udpBind`'s
+ * listener accepts a datagram from any source), so its round trip completed
+ * either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -80,7 +77,7 @@ async function buildLab(protocol: 'tcp' | 'udp'): Promise<Lab> {
 }
 
 describe('PRD-Port-Forwarding.md Phase 5 — Linux iptables DNAT port forwarding (TCP)', () => {
-  it('a real SYN reaches the internal server on the redirected port', async () => {
+  it('the handshake completes through the redirect: the server accepts, the client is established', async () => {
     const { outside, srv } = await buildLab('tcp');
     const accepted: TcpSocket[] = [];
     srv.getTcpStack().listen(INTERNAL_PORT, { onAccept: (s) => { accepted.push(s); } });
@@ -91,8 +88,8 @@ describe('PRD-Port-Forwarding.md Phase 5 — Linux iptables DNAT port forwarding
     expect(halfOpen).toHaveLength(1);
     expect(halfOpen[0].localPort).toBe(INTERNAL_PORT);
     expect(halfOpen[0].remoteIp).toBe(OUTSIDE_IP);
-    expect(accepted).toHaveLength(0);
-    expect(clientSocket!.state).toBe('syn-sent');
+    expect(accepted).toHaveLength(1);
+    expect(clientSocket!.state).toBe('established');
   });
 });
 

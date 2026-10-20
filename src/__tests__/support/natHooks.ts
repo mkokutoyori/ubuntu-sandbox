@@ -14,7 +14,21 @@ export interface NatHooks {
   firewallAcceptsInboundTcp(srcIP: string, dstIP: string, dstPort: number): 'accept' | 'drop' | 'reject';
 }
 
-export const hooksOf = (host: LinuxPC): NatHooks => host as unknown as NatHooks;
+const withoutRange = (result: (NatDecision & { range?: unknown }) | null): NatDecision | null => {
+  if (result === null) return null;
+  const { range: _range, ...decision } = result;
+  return decision;
+};
+
+export const hooksOf = (host: LinuxPC): NatHooks => {
+  const raw = host as unknown as NatHooks;
+  return {
+    evaluatePreRouting: (inPort, packet) => withoutRange(raw.evaluatePreRouting(inPort, packet)),
+    evaluateNat: (packet, inPort, outPort) => withoutRange(raw.evaluateNat(packet, inPort, outPort)),
+    evaluatePreRouting6: (inPort, packet) => withoutRange(raw.evaluatePreRouting6(inPort, packet)),
+    firewallAcceptsInboundTcp: (srcIP, dstIP, dstPort) => raw.firewallAcceptsInboundTcp(srcIP, dstIP, dstPort),
+  };
+};
 
 export const segment = (flags: Partial<TcpFlags>, destinationPort = 80): TcpSegment => ({
   type: 'tcp', sourcePort: 40000, destinationPort, sequence: 1, acknowledgement: 0, dataOffset: 5,

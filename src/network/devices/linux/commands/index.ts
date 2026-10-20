@@ -31,7 +31,6 @@ import { dnsmasqCommand } from './dns/Dnsmasq';
 import { ipCommand } from './net/Ip';
 import { dhclientCommand } from './dhcp/Dhclient';
 import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
-import { applyIptablesNatHook } from './net/IptablesNatHook';
 import { namedCheckconfCommand } from './dns/NamedCheckconf';
 import { namedCheckzoneCommand } from './dns/NamedCheckzone';
 import { rndcCommand } from './dns/Rndc';
@@ -184,7 +183,6 @@ export {
   dhclientCommand,
   readDhcpLeaseFile,
   isDhcpLeasePath,
-  applyIptablesNatHook,
   nmapCommand,
   hping3Command,
   snmpwalkCommand,

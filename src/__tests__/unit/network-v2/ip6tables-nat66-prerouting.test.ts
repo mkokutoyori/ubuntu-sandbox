@@ -42,7 +42,7 @@ describe('ip6tables — NAT66 PREROUTING (DNAT) engine', () => {
       { direction: 'in', protocol: 6, srcIP: 'fd00::2', dstIP: 'fd00::1', srcPort: 0, dstPort: 22, iface: 'eth0' },
       'PREROUTING',
     );
-    expect(result).toEqual({ action: 'DNAT', address: 'fd00::9' });
+    expect(result).toMatchObject({ action: 'DNAT', address: 'fd00::9' });
   });
 
   it('does not match when the destination falls outside the configured prefix', () => {

@@ -458,6 +458,12 @@ export class Port {
 
   getSecondaryIPs(): Array<{ ip: IPAddress; mask: SubnetMask }> { return this.secondaryIPs; }
 
+  addressToward(nextHop: IPAddress): IPAddress | null {
+    if (this.ipAddress === null || this.subnetMask === null) return null;
+    const owners = [{ ip: this.ipAddress, mask: this.subnetMask }, ...this.secondaryIPs];
+    return (owners.find((owner) => owner.ip.isInSameSubnet(nextHop, owner.mask)) ?? owners[0]).ip;
+  }
+
   private addressListener: ((iface: string) => void) | null = null;
 
   setAddressListener(listener: (iface: string) => void): void {

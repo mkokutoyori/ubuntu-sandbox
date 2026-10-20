@@ -11,30 +11,24 @@ describe('iptables/ip6tables dispatch unification', () => {
     gw = new LinuxServer('linux-server', 'GW');
   });
 
-  it('registers the MASQUERADE interface for a plain (non-composite) iptables command', async () => {
-    await gw.executeCommand('ip addr add 10.0.0.1/24 dev eth0');
-    await gw.executeCommand('ip addr add 203.0.113.1/30 dev eth1');
+  const masqueradeRule = '-A POSTROUTING -o eth1 -j MASQUERADE';
+
+  it('puts the MASQUERADE rule in the nat table for a plain (non-composite) iptables command', async () => {
     await gw.executeCommand('iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE');
 
-    expect(gw.getOutgoingMasqueradeIP('203.0.113.2')).toBe('203.0.113.1');
+    expect(await gw.executeCommand('iptables -t nat -S POSTROUTING')).toContain(masqueradeRule);
   });
 
-  it('registers the MASQUERADE interface even when the iptables command is piped (composite syntax)', async () => {
-    await gw.executeCommand('ip addr add 10.0.0.1/24 dev eth0');
-    await gw.executeCommand('ip addr add 203.0.113.1/30 dev eth1');
-    // Piped: previously bypassed tryNetworkCommand's chemin A entirely,
-    // going straight to chemin B, which never called the NAT hook.
+  it('puts the MASQUERADE rule in the nat table even when the iptables command is piped (composite syntax)', async () => {
     await gw.executeCommand('iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE | cat');
 
-    expect(gw.getOutgoingMasqueradeIP('203.0.113.2')).toBe('203.0.113.1');
+    expect(await gw.executeCommand('iptables -t nat -S POSTROUTING')).toContain(masqueradeRule);
   });
 
-  it('registers the MASQUERADE interface when chained with &&', async () => {
-    await gw.executeCommand('ip addr add 10.0.0.1/24 dev eth0');
-    await gw.executeCommand('ip addr add 203.0.113.1/30 dev eth1');
+  it('puts the MASQUERADE rule in the nat table when chained with &&', async () => {
     await gw.executeCommand('true && iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE');
 
-    expect(gw.getOutgoingMasqueradeIP('203.0.113.2')).toBe('203.0.113.1');
+    expect(await gw.executeCommand('iptables -t nat -S POSTROUTING')).toContain(masqueradeRule);
   });
 
   it('iptables rule text is identical regardless of dispatch path (plain vs piped)', async () => {
