@@ -35,7 +35,13 @@ export const NAT64_DEFAULT_TIMEOUTS: Nat64Timeouts = {
   tcpInitialMs: 6_000,
 };
 
+export interface Nat64NexthopMtu {
+  ipv4(destination: IPAddress): number | undefined;
+  ipv6(destination: IPv6Address): number | undefined;
+}
+
 export interface Nat64Config {
+  readonly nexthopMtu?: Nat64NexthopMtu;
   readonly prefix: Nat64Prefix;
   readonly pool: readonly IPAddress[];
   readonly clock: () => number;
@@ -338,8 +344,8 @@ export class Nat64Translator {
   }
 
   private translateError6to4(packet: IPv6Packet, remote: IPAddress, icmp: ICMPv6Packet): Nat64Result<IPv4Packet> {
-    const mapped = this.errorToV4(icmp);
     const invoking = icmp.invokingPacket;
+    const mapped = this.errorToV4(icmp, invoking?.destinationIP, remote);
     if (mapped === null || invoking === undefined) return { ok: false, reason: 'unsupported-icmp' };
     const original = this.embedded6to4(invoking);
     if (original === null) return { ok: false, reason: 'no-binding' };
@@ -355,11 +361,12 @@ export class Nat64Translator {
   }
 
   private translateError4to6(packet: IPv4Packet, icmp: ICMPPacket): Nat64Result<IPv6Packet> {
-    const mapped = this.errorToV6(icmp);
     const original = icmp.originalPacket;
-    if (mapped === null || original === undefined) return { ok: false, reason: 'unsupported-icmp' };
+    if (original === undefined) return { ok: false, reason: 'unsupported-icmp' };
     const embedded = this.embedded4to6(original);
     if (embedded === null) return { ok: false, reason: 'no-binding' };
+    const mapped = this.errorToV6(icmp, original.destinationIP, new IPv6Address(embedded.binding.v6Address));
+    if (mapped === null) return { ok: false, reason: 'unsupported-icmp' };
     const payload: ICMPv6Packet = {
       type: 'icmpv6', icmpType: mapped.type, code: mapped.code, invokingPacket: embedded.packet,
       ...(mapped.mtu === undefined ? {} : { mtu: mapped.mtu }),
@@ -371,9 +378,15 @@ export class Nat64Translator {
     return { ok: true, packet: out };
   }
 
-  private errorToV4(icmp: ICMPv6Packet): { type: ICMPType; code: number; mtu?: number; pointer?: number } | null {
+  private errorToV4(icmp: ICMPv6Packet, v6Hop: IPv6Address | undefined, v4Sender: IPAddress): { type: ICMPType; code: number; mtu?: number; pointer?: number } | null {
     if (icmp.icmpType === 'packet-too-big') {
-      return { type: 'destination-unreachable', code: 4, mtu: (icmp.mtu ?? IPV6_MINIMUM_MTU) - HEADER_GROWTH };
+      const nexthop = this.config.nexthopMtu;
+      const v4Mtu = nexthop?.ipv4(v4Sender);
+      const v6Mtu = v6Hop === undefined ? undefined : nexthop?.ipv6(v6Hop);
+      const candidates = [(icmp.mtu ?? IPV6_MINIMUM_MTU) - HEADER_GROWTH];
+      if (v4Mtu !== undefined) candidates.push(v4Mtu);
+      if (v6Mtu !== undefined) candidates.push(v6Mtu - HEADER_GROWTH);
+      return { type: 'destination-unreachable', code: 4, mtu: Math.min(...candidates) };
     }
     if (icmp.icmpType === 'time-exceeded') return { type: 'time-exceeded', code: icmp.code };
     if (icmp.icmpType === 'destination-unreachable') {
@@ -388,7 +401,7 @@ export class Nat64Translator {
     return null;
   }
 
-  private errorToV6(icmp: ICMPPacket): { type: ICMPv6Type; code: number; mtu?: number; pointer?: number } | null {
+  private errorToV6(icmp: ICMPPacket, v4Hop: IPAddress | undefined, v6Host: IPv6Address): { type: ICMPv6Type; code: number; mtu?: number; pointer?: number } | null {
     if (icmp.icmpType === 'time-exceeded') return { type: 'time-exceeded', code: icmp.code };
     if (icmp.icmpType === 'parameter-problem') {
       const pointer = V4_POINTER_TO_V6[icmp.pointer ?? -1];
@@ -397,7 +410,15 @@ export class Nat64Translator {
     if (icmp.icmpType !== 'destination-unreachable') return null;
     if (icmp.code === 4) {
       const known = icmp.mtu !== undefined && icmp.mtu > 0 ? icmp.mtu : this.plateauBelow(icmp.originalPacket?.totalLength ?? 0);
-      return { type: 'packet-too-big', code: 0, mtu: Math.max(IPV6_MINIMUM_MTU, known + HEADER_GROWTH) };
+      const nexthop = this.config.nexthopMtu;
+      const v4Mtu = v4Hop === undefined ? undefined : nexthop?.ipv4(v4Hop);
+      const candidates = [known + HEADER_GROWTH];
+      if (v6Host !== undefined) {
+        const v6Mtu = nexthop?.ipv6(v6Host);
+        if (v6Mtu !== undefined) candidates.push(v6Mtu);
+      }
+      if (v4Mtu !== undefined) candidates.push(v4Mtu + HEADER_GROWTH);
+      return { type: 'packet-too-big', code: 0, mtu: Math.max(IPV6_MINIMUM_MTU, Math.min(...candidates)) };
     }
     return V4_UNREACHABLE_TO_V6[icmp.code] ?? null;
   }

@@ -388,6 +388,12 @@ export class Bind9Service {
         prefix: mask.toCIDR(),
       });
     }
+    for (const port of this.host.getInterfaces()) {
+      for (const entry of port.getIPv6Addresses()) {
+        localAddresses.push(entry.address.toString());
+        localNetworks.push({ address: entry.address.toString(), prefix: entry.prefixLength });
+      }
+    }
     return { localAddresses, localNetworks };
   }
 

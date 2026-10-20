@@ -12,9 +12,13 @@
  * RFC 7915 (docs/rfc/nat/rfc7915.txt, telechargee depuis le depot Ubuntu doc-rfc-std-proposed) : sections 4.1
  * et 5.1 pour les en-tetes (TOS/classe de trafic copies, DF a zero jusqu'a 1260 octets, TTL/limite de
  * saut conserve : le routeur decremente), 4.2 et 5.2 pour les tables de codes ICMP et de pointeurs.
+ * Les MTU des prochains sauts entrent dans le calcul de l'erreur « packet too big » / « fragmentation
+ * needed » (min(...) des sections 4.2 et 5.2) par `nexthopMtu` ; sans lui le calcul reste celui du
+ * message seul. Cas ajoutes : 3 ; 2 tombent avant (les deux min qui retiennent un MTU de saut suivant),
+ * 1 passe dans les deux etats (le temoin : des MTU de saut suivant plus grands que celui du message ne
+ * changent rien).
  * Limite : un paquet fragmente ne l'est pas (la fragmentation IPv6 n'est pas modelisee par le plan
- * de donnees) ; les MTU des prochains sauts (min(...) des sections 4.2/5.2) ne sont pas disponibles
- * au niveau du traducteur.
+ * de donnees).
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -342,5 +346,43 @@ describe('RFC 6146 / 7915 : error messages cross the translator with the packet 
       { type: 'icmpv6', icmpType: 'parameter-problem', code: 0, pointer, invokingPacket: fromServer }, 56);
     expect(unwrap(translator.translate6to4(v6(7))).payload).toMatchObject({ icmpType: 'parameter-problem', code: 0, pointer: 8 });
     expect(translator.translate6to4(v6(2))).toEqual({ ok: false, reason: 'unsupported-icmp' });
+  });
+});
+
+describe('RFC 7915 sections 4.2 and 5.2 : the next-hop MTUs enter the MTU of a translated error', () => {
+  const mtus = (ipv4: number | undefined, ipv6: number | undefined) => {
+    const translator = new Nat64Translator({
+      prefix: Nat64Prefix.wellKnownPrefix(), pool: [new IPAddress(POOL)], clock: () => 0,
+      nexthopMtu: { ipv4: () => ipv4, ipv6: () => ipv6 },
+    });
+    const forward = unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    const back = unwrap(translator.translate4to6(udp4(SERVER, POOL, 53, 40000)));
+    return { translator, forward, back };
+  };
+  const fragNeeded = (original: IPv4Packet, mtu: number) =>
+    createIPv4Packet(new IPAddress(SERVER), new IPAddress(POOL), IP_PROTO_ICMP, 60,
+      { type: 'icmp', icmpType: 'destination-unreachable', code: 4, id: 0, sequence: 0, dataSize: 0, originalPacket: original, mtu }, 8 + original.totalLength);
+  const tooBig = (invoking: IPv6Packet, mtu: number) =>
+    createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), IP_PROTO_ICMPV6, 64,
+      { type: 'icmpv6', icmpType: 'packet-too-big', code: 0, mtu, invokingPacket: invoking }, 8 + 40 + 8);
+
+  it('witness: with larger next-hop MTUs the message MTU decides, both ways', () => {
+    const { translator, forward, back } = mtus(9000, 9000);
+    const toHost = unwrap(translator.translate4to6(fragNeeded(forward, 1400)));
+    expect(toHost.payload).toMatchObject({ icmpType: 'packet-too-big', mtu: 1420 });
+    const toServer4 = unwrap(translator.translate6to4(tooBig(back, 1400)));
+    expect(toServer4.payload).toMatchObject({ icmpType: 'destination-unreachable', code: 4, mtu: 1380 });
+  });
+
+  it('fragmentation needed: min(mtu + 20, IPv6 next hop, IPv4 next hop + 20)', () => {
+    const { translator, forward } = mtus(1300, 9000);
+    expect(unwrap(translator.translate4to6(fragNeeded(forward, 1400))).payload).toMatchObject({ mtu: 1320 });
+    const narrow = mtus(9000, 1300);
+    expect(unwrap(narrow.translator.translate4to6(fragNeeded(narrow.forward, 1400))).payload).toMatchObject({ mtu: 1300 });
+  });
+
+  it('packet too big: min(mtu - 20, IPv4 next hop, IPv6 next hop - 20)', () => {
+    const { translator, back } = mtus(1350, 1340);
+    expect(unwrap(translator.translate6to4(tooBig(back, 1400))).payload).toMatchObject({ mtu: 1320 });
   });
 });

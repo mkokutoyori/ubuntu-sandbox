@@ -469,6 +469,7 @@ export interface FortiCommitDevice {
   applySslVpnSettings(settings: FortiSslVpnPatch): string | void;
   applySdwan(settings: SdwanConfiguration): string | void;
   applyHa(settings: HaConfiguration): string | void;
+  applyNat64Prefix(prefix: string): string | void;
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;

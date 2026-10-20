@@ -2555,7 +2555,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private nat64: Nat64Translator | null = null;
 
   enableNat64(config: Omit<Nat64Config, 'clock'>): Nat64Translator {
-    this.nat64 = new Nat64Translator({ ...config, clock: () => simulationNowMs() });
+    this.nat64 = new Nat64Translator({
+      nexthopMtu: {
+        ipv4: (destination) => {
+          const iface = this.lookupRoute(destination)?.iface;
+          return iface === undefined ? undefined : this.ports.get(iface)?.getMTU();
+        },
+        ipv6: (destination) => {
+          const iface = this.ipv6Engine.lookupRoute(destination)?.iface;
+          return iface === undefined ? undefined : this.ports.get(iface)?.getIPv6MTU();
+        },
+      },
+      ...config,
+      clock: () => simulationNowMs(),
+    });
     return this.nat64;
   }
 

@@ -195,14 +195,14 @@ export const FIREWALL_ADDRESS6: FortiTableSpec = {
   onCommit(object, context) {
     const comment = object.effective('comment')[0] || undefined;
     if (object.effective('type')[0] === 'iprange') {
-      context.objects.addAddress(rangeAddress6(object.key,
+      context.objects.upsertAddress(rangeAddress6(object.key,
         object.effective('start-ip')[0] ?? '::',
         object.effective('end-ip')[0] ?? '::', { comment }));
       return;
     }
     const prefix = parseIpv6Prefix(object.effective('ip6')[0] ?? '::/0');
     if (!prefix) return FortiMessages.valueError(object.effective('ip6')[0] ?? '');
-    context.objects.addAddress(prefixAddress6(
+    context.objects.upsertAddress(prefixAddress6(
       object.key, prefix.address, prefix.prefixLength, { comment }));
   },
   onDelete(key, context) {

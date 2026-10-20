@@ -8,10 +8,20 @@
  * route. Ce qui est evalue : la politique choisit (interfaces, adresses IPv6, service, action) et
  * porte `nat64` + `poolname` ; le pool porte `nat64` ; sans l'un des trois, le paquet est jete.
  *
- * Limite : le prefixe 64:ff9b::/96 est celui de la RFC 6052 ; aucun reglage de prefixe n'existe dans
- * la reference FortiOS disponible ici (official_docs/forti-cli-ref-767.txt), il n'est donc pas
- * configurable. Le serveur est dans 11.0.0.0/8 parce que le prefixe bien connu refuse de representer
- * les plages de documentation (RFC 6052 §3.1).
+ * Le prefixe est celui de `config system nat64` / `set nat64-prefix` (FortiOS 6.0 CLI Reference, seule
+ * reference disponible ici qui le documente : « must be ::/96, default = 64:ff9b::/96 ») ; il vaut
+ * 64:ff9b::/96 tant qu'il n'est pas change, et tout prefixe qui n'est pas un /96 est refuse. Le serveur
+ * est dans 11.0.0.0/8 parce que le prefixe bien connu refuse de representer les plages de
+ * documentation (RFC 6052 §3.1).
+ *
+ * Redefinir un `address6` existant (`edit NAT64NET` puis `set ip6`) ne changeait pas l'objet effectif : le
+ * magasin refusait le doublon en silence, la politique continuait de viser l'ancien prefixe. Corrige par
+ * `upsertAddress`, ce que le cas du prefixe configurable exerce.
+ *
+ * Cas ajoutes pour le prefixe configurable : 2 tombent avant (traduction vers un prefixe propre a
+ * l'operateur, et le prefixe bien connu qui cesse de traduire une fois remplace) ; le refus d'un /64
+ * passe dans les deux etats car la commande etait deja inconnue (temoin de refus, borne par le cas qui
+ * traduit).
  *
  * Avec src remis avant la correction, les 2 cas de traduction tombent ; 4 passent dans les deux etats :
  * le temoin (le serveur repond en IPv4 a un hote du segment) et les trois refus (sans nat64 dans la
@@ -106,5 +116,32 @@ describe('FortiGate NAT64', () => {
   it('drops the flow when the matching policy denies it', async () => {
     const { pc } = await lab([...POOL, ...policy(['set nat64 enable', 'set ippool enable', 'set poolname NAT64POOL', 'set action deny'])]);
     expect(await fetch(pc)).not.toMatch(/nginx/i);
+  });
+
+  describe('system nat64 nat64-prefix', () => {
+    const OPERATOR_PREFIX = '2001:db8:64::/96';
+    const operatorServer = '2001:db8:64::b01:105';
+    const carryingPolicy = policy(['set nat64 enable', 'set ippool enable', 'set poolname NAT64POOL']);
+    const operatorConfig = [
+      'config system nat64', `set nat64-prefix ${OPERATOR_PREFIX}`, 'end',
+      'config firewall address6', 'edit NAT64NET', `set ip6 ${OPERATOR_PREFIX}`, 'next', 'end',
+    ];
+
+    it('translates toward the configured prefix', async () => {
+      const { pc } = await lab([...operatorConfig, ...POOL, ...carryingPolicy]);
+      expect(await pc.executeCommand(`curl -s -m 5 'http://[${operatorServer}]/'`)).toMatch(/nginx/i);
+    });
+
+    it('no longer translates the well-known prefix once it is replaced', async () => {
+      const { pc } = await lab([...operatorConfig, ...POOL, ...carryingPolicy]);
+      expect(await fetch(pc)).not.toMatch(/nginx/i);
+    });
+
+    it('refuses a prefix that is not a /96', async () => {
+      const { fw } = await lab([]);
+      const out = await fw.executeCommand(['config system nat64', 'set nat64-prefix 2001:db8:64::/64', 'end'].join('\n'));
+      const shown = await fw.executeCommand('show system nat64');
+      expect(out + shown).not.toContain('2001:db8:64::/64\n');
+    });
   });
 });

@@ -2,12 +2,13 @@ import {
   IPAddress, IP_PROTO_ICMPV6, type IPv4Packet, type IPv6Packet,
 } from '@/network/core/types';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
-import { Nat64Translator } from '@/network/nat/nat64/Nat64Translator';
+import { Nat64Translator, type Nat64NexthopMtu } from '@/network/nat/nat64/Nat64Translator';
 import type { PolicyDecision } from '../policy/PolicyEvaluator';
 import type { PolicyProbe } from '../policy/PolicyProbe';
 import { poolAddressAt, poolAddressCount, poolContains, type IpPool } from './IpPool';
 
 export interface FirewallNat64Deps {
+  nexthopMtu: Nat64NexthopMtu;
   decide(ingress: string, probe: PolicyProbe): PolicyDecision;
   pool(ingress: string, name: string): IpPool | undefined;
   pools(): readonly IpPool[];
@@ -33,12 +34,17 @@ function portsOf(packet: IPv6Packet): { sourcePort?: number; destPort?: number }
 }
 
 export class FirewallNat64 {
-  private readonly prefix = Nat64Prefix.wellKnownPrefix();
+  private prefix = Nat64Prefix.wellKnownPrefix();
   private readonly translators = new Map<string, Nat64Translator>();
 
   constructor(private readonly deps: FirewallNat64Deps) {}
 
   forget(pool: string): void { this.translators.delete(pool); }
+
+  setPrefix(prefix: Nat64Prefix): void {
+    this.prefix = prefix;
+    this.translators.clear();
+  }
 
   forward6(ingress: string, packet: IPv6Packet): boolean {
     if (!this.prefix.contains(packet.destinationIP) || packet.hopLimit <= 1) return false;
@@ -81,7 +87,7 @@ export class FirewallNat64 {
   private translatorFor(pool: IpPool): Nat64Translator {
     const existing = this.translators.get(pool.name);
     if (existing !== undefined) return existing;
-    const created = new Nat64Translator({ prefix: this.prefix, pool: poolAddresses(pool), clock: () => this.deps.now() });
+    const created = new Nat64Translator({ nexthopMtu: this.deps.nexthopMtu, prefix: this.prefix, pool: poolAddresses(pool), clock: () => this.deps.now() });
     this.translators.set(pool.name, created);
     return created;
   }

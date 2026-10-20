@@ -3224,12 +3224,18 @@ couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
 
-### [nat64] le traducteur est branche sur le routeur et sur le FortiGate, pas encore sur une commande de prefixe
-`Nat64Translator` (RFC 6146) tourne sur le plan de donnees d'un `Router` (API `enableNat64`, pas de
-commande : aucune documentation Cisco du NAT64 n'est dans `official_docs`) et sur le FortiGate
-(politique `set nat64 enable` + `ippool enable` + pool `set nat64 enable`, documentes dans
-`official_docs/forti-cli-ref-767.txt`). DNS64 est cable dans `named`.
-**Reste** : (1) le prefixe du FortiGate est fixe a `64:ff9b::/96` : la reference ne documente aucun
-reglage de prefixe NAT64 ; (2) les paquets fragmentes ne sont pas traduits (la fragmentation IPv6 n'est pas modelisee par le
-plan de donnees) ; les erreurs ICMP le sont, avec le paquet qu'elles citent ; (3) les MTU des prochains sauts, que la RFC 7915 fait entrer dans le calcul du MTU des erreurs
-« packet too big » / « fragmentation needed », ne sont pas passes au traducteur.
+### [nat64] ce qui reste : fragments, ecoute IPv6 de named, commande de routeur
+`Nat64Translator` (RFC 6146/7915) tourne sur le plan de donnees d'un `Router` (API `enableNat64`, pas de
+commande : aucune documentation Cisco ou Huawei du NAT64 n'est dans `official_docs`) et sur le FortiGate
+(politique `set nat64 enable` + `ippool enable` + pool `set nat64 enable`, prefixe de `config system nat64`
+/ `set nat64-prefix`, documentes dans `official_docs/forti-cli-ref-767.txt` et `forti-cli-ref-60.txt`).
+DNS64 est cable dans `named`, dont les listes `clients`/`mapped` lisent les prefixes IPv6. Les MTU des
+prochains sauts entrent dans le calcul des erreurs « packet too big » / « fragmentation needed ».
+**Reste** : (1) les paquets fragmentes ne sont pas traduits : le modele ne porte pas d'en-tete de
+fragment IPv6 et aucun hote ne reassemble de l'IPv6 (`IPv6DataPlane` le dit dans son en-tete), la traduction
+RFC 7915 §4.1/§5.1 des fragments n'a donc pas de lecteur ; (2) `named` n'ecoute pas en IPv6 (l'entree
+`[udp6]` : les agents du plan de controle restent en IPv4), de sorte que les elements IPv6 des listes ne
+sont evalues que pour une adresse donnee, pas encore pour un client IPv6 venu du fil ; (3) le `status` et les
+`secondary-prefix` de `config system nat64` (FortiOS 6.0) sont refuses, faute d'un second prefixe cote
+traducteur ; (4) aucune commande Cisco/Huawei de NAT64 faute de documentation constructeur.
+

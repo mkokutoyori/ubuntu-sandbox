@@ -68,6 +68,9 @@ export function buildCommitDevice(
       applyHa(patch) {
         return fw.applyHa(patch);
       },
+      applyNat64Prefix(prefix) {
+        return fw.applyNat64Prefix(prefix);
+      },
       hasInterface(name) {
         return fw.getPort(name) !== undefined;
       },

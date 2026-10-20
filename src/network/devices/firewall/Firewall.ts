@@ -161,6 +161,7 @@ import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { Logger } from '../../core/Logger';
+import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
 import { FirewallNat64 } from './nat/FirewallNat64';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
@@ -314,6 +315,16 @@ export class Firewall extends Equipment {
   });
 
   private readonly nat64 = new FirewallNat64({
+    nexthopMtu: {
+      ipv4: (destination) => {
+        const iface = this.routedEgress(destination.toString(), this.activeVdom)?.iface;
+        return iface === undefined ? undefined : this.getPort(iface)?.getMTU();
+      },
+      ipv6: (destination) => {
+        const iface = this.ipv6.dataPlane().lookupRoute(destination)?.iface;
+        return iface === undefined ? undefined : this.getPort(iface)?.getIPv6MTU();
+      },
+    },
     decide: (ingress, probe) => {
       const vdom = this.vdoms.contextOfInterface(ingress);
       return vdom.evaluator.evaluate(vdom.policy.ordered(), probe);
@@ -1267,6 +1278,18 @@ export class Firewall extends Equipment {
     this.haConfiguration = c;
     this.haService.agent.configure(c);
     this.applyClusterVirtualMacs(c);
+    return undefined;
+  }
+
+  applyNat64Prefix(text: string): string | undefined {
+    let prefix: Nat64Prefix;
+    try {
+      prefix = Nat64Prefix.parse(text);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    if (prefix.length !== 96) return `NAT64 prefix must be ::/96: ${text}`;
+    this.nat64.setPrefix(prefix);
     return undefined;
   }
 
