@@ -20,6 +20,7 @@ export interface IpPool {
   readonly pbaTimeout: number;
   readonly permitAnyHost: boolean;
   readonly arpReply: boolean;
+  readonly nat64: boolean;
   readonly arpInterface?: string;
   readonly associatedInterface?: string;
   readonly comment?: string;
@@ -49,6 +50,7 @@ export interface IpPoolDraft {
   pbaTimeout?: number;
   permitAnyHost?: boolean;
   arpReply?: boolean;
+  nat64?: boolean;
   arpInterface?: string;
   associatedInterface?: string;
   comment?: string;
@@ -74,6 +76,7 @@ export function makeIpPool(draft: IpPoolDraft): IpPool {
     pbaTimeout: draft.pbaTimeout ?? DEFAULT_PBA_TIMEOUT,
     permitAnyHost: draft.permitAnyHost ?? false,
     arpReply: draft.arpReply ?? true,
+    nat64: draft.nat64 ?? false,
     arpInterface: draft.arpInterface,
     associatedInterface: draft.associatedInterface,
     comment: draft.comment,

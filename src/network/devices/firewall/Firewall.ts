@@ -160,6 +160,8 @@ import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
+import { Logger } from '../../core/Logger';
+import { FirewallNat64 } from './nat/FirewallNat64';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
 import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
@@ -308,6 +310,21 @@ export class Firewall extends Equipment {
     sessions: (iface) => this.vdoms.contextOfInterface(iface).sessions,
     dhcpv6Server: () => this.dhcp6.getServer(),
     dhcpv6PoolFor: (iface) => this.dhcp6.poolOfInterface(iface),
+    nat64Forward: (ingress, packet) => this.nat64.forward6(ingress, packet),
+  });
+
+  private readonly nat64 = new FirewallNat64({
+    decide: (ingress, probe) => {
+      const vdom = this.vdoms.contextOfInterface(ingress);
+      return vdom.evaluator.evaluate(vdom.policy.ordered(), probe);
+    },
+    pool: (ingress, name) => this.vdoms.contextOfInterface(ingress).pools.get(name),
+    pools: () => this.vdoms.names().flatMap((name) => [...this.getVdom(name).pools.all()]),
+    egressFor: (ingress, target) => this.routedEgress(target, this.vdoms.vdomOfInterface(ingress)),
+    forward: (iface, packet, nextHop) => { this.forward(iface, packet, nextHop); },
+    injectIpv6: (packet) => { this.ipv6.dataPlane().forwardTranslated(packet); },
+    now: () => this.getSystemClockMs(),
+    log: (line) => { Logger.info(this.id, 'nat64:drop', `${this.name}: ${line}`); },
   });
 
   private readonly dhcp6 = new FirewallDhcp6({
@@ -2002,11 +2019,13 @@ export class Firewall extends Equipment {
 
   setIpPool(pool: IpPool, vdom?: string): void {
     this.getVdom(vdom).pools.upsert(pool);
+    this.nat64.forget(pool.name);
     publishPoolProxyArp(this.proxyArp, pool);
   }
 
   removeIpPool(name: string, vdom?: string): void {
     this.getVdom(vdom).pools.remove(name);
+    this.nat64.forget(name);
     this.proxyArp.clear(proxyOwnerKey('ippool', name));
   }
 
@@ -2627,6 +2646,8 @@ export class Firewall extends Equipment {
     const recolle = this.fragments.accept(packet, this.services.now(), portName);
     if (recolle === null) return;
     packet = recolle;
+
+    if (this.nat64.forward4(packet)) return;
 
     const vdom = this.vdoms.contextOfInterface(portName);
     const decision = classifyIpv4(this.ingressHost(), portName, vdom, packet, frame);

@@ -166,6 +166,7 @@ export interface FortiIpPoolPatch {
   readonly pbaTimeout: number;
   readonly permitAnyHost: boolean;
   readonly arpReply: boolean;
+  readonly nat64: boolean;
   readonly arpInterface?: string;
   readonly associatedInterface?: string;
   readonly comment?: string;

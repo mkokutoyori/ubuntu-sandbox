@@ -3224,13 +3224,12 @@ couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
 
-### [nat64] le traducteur existe, aucun equipement ne l'utilise encore
-`Nat64Translator` (RFC 6146 : BIB, sessions, filtrage dependant de l'adresse, delais, machine a etats
-TCP) et `Nat64Prefix` (RFC 6052) sont testes au niveau moteur ; DNS64 est cable dans `named`.
-**Reste** : (1) brancher le traducteur sur le plan de donnees d'un equipement — le pare-feu FortiGate
-(`config firewall nat64` / politique `nat64`, documente dans `official_docs/forti-cli-ref-767.txt`) ou
-un routeur — pour qu'un hote IPv6 seul atteigne un serveur IPv4 par de vraies trames ; (2) traduire les
-erreurs ICMP et les paquets fragmentes (aujourd'hui seul l'echo l'est) ; (3) la RFC 7915 n'est pas dans
-`docs/rfc` : la forme des en-tetes traduits vient de la memoire, a rapprocher du texte quand il
-sera accessible. Il n'y a pas de documentation Cisco du NAT64 dans `official_docs`, donc pas de
-commandes IOS `nat64 …` avant d'en avoir une.
+### [nat64] le traducteur est branche sur le routeur et sur le FortiGate, pas encore sur une commande de prefixe
+`Nat64Translator` (RFC 6146) tourne sur le plan de donnees d'un `Router` (API `enableNat64`, pas de
+commande : aucune documentation Cisco du NAT64 n'est dans `official_docs`) et sur le FortiGate
+(politique `set nat64 enable` + `ippool enable` + pool `set nat64 enable`, documentes dans
+`official_docs/forti-cli-ref-767.txt`). DNS64 est cable dans `named`.
+**Reste** : (1) le prefixe du FortiGate est fixe a `64:ff9b::/96` : la reference ne documente aucun
+reglage de prefixe NAT64 ; (2) les erreurs ICMP et les paquets fragmentes ne sont pas traduits (seul
+l'echo l'est) ; (3) la RFC 7915 n'est pas dans `docs/rfc` : la forme des en-tetes traduits vient de la
+memoire de l'auteur ; (4) le curl de `WindowsPC` ne resout pas encore un nom qui n'a qu'un AAAA.

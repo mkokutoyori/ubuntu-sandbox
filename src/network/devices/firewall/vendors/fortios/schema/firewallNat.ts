@@ -191,6 +191,7 @@ export const FIREWALL_IPPOOL: FortiTableSpec = {
       availableWhen: isBlockPool,
     },
     enable('permit-any-host', 'Enable/disable full cone NAT.'),
+    enable('nat64', 'Enable/disable NAT64.'),
     enable('arp-reply', 'Enable/disable replying to ARP requests when an IP pool '
       + 'is added to a policy.', true),
     reference('arp-intf', 'Select an interface from available options that will reply '
@@ -219,6 +220,7 @@ export const FIREWALL_IPPOOL: FortiTableSpec = {
       pbaTimeout: portNumber(object.effective('pba-timeout')[0], 30),
       permitAnyHost: object.effective('permit-any-host')[0] === 'enable',
       arpReply: object.effective('arp-reply')[0] !== 'disable',
+      nat64: object.effective('nat64')[0] === 'enable',
       arpInterface: object.effective('arp-intf')[0] || undefined,
       associatedInterface: object.effective('associated-interface')[0] || undefined,
       comment: object.effective('comments')[0] || undefined,

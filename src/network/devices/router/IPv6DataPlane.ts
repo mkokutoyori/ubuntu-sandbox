@@ -80,6 +80,8 @@ export interface RAConfig {
 }
 
 /** Interface to access router state needed by IPv6 engine */
+export const NAT64_RETURN_INGRESS = 'nat64';
+
 export interface IPv6RouterContext {
   readonly id: string;
   readonly name: string;
@@ -1013,7 +1015,7 @@ export class IPv6DataPlane {
   // ─── Forwarding ───────────────────────────────────────────────
 
   forwardTranslated(packet: IPv6Packet): void {
-    this.forwardPacket('', { ...packet, hopLimit: packet.hopLimit + 1 }, true);
+    this.forwardPacket(NAT64_RETURN_INGRESS, { ...packet, hopLimit: packet.hopLimit + 1 }, true);
   }
 
   private forwardPacket(inPort: string, ipv6: IPv6Packet, translated = false): void {

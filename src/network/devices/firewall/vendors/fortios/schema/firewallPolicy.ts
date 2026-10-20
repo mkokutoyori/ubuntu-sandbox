@@ -242,6 +242,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       action,
       enabled: object.effective('status')[0] !== 'disable',
       natEnabled: object.effective('nat')[0] === 'enable',
+      nat64Enabled: object.effective('nat64')[0] === 'enable',
       natPool: usesIpPool(object) ? object.effective('poolname')[0] : undefined,
       fixedPort: object.effective('fixedport')[0] === 'enable',
       matchTranslatedDestination: action === 'deny'

@@ -15,7 +15,7 @@ import type { IEventBus } from '@/events/EventBus';
 import type { IScheduler } from '@/events/Scheduler';
 import type { DHCPv6Server } from '../../../dhcpv6/DHCPv6Server';
 import {
-  IPv6DataPlane, type IPv6RouterContext, type Ipv6Counters,
+  IPv6DataPlane, NAT64_RETURN_INGRESS, type IPv6RouterContext, type Ipv6Counters,
 } from '../../router/IPv6DataPlane';
 import type { RouterCounters } from '../../Router';
 
@@ -37,6 +37,7 @@ export interface FirewallIpv6Deps {
   sessions(iface: string): SessionTable;
   dhcpv6Server(): DHCPv6Server;
   dhcpv6PoolFor(iface: string): string | undefined;
+  nat64Forward?(ingress: string, packet: IPv6Packet): boolean;
 }
 
 function idleCounters(): RouterCounters {
@@ -105,13 +106,16 @@ export class FirewallIpv6 {
       onIcmpv6EchoFailed: (payload) => { this.deps.onEchoFailed?.(payload); },
       ipv6FilterPermits: (iface, direction, packet, ingress) =>
         this.permits(iface, direction, packet, ingress),
+      nat64Forward: (ingress, packet) => this.deps.nat64Forward?.(ingress, packet) ?? false,
     };
   }
 
   private permits(
     iface: string, direction: 'in' | 'out', packet: IPv6Packet, ingress?: string,
   ): boolean {
-    if (direction === 'out') return this.transitPermitted(iface, packet, ingress);
+    if (direction === 'out') {
+      return ingress === NAT64_RETURN_INGRESS || this.transitPermitted(iface, packet, ingress);
+    }
     if (this.deps.dosVerdict?.(iface, dosTrafficOf(packet)) === 'block') return false;
     if (!this.addressedToUs(packet.destinationIP)) return true;
     if (this.deps.localInVerdict?.(iface, localInTrafficOf(packet)) === 'deny') return false;
