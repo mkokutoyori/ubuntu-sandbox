@@ -1589,6 +1589,7 @@ export abstract class LinuxMachine extends EndHost
     const mainPid = (): number => executor.serviceMgr.status('rsyslog')?.mainPid ?? 0;
     const host = new LinuxRsyslogHost({
       vfs,
+      vfsReader: { read: (path) => vfs.readFile(path) },
       timers,
       journal: executor.logMgr.syslogSocket,
       localSockets: executor.localDatagramSockets,

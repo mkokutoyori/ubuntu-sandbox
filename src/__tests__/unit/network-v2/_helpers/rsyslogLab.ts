@@ -123,17 +123,24 @@ export class LabHost implements RsyslogHost {
       return true;
     },
   };
+  readonly connectOptions: { address: string; port: number; options: StreamOptions }[] = [];
+  readonly listenOptions: { port: number; options: ListenOptions }[] = [];
   readonly network = {
     resolve: (name: string): Resolution => this.resolveName(name),
     reverse: (address: string): string | null => this.net.reverse.get(address) ?? null,
     service: (name: string, _protocol: 'tcp' | 'udp'): number | null => this.net.services.get(name) ?? null,
     resolveSrv: (name: string): SrvRecord[] | { readonly error: string } => this.net.srv.get(name) ?? { error: 'host not found' },
     sendDatagram: (address: string, port: number, payload: Uint8Array, _options?: DatagramOptions): Errno | null => this.sendDatagram(address, port, payload),
-    connectStream: (address: string, port: number, _options?: StreamOptions): StreamConnection | { readonly errno: Errno } => this.connect(address, port),
+    connectStream: (address: string, port: number, options?: StreamOptions): StreamConnection | { readonly errno: Errno } => {
+      if (options !== undefined) this.connectOptions.push({ address, port, options });
+      return this.connect(address, port);
+    },
     listenDatagram: (port: number, address: string | null, options: ListenOptions, onDatagram: (datagram: Datagram) => void): ListenOutcome =>
       this.listen(this.datagramListeners, port, address, options, onDatagram),
-    listenStream: (port: number, address: string | null, options: ListenOptions, onAccept: (connection: StreamConnection) => void): ListenOutcome =>
-      this.listen(this.streamListeners, port, address, options, onAccept),
+    listenStream: (port: number, address: string | null, options: ListenOptions, onAccept: (connection: StreamConnection) => void): ListenOutcome => {
+      this.listenOptions.push({ port, options });
+      return this.listen(this.streamListeners, port, address, options, onAccept);
+    },
   };
   kernelLogHandler: ((chunk: string) => void) | null = null;
   kernelLogErrno: Errno | null = null;

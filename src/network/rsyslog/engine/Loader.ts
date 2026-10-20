@@ -170,6 +170,8 @@ export class ConfigLoader implements ConfigSink {
       warn: (message) => this.warnAt(message),
       loaded: (name) => this.loadedNames.has(name),
       rateLimiter: (spec) => this.createModuleRateLimiter(spec),
+      netstreamDriverAvailable: (driver) => this.options.catalog.fileExists(`lmnsd_${driver}.so`),
+      moduleDirectory: () => this.options.catalog.moduleDirectory(),
       moduleState: <T>(name: string, create: () => T): T => {
         if (!this.moduleStates.has(name)) this.moduleStates.set(name, create());
         return this.moduleStates.get(name) as T;

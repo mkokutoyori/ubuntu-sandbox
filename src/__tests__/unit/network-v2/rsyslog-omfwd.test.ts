@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import { inflateSync } from 'node:zlib';
 import { LabHost, LabNetwork, lines, startRsyslog, submitLocal, type LabEngine } from './_helpers/rsyslogLab';
+import { BuiltinModuleCatalog } from '@/network/rsyslog/modules/Catalog';
 
 const SERVER_CONFIG = `
 module(load="imudp")
@@ -246,8 +247,31 @@ describe('omfwd configuration diagnostics', () => {
     expect(diagnostics('*.* action(type="omfwd" target="x" targetSrv="y")')[0]).toContain('omfwd: target and targetSrv are mutually exclusive');
   });
 
-  it('refuses TLS and stream compression it cannot provide instead of storing them', () => {
-    expect(diagnostics('*.* action(type="omfwd" target="x" protocol="tcp" streamdriver="gtls" streamdriver.mode="1")')[0]).toContain('requires a TLS network stream driver');
+  it('hands the resolved TLS settings to the connection, with the target as the name to verify', () => {
+    const { client, cli } = lab('*.* action(type="omfwd" target="10.0.0.2" protocol="tcp" streamdriver="gtls" streamdriver.mode="1" streamdriver.authmode="x509/fingerprint" streamdriverpermittedpeers="SHA1:AA:BB,SHA256:CC" streamdriver.cafile="/etc/ca.pem" streamdriver.certfile="/etc/c.pem" streamdriver.keyfile="/etc/c.key")');
+    submitLocal(cli, '<13>Oct 19 12:00:01 ubuntu alice: tls please');
+    const tls = client.connectOptions[0]?.options.tls;
+    expect(tls).toMatchObject({
+      driver: 'gtls', role: 'client', authMode: 'x509/fingerprint', permittedPeers: ['SHA1:AA:BB', 'SHA256:CC'],
+      caFile: '/etc/ca.pem', certFile: '/etc/c.pem', keyFile: '/etc/c.key', connectHost: '10.0.0.2',
+    });
+  });
+
+  it('keeps plain TCP plain: witness, no TLS options are passed at mode 0', () => {
+    const { client, cli } = lab('*.* action(type="omfwd" target="10.0.0.2" protocol="tcp")');
+    submitLocal(cli, '<13>Oct 19 12:00:01 ubuntu alice: plain');
+    expect(client.connectOptions[0]?.options.tls).toBeUndefined();
+  });
+
+  it('refuses TLS on the ptcp driver and a driver whose module is not installed', () => {
+    expect(diagnostics('*.* action(type="omfwd" target="x" protocol="tcp" streamdriver.mode="1")')[0]).toContain('driver mode 1 not supported by ptcp netstream driver');
+    const missing = startRsyslog(new LabHost('10.0.0.9', new LabNetwork()), '*.* action(type="omfwd" target="x" protocol="tcp" streamdriver="gtls" streamdriver.mode="1")', {
+      catalog: new BuiltinModuleCatalog('/usr/lib/x86_64-linux-gnu/rsyslog', (path) => path.endsWith('.so') && !path.includes('lmnsd_gtls')),
+    });
+    expect(missing.loader.log.lines().some((text) => text.includes("could not load netstream driver 'gtls'"))).toBe(true);
+  });
+
+  it('refuses stream compression it cannot provide instead of storing it', () => {
     expect(diagnostics('*.* action(type="omfwd" target="x" protocol="tcp" compression.mode="stream:always")')[0]).toContain('requires a streaming deflate driver');
   });
 

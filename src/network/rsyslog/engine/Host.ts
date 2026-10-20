@@ -1,4 +1,5 @@
 import type { Errno } from '@/network/core/Errno';
+import type { StreamTlsOptions } from './StreamDriver';
 
 export interface RsyslogClock {
   wallMs(): number;
@@ -82,6 +83,7 @@ export interface DatagramOptions {
 }
 
 export interface StreamOptions {
+  readonly tls?: StreamTlsOptions;
   readonly device?: string;
   readonly networkNamespace?: string;
   readonly userTimeoutMs?: number;
@@ -91,6 +93,7 @@ export interface StreamOptions {
 export type AddressFamilyPolicy = 'unspecified' | 'ipv4-only' | 'ipv6-only';
 
 export interface ListenOptions {
+  readonly tls?: StreamTlsOptions;
   readonly family: AddressFamilyPolicy;
   readonly receiveBufferBytes?: number;
   readonly device?: string;

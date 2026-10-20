@@ -4,6 +4,7 @@ import type { NvList } from '../config/Ast';
 import { arrayParam, getParams, numberParam, reportUnused, stringParam, type ParamDescriptor } from '../config/Params';
 import type { RsyslogMessage } from '../Message';
 import type { Resolution, SrvRecord, StreamConnection } from '../engine/Host';
+import { emptyTlsExtras, readTlsExtras, resolveStreamTls, type StreamTlsExtras, type StreamTlsOptions } from '../engine/StreamDriver';
 import { RS_RET } from '../engine/Log';
 import type {
   ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, DirectiveRegistration, ModuleContext, ModuleRateLimiter,
@@ -61,6 +62,8 @@ interface ForwardSettings {
   streamDriverModeSet: boolean;
   streamDriver: string | null;
   authMode: string | null;
+  tls: StreamTlsExtras;
+  resolvedTls: StreamTlsOptions | null;
   rateLimiter: ModuleRateLimiter | null;
 }
 
@@ -316,6 +319,7 @@ class OmfwdWorker implements ActionWorker {
       const attempt = network.connectStream(address, port.value, {
         device: settings.device ?? undefined,
         networkNamespace: settings.networkNamespace ?? undefined,
+        tls: settings.resolvedTls === null ? undefined : { ...settings.resolvedTls, connectHost: target.name },
         userTimeoutMs: settings.userTimeoutMs > 0 ? settings.userTimeoutMs : undefined,
         keepAlive: settings.keepAlive.enabled
           ? { probes: settings.keepAlive.probes, timeSeconds: settings.keepAlive.timeSeconds, intervalSeconds: settings.keepAlive.intervalSeconds }
@@ -594,6 +598,11 @@ class OmfwdInstance implements ActionModuleInstance {
   }
 }
 
+function moduleTlsExtras(context: ModuleContext): StreamTlsExtras {
+  const config = moduleConfig(context);
+  return { ...emptyTlsExtras(), caFile: config.caFile, crlFile: config.crlFile, caExtraFiles: config.caExtraFiles, keyFile: config.keyFile, certFile: config.certFile };
+}
+
 function baseSettings(context: ModuleContext, protocol: Protocol): ForwardSettings {
   const legacy = legacyState(context);
   return {
@@ -602,7 +611,7 @@ function baseSettings(context: ModuleContext, protocol: Protocol): ForwardSettin
     userTimeoutMs: 0, extendedConnectionCheck: true, sendToAll: false, poolResumeInterval: DEFAULT_POOL_RESUME_INTERVAL,
     templateName: defaultTemplateName(context), rateLimiter: null, rebindInterval: 0, keepAlive: defaultKeepAlive(), connectionErrorSkip: 0,
     resendLastOnReconnect: false, streamDriverMode: 0, streamDriverModeSet: legacy.streamDriverModeSet, streamDriver: legacy.streamDriver,
-    authMode: legacy.streamDriverAuthMode,
+    authMode: legacy.streamDriverAuthMode, tls: moduleTlsExtras(context), resolvedTls: null,
   };
 }
 
@@ -614,6 +623,8 @@ function applyLegacySelectorDefaults(settings: ForwardSettings, context: ModuleC
   if (settings.protocol === 'tcp') {
     settings.resendLastOnReconnect = legacy.resendLastOnReconnect;
     settings.streamDriverMode = legacy.streamDriverMode;
+    settings.tls.permittedPeers = [...legacy.permittedPeers];
+    settings.tls.remoteSni = legacy.streamDriverRemoteSni;
     legacy.permittedPeers = [];
   }
 }
@@ -644,13 +655,13 @@ function applySecureDefaults(settings: ForwardSettings, context: ModuleContext):
   return true;
 }
 
-function refuseUnavailableTransport(settings: ForwardSettings, context: ModuleContext): boolean {
-  if (settings.protocol === 'tcp' && settings.streamDriverMode !== 0) {
-    context.runtime.error(
-      `omfwd: streamdriver.mode="${settings.streamDriverMode}" requires a TLS network stream driver, which this rsyslogd build cannot provide`, RS_RET.PARAM_ERROR,
-    );
-    return true;
-  }
+function resolveTransport(settings: ForwardSettings, context: ModuleContext): boolean {
+  if (settings.protocol !== 'tcp') return false;
+  const resolved = resolveStreamTls(
+    { mode: settings.streamDriverMode, driver: settings.streamDriver, authMode: settings.authMode }, settings.tls, context, 'omfwd', 'client',
+  );
+  if (resolved === false) return true;
+  settings.resolvedTls = resolved;
   return false;
 }
 
@@ -797,7 +808,7 @@ function parseSelector(line: string, context: ModuleContext): SelectorParse {
   settings.templateName = template;
   if (!applySecureDefaults(settings, context)) return { status: 'error' };
   warnInsecureDefaults(settings, context);
-  if (refuseUnavailableTransport(settings, context)) return { status: 'error' };
+  if (resolveTransport(settings, context)) return { status: 'error' };
   return { status: 'ok', instance: new OmfwdInstance(settings, context), rest: '' };
 }
 
@@ -845,6 +856,7 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
   }
   settings.streamDriver = stringParam(values, 'streamdriver') ?? stringParam(values, 'streamdriver.name') ?? settings.streamDriver;
   settings.authMode = stringParam(values, 'streamdriverauthmode') ?? stringParam(values, 'streamdriver.authmode') ?? settings.authMode;
+  readTlsExtras(settings.tls, values);
   const zipLevel = numberParam(values, 'ziplevel');
   if (zipLevel !== undefined) {
     if (zipLevel >= 0 && zipLevel <= 10) {
@@ -930,7 +942,7 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
   settings.rateLimiter = limiter.limiter;
   if (!applySecureDefaults(settings, context)) return null;
   warnInsecureDefaults(settings, context);
-  if (refuseUnavailableTransport(settings, context)) return null;
+  if (resolveTransport(settings, context)) return null;
   return new OmfwdInstance(settings, context);
 }
 

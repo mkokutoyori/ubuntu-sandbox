@@ -9,6 +9,7 @@ import type {
   Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
   OpenFileOptions, OpenFileResult, ProcessDetails, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
+import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
 import type { VirtualFileSystem, AppendCreation, AppendDescriptor } from '../VirtualFileSystem';
 import type { SyslogForwardSocket } from './SyslogForwardSocket';
 import type { LocalDatagramSockets } from './LocalDatagramSockets';
@@ -38,6 +39,7 @@ export interface RsyslogUdpEndpoint {
 
 export interface LinuxRsyslogPlatform {
   readonly vfs: VirtualFileSystem;
+  readonly vfsReader: { read(path: string): string | null };
   readonly timers: ClockTimers;
   readonly journal: SyslogForwardSocket;
   readonly localSockets: LocalDatagramSockets;
@@ -401,6 +403,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
     if (options?.keepAlive !== undefined) {
       socket.enableKeepAlive(options.keepAlive.timeSeconds * 1000, options.keepAlive.intervalSeconds * 1000, options.keepAlive.probes);
     }
+    if (options?.tls !== undefined) return openTlsClient(socket, options.tls, this.platform.vfsReader, { nowMs: () => this.clock.wallMs() });
     return new SocketConnection(socket);
   }
 
@@ -484,7 +487,10 @@ export class LinuxRsyslogHost implements RsyslogHost {
           identity: { pid, processName: 'rsyslogd' },
           ...(options.device === undefined ? {} : { boundDevice: options.device }),
           ...(options.receiveBufferBytes === undefined ? {} : { receiveWindow: Math.min(options.receiveBufferBytes, 65535) }),
-          onAccept: (socket) => onAccept(new SocketConnection(socket)),
+          onAccept: (socket) => {
+            if (options.tls === undefined) onAccept(new SocketConnection(socket));
+            else acceptTlsServer(socket, options.tls, this.platform.vfsReader, { nowMs: () => this.clock.wallMs() }, onAccept);
+          },
         }, bindAddress);
         const close = (): void => {
           stack.closeListener(port, bindAddress);

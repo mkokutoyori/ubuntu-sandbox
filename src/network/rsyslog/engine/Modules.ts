@@ -74,6 +74,8 @@ export interface ModuleContext {
   loaded(moduleName: string): boolean;
   rateLimiter(spec: ModuleRateLimitSpec): { readonly limiter: ModuleRateLimiter | null } | null;
   moduleState<T>(moduleName: string, create: () => T): T;
+  netstreamDriverAvailable(driver: string): boolean;
+  moduleDirectory(): string;
 }
 
 export interface DirectiveRegistration {

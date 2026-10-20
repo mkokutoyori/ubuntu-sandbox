@@ -3,6 +3,7 @@ import { arrayParam, getParams, numberParam, reportUnused, stringParam, type Par
 import type { AllowedSenderList } from '../engine/AllowedSenders';
 import type { Listener, StreamConnection } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
+import { emptyTlsExtras, copyTlsExtras, readTlsExtras, resolveStreamTls, type StreamTlsExtras, type StreamTlsOptions } from '../engine/StreamDriver';
 import type { DirectiveRegistration, InputContext, InputInstance, InputModule, ModuleContext } from '../engine/Modules';
 import { TcpFramer } from '../TcpFramer';
 
@@ -66,6 +67,7 @@ interface TcpDefaults {
   networkNamespace: string | null;
   allowedSenders: AllowedSenderList | null;
   configuredViaModule: boolean;
+  tls: StreamTlsExtras;
 }
 
 interface ImtcpLegacyState {
@@ -82,7 +84,7 @@ function defaultDefaults(): TcpDefaults {
     streamDriverModeSet: false, streamDriverName: null, authMode: null, notifyOnClose: false, notifyOnOpen: false,
     additionalDelimiter: NO_ADDITIONAL_DELIMITER, maxFrameSize: DEFAULT_MAX_FRAME_SIZE, disableLfDelimiter: false, discardTruncated: false,
     keepAlive: { enabled: false, probes: 0, interval: 0, time: 0 }, preserveCase: true, compressionMode: 'none', networkNamespace: null,
-    allowedSenders: null, configuredViaModule: false,
+    allowedSenders: null, configuredViaModule: false, tls: emptyTlsExtras(),
   };
 }
 
@@ -103,6 +105,7 @@ function legacyState(context: ModuleContext): ImtcpLegacyState {
 }
 
 interface TcpInstanceSettings extends TcpDefaults {
+  resolvedTls: StreamTlsOptions | null;
   port: string;
   address: string | null;
   inputName: string | null;
@@ -197,7 +200,7 @@ class ImtcpListener implements InputInstance {
     const requested = Number(port);
     const outcome = this.context.host.network.listenStream(
       requested, settings.address === '*' ? null : settings.address,
-      { family: this.context.settings.ipProtocol, freeBind: 0 },
+      { family: this.context.settings.ipProtocol, freeBind: 0, ...(settings.resolvedTls === null ? {} : { tls: settings.resolvedTls }) },
       (connection) => this.accept(connection),
     );
     if (outcome.listeners.length === 0) {
@@ -405,6 +408,7 @@ function applySharedParams(
   }
   target.streamDriverName = stringParam(values, 'streamdriver.name') ?? target.streamDriverName;
   target.authMode = stringParam(values, 'streamdriver.authmode') ?? target.authMode;
+  readTlsExtras(target.tls, values);
   target.preserveCase = flag('preservecase') ?? target.preserveCase;
   target.networkNamespace = stringParam(values, 'networknamespace') ?? target.networkNamespace;
   const depth = numberParam(values, 'streamdriver.tlsverifydepth');
@@ -426,11 +430,17 @@ function applySharedParams(
   return true;
 }
 
-function refuseUnavailableTransport(settings: TcpDefaults, context: ModuleContext): boolean {
-  if (settings.streamDriverMode !== 0) {
-    context.runtime.error(`imtcp: streamdriver.mode="${settings.streamDriverMode}" requires a TLS network stream driver, which this rsyslogd build cannot provide`, RS_RET.PARAM_ERROR);
-    return true;
-  }
+function resolveTransport(settings: TcpInstanceSettings, context: ModuleContext): boolean {
+  const resolved = resolveStreamTls(
+    { mode: settings.streamDriverMode, driver: settings.streamDriverName, authMode: settings.authMode },
+    { ...settings.tls, permittedPeers: [...settings.tls.permittedPeers, ...legacyState(context).permittedPeers] }, context, 'imtcp', 'server',
+  );
+  if (resolved === false) return true;
+  settings.resolvedTls = resolved;
+  return refuseUnavailableCompression(settings, context);
+}
+
+function refuseUnavailableCompression(settings: TcpDefaults, context: ModuleContext): boolean {
   if (settings.compressionMode === 'stream:always') {
     context.runtime.error('imtcp: compression.mode="stream:always" requires a streaming inflate driver, which this rsyslogd build cannot provide', RS_RET.PARAM_ERROR);
     return true;
@@ -448,7 +458,7 @@ function createInstances(params: NvList, context: InputContext): InputInstance[]
   reportUnused(params, report);
   const base = moduleDefaults(context);
   const settings: TcpInstanceSettings = {
-    ...base, keepAlive: { ...base.keepAlive }, port: stringParam(values, 'port') ?? '', address: stringParam(values, 'address') ?? null,
+    ...base, keepAlive: { ...base.keepAlive }, tls: copyTlsExtras(base.tls), resolvedTls: null, port: stringParam(values, 'port') ?? '', address: stringParam(values, 'address') ?? null,
     inputName: stringParam(values, 'name') ?? null, ruleset: stringParam(values, 'ruleset') ?? null,
     defaultTimeZone: stringParam(values, 'defaulttz') ?? null, listenPortFile: stringParam(values, 'listenportfilename') ?? null,
     spFramingFix: (numberParam(values, 'framingfix.cisco.asa') ?? 0) !== 0, multiLine: (numberParam(values, 'multiline') ?? 0) !== 0,
@@ -469,7 +479,7 @@ function createInstances(params: NvList, context: InputContext): InputInstance[]
   }
   if (!applySecureDefaults(settings, context, 'imtcp input')) return null;
   warnInsecure(settings, context);
-  if (refuseUnavailableTransport(settings, context)) return null;
+  if (resolveTransport(settings, context)) return null;
   if (settings.startRegex !== null) {
     try {
       new RegExp(settings.startRegex);
@@ -523,11 +533,11 @@ function directives(): DirectiveRegistration[] {
         const state = legacyState(context);
         const base = legacyDefaults(context);
         const settings: TcpInstanceSettings = {
-          ...base, keepAlive: { ...base.keepAlive }, port: String(value), address: null, inputName: state.inputName, ruleset: state.bindRuleset,
+          ...base, keepAlive: { ...base.keepAlive }, tls: copyTlsExtras(base.tls), resolvedTls: null, port: String(value), address: null, inputName: state.inputName, ruleset: state.bindRuleset,
           defaultTimeZone: null, listenPortFile: state.listenPortFile, spFramingFix: false, multiLine: false, startRegex: null, rateInterval: 0,
           rateBurst: DEFAULT_RATE_LIMIT_BURST, rateName: null, socketBacklog: null,
         };
-        if (!applySecureDefaults(settings, context, 'imtcp input') || refuseUnavailableTransport(settings, context)) return;
+        if (!applySecureDefaults(settings, context, 'imtcp input') || resolveTransport(settings, context)) return;
         context.registerInput('imtcp', new ImtcpListener(settings, context));
       },
     },

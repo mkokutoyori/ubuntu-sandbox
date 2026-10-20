@@ -354,11 +354,27 @@ describe('imtcp', () => {
     expect(filed(r.server)).toEqual([]);
   });
 
-  it('refuses TLS and stream compression it cannot provide', () => {
-    const tls = rig('module(load="imtcp" streamDriver.mode="1" streamDriver.authMode="anon")\ninput(type="imtcp" port="514")\n*.* /var/log/x.log');
-    expect(tls.srv.loader.log.lines().some((text) => text.includes('requires a TLS network stream driver'))).toBe(true);
-    const input = rig('module(load="imtcp")\ninput(type="imtcp" port="514" streamDriver.mode="1")\n*.* /var/log/x.log');
-    expect(input.srv.loader.log.lines().some((text) => text.includes('requires a TLS network stream driver'))).toBe(true);
+  it('hands the resolved TLS driver settings to the listener instead of refusing them', () => {
+    const r = rig('module(load="imtcp" streamDriver.mode="1" streamDriver.authMode="x509/name" streamDriver.permitExpiredCerts="warn" streamDriver.CAFile="/etc/ssl/ca.pem")\ninput(type="imtcp" port="514" streamDriver.name="gtls" permittedPeer=["*.example.net","central"] streamDriver.certFile="/etc/ssl/srv.pem" streamDriver.keyFile="/etc/ssl/srv.key")\n*.* /var/log/x.log');
+    const options = r.server.listenOptions.find((entry) => entry.port === 514)?.options.tls;
+    expect(options).toMatchObject({
+      driver: 'gtls', role: 'server', authMode: 'x509/name', permitExpired: 'warn', permittedPeers: ['*.example.net', 'central'],
+      caFile: '/etc/ssl/ca.pem', certFile: '/etc/ssl/srv.pem', keyFile: '/etc/ssl/srv.key',
+    });
+  });
+
+  it('refuses a TLS mode the driver cannot honour, with the driver words', () => {
+    const ptcp = rig('module(load="imtcp")\ninput(type="imtcp" port="514" streamDriver.mode="1")\n*.* /var/log/x.log');
+    expect(ptcp.srv.loader.log.lines().some((text) => text.includes('error: driver mode 1 not supported by ptcp netstream driver'))).toBe(true);
+    const mode = rig('module(load="imtcp" streamDriver.name="gtls")\ninput(type="imtcp" port="514" streamDriver.mode="2")\n*.* /var/log/x.log');
+    expect(mode.srv.loader.log.lines().some((text) => text.includes('error: driver mode 2 not supported by gtls netstream driver'))).toBe(true);
+    const auth = rig('module(load="imtcp" streamDriver.name="gtls" streamDriver.mode="1" streamDriver.authMode="kerberos")\ninput(type="imtcp" port="514")\n*.* /var/log/x.log');
+    expect(auth.srv.loader.log.lines().some((text) => text.includes("authentication mode 'kerberos' not supported by gtls netstream driver"))).toBe(true);
+  });
+
+  it('refuses stream compression it cannot provide', () => {
+    const r = rig('module(load="imtcp" compression.mode="stream:always")\ninput(type="imtcp" port="514")\n*.* /var/log/x.log');
+    expect(r.srv.loader.log.lines().some((text) => text.includes('streaming inflate driver'))).toBe(true);
   });
 
   it('validates the compression and frame-size parameters', () => {

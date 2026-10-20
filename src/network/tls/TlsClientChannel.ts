@@ -91,6 +91,12 @@ export class TlsClientChannel {
     return reply;
   }
 
+  send(payload: Uint8Array): void {
+    const sealed = encryptApplicationData(this.session.clientTraffic(), this.clientSequence, payload);
+    this.clientSequence = sealed.nextSeq;
+    this.write(sealed.records);
+  }
+
   takeBuffered(): Uint8Array {
     const taken = this.inbox;
     this.inbox = new Uint8Array(0);
