@@ -12,13 +12,14 @@ export interface OutgoingSession {
   openedAtMs: number;
   lastActiveMs: number;
   bytes: number;
+  socket?: { close(): void };
 }
 
 export class OutgoingSessionRegistry {
   private readonly sessions = new Map<number, OutgoingSession>();
   private seq = 0;
 
-  open(args: { host: string; address: string; protocol: OutgoingProtocol; user: string }): OutgoingSession {
+  open(args: { host: string; address: string; protocol: OutgoingProtocol; user: string; socket?: { close(): void } }): OutgoingSession {
     const now = simulationNowMs();
     this.seq += 1;
     const session: OutgoingSession = {
@@ -30,6 +31,7 @@ export class OutgoingSessionRegistry {
       openedAtMs: now,
       lastActiveMs: now,
       bytes: 0,
+      ...(args.socket === undefined ? {} : { socket: args.socket }),
     };
     this.sessions.set(session.conn, session);
     return session;
@@ -49,10 +51,12 @@ export class OutgoingSessionRegistry {
   }
 
   close(conn: number): boolean {
+    this.sessions.get(conn)?.socket?.close();
     return this.sessions.delete(conn);
   }
 
   closeAll(): void {
+    for (const session of this.sessions.values()) session.socket?.close();
     this.sessions.clear();
   }
 
