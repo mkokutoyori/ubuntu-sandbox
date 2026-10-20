@@ -31,6 +31,9 @@ import { keygenAgentOf } from '@/network/protocols/ssh/keygen/KeygenAgentPort';
 import { missingIdentityWarnings, resolveClientInvocation, typedIdentityFiles, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
 import { sshClientAlgorithms, sshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { parseDialAddress } from '@/network/tcp/dial';
+import { buildSyslogMessage, frameForStream, type SyslogStreamFraming, type SyslogWireFormat } from '@/network/syslog/SyslogMessageBuilder';
+import type { StructuredDataElement } from '@/network/syslog/codec/StructuredData';
 import { likeDate } from '@/powershell/runtime/dotnetDateTime';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
@@ -2016,6 +2019,38 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     session.close();
     if (final && final.code >= 200 && final.code < 300) return { ok: true };
     return { ok: false, error: `Send-MailMessage : ${final?.lines.join(' ') ?? 'The message was rejected by the server.'}` };
+  }
+
+  sendSyslogMessage(opts: {
+    server: string; port: number; transport: 'udp' | 'tcp'; format: SyslogWireFormat; framing: SyslogStreamFraming;
+    facility: number; severity: number; hostname: string; appName: string; procId: string | null; msgId: string | null;
+    structuredData: readonly StructuredDataElement[]; message: string; timestampMs?: number;
+  }): { ok: boolean; error?: string; wire?: string } {
+    const literal = parseDialAddress(opts.server);
+    const target = literal?.toString() ?? this.resolveDnsSync(opts.server)[0];
+    if (target === undefined) return { ok: false, error: `Send-SyslogMessage : Unable to resolve the syslog server '${opts.server}'.` };
+    const at = opts.timestampMs ?? this.simulatedDate().getTime();
+    const wire = buildSyslogMessage({
+      format: opts.format, facility: opts.facility, severity: opts.severity, epochMs: at,
+      offsetMinutes: ZonedDate.in(at, this.identity.timezone).offsetMinutes(),
+      hostname: opts.hostname || this.getHostname(), appName: opts.appName, procId: opts.procId, msgId: opts.msgId,
+      structuredData: opts.structuredData, message: opts.message,
+    });
+    const destination = parseDialAddress(target);
+    if (destination === null) return { ok: false, error: `Send-SyslogMessage : '${target}' is not an IP address.` };
+    if (opts.transport === 'udp') {
+      const bytes = new TextEncoder().encode(wire);
+      const sent = this.sendUdpDatagramTo(destination, opts.port, this.allocateEphemeralPort(), bytes, bytes.length);
+      return sent ? { ok: true, wire } : { ok: false, error: `Send-SyslogMessage : The network path to '${opts.server}' is not reachable.` };
+    }
+    const socket = this.getTcpStack().connect(destination.toString(), opts.port);
+    if (socket === null || socket.state !== 'established') {
+      if (socket !== null && !socket.closed) socket.close();
+      return { ok: false, error: `Send-SyslogMessage : No connection could be made because the target machine actively refused it ${opts.server}:${opts.port}.` };
+    }
+    socket.write(frameForStream(wire, opts.framing));
+    socket.close();
+    return { ok: true, wire };
   }
 
   // ─── Group Policy (PRD-Windows-Server.md §5 P10) ────────────────────

@@ -99,6 +99,7 @@ import {
   ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
 } from './NetworkCmdlets';
 import { SendMailMessageCmdlet } from './MailMessageCmdlets';
+import { SendSyslogMessageCmdlet } from './SyslogCmdlets';
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
   SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
@@ -488,6 +489,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new SetNetAdapterCmdlet());
   registry.register(new TestNetConnectionCmdlet());
   registry.register(new SendMailMessageCmdlet());
+  registry.register(new SendSyslogMessageCmdlet());
 
   // ── VPN (provider-backed) ─────────────────────────────────────────────────
   registry.register(new AddVpnConnectionCmdlet());
