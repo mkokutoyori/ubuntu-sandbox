@@ -3223,3 +3223,14 @@ mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
+
+### [nat64] le traducteur existe, aucun equipement ne l'utilise encore
+`Nat64Translator` (RFC 6146 : BIB, sessions, filtrage dependant de l'adresse, delais, machine a etats
+TCP) et `Nat64Prefix` (RFC 6052) sont testes au niveau moteur ; DNS64 est cable dans `named`.
+**Reste** : (1) brancher le traducteur sur le plan de donnees d'un equipement — le pare-feu FortiGate
+(`config firewall nat64` / politique `nat64`, documente dans `official_docs/forti-cli-ref-767.txt`) ou
+un routeur — pour qu'un hote IPv6 seul atteigne un serveur IPv4 par de vraies trames ; (2) traduire les
+erreurs ICMP et les paquets fragmentes (aujourd'hui seul l'echo l'est) ; (3) la RFC 7915 n'est pas dans
+`docs/rfc` : la forme des en-tetes traduits vient de la memoire, a rapprocher du texte quand il
+sera accessible. Il n'y a pas de documentation Cisco du NAT64 dans `official_docs`, donc pas de
+commandes IOS `nat64 …` avant d'en avoir une.
