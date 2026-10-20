@@ -71,6 +71,7 @@ import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
 import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
+import { NAT_ROUTE_MAP_PREFIX, natRouteMapPermits } from './router/nat/NatRouteMap';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
@@ -692,8 +693,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.dhcpServer.setDeviceId(this.id, this.name);
     this.dhcpServer.setClock(() => this.getSystemClockMs());
     this.dhcpServer.setUtilizationSink((crossing) => this.emitDhcpUtilizationTrap(crossing));
-    this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
+    this.natEngine.setACLMatchFn((aclId, srcIP, realPkt, outIface) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
+      if (String(aclId).startsWith(NAT_ROUTE_MAP_PREFIX)) {
+        const name = String(aclId).slice(NAT_ROUTE_MAP_PREFIX.length);
+        const clauses = this.shell.getPolicyRepo?.()?.allRouteMaps().get(name);
+        return natRouteMapPermits(clauses, {
+          aclPermits: (acl) => this.aclEngine.evaluateACLByName(acl, pkt) === 'permit',
+          egressInterface: outIface,
+        });
+      }
       if (String(aclId).startsWith('ezvpn:')) {
         return this.ipsecEngine?.ezvpnClient.natMatches(String(aclId), srcIP, realPkt?.destinationIP.toString(), realPkt) ?? false;
       }

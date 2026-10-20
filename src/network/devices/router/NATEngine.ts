@@ -66,6 +66,7 @@ export type NatDynamicRuleType = 'overload' | 'pool';
 
 export interface NatDynamicRule {
   aclId: string | number;
+  routeMap?: string;
   type: NatDynamicRuleType;
   poolName?: string;
   interfaceName?: string;
@@ -175,7 +176,7 @@ export class NATEngine {
   private reverseSessions = new Map<string, NatSession>();
 
   // Callbacks injected by Router
-  private matchACLFn?: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean;
+  private matchACLFn?: (aclId: string | number, srcIP: string, pkt?: IPv4Packet, outIface?: string) => boolean;
   private getIfaceIPFn?: (iface: string) => string | null;
   // Lookup callback: given an inside IP, return the outside interface it came from
   private getInsideIfaceForIPFn?: (ip: string) => string | null;
@@ -203,6 +204,28 @@ export class NATEngine {
   private maxEntries: number | null = null;
   setMaxEntries(n: number | null): void { this.maxEntries = n; }
   getMaxEntries(): number | null { return this.maxEntries; }
+
+  private readonly maxEntriesByHost = new Map<string, number>();
+  private maxEntriesAllHost: number | null = null;
+
+  setMaxEntriesForHost(ip: string, n: number | null): void {
+    if (n === null) this.maxEntriesByHost.delete(ip); else this.maxEntriesByHost.set(ip, n);
+  }
+
+  setMaxEntriesAllHost(n: number | null): void { this.maxEntriesAllHost = n; }
+
+  getMaxEntriesByHost(): ReadonlyMap<string, number> { return this.maxEntriesByHost; }
+
+  getMaxEntriesAllHost(): number | null { return this.maxEntriesAllHost; }
+
+  private mayCreateSession(srcIP: string): boolean {
+    if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) return false;
+    const hostLimit = this.maxEntriesByHost.get(srcIP) ?? this.maxEntriesAllHost;
+    if (hostLimit === null) return true;
+    let held = 0;
+    for (const session of this.sessions.values()) if (session.localIP === srcIP) held++;
+    return held < hostLimit;
+  }
   // Direction counters (Phase 4b2-NAT)
   private inboundTranslations = 0;
   private outboundTranslations = 0;
@@ -376,7 +399,7 @@ export class NATEngine {
   }
 
   /** Provide ACL matching function (injected by Router) */
-  setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean): void {
+  setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet, outIface?: string) => boolean): void {
     this.matchACLFn = fn;
   }
 
@@ -613,7 +636,7 @@ export class NATEngine {
 
     // 2. Dynamic rules
     for (const rule of this.dynamicRules) {
-      if (!this.matchACL(rule.aclId, srcIP, opts?.aclMatchPkt ?? pkt)) continue;
+      if (!this.matchACL(rule.aclId, srcIP, opts?.aclMatchPkt ?? pkt, outIface)) continue;
 
       if (rule.type === 'overload') {
         // Prefer the interface the operator actually named in
@@ -628,7 +651,7 @@ export class NATEngine {
         let session = this.sessions.get(sessionKey);
 
         if (!session) {
-          if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) continue;
+          if (!this.mayCreateSession(srcIP)) continue;
           const globalPort = this.allocatePort(proto, globalIP);
           if (globalPort === null) continue; // ephemeral range exhausted
           session = {
@@ -695,6 +718,7 @@ export class NATEngine {
         const sessionKey = makeKey4(proto, srcIP, srcPort, dstIP, dstPort);
         let session = this.sessions.get(sessionKey);
         if (!session) {
+          if (!this.mayCreateSession(srcIP)) continue;
           const poolIP = rule.overload
             ? this.overloadPoolAddress(pool, proto)
             : this.allocatePoolAddress(pool, srcIP);
@@ -1087,8 +1111,8 @@ export class NATEngine {
 
   // ─── Private Helpers ─────────────────────────────────────────────
 
-  private matchACL(aclId: string | number, srcIP: string, pkt?: IPv4Packet): boolean {
-    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP, pkt);
+  private matchACL(aclId: string | number, srcIP: string, pkt?: IPv4Packet, outIface?: string): boolean {
+    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP, pkt, outIface);
     return true;
   }
 
