@@ -3231,5 +3231,5 @@ commande : aucune documentation Cisco du NAT64 n'est dans `official_docs`) et su
 `official_docs/forti-cli-ref-767.txt`). DNS64 est cable dans `named`.
 **Reste** : (1) le prefixe du FortiGate est fixe a `64:ff9b::/96` : la reference ne documente aucun
 reglage de prefixe NAT64 ; (2) les paquets fragmentes ne sont pas traduits (la fragmentation IPv6 n'est pas modelisee par le
-plan de donnees) ; les erreurs ICMP le sont, avec le paquet qu'elles citent ; (3) la RFC 7915 n'est pas dans `docs/rfc` : la forme des en-tetes traduits vient de la
-memoire de l'auteur ; (4) le curl de `WindowsPC` ne resout pas encore un nom qui n'a qu'un AAAA.
+plan de donnees) ; les erreurs ICMP le sont, avec le paquet qu'elles citent ; (3) les MTU des prochains sauts, que la RFC 7915 fait entrer dans le calcul du MTU des erreurs
+« packet too big » / « fragmentation needed », ne sont pas passes au traducteur.

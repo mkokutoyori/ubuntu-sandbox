@@ -57,6 +57,12 @@ describe('RFC 6052 Table 2 and section 3.1: the Well-Known Prefix', () => {
     expect(p.extract(p.synthesize(new IPAddress('10.1.2.3')))?.toString()).toBe('10.1.2.3');
   });
 
+  it('follows the Global column of the RFC 6890 registry: 6to4 relay anycast is global, protocol assignments are not', () => {
+    expect(isGlobalIpv4(new IPAddress('192.88.99.1'))).toBe(true);
+    expect(isGlobalIpv4(new IPAddress('192.0.0.8'))).toBe(false);
+    expect(isGlobalIpv4(new IPAddress('255.255.255.255'))).toBe(false);
+  });
+
   it('witness: global and non-global classification', () => {
     expect(isGlobalIpv4(new IPAddress('8.8.8.8'))).toBe(true);
     expect(isGlobalIpv4(new IPAddress('10.0.0.1'))).toBe(false);

@@ -9,6 +9,8 @@ import { isGlobalIpv4, type Nat64Prefix } from './Nat64Prefix';
 const IP_PROTO_TCP = 6;
 const IP_PROTO_UDP = 17;
 const DF = 0b010;
+const DF_LENGTH_THRESHOLD = 1260;
+const MTU_PLATEAUS = [65535, 32000, 17914, 8166, 4352, 2002, 1492, 1006, 508, 296, 68];
 const LOW_PORT_CEILING = 1024;
 const WELL_KNOWN_CEILING = 512;
 
@@ -68,10 +70,10 @@ export type Nat64DropReason =
   | 'no-binding' | 'filtered' | 'unsupported-icmp';
 
 const IPV6_MINIMUM_MTU = 1280;
-const IPV4_MINIMUM_MTU = 68;
 const HEADER_GROWTH = 20;
 const IPV6_HEADER_BYTES = 40;
 const ICMP_ERROR_HEADER_BYTES = 8;
+const IPV4_HEADER_BYTES = 20;
 
 interface ErrorMapping<T> { readonly type: T; readonly code: number; readonly pointer?: number }
 
@@ -82,8 +84,11 @@ const V4_UNREACHABLE_TO_V6: Readonly<Record<number, ErrorMapping<ICMPv6Type>>> =
   7: { type: 'destination-unreachable', code: 0 }, 8: { type: 'destination-unreachable', code: 0 },
   9: { type: 'destination-unreachable', code: 1 }, 10: { type: 'destination-unreachable', code: 1 },
   11: { type: 'destination-unreachable', code: 0 }, 12: { type: 'destination-unreachable', code: 0 },
-  13: { type: 'destination-unreachable', code: 1 },
+  13: { type: 'destination-unreachable', code: 1 }, 15: { type: 'destination-unreachable', code: 1 },
 };
+
+const V4_POINTER_TO_V6: Readonly<Record<number, number>> = { 0: 0, 1: 1, 2: 4, 3: 4, 8: 7, 9: 6, 12: 8, 13: 8, 14: 8, 15: 8, 16: 24, 17: 24, 18: 24, 19: 24 };
+const V6_POINTER_TO_V4: Readonly<Record<number, number>> = { 0: 0, 1: 1, 4: 2, 5: 2, 6: 9, 7: 8 };
 
 const V6_UNREACHABLE_TO_V4: Readonly<Record<number, number>> = { 0: 1, 1: 10, 2: 1, 3: 1, 4: 3 };
 
@@ -146,7 +151,8 @@ export class Nat64Translator {
     const v4Source = new IPAddress(binding.v4Address);
     const translated = this.translatePayload6to4(payload, binding.v4Port, destination.port);
     const out = createIPv4Packet(v4Source, remote, packet.nextHeader === IP_PROTO_ICMPV6 ? IP_PROTO_ICMP : packet.nextHeader,
-      packet.hopLimit, translated, packet.payloadLength, { tos: packet.trafficClass, flags: DF });
+      packet.hopLimit, translated, packet.payloadLength,
+      { tos: packet.trafficClass, flags: packet.payloadLength + IPV4_HEADER_BYTES > DF_LENGTH_THRESHOLD ? DF : 0 });
     out.payload = translated;
     recomputeL4Checksum(out);
     return { ok: true, packet: out };
@@ -340,9 +346,11 @@ export class Nat64Translator {
     const payload: ICMPPacket = {
       type: 'icmp', icmpType: mapped.type, code: mapped.code, id: 0, sequence: 0, dataSize: 0,
       originalPacket: original.packet, ...(mapped.mtu === undefined ? {} : { mtu: mapped.mtu }),
+      ...(mapped.pointer === undefined ? {} : { pointer: mapped.pointer }),
     };
     const out = createIPv4Packet(new IPAddress(original.binding.v4Address), remote, IP_PROTO_ICMP, packet.hopLimit, payload,
-      ICMP_ERROR_HEADER_BYTES + original.packet.totalLength, { tos: packet.trafficClass, flags: DF });
+      ICMP_ERROR_HEADER_BYTES + original.packet.totalLength,
+      { tos: packet.trafficClass, flags: ICMP_ERROR_HEADER_BYTES + original.packet.totalLength + IPV4_HEADER_BYTES > DF_LENGTH_THRESHOLD ? DF : 0 });
     return { ok: true, packet: out };
   }
 
@@ -363,9 +371,9 @@ export class Nat64Translator {
     return { ok: true, packet: out };
   }
 
-  private errorToV4(icmp: ICMPv6Packet): { type: ICMPType; code: number; mtu?: number } | null {
+  private errorToV4(icmp: ICMPv6Packet): { type: ICMPType; code: number; mtu?: number; pointer?: number } | null {
     if (icmp.icmpType === 'packet-too-big') {
-      return { type: 'destination-unreachable', code: 4, mtu: Math.max(IPV4_MINIMUM_MTU, (icmp.mtu ?? IPV6_MINIMUM_MTU) - HEADER_GROWTH) };
+      return { type: 'destination-unreachable', code: 4, mtu: (icmp.mtu ?? IPV6_MINIMUM_MTU) - HEADER_GROWTH };
     }
     if (icmp.icmpType === 'time-exceeded') return { type: 'time-exceeded', code: icmp.code };
     if (icmp.icmpType === 'destination-unreachable') {
@@ -373,16 +381,29 @@ export class Nat64Translator {
       return code === undefined ? null : { type: 'destination-unreachable', code };
     }
     if (icmp.icmpType === 'parameter-problem' && icmp.code === 1) return { type: 'destination-unreachable', code: 2 };
+    if (icmp.icmpType === 'parameter-problem' && icmp.code === 0) {
+      const pointer = V6_POINTER_TO_V4[icmp.pointer ?? -1];
+      return pointer === undefined ? null : { type: 'parameter-problem', code: 0, pointer };
+    }
     return null;
   }
 
   private errorToV6(icmp: ICMPPacket): { type: ICMPv6Type; code: number; mtu?: number; pointer?: number } | null {
     if (icmp.icmpType === 'time-exceeded') return { type: 'time-exceeded', code: icmp.code };
+    if (icmp.icmpType === 'parameter-problem') {
+      const pointer = V4_POINTER_TO_V6[icmp.pointer ?? -1];
+      return (icmp.code === 0 || icmp.code === 2) && pointer !== undefined ? { type: 'parameter-problem', code: 0, pointer } : null;
+    }
     if (icmp.icmpType !== 'destination-unreachable') return null;
     if (icmp.code === 4) {
-      return { type: 'packet-too-big', code: 0, mtu: Math.max(IPV6_MINIMUM_MTU, (icmp.mtu ?? IPV6_MINIMUM_MTU) + HEADER_GROWTH) };
+      const known = icmp.mtu !== undefined && icmp.mtu > 0 ? icmp.mtu : this.plateauBelow(icmp.originalPacket?.totalLength ?? 0);
+      return { type: 'packet-too-big', code: 0, mtu: Math.max(IPV6_MINIMUM_MTU, known + HEADER_GROWTH) };
     }
     return V4_UNREACHABLE_TO_V6[icmp.code] ?? null;
+  }
+
+  private plateauBelow(totalLength: number): number {
+    return MTU_PLATEAUS.find((plateau) => plateau < totalLength && plateau >= IPV6_MINIMUM_MTU) ?? IPV6_MINIMUM_MTU;
   }
 
   private embedded4to6(original: IPv4Packet): { packet: IPv6Packet; binding: Nat64Binding } | null {
@@ -415,7 +436,7 @@ export class Nat64Translator {
       : { ...inner, destinationPort: binding.v4Port };
     const packet = createIPv4Packet(remote, new IPAddress(binding.v4Address),
       invoking.nextHeader === IP_PROTO_ICMPV6 ? IP_PROTO_ICMP : invoking.nextHeader, invoking.hopLimit, payload,
-      invoking.payloadLength, { tos: invoking.trafficClass, flags: DF });
+      invoking.payloadLength, { tos: invoking.trafficClass, flags: invoking.payloadLength + IPV4_HEADER_BYTES > DF_LENGTH_THRESHOLD ? DF : 0 });
     recomputeL4Checksum(packet);
     return { packet, binding };
   }

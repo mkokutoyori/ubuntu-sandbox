@@ -9,10 +9,12 @@
  * ne peuvent pas diverger d'une implementation correcte : le paquet SYN traduit porte les adresses
  * IPv4 attendues et une somme TCP verifiee par recalcul independant.
  *
- * La RFC 7915 (traduction des en-tetes) ne fait pas partie de docs/rfc : la forme des en-tetes
- * (TOS, DF positionne, TTL, longueur, table des codes ICMP) vient de la memoire de l'auteur et le dit.
- * Les messages d'erreur ICMP sont traduits avec le paquet qu'ils citent ; limite : un paquet fragmente
- * ne l'est pas (la fragmentation IPv6 n'est pas modelisee par le plan de donnees).
+ * RFC 7915 (docs/rfc/nat/rfc7915.txt, telechargee depuis le depot Ubuntu doc-rfc-std-proposed) : sections 4.1
+ * et 5.1 pour les en-tetes (TOS/classe de trafic copies, DF a zero jusqu'a 1260 octets, TTL/limite de
+ * saut conserve : le routeur decremente), 4.2 et 5.2 pour les tables de codes ICMP et de pointeurs.
+ * Limite : un paquet fragmente ne l'est pas (la fragmentation IPv6 n'est pas modelisee par le plan
+ * de donnees) ; les MTU des prochains sauts (min(...) des sections 4.2/5.2) ne sont pas disponibles
+ * au niveau du traducteur.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -78,7 +80,7 @@ describe('RFC 6146 section 3.5: the translation of a TCP connection', () => {
     expect(out.protocol).toBe(6);
     expect(out.ttl).toBe(64);
     expect(out.tos).toBe(0x2e);
-    expect(out.flags & 0b010).toBe(0b010);
+    expect(out.flags & 0b010).toBe(0);
     const segment = out.payload as unknown as TcpSegment;
     expect(segment.sourcePort).toBe(49152);
     expect(segment.destinationPort).toBe(80);
@@ -307,5 +309,38 @@ describe('RFC 6146 / 7915 : error messages cross the translator with the packet 
       { type: 'icmpv6', icmpType: 'destination-unreachable', code, invokingPacket: fromServer }, 56);
     expect(unwrap(translator.translate6to4(error(3))).payload).toMatchObject({ icmpType: 'destination-unreachable', code: 1 });
     expect(unwrap(translator.translate6to4(error(4))).payload).toMatchObject({ icmpType: 'destination-unreachable', code: 3 });
+  });
+
+  it('RFC 7915 section 5.1: DF is clear up to 1260 bytes and set above', () => {
+    const { translator } = lab();
+    const small = unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    expect(small.flags & 0b010).toBe(0);
+    const datagram: UDPPacket = { type: 'udp', sourcePort: 40001, destinationPort: 53, length: 1300, checksum: 0, payload: null };
+    const big = unwrap(translator.translate6to4(createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), 17, 64, datagram, 1300)));
+    expect(big.flags & 0b010).toBe(0b010);
+  });
+
+  it('RFC 7915 section 4.2: code 15 maps to administratively prohibited, and a zero MTU uses the plateau table', () => {
+    const { translator } = lab();
+    const forward = sent(translator);
+    expect(unwrap(translator.translate4to6(icmpError4(forward, 'destination-unreachable', 15))).payload)
+      .toMatchObject({ icmpType: 'destination-unreachable', code: 1 });
+    const longQuote = { ...forward, totalLength: 3000 };
+    const plateau = unwrap(translator.translate4to6(icmpError4(longQuote, 'destination-unreachable', 4, 0)));
+    expect(plateau.payload).toMatchObject({ icmpType: 'packet-too-big', mtu: 2002 + 20 });
+  });
+
+  it('RFC 7915 sections 4.2 and 5.2: parameter problems carry their pointer across, and drop when it has no counterpart', () => {
+    const { translator } = lab();
+    const forward = sent(translator);
+    const v4 = (pointer: number) => createIPv4Packet(new IPAddress(SERVER), new IPAddress(POOL), IP_PROTO_ICMP, 60,
+      { type: 'icmp', icmpType: 'parameter-problem', code: 0, id: 0, sequence: 0, dataSize: 0, pointer, originalPacket: forward }, 8 + forward.totalLength);
+    expect(unwrap(translator.translate4to6(v4(8))).payload).toMatchObject({ icmpType: 'parameter-problem', code: 0, pointer: 7 });
+    expect(translator.translate4to6(v4(4))).toEqual({ ok: false, reason: 'unsupported-icmp' });
+    const fromServer = unwrap(translator.translate4to6(udp4(SERVER, POOL, 53, 40000)));
+    const v6 = (pointer: number) => createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), IP_PROTO_ICMPV6, 64,
+      { type: 'icmpv6', icmpType: 'parameter-problem', code: 0, pointer, invokingPacket: fromServer }, 56);
+    expect(unwrap(translator.translate6to4(v6(7))).payload).toMatchObject({ icmpType: 'parameter-problem', code: 0, pointer: 8 });
+    expect(translator.translate6to4(v6(2))).toEqual({ ok: false, reason: 'unsupported-icmp' });
   });
 });

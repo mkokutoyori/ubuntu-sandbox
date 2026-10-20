@@ -1080,6 +1080,7 @@ export type ICMPType =
   | 'destination-unreachable'  // Type 3
   | 'redirect'                 // Type 5
   | 'time-exceeded'            // Type 11
+  | 'parameter-problem'        // Type 12
   | 'timestamp-request'        // Type 13
   | 'timestamp-reply';         // Type 14
 
@@ -1089,6 +1090,7 @@ const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
   redirect: 5,
   'echo-request': 8,
   'time-exceeded': 11,
+  'parameter-problem': 12,
   'timestamp-request': 13,
   'timestamp-reply': 14,
 };
@@ -1127,6 +1129,8 @@ export interface ICMPPacket extends NetworkPdu {
    * and Don't Fragment was Set) per RFC 1191 §4.
    */
   mtu?: number;
+  /** Offset of the offending octet in the quoted header, Parameter Problem (RFC 792). */
+  pointer?: number;
   /** Originate, receive and transmit times of types 13/14, in ms since midnight UTC (RFC 792). */
   timestamps?: { originate: number; receive: number; transmit: number };
   /**
