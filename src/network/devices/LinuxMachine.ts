@@ -1611,6 +1611,13 @@ export abstract class LinuxMachine extends EndHost
         this.ensureLocalConsoleSession();
         return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
       },
+      writeTerminal: (tty, text) => {
+        const path = `/dev/${tty}`;
+        const node = vfs.resolveInode(path);
+        if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
+        if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
+        this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
+      },
       resolveAddresses: (name) => executor.resolveHostAddresses(name),
       reverseName: (address) => reverseNameOf(executor.nss, address),
       servicePort: (name, protocol) => executor.resolveServicePort(name, protocol),
@@ -1626,7 +1633,7 @@ export abstract class LinuxMachine extends EndHost
       isAlive: (pid) => executor.processMgr.get(pid) !== undefined,
       daemonPid: mainPid,
       ipv6Enabled: () => true,
-      submitLibcSyslog: (priority, message) => { executor.logMgr.logAt(String(priority), 'rsyslogd', message, mainPid()); },
+      submitLibcSyslog: (priority, message) => { executor.logMgr.submitLibcSyslog(priority, 'rsyslogd', mainPid(), message, timers.now()); },
       setConsoleLogLevel: (level) => { executor.logMgr.consoleLogLevel = level; return null; },
       restoreConsoleLogLevel: () => { executor.logMgr.consoleLogLevel = 4; },
     });

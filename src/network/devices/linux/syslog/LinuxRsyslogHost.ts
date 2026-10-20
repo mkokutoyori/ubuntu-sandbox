@@ -57,6 +57,7 @@ export interface LinuxRsyslogPlatform {
   gidOf(name: string): number | null;
   userExists(name: string): boolean;
   terminals(): { user: string; tty: string }[];
+  writeTerminal(tty: string, text: string): void;
   resolveAddresses(name: string): string[];
   reverseName(address: string): string | null;
   servicePort(name: string, protocol: 'tcp' | 'udp'): number | null;
@@ -234,7 +235,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
   };
 
   private terminalSink(tty: string): TerminalSink {
-    return { write: (text: string) => { this.platform.vfs.writeFile(`/dev/${tty}`, text, 0, 0, 0o022, true); } };
+    return { write: (text: string) => this.platform.writeTerminal(tty, text) };
   }
 
   readonly network = {

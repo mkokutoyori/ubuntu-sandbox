@@ -137,7 +137,7 @@ import { runAugenrules } from './audit/tools/AugenrulesTool';
 import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import {
-  STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
+  STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath, shippedCommandAt,
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts, type KernelIpFactsSource } from './LinuxIpv4Settings';
@@ -4335,6 +4335,7 @@ export class LinuxCommandExecutor {
     if (!cmd.startsWith('./') && !cmd.startsWith('/')) return null;
     const absPath = this.vfs.normalizePath(cmd, this.cwd);
     if (!this.vfs.exists(absPath)) return null;
+    if (this.shippedBinaryInvocation([cmd])[0] !== cmd) return null;
     // Le préambule de `dispatch()` émet l'`execve` — c'est lui que lit une
     // règle `auditctl -w <script> -p x`. Router ce script vers le jumeau
     // async faisait sauter ce préambule, donc la règle ne voyait plus rien
@@ -4349,6 +4350,13 @@ export class LinuxCommandExecutor {
     const commandLine = ['/bin/bash', absPath, ...args].join(' ');
     return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
       runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+  }
+
+  private shippedBinaryInvocation(argv: string[]): string[] {
+    if (!argv[0].startsWith('/')) return argv;
+    const path = this.vfs.normalizePath(argv[0], this.cwd);
+    const command = shippedCommandAt(path, this.vfs.readFile(path));
+    return command === null ? argv : [command, ...argv.slice(1)];
   }
 
   private dispatchFromInterpreter(
@@ -4374,6 +4382,7 @@ export class LinuxCommandExecutor {
       this.cwd = env['PWD'];
     }
     if (argv.length === 0) return { output: '', exitCode: 0 };
+    argv = this.shippedBinaryInvocation(argv);
     if (background) {
       const spawned = this.spawnBackgroundJob(argv.join(' '), false);
       if (!spawned) return { output: '', exitCode: 0 };

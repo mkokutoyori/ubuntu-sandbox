@@ -187,6 +187,11 @@ export interface MountChangedPayload extends LinuxDeviceRef {
 }
 
 /** A packet was dropped by netfilter (iptables/ip6tables). */
+export interface TtyWrittenPayload extends LinuxDeviceRef {
+  tty: string;
+  text: string;
+}
+
 export interface FirewallDropPayload extends LinuxDeviceRef {
   hostname: string;
   inIface?: string;
@@ -228,4 +233,5 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.syscall.invoked'; payload: SyscallInvokedPayload }
   | { topic: 'linux.mount.mounted'; payload: MountChangedPayload }
   | { topic: 'linux.mount.unmounted'; payload: MountChangedPayload }
-  | { topic: 'linux.firewall.drop'; payload: FirewallDropPayload };
+  | { topic: 'linux.firewall.drop'; payload: FirewallDropPayload }
+  | { topic: 'linux.tty.written'; payload: TtyWrittenPayload };

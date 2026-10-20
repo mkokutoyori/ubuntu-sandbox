@@ -194,6 +194,19 @@ export class LinuxLogManager {
     return true;
   }
 
+  submitLibcSyslog(priority: number, ident: string, pid: number, message: string, atMs: number): void {
+    this.addEntry({
+      priority: priority & 7,
+      facility: priority >> 3,
+      unit: '',
+      tag: ident,
+      message,
+      pid,
+      displayPid: false,
+      hostname: this.currentHostname(),
+    }, atMs);
+  }
+
   /**
    * Append an authentication-facility record — the bridge the IAM layer uses
    * to keep `/var/log/auth.log` (and the journal) coherent with account

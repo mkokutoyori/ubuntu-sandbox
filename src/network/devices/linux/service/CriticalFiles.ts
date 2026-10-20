@@ -212,6 +212,19 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   a2enmod: '/usr/sbin/a2enmod', a2dismod: '/usr/sbin/a2dismod',
 };
 
+const COMMAND_AT_PATH: ReadonlyMap<string, string> = new Map(
+  Object.entries(STANDARD_BIN_PATHS).map(([name, path]) => [canonicalBinPath(path), name]),
+);
+
+const SHIPPED_STUB_CONTENTS: ReadonlySet<string> = new Set(['#!/bin/sh\n']);
+
+export function shippedCommandAt(path: string, content: string | null): string | null {
+  if (content === null) return null;
+  const marked = /^#!\/bin\/bash\n# (\S+) binary stub\n$/.exec(content);
+  if (marked !== null) return marked[1];
+  return SHIPPED_STUB_CONTENTS.has(content) ? COMMAND_AT_PATH.get(canonicalBinPath(path)) ?? null : null;
+}
+
 export function resolveExePath(name: string): string {
   if (name.startsWith('/')) return name;
   return STANDARD_BIN_PATHS[name] ?? `/usr/bin/${name}`;
