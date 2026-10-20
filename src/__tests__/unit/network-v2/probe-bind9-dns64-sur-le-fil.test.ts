@@ -9,9 +9,14 @@
  * recursive via un redirecteur (le serveur du lab est un VRAI second named, les deux echanges
  * traversent le commutateur).
  *
- * Avec src remis a la version precedente, 5 cas sur 7 tombent. Deux passent dans les deux etats : le
- * temoin (sans option dns64, un AAAA sur un nom a enregistrement A seul est une reponse vide
- * NOERROR) et recursive-only, que l'absence de synthese satisfait aussi. `suffix` : la RFC 6052 §2.2 garde les bits
+ * PTR (RFC 6147 §5.3.1, deuxieme option) : une requete inverse sous le prefixe recoit un CNAME vers
+ * le nom in-addr.arpa de l'adresse IPv4 puis le PTR de celui-ci, resolu par le redirecteur ; hors
+ * du prefixe rien ne change.
+ *
+ * Avec src remis avant l'option dns64, 7 cas sur 9 tombent (named refuse la configuration, donc ne repond
+ * plus du tout au cas « hors prefixe » non plus) ; deux passent dans les deux etats : le temoin (sans
+ * option dns64, un AAAA sur un nom a enregistrement A seul est une reponse vide NOERROR) et
+ * recursive-only, que l'absence de synthese satisfait aussi. `suffix` : la RFC 6052 §2.2 garde les bits
  * du suffixe a zero ; une valeur non nulle est refusee, pas rangee sans effet. `clients` ne sait
  * decrire que des reseaux IPv4 (le meme defaut que toutes les ACL de ce serveur) : `any` et les ACL
  * nommees en sont la forme utile.
@@ -27,6 +32,7 @@ import { Logger } from '@/network/core/Logger';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
+import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
@@ -69,27 +75,41 @@ async function buildLab(ns1Options: string): Promise<{ pc: LinuxPC; ns1: LinuxSe
     'zone "local.test" { type primary; file "/etc/bind/db.local.test"; };', '',
   ].join('\n'));
   writeRoot(ns1, '/etc/bind/db.local.test', LOCAL_ZONE);
-  writeRoot(ns2, '/etc/bind/named.conf',
-    'options { recursion no; };\nzone "example.org" { type primary; file "/etc/bind/db.example.org"; };\n');
+  writeRoot(ns2, '/etc/bind/named.conf', [
+    'options { recursion no; };',
+    'zone "example.org" { type primary; file "/etc/bind/db.example.org"; };',
+    'zone "8.8.in-addr.arpa" { type primary; file "/etc/bind/db.8.8"; };', '',
+  ].join('\n'));
   writeRoot(ns2, '/etc/bind/db.example.org', ORG_ZONE);
+  writeRoot(ns2, '/etc/bind/db.8.8', [
+    '$ORIGIN 8.8.in-addr.arpa.', '$TTL 3600',
+    '@ IN SOA ns2.example.org. admin.example.org. ( 1 3600 900 604800 300 )',
+    '  IN NS  ns2.example.org.',
+    '4.4 IN PTR www.example.org.', '',
+  ].join('\n'));
   await ns1.executeCommand('systemctl start named');
   await ns2.executeCommand('systemctl start named');
   return { pc, ns1 };
 }
 
 let nextId = 1;
-function aaaa(from: LinuxPC, qname: string, options: { rd?: boolean; cd?: boolean } = {}): Promise<DnsMessage | null> {
+function ask(
+  from: LinuxPC, qname: string, qtype: number, options: { rd?: boolean; cd?: boolean } = {},
+): Promise<DnsMessage | null> {
   const query: DnsMessage = {
     id: nextId++,
     flags: {
       qr: false, opcode: DnsOpcode.QUERY, aa: false, tc: false,
       rd: options.rd ?? true, ra: false, ad: false, cd: options.cd ?? false, rcode: DnsRcode.NOERROR,
     },
-    questions: [{ qname, qtype: RRType.AAAA, qclass: DnsClass.IN }],
+    questions: [{ qname, qtype, qclass: DnsClass.IN }],
     answers: [], authorities: [], additionals: [],
   };
   return queryDnsOverUdp(from, new IPAddress(NS1_IP), query, 53, 600);
 }
+
+const aaaa = (from: LinuxPC, qname: string, options: { rd?: boolean; cd?: boolean } = {}) =>
+  ask(from, qname, RRType.AAAA, options);
 
 const addresses = (message: DnsMessage | null): string[] =>
   (message?.answers ?? []).filter((rr) => rr.data.type === RRType.AAAA)
@@ -142,5 +162,19 @@ describe('named dns64', () => {
   it('refuses a non-zero suffix instead of storing it without effect', async () => {
     const { ns1 } = await buildLab(`${BASE}\n  dns64 2001:db8::/32 { suffix ::1; };`);
     expect(await ns1.executeCommand('named-checkconf /etc/bind/named.conf')).toContain('suffix');
+  }, 30000);
+
+  it('answers a reverse query under the prefix with a CNAME to the IPv4 reverse name and its PTR (RFC 6147 section 5.3.1)', async () => {
+    const { pc } = await buildLab(`${BASE}\n${DNS64}`);
+    const answer = await ask(pc, ptrQName('64:ff9b::808:404'), RRType.PTR);
+    expect(answer!.answers.map((rr) => rr.data.type)).toEqual([RRType.CNAME, RRType.PTR]);
+    expect(answer!.answers[0].data).toMatchObject({ cname: '4.4.8.8.in-addr.arpa' });
+    expect(answer!.answers[1].data).toMatchObject({ ptrdname: 'www.example.org' });
+  }, 30000);
+
+  it('does not touch a reverse query outside the prefix', async () => {
+    const { pc } = await buildLab(`${BASE}\n${DNS64}`);
+    const answer = await ask(pc, ptrQName('2001:db8::1'), RRType.PTR);
+    expect(answer!.answers.map((rr) => rr.data.type)).not.toContain(RRType.CNAME);
   }, 30000);
 });

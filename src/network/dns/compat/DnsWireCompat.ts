@@ -118,6 +118,16 @@ export function ptrQName(target: string): string {
   return target;
 }
 
+export function ipv6FromPtrName(name: string): IPv6Address | null {
+  const labels = name.toLowerCase().replace(/\.$/, '').split('.');
+  if (labels.length !== 34 || labels[32] !== 'ip6' || labels[33] !== 'arpa') return null;
+  const nibbles = labels.slice(0, 32).reverse();
+  if (!nibbles.every((nibble) => /^[0-9a-f]$/.test(nibble))) return null;
+  const hextets: number[] = [];
+  for (let i = 0; i < 32; i += 4) hextets.push(parseInt(nibbles.slice(i, i + 4).join(''), 16));
+  return new IPv6Address(hextets);
+}
+
 const TXT_CHARACTER_STRING_MAX = 255;
 
 function legacySoaToResourceRecord(record: DnsRecord): ResourceRecord | null {

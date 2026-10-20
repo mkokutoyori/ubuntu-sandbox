@@ -1,6 +1,7 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { ipv6MatchesPrefix } from '@/network/core/RoutingTable';
 import { RRType } from '@/network/dns/wire/RRType';
+import { ipv6FromPtrName } from '@/network/dns/compat/DnsWireCompat';
 import {
   makeAaaaRecord,
   type ResourceRecord,
@@ -106,4 +107,15 @@ export async function applyDns64(
     fromCache: aResult.fromCache,
     security: undefined,
   };
+}
+
+export function dns64ReverseTarget(rules: readonly Dns64Rule[], client: string, qname: string): string | null {
+  const address = ipv6FromPtrName(qname);
+  if (address === null) return null;
+  for (const rule of rules) {
+    if (!rule.clients(client)) continue;
+    const embedded = rule.prefix.extract(address);
+    if (embedded !== null) return `${embedded.getOctets().reverse().join('.')}.in-addr.arpa`;
+  }
+  return null;
 }
