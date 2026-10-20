@@ -163,7 +163,7 @@ describe('Scénario 4 (Cisco) — redirection de port (port forwarding) vers les
 
       const out = await router.executeCommand('show ip nat statistics');
       expect(out).toMatch(/Total active translations:\s*\d+\s*\(5 static,\s*\d+ dynamic/);
-      expect(out).toContain('Inside Source [acl 1] overload');
+      expect(out).toMatch(/-- Inside Source\n\[Id: 1\] access-list 1 interface \S+ refcount \d+/);
     });
 
     it('show ip nat statistics rapporte 5 traductions statiques ("port forward entries")', async () => {

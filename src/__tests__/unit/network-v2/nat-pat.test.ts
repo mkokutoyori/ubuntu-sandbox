@@ -728,14 +728,14 @@ describe('Group 9: TCP NAT/PAT', () => {
     engine.setACLMatchFn(() => true);
   });
 
-  it('9.1 TCP PAT — sourceIP and sourcePort are rewritten', () => {
+  it('9.1 TCP PAT — sourceIP is rewritten and a free source port is preserved', () => {
     engine.addDynamicRule({ aclId: '1', type: 'overload' });
     const pkt = makeTCPPacket('192.168.1.10', '8.8.8.8', 4321, 80, { syn: true });
     const out = engine.translateOutbound(pkt, 'outside', 'inside');
     expect(out).not.toBeNull();
     expect(out!.sourceIP.toString()).toBe('203.0.113.1');
     const tcp = out!.payload as TCPPacket;
-    expect(tcp.sourcePort).not.toBe(4321);
+    expect(tcp.sourcePort).toBe(4321);
   });
 
   it('9.2 TCP PAT — reply is reverse-translated (DNAT)', () => {

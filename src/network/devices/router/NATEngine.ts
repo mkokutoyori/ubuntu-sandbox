@@ -161,7 +161,7 @@ export interface NatTranslationEntry {
 // ─── NATEngine ───────────────────────────────────────────────────────────────
 
 /** Lower bound of the PAT ephemeral range (Cisco IOS overload default). */
-const NAT_EPHEMERAL_MIN = 10240;
+const NAT_EPHEMERAL_MIN = 1024;
 
 export class NATEngine {
   private insideIfaces = new Set<string>();
@@ -656,7 +656,7 @@ export class NATEngine {
 
         if (!session) {
           if (!this.mayCreateSession(srcIP)) continue;
-          const globalPort = this.allocatePort(proto, globalIP);
+          const globalPort = this.allocatePort(proto, globalIP, srcPort);
           if (globalPort === null) continue; // ephemeral range exhausted
           session = {
             protocol: proto,
@@ -733,7 +733,7 @@ export class NATEngine {
             // covers the case where no rule at all can translate the packet.
             continue;
           }
-          const poolPort = rule.overload ? this.allocatePort(proto, poolIP) : srcPort;
+          const poolPort = rule.overload ? this.allocatePort(proto, poolIP, srcPort) : srcPort;
           if (poolPort === null) continue;
           session = {
             protocol: proto,
@@ -1174,13 +1174,28 @@ export class NATEngine {
     return null;
   }
 
-  private allocatePort(proto: number, globalIP: string): number | null {
+  private portUnavailable(proto: number, globalIP: string, port: number): boolean {
+    if (this.reverseSessions.has(makeKey(proto, globalIP, port))) return true;
+    return this.staticEntries.some((e) => e.protocol !== undefined && e.globalIP === globalIP
+      && e.globalPort === port && (e.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP) === proto);
+  }
+
+  private allocatePort(proto: number, globalIP: string, preferred?: number): number | null {
+    if (preferred !== undefined && preferred >= 1 && preferred <= this.maxPort) {
+      if (!this.portUnavailable(proto, globalIP, preferred)) return preferred;
+      if (preferred < NAT_EPHEMERAL_MIN) {
+        const [low, high] = preferred < 512 ? [1, 511] : [512, NAT_EPHEMERAL_MIN - 1];
+        for (let port = low; port <= high; port++) {
+          if (!this.portUnavailable(proto, globalIP, port)) return port;
+        }
+      }
+    }
     const span = this.maxPort - NAT_EPHEMERAL_MIN + 1;
     for (let i = 0; i < span; i++) {
       const candidate = this.nextPort;
       this.nextPort = (this.nextPort >= this.maxPort)
         ? NAT_EPHEMERAL_MIN : this.nextPort + 1;
-      if (!this.reverseSessions.has(makeKey(proto, globalIP, candidate))) {
+      if (!this.portUnavailable(proto, globalIP, candidate)) {
         return candidate;
       }
     }

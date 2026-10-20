@@ -187,7 +187,7 @@ describe('Scénario 1 (Cisco) — PAT (NAT Overload) sur le LAN Mandeng', () => 
     it('show ip nat statistics référence bien la règle dynamique liée à ACL-LAN-INTERNE et GigabitEthernet0/1', async () => {
       const { router } = await buildLab();
       const out = await router.executeCommand('show ip nat statistics');
-      expect(out).toMatch(/Inside Source \[acl ACL-LAN-INTERNE\] overload/);
+      expect(out).toMatch(/-- Inside Source\n\[Id: 1\] access-list ACL-LAN-INTERNE interface GigabitEthernet0\/1 refcount \d+/);
     });
   });
 
@@ -219,12 +219,12 @@ describe('Scénario 1 (Cisco) — PAT (NAT Overload) sur le LAN Mandeng', () => 
       expect(new Set(externalKeys).size).toBe(externalKeys.length);
     });
 
-    it('tous les ports "Inside global" attribués par PAT restent dans la plage 1024-65535', async () => {
+    it('un port source éphémère (1024 et au-delà) reste dans la plage 1024-65535 une fois traduit', async () => {
       const lab = await buildLab();
       await lab.pcLinux1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
       await lab.pcLinux2.executeCommand(`nc -zv ${OUTSIDE_IP} 80`);
       const table = await lab.router.executeCommand('show ip nat translations');
-      for (const e of parseNatTable(table)) {
+      for (const e of parseNatTable(table).filter(x => x.insideLocalPort >= 1024)) {
         expect(e.insideGlobalPort).toBeGreaterThanOrEqual(1024);
         expect(e.insideGlobalPort).toBeLessThanOrEqual(65535);
       }
