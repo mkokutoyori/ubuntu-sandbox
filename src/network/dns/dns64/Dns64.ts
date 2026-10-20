@@ -25,12 +25,15 @@ export interface Dns64Rule {
   readonly clients: (client: string) => boolean;
   readonly mapped: (address: IPAddress) => boolean;
   readonly exclude: readonly Ipv6Range[];
+  readonly recursiveOnly: boolean;
+  readonly breakDnssec: boolean;
 }
 
 export interface Dns64Query {
   readonly client: string;
   readonly checkingDisabled: boolean;
   readonly dnssecOk: boolean;
+  readonly recursionDesired: boolean;
 }
 
 export type Dns64Lookup = (qname: string, qtype: number) => Promise<ResolutionResult>;
@@ -62,6 +65,7 @@ export async function applyDns64(
   const rule = selectDns64Rule(rules, query.client);
   if (rule === null) return aaaaResult;
   if (query.checkingDisabled && query.dnssecOk) return aaaaResult;
+  if (rule.recursiveOnly && !query.recursionDesired) return aaaaResult;
   if (aaaaResult.status === 'NXDOMAIN') return aaaaResult;
 
   const real = aaaaResult.status === 'NOERROR'
@@ -70,6 +74,9 @@ export async function applyDns64(
       return address === null || !isExcluded(address, rule.exclude);
     })
     : [];
+  if (query.dnssecOk && !query.checkingDisabled && !rule.breakDnssec && aaaaResult.security === 'secure') {
+    return aaaaResult;
+  }
   if (real.some((rr) => rr.data.type === RRType.AAAA)) {
     return { ...aaaaResult, answers: real };
   }

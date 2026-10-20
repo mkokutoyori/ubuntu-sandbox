@@ -5,6 +5,9 @@ import type { NamedConfStatement } from './NamedConfParser';
 import { parseUpdatePolicyRule, type UpdatePolicyRule } from './NamedUpdatePolicy';
 import { makeDsRecord, makeDnskeyRecord } from '@/network/dns/wire/ResourceRecord';
 import type { ResourceRecord, DsRecordData } from '@/network/dns/wire/ResourceRecord';
+import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
+import { DEFAULT_DNS64_EXCLUDE, type Ipv6Range } from '@/network/dns/dns64/Dns64';
+import { IPv6Address } from '@/network/core/types';
 import { dsDigestOf, keyTagOf as keyTagOfAnchor, DnssecDigestType } from '@/network/dns/dnssec/DnsKey';
 
 export { NamedConfigError } from './NamedConfigError';
@@ -13,7 +16,17 @@ export type DnssecValidationMode = 'auto' | 'yes' | 'no';
 export type ForwardMode = 'first' | 'only';
 export type ZoneType = 'primary' | 'secondary' | 'forward' | 'hint';
 
+export interface NamedDns64 {
+  readonly prefix: Nat64Prefix;
+  readonly clients: AddressMatchList;
+  readonly mapped: AddressMatchList;
+  readonly exclude: readonly Ipv6Range[];
+  readonly recursiveOnly: boolean;
+  readonly breakDnssec: boolean;
+}
+
 export interface NamedOptions {
+  readonly dns64: readonly NamedDns64[];
   readonly directory: string;
   readonly recursion: boolean;
   readonly queryLog: boolean;
@@ -135,6 +148,7 @@ function normalizeZoneName(name: string): string {
 }
 
 interface MutableOptions {
+  dns64: NamedDns64[];
   directory: string;
   recursion: boolean;
   queryLog: boolean;
@@ -151,6 +165,7 @@ interface MutableOptions {
 
 function defaultOptions(): MutableOptions {
   return {
+    dns64: [],
     directory: DEFAULT_DIRECTORY,
     recursion: true,
     queryLog: false,
@@ -221,6 +236,9 @@ function parseOptions(
         }
         options.dnssecValidation = args[0];
         break;
+      case 'dns64':
+        options.dns64.push(parseDns64(entry, acls));
+        break;
       case 'allow-query':
         options.allowQuery = AddressMatchList.fromStatements(requireBlock(entry), acls);
         break;
@@ -234,6 +252,60 @@ function parseOptions(
         fail(entry, `unknown option '${keyword}'`);
     }
   }
+}
+
+function parseDns64(
+  statement: NamedConfStatement, acls: ReadonlyMap<string, AddressMatchList>,
+): NamedDns64 {
+  const args = argsOf(statement);
+  let prefix: Nat64Prefix;
+  try {
+    prefix = Nat64Prefix.parse(args[0] ?? '');
+  } catch (error) {
+    return fail(statement, (error as Error).message);
+  }
+  let clients = AddressMatchList.any();
+  let mapped = AddressMatchList.any();
+  let exclude: readonly Ipv6Range[] = DEFAULT_DNS64_EXCLUDE;
+  let recursiveOnly = true;
+  let breakDnssec = false;
+  for (const entry of statement.block ?? []) {
+    switch (keywordOf(entry)) {
+      case 'clients':
+        clients = AddressMatchList.fromStatements(requireBlock(entry), acls);
+        break;
+      case 'mapped':
+        mapped = AddressMatchList.fromStatements(requireBlock(entry), acls);
+        break;
+      case 'exclude':
+        exclude = requireBlock(entry).flatMap((item): Ipv6Range[] => {
+          const text = keywordOf(item);
+          if (text === 'none') return [];
+          const [address, length] = text.split('/');
+          const network = IPv6Address.tryParse(address);
+          const bits = Number(length);
+          if (network === null || !Number.isInteger(bits) || bits < 0 || bits > 128) {
+            return fail(item, `expected IPv6 prefix near '${text}'`);
+          }
+          return [{ network, length: bits }];
+        });
+        break;
+      case 'recursive-only':
+        recursiveOnly = parseBoolean(entry);
+        break;
+      case 'break-dnssec':
+        breakDnssec = parseBoolean(entry);
+        break;
+      case 'suffix': {
+        const value = argsOf(entry)[0] ?? '';
+        if (value !== '::') fail(entry, `dns64 suffix '${value}' is not supported: RFC 6052 section 2.2 keeps the suffix bits zero`);
+        break;
+      }
+      default:
+        fail(entry, `unknown dns64 option '${keywordOf(entry)}'`);
+    }
+  }
+  return { prefix, clients, mapped, exclude, recursiveOnly, breakDnssec };
 }
 
 interface ZoneDraft {

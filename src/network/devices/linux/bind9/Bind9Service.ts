@@ -25,6 +25,9 @@ import {
 import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
+import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
+import { applyDns64 } from '@/network/dns/dns64/Dns64';
+import type { ResolutionResult } from '@/network/dns/resolver/RecursiveResolver';
 import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
 import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { updatePolicyPermits } from './NamedUpdatePolicy';
@@ -452,6 +455,66 @@ export class Bind9Service {
     this.answerQuery(query, 'tcp', sourceIP, sourcePort, raw);
 
   private answerQuery(
+    query: DnsMessage,
+    transport: 'udp' | 'tcp',
+    sourceIP?: IPAddress,
+    sourcePort?: number,
+    raw?: Uint8Array,
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
+    const answer = this.answerQueryBeforeDns64(query, transport, sourceIP, sourcePort, raw);
+    const question = query.questions[0];
+    if (!this.config?.options.dns64.length || Array.isArray(answer)
+      || question?.qtype !== RRType.AAAA || isNotify(query) || isUpdateMessage(query)) {
+      return answer;
+    }
+    const client = sourceIP?.toString() ?? LOOPBACK;
+    return Promise.resolve(answer).then((response) => this.synthesizeAaaa(query, response, client));
+  }
+
+  private async synthesizeAaaa(query: DnsMessage, response: DnsMessage, client: string): Promise<DnsMessage> {
+    const config = this.config!;
+    const env = this.aclEnvironment();
+    const rules = config.options.dns64.map((statement) => ({
+      prefix: statement.prefix,
+      clients: (address: string) => statement.clients.matches(address, env),
+      mapped: (address: IPAddress) => statement.mapped.matches(address.toString(), env),
+      exclude: statement.exclude,
+      recursiveOnly: statement.recursiveOnly,
+      breakDnssec: statement.breakDnssec,
+    }));
+    const question = query.questions[0];
+    const toResult = (message: DnsMessage): ResolutionResult => ({
+      status: message.flags.rcode === DnsRcode.NOERROR ? 'NOERROR'
+        : message.flags.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'SERVFAIL',
+      answers: message.answers,
+      authorities: message.authorities,
+      fromCache: false,
+      ...(message.flags.ad ? { security: 'secure' as const } : {}),
+    });
+    const lookup = async (qname: string, qtype: number): Promise<ResolutionResult> => {
+      const aQuery: DnsMessage = { ...query, questions: [{ ...question, qname, qtype }] };
+      const answered = await this.answerQueryBeforeDns64(aQuery, 'udp', IPAddress.tryParse(client) ?? undefined);
+      return toResult(Array.isArray(answered) ? answered[0] : answered);
+    };
+    const original = toResult(response);
+    const result = await applyDns64(rules, {
+      client,
+      checkingDisabled: query.flags.cd,
+      dnssecOk: findOpt(query)?.data.dnssecOk === true,
+      recursionDesired: query.flags.rd,
+    }, question.qname, original, lookup);
+    if (result === original) return response;
+    const rcode = result.status === 'NOERROR' ? DnsRcode.NOERROR
+      : result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.SERVFAIL;
+    return {
+      ...response,
+      flags: { ...response.flags, rcode, ad: false },
+      answers: [...result.answers],
+      authorities: [...(result.authorities ?? response.authorities)],
+    };
+  }
+
+  private answerQueryBeforeDns64(
     query: DnsMessage,
     transport: 'udp' | 'tcp',
     sourceIP?: IPAddress,

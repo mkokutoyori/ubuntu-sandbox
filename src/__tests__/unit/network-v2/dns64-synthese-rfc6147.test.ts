@@ -19,9 +19,10 @@ const noerror = (answers: ResolutionResult['answers'], authorities?: ResolutionR
 const empty = noerror([]);
 
 const rule = (overrides: Partial<Dns64Rule> = {}): Dns64Rule => ({
-  prefix: Nat64Prefix.wellKnownPrefix(), clients: () => true, mapped: () => true, exclude: DEFAULT_DNS64_EXCLUDE, ...overrides,
+  prefix: Nat64Prefix.wellKnownPrefix(), clients: () => true, mapped: () => true, exclude: DEFAULT_DNS64_EXCLUDE,
+  recursiveOnly: true, breakDnssec: false, ...overrides,
 });
-const query = { client: '10.0.0.5', checkingDisabled: false, dnssecOk: false };
+const query = { client: '10.0.0.5', checkingDisabled: false, dnssecOk: false, recursionDesired: true };
 const looking = (answers: Record<number, ResolutionResult>) => async (_n: string, t: number) => answers[t] ?? empty;
 
 describe('RFC 6147 section 5.1: when to synthesize', () => {
@@ -112,5 +113,21 @@ describe('RFC 6147 section 5.1: when to synthesize', () => {
     const result = await applyDns64([rule()], { ...query, checkingDisabled: true, dnssecOk: true }, 'www.example.org', empty,
       looking({ [RRType.A]: noerror([makeARecord('www.example.org', 300, '8.8.4.4')]) }));
     expect(result.answers).toEqual([]);
+  });
+
+  it('recursive-only: a query without RD is not synthesized, unless the rule says otherwise', async () => {
+    const a = looking({ [RRType.A]: noerror([makeARecord('www.example.org', 300, '8.8.4.4')]) });
+    const iterative = { ...query, recursionDesired: false };
+    expect((await applyDns64([rule()], iterative, 'www.example.org', empty, a)).answers).toEqual([]);
+    expect((await applyDns64([rule({ recursiveOnly: false })], iterative, 'www.example.org', empty, a)).answers).toHaveLength(1);
+  });
+
+  it('break-dnssec: a validated negative answer for a DO client is not synthesized by default', async () => {
+    const secureEmpty: ResolutionResult = { ...empty, security: 'secure' };
+    const a = looking({ [RRType.A]: noerror([makeARecord('www.example.org', 300, '8.8.4.4')]) });
+    const dnssecClient = { ...query, dnssecOk: true };
+    expect((await applyDns64([rule()], dnssecClient, 'www.example.org', secureEmpty, a)).answers).toEqual([]);
+    expect((await applyDns64([rule({ breakDnssec: true })], dnssecClient, 'www.example.org', secureEmpty, a)).answers).toHaveLength(1);
+    expect((await applyDns64([rule()], query, 'www.example.org', secureEmpty, a)).answers).toHaveLength(1);
   });
 });
