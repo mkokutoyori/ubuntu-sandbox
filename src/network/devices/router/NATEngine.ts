@@ -113,6 +113,8 @@ export interface NatSession {
   tcpState?: NatTcpState;
   /** Inside interface (possibly a dot1q subinterface) this session was created on. */
   inIface?: string;
+  /** Extended entry of a static translation: listed, aged and journalled, never used to look a packet up. */
+  viaStatic?: boolean;
 }
 
 function isHairpinReturn(session: NatSession, pkt: IPv4Packet): boolean {
@@ -294,9 +296,21 @@ export class NATEngine {
     this.staticEntries = this.staticEntries.filter(
       e => !(e.localIP === localIP && e.globalIP === globalIP)
     );
+    this.dropStaticFlows((s) => s.localIP === localIP && s.globalIP === globalIP);
   }
 
-  removeAllStaticEntries(): void { this.staticEntries = []; }
+  removeAllStaticEntries(): void {
+    this.staticEntries = [];
+    this.dropStaticFlows(() => true);
+  }
+
+  private dropStaticFlows(matches: (session: NatSession) => boolean): void {
+    for (const [key, session] of this.sessions) {
+      if (session.viaStatic !== true || !matches(session)) continue;
+      this.sessions.delete(key);
+      this.announceRemoved(session, 'manual');
+    }
+  }
 
   private outsideStaticEntries: NatOutsideStatic[] = [];
   addOutsideStatic(o: NatOutsideStatic): void {
@@ -473,6 +487,10 @@ export class NATEngine {
       if (!entry.protocol) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
+        if (isOutside) {
+          this.trackStaticFlow(ipPkt, 'in', { ip: entry.localIP, port: dstPort }, { ip: dstIP, port: dstPort },
+            { ip: ipPkt.sourceIP.toString(), port: getPacketSrcPort(ipPkt) }, undefined);
+        }
         return rewriteDestIP(ipPkt, entry.localIP);
       }
 
@@ -480,6 +498,10 @@ export class NATEngine {
       if (proto === entryProto && dstPort === entry.globalPort) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
+        if (isOutside) {
+          this.trackStaticFlow(ipPkt, 'in', { ip: entry.localIP, port: entry.localPort ?? dstPort }, { ip: dstIP, port: dstPort },
+            { ip: ipPkt.sourceIP.toString(), port: getPacketSrcPort(ipPkt) }, undefined);
+        }
         return rewriteDestIP(ipPkt, entry.localIP, entry.localPort);
       }
     }
@@ -552,6 +574,8 @@ export class NATEngine {
         if (proto === entryProto && entry.localIP === srcIP && entry.localPort === srcPort) {
           this.hitCount++;
           entry.hitCount = (entry.hitCount ?? 0) + 1;
+          this.trackStaticFlow(pkt, 'out', { ip: srcIP, port: srcPort }, { ip: entry.globalIP, port: entry.globalPort ?? srcPort },
+            { ip: dstIP, port: dstPort }, inIface);
           return rewriteSrcIP(pkt, entry.globalIP, entry.globalPort);
         }
         continue;
@@ -581,6 +605,8 @@ export class NATEngine {
       } else if (entry.localIP === srcIP) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
+        this.trackStaticFlow(pkt, 'out', { ip: srcIP, port: srcPort }, { ip: entry.globalIP, port: srcPort },
+          { ip: dstIP, port: dstPort }, inIface);
         return rewriteSrcIP(pkt, entry.globalIP);
       }
     }
@@ -829,6 +855,54 @@ export class NATEngine {
     this.removeAllSessions('flush');
   }
 
+
+  private trackStaticFlow(
+    pkt: IPv4Packet, direction: 'in' | 'out',
+    local: { ip: string; port: number }, global: { ip: string; port: number },
+    outside: { ip: string; port: number }, inIface: string | undefined,
+  ): void {
+    const proto = pkt.protocol;
+    const key = makeKey4(proto, local.ip, local.port, outside.ip, outside.port);
+    const existing = this.sessions.get(key);
+    if (existing !== undefined) {
+      existing.timestamp = simulationNowMs();
+      if (proto === IP_PROTO_TCP) updateTcpState(existing, pkt, direction);
+      return;
+    }
+    const now = simulationNowMs();
+    const session: NatSession = {
+      protocol: proto,
+      localIP: local.ip, localPort: local.port,
+      globalIP: global.ip, globalPort: global.port,
+      outsideIP: outside.ip, outsidePort: outside.port,
+      outsideLocalIP: outside.ip, outsideLocalPort: outside.port,
+      timestamp: now, createdAt: now,
+      tcpState: proto === IP_PROTO_TCP ? 'syn-seen' : undefined,
+      inIface,
+      viaStatic: true,
+    };
+    this.sessions.set(key, session);
+    this.updatePeak();
+    this.getBus().publish({
+      topic: 'nat.session.created',
+      payload: {
+        ...this.deviceRef(),
+        protocol: proto,
+        localIp: local.ip, localPort: local.port,
+        globalIp: global.ip, globalPort: global.port,
+        outsideIp: outside.ip, outsidePort: outside.port,
+        outsideLocalIp: outside.ip, outsideLocalPort: outside.port,
+        logged: this.translationLogging,
+        kind: 'static',
+      },
+    });
+  }
+
+  private forgetReverse(session: NatSession): void {
+    const revKey = makeKey(session.protocol, session.globalIP, session.globalPort);
+    if (this.reverseSessions.get(revKey) === session) this.reverseSessions.delete(revKey);
+  }
+
   private translationLogging = false;
 
   setTranslationLogging(enabled: boolean): void { this.translationLogging = enabled; }
@@ -880,7 +954,7 @@ export class NATEngine {
         if (g === null || poolStart === null || poolEnd === null || g < poolStart || g > poolEnd) continue;
       }
       this.sessions.delete(key);
-      this.reverseSessions.delete(makeKey(session.protocol, session.globalIP, session.globalPort));
+      this.forgetReverse(session);
       this.announceRemoved(session, 'manual');
       cleared++;
     }
@@ -901,7 +975,7 @@ export class NATEngine {
     if (!session) return false;
     const key = makeKey4(proto, session.localIP, session.localPort, session.outsideIP, session.outsidePort);
     this.sessions.delete(key);
-    this.reverseSessions.delete(revKey);
+    this.forgetReverse(session);
     this.announceRemoved(session, 'manual');
     return true;
   }
@@ -927,9 +1001,8 @@ export class NATEngine {
       // Sur le chemin normal, la différence est d'une milliseconde sur
       // un délai qui se compte en minutes.
       if (now - session.timestamp >= timeout) {
-        const revKey = makeKey(session.protocol, session.globalIP, session.globalPort);
         this.sessions.delete(key);
-        this.reverseSessions.delete(revKey);
+        this.forgetReverse(session);
         this.expiredCount++;
         sweeped++;
         this.announceRemoved(session, 'expired');

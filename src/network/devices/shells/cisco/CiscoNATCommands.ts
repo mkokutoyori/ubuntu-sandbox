@@ -834,8 +834,9 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
 
 export function showNATStatistics(router: Router): string {
   const engine = router._getNATEngine();
-  const statics = engine.getStaticEntries().length;
-  const dynamicSessions = engine.getSessions().length;
+  const sessions = engine.getSessions();
+  const dynamicSessions = sessions.filter(s => s.viaStatic !== true).length;
+  const statics = engine.getStaticEntries().length + (sessions.length - dynamicSessions);
   const dynamic = engine.getDynamicRules().length;
   const pools = engine.getPools().size;
   const total = engine.getTranslationCount();
@@ -865,7 +866,7 @@ export function showNATStatistics(router: Router): string {
   const staticEntries = engine.getStaticEntries();
 
   return [
-    `Total active translations: ${total} (${statics} static, ${dynamicSessions} dynamic; 0 extended)`,
+    `Total active translations: ${total} (${statics} static, ${dynamicSessions} dynamic; ${sessions.length} extended)`,
     `Peak translations: ${engine.getPeakTranslationCount()}`,
     `Total translations: ${total}`,
     `Static translations: ${statics}`,
