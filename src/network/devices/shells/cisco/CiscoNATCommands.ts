@@ -456,7 +456,14 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
   });
 
   trie.registerGreedy('ip nat log translations', 'Enable NAT translation logging', (args) => {
-    (ctx.r() as any)._ciscoNatLogTranslations = args.join(' ') || 'syslog';
+    if (args.length !== 1 || args[0].toLowerCase() !== 'syslog') return '% Incomplete command.';
+    ctx.r()._getNATEngine().setTranslationLogging(true);
+    return '';
+  });
+
+  trie.registerGreedy('no ip nat log translations', 'Disable NAT translation logging', (args) => {
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'syslog')) return '% Invalid input detected at \'^\' marker.';
+    ctx.r()._getNATEngine().setTranslationLogging(false);
     return '';
   });
 
@@ -924,6 +931,8 @@ export function runningConfigNAT(router: Router): string[] {
       lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}${r.overload ? ' overload' : ''}${vrfTail}`);
     }
   }
+
+  if (engine.isTranslationLogging()) lines.push('ip nat log translations syslog');
 
   // Non-default timeouts
   const t = engine.getTimeouts();

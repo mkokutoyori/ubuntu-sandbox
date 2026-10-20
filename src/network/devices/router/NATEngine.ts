@@ -634,6 +634,8 @@ export class NATEngine {
               localIp: srcIP, localPort: srcPort,
               globalIp: globalIP, globalPort,
               outsideIp: dstIP, outsidePort: dstPort,
+              outsideLocalIp: dstIP, outsideLocalPort: dstPort,
+              logged: this.translationLogging,
               kind: 'overload',
             },
           });
@@ -701,6 +703,8 @@ export class NATEngine {
               localIp: srcIP, localPort: srcPort,
               globalIp: poolIP, globalPort: poolPort,
               outsideIp: dstIP, outsidePort: dstPort,
+              outsideLocalIp: dstIP, outsideLocalPort: dstPort,
+              logged: this.translationLogging,
               kind: 'pool',
             },
           });
@@ -818,13 +822,41 @@ export class NATEngine {
   }
 
   clearTranslations(): void {
-    this.sessions.clear();
-    this.reverseSessions.clear();
+    this.removeAllSessions('flush');
   }
 
   clearDynamicTranslations(): void {
+    this.removeAllSessions('flush');
+  }
+
+  private translationLogging = false;
+
+  setTranslationLogging(enabled: boolean): void { this.translationLogging = enabled; }
+
+  isTranslationLogging(): boolean { return this.translationLogging; }
+
+  private removeAllSessions(reason: 'expired' | 'manual' | 'flush'): void {
+    const removed = [...this.sessions.values()];
     this.sessions.clear();
     this.reverseSessions.clear();
+    for (const session of removed) this.announceRemoved(session, reason);
+  }
+
+  private announceRemoved(session: NatSession, reason: 'expired' | 'manual' | 'flush'): void {
+    this.getBus().publish({
+      topic: 'nat.session.removed',
+      payload: {
+        ...this.deviceRef(),
+        protocol: session.protocol,
+        localIp: session.localIP, localPort: session.localPort,
+        globalIp: session.globalIP, globalPort: session.globalPort,
+        outsideIp: session.outsideIP, outsidePort: session.outsidePort,
+        outsideLocalIp: session.outsideLocalIP ?? session.outsideIP,
+        outsideLocalPort: session.outsideLocalPort ?? session.outsidePort,
+        logged: this.translationLogging,
+        reason,
+      },
+    });
   }
 
   // `ifaces` matches against `NatSession.inIface` — sessions carry no `vrf`
@@ -849,6 +881,7 @@ export class NATEngine {
       }
       this.sessions.delete(key);
       this.reverseSessions.delete(makeKey(session.protocol, session.globalIP, session.globalPort));
+      this.announceRemoved(session, 'manual');
       cleared++;
     }
     return cleared;
@@ -869,6 +902,7 @@ export class NATEngine {
     const key = makeKey4(proto, session.localIP, session.localPort, session.outsideIP, session.outsidePort);
     this.sessions.delete(key);
     this.reverseSessions.delete(revKey);
+    this.announceRemoved(session, 'manual');
     return true;
   }
 
@@ -898,16 +932,7 @@ export class NATEngine {
         this.reverseSessions.delete(revKey);
         this.expiredCount++;
         sweeped++;
-        this.getBus().publish({
-          topic: 'nat.session.removed',
-          payload: {
-            ...this.deviceRef(),
-            protocol: session.protocol,
-            localIp: session.localIP, localPort: session.localPort,
-            globalIp: session.globalIP, globalPort: session.globalPort,
-            reason: 'expired',
-          },
-        });
+        this.announceRemoved(session, 'expired');
       }
     }
     if (sweeped > 0) {

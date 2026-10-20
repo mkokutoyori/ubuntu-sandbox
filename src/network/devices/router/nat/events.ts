@@ -30,6 +30,9 @@ export interface NatSessionCreatedPayload extends NatDeviceRef {
   globalPort: number;
   outsideIp: string;
   outsidePort: number;
+  outsideLocalIp: string;
+  outsideLocalPort: number;
+  logged: boolean;
   kind: 'static' | 'overload' | 'pool';
 }
 
@@ -39,6 +42,11 @@ export interface NatSessionRemovedPayload extends NatDeviceRef {
   localPort: number;
   globalIp: string;
   globalPort: number;
+  outsideIp: string;
+  outsidePort: number;
+  outsideLocalIp: string;
+  outsideLocalPort: number;
+  logged: boolean;
   reason: 'expired' | 'manual' | 'flush';
 }
 
