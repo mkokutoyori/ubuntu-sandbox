@@ -7,8 +7,12 @@ import { runCurl, CURL_FLAGS, CURL_USAGE } from '@/network/http/curl/CurlEngine'
 function linuxCurlHost(ctx: LinuxCommandContext): CurlHost {
   return {
     async resolveHostname(name: string): Promise<string | null> {
-      const ip = await ctx.net.resolveHostname(name);
-      return ip ? ip.toString() : null;
+      if (!name.includes(':')) {
+        const ip = await ctx.net.resolveHostname(name);
+        if (ip) return ip.toString();
+      }
+      const ip6 = await ctx.net.resolveHostname6(name);
+      return ip6 ? ip6.toString() : null;
     },
     tcpStack: () => ctx.net.getTcpStack(),
     trustAnchors: () => ctx.tlsTrustAnchors,

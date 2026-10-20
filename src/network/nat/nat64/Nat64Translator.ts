@@ -93,17 +93,21 @@ export class Nat64Translator {
     this.timeouts = { ...NAT64_DEFAULT_TIMEOUTS, ...config.timeouts };
   }
 
+  ownsPoolAddress(address: IPAddress): boolean {
+    return this.config.pool.some((candidate) => candidate.equals(address));
+  }
+
   getBindings(): readonly Nat64Binding[] { return [...this.bindings6.values()]; }
 
   getSessions(): readonly Nat64Session[] { return [...this.sessionsFrom6.values()]; }
 
   translate6to4(packet: IPv6Packet): Nat64Result<IPv4Packet> {
-    const protocol = protocolOf(packet.nextHeader);
-    if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
     const remote = this.config.prefix.extract(packet.destinationIP);
     if (remote === null) {
       return { ok: false, reason: this.config.prefix.contains(packet.destinationIP) ? 'non-global-destination' : 'not-in-prefix' };
     }
+    const protocol = protocolOf(packet.nextHeader);
+    if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
     const payload = packet.payload as TCPPacket | UDPPacket | ICMPv6Packet;
     const source = this.sourceEndpoint6(packet, payload);
     const destination = { ip: remote.toString(), port: this.destinationPort6(payload) };

@@ -71,6 +71,7 @@ import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
 import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
+import { Nat64Translator, type Nat64Config } from '../nat/nat64/Nat64Translator';
 import { NAT_ROUTE_MAP_PREFIX, natRouteMapPermits } from './router/nat/NatRouteMap';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
@@ -635,6 +636,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       deliverTcp6: (inPort, ipv6) => { this.tcpv2.handleIp6(inPort, ipv6.sourceIP, ipv6); },
       deliverUdp6: (_inPort, ipv6, udp) => this.deliverUdp6(ipv6, udp),
       ipv6FilterPermits: (iface, direction, pkt) => this.ipv6FilterPermits(iface, direction, pkt),
+      nat64Forward: (inPort, ipv6) => this.nat64Forward6(inPort, ipv6),
       onIcmpv6EchoReply: (p) => this.emitIcmpEchoReply({ ...p, ttl: p.hopLimit, rttMs: 0 }),
       onIcmpv6EchoFailed: (p) => this.emitIcmpEchoFailed({
         fromIp: p.fromIp, toIp: '', id: -1, seq: -1, reason: p.reason,
@@ -2532,6 +2534,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ─── Control Plane: ARP Handling ──────────────────────────────
 
   private ownsNatGlobalAddress(portName: string, target: IPAddress): boolean {
+    if (this.nat64?.ownsPoolAddress(target)) return true;
     const engine = this._getNATEngine?.();
     if (!engine) return false;
     if (!engine.getOutsideInterfaces().has(portName)) return false;
@@ -2547,6 +2550,43 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (start !== null && end !== null && n >= start && n <= end) return true;
     }
     return false;
+  }
+
+  private nat64: Nat64Translator | null = null;
+
+  enableNat64(config: Omit<Nat64Config, 'clock'>): Nat64Translator {
+    this.nat64 = new Nat64Translator({ ...config, clock: () => simulationNowMs() });
+    return this.nat64;
+  }
+
+  disableNat64(): void { this.nat64 = null; }
+
+  getNat64(): Nat64Translator | null { return this.nat64; }
+
+  private nat64Forward6(inPort: string, ipv6: IPv6Packet): boolean {
+    if (this.nat64 === null || ipv6.hopLimit <= 1) return false;
+    const result = this.nat64.translate6to4(ipv6);
+    if (result.ok === false) {
+      const ordinary = result.reason === 'not-in-prefix';
+      if (!ordinary) {
+        Logger.info(this.id, 'nat64:drop',
+          `${this.name}: NAT64 dropped ${ipv6.sourceIP} -> ${ipv6.destinationIP} (${result.reason})`);
+      }
+      return !ordinary;
+    }
+    this.forwardPacket(inPort, result.packet);
+    return true;
+  }
+
+  private nat64Forward4(ipPkt: IPv4Packet): void {
+    if (this.nat64 === null || ipPkt.ttl <= 1) return;
+    const result = this.nat64.translate4to6({ ...ipPkt, ttl: ipPkt.ttl - 1 });
+    if (result.ok === false) {
+      Logger.info(this.id, 'nat64:drop',
+        `${this.name}: NAT64 dropped ${ipPkt.sourceIP} -> ${ipPkt.destinationIP} (${result.reason})`);
+      return;
+    }
+    this.ipv6Engine.forwardTranslated(result.packet);
   }
 
   private handleARP(portName: string, arp: ARPPacket): void {
@@ -2671,6 +2711,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     if (routedBySource.kind !== 'pending'
       && this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
+
+    if (this.nat64?.ownsPoolAddress(ipPkt.destinationIP)) {
+      this.nat64Forward4(ipPkt);
+      return;
+    }
 
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;

@@ -127,6 +127,12 @@ export interface IPv6RouterContext {
   ipv6FilterPermits?(
     iface: string, direction: 'in' | 'out', pkt: IPv6Packet, ingress?: string,
   ): boolean;
+  /**
+   * A stateful IPv6-to-IPv4 translator (RFC 6146) sits in front of the
+   * routing decision: `true` means it took the packet, translated and
+   * forwarded it or dropped it, and the IPv6 forwarding path is over.
+   */
+  nat64Forward?(inPort: string, ipv6: IPv6Packet): boolean;
 }
 
 /**
@@ -1006,13 +1012,18 @@ export class IPv6DataPlane {
 
   // ─── Forwarding ───────────────────────────────────────────────
 
-  private forwardPacket(inPort: string, ipv6: IPv6Packet): void {
+  forwardTranslated(packet: IPv6Packet): void {
+    this.forwardPacket('', { ...packet, hopLimit: packet.hopLimit + 1 }, true);
+  }
+
+  private forwardPacket(inPort: string, ipv6: IPv6Packet, translated = false): void {
+    if (!translated && this.ctx.nat64Forward?.(inPort, ipv6)) return;
     const newHopLimit = ipv6.hopLimit - 1;
     if (newHopLimit <= 0) {
       this.v6Counters.inHopLimitExceeded++;
       Logger.info(this.ctx.id, 'router:hop-limit-expired',
         `${this.ctx.name}: Hop limit expired for ${ipv6.sourceIP} → ${ipv6.destinationIP}`);
-      this.sendICMPv6Error(inPort, ipv6, 'time-exceeded', 0);
+      if (!translated) this.sendICMPv6Error(inPort, ipv6, 'time-exceeded', 0);
       return;
     }
 
@@ -1021,7 +1032,7 @@ export class IPv6DataPlane {
       this.v6Counters.inNoRoutes++;
       Logger.info(this.ctx.id, 'router:no-ipv6-route',
         `${this.ctx.name}: no route for ${ipv6.destinationIP}`);
-      this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', 0);
+      if (!translated) this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', 0);
       return;
     }
 
@@ -1033,7 +1044,7 @@ export class IPv6DataPlane {
       this.v6Counters.outTooBig++;
       Logger.info(this.ctx.id, 'router:ipv6-too-big',
         `${this.ctx.name}: ${ipv6PacketBytes(ipv6)} bytes exceed the ${mtu} MTU of ${route.iface}`);
-      this.sendICMPv6Error(inPort, ipv6, 'packet-too-big', 0, mtu);
+      if (!translated) this.sendICMPv6Error(inPort, ipv6, 'packet-too-big', 0, mtu);
       return;
     }
 
