@@ -186,9 +186,21 @@ class OmfileInstance implements ActionModuleInstance {
     };
   }
 
-  private open(path: string): FileHandle | { error: string } {
+  private open(path: string): FileHandle | { error: string; reported: boolean } {
     const result = this.context.host.files.open(path, this.openOptions());
-    return 'handle' in result ? result.handle : result;
+    for (const notice of result.notices ?? []) {
+      if (notice.kind === 'directory-chown') {
+        this.context.runtime.error(`chown for directory '${notice.path}' failed`, RS_RET.DIR_CHOWN_ERROR);
+      } else {
+        this.context.runtime.error(`omfile: chown for file '${notice.path}' failed: ${notice.reason}`, RS_RET.CONF_PARSE_ERROR);
+      }
+    }
+    if ('handle' in result) return result.handle;
+    if (result.step === 'parents') {
+      this.context.runtime.error(`omfile: creating parent directories for file  '${path}' failed: ${result.error}`, RS_RET.CONF_PARSE_ERROR);
+      return { error: result.error, reported: true };
+    }
+    return { error: result.error, reported: result.step === 'chown' };
   }
 
   private validate(path: string): boolean {
@@ -222,8 +234,10 @@ class OmfileInstance implements ActionModuleInstance {
     }
     const opened = this.open(path);
     if ('error' in opened) {
-      this.context.runtime.error(`omfile: open file '${path}' failed: ${opened.error}`, RS_RET.CONF_PARSE_ERROR);
-      this.context.runtime.error(`Could not open dynamic file '${path}' [state ${opened.error === 'No such file or directory' ? -2040 : -2433}] - discarding message`, RS_RET.CONF_PARSE_ERROR);
+      if (!opened.reported) {
+        this.context.runtime.error(`omfile: open file '${path}' failed: ${opened.error}`, RS_RET.CONF_PARSE_ERROR);
+        this.context.runtime.error(`Could not open dynamic file '${path}' [state ${opened.error === 'No such file or directory' ? -2040 : -2433}] - discarding message`, RS_RET.CONF_PARSE_ERROR);
+      }
       return 'error';
     }
     this.cache.push({ name: path, handle: opened, accessed: ++this.clock, idleMinutes: 0 });
@@ -261,8 +275,10 @@ class OmfileInstance implements ActionModuleInstance {
       if (this.handle === null) {
         const opened = this.open(this.settings.fileName);
         if ('error' in opened) {
-          this.context.runtime.error(`omfile: open file '${this.settings.fileName}' failed: ${opened.error}`, RS_RET.CONF_PARSE_ERROR);
-          this.context.runtime.error(`Could not open output file '${this.settings.fileName}'`, RS_RET.CONF_PARSE_ERROR);
+          if (!opened.reported) {
+            this.context.runtime.error(`omfile: open file '${this.settings.fileName}' failed: ${opened.error}`, RS_RET.CONF_PARSE_ERROR);
+            this.context.runtime.error(`Could not open output file '${this.settings.fileName}'`, RS_RET.CONF_PARSE_ERROR);
+          }
           return 'suspended';
         }
         this.handle = opened;

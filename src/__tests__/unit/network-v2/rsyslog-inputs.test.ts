@@ -192,6 +192,7 @@ describe('imudp', () => {
     expect(internal(server)).toEqual([
       'No UDP socket could successfully be initialized, some functionality may be disabled.  [v8.2112.0]',
       'imudp: Could not create udp listener, ignoring port 514 bind-address (null). [v8.2112.0]',
+      'activation of module imudp failed [v8.2112.0 try https://www.rsyslog.com/e/-3 ]',
     ]);
     expect(started.engine.isStarted).toBe(true);
   });

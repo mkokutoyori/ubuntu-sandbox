@@ -7,10 +7,10 @@ import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
   Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
-  OpenFileOptions, OpenFileResult, ProcessDetails, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
+  OpenFileOptions, OpenFileResult, ProcessDetails, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
-import type { VirtualFileSystem, AppendCreation, AppendDescriptor } from '../VirtualFileSystem';
+import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure } from '../VirtualFileSystem';
 import type { SyslogForwardSocket } from './SyslogForwardSocket';
 import type { LocalDatagramSockets } from './LocalDatagramSockets';
 import type { ClockTimers } from './ClockTimers';
@@ -45,7 +45,13 @@ export interface LinuxRsyslogPlatform {
   readonly localSockets: LocalDatagramSockets;
   readonly udp: RsyslogUdpEndpoint;
   tcp(): TcpStack;
-  holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | { readonly error: string };
+  holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | AppendFailure;
+  descriptorLimitReached(): boolean;
+  userNameOfUid(uid: number): string | null;
+  supplementaryGidsOf(userName: string): number[];
+  applyCredentials(uid: number, gid: number): void;
+  restoreProcessLimits(): void;
+  setOpenFilesLimit(uid: number, limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
   wallMs(): number;
   monotonicMs(): number;
   bootTimeMs(): number;
@@ -193,19 +199,53 @@ export class LinuxRsyslogHost implements RsyslogHost {
     monotonicMs: (): number => this.platform.monotonicMs() + (this.platform.timers.now() - this.platform.wallMs()),
   };
 
+  private credentials = { uid: 0, gid: 0, groups: [0] as number[], umask: 0o022 };
+
+  readonly process: RsyslogProcess = {
+    setSupplementaryGroups: (gids) => {
+      if (this.credentials.uid !== 0) return 'EPERM';
+      this.credentials.groups = [...gids];
+      return null;
+    },
+    initSupplementaryGroups: (userName, gid) => {
+      if (this.credentials.uid !== 0) return 'EPERM';
+      this.credentials.groups = [...new Set([gid, ...this.platform.supplementaryGidsOf(userName)])];
+      return null;
+    },
+    setGid: (gid) => {
+      if (this.credentials.uid !== 0 && gid !== this.credentials.gid) return 'EPERM';
+      this.credentials.gid = gid;
+      this.platform.applyCredentials(this.credentials.uid, gid);
+      return null;
+    },
+    setUid: (uid) => {
+      if (this.credentials.uid !== 0 && uid !== this.credentials.uid) return 'EPERM';
+      this.credentials.uid = uid;
+      this.platform.applyCredentials(uid, this.credentials.gid);
+      return null;
+    },
+    userNameOf: (uid) => this.platform.userNameOfUid(uid),
+    currentGid: () => this.credentials.gid,
+    setUmask: (mask) => { this.credentials.umask = mask & 0o777; },
+    setOpenFilesLimit: (limit) => this.platform.setOpenFilesLimit(this.credentials.uid, limit),
+  };
+
   readonly files = {
     open: (path: string, options: OpenFileOptions): OpenFileResult => {
+      if (this.platform.descriptorLimitReached()) return { error: 'Too many open files' };
       const held = this.platform.holdFile(path, {
         mode: options.mode,
-        uid: options.uid ?? 0,
-        gid: options.gid ?? 0,
+        uid: options.uid,
+        gid: options.gid,
         directoryMode: options.directoryMode,
-        directoryUid: options.directoryUid ?? 0,
-        directoryGid: options.directoryGid ?? 0,
+        directoryUid: options.directoryUid,
+        directoryGid: options.directoryGid,
         createDirectories: options.createDirectories,
+        failOnChownFailure: options.failOnChownFailure,
+        actor: { ...this.credentials, gids: this.credentials.groups },
       });
       if ('error' in held) return held;
-      return { handle: new HeldHandle(path, held.handle, held.release) };
+      return { handle: new HeldHandle(path, held.handle, held.release), notices: held.handle.notices };
     },
     read: (path: string): string | null => this.platform.vfs.readFile(path),
     exists: (path: string): boolean => this.platform.vfs.exists(path),
@@ -343,6 +383,8 @@ export class LinuxRsyslogHost implements RsyslogHost {
     for (const close of [...this.tcpListeners]) close();
     this.tcpListeners.clear();
     this.openSockets.clear();
+    this.credentials = { uid: 0, gid: 0, groups: [0], umask: 0o022 };
+    this.platform.restoreProcessLimits();
   }
 
   boundSockets(): Array<{ port: number; protocol: 'udp' | 'tcp' }> {

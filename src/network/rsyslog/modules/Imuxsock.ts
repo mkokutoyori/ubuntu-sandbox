@@ -148,6 +148,7 @@ function escapeQuoted(text: string): string {
 }
 
 class UnixSocketListener implements InputInstance {
+  readonly bindsBeforePrivilegeDrop = true;
   readonly description: string;
   private binding: { close(): void } | null = null;
   private readonly pidLimiters = new Map<number, ModuleRateLimiter>();

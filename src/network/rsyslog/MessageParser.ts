@@ -79,6 +79,7 @@ export function sanitizeRawMessage(raw: string, globals: ParserGlobals): string 
       output += character;
     }
   }
+  if (output === raw) return raw;
   return output.length > globals.maxLine ? output.slice(0, globals.maxLine) : output;
 }
 

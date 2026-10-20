@@ -147,7 +147,7 @@ export class ConfigLoader implements ConfigSink {
     const settings = defaultGlobalSettings();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), timezones: new Map(), hadErrors: false,
+      rateLimits: new Map(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false,
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -337,10 +337,10 @@ export class ConfigLoader implements ConfigSink {
     flag('debugprinttemplatelist', () => undefined);
     flag('debugprintmodulelist', () => undefined);
     flag('debugprintcfsyslinehandlerlist', () => undefined);
-    this.registerDirective({ name: 'privdroptouser', type: 'uid', apply: () => undefined });
-    integer('privdroptouserid', () => undefined);
-    this.registerDirective({ name: 'privdroptogroup', type: 'gid', apply: () => undefined });
-    integer('privdroptogroupid', () => undefined);
+    this.registerDirective({ name: 'privdroptouser', type: 'uid', apply: (value) => { settings.privDrop.uid = Number(value); } });
+    integer('privdroptouserid', (value) => { settings.privDrop.uid = value; });
+    this.registerDirective({ name: 'privdroptogroup', type: 'gid', apply: (value) => { settings.privDrop.gid = Number(value); } });
+    integer('privdroptogroupid', (value) => { settings.privDrop.gid = value; });
     word('generateconfiggraph', () => undefined);
     this.registerDirective({ name: 'umask', type: 'filemode', apply: (value) => { settings.umask = Number(value); } });
     integer('maxopenfiles', (value) => { settings.maxOpenFiles = value; });
@@ -576,28 +576,37 @@ export class ConfigLoader implements ConfigSink {
 
   private processModule(object: ConfigObject): void {
     const values = getParams(object.params, MODULE_PARAMS, this.paramEnvironment());
-    if (values === null) return;
+    if (values === null) {
+      this.config.inputDeclarationFailed = true;
+      return;
+    }
     const name = stringParam(values, 'load');
     if (name === undefined) {
       this.log.error('module type missing', RS_RET.CONF_RQRD_PARAM_MISSING);
+      this.config.inputDeclarationFailed = true;
       return;
     }
-    this.loadModule(name, object.params);
+    if (!this.loadModule(name, object.params)) this.config.inputDeclarationFailed = true;
   }
 
   private processInput(object: ConfigObject): void {
     const values = getParams(object.params, INPUT_PARAMS, this.paramEnvironment());
-    if (values === null) return;
+    if (values === null) {
+      this.config.inputDeclarationFailed = true;
+      return;
+    }
     const type = stringParam(values, 'type') ?? '';
     const module = this.config.modules.get(type);
     if (module === undefined || module.kind !== 'input') {
       this.log.error(`input module name '${type}' is unknown`, RS_RET.MOD_UNKNOWN);
       this.config.hadErrors = true;
+      this.config.inputDeclarationFailed = true;
       return;
     }
     const instances = (module as InputModule).newInstances(object.params, this.inputContext);
     if (instances === null) {
       this.config.hadErrors = true;
+      this.config.inputDeclarationFailed = true;
       return;
     }
     for (const instance of instances) this.config.inputs.push({ module: type, instance });

@@ -21,6 +21,18 @@ export interface ConfigVerification {
   readonly lines: readonly string[];
   readonly hadErrors: boolean;
   readonly fatalCode: number | null;
+  readonly abortOnUncleanConfig: boolean;
+}
+
+export const UNCLEAN_CONFIG_ABORT_TEXT = [
+  'rsyslogd: global(AbortOnUncleanConfig="on") is set, and config is not clean.',
+  'Check error log for details, fix errors and restart. As a last',
+  'resort, you may want to use global(AbortOnUncleanConfig="off") ',
+  'to permit a startup with a dirty config.',
+].join('\n');
+
+export function runFailedText(code: number): string {
+  return `rsyslogd: run failed with error ${code} (see rsyslog.h or try https://www.rsyslog.com/e/${-code} to learn what that number means)`;
 }
 
 export type DaemonStartOutcome = { readonly started: true } | { readonly started: false; readonly lines: readonly string[]; readonly fatalCode: number };
@@ -45,9 +57,15 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
   }
 
   verify(path: string = RSYSLOG_CONFIG_PATH): ConfigVerification {
-    const { loader } = this.load(path);
+    const { loader, config } = this.load(path);
     const fatal = loader.log.entries.find((entry) => entry.severity === 'error' && FATAL_CODES.has(entry.code));
-    return { lines: loader.log.lines(), hadErrors: loader.log.hadErrors(), fatalCode: fatal?.code ?? null };
+    const strictInputs = config.settings.requireAllInputs && config.inputDeclarationFailed;
+    return {
+      lines: loader.log.lines(),
+      hadErrors: loader.log.hadErrors(),
+      fatalCode: fatal?.code ?? (strictInputs ? RS_RET.CONFIG_ERROR : null),
+      abortOnUncleanConfig: config.settings.abortOnUncleanConfig,
+    };
   }
 
   get isRunning(): boolean {
@@ -65,13 +83,26 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
     this.lastDiagnostics = lines;
     const fatal = loader.log.entries.find((entry) => entry.severity === 'error' && FATAL_CODES.has(entry.code));
     if (fatal !== undefined) return { started: false, lines, fatalCode: fatal.code };
-    const engine = new RsyslogEngine(config, this.host);
+    const activation: string[] = [];
+    let capturing = false;
+    const engine = new RsyslogEngine(config, this.host, {
+      onInternalMessage: (_severity, _code, text) => { if (capturing) activation.push(`rsyslogd: ${text}`); },
+    });
     this.engine = engine;
     this.holder.engine = engine;
-    engine.start();
-    for (const entry of loader.log.entries) {
-      const severity = entry.severity === 'error' ? 3 : entry.severity === 'warning' ? 4 : 6;
-      engine.internal(severity, entry.code, formatLogEntry(entry.text, entry.code));
+    const outcome = engine.start(() => {
+      for (const entry of loader.log.entries) {
+        const severity = entry.severity === 'error' ? 3 : entry.severity === 'warning' ? 4 : 6;
+        engine.internal(severity, entry.code, formatLogEntry(entry.text, entry.code));
+      }
+      capturing = true;
+    });
+    if ('code' in outcome) {
+      this.engine = null;
+      this.holder.engine = null;
+      this.host.dispose();
+      this.bound.clear();
+      return { started: false, lines: [...lines, ...activation], fatalCode: outcome.code };
     }
     engine.internal(LOG_INFO, RS_RET.NO_ERRCODE, this.statusText('start'), false, LOG_SYSLOG_FACILITY);
     return { started: true };

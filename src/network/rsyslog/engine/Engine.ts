@@ -4,19 +4,22 @@ import { jsonDeepCopy } from '../Json';
 import { RsyslogMessage } from '../Message';
 import { LOG_PRI_INVALID } from '@/network/syslog/codec/SyslogPriority';
 import { parseReceivedMessage, type MessageParserModule } from '../MessageParser';
-import type { RenderContext } from '../Properties';
+import { messageAsJson, type RenderContext } from '../Properties';
+import { jsonText } from '../Json';
 import { ActionRuntime, type ActionServices } from './ActionRuntime';
-import type { ActionDefinition, LoadedConfig, RulesetDefinition } from './Config';
+import type { ActionDefinition, InputRecord, LoadedConfig, RulesetDefinition } from './Config';
 import { executeStatements, type ExecResult, type ExecutionServices, type Sleep } from './Execution';
-import type { RsyslogHost } from './Host';
+import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
 import { RateLimiter } from './RateLimiter';
-import type { InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
+import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
 
 const LOG_SYSLOG = 5;
 const INTERNAL_INPUT = 'rsyslogd';
+
+export type StartOutcome = { readonly ok: true } | { readonly ok: false; readonly code: number };
 
 export interface EngineEvents {
   onInternalMessage?(severity: number, code: number, text: string): void;
@@ -33,6 +36,8 @@ export class RsyslogEngine implements InputSubmitter {
   private readonly internalLimiter: RateLimiter;
   private readonly script = new ScriptState();
   private started = false;
+  private oversizeLog: FileHandle | null = null;
+  private internalBacklog: RsyslogMessage[] | null = null;
   private stopCallbacks: Array<() => void> = [];
   private readonly runtimeLog: RuntimeLog;
 
@@ -240,7 +245,6 @@ export class RsyslogEngine implements InputSubmitter {
   submit(info: InputSubmission): void {
     if (!this.started) return;
     const now = info.receivedAtMs ?? this.host.clock.wallMs();
-    const settings = this.config.settings;
     let raw = info.raw;
     if (info.bytes !== undefined) {
       const decoded = this.decodeReceived(info.bytes, info.noLegacyZDecompress === true);
@@ -256,6 +260,20 @@ export class RsyslogEngine implements InputSubmitter {
       fromHostPort = String(info.sender.port);
       if (info.pendingAcl !== undefined && info.pendingAcl.verdict(info.sender.ip, resolved.fqdn, true) !== 'allowed') return;
     }
+    const build = (text: string): RsyslogMessage | null =>
+      this.buildMessage(info, text, now, fromHost, fromHostIp, fromHostPort);
+    const message = build(raw);
+    if (message === null) return;
+    const limiter = info.limiter ?? this.defaultLimiter;
+    const decision = limiter.decide(message);
+    if (decision.repeated !== null) this.enqueue(decision.repeated);
+    if (decision.deliver !== null) this.admit(decision.deliver, build);
+  }
+
+  private buildMessage(
+    info: InputSubmission, raw: string, now: number, fromHost: string | null, fromHostIp: string | null, fromHostPort: string | null,
+  ): RsyslogMessage | null {
+    const settings = this.config.settings;
     const message = new RsyslogMessage({
       rawMsg: raw,
       receivedAt: this.timeAt(now),
@@ -284,14 +302,59 @@ export class RsyslogEngine implements InputSubmitter {
       message.parseSuccess = true;
     } else {
       const outcome = parseReceivedMessage(message, this.parsersFor(info.ruleset), settings.parser);
-      if (outcome === 'empty') return;
-      if (message.discarded) return;
+      if (outcome === 'empty') return null;
+      if (message.discarded) return null;
     }
     if (message.rulesetName === null) message.rulesetName = info.ruleset;
-    const limiter = info.limiter ?? this.defaultLimiter;
-    const decision = limiter.decide(message);
-    if (decision.repeated !== null) this.enqueue(decision.repeated);
-    if (decision.deliver !== null) this.enqueue(decision.deliver);
+    return message;
+  }
+
+  private admit(message: RsyslogMessage, build: (raw: string) => RsyslogMessage | null): void {
+    const settings = this.config.settings;
+    const maxLine = settings.parser.maxLine;
+    const raw = message.rawMsg;
+    if (raw.length <= maxLine) {
+      this.enqueue(message);
+      return;
+    }
+    if (settings.oversize.report) {
+      this.runtimeLog.log(4, RS_RET.OVERSIZE_MSG, `message too long (${raw.length}) with configured size ${maxLine}, begin of message is: ${raw.slice(0, 80)}`);
+    }
+    this.writeOversizeLog(message);
+    if (settings.oversize.mode === 'accept') {
+      this.enqueue(message);
+    } else if (settings.oversize.mode === 'truncate') {
+      const truncated = build(raw.slice(0, maxLine));
+      if (truncated !== null) this.enqueue(truncated);
+    } else {
+      for (let offset = 0; offset < raw.length; offset += maxLine) {
+        const segment = build(raw.slice(offset, offset + maxLine));
+        if (segment !== null) this.enqueue(segment);
+      }
+    }
+  }
+
+  private writeOversizeLog(message: RsyslogMessage): void {
+    const path = this.config.settings.oversize.errorFile;
+    if (path === null) return;
+    if (this.oversizeLog === null) {
+      const opened = this.host.files.open(path, {
+        mode: 0o660, directoryMode: 0o700, uid: null, gid: null, directoryUid: null, directoryGid: null,
+        createDirectories: false, failOnChownFailure: false,
+      });
+      if ('error' in opened) {
+        this.runtimeLog.log(3, RS_RET.ERR, `error opening oversize message log file ${path}: ${opened.error}`);
+        return;
+      }
+      this.oversizeLog = opened.handle;
+    }
+    const entry = messageAsJson(message);
+    if (entry['$!'] === null) delete entry['$!'];
+    entry.input = message.inputName;
+    const failure = this.oversizeLog.write(`${jsonText(entry)}\n`);
+    if (failure !== null) {
+      this.runtimeLog.log(3, RS_RET.IO_ERROR, `error writing oversize message log file ${path}, write returned -1: ${failure}`);
+    }
   }
 
   private enqueue(message: RsyslogMessage): void {
@@ -320,6 +383,14 @@ export class RsyslogEngine implements InputSubmitter {
     message.tag = code === RS_RET.NO_ERRCODE ? 'rsyslogd:' : `rsyslogd${code}:`;
     message.msg = sanitized;
     message.parseSuccess = true;
+    if (this.internalBacklog !== null) {
+      this.internalBacklog.push(message);
+      return;
+    }
+    this.processInternal(message);
+  }
+
+  private processInternal(message: RsyslogMessage): void {
     const decision = this.internalLimiter.decide(message);
     if (decision.repeated !== null) this.writeInternal(decision.repeated);
     if (decision.deliver !== null) this.writeInternal(decision.deliver);
@@ -336,14 +407,100 @@ export class RsyslogEngine implements InputSubmitter {
     }
   }
 
-  start(): boolean {
-    if (this.started) return true;
+  start(replay: () => void = () => undefined): StartOutcome {
+    if (this.started) return { ok: true };
     this.started = true;
-    let ok = true;
-    for (const record of this.config.inputs) {
-      if (!record.instance.start()) ok = false;
+    this.internalBacklog = [];
+    replay();
+    const settings = this.config.settings;
+    const process = this.host.process;
+    if (settings.umask !== null) process?.setUmask(settings.umask);
+    if (settings.maxOpenFiles !== null && settings.maxOpenFiles > 0 && process !== undefined) {
+      const failure = process.setOpenFilesLimit(settings.maxOpenFiles);
+      if (failure !== null) {
+        this.runtimeLog.log(
+          3, RS_RET.ERR_RLIM_NOFILE, `could not set process file limit to ${settings.maxOpenFiles} [current hard limit ${failure.hardLimit}]`, failure.errno,
+        );
+        return this.abortStart(RS_RET.ERR_RLIM_NOFILE);
+      }
     }
-    return ok;
+    const strict = settings.abortOnUncleanConfig || settings.requireAllInputs;
+    const started: InputInstance[] = [];
+    const startRecords = (records: InputRecord[]): number | null => {
+      for (const record of records) {
+        if (record.instance.start()) {
+          started.push(record.instance);
+        } else if (settings.requireAllInputs) {
+          this.runtimeLog.log(3, RS_RET.NO_RUN, `input module ${record.module} will not run`);
+          return RS_RET.NO_RUN;
+        }
+      }
+      return null;
+    };
+    const early = this.config.inputs.filter((record) => record.instance.bindsBeforePrivilegeDrop === true);
+    const late = this.config.inputs.filter((record) => record.instance.bindsBeforePrivilegeDrop !== true);
+    for (const record of early) {
+      if (record.instance.start()) {
+        started.push(record.instance);
+        continue;
+      }
+      this.runtimeLog.log(3, RS_RET.NO_RUN, `activation of module ${record.module} failed`);
+      if (strict) return this.abortStart(RS_RET.NO_RUN, started);
+    }
+    const dropped = this.dropPrivileges();
+    if (dropped !== null) return this.abortStart(dropped, started);
+    const failed = startRecords(late);
+    if (failed !== null) return this.abortStart(failed, started);
+    const backlog = this.internalBacklog ?? [];
+    this.internalBacklog = null;
+    for (const message of backlog) this.processInternal(message);
+    return { ok: true };
+  }
+
+  private abortStart(code: number, started: readonly InputInstance[] = []): StartOutcome {
+    for (const instance of started) instance.stop();
+    this.internalBacklog = null;
+    this.started = false;
+    return { ok: false, code };
+  }
+
+  private dropPrivileges(): number | null {
+    const { uid, gid, keepSupplemental } = this.config.settings.privDrop;
+    const process = this.host.process;
+    if (process === undefined) return null;
+    if (gid !== 0) {
+      if (!keepSupplemental) {
+        const refused = process.setSupplementaryGroups([]);
+        if (refused !== null) {
+          this.runtimeLog.log(3, RS_RET.ERR_DROP_PRIV, 'could not remove supplemental group IDs via setgroups(): missing CAP_SETGID or insufficient privilege', refused);
+          return RS_RET.ERR_DROP_PRIV;
+        }
+      }
+      const refused = process.setGid(gid);
+      if (refused !== null) {
+        this.runtimeLog.log(3, RS_RET.ERR_DROP_PRIV, `could not set requested group id ${gid} via setgid(): missing CAP_SETGID or insufficient privilege`, refused);
+        return RS_RET.ERR_DROP_PRIV;
+      }
+      this.internal(6, RS_RET.NO_ERRCODE, `rsyslogd's groupid changed to ${gid}`);
+    }
+    if (uid !== 0) {
+      const name = process.userNameOf(uid);
+      if (name === null) {
+        this.runtimeLog.log(3, RS_RET.NO_ERRCODE, `could not get username for userid '${uid}'`);
+      } else {
+        const refused = process.initSupplementaryGroups(name, process.currentGid());
+        if (refused !== null) {
+          this.runtimeLog.log(3, RS_RET.ERR_DROP_PRIV, `could not initialize supplemental groups for user id ${uid} via initgroups(): missing CAP_SETGID or insufficient privilege`, refused);
+        }
+      }
+      const refused = process.setUid(uid);
+      if (refused !== null) {
+        this.runtimeLog.log(3, RS_RET.ERR_DROP_PRIV, `could not set requested user id ${uid} via setuid(): missing CAP_SETUID or insufficient privilege`, refused);
+        return RS_RET.ERR_DROP_PRIV;
+      }
+      this.internal(6, RS_RET.NO_ERRCODE, `rsyslogd's userid changed to ${uid}`);
+    }
+    return null;
   }
 
   stop(): void {
@@ -355,11 +512,15 @@ export class RsyslogEngine implements InputSubmitter {
     for (const runtime of this.actions.values()) runtime.stop();
     for (const callback of this.stopCallbacks) callback();
     this.stopCallbacks = [];
+    this.oversizeLog?.close();
+    this.oversizeLog = null;
     this.started = false;
   }
 
   hup(): void {
     for (const runtime of this.actions.values()) runtime.hup();
+    this.oversizeLog?.close();
+    this.oversizeLog = null;
   }
 
   onStop(callback: () => void): void {

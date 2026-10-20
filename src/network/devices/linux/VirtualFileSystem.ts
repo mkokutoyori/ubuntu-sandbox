@@ -92,18 +92,40 @@ export interface INode {
   aclGroups?: Map<string, number>;
 }
 
-export interface AppendCreation {
-  readonly mode: number;
+export interface AppendActor {
   readonly uid: number;
   readonly gid: number;
+  readonly gids: readonly number[];
+  readonly umask: number;
+}
+
+export interface AppendNotice {
+  readonly kind: 'directory-chown' | 'file-chown';
+  readonly path: string;
+  readonly reason: string;
+}
+
+export interface AppendCreation {
+  readonly mode: number;
+  readonly uid: number | null;
+  readonly gid: number | null;
   readonly directoryMode: number;
-  readonly directoryUid: number;
-  readonly directoryGid: number;
+  readonly directoryUid: number | null;
+  readonly directoryGid: number | null;
   readonly createDirectories: boolean;
+  readonly failOnChownFailure?: boolean;
+  readonly actor?: AppendActor;
+}
+
+export interface AppendFailure {
+  readonly error: string;
+  readonly notices: readonly AppendNotice[];
+  readonly step?: 'parents' | 'chown';
 }
 
 export interface AppendDescriptor {
   readonly path: string;
+  readonly notices: readonly AppendNotice[];
   lostLines: number;
   lostBytes: number;
   readonly unlinked: boolean;
@@ -930,34 +952,88 @@ export class VirtualFileSystem {
     return false;
   }
 
-  openAppend(path: string, creation: AppendCreation): AppendDescriptor | { readonly error: string } {
+  private chownRefusal(owner: number, uid: number | null, gid: number | null, actor: AppendActor): string | null {
+    if (actor.uid === 0) return null;
+    if (uid !== null && uid !== owner) return 'Operation not permitted';
+    if (gid !== null && gid !== actor.gid && !actor.gids.includes(gid)) return 'Operation not permitted';
+    return actor.uid === owner ? null : 'Operation not permitted';
+  }
+
+  openAppend(path: string, creation: AppendCreation): AppendDescriptor | AppendFailure {
     const canonical = this.canonicalKey(path);
-    if (this.remoteFor(path)) return { error: 'Operation not supported' };
+    const actor: AppendActor = creation.actor ?? { uid: 0, gid: 0, gids: [], umask: 0 };
+    const notices: AppendNotice[] = [];
+    if (this.remoteFor(path)) return { error: 'Operation not supported', notices };
     let inode = this.resolveInode(path);
     if (inode === null) {
-      if (this.isReadOnly(path)) return { error: 'Read-only file system' };
+      if (this.isReadOnly(path)) return { error: 'Read-only file system', notices };
       const slash = canonical.lastIndexOf('/');
       const directory = slash <= 0 ? '/' : canonical.slice(0, slash);
       const parent = this.resolveInode(directory);
       if (parent === null) {
-        if (!creation.createDirectories) return { error: 'No such file or directory' };
-        if (!this.mkdirp(directory, creation.directoryMode, 0, 0)) return { error: 'Permission denied' };
-        this.chown(directory, creation.directoryUid, creation.directoryGid);
+        if (!creation.createDirectories) return { error: 'No such file or directory', notices };
+        const missing: string[] = [];
+        let probe = directory;
+        while (probe !== '/' && this.resolveInode(probe) === null) {
+          missing.unshift(probe);
+          probe = probe.slice(0, Math.max(probe.lastIndexOf('/'), 1));
+        }
+        const anchor = this.resolveInode(probe);
+        if (anchor === null || anchor.type !== 'directory') return { error: 'Not a directory', notices, step: 'parents' };
+        if (!this.checkAccess(anchor, 'w', actor.uid, actor.gid, [...actor.gids]) || !this.checkAccess(anchor, 'x', actor.uid, actor.gid, [...actor.gids])) {
+          return { error: 'Permission denied', notices, step: 'parents' };
+        }
+        for (const created of missing) {
+          if (!this.mkdir(created, creation.directoryMode & ~actor.umask & 0o7777, actor.uid, actor.gid)) {
+            return { error: 'Permission denied', notices, step: 'parents' };
+          }
+          if (creation.directoryUid === null && creation.directoryGid === null) continue;
+          const refusal = this.chownRefusal(actor.uid, creation.directoryUid, creation.directoryGid, actor);
+          if (refusal !== null) {
+            notices.push({ kind: 'directory-chown', path: created, reason: refusal });
+            if (creation.failOnChownFailure === true) return { error: refusal, notices, step: 'parents' };
+            continue;
+          }
+          const made = this.resolveInode(created);
+          if (made !== null) {
+            if (creation.directoryUid !== null) made.uid = creation.directoryUid;
+            if (creation.directoryGid !== null) made.gid = creation.directoryGid;
+          }
+        }
       } else if (parent.type !== 'directory') {
-        return { error: 'Not a directory' };
+        return { error: 'Not a directory', notices };
+      } else if (!this.checkAccess(parent, 'w', actor.uid, actor.gid, [...actor.gids]) || !this.checkAccess(parent, 'x', actor.uid, actor.gid, [...actor.gids])) {
+        return { error: 'Permission denied', notices };
       }
-      if (!this.fitsInode()) return { error: 'No space left on device' };
-      inode = this.createFileAt(canonical, '', creation.mode, 0, 0);
-      if (inode === null) return { error: 'Permission denied' };
-      inode.uid = creation.uid;
-      inode.gid = creation.gid;
+      if (!this.fitsInode()) return { error: 'No space left on device', notices };
+      inode = this.createFileAt(canonical, '', creation.mode & ~actor.umask & 0o7777, 0, 0);
+      if (inode === null) return { error: 'Permission denied', notices };
+      inode.uid = actor.uid;
+      inode.gid = actor.gid;
+      if (creation.uid !== null || creation.gid !== null) {
+        const refusal = this.chownRefusal(actor.uid, creation.uid, creation.gid, actor);
+        if (refusal !== null) {
+          notices.push({ kind: 'file-chown', path: canonical, reason: refusal });
+          if (creation.failOnChownFailure === true) {
+            this.emitWrite({ path: canonical, previous: '', current: '', created: true, truncated: false });
+            return { error: refusal, notices, step: 'chown' };
+          }
+        } else {
+          if (creation.uid !== null) inode.uid = creation.uid;
+          if (creation.gid !== null) inode.gid = creation.gid;
+        }
+      }
       this.emitWrite({ path: canonical, previous: '', current: '', created: true, truncated: false });
     } else {
-      if (inode.type === 'directory') return { error: 'Is a directory' };
+      if (inode.type === 'directory') return { error: 'Is a directory', notices };
+      if (inode.type === 'file' && !this.checkAccess(inode, 'w', actor.uid, actor.gid, [...actor.gids])) {
+        return { error: 'Permission denied', notices };
+      }
     }
     const held = inode;
     const descriptor: AppendDescriptor = {
       path: canonical,
+      notices,
       lostLines: 0,
       lostBytes: 0,
       get unlinked(): boolean { return held.linkCount <= 0; },

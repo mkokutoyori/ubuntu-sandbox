@@ -2,7 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import { RSYSLOG_VERSION } from '@/network/rsyslog/engine/Log';
-import { RSYSLOG_CONFIG_PATH, type LinuxRsyslogDaemon } from '../../syslog/LinuxRsyslogDaemon';
+import { RSYSLOG_CONFIG_PATH, UNCLEAN_CONFIG_ABORT_TEXT, runFailedText, type LinuxRsyslogDaemon } from '../../syslog/LinuxRsyslogDaemon';
 
 const RSYSLOGD_BINARY = '/usr/sbin/rsyslogd';
 const PID_FILE = '/run/rsyslogd.pid';
@@ -70,6 +70,8 @@ export const rsyslogdCommand: LinuxCommand = {
       if (level === 0) return { output: '', exitCode: 0 };
       const result = running.verify(path);
       const header = `rsyslogd: version ${RSYSLOG_VERSION}, config validation run (level ${level}), master config ${path}`;
+      if (result.fatalCode !== null) return { output: [header, ...result.lines, runFailedText(result.fatalCode)].join('\n'), exitCode: 1 };
+      if (result.hadErrors && result.abortOnUncleanConfig) return { output: [header, ...result.lines, UNCLEAN_CONFIG_ABORT_TEXT].join('\n'), exitCode: 2 };
       if (result.hadErrors) return { output: [header, ...result.lines].join('\n'), exitCode: 1 };
       return { output: [header, ...result.lines, 'rsyslogd: End of config validation run. Bye.'].join('\n'), exitCode: 0 };
     }

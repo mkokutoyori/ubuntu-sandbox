@@ -103,6 +103,7 @@ export interface OutputModule {
 }
 
 export interface InputInstance {
+  readonly bindsBeforePrivilegeDrop?: boolean;
   check?(): void;
   start(): boolean;
   stop(): void;

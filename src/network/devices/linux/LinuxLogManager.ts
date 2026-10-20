@@ -16,7 +16,7 @@ import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type Ker
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { SYSLOG_FACILITY } from '@/network/syslog/types';
 import { SyslogForwardSocket } from './syslog/SyslogForwardSocket';
-import type { AppendCreation, AppendDescriptor } from './VirtualFileSystem';
+import type { AppendCreation, AppendDescriptor, AppendFailure } from './VirtualFileSystem';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -534,7 +534,7 @@ export class LinuxLogManager {
     this.descriptorSink = sink;
   }
 
-  holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | { readonly error: string } {
+  holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | AppendFailure {
     const opened = this.vfs.openAppend(path, creation);
     if ('error' in opened) return opened;
     this.heldFiles.add(opened);

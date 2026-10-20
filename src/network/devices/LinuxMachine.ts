@@ -50,7 +50,7 @@ import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
-import { LinuxRsyslogDaemon, RSYSLOG_BINARY_MODULES, RSYSLOG_MODULE_DIRECTORY } from './linux/syslog/LinuxRsyslogDaemon';
+import { LinuxRsyslogDaemon, RSYSLOG_BINARY_MODULES, RSYSLOG_MODULE_DIRECTORY, UNCLEAN_CONFIG_ABORT_TEXT, runFailedText } from './linux/syslog/LinuxRsyslogDaemon';
 import { LinuxRsyslogHost, type RsyslogUdpEndpoint } from './linux/syslog/LinuxRsyslogHost';
 import { ClockTimers } from './linux/syslog/ClockTimers';
 import { reverseNameOf } from './linux/network/ReverseName';
@@ -296,6 +296,9 @@ function readUpstreamAnswer(
     nxdomain: reply.flags.rcode === DnsRcode.NXDOMAIN,
   };
 }
+
+const RLIMIT_NOFILE_CEILING = 1048576;
+const LOG_DAEMON_INFO = 30;
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -1587,6 +1590,10 @@ export abstract class LinuxMachine extends EndHost
     this.rsyslogTimers = timers;
     executor.onClockAdvanced(() => timers.pump());
     const mainPid = (): number => executor.serviceMgr.status('rsyslog')?.mainPid ?? 0;
+    const savedNofile = new Map<number, { soft: number; hard: number }>();
+    const rememberNofile = (uid: number): void => {
+      if (!savedNofile.has(uid)) savedNofile.set(uid, { soft: executor.processMgr.nofileLimit(uid), hard: executor.processMgr.nofileHardLimit(uid) });
+    };
     const host = new LinuxRsyslogHost({
       vfs,
       vfsReader: { read: (path) => vfs.readFile(path) },
@@ -1596,6 +1603,39 @@ export abstract class LinuxMachine extends EndHost
       udp: this as unknown as RsyslogUdpEndpoint,
       tcp: () => this.getTcpStack(),
       holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
+      descriptorLimitReached: () => {
+        const pid = mainPid();
+        return pid !== 0 && !executor.processMgr.canOpenDescriptor(pid, executor.descriptorSourcesFor(pid));
+      },
+      userNameOfUid: (uid) => executor.userMgr.getUserByUid(uid)?.username ?? null,
+      supplementaryGidsOf: (userName) => executor.userMgr.getUserGroups(userName).map((group) => group.gid),
+      applyCredentials: (uid, gid) => {
+        const record = executor.processMgr.get(mainPid());
+        if (record === undefined) return;
+        const limit = executor.processMgr.nofileLimit(record.uid);
+        const hard = executor.processMgr.nofileHardLimit(record.uid);
+        record.uid = uid;
+        record.gid = gid;
+        record.user = executor.userMgr.uidToName(uid);
+        rememberNofile(uid);
+        executor.processMgr.setNofileHardLimit(uid, hard);
+        executor.processMgr.setNofileLimit(uid, limit);
+      },
+      setOpenFilesLimit: (uid, limit) => {
+        const hard = executor.processMgr.nofileHardLimit(uid);
+        if (limit > RLIMIT_NOFILE_CEILING || (uid !== 0 && limit > hard)) return { errno: 'EPERM', hardLimit: hard };
+        rememberNofile(uid);
+        executor.processMgr.setNofileHardLimit(uid, limit);
+        executor.processMgr.setNofileLimit(uid, limit);
+        return null;
+      },
+      restoreProcessLimits: () => {
+        for (const [uid, saved] of savedNofile) {
+          executor.processMgr.setNofileHardLimit(uid, saved.hard);
+          executor.processMgr.setNofileLimit(uid, saved.soft);
+        }
+        savedNofile.clear();
+      },
       wallMs: () => this.getSystemClockMs(),
       monotonicMs: () => this.getMonotonicClockMs(),
       bootTimeMs: () => executor.lifecycle.bootedAt()?.getTime() ?? this.getSystemClockMs(),
@@ -1647,17 +1687,25 @@ export abstract class LinuxMachine extends EndHost
     executor.serviceMgr.registerConfigCheck('rsyslog', () => {
       if (daemon.isRunning) return { ok: true };
       const verification = daemon.verify();
-      if (verification.fatalCode === null) return { ok: true };
-      return {
-        ok: false,
-        error: [...verification.lines, `rsyslogd: run failed with error ${verification.fatalCode} (see rsyslog.conf(5) manpage for error list)`].join('\n'),
-        verbatim: true,
-      };
+      if (verification.fatalCode !== null) {
+        return { ok: false, error: [...verification.lines, runFailedText(verification.fatalCode)].join('\n'), verbatim: true };
+      }
+      if (verification.abortOnUncleanConfig && verification.hadErrors) {
+        return { ok: false, error: [...verification.lines, UNCLEAN_CONFIG_ABORT_TEXT].join('\n'), verbatim: true };
+      }
+      return { ok: true };
     });
 
     const startDaemon = (): void => {
       if (daemon.isRunning) return;
-      if (!daemon.start().started) return;
+      const outcome = daemon.start();
+      if ('lines' in outcome) {
+        for (const line of [...outcome.lines, runFailedText(outcome.fatalCode)]) {
+          executor.logMgr.submitLibcSyslog(LOG_DAEMON_INFO, 'rsyslogd', mainPid(), line.replace(/^rsyslogd: /, ''), timers.now());
+        }
+        executor.serviceMgr.markFailed('rsyslog', 'exit-code');
+        return;
+      }
       this.rsyslogSignalTrap?.();
       this.rsyslogSignalTrap = executor.processMgr.trapSignal(mainPid(), 'SIGHUP', () => daemon.hup());
       this.publishRsyslogPorts();

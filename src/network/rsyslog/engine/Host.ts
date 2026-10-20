@@ -24,7 +24,15 @@ export interface FileHandle {
   close(): void;
 }
 
-export type OpenFileResult = { readonly handle: FileHandle } | { readonly error: string };
+export interface OpenNotice {
+  readonly kind: 'directory-chown' | 'file-chown';
+  readonly path: string;
+  readonly reason: string;
+}
+
+export type OpenFileResult =
+  | { readonly handle: FileHandle; readonly notices?: readonly OpenNotice[] }
+  | { readonly error: string; readonly notices?: readonly OpenNotice[]; readonly step?: 'parents' | 'chown' };
 
 export interface RsyslogFiles {
   open(path: string, options: OpenFileOptions): OpenFileResult;
@@ -161,7 +169,19 @@ export interface RsyslogKernelLog {
   restoreConsoleLogLevel(): void;
 }
 
+export interface RsyslogProcess {
+  setSupplementaryGroups(gids: readonly number[]): Errno | null;
+  initSupplementaryGroups(userName: string, gid: number): Errno | null;
+  setGid(gid: number): Errno | null;
+  setUid(uid: number): Errno | null;
+  userNameOf(uid: number): string | null;
+  currentGid(): number;
+  setUmask(mask: number): void;
+  setOpenFilesLimit(limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
+}
+
 export interface RsyslogHost {
+  readonly process?: RsyslogProcess;
   readonly clock: RsyslogClock;
   readonly files: RsyslogFiles;
   readonly users: RsyslogUsers;

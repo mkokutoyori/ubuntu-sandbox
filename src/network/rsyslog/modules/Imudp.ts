@@ -92,6 +92,7 @@ interface ListenerSettings {
 }
 
 class ImudpListener implements InputInstance {
+  readonly bindsBeforePrivilegeDrop = true;
   readonly description: string;
   private listeners: Listener[] = [];
   private readonly counters = new Map<string, { submitted: number; disallowed: number }>();

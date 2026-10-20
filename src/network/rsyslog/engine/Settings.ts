@@ -74,6 +74,9 @@ export interface GlobalSettings {
   mainQueue: QueueSettings;
   defaultRuleset: string;
   maxOpenFiles: number | null;
+  requireAllInputs: boolean;
+  oversize: { errorFile: string | null; report: boolean; mode: 'truncate' | 'split' | 'accept' };
+  privDrop: { uid: number; gid: number; keepSupplemental: boolean };
   extra: Map<string, ParamValue>;
 }
 
@@ -115,6 +118,9 @@ export function defaultGlobalSettings(): GlobalSettings {
     mainQueue: defaultQueueSettings('FixedArray', 100000),
     defaultRuleset: 'RSYSLOG_DefaultRuleset',
     maxOpenFiles: null,
+    requireAllInputs: false,
+    oversize: { errorFile: null, report: true, mode: 'truncate' },
+    privDrop: { uid: 0, gid: 0, keepSupplemental: false },
     extra: new Map(),
   };
 }
@@ -246,6 +252,17 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
     report(`invalid value '${secureMode}' for global parameter compatibility.defaults.secure`);
   }
   settings.maxOpenFiles = count(values, 'maxopenfiles') ?? settings.maxOpenFiles;
+  const policy = str(values, 'inputstartuppolicy');
+  if (policy === 'require-all') settings.requireAllInputs = true;
+  else if (policy === 'best-effort') settings.requireAllInputs = false;
+  else if (policy !== undefined) report(`invalid inputStartupPolicy '${policy}'; expected 'best-effort' or 'require-all'`);
+  settings.oversize.errorFile = str(values, 'oversizemsg.errorfile') ?? settings.oversize.errorFile;
+  settings.oversize.report = flag(values, 'oversizemsg.report') ?? settings.oversize.report;
+  const oversizeMode = str(values, 'oversizemsg.input.mode');
+  if (oversizeMode !== undefined) settings.oversize.mode = oversizeMode === 'split' || oversizeMode === 'accept' ? oversizeMode : 'truncate';
+  settings.privDrop.keepSupplemental = flag(values, 'privdrop.group.keepsupplemental') ?? settings.privDrop.keepSupplemental;
+  settings.privDrop.gid = count(values, 'privdrop.group.id') ?? count(values, 'privdrop.group.name') ?? settings.privDrop.gid;
+  settings.privDrop.uid = count(values, 'privdrop.user.id') ?? count(values, 'privdrop.user.name') ?? settings.privDrop.uid;
   settings.umask = count(values, 'umask') ?? settings.umask;
   settings.senders.reportNew = flag(values, 'senders.reportnew') ?? settings.senders.reportNew;
   settings.senders.reportGoneAway = flag(values, 'senders.reportgoneaway') ?? settings.senders.reportGoneAway;
