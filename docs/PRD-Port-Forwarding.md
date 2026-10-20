@@ -482,7 +482,7 @@ traité et un oubli.
 7. **[Hôte Linux, Critique — nouveau] Corriger le DNAT/SNAT Linux : réécrire
    le port ET recalculer les checksums L3+L4 — livré (§3 Phase 5).**
    Cf. §3 Phase 5 pour la limite restante (pas d'un-NAT/conntrack sur la
-   voie retour, séparée et hors périmètre).
+   voie retour, séparée et hors périmètre) — levée en §3 Phase 11.
 8. **[Hôte Linux, Mineur] `-j REDIRECT` et chaînes `INPUT`/`OUTPUT` de la
    table `nat` — livré (§3 Phase 6).** Décision retenue : câbler le
    comportement réel (validation par chaîne + REDIRECT en PREROUTING +
@@ -732,7 +732,9 @@ trafic routé/switché/reçu avant le code spécifique au NAT).
   capturent l'état du serveur *au moment de l'acceptation* plutôt
   qu'après le retour de `connect()`. Implémenter un vrai un-NAT/conntrack
   pour ce moteur serait un chantier séparé, plus large que « port +
-  checksum », et n'est pas tenté ici.
+  checksum », et n'est pas tenté ici. **Levé en Phase 11** : la voie
+  retour est traduite par le suivi de connexions, la poignée de mains se
+  termine.
 - **Tests** : nouveau fichier `linux-dnat-port-forward.test.ts` (4 cas) —
   vraie topologie (client externe, passerelle `LinuxServer` avec
   `sysctl net.ipv4.ip_forward=1` + `iptables -t nat -A PREROUTING ... -j
@@ -802,7 +804,8 @@ toujours pas la réponse. Ce n'est donc pas une particularité du cas
 de table de sessions retour/un-NAT pour ce moteur iptables), qui touche
 aussi bien une redirection vers un port local différent. Le test TCP de
 cette phase s'arrête donc, comme celui de la Phase 5, à « le SYN atteint le
-port redirigé », pas à l'établissement complet.
+port redirigé », pas à l'établissement complet. **Levé en Phase 11** : le
+test va jusqu'à l'établissement.
 
 **Délibérément non câblé, et documenté comme tel plutôt que silencieusement
 absent** :
@@ -1011,6 +1014,63 @@ compose la patte lointaine » seraient pires qu'un seul.
   l'interopération des deux piles (chantier d'unification SSH) — un client
   au prompt ne compose toujours pas un port de forward en loopback, les
   deux tables de forwards restant distinctes.
+
+### Phase 11 — Hôte Linux : la table `nat` s'inscrit dans le suivi de connexions — voie retour livrée
+
+Les Phases 5 et 6 s'arrêtaient à « le SYN atteint le bon port » parce que
+le moteur réécrivait le paquet du sens aller et ne retenait rien de ce que
+la table `nat` avait décidé : la réponse revenait sous l'adresse du serveur
+interne, que la socket du client ne reconnaît pas. Le noyau ne fait pas
+cela : la table `nat` ne décide que du PREMIER paquet d'un flux
+(`nf_nat_inet_fn`), ce qu'elle décide s'inscrit dans le tuple de réponse
+du suivi de connexions, et c'est ce tuple qui traduit ensuite chaque
+paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
+`ConnectionTracker` du lot conntrack.
+
+- **Le tuple unique** (`NatMapping.ts`) : la plage de la règle, sinon les
+  trois plages de ports par défaut du noyau pour une source (1-511,
+  600-1023, 1024-65535 selon le port d'origine), contre les tuples de
+  réponse que la table tient déjà — deux hôtes internes qui émettent depuis
+  le même port ne se rencontrent pas. L'identifiant de l'écho tient lieu de
+  port pour l'ICMP. Dans une plage d'adresses, l'adresse est celle de
+  `find_best_ips_proto` : `jhash2` de la source (et de la destination hors
+  `--persistent`) ramené à la plage par `reciprocal_scale`, vérifié contre
+  le code du noyau 6.1 compilé avec gcc.
+- **La grammaire des cibles** (`NatRange.ts`) : plage d'adresses, plage de
+  ports avec sa base, drapeaux `--random`, `--random-fully`,
+  `--persistent`, lus une fois à l'insertion de la règle avec les messages
+  de `libipt_DNAT`, `libipt_SNAT`, `libipt_MASQUERADE` et `libipt_REDIRECT` ;
+  imprimée par une seule fonction pour `-S`, `-L` et `iptables-save`.
+- **Les crochets** sont posés là où le noyau les met : PREROUTING à
+  l'arrivée (avant la décision de routage, donc le FORWARD du filtre voit
+  le paquet traduit), LOCAL_IN avant la remise à une socket, POSTROUTING
+  après la décision de transmission. Le paquet porte son entrée de suivi
+  d'un crochet à l'autre ; un flux est inscrit une fois, à la fin du
+  dernier crochet, et refusé (`insert_failed`) si son tuple de réponse est
+  déjà pris.
+- **Les erreurs ICMP** sont traduites avec le paquet qu'elles citent
+  (`nf_nat_icmp_reply_translation`) : `traceroute` et la découverte de MTU
+  à travers un MASQUERADE marchent.
+- **Disparaissent** : l'ensemble des interfaces portant une règle
+  MASQUERADE (`masqueradeOnInterfaces`), que l'insertion remplissait et que
+  rien ne vidait — après `iptables -t nat -F` la source était encore
+  réécrite —, et la réécriture paquet par paquet de `handleIPv4` et
+  `forwardIPv4`.
+- **Reste** : la chaîne OUTPUT de la table `nat` pour le TCP et l'ICMP que
+  la machine ouvre elle-même (et les jambes de bouclage), la défragmentation
+  autour de la traduction, le renvoi par la même interface, NAT66, le
+  vidage des flux MASQUERADE quand l'interface tombe.
+- Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
+  (93 cas de bout en bout),
+  `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
+  vecteurs du noyau, `uniqueTuple` dans un monde de tirages fixes, puis le
+  suivi seul : liaison unique, refus à l'insertion, échéance, reprise d'une
+  traduction),
+  `probe-iptables-chaque-crochet-de-la-table-nat-decide.test.ts` (19 cas)
+  et `port-address-toward.test.ts` (7 cas) ;
+  `linux-dnat-port-forward.test.ts` et
+  `linux-nat-redirect-output.test.ts` vont maintenant jusqu'à
+  l'établissement de la connexion.
 
 ---
 

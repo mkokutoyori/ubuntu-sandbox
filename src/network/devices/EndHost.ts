@@ -168,7 +168,7 @@ import { MvrpAgent } from '../mvrp/MvrpAgent';
 import { MVRP_ETHERTYPE } from '../mvrp/MvrpPdu';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { LldpNeighbor } from '../lldp/LldpAgent';
-import { parseNatAddress, rewriteNatAddress } from '../nat/rewrite';
+import { parseNatAddress } from '../nat/rewrite';
 import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
 import { DnsClass, RRType } from '../dns/wire/RRType';
 import { makeARecord } from '../dns/wire/ResourceRecord';
@@ -711,8 +711,6 @@ export abstract class EndHost extends Equipment {
    *   interface — the Windows (Vista+) default behaviour.
    */
   protected hostModel: 'weak' | 'strong' = 'weak';
-  /** Interfaces on which MASQUERADE is applied (iptables POSTROUTING MASQUERADE) */
-  protected masqueradeOnInterfaces: Set<string> = new Set();
 
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
@@ -2450,6 +2448,9 @@ export abstract class EndHost extends Equipment {
       const ipPkt = frame.payload as IPv4Packet;
       if (ipPkt && ipPkt.type === 'ipv4' && !this.forwardedDatagrams.has(ipPkt)) {
         this.countLocallyOriginated(ipPkt);
+        const leaving = this.natLocalOut(portName, ipPkt);
+        if (leaving === null) return false;
+        if (leaving !== ipPkt) return this.transmitFrame(portName, { ...frame, payload: leaving });
       }
     } else if (frame.etherType === ETHERTYPE_IPV6) {
       const ipv6 = frame.payload as IPv6Packet;
@@ -2705,26 +2706,26 @@ export abstract class EndHost extends Equipment {
     return 'accept';
   }
 
-  /**
-   * Evaluate NAT table for a forwarded packet.
-   * Subclasses (LinuxPC, LinuxServer) override this to use iptables nat table.
-   * Returns null (no NAT) by default.
-   */
-  protected evaluateNat(
-    _ipPkt: IPv4Packet, _inPort: string, _outPort: string,
-  ): { action: string; address?: string } | null {
-    return null;
+  protected natPreRouting(_inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    return ipPkt;
   }
 
-  /**
-   * Evaluate PREROUTING DNAT rules (before routing decision).
-   * Subclasses override to implement iptables nat PREROUTING chain.
-   * Returns null (no DNAT) by default.
-   */
-  protected evaluatePreRouting(
-    _inPort: string, _ipPkt: IPv4Packet,
-  ): { action: string; address?: string } | null {
-    return null;
+  protected natLocalIn(_inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    return ipPkt;
+  }
+
+  protected natPostRouting(
+    _inPort: string | undefined, _outPort: Port, _nextHop: IPAddress, _received: IPv4Packet, outgoing: IPv4Packet,
+  ): IPv4Packet | null {
+    return outgoing;
+  }
+
+  protected natLocalOut(_outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    return ipPkt;
+  }
+
+  protected confirmForwarded(_ipPkt: IPv4Packet): boolean {
+    return true;
   }
 
   /**
@@ -2837,30 +2838,9 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    // ── PREROUTING: evaluate DNAT rules before routing decision ──
-    // This allows NAT devices to redirect packets addressed to themselves
-    // to a different destination (e.g. port forwarding / DNAT).
-    const preNat = this.evaluatePreRouting(portName, ipPkt);
-    if (preNat?.action === 'DROP') {
-      Logger.info(this.id, 'ipv4:nat-dropped',
-        `${this.name}: nat PREROUTING drop ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
-      return;
-    }
-    if (preNat && preNat.action === 'DNAT' && preNat.address) {
-      try {
-        const { ip, port } = parseNatAddress(preNat.address);
-        ipPkt = rewriteNatAddress(ipPkt, 'dst', ip, port);
-      } catch { /* keep original */ }
-    } else if (preNat && preNat.action === 'REDIRECT') {
-      // REDIRECT has no --to-destination to read: real Linux maps the
-      // destination to this box's own address on the interface that
-      // received the packet (`--to-ports` optionally changes the port).
-      const localIP = this.ports.get(portName)?.getIPAddress();
-      if (localIP) {
-        const portNum = preNat.address ? parseInt(preNat.address, 10) : NaN;
-        ipPkt = rewriteNatAddress(ipPkt, 'dst', localIP.toString(), Number.isNaN(portNum) ? undefined : portNum);
-      }
-    }
+    const arrived = this.natPreRouting(portName, ipPkt);
+    if (arrived === null) return;
+    ipPkt = arrived;
 
     // Check if packet is for us
     const port = this.ports.get(portName);
@@ -2901,6 +2881,10 @@ export abstract class EndHost extends Equipment {
         }
         return;
       }
+
+      const delivered = this.natLocalIn(portName, ipPkt);
+      if (delivered === null) return;
+      ipPkt = delivered;
 
       this.protocolCounters.ipInDelivers++;
       // Deliver to upper layer
@@ -2976,35 +2960,8 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    // NAT: apply POSTROUTING rules (MASQUERADE/SNAT/DNAT)
-    let fwdPkt: IPv4Packet = decision.packet;
-
-    const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
-    if (natResult?.action === 'DROP') {
-      Logger.info(this.id, 'ipv4:nat-dropped',
-        `${this.name}: nat POSTROUTING drop ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${inPort}→${outPortName}`);
-      return;
-    }
-    if (natResult) {
-      if (natResult.action === 'MASQUERADE') {
-        const outPortIP = route.port.getIPAddress();
-        if (outPortIP) fwdPkt = rewriteNatAddress(fwdPkt, 'src', outPortIP.toString());
-      } else if (natResult.action === 'SNAT' && natResult.address) {
-        try {
-          const { ip, port } = parseNatAddress(natResult.address);
-          fwdPkt = rewriteNatAddress(fwdPkt, 'src', ip, port);
-        } catch { /* keep original */ }
-      } else if (natResult.action === 'DNAT' && natResult.address) {
-        try {
-          const { ip, port } = parseNatAddress(natResult.address);
-          fwdPkt = rewriteNatAddress(fwdPkt, 'dst', ip, port);
-        } catch { /* keep original */ }
-      }
-    } else if (this.masqueradeOnInterfaces.has(outPortName)) {
-      // Fallback: legacy masquerade support
-      const outPortIP = route.port.getIPAddress();
-      if (outPortIP) fwdPkt = rewriteNatAddress(fwdPkt, 'src', outPortIP.toString());
-    }
+    const fwdPkt = this.natPostRouting(inPort, route.port, route.nextHopIP, ipPkt, decision.packet);
+    if (fwdPkt === null || !this.confirmForwarded(ipPkt)) return;
 
     // RFC 791 §3.2 / RFC 1191: this NAT-gateway forward can cross an MTU
     // boundary just like a real router forward can. DF=1 gets an ICMP
@@ -3241,20 +3198,6 @@ export abstract class EndHost extends Equipment {
         etherType: ETHERTYPE_IPV6, payload: pkt,
       });
     });
-  }
-
-  /**
-   * Return the apparent source IP the peer at `toIP` would see after MASQUERADE.
-   * Used by IPSecEngine.getApparentSourceIP().
-   */
-  getOutgoingMasqueradeIP(toIP: string): string | null {
-    try {
-      const route = this.resolveRoute(new IPAddress(toIP));
-      if (!route) return null;
-      const outPortName = route.port.getName();
-      if (!this.masqueradeOnInterfaces.has(outPortName)) return null;
-      return route.port.getIPAddress()?.toString() ?? null;
-    } catch { return null; }
   }
 
   // ─── ICMP Handling (RFC 792) ──────────────────────────────────

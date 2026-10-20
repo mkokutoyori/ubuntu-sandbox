@@ -789,10 +789,15 @@ export const IP_PROTO_ICMP = 1;
 export const IP_PROTO_TCP  = 6;
 export const IP_PROTO_UDP  = 17;
 export const IP_PROTO_UDPLITE = 136;
+export const IP_PROTO_DCCP = 33;
+export const IP_PROTO_SCTP = 132;
 export const IP_PROTO_ESP  = 50;  // Encapsulating Security Payload (RFC 4303)
 export const IP_PROTO_AH   = 51;  // Authentication Header (RFC 4302)
 export const IP_PROTO_EIGRP = 88; // EIGRP (RFC 7868 §4.2 — runs directly over IP)
 export const IP_PROTO_OSPF = 89;  // OSPF (RFC 2328 §4.3 — runs directly over IP)
+export const PORT_BEARING_PROTOCOLS: ReadonlySet<number> = new Set([
+  IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IP_PROTO_SCTP, IP_PROTO_DCCP,
+]);
 
 /** IKE / NAT-T UDP ports */
 export const UDP_PORT_IKE       = 500;   // RFC 2408 ISAKMP

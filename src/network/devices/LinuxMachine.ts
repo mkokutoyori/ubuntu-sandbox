@@ -10,7 +10,7 @@
  *   - `IpNetworkContext` adapter used by the `ip` command
  *   - `LinuxNetKernel` façade used by future `LinuxCommand` implementations
  *   - `LinuxCommandRegistry` wiring + registration of `CORE_LINUX_COMMANDS`
- *   - `firewallFilter`, `evaluateNat`, `evaluatePreRouting` overrides
+ *   - `firewallFilter` and the conntrack NAT traversal hooks
  *   - editor / session helpers shared with `Terminal.tsx`
  *   - co-located L7 daemons (`DnsService`) and `IpXfrmContext`
  *
@@ -199,8 +199,11 @@ import type { DsRecordData, ResourceRecord, ResourceRecordData } from '../dns/wi
 import { decodeDnsMessage, encodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { X509Certificate } from '../pki/X509Certificate';
-import type { PacketFacts, PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
-import { connectionTupleOf, type ConnectionTuple } from './linux/ConnectionTracker';
+import type { NatHook, NatHookContext, NatResult, PacketFacts, PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
+import { connectionTupleOf, type ConnectionState, type ConnectionTuple, type NatTranslation } from './linux/ConnectionTracker';
+import { Logger } from '../core/Logger';
+import { isIPv4Fragment } from '../core/Ipv4Fragmentation';
+import { rewriteIcmpError, rewriteNatAddress } from '../nat/rewrite';
 
 // Façade + command registry
 import type { LinuxNetKernel, TracerouteHop } from './linux/LinuxNetKernel';
@@ -301,6 +304,8 @@ const RLIMIT_NOFILE_CEILING = 1048576;
 const LOG_DAEMON_INFO = 30;
 
 // ─── Class ─────────────────────────────────────────────────────────────
+
+const sideOf = (translation: NatTranslation): 'src' | 'dst' => translation.side === 'source' ? 'src' : 'dst';
 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
@@ -4506,12 +4511,6 @@ export abstract class LinuxMachine extends EndHost
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;
       },
-      addMasqueradeInterface: (iface: string): void => {
-        this.masqueradeOnInterfaces.add(iface);
-      },
-      removeMasqueradeInterface: (iface: string): void => {
-        this.masqueradeOnInterfaces.delete(iface);
-      },
       extractPorts: (pkt: IPv4Packet): { srcPort?: number; dstPort?: number } => {
         return this.extractPorts(pkt);
       },
@@ -4734,23 +4733,91 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
-  protected override evaluateNat(
-    ipPkt: IPv4Packet,
-    inPort: string,
-    outPort: string,
-  ): { action: string; address?: string } | null {
-    return this.executor.iptables.evaluateNat({
-      direction: 'forward', iface: inPort, outIface: outPort, ...this.packetFacts(ipPkt),
-    }, 'POSTROUTING');
+  protected evaluateNat(
+    ipPkt: IPv4Packet, inPort: string | undefined, outPort: string, state?: ConnectionState,
+  ): NatResult | null {
+    return this.executor.iptables.evaluateNat(this.postRoutingFacts(inPort, outPort, ipPkt), 'POSTROUTING', state);
   }
 
-  protected override evaluatePreRouting(
-    inPort: string,
-    ipPkt: IPv4Packet,
-  ): { action: string; address?: string } | null {
-    return this.executor.iptables.evaluateNat({
-      direction: 'in', iface: inPort, ...this.packetFacts(ipPkt),
-    }, 'PREROUTING');
+  protected evaluatePreRouting(inPort: string, ipPkt: IPv4Packet, state?: ConnectionState): NatResult | null {
+    return this.executor.iptables.evaluateNat(this.arrivalFacts(inPort, ipPkt), 'PREROUTING', state);
+  }
+
+  private arrivalFacts(inPort: string, ipPkt: IPv4Packet): PacketInfo {
+    return { direction: 'in', iface: inPort, ...this.packetFacts(ipPkt) };
+  }
+
+  private postRoutingFacts(inPort: string | undefined, outPort: string, ipPkt: IPv4Packet): PacketInfo {
+    return inPort === undefined
+      ? { direction: 'out', iface: outPort, ...this.packetFacts(ipPkt) }
+      : { direction: 'forward', iface: inPort, outIface: outPort, ...this.packetFacts(ipPkt) };
+  }
+
+  private traverseNat(
+    hook: NatHook, ipPkt: IPv4Packet, facts: () => PacketInfo, context: NatHookContext,
+    decide: (state: ConnectionState) => NatResult | null,
+  ): IPv4Packet | null {
+    const manager = this.executor.iptables;
+    const outcome = manager.natHook(facts, ipPkt, hook, context, decide);
+    if (outcome.kind === 'drop') {
+      Logger.info(this.id, 'ipv4:nat-dropped',
+        `${this.name}: nat ${hook} drop ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+      return null;
+    }
+    const { translation, error } = outcome;
+    if (error !== null) {
+      const repaired = rewriteIcmpError(
+        ipPkt,
+        { target: sideOf(error.inner), ip: error.inner.address, port: error.inner.key ?? undefined },
+        { target: sideOf(error.outer), ip: error.outer.address },
+      );
+      manager.carry(ipPkt, repaired);
+      return repaired;
+    }
+    if (translation === null) return ipPkt;
+    const translated = rewriteNatAddress(ipPkt, sideOf(translation), translation.address, translation.key ?? undefined);
+    manager.carry(ipPkt, translated);
+    return translated;
+  }
+
+  protected override natPreRouting(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (isIPv4Fragment(ipPkt)) return ipPkt;
+    const redirectAddress = this.ports.get(inPort)?.getIPAddress()?.toString() ?? null;
+    return this.traverseNat(
+      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress },
+      (state) => this.evaluatePreRouting(inPort, ipPkt, state),
+    );
+  }
+
+  protected override natLocalIn(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    return this.traverseNat(
+      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null },
+      (state) => this.executor.iptables.evaluateNat(this.arrivalFacts(inPort, ipPkt), 'INPUT', state),
+    );
+  }
+
+  protected override natPostRouting(
+    inPort: string | undefined, outPort: Port, nextHop: IPAddress, received: IPv4Packet, outgoing: IPv4Packet,
+  ): IPv4Packet | null {
+    this.executor.iptables.carry(received, outgoing);
+    const outName = outPort.getName();
+    const masqueradeAddress = outPort.addressToward(nextHop)?.toString() ?? null;
+    return this.traverseNat(
+      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null },
+      (state) => this.evaluateNat(outgoing, inPort, outName, state),
+    );
+  }
+
+  protected override natLocalOut(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (!this.executor.iptables.isTracked(ipPkt)) return ipPkt;
+    const port = this.ports.get(outPort);
+    if (port === undefined) return ipPkt;
+    const nextHop = this.resolveRoute(ipPkt.destinationIP, outPort)?.nextHopIP ?? ipPkt.destinationIP;
+    return this.natPostRouting(undefined, port, nextHop, ipPkt, ipPkt);
+  }
+
+  protected override confirmForwarded(ipPkt: IPv4Packet): boolean {
+    return this.executor.iptables.confirmForwarded(ipPkt);
   }
 
   protected override evaluateNatOutput(

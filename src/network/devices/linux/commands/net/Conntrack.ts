@@ -2,7 +2,7 @@ import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import type { ConnectionStatistics, ConnectionTracker, ConnectionTuple, FlowView } from '../../ConnectionTracker';
-import { IP_PROTO_ICMP, IP_PROTO_ICMPV6, IPAddress, IPv6Address } from '../../../../core/types';
+import { IP_PROTO_ICMP, IP_PROTO_ICMPV6, IPAddress, IPv6Address, PORT_BEARING_PROTOCOLS } from '../../../../core/types';
 import { IP_PROTO_GRE } from '../../../../gre/types';
 import {
   CONNTRACK_VERSION, STATUS_ASSURED, STATUS_SEEN_REPLY, parseConntrack,
@@ -30,8 +30,6 @@ const CONNTRACK_OPTIONS: readonly LinuxCommandOption[] = [
 const PROTOCOL_NAMES: Readonly<Record<number, string>> = {
   6: 'tcp', 17: 'udp', 136: 'udplite', 1: 'icmp', 58: 'icmpv6', 132: 'sctp', 47: 'gre', 33: 'dccp',
 };
-
-const PORT_PROTOCOLS: ReadonlySet<number> = new Set([6, 17, 136, 132, 33]);
 
 const STATISTIC_ORDER = [
   'found', 'invalid', 'insert', 'insert_failed', 'drop', 'early_drop', 'error', 'search_restart', 'clash_resolve', 'chaintoolong',
@@ -103,7 +101,7 @@ function withoutZone(address: string): string {
 
 function tupleText(tuple: ConnectionTuple): string {
   const addresses = `src=${withoutZone(tuple.srcIP)} dst=${withoutZone(tuple.dstIP)}`;
-  if (PORT_PROTOCOLS.has(tuple.protocol)) return `${addresses} sport=${tuple.srcPort} dport=${tuple.dstPort}`;
+  if (PORT_BEARING_PROTOCOLS.has(tuple.protocol)) return `${addresses} sport=${tuple.srcPort} dport=${tuple.dstPort}`;
   if (tuple.protocol === IP_PROTO_GRE) return `${addresses} srckey=0x${tuple.srcPort.toString(16)} dstkey=0x${tuple.dstPort.toString(16)}`;
   if (tuple.protocol === IP_PROTO_ICMP || tuple.protocol === IP_PROTO_ICMPV6) {
     return `${addresses} type=${tuple.icmpType ?? 0} code=${tuple.icmpCode ?? 0} id=${tuple.icmpId ?? 0}`;

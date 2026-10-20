@@ -1,7 +1,9 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import { IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE } from '../../core/types';
+import { IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IPAddress, PORT_BEARING_PROTOCOLS } from '../../core/types';
 import { IP_PROTO_GRE } from '../../gre/types';
+import { uniqueTuple, type NatManipulation, type NatWorld } from './NatMapping';
+import type { NatRange } from './NatRange';
 
 export type ConnectionState = 'INVALID' | 'UNTRACKED' | 'NEW' | 'RELATED' | 'ESTABLISHED';
 
@@ -29,7 +31,19 @@ export interface ConnectionStatistics {
   found: number;
   invalid: number;
   insert: number;
+  insert_failed: number;
   drop: number;
+}
+
+export interface NatTranslation {
+  readonly side: NatManipulation;
+  readonly address: string;
+  readonly key: number | null;
+}
+
+export interface ErrorTranslation {
+  readonly inner: NatTranslation;
+  readonly outer: NatTranslation;
 }
 
 export interface FlowView {
@@ -40,6 +54,8 @@ export interface FlowView {
   readonly assured: boolean;
   readonly tcpState: TcpConntrackState | null;
   readonly mark: number;
+  readonly natSource: boolean;
+  readonly natDestination: boolean;
 }
 
 type Direction = 'original' | 'reply';
@@ -50,7 +66,10 @@ type TcpCell = TcpConntrackState | 'INVALID' | 'IGNORE';
 
 interface Flow {
   readonly original: ConnectionTuple;
-  readonly reply: ConnectionTuple;
+  reply: ConnectionTuple;
+  snat: boolean;
+  dnat: boolean;
+  readonly natDone: { source: boolean; destination: boolean };
   readonly createdAt: number;
   expiresAt: number;
   seenReply: boolean;
@@ -169,7 +188,7 @@ function tcpIndexOf(flags: number): TcpIndex {
 function viewOf(flow: Flow, now: number): FlowView {
   return {
     original: flow.original, reply: flow.reply, remainingMs: flow.expiresAt - now, replied: flow.seenReply,
-    assured: flow.assured, tcpState: flow.tcpState, mark: flow.mark,
+    assured: flow.assured, tcpState: flow.tcpState, mark: flow.mark, natSource: flow.snat, natDestination: flow.dnat,
   };
 }
 
@@ -189,7 +208,8 @@ export function connectionTupleOf(packet: ConnectionTuple): ConnectionTuple {
 export class ConnectionTracker {
   private readonly index = new Map<string, Hit>();
   private purgedAt = 0;
-  readonly statistics: ConnectionStatistics = { found: 0, invalid: 0, insert: 0, drop: 0 };
+  readonly statistics: ConnectionStatistics = { found: 0, invalid: 0, insert: 0, insert_failed: 0, drop: 0 };
+  private randomState = 0x9e3779b9;
 
   constructor(private readonly family: 4 | 6) {}
 
@@ -205,15 +225,85 @@ export class ConnectionTracker {
     return tracked;
   }
 
-  confirm(tracked: TrackedEntry): void {
-    if (tracked.pending === null || tracked.state !== 'NEW' || tracked.confirmed) return;
-    tracked.confirmed = true;
+  confirm(tracked: TrackedEntry): boolean {
+    if (tracked.pending === null || tracked.state !== 'NEW' || tracked.confirmed) return true;
     const flow = tracked.pending;
     const now = simulationNowMs();
+    const clash = this.index.get(keyOf(flow.reply));
+    if (clash !== undefined && clash.flow !== flow && keyOf(flow.reply) !== keyOf(flow.original)) {
+      if (clash.flow.expiresAt > now) {
+        this.statistics.insert_failed++;
+        return false;
+      }
+      this.remove(clash.flow);
+    }
+    tracked.confirmed = true;
     this.index.set(keyOf(flow.original), { flow, direction: 'original' });
     if (keyOf(flow.reply) !== keyOf(flow.original)) this.index.set(keyOf(flow.reply), { flow, direction: 'reply' });
     this.statistics.insert++;
     if (now - this.purgedAt >= PURGE_INTERVAL_MS) this.purge(now);
+    return true;
+  }
+
+  initialized(tracked: TrackedEntry, manipulation: NatManipulation): boolean {
+    const flow = this.flowOf(tracked);
+    return flow === null || flow.natDone[manipulation];
+  }
+
+  bind(tracked: TrackedEntry, range: NatRange, manipulation: NatManipulation): void {
+    const flow = this.flowOf(tracked);
+    if (flow === null || flow.natDone[manipulation] || this.family !== 4) return;
+    flow.natDone[manipulation] = true;
+    const current = this.reverseOf(flow.reply);
+    if (current === null) return;
+    const next = uniqueTuple(current, range, manipulation, this.natWorld(flow));
+    const reply = this.reverseOf(next);
+    if (reply === null || keyOf(reply) === keyOf(flow.reply)) return;
+    this.alterReply(flow, reply);
+    if (manipulation === 'source') flow.snat = true;
+    else flow.dnat = true;
+  }
+
+  bindUnchanged(tracked: TrackedEntry, manipulation: NatManipulation): void {
+    const flow = this.flowOf(tracked);
+    if (flow === null || flow.natDone[manipulation]) return;
+    const pinned = manipulation === 'source' ? flow.reply.dstIP : flow.reply.srcIP;
+    this.bind(tracked, {
+      addresses: { min: new IPAddress(pinned), max: new IPAddress(pinned) },
+      ports: null, random: false, randomFully: false, persistent: false,
+    }, manipulation);
+  }
+
+  translation(tracked: TrackedEntry, manipulation: NatManipulation): NatTranslation | null {
+    const flow = this.flowOf(tracked);
+    if (flow === null) return null;
+    const direction = tracked.hit?.direction ?? 'original';
+    const translated = (direction === 'original') === (manipulation === 'source') ? flow.snat : flow.dnat;
+    if (!translated) return null;
+    const other = direction === 'original' ? flow.reply : flow.original;
+    const icmp = other.protocol === IP_PROTO_ICMP || other.protocol === IP_PROTO_ICMPV6;
+    const address = manipulation === 'source' ? other.dstIP : other.srcIP;
+    const port = manipulation === 'source' ? other.dstPort : other.srcPort;
+    return { side: manipulation, address, key: icmp ? other.icmpId ?? null : PORT_BEARING_PROTOCOLS.has(other.protocol) ? port : null };
+  }
+
+  errorTranslation(tracked: TrackedEntry, manipulation: NatManipulation): ErrorTranslation | null {
+    if (tracked.state !== 'RELATED' || tracked.hit === null) return null;
+    const { flow, direction } = tracked.hit;
+    const needed = (direction === 'original') === (manipulation === 'source') ? flow.snat : flow.dnat;
+    if (!needed) return null;
+    const opposite = direction === 'original' ? flow.reply : flow.original;
+    const innerSide: NatManipulation = manipulation === 'source' ? 'destination' : 'source';
+    const icmp = opposite.protocol === IP_PROTO_ICMP || opposite.protocol === IP_PROTO_ICMPV6;
+    const port = innerSide === 'source' ? opposite.srcPort : opposite.dstPort;
+    return {
+      inner: {
+        side: innerSide,
+        address: innerSide === 'source' ? opposite.srcIP : opposite.dstIP,
+        key: icmp ? opposite.icmpId ?? null : PORT_BEARING_PROTOCOLS.has(opposite.protocol) ? port : null,
+      },
+      outer: { side: manipulation, address: manipulation === 'source' ? opposite.dstIP : opposite.srcIP, key: null },
+    };
   }
 
   flows(): readonly FlowView[] {
@@ -255,8 +345,11 @@ export class ConnectionTracker {
   }
 
   private evaluateError(packet: TrackedPacket, related: ConnectionTuple): TrackedEntry {
-    const hit = this.lookup(related);
-    return hit !== undefined && packet.dstIP === related.srcIP ? entry('RELATED', { hit }) : entry('INVALID');
+    const inverted = this.reverseOf(related);
+    const hit = inverted === null ? undefined : this.lookup(inverted);
+    if (hit === undefined) return entry('INVALID');
+    const found = hit.direction === 'original' ? hit.flow.original : hit.flow.reply;
+    return packet.dstIP === found.dstIP ? entry('RELATED', { hit }) : entry('INVALID');
   }
 
   private evaluateNew(packet: TrackedPacket, tcp: boolean): TrackedEntry {
@@ -267,7 +360,8 @@ export class ConnectionTracker {
     if (icmp && !this.requestTypes().has(packet.icmpType!)) return entry('INVALID');
     const now = simulationNowMs();
     const flow: Flow = {
-      original, reply, createdAt: now, expiresAt: now, seenReply: false, assured: false, tcpState: null, mark: 0,
+      original, reply, snat: false, dnat: false, natDone: { source: false, destination: false },
+      createdAt: now, expiresAt: now, seenReply: false, assured: false, tcpState: null, mark: 0,
       simultaneousOpen: false, closeInitiated: false, lastIndex: null, lastDirection: null,
     };
     if (tcp) {
@@ -354,6 +448,39 @@ export class ConnectionTracker {
         flow.expiresAt = now + timeout;
       },
     });
+  }
+
+  private flowOf(tracked: TrackedEntry): Flow | null {
+    return tracked.hit?.flow ?? tracked.pending;
+  }
+
+  private alterReply(flow: Flow, reply: ConnectionTuple): void {
+    const indexed = this.index.get(keyOf(flow.reply))?.flow === flow;
+    if (indexed) this.index.delete(keyOf(flow.reply));
+    flow.reply = reply;
+    if (indexed) this.index.set(keyOf(reply), { flow, direction: 'reply' });
+  }
+
+  private natWorld(flow: Flow): NatWorld {
+    return {
+      taken: (candidate) => {
+        const reply = this.reverseOf(candidate);
+        const hit = reply === null ? undefined : this.index.get(keyOf(reply));
+        return hit !== undefined && hit.flow !== flow && hit.flow.expiresAt > simulationNowMs();
+      },
+      mappedSources: (current) => this.liveFlows(simulationNowMs())
+        .filter((other) => other !== flow && other.natDone.source && other.original.protocol === current.protocol
+          && other.original.srcIP === current.srcIP && other.original.srcPort === current.srcPort
+          && other.original.icmpId === current.icmpId)
+        .map((other) => ({
+          ...current, srcIP: other.reply.dstIP, srcPort: other.reply.dstPort,
+          ...(other.reply.icmpId === undefined ? {} : { icmpId: other.reply.icmpId }),
+        })),
+      randomOffset: () => {
+        this.randomState = (Math.imul(this.randomState, 1664525) + 1013904223) >>> 0;
+        return this.randomState >>> 16;
+      },
+    };
   }
 
   private liveFlows(now: number): readonly Flow[] {
