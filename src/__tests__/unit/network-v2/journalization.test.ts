@@ -904,9 +904,10 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       expect(output.toLowerCase()).toMatch(/permission denied|error/);
     });
 
-    it('123. should deny unprivileged users access to read audit logs', async () => {
+    it('123. should deny users outside the adm log group access to read audit logs', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('su user -c "cat /var/log/audit/audit.log"');
+      await pc.executeCommand('sudo useradd -m intruder');
+      const output = await pc.executeCommand('su intruder -c "cat /var/log/audit/audit.log"');
       expect(output.toLowerCase()).toMatch(/permission denied|error/);
     });
 

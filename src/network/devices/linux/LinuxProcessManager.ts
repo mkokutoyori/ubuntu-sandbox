@@ -524,10 +524,12 @@ export class LinuxProcessManager {
 
     const daemonTrap = this.daemonTraps.get(pid)?.get(signal);
     if (daemonTrap !== undefined) {
-      this.publish({
-        topic: 'linux.process.signalled',
-        payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, delivered: true },
-      });
+      if (opts?.silent) {
+        this.publish({
+          topic: 'linux.process.signalled',
+          payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, delivered: true },
+        });
+      }
       daemonTrap();
       return true;
     }

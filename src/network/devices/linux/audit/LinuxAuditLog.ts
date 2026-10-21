@@ -8,9 +8,8 @@
  * `LinuxAuditRecord` is the value object for one such line;
  * `LinuxAuditLog` is the append-only store that also materialises the file.
  *
- * The store is the single source of truth: `audit.log` is re-rendered from
- * it on every append, and `ausearch` / `aureport` query it — so the file
- * and the model never drift.
+ * Every record is handed to a sink as one `audit.log` line: the running
+ * daemon's log writer, or a plain append to the file while no daemon runs.
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -91,12 +90,23 @@ export class LinuxAuditLog {
 
   private readonly records: LinuxAuditRecord[] = [];
   private serialCounter = 0;
+  private sink: ((line: string) => void) | null = null;
+
+  setSink(sink: ((line: string) => void) | null): void { this.sink = sink; }
+
+  private emitLine(line: string): void {
+    if (this.sink !== null) {
+      this.sink(line);
+      return;
+    }
+    this.vfs.writeFile(AUDIT_PATHS.log, `${line}\n`, 0, 0, 0o177, true);
+  }
 
   constructor(private readonly vfs: VirtualFileSystem) {
     this.vfs.mkdirp(AUDIT_PATHS.dir, 0o750, 0, 0);
     // Materialise an empty audit.log so its root-only perms apply even before
     // the first record (unprivileged reads are denied).
-    this.materialize();
+    if (!this.vfs.exists(AUDIT_PATHS.log)) this.vfs.writeFile(AUDIT_PATHS.log, '', 0, 0, 0o177);
   }
 
   /**
@@ -107,7 +117,7 @@ export class LinuxAuditLog {
     if (!this.admission(type)) return new LinuxAuditRecord(type, 0, fields, this.nowMs());
     const entry = new LinuxAuditRecord(type, ++this.serialCounter, fields);
     this.records.push(entry);
-    this.materialize();
+    this.emitLine(entry.render());
     return entry;
   }
 
@@ -122,7 +132,7 @@ export class LinuxAuditLog {
       this.records.push(entry);
       out.push(entry);
     }
-    this.materialize();
+    for (const entry of out) this.emitLine(entry.render());
     return out;
   }
 
@@ -157,10 +167,6 @@ export class LinuxAuditLog {
   /** The full rendered `audit.log` content. */
   renderAuditLog(): string {
     return this.records.map((r) => r.render()).join('\n') + (this.records.length ? '\n' : '');
-  }
-
-  private materialize(): void {
-    this.vfs.writeFile(AUDIT_PATHS.log, this.renderAuditLog(), 0, 0, 0o177);
   }
 }
 

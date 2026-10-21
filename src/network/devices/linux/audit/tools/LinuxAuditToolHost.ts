@@ -1,24 +1,11 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LinuxCommandExecutor } from '../../LinuxCommandExecutor';
-import { AUDIT_PATHS } from '../LinuxAuditLog';
+import { AUDITD_CONF_PATH, formatMessages, loadAuditdConfig } from '../daemon/AuditdConfig';
+import { vfsAuditdConfigFs } from '../daemon/VfsAuditdConfigFs';
 import { hostClock } from './AuditHostClock';
 import type { AuditSearchHost, DateStyle } from './AuditToolHost';
 import type { AuditLoginHost } from './AuditLoginHost';
-
-function parseAuditdConf(text: string): { logFile: string; eoeTimeout: number } {
-  let logFile: string = AUDIT_PATHS.log;
-  let eoeTimeout = 2;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (line.startsWith('#') || line === '') continue;
-    const match = /^([a-z_]+)\s*=\s*(.*)$/.exec(line);
-    if (!match) continue;
-    if (match[1] === 'log_file') logFile = match[2].trim();
-    else if (match[1] === 'end_of_event_timeout') eoeTimeout = parseInt(match[2], 10) || 2;
-  }
-  return { logFile, eoeTimeout };
-}
 
 const AUDIT_DEVICE = 0xfd00;
 
@@ -42,8 +29,9 @@ export function auditToolHost(executor: LinuxCommandExecutor): AuditSearchHost {
     nowSec: () => Math.floor(simulationNowMs() / 1000),
     uptimeSec: () => parseFloat((vfs.readFile('/proc/uptime') ?? '0').split(' ')[0]) || 0,
     auditConfig: () => {
-      const conf = vfs.readFile(AUDIT_PATHS.config);
-      return conf === null ? null : parseAuditdConf(conf);
+      const loaded = loadAuditdConfig(vfsAuditdConfigFs(vfs, userMgr, { uid: userMgr.currentUid, gids: [userMgr.currentGid] }), { configFile: AUDITD_CONF_PATH, allowLinks: false });
+      const note = loaded.rc === 0 ? '' : `NOTE - using built-in logs: ${loaded.config.logFile}\n`;
+      return { logFile: loaded.config.logFile, eoeTimeout: loaded.config.endOfEventTimeout, stderr: formatMessages(loaded.messages) + note };
     },
     dateStyle: () => dateStyleFor(lang),
     protocolName: (number) => {

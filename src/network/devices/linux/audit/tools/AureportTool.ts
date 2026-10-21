@@ -1125,6 +1125,7 @@ class Aureport {
     if (rc0) return 1;
     const config = this.host.auditConfig();
     if (!config) this.out.eprintf("Config file /etc/audit/auditd.conf doesn't exist, skipping\n");
+    else if (config.stderr) this.out.eprintf(config.stderr);
     const logFile = config?.logFile ?? '/var/log/audit/audit.log';
     const eoe = this.opts.eoeTimeout || config?.eoeTimeout || 2;
     this.assembler = new AuditEventAssembler(this.time, eoe);

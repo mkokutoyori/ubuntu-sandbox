@@ -135,7 +135,11 @@ import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from 
 import { runAuditctl } from './audit/tools/AuditctlTool';
 import { runAugenrules } from './audit/tools/AugenrulesTool';
 import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
-import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
+import { LinuxAuditRules } from './audit/LinuxAuditRules';
+import { AUDITD_CONF_PATH, loadAuditdConfig, type AuditPriority } from './audit/daemon/AuditdConfig';
+import { vfsAuditdConfigFs } from './audit/daemon/VfsAuditdConfigFs';
+import { Interpreter } from './audit/tools/AuditInterpret';
+import { hostClock } from './audit/tools/AuditHostClock';
 import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath, shippedCommandAt,
 } from './service/CriticalFiles';
@@ -474,6 +478,10 @@ function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: str
   }
   return { argv, stdoutPath, stdinPath };
 }
+
+const AUDIT_SYSLOG_PRIORITY: Readonly<Record<AuditPriority, number>> = {
+  EMERG: 0, ALERT: 1, CRIT: 2, ERR: 3, WARNING: 4, NOTICE: 5, INFO: 6,
+};
 
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
@@ -1407,7 +1415,7 @@ export class LinuxCommandExecutor {
     this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId, () => this.auditSender());
     this.fsAuditProjection?.dispose();
     this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
-    this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig());
+    this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig(), { checksOnReload: false });
     // §F9.3 — les fichiers que rsyslog tient ouverts sont des descripteurs
     // DU PROCESSUS rsyslog. Le puits les y pose, donc `/proc/<pid>/fd`,
     // `lsof` et `RLIMIT_NOFILE` lisent une seule table.
@@ -1432,9 +1440,24 @@ export class LinuxCommandExecutor {
       rules: this.auditRules,
       vfs: this.vfs,
       serviceMgr: this.serviceMgr,
-      freeSpaceMb: () => this.auditFreeSpaceMb(),
+      configFs: vfsAuditdConfigFs(this.vfs, this.userMgr),
+      logEnv: {
+        execute: (path) => { void this.executeAsync(path); },
+        sendMail: (subject, body, account) => this.deliverLocalMail(account, subject, body),
+        changeRunlevel: (level) => {
+          this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : 'poweroff.target');
+        },
+      },
+      syslog: (priority, text) => this.auditdSyslog(priority, text),
+      interpreter: () => new Interpreter(auditToolHost(this)),
+      hostName: () => (this.localDevice as { getHostname?: () => string } | null)?.getHostname?.() ?? 'localhost',
+      hostAddress: () => this.primaryIpv4Address(),
+      localTime: (seconds) => this.auditStateTime(seconds),
       kernelRelease: () => this.identity.kernel.release,
       loadRules: () => { this.handleAugenrules(['--load']); },
+      trapSignals: (pid, signals) => {
+        for (const signal of signals) this.processMgr.trapSignal(pid, signal as Signal, () => undefined);
+      },
     });
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
@@ -5138,11 +5161,40 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
   }
 
-  private checkAuditdConfig(): { ok: boolean; error?: string } {
-    const conf = this.vfs.readFile('/etc/audit/auditd.conf') ?? '';
-    const confErr = validateAuditdConfig(conf);
-    if (confErr) return { ok: false, error: `auditd: failed: ${confErr.message} (line ${confErr.line})` };
-    return { ok: true };
+  private checkAuditdConfig(): { ok: boolean; error?: string; verbatim?: boolean } {
+    const loaded = loadAuditdConfig(vfsAuditdConfigFs(this.vfs, this.userMgr), { configFile: AUDITD_CONF_PATH, allowLinks: false });
+    if (loaded.rc === 0) return { ok: true };
+    for (const entry of loaded.messages) this.auditdSyslog(entry.priority, entry.text);
+    return {
+      ok: false,
+      verbatim: true,
+      error: 'Job for auditd.service failed because the control process exited with error code.\n'
+        + 'See "systemctl status auditd.service" and "journalctl -xeu auditd.service" for details.',
+    };
+  }
+
+  private auditdSyslog(priority: AuditPriority, text: string): void {
+    this.logMgr.logService('auditd.service', 'auditd', text, this.serviceMgr.status('auditd')?.mainPid ?? 0, AUDIT_SYSLOG_PRIORITY[priority]);
+  }
+
+  private deliverLocalMail(account: string, subject: string, body: string): void {
+    const stamp = new Date(simulationNowMs()).toUTCString();
+    this.vfs.writeFile(`/var/mail/${account}`, `From auditd ${stamp}\nSubject: ${subject}\n\n${body}\n\n`, 0, 0, 0o117, true);
+  }
+
+  private primaryIpv4Address(): string | null {
+    const ports = (this.localDevice as { getPorts?: () => Array<{ getIPAddress(): { toString(): string } | null }> } | null)?.getPorts?.() ?? [];
+    for (const port of ports) {
+      const address = port.getIPAddress();
+      if (address !== null) return address.toString();
+    }
+    return null;
+  }
+
+  private auditStateTime(seconds: number): string {
+    const local = hostClock(this.identity.timezone || 'UTC').localTime(seconds);
+    const two = (value: number): string => String(value).padStart(2, '0');
+    return `${two(local.mon + 1)}/${two(local.mday)}/${two(local.year % 100)} ${two(local.hour)}:${two(local.min)}:${two(local.sec)}`;
   }
 
   private auditdRulesetWarning(): string {
@@ -5159,15 +5211,6 @@ export class LinuxCommandExecutor {
     }
     if (invalid.length === 0) return '';
     return `augenrules: failed to load some rules (invalid syntax): ${invalid.join(', ')}`;
-  }
-
-  private auditFreeSpaceMb(): number {
-    const root = this.mountTable.resolve('/var/log/audit');
-    const partGib = this.hardware.storage
-      .flatMap((d) => d.partitions)
-      .find((p) => p.mountPoint === (root?.target ?? '/'))?.sizeGib;
-    const capacityMb = Math.round((partGib ?? 48) * 1024);
-    return capacityMb;
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {

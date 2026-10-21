@@ -389,9 +389,9 @@ export class LinuxLogManager {
 
   // ── Internal methods ───────────────────────────────────────────
 
-  logService(unit: string, tag: string, message: string, pid: number): void {
+  logService(unit: string, tag: string, message: string, pid: number, priority: number = PRIORITY_NAMES.info): void {
     this.addEntry({
-      priority: PRIORITY_NAMES.info,
+      priority,
       facility: FACILITY_NAMES.daemon,
       unit,
       tag,

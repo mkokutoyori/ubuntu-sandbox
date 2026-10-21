@@ -1,55 +1,47 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxServiceManager } from '../LinuxServiceManager';
 import type { ServiceLifecyclePayload, ProcessSignalledPayload } from '../events';
 import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_UNSET } from './AuditUserMessage';
 import { K } from './tools/AuditKernelConstants';
+import type { Interpreter } from './tools/AuditInterpret';
 import type { LinuxAuditRules } from './LinuxAuditRules';
+import {
+  AUDITD_CONF_PATH, clearConfig, loadAuditdConfig, type AuditdConfig, type AuditdConfigFs, type AuditMessage,
+  type AuditPriority,
+} from './daemon/AuditdConfig';
+import { formatEnriched, formatRaw } from './daemon/AuditdFormat';
+import { AuditdLogWriter, type AuditdLogEnv } from './daemon/AuditdLogWriter';
 
 export type AuditdState = 'running' | 'stopped' | 'suspended';
 
-export interface AuditdConfig {
-  logFile: string;
-  logFormat: string;
-  flush: string;
-  spaceLeft: number;
-  spaceLeftAction: string;
-  adminSpaceLeft: number;
-  adminSpaceLeftAction: string;
-  diskFullAction: string;
-  maxLogFile: number;
-  numLogs: number;
-}
-
-const SUSPENDING_ACTIONS = new Set(['SUSPEND', 'SINGLE', 'HALT']);
-
-const DEFAULT_CONFIG: AuditdConfig = {
-  logFile: '/var/log/audit/audit.log',
-  logFormat: 'RAW',
-  flush: 'INCREMENTAL_ASYNC',
-  spaceLeft: 75,
-  spaceLeftAction: 'SYSLOG',
-  adminSpaceLeft: 50,
-  adminSpaceLeftAction: 'SUSPEND',
-  diskFullAction: 'SUSPEND',
-  maxLogFile: 8,
-  numLogs: 5,
-};
+export const AUDITD_STATE_FILE = '/var/run/auditd.state';
+const AUDIT_VERSION = '3.1.2';
+const TRAPPED_SIGNALS: readonly string[] = ['SIGHUP', 'SIGUSR1', 'SIGUSR2', 'SIGCONT'];
 
 export interface AuditdDeps {
   auditLog: LinuxAuditLog;
   rules: LinuxAuditRules;
   vfs: VirtualFileSystem;
   serviceMgr: LinuxServiceManager;
-  freeSpaceMb: () => number;
+  configFs: AuditdConfigFs;
+  logEnv: Omit<AuditdLogEnv, 'vfs' | 'stopDaemon' | 'syslog'>;
+  syslog: (priority: AuditPriority, text: string) => void;
+  interpreter: () => Interpreter;
+  hostName: () => string;
+  hostAddress: () => string | null;
+  localTime: (nowSec: number) => string;
   kernelRelease: () => string;
   loadRules: () => void;
+  trapSignals: (pid: number, signals: readonly string[]) => void;
 }
 
 export class LinuxAuditDaemon {
   private state: AuditdState = 'stopped';
-  private config: AuditdConfig = { ...DEFAULT_CONFIG };
+  private config: AuditdConfig = clearConfig();
+  private writer: AuditdLogWriter | null = null;
   private readonly subs: Unsubscribe[] = [];
 
   constructor(
@@ -68,6 +60,7 @@ export class LinuxAuditDaemon {
   dispose(): void {
     for (const off of this.subs) off();
     this.subs.length = 0;
+    this.deps.auditLog.setSink(null);
   }
 
   get running(): boolean {
@@ -82,8 +75,8 @@ export class LinuxAuditDaemon {
     return this.state;
   }
 
-  get spaceLeftAction(): string {
-    return this.config.spaceLeftAction;
+  get settings(): AuditdConfig {
+    return this.config;
   }
 
   private onLifecycle(p: ServiceLifecyclePayload, kind: 'start' | 'stop'): void {
@@ -98,26 +91,94 @@ export class LinuxAuditDaemon {
     if (p.comm !== 'auditd' && p.pid !== mainPid) return;
     if (p.signal === 'SIGHUP') this.runReload();
     else if (p.signal === 'SIGTERM' || p.signal === 'SIGKILL') this.runStop();
-    else if (p.signal === 'SIGUSR1') this.deps.auditLog.record('DAEMON_ROTATE', { op: 'rotate-logs', auid: AUDIT_UNSET, uid: 0, ses: AUDIT_UNSET, pid: p.pid, subj: 'unconfined', res: 'success' });
+    else if (p.signal === 'SIGUSR1') this.runRotate(p.pid);
+    else if (p.signal === 'SIGUSR2') this.runResume(p.pid);
+    else if (p.signal === 'SIGCONT') this.writeStateFile();
+  }
+
+  private emit(messages: readonly AuditMessage[]): void {
+    for (const entry of messages) this.deps.syslog(entry.priority, entry.text);
+  }
+
+  private pid(): number {
+    return this.deps.serviceMgr.status('auditd')?.mainPid ?? 1;
+  }
+
+  private resolveNode(config: AuditdConfig): boolean {
+    switch (config.nodeNameFormat) {
+      case 'NONE':
+        return true;
+      case 'USER':
+        if (config.nodeName === null) {
+          this.deps.syslog('ERR', 'User defined name missing');
+          return false;
+        }
+        return true;
+      case 'NUMERIC': {
+        const address = this.deps.hostAddress();
+        if (address === null) {
+          this.deps.syslog('ERR', `Cannot resolve hostname ${this.deps.hostName()} (Name or service not known)`);
+          return false;
+        }
+        config.nodeName = address;
+        return true;
+      }
+      default:
+        config.nodeName = this.deps.hostName().replace(/ /g, '_');
+        return true;
+    }
   }
 
   private runStart(): void {
-    this.loadConfig();
+    const loaded = loadAuditdConfig(this.deps.configFs, { configFile: AUDITD_CONF_PATH, allowLinks: false });
+    this.emit(loaded.messages);
+    if (loaded.rc !== 0) return;
+    const config = loaded.config;
+    if (!this.resolveNode(config)) return;
+    const writer = new AuditdLogWriter(config, {
+      ...this.deps.logEnv,
+      vfs: this.deps.vfs,
+      syslog: (priority, text) => this.deps.syslog(priority, text),
+      stopDaemon: () => this.runStop(),
+    });
+    if (!writer.start()) return;
+    this.config = config;
+    this.writer = writer;
+    this.state = 'running';
+    this.deps.auditLog.setSink((line) => this.dispatch(line));
     this.registerWithKernel();
-    this.evaluateDiskSpace();
+    this.deps.trapSignals(this.pid(), TRAPPED_SIGNALS);
     this.deps.auditLog.record('DAEMON_START', {
       op: 'start',
-      ver: '3.1.2',
-      format: this.config.logFormat.toLowerCase(),
+      ver: AUDIT_VERSION,
+      format: config.logFormat.toLowerCase(),
       kernel: this.deps.kernelRelease(),
       auid: AUDIT_UNSET,
-      pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
+      pid: this.pid(),
       uid: 0,
       ses: AUDIT_UNSET,
       subj: 'unconfined',
       res: 'success',
     });
     this.deps.rules.runAsDaemon(() => this.deps.loadRules());
+    this.syncState();
+  }
+
+  private syncState(): void {
+    if (this.writer === null) return;
+    this.state = this.writer.isSuspended ? 'suspended' : 'running';
+  }
+
+  private dispatch(line: string): void {
+    const writer = this.writer;
+    if (writer === null) return;
+    const config = writer.settings;
+    if (config.logFormat === 'NOLOG') return;
+    const formatted = config.logFormat === 'ENRICHED'
+      ? formatEnriched(line, config, this.deps.interpreter())
+      : formatRaw(line, config);
+    writer.write(formatted);
+    this.syncState();
   }
 
   private registerWithKernel(): void {
@@ -130,74 +191,80 @@ export class LinuxAuditDaemon {
         });
       }
     });
-    kernel.status.pid = this.deps.serviceMgr.status('auditd')?.mainPid ?? 0;
+    kernel.status.pid = this.pid();
   }
 
   private runStop(): void {
     if (this.state === 'stopped') return;
-    this.state = 'stopped';
-    this.deps.rules.kernel.status.pid = 0;
     this.deps.auditLog.record('DAEMON_END', {
       op: 'terminate',
       auid: AUDIT_UNSET,
       uid: 0,
       ses: AUDIT_UNSET,
-      pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
+      pid: this.pid(),
       subj: 'unconfined',
       res: 'success',
     });
+    this.state = 'stopped';
+    this.deps.rules.kernel.status.pid = 0;
+    this.deps.auditLog.setSink(null);
+    this.writer?.shutdown();
+    this.writer = null;
+    this.deps.vfs.deleteFile(AUDITD_STATE_FILE);
   }
 
   private runReload(): void {
-    this.loadConfig();
-    this.evaluateDiskSpace();
+    if (this.writer === null) return;
+    const loaded = loadAuditdConfig(this.deps.configFs, { configFile: AUDITD_CONF_PATH, allowLinks: false });
+    this.emit(loaded.messages);
+    if (loaded.rc !== 0) return;
+    this.deps.syslog('NOTICE', `config change requested by pid=${this.pid()} auid=${AUDIT_UNSET} subj=?`);
+    this.writer.reconfigure(loaded.config);
+    this.config = this.writer.settings;
     this.deps.auditLog.record('DAEMON_CONFIG', {
       op: 'reconfigure',
       state: 'changed',
       auid: AUDIT_UNSET,
-      pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
+      pid: this.pid(),
       subj: 'unconfined',
       res: 'success',
     });
+    this.syncState();
   }
 
-  private evaluateDiskSpace(): void {
-    const free = this.deps.freeSpaceMb();
-    if (free < this.config.adminSpaceLeft && SUSPENDING_ACTIONS.has(this.config.adminSpaceLeftAction)) {
-      this.state = 'suspended';
-      return;
-    }
-    if (free < this.config.spaceLeft && SUSPENDING_ACTIONS.has(this.config.spaceLeftAction)) {
-      this.state = 'suspended';
-      return;
-    }
-    this.state = 'running';
+  private runRotate(senderPid: number): void {
+    if (this.writer === null) return;
+    this.writer.rotateNow();
+    this.deps.auditLog.record('DAEMON_ROTATE', {
+      op: 'rotate-logs', auid: AUDIT_UNSET, uid: 0, ses: AUDIT_UNSET, pid: senderPid, subj: 'unconfined', res: 'success',
+    });
+    this.syncState();
   }
 
-  private loadConfig(): void {
-    const content = this.deps.vfs.readFile('/etc/audit/auditd.conf');
-    if (content === null) return;
-    const cfg: AuditdConfig = { ...DEFAULT_CONFIG };
-    for (const raw of content.split('\n')) {
-      const line = raw.trim();
-      if (!line || line.startsWith('#')) continue;
-      const eq = line.indexOf('=');
-      if (eq === -1) continue;
-      const key = line.slice(0, eq).trim();
-      const value = line.slice(eq + 1).trim();
-      switch (key) {
-        case 'log_file': cfg.logFile = value; break;
-        case 'log_format': cfg.logFormat = value; break;
-        case 'flush': cfg.flush = value; break;
-        case 'space_left': cfg.spaceLeft = parseInt(value, 10) || 0; break;
-        case 'space_left_action': cfg.spaceLeftAction = value.toUpperCase(); break;
-        case 'admin_space_left': cfg.adminSpaceLeft = parseInt(value, 10) || 0; break;
-        case 'admin_space_left_action': cfg.adminSpaceLeftAction = value.toUpperCase(); break;
-        case 'disk_full_action': cfg.diskFullAction = value.toUpperCase(); break;
-        case 'max_log_file': cfg.maxLogFile = parseInt(value, 10) || 0; break;
-        case 'num_logs': cfg.numLogs = parseInt(value, 10) || 0; break;
-      }
-    }
-    this.config = cfg;
+  private runResume(senderPid: number): void {
+    if (this.writer === null) return;
+    this.writer.resumeLogging();
+    this.deps.auditLog.record('DAEMON_RESUME', {
+      op: 'resume-logging', auid: AUDIT_UNSET, pid: senderPid, subj: 'unconfined', res: 'success',
+    });
+    this.syncState();
+  }
+
+  private writeStateFile(): void {
+    if (this.writer === null) return;
+    const seconds = Math.floor(simulationNowMs() / 1000);
+    const lines = [
+      `audit version = ${AUDIT_VERSION}`,
+      `current time = ${this.deps.localTime(seconds)}`,
+      `process priority = ${-this.config.priorityBoost}`,
+      ...this.writer.stateLines(),
+      'Number of active plugins = 0',
+      'current plugin queue depth = 0',
+      'max plugin queue depth used = 0',
+      `plugin queue size = ${this.config.qDepth}`,
+      'plugin queue overflow detected = no',
+      'plugin queueing suspended = no',
+    ];
+    this.deps.vfs.writeFile(AUDITD_STATE_FILE, `${lines.join('\n')}\n`, 0, 0, 0o137);
   }
 }

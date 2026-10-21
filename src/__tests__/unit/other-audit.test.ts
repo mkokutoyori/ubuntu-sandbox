@@ -804,10 +804,10 @@ describe('Linux Audit Trail System Suite', () => {
       expect(config).toContain('log_file = /tmp/audit.log');
     });
 
-    it('93. should show default backlog limit settings inside auditd.conf', async () => {
+    it('93. should show the kernel backlog limit in auditctl -s, not in auditd.conf (auditd 3.1.2 has no such keyword)', async () => {
       const pc = await setupAuditedPC();
-      const config = await pc.executeCommand('cat /etc/audit/auditd.conf');
-      expect(config).toContain('backlog_limit = 64');
+      expect(await pc.executeCommand('auditctl -s')).toContain('backlog_limit 8192');
+      expect(await pc.executeCommand('cat /etc/audit/auditd.conf')).not.toContain('backlog_limit');
     });
 
     it('94. should support configure trail size limits with max_log_file parameter', async () => {
@@ -852,17 +852,17 @@ describe('Linux Audit Trail System Suite', () => {
       expect(config).toContain('admin_space_left_action = HALT');
     });
 
-    it('100. should support configure rate of audits using rate_limit parameters in auditd.conf', async () => {
+    it('100. should report the audit rate limit through auditctl -s, unlimited by default', async () => {
       const pc = await setupAuditedPC();
-      const config = await pc.executeCommand('cat /etc/audit/auditd.conf');
-      expect(config).toContain('rate_limit = 0'); // unlimited by default
+      expect(await pc.executeCommand('auditctl -s')).toContain('rate_limit 0');
     });
 
-    it('101. should reject service reloading if auditd.conf syntax is corrupted', async () => {
+    it('101. should refuse to start auditd when auditd.conf holds an unknown keyword, and say which in the journal (tag auditd)', async () => {
       const pc = await setupAuditedPC();
       await pc.executeCommand('echo "corrupted_property_name = !!" > /etc/audit/auditd.conf');
-      const output = await pc.executeCommand('service auditd reload');
+      const output = await pc.executeCommand('service auditd restart');
       expect(output.toLowerCase()).toMatch(/failed|error/);
+      expect(await pc.executeCommand('journalctl -t auditd --no-pager')).toContain('Unknown keyword "corrupted_property_name" in line 1 of /etc/audit/auditd.conf');
     });
 
     it('102. should restore default configurations if config file backup is loaded', async () => {
@@ -874,11 +874,12 @@ describe('Linux Audit Trail System Suite', () => {
       expect(config).toContain('log_file');
     });
 
-    it('103. should reject max_log_file parameters if value is out of bounds (less than 1)', async () => {
+    it('103. should reject a max_log_file value that is not a number', async () => {
       const pc = await setupAuditedPC();
-      await pc.executeCommand('sed -i "s/max_log_file = 8/max_log_file = 0/g" /etc/audit/auditd.conf');
+      await pc.executeCommand('sed -i "s/max_log_file = 8/max_log_file = abc/g" /etc/audit/auditd.conf');
       const output = await pc.executeCommand('service auditd restart');
       expect(output.toLowerCase()).toMatch(/failed|error/);
+      expect(await pc.executeCommand('journalctl -t auditd --no-pager')).toContain('Value abc should only be numbers - line');
     });
 
     it('104. should deny unprivileged users access to modify /etc/audit/auditd.conf', async () => {
@@ -937,17 +938,18 @@ describe('Linux Audit Trail System Suite', () => {
       expect(config).toContain('num_logs = 10');
     });
 
-    it('112. should reject num_logs parameter adjustments if value is invalid (less than 1)', async () => {
+    it('112. should reject a num_logs above 999', async () => {
       const pc = await setupAuditedPC();
-      await pc.executeCommand('sed -i "s/num_logs = 5/num_logs = 0/g" /etc/audit/auditd.conf');
+      await pc.executeCommand('sed -i "s/num_logs = 5/num_logs = 1000/g" /etc/audit/auditd.conf');
       const output = await pc.executeCommand('service auditd restart');
       expect(output.toLowerCase()).toMatch(/failed|error/);
+      expect(await pc.executeCommand('journalctl -t auditd --no-pager')).toContain('num_logs must be 999 or less');
     });
 
-    it('113. should configure dispatcher parameter in auditd.conf', async () => {
+    it('113. should name the plugin directory in auditd.conf, the successor of the deprecated dispatcher keyword', async () => {
       const pc = await setupAuditedPC();
       const config = await pc.executeCommand('cat /etc/audit/auditd.conf');
-      expect(config).toContain('dispatcher');
+      expect(config).toContain('plugin_dir = /etc/audit/plugins.d');
     });
 
     it('114. should configure write_logs parameter in auditd.conf (write_logs = yes)', async () => {
@@ -956,17 +958,18 @@ describe('Linux Audit Trail System Suite', () => {
       expect(config).toContain('write_logs = yes');
     });
 
-    it('115. should support configure priority format options (log_format = RAW)', async () => {
+    it('115. should ship log_format = ENRICHED, as the Ubuntu package does', async () => {
       const pc = await setupAuditedPC();
       const config = await pc.executeCommand('cat /etc/audit/auditd.conf');
-      expect(config).toContain('log_format = RAW');
+      expect(config).toContain('log_format = ENRICHED');
     });
 
-    it('116. should reject service reload if log_format configuration value is invalid', async () => {
+    it('116. should refuse to start auditd if the log_format value is invalid', async () => {
       const pc = await setupAuditedPC();
-      await pc.executeCommand('sed -i "s/log_format = RAW/log_format = INVALID_FORMAT/g" /etc/audit/auditd.conf');
-      const output = await pc.executeCommand('service auditd reload');
+      await pc.executeCommand('sed -i "s/log_format = ENRICHED/log_format = INVALID_FORMAT/g" /etc/audit/auditd.conf');
+      const output = await pc.executeCommand('service auditd restart');
       expect(output.toLowerCase()).toMatch(/failed|error/);
+      expect(await pc.executeCommand('journalctl -t auditd --no-pager')).toContain('Option INVALID_FORMAT not found - line');
     });
 
     it('117. should preserve auditd.conf permissions statically to owner root only (0640)', async () => {
