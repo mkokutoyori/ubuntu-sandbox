@@ -133,6 +133,8 @@ import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { runAuditctl } from './audit/tools/AuditctlTool';
+import { PROGRAM_TRACES } from './audit/trace/ProgramTraces.generated';
+import { replayProgram } from './audit/ProgramTraceReplay';
 import { runAuditdCommand } from './audit/tools/AuditdCommandTool';
 import { runAutrace, type AutraceHost } from './audit/tools/AutraceTool';
 import { runAugenrules } from './audit/tools/AugenrulesTool';
@@ -5247,14 +5249,14 @@ export class LinuxCommandExecutor {
   publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
   publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
 
-  private publishSyscall(syscall: string, path?: string, perm?: FileAccessPerm): void {
+  private publishSyscall(syscall: string, path?: string, perm?: FileAccessPerm, trace?: SyscallInvokedPayload['trace']): void {
     if (!this.bus || !this.attachedDeviceId) {
-      this.auditRules.onSyscall(syscall, path, undefined, perm);
+      this.auditRules.onSyscall(syscall, path, undefined, perm, trace);
       return;
     }
     const actor = this.snapshotActor();
     const payload: SyscallInvokedPayload = {
-      deviceId: this.attachedDeviceId, syscall, path, perm,
+      deviceId: this.attachedDeviceId, syscall, path, perm, trace,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
       auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
@@ -5332,6 +5334,43 @@ export class LinuxCommandExecutor {
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+    const result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
+    this.replayProgramTrace(cmd, args, result);
+    return result;
+  }
+
+  private tracedOperands(cmd: string, args: readonly string[]): string[] | null {
+    const trace = PROGRAM_TRACES[cmd];
+    if (trace === undefined || args.some((arg) => arg.startsWith('-'))) return null;
+    const operands = args.map((arg) => this.vfs.normalizePath(arg, this.cwd));
+    if (trace.singleOperand) {
+      return operands.length === 1 && this.vfs.getType(operands[0]) === 'directory' ? operands : null;
+    }
+    if (trace.operandBlock === undefined) return operands.length === 0 ? operands : null;
+    if (operands.length === 0 || operands.some((operand) => this.vfs.getType(operand) !== 'file')) return null;
+    return operands;
+  }
+
+  private traceStdoutLength(cmd: string, operands: readonly string[], output: string): number {
+    if (cmd === 'cat') return operands.reduce((sum, operand) => sum + (this.vfs.readFile(operand)?.length ?? 0), 0);
+    return output === '' ? 0 : output.length + 1;
+  }
+
+  private replayProgramTrace(cmd: string, args: readonly string[], result: { output: string; exitCode: number }): void {
+    if (result.exitCode !== 0 || !this.auditRules.hasExitRules) return;
+    const operands = this.tracedOperands(cmd, args);
+    if (operands === null) return;
+    const world = {
+      readContent: (path: string) => this.vfs.readFile(path),
+      listEntries: (path: string) => this.vfs.listDirectory(path)?.map((entry) => entry.name).filter((name) => name !== '.' && name !== '..') ?? null,
+      stdoutLength: this.traceStdoutLength(cmd, operands, result.output),
+    };
+    for (const call of replayProgram(PROGRAM_TRACES[cmd], operands, world)) {
+      this.publishSyscall(call.syscall, call.path, undefined, { args: call.args, exit: call.exit });
+    }
+  }
+
+  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
@@ -5402,9 +5441,10 @@ export class LinuxCommandExecutor {
             return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
           }
         }
+        const traced = this.auditRules.hasExitRules && this.tracedOperands('cat', args) !== null;
         for (const arg of fileArgs) {
           this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
-          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd), 'r');
+          if (!traced) this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd), 'r');
         }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');

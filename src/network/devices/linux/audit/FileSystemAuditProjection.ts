@@ -28,7 +28,7 @@ export class FileSystemAuditProjection {
 
   private onSyscallInvoked(p: SyscallInvokedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    this.rules.onSyscall(p.syscall, p.path, toContext(p), p.perm);
+    this.rules.onSyscall(p.syscall, p.path, toContext(p), p.perm, p.trace);
   }
 }
 

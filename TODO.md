@@ -3249,8 +3249,11 @@ demon a la main, ecrit `/var/run/auditd.pid` et refuse de reprendre le noyau a u
 pose les regles `pid=N` et `ppid=N`, execute le programme comme enfant sous ce pid et nettoie.
 Le binaire reel n'a pas pu etre lance (il exige l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2.
 **Reste** : (1) `auditd -f` et `-n` gardent le terminal (flux du terminal, messages en direct) mais Ctrl-C rend l'invite
-alors que le vrai auditd ignore SIGINT : il faut le tuer depuis une autre session ; le daemon, lui, continue ; (2) `autrace` ne voit que les appels systeme que le simulateur projette (acces fichier, execve), pas « tous » ceux
-d'un programme arbitraire ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
+alors que le vrai auditd ignore SIGINT : il faut le tuer depuis une autre session ; le daemon, lui, continue ; (2) `autrace` et toute regle `exit` voient maintenant tous les appels systeme de `cat`, `ls <repertoire>`,
+`whoami`, `hostname` et `uname` (rejeu de la trace strace du binaire reel, `audit/trace/ProgramTraces.generated.ts`,
+produit par `scripts/oracle/record_syscall_traces.py`) ; les autres commandes, `ls` sans operande ou avec option,
+et `exit_group` gardent le seul execve/openat projete ; les `read` sur un fichier plus gros que le tampon repetent
+le nombre d'appels de l'enregistrement ; le cwd des enregistrements du bus est toujours `/` ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
 est indetermine dans le source) ; (4) un plugin dont le programme est un script recoit les evenements, mais l'interprete de scripts est synchrone : le
 script est relance une fois par evenement avec la ligne pour entree standard, sous le pid du processus plugin, de sorte
 que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas

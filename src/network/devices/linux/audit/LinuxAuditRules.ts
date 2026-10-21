@@ -14,6 +14,11 @@ import { msgTypeToName, nameToMsgType, type RuleData } from './tools/AuditctlLib
 import { x86SyscallNumber } from './tools/AuditSyscallTables';
 import { AuditKernelState, newStatus } from './tools/AuditKernelState';
 
+export interface TracedSyscallDetail {
+  readonly args: readonly [string, string, string, string];
+  readonly exit: number;
+}
+
 export type AuditEnabled = 0 | 1 | 2;
 export type AuditFailureMode = 0 | 1 | 2;
 
@@ -114,6 +119,10 @@ export class LinuxAuditRules {
 
   bindActorContextProvider(provider: () => AuditActorContext): void {
     this.actorContextProvider = provider;
+  }
+
+  get hasExitRules(): boolean {
+    return this.kernel.status.enabled !== 0 && this.kernel.lists[K.AUDIT_FILTER_EXIT].length > 0;
   }
 
   get enabled(): AuditEnabled { return this.kernel.status.enabled as AuditEnabled; }
@@ -246,14 +255,14 @@ export class LinuxAuditRules {
     return true;
   }
 
-  private eventFor(syscall: string, path: string | undefined, actor: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a'): AuditEvent {
+  private eventFor(syscall: string, path: string | undefined, actor: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a', detail?: TracedSyscallDetail): AuditEvent {
     const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
-    const args = syscallArguments(syscall, path, perm).map((hex) => parseInt(hex, 16));
+    const args = (detail?.args ?? syscallArguments(syscall, path, perm)).map((hex) => parseInt(hex, 16));
     return {
       syscall, path,
       pid: actor.pid, ppid: actor.ppid, uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
       auid: actor.auid, session: 1,
-      exit: actor.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13,
+      exit: detail?.exit ?? (actor.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13),
       success: actor.success, exe: actor.exe, arguments: args,
       inode: inode ? { dev: AUDIT_DEVICE, ino: inode.id, uid: inode.uid, gid: inode.gid, permissions: inode.permissions } : undefined,
     };
@@ -305,22 +314,22 @@ export class LinuxAuditRules {
     this.fire(syscallHint, path, hit.decoded.key, actor, perm);
   }
 
-  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a'): void {
+  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a', detail?: TracedSyscallDetail): void {
     if (this.kernel.status.enabled === 0) return;
-    const actor = ctx ?? this.actor();
-    const event = this.eventFor(syscall, path, actor, perm);
+    const actor = detail === undefined ? (ctx ?? this.actor()) : { ...(ctx ?? this.actor()), success: detail.exit >= 0 };
+    const event = this.eventFor(syscall, path, actor, perm, detail);
     const hit = this.firstMatch(event, SYSCALL_ALIASES[syscall] ?? [syscall], (decoded) => decoded.permission === null);
     if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
-    this.fire(syscall, path, hit.decoded.key, actor, perm);
+    this.fire(syscall, path, hit.decoded.key, actor, perm, detail);
   }
 
-  private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a'): void {
+  private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a', detail?: TracedSyscallDetail): void {
     if (this.kernel.status.enabled === 0) return;
     const ctx = ctxArg ?? this.actor();
-    const exit = ctx.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13;
+    const exit = detail?.exit ?? (ctx.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13);
     const number = x86SyscallNumber(syscall);
     const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
-    const args = syscallArguments(syscall, path, perm);
+    const args = detail?.args ?? syscallArguments(syscall, path, perm);
     const syscallFields: Record<string, string | number> = {
       arch: X86_64_ARCH.toString(16),
       syscall: number ?? 0,

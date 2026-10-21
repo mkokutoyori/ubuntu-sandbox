@@ -165,6 +165,7 @@ export interface SyscallInvokedPayload extends LinuxDeviceRef {
   syscall: string;
   path?: string;
   perm?: FileAccessPerm;
+  trace?: { readonly args: readonly [string, string, string, string]; readonly exit: number };
   pid: number;
   ppid: number;
   uid: number;
