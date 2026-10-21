@@ -126,7 +126,7 @@ const ACTION_PARAMS: readonly ParamDescriptor[] = [
   { name: 'resendlastmsgonreconnect', type: 'binary' }, { name: 'extendedconnectioncheck', type: 'binary' },
   { name: 'udp.sendtoall', type: 'binary' }, { name: 'udp.senddelay', type: 'int' }, { name: 'udp.sendbuf', type: 'size' },
   { name: 'template', type: 'word' }, { name: 'pool.resumeinterval', type: 'positive' }, { name: 'ratelimit.interval', type: 'int' },
-  { name: 'ratelimit.burst', type: 'int' }, { name: 'ratelimit.name', type: 'string' },
+  { name: 'ratelimit.burst', type: 'int' },
 ];
 
 function defaultKeepAlive(): KeepAliveSettings {
@@ -902,19 +902,10 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
     if (lowered === 'zstd') return fail('omfwd: compression.driver="zstd" requires rsyslog to be built with libzstd support', RS_RET.PARAM_ERROR);
     if (lowered !== 'zlib') return fail(`omfwd: invalid value for 'compression.driver' parameter (given is '${compressionDriver}')`, RS_RET.PARAM_ERROR);
   }
-  const rateName = stringParam(values, 'ratelimit.name');
   let rateInterval = numberParam(values, 'ratelimit.interval') ?? -1;
   let rateBurst = numberParam(values, 'ratelimit.burst') ?? -1;
-  if (rateName !== undefined) {
-    if (rateInterval !== -1 || rateBurst !== -1) {
-      context.runtime.error('omfwd: ratelimit.name is mutually exclusive with ratelimit.interval and ratelimit.burst - using ratelimit.name', RS_RET.INVALID_PARAMS);
-    }
-    rateInterval = 0;
-    rateBurst = 0;
-  } else {
-    if (rateInterval === -1) rateInterval = 0;
-    if (rateBurst === -1) rateBurst = 200;
-  }
+  if (rateInterval === -1) rateInterval = 0;
+  if (rateBurst === -1) rateBurst = 200;
   if (targetSrv !== undefined && targetList !== undefined) return fail('omfwd: target and targetSrv are mutually exclusive', RS_RET.PARAM_ERROR);
   if (targetSrv === undefined && targetList === undefined) return fail('omfwd: either target or targetSrv must be specified', RS_RET.PARAM_ERROR);
   if (targetSrv !== undefined) {
@@ -946,7 +937,7 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
   if (sendToAll !== undefined && protocol === 'tcp') context.runtime.error('omfwd: parameter udp.sendToAll cannot be used with tcp transport -- ignored', RS_RET.PARAM_ERROR);
   else settings.sendToAll = sendToAll === 1;
   if (settings.address !== null && protocol === 'tcp') context.runtime.error('omfwd: parameter "address" not supported for tcp -- ignored', RS_RET.PARAM_ERROR);
-  const limiter = context.rateLimiter({ module: 'omfwd', interval: rateInterval, burst: rateBurst, configName: rateName ?? null });
+  const limiter = context.rateLimiter({ module: 'omfwd', interval: rateInterval, burst: rateBurst });
   if (limiter === null) return null;
   settings.rateLimiter = limiter.limiter;
   if (!applySecureDefaults(settings, context)) return null;
@@ -1020,7 +1011,6 @@ export const omfwd: OutputModule = {
     config.caExtraFiles = stringParam(values, 'streamdriver.caextrafiles') ?? config.caExtraFiles;
     config.keyFile = stringParam(values, 'streamdriver.keyfile') ?? config.keyFile;
     config.certFile = stringParam(values, 'streamdriver.certfile') ?? config.certFile;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   reset(context) {

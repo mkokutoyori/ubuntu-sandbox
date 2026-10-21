@@ -57,7 +57,6 @@ export interface ModuleRateLimitSpec {
   readonly module: string;
   readonly interval: number;
   readonly burst: number;
-  readonly configName: string | null;
   readonly forInput?: boolean;
   readonly dynamicName?: string;
   readonly severity?: number;

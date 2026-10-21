@@ -64,7 +64,7 @@ const ACTION_PARAMS: readonly ParamDescriptor[] = [
   { name: 'action.repeatedmsgcontainsoriginalmsg', type: 'binary' }, { name: 'action.resumeretrycount', type: 'int' },
   { name: 'action.reportsuspension', type: 'binary' }, { name: 'action.reportsuspensioncontinuation', type: 'binary' },
   { name: 'action.resumeintervalmax', type: 'positive' }, { name: 'action.resumeinterval', type: 'int' },
-  { name: 'action.externalstate.file', type: 'string' }, { name: 'action.ratelimit.name', type: 'string' },
+  { name: 'action.externalstate.file', type: 'string' },
   { name: 'action.copymsg', type: 'binary' },
 ];
 
@@ -78,11 +78,6 @@ const MODULE_PARAMS: readonly ParamDescriptor[] = [
 
 const PARSER_PARAMS: readonly ParamDescriptor[] = [
   { name: 'name', type: 'string', required: true }, { name: 'type', type: 'string', required: true },
-];
-
-const RATELIMIT_PARAMS: readonly ParamDescriptor[] = [
-  { name: 'name', type: 'string', required: true }, { name: 'interval', type: 'int' }, { name: 'burst', type: 'int' },
-  { name: 'severity', type: 'int' }, { name: 'policy', type: 'string' },
 ];
 
 const LOOKUP_TABLE_PARAMS: readonly ParamDescriptor[] = [
@@ -166,7 +161,7 @@ export class ConfigLoader implements ConfigSink {
     const statistics = new Statistics();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), lookupTables: [], statistics,
+      lookupTables: [], statistics,
       dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), info: (text, code) => this.runtimeSink.info(text, code) }),
       percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
@@ -316,21 +311,9 @@ export class ConfigLoader implements ConfigSink {
   }
 
   private createModuleRateLimiter(spec: ModuleRateLimitSpec): { readonly limiter: ModuleRateLimiter | null } | null {
-    let interval = spec.interval;
-    let burst = spec.burst;
-    let severity = spec.severity ?? 0;
-    if (spec.configName !== null) {
-      const shared = this.config.rateLimits.get(spec.configName);
-      if (shared === undefined) {
-        this.runtimeSink.error(`ratelimit config '${spec.configName}' not found`, RS_RET.NOT_FOUND);
-        return null;
-      }
-      interval = shared.interval;
-      burst = shared.burst;
-      severity = Math.max(0, shared.severity);
-    } else if (interval <= 0 && spec.forInput !== true) {
-      return { limiter: null };
-    }
+    const { interval, burst } = spec;
+    const severity = spec.severity ?? 0;
+    if (interval <= 0 && spec.forInput !== true) return { limiter: null };
     const host = this.options.host;
     return {
       limiter: new RateLimiter({
@@ -596,7 +579,6 @@ export class ConfigLoader implements ConfigSink {
       case 'template': this.processTemplate(object); return;
       case 'ruleset': this.processRuleset(object); break;
       case 'parser': this.processParser(object); break;
-      case 'ratelimit': this.processRateLimit(object); break;
       case 'lookup_table': this.processLookupTable(object); break;
       case 'dyn_stats': this.processDynStats(object); break;
       case 'percentile_stats': this.processPercentileStats(object); break;
@@ -807,23 +789,6 @@ export class ConfigLoader implements ConfigSink {
     });
   }
 
-  private processRateLimit(object: ConfigObject): void {
-    const values = getParams(object.params, RATELIMIT_PARAMS, this.paramEnvironment());
-    if (values === null) return;
-    const name = stringParam(values, 'name') ?? '';
-    const interval = numberParam(values, 'interval') ?? 0;
-    const burst = numberParam(values, 'burst') ?? 10000;
-    if (interval < 0) {
-      this.log.error(`ratelimit: interval must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
-      return;
-    }
-    if (burst < 0) {
-      this.log.error(`ratelimit: burst must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
-      return;
-    }
-    this.config.rateLimits.set(name, { name, interval, burst, severity: numberParam(values, 'severity') ?? -1 });
-  }
-
   script(statements: Stmt[]): void {
     for (const statement of statements) this.currentRuleset.statements.push(statement);
   }
@@ -960,7 +925,6 @@ export class ConfigLoader implements ConfigSink {
       errorFile: null,
       errorFileMaxSize: 0,
       externalStateFile: null,
-      rateLimitName: null,
       queue: values === null ? { ...legacy.queue } : defaultQueueSettings('Direct', 1000),
     };
     if (values === null) {
@@ -990,7 +954,6 @@ export class ConfigLoader implements ConfigSink {
     options.resumeIntervalMax = numberParam(values, 'action.resumeintervalmax') ?? options.resumeIntervalMax;
     options.resumeInterval = numberParam(values, 'action.resumeinterval') ?? options.resumeInterval;
     options.externalStateFile = stringParam(values, 'action.externalstate.file') ?? null;
-    options.rateLimitName = stringParam(values, 'action.ratelimit.name') ?? null;
     options.copyMessage = flag('action.copymsg') ?? false;
     const queueValues = new Map([...values].filter(([key]) => key.startsWith('queue.')));
     if (queueValues.size > 0) {

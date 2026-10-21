@@ -28,7 +28,7 @@ const INPUT_PARAMS: readonly ParamDescriptor[] = [
   { name: 'port', type: 'array', required: true }, { name: 'listenportfilename', type: 'string' }, { name: 'defaulttz', type: 'string' },
   { name: 'inputname', type: 'word' }, { name: 'inputname.appendport', type: 'binary' }, { name: 'name', type: 'word' },
   { name: 'name.appendport', type: 'binary' }, { name: 'address', type: 'string' }, { name: 'device', type: 'string' },
-  { name: 'ratelimit.name', type: 'string' }, { name: 'ratelimit.interval', type: 'int' }, { name: 'ratelimit.burst', type: 'int' },
+  { name: 'ratelimit.interval', type: 'int' }, { name: 'ratelimit.burst', type: 'int' },
   { name: 'rcvbufsize', type: 'size' }, { name: 'ipfreebind', type: 'int' }, { name: 'ruleset', type: 'string' },
   { name: 'allowedsender', type: 'array' },
 ];
@@ -86,7 +86,6 @@ interface ListenerSettings {
   defaultTimeZone: string | null;
   rateInterval: number;
   rateBurst: number;
-  rateName: string | null;
   receiveBuffer: number;
   freeBind: 0 | 1 | 2;
   allowedSenders: AllowedSenderList | null;
@@ -280,19 +279,10 @@ function createInstances(params: NvList, context: InputContext): ImudpListener[]
     context.runtime.error('imudp: name.appendport and inputname.appendport parameter specified - only one can be used', RS_RET.INVALID_PARAMS);
     return null;
   }
-  const rateName = stringParam(values, 'ratelimit.name');
   let rateInterval = numberParam(values, 'ratelimit.interval') ?? -1;
   let rateBurst = numberParam(values, 'ratelimit.burst') ?? -1;
-  if (rateName !== undefined) {
-    if (rateInterval !== -1 || rateBurst !== -1) {
-      context.runtime.error('imudp: ratelimit.name is mutually exclusive with ratelimit.interval and ratelimit.burst - using ratelimit.name', RS_RET.INVALID_PARAMS);
-    }
-    rateInterval = 0;
-    rateBurst = 0;
-  } else {
-    if (rateInterval === -1) rateInterval = 0;
-    if (rateBurst === -1) rateBurst = DEFAULT_RATE_LIMIT_BURST;
-  }
+  if (rateInterval === -1) rateInterval = 0;
+  if (rateBurst === -1) rateBurst = DEFAULT_RATE_LIMIT_BURST;
   let receiveBuffer = 0;
   const requestedBuffer = numberParam(values, 'rcvbufsize');
   if (requestedBuffer !== undefined) {
@@ -310,7 +300,7 @@ function createInstances(params: NvList, context: InputContext): ImudpListener[]
     const settings: ListenerSettings = {
       port, portListenFile: listenPortFile, address: stringParam(values, 'address') ?? null, device: stringParam(values, 'device') ?? null,
       ruleset: stringParam(values, 'ruleset') ?? null, inputName, appendPortToInputName: (appendPort ?? legacyAppendPort ?? 0) !== 0,
-      defaultTimeZone: stringParam(values, 'defaulttz') ?? null, rateInterval, rateBurst, rateName: rateName ?? null, receiveBuffer,
+      defaultTimeZone: stringParam(values, 'defaulttz') ?? null, rateInterval, rateBurst, receiveBuffer,
       freeBind: ((numberParam(values, 'ipfreebind') ?? 2) as 0 | 1 | 2), allowedSenders,
     };
     instances.push(buildListener(settings, context));
@@ -320,7 +310,7 @@ function createInstances(params: NvList, context: InputContext): ImudpListener[]
 
 function buildListener(settings: ListenerSettings, context: InputContext): ImudpListener {
   return new ImudpListener(settings, context, (displayName) => {
-    const created = context.rateLimiter({ module: displayName, interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName, forInput: true });
+    const created = context.rateLimiter({ module: displayName, interval: settings.rateInterval, burst: settings.rateBurst, forInput: true });
     return created === null ? null : created.limiter;
   });
 }
@@ -355,7 +345,7 @@ function directives(): DirectiveRegistration[] {
         const settings: ListenerSettings = {
           port, portListenFile: null, address: legacy.bindAddress === '' ? null : legacy.bindAddress, device: legacy.bindDevice === '' ? null : legacy.bindDevice,
           ruleset: legacy.bindRuleset === '' ? null : legacy.bindRuleset, inputName: null, appendPortToInputName: false, defaultTimeZone: null,
-          rateInterval: 0, rateBurst: DEFAULT_RATE_LIMIT_BURST, rateName: null, receiveBuffer: 0, freeBind: 2, allowedSenders: null,
+          rateInterval: 0, rateBurst: DEFAULT_RATE_LIMIT_BURST, receiveBuffer: 0, freeBind: 2, allowedSenders: null,
         };
         context.registerInput('imudp', buildListener(settings, context));
       },
@@ -419,7 +409,6 @@ export const imudp: InputModule = {
       config.allowedSenders = list;
     }
     config.configuredViaModule = true;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   check(instanceCount, context) {

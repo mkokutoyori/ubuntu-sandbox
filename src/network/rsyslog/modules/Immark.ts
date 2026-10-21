@@ -106,7 +106,6 @@ export const immark: InputModule = {
     settings.ruleset = stringParam(values, 'ruleset') ?? settings.ruleset;
     settings.markText = stringParam(values, 'markmessagetext') ?? settings.markText;
     settings.configuredViaModule = true;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   implicitInstances(context) {

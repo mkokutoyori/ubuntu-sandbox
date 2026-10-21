@@ -29,7 +29,6 @@ const MODULE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'syssock.usespecialparser', type: 'binary' }, { name: 'syssock.parsehostname', type: 'binary' },
   { name: 'syssock.usepidfromsystem', type: 'binary' }, { name: 'syssock.ratelimit.interval', type: 'int' },
   { name: 'syssock.ratelimit.burst', type: 'int' }, { name: 'syssock.ratelimit.severity', type: 'int' },
-  { name: 'syssock.ratelimit.name', type: 'string' },
 ];
 
 const INPUT_PARAMS: readonly ParamDescriptor[] = [
@@ -38,7 +37,7 @@ const INPUT_PARAMS: readonly ParamDescriptor[] = [
   { name: 'ignoretimestamp', type: 'binary' }, { name: 'flowcontrol', type: 'binary' }, { name: 'usesystimestamp', type: 'binary' },
   { name: 'annotate', type: 'binary' }, { name: 'usespecialparser', type: 'binary' }, { name: 'parsehostname', type: 'binary' },
   { name: 'usepidfromsystem', type: 'binary' }, { name: 'ruleset', type: 'string' }, { name: 'ratelimit.interval', type: 'int' },
-  { name: 'ratelimit.burst', type: 'int' }, { name: 'ratelimit.severity', type: 'int' }, { name: 'ratelimit.name', type: 'string' },
+  { name: 'ratelimit.burst', type: 'int' }, { name: 'ratelimit.severity', type: 'int' },
 ];
 
 interface SocketSettings {
@@ -52,7 +51,6 @@ interface SocketSettings {
   rateInterval: number;
   rateBurst: number;
   rateSeverity: number;
-  rateName: string | null;
   annotate: boolean;
   parseTrusted: boolean;
   discardOwnMessages: boolean;
@@ -79,7 +77,6 @@ interface ImuxsockModuleConfig {
   rateInterval: number;
   rateBurst: number;
   rateSeverity: number;
-  rateName: string | null;
 }
 
 interface ImuxsockLegacyState {
@@ -112,7 +109,7 @@ function defaultModuleConfig(context: ModuleContext): ImuxsockModuleConfig {
     configuredViaModule: false, systemSocketName: null, omitLocalLogging: false, ignoreTimestamp: true, useFlowControl: false,
     useSystemTimestamp: true, writePid: false, annotate: false, parseTrusted: false, parseHostname: UNSET, useSpecialParser: true,
     discardOwnMessages: context.settings.processInternalMessages, unlink: true, rateInterval: UNSET, rateBurst: UNSET,
-    rateSeverity: DEFAULT_RATE_SEVERITY, rateName: null,
+    rateSeverity: DEFAULT_RATE_SEVERITY,
   };
 }
 
@@ -227,7 +224,7 @@ class UnixSocketListener implements InputInstance {
     const settings = this.settings;
     if (this.defaultLimiter === undefined) {
       const created = this.context.rateLimiter({
-        module: 'imuxsock', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName,
+        module: 'imuxsock', interval: settings.rateInterval, burst: settings.rateBurst,
         forInput: true, severity: settings.rateSeverity,
       });
       this.defaultLimiter = created === null ? null : created.limiter;
@@ -243,7 +240,7 @@ class UnixSocketListener implements InputInstance {
     const details = this.context.host.sockets.processDetails(pid);
     const name = details === null || details.cmdline === '' ? `pid: ${pid}` : `pid: ${pid}, name: ${details.cmdline.split('\u0000')[0]}`;
     const created = this.context.rateLimiter({
-      module: 'imuxsock', dynamicName: name, interval: settings.rateInterval, burst: settings.rateBurst, configName: null,
+      module: 'imuxsock', dynamicName: name, interval: settings.rateInterval, burst: settings.rateBurst,
       forInput: true, severity: settings.rateSeverity,
     });
     if (created === null || created.limiter === null) return fallback;
@@ -383,22 +380,15 @@ function instanceFromParams(params: NvList, context: InputContext): UnixSocketLi
     const value = numberParam(values, key);
     return value === undefined ? fallback : value !== 0;
   };
-  const rateName = stringParam(values, 'ratelimit.name') ?? null;
   let rateInterval = numberParam(values, 'ratelimit.interval') ?? UNSET;
   let rateBurst = numberParam(values, 'ratelimit.burst') ?? UNSET;
-  if (rateName !== null) {
-    if (rateInterval !== UNSET || rateBurst !== UNSET) {
-      context.runtime.error('imuxsock: ratelimit.name is mutually exclusive with ratelimit.interval and ratelimit.burst - using ratelimit.name', RS_RET.INVALID_PARAMS);
-    }
-  } else {
-    if (rateInterval === UNSET) rateInterval = DEFAULT_RATE_INTERVAL;
-    if (rateBurst === UNSET) rateBurst = DEFAULT_RATE_BURST;
-  }
+  if (rateInterval === UNSET) rateInterval = DEFAULT_RATE_INTERVAL;
+  if (rateBurst === UNSET) rateBurst = DEFAULT_RATE_BURST;
   const settings: SocketSettings = {
     socketName: socket, hostName: stringParam(values, 'hostname') ?? null, flowControl: flag('flowcontrol', false),
     ignoreTimestamp: flag('ignoretimestamp', true), writePid: flag('usepidfromsystem', false), useSystemTimestamp: flag('usesystimestamp', true),
     createPath: flag('createpath', false), rateInterval, rateBurst, rateSeverity: numberParam(values, 'ratelimit.severity') ?? DEFAULT_RATE_SEVERITY,
-    rateName, annotate: flag('annotate', false), parseTrusted: flag('parsetrusted', false), discardOwnMessages: flag('ignoreownmessages', true),
+    annotate: flag('annotate', false), parseTrusted: flag('parsetrusted', false), discardOwnMessages: flag('ignoreownmessages', true),
     unlink: flag('unlink', true), useSpecialParser: flag('usespecialparser', true), parseHostname: numberParam(values, 'parsehostname') ?? UNSET,
     ruleset: stringParam(values, 'ruleset') ?? null,
   };
@@ -462,7 +452,7 @@ function directives(): DirectiveRegistration[] {
         const settings: SocketSettings = {
           socketName: name, hostName: state.hostName, flowControl: state.useFlowControl, ignoreTimestamp: state.ignoreTimestamp, writePid: state.writePid,
           useSystemTimestamp: state.useSystemTimestamp, createPath: state.createPath, rateInterval: state.rateInterval, rateBurst: state.rateBurst,
-          rateSeverity: state.rateSeverity, rateName: null, annotate: state.annotate, parseTrusted: state.parseTrusted, discardOwnMessages: true,
+          rateSeverity: state.rateSeverity, annotate: state.annotate, parseTrusted: state.parseTrusted, discardOwnMessages: true,
           unlink: true, useSpecialParser: true, parseHostname: name.startsWith(':') ? 1 : 0, ruleset: null,
         };
         state.hostName = null;
@@ -477,10 +467,9 @@ function systemSettings(context: ModuleContext): SocketSettings | null {
   const legacy = legacyState(context);
   const viaModule = config.configuredViaModule;
   if (viaModule ? config.omitLocalLogging : legacy.omitLocalLogging) return null;
-  const rateName = viaModule ? config.rateName : null;
   let rateInterval = viaModule ? config.rateInterval : legacy.rateIntervalSystem;
   let rateBurst = viaModule ? config.rateBurst : legacy.rateBurstSystem;
-  if (viaModule && rateName === null) {
+  if (viaModule) {
     if (rateInterval === UNSET) rateInterval = DEFAULT_RATE_INTERVAL;
     if (rateBurst === UNSET) rateBurst = DEFAULT_RATE_BURST;
   }
@@ -490,7 +479,7 @@ function systemSettings(context: ModuleContext): SocketSettings | null {
     ignoreTimestamp: viaModule ? config.ignoreTimestamp : legacy.ignoreTimestampSystem,
     writePid: viaModule ? config.writePid : legacy.writePidSystem,
     useSystemTimestamp: viaModule ? config.useSystemTimestamp : legacy.useSystemTimestampSystem, createPath: false,
-    rateInterval, rateBurst, rateSeverity: viaModule ? config.rateSeverity : legacy.rateSeveritySystem, rateName,
+    rateInterval, rateBurst, rateSeverity: viaModule ? config.rateSeverity : legacy.rateSeveritySystem,
     annotate: viaModule ? config.annotate : legacy.annotateSystem, parseTrusted: viaModule ? config.parseTrusted : legacy.parseTrusted,
     discardOwnMessages: viaModule ? config.discardOwnMessages : context.settings.processInternalMessages,
     unlink: viaModule ? config.unlink : true, useSpecialParser: viaModule ? config.useSpecialParser : true,
@@ -536,15 +525,7 @@ export const imuxsock: InputModule = {
     config.rateInterval = numberParam(values, 'syssock.ratelimit.interval') ?? config.rateInterval;
     config.rateBurst = numberParam(values, 'syssock.ratelimit.burst') ?? config.rateBurst;
     config.rateSeverity = numberParam(values, 'syssock.ratelimit.severity') ?? config.rateSeverity;
-    config.rateName = stringParam(values, 'syssock.ratelimit.name') ?? config.rateName;
-    if (config.rateName !== null && (config.rateInterval !== UNSET || config.rateBurst !== UNSET)) {
-      context.runtime.error(
-        'imuxsock: syssock.ratelimit.name is mutually exclusive with syssock.ratelimit.interval and syssock.ratelimit.burst - using syssock.ratelimit.name',
-        RS_RET.INVALID_PARAMS,
-      );
-    }
     config.configuredViaModule = true;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   implicitInstances(context) {

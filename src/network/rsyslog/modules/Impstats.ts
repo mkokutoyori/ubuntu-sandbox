@@ -234,7 +234,6 @@ export const impstats: InputModule = {
       settings.ruleset = null;
     }
     settings.configuredViaModule = true;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   implicitInstances(context) {

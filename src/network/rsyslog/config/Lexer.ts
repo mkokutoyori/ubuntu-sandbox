@@ -1,6 +1,6 @@
 export type ObjectType =
   | 'global' | 'timezone' | 'main_queue' | 'module' | 'input' | 'lookup_table' | 'dyn_stats' | 'percentile_stats'
-  | 'parser' | 'ratelimit' | 'template' | 'ruleset' | 'property' | 'constant' | 'action';
+  | 'parser' | 'template' | 'ruleset' | 'property' | 'constant' | 'action';
 
 export type TokenType =
   | 'NAME' | 'FUNC' | 'BEGINOBJ' | 'ENDOBJ' | 'BEGIN_INCLUDE' | 'BEGIN_ACTION' | 'BEGIN_PROPERTY' | 'BEGIN_CONSTANT'
@@ -158,7 +158,7 @@ const OBJECT_KEYWORDS: ReadonlyArray<readonly [string, TokenType, ObjectType]> =
   ['global', 'BEGINOBJ', 'global'], ['template', 'BEGIN_TPL', 'template'], ['ruleset', 'BEGIN_RULESET', 'ruleset'],
   ['property', 'BEGIN_PROPERTY', 'property'], ['constant', 'BEGIN_CONSTANT', 'constant'], ['input', 'BEGINOBJ', 'input'],
   ['module', 'BEGINOBJ', 'module'], ['lookup_table', 'BEGINOBJ', 'lookup_table'], ['dyn_stats', 'BEGINOBJ', 'dyn_stats'],
-  ['percentile_stats', 'BEGINOBJ', 'percentile_stats'], ['ratelimit', 'BEGINOBJ', 'ratelimit'],
+  ['percentile_stats', 'BEGINOBJ', 'percentile_stats'],
 ];
 
 export interface ScannerEnvironment {

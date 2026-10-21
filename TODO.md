@@ -3271,3 +3271,16 @@ omusrmsg n'ont pas d'objet de statistiques dans 8.2112.0. Ecarts assumes avec le
 echoue sur un assert) ; le message « statname ... truncated » du source imprime un tampon de pile non initialise, ici le nom fautif ;
 le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
+
+### [rsyslog] Parametres de 8.2610 encore acceptes sous la banniere 8.2112.0
+Le moteur a ete porte de 8.2610 alors que la machine annonce 8.2112.0. Retires sur ce constat : l'objet `ratelimit()`, tous les
+`*.ratelimit.name`, `action.ratelimit.name`, les parametres de debit d'`omusrmsg`, et le silence sur les parametres de `module(...)`
+inconnus (cnfDoObj appelle `nvlstChkUnused` apres le chargement). Reste a verifier module par module contre les `cnfparamdescr` de
+8.2112.0, mesure par comparaison des noms (a confirmer un a un, l'extraction du tcpsrv partage est incomplete) : omfile
+(`addlf`, `compression.driver`, `compression.zstd.workers`, `dynafile.dangerouspermitpathescape`, `dynafile.restricttemplatetype`,
+`followsymlinks`, `rotation.sizelimit*`), omfwd (`compression.driver`, `extendedconnectioncheck`, `iobuffer.maxsize`,
+`pool.resumeinterval`, `streamdriver.caextrafiles`, `streamdriver.crlfile`, `streamdriver.remotesni`, `tcp_user_timeout`, `targetsrv`),
+imtcp (`compression.*`, `framing.delimiter.regex`, `multiline`, `networknamespace`, `notifyonconnectionopen`, `socketbacklog`,
+`starvationprotection.maxreads`, `streamdriver.crlfile`, `streamdriver.tlsrevocationcheck`, `workerthreads`), imudp
+(`listenportfilename`, schedulingpolicy/priority a verifier). Chacun est soit retire (8.2112.0 le refuse), soit garde avec la
+preuve qu'il existe dans cette version. `action.externalstate.file` est lu et stocke sans effet visible : a trancher dans le meme passage.

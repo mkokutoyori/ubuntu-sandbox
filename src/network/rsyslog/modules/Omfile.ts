@@ -643,7 +643,6 @@ export const omfile: OutputModule = {
       else if (lowered.startsWith('zstd')) config.compressionDriver = 'zstd';
       else context.runtime.error("omfile: error: invalid compression.driver driver name - noch applying setting. Valid drivers: 'zlib' and 'zstd'.", RS_RET.CONF_PARSE_ERROR);
     }
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   reset(context) {

@@ -44,7 +44,7 @@ const INPUT_PARAMS: readonly ParamDescriptor[] = [
   { name: 'listenportfilename', type: 'string' }, { name: 'address', type: 'string' }, { name: 'name', type: 'string' },
   { name: 'defaulttz', type: 'string' }, { name: 'ruleset', type: 'string' }, { name: 'supportoctetcountedframing', type: 'binary' },
   { name: 'ratelimit.interval', type: 'int' }, { name: 'framingfix.cisco.asa', type: 'binary' }, { name: 'ratelimit.burst', type: 'int' },
-  { name: 'ratelimit.name', type: 'string' }, { name: 'socketbacklog', type: 'nonneg' }, { name: 'multiline', type: 'binary' },
+  { name: 'socketbacklog', type: 'nonneg' }, { name: 'multiline', type: 'binary' },
   { name: 'framing.delimiter.regex', type: 'string' },
 ];
 
@@ -118,7 +118,6 @@ interface TcpInstanceSettings extends TcpDefaults {
   startRegex: string | null;
   rateInterval: number;
   rateBurst: number;
-  rateName: string | null;
   socketBacklog: number | null;
 }
 
@@ -232,7 +231,7 @@ class ImtcpListener implements InputInstance {
     if (this.limiter === undefined) {
       const settings = this.settings;
       const created = this.context.rateLimiter({
-        module: 'tcpsrv', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName, forInput: true,
+        module: 'tcpsrv', interval: settings.rateInterval, burst: settings.rateBurst, forInput: true,
       });
       this.limiter = created === null ? null : created.limiter;
     }
@@ -471,20 +470,14 @@ function createInstances(params: NvList, context: InputContext): InputInstance[]
     defaultTimeZone: stringParam(values, 'defaulttz') ?? null, listenPortFile: stringParam(values, 'listenportfilename') ?? null,
     spFramingFix: (numberParam(values, 'framingfix.cisco.asa') ?? 0) !== 0, multiLine: (numberParam(values, 'multiline') ?? 0) !== 0,
     startRegex: stringParam(values, 'framing.delimiter.regex') ?? null, rateInterval: numberParam(values, 'ratelimit.interval') ?? -1,
-    rateBurst: numberParam(values, 'ratelimit.burst') ?? -1, rateName: stringParam(values, 'ratelimit.name') ?? null,
+    rateBurst: numberParam(values, 'ratelimit.burst') ?? -1,
     socketBacklog: numberParam(values, 'socketbacklog') ?? null, allowedSenders: base.allowedSenders,
   };
   if (!applySharedParams(settings, values, context, 'imtcp')) return null;
   const octet = numberParam(values, 'supportoctetcountedframing');
   if (octet !== undefined) settings.supportOctetCounted = octet !== 0;
-  if (settings.rateName !== null) {
-    if (settings.rateInterval !== -1 || settings.rateBurst !== -1) {
-      context.runtime.error('imtcp: ratelimit.name is mutually exclusive with ratelimit.interval and ratelimit.burst - using named ratelimit', RS_RET.INVALID_PARAMS);
-    }
-  } else {
-    if (settings.rateInterval === -1) settings.rateInterval = 0;
-    if (settings.rateBurst === -1) settings.rateBurst = DEFAULT_RATE_LIMIT_BURST;
-  }
+  if (settings.rateInterval === -1) settings.rateInterval = 0;
+  if (settings.rateBurst === -1) settings.rateBurst = DEFAULT_RATE_LIMIT_BURST;
   if (!applySecureDefaults(settings, context, 'imtcp input')) return null;
   warnInsecure(settings, context);
   if (resolveTransport(settings, context)) return null;
@@ -543,7 +536,7 @@ function directives(): DirectiveRegistration[] {
         const settings: TcpInstanceSettings = {
           ...base, keepAlive: { ...base.keepAlive }, tls: copyTlsExtras(base.tls), resolvedTls: null, port: String(value), address: null, inputName: state.inputName, ruleset: state.bindRuleset,
           defaultTimeZone: null, listenPortFile: state.listenPortFile, spFramingFix: false, multiLine: false, startRegex: null, rateInterval: 0,
-          rateBurst: DEFAULT_RATE_LIMIT_BURST, rateName: null, socketBacklog: null,
+          rateBurst: DEFAULT_RATE_LIMIT_BURST, socketBacklog: null,
         };
         if (!applySecureDefaults(settings, context, 'imtcp input') || resolveTransport(settings, context)) return;
         context.registerInput('imtcp', new ImtcpListener(settings, context));
@@ -572,7 +565,6 @@ export const imtcp: InputModule = {
     defaults.configuredViaModule = true;
     if (!applySecureDefaults(defaults, context, 'imtcp module')) return false;
     warnInsecure(defaults, context);
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   check(instanceCount, context) {
