@@ -510,6 +510,10 @@ export class LinuxCommandExecutor {
     this.execInput = input;
   }
 
+  private scriptInput(stdin: string | undefined): string | undefined {
+    return stdin ?? this.execInput;
+  }
+
   private takeExecInput(cmd: string, args: readonly string[]): string | undefined {
     if (this.execInput === undefined || !readsStandardInput(cmd.split('/').pop() ?? cmd, args)) return undefined;
     const input = this.execInput;
@@ -1463,6 +1467,7 @@ export class LinuxCommandExecutor {
         isAlive: (pid) => pid > 0 && this.processMgr.get(pid) !== undefined,
         terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
         libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
+        runProgram: (pid, command, input) => this.runAuditPluginProgram(pid, command, input),
       },
       trapSignals: (pid, signals) => {
         for (const signal of signals) this.processMgr.trapSignal(pid, signal as Signal, () => undefined);
@@ -5136,6 +5141,32 @@ export class LinuxCommandExecutor {
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
   }
 
+  private auditPluginRunning = false;
+
+  private runAuditPluginProgram(pid: number, command: string, input: string): void {
+    if (this.auditPluginRunning) return;
+    const saved = {
+      user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid,
+      exit: this.lastExitCode, cwd: this.cwd, head: this.currentCommandHead,
+    };
+    this.auditPluginRunning = true;
+    this.userMgr.currentUser = 'root';
+    this.userMgr.currentUid = 0;
+    this.userMgr.currentGid = 0;
+    this.cwd = '/';
+    try {
+      this.withProcessIdentity(pid, () => this.executeChild(command, input));
+    } finally {
+      this.auditPluginRunning = false;
+      this.userMgr.currentUser = saved.user;
+      this.userMgr.currentUid = saved.uid;
+      this.userMgr.currentGid = saved.gid;
+      this.lastExitCode = saved.exit;
+      this.cwd = saved.cwd;
+      this.currentCommandHead = saved.head;
+    }
+  }
+
   handleAuditd(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const daemon = this.auditDaemon;
     if (daemon === null) return { output: '', exitCode: 1, stderr: 'auditd: audit daemon unavailable\n', interleaved: 'auditd: audit daemon unavailable\n' };
@@ -5843,12 +5874,12 @@ export class LinuxCommandExecutor {
             runScriptContent(
               parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
               startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, stdin: this.scriptInput(stdin) }, this.aliases, this.functions,
             ));
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }));
         }
         return { output: '', exitCode: 0 };
       }
@@ -6375,7 +6406,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.exists(absPath)) {
             const commandLine = ['/bin/bash', absPath, ...args].join(' ');
             return this.runScriptProcess(commandLine, (identity, bridge) =>
-              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
           }
         }
 

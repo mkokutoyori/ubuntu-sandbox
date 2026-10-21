@@ -3252,8 +3252,10 @@ Le binaire reel n'a pas pu etre lance (il exige l'ecriture de `/etc/audit`) : l'
 l'initialisation, et les messages d'un demon lance avec `-f` ne vont sur stderr que pendant le demarrage ;
 (2) `autrace` ne voit que les appels systeme que le simulateur projette (acces fichier, execve), pas « tous » ceux
 d'un programme arbitraire ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
-est indetermine dans le source) ; (4) un plugin dont le programme n'est ni `audisp-syslog` ni `audisp-af_unix` sort
-aussitot (l'interprete de scripts est synchrone : il ne peut pas lire des evenements sur son entree standard), et les
-clients de la socket `af_unix` ne sont pas modelises (pas de socket UNIX connectable) ; la file du dispatcher est
+est indetermine dans le source) ; (4) un plugin dont le programme est un script recoit les evenements, mais l'interprete de scripts est synchrone : le
+script est relance une fois par evenement avec la ligne pour entree standard, sous le pid du processus plugin, de sorte
+que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
+re-remis a ce plugin (garde contre la recursion) ; les clients de la socket `af_unix` ne sont pas modelises (pas de
+socket UNIX connectable, `nc -U` n'est qu'une ligne d'usage) ; la file du dispatcher est
 synchrone (profondeur courante toujours 0). `poweroff.target` et `halt.target` arretent les unites sans eteindre la
 machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.

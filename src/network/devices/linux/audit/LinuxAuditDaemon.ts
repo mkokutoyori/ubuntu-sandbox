@@ -15,7 +15,7 @@ import {
 import { formatEnriched, formatRaw } from './daemon/AuditdFormat';
 import { AuditdLogWriter, type AuditdLogEnv } from './daemon/AuditdLogWriter';
 import { AudispDispatcher, type DispatcherSettings } from './daemon/dispatch/AudispDispatcher';
-import { AUDISP_PROGRAMS } from './daemon/dispatch/AudispPlugins';
+import { AUDISP_PROGRAMS, scriptPlugin } from './daemon/dispatch/AudispPlugins';
 
 export type AuditdState = 'running' | 'stopped' | 'suspended';
 export type AuditdStartupState = 'disable' | 'enable' | 'nochange';
@@ -64,6 +64,7 @@ export interface AuditdDeps {
     isAlive: (pid: number) => boolean;
     terminate: (pid: number) => void;
     libcSyslog: (priorityWithFacility: number, ident: string, pid: number, text: string) => void;
+    runProgram: (pid: number, command: string, input: string) => void;
   };
 }
 
@@ -267,10 +268,14 @@ export class LinuxAuditDaemon {
       terminate: plugins.terminate,
       programFor: (path) => {
         const name = programName(path);
-        return name === null ? null : AUDISP_PROGRAMS[name] ?? null;
+        if (name !== null && AUDISP_PROGRAMS[name] !== undefined) return AUDISP_PROGRAMS[name];
+        const inode = vfs.resolveInode(path);
+        if (inode === null || inode.type !== 'file' || (inode.permissions & 0o111) === 0) return null;
+        return scriptPlugin(plugins.runProgram);
       },
       startProgram: (program, plugin, pid) => program(plugin.args, {
         pid,
+        programPath: plugin.path ?? '',
         vfs,
         libcSyslog: (priority, ident, text) => plugins.libcSyslog(priority, ident, pid, text),
         localTime: this.deps.localTime,

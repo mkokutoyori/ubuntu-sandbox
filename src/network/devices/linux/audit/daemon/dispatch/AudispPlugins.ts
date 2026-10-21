@@ -6,6 +6,7 @@ import { posixDirname } from '../AuditdConfig';
 
 export interface PluginHost {
   readonly pid: number;
+  readonly programPath: string;
   readonly vfs: VirtualFileSystem;
   libcSyslog(priorityWithFacility: number, ident: string, text: string): void;
   localTime(seconds: number): string;
@@ -168,6 +169,20 @@ export const audispAfUnix: PluginProgram = (args, host) => {
     },
   };
 };
+
+export function scriptPlugin(run: (pid: number, command: string, input: string) => void): PluginProgram {
+  return (args, host) => {
+    const path = host.programPath;
+    const command = [path, ...args].join(' ');
+    return {
+      write(line) {
+        run(host.pid, command, `${line}\n`);
+      },
+      reload() {},
+      terminate() {},
+    };
+  };
+}
 
 export const AUDISP_PROGRAMS: Readonly<Record<string, PluginProgram>> = {
   'audisp-syslog': audispSyslog,
