@@ -1451,7 +1451,7 @@ export class LinuxCommandExecutor {
         execute: (path) => { void this.executeAsync(path); },
         sendMail: (subject, body, account) => this.deliverLocalMail(account, subject, body),
         changeRunlevel: (level) => {
-          this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : level === 'halt' ? 'halt.target' : 'poweroff.target');
+          this.changeAuditRunlevel(level);
         },
       },
       syslog: (priority, text) => this.auditdSyslog(priority, text),
@@ -1465,6 +1465,8 @@ export class LinuxCommandExecutor {
         listDirectory: (path) => this.vfs.listDirectory(path)?.filter((entry) => entry.inode.type === 'file').map((entry) => entry.name) ?? null,
         spawn: (command, ppid) => this.processMgr.spawn({ command, user: 'root', uid: 0, gid: 0, ppid }).pid,
         isAlive: (pid) => pid > 0 && this.processMgr.get(pid) !== undefined,
+        isStopped: (pid) => this.processMgr.get(pid)?.state === 'T',
+        changeRunlevel: (level) => this.changeAuditRunlevel(level),
         terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
         libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
         runProgram: (pid, command, input) => this.runAuditPluginProgram(pid, command, input),
@@ -5139,6 +5141,10 @@ export class LinuxCommandExecutor {
   handleAuditctl(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const result = runAuditctl(auditctlHost(this, false), args);
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  private changeAuditRunlevel(level: 'single' | 'halt'): void {
+    this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : 'halt.target');
   }
 
   private auditPluginRunning = false;

@@ -3256,6 +3256,4 @@ est indetermine dans le source) ; (4) un plugin dont le programme est un script 
 script est relance une fois par evenement avec la ligne pour entree standard, sous le pid du processus plugin, de sorte
 que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
 re-remis a ce plugin (garde contre la recursion) ; les clients de la socket `af_unix` ne sont pas modelises (pas de
-socket UNIX connectable, `nc -U` n'est qu'une ligne d'usage) ; la file du dispatcher est
-synchrone (profondeur courante toujours 0). `poweroff.target` et `halt.target` arretent les unites sans eteindre la
-machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.
+socket UNIX connectable, `nc -U` n'est qu'une ligne d'usage) ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.

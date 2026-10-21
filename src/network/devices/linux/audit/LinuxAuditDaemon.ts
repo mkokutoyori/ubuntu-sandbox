@@ -62,6 +62,8 @@ export interface AuditdDeps {
     listDirectory: (path: string) => readonly string[] | null;
     spawn: (command: string, ppid: number) => number;
     isAlive: (pid: number) => boolean;
+    isStopped: (pid: number) => boolean;
+    changeRunlevel: (level: 'single' | 'halt') => void;
     terminate: (pid: number) => void;
     libcSyslog: (priorityWithFacility: number, ident: string, pid: number, text: string) => void;
     runProgram: (pid: number, command: string, input: string) => void;
@@ -121,6 +123,7 @@ export class LinuxAuditDaemon {
 
   private onSignal(p: ProcessSignalledPayload): void {
     if (p.deviceId !== this.deviceId || !p.delivered) return;
+    if (p.signal === 'SIGCONT') this.dispatcher?.refresh(p.pid);
     const mainPid = this.deps.serviceMgr.status('auditd')?.mainPid;
     if (p.comm !== 'auditd' && p.pid !== mainPid) return;
     if (p.signal === 'SIGHUP') this.runReload();
@@ -265,6 +268,8 @@ export class LinuxAuditDaemon {
       syslog: (priority, text) => this.log(priority, text),
       spawn: (plugin) => plugins.spawn([plugin.path ?? '', ...plugin.args].join(' '), this.pid()),
       isAlive: plugins.isAlive,
+      isStopped: plugins.isStopped,
+      changeRunlevel: plugins.changeRunlevel,
       terminate: plugins.terminate,
       programFor: (path) => {
         const name = programName(path);
@@ -371,6 +376,7 @@ export class LinuxAuditDaemon {
   private runResume(senderPid: number): void {
     if (this.writer === null) return;
     this.writer.resumeLogging();
+    this.dispatcher?.resume();
     this.deps.auditLog.record('DAEMON_RESUME', {
       op: 'resume-logging', auid: AUDIT_UNSET, pid: senderPid, subj: 'unconfined', res: 'success',
     });
