@@ -5,6 +5,7 @@ export interface ProgramTrace {
   readonly operandBlock?: readonly TracedCall[];
   readonly epilogue?: readonly TracedCall[];
   readonly singleOperand?: boolean;
+  readonly operandKind?: 'file' | 'directory';
 }
 
 export interface ReplayWorld {
@@ -84,6 +85,7 @@ export function expandTrace(trace: ProgramTrace, operands: readonly string[]): T
 
 export function replayProgram(trace: ProgramTrace, operands: readonly string[], world: ReplayWorld): ReplayedSyscall[] {
   const descriptors = new Map<number, { path: string; offset: number; listed: boolean }>();
+  const seekEnds = new Map<number, { recorded: number; actual: number }>();
   const replayed: ReplayedSyscall[] = [];
   for (const [name, rawArgs, recorded, errno] of expandTrace(trace, operands)) {
     const pathIndex = PATH_ARGUMENT[name];
@@ -93,11 +95,20 @@ export function replayProgram(trace: ProgramTrace, operands: readonly string[], 
     const fd = Number(rawArgs[0]);
     if (name === 'openat' && path !== undefined && exit >= 0) descriptors.set(exit, { path, offset: 0, listed: false });
     else if (name === 'close') descriptors.delete(fd);
-    else if (name === 'read' && exit > 0) {
+    else if (name === 'lseek' && rawArgs[2] === '0x2') {
+      const open = descriptors.get(fd);
+      const content = open === undefined ? null : world.readContent(open.path);
+      if (content !== null) {
+        seekEnds.set(fd, { recorded: exit, actual: content.length });
+        exit = content.length;
+      }
+    } else if (name === 'read' && exit > 0) {
       const open = descriptors.get(fd);
       const content = open === undefined ? null : world.readContent(open.path);
       if (open !== undefined && content !== null) {
-        const count = Number(rawArgs[2]);
+        const seekEnd = seekEnds.get(fd);
+        const count = seekEnd !== undefined && Number(rawArgs[2]) === seekEnd.recorded ? seekEnd.actual : Number(rawArgs[2]);
+        numeric[2] = count.toString(16);
         exit = Math.max(0, Math.min(content.length - open.offset, count));
         open.offset += exit;
       }

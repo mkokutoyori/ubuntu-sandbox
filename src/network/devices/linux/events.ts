@@ -159,6 +159,7 @@ export interface FileAccessedPayload extends LinuxDeviceRef {
   tty: string;
   success: boolean;
   exit: number;
+  cwd?: string;
 }
 
 export interface SyscallInvokedPayload extends LinuxDeviceRef {
@@ -178,6 +179,7 @@ export interface SyscallInvokedPayload extends LinuxDeviceRef {
   tty: string;
   success: boolean;
   exit: number;
+  cwd?: string;
 }
 
 export interface MountChangedPayload extends LinuxDeviceRef {

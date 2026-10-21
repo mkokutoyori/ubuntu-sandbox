@@ -5118,7 +5118,7 @@ export class LinuxCommandExecutor {
       syscall: syscall ?? (perm === 'x' ? 'execve' : perm === 'w' ? 'open' : perm === 'a' ? 'chmod' : 'openat'),
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success: actor.success, exit: actor.success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
@@ -5131,7 +5131,7 @@ export class LinuxCommandExecutor {
       deviceId: this.attachedDeviceId, path, perm, syscall,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success, exit: success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
@@ -5259,7 +5259,7 @@ export class LinuxCommandExecutor {
       deviceId: this.attachedDeviceId, syscall, path, perm, trace,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success: actor.success, exit: actor.success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
@@ -5275,7 +5275,7 @@ export class LinuxCommandExecutor {
       deviceId: this.attachedDeviceId, syscall, path,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success, exit: exit ?? (success ? 0 : -13),
     };
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
@@ -5344,7 +5344,7 @@ export class LinuxCommandExecutor {
     if (trace === undefined || args.some((arg) => arg.startsWith('-'))) return null;
     const operands = args.map((arg) => this.vfs.normalizePath(arg, this.cwd));
     if (trace.singleOperand) {
-      return operands.length === 1 && this.vfs.getType(operands[0]) === 'directory' ? operands : null;
+      return operands.length === 1 && this.vfs.getType(operands[0]) === (trace.operandKind ?? 'directory') ? operands : null;
     }
     if (trace.operandBlock === undefined) return operands.length === 0 ? operands : null;
     if (operands.length === 0 || operands.some((operand) => this.vfs.getType(operand) !== 'file')) return null;

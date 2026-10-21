@@ -4,6 +4,12 @@ LAB = '/tmp/syscall-trace-lab'
 PROGRAMS = {
     'cat': {'operands': 'files', 'exe': '/usr/bin/cat'},
     'ls': {'operands': 'single-dir', 'exe': '/usr/bin/ls'},
+    'stat': {'operands': 'single-file', 'exe': '/usr/bin/stat'},
+    'head': {'operands': 'single-file', 'exe': '/usr/bin/head'},
+    'tail': {'operands': 'single-file', 'exe': '/usr/bin/tail'},
+    'wc': {'operands': 'single-file', 'exe': '/usr/bin/wc'},
+    'md5sum': {'operands': 'single-file', 'exe': '/usr/bin/md5sum'},
+    'sha256sum': {'operands': 'single-file', 'exe': '/usr/bin/sha256sum'},
     'whoami': {'operands': 'none', 'exe': '/usr/bin/whoami'},
     'hostname': {'operands': 'none', 'exe': '/usr/bin/hostname'},
     'uname': {'operands': 'none', 'exe': '/usr/bin/uname'},
@@ -101,10 +107,10 @@ def build(program):
     if spec['operands'] == 'none':
         calls = run(program, [])
         return {'prologue': calls, 'operandBlock': [], 'epilogue': []}
-    if spec['operands'] == 'single-dir':
-        operands = [f'{LAB}/d1']
+    if spec['operands'] in ('single-dir', 'single-file'):
+        operands = [f'{LAB}/d1' if spec['operands'] == 'single-dir' else f'{LAB}/f1']
         calls = tokenised(run(program, operands), operands)
-        return {'prologue': calls, 'operandBlock': [], 'epilogue': [], 'singleOperand': True}
+        return {'prologue': calls, 'operandBlock': [], 'epilogue': [], 'singleOperand': True, 'operandKind': 'directory' if spec['operands'] == 'single-dir' else 'file'}
     kind = 'f'
     ops1 = [f'{LAB}/{kind}1']
     ops2 = [f'{LAB}/{kind}1', f'{LAB}/{kind}2']

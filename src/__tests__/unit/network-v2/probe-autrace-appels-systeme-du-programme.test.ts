@@ -1,5 +1,5 @@
 /**
- * Les appels systeme d'un programme vu par audit : cat, ls (un repertoire), whoami, hostname et uname rejouent la
+ * Les appels systeme d'un programme vu par audit : cat, ls (un repertoire), stat, head, tail, wc, md5sum, sha256sum (un fichier), whoami, hostname et uname rejouent la
  * trace strace -X raw de leur binaire reel (coreutils 9.4, Ubuntu 24.04.4, enregistree par
  * scripts/oracle/record_syscall_traces.py : chargeur dynamique, bibliotheques, lecture, ecriture, fermeture). Les
  * quantites que le simulateur connait remplacent celles de l'enregistrement : le read d'un operande rend la taille
@@ -10,9 +10,11 @@
  * gardent le seul execve/openat.
  *
  * Mesure avant : `autrace /usr/bin/cat f` ne voyait que l'execve et l'openat ; une regle sur /etc/ld.so.cache ne
- * se declenchait jamais. Avec src/network remis avant, 6 cas sur 8 tombent ; 2 passent dans les deux etats : le
- * temoin (une surveillance -w ne declenche qu'un enregistrement, sans rejeu) et « un fichier absent n'est pas
- * rejoue » ; ils bornent les cas qui rejouent.
+ * se declenchait jamais (8 cas du fichier tombaient avant le rejeu de cat, ls, whoami, hostname, uname). Ajoute ensuite
+ * stat, head, tail, wc, md5sum, sha256sum, et le repertoire courant dans le CWD des enregistrements du bus (il valait
+ * toujours « / ») : ces 2 cas tombent avec src/network remis avant cet ajout ; les 8 autres passent dans les deux
+ * etats, dont le temoin (une surveillance -w ne declenche qu'un enregistrement, sans rejeu) et « un fichier absent
+ * n'est pas rejoue », qui bornent les cas qui rejouent. lseek en fin de fichier suit la taille simulee (tail).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -90,6 +92,30 @@ describe('program syscall traces', () => {
     await pc.executeCommand('cat /etc/hostname');
     await pc.executeCommand('whoami');
     expect((await pc.executeCommand('ausearch -k loader -r | grep -c "type=SYSCALL"')).trim()).toBe('2');
+  });
+
+  it('stat, head, tail, wc, md5sum and sha256sum on one file replay their own trace', async () => {
+    const pc = await rootHost();
+    await pc.executeCommand('printf "hello world" > /tmp/eleven');
+    for (const program of ['wc', 'head', 'tail']) {
+      const text = await records(pc, pidOf(await pc.executeCommand(`autrace /usr/bin/${program} /tmp/eleven`)));
+      expect(text, program).toContain('name=/etc/ld.so.cache');
+      expect(text, program).toMatch(/syscall=read success=yes exit=11 /);
+    }
+    const stat = await records(pc, pidOf(await pc.executeCommand('autrace /usr/bin/stat /tmp/eleven')));
+    expect(stat).toContain('syscall=statx');
+    expect(calls(stat).length).toBeGreaterThan(30);
+    await pc.executeCommand('auditctl -a always,exit -F arch=b64 -S read -F a0=3 -k reads');
+    await pc.executeCommand('md5sum /tmp/eleven');
+    await pc.executeCommand('sha256sum /tmp/eleven');
+    expect(await pc.executeCommand('ausearch -k reads -i | grep -c "exit=11"')).toBe('2');
+  });
+
+  it('the CWD record carries the directory the program was started from', async () => {
+    const pc = await rootHost();
+    await pc.executeCommand('auditctl -a always,exit -F arch=b64 -S openat -F path=/etc/ld.so.cache -k cwdkey');
+    await pc.executeCommand('cd /etc && cat hostname');
+    expect(await pc.executeCommand('ausearch -k cwdkey -i | grep -o "cwd=[^ ]*"')).toBe('cwd=/etc');
   });
 
   it('a file that does not exist is not replayed', async () => {
