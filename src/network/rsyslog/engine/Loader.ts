@@ -10,7 +10,7 @@ import {
 } from '../config/Params';
 import { DEFAULT_RFC3164_SETTINGS, Rfc3164Parser, Rfc5424Parser, defaultParserChain, type Rfc3164ParserSettings } from '../MessageParser';
 import { parseLegacyTemplate, standardTemplates, templateFromObject, TemplateError, type Template } from '../Template';
-import type { ActionDefinition, ActionOptions, LoadedConfig, RulesetDefinition } from './Config';
+import type { ActionDefinition, ActionOptions, ActionRateLimit, LoadedConfig, RulesetDefinition } from './Config';
 import { applyDirective } from './Directives';
 import type { RsyslogHost } from './Host';
 import { DiagnosticLog, RS_RET } from './Log';
@@ -21,6 +21,7 @@ import type {
 import { AllowedSenderList, parseAllowedSenderEntries, type AllowedSenderEnvironment } from './AllowedSenders';
 import { LocalClock } from './LocalClock';
 import { RateLimiter } from './RateLimiter';
+import { RateLimitRegistry, type SharedRateLimit } from './SharedRateLimit';
 import { SenderResolver } from './SenderResolver';
 import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
 import { PercentileStatsRegistry } from './PercentileStats';
@@ -82,7 +83,9 @@ const PARSER_PARAMS: readonly ParamDescriptor[] = [
 
 const RATELIMIT_PARAMS: readonly ParamDescriptor[] = [
   { name: 'name', type: 'string', required: true }, { name: 'interval', type: 'int' }, { name: 'burst', type: 'int' },
-  { name: 'severity', type: 'int' }, { name: 'policy', type: 'string' },
+  { name: 'severity', type: 'severity' }, { name: 'policy', type: 'string' }, { name: 'policyWatch', type: 'binary' },
+  { name: 'policyWatchDebounce', type: 'string' }, { name: 'perSource', type: 'binary' }, { name: 'perSourcePolicy', type: 'string' },
+  { name: 'perSourceKeyTpl', type: 'string' }, { name: 'perSourceMaxStates', type: 'int' }, { name: 'perSourceTopN', type: 'int' },
 ];
 
 const LOOKUP_TABLE_PARAMS: readonly ParamDescriptor[] = [
@@ -168,7 +171,11 @@ export class ConfigLoader implements ConfigSink {
     const statistics = new Statistics();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), lookupTables: [], statistics,
+      rateLimits: new RateLimitRegistry({
+        runtime: () => this.runtimeSink, files: options.host.files, statistics, template: (name) => this.config.templates.get(name),
+        schedule: (callback, delay) => options.host.schedule(callback, delay), nowMs: () => options.host.clock.wallMs(),
+      }),
+      lookupTables: [], statistics,
       dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), runtime: () => this.runtimeSink, files: options.host.files, workDirectory: () => settings.workDirectory }),
       percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
@@ -320,16 +327,20 @@ export class ConfigLoader implements ConfigSink {
   private createModuleRateLimiter(spec: ModuleRateLimitSpec): { readonly limiter: ModuleRateLimiter | null } | null {
     let interval = spec.interval;
     let burst = spec.burst;
-    let severity = spec.severity ?? 0;
+    const severity = spec.severity ?? 0;
+    let shared: SharedRateLimit | undefined;
     if (spec.configName !== null) {
-      const shared = this.config.rateLimits.get(spec.configName);
+      shared = this.config.rateLimits.find(spec.configName);
       if (shared === undefined) {
         this.runtimeSink.error(`ratelimit config '${spec.configName}' not found`, RS_RET.NOT_FOUND);
         return null;
       }
+      if (shared.scope !== 'input') {
+        this.runtimeSink.error(`ratelimit config '${spec.configName}' has incompatible scope for ${spec.module}`, RS_RET.CONFIG_ERROR);
+        return null;
+      }
       interval = shared.interval;
       burst = shared.burst;
-      severity = Math.max(0, shared.severity);
     } else if (interval <= 0 && spec.forInput !== true) {
       return { limiter: null };
     }
@@ -339,8 +350,33 @@ export class ConfigLoader implements ConfigSink {
         name: spec.dynamicName === undefined ? spec.module : `${spec.module}[${spec.dynamicName}]`, interval, burst, severityThreshold: severity, reduceRepeated: spec.forInput === true && this.config.settings.repeatedMessageReduction,
         internal: (level, code, text) => this.runtimeSink.internal(level, code, text),
         nowSeconds: () => Math.floor(host.clock.wallMs() / 1000),
+        shared, registry: this.config.rateLimits,
       }),
     };
+  }
+
+  private createOutputRateLimiter(configName: string, actionName: string, direct: boolean): ActionRateLimit | null {
+    const shared = this.config.rateLimits.find(configName);
+    if (shared === undefined) {
+      this.runtimeSink.error(`ratelimit config '${configName}' not found`, RS_RET.NOT_FOUND);
+      return null;
+    }
+    if (shared.scope !== 'output') {
+      this.runtimeSink.error(`ratelimit config '${configName}' has incompatible scope for action`, RS_RET.CONFIG_ERROR);
+      return null;
+    }
+    const host = this.options.host;
+    const limiter = new RateLimiter({
+      name: `action[${actionName}]`, interval: shared.interval, burst: shared.burst, severityThreshold: 0, reduceRepeated: false,
+      internal: (level, code, text) => this.runtimeSink.internal(level, code, text),
+      nowSeconds: () => Math.floor(host.clock.wallMs() / 1000), shared, registry: this.config.rateLimits, noTimeCache: true,
+    });
+    if (direct) shared.outputPaceForbidden = true;
+    if (shared.outputMode === 'pace' && direct) {
+      this.runtimeSink.error(`action '${actionName}': action.ratelimit.name='${configName}' uses pace mode, which requires a non-direct action queue`, RS_RET.CONFIG_ERROR);
+      return null;
+    }
+    return { limiter, shared };
   }
 
   private takeScannerDiagnostic(diagnostic: Diagnostic): void {
@@ -829,17 +865,34 @@ export class ConfigLoader implements ConfigSink {
     const values = getParams(object.params, RATELIMIT_PARAMS, this.paramEnvironment());
     if (values === null) return;
     const name = stringParam(values, 'name') ?? '';
-    const interval = numberParam(values, 'interval') ?? 0;
-    const burst = numberParam(values, 'burst') ?? 10000;
-    if (interval < 0) {
+    const interval = numberParam(values, 'interval');
+    const burst = numberParam(values, 'burst');
+    const severity = numberParam(values, 'severity');
+    const maxStates = numberParam(values, 'perSourceMaxStates');
+    const topN = numberParam(values, 'perSourceTopN');
+    const perSource = numberParam(values, 'perSource');
+    const perSourcePolicy = stringParam(values, 'perSourcePolicy') ?? null;
+    const perSourceKeyTemplate = stringParam(values, 'perSourceKeyTpl') ?? null;
+    const legacyPerSource = [perSource, perSourcePolicy, perSourceKeyTemplate, maxStates, topN].some((value) => value !== undefined && value !== null);
+    if ((maxStates ?? 0) < 0 || (topN ?? 0) < 0) {
+      this.log.error(`ratelimit: perSourceMaxStates/perSourceTopN must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
+      return;
+    }
+    if ((interval ?? 0) < 0) {
       this.log.error(`ratelimit: interval must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
       return;
     }
-    if (burst < 0) {
+    if ((burst ?? 10000) < 0) {
       this.log.error(`ratelimit: burst must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
       return;
     }
-    this.config.rateLimits.set(name, { name, interval, burst, severity: numberParam(values, 'severity') ?? -1 });
+    this.config.rateLimits.add({
+      name, interval: interval ?? 0, burst: burst ?? 10000, severity: severity ?? -1, policyFile: stringParam(values, 'policy') ?? null,
+      policyWatch: (numberParam(values, 'policyWatch') ?? 0) !== 0, policyWatchDebounce: stringParam(values, 'policyWatchDebounce') ?? null,
+      perSource: (perSource ?? 0) !== 0 || perSourcePolicy !== null, perSourcePolicyFile: perSourcePolicy, perSourceKeyTemplate,
+      perSourceMaxStates: maxStates ?? 0, perSourceTopN: topN ?? 0,
+      hasInlinePolicyParams: [interval, burst, severity].some((value) => value !== undefined && value !== null), hasLegacyPerSourceParams: legacyPerSource,
+    });
   }
 
   script(statements: Stmt[]): void {
@@ -1038,9 +1091,16 @@ export class ConfigLoader implements ConfigSink {
       }
       templates.push({ request, template });
     }
-    const definition: ActionDefinition = {
-      id: this.nextActionId++, instance, templates, options, moduleDisplayName: module.builtin ? `builtin:${module.name}` : module.name,
-    };
+    const moduleDisplayName = module.builtin ? `builtin:${module.name}` : module.name;
+    let outputLimiter: ActionRateLimit | null = null;
+    if (options.rateLimitName !== null) {
+      outputLimiter = this.createOutputRateLimiter(options.rateLimitName, options.name ?? `action-${this.nextActionId - 1}-${moduleDisplayName}`, options.queue.type === 'Direct');
+      if (outputLimiter === null) {
+        this.config.hadErrors = true;
+        return null;
+      }
+    }
+    const definition: ActionDefinition = { id: this.nextActionId++, instance, templates, options, moduleDisplayName, outputLimiter };
     this.config.actions.push(definition);
     return definition;
   }

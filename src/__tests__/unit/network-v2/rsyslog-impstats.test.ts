@@ -51,7 +51,7 @@ describe('impstats', () => {
     host.advance(1_000);
     expect(bodies(host)).toEqual([
       'main Q: origin=core.queue size=0 enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ',
-      'action-0-builtin:omfile: origin=core.action processed=0 failed=0 suspended=0 suspended.duration=0 resumed=0 ',
+      'action-0-builtin:omfile: origin=core.action processed=0 batchesprocessed=0 failed=0 suspended=0 suspended.duration=0 resumed=0 ratelimit.allowed=0 ratelimit.dropped=0 ratelimit.paced=0 ratelimit.paced_usec=0 ',
       'resource-usage: origin=impstats utime=0 stime=0 maxrss=0 minflt=0 majflt=0 inblock=0 oublock=0 nvcsw=0 nivcsw=0 openfiles=0 ',
     ]);
   });
@@ -61,7 +61,7 @@ describe('impstats', () => {
     host.advance(120_000);
     const second = bodies(host).slice(3);
     expect(second[0]).toBe('main Q: origin=core.queue size=0 enqueued=5 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
-    expect(second[1]).toBe('action-0-builtin:omfile: origin=core.action processed=5 failed=0 suspended=0 suspended.duration=0 resumed=0 ');
+    expect(second[1]).toBe('action-0-builtin:omfile: origin=core.action processed=5 batchesprocessed=5 failed=0 suspended=0 suspended.duration=0 resumed=0 ratelimit.allowed=0 ratelimit.dropped=0 ratelimit.paced=0 ratelimit.paced_usec=0 ');
   });
 
   it('resetcounters zeroes the resettable counters after each read, and never the gauges', () => {
@@ -84,10 +84,10 @@ describe('impstats', () => {
   it('format="cee" prefixes the cookie, and format="json-elasticsearch" replaces dots with bangs', () => {
     const cee = rig(`${TRADITIONAL}module(load="impstats" interval="60" format="cee")\n*.* /var/log/x.log`);
     cee.host.advance(60_000);
-    expect(bodies(cee.host)[1]).toBe('@cee: { "name": "action-0-builtin:omfile", "origin": "core.action", "processed": 0, "failed": 0, "suspended": 0, "suspended.duration": 0, "resumed": 0 }');
+    expect(bodies(cee.host)[1]).toBe('@cee: { "name": "action-0-builtin:omfile", "origin": "core.action", "processed": 0, "batchesprocessed": 0, "failed": 0, "suspended": 0, "suspended.duration": 0, "resumed": 0, "ratelimit.allowed": 0, "ratelimit.dropped": 0, "ratelimit.paced": 0, "ratelimit.paced_usec": 0 }');
     const es = rig(`${TRADITIONAL}module(load="impstats" interval="60" format="json-elasticsearch")\n*.* /var/log/x.log`);
     es.host.advance(60_000);
-    expect(bodies(es.host)[1]).toBe('{ "name": "action-0-builtin:omfile", "origin": "core.action", "processed": 0, "failed": 0, "suspended": 0, "suspended!duration": 0, "resumed": 0 }');
+    expect(bodies(es.host)[1]).toBe('{ "name": "action-0-builtin:omfile", "origin": "core.action", "processed": 0, "batchesprocessed": 0, "failed": 0, "suspended": 0, "suspended!duration": 0, "resumed": 0, "ratelimit!allowed": 0, "ratelimit!dropped": 0, "ratelimit!paced": 0, "ratelimit!paced_usec": 0 }');
   });
 
   it('bracketing wraps each report in BEGIN and END', () => {

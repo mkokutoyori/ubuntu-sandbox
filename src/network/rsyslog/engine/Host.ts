@@ -46,6 +46,7 @@ export interface RsyslogFiles {
   statSize(path: string): number | null;
   readFrom(path: string, offset: number): { text: string; size: number; inode: string } | null;
   write(path: string, text: string): boolean;
+  watch?(path: string, onEvent: () => void): (() => void) | null;
 }
 
 export interface TerminalSink {

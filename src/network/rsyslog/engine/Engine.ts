@@ -13,6 +13,7 @@ import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
 import { RateLimiter } from './RateLimiter';
+import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
 
@@ -51,6 +52,7 @@ export class RsyslogEngine implements InputSubmitter {
     };
     this.runtimeLog = runtimeLog;
     config.bindRuntime(runtimeLog);
+    config.rateLimits.bindRenderer((template, message) => renderTemplate(template, message, this.renderContext()));
     this.defaultLimiter = this.newLimiter('rsyslogd', 0, 10000, 0);
     this.internalLimiter = this.newLimiter(
       'rsyslogd[internal_messages]', config.settings.internalMessages.rateInterval, config.settings.internalMessages.rateBurst, 0,
@@ -67,7 +69,7 @@ export class RsyslogEngine implements InputSubmitter {
       this.registerActionStatistics(runtime);
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
-      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => runtime.commit()));
+      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; runtime.commit(); }));
     }
   }
 
@@ -106,10 +108,15 @@ export class RsyslogEngine implements InputSubmitter {
     const object = this.config.statistics.create(runtime.name, { origin: 'core.action' });
     const counters = runtime.counters;
     object.addCounter({ name: 'processed', read: () => counters.processed, reset: () => { counters.processed = 0; } });
+    object.addCounter({ name: 'batchesprocessed', read: () => counters.batchesProcessed, reset: () => { counters.batchesProcessed = 0; } });
     object.addCounter({ name: 'failed', read: () => counters.failed, reset: () => { counters.failed = 0; } });
     object.addCounter({ name: 'suspended', read: () => counters.suspended, reset: () => { counters.suspended = 0; } });
     object.addCounter({ name: 'suspended.duration', read: () => counters.suspendedDuration });
     object.addCounter({ name: 'resumed', read: () => counters.resumed, reset: () => { counters.resumed = 0; } });
+    object.addCounter({ name: 'ratelimit.allowed', read: () => counters.rateLimitAllowed, reset: () => { counters.rateLimitAllowed = 0; } });
+    object.addCounter({ name: 'ratelimit.dropped', read: () => counters.rateLimitDropped, reset: () => { counters.rateLimitDropped = 0; } });
+    object.addCounter({ name: 'ratelimit.paced', read: () => counters.rateLimitPaced, reset: () => { counters.rateLimitPaced = 0; } });
+    object.addCounter({ name: 'ratelimit.paced_usec', read: () => counters.rateLimitPacedMicroseconds, reset: () => { counters.rateLimitPacedMicroseconds = 0; } });
   }
 
   private commitActions(): void {
@@ -543,6 +550,7 @@ export class RsyslogEngine implements InputSubmitter {
     for (const queue of this.actionQueues.values()) queue.stop();
     for (const runtime of this.actions.values()) runtime.stop();
     for (const table of this.config.lookupTables) table.stop();
+    this.config.rateLimits.close();
     this.config.dynStats.persistAll();
     for (const callback of this.stopCallbacks) callback();
     this.stopCallbacks = [];
@@ -555,6 +563,7 @@ export class RsyslogEngine implements InputSubmitter {
     for (const runtime of this.actions.values()) runtime.hup();
     for (const record of this.config.inputs) record.instance.hup?.();
     for (const table of this.config.lookupTables) if (table.reloadOnHup) table.reload(null);
+    this.config.rateLimits.hup();
     this.oversizeLog?.close();
     this.oversizeLog = null;
   }

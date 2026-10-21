@@ -1,6 +1,8 @@
 import type { Stmt } from '../config/Ast';
 import type { DynStatsRegistry } from './DynStats';
 import type { PercentileStatsRegistry } from './PercentileStats';
+import type { RateLimiter } from './RateLimiter';
+import type { RateLimitRegistry, SharedRateLimit } from './SharedRateLimit';
 import type { Statistics } from './Statistics';
 import type { MessageParserModule } from '../MessageParser';
 import type { Template } from '../Template';
@@ -36,12 +38,18 @@ export interface ActionTemplateBinding {
   readonly template: Template | null;
 }
 
+export interface ActionRateLimit {
+  readonly limiter: RateLimiter;
+  readonly shared: SharedRateLimit;
+}
+
 export interface ActionDefinition {
   readonly id: number;
   readonly instance: ActionModuleInstance;
   readonly moduleDisplayName: string;
   readonly templates: ActionTemplateBinding[];
   readonly options: ActionOptions;
+  readonly outputLimiter: ActionRateLimit | null;
 }
 
 export interface RulesetDefinition {
@@ -49,13 +57,6 @@ export interface RulesetDefinition {
   statements: Stmt[];
   parserNames: string[] | null;
   queue: QueueSettings | null;
-}
-
-export interface RateLimitDefinition {
-  readonly name: string;
-  readonly interval: number;
-  readonly burst: number;
-  readonly severity: number;
 }
 
 export interface InputRecord {
@@ -72,7 +73,7 @@ export interface LoadedConfig {
   readonly outchannels: OutChannel[];
   readonly actions: ActionDefinition[];
   readonly parsers: Map<string, MessageParserModule>;
-  readonly rateLimits: Map<string, RateLimitDefinition>;
+  readonly rateLimits: RateLimitRegistry;
   readonly lookupTables: LookupRef[];
   readonly statistics: Statistics;
   readonly dynStats: DynStatsRegistry;

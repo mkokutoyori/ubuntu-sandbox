@@ -178,6 +178,10 @@ class ImudpListener implements InputInstance {
       }
       this.context.host.files.write(settings.portListenFile, `${outcome.listeners[0].port}\n`);
     }
+    if (settings.rateName !== null && outcome.listeners.some((listener) => this.limiterFor(this.displayName(listener.family)) === null)) {
+      for (const listener of outcome.listeners) listener.close();
+      return false;
+    }
     this.listeners = outcome.listeners;
     for (const listener of this.listeners) this.registerListenerStatistics(this.displayName(listener.family));
     workerCounters(this.context);

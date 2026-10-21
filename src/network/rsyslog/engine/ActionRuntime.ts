@@ -40,7 +40,10 @@ export class ActionRuntime {
   private resumeAtSeconds = 0;
   private retriesInRow = 0;
   private resumeInRow = 0;
-  counters = { processed: 0, failed: 0, suspended: 0, suspendedDuration: 0, resumed: 0 };
+  counters = {
+    processed: 0, batchesProcessed: 0, failed: 0, suspended: 0, suspendedDuration: 0, resumed: 0,
+    rateLimitAllowed: 0, rateLimitDropped: 0, rateLimitPaced: 0, rateLimitPacedMicroseconds: 0,
+  };
 
   constructor(readonly definition: ActionDefinition, private readonly services: ActionServices, ordinal: number) {
     this.moduleDisplayName = definition.moduleDisplayName;
@@ -200,6 +203,31 @@ export class ActionRuntime {
     return 'deferred';
   }
 
+  private *passesOutputRateLimit(): Generator<Sleep, boolean> {
+    const output = this.definition.outputLimiter;
+    if (output === null) return true;
+    const counters = this.counters;
+    if (output.shared.outputMode === 'drop') {
+      if (output.limiter.admit(this.name)) {
+        counters.rateLimitAllowed++;
+        return true;
+      }
+      counters.rateLimitDropped++;
+      return false;
+    }
+    for (;;) {
+      const wait = output.limiter.waitMicroseconds();
+      if (wait === 0) {
+        counters.rateLimitAllowed++;
+        return true;
+      }
+      const sleep = wait > 1_000_000 ? 1_000_000 : wait;
+      counters.rateLimitPaced++;
+      counters.rateLimitPacedMicroseconds += sleep;
+      yield { sleepMs: sleep / 1000 };
+    }
+  }
+
   *submit(message: RsyslogMessage, script: ScriptState): Generator<Sleep, SubmitResult> {
     const options = this.definition.options;
     if (this.state === 'disabled') return 'dropped';
@@ -230,6 +258,8 @@ export class ActionRuntime {
     this.lastExecutionSeconds = now;
     if (complex) this.lastMessageSeconds = message.receivedAtSeconds;
     this.counters.processed++;
+    if (options.queue.type === 'Direct') this.counters.batchesProcessed++;
+    if (!(yield* this.passesOutputRateLimit())) return 'dropped';
     const args = this.render(message);
     const result = yield* this.execute(args, message);
     script.previousSuspended = result === 'deferred';

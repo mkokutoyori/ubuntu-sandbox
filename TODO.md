@@ -3274,6 +3274,18 @@ omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
+### [rsyslog] ratelimit() : limites du lecteur YAML, de policyWatch et de la creation des limiteurs
+`ratelimit()` est porte de rsyslog 8.2608.0 (`engine/SharedRateLimit.ts`, `PerSourceRateLimit.ts`, `RateLimitPolicy.ts`, `YamlEvents.ts`) :
+fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
+`YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
+etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
+sont reproduits ; policyWatch repose sur l'evenement d'ecriture du VFS (`onWrite`) : un `mv` qui amene le fichier en place (IN_MOVED_TO) ou
+un `chmod` (IN_ATTRIB) n'emet aucun evenement, la ou inotify les signale ; `imudp` cree ses limiteurs au demarrage comme le source, mais
+`imtcp`, `imuxsock` et `imklog` les creent au premier message, si bien qu'un `ratelimit.name` inconnu n'y est signale qu'a ce moment et que
+le listener n'est pas refuse ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
+source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
+(`global(senders.keepTrack)`) restent a porter.
+
 ### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
 Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
 `LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
