@@ -543,6 +543,7 @@ export class RsyslogEngine implements InputSubmitter {
     for (const queue of this.actionQueues.values()) queue.stop();
     for (const runtime of this.actions.values()) runtime.stop();
     for (const table of this.config.lookupTables) table.stop();
+    this.config.dynStats.persistAll();
     for (const callback of this.stopCallbacks) callback();
     this.stopCallbacks = [];
     this.oversizeLog?.close();

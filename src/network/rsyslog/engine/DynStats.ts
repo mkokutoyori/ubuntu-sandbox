@@ -1,4 +1,6 @@
 import { RS_RET } from './Log';
+import type { RsyslogFiles } from './Host';
+import type { RuntimeLog } from './Modules';
 import type { Statistics, StatsObject } from './Statistics';
 
 const DYN_INC_OK = 0;
@@ -11,11 +13,23 @@ export interface DynStatsOptions {
   readonly resettable: boolean;
   readonly maxCardinality: number;
   readonly unusedMetricLifeSeconds: number;
+  readonly persistUpdates?: number;
+  readonly persistSeconds?: number;
+  readonly stateDirectory?: string | null;
 }
 
 export interface DynStatsServices {
   readonly nowMs: () => number;
-  readonly info: (text: string, code: number) => void;
+  readonly runtime: () => RuntimeLog;
+  readonly files: RsyslogFiles;
+  readonly workDirectory: () => string | null;
+}
+
+const STATE_FILE_PREFIX = 'dynstats-state:';
+const OPEN_STATE_FILE_FAILED = 'dynstats: openStateFile failed - there should be messages before this one with the reason.\n';
+
+function plainJson(value: unknown): string {
+  return JSON.stringify(value).replace(/\//g, '\\/');
 }
 
 interface MetricCounter {
@@ -44,6 +58,8 @@ export class DynStatsBucket {
   private cleanupAtMs = 0;
   private readonly counters: BucketCounters = { opsOverflow: 0, newMetricAdd: 0, noMetric: 0, metricsPurged: 0, opsIgnored: 0, purgeTriggered: 0 };
   private readonly object: StatsObject;
+  private updates = 0;
+  private persistExpirationSeconds = 0;
 
   constructor(
     readonly options: DynStatsOptions, private readonly statistics: Statistics, globalObject: StatsObject, private readonly services: DynStatsServices,
@@ -56,6 +72,101 @@ export class DynStatsBucket {
     for (const [suffix, key] of GLOBAL_COUNTER_SUFFIXES) {
       globalObject.addCounter({ name: `${options.name}.${suffix}`, read: () => this.counters[key], reset: () => { this.counters[key] = 0; } });
     }
+    if (this.persistsState) {
+      if (this.loadState() !== DYN_INC_OK) this.services.runtime().info(OPEN_STATE_FILE_FAILED, RS_RET.ERR);
+      if (this.persistSeconds > 0) this.persistExpirationSeconds = this.nowSeconds() + this.persistSeconds;
+    }
+  }
+
+  private get persistUpdates(): number {
+    return this.options.persistUpdates ?? 0;
+  }
+
+  private get persistSeconds(): number {
+    return this.options.persistSeconds ?? 0;
+  }
+
+  get persistsState(): boolean {
+    return this.persistUpdates > 0 || this.persistSeconds > 0;
+  }
+
+  private nowSeconds(): number {
+    return Math.floor(this.services.nowMs() / 1000);
+  }
+
+  private stateFilePath(): string {
+    const name = this.options.name;
+    let fileName = `${STATE_FILE_PREFIX}${name}`;
+    if (name.includes('/')) {
+      const sanitized = name.replace(/\//g, '_');
+      fileName = `${STATE_FILE_PREFIX}${sanitized}`;
+      this.services.runtime().warning(`dynstats: bucket name '${name}' contains slashes, sanitized to '${sanitized}' for state file`, DYN_INC_OK);
+    }
+    return `${this.options.stateDirectory ?? this.services.workDirectory() ?? '.'}/${fileName}`;
+  }
+
+  private loadState(): number {
+    const runtime = this.services.runtime();
+    const path = this.stateFilePath();
+    const content = this.services.files.read(path);
+    if (content === null) {
+      runtime.info(`dyn_stats: warning state file doesn't exist: '${path}'`, RS_RET.FILE_NOT_FOUND);
+      return RS_RET.FILE_NOT_FOUND;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      parsed = null;
+    }
+    if (typeof parsed !== 'object' || parsed === null) {
+      runtime.info(`dyn_stats: error couldn't read json from file: '${path}'`, RS_RET.JSON_UNUSABLE);
+      return RS_RET.JSON_UNUSABLE;
+    }
+    const values = (parsed as { values?: unknown }).values;
+    if (typeof values !== 'object' || values === null) return DYN_INC_OK;
+    for (const [metric, value] of Object.entries(values)) {
+      if (typeof value !== 'number' || !Number.isInteger(value)) {
+        runtime.error(`dynstats: state file '${path}' contains non-integer value for metric '${metric}'`, RS_RET.JSON_UNUSABLE);
+        continue;
+      }
+      if (value < 0) {
+        runtime.error(`dynstats: state file '${path}' contains negative value ${value} for metric '${metric}' - ignoring`, RS_RET.JSON_UNUSABLE);
+        continue;
+      }
+      const code = this.addMetric(metric, value, 0);
+      if (code !== DYN_INC_OK) runtime.error(`dynstats: failed to add metric '${metric}' from state file`, code);
+    }
+    return DYN_INC_OK;
+  }
+
+  persistState(synchronous: boolean): void {
+    const path = this.stateFilePath();
+    const values: { [metric: string]: number } = {};
+    for (const counter of this.table.values()) values[counter.metric] = counter.value;
+    const runtime = this.services.runtime();
+    if (this.services.files.write(path, plainJson({ name: this.options.name, values }))) return;
+    runtime.error(`dynstats: cannot open state file '${path}.tmp' for persisting file state - some data will probably be duplicated on next startup`, RS_RET.IO_ERROR);
+    if (synchronous) runtime.error(`dynstats: could not persist state file ${path} - data may be repeated on next startup. Is WorkDirectory set?`, RS_RET.IO_ERROR);
+  }
+
+  persistOnStop(): void {
+    if (this.persistsState || this.persistExpirationSeconds !== 0) this.persistState(true);
+  }
+
+  private persistIfDue(): void {
+    if (!this.persistsState) return;
+    const now = this.nowSeconds();
+    let due = false;
+    if (this.persistUpdates > 0) {
+      this.updates++;
+      due = this.updates >= this.persistUpdates;
+    }
+    if (!due && this.persistExpirationSeconds !== 0 && now >= this.persistExpirationSeconds) due = true;
+    if (!due) return;
+    this.persistState(false);
+    if (this.persistUpdates > 0) this.updates -= this.persistUpdates;
+    if (this.persistSeconds > 0) this.persistExpirationSeconds = now + this.persistSeconds;
   }
 
   get name(): string {
@@ -69,14 +180,16 @@ export class DynStatsBucket {
       return DYN_INC_OK;
     }
     const existing = this.table.get(metric);
-    if (existing !== undefined) {
-      existing.value++;
-      return DYN_INC_OK;
+    if (existing !== undefined) existing.value++;
+    else {
+      const code = this.addMetric(metric, 0, 1);
+      if (code !== DYN_INC_OK) return code;
     }
-    return this.addMetric(metric);
+    this.persistIfDue();
+    return DYN_INC_OK;
   }
 
-  private addMetric(metric: string): number {
+  private addMetric(metric: string, offset: number, increment: number): number {
     if (this.metricCount >= this.options.maxCardinality) {
       this.counters.opsOverflow++;
       return RS_RET.OUT_OF_MEMORY;
@@ -86,7 +199,7 @@ export class DynStatsBucket {
     if (survivor !== undefined) this.survivors.delete(metric);
     this.table.set(metric, counter);
     this.object.addCounter({ name: metric, read: () => counter.value, reset: () => { counter.value = 0; }, mustReset: this.options.resettable });
-    counter.value++;
+    counter.value += increment + offset;
     if (survivor === undefined) {
       this.metricCount++;
       this.counters.newMetricAdd++;
@@ -106,7 +219,7 @@ export class DynStatsBucket {
 
   private resetIfExpired(): void {
     if (this.services.nowMs() < this.cleanupAtMs) return;
-    this.services.info(`dynstats: bucket '${this.options.name}' is being reset`, RS_RET.TIMED_OUT);
+    this.services.runtime().info(`dynstats: bucket '${this.options.name}' is being reset`, RS_RET.TIMED_OUT);
     this.reset();
   }
 }
@@ -120,6 +233,9 @@ export class DynStatsRegistry {
   }
 
   create(options: DynStatsOptions): DynStatsBucket {
+    if (this.find(options.name) !== undefined) {
+      this.services.runtime().warning(`dynstats: duplicate bucket name '${options.name}' in current config set; impstats output may be ambiguous`, DYN_INC_OK);
+    }
     const bucket = new DynStatsBucket(options, this.statistics, this.globalObject, this.services);
     this.buckets.unshift(bucket);
     return bucket;
@@ -127,5 +243,9 @@ export class DynStatsRegistry {
 
   find(name: string): DynStatsBucket | undefined {
     return this.buckets.find((bucket) => bucket.name === name);
+  }
+
+  persistAll(): void {
+    for (const bucket of this.buckets) bucket.persistOnStop();
   }
 }

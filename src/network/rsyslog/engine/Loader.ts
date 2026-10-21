@@ -92,6 +92,8 @@ const LOOKUP_TABLE_PARAMS: readonly ParamDescriptor[] = [
 const DYN_STATS_PARAMS: readonly ParamDescriptor[] = [
   { name: 'name', type: 'string', required: true }, { name: 'resettable', type: 'binary' },
   { name: 'maxCardinality', type: 'positive' }, { name: 'unusedMetricLife', type: 'positive' },
+  { name: 'persistStateInterval', type: 'positive' }, { name: 'persistStateTimeInterval', type: 'positive' },
+  { name: 'statefile.directory', type: 'string' },
 ];
 
 const PERCENTILE_STATS_PARAMS: readonly ParamDescriptor[] = [
@@ -167,7 +169,7 @@ export class ConfigLoader implements ConfigSink {
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
       rateLimits: new Map(), lookupTables: [], statistics,
-      dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), info: (text, code) => this.runtimeSink.info(text, code) }),
+      dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), runtime: () => this.runtimeSink, files: options.host.files, workDirectory: () => settings.workDirectory }),
       percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
@@ -785,6 +787,9 @@ export class ConfigLoader implements ConfigSink {
       resettable: resettable === undefined ? true : resettable !== 0,
       maxCardinality: numberParam(values, 'maxCardinality') ?? DEFAULT_MAX_CARDINALITY,
       unusedMetricLifeSeconds: numberParam(values, 'unusedMetricLife') ?? DEFAULT_UNUSED_METRIC_LIFE_SECONDS,
+      persistUpdates: numberParam(values, 'persistStateInterval') ?? 0,
+      persistSeconds: numberParam(values, 'persistStateTimeInterval') ?? 0,
+      stateDirectory: stringParam(values, 'statefile.directory') ?? null,
     });
   }
 

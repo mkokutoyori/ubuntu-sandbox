@@ -3262,7 +3262,8 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
-`dyn_stats` n'a pas la persistance de 8.2608 (`persistStateInterval`, `statefile.directory`, compteurs `flushed_*`), `percentile_stats` la
+la persistance de `dyn_stats` ecrit les metriques dans l'ordre d'insertion, la ou le source parcourt sa table de hachage ; l'ecriture
+est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; `percentile_stats` n'a pas la
 validation de plage et le message de troncature de 8.2608 ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
 compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
 (l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
