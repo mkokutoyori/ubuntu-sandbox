@@ -34,7 +34,8 @@ function rig(config: string): { host: LabHost; lab: ReturnType<typeof startRsysl
 }
 
 const read = (host: LabHost, path = '/var/log/x.log'): string[] => lines(host.fileSystem.get(path) ?? null);
-const bodies = (host: LabHost, path = '/var/log/x.log'): string[] => read(host, path).map((line) => line.replace(/^\S+ +\d+ [\d:]+ \S+ rsyslogd-pstats: /, ''));
+const bodies = (host: LabHost, path = '/var/log/x.log'): string[] =>
+  read(host, path).map((line) => line.replace(/^\S+ +\d+ [\d:]+ \S+ rsyslogd-pstats: /, '')).filter((line) => !line.includes('origin=dynstats ') && !line.includes('"origin": "dynstats"'));
 
 describe('impstats', () => {
   it('witness: a plain selector writes what the lab submits, and no statistics appear without the module', () => {
@@ -59,19 +60,19 @@ describe('impstats', () => {
     const { host } = rig(`${TRADITIONAL}module(load="impstats" interval="60")\n*.* /var/log/x.log`);
     host.advance(120_000);
     const second = bodies(host).slice(3);
-    expect(second[0]).toBe('main Q: origin=core.queue size=0 enqueued=3 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
-    expect(second[1]).toBe('action-0-builtin:omfile: origin=core.action processed=3 failed=0 suspended=0 suspended.duration=0 resumed=0 ');
+    expect(second[0]).toBe('main Q: origin=core.queue size=0 enqueued=4 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
+    expect(second[1]).toBe('action-0-builtin:omfile: origin=core.action processed=4 failed=0 suspended=0 suspended.duration=0 resumed=0 ');
   });
 
   it('resetcounters zeroes the resettable counters after each read, and never the gauges', () => {
     const kept = rig(`${TRADITIONAL}module(load="impstats" interval="60")\n*.* /var/log/x.log`);
     kept.host.advance(180_000);
-    expect(bodies(kept.host).slice(6)[0]).toContain('enqueued=6 ');
+    expect(bodies(kept.host).slice(6)[0]).toContain('enqueued=8 ');
     const reset = rig(`${TRADITIONAL}module(load="impstats" interval="60" resetcounters="on")\n*.* /var/log/x.log`);
     reset.host.advance(180_000);
     const third = bodies(reset.host).slice(6);
-    expect(third[0]).toBe('main Q: origin=core.queue size=0 enqueued=3 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
-    expect(third[1]).toContain('processed=3 ');
+    expect(third[0]).toBe('main Q: origin=core.queue size=0 enqueued=4 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
+    expect(third[1]).toContain('processed=4 ');
   });
 
   it('format="json" writes the libfastjson spelling, in counter order, one object per line', () => {
@@ -101,8 +102,8 @@ describe('impstats', () => {
   it('facility and severity choose the priority of the submitted messages', () => {
     const { host } = rig('module(load="impstats" interval="60" facility="17" severity="5")\nlocal1.notice /var/log/l1.log\n*.* /var/log/all.log');
     host.advance(60_000);
-    expect(read(host, '/var/log/l1.log')).toHaveLength(4);
-    expect(read(host, '/var/log/all.log')).toHaveLength(4);
+    expect(read(host, '/var/log/l1.log')).toHaveLength(5);
+    expect(read(host, '/var/log/all.log')).toHaveLength(5);
     const other = rig('module(load="impstats" interval="60")\nlocal1.notice /var/log/l1.log\n*.* /var/log/all.log');
     other.host.advance(60_000);
     expect(read(other.host, '/var/log/l1.log')).toEqual([]);
@@ -113,19 +114,19 @@ describe('impstats', () => {
     host.advance(60_000);
     expect(read(host)).toEqual([]);
     const written = read(host, '/var/log/stats.log');
-    expect(written).toHaveLength(3);
-    expect(written[0]).toBe('Mon Oct 19 12:01:00 2026: main Q: origin=core.queue size=0 enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ');
+    expect(written).toHaveLength(4);
+    expect(written[1]).toBe('Mon Oct 19 12:01:00 2026: main Q: origin=core.queue size=0 enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ');
   });
 
   it('the ruleset parameter routes the report, and an unknown one falls back with a message', () => {
     const routed = rig('module(load="impstats" interval="60" ruleset="stats")\nruleset(name="stats") { action(type="omfile" file="/var/log/stats.log") }\n*.* /var/log/x.log');
     routed.host.advance(60_000);
-    expect(read(routed.host, '/var/log/stats.log')).toHaveLength(4);
+    expect(read(routed.host, '/var/log/stats.log')).toHaveLength(5);
     expect(read(routed.host)).toEqual([]);
     const missing = rig('module(load="impstats" interval="60" ruleset="nope")\n*.* /var/log/x.log');
     expect(missing.lab.loader.log.lines()).toEqual(["rsyslogd: impstats: ruleset 'nope' not found - using default ruleset instead [v8.2112.0]"]);
     missing.host.advance(60_000);
-    expect(read(missing.host)).toHaveLength(3);
+    expect(read(missing.host)).toHaveLength(4);
   });
 
   it('refuses a zero interval, an unknown format, and a ruleset without log.syslog', () => {
@@ -134,7 +135,7 @@ describe('impstats', () => {
     zero.host.advance(299_000);
     expect(read(zero.host)).toEqual([]);
     zero.host.advance(1_000);
-    expect(read(zero.host)).toHaveLength(3);
+    expect(read(zero.host)).toHaveLength(4);
     const format = rig('module(load="impstats" interval="60" format="xml")\n*.* /var/log/x.log');
     expect(format.lab.loader.log.lines()).toEqual(['rsyslogd: impstats: invalid format xml [v8.2112.0]']);
   });
@@ -154,7 +155,7 @@ describe('impstats', () => {
     const { host, lab } = rig('module(load="impstats" interval="3600" log.syslog="off" log.file="/var/log/stats.log")\n*.* /var/log/x.log');
     expect(read(host, '/var/log/stats.log')).toEqual([]);
     lab.engine.stop();
-    expect(read(host, '/var/log/stats.log')).toHaveLength(3);
+    expect(read(host, '/var/log/stats.log')).toHaveLength(4);
   });
 
   it('a full action queue counts what it refuses, in discarded.full and full', () => {

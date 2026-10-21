@@ -82,6 +82,7 @@ class StatisticsReporter implements InputInstance {
   }
 
   start(): boolean {
+    this.context.statistics.enabled = true;
     this.registerResourceUsage();
     this.cancel = this.context.host.scheduleEvery(() => this.report(), this.intervalSeconds * 1000);
     return true;

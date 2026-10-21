@@ -227,6 +227,10 @@ export interface LookupTableReference {
   lookup(key: string | number): string;
 }
 
+export interface DynStatsReference {
+  inc(metric: string): number;
+}
+
 export interface CompiledRegex {
   readonly matcher: RegExp;
 }
@@ -458,6 +462,14 @@ const SIGNATURES: FunctionSignature[] = [
       if (keyType === 'string') return str(table.lookup(valueToString(key)));
       if (keyType === 'uint') return str(table.lookup(Number(BigInt.asUintN(32, BigInt(Math.trunc(valueToNumber(key).n))))));
       return str(table.lookup(0));
+    },
+  },
+  {
+    name: 'dyn_inc', min: 2, max: 2,
+    call: (a, p, m, e) => {
+      const bucket = p as DynStatsReference | undefined;
+      if (bucket === undefined) return num(-1);
+      return num(bucket.inc(textOf(a[1], m, e)));
     },
   },
   {

@@ -22,6 +22,7 @@ import { AllowedSenderList, parseAllowedSenderEntries, type AllowedSenderEnviron
 import { LocalClock } from './LocalClock';
 import { RateLimiter } from './RateLimiter';
 import { SenderResolver } from './SenderResolver';
+import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
 import { Statistics } from './Statistics';
 import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type QueueSettings } from './Settings';
 
@@ -85,6 +86,11 @@ const RATELIMIT_PARAMS: readonly ParamDescriptor[] = [
 
 const LOOKUP_TABLE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'name', type: 'string', required: true }, { name: 'file', type: 'string', required: true }, { name: 'reloadOnHUP', type: 'binary' },
+];
+
+const DYN_STATS_PARAMS: readonly ParamDescriptor[] = [
+  { name: 'name', type: 'string', required: true }, { name: 'resettable', type: 'binary' },
+  { name: 'maxCardinality', type: 'positive' }, { name: 'unusedMetricLife', type: 'positive' },
 ];
 
 const TIMEZONE_PARAMS: readonly ParamDescriptor[] = [{ name: 'id', type: 'string', required: true }, { name: 'offset', type: 'string', required: true }];
@@ -151,9 +157,11 @@ export class ConfigLoader implements ConfigSink {
 
   constructor(private readonly options: LoaderOptions) {
     const settings = defaultGlobalSettings();
+    const statistics = new Statistics();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), lookupTables: [], statistics: new Statistics(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
+      rateLimits: new Map(), lookupTables: [], statistics,
+      dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), info: (text, code) => this.runtimeSink.info(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -583,7 +591,7 @@ export class ConfigLoader implements ConfigSink {
       case 'parser': this.processParser(object); break;
       case 'ratelimit': this.processRateLimit(object); break;
       case 'lookup_table': this.processLookupTable(object); break;
-      case 'dyn_stats':
+      case 'dyn_stats': this.processDynStats(object); break;
       case 'percentile_stats':
         break;
       default: return;
@@ -758,6 +766,20 @@ export class ConfigLoader implements ConfigSink {
     if (reloadOnHup !== undefined) table.reloadOnHup = reloadOnHup !== 0;
     this.config.lookupTables.push(table);
     table.load();
+  }
+
+  private processDynStats(object: ConfigObject): void {
+    const values = getParams(object.params, DYN_STATS_PARAMS, this.paramEnvironment());
+    if (values === null) return;
+    const name = stringParam(values, 'name');
+    if (name === undefined) return;
+    const resettable = numberParam(values, 'resettable');
+    this.config.dynStats.create({
+      name,
+      resettable: resettable === undefined ? true : resettable !== 0,
+      maxCardinality: numberParam(values, 'maxCardinality') ?? DEFAULT_MAX_CARDINALITY,
+      unusedMetricLifeSeconds: numberParam(values, 'unusedMetricLife') ?? DEFAULT_UNUSED_METRIC_LIFE_SECONDS,
+    });
   }
 
   private processRateLimit(object: ConfigObject): void {
@@ -1063,6 +1085,21 @@ export class ConfigLoader implements ConfigSink {
       return;
     }
     if (name === 'lookup' && expression.k === 'func') this.resolveLookupFunction(expression, location);
+    if (name === 'dyn_inc' && expression.k === 'func') this.resolveDynStatsFunction(expression, location);
+  }
+
+  private resolveDynStatsFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
+    const first = expression.args[0];
+    if (first.k !== 'str') {
+      this.reportAt('dyn-stats bucket-name (param 1) of dyn-stats manipulating functions like dyn_inc must be a constant string', location);
+      return;
+    }
+    const bucket = this.config.dynStats.find(first.value);
+    if (bucket === undefined) {
+      this.reportAt(`dyn-stats bucket '${first.value}' not found`, location);
+      return;
+    }
+    bindFunctionData(expression, bucket);
   }
 
   private resolveLookupFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {

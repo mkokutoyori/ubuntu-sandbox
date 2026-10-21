@@ -3259,12 +3259,11 @@ script est relance une fois par evenement avec la ligne pour entree standard, so
 que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
 re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connecter (client) : `nc -lU` et `nc -uU` restent refuses, et seul `audisp-af_unix` ecoute une socket UNIX en flux ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.
 
-### [rsyslog] `dyn_stats`, `percentile_stats`, `dyn_inc()` et `percentile_observe()` sont acceptes puis ignores
+### [rsyslog] `percentile_stats` et `percentile_observe()` sont acceptes puis ignores
 `lookup_table`, `lookup()` et `reload_lookup_table()` sont portes de rsyslog 8.2112.0 (`engine/LookupTable.ts`).
 `statsobj.c` et le module `impstats` sont portes (`engine/Statistics.ts`, `modules/Impstats.ts`) : files, actions, imuxsock,
-imudp, imtcp, omfwd (`bytes.sent`) et le cache dynafile d'omfile publient leurs compteurs. Reste a porter : les objets
-`dyn_stats` et `percentile_stats`, acceptes par le chargeur sans effet, et les fonctions `dyn_inc()` /
-`percentile_observe()` (`runtime/dynstats.c`, `perctile_stats.c`, `perctile_ringbuf.c`). Ce que `impstats` ne publie pas
+imudp, imtcp, omfwd (`bytes.sent`) et le cache dynafile d'omfile publient leurs compteurs. `dyn_stats` et `dyn_inc()` sont portes (`engine/DynStats.ts`). Reste a porter : l'objet `percentile_stats`, accepte par le
+chargeur sans effet, et la fonction `percentile_observe()` (`runtime/perctile_stats.c`, `perctile_ringbuf.c`). Ce que `impstats` ne publie pas
 encore : les objets `imklog`, `immark` n'en ont pas dans 8.2112.0 ; les statistiques par expediteur (`_sender_stat`,
 `global(senders.keepTrack)`) ; `resource-usage` ne fournit que utime (temps CPU du processus), maxrss (taille residente
 courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock, oublock, nvcsw et nivcsw valent 0 faute de

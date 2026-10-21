@@ -35,6 +35,10 @@ export class StatsObject {
     this.counters.push(spec);
   }
 
+  clearCounters(): void {
+    this.counters = [];
+  }
+
   removeCounter(name: string): void {
     this.counters = this.counters.filter((counter) => counter.name !== name);
   }
@@ -75,6 +79,7 @@ function jsonLine(object: StatsObject, format: Exclude<StatisticsFormat, 'legacy
 
 export class Statistics {
   private objects: StatsObject[] = [];
+  enabled = false;
 
   create(name: string, options: StatsObjectOptions = {}): StatsObject {
     const object = new StatsObject(name, options);

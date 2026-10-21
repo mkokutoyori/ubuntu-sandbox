@@ -1,4 +1,5 @@
 import type { Stmt } from '../config/Ast';
+import type { DynStatsRegistry } from './DynStats';
 import type { Statistics } from './Statistics';
 import type { MessageParserModule } from '../MessageParser';
 import type { Template } from '../Template';
@@ -73,6 +74,7 @@ export interface LoadedConfig {
   readonly rateLimits: Map<string, RateLimitDefinition>;
   readonly lookupTables: LookupRef[];
   readonly statistics: Statistics;
+  readonly dynStats: DynStatsRegistry;
   readonly timezones: Map<string, { offsetMinutes: number }>;
   readonly senderResolver: SenderResolver;
   readonly localClock: LocalClock;
