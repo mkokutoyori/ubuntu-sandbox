@@ -116,6 +116,10 @@ export class PolicyRepository {
     return c;
   }
 
+  findRouteMapClause(name: string, seq: number): RouteMapClause | undefined {
+    return this.routeMaps.get(name)?.find((x) => x.seq === seq);
+  }
+
   removeRouteMap(name: string): void { this.routeMaps.delete(name); }
 
   allPrefixLists(v6 = false): ReadonlyMap<string, readonly PrefixListEntry[]> {

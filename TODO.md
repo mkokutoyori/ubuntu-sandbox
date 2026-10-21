@@ -3223,3 +3223,33 @@ mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
+
+### [nat64] ce qui reste : le `status` de `config system nat64` et une commande de routeur
+`Nat64Translator` (RFC 6146/7915) tourne sur le plan de donnees d'un `Router` (API `enableNat64`, pas de
+commande : aucune documentation Cisco ou Huawei du NAT64 n'est dans `official_docs`) et sur le FortiGate
+(politique `set nat64 enable` + `ippool enable` + pool `set nat64 enable`, prefixe, `secondary-prefix-status`
+et `secondary-prefix` de `config system nat64`, documentes dans `official_docs/forti-cli-ref-767.txt` et
+`forti-cli-ref-60.txt`). DNS64 est cable dans `named` (listes `clients`/`mapped` IPv4 et IPv6, client IPv6
+venu du fil). Les fragments sont traduits dans les deux sens et refragmentes pour tenir dans le MTU IPv6 ;
+les MTU des prochains sauts entrent dans le calcul des erreurs.
+**Reste** : (1) le `status` de `config system nat64` (FortiOS 6.0, « default = disable ») n'est pas lu :
+la reference 7.6.7 ne documente plus cette table, et la porter comme une porte fermerait par defaut un
+NAT64 que les politiques 7.6 pilotent seules ; (2) un fragment qui precede son premier fragment est jete,
+alors que la RFC 6146 autorise de le mettre en file ; (3) aucune commande Cisco/Huawei de NAT64, faute de
+documentation constructeur.
+
+
+### [auditd] ce que le demon ne fait pas encore : plugins audisp, binaire auditd, autrace
+`auditd.conf` est lu par un seul analyseur (`audit/daemon/AuditdConfig.ts`, port de `auditd-config.c`) et le demon
+applique au journal la rotation, `max_log_file_action`, les actions d'espace, ENRICHED, `log_group` et les signaux
+(`audit/daemon/AuditdLogWriter.ts`, port de `auditd-event.c`). Le binaire reel n'a pas pu etre lance (il exige
+l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2 et les chaines du binaire du paquet.
+**Reste** : (1) le dispatcher et les plugins de `/etc/audit/plugins.d` (`audisp-syslog`, `audisp-af_unix`,
+`plugin_dir`, `q_depth`, `overflow_action`, `max_restarts`) : `Number of active plugins` vaut toujours 0 dans
+`/var/run/auditd.state` ; (2) la commande `auditd` (`-f -l -n -s -c`) est inconnue du shell, seul le service existe ;
+(3) `autrace` est inconnu : le simulateur n'emet pas d'evenement SYSCALL pour un programme arbitraire, seulement
+pour les operations de fichier qu'il projette, de sorte qu'une regle `-S all -F pid=N` n'aurait presque rien a
+voir ; (4) les actions `EXEC`, `EMAIL`, `SINGLE` et `HALT` des seuils d'espace sont cablees (script lance, courrier
+dans `/var/mail`, isolation de la cible) mais aucune sonde ne les exerce encore ; (5) `hostResolves` de la
+validation de `action_mail_acct` repond toujours oui, le message « failed looking up host » n'est donc jamais emis ;
+(6) la queue et les modes `log_format = ENRICHED` n'utilisent pas encore `name_format` ≠ NONE dans une sonde.

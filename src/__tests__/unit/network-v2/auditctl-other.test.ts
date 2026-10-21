@@ -1148,15 +1148,16 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(output.toLowerCase()).toMatch(/permission denied|error/);
     });
 
-    it('136. should support custom log file write permissions statically (0600)', async () => {
+    it('136. should ship the log 0640 root:adm, the mode auditd gives it with log_group = adm', async () => {
       const pc = await setupAdvancedAuditPC();
-      const output = await pc.executeCommand('stat -c "%a" /var/log/audit/audit.log');
-      expect(output.trim()).toBe('600');
+      const output = await pc.executeCommand('stat -c "%a %U:%G" /var/log/audit/audit.log');
+      expect(output.trim()).toBe('640 root:adm');
     });
 
-    it('137. should prevent unprivileged users from reading audit logs', async () => {
+    it('137. should prevent users outside the adm log group from reading audit logs', async () => {
       const pc = await setupAdvancedAuditPC();
-      const output = await pc.executeCommand('su user -c "cat /var/log/audit/audit.log"');
+      await pc.executeCommand('useradd -m intruder');
+      const output = await pc.executeCommand('su intruder -c "cat /var/log/audit/audit.log"');
       expect(output.toLowerCase()).toMatch(/permission denied|error/);
     });
 

@@ -4088,6 +4088,8 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('configure terminal');
       const longName = 'POOL_' + 'N'.repeat(25);
       await topo.r1.executeCommand(`ip nat pool ${longName} 203.0.113.10 203.0.113.20 netmask 255.255.255.0`);
+      await topo.r1.executeCommand('access-list 1 permit 192.168.1.0 0.0.0.255');
+      await topo.r1.executeCommand(`ip nat inside source list 1 pool ${longName}`);
       await topo.r1.executeCommand('end');
       const stats = await topo.r1.executeCommand('show ip nat statistics');
       expect(stats).toContain(longName);

@@ -16,7 +16,7 @@ import {
   type UdpChecksumInput,
 } from '../layers/transport/UdpChecksum';
 
-export function recomputeL4Checksum(result: IPv4Packet): void {
+export function recomputeL4Checksum(result: { sourceIP: { toString(): string }; destinationIP: { toString(): string }; payload: unknown }): void {
   const payload = result.payload as (UDPPacket | TCPPacket | undefined);
   if (!payload) return;
   const srcIp = result.sourceIP.toString();

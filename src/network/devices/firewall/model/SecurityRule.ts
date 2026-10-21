@@ -49,6 +49,7 @@ export interface SecurityRule {
 
   action: RuleAction;
   natEnabled?: boolean;
+  nat64Enabled?: boolean;
   natPool?: string;
   fixedPort?: boolean;
   matchTranslatedDestination?: boolean;
@@ -121,6 +122,7 @@ export interface SecurityRuleInit {
   schedule?: string;
   action?: RuleAction;
   natEnabled?: boolean;
+  nat64Enabled?: boolean;
   natPool?: string;
   fixedPort?: boolean;
   matchTranslatedDestination?: boolean;
@@ -196,6 +198,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     schedule: init.schedule,
     action: init.action ?? 'deny',
     natEnabled: init.natEnabled,
+    nat64Enabled: init.nat64Enabled,
     natPool: init.natPool,
     fixedPort: init.fixedPort,
     matchTranslatedDestination: init.matchTranslatedDestination,

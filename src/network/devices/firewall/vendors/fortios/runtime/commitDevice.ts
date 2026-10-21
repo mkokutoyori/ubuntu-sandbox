@@ -68,6 +68,18 @@ export function buildCommitDevice(
       applyHa(patch) {
         return fw.applyHa(patch);
       },
+      applyNat64SecondaryPrefix(name, prefix) {
+        return fw.applyNat64SecondaryPrefix(name, prefix);
+      },
+      removeNat64SecondaryPrefix(name) {
+        fw.removeNat64SecondaryPrefix(name);
+      },
+      applyNat64SecondaryStatus(enabled) {
+        fw.applyNat64SecondaryStatus(enabled);
+      },
+      applyNat64Prefix(prefix) {
+        return fw.applyNat64Prefix(prefix);
+      },
       hasInterface(name) {
         return fw.getPort(name) !== undefined;
       },

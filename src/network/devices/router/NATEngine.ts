@@ -66,6 +66,7 @@ export type NatDynamicRuleType = 'overload' | 'pool';
 
 export interface NatDynamicRule {
   aclId: string | number;
+  routeMap?: string;
   type: NatDynamicRuleType;
   poolName?: string;
   interfaceName?: string;
@@ -113,6 +114,8 @@ export interface NatSession {
   tcpState?: NatTcpState;
   /** Inside interface (possibly a dot1q subinterface) this session was created on. */
   inIface?: string;
+  /** Extended entry of a static translation: listed, aged and journalled, never used to look a packet up. */
+  viaStatic?: boolean;
 }
 
 function isHairpinReturn(session: NatSession, pkt: IPv4Packet): boolean {
@@ -158,7 +161,7 @@ export interface NatTranslationEntry {
 // ─── NATEngine ───────────────────────────────────────────────────────────────
 
 /** Lower bound of the PAT ephemeral range (Cisco IOS overload default). */
-const NAT_EPHEMERAL_MIN = 10240;
+const NAT_EPHEMERAL_MIN = 1024;
 
 export class NATEngine {
   private insideIfaces = new Set<string>();
@@ -173,7 +176,7 @@ export class NATEngine {
   private reverseSessions = new Map<string, NatSession>();
 
   // Callbacks injected by Router
-  private matchACLFn?: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean;
+  private matchACLFn?: (aclId: string | number, srcIP: string, pkt?: IPv4Packet, outIface?: string) => boolean;
   private getIfaceIPFn?: (iface: string) => string | null;
   // Lookup callback: given an inside IP, return the outside interface it came from
   private getInsideIfaceForIPFn?: (ip: string) => string | null;
@@ -201,6 +204,28 @@ export class NATEngine {
   private maxEntries: number | null = null;
   setMaxEntries(n: number | null): void { this.maxEntries = n; }
   getMaxEntries(): number | null { return this.maxEntries; }
+
+  private readonly maxEntriesByHost = new Map<string, number>();
+  private maxEntriesAllHost: number | null = null;
+
+  setMaxEntriesForHost(ip: string, n: number | null): void {
+    if (n === null) this.maxEntriesByHost.delete(ip); else this.maxEntriesByHost.set(ip, n);
+  }
+
+  setMaxEntriesAllHost(n: number | null): void { this.maxEntriesAllHost = n; }
+
+  getMaxEntriesByHost(): ReadonlyMap<string, number> { return this.maxEntriesByHost; }
+
+  getMaxEntriesAllHost(): number | null { return this.maxEntriesAllHost; }
+
+  private mayCreateSession(srcIP: string): boolean {
+    if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) return false;
+    const hostLimit = this.maxEntriesByHost.get(srcIP) ?? this.maxEntriesAllHost;
+    if (hostLimit === null) return true;
+    let held = 0;
+    for (const session of this.sessions.values()) if (session.localIP === srcIP) held++;
+    return held < hostLimit;
+  }
   // Direction counters (Phase 4b2-NAT)
   private inboundTranslations = 0;
   private outboundTranslations = 0;
@@ -294,9 +319,21 @@ export class NATEngine {
     this.staticEntries = this.staticEntries.filter(
       e => !(e.localIP === localIP && e.globalIP === globalIP)
     );
+    this.dropStaticFlows((s) => s.localIP === localIP && s.globalIP === globalIP);
   }
 
-  removeAllStaticEntries(): void { this.staticEntries = []; }
+  removeAllStaticEntries(): void {
+    this.staticEntries = [];
+    this.dropStaticFlows(() => true);
+  }
+
+  private dropStaticFlows(matches: (session: NatSession) => boolean): void {
+    for (const [key, session] of this.sessions) {
+      if (session.viaStatic !== true || !matches(session)) continue;
+      this.sessions.delete(key);
+      this.announceRemoved(session, 'manual');
+    }
+  }
 
   private outsideStaticEntries: NatOutsideStatic[] = [];
   addOutsideStatic(o: NatOutsideStatic): void {
@@ -314,6 +351,10 @@ export class NATEngine {
   addPool(pool: NatPool): void { this.pools.set(pool.name, pool); }
   removePool(name: string): void { this.pools.delete(name); }
   getPool(name: string): NatPool | undefined { return this.pools.get(name); }
+
+  private readonly poolMisses = new Map<string, number>();
+
+  getPoolMisses(name: string): number { return this.poolMisses.get(name) ?? 0; }
 
   addDynamicRule(rule: NatDynamicRule): void { this.dynamicRules.push(rule); }
 
@@ -362,7 +403,7 @@ export class NATEngine {
   }
 
   /** Provide ACL matching function (injected by Router) */
-  setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean): void {
+  setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet, outIface?: string) => boolean): void {
     this.matchACLFn = fn;
   }
 
@@ -473,6 +514,10 @@ export class NATEngine {
       if (!entry.protocol) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
+        if (isOutside) {
+          this.trackStaticFlow(ipPkt, 'in', { ip: entry.localIP, port: dstPort }, { ip: dstIP, port: dstPort },
+            { ip: ipPkt.sourceIP.toString(), port: getPacketSrcPort(ipPkt) }, undefined);
+        }
         return rewriteDestIP(ipPkt, entry.localIP);
       }
 
@@ -480,6 +525,10 @@ export class NATEngine {
       if (proto === entryProto && dstPort === entry.globalPort) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
+        if (isOutside) {
+          this.trackStaticFlow(ipPkt, 'in', { ip: entry.localIP, port: entry.localPort ?? dstPort }, { ip: dstIP, port: dstPort },
+            { ip: ipPkt.sourceIP.toString(), port: getPacketSrcPort(ipPkt) }, undefined);
+        }
         return rewriteDestIP(ipPkt, entry.localIP, entry.localPort);
       }
     }
@@ -552,6 +601,8 @@ export class NATEngine {
         if (proto === entryProto && entry.localIP === srcIP && entry.localPort === srcPort) {
           this.hitCount++;
           entry.hitCount = (entry.hitCount ?? 0) + 1;
+          this.trackStaticFlow(pkt, 'out', { ip: srcIP, port: srcPort }, { ip: entry.globalIP, port: entry.globalPort ?? srcPort },
+            { ip: dstIP, port: dstPort }, inIface);
           return rewriteSrcIP(pkt, entry.globalIP, entry.globalPort);
         }
         continue;
@@ -581,13 +632,15 @@ export class NATEngine {
       } else if (entry.localIP === srcIP) {
         this.hitCount++;
         entry.hitCount = (entry.hitCount ?? 0) + 1;
+        this.trackStaticFlow(pkt, 'out', { ip: srcIP, port: srcPort }, { ip: entry.globalIP, port: srcPort },
+          { ip: dstIP, port: dstPort }, inIface);
         return rewriteSrcIP(pkt, entry.globalIP);
       }
     }
 
     // 2. Dynamic rules
     for (const rule of this.dynamicRules) {
-      if (!this.matchACL(rule.aclId, srcIP, opts?.aclMatchPkt ?? pkt)) continue;
+      if (!this.matchACL(rule.aclId, srcIP, opts?.aclMatchPkt ?? pkt, outIface)) continue;
 
       if (rule.type === 'overload') {
         // Prefer the interface the operator actually named in
@@ -602,8 +655,8 @@ export class NATEngine {
         let session = this.sessions.get(sessionKey);
 
         if (!session) {
-          if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) continue;
-          const globalPort = this.allocatePort(proto, globalIP);
+          if (!this.mayCreateSession(srcIP)) continue;
+          const globalPort = this.allocatePort(proto, globalIP, srcPort);
           if (globalPort === null) continue; // ephemeral range exhausted
           session = {
             protocol: proto,
@@ -634,6 +687,8 @@ export class NATEngine {
               localIp: srcIP, localPort: srcPort,
               globalIp: globalIP, globalPort,
               outsideIp: dstIP, outsidePort: dstPort,
+              outsideLocalIp: dstIP, outsideLocalPort: dstPort,
+              logged: this.translationLogging,
               kind: 'overload',
             },
           });
@@ -667,16 +722,18 @@ export class NATEngine {
         const sessionKey = makeKey4(proto, srcIP, srcPort, dstIP, dstPort);
         let session = this.sessions.get(sessionKey);
         if (!session) {
+          if (!this.mayCreateSession(srcIP)) continue;
           const poolIP = rule.overload
             ? this.overloadPoolAddress(pool, proto)
             : this.allocatePoolAddress(pool, srcIP);
           if (poolIP === null) {
+            this.poolMisses.set(rule.poolName, (this.poolMisses.get(rule.poolName) ?? 0) + 1);
             // Exhausted for this rule — try the next dynamic rule rather
             // than counting a Miss here; the final `missCount++` below
             // covers the case where no rule at all can translate the packet.
             continue;
           }
-          const poolPort = rule.overload ? this.allocatePort(proto, poolIP) : srcPort;
+          const poolPort = rule.overload ? this.allocatePort(proto, poolIP, srcPort) : srcPort;
           if (poolPort === null) continue;
           session = {
             protocol: proto,
@@ -701,6 +758,8 @@ export class NATEngine {
               localIp: srcIP, localPort: srcPort,
               globalIp: poolIP, globalPort: poolPort,
               outsideIp: dstIP, outsidePort: dstPort,
+              outsideLocalIp: dstIP, outsideLocalPort: dstPort,
+              logged: this.translationLogging,
               kind: 'pool',
             },
           });
@@ -818,13 +877,89 @@ export class NATEngine {
   }
 
   clearTranslations(): void {
-    this.sessions.clear();
-    this.reverseSessions.clear();
+    this.removeAllSessions('flush');
   }
 
   clearDynamicTranslations(): void {
+    this.removeAllSessions('flush');
+  }
+
+
+  private trackStaticFlow(
+    pkt: IPv4Packet, direction: 'in' | 'out',
+    local: { ip: string; port: number }, global: { ip: string; port: number },
+    outside: { ip: string; port: number }, inIface: string | undefined,
+  ): void {
+    const proto = pkt.protocol;
+    const key = makeKey4(proto, local.ip, local.port, outside.ip, outside.port);
+    const existing = this.sessions.get(key);
+    if (existing !== undefined) {
+      existing.timestamp = simulationNowMs();
+      if (proto === IP_PROTO_TCP) updateTcpState(existing, pkt, direction);
+      return;
+    }
+    const now = simulationNowMs();
+    const session: NatSession = {
+      protocol: proto,
+      localIP: local.ip, localPort: local.port,
+      globalIP: global.ip, globalPort: global.port,
+      outsideIP: outside.ip, outsidePort: outside.port,
+      outsideLocalIP: outside.ip, outsideLocalPort: outside.port,
+      timestamp: now, createdAt: now,
+      tcpState: proto === IP_PROTO_TCP ? 'syn-seen' : undefined,
+      inIface,
+      viaStatic: true,
+    };
+    this.sessions.set(key, session);
+    this.updatePeak();
+    this.getBus().publish({
+      topic: 'nat.session.created',
+      payload: {
+        ...this.deviceRef(),
+        protocol: proto,
+        localIp: local.ip, localPort: local.port,
+        globalIp: global.ip, globalPort: global.port,
+        outsideIp: outside.ip, outsidePort: outside.port,
+        outsideLocalIp: outside.ip, outsideLocalPort: outside.port,
+        logged: this.translationLogging,
+        kind: 'static',
+      },
+    });
+  }
+
+  private forgetReverse(session: NatSession): void {
+    const revKey = makeKey(session.protocol, session.globalIP, session.globalPort);
+    if (this.reverseSessions.get(revKey) === session) this.reverseSessions.delete(revKey);
+  }
+
+  private translationLogging = false;
+
+  setTranslationLogging(enabled: boolean): void { this.translationLogging = enabled; }
+
+  isTranslationLogging(): boolean { return this.translationLogging; }
+
+  private removeAllSessions(reason: 'expired' | 'manual' | 'flush'): void {
+    const removed = [...this.sessions.values()];
     this.sessions.clear();
     this.reverseSessions.clear();
+    for (const session of removed) this.announceRemoved(session, reason);
+  }
+
+  private announceRemoved(session: NatSession, reason: 'expired' | 'manual' | 'flush'): void {
+    this.getBus().publish({
+      topic: 'nat.session.removed',
+      payload: {
+        ...this.deviceRef(),
+        protocol: session.protocol,
+        localIp: session.localIP, localPort: session.localPort,
+        globalIp: session.globalIP, globalPort: session.globalPort,
+        outsideIp: session.outsideIP, outsidePort: session.outsidePort,
+        outsideLocalIp: session.outsideLocalIP ?? session.outsideIP,
+        outsideLocalPort: session.outsideLocalPort ?? session.outsidePort,
+        logged: this.translationLogging,
+        reason,
+      },
+    });
   }
 
   // `ifaces` matches against `NatSession.inIface` — sessions carry no `vrf`
@@ -848,7 +983,8 @@ export class NATEngine {
         if (g === null || poolStart === null || poolEnd === null || g < poolStart || g > poolEnd) continue;
       }
       this.sessions.delete(key);
-      this.reverseSessions.delete(makeKey(session.protocol, session.globalIP, session.globalPort));
+      this.forgetReverse(session);
+      this.announceRemoved(session, 'manual');
       cleared++;
     }
     return cleared;
@@ -868,7 +1004,8 @@ export class NATEngine {
     if (!session) return false;
     const key = makeKey4(proto, session.localIP, session.localPort, session.outsideIP, session.outsidePort);
     this.sessions.delete(key);
-    this.reverseSessions.delete(revKey);
+    this.forgetReverse(session);
+    this.announceRemoved(session, 'manual');
     return true;
   }
 
@@ -893,21 +1030,11 @@ export class NATEngine {
       // Sur le chemin normal, la différence est d'une milliseconde sur
       // un délai qui se compte en minutes.
       if (now - session.timestamp >= timeout) {
-        const revKey = makeKey(session.protocol, session.globalIP, session.globalPort);
         this.sessions.delete(key);
-        this.reverseSessions.delete(revKey);
+        this.forgetReverse(session);
         this.expiredCount++;
         sweeped++;
-        this.getBus().publish({
-          topic: 'nat.session.removed',
-          payload: {
-            ...this.deviceRef(),
-            protocol: session.protocol,
-            localIp: session.localIP, localPort: session.localPort,
-            globalIp: session.globalIP, globalPort: session.globalPort,
-            reason: 'expired',
-          },
-        });
+        this.announceRemoved(session, 'expired');
       }
     }
     if (sweeped > 0) {
@@ -989,8 +1116,8 @@ export class NATEngine {
 
   // ─── Private Helpers ─────────────────────────────────────────────
 
-  private matchACL(aclId: string | number, srcIP: string, pkt?: IPv4Packet): boolean {
-    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP, pkt);
+  private matchACL(aclId: string | number, srcIP: string, pkt?: IPv4Packet, outIface?: string): boolean {
+    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP, pkt, outIface);
     return true;
   }
 
@@ -1047,13 +1174,28 @@ export class NATEngine {
     return null;
   }
 
-  private allocatePort(proto: number, globalIP: string): number | null {
+  private portUnavailable(proto: number, globalIP: string, port: number): boolean {
+    if (this.reverseSessions.has(makeKey(proto, globalIP, port))) return true;
+    return this.staticEntries.some((e) => e.protocol !== undefined && e.globalIP === globalIP
+      && e.globalPort === port && (e.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP) === proto);
+  }
+
+  private allocatePort(proto: number, globalIP: string, preferred?: number): number | null {
+    if (preferred !== undefined && preferred >= 1 && preferred <= this.maxPort) {
+      if (!this.portUnavailable(proto, globalIP, preferred)) return preferred;
+      if (preferred < NAT_EPHEMERAL_MIN) {
+        const [low, high] = preferred < 512 ? [1, 511] : [512, NAT_EPHEMERAL_MIN - 1];
+        for (let port = low; port <= high; port++) {
+          if (!this.portUnavailable(proto, globalIP, port)) return port;
+        }
+      }
+    }
     const span = this.maxPort - NAT_EPHEMERAL_MIN + 1;
     for (let i = 0; i < span; i++) {
       const candidate = this.nextPort;
       this.nextPort = (this.nextPort >= this.maxPort)
         ? NAT_EPHEMERAL_MIN : this.nextPort + 1;
-      if (!this.reverseSessions.has(makeKey(proto, globalIP, candidate))) {
+      if (!this.portUnavailable(proto, globalIP, candidate)) {
         return candidate;
       }
     }

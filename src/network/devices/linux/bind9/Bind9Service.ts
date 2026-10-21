@@ -9,8 +9,8 @@ import { ZoneError } from '@/network/dns/zone/Zone';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
-import { IPAddress } from '@/network/core/types';
-import { makeTxtRecord } from '@/network/dns/wire/ResourceRecord';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import { makeTxtRecord, makeCnameRecord } from '@/network/dns/wire/ResourceRecord';
 import { formatRecordLine } from '../commands/dns/RecordFormat';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
@@ -25,6 +25,9 @@ import {
 import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
+import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
+import { applyDns64, dns64ReverseTarget } from '@/network/dns/dns64/Dns64';
+import type { ResolutionResult } from '@/network/dns/resolver/RecursiveResolver';
 import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
 import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { updatePolicyPermits } from './NamedUpdatePolicy';
@@ -385,6 +388,12 @@ export class Bind9Service {
         prefix: mask.toCIDR(),
       });
     }
+    for (const port of this.host.getInterfaces()) {
+      for (const entry of port.getIPv6Addresses()) {
+        localAddresses.push(entry.address.toString());
+        localNetworks.push({ address: entry.address.toString(), prefix: entry.prefixLength });
+      }
+    }
     return { localAddresses, localNetworks };
   }
 
@@ -442,19 +451,109 @@ export class Bind9Service {
   }
 
   private readonly handleUdpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
+    query: DnsMessage, sourceIP?: IPAddress | IPv6Address, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> =>
     datagramReply(this.answerQuery(query, 'udp', sourceIP, sourcePort, raw));
 
   private readonly handleTcpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
+    query: DnsMessage, sourceIP?: IPAddress | IPv6Address, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> =>
     this.answerQuery(query, 'tcp', sourceIP, sourcePort, raw);
 
   private answerQuery(
     query: DnsMessage,
     transport: 'udp' | 'tcp',
-    sourceIP?: IPAddress,
+    sourceIP?: IPAddress | IPv6Address,
+    sourcePort?: number,
+    raw?: Uint8Array,
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
+    const answer = this.answerQueryBeforeDns64(query, transport, sourceIP, sourcePort, raw);
+    const question = query.questions[0];
+    if (!this.config?.options.dns64.length || Array.isArray(answer)
+      || (question?.qtype !== RRType.AAAA && question?.qtype !== RRType.PTR)
+      || isNotify(query) || isUpdateMessage(query)) {
+      return answer;
+    }
+    const client = sourceIP?.toString() ?? LOOPBACK;
+    return Promise.resolve(answer).then((response) => question.qtype === RRType.AAAA
+      ? this.synthesizeAaaa(query, response, client)
+      : this.synthesizePtr(query, response, client));
+  }
+
+  private async synthesizePtr(query: DnsMessage, response: DnsMessage, client: string): Promise<DnsMessage> {
+    const env = this.aclEnvironment();
+    const rules = this.config!.options.dns64.map((statement) => ({
+      prefix: statement.prefix,
+      clients: (address: string) => statement.clients.matches(address, env),
+      mapped: () => true,
+      exclude: statement.exclude,
+      recursiveOnly: statement.recursiveOnly,
+      breakDnssec: statement.breakDnssec,
+    }));
+    const question = query.questions[0];
+    const target = dns64ReverseTarget(rules, client, question.qname);
+    if (target === null || (rules[0].recursiveOnly && !query.flags.rd)) return response;
+    const reverseQuery: DnsMessage = { ...query, questions: [{ ...question, qname: target }] };
+    const answered = await this.answerQueryBeforeDns64(reverseQuery, 'udp', IPAddress.tryParse(client) ?? IPv6Address.tryParse(client) ?? undefined);
+    const reverse = Array.isArray(answered) ? answered[0] : answered;
+    const pointers = reverse.answers.filter((rr) => rr.data.type === RRType.PTR);
+    if (reverse.flags.rcode !== DnsRcode.NOERROR || pointers.length === 0) return response;
+    const ttl = Math.min(...pointers.map((rr) => rr.ttl));
+    return {
+      ...response,
+      flags: { ...response.flags, rcode: DnsRcode.NOERROR, ad: false },
+      answers: [makeCnameRecord(question.qname, ttl, target), ...reverse.answers],
+      authorities: [],
+    };
+  }
+
+  private async synthesizeAaaa(query: DnsMessage, response: DnsMessage, client: string): Promise<DnsMessage> {
+    const config = this.config!;
+    const env = this.aclEnvironment();
+    const rules = config.options.dns64.map((statement) => ({
+      prefix: statement.prefix,
+      clients: (address: string) => statement.clients.matches(address, env),
+      mapped: (address: IPAddress) => statement.mapped.matches(address.toString(), env),
+      exclude: statement.exclude,
+      recursiveOnly: statement.recursiveOnly,
+      breakDnssec: statement.breakDnssec,
+    }));
+    const question = query.questions[0];
+    const toResult = (message: DnsMessage): ResolutionResult => ({
+      status: message.flags.rcode === DnsRcode.NOERROR ? 'NOERROR'
+        : message.flags.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'SERVFAIL',
+      answers: message.answers,
+      authorities: message.authorities,
+      fromCache: false,
+      ...(message.flags.ad ? { security: 'secure' as const } : {}),
+    });
+    const lookup = async (qname: string, qtype: number): Promise<ResolutionResult> => {
+      const aQuery: DnsMessage = { ...query, questions: [{ ...question, qname, qtype }] };
+      const answered = await this.answerQueryBeforeDns64(aQuery, 'udp', IPAddress.tryParse(client) ?? IPv6Address.tryParse(client) ?? undefined);
+      return toResult(Array.isArray(answered) ? answered[0] : answered);
+    };
+    const original = toResult(response);
+    const result = await applyDns64(rules, {
+      client,
+      checkingDisabled: query.flags.cd,
+      dnssecOk: findOpt(query)?.data.dnssecOk === true,
+      recursionDesired: query.flags.rd,
+    }, question.qname, original, lookup);
+    if (result === original) return response;
+    const rcode = result.status === 'NOERROR' ? DnsRcode.NOERROR
+      : result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.SERVFAIL;
+    return {
+      ...response,
+      flags: { ...response.flags, rcode, ad: false },
+      answers: [...result.answers],
+      authorities: [...(result.authorities ?? response.authorities)],
+    };
+  }
+
+  private answerQueryBeforeDns64(
+    query: DnsMessage,
+    transport: 'udp' | 'tcp',
+    sourceIP?: IPAddress | IPv6Address,
     sourcePort?: number,
     raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
@@ -520,7 +619,7 @@ export class Bind9Service {
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
   }
 
-  private handleUpdate(query: DnsMessage, sourceIP?: IPAddress, raw?: Uint8Array): DnsMessage {
+  private handleUpdate(query: DnsMessage, sourceIP?: IPAddress | IPv6Address, raw?: Uint8Array): DnsMessage {
     const now = Math.floor(simulationNowMs() / 1000);
     const auth = authorizeUpdate(raw, 'none', this.keyring, now);
     const reply = (rcode: number): DnsMessage =>
@@ -603,7 +702,7 @@ export class Bind9Service {
     return serveZoneTransfer(this.store, query) ?? [this.refuse(query, false)];
   }
 
-  private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
+  private handleNotify(query: DnsMessage, sourceIP?: IPAddress | IPv6Address): DnsMessage {
     const qname = normalizeDnsName(query.questions[0]?.qname ?? '');
     const zone = this.config?.zones.find((z) => z.name === qname && z.type === 'secondary');
     const source = sourceIP?.toString();

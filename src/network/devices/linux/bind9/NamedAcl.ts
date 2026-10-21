@@ -1,4 +1,5 @@
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import { ipv6MatchesPrefix } from '@/network/core/RoutingTable';
 import { NamedConfigError } from './NamedConfigError';
 import type { NamedConfStatement } from './NamedConfParser';
 
@@ -18,12 +19,20 @@ type AclElement =
   | { readonly kind: 'localhost'; readonly negated: boolean }
   | { readonly kind: 'localnets'; readonly negated: boolean }
   | { readonly kind: 'address'; readonly base: number; readonly prefix: number; readonly negated: boolean }
+  | { readonly kind: 'address6'; readonly base: IPv6Address; readonly prefix: number; readonly negated: boolean }
   | { readonly kind: 'reference'; readonly list: AddressMatchList; readonly negated: boolean }
   | { readonly kind: 'key'; readonly name: string; readonly negated: boolean };
 
 const ADDRESS_PATTERN = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?:\/(\d{1,2}))?$/;
 const LOOPBACK_PREFIX: AclNetwork = { address: '127.0.0.0', prefix: 8 };
 const FULL_PREFIX = 32;
+const FULL_PREFIX_6 = 128;
+const ADDRESS_6_PATTERN = /^([0-9a-fA-F:.]+:[0-9a-fA-F:.]*)(?:\/(\d{1,3}))?$/;
+
+interface Client {
+  readonly v4: number | null;
+  readonly v6: IPv6Address | null;
+}
 
 function prefixMask(prefix: number): number {
   return prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
@@ -73,9 +82,9 @@ export class AddressMatchList {
   }
 
   matches(ip: string, env: AclHostEnvironment, signingKey: string | null = null): boolean {
-    const address = toUint32(ip);
+    const client: Client = { v4: toUint32(ip), v6: IPv6Address.tryParse(ip) };
     for (const element of this.elements) {
-      if (elementMatches(element, address, env, signingKey)) return !element.negated;
+      if (elementMatches(element, client, env, signingKey)) return !element.negated;
     }
     return false;
   }
@@ -105,6 +114,15 @@ function parseElement(
     if (text === 'any' || text === 'none' || text === 'localhost' || text === 'localnets') {
       return { kind: text, negated };
     }
+    const address6Match = ADDRESS_6_PATTERN.exec(text);
+    if (address6Match) {
+      const base = IPv6Address.tryParse(address6Match[1]);
+      const prefix = address6Match[2] === undefined ? FULL_PREFIX_6 : Number(address6Match[2]);
+      if (base === null || prefix > FULL_PREFIX_6) {
+        throw new NamedConfigError(statement.file, statement.line, `expected IP address near '${text}'`);
+      }
+      return { kind: 'address6', base, prefix, negated };
+    }
     const addressMatch = ADDRESS_PATTERN.exec(text);
     if (addressMatch) {
       const base = toUint32(addressMatch[1]);
@@ -123,14 +141,8 @@ function parseElement(
   return { kind: 'reference', list: referenced, negated };
 }
 
-/**
- * `any`/`none` are family-agnostic wildcards — real `named` applies them to
- * IPv6 clients exactly like IPv4 ones. Every other element kind below is
- * IPv4-only (this simulator has no IPv6 CIDR matching yet), so a `null`
- * (non-IPv4) address never matches them.
- */
 function elementMatches(
-  element: AclElement, address: number | null, env: AclHostEnvironment, signingKey: string | null,
+  element: AclElement, client: Client, env: AclHostEnvironment, signingKey: string | null,
 ): boolean {
   switch (element.kind) {
     case 'any':
@@ -138,28 +150,37 @@ function elementMatches(
     case 'none':
       return false;
     case 'localhost':
-      return address !== null && matchesLocalhost(address, env);
+      return matchesLocalhost(client, env);
     case 'localnets':
-      return address !== null && matchesNetworks(address, env.localNetworks);
+      return matchesNetworks(client, env.localNetworks);
     case 'address':
-      return address !== null && inNetwork(address, element.base, element.prefix);
+      return client.v4 !== null && inNetwork(client.v4, element.base, element.prefix);
+    case 'address6':
+      return client.v6 !== null && ipv6MatchesPrefix(client.v6, element.base, element.prefix);
     case 'reference':
-      return address !== null
-        && element.list.matches(IPAddress.fromUint32(address).toString(), env, signingKey);
+      return element.list.matches(client.v4 === null ? (client.v6?.toString() ?? '') : IPAddress.fromUint32(client.v4).toString(), env, signingKey);
     case 'key':
       return signingKey !== null && signingKey === element.name;
   }
 }
 
-function matchesLocalhost(address: number, env: AclHostEnvironment): boolean {
+function matchesLocalhost(client: Client, env: AclHostEnvironment): boolean {
+  if (client.v6 !== null) {
+    return client.v6.isLoopback() || env.localAddresses.some((local) => IPv6Address.tryParse(local)?.equals(client.v6!) === true);
+  }
+  if (client.v4 === null) return false;
   const loopbackBase = toUint32(LOOPBACK_PREFIX.address);
-  if (loopbackBase !== null && inNetwork(address, loopbackBase, LOOPBACK_PREFIX.prefix)) return true;
-  return env.localAddresses.some((local) => toUint32(local) === address);
+  if (loopbackBase !== null && inNetwork(client.v4, loopbackBase, LOOPBACK_PREFIX.prefix)) return true;
+  return env.localAddresses.some((local) => toUint32(local) === client.v4);
 }
 
-function matchesNetworks(address: number, networks: readonly AclNetwork[]): boolean {
+function matchesNetworks(client: Client, networks: readonly AclNetwork[]): boolean {
   return networks.some((network) => {
+    if (client.v6 !== null) {
+      const base = IPv6Address.tryParse(network.address);
+      return base !== null && ipv6MatchesPrefix(client.v6, base, network.prefix);
+    }
     const base = toUint32(network.address);
-    return base !== null && inNetwork(address, base, network.prefix);
+    return client.v4 !== null && base !== null && inNetwork(client.v4, base, network.prefix);
   });
 }

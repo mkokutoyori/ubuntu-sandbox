@@ -42,6 +42,7 @@ export interface IRouterShell {
   ): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
+  getPolicyRepo?(): import('../inspection/config/PolicyRepository').PolicyRepository;
   /**
    * Take over the stores that belong to the MACHINE rather than to this
    * line — the alias repository and the logging buffer. A per-session

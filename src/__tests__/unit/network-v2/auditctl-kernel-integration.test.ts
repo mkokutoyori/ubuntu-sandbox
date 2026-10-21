@@ -8,6 +8,8 @@
  * either way are witnesses: 'a watch still fires on a write' (non-regression of the fire path), 'never,exit before
  * always,exit suppresses the event' (the old model let any never rule suppress) and 'wipes runtime-only rules on an
  * auditd restart but reloads those of rules.d' (the old model also cleared on restart and re-read rules.d).
+ * auditd.conf now ships log_format = ENRICHED, as the Ubuntu package does, so every line carries its interpreted
+ * fields after the 0x1d separator; configChanges() cuts the line there to read the kernel part.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -21,7 +23,7 @@ async function rootHost(): Promise<LinuxPC> {
 }
 
 const configChanges = async (pc: LinuxPC): Promise<string[]> =>
-  (await pc.executeCommand('cat /var/log/audit/audit.log')).split('\n').filter((line) => line.startsWith('type=CONFIG_CHANGE'));
+  (await pc.executeCommand('cat /var/log/audit/audit.log')).split('\n').filter((line) => line.startsWith('type=CONFIG_CHANGE')).map((line) => line.split('\u001d')[0]);
 
 describe('audit kernel model on the simulated host', () => {
   beforeEach(() => {

@@ -166,6 +166,7 @@ export interface FortiIpPoolPatch {
   readonly pbaTimeout: number;
   readonly permitAnyHost: boolean;
   readonly arpReply: boolean;
+  readonly nat64: boolean;
   readonly arpInterface?: string;
   readonly associatedInterface?: string;
   readonly comment?: string;
@@ -468,6 +469,10 @@ export interface FortiCommitDevice {
   applySslVpnSettings(settings: FortiSslVpnPatch): string | void;
   applySdwan(settings: SdwanConfiguration): string | void;
   applyHa(settings: HaConfiguration): string | void;
+  applyNat64Prefix(prefix: string): string | void;
+  applyNat64SecondaryPrefix(name: string, prefix: string): string | void;
+  removeNat64SecondaryPrefix(name: string): void;
+  applyNat64SecondaryStatus(enabled: boolean): void;
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;

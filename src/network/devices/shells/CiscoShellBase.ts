@@ -23,6 +23,7 @@ import type { IPv4Packet } from '../../core/types';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
+import type { TcpStack } from '@/network/tcp/TcpStack';
 import { IPAddress } from '@/network/core/types';
 import { IOS_SSH } from '@/terminal/ssh/sshDialect';
 import { CommandTable } from '@/cli/CommandTable';
@@ -105,7 +106,6 @@ import {
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
 import { bgpFilterListSpecs, type FilterListHost } from './cisco/filterListSpecs';
@@ -219,7 +219,6 @@ import {
 } from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
-import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory,
   archiveSubmodeSpecs, archiveLogSubmodeSpecs } from './cisco/CiscoArchiveCommands';
@@ -10003,37 +10002,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
-    const stack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
-      .getTcpStack?.();
-    if (stack && IPAddress.tryParse(host) && !stack.hasEgressTo(host)) {
-      return `Trying ${display} ...\n% Destination unreachable; gateway or host down`;
+    const stack = (this.d() as unknown as { getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'> }).getTcpStack?.();
+    const target = positional[1] ? `${display}, ${port}` : display;
+    if (!IPAddress.tryParse(host)) {
+      return `Translating "${display}"\n\n% Unknown command or computer name, or unable to find computer address`;
     }
-
-    const remote = findHostByAddress(host, undefined, this.d() as never);
-    if (!remote || remote.poweredOff || remote.interfaceDown) {
-      return `Trying ${display} ...\n% Connection timed out; remote host not responding`;
+    if (!stack || !stack.hasEgressTo(host)) {
+      return `Trying ${target} ...\n% Destination unreachable; gateway or host down`;
     }
-    if (!isPathReachable(sourceIp, remote.ip, this.d() as never)) {
-      return `Trying ${display} ...\n% Destination unreachable; gateway or host down`;
+    const socket = stack.connect(host, port);
+    if (!socket || !socket.everEstablished) {
+      const refused = socket?.connectRefused === true;
+      socket?.close();
+      return refused
+        ? `Trying ${target} ...\n% Connection refused by remote host`
+        : `Trying ${target} ...\n% Connection timed out; remote host not responding`;
     }
-    if (!this.remoteAcceptsTelnet(remote.device, port)) {
-      return `Trying ${display} ...\n% Connection refused by remote host`;
-    }
-    this.outgoingSessions.open({ host: display, address: remote.ip, protocol: 'telnet', user: '' });
-    return `Trying ${display} ... Open\n`;
-  }
-
-  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
-    if (port !== 23) return false;
-    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
-    const cls = d.constructor?.name ?? '';
-    const type = (d.getDeviceType?.() ?? '').toLowerCase();
-    const isNetworkCli =
-      /Router|Switch/.test(cls) || /router|switch/.test(type);
-    if (!isNetworkCli) return false;
-    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
-    if (transport === undefined) return true;
-    return transport === 'telnet' || transport === 'all';
+    this.outgoingSessions.open({ host: display, address: host, protocol: 'telnet', user: '', socket });
+    return `Trying ${target} ... Open\n`;
   }
 
   /**

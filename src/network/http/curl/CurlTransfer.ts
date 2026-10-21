@@ -115,7 +115,9 @@ class InsecureCertificateVerifier extends CertificateVerifier {
   }
 }
 
-const URL_RE = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?(?:([^/?#@]*)@)?([^/?#:@]+)(?::(\d+))?([/?#].*)?$/;
+const URL_RE = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?(?:([^/?#@]*)@)?(\[[0-9A-Fa-f:.]+\]|[^/?#:@\[\]]+)(?::(\d+))?([/?#].*)?$/;
+
+const hostInAuthority = (host: string): string => (host.includes(':') ? `[${host}]` : host);
 
 const DEFAULT_PORTS: Readonly<Record<CurlUrl['scheme'], number>> = { http: 80, https: 443, ftp: 21 };
 
@@ -131,10 +133,10 @@ export function parseCurlUrl(raw: string): UrlParse {
     return { ok: false, code: 1, message: `curl: (1) Protocol "${scheme}" not supported or disabled in libcurl` };
   }
   const userinfo = m[2];
-  const host = m[3];
+  const host = m[3].replace(/^\[|\]$/g, '');
   const port = m[4] ? parseInt(m[4], 10) : DEFAULT_PORTS[scheme];
   const path = m[5] || '/';
-  const authority = port === DEFAULT_PORTS[scheme] ? host : `${host}:${port}`;
+  const authority = port === DEFAULT_PORTS[scheme] ? hostInAuthority(host) : `${hostInAuthority(host)}:${port}`;
   const colon = userinfo === undefined ? -1 : userinfo.indexOf(':');
   const credentials = userinfo === undefined ? {}
     : colon < 0 ? { user: decodeURIComponent(userinfo) }
@@ -192,8 +194,8 @@ function buildRequest(
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
   const request = createRequest(verb, url.path);
   const authority = (url.scheme === 'https' && url.port === 443) || (url.scheme === 'http' && url.port === 80)
-    ? url.host
-    : `${url.host}:${url.port}`;
+    ? hostInAuthority(url.host)
+    : `${hostInAuthority(url.host)}:${url.port}`;
   request.headers.set('Host', authority);
   request.headers.set('User-Agent', opts.userAgent);
   request.headers.set('Accept', '*/*');
@@ -254,14 +256,14 @@ function resolveLocation(base: CurlUrl, location: string): UrlParse {
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(location)) return parseCurlUrl(location);
   if (location.startsWith('/')) {
     const authority = (base.scheme === 'https' && base.port === 443) || (base.scheme === 'http' && base.port === 80)
-      ? base.host
-      : `${base.host}:${base.port}`;
+      ? hostInAuthority(base.host)
+      : `${hostInAuthority(base.host)}:${base.port}`;
     return parseCurlUrl(`${base.scheme}://${authority}${location}`);
   }
   const dir = base.path.slice(0, base.path.lastIndexOf('/') + 1);
   const authority = (base.scheme === 'https' && base.port === 443) || (base.scheme === 'http' && base.port === 80)
-    ? base.host
-    : `${base.host}:${base.port}`;
+    ? hostInAuthority(base.host)
+    : `${hostInAuthority(base.host)}:${base.port}`;
   return parseCurlUrl(`${base.scheme}://${authority}${dir}${location}`);
 }
 

@@ -1,6 +1,7 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_PATHS } from './LinuxAuditLog';
+import { SHIPPED_AUDITD_CONF } from './daemon/AuditdConfFile';
 import { AUDIT_UNSET, encodeValue, ttyForAudit, userMessageFields } from './AuditUserMessage';
 import {
   X86_64_ARCH, decodeRule, fieldsMatch, maskCoversSyscall, pathCriteriaMatch, permissionBit,
@@ -80,10 +81,10 @@ export class LinuxAuditRules {
     private readonly auditLog: LinuxAuditLog,
     private readonly vfs: VirtualFileSystem,
   ) {
-    this.vfs.mkdirp('/etc/audit', 0o755, 0, 0);
+    this.vfs.mkdirp('/etc/audit', 0o750, 0, 0);
     this.vfs.mkdirp('/etc/audit/rules.d', 0o750, 0, 0);
     if (!this.vfs.exists(AUDIT_PATHS.config)) {
-      this.vfs.writeFile(AUDIT_PATHS.config, defaultAuditdConf(), 0, 0, 0o037);
+      this.vfs.writeFile(AUDIT_PATHS.config, SHIPPED_AUDITD_CONF, 0, 0, 0o137);
     }
     if (!this.vfs.exists('/etc/audit/rules.d/audit.rules')) {
       this.vfs.writeFile('/etc/audit/rules.d/audit.rules', DEFAULT_RULES_D, 0, 0, 0o037);
@@ -393,94 +394,3 @@ function writingSyscall(syscall: string): boolean {
     'truncate', 'ftruncate'].includes(syscall);
 }
 
-function defaultAuditdConf(): string {
-  return [
-    'local_events = yes',
-    'write_logs = yes',
-    'log_file = /var/log/audit/audit.log',
-    'log_format = RAW',
-    'log_group = adm',
-    'priority_boost = 4',
-    'flush = INCREMENTAL_ASYNC',
-    'freq = 50',
-    'max_log_file = 8',
-    'num_logs = 5',
-    'max_log_file_action = ROTATE',
-    'space_left = 75',
-    'space_left_action = SYSLOG',
-    'admin_space_left = 50',
-    'admin_space_left_action = SUSPEND',
-    'disk_full_action = SUSPEND',
-    'disk_error_action = SUSPEND',
-    'backlog_limit = 64',
-    'rate_limit = 0',
-    'name_format = NONE',
-    'verify_email = yes',
-    'enable_krb5 = no',
-    'krb5_principal = auditd',
-    'tcp_listen_queue = 5',
-    'tcp_max_per_addr = 1',
-    'tcp_client_max_idle = 0',
-    'transport = TCP',
-    'dispatcher = /sbin/audispd',
-    '',
-  ].join('\n');
-}
-
-const AUDITD_VALID_KEYS: ReadonlySet<string> = new Set([
-  'local_events', 'write_logs', 'log_file', 'log_format', 'log_group',
-  'priority_boost', 'flush', 'freq', 'max_log_file', 'num_logs',
-  'max_log_file_action', 'space_left', 'space_left_action', 'admin_space_left',
-  'admin_space_left_action', 'disk_full_action', 'disk_error_action',
-  'backlog_limit', 'rate_limit', 'name_format', 'verify_email', 'enable_krb5',
-  'krb5_principal', 'krb5_key_file', 'tcp_listen_queue', 'tcp_max_per_addr',
-  'tcp_client_max_idle', 'tcp_client_ports', 'tcp_listen_port', 'transport',
-  'dispatcher', 'distribute_network', 'q_depth', 'overflow_action',
-  'plugin_dir', 'use_libwrap', 'name', 'admin_space_left_action',
-]);
-
-const AUDITD_VALID_LOG_FORMATS: ReadonlySet<string> = new Set(['RAW', 'ENRICHED', 'NOLOG']);
-
-const AUDITD_VALID_ACTIONS: ReadonlySet<string> = new Set([
-  'IGNORE', 'SYSLOG', 'EXEC', 'SUSPEND', 'SINGLE', 'HALT', 'KEEP_LOGS',
-  'ROTATE', 'EMAIL', 'NOTIFY',
-]);
-
-export interface AuditdConfigError {
-  line: number;
-  message: string;
-}
-
-export function validateAuditdConfig(content: string): AuditdConfigError | null {
-  const lines = content.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i].trim();
-    if (!raw || raw.startsWith('#')) continue;
-    const eq = raw.indexOf('=');
-    if (eq === -1) return { line: i + 1, message: `auditd.conf: malformed line (no '='): '${raw}'` };
-    const key = raw.slice(0, eq).trim();
-    const value = raw.slice(eq + 1).trim();
-    if (!AUDITD_VALID_KEYS.has(key)) {
-      return { line: i + 1, message: `auditd.conf: unknown parameter '${key}'` };
-    }
-    if (key === 'log_format' && !AUDITD_VALID_LOG_FORMATS.has(value)) {
-      return { line: i + 1, message: `auditd.conf: invalid log_format value '${value}'` };
-    }
-    if (key === 'max_log_file') {
-      const n = parseInt(value, 10);
-      if (!Number.isInteger(n) || n < 1) return { line: i + 1, message: `auditd.conf: max_log_file must be >= 1 (got '${value}')` };
-    }
-    if (key === 'num_logs') {
-      const n = parseInt(value, 10);
-      if (!Number.isInteger(n) || n < 1) return { line: i + 1, message: `auditd.conf: num_logs must be >= 1 (got '${value}')` };
-    }
-    if (key === 'freq') {
-      const n = parseInt(value, 10);
-      if (!Number.isInteger(n) || n < 0) return { line: i + 1, message: `auditd.conf: freq must be a non-negative integer (got '${value}')` };
-    }
-    if (key === 'max_log_file_action' && !AUDITD_VALID_ACTIONS.has(value)) {
-      return { line: i + 1, message: `auditd.conf: invalid max_log_file_action '${value}'` };
-    }
-  }
-  return null;
-}

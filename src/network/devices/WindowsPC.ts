@@ -62,7 +62,7 @@ import { runW32tm } from './windows/WinW32tm';
 import { simulatedWait } from '../core/SimulatedWait';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
-import type { ARecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
+import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
@@ -3394,21 +3394,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
 
     // 4. Resolver cache, then DNS over the wire via every effective server.
-    for (const qname of this.dnsSearchCandidates(name)) {
-      const cached = this.dnsCacheValue(qname, RRType.A);
-      if (cached) {
-        try { return new IPAddress(cached); } catch { void 0; }
-      }
-    }
-    if (!this.isMdnsName(name)) {
-      for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-        const response = await this.queryDnsServer(server, qname, 'A');
-        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-        if (aRecords.length > 0) {
-          this.dnsCache.storePositive(response!.answers, qname);
-          return (aRecords[0].data as ARecordData).address;
-        }
-      }
+    const answered = await this.dnsAddress(name, 'A');
+    if (answered !== null) {
+      try { return new IPAddress(answered); } catch { void 0; }
     }
 
     // 5. Le lien, quand le DNS n'a rien su dire.
@@ -3418,6 +3406,34 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       try { return new IPAddress(linkLocal[0]); } catch { return null; }
     }
     return null;
+  }
+
+  private async dnsAddress(name: string, type: 'A' | 'AAAA'): Promise<string | null> {
+    const wanted = type === 'A' ? RRType.A : RRType.AAAA;
+    for (const qname of this.dnsSearchCandidates(name)) {
+      const cached = this.dnsCacheValue(qname, wanted);
+      if (cached) return cached;
+    }
+    if (this.isMdnsName(name)) return null;
+    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+      const response = await this.queryDnsServer(server, qname, type);
+      const records = response?.answers.filter((rr) => rr.data.type === wanted) ?? [];
+      if (records.length > 0) {
+        this.dnsCache.storePositive(response!.answers, qname);
+        const data = records[0].data as ARecordData | AaaaRecordData;
+        return data.address.toString();
+      }
+    }
+    return null;
+  }
+
+  async resolveHostname6(name: string): Promise<IPv6Address | null> {
+    const literal = IPv6Address.tryParse(name);
+    if (literal !== null) return literal;
+    const hosts = this.readHostsFile().resolve(name, 6);
+    if (hosts) return IPv6Address.tryParse(hosts);
+    const answered = await this.dnsAddress(name, 'AAAA');
+    return answered === null ? null : IPv6Address.tryParse(answered);
   }
 
   /**
@@ -4986,8 +5002,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private curlHost(): CurlHost {
     return {
       resolveHostname: async (name: string): Promise<string | null> => {
-        const ip = await this.resolveHostname(name);
-        return ip ? ip.toString() : null;
+        if (!name.includes(':')) {
+          const ip = await this.resolveHostname(name);
+          if (ip) return ip.toString();
+        }
+        const ip6 = await this.resolveHostname6(name);
+        return ip6 ? ip6.toString() : null;
       },
       tcpStack: () => this.getTcpStack(),
       trustAnchors: () => this.trustedCAs,

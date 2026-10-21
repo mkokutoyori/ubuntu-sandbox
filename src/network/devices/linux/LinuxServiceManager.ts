@@ -611,6 +611,7 @@ export class LinuxServiceManager {
    * A failing check aborts the reload and surfaces the error to the caller.
    */
   private configChecks = new Map<string, () => OperationResult>();
+  private startOnlyChecks = new Set<string>();
   /**
    * Listener specs registered at runtime for units that are not part of
    * the static {@link SERVICE_LISTENERS} table — units with dynamic
@@ -647,9 +648,10 @@ export class LinuxServiceManager {
    * `reload` so an invalid on-disk config is rejected exactly as `sshd -t`
    * would reject it, instead of being silently applied.
    */
-  registerConfigCheck(name: string, check: () => OperationResult): void {
+  registerConfigCheck(name: string, check: () => OperationResult, options: { checksOnReload: boolean } = { checksOnReload: true }): void {
     const unitName = name.replace(/\.service$/, '');
     this.configChecks.set(unitName, check);
+    if (!options.checksOnReload) this.startOnlyChecks.add(unitName);
     this.reconcileAlreadyActive(unitName, check);
   }
 
@@ -855,7 +857,7 @@ export class LinuxServiceManager {
     if (check) {
       const verdict = check();
       if (!verdict.ok) {
-        this.markFailed(u.name, verdict.error ?? 'configuration check failed');
+        this.markFailed(u.name, verdict.verbatim ? 'exit-code' : (verdict.error ?? 'configuration check failed'));
         return verdict;
       }
     }
@@ -1015,7 +1017,7 @@ export class LinuxServiceManager {
     if (!u.execReload) {
       return { ok: false, error: `Job type reload is not applicable for unit ${name}.service.` };
     }
-    const check = this.configChecks.get(u.name);
+    const check = this.startOnlyChecks.has(u.name) ? undefined : this.configChecks.get(u.name);
     if (check) {
       const verdict = check();
       if (!verdict.ok) return verdict;

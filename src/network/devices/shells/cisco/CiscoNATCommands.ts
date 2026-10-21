@@ -14,6 +14,8 @@
  *   Show:          show ip nat translations / show ip nat statistics
  */
 
+import { IPAddress } from '@/network/core/types';
+import { NAT_ROUTE_MAP_PREFIX } from '../../router/nat/NatRouteMap';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { Router } from '../../Router';
@@ -425,16 +427,39 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     return '';
   });
 
-  trie.registerGreedy('ip nat inside source route-map', 'NAT via route-map', (args, raw) => {
-    const r = ctx.r() as any;
-    (r._ciscoNatRouteMapRules ??= []).push(raw ?? `ip nat inside source route-map ${args.join(' ')}`);
+  trie.registerGreedy('ip nat inside source route-map', 'NAT via route-map', (rawArgs) => {
+    const args = rawArgs.map(a => a.replace(/^["']|["']$/g, ''));
+    if (args.length < 3) return '% Incomplete command.';
+    const engine = ctx.r()._getNATEngine();
+    const routeMap = args[0];
+    const aclId = `${NAT_ROUTE_MAP_PREFIX}${routeMap}`;
+    const keyword = args[1].toLowerCase();
+    if (keyword === 'interface') {
+      const ifName = ctx.resolveInterfaceName(args[2]) ?? args[2];
+      if (!ctx.r().getPort?.(ifName) && !/^Loopback/i.test(ifName) && !/\.\d+$/.test(ifName)) {
+        return `% Invalid interface ${args[2]}.`;
+      }
+      if (!args.slice(3).some(a => a.toLowerCase() === 'overload')) return '% Missing "overload" keyword.';
+      const extra = args.slice(3).filter(a => a.toLowerCase() !== 'overload');
+      if (extra.length > 0) return `% Invalid extra argument(s): ${extra.join(' ')}`;
+      engine.addDynamicRule({ aclId, routeMap, type: 'overload', interfaceName: ifName });
+    } else if (keyword === 'pool') {
+      const poolName = args[2];
+      if (!engine.getPool(poolName)) return `% Pool ${poolName} not defined.`;
+      const extra = args.slice(3).filter(a => a.toLowerCase() !== 'overload');
+      if (extra.length > 0) return `% Invalid extra argument(s): ${extra.join(' ')}`;
+      const overload = args.slice(3).some(a => a.toLowerCase() === 'overload');
+      engine.addDynamicRule({ aclId, routeMap, type: 'pool', poolName, ...(overload ? { overload: true } : {}) });
+    } else {
+      return '% Invalid command syntax.';
+    }
     return '';
   });
   trie.registerGreedy('no ip nat inside source route-map', 'Remove route-map NAT', (args) => {
-    const r = ctx.r() as any;
-    const name = args[0];
-    if (!r._ciscoNatRouteMapRules) return '';
-    r._ciscoNatRouteMapRules = (r._ciscoNatRouteMapRules as string[]).filter((s: string) => !s.includes(`route-map ${name}`));
+    if (args.length < 1) return '% Incomplete command.';
+    const engine = ctx.r()._getNATEngine();
+    engine.removeDynamicRule(`${NAT_ROUTE_MAP_PREFIX}${args[0]}`);
+    engine.clearDynamicTranslations();
     return '';
   });
 
@@ -447,16 +472,51 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
   });
 
   trie.registerGreedy('ip nat translation max-entries', 'Set NAT translation table cap', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (isNaN(n)) return '% Invalid max-entries value.';
-    if (n < 1 || n > 2_147_483) return '% max-entries value exceeds platform limits.';
-    (ctx.r() as any)._ciscoNatMaxEntries = n;
-    ctx.r()._getNATEngine().setMaxEntries?.(n);
+    const engine = ctx.r()._getNATEngine();
+    const limitOf = (text: string | undefined): number | string => {
+      const n = parseInt(text ?? '', 10);
+      if (isNaN(n)) return '% Invalid max-entries value.';
+      if (n < 1 || n > 2_147_483) return '% max-entries value exceeds platform limits.';
+      return n;
+    };
+    const keyword = (args[0] ?? '').toLowerCase();
+    if (keyword === 'host') {
+      if (!args[1] || !IPAddress.tryParse(args[1])) return '% Invalid IP address.';
+      const n = limitOf(args[2]);
+      if (typeof n === 'string') return n;
+      engine.setMaxEntriesForHost(args[1], n);
+      return '';
+    }
+    if (keyword === 'all-host') {
+      const n = limitOf(args[1]);
+      if (typeof n === 'string') return n;
+      engine.setMaxEntriesAllHost(n);
+      return '';
+    }
+    const n = limitOf(args[0]);
+    if (typeof n === 'string') return n;
+    engine.setMaxEntries(n);
+    return '';
+  });
+
+  trie.registerGreedy('no ip nat translation max-entries', 'Remove a NAT table cap', (args) => {
+    const engine = ctx.r()._getNATEngine();
+    const keyword = (args[0] ?? '').toLowerCase();
+    if (keyword === 'host' && args[1]) engine.setMaxEntriesForHost(args[1], null);
+    else if (keyword === 'all-host') engine.setMaxEntriesAllHost(null);
+    else engine.setMaxEntries(null);
     return '';
   });
 
   trie.registerGreedy('ip nat log translations', 'Enable NAT translation logging', (args) => {
-    (ctx.r() as any)._ciscoNatLogTranslations = args.join(' ') || 'syslog';
+    if (args.length !== 1 || args[0].toLowerCase() !== 'syslog') return '% Incomplete command.';
+    ctx.r()._getNATEngine().setTranslationLogging(true);
+    return '';
+  });
+
+  trie.registerGreedy('no ip nat log translations', 'Disable NAT translation logging', (args) => {
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'syslog')) return '% Invalid input detected at \'^\' marker.';
+    ctx.r()._getNATEngine().setTranslationLogging(false);
     return '';
   });
 
@@ -827,8 +887,9 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
 
 export function showNATStatistics(router: Router): string {
   const engine = router._getNATEngine();
-  const statics = engine.getStaticEntries().length;
-  const dynamicSessions = engine.getSessions().length;
+  const sessions = engine.getSessions();
+  const dynamicSessions = sessions.filter(s => s.viaStatic !== true).length;
+  const statics = engine.getStaticEntries().length + (sessions.length - dynamicSessions);
   const dynamic = engine.getDynamicRules().length;
   const pools = engine.getPools().size;
   const total = engine.getTranslationCount();
@@ -839,26 +900,41 @@ export function showNATStatistics(router: Router): string {
   const maxEntries = engine.getMaxEntries?.();
   const hasOverload = engine.getDynamicRules().some(r => r.type === 'overload');
 
-  const poolUsage: string[] = [];
-  if (pools > 0) {
-    poolUsage.push(`Pools:`);
-    for (const [, p] of engine.getPools()) {
-      const startN = p.startIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
-      const endN = p.endIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
-      const cap = (endN - startN + 1) || 1;
-      const used = engine.getSessions().filter(s => {
-        const n = s.globalIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
-        return n >= startN && n <= endN;
-      }).length;
-      const pct = Math.round((used * 100) / cap);
-      poolUsage.push(` ${p.name}: ${p.startIP} - ${p.endIP} — used ${used}/${cap} (${pct}%)`);
+  const addressNumber = (ip: string): number => ip.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
+  const maskOf = (p: { netmask?: string; prefixLength?: number }): string => {
+    if (p.netmask) return p.netmask;
+    const bits = p.prefixLength ?? 24;
+    const value = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff).join('.');
+  };
+  const mappingLines: string[] = [];
+  engine.getDynamicRules().forEach((rule, index) => {
+    const selector = rule.routeMap !== undefined ? `route-map ${rule.routeMap}` : `access-list ${rule.aclId}`;
+    const id = `[Id: ${index + 1}]`;
+    if (rule.type === 'overload') {
+      const ifName = rule.interfaceName ?? '';
+      const ifIp = router.getPort?.(ifName)?.getIPAddress?.()?.toString();
+      const refcount = sessions.filter(s => s.viaStatic !== true && s.globalIP === ifIp).length;
+      mappingLines.push(`${id} ${selector} interface ${ifName} refcount ${refcount}`);
+      return;
     }
-  }
+    const pool = rule.poolName !== undefined ? engine.getPool(rule.poolName) : undefined;
+    if (!pool) return;
+    const start = addressNumber(pool.startIP);
+    const end = addressNumber(pool.endIP);
+    const inPool = sessions.filter(s => s.viaStatic !== true && addressNumber(s.globalIP) >= start && addressNumber(s.globalIP) <= end);
+    const allocated = new Set(inPool.map(s => s.globalIP)).size;
+    const total = end - start + 1;
+    mappingLines.push(`${id} ${selector} pool ${pool.name}${rule.overload ? ' overload' : ''} refcount ${inPool.length}`);
+    mappingLines.push(` pool ${pool.name}: netmask ${maskOf(pool)}`);
+    mappingLines.push(`\tstart ${pool.startIP} end ${pool.endIP}`);
+    mappingLines.push(`\ttype generic, total addresses ${total}, allocated ${allocated} (${Math.round((allocated * 100) / total)}%), misses ${engine.getPoolMisses(pool.name)}`);
+  });
 
   const staticEntries = engine.getStaticEntries();
 
   return [
-    `Total active translations: ${total} (${statics} static, ${dynamicSessions} dynamic; 0 extended)`,
+    `Total active translations: ${total} (${statics} static, ${dynamicSessions} dynamic; ${sessions.length} extended)`,
     `Peak translations: ${engine.getPeakTranslationCount()}`,
     `Total translations: ${total}`,
     `Static translations: ${statics}`,
@@ -873,15 +949,12 @@ export function showNATStatistics(router: Router): string {
     ...(maxEntries != null ? [`max-entries ${maxEntries}`, ...(dynamicSessions >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
     `Static mappings:`,
     ...(staticEntries.length === 0 ? ['-- No static NAT entries configured --'] :
-      staticEntries.map(e =>
-        ` -- static  ${e.localIP}  ${e.globalIP}  refcount ${e.hitCount ?? 0}`
+      staticEntries.map(e => e.protocol
+        ? ` -- static  ${e.protocol} ${e.localIP} ${e.localPort ?? ''}  ${e.globalIP} ${e.globalPort ?? ''}  refcount ${e.hitCount ?? 0}`
+        : ` -- static  ${e.localIP}  ${e.globalIP}  refcount ${e.hitCount ?? 0}`
       )),
     `Dynamic mappings:`,
-    ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] :
-      engine.getDynamicRules().map(r =>
-        ` -- Inside Source [acl ${r.aclId}] ${r.type === 'overload' ? 'overload' : `pool ${r.poolName}`}`
-      )),
-    ...poolUsage,
+    ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] : ['-- Inside Source', ...mappingLines]),
     `Total doors: ${engine.getAlgDoors()}`,
     `Appl doors: ${engine.getAlgDoors()}`,
     `Normal doors: 0`,
@@ -917,13 +990,19 @@ export function runningConfigNAT(router: Router): string[] {
   }
   for (const r of engine.getDynamicRules()) {
     const vrfTail = (r as any).vrf ? ` vrf ${(r as any).vrf}` : '';
+    const selector = r.routeMap !== undefined ? `route-map ${r.routeMap}` : `list ${r.aclId}`;
     if (r.type === 'overload') {
       const iface = r.interfaceName ?? [...engine.getOutsideInterfaces()][0] ?? 'GigabitEthernet0/1';
-      lines.push(`ip nat inside source list ${r.aclId} interface ${iface} overload${vrfTail}`);
+      lines.push(`ip nat inside source ${selector} interface ${iface} overload${vrfTail}`);
     } else if (r.type === 'pool' && r.poolName) {
-      lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}${r.overload ? ' overload' : ''}${vrfTail}`);
+      lines.push(`ip nat inside source ${selector} pool ${r.poolName}${r.overload ? ' overload' : ''}${vrfTail}`);
     }
   }
+
+  if (engine.getMaxEntries() !== null) lines.push(`ip nat translation max-entries ${engine.getMaxEntries()}`);
+  if (engine.getMaxEntriesAllHost() !== null) lines.push(`ip nat translation max-entries all-host ${engine.getMaxEntriesAllHost()}`);
+  for (const [host, limit] of engine.getMaxEntriesByHost()) lines.push(`ip nat translation max-entries host ${host} ${limit}`);
+  if (engine.isTranslationLogging()) lines.push('ip nat log translations syslog');
 
   // Non-default timeouts
   const t = engine.getTimeouts();

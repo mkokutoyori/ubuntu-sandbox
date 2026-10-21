@@ -1379,7 +1379,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private routeMapHost(): RouteMapHost {
     const clause = () => {
       const sel = this.selectedRouteMap;
-      return sel ? this.policy.ensureRouteMap(sel.name, 'permit', sel.seq) : null;
+      return sel ? this.policy.findRouteMapClause(sel.name, sel.seq) ?? null : null;
     };
     const liste = (kind: RouteMapClauseKind) => {
       const c = clause();

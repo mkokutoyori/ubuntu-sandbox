@@ -1034,6 +1034,12 @@ export class LoggingConfig {
           `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`,
           true, 'ADJCHG');
       }),
+      bus.subscribeWhere('nat.session.created', isOurs, (e) => {
+        if (e.payload.logged) this.append('informational', 'ipnat', natTranslationText(e.payload), true, 'CREATED');
+      }),
+      bus.subscribeWhere('nat.session.removed', isOurs, (e) => {
+        if (e.payload.logged) this.append('informational', 'ipnat', natTranslationText(e.payload), true, 'DELETED');
+      }),
       bus.subscribeWhere('hsrp.active.changed', isOurs, (e) => {
         const p = e.payload as unknown as { iface?: string; group?: number; activeIp?: string; activePriority?: number };
         this.append('informational', 'hsrp',
@@ -2279,4 +2285,15 @@ export class LoggingConfig {
     this.horodatage.debug = defaultTimestampSpec();
     this.horodatage.log = defaultTimestampSpec();
   }
+}
+
+const NAT_PROTOCOL_NAMES: Readonly<Record<number, string>> = { 1: 'icmp', 6: 'tcp', 17: 'udp' };
+
+function natTranslationText(p: {
+  protocol: number; localIp: string; localPort: number; globalIp: string; globalPort: number;
+  outsideLocalIp: string; outsideLocalPort: number; outsideIp: string; outsidePort: number;
+}): string {
+  const protocol = NAT_PROTOCOL_NAMES[p.protocol] ?? String(p.protocol);
+  return `${protocol} ${p.localIp}:${p.localPort} ${p.globalIp}:${p.globalPort} `
+    + `${p.outsideLocalIp}:${p.outsideLocalPort} ${p.outsideIp}:${p.outsidePort}`;
 }

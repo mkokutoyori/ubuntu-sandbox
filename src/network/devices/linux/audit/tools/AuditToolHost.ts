@@ -20,7 +20,7 @@ export interface AuditToolHost {
   mktime(tm: Omit<LocalTime, 'wday' | 'yday'>): number;
   nowSec(): number;
   uptimeSec(): number;
-  auditConfig(): { logFile: string; eoeTimeout: number } | null;
+  auditConfig(): { logFile: string; eoeTimeout: number; stderr?: string } | null;
   dateStyle(): DateStyle;
 }
 
