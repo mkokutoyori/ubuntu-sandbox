@@ -3296,6 +3296,23 @@ vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desact
 `-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
 source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
 
+### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
+Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
+Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
+`security.abortOnIDResolutionFail` (cfsysline.c : un `$FileOwner` ou `$PrivDropToUser` d'un utilisateur inconnu arrete le demon avec
+`exit(1)` au lieu de journaliser), `reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
+`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `operatingStateFile` (operatingstate.c : fichier d'etat qui detecte un arret
+non propre), `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
+`libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
+`abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
+Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
+`lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
+`saveOnShutdown` et `fileName` (et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
+moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
+`dequeueSlowdown` et la fenetre `dequeueTimeBegin/End` decident. Une file « disk » ou « disk-assisted » se comporte donc comme
+« linkedlist » en memoire.
+
 ### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
 Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
 `LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
