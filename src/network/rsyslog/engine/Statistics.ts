@@ -1,4 +1,5 @@
 import { jsonText } from '../Json';
+import { RsyslogHashTable } from './HashTable';
 import type { JsonValue } from '../Message';
 
 export type StatisticsFormat = 'legacy' | 'json' | 'json-elasticsearch' | 'cee' | 'prometheus';
@@ -106,7 +107,46 @@ function jsonLine(object: StatsObject, format: 'json' | 'json-elasticsearch' | '
   return format === 'cee' ? `${CEE_COOKIE} ${text}` : text;
 }
 
+export interface SenderRecord {
+  readonly sender: string;
+  messages: number;
+  lastSeen: number;
+}
+
+export class SenderStatistics {
+  private readonly table = new RsyslogHashTable<SenderRecord>(100);
+
+  record(sender: string, messages: number, lastSeen: number, onNew: () => void): void {
+    let found = this.table.search(sender);
+    if (found === undefined) {
+      found = { sender, messages: 0, lastSeen: 0 };
+      onNew();
+      this.table.insert(sender, found);
+    }
+    found.messages += messages;
+    found.lastSeen = lastSeen;
+  }
+
+  removeStale(oldestAllowed: number, onRemoved: (record: SenderRecord) => void): void {
+    this.table.removeIf((_, record) => {
+      if (record.lastSeen >= oldestAllowed) return false;
+      onRemoved(record);
+      return true;
+    });
+  }
+
+  lines(format: StatisticsFormat, resetCounters: boolean): string[] {
+    if (format === 'prometheus') return [];
+    const lines = this.table.values().map((record) => (format === 'legacy'
+      ? `_sender_stat: sender=${record.sender} messages=${record.messages}`
+      : `{ "name":"_sender_stat", "origin":"impstats", "sender":"${record.sender}", "messages":${record.messages}}`));
+    if (resetCounters) for (const record of this.table.values()) record.messages = 0;
+    return lines;
+  }
+}
+
 export class Statistics {
+  readonly senders = new SenderStatistics();
   private objects: StatsObject[] = [];
   enabled = false;
 
@@ -136,6 +176,7 @@ export class Statistics {
       else lines.push(format === 'legacy' ? legacyLine(object, resetCounters) : jsonLine(object, format, resetCounters));
       object.readNotifier?.();
     }
+    lines.push(...this.senders.lines(format, resetCounters));
     return lines;
   }
 
@@ -151,6 +192,11 @@ export class Statistics {
       members.push(jsonLine(object, 'json', resetCounters));
       groups.set(key, members);
       object.readNotifier?.();
+    }
+    for (const line of this.senders.lines('json', resetCounters)) {
+      const members = groups.get('stats_impstats') ?? [];
+      members.push(line);
+      groups.set('stats_impstats', members);
     }
     let text = `{ "timedate": "${timedate}"`;
     for (const [key, members] of groups) text += `, "${key}": [${members.join(',')}]`;

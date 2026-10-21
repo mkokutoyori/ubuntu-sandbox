@@ -3265,7 +3265,7 @@ et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.fil
 la persistance de `dyn_stats` : l'ecriture est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
 compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
 (l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
-`impstats` ne publie pas les statistiques par expediteur (`_sender_stat`, `global(senders.keepTrack)`) ; `resource-usage` ne fournit que
+les statistiques par expediteur (`_sender_stat`) ne sont alimentees que par `imtcp` (le source alimente aussi `imptcp`, absent ici) ; `resource-usage` ne fournit que
 utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
 oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
 source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,

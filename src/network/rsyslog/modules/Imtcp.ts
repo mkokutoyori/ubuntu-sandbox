@@ -301,7 +301,9 @@ class ImtcpListener implements InputInstance {
       this.closeSession(session, false);
       return;
     }
+    const before = this.submitted;
     session.framer.push(bytes);
+    this.context.recordSender(session.host, this.submitted - before, Math.floor(this.context.host.clock.wallMs() / 1000));
   }
 
   private closeSession(session: TcpSession, closedByPeer: boolean): void {

@@ -9,6 +9,7 @@ import type { Template } from '../Template';
 import type { ActionModuleInstance, EngineModule, InputInstance, OutChannel, RuntimeLog, TemplateRequest } from './Modules';
 import type { LocalClock } from './LocalClock';
 import type { SenderResolver } from './SenderResolver';
+import type { Janitor } from './Janitor';
 import type { LookupRef } from './LookupTable';
 import type { GlobalSettings, QueueSettings } from './Settings';
 
@@ -76,6 +77,7 @@ export interface LoadedConfig {
   readonly rateLimits: RateLimitRegistry;
   readonly lookupTables: LookupRef[];
   readonly statistics: Statistics;
+  readonly janitor: Janitor;
   readonly dynStats: DynStatsRegistry;
   readonly percentileStats: PercentileStatsRegistry;
   readonly timezones: Map<string, { offsetMinutes: number }>;

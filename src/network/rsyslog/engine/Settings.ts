@@ -69,6 +69,7 @@ export interface GlobalSettings {
   aclDontResolve: boolean;
   aclAddHostnameOnFail: boolean;
   allowedSenders: { udp: AllowedSenderList; tcp: AllowedSenderList };
+  janitorInterval: number;
   senders: { reportNew: boolean; reportGoneAway: boolean; timeoutAfter: number; keepTrack: boolean };
   compactJson: boolean;
   mainQueue: QueueSettings;
@@ -113,6 +114,7 @@ export function defaultGlobalSettings(): GlobalSettings {
     aclDontResolve: false,
     aclAddHostnameOnFail: false,
     allowedSenders: { udp: new AllowedSenderList(), tcp: new AllowedSenderList() },
+    janitorInterval: 10,
     senders: { reportNew: false, reportGoneAway: false, timeoutAfter: 12 * 60 * 60, keepTrack: false },
     compactJson: false,
     mainQueue: defaultQueueSettings('FixedArray', 100000),
@@ -264,6 +266,7 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.privDrop.gid = count(values, 'privdrop.group.id') ?? count(values, 'privdrop.group.name') ?? settings.privDrop.gid;
   settings.privDrop.uid = count(values, 'privdrop.user.id') ?? count(values, 'privdrop.user.name') ?? settings.privDrop.uid;
   settings.umask = count(values, 'umask') ?? settings.umask;
+  settings.janitorInterval = count(values, 'janitor.interval') ?? settings.janitorInterval;
   settings.senders.reportNew = flag(values, 'senders.reportnew') ?? settings.senders.reportNew;
   settings.senders.reportGoneAway = flag(values, 'senders.reportgoneaway') ?? settings.senders.reportGoneAway;
   settings.senders.timeoutAfter = count(values, 'senders.timeoutafter') ?? settings.senders.timeoutAfter;

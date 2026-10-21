@@ -190,7 +190,7 @@ class OmfileInstance implements ActionModuleInstance {
       this.registerStatistics();
     }
     if (settings.closeTimeoutMinutes > 0) {
-      this.cancelJanitor = context.host.scheduleEvery(() => this.janitor(), 60_000);
+      this.cancelJanitor = context.janitor.add(`omfile:${settings.dynamic ? 'dyna' : ''}file:${settings.fileName}`, () => this.janitor());
     }
   }
 
@@ -323,23 +323,22 @@ class OmfileInstance implements ActionModuleInstance {
 
   private janitor(): void {
     const limit = this.settings.closeTimeoutMinutes;
+    const elapsed = this.context.settings.janitorInterval;
     if (this.settings.dynamic) {
       for (const entry of [...this.cache]) {
-        entry.idleMinutes++;
         if (entry.idleMinutes >= limit) {
           entry.handle.close();
           this.cache.splice(this.cache.indexOf(entry), 1);
           this.counters.closeTimeouts++;
           if (this.currentName === entry.name) this.currentName = null;
-        }
+        } else entry.idleMinutes += elapsed;
       }
     } else if (this.handle !== null) {
-      this.idleMinutes++;
       if (this.idleMinutes >= limit) {
         this.handle.close();
         this.handle = null;
         this.counters.closeTimeouts++;
-      }
+      } else this.idleMinutes += elapsed;
     }
   }
 

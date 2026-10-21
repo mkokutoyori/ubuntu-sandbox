@@ -493,7 +493,23 @@ export class RsyslogEngine implements InputSubmitter {
     const backlog = this.internalBacklog ?? [];
     this.internalBacklog = null;
     for (const message of backlog) this.processInternal(message);
+    this.stopCallbacks.push(this.host.scheduleEvery(() => this.runJanitor(), Math.max(1, settings.janitorInterval) * 60_000));
     return { ok: true };
+  }
+
+  private runJanitor(): void {
+    this.config.janitor.run();
+    const senders = this.config.settings.senders;
+    const oldestAllowed = Math.floor(this.host.clock.wallMs() / 1000) - senders.timeoutAfter;
+    this.config.statistics.senders.removeStale(oldestAllowed, (record) => {
+      if (!senders.reportGoneAway) return;
+      const time = this.timeAt(record.lastSeen * 1000);
+      const pad = (value: number, width = 2): string => String(value).padStart(width, '0');
+      this.runtimeLog.log(
+        4, RS_RET.SENDER_GONE_AWAY,
+        `removing sender '${record.sender}' from connection table, last seen at ${pad(time.year, 4)}-${pad(time.month)}-${pad(time.day)} ${pad(time.hour)}:${pad(time.minute)}:${pad(time.second)}`,
+      );
+    });
   }
 
   private abortStart(code: number, started: readonly InputInstance[] = []): StartOutcome {

@@ -20,6 +20,7 @@ import type {
 } from './Modules';
 import { AllowedSenderList, parseAllowedSenderEntries, type AllowedSenderEnvironment } from './AllowedSenders';
 import { LocalClock } from './LocalClock';
+import { Janitor } from './Janitor';
 import { RateLimiter } from './RateLimiter';
 import { RateLimitRegistry, type SharedRateLimit } from './SharedRateLimit';
 import { SenderResolver } from './SenderResolver';
@@ -175,7 +176,7 @@ export class ConfigLoader implements ConfigSink {
         runtime: () => this.runtimeSink, files: options.host.files, statistics, template: (name) => this.config.templates.get(name),
         schedule: (callback, delay) => options.host.schedule(callback, delay), nowMs: () => options.host.clock.wallMs(),
       }),
-      lookupTables: [], statistics,
+      lookupTables: [], statistics, janitor: new Janitor(),
       dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), runtime: () => this.runtimeSink, files: options.host.files, workDirectory: () => settings.workDirectory }),
       percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
@@ -196,6 +197,8 @@ export class ConfigLoader implements ConfigSink {
       },
       settings,
       statistics: this.config.statistics,
+      janitor: this.config.janitor,
+      recordSender: (sender, messages, seconds) => this.recordSender(sender, messages, seconds),
       template: (name) => this.config.templates.get(name),
       report: (message) => this.reportAt(message),
       warn: (message) => this.warnAt(message),
@@ -322,6 +325,13 @@ export class ConfigLoader implements ConfigSink {
     }
     this.addAllowedSenders(lowered === 'udp' ? settings.allowedSenders.udp : settings.allowedSenders.tcp, entries, (message) => this.runtimeSink.error(message, RS_RET.ERR));
     return '';
+  }
+
+  private recordSender(sender: string, messages: number, seconds: number): void {
+    if (!this.config.settings.senders.keepTrack) return;
+    this.config.statistics.senders.record(sender, messages, seconds, () => {
+      if (this.config.settings.senders.reportNew) this.runtimeSink.info(`new sender '${sender}'`, RS_RET.SENDER_APPEARED);
+    });
   }
 
   private createModuleRateLimiter(spec: ModuleRateLimitSpec): { readonly limiter: ModuleRateLimiter | null } | null {
