@@ -15,7 +15,7 @@ const NOT_PERMITTED_AFTER_MODULE_PARAMS = (name: string): string =>
 const MODULE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'interval', type: 'int' }, { name: 'facility', type: 'int' }, { name: 'severity', type: 'int' },
   { name: 'bracketing', type: 'binary' }, { name: 'log.syslog', type: 'binary' }, { name: 'resetcounters', type: 'binary' },
-  { name: 'log.file', type: 'word' }, { name: 'format', type: 'word' }, { name: 'ruleset', type: 'string' },
+  { name: 'log.file', type: 'word' }, { name: 'log.file.overwrite', type: 'binary' }, { name: 'format', type: 'word' }, { name: 'ruleset', type: 'string' },
 ];
 
 interface ImpstatsConfig {
@@ -23,11 +23,12 @@ interface ImpstatsConfig {
   intervalSeconds: number;
   facility: number;
   severity: number;
-  format: StatisticsFormat;
+  format: StatisticsFormat | 'zabbix';
   bracketing: boolean;
   logToSyslog: boolean;
   resetCounters: boolean;
   logFile: string | null;
+  logOverwrite: boolean;
   ruleset: string | null;
   legacy: { intervalSeconds: number; facility: number; severity: number; json: boolean; cee: boolean };
 }
@@ -39,7 +40,7 @@ function defaultLegacy(): ImpstatsConfig['legacy'] {
 function defaultConfig(): ImpstatsConfig {
   return {
     configuredViaModule: false, intervalSeconds: DEFAULT_STATS_PERIOD, facility: DEFAULT_FACILITY, severity: DEFAULT_SEVERITY,
-    format: 'legacy', bracketing: false, logToSyslog: true, resetCounters: false, logFile: null, ruleset: null, legacy: defaultLegacy(),
+    format: 'legacy', bracketing: false, logToSyslog: true, resetCounters: false, logFile: null, logOverwrite: false, ruleset: null, legacy: defaultLegacy(),
   };
 }
 
@@ -47,12 +48,14 @@ function config(context: ModuleContext): ImpstatsConfig {
   return context.moduleState('impstats.config', defaultConfig);
 }
 
-function formatOf(name: string): StatisticsFormat | null {
+function formatOf(name: string): ImpstatsConfig['format'] | null {
   switch (name.toLowerCase()) {
     case 'json': return 'json';
     case 'json-elasticsearch': return 'json-elasticsearch';
     case 'cee': return 'cee';
     case 'legacy': return 'legacy';
+    case 'prometheus': return 'prometheus';
+    case 'zabbix': return 'zabbix';
     default: return null;
   }
 }
@@ -64,6 +67,7 @@ class StatisticsReporter implements InputInstance {
   private ruleset: string | null = null;
   private intervalSeconds: number;
   private resourceObject: StatsObject | null = null;
+  private pendingFile: string | null = null;
   private readonly resource = { utime: 0, stime: 0, maxrss: 0, minflt: 0, majflt: 0, inblock: 0, oublock: 0, nvcsw: 0, nivcsw: 0, openfiles: 0 };
 
   constructor(private readonly context: InputContext, private readonly settings: ImpstatsConfig) {
@@ -128,10 +132,29 @@ class StatisticsReporter implements InputInstance {
 
   private report(): void {
     const settings = this.settings;
+    const overwrite = settings.logOverwrite && settings.logFile !== null;
+    if (overwrite) this.pendingFile = '';
     if (settings.bracketing) this.submitLine('BEGIN');
     this.sampleResourceUsage();
-    for (const line of this.context.statistics.lines(settings.format, settings.resetCounters)) this.submitLine(line);
+    if (settings.format === 'zabbix') this.submitLine(this.context.statistics.zabbixLine(this.timedate(), settings.resetCounters));
+    else for (const line of this.context.statistics.lines(settings.format, settings.resetCounters)) this.submitLine(line);
     if (settings.bracketing) this.submitLine('END');
+    if (overwrite) this.replaceFile();
+  }
+
+  private timedate(): string {
+    const now = this.context.clock.now();
+    const offset = (now.offsetMode === '-' ? -1 : 1) * (now.offsetHour * 60 + now.offsetMinute);
+    return ctime(this.context.host.clock.wallMs(), offset).replace(/^(\w{3} \w{3}) (\d) /, '$1 0$2 ');
+  }
+
+  private replaceFile(): void {
+    const path = this.settings.logFile as string;
+    const text = this.pendingFile ?? '';
+    this.pendingFile = null;
+    if (!this.context.host.files.write(path, text)) {
+      this.context.runtime.error(`impstats: error renaming temp stats file ${path}.tmp.XXXXXX to ${path}`, RS_RET.ERR);
+    }
   }
 
   private submitLine(line: string): void {
@@ -153,6 +176,10 @@ class StatisticsReporter implements InputInstance {
   private appendToFile(line: string): void {
     const path = this.settings.logFile as string;
     if (line.length === 0) return;
+    if (this.settings.logOverwrite) {
+      if (this.pendingFile !== null) this.pendingFile += `${this.stamped(line)}\n`;
+      return;
+    }
     if (this.logHandle === null) {
       const opened = this.context.host.files.open(path, {
         mode: STATS_FILE_MODE, directoryMode: 0o700, uid: null, gid: null, directoryUid: null, directoryGid: null,
@@ -161,9 +188,13 @@ class StatisticsReporter implements InputInstance {
       if ('error' in opened) return;
       this.logHandle = opened.handle;
     }
+    this.logHandle.write(`${this.stamped(line)}\n`);
+  }
+
+  private stamped(line: string): string {
     const now = this.context.clock.now();
     const offset = (now.offsetMode === '-' ? -1 : 1) * (now.offsetHour * 60 + now.offsetMinute);
-    this.logHandle.write(`${ctime(this.context.host.clock.wallMs(), offset)}: ${line}\n`);
+    return `${ctime(this.context.host.clock.wallMs(), offset)}: ${line}`;
   }
 }
 
@@ -222,6 +253,8 @@ export const impstats: InputModule = {
     const resetCounters = numberParam(values, 'resetcounters');
     if (resetCounters !== undefined) settings.resetCounters = resetCounters !== 0;
     settings.logFile = stringParam(values, 'log.file') ?? settings.logFile;
+    const logOverwrite = numberParam(values, 'log.file.overwrite');
+    if (logOverwrite !== undefined) settings.logOverwrite = logOverwrite !== 0;
     settings.ruleset = stringParam(values, 'ruleset') ?? settings.ruleset;
     const formatName = stringParam(values, 'format');
     if (formatName !== undefined) {
@@ -232,6 +265,9 @@ export const impstats: InputModule = {
     if (settings.ruleset !== null && !settings.logToSyslog) {
       context.warn('impstats: log.syslog set to "off" but ruleset specified - with these settings, the ruleset will never be used, because regular syslog processing is turned off - ruleset parameter is ignored');
       settings.ruleset = null;
+    }
+    if (settings.logToSyslog && settings.format === 'zabbix' && settings.logFile === null) {
+      context.warn('impstats: log.syslog set to "on" and format set to "zabbix" without log.file set. This is not recommended due to potential for pstats msg truncation leading to malformed JSON. Ensure "$MaxMessageSize" at the top of rsyslog.conf to a sufficient size or ensure log.file is specified. Increasing $MaxMessageSize may have other adverse side effect.');
     }
     settings.configuredViaModule = true;
     return true;

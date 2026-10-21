@@ -3260,13 +3260,17 @@ que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement p
 re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connecter (client) : `nc -lU` et `nc -uU` restent refuses, et seul `audisp-af_unix` ecoute une socket UNIX en flux ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.
 
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
-`statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0
-(`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
+`statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
+et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
+`dyn_stats` n'a pas la persistance de 8.2608 (`persistStateInterval`, `statefile.directory`, compteurs `flushed_*`), `percentile_stats` la
+validation de plage et le message de troncature de 8.2608 ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
+compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
+(l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
 `impstats` ne publie pas les statistiques par expediteur (`_sender_stat`, `global(senders.keepTrack)`) ; `resource-usage` ne fournit que
 utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
 oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
 source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
-omusrmsg n'ont pas d'objet de statistiques dans 8.2112.0. Ecarts assumes avec le source : un `percentile_stats` sans
+omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
 echoue sur un assert) ; le message « statname ... truncated » du source imprime un tampon de pile non initialise, ici le nom fautif ;
 le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre

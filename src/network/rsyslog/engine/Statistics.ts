@@ -1,7 +1,7 @@
 import { jsonText } from '../Json';
 import type { JsonValue } from '../Message';
 
-export type StatisticsFormat = 'legacy' | 'json' | 'json-elasticsearch' | 'cee';
+export type StatisticsFormat = 'legacy' | 'json' | 'json-elasticsearch' | 'cee' | 'prometheus';
 
 export const CEE_COOKIE = '@cee:';
 
@@ -64,7 +64,36 @@ function legacyLine(object: StatsObject, resetCounters: boolean): string {
   return line;
 }
 
-function jsonLine(object: StatsObject, format: Exclude<StatisticsFormat, 'legacy'>, resetCounters: boolean): string {
+const PROMETHEUS_LEGACY_SAFE = /^[A-Za-z_:][A-Za-z0-9_:]*$/;
+const ZABBIX_DUAL_ORIGINS = new Set(['imkafka', 'omkafka', 'imtcp', 'imudp']);
+
+export function prometheusMetricName(raw: string): string {
+  if (PROMETHEUS_LEGACY_SAFE.test(raw) && !raw.startsWith('U__')) return raw;
+  let encoded = 'U__';
+  for (const character of raw) {
+    const codepoint = character.codePointAt(0) as number;
+    if (/^[A-Za-z0-9:]$/.test(character)) encoded += character;
+    else if (character === '_') encoded += '__';
+    else encoded += `_${codepoint.toString(16).toUpperCase()}_`;
+  }
+  return encoded;
+}
+
+function prometheusHelpText(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+
+function prometheusLines(object: StatsObject, resetCounters: boolean): string[] {
+  const origin = prometheusHelpText(object.origin ?? '');
+  const objectName = prometheusHelpText(object.name);
+  return object.entries(resetCounters).map(([name, value]) => {
+    const metric = prometheusMetricName(`${object.name}_${name}_total`);
+    const unsigned = BigInt.asUintN(64, BigInt(Math.trunc(value)));
+    return `# HELP ${metric} rsyslog stats: origin="${origin}" object="${objectName}", counter="${prometheusHelpText(name)}"\n# TYPE ${metric} counter\n${metric} ${unsigned}\n`;
+  });
+}
+
+function jsonLine(object: StatsObject, format: 'json' | 'json-elasticsearch' | 'cee', resetCounters: boolean): string {
   const root: { [key: string]: JsonValue } = { name: object.name };
   if (object.origin !== null) root.origin = object.origin;
   let values = root;
@@ -103,9 +132,28 @@ export class Statistics {
   lines(format: StatisticsFormat, resetCounters: boolean): string[] {
     const lines: string[] = [];
     for (const object of [...this.objects]) {
-      lines.push(format === 'legacy' ? legacyLine(object, resetCounters) : jsonLine(object, format, resetCounters));
+      if (format === 'prometheus') lines.push(...prometheusLines(object, resetCounters));
+      else lines.push(format === 'legacy' ? legacyLine(object, resetCounters) : jsonLine(object, format, resetCounters));
       object.readNotifier?.();
     }
     return lines;
+  }
+
+  zabbixLine(timedate: string, resetCounters: boolean): string {
+    const groups = new Map<string, string[]>();
+    for (const object of [...this.objects]) {
+      const origin = object.origin ?? 'unknown';
+      let key: string;
+      if (origin === 'core.action' && object.name.includes('omkafka')) key = 'stats_omkafka_local';
+      else if (ZABBIX_DUAL_ORIGINS.has(origin)) key = `stats_${origin}_${object.name === origin ? 'global' : 'local'}`;
+      else key = `stats_${origin.replace(/\./g, '_')}`;
+      const members = groups.get(key) ?? [];
+      members.push(jsonLine(object, 'json', resetCounters));
+      groups.set(key, members);
+      object.readNotifier?.();
+    }
+    let text = `{ "timedate": "${timedate}"`;
+    for (const [key, members] of groups) text += `, "${key}": [${members.join(',')}]`;
+    return `${text}}`;
   }
 }
