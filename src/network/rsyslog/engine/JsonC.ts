@@ -146,6 +146,17 @@ function jsonNumberText(value: number): string {
   return String(value);
 }
 
+export function jsonGetInt64(value: JsonValue | undefined): number {
+  let n = 0;
+  if (typeof value === 'number') n = Number.isNaN(value) ? 0 : Math.trunc(value);
+  else if (typeof value === 'boolean') n = value ? 1 : 0;
+  else if (typeof value === 'string') {
+    const match = /^\s*[+-]?\d+/.exec(value);
+    n = match === null ? 0 : Number(match[0].trim());
+  }
+  return Math.max(-9223372036854775808, Math.min(9223372036854775807, n));
+}
+
 export function jsonGetInt(value: JsonValue | undefined): number {
   let n = 0;
   if (typeof value === 'number') n = Number.isNaN(value) ? 0 : Math.trunc(value);

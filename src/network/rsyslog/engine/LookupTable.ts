@@ -1,6 +1,7 @@
 import type { Errno } from '@/network/core/Errno';
 import { RS_RET } from './Log';
-import { jsonGetInt, jsonGetString, parseJsonC, type JsonValue } from './JsonC';
+import { compileEre, PosixRegexError, type CompiledEre } from '@/network/devices/linux/regex/PosixEre';
+import { jsonGetInt, jsonGetInt64, jsonGetString, parseJsonC, type JsonValue } from './JsonC';
 
 export interface LookupLog {
   error(text: string, code: number, errno?: Errno): void;
@@ -16,6 +17,7 @@ export interface LookupFiles {
 export type LookupKeyType = 'string' | 'uint' | 'none';
 
 const ENCODER = new TextEncoder();
+const UINT32_MAX = 4294967295;
 
 function compareBytes(a: string, b: string): number {
   const left = ENCODER.encode(a);
@@ -63,8 +65,9 @@ export class LookupTable {
   private nomatch: string | null = null;
   private entries: Array<{ key: string; value: string }> = [];
   private numbered: Array<{ key: number; value: string }> = [];
+  private patterns: Array<{ regex: CompiledEre; value: string }> = [];
   private firstKey = 0;
-  private kind: 'string' | 'array' | 'sparseArray' | 'stub' | 'empty' = 'empty';
+  private kind: 'string' | 'array' | 'sparseArray' | 'regex' | 'stub' | 'empty' = 'empty';
 
   static stubbed(value: string): LookupTable {
     const table = new LookupTable();
@@ -106,6 +109,11 @@ export class LookupTable {
         const found = searchLessOrEqual(this.numbered, (entry) => (wanted < entry.key ? -1 : wanted > entry.key ? 1 : 0));
         return found === undefined ? this.defaultValue() : found.value;
       }
+      case 'regex': {
+        const wanted = String(key);
+        const found = this.patterns.find((entry) => entry.regex.exec(wanted, 0) !== null);
+        return found === undefined ? this.defaultValue() : found.value;
+      }
       default: return this.defaultValue();
     }
   }
@@ -128,10 +136,11 @@ export class LookupTable {
       return false;
     }
     const type = jsonGetString(record(root)?.type) ?? 'string';
+    const valueKey = type === 'regex' ? 'tag' : 'value';
     for (const row of table) {
-      const value = field(row, 'value');
+      const value = field(row, valueKey);
       if (value === undefined || value === null) {
-        log.error(`'${type}' lookup table named: '${name}' has record(s) without 'value' field`, RS_RET.INVALID_VALUE);
+        log.error(`'${type}' lookup table named: '${name}' has record(s) without '${valueKey}' field`, RS_RET.INVALID_VALUE);
         return false;
       }
     }
@@ -140,7 +149,23 @@ export class LookupTable {
       log.error(`'${kind}' lookup table named: '${name}' has record(s) without 'index' field`, RS_RET.INVALID_VALUE);
       return false;
     };
-    const rows = table.map((row) => ({ index: field(row, 'index'), value: jsonGetString(field(row, 'value')) ?? '' }));
+    const rows = table.map((row) => ({ index: field(row, 'index'), value: jsonGetString(field(row, valueKey)) ?? '', pattern: field(row, 'regex') }));
+    const numberedRows = (kind: string): Array<{ key: number; value: string }> | null => {
+      const indexed: Array<{ key: number; value: string }> = [];
+      for (const row of rows) {
+        if (row.index === undefined || row.index === null) {
+          noIndex(kind);
+          return null;
+        }
+        const index = jsonGetInt64(row.index);
+        if (index < 0 || index > UINT32_MAX) {
+          log.error(`'${kind}' lookup table name: '${name}' has index '${index}' outside uint32 range`, RS_RET.INVALID_VALUE);
+          return null;
+        }
+        indexed.push({ key: index, value: row.value });
+      }
+      return indexed;
+    };
     if (type === 'string') {
       for (const row of rows) if (row.index === undefined || row.index === null) return noIndex('string');
       this.entries = rows.map((row) => ({ key: jsonGetString(row.index) ?? '', value: row.value }));
@@ -150,8 +175,8 @@ export class LookupTable {
       return true;
     }
     if (type === 'array') {
-      for (const row of rows) if (row.index === undefined || row.index === null) return noIndex('array');
-      const indexed = rows.map((row) => ({ key: jsonGetInt(row.index) >>> 0, value: row.value }));
+      const indexed = numberedRows('array');
+      if (indexed === null) return false;
       indexed.sort((a, b) => a.key - b.key);
       let previous = 0;
       indexed.forEach((entry, position) => {
@@ -172,11 +197,33 @@ export class LookupTable {
       return true;
     }
     if (type === 'sparseArray') {
-      for (const row of rows) if (row.index === undefined || row.index === null) return noIndex('sparseArray');
-      this.numbered = rows.map((row) => ({ key: jsonGetInt(row.index) >>> 0, value: row.value }));
+      const indexed = numberedRows('sparseArray');
+      if (indexed === null) return false;
+      this.numbered = indexed;
       this.numbered.sort((a, b) => a.key - b.key);
       this.kind = 'sparseArray';
       this.keyType = 'uint';
+      return true;
+    }
+    if (type === 'regex') {
+      const patterns: Array<{ regex: CompiledEre; value: string }> = [];
+      for (const row of rows) {
+        if (row.pattern === undefined || row.pattern === null) {
+          log.error(`'regex' lookup table named: '${name}' has record(s) without required fields`, RS_RET.INVALID_VALUE);
+          return false;
+        }
+        const source = jsonGetString(row.pattern) ?? '';
+        try {
+          patterns.push({ regex: compileEre(source, false), value: row.value });
+        } catch (error) {
+          if (!(error instanceof PosixRegexError)) throw error;
+          log.error(`error compiling regex '${source}' in lookup table '${name}': ${error.message}`, RS_RET.INVALID_VALUE);
+          return false;
+        }
+      }
+      this.patterns = patterns;
+      this.kind = 'regex';
+      this.keyType = 'string';
       return true;
     }
     log.error(`lookup table named: '${name}' uses unupported type: '${type}'`, RS_RET.INVALID_VALUE);
@@ -196,6 +243,10 @@ export function readLookupFile(files: LookupFiles, name: string, filename: strin
   const content = files.read(filename);
   if (content === null) {
     log.error(`lookup table file '${filename}' could not be opened`, RS_RET.FILE_NOT_FOUND, 'EACCES');
+    return null;
+  }
+  if (content.length === 0) {
+    log.error(`lookup table file '${filename}' is empty`, RS_RET.JSON_PARSE_ERR);
     return null;
   }
   const root = parseJsonC(content);

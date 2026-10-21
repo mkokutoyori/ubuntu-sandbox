@@ -765,6 +765,10 @@ export class ConfigLoader implements ConfigSink {
     const name = stringParam(values, 'name');
     const file = stringParam(values, 'file');
     if (name === undefined || file === undefined) return;
+    if (this.findLookupTable(name) !== undefined) {
+      this.log.error(`lookup_table: duplicate name '${name}' in current config set`, RS_RET.CONFIG_ERROR);
+      return;
+    }
     const table = new LookupRef(
       name, file, this.options.host.files,
       { error: (text, code, errno) => this.runtimeSink.error(text, code, errno), info: (text) => this.runtimeSink.info(text) },

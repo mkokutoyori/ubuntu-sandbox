@@ -2,9 +2,9 @@
  * Probe — lookup_table(), lookup() and reload_lookup_table() of rsyslog 8.2610.0, the version the machine reports
  * (runtime/lookup.c and grammar/rainerscript.c of that source: string, array and sparseArray tables, nomatch, the
  * version / type / index / value checks and their messages, the table reloaded on HUP or by reload_lookup_table()
- * on its own thread, a table stubbed when its reload fails, "TABLE-NOT-FOUND" for an unknown table). Not carried
- * over from 8.2608: regex tables, the uint32 range check, the empty-file message and the duplicate-name refusal do
- * not exist in 8.2112. json-c leniencies kept: comments, single quotes, case-insensitive literals, data after the
+ * on its own thread, a table stubbed when its reload fails, "TABLE-NOT-FOUND" for an unknown table). Regex tables, the
+ * uint32 range check, the empty-file message and the duplicate-name refusal of 8.2608 are probed in
+ * rsyslog-lookup-table-8-2608.test.ts. json-c leniencies kept: comments, single quotes, case-insensitive literals, data after the
  * first value. Not kept: trailing commas.
  *
  * Measured against the base commit: the object was accepted and ignored, lookup() answered an unknown function and
@@ -101,7 +101,7 @@ describe('lookup table errors', () => {
 
   it('a file that is not JSON, and an empty file', () => {
     expect(load('{ nope')).toContain("lookup table file '/etc/t.json' json parsing error");
-    expect(load('')).toContain("lookup table file '/etc/t.json' json parsing error");
+    expect(load('')).toContain("lookup table file '/etc/t.json' is empty");
   });
 
   it('a missing version is reported but the table is still built', () => {
@@ -112,7 +112,7 @@ describe('lookup table errors', () => {
 
   it('an unsupported version, type or table definition', () => {
     expect(load(JSON.stringify({ version: 2, table: [] }))).toContain("lookup table named: 't' uses unsupported version: 2");
-    expect(load(JSON.stringify({ version: 1, type: 'regex', table: [] }))).toContain("lookup table named: 't' uses unupported type: 'regex'");
+    expect(load(JSON.stringify({ version: 1, type: 'bogus', table: [] }))).toContain("lookup table named: 't' uses unupported type: 'bogus'");
     expect(load(JSON.stringify({ version: 1, table: 'x' }))).toContain("lookup table named: 't' has invalid table definition");
   });
 
