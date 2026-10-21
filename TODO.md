@@ -3284,3 +3284,17 @@ imtcp (`compression.*`, `framing.delimiter.regex`, `multiline`, `networknamespac
 `starvationprotection.maxreads`, `streamdriver.crlfile`, `streamdriver.tlsrevocationcheck`, `workerthreads`), imudp
 (`listenportfilename`, schedulingpolicy/priority a verifier). Chacun est soit retire (8.2112.0 le refuse), soit garde avec la
 preuve qu'il existe dans cette version. `action.externalstate.file` est lu et stocke sans effet visible : a trancher dans le meme passage.
+
+### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
+Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
+`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
+(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
+Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
+System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
+TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
+(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
+`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
+8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
+hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
+`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
+le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
