@@ -10,11 +10,12 @@
  * gardent le seul execve/openat.
  *
  * Mesure avant : `autrace /usr/bin/cat f` ne voyait que l'execve et l'openat ; une regle sur /etc/ld.so.cache ne
- * se declenchait jamais (8 cas du fichier tombaient avant le rejeu de cat, ls, whoami, hostname, uname). Ajoute ensuite
- * stat, head, tail, wc, md5sum, sha256sum, et le repertoire courant dans le CWD des enregistrements du bus (il valait
- * toujours « / ») : ces 2 cas tombent avec src/network remis avant cet ajout ; les 8 autres passent dans les deux
- * etats, dont le temoin (une surveillance -w ne declenche qu'un enregistrement, sans rejeu) et « un fichier absent
- * n'est pas rejoue », qui bornent les cas qui rejouent. lseek en fin de fichier suit la taille simulee (tail).
+ * se declenchait jamais (8 cas du fichier tombaient avant le rejeu de cat, ls, whoami, hostname, uname). Un second
+ * ajout (stat, head, tail, wc, md5sum, sha256sum, repertoire courant dans le CWD) en a fait tomber 2. Ce troisieme
+ * ajout (fichier plus gros que le tampon lu en plusieurs appels ; chaque operande de cat ecrit sa propre taille, un
+ * fichier vide n'ecrit rien) en fait tomber 2 avec src/network remis avant ; les 10 autres passent dans les deux
+ * etats, dont le temoin (une surveillance -w ne declenche qu'un enregistrement) et « un fichier absent n'est pas
+ * rejoue », qui bornent les cas qui rejouent. lseek en fin de fichier suit la taille simulee (tail).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -116,6 +117,22 @@ describe('program syscall traces', () => {
     await pc.executeCommand('auditctl -a always,exit -F arch=b64 -S openat -F path=/etc/ld.so.cache -k cwdkey');
     await pc.executeCommand('cd /etc && cat hostname');
     expect(await pc.executeCommand('ausearch -k cwdkey -i | grep -o "cwd=[^ ]*"')).toBe('cwd=/etc');
+  });
+
+  it('a file larger than the buffer is read in several calls, each written out as read', async () => {
+    const pc = await rootHost();
+    const vfs = (pc as unknown as { executor: { vfs: { writeFile(path: string, content: string, uid: number, gid: number, umask: number): void } } }).executor.vfs;
+    vfs.writeFile('/tmp/big', 'z'.repeat(300000), 0, 0, 0o022);
+    const text = await records(pc, pidOf(await pc.executeCommand('autrace /usr/bin/cat /tmp/big')));
+    expect([...text.matchAll(/syscall=read success=yes exit=(\d+) a0=0x3 .* a2=0x20000/g)].map((m) => m[1])).toEqual(['131072', '131072', '37856', '0']);
+    expect([...text.matchAll(/syscall=write success=yes exit=(\d+) a0=0x1 /g)].map((m) => m[1])).toEqual(['131072', '131072', '37856']);
+  });
+
+  it('each operand of cat is written with its own size, and an empty file writes nothing', async () => {
+    const pc = await rootHost();
+    await pc.executeCommand('printf "a" > /tmp/one; printf "bbb" > /tmp/three; : > /tmp/empty');
+    const text = await records(pc, pidOf(await pc.executeCommand('autrace /usr/bin/cat /tmp/one /tmp/three /tmp/empty')));
+    expect([...text.matchAll(/syscall=write success=yes exit=(\d+) a0=0x1 /g)].map((m) => m[1])).toEqual(['1', '3']);
   });
 
   it('a file that does not exist is not replayed', async () => {

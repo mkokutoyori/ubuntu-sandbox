@@ -87,7 +87,10 @@ export function replayProgram(trace: ProgramTrace, operands: readonly string[], 
   const descriptors = new Map<number, { path: string; offset: number; listed: boolean }>();
   const seekEnds = new Map<number, { recorded: number; actual: number }>();
   const replayed: ReplayedSyscall[] = [];
-  for (const [name, rawArgs, recorded, errno] of expandTrace(trace, operands)) {
+  const calls = expandTrace(trace, operands);
+  let lastRead = -1;
+  for (let index = 0; index < calls.length; index++) {
+    const [name, rawArgs, recorded, errno] = calls[index];
     const pathIndex = PATH_ARGUMENT[name];
     const path = pathIndex === undefined ? undefined : unquote(rawArgs[pathIndex] ?? '');
     const numeric: string[] = rawArgs.map((arg, index) => numberHex(arg) ?? pointerHex(`${name}#${index}#${path ?? arg}`));
@@ -111,10 +114,18 @@ export function replayProgram(trace: ProgramTrace, operands: readonly string[], 
         numeric[2] = count.toString(16);
         exit = Math.max(0, Math.min(content.length - open.offset, count));
         open.offset += exit;
+        lastRead = exit;
+        if (open.offset < content.length) {
+          const followedByWrite = calls[index + 1]?.[0] === 'write' && calls[index + 1][1][0] === '1';
+          const repeat: TracedCall[] = followedByWrite ? [calls[index], calls[index + 1]] : [calls[index]];
+          calls.splice(index + 1 + (followedByWrite ? 1 : 0), 0, ...repeat);
+        }
       }
     } else if (name === 'write' && fd === 1 && exit > 0) {
-      exit = world.stdoutLength;
+      const followsRead = calls[index - 1]?.[0] === 'read' && lastRead >= 0;
+      exit = followsRead ? lastRead : world.stdoutLength;
       numeric[2] = exit.toString(16);
+      if (exit === 0) continue;
     } else if (name === 'getdents64' && exit > 0) {
       const open = descriptors.get(fd);
       const entries = open === undefined ? null : world.listEntries(open.path);

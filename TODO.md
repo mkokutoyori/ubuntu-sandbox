@@ -3252,8 +3252,8 @@ Le binaire reel n'a pas pu etre lance (il exige l'ecriture de `/etc/audit`) : l'
 alors que le vrai auditd ignore SIGINT : il faut le tuer depuis une autre session ; le daemon, lui, continue ; (2) `autrace` et toute regle `exit` voient maintenant tous les appels systeme de `cat`, `ls <repertoire>`,
 `stat`/`head`/`tail`/`wc`/`md5sum`/`sha256sum <fichier>`, `whoami`, `hostname` et `uname` (rejeu de la trace strace du binaire reel, `audit/trace/ProgramTraces.generated.ts`,
 produit par `scripts/oracle/record_syscall_traces.py`) ; les autres commandes, `ls` sans operande ou avec option,
-et `exit_group` gardent le seul execve/openat projete ; les `read` sur un fichier plus gros que le tampon repetent
-le nombre d'appels de l'enregistrement ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
+et `exit_group` gardent le seul execve/openat projete (exit_group : le noyau l'ecrit par audit_free sans success ni
+exit, ce que ce conteneur ne permet pas de verifier) ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
 est indetermine dans le source) ; (4) un plugin dont le programme est un script recoit les evenements, mais l'interprete de scripts est synchrone : le
 script est relance une fois par evenement avec la ligne pour entree standard, sous le pid du processus plugin, de sorte
 que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
