@@ -395,10 +395,19 @@ class OmfileInstance implements ActionModuleInstance {
     handle.close();
   }
 
+  private failureCode(): number {
+    switch (this.current?.lastFailure) {
+      case 'disabled': return RS_RET.STREAM_DISABLED;
+      case 'no-size-limit-command': return RS_RET.NON_SIZELIMITCMD;
+      default: return RS_RET.DATAFAIL;
+    }
+  }
+
   createWorker(): ActionWorker {
     return {
       doAction: (args: ActionArguments, _message: RsyslogMessage) => this.write(args.strings[0] ?? '', args.strings[1] ?? ''),
       endTransaction: () => this.commit(),
+      failureCode: () => this.failureCode(),
       close: () => undefined,
     };
   }

@@ -33,6 +33,7 @@ export interface ActionWorker {
   beginTransaction?(): void;
   endTransaction?(): ActionOutcome;
   pauseAfterAction?(): number;
+  failureCode?(): number;
   close(): void;
 }
 
