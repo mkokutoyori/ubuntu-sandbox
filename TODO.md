@@ -3239,17 +3239,18 @@ alors que la RFC 6146 autorise de le mettre en file ; (3) aucune commande Cisco/
 documentation constructeur.
 
 
-### [auditd] ce que le demon ne fait pas encore : plugins audisp, binaire auditd, autrace
+### [auditd] ce que le demon ne fait pas encore : binaire auditd, autrace, plugins arbitraires
 `auditd.conf` est lu par un seul analyseur (`audit/daemon/AuditdConfig.ts`, port de `auditd-config.c`) et le demon
 applique au journal la rotation, `max_log_file_action`, les actions d'espace, ENRICHED, `log_group` et les signaux
-(`audit/daemon/AuditdLogWriter.ts`, port de `auditd-event.c`). Le binaire reel n'a pas pu etre lance (il exige
-l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2 et les chaines du binaire du paquet.
-**Reste** : (1) le dispatcher et les plugins de `/etc/audit/plugins.d` (`audisp-syslog`, `audisp-af_unix`,
-`plugin_dir`, `q_depth`, `overflow_action`, `max_restarts`) : `Number of active plugins` vaut toujours 0 dans
-`/var/run/auditd.state` ; (2) la commande `auditd` (`-f -l -n -s -c`) est inconnue du shell, seul le service existe ;
-(3) `autrace` est inconnu : le simulateur n'emet pas d'evenement SYSCALL pour un programme arbitraire, seulement
-pour les operations de fichier qu'il projette, de sorte qu'une regle `-S all -F pid=N` n'aurait presque rien a
-voir ; (4) les actions `EXEC`, `EMAIL`, `SINGLE` et `HALT` des seuils d'espace sont cablees (script lance, courrier
-dans `/var/mail`, isolation de la cible) mais aucune sonde ne les exerce encore ; (5) `hostResolves` de la
-validation de `action_mail_acct` repond toujours oui, le message « failed looking up host » n'est donc jamais emis ;
-(6) la queue et les modes `log_format = ENRICHED` n'utilisent pas encore `name_format` ≠ NONE dans une sonde.
+(`audit/daemon/AuditdLogWriter.ts`, port de `auditd-event.c`). Le dispatcher audisp (`audit/daemon/dispatch/`, port
+de `audispd`) charge `plugins.d`, lance `audisp-syslog` et `audisp-af_unix` comme processus enfants, les relance a
+leur mort et les arrete au SIGHUP ; les outils `ausearch`/`aureport` lisent un journal ENRICHED comme les binaires
+reels (1170 + 1259 cas enregistres). Le binaire reel `auditd` n'a pas pu etre lance (il exige l'ecriture de
+`/etc/audit`) : l'oracle est le source 3.1.2 et les chaines du binaire du paquet.
+**Reste** : (1) la commande `auditd` (`-f -l -n -s -c`) est inconnue du shell, seul le service existe ;
+(2) `autrace` est inconnu : le simulateur n'emet pas d'evenement SYSCALL pour un programme arbitraire, seulement
+pour les operations de fichier qu'il projette ; (3) les actions `EXEC`, `EMAIL`, `SINGLE` et `HALT` des seuils
+d'espace sont cablees mais aucune sonde ne les exerce encore ; (4) `hostResolves` de la validation de
+`action_mail_acct` repond toujours oui ; (5) `name_format` ≠ NONE n'a pas de sonde ; (6) un plugin dont le programme
+n'est ni `audisp-syslog` ni `audisp-af_unix` sort aussitot, et les clients de la socket `af_unix` ne sont pas
+modelises ; la file du dispatcher est synchrone (profondeur courante toujours 0).

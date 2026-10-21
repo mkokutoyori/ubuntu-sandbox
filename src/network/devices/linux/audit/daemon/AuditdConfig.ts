@@ -53,6 +53,7 @@ export type FileKind = 'file' | 'directory' | 'symlink' | 'other';
 
 export interface FileInfo {
   readonly kind: FileKind;
+  readonly ino?: number;
   readonly uid: number;
   readonly gid: number;
   readonly mode: number;
@@ -146,7 +147,7 @@ export function clearConfig(): AuditdConfig {
   };
 }
 
-interface NameValue {
+export interface NameValue {
   name: string | null;
   value: string | null;
   option: string | null;
@@ -631,7 +632,7 @@ function splitSpaces(buffer: string): string[] {
   return buffer.split(' ').filter((token) => token !== '');
 }
 
-function splitNameValue(buffer: string): { rc: number; nv: NameValue } {
+export function splitNameValue(buffer: string): { rc: number; nv: NameValue } {
   const nv: NameValue = { name: null, value: null, option: null };
   const tokens = splitSpaces(buffer);
   if (tokens.length === 0 || tokens[0].startsWith('#')) return { rc: 0, nv };
@@ -647,7 +648,7 @@ function splitNameValue(buffer: string): { rc: number; nv: NameValue } {
   return { rc: 0, nv };
 }
 
-function* readLines(content: string, file: string, messages: AuditMessage[], lineNumber: { value: number }): Generator<string> {
+export function* readConfigLines(content: string, file: string, messages: AuditMessage[], lineNumber: { value: number }): Generator<string> {
   let position = 0;
   let tooLong = false;
   while (position < content.length) {
@@ -726,7 +727,7 @@ export function loadAuditdConfig(fs: AuditdConfigFs, options: AuditdConfigOption
   const content = fs.readText(file) ?? '';
 
   const lineNumber = { value: 1 };
-  for (const buffer of readLines(content, file, messages, lineNumber)) {
+  for (const buffer of readConfigLines(content, file, messages, lineNumber)) {
     const { rc, nv } = splitNameValue(buffer);
     if (rc === 1) message(state, 'ERR', `Wrong number of arguments for line ${lineNumber.value} in ${file}`);
     else if (rc === 2) message(state, 'ERR', `Missing equal sign for line ${lineNumber.value} in ${file}`);

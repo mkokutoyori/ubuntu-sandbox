@@ -354,3 +354,24 @@ def gen_sessions(seed, n):
         elif kind == "end":
             logout()
     return "\n".join(lines) + "\n"
+
+ENRICH_USERS = {0: "root", 1100: "alice", 1101: "bob", 1102: "carol", 4294967295: "unset"}
+ENRICH_SYSCALLS = {257: "openat", 59: "execve", 87: "unlink", 2: "open", 82: "rename"}
+ENRICH_UID_FIELDS = {"uid", "auid", "euid", "suid", "fsuid", "ouid", "oauid", "old-auid", "iuid", "sauid", "obj_uid", "gid", "egid", "sgid", "fsgid", "ogid", "obj_gid", "inode_uid", "inode_gid"}
+ENRICH_ARCH = {"c000003e": "x86_64", "40000003": "i386"}
+
+def enrich_line(line):
+    import re
+    fields = re.findall(r"(?:^|[ '])([A-Za-z_][\w-]*)=([^ ']*)", line.split(": ", 1)[-1] if "): " in line else line)
+    out = []
+    for name, value in fields:
+        if name == "arch" and value in ENRICH_ARCH:
+            out.append("ARCH=%s" % ENRICH_ARCH[value])
+        elif name == "syscall" and value.isdigit() and int(value) in ENRICH_SYSCALLS:
+            out.append("SYSCALL=%s" % ENRICH_SYSCALLS[int(value)])
+        elif name in ENRICH_UID_FIELDS and value.isdigit() and int(value) in ENRICH_USERS:
+            out.append('%s="%s"' % (name.upper(), ENRICH_USERS[int(value)]))
+    return line + "\x1d" + " ".join(out) if out else line
+
+def enrich(text):
+    return "\n".join(enrich_line(l) for l in text.split("\n"))

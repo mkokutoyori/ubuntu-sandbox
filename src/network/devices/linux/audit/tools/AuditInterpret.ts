@@ -212,8 +212,49 @@ function needsEscaping(text: string, mode: EscapeMode): boolean {
   return false;
 }
 
+interface Interpretation {
+  readonly name: string;
+  readonly value: string;
+}
+
 export class Interpreter {
   private lastFanType = 2;
+  private interpretations: Interpretation[] | null = null;
+
+  freeInterpretations(): void {
+    this.interpretations = null;
+  }
+
+  loadInterpretations(buffer: string | null): boolean {
+    if (buffer === null) return false;
+    const loaded = this.interpretations ?? [];
+    this.interpretations = loaded;
+    if (buffer.startsWith('SADDR=')) {
+      const open = buffer.indexOf('{', 6);
+      if (open >= 0 && buffer.indexOf('}', open) >= 0) {
+        loaded.push({ name: 'saddr', value: buffer.slice(open) });
+        return true;
+      }
+      this.interpretations = null;
+      return false;
+    }
+    for (const token of buffer.split(' ')) {
+      const equals = token.indexOf('=');
+      if (token === '' || equals < 0) continue;
+      loaded.push({ name: token.slice(0, equals).toLowerCase(), value: token.slice(equals + 1) });
+    }
+    if (loaded.length === 0) {
+      this.interpretations = null;
+      return false;
+    }
+    return true;
+  }
+
+  lookupInterpretation(name: string): string | null {
+    const found = this.interpretations?.find((entry) => entry.name === name);
+    if (found === undefined) return null;
+    return name.includes('id') ? printEscaped(found.value) : found.value;
+  }
 
   constructor(private readonly host: InterpretHost) {}
 
@@ -763,6 +804,10 @@ export class Interpreter {
   }
 
   doInterpretation(type: string, id: Idata, mode: EscapeMode): string | null {
+    const recorded = this.interpretations?.find((entry) => entry.name === id.name)?.value;
+    if (recorded !== undefined && !recorded.startsWith('unknown-')) {
+      return type === 'UID' || type === 'GID' ? printEscaped(recorded) : recorded;
+    }
     let out: string | null;
     switch (type) {
       case 'UID': out = this.printUid(id.val, 10); break;

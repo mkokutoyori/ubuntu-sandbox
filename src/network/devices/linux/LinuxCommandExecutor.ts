@@ -1455,6 +1455,13 @@ export class LinuxCommandExecutor {
       localTime: (seconds) => this.auditStateTime(seconds),
       kernelRelease: () => this.identity.kernel.release,
       loadRules: () => { this.handleAugenrules(['--load']); },
+      plugins: {
+        listDirectory: (path) => this.vfs.listDirectory(path)?.filter((entry) => entry.inode.type === 'file').map((entry) => entry.name) ?? null,
+        spawn: (command, ppid) => this.processMgr.spawn({ command, user: 'root', uid: 0, gid: 0, ppid }).pid,
+        isAlive: (pid) => pid > 0 && this.processMgr.get(pid) !== undefined,
+        terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
+        libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
+      },
       trapSignals: (pid, signals) => {
         for (const signal of signals) this.processMgr.trapSignal(pid, signal as Signal, () => undefined);
       },

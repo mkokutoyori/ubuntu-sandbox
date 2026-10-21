@@ -13,6 +13,7 @@ import {
   ExitSignal, ToolOutput, formatDateTime, type AuditToolHost, type ToolResult,
 } from './AuditToolHost';
 import { SYSCALL_TABLES } from './AuditSyscallTables';
+import { Interpreter } from './AuditInterpret';
 import { toInt32 } from './AuditCString';
 import { safePrintString, ttyDataText, type EscapeMode } from './AuditPrint';
 
@@ -162,11 +163,13 @@ class Aureport {
   private assembler!: AuditEventAssembler;
   private veryLastSec = 0;
   private veryLastMilli = 0;
+  private readonly interpreter: Interpreter;
 
   constructor(host: AuditToolHost, out: ToolOutput) {
     this.host = host;
     this.out = out;
     this.time = new AuditTimeArgs(host, out);
+    this.interpreter = new Interpreter({ userName: (uid) => host.userName(uid), groupName: (gid) => host.groupName(gid), protocolName: () => null });
     this.opts = {
       userFile: null, forceLogs: false, noConfig: false, reportType: 'unset', detail: 'unset', interpret: false,
       failed: 'both', confAct: 'neither', escape: 'tty', nodes: null, eoeTimeout: 0, flags: defaultSearchFlags(),
@@ -441,12 +444,16 @@ class Aureport {
     const signed = toInt32(uid);
     if (!this.opts.interpret) return String(signed);
     if (uid === UID_UNSET) return 'unset';
+    const interpreted = this.interpreter.lookupInterpretation('auid');
+    if (interpreted !== null) return interpreted;
     const name = this.host.userName(uid);
     return name ?? `unknown(${signed})`;
   }
 
   private syscallName(e: AuditEvent): string {
     if (!this.opts.interpret) return String(e.s.syscall);
+    const interpreted = this.interpreter.lookupInterpretation('syscall');
+    if (interpreted !== null) return interpreted;
     const table = machineTable(e.s.arch);
     if (!table) return '?';
     const sys = table[e.s.syscall];
@@ -1091,7 +1098,9 @@ class Aureport {
 
   private processEvent(e: AuditEvent): void {
     if (this.scan(e)) {
+      if (e.count === 1 || e.head?.type === AUDIT.SYSCALL) this.interpreter.loadInterpretations(e.head?.interp ?? null);
       if (this.perEventProcessing(e)) this.found = true;
+      this.interpreter.freeInterpretations();
     }
   }
 

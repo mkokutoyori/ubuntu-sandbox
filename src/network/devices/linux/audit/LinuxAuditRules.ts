@@ -2,6 +2,7 @@ import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_PATHS } from './LinuxAuditLog';
 import { SHIPPED_AUDITD_CONF } from './daemon/AuditdConfFile';
+import { SHIPPED_AUDISP_AF_UNIX_CONF, SHIPPED_AUDISP_SYSLOG_CONF } from './daemon/AudispConfFiles';
 import { AUDIT_UNSET, encodeValue, ttyForAudit, userMessageFields } from './AuditUserMessage';
 import {
   X86_64_ARCH, decodeRule, fieldsMatch, maskCoversSyscall, pathCriteriaMatch, permissionBit,
@@ -83,6 +84,16 @@ export class LinuxAuditRules {
   ) {
     this.vfs.mkdirp('/etc/audit', 0o750, 0, 0);
     this.vfs.mkdirp('/etc/audit/rules.d', 0o750, 0, 0);
+    this.vfs.mkdirp('/etc/audit/plugins.d', 0o750, 0, 0);
+    if (!this.vfs.exists('/etc/audit/plugins.d/syslog.conf')) {
+      this.vfs.writeFile('/etc/audit/plugins.d/syslog.conf', SHIPPED_AUDISP_SYSLOG_CONF, 0, 0, 0o137);
+    }
+    if (!this.vfs.exists('/etc/audit/plugins.d/af_unix.conf')) {
+      this.vfs.writeFile('/etc/audit/plugins.d/af_unix.conf', SHIPPED_AUDISP_AF_UNIX_CONF, 0, 0, 0o137);
+    }
+    for (const program of ['audisp-syslog', 'audisp-af_unix']) {
+      if (!this.vfs.exists(`/usr/sbin/${program}`)) this.vfs.createFileAt(`/usr/sbin/${program}`, '#!/bin/sh\n', 0o755, 0, 0);
+    }
     if (!this.vfs.exists(AUDIT_PATHS.config)) {
       this.vfs.writeFile(AUDIT_PATHS.config, SHIPPED_AUDITD_CONF, 0, 0, 0o137);
     }

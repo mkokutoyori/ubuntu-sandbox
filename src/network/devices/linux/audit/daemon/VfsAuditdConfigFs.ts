@@ -18,7 +18,7 @@ export function vfsAuditdConfigFs(
     const inode = vfs.resolveInode(path, follow);
     if (inode === null) return { ok: false, errno: 'ENOENT' };
     const kind = inode.type === 'file' ? 'file' : inode.type === 'directory' ? 'directory' : inode.type === 'symlink' ? 'symlink' : 'other';
-    return { ok: true, info: { kind, uid: inode.uid, gid: inode.gid, mode: inode.permissions & MODE_MASK } };
+    return { ok: true, info: { kind, ino: inode.id, uid: inode.uid, gid: inode.gid, mode: inode.permissions & MODE_MASK } };
   };
   return {
     stat(path, followLinks) {

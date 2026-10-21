@@ -14,6 +14,8 @@ import {
 } from './daemon/AuditdConfig';
 import { formatEnriched, formatRaw } from './daemon/AuditdFormat';
 import { AuditdLogWriter, type AuditdLogEnv } from './daemon/AuditdLogWriter';
+import { AudispDispatcher, type DispatcherSettings } from './daemon/dispatch/AudispDispatcher';
+import { AUDISP_PROGRAMS } from './daemon/dispatch/AudispPlugins';
 
 export type AuditdState = 'running' | 'stopped' | 'suspended';
 
@@ -36,12 +38,20 @@ export interface AuditdDeps {
   kernelRelease: () => string;
   loadRules: () => void;
   trapSignals: (pid: number, signals: readonly string[]) => void;
+  plugins: {
+    listDirectory: (path: string) => readonly string[] | null;
+    spawn: (command: string, ppid: number) => number;
+    isAlive: (pid: number) => boolean;
+    terminate: (pid: number) => void;
+    libcSyslog: (priorityWithFacility: number, ident: string, pid: number, text: string) => void;
+  };
 }
 
 export class LinuxAuditDaemon {
   private state: AuditdState = 'stopped';
   private config: AuditdConfig = clearConfig();
   private writer: AuditdLogWriter | null = null;
+  private dispatcher: AudispDispatcher | null = null;
   private readonly subs: Unsubscribe[] = [];
 
   constructor(
@@ -146,6 +156,9 @@ export class LinuxAuditDaemon {
     this.writer = writer;
     this.state = 'running';
     this.deps.auditLog.setSink((line) => this.dispatch(line));
+    this.dispatcher = this.newDispatcher(config);
+    this.dispatcher.init();
+    this.deps.syslog('NOTICE', `Init complete, auditd ${AUDIT_VERSION} listening for events (startup state enable)`);
     this.registerWithKernel();
     this.deps.trapSignals(this.pid(), TRAPPED_SIGNALS);
     this.deps.auditLog.record('DAEMON_START', {
@@ -164,6 +177,37 @@ export class LinuxAuditDaemon {
     this.syncState();
   }
 
+  private dispatcherSettings(config: AuditdConfig): DispatcherSettings {
+    return { qDepth: config.qDepth, overflowAction: config.overflowAction, maxRestarts: config.maxRestarts, pluginDir: config.pluginDir };
+  }
+
+  private newDispatcher(config: AuditdConfig): AudispDispatcher {
+    const { vfs, plugins } = this.deps;
+    const programName = (path: string): string | null => {
+      const real = vfs.realpath(path);
+      return real === null ? null : real.slice(real.lastIndexOf('/') + 1);
+    };
+    return new AudispDispatcher({
+      fs: this.deps.configFs,
+      listDirectory: plugins.listDirectory,
+      syslog: (priority, text) => this.deps.syslog(priority, text),
+      spawn: (plugin) => plugins.spawn([plugin.path ?? '', ...plugin.args].join(' '), this.pid()),
+      isAlive: plugins.isAlive,
+      terminate: plugins.terminate,
+      programFor: (path) => {
+        const name = programName(path);
+        return name === null ? null : AUDISP_PROGRAMS[name] ?? null;
+      },
+      startProgram: (program, plugin, pid) => program(plugin.args, {
+        pid,
+        vfs,
+        libcSyslog: (priority, ident, text) => plugins.libcSyslog(priority, ident, pid, text),
+        localTime: this.deps.localTime,
+        interpreter: this.deps.interpreter,
+      }),
+    }, this.dispatcherSettings(config));
+  }
+
   private syncState(): void {
     if (this.writer === null) return;
     this.state = this.writer.isSuspended ? 'suspended' : 'running';
@@ -178,6 +222,7 @@ export class LinuxAuditDaemon {
       ? formatEnriched(line, config, this.deps.interpreter())
       : formatRaw(line, config);
     writer.write(formatted);
+    this.dispatcher?.dispatch(config.logFormat === 'ENRICHED' ? formatted : line);
     this.syncState();
   }
 
@@ -205,6 +250,8 @@ export class LinuxAuditDaemon {
       subj: 'unconfined',
       res: 'success',
     });
+    this.dispatcher?.shutdown();
+    this.dispatcher = null;
     this.state = 'stopped';
     this.deps.rules.kernel.status.pid = 0;
     this.deps.auditLog.setSink(null);
@@ -221,6 +268,7 @@ export class LinuxAuditDaemon {
     this.deps.syslog('NOTICE', `config change requested by pid=${this.pid()} auid=${AUDIT_UNSET} subj=?`);
     this.writer.reconfigure(loaded.config);
     this.config = this.writer.settings;
+    this.dispatcher?.reconfigure(this.dispatcherSettings(this.config));
     this.deps.auditLog.record('DAEMON_CONFIG', {
       op: 'reconfigure',
       state: 'changed',
@@ -258,12 +306,7 @@ export class LinuxAuditDaemon {
       `current time = ${this.deps.localTime(seconds)}`,
       `process priority = ${-this.config.priorityBoost}`,
       ...this.writer.stateLines(),
-      'Number of active plugins = 0',
-      'current plugin queue depth = 0',
-      'max plugin queue depth used = 0',
-      `plugin queue size = ${this.config.qDepth}`,
-      'plugin queue overflow detected = no',
-      'plugin queueing suspended = no',
+      ...(this.dispatcher?.stateLines() ?? []),
     ];
     this.deps.vfs.writeFile(AUDITD_STATE_FILE, `${lines.join('\n')}\n`, 0, 0, 0o137);
   }
