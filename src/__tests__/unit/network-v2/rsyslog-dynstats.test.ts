@@ -108,7 +108,7 @@ describe('dyn_stats', () => {
     host.advance(60_000);
     const buckets = report(host).filter((line) => line.startsWith('msgs:'));
     expect(buckets).toEqual(['msgs: origin=dynstats.bucket alice=1 ', 'msgs: origin=dynstats.bucket alice=1 ', 'msgs: origin=dynstats.bucket ']);
-    const globals = report(host).filter((line) => line.startsWith('global:'));
+    const globals = report(host).filter((line) => line.startsWith('global: origin=dynstats'));
     expect(globals[2]).toContain('msgs.purge_triggered=1 ');
   });
 
@@ -121,14 +121,14 @@ describe('dyn_stats', () => {
     host.advance(60_000);
     const last = report(host);
     expect(last.filter((line) => line.startsWith('msgs:')).pop()).toBe('msgs: origin=dynstats.bucket alice=2 ');
-    expect(last.filter((line) => line.startsWith('global:')).pop()).toContain('msgs.new_metric_add=1 msgs.no_metric=0 msgs.metrics_purged=0 ');
+    expect(last.filter((line) => line.startsWith('global: origin=dynstats')).pop()).toContain('msgs.new_metric_add=1 msgs.no_metric=0 msgs.metrics_purged=0 ');
   });
 
   it('metrics left in the older generation are purged at the next reset, and counted', () => {
     const { host, lab } = start(`${stats()}dyn_stats(name="msgs" resettable="off" unusedMetricLife="100")\n${countOnProgram('msgs')}`);
     submitLocal(lab, MSG('alice'));
     for (let step = 0; step < 5; step++) host.advance(60_000);
-    expect(report(host).filter((line) => line.startsWith('global:')).pop()).toContain('msgs.metrics_purged=1 ');
+    expect(report(host).filter((line) => line.startsWith('global: origin=dynstats')).pop()).toContain('msgs.metrics_purged=1 ');
   });
 
   it('several buckets are reported in declaration order, each with its own global counters', () => {

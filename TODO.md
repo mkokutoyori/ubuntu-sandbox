@@ -3259,13 +3259,15 @@ script est relance une fois par evenement avec la ligne pour entree standard, so
 que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
 re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connecter (client) : `nc -lU` et `nc -uU` restent refuses, et seul `audisp-af_unix` ecoute une socket UNIX en flux ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.
 
-### [rsyslog] `percentile_stats` et `percentile_observe()` sont acceptes puis ignores
-`lookup_table`, `lookup()` et `reload_lookup_table()` sont portes de rsyslog 8.2112.0 (`engine/LookupTable.ts`).
-`statsobj.c` et le module `impstats` sont portes (`engine/Statistics.ts`, `modules/Impstats.ts`) : files, actions, imuxsock,
-imudp, imtcp, omfwd (`bytes.sent`) et le cache dynafile d'omfile publient leurs compteurs. `dyn_stats` et `dyn_inc()` sont portes (`engine/DynStats.ts`). Reste a porter : l'objet `percentile_stats`, accepte par le
-chargeur sans effet, et la fonction `percentile_observe()` (`runtime/perctile_stats.c`, `perctile_ringbuf.c`). Ce que `impstats` ne publie pas
-encore : les objets `imklog`, `immark` n'en ont pas dans 8.2112.0 ; les statistiques par expediteur (`_sender_stat`,
-`global(senders.keepTrack)`) ; `resource-usage` ne fournit que utime (temps CPU du processus), maxrss (taille residente
-courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock, oublock, nvcsw et nivcsw valent 0 faute de
-comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du source les met aussi a 0) ;
-`imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone.
+### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
+`statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0
+(`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
+`impstats` ne publie pas les statistiques par expediteur (`_sender_stat`, `global(senders.keepTrack)`) ; `resource-usage` ne fournit que
+utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
+oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
+source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
+omusrmsg n'ont pas d'objet de statistiques dans 8.2112.0. Ecarts assumes avec le source : un `percentile_stats` sans
+`windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
+echoue sur un assert) ; le message « statname ... truncated » du source imprime un tampon de pile non initialise, ici le nom fautif ;
+le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
+deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.

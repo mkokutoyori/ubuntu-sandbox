@@ -30,6 +30,7 @@ export interface EvaluationEnvironment {
   environment(name: string): string | undefined;
   random(): number;
   warn(message: string): void;
+  error(message: string): void;
 }
 
 export interface FunctionSignature {
@@ -229,6 +230,10 @@ export interface LookupTableReference {
 
 export interface DynStatsReference {
   inc(metric: string): number;
+}
+
+export interface PercentileStatsReference {
+  observe(key: string, value: bigint): number;
 }
 
 export interface CompiledRegex {
@@ -470,6 +475,21 @@ const SIGNATURES: FunctionSignature[] = [
       const bucket = p as DynStatsReference | undefined;
       if (bucket === undefined) return num(-1);
       return num(bucket.inc(textOf(a[1], m, e)));
+    },
+  },
+  {
+    name: 'percentile_observe', min: 3, max: 3,
+    call: (a, p, m, e) => {
+      const bucket = p as PercentileStatsReference | undefined;
+      if (bucket === undefined) return num(-1);
+      const key = textOf(a[1], m, e);
+      const observed = evaluate(a[2], m, e);
+      const parsed = valueToNumber(observed);
+      if (!parsed.ok) {
+        e.error(`rainerscript: percentile_obs - didn't get a valid number: ${valueToString(observed)}\n`);
+        return num(0);
+      }
+      return num(bucket.observe(key, BigInt(Math.trunc(parsed.n))));
     },
   },
   {

@@ -172,6 +172,7 @@ export class RsyslogEngine implements InputSubmitter {
       environment: (name) => settings.environment[name] ?? this.host.environment(name),
       random: () => Math.floor(this.host.random() * 0x7fffffff),
       warn: (text) => this.internal(4, -1, text),
+      error: (text) => this.runtimeLog.log(3, RS_RET.CONF_PARSE_ERROR, `error during config processing: ${text}`),
     };
   }
 

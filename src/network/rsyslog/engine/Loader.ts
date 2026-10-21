@@ -23,6 +23,7 @@ import { LocalClock } from './LocalClock';
 import { RateLimiter } from './RateLimiter';
 import { SenderResolver } from './SenderResolver';
 import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
+import { PercentileStatsRegistry } from './PercentileStats';
 import { Statistics } from './Statistics';
 import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type QueueSettings } from './Settings';
 
@@ -93,6 +94,11 @@ const DYN_STATS_PARAMS: readonly ParamDescriptor[] = [
   { name: 'maxCardinality', type: 'positive' }, { name: 'unusedMetricLife', type: 'positive' },
 ];
 
+const PERCENTILE_STATS_PARAMS: readonly ParamDescriptor[] = [
+  { name: 'name', type: 'string', required: true }, { name: 'delimiter', type: 'string' },
+  { name: 'percentiles', type: 'array' }, { name: 'windowSize', type: 'positive' },
+];
+
 const TIMEZONE_PARAMS: readonly ParamDescriptor[] = [{ name: 'id', type: 'string', required: true }, { name: 'offset', type: 'string', required: true }];
 
 const INCLUDE_PARAMS: readonly ParamDescriptor[] = [{ name: 'file', type: 'string' }, { name: 'text', type: 'string' }, { name: 'mode', type: 'word' }];
@@ -161,7 +167,8 @@ export class ConfigLoader implements ConfigSink {
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
       rateLimits: new Map(), lookupTables: [], statistics,
-      dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), info: (text, code) => this.runtimeSink.info(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
+      dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), info: (text, code) => this.runtimeSink.info(text, code) }),
+      percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -592,8 +599,7 @@ export class ConfigLoader implements ConfigSink {
       case 'ratelimit': this.processRateLimit(object); break;
       case 'lookup_table': this.processLookupTable(object); break;
       case 'dyn_stats': this.processDynStats(object); break;
-      case 'percentile_stats':
-        break;
+      case 'percentile_stats': this.processPercentileStats(object); break;
       default: return;
     }
     reportUnused(object.params, (message) => this.reportAt(message, object.location));
@@ -779,6 +785,25 @@ export class ConfigLoader implements ConfigSink {
       resettable: resettable === undefined ? true : resettable !== 0,
       maxCardinality: numberParam(values, 'maxCardinality') ?? DEFAULT_MAX_CARDINALITY,
       unusedMetricLifeSeconds: numberParam(values, 'unusedMetricLife') ?? DEFAULT_UNUSED_METRIC_LIFE_SECONDS,
+    });
+  }
+
+  private processPercentileStats(object: ConfigObject): void {
+    const values = getParams(object.params, PERCENTILE_STATS_PARAMS, this.paramEnvironment());
+    if (values === null) return;
+    const name = stringParam(values, 'name');
+    const requested = arrayParam(values, 'percentiles');
+    if (name === undefined || requested === undefined || requested.length === 0) return;
+    const windowSize = numberParam(values, 'windowSize') ?? 0;
+    if (windowSize < 2) {
+      this.log.error(`percentile_stats: bucket '${name}' needs a windowsize of at least 2 - bucket not created`, RS_RET.CONFIG_ERROR);
+      return;
+    }
+    this.config.percentileStats.create({
+      name,
+      delimiter: stringParam(values, 'delimiter') ?? '.',
+      percentiles: requested.map((text) => (Number.parseInt(text, 10) || 0) & 0xff),
+      windowSize,
     });
   }
 
@@ -1086,6 +1111,21 @@ export class ConfigLoader implements ConfigSink {
     }
     if (name === 'lookup' && expression.k === 'func') this.resolveLookupFunction(expression, location);
     if (name === 'dyn_inc' && expression.k === 'func') this.resolveDynStatsFunction(expression, location);
+    if (name === 'percentile_observe' && expression.k === 'func') this.resolvePercentileFunction(expression, location);
+  }
+
+  private resolvePercentileFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
+    const first = expression.args[0];
+    if (first.k !== 'str') {
+      this.reportAt('percentile-stats bucket-name (param 1) of perctile-stats manipulating functions like percentile_observe must be a constant string', location);
+      return;
+    }
+    const bucket = this.config.percentileStats.find(first.value);
+    if (bucket === undefined) {
+      this.reportAt(`perctile-stats bucket '${first.value}' not found`, location);
+      return;
+    }
+    bindFunctionData(expression, bucket);
   }
 
   private resolveDynStatsFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
