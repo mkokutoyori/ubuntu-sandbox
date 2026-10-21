@@ -133,6 +133,8 @@ import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { runAuditctl } from './audit/tools/AuditctlTool';
+import { runAuditdCommand } from './audit/tools/AuditdCommandTool';
+import { runAutrace, type AutraceHost } from './audit/tools/AutraceTool';
 import { runAugenrules } from './audit/tools/AugenrulesTool';
 import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
 import { LinuxAuditRules } from './audit/LinuxAuditRules';
@@ -302,7 +304,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'ausyscall', 'aulast', 'aulastlog', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'ausyscall', 'aulast', 'aulastlog', 'aureport', 'auditctl', 'auditd', 'autrace', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -1464,6 +1466,14 @@ export class LinuxCommandExecutor {
       },
       trapSignals: (pid, signals) => {
         for (const signal of signals) this.processMgr.trapSignal(pid, signal as Signal, () => undefined);
+      },
+      process: {
+        spawn: () => this.processMgr.spawn({ command: '/sbin/auditd', user: 'root', uid: 0, gid: 0, ppid: 1 }).pid,
+        exit: (pid) => {
+          if (this.processMgr.get(pid) === undefined) return;
+          this.processMgr.exit(pid, 0);
+          this.processMgr.reap(pid);
+        },
       },
     });
     // Keep the PAM password-policy config files coherent with the policy
@@ -5072,8 +5082,8 @@ export class LinuxCommandExecutor {
     const suidRoot = !!exeInode && (exeInode.permissions & 0o4000) !== 0 && exeInode.uid === 0;
     const euid = cur === 0 ? 0 : (suidRoot ? 0 : cur);
     return {
-      pid: this.shellPid ?? 1,
-      ppid: this.shellPpid ?? 1,
+      pid: this.currentBashPid() || 1,
+      ppid: this.processMgr.get(this.currentBashPid())?.ppid ?? this.shellPpid ?? 1,
       uid: cur,
       euid,
       gid,
@@ -5124,6 +5134,52 @@ export class LinuxCommandExecutor {
   handleAuditctl(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const result = runAuditctl(auditctlHost(this, false), args);
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  handleAuditd(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const daemon = this.auditDaemon;
+    if (daemon === null) return { output: '', exitCode: 1, stderr: 'auditd: audit daemon unavailable\n', interleaved: 'auditd: audit daemon unavailable\n' };
+    const result = runAuditdCommand({ isRoot: () => this.userMgr.currentUid === 0, launch: (options) => daemon.launch(options) }, args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  handleAutrace(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const result = runAutrace(this.autraceHost(), args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  private autraceHost(): AutraceHost {
+    const quote = (word: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`);
+    return {
+      isRoot: () => this.userMgr.currentUid === 0,
+      executableState: (path) => {
+        const absolute = path.startsWith('/') ? path : `${this.cwd.replace(/\/$/, '')}/${path}`;
+        const inode = this.vfs.resolveInode(absolute);
+        if (inode === null) return 'missing';
+        return (inode.permissions & 0o111) !== 0 || inode.type === 'directory' ? 'executable' : 'denied';
+      },
+      loadedRuleCount: () => this.auditRules.kernel.allRules().length,
+      auditctl: (args) => runAuditctl(auditctlHost(this, true), args),
+      startChild: (argv) => this.processMgr.spawn({
+        command: argv.map(quote).join(' '),
+        user: this.userMgr.currentUser,
+        uid: this.userMgr.currentUid,
+        gid: this.userMgr.currentGid,
+        ppid: this.currentBashPid(),
+        tty: 'pts/0',
+        cwd: this.cwd,
+      }).pid,
+      runChild: (pid, argv) => {
+        const output = this.withProcessIdentity(pid, () => this.execute(argv.map(quote).join(' ')));
+        return { output, exitCode: this.lastExitCode };
+      },
+      endChild: (pid, exitCode) => {
+        this.processMgr.exit(pid, exitCode);
+        this.processMgr.reap(pid);
+      },
+      terminateChild: (pid) => { this.processMgr.kill(pid, 'SIGTERM'); },
+      sleepSeconds: (seconds) => this.spendSeconds(seconds),
+    };
   }
 
   handleAugenrules(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
@@ -5588,6 +5644,8 @@ export class LinuxCommandExecutor {
         return shaped;
       }
       case 'auditctl': return this.handleAuditctl(args);
+      case 'auditd': return this.handleAuditd(args);
+      case 'autrace': return this.handleAutrace(args);
       case 'augenrules': return this.handleAugenrules(args);
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };

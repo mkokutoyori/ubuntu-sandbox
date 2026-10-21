@@ -3239,18 +3239,21 @@ alors que la RFC 6146 autorise de le mettre en file ; (3) aucune commande Cisco/
 documentation constructeur.
 
 
-### [auditd] ce que le demon ne fait pas encore : binaire auditd, autrace, plugins arbitraires
-`auditd.conf` est lu par un seul analyseur (`audit/daemon/AuditdConfig.ts`, port de `auditd-config.c`) et le demon
-applique au journal la rotation, `max_log_file_action`, les actions d'espace, ENRICHED, `log_group` et les signaux
-(`audit/daemon/AuditdLogWriter.ts`, port de `auditd-event.c`). Le dispatcher audisp (`audit/daemon/dispatch/`, port
-de `audispd`) charge `plugins.d`, lance `audisp-syslog` et `audisp-af_unix` comme processus enfants, les relance a
-leur mort et les arrete au SIGHUP ; les outils `ausearch`/`aureport` lisent un journal ENRICHED comme les binaires
-reels (1170 + 1259 cas enregistres). Le binaire reel `auditd` n'a pas pu etre lance (il exige l'ecriture de
-`/etc/audit`) : l'oracle est le source 3.1.2 et les chaines du binaire du paquet.
-**Reste** : (1) la commande `auditd` (`-f -l -n -s -c`) est inconnue du shell, seul le service existe ;
-(2) `autrace` est inconnu : le simulateur n'emet pas d'evenement SYSCALL pour un programme arbitraire, seulement
-pour les operations de fichier qu'il projette ; (3) les actions `EXEC`, `EMAIL`, `SINGLE` et `HALT` des seuils
-d'espace sont cablees mais aucune sonde ne les exerce encore ; (4) `hostResolves` de la validation de
-`action_mail_acct` repond toujours oui ; (5) `name_format` ≠ NONE n'a pas de sonde ; (6) un plugin dont le programme
-n'est ni `audisp-syslog` ni `audisp-af_unix` sort aussitot, et les clients de la socket `af_unix` ne sont pas
-modelises ; la file du dispatcher est synchrone (profondeur courante toujours 0).
+### [auditd] ce que le demon et autrace ne font pas encore
+`auditd.conf` est lu par un seul analyseur (`audit/daemon/AuditdConfig.ts`, port de `auditd-config.c`), le demon
+applique rotation, actions d'espace, ENRICHED, `log_group` et signaux (`audit/daemon/AuditdLogWriter.ts`, port de
+`auditd-event.c`), le dispatcher audisp lance `audisp-syslog` et `audisp-af_unix` (`audit/daemon/dispatch/`).
+La commande `auditd` (`-f -l -n -s -c`, `audit/tools/AuditdCommandTool.ts`, port du `main` de `auditd.c`) demarre le
+demon a la main, ecrit `/var/run/auditd.pid` et refuse de reprendre le noyau a un demon deja inscrit
+(`Unable to set audit pid, exiting` + `DAEMON_ABORT`). `autrace` (`audit/tools/AutraceTool.ts`, port de `autrace.c`)
+pose les regles `pid=N` et `ppid=N`, execute le programme comme enfant sous ce pid et nettoie.
+Le binaire reel n'a pas pu etre lance (il exige l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2.
+**Reste** : (1) `auditd -f` et `-n` ne bloquent pas le terminal comme le vrai demon : la commande rend la main apres
+l'initialisation, et les messages d'un demon lance avec `-f` ne vont sur stderr que pendant le demarrage ;
+(2) `autrace` ne voit que les appels systeme que le simulateur projette (acces fichier, execve), pas « tous » ceux
+d'un programme arbitraire ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
+est indetermine dans le source) ; (4) les actions `EXEC`, `EMAIL`, `SINGLE` et `HALT` des seuils d'espace sont
+cablees mais aucune sonde ne les exerce ; (5) `hostResolves` de la validation de `action_mail_acct` repond toujours
+oui ; (6) `name_format` ≠ NONE n'a pas de sonde ; (7) un plugin dont le programme n'est ni `audisp-syslog` ni
+`audisp-af_unix` sort aussitot, et les clients de la socket `af_unix` ne sont pas modelises ; la file du dispatcher
+est synchrone (profondeur courante toujours 0).
