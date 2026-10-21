@@ -4,6 +4,7 @@ import type { Template } from '../Template';
 import type { ActionModuleInstance, EngineModule, InputInstance, OutChannel, RuntimeLog, TemplateRequest } from './Modules';
 import type { LocalClock } from './LocalClock';
 import type { SenderResolver } from './SenderResolver';
+import type { LookupRef } from './LookupTable';
 import type { GlobalSettings, QueueSettings } from './Settings';
 
 export interface ActionOptions {
@@ -69,6 +70,7 @@ export interface LoadedConfig {
   readonly actions: ActionDefinition[];
   readonly parsers: Map<string, MessageParserModule>;
   readonly rateLimits: Map<string, RateLimitDefinition>;
+  readonly lookupTables: LookupRef[];
   readonly timezones: Map<string, { offsetMinutes: number }>;
   readonly senderResolver: SenderResolver;
   readonly localClock: LocalClock;

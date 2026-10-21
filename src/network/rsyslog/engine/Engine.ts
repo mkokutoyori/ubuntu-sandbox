@@ -168,6 +168,7 @@ export class RsyslogEngine implements InputSubmitter {
       runAction: (definition, message) => this.runAction(definition, message),
       callRuleset: (name, message, depth) => this.callRuleset(name, message, depth),
       log: (text) => this.internal(4, -1, text),
+      reloadLookupTable: (name, stub) => this.config.lookupTables.find((table) => table.name === name)?.reload(stub),
     };
   }
 
@@ -518,6 +519,7 @@ export class RsyslogEngine implements InputSubmitter {
     for (const queue of this.rulesetQueues.values()) queue.stop();
     for (const queue of this.actionQueues.values()) queue.stop();
     for (const runtime of this.actions.values()) runtime.stop();
+    for (const table of this.config.lookupTables) table.stop();
     for (const callback of this.stopCallbacks) callback();
     this.stopCallbacks = [];
     this.oversizeLog?.close();
@@ -527,6 +529,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   hup(): void {
     for (const runtime of this.actions.values()) runtime.hup();
+    for (const table of this.config.lookupTables) if (table.reloadOnHup) table.reload(null);
     this.oversizeLog?.close();
     this.oversizeLog = null;
   }

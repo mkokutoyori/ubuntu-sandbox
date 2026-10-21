@@ -66,6 +66,9 @@ export const RS_RET = {
   NOT_IMPLEMENTED: -7,
   DUP_PARAM: -2220,
   FILE_OPEN_ERROR: -2433,
+  JSON_PARSE_ERR: -2303,
+  READ_ERR: -2356,
+  NONE: -2000,
 } as const;
 
 export type LogSeverity = 'error' | 'warning' | 'info';

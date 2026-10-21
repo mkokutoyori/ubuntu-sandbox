@@ -1,6 +1,7 @@
-import { NvList, type ConfigObject, type Location, type Stmt } from '../config/Ast';
+import { NvList, type ConfigObject, type Expr, type Location, type Stmt } from '../config/Ast';
 import { decodePriorityFilter, decodePropertyFilter } from '../config/Filters';
-import { prepareFunctions, checkFunctionCall } from '../config/Expressions';
+import { bindFunctionData, prepareFunctions, checkFunctionCall } from '../config/Expressions';
+import { LookupRef } from './LookupTable';
 import { ConfigScanner, type Diagnostic, type ScannerEnvironment } from '../config/Lexer';
 import { ConfigParser, type ConfigSink } from '../config/Parser';
 import {
@@ -81,6 +82,10 @@ const RATELIMIT_PARAMS: readonly ParamDescriptor[] = [
   { name: 'severity', type: 'int' }, { name: 'policy', type: 'string' },
 ];
 
+const LOOKUP_TABLE_PARAMS: readonly ParamDescriptor[] = [
+  { name: 'name', type: 'string', required: true }, { name: 'file', type: 'string', required: true }, { name: 'reloadOnHUP', type: 'binary' },
+];
+
 const TIMEZONE_PARAMS: readonly ParamDescriptor[] = [{ name: 'id', type: 'string', required: true }, { name: 'offset', type: 'string', required: true }];
 
 const INCLUDE_PARAMS: readonly ParamDescriptor[] = [{ name: 'file', type: 'string' }, { name: 'text', type: 'string' }, { name: 'mode', type: 'word' }];
@@ -147,7 +152,7 @@ export class ConfigLoader implements ConfigSink {
     const settings = defaultGlobalSettings();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
+      rateLimits: new Map(), lookupTables: [], timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -575,7 +580,7 @@ export class ConfigLoader implements ConfigSink {
       case 'ruleset': this.processRuleset(object); break;
       case 'parser': this.processParser(object); break;
       case 'ratelimit': this.processRateLimit(object); break;
-      case 'lookup_table':
+      case 'lookup_table': this.processLookupTable(object); break;
       case 'dyn_stats':
       case 'percentile_stats':
         break;
@@ -730,6 +735,27 @@ export class ConfigLoader implements ConfigSink {
     } else if (type === 'pmrfc5424') {
       this.config.parsers.set(name, new Rfc5424Parser());
     }
+  }
+
+  private findLookupTable(name: string): LookupRef | undefined {
+    return this.config.lookupTables.find((table) => table.name === name);
+  }
+
+  private processLookupTable(object: ConfigObject): void {
+    const values = getParams(object.params, LOOKUP_TABLE_PARAMS, this.paramEnvironment());
+    if (values === null) return;
+    const name = stringParam(values, 'name');
+    const file = stringParam(values, 'file');
+    if (name === undefined || file === undefined) return;
+    const table = new LookupRef(
+      name, file, this.options.host.files,
+      { error: (text, code, errno) => this.runtimeSink.error(text, code, errno), info: (text) => this.runtimeSink.info(text) },
+      { schedule: (callback, delay) => this.options.host.schedule(callback, delay) },
+    );
+    const reloadOnHup = numberParam(values, 'reloadOnHUP');
+    if (reloadOnHup !== undefined) table.reloadOnHup = reloadOnHup !== 0;
+    this.config.lookupTables.push(table);
+    table.load();
   }
 
   private processRateLimit(object: ConfigObject): void {
@@ -1028,9 +1054,51 @@ export class ConfigLoader implements ConfigSink {
     return { k: 'call', name };
   }
 
-  checkFunction(name: string, argumentCount: number, location: Location): void {
+  checkFunction(name: string, argumentCount: number, location: Location, expression: Expr): void {
     const problem = checkFunctionCall(name, argumentCount);
-    if (problem !== null) this.reportAt(problem, location);
+    if (problem !== null) {
+      this.reportAt(problem, location);
+      return;
+    }
+    if (name === 'lookup' && expression.k === 'func') this.resolveLookupFunction(expression, location);
+  }
+
+  private resolveLookupFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
+    const first = expression.args[0];
+    if (first.k !== 'str') {
+      this.reportAt('table name (param 1) of lookup() must be a constant string', location);
+      return;
+    }
+    const table = this.findLookupTable(first.value);
+    if (table === undefined) {
+      this.reportAt(`lookup table '${first.value}' not found (used in function: lookup)`, location);
+      return;
+    }
+    bindFunctionData(expression, table);
+  }
+
+  private checkReloadLookupStatement(statement: Extract<Stmt, { k: 'reloadLookupTable' }>): Stmt | null {
+    const usage = 'statement ignored: reload_lookup_table(table_name, optional:stub_value_in_case_reload_fails) ';
+    const args = statement.args;
+    if (args.length !== 1 && args.length !== 2) {
+      this.reportAt(`${usage}expected 1 or 2 arguments, but found '${args.length}'\n`);
+      return null;
+    }
+    let failed = false;
+    let stub: string | null = null;
+    if (args.length === 2) {
+      if (args[1].k !== 'str') {
+        this.reportAt(`${usage}expects a litteral string for second argument\n`);
+        failed = true;
+      } else stub = args[1].value;
+    }
+    if (args[0].k !== 'str') {
+      this.reportAt(`${usage}expects a litteral string for first argument\n`);
+      failed = true;
+    }
+    if (failed || args[0].k !== 'str') return null;
+    if (this.findLookupTable(args[0].value) === undefined) this.reportAt(`lookup table '${args[0].value}' not found\n`);
+    return { k: 'reloadLookupTable', args, table: args[0].value, stub };
   }
 
   report(diagnostic: Diagnostic): void {
@@ -1042,6 +1110,11 @@ export class ConfigLoader implements ConfigSink {
     for (const statement of statements) {
       switch (statement.k) {
         case 'nop': break;
+        case 'reloadLookupTable': {
+          const checked = this.checkReloadLookupStatement(statement);
+          if (checked !== null) result.push(checked);
+          break;
+        }
         case 'if': {
           prepareFunctions(statement.expr, (message) => this.reportAt(message));
           result.push({ ...statement, then: this.prepareStatements(statement.then), else: statement.else === null ? null : this.prepareStatements(statement.else) });

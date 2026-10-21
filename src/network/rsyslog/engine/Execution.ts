@@ -18,6 +18,7 @@ export interface ExecutionServices {
   runAction(definition: ActionDefinition, message: RsyslogMessage): Generator<Sleep, void>;
   callRuleset(name: string, message: RsyslogMessage, depth: number): Generator<Sleep, ExecResult>;
   log(text: string): void;
+  reloadLookupTable(name: string, stubIfReloadFails: string | null): void;
 }
 
 const MAX_CALL_DEPTH = 1024;
@@ -144,7 +145,9 @@ export function* executeStatements(statements: readonly Stmt[], message: Rsyslog
         if (evaluatePropertyFilter(statement, message, services)
           && (yield* executeStatements(statement.then, message, services, depth)) === 'stop') return 'stop';
         break;
-      case 'reloadLookupTable': break;
+      case 'reloadLookupTable':
+        if (statement.table !== undefined) services.reloadLookupTable(statement.table, statement.stub ?? null);
+        break;
     }
   }
   return 'continue';
