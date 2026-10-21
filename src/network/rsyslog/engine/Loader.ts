@@ -799,6 +799,15 @@ export class ConfigLoader implements ConfigSink {
     const name = stringParam(values, 'name');
     const requested = arrayParam(values, 'percentiles');
     if (name === undefined || requested === undefined || requested.length === 0) return;
+    const percentiles: number[] = [];
+    for (const text of requested) {
+      const parsed = /^\s*[+-]?\d+$/.test(text) ? Number.parseInt(text, 10) : Number.NaN;
+      if (!(parsed >= 0 && parsed <= 100)) {
+        this.log.error(`perctile: percentile value '${text}' is invalid - must be an integer between 0 and 100`, RS_RET.PARAM_ERROR);
+        return;
+      }
+      percentiles.push(parsed);
+    }
     const windowSize = numberParam(values, 'windowSize') ?? 0;
     if (windowSize < 2) {
       this.log.error(`percentile_stats: bucket '${name}' needs a windowsize of at least 2 - bucket not created`, RS_RET.CONFIG_ERROR);
@@ -807,7 +816,7 @@ export class ConfigLoader implements ConfigSink {
     this.config.percentileStats.create({
       name,
       delimiter: stringParam(values, 'delimiter') ?? '.',
-      percentiles: requested.map((text) => (Number.parseInt(text, 10) || 0) & 0xff),
+      percentiles,
       windowSize,
     });
   }

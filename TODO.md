@@ -3263,8 +3263,7 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
 la persistance de `dyn_stats` ecrit les metriques dans l'ordre d'insertion, la ou le source parcourt sa table de hachage ; l'ecriture
-est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; `percentile_stats` n'a pas la
-validation de plage et le message de troncature de 8.2608 ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
+est synchrone et sans fichier temporaire (l'hote n'a pas `rename`)  ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
 compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
 (l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
 `impstats` ne publie pas les statistiques par expediteur (`_sender_stat`, `global(senders.keepTrack)`) ; `resource-usage` ne fournit que
@@ -3273,8 +3272,7 @@ oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le s
 source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
 omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
-echoue sur un assert) ; le message « statname ... truncated » du source imprime un tampon de pile non initialise, ici le nom fautif ;
-le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
+echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
 ### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes

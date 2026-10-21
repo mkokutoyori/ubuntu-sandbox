@@ -120,17 +120,19 @@ export class PercentileBucket {
 
   private createStat(key: string, value: bigint): ObservedStat | number {
     const delimiter = this.options.delimiter;
-    const truncated = (name: string): number => {
-      this.services.error(`statname '${name}' truncated - too long for buffer size: ${NAME_BUFFER}\n`, OK);
+    const truncated = (message: string): number => {
+      this.services.error(message, OK);
       this.services.error('Could not initialize percentile stats.', CONF_PARAM_INVALID);
       return CONF_PARAM_INVALID;
     };
-    if (key.length >= NAME_BUFFER) return truncated(key);
+    if (key.length >= NAME_BUFFER) return truncated(`statname '${key}' truncated - too long for buffer size: ${key.length}\n`);
     const offset = key.length + delimiter.length;
-    if (offset >= NAME_BUFFER) return truncated(`${key}${delimiter}`);
+    if (offset >= NAME_BUFFER) return truncated(`statname '${key}' delim '${delimiter}' truncated - too long for buffer size: ${offset}\n`);
     const remaining = NAME_BUFFER - offset - 1;
     const suffixes = [...this.options.percentiles.map((percentile) => `p${percentile}`), 'window_min', 'window_max', 'window_sum', 'window_count'];
-    for (const suffix of suffixes) if (suffix.length >= remaining) return truncated(`${key}${delimiter}${suffix}`);
+    for (const suffix of suffixes) {
+      if (suffix.length >= remaining) return truncated(`statname '${key}${delimiter}${suffix.slice(0, remaining - 1)}' truncated - too long for buffer size: ${NAME_BUFFER}\n`);
+    }
     const stat: ObservedStat = {
       ring: new RingBuffer(this.options.windowSize),
       percentiles: this.options.percentiles.map((percentile) => ({ percentile, value: 0n })),

@@ -11,8 +11,7 @@
  * percentile_observe() was an unknown function. 13 of the 14 cases fall; the one that passes in both states is the
  * witness (a config without percentile_stats loads clean).
  * Not kept from the source: a bucket without windowsize (0 or 1) is refused at load - the source builds a ring buffer of
- * size 0 or 1 whose first append trips an assert; a statname longer than the buffer prints its message with the
- * uninitialised stack buffer in the source, here with the offending name.
+ * size 0 or 1 whose first append trips an assert.
  */
 import { describe, expect, it } from 'vitest';
 import { LabHost, LabNetwork, lines, startRsyslog, submitLocal } from './_helpers/rsyslogLab';
