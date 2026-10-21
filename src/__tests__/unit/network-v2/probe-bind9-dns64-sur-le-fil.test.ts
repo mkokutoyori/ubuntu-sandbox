@@ -17,12 +17,16 @@
  * plus du tout au cas « hors prefixe » non plus) ; deux passent dans les deux etats : le temoin (sans
  * option dns64, un AAAA sur un nom a enregistrement A seul est une reponse vide NOERROR) et
  * recursive-only, que l'absence de synthese satisfait aussi. `suffix` : la RFC 6052 §2.2 garde les bits
- * du suffixe a zero ; une valeur non nulle est refusee, pas rangee sans effet. `clients` ne sait
- * decrire que des reseaux IPv4 (le meme defaut que toutes les ACL de ce serveur) : `any` et les ACL
- * nommees en sont la forme utile.
+ * du suffixe a zero ; une valeur non nulle est refusee, pas rangee sans effet. `clients` lit des
+ * reseaux IPv4 comme IPv6, et un client IPv6 venu du fil (le cas reel d'un hote qui n'a que de l'IPv6)
+ * est juge par son adresse IPv6 : 3 cas ajoutes. Un seul tombe quand Bind9Service est remis avant
+ * la correction : la requete PTR interne d'un client IPv6 etait emise depuis le bouclage, donc refusee
+ * par un allow-query qui n'admet que son reseau. Les deux autres (synthese pour un reseau present dans
+ * clients, absence de synthese pour un reseau absent) passent dans les deux etats de Bind9Service parce
+ * que la lecture de l'IPv6 par les listes est deja livree ; le second est un refus borne par le premier.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
+import { IPAddress, IPv6Address, SubnetMask, resetCounters } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -177,4 +181,41 @@ describe('named dns64', () => {
     const answer = await ask(pc, ptrQName('2001:db8::1'), RRType.PTR);
     expect(answer!.answers.map((rr) => rr.data.type)).not.toContain(RRType.CNAME);
   }, 30000);
+
+  describe('an IPv6 client', () => {
+    const V6_SERVER = '2001:db8:1::53';
+    const V6_CLIENT = '2001:db8:1::10';
+
+    async function labV6(clients: string, extra = '') {
+      const { pc, ns1 } = await buildLab(`${BASE}${extra}\n  dns64 64:ff9b::/96 { clients { ${clients} }; };`);
+      await ns1.executeCommand(`ip -6 addr add ${V6_SERVER}/64 dev eth0`);
+      await pc.executeCommand(`ip -6 addr add ${V6_CLIENT}/64 dev eth0`);
+      return pc;
+    }
+
+    const askV6 = (from: LinuxPC, qname: string, qtype: number): Promise<DnsMessage | null> => {
+      const query: DnsMessage = {
+        id: nextId++,
+        flags: { qr: false, opcode: DnsOpcode.QUERY, aa: false, tc: false, rd: true, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR },
+        questions: [{ qname, qtype, qclass: DnsClass.IN }], answers: [], authorities: [], additionals: [],
+      };
+      return queryDnsOverUdp(from, new IPv6Address(V6_SERVER), query, 53, 600);
+    };
+
+    it('is synthesized for when its IPv6 network is in clients', async () => {
+      const pc = await labV6('2001:db8:1::/64;');
+      expect(addresses(await askV6(pc, 'www.local.test', RRType.AAAA))).toEqual(['64:ff9b::808:404']);
+    }, 30000);
+
+    it('gets the reverse answer too, queried on its own behalf', async () => {
+      const pc = await labV6('2001:db8:1::/64;', '\n  allow-query { 2001:db8:1::/64; };');
+      const answer = await askV6(pc, ptrQName('64:ff9b::808:404'), RRType.PTR);
+      expect(answer!.answers.map((rr) => rr.data.type)).toEqual([RRType.CNAME, RRType.PTR]);
+    }, 30000);
+
+    it('is not synthesized for when its network is not in clients', async () => {
+      const pc = await labV6('2001:db8:9::/64;');
+      expect(addresses(await askV6(pc, 'www.local.test', RRType.AAAA))).toEqual([]);
+    }, 30000);
+  });
 });

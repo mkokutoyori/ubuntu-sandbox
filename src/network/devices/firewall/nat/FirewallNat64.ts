@@ -1,5 +1,5 @@
 import {
-  IPAddress, IP_PROTO_ICMPV6, type IPv4Packet, type IPv6Packet,
+  IPAddress, IP_PROTO_ICMPV6, type IPv6Address, type IPv4Packet, type IPv6Packet,
 } from '@/network/core/types';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
 import { Nat64Translator, type Nat64NexthopMtu } from '@/network/nat/nat64/Nat64Translator';
@@ -41,14 +41,41 @@ export class FirewallNat64 {
 
   forget(pool: string): void { this.translators.delete(pool); }
 
+  private secondary = new Map<string, Nat64Prefix>();
+  private secondaryEnabled = false;
+
   setPrefix(prefix: Nat64Prefix): void {
     this.prefix = prefix;
     this.translators.clear();
   }
 
+  setSecondaryPrefix(name: string, prefix: Nat64Prefix): void {
+    this.secondary.set(name, prefix);
+    this.translators.clear();
+  }
+
+  removeSecondaryPrefix(name: string): void {
+    this.secondary.delete(name);
+    this.translators.clear();
+  }
+
+  setSecondaryEnabled(enabled: boolean): void {
+    this.secondaryEnabled = enabled;
+    this.translators.clear();
+  }
+
+  private secondaryPrefixes(): Nat64Prefix[] {
+    return this.secondaryEnabled ? [...this.secondary.values()] : [];
+  }
+
+  private prefixFor(address: IPv6Address): Nat64Prefix | undefined {
+    return [this.prefix, ...this.secondaryPrefixes()].find((candidate) => candidate.contains(address));
+  }
+
   forward6(ingress: string, packet: IPv6Packet): boolean {
-    if (!this.prefix.contains(packet.destinationIP) || packet.hopLimit <= 1) return false;
-    const target = this.prefix.extract(packet.destinationIP);
+    const prefix = this.prefixFor(packet.destinationIP);
+    if (prefix === undefined || packet.hopLimit <= 1) return false;
+    const target = prefix.extract(packet.destinationIP);
     if (target === null) return this.drop(packet, 'non-global-destination');
     const egress = this.deps.egressFor(ingress, target.toString());
     if (egress === undefined) return this.drop(packet, 'no-route');
@@ -75,19 +102,19 @@ export class FirewallNat64 {
     const pool = this.deps.pools().find((p) => p.nat64 && poolContains(p, packet.destinationIP.toString()));
     if (pool === undefined) return false;
     if (packet.ttl <= 1) return true;
-    const result = this.translatorFor(pool).translate4to6({ ...packet, ttl: packet.ttl - 1 });
+    const result = this.translatorFor(pool).translate4to6Fitted({ ...packet, ttl: packet.ttl - 1 });
     if (result.ok === false) {
       this.deps.log(`NAT64 dropped ${packet.sourceIP} -> ${packet.destinationIP} (${result.reason})`);
       return true;
     }
-    this.deps.injectIpv6(result.packet);
+    for (const translated of result.packet) this.deps.injectIpv6(translated);
     return true;
   }
 
   private translatorFor(pool: IpPool): Nat64Translator {
     const existing = this.translators.get(pool.name);
     if (existing !== undefined) return existing;
-    const created = new Nat64Translator({ nexthopMtu: this.deps.nexthopMtu, prefix: this.prefix, pool: poolAddresses(pool), clock: () => this.deps.now() });
+    const created = new Nat64Translator({ nexthopMtu: this.deps.nexthopMtu, prefix: this.prefix, secondaryPrefixes: this.secondaryPrefixes(), pool: poolAddresses(pool), clock: () => this.deps.now() });
     this.translators.set(pool.name, created);
     return created;
   }

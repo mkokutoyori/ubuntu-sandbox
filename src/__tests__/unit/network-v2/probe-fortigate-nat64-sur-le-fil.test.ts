@@ -14,6 +14,14 @@
  * est dans 11.0.0.0/8 parce que le prefixe bien connu refuse de representer les plages de
  * documentation (RFC 6052 §3.1).
  *
+ * Un echo de 3000 octets (fragments traduits dans les deux sens, refragmentes au retour pour tenir dans le
+ * MTU IPv6) est ajoute ; il tombe avant.
+ *
+ * Prefixes secondaires (`secondary-prefix-status` et `config secondary-prefix`, memes pages de la reference
+ * 6.0, longueurs libres) : 3 cas ajoutes, 2 tombent avant (traduction par le prefixe secondaire, et le
+ * prefixe principal qui continue de servir a cote) ; le refus quand le statut est `disable` passe dans les
+ * deux etats et est borne par le premier cas.
+ *
  * Redefinir un `address6` existant (`edit NAT64NET` puis `set ip6`) ne changeait pas l'objet effectif : le
  * magasin refusait le doublon en silence, la politique continuait de viser l'ancien prefixe. Corrige par
  * `upsertAddress`, ce que le cas du prefixe configurable exerce.
@@ -36,6 +44,7 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
 
 beforeEach(() => { resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset(); });
 
@@ -102,6 +111,11 @@ describe('FortiGate NAT64', () => {
     expect(await pc.executeCommand(`ping -6 -c 2 ${SERVER_V6}`)).toContain('2 received');
   });
 
+  it('answers an echo larger than the link MTU, fragmented in both directions', async () => {
+    const { pc } = await lab([...POOL, ...policy(['set nat64 enable', 'set ippool enable', 'set poolname NAT64POOL'])]);
+    expect(await pc.executeCommand(`ping -6 -c 1 -s 3000 ${SERVER_V6}`)).toContain('1 received');
+  }, 30000);
+
   it('drops the flow when the policy that matches does not carry nat64', async () => {
     const { pc } = await lab([...POOL, ...policy(['set ippool enable', 'set poolname NAT64POOL'])]);
     expect(await fetch(pc)).not.toMatch(/nginx/i);
@@ -143,5 +157,31 @@ describe('FortiGate NAT64', () => {
       const shown = await fw.executeCommand('show system nat64');
       expect(out + shown).not.toContain('2001:db8:64::/64\n');
     });
+  });
+
+  describe('secondary prefixes', () => {
+    const SECONDARY = '2001:db8:ffff::/64';
+    const secondaryServer = Nat64Prefix.parse(SECONDARY).synthesize(new IPAddress('11.1.1.5')).toString();
+    const carryingPolicy = policy(['set nat64 enable', 'set ippool enable', 'set poolname NAT64POOL', 'set dstaddr6 NAT64NET SECNET']);
+    const secondaryConfig = (status: 'enable' | 'disable') => [
+      'config system nat64', `set secondary-prefix-status ${status}`,
+      'config secondary-prefix', 'edit sec', `set nat64-prefix ${SECONDARY}`, 'next', 'end', 'end',
+      'config firewall address6', 'edit SECNET', `set ip6 ${SECONDARY}`, 'next', 'end',
+    ];
+
+    it('translates toward a secondary prefix of another length', async () => {
+      const { pc } = await lab([...secondaryConfig('enable'), ...POOL, ...carryingPolicy]);
+      expect(await pc.executeCommand(`curl -s -m 5 'http://[${secondaryServer}]/'`)).toMatch(/nginx/i);
+    }, 30000);
+
+    it('keeps serving the primary prefix beside it', async () => {
+      const { pc } = await lab([...secondaryConfig('enable'), ...POOL, ...carryingPolicy]);
+      expect(await fetch(pc)).toMatch(/nginx/i);
+    }, 30000);
+
+    it('does not translate toward it while the secondary status is disabled', async () => {
+      const { pc } = await lab([...secondaryConfig('disable'), ...POOL, ...carryingPolicy]);
+      expect(await pc.executeCommand(`curl -s -m 5 'http://[${secondaryServer}]/'`)).not.toMatch(/nginx/i);
+    }, 30000);
   });
 });

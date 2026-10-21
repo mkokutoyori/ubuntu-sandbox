@@ -9,7 +9,7 @@ import { ZoneError } from '@/network/dns/zone/Zone';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { makeTxtRecord, makeCnameRecord } from '@/network/dns/wire/ResourceRecord';
 import { formatRecordLine } from '../commands/dns/RecordFormat';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
@@ -451,19 +451,19 @@ export class Bind9Service {
   }
 
   private readonly handleUdpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
+    query: DnsMessage, sourceIP?: IPAddress | IPv6Address, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> =>
     datagramReply(this.answerQuery(query, 'udp', sourceIP, sourcePort, raw));
 
   private readonly handleTcpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
+    query: DnsMessage, sourceIP?: IPAddress | IPv6Address, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> =>
     this.answerQuery(query, 'tcp', sourceIP, sourcePort, raw);
 
   private answerQuery(
     query: DnsMessage,
     transport: 'udp' | 'tcp',
-    sourceIP?: IPAddress,
+    sourceIP?: IPAddress | IPv6Address,
     sourcePort?: number,
     raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
@@ -494,7 +494,7 @@ export class Bind9Service {
     const target = dns64ReverseTarget(rules, client, question.qname);
     if (target === null || (rules[0].recursiveOnly && !query.flags.rd)) return response;
     const reverseQuery: DnsMessage = { ...query, questions: [{ ...question, qname: target }] };
-    const answered = await this.answerQueryBeforeDns64(reverseQuery, 'udp', IPAddress.tryParse(client) ?? undefined);
+    const answered = await this.answerQueryBeforeDns64(reverseQuery, 'udp', IPAddress.tryParse(client) ?? IPv6Address.tryParse(client) ?? undefined);
     const reverse = Array.isArray(answered) ? answered[0] : answered;
     const pointers = reverse.answers.filter((rr) => rr.data.type === RRType.PTR);
     if (reverse.flags.rcode !== DnsRcode.NOERROR || pointers.length === 0) return response;
@@ -529,7 +529,7 @@ export class Bind9Service {
     });
     const lookup = async (qname: string, qtype: number): Promise<ResolutionResult> => {
       const aQuery: DnsMessage = { ...query, questions: [{ ...question, qname, qtype }] };
-      const answered = await this.answerQueryBeforeDns64(aQuery, 'udp', IPAddress.tryParse(client) ?? undefined);
+      const answered = await this.answerQueryBeforeDns64(aQuery, 'udp', IPAddress.tryParse(client) ?? IPv6Address.tryParse(client) ?? undefined);
       return toResult(Array.isArray(answered) ? answered[0] : answered);
     };
     const original = toResult(response);
@@ -553,7 +553,7 @@ export class Bind9Service {
   private answerQueryBeforeDns64(
     query: DnsMessage,
     transport: 'udp' | 'tcp',
-    sourceIP?: IPAddress,
+    sourceIP?: IPAddress | IPv6Address,
     sourcePort?: number,
     raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
@@ -619,7 +619,7 @@ export class Bind9Service {
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
   }
 
-  private handleUpdate(query: DnsMessage, sourceIP?: IPAddress, raw?: Uint8Array): DnsMessage {
+  private handleUpdate(query: DnsMessage, sourceIP?: IPAddress | IPv6Address, raw?: Uint8Array): DnsMessage {
     const now = Math.floor(simulationNowMs() / 1000);
     const auth = authorizeUpdate(raw, 'none', this.keyring, now);
     const reply = (rcode: number): DnsMessage =>
@@ -702,7 +702,7 @@ export class Bind9Service {
     return serveZoneTransfer(this.store, query) ?? [this.refuse(query, false)];
   }
 
-  private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
+  private handleNotify(query: DnsMessage, sourceIP?: IPAddress | IPv6Address): DnsMessage {
     const qname = normalizeDnsName(query.questions[0]?.qname ?? '');
     const zone = this.config?.zones.find((z) => z.name === qname && z.type === 'secondary');
     const source = sourceIP?.toString();

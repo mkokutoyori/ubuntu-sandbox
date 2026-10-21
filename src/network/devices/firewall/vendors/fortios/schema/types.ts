@@ -470,6 +470,9 @@ export interface FortiCommitDevice {
   applySdwan(settings: SdwanConfiguration): string | void;
   applyHa(settings: HaConfiguration): string | void;
   applyNat64Prefix(prefix: string): string | void;
+  applyNat64SecondaryPrefix(name: string, prefix: string): string | void;
+  removeNat64SecondaryPrefix(name: string): void;
+  applyNat64SecondaryStatus(enabled: boolean): void;
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;

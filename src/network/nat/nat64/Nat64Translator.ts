@@ -1,8 +1,10 @@
 import {
-  IPAddress, IPv6Address, IP_PROTO_ICMP, IP_PROTO_ICMPV6, createIPv4Packet, createIPv6Packet,
+  IPAddress, IPv6Address, IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, computeIPv4Checksum, createIPv4Packet, createIPv6Packet,
   type ICMPPacket, type ICMPType, type ICMPv6Packet, type ICMPv6Type, type IPv4Packet, type IPv6Packet,
   type TCPPacket, type UDPPacket,
 } from '@/network/core/types';
+import { IPV4_FLAG_MF, isIPv4Fragment } from '@/network/core/Ipv4Fragmentation';
+import { IPV6_FRAGMENT_HEADER_BYTES, fragmentIPv6, ipv6FirstFragmentView, ipv6FragmentCapacity, ipv6FragmentOf, type IPv6FragmentHeader } from '@/network/layers/internet/Ipv6Fragmentation';
 import { recomputeL4Checksum } from '@/network/nat/rewrite';
 import { isGlobalIpv4, type Nat64Prefix } from './Nat64Prefix';
 
@@ -43,6 +45,7 @@ export interface Nat64NexthopMtu {
 export interface Nat64Config {
   readonly nexthopMtu?: Nat64NexthopMtu;
   readonly prefix: Nat64Prefix;
+  readonly secondaryPrefixes?: readonly Nat64Prefix[];
   readonly pool: readonly IPAddress[];
   readonly clock: () => number;
   readonly timeouts?: Partial<Nat64Timeouts>;
@@ -73,13 +76,17 @@ export interface Nat64Session {
 
 export type Nat64DropReason =
   | 'not-in-prefix' | 'non-global-destination' | 'unsupported-protocol' | 'pool-exhausted'
-  | 'no-binding' | 'filtered' | 'unsupported-icmp';
+  | 'no-binding' | 'filtered' | 'unsupported-icmp' | 'fragment-without-head';
 
 const IPV6_MINIMUM_MTU = 1280;
 const HEADER_GROWTH = 20;
 const IPV6_HEADER_BYTES = 40;
 const ICMP_ERROR_HEADER_BYTES = 8;
 const IPV4_HEADER_BYTES = 20;
+const FRAGMENT_STATE_MS = 60_000;
+
+interface Fragments6 { readonly source: IPAddress; readonly protocol: number; readonly identification: number; readonly createdAt: number }
+interface Fragments4 { readonly source: IPv6Address; readonly destination: IPv6Address; readonly nextHeader: number; readonly createdAt: number }
 
 interface ErrorMapping<T> { readonly type: T; readonly code: number; readonly pointer?: number }
 
@@ -119,10 +126,23 @@ export class Nat64Translator {
   private readonly sessionsFrom6 = new Map<string, Nat64Session>();
   private readonly sessionsFrom4 = new Map<string, Nat64Session>();
   private readonly pairedAddress = new Map<string, string>();
+  private readonly fragments6 = new Map<string, Fragments6>();
+  private readonly fragments4 = new Map<string, Fragments4>();
   private readonly timeouts: Nat64Timeouts;
 
   constructor(private readonly config: Nat64Config) {
     this.timeouts = { ...NAT64_DEFAULT_TIMEOUTS, ...config.timeouts };
+  }
+
+  private prefixOf(address: IPv6Address): Nat64Prefix | null {
+    return [this.config.prefix, ...(this.config.secondaryPrefixes ?? [])].find((candidate) => candidate.contains(address)) ?? null;
+  }
+
+  private prefixOfSession(protocol: Nat64Protocol, binding: Nat64Binding, remote: IPAddress): Nat64Prefix {
+    const session = [...this.sessionsFrom4.values()].find((candidate) => candidate.protocol === protocol
+        && candidate.v4Source === binding.v4Address && candidate.v4SourcePort === binding.v4Port
+        && candidate.v4Destination === remote.toString());
+    return (session === undefined ? null : this.prefixOf(new IPv6Address(session.v6Destination))) ?? this.config.prefix;
   }
 
   ownsPoolAddress(address: IPAddress): boolean {
@@ -134,10 +154,12 @@ export class Nat64Translator {
   getSessions(): readonly Nat64Session[] { return [...this.sessionsFrom6.values()]; }
 
   translate6to4(packet: IPv6Packet): Nat64Result<IPv4Packet> {
-    const remote = this.config.prefix.extract(packet.destinationIP);
-    if (remote === null) {
-      return { ok: false, reason: this.config.prefix.contains(packet.destinationIP) ? 'non-global-destination' : 'not-in-prefix' };
-    }
+    const prefix = this.prefixOf(packet.destinationIP);
+    if (prefix === null) return { ok: false, reason: 'not-in-prefix' };
+    const remote = prefix.extract(packet.destinationIP);
+    if (remote === null) return { ok: false, reason: 'non-global-destination' };
+    const fragment = ipv6FragmentOf(packet);
+    if (fragment !== null) return this.translateFragment6to4(packet, fragment, remote);
     const protocol = protocolOf(packet.nextHeader);
     if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
     const payload = packet.payload as TCPPacket | UDPPacket | ICMPv6Packet;
@@ -165,6 +187,7 @@ export class Nat64Translator {
   }
 
   translate4to6(packet: IPv4Packet): Nat64Result<IPv6Packet> {
+    if (isIPv4Fragment(packet)) return this.translateFragment4to6(packet);
     const protocol = protocolOf(packet.protocol);
     if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
     const payload = packet.payload as TCPPacket | UDPPacket | ICMPPacket;
@@ -182,7 +205,7 @@ export class Nat64Translator {
     if (session === null) return { ok: false, reason: 'filtered' };
     this.advanceTcp(session, payload, 'v4');
 
-    const v6Source = this.config.prefix.synthesize(packet.sourceIP);
+    const v6Source = this.prefixOf(new IPv6Address(session.v6Destination))!.synthesize(packet.sourceIP);
     const v6Destination = new IPv6Address(binding.v6Address);
     const translated = this.translatePayload4to6(payload, remote.port, binding.v6Port);
     const length = packet.totalLength - packet.ihl * 4;
@@ -192,8 +215,97 @@ export class Nat64Translator {
     return { ok: true, packet: out };
   }
 
+  translate4to6Fitted(packet: IPv4Packet): Nat64Result<IPv6Packet[]> {
+    const result = this.translate4to6(packet);
+    if (result.ok === false) return result;
+    const translated = result.packet;
+    const mtu = this.config.nexthopMtu?.ipv6(translated.destinationIP);
+    const bytes = IPV6_HEADER_BYTES + translated.payloadLength;
+    if (mtu === undefined || bytes <= mtu) return { ok: true, packet: [translated] };
+    const header = ipv6FragmentOf(translated);
+    if (header !== null) return { ok: true, packet: this.refragment(translated, header, mtu) };
+    if ((packet.flags & DF) !== 0) return { ok: true, packet: [translated] };
+    return { ok: true, packet: fragmentIPv6(translated, mtu, () => packet.identification) };
+  }
+
+  private refragment(packet: IPv6Packet, header: IPv6FragmentHeader, mtu: number): IPv6Packet[] {
+    const capacity = ipv6FragmentCapacity(mtu);
+    if (capacity <= 0) return [packet];
+    const pieces: IPv6Packet[] = [];
+    for (let start = 0; start < header.length; start += capacity) {
+      const length = Math.min(capacity, header.length - start);
+      const piece: IPv6FragmentHeader = {
+        ...header, length,
+        fragmentOffset: header.fragmentOffset + start / 8,
+        moreFragments: start + length < header.length ? true : header.moreFragments,
+        payload: start === 0 ? header.payload : { type: 'ipv6-fragment-data', length },
+      };
+      pieces.push({ ...packet, payloadLength: IPV6_FRAGMENT_HEADER_BYTES + length, payload: piece });
+    }
+    return pieces;
+  }
+
+  private translateFragment6to4(packet: IPv6Packet, fragment: IPv6FragmentHeader, remote: IPAddress): Nat64Result<IPv4Packet> {
+    const key = `${packet.sourceIP}|${packet.destinationIP}|${fragment.identification}`;
+    const identification = fragment.identification & 0xffff;
+    const flags = fragment.moreFragments ? IPV4_FLAG_MF : 0;
+    if (fragment.fragmentOffset === 0) {
+      const head = this.translate6to4(ipv6FirstFragmentView(packet)!);
+      if (head.ok === false) return head;
+      const out: IPv4Packet = { ...head.packet, flags, identification, headerChecksum: 0 };
+      out.headerChecksum = computeIPv4Checksum(out);
+      if (fragment.moreFragments) {
+        this.fragments6.set(key, { source: out.sourceIP, protocol: out.protocol, identification, createdAt: this.config.clock() });
+      }
+      return { ok: true, packet: out };
+    }
+    const held = this.fragments6.get(key);
+    if (held === undefined) return { ok: false, reason: 'fragment-without-head' };
+    if (!fragment.moreFragments) this.fragments6.delete(key);
+    const out = createIPv4Packet(held.source, remote, held.protocol, packet.hopLimit,
+      { type: 'ipv4-fragment-data', length: fragment.length }, fragment.length,
+      { tos: packet.trafficClass, flags, identification: held.identification });
+    out.fragmentOffset = fragment.fragmentOffset;
+    out.headerChecksum = 0;
+    out.headerChecksum = computeIPv4Checksum(out);
+    return { ok: true, packet: out };
+  }
+
+  private translateFragment4to6(packet: IPv4Packet): Nat64Result<IPv6Packet> {
+    const key = `${packet.sourceIP}|${packet.destinationIP}|${packet.protocol}|${packet.identification}`;
+    const moreFragments = (packet.flags & IPV4_FLAG_MF) !== 0;
+    const length = packet.totalLength - packet.ihl * 4;
+    if (packet.fragmentOffset === 0) {
+      const head = this.translate4to6({ ...packet, flags: packet.flags & ~IPV4_FLAG_MF });
+      if (head.ok === false) return head;
+      const inner = head.packet;
+      const header: IPv6FragmentHeader = {
+        type: 'ipv6-fragment', nextHeader: inner.nextHeader, fragmentOffset: 0, moreFragments,
+        identification: packet.identification, length: inner.payloadLength, payload: inner.payload,
+      };
+      if (moreFragments) {
+        this.fragments4.set(key, { source: inner.sourceIP, destination: inner.destinationIP, nextHeader: inner.nextHeader, createdAt: this.config.clock() });
+      }
+      return { ok: true, packet: { ...inner, nextHeader: IP_PROTO_IPV6_FRAGMENT, payloadLength: IPV6_FRAGMENT_HEADER_BYTES + inner.payloadLength, payload: header } };
+    }
+    const held = this.fragments4.get(key);
+    if (held === undefined) return { ok: false, reason: 'fragment-without-head' };
+    if (!moreFragments) this.fragments4.delete(key);
+    const header: IPv6FragmentHeader = {
+      type: 'ipv6-fragment', nextHeader: held.nextHeader, fragmentOffset: packet.fragmentOffset, moreFragments,
+      identification: packet.identification, length, payload: { type: 'ipv6-fragment-data', length },
+    };
+    return {
+      ok: true,
+      packet: createIPv6Packet(held.source, held.destination, IP_PROTO_IPV6_FRAGMENT, packet.ttl, header,
+        IPV6_FRAGMENT_HEADER_BYTES + length, { trafficClass: packet.tos }),
+    };
+  }
+
   purge(): void {
     const now = this.config.clock();
+    for (const [key, held] of this.fragments6) if (now - held.createdAt >= FRAGMENT_STATE_MS) this.fragments6.delete(key);
+    for (const [key, held] of this.fragments4) if (now - held.createdAt >= FRAGMENT_STATE_MS) this.fragments4.delete(key);
     for (const [key, session] of this.sessionsFrom6) {
       if (now - session.lastUsedAt < this.timeoutOf(session)) continue;
       this.sessionsFrom6.delete(key);
@@ -310,7 +422,7 @@ export class Nat64Translator {
     if (knowsRemote === undefined) return null;
     if (protocol === 'tcp' && !(payload as TCPPacket).flags.syn) return null;
     const now = this.config.clock();
-    const v6Destination = this.config.prefix.synthesize(new IPAddress(remote.ip)).toString();
+    const v6Destination = this.prefixOf(new IPv6Address(knowsRemote.v6Destination))!.synthesize(new IPAddress(remote.ip)).toString();
     const session: Nat64Session = {
       protocol,
       v6Source: binding.v6Address, v6SourcePort: binding.v6Port,
@@ -372,7 +484,7 @@ export class Nat64Translator {
       ...(mapped.mtu === undefined ? {} : { mtu: mapped.mtu }),
       ...(mapped.pointer === undefined ? {} : { pointer: mapped.pointer }),
     };
-    const out = createIPv6Packet(this.config.prefix.synthesize(packet.sourceIP), new IPv6Address(embedded.binding.v6Address),
+    const out = createIPv6Packet(embedded.prefix.synthesize(packet.sourceIP), new IPv6Address(embedded.binding.v6Address),
       IP_PROTO_ICMPV6, packet.ttl, payload, ICMP_ERROR_HEADER_BYTES + IPV6_HEADER_BYTES + embedded.packet.payloadLength,
       { trafficClass: packet.tos });
     return { ok: true, packet: out };
@@ -427,7 +539,7 @@ export class Nat64Translator {
     return MTU_PLATEAUS.find((plateau) => plateau < totalLength && plateau >= IPV6_MINIMUM_MTU) ?? IPV6_MINIMUM_MTU;
   }
 
-  private embedded4to6(original: IPv4Packet): { packet: IPv6Packet; binding: Nat64Binding } | null {
+  private embedded4to6(original: IPv4Packet): { packet: IPv6Packet; binding: Nat64Binding; prefix: Nat64Prefix } | null {
     const protocol = protocolOf(original.protocol);
     if (protocol === null) return null;
     const inner = original.payload as TCPPacket | UDPPacket | ICMPPacket;
@@ -437,16 +549,18 @@ export class Nat64Translator {
     const payload = inner.type === 'icmp'
       ? { type: 'icmpv6', icmpType: 'echo-request', code: 0, id: binding.v6Port, sequence: inner.sequence, dataSize: inner.dataSize } as ICMPv6Packet
       : { ...inner, sourcePort: binding.v6Port };
-    const packet = createIPv6Packet(new IPv6Address(binding.v6Address), this.config.prefix.synthesize(original.destinationIP),
+    const prefix = this.prefixOfSession(protocol, binding, original.destinationIP);
+    const packet = createIPv6Packet(new IPv6Address(binding.v6Address), prefix.synthesize(original.destinationIP),
       original.protocol === IP_PROTO_ICMP ? IP_PROTO_ICMPV6 : original.protocol, original.ttl, payload,
       original.totalLength - original.ihl * 4, { trafficClass: original.tos });
     recomputeL4Checksum(packet);
-    return { packet, binding };
+    return { packet, binding, prefix };
   }
 
   private embedded6to4(invoking: IPv6Packet): { packet: IPv4Packet; binding: Nat64Binding } | null {
     const protocol = protocolOf(invoking.nextHeader);
-    const remote = this.config.prefix.extract(invoking.sourceIP);
+    const prefix = this.prefixOf(invoking.sourceIP);
+    const remote = prefix === null ? null : prefix.extract(invoking.sourceIP);
     if (protocol === null || remote === null) return null;
     const inner = invoking.payload as TCPPacket | UDPPacket | ICMPv6Packet;
     const port = inner.type === 'icmpv6' ? (inner.id ?? 0) : inner.destinationPort;

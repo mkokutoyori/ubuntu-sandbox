@@ -3224,18 +3224,17 @@ couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
 
-### [nat64] ce qui reste : fragments, ecoute IPv6 de named, commande de routeur
+### [nat64] ce qui reste : le `status` de `config system nat64` et une commande de routeur
 `Nat64Translator` (RFC 6146/7915) tourne sur le plan de donnees d'un `Router` (API `enableNat64`, pas de
 commande : aucune documentation Cisco ou Huawei du NAT64 n'est dans `official_docs`) et sur le FortiGate
-(politique `set nat64 enable` + `ippool enable` + pool `set nat64 enable`, prefixe de `config system nat64`
-/ `set nat64-prefix`, documentes dans `official_docs/forti-cli-ref-767.txt` et `forti-cli-ref-60.txt`).
-DNS64 est cable dans `named`, dont les listes `clients`/`mapped` lisent les prefixes IPv6. Les MTU des
-prochains sauts entrent dans le calcul des erreurs « packet too big » / « fragmentation needed ».
-**Reste** : (1) les paquets fragmentes ne sont pas traduits : le modele ne porte pas d'en-tete de
-fragment IPv6 et aucun hote ne reassemble de l'IPv6 (`IPv6DataPlane` le dit dans son en-tete), la traduction
-RFC 7915 §4.1/§5.1 des fragments n'a donc pas de lecteur ; (2) `named` n'ecoute pas en IPv6 (l'entree
-`[udp6]` : les agents du plan de controle restent en IPv4), de sorte que les elements IPv6 des listes ne
-sont evalues que pour une adresse donnee, pas encore pour un client IPv6 venu du fil ; (3) le `status` et les
-`secondary-prefix` de `config system nat64` (FortiOS 6.0) sont refuses, faute d'un second prefixe cote
-traducteur ; (4) aucune commande Cisco/Huawei de NAT64 faute de documentation constructeur.
+(politique `set nat64 enable` + `ippool enable` + pool `set nat64 enable`, prefixe, `secondary-prefix-status`
+et `secondary-prefix` de `config system nat64`, documentes dans `official_docs/forti-cli-ref-767.txt` et
+`forti-cli-ref-60.txt`). DNS64 est cable dans `named` (listes `clients`/`mapped` IPv4 et IPv6, client IPv6
+venu du fil). Les fragments sont traduits dans les deux sens et refragmentes pour tenir dans le MTU IPv6 ;
+les MTU des prochains sauts entrent dans le calcul des erreurs.
+**Reste** : (1) le `status` de `config system nat64` (FortiOS 6.0, « default = disable ») n'est pas lu :
+la reference 7.6.7 ne documente plus cette table, et la porter comme une porte fermerait par defaut un
+NAT64 que les politiques 7.6 pilotent seules ; (2) un fragment qui precede son premier fragment est jete,
+alors que la RFC 6146 autorise de le mettre en file ; (3) aucune commande Cisco/Huawei de NAT64, faute de
+documentation constructeur.
 

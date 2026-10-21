@@ -8,6 +8,9 @@
  * 2001:db8:64::/96 (un prefixe propre au site parce que la plage de documentation 203.0.113.0/24
  * est non globale et que le prefixe bien connu refuse de la representer, RFC 6052 §3.1).
  *
+ * Un echo de 3000 octets, fragmente par l'hote, traduit fragment par fragment puis refragmente au retour
+ * pour tenir dans le MTU IPv6, est ajoute (8 cas) ; il tombe avant, ainsi que son pendant FortiGate.
+ *
  * Avec src remis avant la correction, 4 cas sur 6 tombent. Deux passent dans les deux etats : le temoin
  * (le serveur repond en IPv4 direct, donc le lab est sain) et « sans traducteur, pas de reponse »,
  * que l'absence de traducteur satisfait aussi ; ce dernier borne le cas qui traduit. La commande qui active la fonction est ici une API du routeur : aucune
@@ -83,6 +86,11 @@ describe('NAT64 on the router data plane', () => {
     const { pc } = await lab();
     expect(await pc.executeCommand(`ping -6 -c 2 ${SERVER_V6}`)).toContain('2 received');
   });
+
+  it('an echo larger than the link MTU is fragmented by the host, translated fragment by fragment and answered whole', async () => {
+    const { pc } = await lab();
+    expect(await pc.executeCommand(`ping -6 -c 1 -s 3000 ${SERVER_V6}`)).toContain('1 received');
+  }, 30000);
 
   it('without the translator the same request gets no answer', async () => {
     const { pc } = await lab(false);

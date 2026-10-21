@@ -1,4 +1,4 @@
-import type { FortiAttributeSpec, FortiTableSpec } from './types';
+import { enable, word, type FortiAttributeSpec, type FortiTableSpec } from './types';
 
 const DEFAULT_PREFIX = '64:ff9b::/96';
 
@@ -17,8 +17,32 @@ export const SYSTEM_NAT64: FortiTableSpec = {
   accessGroup: 'sysgrp',
   renderOrder: 32,
   help: 'Configure NAT64.',
-  attributes: [nat64Prefix],
+  attributes: [
+    nat64Prefix,
+    enable('secondary-prefix-status', 'Enable/disable secondary NAT64 prefix.'),
+  ],
+  children: [{
+    path: ['secondary-prefix'],
+    kind: 'table',
+    keyType: 'name',
+    ordered: false,
+    scope: 'global',
+    accessGroup: 'sysgrp',
+    renderOrder: 33,
+    help: 'Secondary NAT64 prefix.',
+    attributes: [
+      { ...word('name', 'NAT64 prefix name.'), readOnly: true },
+      { ...nat64Prefix, help: 'NAT64 prefix.', defaultValue: [''] },
+    ],
+    onCommit(object, context) {
+      return context.device.applyNat64SecondaryPrefix(object.key, object.effective('nat64-prefix')[0] ?? '');
+    },
+    onDelete(key, context) {
+      context.device.removeNat64SecondaryPrefix(key);
+    },
+  }],
   onCommit(object, context) {
+    context.device.applyNat64SecondaryStatus(object.effective('secondary-prefix-status')[0] === 'enable');
     return context.device.applyNat64Prefix(object.effective('nat64-prefix')[0] ?? DEFAULT_PREFIX);
   },
 };

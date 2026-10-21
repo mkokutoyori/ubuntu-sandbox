@@ -1293,6 +1293,19 @@ export class Firewall extends Equipment {
     return undefined;
   }
 
+  applyNat64SecondaryPrefix(name: string, text: string): string | undefined {
+    try {
+      this.nat64.setSecondaryPrefix(name, Nat64Prefix.parse(text));
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return undefined;
+  }
+
+  removeNat64SecondaryPrefix(name: string): void { this.nat64.removeSecondaryPrefix(name); }
+
+  applyNat64SecondaryStatus(enabled: boolean): void { this.nat64.setSecondaryEnabled(enabled); }
+
   private haConfiguration: HaConfiguration = HA_DEFAULTS;
 
   isHaManagementInterface(iface: string): boolean {

@@ -17,8 +17,14 @@
  * message seul. Cas ajoutes : 3 ; 2 tombent avant (les deux min qui retiennent un MTU de saut suivant),
  * 1 passe dans les deux etats (le temoin : des MTU de saut suivant plus grands que celui du message ne
  * changent rien).
- * Limite : un paquet fragmente ne l'est pas (la fragmentation IPv6 n'est pas modelisee par le plan
- * de donnees).
+ * Plusieurs prefixes sur un traducteur (RFC 6052 §3, `secondaryPrefixes`) : 3 cas ajoutes, qui tombent
+ * tous avant (le prefixe secondaire n'etait pas reconnu). Le retour d'un flux repart du prefixe par lequel
+ * il est entre, les erreurs aussi.
+ * Fragments (RFC 7915 §4.1 et §5.1) : l'en-tete de fragment IPv6 devient les champs de fragment IPv4
+ * (decalage, MF, identification sur 16 bits) et inversement ; seul le premier fragment porte l'en-tete de
+ * transport, les suivants suivent l'etat qu'il a laisse. 6 cas ajoutes, dont 5 tombent avant (un
+ * fragment etait refuse comme protocole non pris en charge ; le temoin sans fragment passe). Limite : un fragment qui precede son premier
+ * fragment est jete (« fragment-without-head »), la file d'attente que la RFC 6146 autorise n'existe pas.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -28,6 +34,8 @@ import {
 import { computeTcpChecksum, type TcpSegment } from '@/network/tcp/types';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
 import { Nat64Translator, NAT64_DEFAULT_TIMEOUTS } from '@/network/nat/nat64/Nat64Translator';
+import { fragmentIPv4, IPV4_FLAG_MF } from '@/network/core/Ipv4Fragmentation';
+import { fragmentIPv6, ipv6FragmentOf, IPv6Reassembler } from '@/network/layers/internet/Ipv6Fragmentation';
 
 const HOST_A = '2001:db8:1::a';
 const HOST_B = '2001:db8:1::b';
@@ -384,5 +392,111 @@ describe('RFC 7915 sections 4.2 and 5.2 : the next-hop MTUs enter the MTU of a t
   it('packet too big: min(mtu - 20, IPv4 next hop, IPv6 next hop - 20)', () => {
     const { translator, back } = mtus(1350, 1340);
     expect(unwrap(translator.translate6to4(tooBig(back, 1400))).payload).toMatchObject({ mtu: 1320 });
+  });
+});
+
+describe('RFC 6052 section 3 : several prefixes on one translator', () => {
+  const secondary = Nat64Prefix.parse('2001:db8:ffff::/64');
+  const both = () => new Nat64Translator({
+    prefix: Nat64Prefix.wellKnownPrefix(), secondaryPrefixes: [secondary],
+    pool: [new IPAddress(POOL)], clock: () => 0,
+  });
+  const throughSecondary = secondary.synthesize(new IPAddress(SERVER)).toString();
+
+  it('translates toward the secondary prefix and answers from it, not from the primary', () => {
+    const translator = both();
+    const forward = unwrap(translator.translate6to4(udp6(HOST_A, throughSecondary, 40000, 53)));
+    expect(forward.destinationIP.toString()).toBe(SERVER);
+    const back = unwrap(translator.translate4to6(udp4(SERVER, POOL, 53, 40000)));
+    expect(back.sourceIP.toString()).toBe(throughSecondary);
+  });
+
+  it('the same host keeps the primary prefix for a flow that came through it', () => {
+    const translator = both();
+    unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40001, 53)));
+    const back = unwrap(translator.translate4to6(udp4(SERVER, POOL, 53, 40001)));
+    expect(back.sourceIP.toString()).toBe(toServer());
+  });
+
+  it('an error about a flow through the secondary prefix is sent from the secondary prefix', () => {
+    const translator = both();
+    const forward = unwrap(translator.translate6to4(udp6(HOST_A, throughSecondary, 40002, 53)));
+    const error = createIPv4Packet(new IPAddress(OTHER), new IPAddress(POOL), IP_PROTO_ICMP, 60,
+      { type: 'icmp', icmpType: 'time-exceeded', code: 0, id: 0, sequence: 0, dataSize: 0, originalPacket: forward }, 8 + forward.totalLength);
+    const back = unwrap(translator.translate4to6(error));
+    expect(back.sourceIP.toString()).toBe(secondary.synthesize(new IPAddress(OTHER)).toString());
+  });
+});
+
+describe('RFC 7915 sections 4.1 and 5.1 : fragments', () => {
+  const bigUdp6 = () => {
+    const datagram: UDPPacket = { type: 'udp', sourcePort: 40000, destinationPort: 53, length: 3000, checksum: 0, payload: null };
+    return createIPv6Packet(new IPv6Address(HOST_A), new IPv6Address(toServer()), 17, 64, datagram, 3000);
+  };
+  const bigUdp4 = () => {
+    const datagram: UDPPacket = { type: 'udp', sourcePort: 53, destinationPort: 40000, length: 3000, checksum: 0, payload: null };
+    return createIPv4Packet(new IPAddress(SERVER), new IPAddress(POOL), 17, 60, datagram, 3000, { flags: 0 });
+  };
+
+  it('IPv6 fragments become IPv4 fragments: offsets, more-fragments and a 16-bit identification', () => {
+    const { translator } = lab();
+    const pieces = fragmentIPv6(bigUdp6(), 1280, () => 0x12345);
+    expect(pieces.length).toBe(3);
+    const out = pieces.map((piece) => unwrap(translator.translate6to4(piece)));
+    expect(out.map((p) => p.fragmentOffset)).toEqual(pieces.map((p) => ipv6FragmentOf(p)!.fragmentOffset));
+    expect(out.map((p) => (p.flags & IPV4_FLAG_MF) !== 0)).toEqual([true, true, false]);
+    expect(new Set(out.map((p) => p.identification))).toEqual(new Set([0x2345]));
+    expect(out.every((p) => p.destinationIP.toString() === SERVER && p.sourceIP.toString() === POOL && p.protocol === 17)).toBe(true);
+    expect(out[0].payload).toMatchObject({ type: 'udp', destinationPort: 53 });
+  });
+
+  it('IPv4 fragments become IPv6 fragments that an IPv6 host reassembles whole', () => {
+    const { translator } = lab();
+    unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    const pieces = fragmentIPv4(bigUdp4(), 1500);
+    expect(pieces.length).toBe(3);
+    const out = pieces.map((piece) => unwrap(translator.translate4to6(piece)));
+    expect(out.every((p) => p.destinationIP.toString() === HOST_A && p.sourceIP.toString() === toServer())).toBe(true);
+    const reassembler = new IPv6Reassembler({ highThresholdBytes: () => 1 << 20 });
+    const outcomes = out.map((piece) => reassembler.add(piece, 'eth0'));
+    const whole = outcomes[2];
+    expect(whole.kind).toBe('complete');
+    expect(whole.kind === 'complete' && whole.packet.payload).toMatchObject({ type: 'udp', sourcePort: 53, destinationPort: 40000 });
+    expect(whole.kind === 'complete' && whole.packet.payloadLength).toBe(3000);
+  });
+
+  it('a fragment that grows past the IPv6 link MTU is split again, offsets kept on 8-byte units', () => {
+    const translator = new Nat64Translator({
+      prefix: Nat64Prefix.wellKnownPrefix(), pool: [new IPAddress(POOL)], clock: () => 0,
+      nexthopMtu: { ipv4: () => 1500, ipv6: () => 1500 },
+    });
+    unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    const pieces = fragmentIPv4(bigUdp4(), 1500);
+    const out = pieces.flatMap((piece) => unwrap(translator.translate4to6Fitted(piece)));
+    expect(out.every((p) => 40 + p.payloadLength <= 1500)).toBe(true);
+    const reassembler = new IPv6Reassembler({ highThresholdBytes: () => 1 << 20 });
+    const outcomes = out.map((piece) => reassembler.add(piece, 'eth0'));
+    const whole = outcomes[outcomes.length - 1];
+    expect(whole.kind === 'complete' && whole.packet.payloadLength).toBe(3000);
+  });
+
+  it('a fragment that arrives before the first one is dropped', () => {
+    const { translator } = lab();
+    unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    const pieces = fragmentIPv4(bigUdp4(), 1500);
+    expect(translator.translate4to6(pieces[1])).toEqual({ ok: false, reason: 'fragment-without-head' });
+  });
+
+  it('the same holds toward IPv4', () => {
+    const { translator } = lab();
+    const pieces = fragmentIPv6(bigUdp6(), 1280, () => 9);
+    expect(translator.translate6to4(pieces[1])).toEqual({ ok: false, reason: 'fragment-without-head' });
+  });
+
+  it('witness: an unfragmented datagram still translates whole', () => {
+    const { translator } = lab();
+    const out = unwrap(translator.translate6to4(udp6(HOST_A, toServer(), 40000, 53)));
+    expect(out.fragmentOffset).toBe(0);
+    expect(out.flags & IPV4_FLAG_MF).toBe(0);
   });
 });
