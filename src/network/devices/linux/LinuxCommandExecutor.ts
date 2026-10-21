@@ -1442,12 +1442,12 @@ export class LinuxCommandExecutor {
       rules: this.auditRules,
       vfs: this.vfs,
       serviceMgr: this.serviceMgr,
-      configFs: vfsAuditdConfigFs(this.vfs, this.userMgr),
+      configFs: vfsAuditdConfigFs(this.vfs, this.userMgr, (host) => this.resolveHostAddresses(host).length > 0),
       logEnv: {
         execute: (path) => { void this.executeAsync(path); },
         sendMail: (subject, body, account) => this.deliverLocalMail(account, subject, body),
         changeRunlevel: (level) => {
-          this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : 'poweroff.target');
+          this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : level === 'halt' ? 'halt.target' : 'poweroff.target');
         },
       },
       syslog: (priority, text) => this.auditdSyslog(priority, text),
@@ -5225,7 +5225,7 @@ export class LinuxCommandExecutor {
   }
 
   private checkAuditdConfig(): { ok: boolean; error?: string; verbatim?: boolean } {
-    const loaded = loadAuditdConfig(vfsAuditdConfigFs(this.vfs, this.userMgr), { configFile: AUDITD_CONF_PATH, allowLinks: false });
+    const loaded = loadAuditdConfig(vfsAuditdConfigFs(this.vfs, this.userMgr, (host) => this.resolveHostAddresses(host).length > 0), { configFile: AUDITD_CONF_PATH, allowLinks: false });
     if (loaded.rc === 0) return { ok: true };
     for (const entry of loaded.messages) this.auditdSyslog(entry.priority, entry.text);
     return {

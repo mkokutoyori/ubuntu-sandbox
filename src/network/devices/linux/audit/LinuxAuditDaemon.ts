@@ -194,6 +194,15 @@ export class LinuxAuditDaemon {
     return 1;
   }
 
+  private failStart(): number {
+    this.exitProcess(this.pid());
+    return 1;
+  }
+
+  private exitProcess(pid: number): void {
+    if (pid > 1) this.deps.process.exit(pid);
+  }
+
   private runStart(options: AuditdLaunchOptions): number {
     if (this.state !== 'stopped') return this.abortStart();
     const loaded = loadAuditdConfig(this.deps.configFs, { configFile: options.configFile, allowLinks: options.allowLinks });
@@ -201,7 +210,7 @@ export class LinuxAuditDaemon {
     if (loaded.rc !== 0) return 6;
     const config = loaded.config;
     if (options.foreground) config.writeLogs = false;
-    if (!this.resolveNode(config)) return 1;
+    if (!this.resolveNode(config)) return this.failStart();
     this.deps.vfs.writeFile(AUDITD_PID_FILE, `${this.pid()}\n`, 0, 0, 0o133);
     const writer = new AuditdLogWriter(config, {
       ...this.deps.logEnv,
@@ -211,7 +220,7 @@ export class LinuxAuditDaemon {
     });
     if (!writer.start()) {
       this.deps.vfs.deleteFile(AUDITD_PID_FILE);
-      return 1;
+      return this.failStart();
     }
     this.config = config;
     this.writer = writer;
@@ -321,10 +330,8 @@ export class LinuxAuditDaemon {
     this.writer = null;
     this.deps.vfs.deleteFile(AUDITD_STATE_FILE);
     this.deps.vfs.deleteFile(AUDITD_PID_FILE);
-    if (this.ownPid !== null) {
-      this.deps.process.exit(this.ownPid);
-      this.ownPid = null;
-    }
+    this.exitProcess(this.pid());
+    this.ownPid = null;
   }
 
   private runReload(): void {

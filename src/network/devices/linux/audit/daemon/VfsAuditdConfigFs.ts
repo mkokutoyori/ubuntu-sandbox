@@ -12,7 +12,7 @@ function readable(info: FileInfo, uid: number, gids: readonly number[]): boolean
 }
 
 export function vfsAuditdConfigFs(
-  vfs: VirtualFileSystem, users: LinuxUserManager, actor: { uid: number; gids: readonly number[] } = { uid: 0, gids: [0] },
+  vfs: VirtualFileSystem, users: LinuxUserManager, hostResolves: (host: string) => boolean, actor: { uid: number; gids: readonly number[] } = { uid: 0, gids: [0] },
 ): AuditdConfigFs {
   const statOf = (path: string, follow: boolean): StatResult => {
     const inode = vfs.resolveInode(path, follow);
@@ -37,6 +37,6 @@ export function vfsAuditdConfigFs(
       const found = statOf(path, true);
       return found.ok && found.info.kind === 'file' && (found.info.mode & 0o111) !== 0;
     },
-    hostResolves: () => true,
+    hostResolves,
   };
 }
