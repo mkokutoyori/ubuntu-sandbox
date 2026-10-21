@@ -1,6 +1,6 @@
 import { strerror, type Errno } from '@/network/core/Errno';
 
-export const RSYSLOG_VERSION = '8.2112.0';
+export const RSYSLOG_VERSION = '8.2610.0';
 
 export const RS_RET = {
   ERR: -3000,

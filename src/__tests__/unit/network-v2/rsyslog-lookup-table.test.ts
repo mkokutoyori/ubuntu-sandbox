@@ -1,5 +1,5 @@
 /**
- * Probe — lookup_table(), lookup() and reload_lookup_table() of rsyslog 8.2112.0, the version the machine reports
+ * Probe — lookup_table(), lookup() and reload_lookup_table() of rsyslog 8.2610.0, the version the machine reports
  * (runtime/lookup.c and grammar/rainerscript.c of that source: string, array and sparseArray tables, nomatch, the
  * version / type / index / value checks and their messages, the table reloaded on HUP or by reload_lookup_table()
  * on its own thread, a table stubbed when its reload fails, "TABLE-NOT-FOUND" for an unknown table). Not carried

@@ -14,6 +14,7 @@ const MODULE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'ruleset', type: 'string' }, { name: 'logpath', type: 'word' }, { name: 'permitnonkernelfacility', type: 'binary' },
   { name: 'consoleloglevel', type: 'int' }, { name: 'parsekerneltimestamp', type: 'binary' }, { name: 'keepkerneltimestamp', type: 'binary' },
   { name: 'internalmsgfacility', type: 'facility' }, { name: 'ratelimitinterval', type: 'int' }, { name: 'ratelimitburst', type: 'int' },
+  { name: 'ratelimit.name', type: 'string' },
 ];
 
 interface ImklogConfig {
@@ -26,13 +27,14 @@ interface ImklogConfig {
   internalMessageFacility: number;
   rateInterval: number;
   rateBurst: number;
+  rateName: string | null;
   ruleset: string | null;
 }
 
 function defaultConfig(): ImklogConfig {
   return {
     configuredViaModule: false, path: null, permitNonKernel: false, parseKernelStamp: false, keepKernelStamp: false, consoleLogLevel: -1,
-    internalMessageFacility: LOG_SYSLOG, rateInterval: -1, rateBurst: -1, ruleset: null,
+    internalMessageFacility: LOG_SYSLOG, rateInterval: -1, rateBurst: -1, rateName: null, ruleset: null,
   };
 }
 
@@ -155,7 +157,7 @@ class KernelLogReader implements InputInstance {
     if (!settings.permitNonKernel && (priority >> 3) !== LOG_KERN) return;
     if (this.limiter === undefined) {
       const created = this.context.rateLimiter({
-        module: 'imklog', interval: settings.rateInterval, burst: settings.rateBurst, forInput: true,
+        module: 'imklog', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName, forInput: true,
       });
       this.limiter = created === null ? null : created.limiter;
     }
@@ -222,9 +224,16 @@ export const imklog: InputModule = {
     settings.internalMessageFacility = numberParam(values, 'internalmsgfacility') ?? settings.internalMessageFacility;
     settings.rateBurst = numberParam(values, 'ratelimitburst') ?? settings.rateBurst;
     settings.rateInterval = numberParam(values, 'ratelimitinterval') ?? settings.rateInterval;
+    settings.rateName = stringParam(values, 'ratelimit.name') ?? settings.rateName;
     settings.ruleset = stringParam(values, 'ruleset') ?? settings.ruleset;
-    if (settings.rateInterval === -1) settings.rateInterval = 0;
-    if (settings.rateBurst === -1) settings.rateBurst = 10000;
+    if (settings.rateName !== null) {
+      if (settings.rateInterval !== -1 || settings.rateBurst !== -1) {
+        context.runtime.error('imklog: ratelimit.name is mutually exclusive with ratelimitinterval and ratelimitburst - using ratelimit.name', RS_RET.INVALID_PARAMS);
+      }
+    } else {
+      if (settings.rateInterval === -1) settings.rateInterval = 0;
+      if (settings.rateBurst === -1) settings.rateBurst = 10000;
+    }
     settings.configuredViaModule = true;
     return true;
   },

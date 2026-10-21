@@ -50,12 +50,12 @@ describe('immark', () => {
 
   it('refuses a zero period, and reports a ruleset that is combined with the syslog() path', () => {
     const zero = rig('module(load="immark" interval="0")\n*.* /var/log/x.log');
-    expect(zero.lab.loader.log.lines()).toEqual(['rsyslogd: immark: mark message period must not be 0, can not run [v8.2112.0]']);
+    expect(zero.lab.loader.log.lines()).toEqual(['rsyslogd: immark: mark message period must not be 0, can not run [v8.2610.0]']);
     expect(zero.lab.config.inputs.filter((record) => record.module === 'immark')).toHaveLength(0);
     zero.host.advance(3600_000);
     expect(libc(zero.host)).toEqual([]);
     const routed = rig('module(load="immark" interval="60" ruleset="marks")\nruleset(name="marks") { action(type="omfile" file="/var/log/marks.log") }\n*.* /var/log/x.log');
-    expect(routed.lab.loader.log.lines()).toEqual(['rsyslogd: immark: ruleset specified, but configured to log via syslog call - switching to rsyslog-internal logging [v8.2112.0]']);
+    expect(routed.lab.loader.log.lines()).toEqual(['rsyslogd: immark: ruleset specified, but configured to log via syslog call - switching to rsyslog-internal logging [v8.2610.0]']);
     routed.host.advance(60_000);
     expect(libc(routed.host)).toEqual([]);
     expect(read(routed.host, '/var/log/marks.log')).toHaveLength(1);

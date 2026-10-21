@@ -59,7 +59,7 @@ describe('omfwd over UDP', () => {
     submitLocal(cli, raw);
     expect(client.sentDatagrams.map((datagram) => datagram.payload.length)).toEqual([65507]);
     expect(internal(client)).toContain(
-      `omfwd/udp: message is ${raw.length} bytes long, but UDP can send at most 65507 bytes (by RFC limit) - truncating message [v8.2112.0 try https://www.rsyslog.com/e/2440 ]`,
+      `omfwd/udp: message is ${raw.length} bytes long, but UDP can send at most 65507 bytes (by RFC limit) - truncating message [v8.2610.0 try https://www.rsyslog.com/e/2440 ]`,
     );
   });
 
@@ -79,7 +79,7 @@ describe('omfwd over UDP', () => {
     submitLocal(cli, HELLO);
     expect(client.sentDatagrams).toHaveLength(0);
     expect(internal(client)[0]).toBe(
-      "omfwd: could not get addrinfo for hostname 'late.example':'514': Name or service not known [v8.2112.0 try https://www.rsyslog.com/e/2007 ]",
+      "omfwd: could not get addrinfo for hostname 'late.example':'514': Name or service not known [v8.2610.0 try https://www.rsyslog.com/e/2007 ]",
     );
     net.names.set('late.example', ['10.0.0.2']);
     submitLocal(cli, HELLO);
@@ -95,8 +95,8 @@ describe('omfwd over UDP', () => {
     client.datagramFailures.set('10.0.0.9', 'ENETUNREACH');
     submitLocal(cli, HELLO);
     const messages = internal(client);
-    expect(messages).toContain('omfwd/udp: socket 4: sendto() error: Network is unreachable [v8.2112.0 try https://www.rsyslog.com/e/2354 ]');
-    expect(messages).toContain('omfwd: socket 4: error 101 sending via udp: Network is unreachable [v8.2112.0 try https://www.rsyslog.com/e/2354 ]');
+    expect(messages).toContain('omfwd/udp: socket 4: sendto() error: Network is unreachable [v8.2610.0 try https://www.rsyslog.com/e/2354 ]');
+    expect(messages).toContain('omfwd: socket 4: error 101 sending via udp: Network is unreachable [v8.2610.0 try https://www.rsyslog.com/e/2354 ]');
   });
 
   it('rebindInterval re-creates the socket every N transmissions', () => {
@@ -162,7 +162,7 @@ describe('omfwd over TCP', () => {
   it('refuses a connection error, suspends, reports the connect failure and resumes after the interval', () => {
     const { net, client, server, cli } = lab('*.* action(type="omfwd" target="10.0.0.2" port="601" protocol="tcp")');
     submitLocal(cli, HELLO);
-    expect(internal(client)).toContain('cannot connect to 10.0.0.2:601 (took 0.00 seconds): Connection refused [v8.2112.0 try https://www.rsyslog.com/e/2027 ]');
+    expect(internal(client)).toContain('cannot connect to 10.0.0.2:601 (took 0.00 seconds): Connection refused [v8.2610.0 try https://www.rsyslog.com/e/2027 ]');
     const listener = startRsyslog(server, `${SERVER_CONFIG.replace('port="514" ruleset', 'port="514" ruleset')}\ninput(type="imtcp" port="601")`);
     expect(net.hosts.size).toBe(2);
     submitLocal(cli, HELLO);
@@ -178,7 +178,7 @@ describe('omfwd over TCP', () => {
     submitLocal(cli, HELLO);
     server.tcpAccepted[0].close();
     submitLocal(cli, '<13>Oct 19 12:00:02 ubuntu alice: second');
-    expect(internal(client)).toContain('ptcp network driver: CheckConnection detected that peer closed connection. [v8.2112.0 try https://www.rsyslog.com/e/2027 ]');
+    expect(internal(client)).toContain('ptcp network driver: CheckConnection detected that peer closed connection. [v8.2610.0 try https://www.rsyslog.com/e/2027 ]');
     expect(internal(client).some((text) => text.includes('remote server closed connection.'))).toBe(true);
     expect(server.tcpAccepted.map((connection) => connection.receivedText())).toEqual([`${HELLO}\n`, '<13>Oct 19 12:00:02 ubuntu alice: second\n']);
   });
@@ -232,13 +232,13 @@ describe('omfwd configuration diagnostics', () => {
 
   it('rejects an unknown protocol', () => {
     expect(diagnostics('*.* action(type="omfwd" target="x" protocol="sctp")')).toContain(
-      'rsyslogd: omfwd: invalid protocol "sctp" [v8.2112.0 try https://www.rsyslog.com/e/2213 ]',
+      'rsyslogd: omfwd: invalid protocol "sctp" [v8.2610.0 try https://www.rsyslog.com/e/2213 ]',
     );
   });
 
   it('rejects an unknown framing', () => {
     expect(diagnostics('*.* action(type="omfwd" target="x" protocol="tcp" tcp_framing="chunked")')).toContain(
-      'rsyslogd: omfwd: invalid framing "chunked" [v8.2112.0 try https://www.rsyslog.com/e/2214 ]',
+      'rsyslogd: omfwd: invalid framing "chunked" [v8.2610.0 try https://www.rsyslog.com/e/2214 ]',
     );
   });
 

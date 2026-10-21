@@ -1,7 +1,7 @@
 /**
  * Probe — src/network/rsyslog/engine/Statistics.ts and modules/Impstats.ts, ported from
  * runtime/statsobj.c, plugins/impstats/impstats.c, runtime/queue.c (statistics block) and
- * action.c (statistics block) of rsyslog 8.2112.0.
+ * action.c (statistics block) of rsyslog 8.2610.0.
  *
  * Measured against the base commit (git stash of src/network): 18 of the 19 cases fall - the module
  * does not exist there ("could not load module"), and the counters of queues, actions, inputs and
@@ -124,20 +124,20 @@ describe('impstats', () => {
     expect(read(routed.host, '/var/log/stats.log')).toHaveLength(6);
     expect(read(routed.host)).toEqual([]);
     const missing = rig('module(load="impstats" interval="60" ruleset="nope")\n*.* /var/log/x.log');
-    expect(missing.lab.loader.log.lines()).toEqual(["rsyslogd: impstats: ruleset 'nope' not found - using default ruleset instead [v8.2112.0]"]);
+    expect(missing.lab.loader.log.lines()).toEqual(["rsyslogd: impstats: ruleset 'nope' not found - using default ruleset instead [v8.2610.0]"]);
     missing.host.advance(60_000);
     expect(read(missing.host)).toHaveLength(5);
   });
 
   it('refuses a zero interval, an unknown format, and a ruleset without log.syslog', () => {
     const zero = rig('module(load="impstats" interval="0")\n*.* /var/log/x.log');
-    expect(zero.lab.loader.log.lines()).toEqual(['rsyslogd: impstats: stats interval zero not permitted, using default of 300 seconds [v8.2112.0]']);
+    expect(zero.lab.loader.log.lines()).toEqual(['rsyslogd: impstats: stats interval zero not permitted, using default of 300 seconds [v8.2610.0]']);
     zero.host.advance(299_000);
     expect(read(zero.host)).toEqual([]);
     zero.host.advance(1_000);
     expect(read(zero.host)).toHaveLength(5);
     const format = rig('module(load="impstats" interval="60" format="xml")\n*.* /var/log/x.log');
-    expect(format.lab.loader.log.lines()).toEqual(['rsyslogd: impstats: invalid format xml [v8.2112.0]']);
+    expect(format.lab.loader.log.lines()).toEqual(['rsyslogd: impstats: invalid format xml [v8.2610.0]']);
   });
 
   it('the legacy directives work before module(...) parameters and are refused after them', () => {
@@ -148,7 +148,7 @@ describe('impstats', () => {
     cee.host.advance(30_000);
     expect(bodies(cee.host)[0].startsWith('@cee: { "name": "main Q"')).toBe(true);
     const late = rig('module(load="impstats" interval="60")\n$PStatsInterval 30\n*.* /var/log/x.log');
-    expect(late.lab.loader.log.lines()).toEqual(["rsyslogd: command 'pstatsinterval' is currently not permitted - did you already set it via a RainerScript command (v6+ config)? [v8.2112.0 try https://www.rsyslog.com/e/2222 ]"]);
+    expect(late.lab.loader.log.lines()).toEqual(["rsyslogd: command 'pstatsinterval' is currently not permitted - did you already set it via a RainerScript command (v6+ config)? [v8.2610.0 try https://www.rsyslog.com/e/2222 ]"]);
   });
 
   it('a stopping daemon emits a last report', () => {
@@ -167,7 +167,7 @@ describe('impstats', () => {
     expect(queue[queue.length - 1]).toMatch(/full=[1-9]\d* discarded\.full=[1-9]\d* /);
   });
 
-  it('imuxsock counts submissions and per-pid rate limiters; the discarded counter stays at zero as in 8.2112.0', () => {
+  it('imuxsock counts submissions and per-pid rate limiters; the discarded counter stays at zero as in 8.2610.0', () => {
     const { host } = rig(`${TRADITIONAL}module(load="imuxsock" SysSock.RateLimit.Interval="5" SysSock.RateLimit.Burst="100")\nmodule(load="impstats" interval="60")\n*.* /var/log/x.log`);
     host.livePids.add(4242);
     host.logLocal('/run/systemd/journal/syslog', '<13>Oct 19 12:00:00 alice: one', { pid: 4242, uid: 1000, gid: 1000 });

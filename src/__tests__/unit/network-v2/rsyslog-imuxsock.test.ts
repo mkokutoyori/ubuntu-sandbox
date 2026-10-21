@@ -33,7 +33,7 @@ describe('imuxsock system socket', () => {
 
   it('takes the socket from systemd when it was handed over, and says so', () => {
     const { host } = rig(`${TEMPLATE}\nmodule(load="imuxsock")\n${FILE}`);
-    expect(libc(host)).toContain("imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2112.0]");
+    expect(libc(host)).toContain("imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]");
   });
 
   it('falls back to /dev/log when systemd did not hand a socket over, and honours syssock.name', () => {
@@ -124,7 +124,7 @@ describe('imuxsock additional sockets', () => {
 
   it('reports a socket path that cannot be created', () => {
     const { host } = rig('module(load="imuxsock")\ninput(type="imuxsock" socket="/nowhere/log")\n*.* /var/log/x.log');
-    expect(libc(host)).toContain("cannot create '/nowhere/log': No such file or directory [v8.2112.0 try https://www.rsyslog.com/e/2085 ]");
+    expect(libc(host)).toContain("cannot create '/nowhere/log': No such file or directory [v8.2610.0 try https://www.rsyslog.com/e/2085 ]");
   });
 
   it('legacy $AddUnixListenSocket with $InputUnixListenSocketHostName', () => {

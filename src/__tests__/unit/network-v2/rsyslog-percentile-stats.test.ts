@@ -1,5 +1,5 @@
 /**
- * Probe — percentile_stats() and percentile_observe() of rsyslog 8.2112.0 (runtime/perctile_stats.c,
+ * Probe — percentile_stats() and percentile_observe() of rsyslog 8.2610.0 (runtime/perctile_stats.c,
  * perctile_ringbuf.c and the function of grammar/rainerscript.c), observed through impstats: the numbers of the
  * source's own test (tests/perctile-simple.sh: 1..1000 then 1001..2000, p95=950, p50=500, p99=990, window_sum=500500),
  * the one-report lag of the percentiles (they are computed by the read notifier after the line is written), a ring

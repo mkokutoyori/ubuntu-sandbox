@@ -27,6 +27,7 @@ export interface ActionOptions {
   errorFile: string | null;
   errorFileMaxSize: number;
   externalStateFile: string | null;
+  rateLimitName: string | null;
   queue: QueueSettings;
 }
 
@@ -50,6 +51,13 @@ export interface RulesetDefinition {
   queue: QueueSettings | null;
 }
 
+export interface RateLimitDefinition {
+  readonly name: string;
+  readonly interval: number;
+  readonly burst: number;
+  readonly severity: number;
+}
+
 export interface InputRecord {
   readonly module: string;
   readonly instance: InputInstance;
@@ -64,6 +72,7 @@ export interface LoadedConfig {
   readonly outchannels: OutChannel[];
   readonly actions: ActionDefinition[];
   readonly parsers: Map<string, MessageParserModule>;
+  readonly rateLimits: Map<string, RateLimitDefinition>;
   readonly lookupTables: LookupRef[];
   readonly statistics: Statistics;
   readonly dynStats: DynStatsRegistry;

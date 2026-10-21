@@ -1,5 +1,5 @@
 /**
- * Probe — dyn_stats() and dyn_inc() of rsyslog 8.2112.0 (runtime/dynstats.c and the dyn_inc() function of
+ * Probe — dyn_stats() and dyn_inc() of rsyslog 8.2610.0 (runtime/dynstats.c and the dyn_inc() function of
  * grammar/rainerscript.c), observed through impstats, the only place their counters exist: per-bucket objects
  * (origin dynstats.bucket, reporting namespace "values", metrics reset on every read unless resettable="off"), the
  * "global" object (origin dynstats, "<bucket>.ops_overflow / new_metric_add / no_metric / metrics_purged / ops_ignored /
