@@ -8,7 +8,8 @@
  * Measured against the base commit (git stash of src/network): 9 of the 10 cases fall - the three parameters
  * are refused as unknown. The one that passes in both states is the WITNESS (a bucket without persistence
  * writes nothing).
- * Deviation recorded in TODO.md: the metrics are written in insertion order, the source walks its hash table.
+ * The metrics are written in the order the source's hash table (engine/HashTable.ts, checked against the C table
+ * compiled with gcc: alice then bob in a 3079-slot table iterate as bob, alice) walks them.
  */
 import { describe, expect, it } from 'vitest';
 import { LabHost, LabNetwork, startRsyslog, submitLocal } from './_helpers/rsyslogLab';
@@ -38,7 +39,7 @@ describe('dyn_stats persistence', () => {
     const lab = start(host, 'msgs', 'persistStateInterval="100" resettable="off"');
     for (const program of ['alice', 'alice', 'bob']) submitLocal(lab, MSG(program));
     lab.engine.stop();
-    expect(host.fileSystem.get(STATE)).toBe('{"name":"msgs","values":{"alice":2,"bob":1}}');
+    expect(host.fileSystem.get(STATE)).toBe('{"name":"msgs","values":{"bob":1,"alice":2}}');
   });
 
   it('persists what the final impstats report left: a resettable bucket is read, hence reset, before the state is written', () => {
@@ -56,7 +57,7 @@ describe('dyn_stats persistence', () => {
     submitLocal(lab, MSG('alice'));
     expect(host.fileSystem.has(STATE)).toBe(false);
     submitLocal(lab, MSG('bob'));
-    expect(host.fileSystem.get(STATE)).toBe('{"name":"msgs","values":{"alice":2,"bob":1}}');
+    expect(host.fileSystem.get(STATE)).toBe('{"name":"msgs","values":{"bob":1,"alice":2}}');
   });
 
   it('writes when persistStateTimeInterval has elapsed at the next update', () => {

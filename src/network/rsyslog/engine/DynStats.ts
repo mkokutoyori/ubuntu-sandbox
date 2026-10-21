@@ -1,9 +1,12 @@
+import { RsyslogHashTable } from './HashTable';
 import { RS_RET } from './Log';
 import type { RsyslogFiles } from './Host';
 import type { RuntimeLog } from './Modules';
 import type { Statistics, StatsObject } from './Statistics';
 
 const DYN_INC_OK = 0;
+
+const HASHTABLE_OVERPROVISIONING = 1.25;
 
 export const DEFAULT_MAX_CARDINALITY = 2000;
 export const DEFAULT_UNUSED_METRIC_LIFE_SECONDS = 3600;
@@ -52,7 +55,7 @@ const GLOBAL_COUNTER_SUFFIXES: ReadonlyArray<readonly [string, keyof BucketCount
 ];
 
 export class DynStatsBucket {
-  private table = new Map<string, MetricCounter>();
+  private table: RsyslogHashTable<MetricCounter>;
   private survivors = new Map<string, MetricCounter>();
   private metricCount = 0;
   private cleanupAtMs = 0;
@@ -64,6 +67,7 @@ export class DynStatsBucket {
   constructor(
     readonly options: DynStatsOptions, private readonly statistics: Statistics, globalObject: StatsObject, private readonly services: DynStatsServices,
   ) {
+    this.table = this.newTable();
     this.object = statistics.create(options.name, {
       origin: 'dynstats.bucket', reportingNamespace: 'values', readNotifier: () => this.resetIfExpired(),
     });
@@ -142,10 +146,9 @@ export class DynStatsBucket {
 
   persistState(synchronous: boolean): void {
     const path = this.stateFilePath();
-    const values: { [metric: string]: number } = {};
-    for (const counter of this.table.values()) values[counter.metric] = counter.value;
+    const members = this.table.values().map((counter) => `${plainJson(counter.metric)}:${counter.value}`);
     const runtime = this.services.runtime();
-    if (this.services.files.write(path, plainJson({ name: this.options.name, values }))) return;
+    if (this.services.files.write(path, `{"name":${plainJson(this.options.name)},"values":{${members.join(',')}}}`)) return;
     runtime.error(`dynstats: cannot open state file '${path}.tmp' for persisting file state - some data will probably be duplicated on next startup`, RS_RET.IO_ERROR);
     if (synchronous) runtime.error(`dynstats: could not persist state file ${path} - data may be repeated on next startup. Is WorkDirectory set?`, RS_RET.IO_ERROR);
   }
@@ -179,7 +182,7 @@ export class DynStatsBucket {
       this.counters.noMetric++;
       return DYN_INC_OK;
     }
-    const existing = this.table.get(metric);
+    const existing = this.table.search(metric);
     if (existing !== undefined) existing.value++;
     else {
       const code = this.addMetric(metric, 0, 1);
@@ -197,7 +200,7 @@ export class DynStatsBucket {
     const survivor = this.survivors.get(metric);
     const counter: MetricCounter = survivor ?? { metric, value: 0 };
     if (survivor !== undefined) this.survivors.delete(metric);
-    this.table.set(metric, counter);
+    this.table.insert(metric, counter);
     this.object.addCounter({ name: metric, read: () => counter.value, reset: () => { counter.value = 0; }, mustReset: this.options.resettable });
     counter.value += increment + offset;
     if (survivor === undefined) {
@@ -207,12 +210,16 @@ export class DynStatsBucket {
     return DYN_INC_OK;
   }
 
+  private newTable(): RsyslogHashTable<MetricCounter> {
+    return new RsyslogHashTable(Math.floor(HASHTABLE_OVERPROVISIONING * this.options.maxCardinality + 1));
+  }
+
   private reset(): void {
     this.object.clearCounters();
     this.counters.metricsPurged += this.survivors.size;
     this.metricCount -= this.survivors.size;
-    this.survivors = this.table;
-    this.table = new Map();
+    this.survivors = new Map(this.table.entries());
+    this.table = this.newTable();
     this.counters.purgeTriggered++;
     this.cleanupAtMs = this.services.nowMs() + this.options.unusedMetricLifeSeconds * 1000;
   }
