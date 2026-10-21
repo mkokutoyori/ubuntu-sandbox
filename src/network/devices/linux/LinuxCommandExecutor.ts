@@ -5247,14 +5247,14 @@ export class LinuxCommandExecutor {
   publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
   publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
 
-  private publishSyscall(syscall: string, path?: string): void {
+  private publishSyscall(syscall: string, path?: string, perm?: FileAccessPerm): void {
     if (!this.bus || !this.attachedDeviceId) {
-      this.auditRules.onSyscall(syscall, path);
+      this.auditRules.onSyscall(syscall, path, undefined, perm);
       return;
     }
     const actor = this.snapshotActor();
     const payload: SyscallInvokedPayload = {
-      deviceId: this.attachedDeviceId, syscall, path,
+      deviceId: this.attachedDeviceId, syscall, path, perm,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
       auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
@@ -5404,7 +5404,7 @@ export class LinuxCommandExecutor {
         }
         for (const arg of fileArgs) {
           this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
-          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd));
+          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd), 'r');
         }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');

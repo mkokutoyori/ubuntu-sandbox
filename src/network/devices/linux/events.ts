@@ -164,6 +164,7 @@ export interface FileAccessedPayload extends LinuxDeviceRef {
 export interface SyscallInvokedPayload extends LinuxDeviceRef {
   syscall: string;
   path?: string;
+  perm?: FileAccessPerm;
   pid: number;
   ppid: number;
   uid: number;

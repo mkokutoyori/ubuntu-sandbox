@@ -246,9 +246,9 @@ export class LinuxAuditRules {
     return true;
   }
 
-  private eventFor(syscall: string, path: string | undefined, actor: AuditActorContext): AuditEvent {
+  private eventFor(syscall: string, path: string | undefined, actor: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a'): AuditEvent {
     const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
-    const args = syscallArguments(syscall, path).map((hex) => parseInt(hex, 16));
+    const args = syscallArguments(syscall, path, perm).map((hex) => parseInt(hex, 16));
     return {
       syscall, path,
       pid: actor.pid, ppid: actor.ppid, uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
@@ -283,44 +283,44 @@ export class LinuxAuditRules {
     if (this.kernel.status.enabled === 0) return;
     const syscall = syscallHint ?? defaultSyscallFor(perm);
     const actor = ctx ?? this.actor();
-    const event = this.eventFor(syscall, path, actor);
+    const event = this.eventFor(syscall, path, actor, perm);
     const bit = permissionBit(perm);
     const hit = this.firstMatch(event, SYSCALL_ALIASES[syscall] ?? [syscall],
       (decoded) => decoded.permission === null
         ? decoded.action === K.AUDIT_NEVER
         : (decoded.permission & bit) !== 0 && (decoded.watchPath !== null || decoded.dirPath !== null));
     if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
-    this.fire(syscall, path, hit.decoded.key, actor);
+    this.fire(syscall, path, hit.decoded.key, actor, perm);
   }
 
   onAccessIndirect(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint: string, ctx?: AuditActorContext): void {
     if (this.kernel.status.enabled === 0) return;
     const actor = ctx ?? this.actor();
-    const event = this.eventFor(syscallHint, path, actor);
+    const event = this.eventFor(syscallHint, path, actor, perm);
     const bit = permissionBit(perm);
     const hit = this.firstMatch(event, SYSCALL_ALIASES[syscallHint] ?? [syscallHint],
       (decoded) => decoded.permission !== null && (decoded.permission & bit) !== 0 && decoded.watchPath !== null
         && decoded.watchPath !== path);
     if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
-    this.fire(syscallHint, path, hit.decoded.key, actor);
+    this.fire(syscallHint, path, hit.decoded.key, actor, perm);
   }
 
-  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext): void {
+  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a'): void {
     if (this.kernel.status.enabled === 0) return;
     const actor = ctx ?? this.actor();
-    const event = this.eventFor(syscall, path, actor);
+    const event = this.eventFor(syscall, path, actor, perm);
     const hit = this.firstMatch(event, SYSCALL_ALIASES[syscall] ?? [syscall], (decoded) => decoded.permission === null);
     if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
-    this.fire(syscall, path, hit.decoded.key, actor);
+    this.fire(syscall, path, hit.decoded.key, actor, perm);
   }
 
-  private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext): void {
+  private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext, perm?: 'r' | 'w' | 'x' | 'a'): void {
     if (this.kernel.status.enabled === 0) return;
     const ctx = ctxArg ?? this.actor();
     const exit = ctx.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13;
     const number = x86SyscallNumber(syscall);
     const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
-    const args = syscallArguments(syscall, path);
+    const args = syscallArguments(syscall, path, perm);
     const syscallFields: Record<string, string | number> = {
       arch: X86_64_ARCH.toString(16),
       syscall: number ?? 0,
@@ -383,10 +383,10 @@ function pointerFor(path: string | undefined, salt: number): string {
   return `55${h.toString(16).padStart(8, '0')}${(salt * 16).toString(16).padStart(2, '0')}`;
 }
 
-function syscallArguments(syscall: string, path: string | undefined): [string, string, string, string] {
+function syscallArguments(syscall: string, path: string | undefined, perm?: 'r' | 'w' | 'x' | 'a'): [string, string, string, string] {
   const p0 = pointerFor(path, 0);
   const p1 = pointerFor(path, 1);
-  const writing = writingSyscall(syscall);
+  const writing = perm === 'r' ? false : writingSyscall(syscall);
   if (syscall === 'open') return [p0, writing ? '241' : '0', '1b6', '0'];
   if (syscall === 'openat' || syscall === 'openat2') return ['ffffff9c', p0, writing ? '241' : '0', '1b6'];
   if (syscall === 'creat') return [p0, '1b6', '0', '0'];
