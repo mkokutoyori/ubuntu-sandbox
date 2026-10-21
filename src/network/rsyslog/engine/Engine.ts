@@ -56,18 +56,17 @@ export class RsyslogEngine implements InputSubmitter {
       'rsyslogd[internal_messages]', config.settings.internalMessages.rateInterval, config.settings.internalMessages.rateBurst, 0,
     );
     this.mainQueue = this.newQueue('main Q', config.settings.mainQueue, (message) => this.processThroughRuleset(message));
-    config.actions.forEach((definition) => {
-      this.actions.set(definition.id, new ActionRuntime(definition, this.actionServices(), definition.id - 1));
-    });
     for (const [name, ruleset] of config.rulesets) {
       if (ruleset.queue !== null && ruleset.queue.type !== 'Direct') {
         this.rulesetQueues.set(name, this.newQueue(`ruleset ${name} queue`, ruleset.queue, (message) => this.processThroughRuleset(message)));
       }
     }
     for (const definition of config.actions) {
+      const runtime = new ActionRuntime(definition, this.actionServices(), definition.id - 1);
+      this.actions.set(definition.id, runtime);
+      this.registerActionStatistics(runtime);
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
-      const runtime = this.actions.get(definition.id) as ActionRuntime;
       this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => runtime.commit()));
     }
   }
@@ -76,7 +75,7 @@ export class RsyslogEngine implements InputSubmitter {
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
     endBatch: () => void = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
-    return new WorkerQueue<RsyslogMessage>(
+    const queue = new WorkerQueue<RsyslogMessage>(
       name,
       settings,
       {
@@ -88,6 +87,29 @@ export class RsyslogEngine implements InputSubmitter {
       },
       process,
     );
+    if (settings.type !== 'Direct') this.registerQueueStatistics(queue);
+    return queue;
+  }
+
+  private registerQueueStatistics(queue: WorkerQueue<RsyslogMessage>): void {
+    const counters = queue.statistics;
+    const object = this.config.statistics.create(queue.name, { origin: 'core.queue' });
+    object.addCounter({ name: 'size', read: () => queue.length });
+    object.addCounter({ name: 'enqueued', read: () => counters.enqueued, reset: () => { counters.enqueued = 0; } });
+    object.addCounter({ name: 'full', read: () => counters.full, reset: () => { counters.full = 0; } });
+    object.addCounter({ name: 'discarded.full', read: () => counters.discardedFull, reset: () => { counters.discardedFull = 0; } });
+    object.addCounter({ name: 'discarded.nf', read: () => counters.discardedNearlyFull, reset: () => { counters.discardedNearlyFull = 0; } });
+    object.addCounter({ name: 'maxqsize', read: () => counters.maxSize });
+  }
+
+  private registerActionStatistics(runtime: ActionRuntime): void {
+    const object = this.config.statistics.create(runtime.name, { origin: 'core.action' });
+    const counters = runtime.counters;
+    object.addCounter({ name: 'processed', read: () => counters.processed, reset: () => { counters.processed = 0; } });
+    object.addCounter({ name: 'failed', read: () => counters.failed, reset: () => { counters.failed = 0; } });
+    object.addCounter({ name: 'suspended', read: () => counters.suspended, reset: () => { counters.suspended = 0; } });
+    object.addCounter({ name: 'suspended.duration', read: () => counters.suspendedDuration });
+    object.addCounter({ name: 'resumed', read: () => counters.resumed, reset: () => { counters.resumed = 0; } });
   }
 
   private commitActions(): void {
@@ -529,6 +551,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   hup(): void {
     for (const runtime of this.actions.values()) runtime.hup();
+    for (const record of this.config.inputs) record.instance.hup?.();
     for (const table of this.config.lookupTables) if (table.reloadOnHup) table.reload(null);
     this.oversizeLog?.close();
     this.oversizeLog = null;

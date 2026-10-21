@@ -3,6 +3,7 @@ import { arrayParam, getParams, numberParam, reportUnused, stringParam, type Par
 import type { AllowedSenderList } from '../engine/AllowedSenders';
 import type { Listener, StreamConnection } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
+import type { StatsObject } from '../engine/Statistics';
 import { emptyTlsExtras, copyTlsExtras, readTlsExtras, resolveStreamTls, type StreamTlsExtras, type StreamTlsOptions } from '../engine/StreamDriver';
 import type { DirectiveRegistration, InputContext, InputInstance, InputModule, ModuleContext } from '../engine/Modules';
 import { TcpFramer } from '../TcpFramer';
@@ -159,6 +160,8 @@ class ImtcpListener implements InputInstance {
   private listeners: Listener[] = [];
   private readonly sessions = new Set<TcpSession>();
   private limiter: import('../engine/RateLimiter').RateLimiter | null | undefined;
+  private statistics: StatsObject | null = null;
+  private submitted = 0;
 
   constructor(private readonly settings: TcpInstanceSettings, private readonly context: InputContext) {
     this.description = `imtcp(${settings.address ?? '*'}/${settings.port})`;
@@ -212,6 +215,8 @@ class ImtcpListener implements InputInstance {
     }
     if (settings.listenPortFile !== null) this.context.host.files.write(settings.listenPortFile, `${outcome.listeners[0].port}\n`);
     this.listeners = outcome.listeners;
+    this.statistics = this.context.statistics.create(`${this.displayInputName}(${port})`, { origin: 'imtcp' });
+    this.statistics.addCounter({ name: 'submitted', read: () => this.submitted, reset: () => { this.submitted = 0; } });
     return true;
   }
 
@@ -219,6 +224,8 @@ class ImtcpListener implements InputInstance {
     for (const session of [...this.sessions]) this.closeSession(session, false);
     for (const listener of this.listeners) listener.close();
     this.listeners = [];
+    if (this.statistics !== null) this.context.statistics.remove(this.statistics);
+    this.statistics = null;
   }
 
   private limiterForSubmissions(): import('../engine/RateLimiter').RateLimiter | undefined {
@@ -319,6 +326,7 @@ class ImtcpListener implements InputInstance {
       defaultTimeZone: this.settings.defaultTimeZone,
       limiter: this.limiterForSubmissions(),
     });
+    this.submitted++;
   }
 }
 

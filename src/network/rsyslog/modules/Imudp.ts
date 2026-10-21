@@ -3,6 +3,7 @@ import { arrayParam, getParams, numberParam, reportUnused, stringParam, type Par
 import type { AllowedSenderList } from '../engine/AllowedSenders';
 import type { Datagram, Listener } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
+import type { StatsObject } from '../engine/Statistics';
 import type {
   DirectiveRegistration, InputContext, InputInstance, InputModule, ModuleContext, ModuleRateLimiter,
 } from '../engine/Modules';
@@ -91,11 +92,32 @@ interface ListenerSettings {
   allowedSenders: AllowedSenderList | null;
 }
 
+interface WorkerCounters {
+  calledRecvmmsg: number;
+  calledRecvmsg: number;
+  messagesReceived: number;
+}
+
+function workerCounters(context: ModuleContext): WorkerCounters {
+  return context.moduleState('imudp.workers', () => {
+    const first: WorkerCounters = { calledRecvmmsg: 0, calledRecvmsg: 0, messagesReceived: 0 };
+    for (let index = 0; index < moduleConfig(context).workerThreads; index++) {
+      const state = index === 0 ? first : { calledRecvmmsg: 0, calledRecvmsg: 0, messagesReceived: 0 };
+      const object = context.statistics.create(`imudp(w${index})`, { origin: 'imudp' });
+      object.addCounter({ name: 'called.recvmmsg', read: () => state.calledRecvmmsg, reset: () => { state.calledRecvmmsg = 0; } });
+      object.addCounter({ name: 'called.recvmsg', read: () => state.calledRecvmsg, reset: () => { state.calledRecvmsg = 0; } });
+      object.addCounter({ name: 'msgs.received', read: () => state.messagesReceived, reset: () => { state.messagesReceived = 0; } });
+    }
+    return first;
+  });
+}
+
 class ImudpListener implements InputInstance {
   readonly bindsBeforePrivilegeDrop = true;
   readonly description: string;
   private listeners: Listener[] = [];
   private readonly counters = new Map<string, { submitted: number; disallowed: number }>();
+  private statisticsObjects: StatsObject[] = [];
 
   constructor(
     private readonly settings: ListenerSettings,
@@ -157,16 +179,26 @@ class ImudpListener implements InputInstance {
       this.context.host.files.write(settings.portListenFile, `${outcome.listeners[0].port}\n`);
     }
     this.listeners = outcome.listeners;
-    const baseName = settings.inputName ?? 'imudp';
-    for (const listener of this.listeners) {
-      this.counters.set(`${baseName}(${bindName}/${port}/${listener.family})`, { submitted: 0, disallowed: 0 });
-    }
+    for (const listener of this.listeners) this.registerListenerStatistics(this.displayName(listener.family));
+    workerCounters(this.context);
     return true;
+  }
+
+  private registerListenerStatistics(name: string): void {
+    const state = { submitted: 0, disallowed: 0 };
+    const object = this.context.statistics.create(name, { origin: 'imudp' });
+    object.addCounter({ name: 'submitted', read: () => state.submitted, reset: () => { state.submitted = 0; } });
+    object.addCounter({ name: 'disallowed', read: () => state.disallowed, reset: () => { state.disallowed = 0; } });
+    this.counters.set(name, state);
+    this.statisticsObjects.push(object);
   }
 
   stop(): void {
     for (const listener of this.listeners) listener.close();
     this.listeners = [];
+    for (const object of this.statisticsObjects) this.context.statistics.remove(object);
+    this.statisticsObjects = [];
+    this.counters.clear();
   }
 
   private displayName(family: 'IPv4' | 'IPv6'): string {
@@ -175,6 +207,9 @@ class ImudpListener implements InputInstance {
   }
 
   private receive(datagram: Datagram): void {
+    const worker = workerCounters(this.context);
+    worker.calledRecvmmsg++;
+    worker.messagesReceived++;
     if (datagram.payload.length === 0) return;
     const family: 'IPv4' | 'IPv6' = datagram.sourceIp.includes(':') ? 'IPv6' : 'IPv4';
     const display = this.displayName(this.listeners[0]?.family ?? family);

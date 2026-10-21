@@ -15,7 +15,8 @@ export interface QueueStatistics {
   size: number;
   enqueued: number;
   full: number;
-  discarded: number;
+  discardedFull: number;
+  discardedNearlyFull: number;
   maxSize: number;
 }
 
@@ -24,7 +25,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   private running = false;
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
-  readonly statistics: QueueStatistics = { size: 0, enqueued: 0, full: 0, discarded: 0, maxSize: 0 };
+  readonly statistics: QueueStatistics = { size: 0, enqueued: 0, full: 0, discardedFull: 0, discardedNearlyFull: 0, maxSize: 0 };
 
   constructor(
     readonly name: string,
@@ -50,12 +51,12 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     if (this.stopped) return false;
     const discardMark = settings.discardMark ?? Math.floor(settings.size * 0.98);
     if (this.items.length >= discardMark && item.severity >= settings.discardSeverity) {
-      this.statistics.discarded++;
+      this.statistics.discardedNearlyFull++;
       return false;
     }
     if (this.items.length >= settings.size) {
       this.statistics.full++;
-      this.statistics.discarded++;
+      this.statistics.discardedFull++;
       this.host.report(`queue '${this.name}': queue full - ${this.items.length} messages in queue, message discarded`);
       return false;
     }

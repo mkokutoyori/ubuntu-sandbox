@@ -22,6 +22,7 @@ import { AllowedSenderList, parseAllowedSenderEntries, type AllowedSenderEnviron
 import { LocalClock } from './LocalClock';
 import { RateLimiter } from './RateLimiter';
 import { SenderResolver } from './SenderResolver';
+import { Statistics } from './Statistics';
 import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type QueueSettings } from './Settings';
 
 export interface ModuleCatalog {
@@ -152,7 +153,7 @@ export class ConfigLoader implements ConfigSink {
     const settings = defaultGlobalSettings();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), lookupTables: [], timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
+      rateLimits: new Map(), lookupTables: [], statistics: new Statistics(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -170,6 +171,7 @@ export class ConfigLoader implements ConfigSink {
         internal: (severity, code, text, mark, facility) => this.runtimeSink.internal(severity, code, text, mark, facility),
       },
       settings,
+      statistics: this.config.statistics,
       template: (name) => this.config.templates.get(name),
       report: (message) => this.reportAt(message),
       warn: (message) => this.warnAt(message),

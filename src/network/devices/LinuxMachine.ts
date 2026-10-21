@@ -1629,6 +1629,12 @@ export abstract class LinuxMachine extends EndHost
       udp: this as unknown as RsyslogUdpEndpoint,
       tcp: () => this.getTcpStack(),
       holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
+      resourceUsage: () => {
+        const pid = mainPid();
+        const record = executor.processMgr.get(pid);
+        if (record === undefined) return {};
+        return { userMicroseconds: record.cpuTime * 1000, maxResidentKilobytes: record.rss, openFiles: executor.descriptorCountOf(pid) };
+      },
       descriptorLimitReached: () => {
         const pid = mainPid();
         return pid !== 0 && !executor.processMgr.canOpenDescriptor(pid, executor.descriptorSourcesFor(pid));

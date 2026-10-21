@@ -1312,6 +1312,10 @@ export class LinuxCommandExecutor {
     };
   }
 
+  descriptorCountOf(pid: number): number {
+    return descriptorCount(this.descriptorSourcesFor(pid));
+  }
+
   /** Le processus rsyslog vivant, celui qui tient les journaux ouverts. */
   private rsyslogProcess(): (import('../os/OSProcess').OSProcess) | undefined {
     const info = this.processMgr.list().find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));

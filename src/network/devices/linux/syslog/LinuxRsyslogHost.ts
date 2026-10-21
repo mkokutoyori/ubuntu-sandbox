@@ -7,7 +7,7 @@ import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
   Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
-  OpenFileOptions, OpenFileResult, ProcessDetails, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
+  OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
 import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure } from '../VirtualFileSystem';
@@ -47,6 +47,7 @@ export interface LinuxRsyslogPlatform {
   tcp(): TcpStack;
   holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | AppendFailure;
   descriptorLimitReached(): boolean;
+  resourceUsage(): ResourceUsage;
   userNameOfUid(uid: number): string | null;
   supplementaryGidsOf(userName: string): number[];
   applyCredentials(uid: number, gid: number): void;
@@ -367,6 +368,10 @@ export class LinuxRsyslogHost implements RsyslogHost {
 
   bootTimeMs(): number {
     return this.platform.bootTimeMs();
+  }
+
+  resourceUsage(): ResourceUsage {
+    return this.platform.resourceUsage();
   }
 
   schedule(callback: () => void, delayMs: number): () => void {

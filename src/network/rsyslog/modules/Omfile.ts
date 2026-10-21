@@ -2,6 +2,7 @@ import type { NvList } from '../config/Ast';
 import { getParams, numberParam, reportUnused, stringParam, type ParamDescriptor } from '../config/Params';
 import type { FileHandle, OpenFileOptions } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
+import type { StatsObject } from '../engine/Statistics';
 import type {
   ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, DirectiveRegistration, ModuleContext, OutputModule, SelectorParse,
   TemplateRequest,
@@ -174,6 +175,9 @@ class OmfileInstance implements ActionModuleInstance {
   private clock = 0;
   private cancelJanitor: (() => void) | null = null;
   private baseDirectory: string | null = null;
+  private currentName: string | null = null;
+  private statistics: StatsObject | null = null;
+  private readonly counters = { requests: 0, level0: 0, missed: 0, evicted: 0, maxUsed: 0, closeTimeouts: 0 };
 
   constructor(private readonly settings: OmfileInstanceSettings, private readonly context: ModuleContext) {
     this.description = settings.fileName;
@@ -183,10 +187,25 @@ class OmfileInstance implements ActionModuleInstance {
     if (settings.dynamic) {
       const template = context.template(settings.fileName);
       this.baseDirectory = template === undefined ? null : OmfileInstance.baseOf(template);
+      this.registerStatistics();
     }
     if (settings.closeTimeoutMinutes > 0) {
       this.cancelJanitor = context.host.scheduleEvery(() => this.janitor(), 60_000);
     }
+  }
+
+  private registerStatistics(): void {
+    const counters = this.counters;
+    const object = this.context.statistics.create(`dynafile cache ${this.settings.fileName}`, { origin: 'omfile' });
+    const resettable = (name: string, key: keyof typeof counters): void =>
+      object.addCounter({ name, read: () => counters[key], reset: () => { counters[key] = 0; } });
+    resettable('requests', 'requests');
+    resettable('level0', 'level0');
+    resettable('missed', 'missed');
+    resettable('evicted', 'evicted');
+    resettable('maxused', 'maxUsed');
+    resettable('closetimeouts', 'closeTimeouts');
+    this.statistics = object;
   }
 
   private static baseOf(template: { kind: string; entries: ReadonlyArray<{ kind: string; text?: string }> }): string | null {
@@ -271,16 +290,23 @@ class OmfileInstance implements ActionModuleInstance {
   private dynamicHandle(path: string): OmfileStream | 'discard' | 'error' {
     const existing = this.cache.find((entry) => entry.name === path);
     if (existing !== undefined) {
+      if (this.currentName === path) this.counters.level0++;
+      this.currentName = path;
       existing.accessed = ++this.clock;
       existing.idleMinutes = 0;
       return existing.handle;
     }
+    this.counters.missed++;
+    this.currentName = null;
     if (!this.validate(path)) return 'discard';
     if (this.cache.length >= this.settings.cacheSize) {
       let oldest = 0;
       this.cache.forEach((entry, index) => { if (entry.accessed < this.cache[oldest].accessed) oldest = index; });
       this.cache[oldest].handle.close();
       this.cache.splice(oldest, 1);
+      this.counters.evicted++;
+    } else {
+      this.counters.maxUsed = Math.max(this.counters.maxUsed, this.cache.length + 1);
     }
     const opened = this.open(path);
     if ('error' in opened) {
@@ -291,6 +317,7 @@ class OmfileInstance implements ActionModuleInstance {
       return 'error';
     }
     this.cache.push({ name: path, handle: opened, accessed: ++this.clock, idleMinutes: 0 });
+    this.currentName = path;
     return opened;
   }
 
@@ -302,6 +329,8 @@ class OmfileInstance implements ActionModuleInstance {
         if (entry.idleMinutes >= limit) {
           entry.handle.close();
           this.cache.splice(this.cache.indexOf(entry), 1);
+          this.counters.closeTimeouts++;
+          if (this.currentName === entry.name) this.currentName = null;
         }
       }
     } else if (this.handle !== null) {
@@ -309,12 +338,14 @@ class OmfileInstance implements ActionModuleInstance {
       if (this.idleMinutes >= limit) {
         this.handle.close();
         this.handle = null;
+        this.counters.closeTimeouts++;
       }
     }
   }
 
   write(text: string, path: string): ActionOutcome {
     if (this.settings.isDevNull) return 'ok';
+    this.counters.requests++;
     let handle: OmfileStream;
     if (this.settings.dynamic) {
       const found = this.dynamicHandle(path);
@@ -357,7 +388,10 @@ class OmfileInstance implements ActionModuleInstance {
     if (this.handle === handle) this.handle = null;
     if (this.current === handle) this.current = null;
     const index = this.cache.findIndex((entry) => entry.handle === handle);
-    if (index >= 0) this.cache.splice(index, 1);
+    if (index >= 0) {
+      if (this.currentName === this.cache[index].name) this.currentName = null;
+      this.cache.splice(index, 1);
+    }
     handle.close();
   }
 
@@ -374,6 +408,7 @@ class OmfileInstance implements ActionModuleInstance {
     if (this.settings.dynamic) {
       for (const entry of this.cache) entry.handle.close();
       this.cache.length = 0;
+      this.currentName = null;
     } else if (this.handle !== null) {
       this.handle.close();
       this.handle = null;
@@ -384,6 +419,8 @@ class OmfileInstance implements ActionModuleInstance {
     this.hup();
     this.cancelJanitor?.();
     this.cancelJanitor = null;
+    if (this.statistics !== null) this.context.statistics.remove(this.statistics);
+    this.statistics = null;
   }
 }
 

@@ -3,6 +3,7 @@ import type { EngineModule, ParserModuleDefinition } from '../engine/Modules';
 import { imklog } from './Imklog';
 import { imtcp } from './Imtcp';
 import { immark } from './Immark';
+import { impstats } from './Impstats';
 import { imuxsock } from './Imuxsock';
 import { imudp } from './Imudp';
 import { omdiscard } from './Omdiscard';
@@ -23,7 +24,7 @@ export class BuiltinModuleCatalog implements ModuleCatalog {
     private readonly fileExistsAt: (path: string) => boolean,
     additional: readonly EngineModule[] = [],
   ) {
-    for (const module of [omfile, omfwd, omusrmsg, omdiscard, imudp, imtcp, imuxsock, imklog, immark, ...PARSER_MODULES, ...additional]) this.modules.set(module.name, module);
+    for (const module of [omfile, omfwd, omusrmsg, omdiscard, imudp, imtcp, imuxsock, imklog, immark, impstats, ...PARSER_MODULES, ...additional]) this.modules.set(module.name, module);
   }
 
   find(cnfName: string): EngineModule | undefined {

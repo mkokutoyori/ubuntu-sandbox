@@ -3261,7 +3261,12 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 
 ### [rsyslog] `dyn_stats`, `percentile_stats`, `dyn_inc()` et `percentile_observe()` sont acceptes puis ignores
 `lookup_table`, `lookup()` et `reload_lookup_table()` sont portes de rsyslog 8.2112.0 (`engine/LookupTable.ts`).
-Le chargeur accepte encore les objets `dyn_stats` et `percentile_stats` sans rien en faire (`engine/Loader.ts`), et les
-fonctions `dyn_inc()` / `percentile_observe()` n'existent pas : leurs compteurs ne sont observables que par le module
-`impstats`, absent lui aussi. Brique a ecrire d'un seul tenant : port de `runtime/dynstats.c`, `perctile_stats.c`,
-`statsobj.c` et du module `impstats`.
+`statsobj.c` et le module `impstats` sont portes (`engine/Statistics.ts`, `modules/Impstats.ts`) : files, actions, imuxsock,
+imudp, imtcp, omfwd (`bytes.sent`) et le cache dynafile d'omfile publient leurs compteurs. Reste a porter : les objets
+`dyn_stats` et `percentile_stats`, acceptes par le chargeur sans effet, et les fonctions `dyn_inc()` /
+`percentile_observe()` (`runtime/dynstats.c`, `perctile_stats.c`, `perctile_ringbuf.c`). Ce que `impstats` ne publie pas
+encore : les objets `imklog`, `immark` n'en ont pas dans 8.2112.0 ; les statistiques par expediteur (`_sender_stat`,
+`global(senders.keepTrack)`) ; `resource-usage` ne fournit que utime (temps CPU du processus), maxrss (taille residente
+courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock, oublock, nvcsw et nivcsw valent 0 faute de
+comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du source les met aussi a 0) ;
+`imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone.

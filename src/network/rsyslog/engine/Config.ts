@@ -1,4 +1,5 @@
 import type { Stmt } from '../config/Ast';
+import type { Statistics } from './Statistics';
 import type { MessageParserModule } from '../MessageParser';
 import type { Template } from '../Template';
 import type { ActionModuleInstance, EngineModule, InputInstance, OutChannel, RuntimeLog, TemplateRequest } from './Modules';
@@ -71,6 +72,7 @@ export interface LoadedConfig {
   readonly parsers: Map<string, MessageParserModule>;
   readonly rateLimits: Map<string, RateLimitDefinition>;
   readonly lookupTables: LookupRef[];
+  readonly statistics: Statistics;
   readonly timezones: Map<string, { offsetMinutes: number }>;
   readonly senderResolver: SenderResolver;
   readonly localClock: LocalClock;

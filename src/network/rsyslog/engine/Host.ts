@@ -183,7 +183,21 @@ export interface RsyslogProcess {
   setOpenFilesLimit(limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
 }
 
+export interface ResourceUsage {
+  readonly userMicroseconds?: number;
+  readonly systemMicroseconds?: number;
+  readonly maxResidentKilobytes?: number;
+  readonly minorFaults?: number;
+  readonly majorFaults?: number;
+  readonly blocksRead?: number;
+  readonly blocksWritten?: number;
+  readonly voluntaryContextSwitches?: number;
+  readonly involuntaryContextSwitches?: number;
+  readonly openFiles?: number;
+}
+
 export interface RsyslogHost {
+  resourceUsage?(): ResourceUsage;
   readonly process?: RsyslogProcess;
   readonly clock: RsyslogClock;
   readonly files: RsyslogFiles;
