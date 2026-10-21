@@ -3248,12 +3248,10 @@ demon a la main, ecrit `/var/run/auditd.pid` et refuse de reprendre le noyau a u
 (`Unable to set audit pid, exiting` + `DAEMON_ABORT`). `autrace` (`audit/tools/AutraceTool.ts`, port de `autrace.c`)
 pose les regles `pid=N` et `ppid=N`, execute le programme comme enfant sous ce pid et nettoie.
 Le binaire reel n'a pas pu etre lance (il exige l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2.
-**Reste** : (1) `auditd -f` et `-n` ne bloquent pas le terminal comme le vrai demon : la commande rend la main apres
-l'initialisation, et les messages d'un demon lance avec `-f` ne vont sur stderr que pendant le demarrage ;
-(2) `autrace` ne voit que les appels systeme que le simulateur projette (acces fichier, execve), pas « tous » ceux
+**Reste** : (1) `auditd -f` et `-n` gardent le terminal (flux du terminal, messages en direct) mais Ctrl-C rend l'invite
+alors que le vrai auditd ignore SIGINT : il faut le tuer depuis une autre session ; le daemon, lui, continue ; (2) `autrace` ne voit que les appels systeme que le simulateur projette (acces fichier, execve), pas « tous » ceux
 d'un programme arbitraire ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
 est indetermine dans le source) ; (4) un plugin dont le programme est un script recoit les evenements, mais l'interprete de scripts est synchrone : le
 script est relance une fois par evenement avec la ligne pour entree standard, sous le pid du processus plugin, de sorte
 que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
-re-remis a ce plugin (garde contre la recursion) ; les clients de la socket `af_unix` ne sont pas modelises (pas de
-socket UNIX connectable, `nc -U` n'est qu'une ligne d'usage) ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.
+re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connecter (client) : `nc -lU` et `nc -uU` restent refuses, et seul `audisp-af_unix` ecoute une socket UNIX en flux ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.

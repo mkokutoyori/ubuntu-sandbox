@@ -62,7 +62,7 @@ const UNBUILDABLE: Readonly<Record<string, string>> = {
   o: 'TLS (libtls)', R: 'TLS (libtls)', Z: 'TLS (libtls)',
   F: 'file-descriptor passing', I: 'a TCP receive buffer size', O: 'a TCP send buffer size',
   S: 'the TCP MD5 signature option',
-  U: 'UNIX-domain sockets', V: 'alternate routing tables',
+  V: 'alternate routing tables',
   P: 'proxy connections', x: 'proxy connections',
 };
 
@@ -98,6 +98,7 @@ interface NcOptions {
   zero: boolean;
   udp: boolean;
   listen: boolean;
+  unix: boolean;
   keep: boolean;
   detachStdin: boolean;
   randomize: boolean;
@@ -190,7 +191,7 @@ function usageExit(before: string[] = []): NcExit {
 
 function parseNcArgs(args: readonly string[]): NcOptions {
   const opts: NcOptions = {
-    family: null, numeric: false, verbose: false, zero: false, udp: false, listen: false,
+    family: null, numeric: false, verbose: false, zero: false, udp: false, listen: false, unix: false,
     keep: false, detachStdin: false, randomize: false, shutdownWrite: false, operands: [],
   };
   for (const token of shortOptions(args, OPTSTRING)) {
@@ -216,6 +217,7 @@ function parseNcArgs(args: readonly string[]): NcOptions {
       case 'r': opts.randomize = true; break;
       case 's': opts.sourceAddress = argument; break;
       case 'u': opts.udp = true; break;
+      case 'U': opts.unix = true; break;
       case 'v': opts.verbose = true; break;
       case 'W': checkedNumber(argument!, 1, INT_MAX, 'receive limit'); break;
       case 'w': opts.timeoutMs = checkedNumber(argument!, 0, Math.floor(INT_MAX / 1000), 'timeout') * 1000; break;
@@ -228,6 +230,8 @@ function parseNcArgs(args: readonly string[]): NcOptions {
       default: throw new NcExit([`nc: option -${letter}: this simulator cannot build ${UNBUILDABLE[letter]}`]);
     }
   }
+  if (opts.unix && opts.listen) throw new NcExit(['nc: option -l: this simulator cannot build UNIX-domain listening sockets']);
+  if (opts.unix && opts.udp) throw new NcExit(['nc: option -u: this simulator cannot build UNIX-domain datagram sockets']);
   if (opts.listen && opts.sourceAddress !== undefined) throw new NcExit(['nc: cannot use -s and -l']);
   if (opts.listen && opts.zero) throw new NcExit(['nc: cannot use -z and -l']);
   if (!opts.listen && opts.keep) throw new NcExit(['nc: must use -l with -k']);
@@ -328,6 +332,36 @@ function udpTest(send: () => Errno | null): boolean {
   let answered = false;
   for (let i = 0; i < UDP_TEST_WRITES; i++) answered = send() === null;
   return answered;
+}
+
+const UNIX_CONNECT_ERRORS: Readonly<Record<string, Errno>> = {
+  ENOENT: 'ENOENT', ECONNREFUSED: 'ECONNREFUSED', EACCES: 'EACCES',
+};
+
+export function ncUnixClientPath(args: readonly string[]): string | null {
+  try {
+    const opts = parseNcArgs(args);
+    if (!opts.unix || opts.listen || opts.zero || opts.operands.length !== 1) return null;
+    return opts.operands[0];
+  } catch (error) {
+    if (error instanceof NcExit) return null;
+    throw error;
+  }
+}
+
+function runUnixConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: string, out: NcOutput): number {
+  if (opts.operands.length !== 1) throw usageExit();
+  const path = opts.operands[0];
+  let received = '';
+  const end = ctx.executor.connectUnixStream(path, { onData: (text) => { received += text; }, onClose: () => undefined });
+  if ('errno' in end) {
+    out.write('stderr', `nc: ${path}: ${strerror(UNIX_CONNECT_ERRORS[end.errno])}`);
+    return 1;
+  }
+  if (!opts.zero && !opts.detachStdin && stdin !== '') end.write(stdin);
+  end.close();
+  if (!opts.zero && received !== '') out.write('stdout', received.replace(/\r?\n$/, ''));
+  return 0;
 }
 
 async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: string, out: NcOutput): Promise<number> {
@@ -455,7 +489,8 @@ async function runNc(ctx: LinuxCommandContext, args: string[], stdin = ''): Prom
   const out = new NcOutput();
   try {
     const opts = parseNcArgs(args);
-    const code = opts.listen ? runListen(ctx, opts, out, stdin) : await runConnect(ctx, opts, stdin, out);
+    const code = opts.unix ? runUnixConnect(ctx, opts, stdin, out)
+      : opts.listen ? runListen(ctx, opts, out, stdin) : await runConnect(ctx, opts, stdin, out);
     return out.finish(code);
   } catch (error) {
     if (!(error instanceof NcExit)) throw error;
@@ -472,7 +507,7 @@ export const ncCommand: LinuxCommand = {
   ownsHelpOption: true,
   readsStdin: true,
   complete: makeArgCompleter({
-    flags: ['-4', '-6', '-d', '-h', '-i', '-k', '-l', '-M', '-m', '-N', '-n', '-p', '-q', '-r', '-s', '-T', '-u', '-v', '-W', '-w', '-z'],
+    flags: ['-4', '-6', '-d', '-h', '-i', '-k', '-l', '-M', '-m', '-N', '-n', '-p', '-q', '-r', '-s', '-T', '-U', '-u', '-v', '-W', '-w', '-z'],
     hostsAtBarePosition: true,
   }),
   manSection: 1,

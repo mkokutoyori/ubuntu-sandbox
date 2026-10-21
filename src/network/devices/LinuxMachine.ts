@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
@@ -5534,6 +5535,14 @@ export abstract class LinuxMachine extends EndHost
 
   installCrontabContent(content: string, user: string): void {
     this.executor.installCrontab(content, user);
+  }
+
+  followAuditdForeground(line: (text: string) => void, stopped: () => void): () => void {
+    return this.executor.followAuditdForeground(line, stopped);
+  }
+
+  connectUnixStream(path: string, handlers: UnixStreamHandlers): UnixStreamConnectOutcome {
+    return this.executor.connectUnixStream(path, handlers);
   }
 
   followJournal(args: string[], sink: (line: string) => void): () => void {

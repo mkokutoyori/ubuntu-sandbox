@@ -3,8 +3,10 @@ import { buildAuparseEvent } from '../../tools/AuparseEvent';
 import { extractFeedTimestamp } from '../../tools/AuparseFeed';
 import type { Interpreter } from '../../tools/AuditInterpret';
 import { posixDirname } from '../AuditdConfig';
+import type { LocalDatagramSockets, UnixStreamEnd } from '../../../syslog/LocalDatagramSockets';
 
 export interface PluginHost {
+  readonly sockets: LocalDatagramSockets;
   readonly pid: number;
   readonly programPath: string;
   readonly vfs: VirtualFileSystem;
@@ -116,6 +118,13 @@ export const audispSyslog: PluginProgram = (args, host) => {
   };
 };
 
+const UNIX_ERRNO_TEXT: Readonly<Record<string, string>> = {
+  EADDRINUSE: 'Address already in use',
+  ENOENT: 'No such file or directory',
+  EACCES: 'Permission denied',
+  ECONNREFUSED: 'Connection refused',
+};
+
 const AF_UNIX_DEFAULT_PATH = '/var/run/audispd_events';
 const AF_UNIX_DEFAULT_MODE = 0o640;
 const AF_UNIX_SOCKET_MODE_AFTER_UMASK = 0o700;
@@ -154,17 +163,45 @@ export const audispAfUnix: PluginProgram = (args, host) => {
     }
   }
   const socketPath = path!;
-  if (!vfs.createSocket(socketPath, AF_UNIX_SOCKET_MODE_AFTER_UMASK, 0, 0)) {
-    log(LOG_ERR, "Couldn't bind af_unix socket (Address already in use)");
+  let client: UnixStreamEnd | null = null;
+  const bound = host.sockets.listenStream(
+    socketPath,
+    { mode: AF_UNIX_SOCKET_MODE_AFTER_UMASK, uid: 0, gid: 0 },
+    (server) => {
+      if (client !== null) {
+        server.close();
+        return;
+      }
+      log(LOG_INFO, 'Client connected');
+      client = server;
+      server.setHandlers({
+        onData: () => undefined,
+        onClose: () => {
+          if (client === server) client = null;
+        },
+      });
+    },
+  );
+  if ('errno' in bound) {
+    log(LOG_ERR, `Couldn't bind af_unix socket (${UNIX_ERRNO_TEXT[bound.errno]})`);
     log(LOG_ERR, 'audisp-af_unix plugin exiting');
     return null;
   }
   vfs.chmod(socketPath, mode);
   log(LOG_INFO, 'audisp-af_unix plugin is listening for events');
   return {
-    write() {},
+    write(line) {
+      if (client === null) return;
+      if (!client.write(`${line}\n`)) {
+        client.close();
+        client = null;
+      }
+    },
     reload() {},
     terminate() {
+      client?.close();
+      client = null;
+      bound.close();
       vfs.deleteFile(socketPath);
     },
   };

@@ -244,7 +244,7 @@ import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
-import { LocalDatagramSockets } from './syslog/LocalDatagramSockets';
+import { LocalDatagramSockets, type UnixStreamConnectOutcome, type UnixStreamHandlers } from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
@@ -1470,6 +1470,7 @@ export class LinuxCommandExecutor {
         terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
         libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
         runProgram: (pid, command, input) => this.runAuditPluginProgram(pid, command, input),
+        sockets: this.localDatagramSockets,
       },
       trapSignals: (pid, signals) => {
         for (const signal of signals) this.processMgr.trapSignal(pid, signal as Signal, () => undefined);
@@ -5141,6 +5142,23 @@ export class LinuxCommandExecutor {
   handleAuditctl(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const result = runAuditctl(auditctlHost(this, false), args);
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  followAuditdForeground(line: (text: string) => void, stopped: () => void): () => void {
+    if (this.auditDaemon === null) {
+      stopped();
+      return () => undefined;
+    }
+    return this.auditDaemon.followForeground(line, stopped);
+  }
+
+  connectUnixStream(path: string, handlers: UnixStreamHandlers): UnixStreamConnectOutcome {
+    const gids = this.userMgr.getUserGroups(this.userMgr.currentUser).map((group) => group.gid);
+    return this.localDatagramSockets.connectStream(
+      this.vfs.normalizePath(path, this.cwd),
+      { uid: this.userMgr.currentUid, gids: [this.userMgr.currentGid, ...gids] },
+      handlers,
+    );
   }
 
   private changeAuditRunlevel(level: 'single' | 'halt'): void {

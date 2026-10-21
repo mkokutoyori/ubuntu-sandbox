@@ -8,6 +8,7 @@ import { AUDIT_UNSET } from './AuditUserMessage';
 import { K } from './tools/AuditKernelConstants';
 import type { Interpreter } from './tools/AuditInterpret';
 import type { LinuxAuditRules } from './LinuxAuditRules';
+import type { LocalDatagramSockets } from '../syslog/LocalDatagramSockets';
 import {
   AUDITD_CONF_PATH, clearConfig, loadAuditdConfig, type AuditdConfig, type AuditdConfigFs, type AuditMessage,
   type AuditPriority,
@@ -67,6 +68,7 @@ export interface AuditdDeps {
     terminate: (pid: number) => void;
     libcSyslog: (priorityWithFacility: number, ident: string, pid: number, text: string) => void;
     runProgram: (pid: number, command: string, input: string) => void;
+    sockets: LocalDatagramSockets;
   };
 }
 
@@ -77,7 +79,9 @@ export class LinuxAuditDaemon {
   private dispatcher: AudispDispatcher | null = null;
   private ownPid: number | null = null;
   private foreground = false;
+  private launching = false;
   private foregroundLines: string[] = [];
+  private readonly followers = new Set<{ line: (text: string) => void; stopped: () => void }>();
   private readonly subs: Unsubscribe[] = [];
 
   constructor(
@@ -138,8 +142,22 @@ export class LinuxAuditDaemon {
   }
 
   private log(priority: AuditPriority, text: string): void {
-    if (this.foreground) this.foregroundLines.push(`${text}\n`);
-    else this.deps.syslog(priority, text);
+    if (!this.foreground) {
+      this.deps.syslog(priority, text);
+      return;
+    }
+    if (this.launching) this.foregroundLines.push(`${text}\n`);
+    for (const follower of this.followers) follower.line(text);
+  }
+
+  followForeground(line: (text: string) => void, stopped: () => void): () => void {
+    const follower = { line, stopped };
+    this.followers.add(follower);
+    if (this.state === 'stopped') {
+      this.followers.delete(follower);
+      stopped();
+    }
+    return () => { this.followers.delete(follower); };
   }
 
   private pid(): number {
@@ -147,15 +165,18 @@ export class LinuxAuditDaemon {
   }
 
   launch(options: AuditdLaunchOptions): AuditdLaunchResult {
-    this.foreground = options.foreground;
+    const previousForeground = this.foreground;
+    this.foreground = options.foreground || previousForeground;
+    this.launching = true;
     this.foregroundLines = [];
     const previous = this.ownPid;
     const spawned = this.deps.process.spawn();
     this.ownPid = spawned;
     const exitCode = this.runStart(options);
     const stderr = this.foregroundLines.join('');
-    this.foreground = false;
+    this.launching = false;
     this.foregroundLines = [];
+    if (exitCode !== 0 || !options.foreground) this.foreground = previousForeground;
     if (exitCode !== 0) {
       this.ownPid = previous;
       this.deps.process.exit(spawned);
@@ -279,6 +300,7 @@ export class LinuxAuditDaemon {
         return scriptPlugin(plugins.runProgram);
       },
       startProgram: (program, plugin, pid) => program(plugin.args, {
+        sockets: plugins.sockets,
         pid,
         programPath: plugin.path ?? '',
         vfs,
@@ -342,6 +364,10 @@ export class LinuxAuditDaemon {
     this.deps.vfs.deleteFile(AUDITD_PID_FILE);
     this.exitProcess(this.pid());
     this.ownPid = null;
+    this.foreground = false;
+    const followers = [...this.followers];
+    this.followers.clear();
+    for (const follower of followers) follower.stopped();
   }
 
   private runReload(): void {
