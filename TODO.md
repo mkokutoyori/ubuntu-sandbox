@@ -3305,9 +3305,9 @@ non propre), `compatibility.configFormat.legacy|syslogd|property`, `systemd.noti
 `abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
 Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
 `lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
-`saveOnShutdown` et `fileName` (et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
+(et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
 moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
-`dequeueSlowdown` et la fenetre `dequeueTimeBegin/End` decident. Une file « disk » ou « disk-assisted » se comporte donc comme
+`dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
 « linkedlist » en memoire.
 
 ### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes

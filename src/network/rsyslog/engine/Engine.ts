@@ -13,6 +13,7 @@ import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
 import { RateLimiter } from './RateLimiter';
+import { loadQueueState, queueStatePath, saveQueueState } from './QueueState';
 import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
@@ -497,6 +498,7 @@ export class RsyslogEngine implements InputSubmitter {
     const backlog = this.internalBacklog ?? [];
     this.internalBacklog = null;
     for (const message of backlog) this.processInternal(message);
+    this.restoreQueues();
     this.stopCallbacks.push(this.host.scheduleEvery(() => this.runJanitor(), Math.max(1, settings.janitorInterval) * 60_000));
     return { ok: true };
   }
@@ -565,6 +567,7 @@ export class RsyslogEngine implements InputSubmitter {
   stop(): void {
     if (!this.started) return;
     for (const record of this.config.inputs) record.instance.stop();
+    this.saveQueues();
     this.mainQueue.stop();
     for (const queue of this.rulesetQueues.values()) queue.stop();
     for (const queue of this.actionQueues.values()) queue.stop();
@@ -577,6 +580,33 @@ export class RsyslogEngine implements InputSubmitter {
     this.oversizeLog?.close();
     this.oversizeLog = null;
     this.started = false;
+  }
+
+  private persistentQueues(): Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> {
+    const all = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+    const found: Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> = [];
+    for (const queue of all) {
+      const path = queueStatePath(queue.settings, this.config.settings.workDirectory);
+      if (path !== null) found.push({ queue, path });
+    }
+    return found;
+  }
+
+  private saveQueues(): void {
+    for (const { queue, path } of this.persistentQueues()) {
+      if (!saveQueueState(this.host.files, path, queue.name, queue.pending())) {
+        this.internal(3, -1, `queue '${queue.name}': could not save the queue state to ${path}`);
+      }
+    }
+  }
+
+  private restoreQueues(): void {
+    for (const { queue, path } of this.persistentQueues()) {
+      const messages = loadQueueState(this.host.files, path);
+      if (messages.length === 0) continue;
+      this.host.files.write(path, '');
+      for (const message of messages) queue.enqueue(message);
+    }
   }
 
   hup(): void {
