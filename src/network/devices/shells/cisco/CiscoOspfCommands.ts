@@ -40,6 +40,7 @@ import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { toutesLesSuites } from './ciscoContinuations';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { decryptType7 } from '@/crypto';
 
 const OSPF_METRIC_MAX = 16777214;
 const OSPF_TIMER_MAX_MS = 600000;
@@ -691,6 +692,10 @@ const SECONDES_OSPF = (description: string): ArgumentSpec => ({
   name: 'secondes', type: 'INT', description, range: [1, 65535],
 });
 
+const MESSAGE_DIGEST_KEY_ID: ArgumentSpec = {
+  name: 'identifiant', type: 'INT', description: 'Key identifier', range: [1, 255],
+};
+
 const OSPF_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip ospf bfd': null,
@@ -733,8 +738,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'The authentication key itself',
   },
   'ip ospf message-digest-key': [
-    { name: 'identifiant', type: 'INT', description: 'Key identifier',
-      range: [1, 255] },
+    MESSAGE_DIGEST_KEY_ID,
     { name: 'reste', type: 'REST', description: '`md5` then the key itself' },
   ],
   'ip ospf area': {
@@ -754,7 +758,35 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
+function messageDigestKeys(ctx: CiscoShellContext, ifName: string): ReadonlyMap<number, string> {
+  return ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName)?.md5Keys ?? new Map();
+}
+
+function messageDigestKeyUndoSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [{
+    id: 'config-if-ip-ospf-message-digest-key-identifiant',
+    path: ['ip', 'ospf', 'message-digest-key', MESSAGE_DIGEST_KEY_ID],
+    description: 'Set an MD5 key',
+    undoDescription: 'Remove one MD5 key',
+    modes: MODES_INTERFACE, minPrivilege: 15,
+    existsOnlyNegated: true,
+    run: () => '% Incomplete command.',
+    undo: (_session, args) => {
+      const ifName = ctx.getSelectedInterface();
+      if (!ifName) return '% No interface selected';
+      const remaining = new Map(messageDigestKeys(ctx, ifName));
+      remaining.delete(Number(args.identifiant));
+      ctx.r()._getOSPFIntegration().applyInterfaceSettings(ifName, { md5Keys: remaining });
+      return '';
+    },
+  }];
+}
+
 export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [...ospfTrieInterfaceSpecs(ctx), ...messageDigestKeyUndoSpecs(ctx)];
+}
+
+function ospfTrieInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) =>
       registerOSPFInterfaceCommands(collector as unknown as CommandTrie, ctx),
@@ -765,6 +797,16 @@ export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
       keywordsFor: toutesLesSuites,
     },
   );
+}
+
+const PLAIN_KEY_ENCRYPTION = '0';
+const TYPE_7_KEY_ENCRYPTION = '7';
+
+function messageDigestSecret(words: readonly string[]): string | null {
+  if (words.length === 1) return words[0];
+  if (words[0] === PLAIN_KEY_ENCRYPTION) return words[1];
+  if (words[0] !== TYPE_7_KEY_ENCRYPTION) return null;
+  try { return decryptType7(words[1]); } catch { return null; }
 }
 
 export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: CiscoShellContext): void {
@@ -917,11 +959,13 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   configIfTrie.registerGreedy('ip ospf message-digest-key', 'Set MD5 key', (args) => {
-    // ip ospf message-digest-key <id> md5 <key>
     if (args.length < 3) return '% Incomplete command.';
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    setPendingOspfIf(ifName, { authKey: args[2] });
+    const keyId = Number(args[0]);
+    const secret = args[1].toLowerCase() === 'md5' ? messageDigestSecret(args.slice(2)) : null;
+    if (!Number.isInteger(keyId) || secret === null) return "% Invalid input detected at '^' marker.";
+    setPendingOspfIf(ifName, { md5Keys: new Map([...messageDigestKeys(ctx, ifName), [keyId, secret]]) });
     return '';
   });
 
@@ -932,7 +976,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     'no ip ospf network': { networkType: 'broadcast' },
     'no ip ospf authentication': { authType: 0 },
     'no ip ospf authentication-key': { authKey: '' },
-    'no ip ospf message-digest-key': { authType: 0, authKey: '' },
     'no ip ospf retransmit-interval': { retransmitInterval: 5 },
     'no ip ospf transmit-delay': { transmitDelay: 1 },
     'no ip ospf mtu-ignore': { mtuIgnore: false },

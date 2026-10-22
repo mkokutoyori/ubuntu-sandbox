@@ -621,7 +621,7 @@ export function registerOSPFInterfaceCommands(
     if (mode === 'md5') {
       const keyId = parseInt(args[1] ?? '', 10);
       if (isNaN(keyId)) return 'Error: Incomplete command.';
-      setPendingOspfIf(ifName, { authType: 2, authKeyId: keyId, authKey: cle(2) });
+      setPendingOspfIf(ifName, { authType: 2, md5Keys: new Map([[keyId, cle(2) ?? '']]) });
     } else if (mode === 'simple') {
       setPendingOspfIf(ifName, { authType: 1, authKey: cle(1) });
     } else if (mode === 'null') {

@@ -1090,7 +1090,7 @@ const OSPF_IF_DEFAULTS: Record<string, unknown> = {
   retransmitInterval: 5, transmitDelay: 1, authType: 0,
 };
 
-function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): string[] {
+function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>, serviceEncryption: boolean): string[] {
   const lines: string[] = [];
   const ecart = (cle: string) =>
     pending[cle] !== undefined && pending[cle] !== OSPF_IF_DEFAULTS[cle];
@@ -1105,6 +1105,10 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
   if (pending.authType === 1) lines.push(' ip ospf authentication');
   if (pending.authType === 2) lines.push(' ip ospf authentication message-digest');
   if (pending.authKey) lines.push(` ip ospf authentication-key ${pending.authKey}`);
+  const md5Keys = [...((pending.md5Keys as ReadonlyMap<number, string> | undefined) ?? [])].sort(([first], [second]) => first - second);
+  for (const [keyId, secret] of md5Keys) {
+    lines.push(` ip ospf message-digest-key ${keyId} md5 ${renderPasswordField(secret, 'plain', serviceEncryption, false, `ospf-md5:${keyId}`)}`);
+  }
   if (pending.mtuIgnore) lines.push(' ip ospf mtu-ignore');
   if (pending.demandCircuit) lines.push(' ip ospf demand-circuit');
   if (pending.bfd) lines.push(' ip ospf bfd');
@@ -1230,7 +1234,7 @@ function interfaceConfigLines(
   const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
   const pending = ospfExtra?.pendingIfConfig.get(name);
   if (pending) {
-    lines.push(...ospfInterfaceRunningConfigLines(pending));
+    lines.push(...ospfInterfaceRunningConfigLines(pending, router.getServiceFlags().get('password-encryption') === true));
     if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
     if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
     if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);

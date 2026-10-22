@@ -39,14 +39,20 @@ import type { Equipment } from '@/network/equipment/Equipment';
 export interface OspfInterfaceSettings {
   cost?: number; priority?: number;
   helloInterval?: number; deadInterval?: number;
-  authType?: number; authKey?: string;
+  authType?: number; authKey?: string; md5Keys?: ReadonlyMap<number, string>;
   demandCircuit?: boolean; networkType?: string;
   mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
-  authKeyId?: number; silent?: boolean;
+  silent?: boolean;
   bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
   bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
   floodReduction?: boolean; databaseFilterAllOut?: boolean;
   area?: string; processId?: number;
+}
+
+function applyInterfaceAuthentication(iface: OSPFInterface, settings: OspfInterfaceSettings): void {
+  if (settings.authType !== undefined) iface.authType = settings.authType;
+  if (settings.authKey !== undefined) iface.authKey = settings.authKey;
+  if (settings.md5Keys !== undefined) iface.md5Keys = new Map(settings.md5Keys);
 }
 
 export interface OSPFExtraConfig {
@@ -614,8 +620,7 @@ export class RouterOSPFIntegration {
       }
       if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
       if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
-      if (updates.authType !== undefined) iface.authType = updates.authType;
-      if (updates.authKey !== undefined) iface.authKey = updates.authKey;
+      applyInterfaceAuthentication(iface, updates);
       if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
       if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
     }
@@ -708,12 +713,13 @@ export class RouterOSPFIntegration {
           helloInterval: pending?.helloInterval,
           deadInterval: pending?.deadInterval,
           networkType: pending?.networkType as any,
+          authType: pending?.authType,
+          authKey: pending?.authKey,
+          md5Keys: pending?.md5Keys,
         });
         if (pending) {
           const iface = this.ospfEngine.getInterface(m.name);
           if (iface) {
-            if (pending.authType !== undefined) iface.authType = pending.authType;
-            if (pending.authKey !== undefined) iface.authKey = pending.authKey;
             if (pending.retransmitInterval !== undefined) iface.retransmitInterval = pending.retransmitInterval;
             if (pending.transmitDelay !== undefined) iface.transmitDelay = pending.transmitDelay;
           }
@@ -753,14 +759,10 @@ export class RouterOSPFIntegration {
           helloInterval: rPending?.helloInterval,
           deadInterval: rPending?.deadInterval,
           networkType: rPending?.networkType as any,
+          authType: rPending?.authType,
+          authKey: rPending?.authKey,
+          md5Keys: rPending?.md5Keys,
         });
-        if (rPending) {
-          const iface = remote.ospfEngine.getInterface(rm.name);
-          if (iface) {
-            if (rPending.authType !== undefined) iface.authType = rPending.authType;
-            if (rPending.authKey !== undefined) iface.authKey = rPending.authKey;
-          }
-        }
       }
     }
   }

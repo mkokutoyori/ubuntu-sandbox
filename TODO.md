@@ -1520,11 +1520,26 @@ on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
   elit une fois les voisins connus et reste juste. Non ferme : relancer
   l'election exige de reevaluer les adjacences (AdjOK), que la voie
   rapide vers Full de v3 (`shouldFormAdjacency`) ne fait pas.
-- `ip ospf message-digest-key 1 md5 SECRET` range la cle comme une cle
-  SIMPLE (`setPendingOspfIf({ authKey })`, l'identifiant est ignore) et le
-  `running-config` rend `ip ospf authentication-key SECRET` : la ligne que
-  l'operateur a tapee disparait, et deux cles MD5 d'identifiants differents
-  s'authentifient.
+- L'authentification OSPF n'a que deux etats (`authType` 0 / 1 / 2) et
+  l'AIRE n'est jamais lue : `area 0 authentication message-digest` est
+  range par `setAreaAuthentication` et rendu, mais le moteur ne lit pas
+  `OSPFArea.authentication` — une interface sans commande `ip ospf
+  authentication` devrait heriter de celle de son aire (« the area default
+  is null authentication », ios-ip-routing-ospf-command-reference-2024.pdf,
+  `ip ospf authentication`). Dans le meme gestionnaire, `ip ospf
+  authentication null` (qui doit ecraser l'aire) et `ip ospf authentication
+  key-chain NOM` sont acceptes et ignores : le premier est lu comme
+  `simple`, le second aussi, et `null` tape apres `message-digest` ne
+  change rien. Le `null` explicite exige un etat « non configure » distinct
+  de « null » pour l'heritage ET pour rendre la ligne tapee ; `key-chain`
+  exige le sous-systeme de chaines de cles (algorithmes HMAC-SHA) que
+  l'OSPF ne lit pas. Mesure par `show running-config` apres la serie de
+  commandes ci-dessus.
+- Le condense MD5 d'OSPF (`OspfCryptographicAuth`) couvre la serialisation
+  canonique de l'objet paquet : le simulateur n'a pas de codec binaire
+  OSPF, donc la disposition d'octets de la RFC 2328 Appendix D (en-tete de
+  24 octets, champ d'authentification de 8, condense de 16 apres le
+  paquet) n'est pas reproduite. Rien ne l'interopere avec un vrai routeur.
 - `default-information originate always` est accepte, annonce le LSA
   Type-5 (`show ip ospf database external`, et la route `O*E2` arrive chez
   le voisin quand la statique est retiree) mais n'est PAS rendu par

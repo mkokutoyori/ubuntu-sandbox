@@ -50,7 +50,7 @@ describe('CLI Cisco — formes négatives de `ip ospf` sur interface', () => {
       'configure terminal', 'interface GigabitEthernet0/1',
       'no ip ospf cost', 'no ip ospf priority', 'no ip ospf hello-interval',
       'no ip ospf dead-interval', 'no ip ospf network', 'no ip ospf authentication',
-      'no ip ospf authentication-key', 'no ip ospf message-digest-key',
+      'no ip ospf authentication-key', 'no ip ospf message-digest-key 1',
       'no ip ospf retransmit-interval', 'no ip ospf transmit-delay',
       'no ip ospf mtu-ignore', 'no ip ospf demand-circuit',
       'no ip ospf bfd', 'no ip ospf flood-reduction',
