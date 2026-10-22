@@ -104,6 +104,7 @@ import {
 } from '../layers/transport/UdpEgress';
 import type { HostIcmpEchoFailedPayload, HostIcmpEchoReplyPayload, HostIcmpUnreachablePayload } from './host/events';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
+import type { IcmpExtensionObject } from '../icmp/IcmpExtensions';
 import { Logger } from '../core/Logger';
 import { strerror, type Errno } from '../core/Errno';
 import { MTU } from '../core/constants';
@@ -237,6 +238,7 @@ export interface TracerouteProbeResult {
   ip?: string;
   unreachable?: boolean;
   icmpCode?: number;
+  extensions?: readonly IcmpExtensionObject[];
 }
 
 export type TraceProbeMethod =
@@ -356,6 +358,7 @@ interface TraceProbeOutcome {
   rttMs?: number;
   unreachable?: boolean;
   icmpCode?: number;
+  extensions?: readonly IcmpExtensionObject[];
 }
 
 const TRACE_UDP_DATA_BYTES = 32;
@@ -5616,7 +5619,7 @@ export abstract class EndHost extends Equipment {
     if (answer === null) return { timeout: true, reached: false };
     const { payload: pl, rttMs } = answer;
     if (pl.code === 'ttl-exceeded') {
-      return { timeout: false, reached: false, ip: pl.fromIp, rttMs };
+      return { timeout: false, reached: false, ip: pl.fromIp, rttMs, ...(pl.extensions ? { extensions: pl.extensions } : {}) };
     }
     if (isArrival(pl.code) && pl.fromIp === targetIP.toString()) {
       return { timeout: false, reached: true, ip: pl.fromIp, rttMs };
@@ -5698,7 +5701,7 @@ export abstract class EndHost extends Equipment {
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
       if (hooks?.shouldStop?.()) break;
-      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> = [];
+      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number; extensions?: readonly IcmpExtensionObject[] }> = [];
       let destinationReached = false;
 
       for (let p = 0; p < probesPerHop; p++) {
@@ -5715,6 +5718,7 @@ export abstract class EndHost extends Equipment {
             ip: outcome.ip,
             unreachable: outcome.unreachable,
             icmpCode: outcome.icmpCode,
+            ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
           });
           if (outcome.reached) destinationReached = true;
           continue;

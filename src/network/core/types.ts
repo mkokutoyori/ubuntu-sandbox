@@ -15,6 +15,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { lookupIpv4SpecialPurpose, lookupIpv6SpecialPurpose, type SpecialPurposeEntry } from '@/network/core/SpecialPurposeRegistry';
 
 import type { NetworkPdu } from './NetworkPdu';
+import type { IcmpExtensionObject } from '@/network/icmp/IcmpExtensions';
 export type { NetworkPdu } from './NetworkPdu';
 
 // ─── MAC Address ─────────────────────────────────────────────────────
@@ -1165,6 +1166,7 @@ export interface ICMPPacket extends NetworkPdu {
    * the original packet header (SPI, protocol, etc.).
    */
   originalPacket?: IPv4Packet;
+  extensions?: readonly IcmpExtensionObject[];
   /**
    * Redirect Gateway — included in ICMP Type 5 (Redirect) per RFC 792.
    * The host should send future packets for the destination to this address.

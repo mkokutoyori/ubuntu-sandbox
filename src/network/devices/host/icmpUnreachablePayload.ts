@@ -19,6 +19,7 @@ export function icmpUnreachablePayload(
     origDestPort: transport?.destinationPort,
     icmpType: timeExceeded ? 'time-exceeded' : 'destination-unreachable',
     ...(icmp.mtu === undefined ? {} : { mtu: icmp.mtu }),
+    ...(icmp.extensions === undefined ? {} : { extensions: icmp.extensions }),
   };
 }
 
