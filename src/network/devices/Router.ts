@@ -4056,6 +4056,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         connected: route.type === 'connected', distance: route.ad, metric: route.metric,
       })).filter(route => route.length > 0),
       sendHello: (iface, payload) => this.sendLdpHello(iface, payload),
+      sendTargetedHello: (destination, payload) => this.sendLdpTargetedHello(destination, payload),
       tcp: () => this.tcpv2,
     }, this.getMplsEngine(), () => this.getScheduler());
     return this.ldpEngine;
@@ -4092,6 +4093,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     engine.routerIdSource = iface === null ? null : { iface, force };
     if (force) engine.resetSessions();
     engine.reconcile();
+  }
+
+  private sendLdpTargetedHello(destination: IPAddress, payload: Uint8Array): boolean {
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: LDP_PORT, destinationPort: LDP_PORT, length: 8 + payload.length, checksum: 0, payload,
+    };
+    const packet = createIPv4Packet(this.ldpRouterId(), destination, IP_PROTO_UDP, 255, udp, udp.length);
+    return this.runInVrf(null, () => this.sendSelfOriginatedIPv4(packet, destination));
   }
 
   private sendLdpHello(iface: string, payload: Uint8Array): void {

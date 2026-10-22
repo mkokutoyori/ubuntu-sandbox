@@ -6,7 +6,7 @@ import type { MplsEngine } from '@/network/mpls/MplsEngine';
 import { decodePdu, encodePdu } from './LdpCodec';
 import { LdpIdentifier } from './LdpIdentifier';
 import {
-  LDP_HOLD_TIME_INFINITE, LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, LDP_PORT, LDP_VERSION, StatusCode,
+  LDP_HOLD_TIME_INFINITE, LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, LDP_PORT, LDP_VERSION, StatusCode,
   type FecElement, type LabelMappingMessage, type LdpMessage,
 } from './LdpMessages';
 import { LdpSession, type LdpSessionOwner, type LdpSessionParameters } from './LdpSession';
@@ -32,6 +32,7 @@ export interface LdpHost {
   interfaces(): readonly LdpInterfaceAddress[];
   routes(): readonly LdpRoute[];
   sendHello(iface: string, payload: Uint8Array): void;
+  sendTargetedHello(destination: IPAddress, payload: Uint8Array): boolean;
   tcp(): TcpStack;
 }
 
@@ -43,6 +44,9 @@ export interface LdpConfig {
   keepAliveSeconds: number;
   controlMode: LdpControlMode;
   maxPduLength: number;
+  targetedHelloIntervalSeconds: number;
+  targetedHelloHoldSeconds: number;
+  acceptTargetedHellos: boolean;
 }
 
 export interface LdpAdjacency {
@@ -51,6 +55,7 @@ export interface LdpAdjacency {
   readonly source: IPAddress;
   readonly transport: IPAddress;
   readonly holdSeconds: number;
+  readonly targeted: boolean;
   timer: number | null;
 }
 
@@ -96,6 +101,7 @@ export class LdpEngine implements LdpSessionOwner {
   readonly config: LdpConfig = {
     helloIntervalSeconds: 5, helloHoldSeconds: LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, keepAliveSeconds: 180,
     controlMode: 'independent', maxPduLength: 4096,
+    targetedHelloIntervalSeconds: 15, targetedHelloHoldSeconds: LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, acceptTargetedHellos: false,
   };
   private readonly enabledInterfaces = new Set<string>();
   private readonly adjacencyTable = new Map<string, LdpAdjacency>();
@@ -109,6 +115,8 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly installedFtn = new Map<string, FecInstall>();
   private readonly retryHandles = new Map<string, number>();
   private readonly backoff = new Map<string, { until: number; delay: number }>();
+  private readonly targetedPeers = new Map<string, { readonly address: IPAddress; readonly configured: boolean }>();
+  private readonly targetedNextSendMs = new Map<string, number>();
   private helloTimer: number | null = null;
   private listening = false;
   private messageCounter = 0;
@@ -221,6 +229,7 @@ export class LdpEngine implements LdpSessionOwner {
 
   private tick(): void {
     for (const iface of this.enabledInterfaces) this.sendHelloOn(iface);
+    this.sendTargetedHellos();
     const current = this.routeFingerprint();
     if (current !== this.fingerprint) this.reconcile();
   }
@@ -246,23 +255,103 @@ export class LdpEngine implements LdpSessionOwner {
   }
 
   receiveHello(inPort: string, source: IPAddress, payload: Uint8Array): void {
-    if (!this.globallyEnabled || !this.enabledInterfaces.has(inPort)) return;
+    if (!this.globallyEnabled) return;
     let pdu;
     try { pdu = decodePdu(payload); } catch { return; }
     if (pdu.sender.equals(this.localId) || !pdu.sender.isPlatformWide()) return;
     for (const message of pdu.messages) {
-      if (message.kind !== 'hello' || message.targeted) continue;
+      if (message.kind !== 'hello') continue;
+      const transport = message.transportAddress ?? source;
+      if (message.targeted) {
+        this.receiveTargetedHello(pdu.sender, source, transport, message);
+        continue;
+      }
+      if (!this.enabledInterfaces.has(inPort)) continue;
       const requested = message.holdTimeSeconds === 0 ? LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS : message.holdTimeSeconds;
       const hold = requested === LDP_HOLD_TIME_INFINITE ? requested : Math.min(requested, this.config.helloHoldSeconds);
-      this.refreshAdjacency(pdu.sender, inPort, source, message.transportAddress ?? source, hold);
+      this.refreshAdjacency(pdu.sender, inPort, source, transport, hold, false);
     }
   }
 
-  private refreshAdjacency(peer: LdpIdentifier, iface: string, source: IPAddress, transport: IPAddress, hold: number): void {
+  private receiveTargetedHello(
+    peer: LdpIdentifier, source: IPAddress, transport: IPAddress,
+    message: { readonly holdTimeSeconds: number; readonly requestTargetedHellos: boolean },
+  ): void {
+    const configured = this.targetedPeers.get(source.toString());
+    if (configured === undefined && !this.config.acceptTargetedHellos) return;
+    const requested = message.holdTimeSeconds === 0 ? LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS : message.holdTimeSeconds;
+    const hold = requested === LDP_HOLD_TIME_INFINITE ? requested : Math.min(requested, this.config.targetedHelloHoldSeconds);
+    this.refreshAdjacency(peer, `targeted:${source}`, source, transport, hold, true);
+    if (message.requestTargetedHellos && configured === undefined) {
+      this.targetedPeers.set(source.toString(), { address: source, configured: false });
+      this.start();
+      this.sendTargetedHello(source, false);
+    }
+  }
+
+  addTargetedPeer(address: IPAddress): void {
+    const existing = this.targetedPeers.get(address.toString());
+    if (existing?.configured) return;
+    this.targetedPeers.set(address.toString(), { address, configured: true });
+    this.configurationSequence++;
+    this.start();
+    this.sendTargetedHello(address, true);
+  }
+
+  removeTargetedPeer(address: IPAddress): void {
+    if (!this.targetedPeers.delete(address.toString())) return;
+    this.configurationSequence++;
+    for (const adjacency of [...this.adjacencyTable.values()]) {
+      if (adjacency.targeted && adjacency.source.equals(address)) this.dropAdjacency(adjacency);
+    }
+    this.reconcile();
+  }
+
+  setAcceptTargetedHellos(accept: boolean): void {
+    this.config.acceptTargetedHellos = accept;
+    if (accept) { this.start(); return; }
+    for (const adjacency of [...this.adjacencyTable.values()]) {
+      const entry = this.targetedPeers.get(adjacency.source.toString());
+      if (adjacency.targeted && (entry === undefined || !entry.configured)) {
+        this.targetedPeers.delete(adjacency.source.toString());
+        this.dropAdjacency(adjacency);
+      }
+    }
+    this.reconcile();
+  }
+
+  targetedAddresses(): readonly IPAddress[] {
+    return [...this.targetedPeers.values()].map(entry => entry.address);
+  }
+
+  private sendTargetedHellos(): void {
+    if (!this.globallyEnabled) return;
+    const now = this.nowMs();
+    for (const entry of this.targetedPeers.values()) {
+      const key = entry.address.toString();
+      if ((this.targetedNextSendMs.get(key) ?? 0) > now) continue;
+      this.sendTargetedHello(entry.address, entry.configured);
+    }
+  }
+
+  private sendTargetedHello(destination: IPAddress, requestReply: boolean): void {
+    if (!this.globallyEnabled) return;
+    const bytes = encodePdu({
+      version: LDP_VERSION, sender: this.localId,
+      messages: [{
+        kind: 'hello', id: this.nextMessageId(), holdTimeSeconds: this.config.targetedHelloHoldSeconds, targeted: true,
+        requestTargetedHellos: requestReply, transportAddress: this.host.routerId(), configurationSequenceNumber: this.configurationSequence,
+      }],
+    });
+    this.host.sendTargetedHello(destination, bytes);
+    this.targetedNextSendMs.set(destination.toString(), this.nowMs() + this.config.targetedHelloIntervalSeconds * 1000);
+  }
+
+  private refreshAdjacency(peer: LdpIdentifier, iface: string, source: IPAddress, transport: IPAddress, hold: number, targeted: boolean): void {
     const key = `${peer}@${iface}`;
     const existing = this.adjacencyTable.get(key);
     if (existing?.timer != null) this.cancelTimeout(existing.timer);
-    const adjacency: LdpAdjacency = { peer, iface, source, transport, holdSeconds: hold, timer: null };
+    const adjacency: LdpAdjacency = { peer, iface, source, transport, holdSeconds: hold, targeted, timer: null };
     if (hold !== LDP_HOLD_TIME_INFINITE) {
       adjacency.timer = this.scheduleTimeout(() => this.expireAdjacency(key), hold * 1000);
     }
