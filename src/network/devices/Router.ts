@@ -3660,6 +3660,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // fragment 0 will carry the L4 header they need to inspect. The
     // DF=1-and-oversized case already returned earlier (ICMP frag-needed),
     // so any oversized packet reaching here is safe to split.
+    const lspMtu = this.mplsEngine?.lspMtuFor(fwdPkt.destinationIP, route.iface);
+    if (lspMtu !== undefined && fwdPkt.totalLength > lspMtu) {
+      if ((fwdPkt.flags & 0b010) !== 0) {
+        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 4, lspMtu);
+        return;
+      }
+      for (const fragment of fragmentIPv4(fwdPkt, lspMtu)) {
+        const labelledFragment = this.mplsEngine?.impose(fragment, route.iface, nextHopIP) ?? null;
+        if (labelledFragment === null) continue;
+        this.counters.ipForwDatagrams++;
+        this.counters.ifOutOctets += fragment.totalLength;
+        this.sendMplsFrameArpAware(route.iface, labelledFragment, nextHopIP, outPort);
+      }
+      return;
+    }
     const labelled = this.mplsEngine?.impose(fwdPkt, route.iface, nextHopIP) ?? null;
     if (labelled !== null) {
       this.counters.ipForwDatagrams++;
@@ -4102,7 +4117,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       routerId: () => this.ldpRouterId(),
       interfaces: () => [...this.ports.entries()].flatMap(([name, port]) => {
         const address = port.getIPAddress();
-        return address ? [{ name, address, up: port.getIsUp() }] : [];
+        return address ? [{ name, address, up: port.getIsUp(), mtu: port.getMTU() }] : [];
       }),
       routes: () => this.routingTable.map((route): LdpRoute => ({
         prefix: route.network, length: route.mask.toCIDR(), nextHop: route.nextHop, iface: route.iface,
