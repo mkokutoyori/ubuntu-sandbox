@@ -243,6 +243,8 @@ import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { MplsEngine } from '../mpls/MplsEngine';
 import { LdpEngine, type LdpRoute } from '../ldp/LdpEngine';
+import { lookupVrfRoute, vrfRoutes, type VrfRoute, type VrfRouteSources, type VrfStaticRouteConfig } from '../vrf/VrfForwarding';
+import type { VrfStore } from './shells/cisco/ciscoVrfStore';
 import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
 import { mplsLabelStackObject } from '../icmp/IcmpExtensions';
 import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
@@ -274,6 +276,7 @@ export interface RouteEntry extends IIPv4Route {
   description?: string;
   track?: string;
   vpnInstance?: string;
+  vpn?: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress };
   permanent?: boolean;
   installedAt?: number;
   /**
@@ -2139,7 +2142,57 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.lookupRoute(new IPAddress(address))?.iface ?? null;
   }
 
+  _vrfs?: VrfStore;
+  _ciscoVrfRoutes?: Map<string, VrfStaticRouteConfig[]>;
+  private activeVrf: string | null = null;
+  private readonly importedVrfRoutes = new Map<string, VrfRoute[]>();
+
+  vrfOfInterface(iface: string): string | null {
+    for (const [name, vrf] of this._vrfs ?? []) if (vrf.interfaces.has(iface)) return name;
+    return null;
+  }
+
+  runInVrf<T>(vrf: string | null, work: () => T): T {
+    const previous = this.activeVrf;
+    this.activeVrf = vrf;
+    try { return work(); } finally { this.activeVrf = previous; }
+  }
+
+  setImportedVrfRoutes(vrf: string, routes: VrfRoute[]): void {
+    this.importedVrfRoutes.set(vrf, routes);
+  }
+
+  vrfRouteTable(vrf: string): VrfRoute[] {
+    return vrfRoutes(vrf, this.vrfRouteSources());
+  }
+
+  vrfMemberAddresses(vrf: string): Array<[string, IPAddress]> {
+    return this.vrfRouteSources().memberAddresses(vrf).flatMap(member => [[member.iface, member.address] as [string, IPAddress]]);
+  }
+
+  lookupVrfDestination(vrf: string, destination: IPAddress): VrfRoute | null {
+    return lookupVrfRoute(vrf, destination, this.vrfRouteSources());
+  }
+
+  private vrfRouteSources(): VrfRouteSources {
+    return {
+      memberAddresses: (vrf) => [...(this._vrfs?.get(vrf)?.interfaces ?? [])].flatMap(iface => {
+        const port = this.ports.get(iface);
+        const address = port?.getIPAddress();
+        const mask = port?.getSubnetMask();
+        return address && mask ? [{ iface, address, mask }] : [];
+      }),
+      staticRoutes: (vrf) => this._ciscoVrfRoutes?.get(vrf) ?? [],
+      importedRoutes: (vrf) => this.importedVrfRoutes.get(vrf) ?? [],
+      interfaceUsable: (iface) => this.isRouteInterfaceUsable(iface),
+    };
+  }
+
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
+    if (this.activeVrf !== null) {
+      const route = this.lookupVrfDestination(this.activeVrf, destIP);
+      return route === null ? null : { ...route, ...(route.vpn ? { vpn: route.vpn } : {}) } as RouteEntry;
+    }
     // ECMP: collect every route genuinely tied for best (same prefix
     // length, AD, and metric) instead of freezing on whichever happened
     // to be inserted first, so equal-cost paths actually get used.
@@ -2150,6 +2203,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const destInt = destIP.toUint32();
 
     for (const route of this.routingTable) {
+      if (route.type === 'connected' && this.vrfOfInterface(route.iface) !== null) continue;
       if (!this.isRouteInterfaceUsable(route.iface)) {
         // Interface went down — clear any IPSec SAs using this interface
         // (mirrors IOS: "line protocol down" triggers SA teardown)
@@ -2521,19 +2575,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const delivery = this.getLinkLayer().deliver(portName, frame);
     if (!delivery) return;
 
-    if (frame.etherType === ETHERTYPE_ARP) {
-      this.handleARP(portName, frame.payload as ARPPacket);
-    } else if (frame.etherType === ETHERTYPE_IPV4) {
-      this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
-      this.processIPv4(portName, frame.payload as IPv4Packet);
-    } else if (frame.etherType === ETHERTYPE_MPLS_UNICAST) {
-      if (isMplsPacket(frame.payload)) this.mplsEngine?.receive(portName, frame.payload);
-    } else if (frame.etherType === ETHERTYPE_IPV6) {
-      const ipv6 = frame.payload as IPv6Packet;
-      if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
-        this.ipv6Engine.processPacket(portName, ipv6, frame.srcMAC);
+    this.runInVrf(this.vrfOfInterface(portName), () => {
+      if (frame.etherType === ETHERTYPE_ARP) {
+        this.handleARP(portName, frame.payload as ARPPacket);
+      } else if (frame.etherType === ETHERTYPE_IPV4) {
+        this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
+        this.processIPv4(portName, frame.payload as IPv4Packet);
+      } else if (frame.etherType === ETHERTYPE_MPLS_UNICAST) {
+        if (isMplsPacket(frame.payload)) this.mplsEngine?.receive(portName, frame.payload);
+      } else if (frame.etherType === ETHERTYPE_IPV6) {
+        const ipv6 = frame.payload as IPv6Packet;
+        if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
+          this.ipv6Engine.processPacket(portName, ipv6, frame.srcMAC);
+        }
       }
-    }
+    });
   }
 
   protected override ownsLocalUnicast(iface: string, destination: MACAddress): boolean {
@@ -6015,6 +6071,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       tos?: number;
       sizeBytes?: number;
       shouldStop?: () => boolean;
+      vrf?: string;
     },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     // 127.0.0.0/8 est TOUJOURS local (RFC 1122 §3.2.1.3) : il n'a pas
@@ -6038,7 +6095,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    const route = this.lookupRoute(targetIP);
+    const route = hooks?.vrf === undefined ? this.lookupRoute(targetIP) : this.runInVrf(hooks.vrf, () => this.lookupRoute(targetIP));
     if (!route) {
       const rows = [];
       for (let seq = 1; seq <= count; seq++) {

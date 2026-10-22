@@ -2752,11 +2752,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return '';
     }
 
+    if (parsed.vrf !== undefined && !vrfStoreOf(router as unknown as VrfHost).has(parsed.vrf)) {
+      return `% VRF ${parsed.vrf} not configured`;
+    }
     this._pendingAsync = this.resoudreCible(router, parsed.target).then((adresse) => {
       if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
       return router
         .executePingSequence(
-          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
+          parsed.vrf === undefined ? undefined : { vrf: parsed.vrf })
         .then(results => formatCiscoPing(
           adresse, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     });
