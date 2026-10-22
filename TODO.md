@@ -1599,6 +1599,19 @@ on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
   n'imprime ni les trois lignes `Supports …` ni le bloc `Redistributing
   External Routes from,` (le seul exemple officiel est
   `static, includes subnets in redistribution`).
+- `show ip ospf interface brief` ecrit l'etat `DROTH` pour un routeur ni DR
+  ni BDR. Aucune source atteignable ne l'atteste : ni les PDF de
+  `official_docs/` (le seul exemple officiel montre `LOOP` et `P2P`), ni les
+  captures de vrais IOS de `ntc-templates` et de `genieparser` (`LOOP`,
+  `P2P`, `BDR`, `DR`, `DOWN`), et les pages de reference (cisco.com,
+  community.cisco.com, netstuts.com) sont refusees par la politique reseau de
+  la session. La largeur de la colonne `State` (5 caracteres) tient `DROTH`
+  sans l'imposer. A verifier sur une capture avant d'y toucher. A l'inverse,
+  la table de `show ip ospf neighbor` (priorite alignee a droite sous
+  `Pri`, `State` a la colonne 22, `Dead Time` a 38, `Address` a 50,
+  `Interface` a 66) est celle de la capture IOS
+  `ntc-templates/tests/cisco_ios/show_ip_ospf_neighbor`, et les roles
+  `FULL/DR`, `FULL/BDR`, `FULL/-` y figurent aussi.
 - Le LIBELLE des lignes `%OSPF-5-ADJCHG` (`from Loading to Full,
   LoadingDone`, `from Full to Down, InactivityTimer` / `KillNbr`) n'est
   atteste par aucun document du depot : la reference OSPF de Cisco decrit
