@@ -36,6 +36,7 @@ import {
   OSPF_INFINITY_METRIC,
   OSPF_VERSION_2,
   createDefaultOSPFConfig,
+  adjacencyChangeIsLogged,
   OSPF_ROUTER_ID_ABSENT,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
@@ -1715,7 +1716,8 @@ export class OSPFEngine implements IProtocolEngine {
 
     this.eventLog.push(`OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${from} -> ${next} (${event})`);
     this.neighborChangeCount++;
-    if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
+    const logged = adjacencyChangeIsLogged(this.config, from, next);
+    if (this.logAdjacencyChanges || logged) {
       this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${from} to ${next}, ${event}`);
     }
 
@@ -1728,8 +1730,14 @@ export class OSPFEngine implements IProtocolEngine {
         oldState: from,
         newState: next,
         event,
+        logged,
       },
     });
+  }
+
+  setAdjacencyLogging(enabled: boolean, detail: boolean): void {
+    this.config.logAdjacencyChanges = enabled;
+    this.config.logAdjacencyChangesDetail = detail;
   }
 
   /**

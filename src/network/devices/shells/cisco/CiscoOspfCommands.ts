@@ -174,7 +174,6 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
 export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   const extra = () => ctx.r()._getOSPFExtraConfig() as unknown as Record<string, unknown> & {
     maximumPaths?: number; compatibleRfc1583?: boolean;
-    logAdjacencyChanges?: boolean; logAdjacencyChangesDetail?: boolean;
     distance?: { intraArea?: number; interArea?: number; external?: number };
     timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
     timersLsaArrivalMs?: number;
@@ -481,19 +480,19 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  // `detail` était refusé faute d'être greedy — le suffixe le plus
-  // courant en cours (il fait journaliser CHAQUE transition d'état de
-  // l'adjacence, pas seulement l'entrée et la sortie de Full).
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
-    if (args.length > 0 && args[0] !== 'detail') {
-      throw new CliInvalidInput();
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'detail')) {
+      throw new CliInvalidInput({ token: args.length > 1 ? args[1] : args[0] });
     }
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.logAdjacencyChanges = true;
-    extra.logAdjacencyChangesDetail = args[0] === 'detail';
-    // Enable in the OSPF engine if already running
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (ospf) ospf.logAdjacencyChanges = true;
+    ctx.r()._getOSPFEngineInternal()?.setAdjacencyLogging(true, args.length === 1);
+    return '';
+  });
+
+  trie.registerGreedy('no log-adjacency-changes', 'Stop logging OSPF adjacency changes', (args) => {
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'detail')) {
+      throw new CliInvalidInput({ token: args.length > 1 ? args[1] : args[0] });
+    }
+    ctx.r()._getOSPFEngineInternal()?.setAdjacencyLogging(args.length === 1, false);
     return '';
   });
 
@@ -1766,9 +1765,6 @@ function showIpOspf(router: Router): string {
   }
   if (extra.gracefulRestart?.enabled) {
     lines.push(` Graceful restart enabled, grace period ${extra.gracefulRestart.gracePeriod}`);
-  }
-  if (extra.logAdjacencyChanges) {
-    lines.push(` Log-Adjacency-Changes: enabled`);
   }
 
   // NBMA neighbors

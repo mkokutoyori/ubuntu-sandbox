@@ -985,10 +985,15 @@ function lignesDAire(
   router: Router,
   ospfCfg: {
     referenceBandwidth: number;
+    logAdjacencyChanges: boolean;
+    logAdjacencyChangesDetail: boolean;
     areas: Map<string, { type: string; ranges?: Array<{ network: string; mask: string; advertise: boolean }>; defaultCost?: number; authentication?: string }>;
   },
 ): string[] {
   const lignes: string[] = [];
+  if (ospfCfg.logAdjacencyChanges) {
+    lignes.push(ospfCfg.logAdjacencyChangesDetail ? 'log-adjacency-changes detail' : 'log-adjacency-changes');
+  }
   for (const [id, aire] of ospfCfg.areas) {
     if (aire.authentication === 'simple') lignes.push(`area ${id} authentication`);
     else if (aire.authentication === 'message-digest') {

@@ -654,11 +654,23 @@ export interface OSPFConfig {
   passiveInterfaceDefault?: boolean;
   /** Log adjacency changes */
   logAdjacencyChanges: boolean;
+  logAdjacencyChangesDetail: boolean;
   /** Auto-cost reference bandwidth (Kbps for Cisco) */
   autoCostReferenceBandwidth: number;
 }
 
 export const OSPF_ROUTER_ID_ABSENT = '0.0.0.0';
+
+export const DEFAULT_ADJACENCY_LOGGING = { logAdjacencyChanges: true, logAdjacencyChangesDetail: false } as const;
+
+export function adjacencyChangeIsLogged(
+  config: Pick<OSPFConfig, 'logAdjacencyChanges' | 'logAdjacencyChangesDetail'>,
+  from: OSPFNeighborState,
+  to: OSPFNeighborState,
+): boolean {
+  if (!config.logAdjacencyChanges) return false;
+  return config.logAdjacencyChangesDetail || from === 'Full' || to === 'Full';
+}
 
 export function createDefaultOSPFConfig(processId: number = 1): OSPFConfig {
   return {
@@ -673,6 +685,7 @@ export function createDefaultOSPFConfig(processId: number = 1): OSPFConfig {
     redistributeRip: false,
     passiveInterfaces: new Set(),
     logAdjacencyChanges: true,
+    logAdjacencyChangesDetail: false,
     autoCostReferenceBandwidth: 100, // 100 Mbps in Mbps
   };
 }

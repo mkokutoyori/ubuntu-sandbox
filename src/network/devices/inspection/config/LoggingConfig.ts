@@ -5,6 +5,7 @@ import { formatIosElapsed } from '@/network/devices/shells/cisco/iosElapsed';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import { isValidIPv4 } from '@/network/core/ip';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
+import { DEFAULT_ADJACENCY_LOGGING, adjacencyChangeIsLogged } from '@/network/ospf/types';
 import {
   getManagementService, getNtpAgent,
 } from '@/network/equipment/RouterServiceCapabilities';
@@ -1027,9 +1028,7 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
-        const versFull = String(p.newState).toLowerCase() === 'full';
-        const quitteFull = String(p.oldState).toLowerCase() === 'full';
-        if (!versFull && !quitteFull) return;
+        if (!(p.logged ?? adjacencyChangeIsLogged(DEFAULT_ADJACENCY_LOGGING, p.oldState, p.newState))) return;
         this.append('notifications', 'ospf',
           `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`,
           true, 'ADJCHG');

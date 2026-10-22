@@ -1599,11 +1599,12 @@ on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
   n'imprime ni les trois lignes `Supports …` ni le bloc `Redistributing
   External Routes from,` (le seul exemple officiel est
   `static, includes subnets in redistribution`).
-- Les lignes `%OSPF-5-ADJCHG` disent `from Loading to Full, LoadingDone`
-  et `from Full to Down, InactivityTimer` / `KillNbr` ; IOS ecrit les etats
-  en capitales et les causes en mots (`from LOADING to FULL, Loading Done`,
-  `from FULL to DOWN, Neighbor Down: Dead timer expired`). Non atteste ici
-  (aucune capture d'IOS dans le depot) : a verifier avant d'y toucher.
+- Le LIBELLE des lignes `%OSPF-5-ADJCHG` (`from Loading to Full,
+  LoadingDone`, `from Full to Down, InactivityTimer` / `KillNbr`) n'est
+  atteste par aucun document du depot : la reference OSPF de Cisco decrit
+  `log-adjacency-changes [detail]` (quels evenements sont journalises, et
+  c'est evalue) mais ne donne pas le texte du message. Rien ne dit non plus
+  si IOS ecrit les etats en capitales ; a verifier avant d'y toucher.
 **Pourquoi ce n'est pas ferme** : relever, pas corriger — l'exploration
 etait demandee sans correctif. Chaque point a une sonde evidente
 (`showIpOspfNeighbor` lit deja `iface.dr` / `n.neighborDR`).

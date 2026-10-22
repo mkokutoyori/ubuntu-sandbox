@@ -311,10 +311,7 @@ export function buildOSPFViewCommands(
   });
 
   trie.register('log-peer-change', 'Log OSPF adjacency changes', () => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.logAdjacencyChanges = true;
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (ospf) ospf.logAdjacencyChanges = true;
+    ctx.r()._getOSPFEngineInternal()?.setAdjacencyLogging(true, false);
     return '';
   });
 
