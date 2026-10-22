@@ -50,6 +50,8 @@ export interface BgpOpenMessage {
 
 export const AFI_IPV4 = 1;
 export const SAFI_MPLS_VPN = 128;
+export const AFI_L2VPN = 25;
+export const SAFI_VPLS = 65;
 
 export interface BgpAddressFamily {
   readonly afi: number;
@@ -79,6 +81,37 @@ export interface BgpVpnv4Attributes {
   readonly localPref?: number;
   readonly med?: number;
   readonly extendedCommunities: readonly string[];
+}
+
+export interface BgpVplsNlri {
+  readonly rd: string;
+  readonly veId: number;
+  readonly veBlockOffset: number;
+  readonly veBlockSize: number;
+  readonly labelBase: number;
+}
+
+export interface BgpLayer2Info {
+  readonly encapsulationType: number;
+  readonly controlWord: boolean;
+  readonly sequenced: boolean;
+  readonly mtu: number;
+}
+
+export interface BgpVplsReach {
+  readonly nextHop: string;
+  readonly nlri: readonly BgpVplsNlri[];
+  readonly attributes: {
+    readonly origin: BgpOrigin;
+    readonly asPath: readonly number[];
+    readonly localPref?: number;
+    readonly routeTargets: readonly string[];
+    readonly layer2Info: BgpLayer2Info;
+  };
+}
+
+export interface BgpVplsUnreach {
+  readonly nlri: readonly BgpVplsNlri[];
 }
 
 export interface BgpMpReach {
@@ -127,6 +160,8 @@ export interface BgpUpdateMessage {
   readonly attributes?: BgpPathAttributes;
   readonly mpReach?: BgpMpReach;
   readonly mpUnreach?: BgpMpUnreach;
+  readonly vplsReach?: BgpVplsReach;
+  readonly vplsUnreach?: BgpVplsUnreach;
 }
 
 /** KEEPALIVE (RFC 4271 §4.4) — header only; resets the peer's Hold Timer. */

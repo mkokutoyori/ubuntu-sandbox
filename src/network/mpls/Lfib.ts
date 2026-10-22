@@ -56,6 +56,24 @@ export class Lfib {
     return MplsLabel.of(this.nextDynamicLabel++);
   }
 
+  allocateLabelBlock(size: number, entryAt: (offset: number) => IlmEntry): MplsLabel {
+    let base = this.nextDynamicLabel;
+    for (;;) {
+      if (base + size - 1 > MPLS_LABEL_MAX) throw new RangeError('MPLS label space exhausted');
+      let clash = -1;
+      for (let offset = 0; offset < size; offset++) if (this.ilm.has(base + offset)) clash = offset;
+      if (clash < 0) break;
+      base += clash + 1;
+    }
+    for (let offset = 0; offset < size; offset++) this.ilm.set(base + offset, entryAt(offset));
+    this.nextDynamicLabel = Math.max(this.nextDynamicLabel, base + size);
+    return MplsLabel.of(base);
+  }
+
+  releaseLabelBlock(base: MplsLabel, size: number): void {
+    for (let offset = 0; offset < size; offset++) this.ilm.delete(base.value + offset);
+  }
+
   releaseLabel(label: MplsLabel): void {
     this.ilm.delete(label.value);
     if (!label.isSpecialPurpose() && !this.released.includes(label.value)) this.released.push(label.value);

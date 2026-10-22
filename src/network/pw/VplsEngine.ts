@@ -1,10 +1,14 @@
-import { MACAddress, ethernetFrameBytesWithoutFcs, type EthernetFrame, type IPAddress } from '@/network/core/types';
+import { IPAddress, MACAddress, ethernetFrameBytesWithoutFcs, type EthernetFrame } from '@/network/core/types';
 import { BridgeFdb } from '@/network/devices/firewall/l2/BridgeFdb';
 import type { LdpEngine, LdpPwHandler } from '@/network/ldp/LdpEngine';
 import type { LdpIdentifier } from '@/network/ldp/LdpIdentifier';
 import type { GeneralizedPwFec, PwFec } from '@/network/ldp/LdpMessages';
 import type { MplsEngine } from '@/network/mpls/MplsEngine';
 import type { MplsLabel } from '@/network/mpls/MplsLabel';
+import type { BGPEngine } from '@/network/bgp/BGPEngine';
+import { VPLS_ENCAPSULATION_TYPE, type VplsLocalInstance, type VplsRemoteAdvertisement } from '@/network/bgp/vpls/VplsBgpSpeaker';
+import type { BgpVplsNlri } from '@/network/bgp/messages';
+import { BgpPseudowire, type BgpLocalBlock } from './BgpPseudowire';
 import { controlWordOf, isValidControlWord, type PseudowirePayload } from './PseudowirePacket';
 import { PW_TYPE_ETHERNET_RAW, type PseudowireHost } from './PseudowireEngine';
 import { PseudowireSession, mtuOf, mtuParameter, type ControlWordPreference, type RemoteMapping } from './PseudowireSession';
@@ -38,9 +42,32 @@ export interface VplsCounters {
   macWithdrawsReceived: number;
 }
 
+export interface VplsPseudowire {
+  readonly localLabel: MplsLabel | null;
+  readonly remote: { readonly label: MplsLabel } | null;
+  readonly sendsControlWord: boolean;
+  readonly receivesControlWord: boolean;
+  blocker(): string | null;
+  teardown(): void;
+}
+
+export interface VplsBgpConfig extends VplsConfig {
+  readonly rd: string;
+  readonly routeTarget: string;
+  readonly veId: number;
+  readonly veBlockSize: number;
+}
+
 interface Neighbor {
   readonly peer: IPAddress;
-  readonly session: PseudowireSession;
+  readonly session: VplsPseudowire;
+  readonly ldp?: PseudowireSession;
+  readonly veId?: number;
+}
+
+interface BgpState {
+  readonly config: VplsBgpConfig;
+  readonly block: BgpLocalBlock;
 }
 
 interface Instance {
@@ -48,6 +75,7 @@ interface Instance {
   readonly attachmentCircuits: Set<string>;
   readonly neighbors: Map<string, Neighbor>;
   readonly fdb: BridgeFdb;
+  bgp?: BgpState;
 }
 
 function agiBytes(vpnId: number): Uint8Array {
@@ -77,6 +105,7 @@ export class VplsEngine implements LdpPwHandler {
   };
   private readonly instances = new Map<string, Instance>();
   private readonly pendingRemote = new Map<string, RemoteMapping>();
+  private bgp: BGPEngine | null = null;
 
   constructor(
     private readonly host: PseudowireHost,
@@ -90,6 +119,32 @@ export class VplsEngine implements LdpPwHandler {
       config, attachmentCircuits: new Set(), neighbors: new Map(), fdb: new BridgeFdb({ now: () => this.ldp().nowMs() }),
     });
     this.ldp().addPwHandler(this);
+  }
+
+  defineBgp(config: VplsBgpConfig): void {
+    this.define(config);
+    const instance = this.instance(config.name);
+    const veBlockOffset = 1;
+    const base = this.mpls().lfib.allocateLabelBlock(config.veBlockSize, offset => ({
+      kind: 'pw', owner: 'vpls', endpoint: `${config.name}|ve:${veBlockOffset + offset}`,
+    }));
+    instance.bgp = {
+      config,
+      block: {
+        veId: config.veId, offset: veBlockOffset, size: config.veBlockSize, base,
+        controlWord: config.controlWord === 'preferred', mtu: () => this.mtuOf(instance),
+      },
+    };
+    this.bgp?.vplsBgpSpeaker()?.sync();
+  }
+
+  attachBgp(bgp: BGPEngine): void {
+    this.bgp = bgp;
+    bgp.setVplsHost({
+      instances: () => this.localBgpInstances(),
+      remoteAdvertised: advertisement => this.bgpAdvertised(advertisement),
+      remoteWithdrawn: (name, _peerIp, nlri) => this.bgpWithdrawn(name, nlri),
+    });
   }
 
   addAttachmentCircuit(name: string, iface: string): void {
@@ -114,7 +169,7 @@ export class VplsEngine implements LdpPwHandler {
       mtu: () => this.mtuOf(instance),
       localUp: () => true,
     }, this.ldp, this.mpls);
-    instance.neighbors.set(peer.toString(), { peer, session });
+    instance.neighbors.set(peer.toString(), { peer, session, ldp: session });
     const held = this.pendingRemote.get(`${instance.config.vpnId}|${peer}`);
     if (held !== undefined) {
       session.adopt(held);
@@ -175,12 +230,14 @@ export class VplsEngine implements LdpPwHandler {
     void inPort;
     const [name, peerText] = endpoint.split('|');
     const instance = this.instances.get(name);
-    const neighbor = instance?.neighbors.get(peerText);
+    const neighbor = peerText.startsWith('ve:')
+      ? [...(instance?.neighbors.values() ?? [])].find(n => n.veId === Number(peerText.slice(3)))
+      : instance?.neighbors.get(peerText);
     if (instance === undefined || neighbor === undefined || neighbor.session.blocker() !== null) {
       this.counters.droppedDown++;
       return;
     }
-    if (neighbor.session.usesControlWord !== (payload.controlWord !== null)
+    if (neighbor.session.receivesControlWord !== (payload.controlWord !== null)
       || (payload.controlWord !== null && !isValidControlWord(payload.controlWord))) {
       this.counters.droppedControlWord++;
       return;
@@ -208,7 +265,7 @@ export class VplsEngine implements LdpPwHandler {
     if (instance === undefined) return;
     instance.fdb.forgetPort(attachmentPort(iface));
     for (const neighbor of instance.neighbors.values()) {
-      if (neighbor.session.blocker() !== null) continue;
+      if (neighbor.ldp === undefined || neighbor.session.blocker() !== null) continue;
       const sent = this.ldp().sendToPeer(neighbor.peer, [{
         kind: 'mac-withdraw', id: this.ldp().nextMessageId(), fec: [this.fecOf(instance, false, false)], macs: [],
       }]);
@@ -217,12 +274,12 @@ export class VplsEngine implements LdpPwHandler {
   }
 
   sessionOperational(peer: LdpIdentifier): void {
-    for (const instance of this.instances.values()) instance.neighbors.get(peer.lsrId.toString())?.session.advertise();
+    for (const instance of this.instances.values()) instance.neighbors.get(peer.lsrId.toString())?.ldp?.advertise();
   }
 
   sessionClosed(peer: LdpIdentifier): void {
     for (const instance of this.instances.values()) {
-      instance.neighbors.get(peer.lsrId.toString())?.session.sessionClosed();
+      instance.neighbors.get(peer.lsrId.toString())?.ldp?.sessionClosed();
       instance.fdb.forgetPort(pseudowirePort(peer.lsrId));
     }
   }
@@ -238,24 +295,24 @@ export class VplsEngine implements LdpPwHandler {
       });
       return;
     }
-    neighbor.session.mapping(peer, fec, label, pwStatus);
+    neighbor.ldp?.mapping(peer, fec, label, pwStatus);
   }
 
   withdraw(peer: LdpIdentifier, fec: PwFec, label: MplsLabel | undefined, status: number | undefined): void {
     if (fec.kind !== 'gen-pwid') return;
     const vpnId = agiValue(fec.agi.value);
     if (vpnId !== null) this.pendingRemote.delete(`${vpnId}|${peer.lsrId}`);
-    this.neighborFor(peer, fec)?.session.withdraw(peer, label, status);
+    this.neighborFor(peer, fec)?.ldp?.withdraw(peer, label, status);
   }
 
   release(peer: LdpIdentifier, fec: PwFec, _label: MplsLabel | undefined, status: number | undefined): void {
     if (fec.kind !== 'gen-pwid') return;
-    this.neighborFor(peer, fec)?.session.release(status);
+    this.neighborFor(peer, fec)?.ldp?.release(status);
   }
 
   notification(peer: LdpIdentifier, fec: PwFec, pwStatus: number): void {
     if (fec.kind !== 'gen-pwid') return;
-    this.neighborFor(peer, fec)?.session.notification(pwStatus);
+    this.neighborFor(peer, fec)?.ldp?.notification(pwStatus);
   }
 
   macWithdraw(peer: LdpIdentifier, fec: PwFec, macs: readonly (readonly number[])[]): void {
@@ -272,6 +329,33 @@ export class VplsEngine implements LdpPwHandler {
       const mac = new MACAddress([...octets]).toString();
       if (instance.fdb.lookup(mac) === port) instance.fdb.forget(mac);
     }
+  }
+
+  private localBgpInstances(): readonly VplsLocalInstance[] {
+    return [...this.instances.values()].flatMap(({ bgp, config }) => bgp === undefined ? [] : [{
+      name: config.name, rd: bgp.config.rd, routeTarget: bgp.config.routeTarget, veId: bgp.block.veId,
+      veBlockOffset: bgp.block.offset, veBlockSize: bgp.block.size, labelBase: bgp.block.base.value,
+      layer2Info: { encapsulationType: VPLS_ENCAPSULATION_TYPE, controlWord: bgp.block.controlWord, sequenced: false, mtu: bgp.block.mtu() },
+    }]);
+  }
+
+  private bgpAdvertised(advertisement: VplsRemoteAdvertisement): void {
+    const instance = this.instances.get(advertisement.instance);
+    if (instance?.bgp === undefined || advertisement.nlri.veId === instance.bgp.block.veId) return;
+    this.bgpWithdrawn(advertisement.instance, advertisement.nlri);
+    const peer = new IPAddress(advertisement.nextHop);
+    instance.neighbors.set(peer.toString(), {
+      peer, veId: advertisement.nlri.veId,
+      session: new BgpPseudowire(instance.bgp.block, advertisement.nlri.veId, advertisement, () => true),
+    });
+  }
+
+  private bgpWithdrawn(name: string, nlri: BgpVplsNlri): void {
+    const instance = this.instances.get(name);
+    const stale = [...(instance?.neighbors.values() ?? [])].find(n => n.ldp === undefined && n.veId === nlri.veId);
+    if (instance === undefined || stale === undefined) return;
+    instance.neighbors.delete(stale.peer.toString());
+    instance.fdb.forgetPort(pseudowirePort(stale.peer));
   }
 
   private instance(name: string): Instance {
@@ -337,7 +421,7 @@ export class VplsEngine implements LdpPwHandler {
       return;
     }
     const payload: PseudowirePayload = {
-      type: 'pw-ethernet', controlWord: neighbor.session.usesControlWord ? controlWordOf(0) : null, frame,
+      type: 'pw-ethernet', controlWord: neighbor.session.sendsControlWord ? controlWordOf(0) : null, frame,
     };
     const imposed = this.mpls().imposeUnderlay(payload, remote.label, neighbor.peer);
     if (imposed === null) {

@@ -4109,7 +4109,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   getVplsEngine(): VplsEngine {
-    this.vpls ??= new VplsEngine(this.pseudowireHost(), () => this.getLdpEngine(), () => this.getMplsEngine());
+    if (this.vpls === null) {
+      this.vpls = new VplsEngine(this.pseudowireHost(), () => this.getLdpEngine(), () => this.getMplsEngine());
+      this.vpls.attachBgp(this.dynamicRouting.bgp);
+    }
     return this.vpls;
   }
 

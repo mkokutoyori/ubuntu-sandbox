@@ -3534,6 +3534,16 @@ PW (0x096C) et les retraits generiques (longueur d'information 0) de la FEC
 generalisee sont refuses a l'analyse plutot qu'ignores. Le type d'AGI 1
 vient du registre IANA, absent de `docs/rfc/mpls/`.
 
+### [vpls-bgp] le reste de la RFC 4761
+Seul le cas iBGP en maillage complet avec un VE par instance et par PE est
+servi : pas de route reflector, pas de multi-AS (§5, options a/b/c), pas de
+double attache ni de selection de VE (D-bit, preference locale du §3.2.4), un
+seul bloc d'etiquettes de 8 VE commencant au VE-ID 1, pas de numero de
+sequence (un pair qui annonce S=1 laisse le pseudo-fil hors service) et pas d'etiquette de
+decouverte `vpls` dans la CLI : l'API est `Router.getVplsEngine().defineBgp`
+et le drapeau `vpls` du voisin BGP. Les valeurs du registre IANA (AFI 25,
+SAFI 65, type de communaute 0x800A) viennent du corps de la RFC.
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit

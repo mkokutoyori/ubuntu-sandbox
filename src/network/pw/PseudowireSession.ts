@@ -56,6 +56,14 @@ export class PseudowireSession {
     return this.advertisedControlWord === true && this.remote?.controlWord === true;
   }
 
+  get sendsControlWord(): boolean {
+    return this.usesControlWord;
+  }
+
+  get receivesControlWord(): boolean {
+    return this.usesControlWord;
+  }
+
   localStatus(): number {
     return this.spec.localUp() ? PW_STATUS_FORWARDING : PW_STATUS_NOT_FORWARDING;
   }
