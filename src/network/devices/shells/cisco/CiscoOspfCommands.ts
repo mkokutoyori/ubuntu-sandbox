@@ -15,7 +15,7 @@ import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes
 import { isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { formatIosElapsed } from './iosElapsed';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
-import { isAreaId, isBackboneAreaId, type LSAHeader } from '../../../ospf/types';
+import { isAreaId, isBackboneAreaId, type LSAHeader, type OSPFNeighborState, type OSPFNetworkType } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 import { CISCO_ERRORS } from '../cli-utils';
@@ -1732,6 +1732,35 @@ function showIpOspf(router: Router): string {
   return lines.join('\n');
 }
 
+const NEIGHBOR_STATE_LABELS: Readonly<Record<OSPFNeighborState, string>> = {
+  Down: 'DOWN',
+  Attempt: 'ATTEMPT',
+  Init: 'INIT',
+  TwoWay: '2WAY',
+  ExStart: 'EXSTART',
+  Exchange: 'EXCHANGE',
+  Loading: 'LOADING',
+  Full: 'FULL',
+};
+
+export function ospfNeighborStateLabel(state: OSPFNeighborState): string {
+  return NEIGHBOR_STATE_LABELS[state];
+}
+
+export function ospfNeighborRole(networkType: OSPFNetworkType, isDesignatedRouter: boolean, isBackup: boolean): string {
+  if (networkType !== 'broadcast' && networkType !== 'nbma') return '-';
+  if (isDesignatedRouter) return 'DR';
+  return isBackup ? 'BDR' : 'DROTHER';
+}
+
+function ospfNeighborStateColumn(state: OSPFNeighborState, role: string): string {
+  return `${ospfNeighborStateLabel(state)}/${role === '-' ? '  -' : role}`;
+}
+
+function ospfNeighborLine(routerId: string, priority: number, stateColumn: string, deadTime: string, thirdColumn: string, iface: string): string {
+  return `${padToWidth(routerId, 16)}${String(priority).padStart(3)}   ${padToWidth(stateColumn, 16)}${padToWidth(deadTime, 12)}${padToWidth(thirdColumn, 16)}${iface}`;
+}
+
 export function showIpOspfNeighbor(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
@@ -1744,14 +1773,11 @@ export function showIpOspfNeighbor(router: Router): string {
   for (const n of neighbors) {
     const iface = ospf.getInterface(n.iface);
     if (!iface || iface.state === 'Down') continue;
-    const stateStr = `${n.state.toUpperCase()}/  -`;
-    const deadTime = compteARebours(iface, n.lastHelloReceived, ospf.now());
-
-    lines.push(
-      `${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}` +
-      `${padToWidth(stateStr, 16)}${padToWidth(deadTime, 12)}` +
-      `${padToWidth(n.ipAddress, 16)}${n.iface}`
-    );
+    const role = ospfNeighborRole(iface.networkType, n.ipAddress === iface.dr, n.ipAddress === iface.bdr);
+    lines.push(ospfNeighborLine(
+      n.routerId, n.priority, ospfNeighborStateColumn(n.state, role),
+      compteARebours(iface, n.lastHelloReceived, ospf.now()), n.ipAddress, n.iface,
+    ));
   }
 
   return lines.join('\n');
@@ -2078,7 +2104,7 @@ function showIpOspfNeighborDetail(router: Router): string {
 
     lines.push(` Neighbor ${n.routerId}, interface address ${n.ipAddress}`);
     lines.push(`    In the area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
-    lines.push(`    Neighbor priority is ${n.priority}, State is ${n.state.toUpperCase()}, ${ospf.getNeighborChangeCount()} state changes`);
+    lines.push(`    Neighbor priority is ${n.priority}, State is ${ospfNeighborStateLabel(n.state)}, ${ospf.getNeighborChangeCount()} state changes`);
     const drId = iface?.dr && iface.dr !== '0.0.0.0' ? iface.dr : n.neighborDR;
     const bdrId = iface?.bdr && iface.bdr !== '0.0.0.0' ? iface.bdr : n.neighborBDR;
     lines.push(`    DR is ${drId} BDR is ${bdrId}`);
@@ -2986,10 +3012,15 @@ function showIpv6Ospf(router: Router, processId?: number): string {
 function showIpv6OspfNeighbor(router: Router): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return '% OSPFv3 is not configured';
-  const neighbors = v3.getNeighbors();
-  const lines = ['Neighbor ID     Pri   State           Dead Time   Interface'];
-  for (const n of neighbors) {
-    lines.push(`${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}FULL/ -         ${n.iface}`);
+  const lines = ['Neighbor ID     Pri   State           Dead Time   Interface ID    Interface'];
+  for (const n of v3.getNeighbors()) {
+    const iface = v3.getInterface(n.iface);
+    if (!iface) continue;
+    const role = ospfNeighborRole(iface.networkType, n.routerId === iface.dr, n.routerId === iface.bdr);
+    lines.push(ospfNeighborLine(
+      n.routerId, n.priority, ospfNeighborStateColumn(n.state, role),
+      compteARebours(iface, n.lastHelloReceived, v3.now()), String(n.interfaceId ?? 0), n.iface,
+    ));
   }
   return lines.join('\n');
 }

@@ -188,6 +188,7 @@ export interface OSPFNeighbor {
   lastHelloReceived: number;
   /** Options field from Hello */
   options: number;
+  interfaceId?: number;
   /** DD retransmission timer handle (RFC 2328 §10.6) */
   ddRetransmitTimer: symbol | null;
   /** LSR retransmission timer handle (RFC 2328 §10.9) */

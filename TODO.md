@@ -1511,10 +1511,15 @@ on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
 `O [110/2]`, `ping` et `traceroute` de bout en bout, l'echec d'aire / de hello
 / d'authentification se voit dans `%OSPF-4-ERRRCV` et tombe a 40 s
 (`InactivityTimer`). Ce qui sonne faux :
-- `show ip ospf neighbor` ecrit toujours `FULL/  -` (`showIpOspfNeighbor`,
-  chaine fixe) : sur un segment Ethernet IOS dit `FULL/DR`, `FULL/BDR`,
-  `FULL/DROTHER` ou `2WAY/DROTHER`, et `show ip ospf interface` du MEME
-  routeur nomme bien le DR et le BDR : deux vues qui se contredisent.
+- OSPFv3 : deux routeurs relies par un cable direct, sans horloge, s'elisent
+  CHACUN DR (R1 voit `dr = 1.1.1.1`, R2 `dr = 2.2.2.2`, BDR `0.0.0.0`).
+  L'accelerateur de WaitTimer de `v3AutoConverge` elit pendant que le voisin
+  est encore en Init (exclu des candidats) et `processHello` de
+  `OSPFv3Engine` ne relance pas l'election sur NbrChange (RFC 2328 §9.2, ce
+  que fait `processHello` de `OSPFEngine`) ; la voie « commutateur + horloge »
+  elit une fois les voisins connus et reste juste. Non ferme : relancer
+  l'election exige de reevaluer les adjacences (AdjOK), que la voie
+  rapide vers Full de v3 (`shouldFormAdjacency`) ne fait pas.
 - `show ip ospf interface brief` rend l'etat `DROTHER` en entier
   (`DROTHER1/1`, la colonne des voisins collee) ; IOS tient l'etat sur
   cinq cellules (`DROTH`).

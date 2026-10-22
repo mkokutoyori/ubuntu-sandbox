@@ -555,6 +555,7 @@ export class OSPFv3Engine implements IProtocolEngine {
     neighbor.neighborBDR = hello.backupDesignatedRouter;
     neighbor.lastHelloReceived = this.now();
     neighbor.options = hello.options;
+    neighbor.interfaceId = hello.interfaceId;
 
     // HelloReceived
     this.resetDeadTimer(iface, neighbor);
