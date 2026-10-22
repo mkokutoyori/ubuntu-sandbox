@@ -138,6 +138,11 @@ export class MplsEngine implements TtlPolicy {
     return { packet: { type: 'mpls', stack, payload }, iface: entry.iface, nextHop: entry.nextHop };
   }
 
+  lspMtuFor(destination: IPAddress, iface: string): number | undefined {
+    const entry = this.lfib.lookupFtn(destination);
+    return entry !== undefined && entry.iface === iface && entry.outLabels.length > 0 ? entry.lspMtu : undefined;
+  }
+
   impose(packet: IPv4Packet, iface: string, nextHop: IPAddress | null): MplsPacket | null {
     if (!this.interfaces.has(iface)) return null;
     const entry = this.lfib.lookupFtn(packet.destinationIP);

@@ -9,6 +9,8 @@ export const LDP_DEFAULT_MAX_PDU_LENGTH = 4096;
 export const LDP_HOLD_TIME_INFINITE = 0xffff;
 export const LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS = 15;
 export const LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS = 45;
+export const LDP_EGRESS_LSP_MTU = 65535;
+export const LDP_LABEL_BYTES = 4;
 export const ADDRESS_FAMILY_IPV4 = 1;
 
 export const MessageType = {
@@ -43,6 +45,7 @@ export const TlvType = {
   PwStatus: 0x096a,
   PwInterfaceParameters: 0x096b,
   EntropyLabelCapability: 0x0206,
+  Mtu: 0x0601,
   MacList: 0x0404,
 } as const;
 
@@ -177,6 +180,7 @@ export interface LabelMappingMessage {
   readonly pathVector?: readonly IPAddress[];
   readonly pwStatus?: number;
   readonly entropyLabelCapable?: boolean;
+  readonly lspMtu?: number;
 }
 
 export interface LabelRequestMessage {

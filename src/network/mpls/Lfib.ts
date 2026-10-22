@@ -34,6 +34,7 @@ export interface FtnEntry {
   readonly iface: string;
   readonly nextHop: IPAddress;
   readonly entropyLabelCapable?: boolean;
+  readonly lspMtu?: number;
 }
 
 export class Lfib {

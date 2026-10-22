@@ -236,6 +236,7 @@ function encodeMessage(entry: LdpMessage): Uint8Array {
       }
       if (entry.pwStatus !== undefined) optional.push(tlv(TlvType.PwStatus, new Writer().u32(entry.pwStatus).toBytes(), true));
       if (entry.entropyLabelCapable === true) optional.push(tlv(TlvType.EntropyLabelCapability, new Uint8Array(0), true, true));
+      if (entry.lspMtu !== undefined) optional.push(tlv(TlvType.Mtu, new Writer().u16(entry.lspMtu).toBytes(), true, true));
       return message(MessageType.LabelMapping, entry.id, [encodeFec(entry.fec), encodeLabel(entry.label), ...optional]);
     }
     case 'label-request': {
@@ -375,6 +376,7 @@ function decodeMessage(type: number, unknownBit: boolean, id: number, tlvs: read
         ...(path ? { pathVector: decodePathVector(path.value) } : {}),
         ...(pwStatus ? { pwStatus: new Reader(pwStatus.value).u32() } : {}),
         ...(optional(tlvs, TlvType.EntropyLabelCapability) ? { entropyLabelCapable: true } : {}),
+        ...(optional(tlvs, TlvType.Mtu) ? { lspMtu: new Reader(optional(tlvs, TlvType.Mtu)!.value).u16() } : {}),
       };
     }
     case MessageType.LabelRequest: {

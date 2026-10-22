@@ -6,7 +6,7 @@ import type { MplsEngine } from '@/network/mpls/MplsEngine';
 import { decodePdu, encodePdu } from './LdpCodec';
 import { LdpIdentifier } from './LdpIdentifier';
 import {
-  LDP_HOLD_TIME_INFINITE, LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, LDP_PORT, LDP_VERSION, StatusCode,
+  LDP_HOLD_TIME_INFINITE, LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, LDP_EGRESS_LSP_MTU, LDP_LABEL_BYTES, LDP_PORT, LDP_VERSION, StatusCode,
   type FecElement, type LabelMappingMessage, type LdpMessage, type PwFec, isPwFec,
 } from './LdpMessages';
 import { LdpSession, type LdpSessionOwner, type LdpSessionParameters } from './LdpSession';
@@ -25,6 +25,7 @@ export interface LdpInterfaceAddress {
   readonly name: string;
   readonly address: IPAddress;
   readonly up: boolean;
+  readonly mtu: number;
 }
 
 export interface LdpHost {
@@ -123,6 +124,8 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly advertisedAddresses = new Map<string, Set<string>>();
   private readonly receivedElc = new Map<string, Set<string>>();
   private readonly advertisedElc = new Map<string, Set<string>>();
+  private readonly receivedMtu = new Map<string, Map<string, number>>();
+  private readonly advertisedMtu = new Map<string, Map<string, number>>();
   private readonly installedIlm = new Map<number, true>();
   private readonly installedFtn = new Map<string, FecInstall>();
   private readonly retryHandles = new Map<string, number>();
@@ -249,7 +252,7 @@ export class LdpEngine implements LdpSessionOwner {
 
   private routeFingerprint(): string {
     const routes = this.host.routes().map(r => `${r.prefix}/${r.length}>${r.nextHop ?? '-'}@${r.iface}`).sort().join(';');
-    const interfaces = this.host.interfaces().map(i => `${i.name}=${i.address}:${i.up}`).sort().join(';');
+    const interfaces = this.host.interfaces().map(i => `${i.name}=${i.address}:${i.up}:${i.mtu}`).sort().join(';');
     return `${routes}|${interfaces}|${this.host.routerId()}`;
   }
 
@@ -457,6 +460,8 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertised.set(peerKey, new Map());
     this.receivedElc.set(peerKey, new Set());
     this.advertisedElc.set(peerKey, new Set());
+    this.receivedMtu.set(peerKey, new Map());
+    this.advertisedMtu.set(peerKey, new Map());
     this.advertisedAddresses.set(peerKey, new Set());
     this.syncAddresses(session, peerKey);
     this.reconcile();
@@ -472,6 +477,8 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertised.delete(peerKey);
     this.receivedElc.delete(peerKey);
     this.advertisedElc.delete(peerKey);
+    this.receivedMtu.delete(peerKey);
+    this.advertisedMtu.delete(peerKey);
     this.advertisedAddresses.delete(peerKey);
     if (rejected && session.role === 'active') {
       const previous = this.backoff.get(peerKey);
@@ -554,6 +561,8 @@ export class LdpEngine implements LdpSessionOwner {
       table.set(fec.key, message.label);
       if (message.entropyLabelCapable === true) elc?.add(fec.key);
       else elc?.delete(fec.key);
+      if (message.lspMtu !== undefined) this.receivedMtu.get(peerKey)?.set(fec.key, message.lspMtu);
+      else this.receivedMtu.get(peerKey)?.delete(fec.key);
     }
     this.reconcile();
     void session;
@@ -594,6 +603,7 @@ export class LdpEngine implements LdpSessionOwner {
       if (held && (!label || held.equals(label))) {
         table.delete(fec.key);
         this.receivedElc.get(peerKey)?.delete(fec.key);
+        this.receivedMtu.get(peerKey)?.delete(fec.key);
       }
     }
     const prefixFecs = fecs.filter(element => !isPwFec(element));
@@ -704,17 +714,21 @@ export class LdpEngine implements LdpSessionOwner {
     if (!table) return;
     const outgoing: LdpMessage[] = [];
     const sentElc = this.advertisedElc.get(peerKey) ?? new Set<string>();
+    const sentMtu = this.advertisedMtu.get(peerKey) ?? new Map<string, number>();
     for (const [key, binding] of this.localBindings) {
       const elc = this.entropyCapableFor(key, binding, fecs.get(key));
-      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc) continue;
+      const lspMtu = this.lspMtuFor(key, binding, fecs.get(key));
+      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc && sentMtu.get(key) === lspMtu) continue;
       if (this.config.controlMode === 'ordered' && !binding.egress && !this.hasDownstreamLabel(fecs.get(key))) continue;
       table.set(key, binding.label);
       if (elc) sentElc.add(key);
       else sentElc.delete(key);
+      sentMtu.set(key, lspMtu);
       outgoing.push({
         kind: 'label-mapping', id: this.nextMessageId(),
         fec: [{ kind: 'prefix', prefix: binding.fec.prefix, length: binding.fec.length }], label: binding.label,
         ...(elc ? { entropyLabelCapable: true } : {}),
+        lspMtu,
       });
     }
     if (outgoing.length > 0) session.send(outgoing);
@@ -725,6 +739,17 @@ export class LdpEngine implements LdpSessionOwner {
       if (!fec) continue;
       session.send([{ kind: 'label-withdraw', id: this.nextMessageId(), fec: [{ kind: 'prefix', prefix: fec.prefix, length: fec.length }], label }]);
     }
+  }
+
+  private lspMtuFor(key: string, binding: LdpLocalBinding, entry: { fec: LdpFec; route: LdpRoute } | undefined): number {
+    if (binding.egress) return LDP_EGRESS_LSP_MTU;
+    if (!entry?.route.nextHop) return LDP_EGRESS_LSP_MTU;
+    const owner = this.peerOwning(entry.route.nextHop, entry.route.iface);
+    const link = this.host.interfaces().find(candidate => candidate.name === entry.route.iface);
+    if (owner === null || link === undefined) return LDP_EGRESS_LSP_MTU;
+    const downstream = this.received.get(owner.key)?.get(key);
+    const hop = downstream?.isImplicitNull() === true ? link.mtu : link.mtu - LDP_LABEL_BYTES;
+    return Math.min(hop, this.receivedMtu.get(owner.key)?.get(key) ?? LDP_EGRESS_LSP_MTU);
   }
 
   private entropyCapableFor(key: string, binding: LdpLocalBinding, entry: { fec: LdpFec; route: LdpRoute } | undefined): boolean {
@@ -756,7 +781,10 @@ export class LdpEngine implements LdpSessionOwner {
       if (remote.isImplicitNull()) {
         this.mpls.lfib.setIlm(binding.label, { kind: 'pop', iface: route.iface, nextHop: route.nextHop });
         wantedIlm.set(binding.label.value, true);
-        this.mpls.lfib.setFtn({ prefix: fec.prefix, prefixLength: fec.length, outLabels: [], iface: route.iface, nextHop: route.nextHop });
+        this.mpls.lfib.setFtn({
+          prefix: fec.prefix, prefixLength: fec.length, outLabels: [], iface: route.iface, nextHop: route.nextHop,
+          lspMtu: this.lspMtuFor(key, binding, { fec, route }),
+        });
         wantedFtn.set(key, { prefix: fec.prefix, length: fec.length });
         continue;
       }
@@ -765,6 +793,7 @@ export class LdpEngine implements LdpSessionOwner {
       this.mpls.lfib.setFtn({
         prefix: fec.prefix, prefixLength: fec.length, outLabels: [remote], iface: route.iface, nextHop: route.nextHop,
         entropyLabelCapable: owner !== null && this.receivedElc.get(owner.key)?.has(key) === true,
+        lspMtu: this.lspMtuFor(key, binding, { fec, route }),
       });
       wantedFtn.set(key, { prefix: fec.prefix, length: fec.length });
     }
