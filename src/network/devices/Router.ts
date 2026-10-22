@@ -256,6 +256,7 @@ import { carriesIp, isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
 import { PseudowireEngine, type PseudowireHost } from '../pw/PseudowireEngine';
 import { VplsEngine } from '../pw/VplsEngine';
 import { MplsTpEngine } from '../mpls/tp/MplsTpEngine';
+import { TpBfdEngine } from '../mpls/tp/TpBfd';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -4064,6 +4065,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       },
     });
     return this.mplsTp;
+  }
+
+  private tpBfd: TpBfdEngine | null = null;
+
+  getTpBfdEngine(): TpBfdEngine {
+    this.tpBfd ??= new TpBfdEngine(this.getMplsTpEngine(), () => this.getScheduler());
+    return this.tpBfd;
   }
 
   private pseudowires: PseudowireEngine | null = null;

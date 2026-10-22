@@ -3534,3 +3534,12 @@ pose, au swap et au depilage), mais `short-pipe` n'a pas d'effet distinct de `pi
 difference porte sur la file choisie a l'egress, et aucune file n'est simulee. Les L-LSP
 (PSC portee par l'etiquette), la signalisation du mapping EXP<->PHB (objet DIFFSERV RSVP, TLV LDP),
 le mapping ATM/Frame Relay et la commande IOS (`mls qos map`, `set mpls experimental`) sont absents.
+
+### [mpls-tp] le reste des RFC 6428 et 5960
+BFD CC/CV/RDI est servi en mode coordonne sur une paire de LSP statiques, avec
+l'identifiant MEP de LSP (§3.5.2) : le rythme est fixe des le depart (pas de
+migration Poll/Final §3.7.1), le mode independant (MinRx = 0), les entrees
+LDI et LKI/LKR (§3.7.2), l'authentification et les formes Section / PW du
+MEP-ID ne sont pas construits. Les LSP statiques se definissent par l'API
+`Router.getMplsTpEngine()` ; ni commande IOS (`mpls tp`) ni transport de
+trafic client sur ces LSP (seul le G-ACh circule).

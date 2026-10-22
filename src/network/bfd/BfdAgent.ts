@@ -4,7 +4,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type BfdConfig, type BfdSessionRuntime, type BfdPacket, type BfdState, type BfdDiagnostic,
-  createDefaultBfdConfig, defaultSession, makeKey,
+  bfdNextState, createDefaultBfdConfig, defaultSession, makeKey,
   detectionTimeMs, negotiatedTxIntervalMs,
   UDP_PORT_BFD_CONTROL,
 } from './types';
@@ -126,28 +126,11 @@ export class BfdAgent {
     s.remoteMinRxUs = payload.requiredMinRxIntervalUs;
     s.lastHeardMs = simulationNowMs();
 
-    const next = this.fsmNext(s.state, payload.state, s.adminUp);
+    const next = bfdNextState(s.state, payload.state, s.adminUp);
     if (next !== s.state) {
       this.transition(s, next, 'none', 'peer');
       this.kickOnce(s);
     }
-  }
-
-  private fsmNext(local: BfdState, remote: BfdState, adminUp: boolean): BfdState {
-    if (!adminUp) return 'admin-down';
-    if (remote === 'admin-down') return 'down';
-    if (local === 'admin-down') return 'down';
-    if (local === 'down') {
-      if (remote === 'down') return 'init';
-      if (remote === 'init') return 'up';
-      return 'down';
-    }
-    if (local === 'init') {
-      if (remote === 'init' || remote === 'up') return 'up';
-      return 'init';
-    }
-    if (remote === 'down') return 'down';
-    return 'up';
   }
 
   private transition(s: BfdSessionRuntime, newState: BfdState, diag: BfdDiagnostic,

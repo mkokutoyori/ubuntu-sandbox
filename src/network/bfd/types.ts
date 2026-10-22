@@ -15,7 +15,8 @@ export type BfdDiagnostic =
   | 'path-down'
   | 'concatenated-path-down'
   | 'admin-down'
-  | 'reverse-concatenated-path-down';
+  | 'reverse-concatenated-path-down'
+  | 'mis-connectivity-defect';
 
 export interface BfdPacket extends NetworkPdu {
   type: 'bfd';
@@ -59,6 +60,23 @@ export interface BfdSessionRuntime {
 export interface BfdConfig {
   enabled: boolean;
   sessions: Map<string, BfdSessionRuntime>;
+}
+
+export function bfdNextState(local: BfdState, remote: BfdState, adminUp: boolean): BfdState {
+  if (!adminUp) return 'admin-down';
+  if (remote === 'admin-down') return 'down';
+  if (local === 'admin-down') return 'down';
+  if (local === 'down') {
+    if (remote === 'down') return 'init';
+    if (remote === 'init') return 'up';
+    return 'down';
+  }
+  if (local === 'init') {
+    if (remote === 'init' || remote === 'up') return 'up';
+    return 'init';
+  }
+  if (remote === 'down') return 'down';
+  return 'up';
 }
 
 export function makeKey(iface: string, neighborIp: string): string {
