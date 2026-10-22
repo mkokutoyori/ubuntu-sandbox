@@ -3298,8 +3298,7 @@ source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel qu
 Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
 Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
 `reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
-`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `operatingStateFile` (operatingstate.c : fichier d'etat qui detecte un arret
-non propre), `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
 `allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
 `libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
 `abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.

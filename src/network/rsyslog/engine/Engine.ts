@@ -13,6 +13,8 @@ import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
 import { RateLimiter } from './RateLimiter';
+import { OperatingStateFile } from './OperatingState';
+import { RSYSLOG_VERSION } from './Log';
 import { loadQueueState, queueStatePath, saveQueueState } from './QueueState';
 import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
@@ -41,6 +43,7 @@ export class RsyslogEngine implements InputSubmitter {
   private oversizeLog: FileHandle | null = null;
   private internalBacklog: RsyslogMessage[] | null = null;
   private stopCallbacks: Array<() => void> = [];
+  private operatingState: OperatingStateFile | null = null;
   private readonly runtimeLog: RuntimeLog;
 
   constructor(readonly config: LoadedConfig, private readonly host: RsyslogHost, private readonly events: EngineEvents = {}) {
@@ -404,6 +407,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   internal(severity: number, code: number, text: string, mark = false, facility = LOG_SYSLOG): void {
     this.events.onInternalMessage?.(severity, code, text);
+    this.operatingState?.write('MSG', text.replace(/ \[v[^\]]*\]$/, ''));
     if (!this.started) return;
     const sanitized = text.replace(/[\x00-\x1f\x7f]/g, ' ');
     const localName = this.localHostName();
@@ -451,6 +455,14 @@ export class RsyslogEngine implements InputSubmitter {
     if (this.started) return { ok: true };
     this.started = true;
     this.internalBacklog = [];
+    const stateFile = this.config.settings.operatingStateFile;
+    if (stateFile !== null) {
+      this.operatingState = new OperatingStateFile(stateFile, {
+        files: this.host.files, now: () => this.timeAt(this.host.clock.wallMs()), version: RSYSLOG_VERSION,
+        report: (text, level, code) => this.runtimeLog.log(level === 'error' ? 3 : 6, code, text),
+      });
+      this.operatingState.open();
+    }
     replay();
     if (this.config.fatalConfigError !== null) {
       this.runtimeLog.log(3, RS_RET.NOT_FOUND, this.config.fatalConfigError);
@@ -575,6 +587,8 @@ export class RsyslogEngine implements InputSubmitter {
     for (const table of this.config.lookupTables) table.stop();
     this.config.rateLimits.close();
     this.config.dynStats.persistAll();
+    this.operatingState?.close();
+    this.operatingState = null;
     for (const callback of this.stopCallbacks) callback();
     this.stopCallbacks = [];
     this.oversizeLog?.close();
