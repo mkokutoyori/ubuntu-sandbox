@@ -15,7 +15,7 @@ export type SwitchingDecision =
   | { readonly kind: 'unlabelled'; readonly packet: IPv4Packet; readonly iface: string; readonly nextHop: IPAddress }
   | { readonly kind: 'deliver'; readonly packet: IPv4Packet; readonly ttlAccounted: boolean }
   | { readonly kind: 'deliver-vrf'; readonly packet: IPv4Packet; readonly vrf: string; readonly ttlAccounted: boolean }
-  | { readonly kind: 'deliver-pw'; readonly payload: PseudowirePayload; readonly attachmentCircuit: string };
+  | { readonly kind: 'deliver-pw'; readonly payload: PseudowirePayload; readonly owner: 'xconnect' | 'vpls'; readonly endpoint: string };
 
 function withIpTtl(packet: IPv4Packet, ttl: number): IPv4Packet {
   const updated: IPv4Packet = { ...packet, ttl, headerChecksum: 0 };
@@ -59,7 +59,7 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
 
   if (entry.kind === 'pw') {
     if (below.length > 0 || packet.payload.type !== 'pw-ethernet') return { kind: 'no-binding', packet };
-    return { kind: 'deliver-pw', payload: packet.payload, attachmentCircuit: entry.attachmentCircuit };
+    return { kind: 'deliver-pw', payload: packet.payload, owner: entry.owner, endpoint: entry.endpoint };
   }
 
   if (entry.kind === 'vrf') {

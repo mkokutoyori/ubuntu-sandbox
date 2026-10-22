@@ -14,7 +14,7 @@ export interface MplsHost {
   continueInVrf(inPort: string, packet: IPv4Packet, vrf: string, ttlAccounted: boolean): void;
   expired(inPort: string, packet: MplsPacket): void;
   echoRequest(inPort: string, packet: MplsPacket): void;
-  deliverPseudowire(inPort: string, attachmentCircuit: string, payload: PseudowirePayload): void;
+  deliverPseudowire(inPort: string, owner: 'xconnect' | 'vpls', endpoint: string, payload: PseudowirePayload): void;
 }
 
 export interface MplsCounters {
@@ -79,7 +79,7 @@ export class MplsEngine implements TtlPolicy {
         return;
       case 'deliver-pw':
         this.counters.disposed++;
-        this.host.deliverPseudowire(inPort, decision.attachmentCircuit, decision.payload);
+        this.host.deliverPseudowire(inPort, decision.owner, decision.endpoint, decision.payload);
         return;
       case 'expired':
         this.counters.expired++;

@@ -41,6 +41,8 @@ export const TlvType = {
   CommonSessionParameters: 0x0500,
   LabelRequestMessageId: 0x0600,
   PwStatus: 0x096a,
+  PwInterfaceParameters: 0x096b,
+  MacList: 0x0404,
 } as const;
 
 export const StatusCode = {
@@ -98,10 +100,32 @@ export interface PwIdFec {
   readonly interfaceParameters: readonly PwInterfaceParameter[];
 }
 
+export interface AttachmentIdentifier {
+  readonly type: number;
+  readonly value: Uint8Array;
+}
+
+export interface GeneralizedPwFec {
+  readonly kind: 'gen-pwid';
+  readonly controlWord: boolean;
+  readonly pwType: number;
+  readonly agi: AttachmentIdentifier;
+  readonly saii: AttachmentIdentifier;
+  readonly taii: AttachmentIdentifier;
+  readonly interfaceParameters: readonly PwInterfaceParameter[];
+}
+
+export type PwFec = PwIdFec | GeneralizedPwFec;
+
 export type FecElement =
   | { readonly kind: 'wildcard' }
   | { readonly kind: 'prefix'; readonly prefix: IPAddress; readonly length: number }
-  | PwIdFec;
+  | PwIdFec
+  | GeneralizedPwFec;
+
+export function isPwFec(element: FecElement): element is PwFec {
+  return element.kind === 'pwid' || element.kind === 'gen-pwid';
+}
 
 export type AdvertisementMode = 'unsolicited' | 'on-demand';
 
@@ -128,6 +152,13 @@ export interface InitializationMessage {
 }
 
 export interface KeepAliveMessage { readonly kind: 'keepalive'; readonly id: number }
+
+export interface MacWithdrawMessage {
+  readonly kind: 'mac-withdraw';
+  readonly id: number;
+  readonly fec: readonly FecElement[];
+  readonly macs: readonly (readonly number[])[];
+}
 
 export interface AddressMessage {
   readonly kind: 'address' | 'address-withdraw';
@@ -181,7 +212,7 @@ export interface UnknownMessage {
 }
 
 export type LdpMessage =
-  | HelloMessage | InitializationMessage | KeepAliveMessage | AddressMessage
+  | HelloMessage | InitializationMessage | KeepAliveMessage | AddressMessage | MacWithdrawMessage
   | LabelMappingMessage | LabelRequestMessage | LabelWithdrawMessage | NotificationMessage | UnknownMessage;
 
 export interface LdpPdu {

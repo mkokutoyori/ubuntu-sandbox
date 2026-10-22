@@ -253,7 +253,8 @@ import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
 import { mplsLabelStackObject } from '../icmp/IcmpExtensions';
 import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
 import { carriesIp, isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
-import { PseudowireEngine } from '../pw/PseudowireEngine';
+import { PseudowireEngine, type PseudowireHost } from '../pw/PseudowireEngine';
+import { VplsEngine } from '../pw/VplsEngine';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -1564,6 +1565,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
         this.pseudowires?.attachmentStateChanged(name);
+        this.vpls?.attachmentStateChanged(name);
         this.syncRouteDebug();
         this.emitLinkTrap(name, port, state === 'up');
         if (state === 'up') this.dhcpClientAgent.onLinkUp(name);
@@ -2592,6 +2594,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     if (this.pseudowires?.attaches(portName)) {
       this.pseudowires.ingress(portName, frame);
+      return;
+    }
+    if (this.vpls?.attaches(portName)) {
+      this.vpls.ingress(portName, frame);
       return;
     }
     const tag = (frame as TaggedEthernetFrame).dot1q;
@@ -4016,15 +4022,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           this.getMplsOam().receiveRequest(inPort, packet.payload, packet.stack.map(entry => entry.label.value), packet.stack[0].ttl);
         }
       },
-      deliverPseudowire: (_inPort, attachmentCircuit, payload) => this.getPseudowireEngine().egress(attachmentCircuit, payload),
+      deliverPseudowire: (inPort, owner, endpoint, payload) => {
+        if (owner === 'vpls') this.getVplsEngine().egress(inPort, endpoint, payload);
+        else this.getPseudowireEngine().egress(endpoint, payload);
+      },
     });
     return this.mplsEngine;
   }
 
   private pseudowires: PseudowireEngine | null = null;
+  private vpls: VplsEngine | null = null;
 
-  getPseudowireEngine(): PseudowireEngine {
-    this.pseudowires ??= new PseudowireEngine({
+  private pseudowireHost(): PseudowireHost {
+    return {
       attachmentMtu: iface => this.ports.get(iface)?.getMTU() ?? 1500,
       attachmentUp: iface => {
         const port = this.ports.get(iface);
@@ -4035,8 +4045,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         const port = this.ports.get(iface);
         if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
       },
-    }, () => this.getLdpEngine(), () => this.getMplsEngine());
+    };
+  }
+
+  getPseudowireEngine(): PseudowireEngine {
+    this.pseudowires ??= new PseudowireEngine(this.pseudowireHost(), () => this.getLdpEngine(), () => this.getMplsEngine());
     return this.pseudowires;
+  }
+
+  getVplsEngine(): VplsEngine {
+    this.vpls ??= new VplsEngine(this.pseudowireHost(), () => this.getLdpEngine(), () => this.getMplsEngine());
+    return this.vpls;
   }
 
   private mplsOam: RouterMplsOam | null = null;

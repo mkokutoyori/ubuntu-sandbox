@@ -4,7 +4,7 @@ import { MplsLabel } from '@/network/mpls/MplsLabel';
 import { LdpIdentifier, LDP_IDENTIFIER_BYTES } from './LdpIdentifier';
 import {
   ADDRESS_FAMILY_IPV4, LDP_VERSION, MessageType, StatusCode, TlvType, isFatalStatus,
-  type AdvertisementMode, type FecElement, type LdpMessage, type LdpPdu, type PwIdFec, type PwInterfaceParameter,
+  type AdvertisementMode, type FecElement, type LdpMessage, type LdpPdu, type AttachmentIdentifier, type GeneralizedPwFec, type PwIdFec, type PwInterfaceParameter,
 } from './LdpMessages';
 
 export const LDP_PDU_HEADER_BYTES = 10;
@@ -12,6 +12,7 @@ export const LDP_MINIMUM_PDU_LENGTH = 14;
 const FEC_ELEMENT_WILDCARD = 0x01;
 const FEC_ELEMENT_PREFIX = 0x02;
 const FEC_ELEMENT_PWID = 0x80;
+const FEC_ELEMENT_GENERALIZED_PWID = 0x81;
 const PW_INTERFACE_PARAMETER_HEADER = 2;
 
 export class LdpDecodeError extends Error {
@@ -40,6 +41,10 @@ function encodeFec(elements: readonly FecElement[]): Uint8Array {
       value.bytes(encodePwIdFec(element));
       continue;
     }
+    if (element.kind === 'gen-pwid') {
+      value.bytes(encodeGeneralizedFec(element));
+      continue;
+    }
     const octets = Math.ceil(element.length / 8);
     value.u8(FEC_ELEMENT_PREFIX).u16(ADDRESS_FAMILY_IPV4).u8(element.length);
     value.bytes(ipv4Bytes(element.prefix).slice(0, octets));
@@ -58,6 +63,64 @@ function encodePwIdFec(fec: PwIdFec): number[] {
   const header = new Writer().u8(FEC_ELEMENT_PWID).u16(((fec.controlWord ? 1 : 0) << 15) | fec.pwType)
     .u8(info.length).u32(fec.groupId);
   return [...header.toBytes(), ...info.toBytes()];
+}
+
+function encodeAttachmentIdentifier(identifier: AttachmentIdentifier): number[] {
+  return [identifier.type, identifier.value.length, ...identifier.value];
+}
+
+function encodeGeneralizedFec(fec: GeneralizedPwFec): number[] {
+  const body = [
+    ...encodeAttachmentIdentifier(fec.agi), ...encodeAttachmentIdentifier(fec.saii), ...encodeAttachmentIdentifier(fec.taii),
+  ];
+  const header = new Writer().u8(FEC_ELEMENT_GENERALIZED_PWID).u16(((fec.controlWord ? 1 : 0) << 15) | fec.pwType).u8(body.length);
+  return [...header.toBytes(), ...body];
+}
+
+function readAttachmentIdentifier(reader: Reader): AttachmentIdentifier {
+  if (reader.remaining < 2) throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'attachment identifier');
+  const type = reader.u8();
+  const length = reader.u8();
+  if (length > reader.remaining) throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'attachment identifier length');
+  return { type, value: reader.take(length) };
+}
+
+function decodeGeneralizedFec(reader: Reader): GeneralizedPwFec {
+  if (reader.remaining < 3) throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'Generalized PWid FEC');
+  const word = reader.u16();
+  const infoLength = reader.u8();
+  if (infoLength === 0 || infoLength > reader.remaining) throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'Generalized PWid FEC info length');
+  const info = new Reader(reader.take(infoLength));
+  const agi = readAttachmentIdentifier(info);
+  const saii = readAttachmentIdentifier(info);
+  const taii = readAttachmentIdentifier(info);
+  return { kind: 'gen-pwid', controlWord: (word & 0x8000) !== 0, pwType: word & 0x7fff, agi, saii, taii, interfaceParameters: [] };
+}
+
+function encodeInterfaceParameters(parameters: readonly PwInterfaceParameter[]): Uint8Array {
+  const value = new Writer();
+  for (const parameter of parameters) value.u8(parameter.type).u8(PW_INTERFACE_PARAMETER_HEADER + parameter.value.length).bytes(parameter.value);
+  return tlv(TlvType.PwInterfaceParameters, value.toBytes());
+}
+
+function decodeInterfaceParameters(value: Uint8Array): PwInterfaceParameter[] {
+  const info = new Reader(value);
+  const parameters: PwInterfaceParameter[] = [];
+  while (info.remaining > 0) {
+    if (info.remaining < PW_INTERFACE_PARAMETER_HEADER) throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'interface parameter');
+    const type = info.u8();
+    const length = info.u8();
+    if (length < PW_INTERFACE_PARAMETER_HEADER || length - PW_INTERFACE_PARAMETER_HEADER > info.remaining) {
+      throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'interface parameter length');
+    }
+    parameters.push({ type, value: info.take(length - PW_INTERFACE_PARAMETER_HEADER) });
+  }
+  return parameters;
+}
+
+function withParameters(fec: FecElement[], parameters: PwInterfaceParameter[] | undefined): FecElement[] {
+  if (parameters === undefined) return fec;
+  return fec.map(element => (element.kind === 'gen-pwid' ? { ...element, interfaceParameters: parameters } : element));
 }
 
 function decodePwIdFec(reader: Reader): PwIdFec {
@@ -103,6 +166,8 @@ function decodeFec(value: Uint8Array): FecElement[] {
       elements.push({ kind: 'prefix', prefix: new IPAddress(raw), length });
     } else if (type === FEC_ELEMENT_PWID) {
       elements.push(decodePwIdFec(reader));
+    } else if (type === FEC_ELEMENT_GENERALIZED_PWID) {
+      elements.push(decodeGeneralizedFec(reader));
     } else {
       throw new LdpDecodeError(StatusCode.UnknownFec, `FEC element ${type}`);
     }
@@ -156,11 +221,19 @@ function encodeMessage(entry: LdpMessage): Uint8Array {
       return message(MessageType.Address, entry.id, [encodeAddressList(entry.addresses)]);
     case 'address-withdraw':
       return message(MessageType.AddressWithdraw, entry.id, [encodeAddressList(entry.addresses)]);
+    case 'mac-withdraw':
+      return message(MessageType.AddressWithdraw, entry.id, [
+        encodeFec(entry.fec), tlv(TlvType.MacList, Uint8Array.from(entry.macs.flat()), true),
+      ]);
     case 'label-mapping': {
       const optional: Uint8Array[] = [];
       if (entry.requestMessageId !== undefined) optional.push(tlv(TlvType.LabelRequestMessageId, new Writer().u32(entry.requestMessageId).toBytes()));
       if (entry.hopCount !== undefined) optional.push(tlv(TlvType.HopCount, Uint8Array.of(entry.hopCount)));
       if (entry.pathVector) optional.push(tlv(TlvType.PathVector, Uint8Array.from(entry.pathVector.flatMap(ipv4Bytes))));
+      const generalized = entry.fec.find((element): element is GeneralizedPwFec => element.kind === 'gen-pwid');
+      if (generalized !== undefined && generalized.interfaceParameters.length > 0) {
+        optional.push(encodeInterfaceParameters(generalized.interfaceParameters));
+      }
       if (entry.pwStatus !== undefined) optional.push(tlv(TlvType.PwStatus, new Writer().u32(entry.pwStatus).toBytes(), true));
       return message(MessageType.LabelMapping, entry.id, [encodeFec(entry.fec), encodeLabel(entry.label), ...optional]);
     }
@@ -273,18 +346,28 @@ function decodeMessage(type: number, unknownBit: boolean, id: number, tlvs: read
     case MessageType.KeepAlive:
       return { kind: 'keepalive', id };
     case MessageType.Address:
-    case MessageType.AddressWithdraw:
+    case MessageType.AddressWithdraw: {
+      const macList = optional(tlvs, TlvType.MacList);
+      if (type === MessageType.AddressWithdraw && macList !== undefined) {
+        if (macList.value.length % 6 !== 0) throw new LdpDecodeError(StatusCode.MalformedTlvValue, 'MAC list length');
+        const macs: number[][] = [];
+        for (let offset = 0; offset < macList.value.length; offset += 6) macs.push([...macList.value.subarray(offset, offset + 6)]);
+        return { kind: 'mac-withdraw', id, fec: decodeFec(required(tlvs, TlvType.Fec).value), macs };
+      }
       return {
         kind: type === MessageType.Address ? 'address' : 'address-withdraw', id,
         addresses: decodeAddresses(required(tlvs, TlvType.AddressList).value),
       };
+    }
     case MessageType.LabelMapping: {
       const request = optional(tlvs, TlvType.LabelRequestMessageId);
       const hop = optional(tlvs, TlvType.HopCount);
       const path = optional(tlvs, TlvType.PathVector);
       const pwStatus = optional(tlvs, TlvType.PwStatus);
+      const parameterTlv = optional(tlvs, TlvType.PwInterfaceParameters);
+      const interfaceParameters = parameterTlv ? decodeInterfaceParameters(parameterTlv.value) : undefined;
       return {
-        kind: 'label-mapping', id, fec: decodeFec(required(tlvs, TlvType.Fec).value),
+        kind: 'label-mapping', id, fec: withParameters(decodeFec(required(tlvs, TlvType.Fec).value), interfaceParameters),
         label: decodeLabel(required(tlvs, TlvType.GenericLabel).value),
         ...(request ? { requestMessageId: new Reader(request.value).u32() } : {}),
         ...(hop ? { hopCount: hop.value[0] } : {}),

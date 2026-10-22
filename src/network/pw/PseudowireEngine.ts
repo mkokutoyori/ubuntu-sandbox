@@ -1,19 +1,19 @@
-import { IPAddress, ethernetFrameBytesWithoutFcs, type EthernetFrame } from '@/network/core/types';
+import { type IPAddress, ethernetFrameBytesWithoutFcs, type EthernetFrame } from '@/network/core/types';
 import type { LdpEngine, LdpPwHandler } from '@/network/ldp/LdpEngine';
 import type { LdpIdentifier } from '@/network/ldp/LdpIdentifier';
-import { StatusCode, type PwIdFec, type PwInterfaceParameter } from '@/network/ldp/LdpMessages';
+import type { PwFec, PwIdFec } from '@/network/ldp/LdpMessages';
 import type { MplsEngine } from '@/network/mpls/MplsEngine';
 import type { MplsLabel } from '@/network/mpls/MplsLabel';
 import type { MplsPacket } from '@/network/mpls/MplsPacket';
 import { controlWordOf, isValidControlWord, type PseudowirePayload } from './PseudowirePacket';
+import {
+  PseudowireSession, mtuParameter, mtuOf, type ControlWordPreference, type RemoteMapping,
+} from './PseudowireSession';
 
 export const PW_TYPE_ETHERNET_RAW = 5;
-export const PW_STATUS_FORWARDING = 0;
-export const PW_STATUS_NOT_FORWARDING = 1;
-const INTERFACE_PARAMETER_MTU = 0x01;
 const ETHERNET_HEADER_BYTES = 14;
 
-export type ControlWordPreference = 'preferred' | 'not-preferred';
+export type { ControlWordPreference };
 
 export interface PseudowireConfig {
   readonly attachmentCircuit: string;
@@ -28,23 +28,6 @@ export interface PseudowireHost {
   attachmentUp(iface: string): boolean;
   sendFrame(iface: string, frame: EthernetFrame): void;
   transmit(iface: string, nextHop: IPAddress, packet: MplsPacket): void;
-}
-
-interface RemoteMapping {
-  readonly label: MplsLabel;
-  readonly controlWord: boolean;
-  readonly mtu: number | null;
-  readonly statusTlv: boolean;
-  status: number;
-}
-
-interface Pseudowire {
-  readonly config: PseudowireConfig;
-  localLabel: MplsLabel | null;
-  advertisedControlWord: boolean | null;
-  remote: RemoteMapping | null;
-  negotiated: boolean | null;
-  lastError: string | null;
 }
 
 export interface PseudowireView {
@@ -67,22 +50,25 @@ export interface PseudowireCounters {
   droppedControlWord: number;
 }
 
+interface Wire {
+  readonly config: PseudowireConfig;
+  readonly session: PseudowireSession;
+}
+
 function remoteKey(peer: IPAddress, pwId: number): string {
   return `${peer}|${pwId}`;
 }
 
-function mtuParameter(mtu: number): PwInterfaceParameter {
-  return { type: INTERFACE_PARAMETER_MTU, value: Uint8Array.of(mtu >> 8, mtu & 0xff) };
-}
-
-function mtuOf(fec: PwIdFec): number | null {
-  const parameter = fec.interfaceParameters.find(candidate => candidate.type === INTERFACE_PARAMETER_MTU);
-  return parameter !== undefined && parameter.value.length === 2 ? (parameter.value[0] << 8) | parameter.value[1] : null;
+export function pwFecOf(config: PseudowireConfig, controlWord: boolean, mtu: number | null): PwIdFec {
+  return {
+    kind: 'pwid', controlWord, pwType: PW_TYPE_ETHERNET_RAW, groupId: config.groupId, pwId: config.pwId,
+    interfaceParameters: mtu === null ? [] : [mtuParameter(mtu)],
+  };
 }
 
 export class PseudowireEngine implements LdpPwHandler {
   readonly counters: PseudowireCounters = { encapsulated: 0, decapsulated: 0, droppedDown: 0, droppedMtu: 0, droppedControlWord: 0 };
-  private readonly wires = new Map<string, Pseudowire>();
+  private readonly wires = new Map<string, Wire>();
   private readonly pendingRemote = new Map<string, RemoteMapping>();
 
   constructor(
@@ -93,39 +79,39 @@ export class PseudowireEngine implements LdpPwHandler {
 
   add(config: PseudowireConfig): void {
     if (this.wires.has(config.attachmentCircuit)) throw new Error(`${config.attachmentCircuit} already carries a pseudowire`);
-    const wire: Pseudowire = {
-      config, localLabel: null, advertisedControlWord: null, remote: null, negotiated: null, lastError: null,
-    };
-    this.wires.set(config.attachmentCircuit, wire);
+    const iface = config.attachmentCircuit;
+    const session = new PseudowireSession({
+      peer: config.peer, controlWord: config.controlWord, ilmEntry: { kind: 'pw', owner: 'xconnect', endpoint: iface },
+      fec: (controlWord, withParameters) => pwFecOf(config, controlWord, withParameters ? this.host.attachmentMtu(iface) : null),
+      matches: fec => fec.kind === 'pwid' && fec.pwId === config.pwId && fec.pwType === PW_TYPE_ETHERNET_RAW,
+      mtu: () => this.host.attachmentMtu(iface),
+      localUp: () => this.host.attachmentUp(iface),
+    }, this.ldp, this.mpls);
+    this.wires.set(iface, { config, session });
     const held = this.pendingRemote.get(remoteKey(config.peer, config.pwId));
     if (held !== undefined) {
-      wire.remote = held;
+      session.adopt(held);
       this.pendingRemote.delete(remoteKey(config.peer, config.pwId));
     }
-    this.ldp().setPwHandler(this);
+    this.ldp().addPwHandler(this);
     this.ldp().addTargetedPeer(config.peer);
-    this.advertise(wire);
+    session.advertise();
   }
 
   remove(attachmentCircuit: string): void {
     const wire = this.wires.get(attachmentCircuit);
     if (wire === undefined) return;
     this.wires.delete(attachmentCircuit);
-    if (wire.localLabel !== null) {
-      this.ldp().sendToPeer(wire.config.peer, [{
-        kind: 'label-withdraw', id: this.ldp().nextMessageId(), fec: [this.fecOf(wire, false)], label: wire.localLabel,
-      }]);
-      this.mpls().lfib.releaseLabel(wire.localLabel);
-    }
+    wire.session.teardown();
     const stillTargeted = [...this.wires.values()].some(other => other.config.peer.equals(wire.config.peer));
     if (!stillTargeted) this.ldp().removeTargetedPeer(wire.config.peer);
   }
 
   views(): readonly PseudowireView[] {
-    return [...this.wires.values()].map(wire => ({
-      attachmentCircuit: wire.config.attachmentCircuit, peer: wire.config.peer, pwId: wire.config.pwId, pwType: PW_TYPE_ETHERNET_RAW,
-      localLabel: wire.localLabel, remoteLabel: wire.remote?.label ?? null,
-      controlWord: this.usesControlWord(wire), state: this.blocker(wire) === null ? 'up' : 'down', reason: this.blocker(wire),
+    return [...this.wires.values()].map(({ config, session }) => ({
+      attachmentCircuit: config.attachmentCircuit, peer: config.peer, pwId: config.pwId, pwType: PW_TYPE_ETHERNET_RAW,
+      localLabel: session.localLabel, remoteLabel: session.remote?.label ?? null,
+      controlWord: session.usesControlWord, state: session.blocker() === null ? 'up' : 'down', reason: session.blocker(),
     }));
   }
 
@@ -140,14 +126,15 @@ export class PseudowireEngine implements LdpPwHandler {
   ingress(iface: string, frame: EthernetFrame): void {
     const wire = this.wires.get(iface);
     if (wire === undefined) return;
-    if (this.blocker(wire) !== null || wire.remote === null) {
+    const remote = wire.session.remote;
+    if (wire.session.blocker() !== null || remote === null) {
       this.counters.droppedDown++;
       return;
     }
     const payload: PseudowirePayload = {
-      type: 'pw-ethernet', controlWord: this.usesControlWord(wire) ? controlWordOf(0) : null, frame,
+      type: 'pw-ethernet', controlWord: wire.session.usesControlWord ? controlWordOf(0) : null, frame,
     };
-    const imposed = this.mpls().imposeUnderlay(payload, wire.remote.label, wire.config.peer);
+    const imposed = this.mpls().imposeUnderlay(payload, remote.label, wire.config.peer);
     if (imposed === null) {
       this.counters.droppedDown++;
       return;
@@ -158,12 +145,11 @@ export class PseudowireEngine implements LdpPwHandler {
 
   egress(attachmentCircuit: string, payload: PseudowirePayload): void {
     const wire = this.wires.get(attachmentCircuit);
-    if (wire === undefined || this.blocker(wire) !== null) {
+    if (wire === undefined || wire.session.blocker() !== null) {
       this.counters.droppedDown++;
       return;
     }
-    const expectsControlWord = this.usesControlWord(wire);
-    if (expectsControlWord !== (payload.controlWord !== null)
+    if (wire.session.usesControlWord !== (payload.controlWord !== null)
       || (payload.controlWord !== null && !isValidControlWord(payload.controlWord))) {
       this.counters.droppedControlWord++;
       return;
@@ -178,158 +164,54 @@ export class PseudowireEngine implements LdpPwHandler {
   }
 
   attachmentStateChanged(iface: string): void {
-    const wire = this.wires.get(iface);
-    if (wire === undefined) return;
-    const up = this.host.attachmentUp(iface);
-    if (wire.negotiated === true) {
-      this.ldp().sendToPeer(wire.config.peer, [{
-        kind: 'notification', id: this.ldp().nextMessageId(), statusCode: StatusCode.PwStatus, forward: false,
-        referencedMessageId: 0, referencedMessageType: 0, pwStatus: this.localStatus(wire), fec: [this.fecOf(wire, false)],
-      }]);
-      return;
-    }
-    if (up) {
-      this.advertise(wire);
-    } else if (wire.localLabel !== null && wire.advertisedControlWord !== null) {
-      this.ldp().sendToPeer(wire.config.peer, [{
-        kind: 'label-withdraw', id: this.ldp().nextMessageId(), fec: [this.fecOf(wire, false)], label: wire.localLabel,
-      }]);
-      wire.advertisedControlWord = null;
-    }
+    this.wires.get(iface)?.session.localStateChanged();
   }
 
   sessionOperational(peer: LdpIdentifier): void {
-    for (const wire of this.wires.values()) if (wire.config.peer.equals(peer.lsrId)) this.advertise(wire);
+    for (const { config, session } of this.wires.values()) if (config.peer.equals(peer.lsrId)) session.advertise();
   }
 
   sessionClosed(peer: LdpIdentifier): void {
-    for (const wire of this.wires.values()) {
-      if (!wire.config.peer.equals(peer.lsrId)) continue;
-      wire.remote = null;
-      wire.negotiated = null;
-      wire.advertisedControlWord = null;
-    }
+    for (const { config, session } of this.wires.values()) if (config.peer.equals(peer.lsrId)) session.sessionClosed();
   }
 
-  mapping(peer: LdpIdentifier, fec: PwIdFec, label: MplsLabel, pwStatus: number | undefined): void {
-    if (fec.pwId === null) return;
-    const received: RemoteMapping = {
-      label, controlWord: fec.controlWord, mtu: mtuOf(fec), statusTlv: pwStatus !== undefined, status: pwStatus ?? 0,
-    };
+  mapping(peer: LdpIdentifier, fec: PwFec, label: MplsLabel, pwStatus: number | undefined): void {
+    if (fec.kind !== 'pwid' || fec.pwId === null) return;
     const wire = this.find(peer, fec);
     if (wire === undefined) {
-      this.pendingRemote.set(remoteKey(peer.lsrId, fec.pwId), received);
+      this.pendingRemote.set(remoteKey(peer.lsrId, fec.pwId), {
+        label, controlWord: fec.controlWord, mtu: mtuOf(fec), statusTlv: pwStatus !== undefined, status: pwStatus ?? 0,
+      });
       return;
     }
-    if (wire.advertisedControlWord === null) {
-      wire.remote = received;
-      return;
-    }
-    if (received.controlWord === wire.advertisedControlWord) {
-      this.accept(wire, received);
-      return;
-    }
-    if (received.controlWord && !wire.advertisedControlWord) {
-      wire.remote = null;
-      return;
-    }
-    this.ldp().sendToPeer(peer.lsrId, [{
-      kind: 'label-withdraw', id: this.ldp().nextMessageId(), fec: [this.fecOf(wire, false)],
-      label: wire.localLabel as MplsLabel, status: StatusCode.WrongCBit,
-    }]);
-    wire.advertisedControlWord = false;
-    this.sendMapping(wire);
-    this.accept(wire, received);
+    wire.session.mapping(peer, fec, label, pwStatus);
   }
 
-  withdraw(peer: LdpIdentifier, fec: PwIdFec, label: MplsLabel | undefined, status: number | undefined): void {
-    const wire = this.find(peer, fec);
+  withdraw(peer: LdpIdentifier, fec: PwFec, label: MplsLabel | undefined, status: number | undefined): void {
+    if (fec.kind !== 'pwid') return;
     if (fec.pwId !== null) this.pendingRemote.delete(remoteKey(peer.lsrId, fec.pwId));
-    if (wire === undefined) return;
-    if (label !== undefined && wire.remote !== null && !wire.remote.label.equals(label)) return;
-    wire.remote = null;
-    wire.negotiated = null;
-    if (status === StatusCode.WrongCBit) return;
-    this.ldp().sendToPeer(peer.lsrId, [{
-      kind: 'label-release', id: this.ldp().nextMessageId(), fec: [this.fecOf(wire, false)], ...(label ? { label } : {}),
-    }]);
+    this.find(peer, fec)?.session.withdraw(peer, label, status);
   }
 
-  release(peer: LdpIdentifier, fec: PwIdFec, _label: MplsLabel | undefined, status: number | undefined): void {
-    const wire = this.find(peer, fec);
-    if (wire === undefined) return;
-    wire.advertisedControlWord = null;
-    if (status === StatusCode.IllegalCBit) wire.lastError = 'peer refused the control word (Illegal C-bit)';
+  release(peer: LdpIdentifier, fec: PwFec, _label: MplsLabel | undefined, status: number | undefined): void {
+    if (fec.kind !== 'pwid') return;
+    this.find(peer, fec)?.session.release(status);
   }
 
-  notification(peer: LdpIdentifier, fec: PwIdFec, pwStatus: number): void {
-    for (const wire of this.wires.values()) {
-      if (!wire.config.peer.equals(peer.lsrId) || wire.remote === null) continue;
-      const wildcard = fec.pwId === null && wire.config.groupId === fec.groupId;
-      if (wildcard || fec.pwId === wire.config.pwId) wire.remote.status = pwStatus;
+  notification(peer: LdpIdentifier, fec: PwFec, pwStatus: number): void {
+    if (fec.kind !== 'pwid') return;
+    for (const { config, session } of this.wires.values()) {
+      if (!config.peer.equals(peer.lsrId)) continue;
+      const wildcard = fec.pwId === null && config.groupId === fec.groupId;
+      if (wildcard || fec.pwId === config.pwId) session.notification(pwStatus);
     }
   }
 
-  private accept(wire: Pseudowire, received: RemoteMapping): void {
-    wire.remote = received;
-    wire.negotiated = received.statusTlv;
-    wire.lastError = null;
-  }
+  macWithdraw(): void {}
 
-  private find(peer: LdpIdentifier, fec: PwIdFec): Pseudowire | undefined {
+  private find(peer: LdpIdentifier, fec: PwIdFec): Wire | undefined {
     if (fec.pwId === null) return undefined;
     return [...this.wires.values()].find(wire => wire.config.peer.equals(peer.lsrId)
-      && wire.config.pwId === fec.pwId && fec.pwType === PW_TYPE_ETHERNET_RAW);
-  }
-
-  private fecOf(wire: Pseudowire, withParameters: boolean): PwIdFec {
-    return {
-      kind: 'pwid', controlWord: wire.advertisedControlWord ?? false, pwType: PW_TYPE_ETHERNET_RAW,
-      groupId: wire.config.groupId, pwId: wire.config.pwId,
-      interfaceParameters: withParameters ? [mtuParameter(this.host.attachmentMtu(wire.config.attachmentCircuit))] : [],
-    };
-  }
-
-  private localStatus(wire: Pseudowire): number {
-    return this.host.attachmentUp(wire.config.attachmentCircuit) ? PW_STATUS_FORWARDING : PW_STATUS_NOT_FORWARDING;
-  }
-
-  private advertise(wire: Pseudowire): void {
-    if (wire.advertisedControlWord !== null) return;
-    if (wire.negotiated === false && !this.host.attachmentUp(wire.config.attachmentCircuit)) return;
-    const preferred = wire.config.controlWord === 'preferred';
-    wire.advertisedControlWord = wire.remote === null ? preferred : wire.remote.controlWord && preferred;
-    if (!this.sendMapping(wire)) {
-      wire.advertisedControlWord = null;
-      return;
-    }
-    if (wire.remote !== null && wire.remote.controlWord === wire.advertisedControlWord) this.accept(wire, wire.remote);
-  }
-
-  private sendMapping(wire: Pseudowire): boolean {
-    if (wire.localLabel === null) {
-      wire.localLabel = this.mpls().lfib.allocateLabel();
-      this.mpls().lfib.setIlm(wire.localLabel, { kind: 'pw', attachmentCircuit: wire.config.attachmentCircuit });
-    }
-    return this.ldp().sendToPeer(wire.config.peer, [{
-      kind: 'label-mapping', id: this.ldp().nextMessageId(), fec: [this.fecOf(wire, true)], label: wire.localLabel,
-      pwStatus: this.localStatus(wire),
-    }]);
-  }
-
-  private usesControlWord(wire: Pseudowire): boolean {
-    return wire.advertisedControlWord === true && wire.remote?.controlWord === true;
-  }
-
-  private blocker(wire: Pseudowire): string | null {
-    if (wire.lastError !== null) return wire.lastError;
-    if (wire.localLabel === null || wire.advertisedControlWord === null) return 'no label mapping sent';
-    if (wire.remote === null) return 'no label mapping from the peer';
-    if (wire.remote.controlWord !== wire.advertisedControlWord) return 'control word not agreed';
-    const mtu = this.host.attachmentMtu(wire.config.attachmentCircuit);
-    if (wire.remote.mtu === null || wire.remote.mtu !== mtu) return 'interface MTU mismatch';
-    if (!this.host.attachmentUp(wire.config.attachmentCircuit)) return 'attachment circuit down';
-    if (wire.remote.status !== PW_STATUS_FORWARDING) return 'peer reports the pseudowire not forwarding';
-    return null;
+      && wire.session.spec.matches(fec));
   }
 }

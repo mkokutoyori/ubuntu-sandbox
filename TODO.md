@@ -3458,3 +3458,12 @@ environnement (rfc-editor.org et datatracker.ietf.org repondent 403 au proxy).
 Le format de l'en-tete commun, des classes d'objet, de SESSION, RSVP_HOP,
 TIME_VALUES, ERROR_SPEC, STYLE et des Tspec vient de la RFC 2205 : CLAUDE.md §8
 interdit de le reconstruire de memoire. A reprendre quand cette RFC est fournie.
+
+### [vpls] le reste de la RFC 4762
+Pas de commande IOS (`l2 vfi`, `bridge-domain`, `xconnect vfi`) : l'API est
+`Router.getVplsEngine()`. Le mode tagge (type 4) et l'apprentissage non
+qualifie sont absents, comme la hierarchie H-VPLS (§10-§11), la double
+attache et les ressources de decouverte (BGP / RADIUS). Le TLV de groupage
+PW (0x096C) et les retraits generiques (longueur d'information 0) de la FEC
+generalisee sont refuses a l'analyse plutot qu'ignores. Le type d'AGI 1
+vient du registre IANA, absent de `docs/rfc/mpls/`.

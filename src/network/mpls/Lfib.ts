@@ -21,7 +21,8 @@ export interface VrfEntry {
 
 export interface PseudowireEntry {
   readonly kind: 'pw';
-  readonly attachmentCircuit: string;
+  readonly owner: 'xconnect' | 'vpls';
+  readonly endpoint: string;
 }
 
 export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry;
