@@ -368,10 +368,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
     // Ctrl+C
     if (e.key === 'c' && e.ctrlKey) {
-      if (this.asyncRuntime.interruptForeground()) return true;
-      this.addLine(`${this.getPrompt()}${this.input}^C`, 'warning');
-      this.input = '';
-      this.notify();
+      this.onCtrlC();
       return true;
     }
 
@@ -678,6 +675,13 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  protected override readonly interruptLineType = 'warning';
+
+  protected override interruptForegroundCommand(): boolean {
+    const dev = this.device;
+    return dev instanceof WindowsPC && this.shell !== null && dev.interruptForeground(this.shell);
+  }
+
   protected onEnter(): void | Promise<void> {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
@@ -685,6 +689,7 @@ export class WindowsTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
+    if (this.holdTypedAhead()) return;
     // Drain BOTH buffers so tests / drivers that keep using
     // `setInputBuf` after the sub-shell stack has fully unwound still
     // reach the local cmd.exe instead of being silently swallowed.
@@ -805,7 +810,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
     // Execute on device (root cmd)
     try {
-      const result = await this.executeOnDevice(trimmed);
+      const result = await this.inForeground(() => this.executeOnDevice(trimmed));
       if (result !== undefined && result !== null && result !== '') {
         this.emitWindowsOutput(result);
       }
@@ -824,6 +829,7 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     this.notify();
+    void this.drainTypedAhead();
   }
 
   private async tryEnterSftpInteractive(line: string, device: WindowsPC): Promise<boolean> {

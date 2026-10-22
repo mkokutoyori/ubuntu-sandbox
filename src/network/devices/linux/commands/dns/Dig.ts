@@ -18,6 +18,7 @@ const DNS_RECORD_TYPES = ['A', 'AAAA', 'ANY', 'CNAME', 'MX', 'NS', 'PTR', 'SOA',
 export const digCommand: LinuxCommand = {
   name: 'dig',
   needsNetworkContext: true,
+  foregroundClient: true,
   complete(ctx, args) {
     const partial = args[args.length - 1] ?? '';
     if (args.length >= 2 && partial === partial.toUpperCase() && partial.length > 0) {

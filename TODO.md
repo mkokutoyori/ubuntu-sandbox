@@ -798,6 +798,40 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
 
 ---
 
+### [terminal] Ctrl-C ne libere le terminal que pour les clients declares `foregroundClient`
+**Mesure** (nat-lab : `curl http://170.20.0.2` vers un hote qui ne repond pas,
+Ctrl-C, puis `ls`) : `curl` attend 127 s comme le noyau, puis la commande
+suivante s'execute. Corrige pour `curl`, `dig`, `nslookup`, `host`, `nmap`,
+`ldapsearch`, `snmpwalk`, `hping3`, `arping`, `radtest`, `tracepath`, `ntpq`
+(`LinuxCommand.foregroundClient` : le client est un processus de la table, SIGINT
+le tue, la commande rend la main, la file de la machine est liberee). Reste :
+- `nc`, `openssl`, `ssh`, `telnet`, `ftp`, `scp`, `sftp` et les serveurs qui
+  rendent la main en laissant un ecouteur (`nc -l`, `openssl s_server`) ne sont
+  PAS declares : un ecouteur est attribue a son processus par NOM
+  (`reapProcessSockets`), la mort du processus d'une commande voisine de meme
+  nom fermerait l'ecouteur (mesure : le second client de `openssl s_server`
+  trouvait le port ferme). Tant que l'attribution n'est pas faite par pid, ces
+  commandes tiennent la file jusqu'a leur fin naturelle.
+- Seul `curl` ferme ses sockets a l'interruption (`CurlHost.signal`). Les autres
+  clients declares sont liberes par preemption (la commande est abandonnee, sa
+  sortie jetee) : leur travail se poursuit en arriere-plan jusqu'a sa fin
+  naturelle, sans rien ecrire.
+- La file de commandes est UNE par machine (`SessionWorkQueue`) : une commande
+  de premier plan dans un terminal tient les autres terminaux de la meme
+  machine, ce qu'un vrai noyau ne fait pas.
+- Windows : seul `curl.exe` est interruptible (`WindowsShellSession.foregroundAbort`,
+  pas de table de processus Windows) ; les autres commandes bloquantes d'un
+  terminal Windows n'ont pas ete mesurees.
+- Un terminal SSH vers une machine Linux (`SshInteractiveShell`) ne passe pas par
+  `LinuxTerminalSession` : l'interruption n'y est pas mesuree.
+- `wget`, `telnet` et `nc` vers un hote qui laisse tomber les SYN rendent leur
+  verdict AU CLIC (`Connection refused` / `Connection timed out` immediat, aller-
+  retour TCP synchrone) la ou un vrai Linux attend ~127 s : ce n'est pas un blocage,
+  mais la chronologie n'est pas celle du noyau.
+**Pourquoi ce n'est pas ferme** : chaque client doit etre lu pour savoir ce qu'il
+laisse derriere lui ; la preemption generale a ete restreinte aux clients dont la
+fin ne laisse rien (voir la mesure sur `openssl s_server`).
+
 ## Gestion (SNMP, NTP, syslog)
 
 ### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute

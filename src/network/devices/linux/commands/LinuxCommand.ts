@@ -69,6 +69,8 @@ export interface LinuxCommand {
 
   readonly opensWireSession?: boolean;
 
+  readonly foregroundClient?: boolean;
+
   /**
    * Declarative privilege requirement for this command (e.g. "must be
    * root"). When set, the registry dispatch path (`LinuxMachine`) checks it

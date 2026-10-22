@@ -89,6 +89,7 @@ async function runProbe(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): Pro
 export const arpingCommand: LinuxCommand = {
   name: 'arping',
   needsNetworkContext: true,
+  foregroundClient: true,
   manSection: 8,
   usage: 'arping [-fqbDUAV] [-c count] [-w timeout] [-I device] destination',
   help: 'Send ARP requests/announcements to a neighbor on the local network.',

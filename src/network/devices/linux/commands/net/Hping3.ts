@@ -580,6 +580,7 @@ export const hping3Command: LinuxCommand = {
   aliases: ['hping', 'hping2'],
   package: 'hping3',
   needsNetworkContext: true,
+  foregroundClient: true,
   manSection: 8,
   usage: 'hping3 [-c count] [-p [+[+]]destport] [-s baseport] [-k] [-1|-2|-0|-8 ports] '
     + '[-S|-A|-R|-F|-P|-U] [-a spoofaddr] [-t ttl] [-w win] [-d datasize] [-o tos] '

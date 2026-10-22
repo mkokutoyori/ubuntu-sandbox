@@ -18,6 +18,7 @@ export const snmpwalkCommand: LinuxCommand = {
   name: 'snmpwalk',
   package: 'snmp',
   needsNetworkContext: true,
+  foregroundClient: true,
   manSection: 1,
   usage: 'snmpwalk [APPLICATION OPTIONS] [COMMON OPTIONS] AGENT [OID]',
   help: 'snmpwalk - retrieve a subtree of management values using SNMP GETNEXT requests',

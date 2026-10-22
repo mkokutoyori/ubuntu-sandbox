@@ -563,6 +563,7 @@ export class LinuxProcessManager {
           topic: 'linux.process.exited',
           payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, reparented },
         });
+        this.notifyKilled(pid, signal);
         return true;
       }
       case 'SIGKILL': {
@@ -572,12 +573,29 @@ export class LinuxProcessManager {
           topic: 'linux.process.exited',
           payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, reparented },
         });
+        this.notifyKilled(pid, signal);
         return true;
       }
     }
   }
 
   private readonly lastKill = new Map<number, Signal>();
+
+  private readonly killListeners = new Map<number, Set<(signal: Signal) => void>>();
+
+  whenKilled(pid: number, listener: (signal: Signal) => void): () => void {
+    const listeners = this.killListeners.get(pid) ?? new Set();
+    listeners.add(listener);
+    this.killListeners.set(pid, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.killListeners.delete(pid);
+    };
+  }
+
+  private notifyKilled(pid: number, signal: Signal): void {
+    for (const listener of [...(this.killListeners.get(pid) ?? [])]) listener(signal);
+  }
 
   lastKillSignal(pid: number): Signal | undefined {
     return this.lastKill.get(pid);

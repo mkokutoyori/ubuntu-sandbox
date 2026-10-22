@@ -350,6 +350,8 @@ function seededFirewallRules(): Map<string, NetFirewallRuleEntry> {
   return store;
 }
 
+const STATUS_CONTROL_C_EXIT = -1073741510;
+
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
 
@@ -5001,6 +5003,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private curlHost(): CurlHost {
     return {
+      signal: this._activeShellSession?.foregroundAbort?.signal,
       resolveHostname: async (name: string): Promise<string | null> => {
         if (!name.includes(':')) {
           const ip = await this.resolveHostname(name);
@@ -5021,12 +5024,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   async cmdCurl(args: string[]): Promise<string> {
-    const result = await runCurl(this.curlHost(), args);
+    const result = await this.runCurlWithStatus(args);
+    this.commandExitStatus = result.exitCode;
     return [result.output, result.stderr].filter((s) => s.length > 0).join('\n');
   }
 
   async runCurlWithStatus(args: string[]): Promise<{ output: string; exitCode: number; stderr: string }> {
-    return runCurl(this.curlHost(), args);
+    const host = this.curlHost();
+    const result = await runCurl(host, args);
+    return host.signal?.aborted ? { output: '', stderr: '', exitCode: STATUS_CONTROL_C_EXIT } : result;
   }
 
   private scanHost(): ScanHost {
@@ -6694,8 +6700,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
-      return this.sessionSwap.within(session, () => this.executeCommand(command));
+      session.foregroundAbort = new AbortController();
+      try {
+        return await this.sessionSwap.within(session, () => this.executeCommand(command));
+      } finally {
+        session.foregroundAbort = null;
+      }
     });
+  }
+
+  interruptForeground(session: WindowsShellSession): boolean {
+    const running = session.foregroundAbort;
+    if (running === null || running.signal.aborted) return false;
+    running.abort();
+    return true;
   }
 
   /**

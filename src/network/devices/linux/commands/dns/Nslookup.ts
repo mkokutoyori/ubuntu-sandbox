@@ -14,6 +14,7 @@ import { readResolverIP } from './resolverIP';
 export const nslookupCommand: LinuxCommand = {
   name: 'nslookup',
   needsNetworkContext: true,
+  foregroundClient: true,
   manSection: 1,
   usage: 'nslookup [name] [server]',
   help:

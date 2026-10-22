@@ -14,6 +14,7 @@ import { readResolverIP } from './resolverIP';
 export const hostCommand: LinuxCommand = {
   name: 'host',
   needsNetworkContext: true,
+  foregroundClient: true,
   manSection: 1,
   usage: 'host [name] [server]',
   help:
