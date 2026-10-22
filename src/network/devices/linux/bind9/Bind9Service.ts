@@ -363,7 +363,7 @@ export class Bind9Service {
       : {};
     if (forwarders.length > 0) {
       resolvers.push(new RecursiveResolver(
-        this.host, forwarders, this.cache, { forwardRecursively: true, servfailTtlSeconds: config.options.servfailTtl, ...dnssec }));
+        this.host, forwarders, this.cache, { forwardRecursively: true, servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
     }
     const hints: IPAddress[] = [];
     for (const zone of config.zones) {
@@ -371,7 +371,7 @@ export class Bind9Service {
       const content = this.readFile(zone.file);
       if (content !== null) hints.push(...collectHintAddresses(content));
     }
-    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, ...dnssec }));
+    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
     return resolvers;
   }
 
