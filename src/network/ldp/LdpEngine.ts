@@ -58,6 +58,14 @@ export interface LdpConfig {
   targetedHelloIntervalSeconds: number;
   targetedHelloHoldSeconds: number;
   acceptTargetedHellos: boolean;
+  loopDetection: boolean;
+  pathVectorLimit: number;
+  maxHopCount: number;
+}
+
+interface LoopAttributes {
+  readonly hopCount: number;
+  readonly pathVector: readonly IPAddress[];
 }
 
 export interface LdpAdjacency {
@@ -113,6 +121,7 @@ export class LdpEngine implements LdpSessionOwner {
     helloIntervalSeconds: 5, helloHoldSeconds: LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, keepAliveSeconds: 180,
     controlMode: 'independent', maxPduLength: 4096,
     targetedHelloIntervalSeconds: 15, targetedHelloHoldSeconds: LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, acceptTargetedHellos: false,
+    loopDetection: false, pathVectorLimit: 16, maxHopCount: 255,
   };
   private readonly enabledInterfaces = new Set<string>();
   private readonly adjacencyTable = new Map<string, LdpAdjacency>();
@@ -126,6 +135,8 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly advertisedElc = new Map<string, Set<string>>();
   private readonly receivedMtu = new Map<string, Map<string, number>>();
   private readonly advertisedMtu = new Map<string, Map<string, number>>();
+  private readonly receivedLoop = new Map<string, Map<string, LoopAttributes>>();
+  private readonly advertisedLoop = new Map<string, Map<string, string>>();
   private readonly installedIlm = new Map<number, true>();
   private readonly installedFtn = new Map<string, FecInstall>();
   private readonly retryHandles = new Map<string, number>();
@@ -133,6 +144,8 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly targetedPeers = new Map<string, { readonly address: IPAddress; readonly configured: boolean }>();
   private readonly targetedNextSendMs = new Map<string, number>();
   private readonly pwHandlers: LdpPwHandler[] = [];
+  loopsDetected = 0;
+  loopsReported = 0;
   private helloTimer: number | null = null;
   private listening = false;
   private messageCounter = 0;
@@ -155,7 +168,7 @@ export class LdpEngine implements LdpSessionOwner {
   get parameters(): LdpSessionParameters {
     return {
       keepAliveTimeSeconds: this.config.keepAliveSeconds, advertisementMode: 'unsolicited',
-      loopDetection: false, maxPduLength: this.config.maxPduLength,
+      loopDetection: this.config.loopDetection, pathVectorLimit: this.config.pathVectorLimit, maxPduLength: this.config.maxPduLength,
     };
   }
 
@@ -462,6 +475,8 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertisedElc.set(peerKey, new Set());
     this.receivedMtu.set(peerKey, new Map());
     this.advertisedMtu.set(peerKey, new Map());
+    this.receivedLoop.set(peerKey, new Map());
+    this.advertisedLoop.set(peerKey, new Map());
     this.advertisedAddresses.set(peerKey, new Set());
     this.syncAddresses(session, peerKey);
     this.reconcile();
@@ -479,6 +494,8 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertisedElc.delete(peerKey);
     this.receivedMtu.delete(peerKey);
     this.advertisedMtu.delete(peerKey);
+    this.receivedLoop.delete(peerKey);
+    this.advertisedLoop.delete(peerKey);
     this.advertisedAddresses.delete(peerKey);
     if (rejected && session.role === 'active') {
       const previous = this.backoff.get(peerKey);
@@ -544,7 +561,7 @@ export class LdpEngine implements LdpSessionOwner {
         for (const element of message.fec) {
           if (isPwFec(element)) for (const handler of this.pwHandlers) handler.release(session.peer as LdpIdentifier, element, message.label, message.status);
         }
-        this.onRelease(peerKey, message.fec, message.label);
+        this.onRelease(peerKey, message.fec, message.label, message.status);
         return;
       default:
         return;
@@ -558,6 +575,13 @@ export class LdpEngine implements LdpSessionOwner {
     for (const element of message.fec) {
       const fec = fecOf(element);
       if (!fec) continue;
+      if (session.negotiated?.loopDetection === true) {
+        if (this.looping(message)) {
+          this.dropLoopingMapping(session, peerKey, element, fec.key, message.label);
+          continue;
+        }
+        this.receivedLoop.get(peerKey)?.set(fec.key, { hopCount: message.hopCount ?? 0, pathVector: message.pathVector ?? [] });
+      }
       table.set(fec.key, message.label);
       if (message.entropyLabelCapable === true) elc?.add(fec.key);
       else elc?.delete(fec.key);
@@ -587,6 +611,35 @@ export class LdpEngine implements LdpSessionOwner {
     }
   }
 
+  private looping(message: LabelMappingMessage): boolean {
+    const hopCount = message.hopCount ?? 0;
+    const pathVector = message.pathVector ?? [];
+    return hopCount > this.config.maxHopCount
+      || pathVector.some(hop => hop.equals(this.localId.lsrId))
+      || pathVector.length > this.config.pathVectorLimit;
+  }
+
+  private dropLoopingMapping(session: LdpSession, peerKey: string, element: FecElement, key: string, label: MplsLabel): void {
+    this.received.get(peerKey)?.delete(key);
+    this.receivedElc.get(peerKey)?.delete(key);
+    this.receivedMtu.get(peerKey)?.delete(key);
+    this.receivedLoop.get(peerKey)?.delete(key);
+    this.loopsDetected++;
+    session.send([{ kind: 'label-release', id: this.nextMessageId(), fec: [element], label, status: StatusCode.LoopDetected }]);
+  }
+
+  private loopAttributes(
+    session: LdpSession, key: string, binding: LdpLocalBinding, entry: { fec: LdpFec; route: LdpRoute } | undefined,
+  ): LoopAttributes | null | 'exceeded' {
+    if (session.negotiated?.loopDetection !== true) return null;
+    if (binding.egress) return { hopCount: 1, pathVector: [] };
+    const owner = entry?.route.nextHop ? this.peerOwning(entry.route.nextHop, entry.route.iface) : null;
+    const learned = owner === null ? undefined : this.receivedLoop.get(owner.key)?.get(key);
+    const pathVector = [...(learned?.pathVector ?? []), this.localId.lsrId];
+    if (pathVector.length > this.config.pathVectorLimit) return 'exceeded';
+    return { hopCount: learned === undefined || learned.hopCount === 0 ? 0 : learned.hopCount + 1, pathVector };
+  }
+
   private onWithdraw(
     session: LdpSession, peerKey: string, fecs: readonly FecElement[], label: MplsLabel | undefined, withdrawId: number,
   ): void {
@@ -604,6 +657,7 @@ export class LdpEngine implements LdpSessionOwner {
         table.delete(fec.key);
         this.receivedElc.get(peerKey)?.delete(fec.key);
         this.receivedMtu.get(peerKey)?.delete(fec.key);
+        this.receivedLoop.get(peerKey)?.delete(fec.key);
       }
     }
     const prefixFecs = fecs.filter(element => !isPwFec(element));
@@ -614,9 +668,13 @@ export class LdpEngine implements LdpSessionOwner {
     this.reconcile();
   }
 
-  private onRelease(peerKey: string, fecs: readonly FecElement[], label: MplsLabel | undefined): void {
+  private onRelease(peerKey: string, fecs: readonly FecElement[], label: MplsLabel | undefined, status?: number): void {
     const table = this.advertised.get(peerKey);
     if (!table) return;
+    if (status === StatusCode.LoopDetected) {
+      this.loopsReported++;
+      return;
+    }
     for (const element of fecs) {
       if (element.kind === 'wildcard') {
         for (const [key, held] of [...table]) if (!label || held.equals(label)) table.delete(key);
@@ -715,19 +773,26 @@ export class LdpEngine implements LdpSessionOwner {
     const outgoing: LdpMessage[] = [];
     const sentElc = this.advertisedElc.get(peerKey) ?? new Set<string>();
     const sentMtu = this.advertisedMtu.get(peerKey) ?? new Map<string, number>();
+    const sentLoop = this.advertisedLoop.get(peerKey) ?? new Map<string, string>();
     for (const [key, binding] of this.localBindings) {
       const elc = this.entropyCapableFor(key, binding, fecs.get(key));
       const lspMtu = this.lspMtuFor(key, binding, fecs.get(key));
-      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc && sentMtu.get(key) === lspMtu) continue;
+      const loop = this.loopAttributes(session, key, binding, fecs.get(key));
+      if (loop === 'exceeded') continue;
+      const loopSignature = loop === null ? '' : `${loop.hopCount}|${loop.pathVector.join(',')}`;
+      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc && sentMtu.get(key) === lspMtu
+        && (sentLoop.get(key) ?? '') === loopSignature) continue;
       if (this.config.controlMode === 'ordered' && !binding.egress && !this.hasDownstreamLabel(fecs.get(key))) continue;
       table.set(key, binding.label);
       if (elc) sentElc.add(key);
       else sentElc.delete(key);
       sentMtu.set(key, lspMtu);
+      sentLoop.set(key, loopSignature);
       outgoing.push({
         kind: 'label-mapping', id: this.nextMessageId(),
         fec: [{ kind: 'prefix', prefix: binding.fec.prefix, length: binding.fec.length }], label: binding.label,
         ...(elc ? { entropyLabelCapable: true } : {}),
+        ...(loop === null ? {} : { hopCount: loop.hopCount, ...(loop.pathVector.length > 0 ? { pathVector: loop.pathVector } : {}) }),
         lspMtu,
       });
     }
@@ -816,6 +881,13 @@ export class LdpEngine implements LdpSessionOwner {
 
   forwardingRows(): readonly LdpForwardingRow[] {
     return this.forwardingTable;
+  }
+
+  setLoopDetection(enabled: boolean, pathVectorLimit: number | null = null, maxHopCount: number | null = null): void {
+    this.config.loopDetection = enabled;
+    if (pathVectorLimit !== null) this.config.pathVectorLimit = pathVectorLimit;
+    if (maxHopCount !== null) this.config.maxHopCount = maxHopCount;
+    this.resetSessions();
   }
 
   setHelloTimers(intervalSeconds: number | null, holdSeconds: number | null): void {

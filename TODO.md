@@ -3469,11 +3469,14 @@ necessaire pour trancher ; les ntc-templates ne portent que
 `show mpls interfaces` pour IOS.
 
 ### [ldp] le reste de la RFC 5036
-Decouverte etendue (Targeted Hello, `R`), Label Request / Label Abort Request
-et mode Downstream on Demand, detection de boucle par Path Vector (codec pret,
-procedure absente), TCP MD5 (§2.9), sessions par interface (ATM/Frame Relay),
-Label Release sur retention conservatrice. La retention liberale et la
-distribution non sollicitee sont implementees.
+Label Request / Label Abort Request et mode Downstream on Demand, donc la
+detection de boucle sur Label Request (§2.8.1, Path Vector et Hop Count) ;
+celle sur Label Mapping (§2.8.2) est servie en mode non sollicite, avec un
+vecteur de chemin toujours inclus quand elle est negociee (le texte l'autorise)
+et sans reinitialisation du compteur de sauts aux frontieres ATM/Frame Relay.
+Absents aussi : TCP MD5 (§2.9), sessions par interface (ATM/Frame Relay), Label
+Release sur retention conservatrice. La retention liberale, la distribution non
+sollicitee et la decouverte etendue (Targeted Hello) sont implementees.
 
 ### [vrf] le cache ARP est indexe par adresse IP
 Deux VRF d'un meme PE qui portent la MEME adresse de voisin PE-CE sur deux
@@ -3506,8 +3509,8 @@ de sortie IOS n'est pas source (CLAUDE.md §8), l'API est
 
 ### [pseudowire] le reste des RFC 4447 / 4448
 Seul le type 5 (Ethernet, mode brut) sur circuit d'acces par port est servi :
-le type 4 (mode tagge, TLV 0x06) exige des circuits d'acces par VLAN, la FEC
-generalisee 0x81 et l'AGI/SAII/TAII ne sont ni emises ni lues. Le numero de
+le type 4 (mode tagge, TLV 0x06) exige des circuits d'acces par VLAN. La FEC
+generalisee 0x81 avec AGI/SAII/TAII est servie par le VPLS. Le numero de
 sequence du mot de controle est emis a 0 (verification desactivee). Le mot de
 controle se choisit par l'API (`controlWord`), sans commande IOS faute de
 pseudowire-class (`xconnect <ip> <vcid> encapsulation mpls` est servi, sans

@@ -14,6 +14,7 @@ export interface LdpSessionParameters {
   readonly keepAliveTimeSeconds: number;
   readonly advertisementMode: AdvertisementMode;
   readonly loopDetection: boolean;
+  readonly pathVectorLimit?: number;
   readonly maxPduLength: number;
 }
 
@@ -91,7 +92,7 @@ export class LdpSession {
     const message: InitializationMessage = {
       kind: 'initialization', id: this.owner.nextMessageId(), protocolVersion: LDP_VERSION,
       keepAliveTimeSeconds: parameters.keepAliveTimeSeconds, advertisementMode: parameters.advertisementMode,
-      loopDetection: parameters.loopDetection, pathVectorLimit: 0, maxPduLength: parameters.maxPduLength,
+      loopDetection: parameters.loopDetection, pathVectorLimit: parameters.loopDetection ? parameters.pathVectorLimit ?? 0 : 0, maxPduLength: parameters.maxPduLength,
       receiver: this.peer as LdpIdentifier,
     };
     this.send([message]);
@@ -187,7 +188,7 @@ export class LdpSession {
     this.send([{
       kind: 'initialization', id: this.owner.nextMessageId(), protocolVersion: LDP_VERSION,
       keepAliveTimeSeconds: parameters.keepAliveTimeSeconds, advertisementMode: parameters.advertisementMode,
-      loopDetection: parameters.loopDetection, pathVectorLimit: 0, maxPduLength: parameters.maxPduLength,
+      loopDetection: parameters.loopDetection, pathVectorLimit: parameters.loopDetection ? parameters.pathVectorLimit ?? 0 : 0, maxPduLength: parameters.maxPduLength,
       receiver: this.peer as LdpIdentifier,
     }]);
   }
@@ -243,6 +244,7 @@ export class LdpSession {
       keepAliveTimeSeconds: Math.min(local.keepAliveTimeSeconds, proposal.keepAliveTimeSeconds),
       advertisementMode: 'unsolicited',
       loopDetection: local.loopDetection && proposal.loopDetection,
+      pathVectorLimit: local.pathVectorLimit ?? 0,
       maxPduLength: proposal.maxPduLength === 0 ? local.maxPduLength : Math.min(local.maxPduLength, proposal.maxPduLength),
     };
     return null;
