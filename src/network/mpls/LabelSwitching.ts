@@ -49,6 +49,11 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
   if (ttl === 0) return { kind: 'expired', packet };
 
   if (top.label.isExplicitNull()) {
+    if (below.length > 0) {
+      const [next, ...deeper] = below;
+      const exposedTop = policy.propagateTtl ? { ...next, ttl: Math.min(next.ttl, top.ttl) } : next;
+      return switchLabelled({ ...packet, stack: withBottomOfStack([exposedTop, ...deeper]) }, lfib, policy);
+    }
     const ip = exposed(packet, below, ttl, policy);
     if (ip !== null && ip.type === 'ipv4') return { kind: 'deliver', packet: ip, ttlAccounted: policy.propagateTtl };
     return { kind: 'no-binding', packet };
