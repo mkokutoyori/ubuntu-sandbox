@@ -1311,6 +1311,8 @@ export abstract class EndHost extends Equipment {
     this.dhcpClient.setBroadcastFlag(false);
     this.dhcpClient.setPersonality(ISC_DHCLIENT_PERSONALITY);
     this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
+    this.dhcpClient.setLinkLocalProber((iface, ip) => this.addressAnsweredOnLink(iface, ip));
+    this.dhcpClient.setLinkLocalAnnouncer((iface, ip) => { this.sendGratuitousArp(iface, new IPAddress(ip)); });
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
     this.dhcpClient.setForwardRegistrationPolicy(() => this.registersOwnForwardDns());
@@ -2628,6 +2630,7 @@ export abstract class EndHost extends Equipment {
           localMac: port.getMAC().toString(),
         },
       });
+      if (myIP.isLinkLocal()) this.dhcpClient.handleLinkLocalConflict(portName);
     }
 
     if (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP)) {
@@ -2644,7 +2647,7 @@ export abstract class EndHost extends Equipment {
 
       this.getLinkLayer().send({
         iface: portName,
-        destination: arp.senderMAC,
+        destination: arp.targetIP.isLinkLocal() ? MACAddress.broadcast() : arp.senderMAC,
         etherType: ETHERTYPE_ARP,
         payload: reply,
       });
