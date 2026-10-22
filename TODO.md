@@ -1574,13 +1574,31 @@ on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
   OSPF, donc la disposition d'octets de la RFC 2328 Appendix D (en-tete de
   24 octets, champ d'authentification de 8, condense de 16 apres le
   paquet) n'est pas reproduite. Rien ne l'interopere avec un vrai routeur.
-- `default-information originate always` est accepte, annonce le LSA
-  Type-5 (`show ip ospf database external`, et la route `O*E2` arrive chez
-  le voisin quand la statique est retiree) mais n'est PAS rendu par
-  `show running-config` (donc perdu a l'export de la topologie), le
-  tableau `show ip ospf database` n'ouvre pas la section « Type-5 AS
-  External Link States » et `show ip ospf` ne dit pas que le routeur est
-  un ASBR.
+- `default-information originate [always] [metric] [metric-type] [route-map]`
+  est evalue (metrique, type, existence de la route par defaut, retrait de
+  la LSA, rendu en running-config, ligne ASBR), mais la ROUTE-MAP n'est que
+  rangee et rendue : elle dispense la route par defaut d'exister et fait
+  ignorer `always` (ce que dit la reference OSPF de Cisco), et ses clauses
+  `match` ne sont evaluees nulle part — le simulateur n'a aucun evaluateur
+  de route-map (BGP `neighbor … route-map` et `redistribute … route-map`
+  sont dans le meme cas). La reference ne dit pas non plus CONTRE QUOI la
+  clause est jugee. Meme famille, mesuree dans `originateRedistributedRoutes` :
+  `redistribute static metric N` et `subnets` sont ranges et ignores (metrique
+  20 en dur), `default-metric` ne sert qu'a `default-information`, et
+  `redistribute eigrp|bgp|isis|ospf` est accepte sans rien ranger.
+- Huawei `default-route-advertise [always] [cost n] [type 1|2]` evalue
+  maintenant ses trois mots, mais ses valeurs par defaut (cout 1, type 2)
+  sont celles que le code portait deja : `official_docs/` n'a aucune
+  reference Huawei, donc rien ne les atteste.
+- `show ip ospf database` : la section « Type-5 AS External Link States »
+  porte les cinq colonnes que la reference decrit (Link ID, ADV Router, Age,
+  Seq#, Checksum) et PAS la colonne Tag, qu'aucun exemple officiel ne montre.
+  La reference montre aussi `database external` SANS `detail` comme un bloc
+  detaille par LSA (`Metric Type`, `TOS: 0`, `Metric:`…) ; le simulateur
+  imprime un tableau et ne filtre pas sur un `<ls-id>` tape. `show ip ospf`
+  n'imprime ni les trois lignes `Supports …` ni le bloc `Redistributing
+  External Routes from,` (le seul exemple officiel est
+  `static, includes subnets in redistribution`).
 - Les lignes `%OSPF-5-ADJCHG` disent `from Loading to Full, LoadingDone`
   et `from Full to Down, InactivityTimer` / `KillNbr` ; IOS ecrit les etats
   en capitales et les causes en mots (`from LOADING to FULL, Loading Done`,

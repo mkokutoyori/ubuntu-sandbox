@@ -648,6 +648,7 @@ export interface OSPFConfig {
   redistributeConnected: boolean;
   /** Redistribute static */
   redistributeStatic: boolean;
+  redistributeRip: boolean;
   /** Passive interfaces (no hellos sent) */
   passiveInterfaces: Set<string>;
   passiveInterfaceDefault?: boolean;
@@ -669,6 +670,7 @@ export function createDefaultOSPFConfig(processId: number = 1): OSPFConfig {
     defaultInformationOriginate: false,
     redistributeConnected: false,
     redistributeStatic: false,
+    redistributeRip: false,
     passiveInterfaces: new Set(),
     logAdjacencyChanges: true,
     autoCostReferenceBandwidth: 100, // 100 Mbps in Mbps

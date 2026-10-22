@@ -14,6 +14,7 @@ import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { OSPF_DEFAULT_REFERENCE_BANDWIDTH } from '../../../ospf/types';
 import { ARP_TIMEOUT_DEFAULT_SEC } from '../../../arp/ArpCache';
 import type { Router } from '../../Router';
+import type { DefaultInformationOriginate } from '../../router/RouterOSPFIntegration';
 import { iosClockConfigLines } from './CiscoCommonShow';
 import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import { loadIntervalLabel, DEFAULT_LOAD_INTERVAL_SEC } from '../../../hardware/PortLoad';
@@ -1010,6 +1011,8 @@ function lignesDAire(
       capabilities?: { transit?: boolean; opaque?: boolean };
       timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
       spfThrottle?: { initial: number; hold: number; max: number };
+      defaultInformation?: DefaultInformationOriginate;
+      defaultMetric?: number;
     };
   })._getOSPFExtraConfig?.();
   for (const [id, voisin] of extra?.virtualLinks ?? []) {
@@ -1033,7 +1036,18 @@ function lignesDAire(
       + `${voisin.priority !== undefined ? ` priority ${voisin.priority}` : ''}`
       + `${voisin.pollInterval !== undefined ? ` poll-interval ${voisin.pollInterval}` : ''}`);
   }
+  if (extra?.defaultMetric !== undefined) lignes.push(`default-metric ${extra.defaultMetric}`);
+  if (extra?.defaultInformation) lignes.push(defaultInformationLine(extra.defaultInformation));
   return lignes;
+}
+
+function defaultInformationLine(info: DefaultInformationOriginate): string {
+  return ['default-information originate',
+    ...(info.always ? ['always'] : []),
+    ...(info.metric !== undefined ? ['metric', String(info.metric)] : []),
+    ...(info.metricType === 1 ? ['metric-type 1'] : []),
+    ...(info.routeMap !== undefined ? ['route-map', info.routeMap] : []),
+  ].join(' ');
 }
 
 export function configProvenanceLines(router: Router): string[] {

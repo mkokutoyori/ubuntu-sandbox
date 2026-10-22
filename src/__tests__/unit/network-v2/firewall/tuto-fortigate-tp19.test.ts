@@ -174,7 +174,7 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
     expect(vue).not.toMatch(/Command fail|unknown configuration path/i);
     expect(vue).toContain('O - OSPF');
     expect(vue).not.toMatch(/^C\s+192\.168\.10\.0/m);
-    expect(vue).toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 192\.168\.100\.1, port1, \d\d:\d\d:\d\d$/m);
+    expect(vue).toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/10\] via 192\.168\.100\.1, port1, \d\d:\d\d:\d\d$/m);
 
     expect(await fgt.executeCommand('get router info routing-table connected'))
       .toMatch(/C\s+192\.168\.10\.0/);
@@ -205,7 +205,7 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
       expect(await r1.executeCommand('show ip route'))
         .not.toMatch(/^S\*/m);
       expect(await r2.executeCommand('show ip route'))
-        .toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 10\.0\.0\.1, \d\d:\d\d:\d\d, GigabitEthernet0\/1$/m);
+        .toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/10\] via 10\.0\.0\.1, \d\d:\d\d:\d\d, GigabitEthernet0\/1$/m);
     });
 
   it('etape 5 : une coupure fait TOMBER l\'adjacence, le retour la refait',
@@ -373,7 +373,7 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
 
       const table = await fgt.executeCommand('get router info routing-table ospf');
       expect(table).toMatch(/O\s+172\.16\.0\.0\/24 \[110\/2\] via 10\.0\.0\.1, port1/);
-      expect(table).toMatch(/O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 10\.0\.0\.1, port1/);
+      expect(table).toMatch(/O\*E2\s+0\.0\.0\.0\/0 \[110\/10\] via 10\.0\.0\.1, port1/);
     });
 
   it('une interface PASSIVE n\'a pas de voisin', async () => {

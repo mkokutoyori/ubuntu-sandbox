@@ -2052,6 +2052,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     Logger.info(this.id, 'router:route-add',
       `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);
+    this.ospfIntegration.staticRoutesChanged();
     return true;
   }
 
@@ -2088,14 +2089,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (nextHopStr && r.nextHop?.toString() !== nextHopStr) return true;
       return false;
     });
-    return this.routingTable.length < before;
+    const removed = this.routingTable.length < before;
+    if (removed) this.ospfIntegration.staticRoutesChanged();
+    return removed;
   }
 
   removeDefaultRoute(nextHop?: IPAddress): boolean {
     const before = this.routingTable.length;
     this.routingTable = this.routingTable.filter(r =>
       r.type !== 'default' || (nextHop !== undefined && String(r.nextHop) !== String(nextHop)));
-    return this.routingTable.length < before;
+    const removed = this.routingTable.length < before;
+    if (removed) this.ospfIntegration.staticRoutesChanged();
+    return removed;
   }
 
   /**
@@ -2131,6 +2136,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       track: opts?.track,
       permanent: opts?.permanent,
     });
+    this.ospfIntegration.staticRoutesChanged();
     return true;
   }
 
