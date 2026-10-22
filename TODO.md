@@ -3544,6 +3544,13 @@ decouverte `vpls` dans la CLI : l'API est `Router.getVplsEngine().defineBgp`
 et le drapeau `vpls` du voisin BGP. Les valeurs du registre IANA (AFI 25,
 SAFI 65, type de communaute 0x800A) viennent du corps de la RFC.
 
+### [mpls-mib] RFC 3811, 3812, 3813 (MPLS-TC, MPLS-TE, MPLS-LSR)
+Non implementees : le MIB LSR expose des lignes `ifTable` de couche MPLS
+(ifType 166) que ni `Router` ni le moteur SNMP ne portent, et plusieurs tables
+(`mplsInSegmentTable`, `mplsXCTable`) exigent de rendre le LFIB sous la forme
+d'index entiers stables. A reprendre en ajoutant d'abord les interfaces MPLS
+a l'`ifTable`, puis un module MIB lisant `Lfib` (jamais une copie).
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit
