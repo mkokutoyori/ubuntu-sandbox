@@ -12,6 +12,7 @@
  */
 
 import type { Icmp6ErrorReport } from '../../core/IcmpErrors';
+import type { IcmpExtensionObject } from '../../icmp/IcmpExtensions';
 
 // Note: payload fields use plain strings for IPs/MACs to keep the
 // event taxonomy serialisable without coupling consumers to the
@@ -129,6 +130,7 @@ export interface HostIcmpUnreachablePayload extends HostDeviceRef {
   origDestPort?: number;
   icmpType?: 'time-exceeded' | 'destination-unreachable';
   mtu?: number;
+  extensions?: readonly IcmpExtensionObject[];
 }
 
 /**

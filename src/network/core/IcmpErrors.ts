@@ -20,6 +20,7 @@ import {
   type ICMPType,
 } from './types';
 import type { Errno } from './Errno';
+import type { IcmpExtensionObject } from '@/network/icmp/IcmpExtensions';
 
 // ─── ICMP codes (RFC 792 / RFC 1812) ─────────────────────────────────
 
@@ -317,6 +318,7 @@ export interface ICMPErrorOptions {
   /** RFC 1191 §4: Next-Hop MTU for Fragmentation Needed (Type 3, Code 4). */
   nextHopMTU?: number;
   quote?: IcmpErrorQuote;
+  extensions?: readonly IcmpExtensionObject[];
 }
 
 export interface IcmpErrorQuote {
@@ -370,6 +372,7 @@ export function buildICMPError(
     // Simulator-level reference to the offending packet: receivers correlate
     // echo failures (ping/traceroute) and IPsec PMTU discovery through it.
     originalPacket: offendingPkt,
+    ...(options.extensions ? { extensions: options.extensions } : {}),
   };
 
   const quote = options.quote ?? RFC792_ICMP_ERROR_QUOTE;

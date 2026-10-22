@@ -3363,3 +3363,16 @@ TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesur
 hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
 `systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
 le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
+
+### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
+Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
+de la RFC 4950 dans l'ICMP time-exceeded, et la sonde de `executeTraceroute` le
+porte jusqu'a `TracerouteProbeResult.extensions`. Aucun rendu n'en est fait :
+ni la disposition de `traceroute -e` (Linux), ni celle de `traceroute` IOS
+(`[MPLS: Label 17 Exp 0]`) ne sont lisibles dans un texte de reference de ce
+depot (la RFC 4950 n'illustre que la sortie generique de sa figure 1).
+**Pourquoi ce n'est pas ferme** : CLAUDE.md §8 interdit de reconstituer de
+memoire un format de sortie. A reprendre avec une capture reelle.
+**Egalement non code** : l'octet-a-octet de la structure d'extension ICMP
+(en-tete, checksum, champ de longueur) - la RFC 4884 qui la definit n'est pas
+dans `docs/rfc/mpls`.

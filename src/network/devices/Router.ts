@@ -152,7 +152,7 @@ import { Logger } from '../core/Logger';
 import { CarPolicer } from '../qos/CarPolicer';
 import {
   buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT,
-  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType, type ICMPErrorOptions,
 } from '../core/IcmpErrors';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
@@ -241,6 +241,10 @@ import { ArchiveService } from './router/archive/ArchiveService';
 import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
+import { MplsEngine } from '../mpls/MplsEngine';
+import { mplsLabelStackObject } from '../icmp/IcmpExtensions';
+import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
+import { isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -299,6 +303,7 @@ export type RouterCounters = Pick<ProtocolCounters,
 /** Packets waiting for ARP resolution */
 interface QueuedPacket {
   frame: IPv4Packet;
+  mpls?: MplsPacket;
   outIface: string;
   nextHopIP: IPAddress;
   timer: symbol;
@@ -2519,6 +2524,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     } else if (frame.etherType === ETHERTYPE_IPV4) {
       this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
       this.processIPv4(portName, frame.payload as IPv4Packet);
+    } else if (frame.etherType === ETHERTYPE_MPLS_UNICAST) {
+      if (isMplsPacket(frame.payload)) this.mplsEngine?.receive(portName, frame.payload);
     } else if (frame.etherType === ETHERTYPE_IPV6) {
       const ipv6 = frame.payload as IPv6Packet;
       if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
@@ -2685,7 +2692,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── Data Plane: Phase B+C — IPv4 Processing ──────────────────
 
-  protected processIPv4(inPort: string, ipPkt: IPv4Packet, reinjected = false): void {
+  protected processIPv4(inPort: string, ipPkt: IPv4Packet, reinjected = false, ttlAccounted = false): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Phase B: L3 Header Sanity Check (RFC 1812 §5.2.2)
@@ -2760,7 +2767,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return;
       }
       if (!this.policeCar(inPort, 'input', ipPkt)) return;
-      this.forwardPacket(inPort, ipPkt, originalPkt);
+      this.forwardPacket(inPort, ipPkt, originalPkt, ttlAccounted);
       return;
     }
 
@@ -2809,7 +2816,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // s'applique à l'entrée de l'interface, donc un paquet en excès est
     // jeté sans jamais consommer de décision de routage.
     if (!this.policeCar(inPort, 'input', ipPkt)) return;
-    this.forwardPacket(inPort, ipPkt, originalPkt);
+    this.forwardPacket(inPort, ipPkt, originalPkt, ttlAccounted);
   }
 
   // ─── CAR (`rate-limit`) ────────────────────────────────────────
@@ -3313,7 +3320,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Forward an IPv4 packet to the next hop.
    * Implements the full RFC 1812 forwarding pipeline.
    */
-  private forwardPacket(inPort: string, ipPkt: IPv4Packet, originalPkt: IPv4Packet = ipPkt): void {
+  private forwardPacket(inPort: string, ipPkt: IPv4Packet, originalPkt: IPv4Packet = ipPkt, ttlAccounted = false): void {
     const martien = martianSource(ipPkt.sourceIP);
     if (martien) {
       Logger.warn(this.id, 'router:martian-source',
@@ -3342,7 +3349,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    const decision = decrementForForwarding(ipPkt);
+    const decision = ttlAccounted ? { kind: 'forward' as const, packet: ipPkt } : decrementForForwarding(ipPkt);
     if (decision.kind === 'expired') {
       Logger.info(this.id, 'router:ttl-expired',
         `${this.name}: TTL expired for packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
@@ -3527,6 +3534,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // fragment 0 will carry the L4 header they need to inspect. The
     // DF=1-and-oversized case already returned earlier (ICMP frag-needed),
     // so any oversized packet reaching here is safe to split.
+    const labelled = this.mplsEngine?.impose(fwdPkt, route.iface, nextHopIP) ?? null;
+    if (labelled !== null) {
+      this.counters.ipForwDatagrams++;
+      this.counters.ifOutOctets += fwdPkt.totalLength;
+      this.sendMplsFrameArpAware(route.iface, labelled, nextHopIP, outPort);
+      return;
+    }
     const outgoingFragments = fragmentIPv4(fwdPkt, effectiveMtu);
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
@@ -3685,24 +3699,36 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     code: number,
     nextHopMTU?: number,
   ): void {
+    const errorIP = this.buildIcmpErrorPacket(inPort, offendingPkt, icmpType, code, nextHopMTU);
+    if (errorIP !== null) this.sendSelfOriginatedIPv4(errorIP, offendingPkt.sourceIP);
+  }
+
+  private buildIcmpErrorPacket(
+    inPort: string,
+    offendingPkt: IPv4Packet,
+    icmpType: ICMPErrorType,
+    code: number,
+    nextHopMTU?: number,
+    extensions?: ICMPErrorOptions['extensions'],
+  ): IPv4Packet | null {
     // RFC 1122 §3.2.2: never generate an error about an ICMP error,
     // a fragment, or a broadcast/multicast packet (prevents error storms).
-    if (!mayGenerateICMPError(offendingPkt)) return;
+    if (!mayGenerateICMPError(offendingPkt)) return null;
 
     if (icmpType === 'destination-unreachable'
-      && !this.isIcmpUnreachablesEnabled(inPort)) return;
+      && !this.isIcmpUnreachablesEnabled(inPort)) return null;
 
     const inPortObj = this.ports.get(inPort);
-    if (!inPortObj) return;
+    if (!inPortObj) return null;
     const myIP = inPortObj.getIPAddress();
-    if (!myIP) return;
+    if (!myIP) return null;
 
-    if (this.icmpTypeSuppressedByLocalAcl(icmpType)) return;
-    if (icmpType === 'destination-unreachable' && !this.icmpUnreachableRateLimit.admit(code)) return;
+    if (this.icmpTypeSuppressedByLocalAcl(icmpType)) return null;
+    if (icmpType === 'destination-unreachable' && !this.icmpUnreachableRateLimit.admit(code)) return null;
 
     const errorIP = buildICMPError(
       myIP, offendingPkt, icmpType, code, this.defaultTTL,
-      { nextHopMTU: nextHopMTU ?? this.interfaceMTU },
+      { nextHopMTU: nextHopMTU ?? this.interfaceMTU, ...(extensions ? { extensions } : {}) },
     );
 
     this.counters.icmpOutMsgs++;
@@ -3713,7 +3739,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       offendingPkt.destinationIP.toString(), myIP.toString(),
       offendingPkt.sourceIP.toString());
 
-    this.sendSelfOriginatedIPv4(errorIP, offendingPkt.sourceIP);
+    return errorIP;
   }
 
   /**
@@ -3760,7 +3786,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── ARP Resolution + Packet Queue ────────────────────────────
 
-  private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port): void {
+  private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port, mpls?: MplsPacket): void {
     const key = nextHopIP.toString();
     const timer = this.routerTimers.setTimeout(() => {
       const abandonnes = this.packetQueue.filter(
@@ -3777,7 +3803,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }, 2000);
 
-    this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
+    this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer, ...(mpls ? { mpls } : {}) });
 
     if (!this.inFlightFwdARPs.has(key)) {
       this.inFlightFwdARPs.add(key);
@@ -3837,10 +3863,53 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.counters.ifOutOctets += q.frame.totalLength;
         this.sendFrame(q.outIface, {
           srcMAC: outPort.getMAC(), dstMAC: resolvedMAC,
-          etherType: ETHERTYPE_IPV4, payload: q.frame,
+          ...(q.mpls
+            ? { etherType: ETHERTYPE_MPLS_UNICAST, payload: q.mpls }
+            : { etherType: ETHERTYPE_IPV4, payload: q.frame }),
         });
       }
     }
+  }
+
+  private mplsEngine: MplsEngine | null = null;
+
+  getMplsEngine(): MplsEngine {
+    this.mplsEngine ??= new MplsEngine({
+      sendLabelled: (iface, nextHop, packet) => {
+        const port = this.ports.get(iface);
+        if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
+      },
+      sendUnlabelled: (iface, nextHop, packet) => {
+        this.counters.ipForwDatagrams++;
+        this.sendIpv4FrameArpAware(iface, packet, nextHop);
+      },
+      continueAsIp: (inPort, packet, ttlAccounted) => this.processIPv4(inPort, packet, true, ttlAccounted),
+      expired: (inPort, packet) => this.mplsExpired(inPort, packet),
+    });
+    return this.mplsEngine;
+  }
+
+  private sendMplsFrameArpAware(iface: string, packet: MplsPacket, nextHop: IPAddress, port: Port): void {
+    const cached = this.arpTable.get(nextHop.toString());
+    if (cached) {
+      this.sendFrame(iface, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_MPLS_UNICAST, payload: packet,
+      });
+    } else {
+      this.queueAndResolve(packet.payload, iface, nextHop, port, packet);
+    }
+  }
+
+  private mplsExpired(inPort: string, packet: MplsPacket): void {
+    const error = this.buildIcmpErrorPacket(
+      inPort, packet.payload, 'time-exceeded', 0, undefined, [mplsLabelStackObject(packet.stack)]);
+    if (error === null) return;
+    if (this.lookupRoute(packet.payload.sourceIP) !== null) {
+      this.sendSelfOriginatedIPv4(error, packet.payload.sourceIP);
+      return;
+    }
+    this.getMplsEngine().tunnel(inPort, packet, error);
   }
 
   /**
