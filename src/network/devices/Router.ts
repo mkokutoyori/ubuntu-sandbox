@@ -242,6 +242,8 @@ import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { MplsEngine } from '../mpls/MplsEngine';
+import { LdpEngine, type LdpRoute } from '../ldp/LdpEngine';
+import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
 import { mplsLabelStackObject } from '../icmp/IcmpExtensions';
 import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
 import { isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
@@ -3684,6 +3686,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       receive: (inPort, ipPkt, udp) => { this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp); },
     });
     claims.set(UDP_PORT_IKE_NAT_T, { owner: 'isakmp-natt', receive: () => undefined });
+    claims.set(LDP_PORT, {
+      owner: 'ldp',
+      receive: (inPort, ipPkt, udp) => { this.ldpEngine?.receiveUdp(inPort, ipPkt.sourceIP, udp.payload); },
+    });
     this.baseUdpClaims = claims;
     return claims;
   }
@@ -3887,6 +3893,49 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       expired: (inPort, packet) => this.mplsExpired(inPort, packet),
     });
     return this.mplsEngine;
+  }
+
+  private ldpEngine: LdpEngine | null = null;
+
+  getLdpEngine(): LdpEngine {
+    this.ldpEngine ??= new LdpEngine({
+      routerId: () => this.ldpRouterId(),
+      interfaces: () => [...this.ports.entries()].flatMap(([name, port]) => {
+        const address = port.getIPAddress();
+        return address ? [{ name, address, up: port.getIsUp() }] : [];
+      }),
+      routes: () => this.routingTable.map((route): LdpRoute => ({
+        prefix: route.network, length: route.mask.toCIDR(), nextHop: route.nextHop, iface: route.iface,
+        connected: route.type === 'connected', distance: route.ad, metric: route.metric,
+      })).filter(route => route.length > 0),
+      sendHello: (iface, payload) => this.sendLdpHello(iface, payload),
+      tcp: () => this.tcpv2,
+    }, this.getMplsEngine(), () => this.getScheduler());
+    return this.ldpEngine;
+  }
+
+  private ldpRouterId(): IPAddress {
+    const addresses = [...this.ports.entries()]
+      .flatMap(([name, port]) => { const a = port.getIPAddress(); return a ? [{ name, address: a }] : []; });
+    const loopbacks = addresses.filter(entry => /^loopback/i.test(entry.name));
+    const pool = loopbacks.length > 0 ? loopbacks : addresses;
+    const best = pool.reduce<IPAddress | null>((top, entry) => (top === null || entry.address.toUint32() > top.toUint32() ? entry.address : top), null);
+    return best ?? new IPAddress('0.0.0.0');
+  }
+
+  private sendLdpHello(iface: string, payload: Uint8Array): void {
+    const port = this.ports.get(iface);
+    const address = port?.getIPAddress();
+    if (!port || !address || !port.getIsUp()) return;
+    const group = new IPAddress(LDP_ALL_ROUTERS_GROUP);
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: LDP_PORT, destinationPort: LDP_PORT, length: 8 + payload.length, checksum: 0, payload,
+    };
+    const packet = createIPv4Packet(address, group, IP_PROTO_UDP, 1, udp, udp.length);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC: new MACAddress(ipv4MulticastToMac(LDP_ALL_ROUTERS_GROUP)),
+      etherType: ETHERTYPE_IPV4, payload: packet,
+    });
   }
 
   private sendMplsFrameArpAware(iface: string, packet: MplsPacket, nextHop: IPAddress, port: Port): void {
