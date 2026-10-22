@@ -1503,6 +1503,42 @@ equipements Cisco.
 **Report** : demande de choisir ce qu'un groupe veut dire pour une VACL
 avant de le declarer.
 
+### [ospf] ce que montre OSPF sur deux routeurs Cisco cables en Ethernet (R-AKWA / R-ISP, aire 0, un /28)
+**Mesure** : la topologie d'un utilisateur importee par `importTopology`,
+`router ospf 1` + `network … area 0` des deux cotes, horloge virtuelle quand
+on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
+(configure le premier, pas de preemption), R-ISP apprend les quatre LAN en
+`O [110/2]`, `ping` et `traceroute` de bout en bout, l'echec d'aire / de hello
+/ d'authentification se voit dans `%OSPF-4-ERRRCV` et tombe a 40 s
+(`InactivityTimer`). Ce qui sonne faux :
+- `show ip ospf neighbor` ecrit toujours `FULL/  -` (`showIpOspfNeighbor`,
+  chaine fixe) : sur un segment Ethernet IOS dit `FULL/DR`, `FULL/BDR`,
+  `FULL/DROTHER` ou `2WAY/DROTHER`, et `show ip ospf interface` du MEME
+  routeur nomme bien le DR et le BDR : deux vues qui se contredisent.
+- `show ip ospf interface brief` rend l'etat `DROTHER` en entier
+  (`DROTHER1/1`, la colonne des voisins collee) ; IOS tient l'etat sur
+  cinq cellules (`DROTH`).
+- `ip ospf message-digest-key 1 md5 SECRET` range la cle comme une cle
+  SIMPLE (`setPendingOspfIf({ authKey })`, l'identifiant est ignore) et le
+  `running-config` rend `ip ospf authentication-key SECRET` : la ligne que
+  l'operateur a tapee disparait, et deux cles MD5 d'identifiants differents
+  s'authentifient.
+- `default-information originate always` est accepte, annonce le LSA
+  Type-5 (`show ip ospf database external`, et la route `O*E2` arrive chez
+  le voisin quand la statique est retiree) mais n'est PAS rendu par
+  `show running-config` (donc perdu a l'export de la topologie), le
+  tableau `show ip ospf database` n'ouvre pas la section « Type-5 AS
+  External Link States » et `show ip ospf` ne dit pas que le routeur est
+  un ASBR.
+- Les lignes `%OSPF-5-ADJCHG` disent `from Loading to Full, LoadingDone`
+  et `from Full to Down, InactivityTimer` / `KillNbr` ; IOS ecrit les etats
+  en capitales et les causes en mots (`from LOADING to FULL, Loading Done`,
+  `from FULL to DOWN, Neighbor Down: Dead timer expired`). Non atteste ici
+  (aucune capture d'IOS dans le depot) : a verifier avant d'y toucher.
+**Pourquoi ce n'est pas ferme** : relever, pas corriger — l'exploration
+etait demandee sans correctif. Chaque point a une sonde evidente
+(`showIpOspfNeighbor` lit deja `iface.dr` / `n.neighborDR`).
+
 ## Pare-feu FortiGate
 
 ### [interface] `allowaccess` du PROFIL n'est applique a personne
