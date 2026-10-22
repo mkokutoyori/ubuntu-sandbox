@@ -22,6 +22,7 @@ export interface AuparseRecord {
   fields: AuparseField[];
   cur: number;
   text: string;
+  interp: string | null;
 }
 
 export interface AuparseTime {
@@ -78,8 +79,11 @@ function unsignedParse(text: string, base: number): { value: bigint; failed: boo
   return { value, failed: false };
 }
 
-export function parseUpRecord(text: string, item: number): AuparseRecord | null {
-  const record: AuparseRecord = { type: 0, machine: -1, syscall: -1, a0: 0n, a1: 0n, cwd: null, item, fields: [], cur: 0, text };
+export function parseUpRecord(fullText: string, item: number): AuparseRecord | null {
+  const separator = fullText.indexOf('\u001d');
+  const text = separator < 0 ? fullText : fullText.slice(0, separator);
+  const interp = separator < 0 ? null : fullText.slice(separator + 1);
+  const record: AuparseRecord = { type: 0, machine: -1, syscall: -1, a0: 0n, a1: 0n, cwd: null, item, fields: [], cur: 0, text, interp };
   const splitter = new Splitter(text);
   let offset = 0;
   const append = (name: string, val: string | null): void => {
@@ -191,20 +195,27 @@ export class AuparseEvent {
     if (this.records.length === 0) return 0;
     this.current = 0;
     this.records[0].cur = 0;
+    this.interpreter.freeInterpretations();
+    this.interpreter.loadInterpretations(this.records[0].interp);
     return 1;
   }
 
   nextRecord(): number {
     if (this.records.length === 0) return 0;
+    this.interpreter.freeInterpretations();
     if (this.current === null) return 0;
     this.current = this.current + 1 < this.records.length ? this.current + 1 : null;
-    return this.current === null ? 0 : 1;
+    if (this.current === null) return 0;
+    this.interpreter.loadInterpretations(this.records[this.current].interp);
+    return 1;
   }
 
   gotoRecordNum(num: number): number {
+    this.interpreter.freeInterpretations();
     if (num >= this.records.length) return 0;
     this.current = num;
     this.records[num].cur = 0;
+    this.interpreter.loadInterpretations(this.records[num].interp);
     return 1;
   }
 
@@ -271,6 +282,10 @@ export class AuparseEvent {
       if (record !== null) record.cur = 0;
     }
     return null;
+  }
+
+  numFields(): number {
+    return this.record?.fields.length ?? 0;
   }
 
   fieldNum(): number {

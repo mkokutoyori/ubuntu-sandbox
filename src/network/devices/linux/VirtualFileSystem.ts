@@ -163,6 +163,7 @@ export class VirtualFileSystem {
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
+  private entryListeners: Map<string, Set<() => void>> = new Map();
   private readOnlyResolver?: (path: string) => boolean;
   private remoteMountPort: RemoteMountPort | null = null;
   /**
@@ -1123,6 +1124,23 @@ export class VirtualFileSystem {
     };
   }
 
+  onEntryChange(path: string, listener: () => void): () => void {
+    const key = this.canonicalKey(path);
+    const set = this.entryListeners.get(key) ?? new Set<() => void>();
+    set.add(listener);
+    this.entryListeners.set(key, set);
+    return () => {
+      set.delete(listener);
+      if (set.size === 0) this.entryListeners.delete(key);
+    };
+  }
+
+  private emitEntryChange(path: string): void {
+    for (const listener of [...(this.entryListeners.get(this.canonicalKey(path)) ?? [])]) {
+      try { listener(); } catch { /* a subscriber must not corrupt the filesystem */ }
+    }
+  }
+
   /** Fan out a write event to every subscriber registered against `path`. */
   private emitWrite(event: VfsWriteEvent): void {
     const set = this.writeListeners.get(event.path);
@@ -1309,6 +1327,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     inode.permissions = mode;
     inode.ctime = this.nowMs();
+    this.emitEntryChange(path);
     return true;
   }
 
@@ -1480,6 +1499,7 @@ export class VirtualFileSystem {
       srcNode.children.set('..', dstParentInode.id);
     }
 
+    this.emitEntryChange(finalDst);
     return true;
   }
 

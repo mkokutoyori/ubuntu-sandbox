@@ -17,7 +17,7 @@ export interface ConfigSink {
   newPriorityFilter(text: string, then: Stmt[], location: Location): Stmt;
   newPropertyFilter(text: string, then: Stmt[], location: Location): Stmt;
   newCall(name: string): Stmt;
-  checkFunction(name: string, argumentCount: number, location: Location): void;
+  checkFunction(name: string, argumentCount: number, location: Location, expression: Expr): void;
   report(diagnostic: Diagnostic): void;
 }
 
@@ -398,8 +398,9 @@ export class ConfigParser {
         this.expectChar('(');
         const args = this.parseArguments();
         this.expectChar(')');
-        this.sink.checkFunction(String(token.value), args.length, this.location(token));
-        return { k: 'func', name: String(token.value), args };
+        const call: Expr = { k: 'func', name: String(token.value), args };
+        this.sink.checkFunction(String(token.value), args.length, this.location(token), call);
+        return call;
       }
       case 'CHAR':
         if (token.text === '(') {

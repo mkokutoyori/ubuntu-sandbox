@@ -3,6 +3,7 @@ import { arrayParam, getParams, numberParam, reportUnused, stringParam, type Par
 import type { AllowedSenderList } from '../engine/AllowedSenders';
 import type { Listener, StreamConnection } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
+import type { StatsObject } from '../engine/Statistics';
 import { emptyTlsExtras, copyTlsExtras, readTlsExtras, resolveStreamTls, type StreamTlsExtras, type StreamTlsOptions } from '../engine/StreamDriver';
 import type { DirectiveRegistration, InputContext, InputInstance, InputModule, ModuleContext } from '../engine/Modules';
 import { TcpFramer } from '../TcpFramer';
@@ -159,6 +160,8 @@ class ImtcpListener implements InputInstance {
   private listeners: Listener[] = [];
   private readonly sessions = new Set<TcpSession>();
   private limiter: import('../engine/RateLimiter').RateLimiter | null | undefined;
+  private statistics: StatsObject | null = null;
+  private submitted = 0;
 
   constructor(private readonly settings: TcpInstanceSettings, private readonly context: InputContext) {
     this.description = `imtcp(${settings.address ?? '*'}/${settings.port})`;
@@ -186,6 +189,7 @@ class ImtcpListener implements InputInstance {
 
   start(): boolean {
     const settings = this.settings;
+    if (settings.rateName !== null && (this.limiterForSubmissions(), this.limiter === null)) return false;
     let port = settings.port;
     const numericPrefix = /^\d*/.exec(port)?.[0] ?? '';
     const portNumber = numericPrefix === '' ? 0 : Number(numericPrefix);
@@ -212,6 +216,8 @@ class ImtcpListener implements InputInstance {
     }
     if (settings.listenPortFile !== null) this.context.host.files.write(settings.listenPortFile, `${outcome.listeners[0].port}\n`);
     this.listeners = outcome.listeners;
+    this.statistics = this.context.statistics.create(`${this.displayInputName}(${port})`, { origin: 'imtcp' });
+    this.statistics.addCounter({ name: 'submitted', read: () => this.submitted, reset: () => { this.submitted = 0; } });
     return true;
   }
 
@@ -219,6 +225,8 @@ class ImtcpListener implements InputInstance {
     for (const session of [...this.sessions]) this.closeSession(session, false);
     for (const listener of this.listeners) listener.close();
     this.listeners = [];
+    if (this.statistics !== null) this.context.statistics.remove(this.statistics);
+    this.statistics = null;
   }
 
   private limiterForSubmissions(): import('../engine/RateLimiter').RateLimiter | undefined {
@@ -294,7 +302,9 @@ class ImtcpListener implements InputInstance {
       this.closeSession(session, false);
       return;
     }
+    const before = this.submitted;
     session.framer.push(bytes);
+    this.context.recordSender(session.host, this.submitted - before, Math.floor(this.context.host.clock.wallMs() / 1000));
   }
 
   private closeSession(session: TcpSession, closedByPeer: boolean): void {
@@ -319,6 +329,7 @@ class ImtcpListener implements InputInstance {
       defaultTimeZone: this.settings.defaultTimeZone,
       limiter: this.limiterForSubmissions(),
     });
+    this.submitted++;
   }
 }
 
@@ -564,7 +575,6 @@ export const imtcp: InputModule = {
     defaults.configuredViaModule = true;
     if (!applySecureDefaults(defaults, context, 'imtcp module')) return false;
     warnInsecure(defaults, context);
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   check(instanceCount, context) {

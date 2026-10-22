@@ -10,7 +10,7 @@ import type { LinuxRsyslogHost } from './LinuxRsyslogHost';
 
 export const RSYSLOG_CONFIG_PATH = '/etc/rsyslog.conf';
 export const RSYSLOG_MODULE_DIRECTORY = '/usr/lib/x86_64-linux-gnu/rsyslog';
-export const RSYSLOG_BINARY_MODULES = ['imudp', 'imtcp', 'imuxsock', 'imklog', 'immark'] as const;
+export const RSYSLOG_BINARY_MODULES = ['imudp', 'imtcp', 'imuxsock', 'imklog', 'immark', 'impstats'] as const;
 
 const LOG_SYSLOG_FACILITY = 5;
 const LOG_INFO = 6;

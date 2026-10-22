@@ -6,6 +6,7 @@ import type { RsyslogMessage } from '../Message';
 import type { Resolution, SrvRecord, StreamConnection } from '../engine/Host';
 import { emptyTlsExtras, readTlsExtras, resolveStreamTls, type StreamTlsExtras, type StreamTlsOptions } from '../engine/StreamDriver';
 import { RS_RET } from '../engine/Log';
+import type { StatsObject } from '../engine/Statistics';
 import type {
   ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, DirectiveRegistration, ModuleContext, ModuleRateLimiter,
   OutputModule, SelectorParse, TemplateRequest,
@@ -190,7 +191,6 @@ class ForwardTarget {
   socket = 0;
   resumeAtSeconds: number;
   sentMessages = 0;
-  sentBytes = 0;
   connects = 0;
   previousFrame: Uint8Array | null = null;
   transmissions = 0;
@@ -207,7 +207,7 @@ class OmfwdWorker implements ActionWorker {
   private pendingPause = 0;
   private readonly workerId: number;
 
-  constructor(private readonly settings: ForwardSettings, private readonly context: ModuleContext) {
+  constructor(private readonly settings: ForwardSettings, private readonly context: ModuleContext, private readonly sent: { bytes: number }) {
     const state = processState(context);
     this.workerId = state.nextWorker++;
     const resumeAt = this.nowSeconds() - 1;
@@ -425,7 +425,7 @@ class OmfwdWorker implements ActionWorker {
         if (failure === null) {
           success = true;
           lastSent = attemptLength === length;
-          target.sentBytes += attemptLength;
+          this.sent.bytes += attemptLength;
           break;
         }
         if (failure === 'EMSGSIZE') {
@@ -469,7 +469,7 @@ class OmfwdWorker implements ActionWorker {
       this.destroyTarget(target, false);
       return 'suspended';
     }
-    target.sentBytes += frame.length;
+    this.sent.bytes += frame.length;
     return 'ok';
   }
 
@@ -588,13 +588,22 @@ class OmfwdInstance implements ActionModuleInstance {
   readonly templates: TemplateRequest[];
   readonly description: string;
 
+  private readonly sent = { bytes: 0 };
+  private readonly statistics: StatsObject;
+
   constructor(private readonly settings: ForwardSettings, private readonly context: ModuleContext) {
     this.templates = [{ name: settings.templateName }];
     this.description = `${settings.protocol === 'udp' ? '@' : '@@'}${settings.targets[0]}:${settings.ports[0]}`;
+    this.statistics = context.statistics.create(`${settings.protocol === 'tcp' ? 'TCP' : 'UDP'}-${settings.targets[0]}-${settings.ports[0]}`, { origin: 'omfwd' });
+    this.statistics.addCounter({ name: 'bytes.sent', read: () => this.sent.bytes, reset: () => { this.sent.bytes = 0; } });
   }
 
   createWorker(): ActionWorker {
-    return new OmfwdWorker(this.settings, this.context);
+    return new OmfwdWorker(this.settings, this.context, this.sent);
+  }
+
+  teardown(): void {
+    this.context.statistics.remove(this.statistics);
   }
 }
 
@@ -1011,7 +1020,6 @@ export const omfwd: OutputModule = {
     config.caExtraFiles = stringParam(values, 'streamdriver.caextrafiles') ?? config.caExtraFiles;
     config.keyFile = stringParam(values, 'streamdriver.keyfile') ?? config.keyFile;
     config.certFile = stringParam(values, 'streamdriver.certfile') ?? config.certFile;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   reset(context) {

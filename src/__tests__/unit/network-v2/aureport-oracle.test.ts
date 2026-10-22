@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync, writeFileSync } from 'fs';
 import { runAureport } from '@/network/devices/linux/audit/tools/AureportTool';
 import { hostClock } from '@/network/devices/linux/audit/tools/AuditHostClock';
 import type { AuditToolHost } from '@/network/devices/linux/audit/tools/AuditToolHost';
 
 interface Case { log: string; args: string[]; tz?: string; stdout: string; stderr: string; code: number }
-const fixture = JSON.parse(readFileSync('src/__tests__/support/oracle/audit-tools/aureport-3.1.2.json', 'utf8')) as {
-  logs: Record<string, string>; cases: Case[];
-};
+interface Fixture { logs: Record<string, string>; cases: Case[] }
+const FIXTURES = ['aureport-3.1.2.json', 'aureport-enriched-3.1.2.json'];
+let fixture!: Fixture;
 
 function labHost(c: Case): AuditToolHost {
   const clock = hostClock(c.tz ?? 'UTC');
@@ -35,10 +35,14 @@ function replay(c: Case): string | null {
   return null;
 }
 
-describe('aureport against the real 3.1.2 binary', () => {
+describe.each(FIXTURES)('aureport against the real 3.1.2 binary (%s)', (file) => {
+  beforeAll(() => {
+    fixture = JSON.parse(readFileSync(`src/__tests__/support/oracle/audit-tools/${file}`, 'utf8')) as Fixture;
+  });
+
   it('replays', () => {
     const failures = fixture.cases.map(replay).filter((f): f is string => f !== null);
-    require('fs').writeFileSync('/tmp/claude-0/scratch/aureport-failures.txt', `${failures.length}/${fixture.cases.length}\n` + failures.join('\n=====\n'));
+    writeFileSync(`/tmp/claude-0/scratch/aureport-${file}-failures.txt`, `${failures.length}/${fixture.cases.length}\n` + failures.join('\n=====\n'));
     expect(failures.length).toBe(0);
   });
 });

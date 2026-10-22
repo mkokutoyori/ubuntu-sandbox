@@ -163,6 +163,7 @@ export interface InterpreterOptions {
   /** True for a backgrounded job — makes unconditional loops (`while
    *  true`) run their body once, then park via {@link DaemonParkSignal}. */
   daemonMode?: boolean;
+  stdin?: string;
 }
 
 /**
@@ -236,6 +237,11 @@ export class BashInterpreter {
     this.aliases = options.aliases ?? new AliasTable();
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
+    if (options.stdin !== undefined) {
+      const lines = options.stdin.split('\n');
+      if (lines[lines.length - 1] === '') lines.pop();
+      this.loopStdin = lines;
+    }
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',

@@ -49,14 +49,14 @@ describe('configuration loading', () => {
   it('reports an unknown module the way rsyslogd -N1 does', () => {
     const { lab } = single('module(load="imfoo")\n*.* /var/log/x.log');
     expect(lab.loader.log.lines()[0]).toBe(
-      "rsyslogd: could not load module 'imfoo', errors: trying to load module /usr/lib/x86_64-linux-gnu/rsyslog/imfoo.so: /usr/lib/x86_64-linux-gnu/rsyslog/imfoo.so: cannot open shared object file: No such file or directory [v8.2112.0 try https://www.rsyslog.com/e/2066 ]",
+      "rsyslogd: could not load module 'imfoo', errors: trying to load module /usr/lib/x86_64-linux-gnu/rsyslog/imfoo.so: /usr/lib/x86_64-linux-gnu/rsyslog/imfoo.so: cannot open shared object file: No such file or directory [v8.2610.0 try https://www.rsyslog.com/e/2066 ]",
     );
   });
 
   it('reports a config without any action', () => {
     const { lab } = single('module(load="imudp")');
     expect(lab.loader.log.lines()).toContain(
-      'rsyslogd: there are no active actions configured. Inputs would run, but no output whatsoever were created. [v8.2112.0 try https://www.rsyslog.com/e/2103 ]',
+      'rsyslogd: there are no active actions configured. Inputs would run, but no output whatsoever were created. [v8.2610.0 try https://www.rsyslog.com/e/2103 ]',
     );
   });
 
@@ -84,7 +84,7 @@ ruleset(name="inner") { if $msg contains "drop" then stop }
     const { host, lab } = single('*.* ~\n*.* /var/log/never.log');
     submitLocal(lab, MSG('x'));
     expect(host.fileSystem.has('/var/log/never.log')).toBe(false);
-    expect(lab.loader.log.lines()).toContain("rsyslogd: warning: ~ action is deprecated, consider using the 'stop' statement instead [v8.2112.0 try https://www.rsyslog.com/e/2307 ]");
+    expect(lab.loader.log.lines()).toContain("rsyslogd: warning: ~ action is deprecated, consider using the 'stop' statement instead [v8.2610.0 try https://www.rsyslog.com/e/2307 ]");
   });
 
   it('omusrmsg writes to the terminals of the named user and * reaches everybody', () => {
@@ -154,7 +154,7 @@ describe('action state machine on the simulated clock', () => {
     host.advance(31_000);
     submitLocal(lab, MSG('three'));
     expect(target.delivered).toEqual(['Oct 19 12:00:01 ubuntu alice: three']);
-    expect(libc(host)).toContain("action 'action-0-omflaky' resumed (module 'omflaky') [v8.2112.0 try https://www.rsyslog.com/e/2359 ]");
+    expect(libc(host)).toContain("action 'action-0-omflaky' resumed (module 'omflaky') [v8.2610.0 try https://www.rsyslog.com/e/2359 ]");
   });
 
   it('the suspension lengthens by one resume interval after every ten failed retries in a row', () => {
@@ -238,7 +238,7 @@ describe('action state machine on the simulated clock', () => {
   it('omfile reports an open failure and suspends, but its empty tryResume resumes it at once (it has no retry timer of its own)', () => {
     const { host, lab } = single('*.* action(type="omfile" file="/var/missing/out.log" createDirs="off")');
     submitLocal(lab, MSG('one'));
-    expect(libc(host)[0]).toBe("omfile: open file '/var/missing/out.log' failed: No such file or directory [v8.2112.0 try https://www.rsyslog.com/e/2207 ]");
+    expect(libc(host)[0]).toBe("omfile: open file '/var/missing/out.log' failed: No such file or directory [v8.2610.0 try https://www.rsyslog.com/e/2207 ]");
     expect(libc(host).some((text) => text.startsWith("action 'action-0-builtin:omfile' suspended (module 'builtin:omfile'), retry 0."))).toBe(true);
     expect(libc(host).some((text) => text.startsWith("action 'action-0-builtin:omfile' resumed"))).toBe(true);
   });

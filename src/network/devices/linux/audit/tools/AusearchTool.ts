@@ -687,12 +687,18 @@ class Ausearch {
     return true;
   }
 
+  private loadInterpretationsForMatch(e: AuditEvent): void {
+    if (this.eventTuid === null && this.eventTeuid === null && this.eventTauid === null) return;
+    if (e.count === 1 || e.head?.type === AUDIT.SYSCALL) this.loadInterpretationsOnce(e.head?.interp ?? null);
+  }
+
   private match(e: AuditEvent): boolean {
     const { startTime, endTime } = this.time;
     if (!(startTime === 0 || e.e.sec >= startTime)) return false;
     if (!(endTime === 0 || e.e.sec <= endTime)) return false;
     if (!(this.eventId === UINT_MAX || this.eventId === e.e.serial)) return false;
-    if (extractSearchItems(e, { flags: this.flags, userName: (uid) => this.host.userName(uid), debug: this.eventDebug ? (m) => this.out.eprintf(m) : undefined }) !== 0) return false;
+    this.loadInterpretationsForMatch(e);
+    if (extractSearchItems(e, { flags: this.flags, userName: (uid) => this.host.userName(uid), interpretation: (name) => this.interpreter.lookupInterpretation(name), debug: this.eventDebug ? (m) => this.out.eprintf(m) : undefined }) !== 0) return false;
     const s = e.s;
     if (this.eventNodes) {
       if (e.e.node === null) return false;
@@ -751,7 +757,7 @@ class Ausearch {
   }
 
   private outputRaw(e: AuditEvent): void {
-    for (const n of e.records) this.out.printf(`${n.message}\n`);
+    for (const n of e.records) this.out.printf(`${n.message}${e.enriched ? `\u001d${n.interp ?? ''}` : ''}\n`);
   }
 
   private outputDefault(e: AuditEvent): void {
@@ -803,6 +809,26 @@ class Ausearch {
   }
 
   private outputInterpretedRecord(n: AuditEvent['records'][number], e: AuditEvent['e']): void {
+    this.loadInterpretationsOnce(n.interp);
+    this.printInterpretedRecord(n, e);
+    this.freeInterpretations();
+  }
+
+  private interpretationsLoaded = false;
+
+  private loadInterpretationsOnce(interp: string | null): void {
+    if (this.interpretationsLoaded) return;
+    this.interpreter.loadInterpretations(interp);
+    this.interpretationsLoaded = true;
+  }
+
+  private freeInterpretations(): void {
+    if (!this.interpretationsLoaded) return;
+    this.interpreter.freeInterpretations();
+    this.interpretationsLoaded = false;
+  }
+
+  private printInterpretedRecord(n: AuditEvent['records'][number], e: AuditEvent['e']): void {
     this.machine = -1;
     this.curSyscall = -1;
     let line = n.message;
@@ -948,6 +974,7 @@ class Ausearch {
 
   private processText(text: string, lastFile: boolean): number {
     for (const event of readEvents(this.assembler, text, lastFile && !this.checkpointFile)) {
+      this.freeInterpretations();
       if (this.match(event)) {
         let doOutput = 1;
         if (this.checkpointFile) doOutput = this.checkpointDecision(event.e);

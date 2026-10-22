@@ -4,6 +4,7 @@ import { AuditEvent, type AuditEventTime } from './AuditSearchParser';
 import { strtoul } from './AuditCString';
 
 const EOE_TIMEOUT = 2;
+const INTERPRETATION_SEPARATOR = '\u001d';
 
 const NAME_TO_TYPE = new Map<string, number>(AUDIT_MESSAGE_TYPES.map(([value, name]) => [name, value]));
 const TYPE_TO_NAME = new Map<number, string>(AUDIT_MESSAGE_TYPES.map(([value, name]) => [value, name]));
@@ -105,7 +106,12 @@ export class AuditEventAssembler {
     const line = rawLine.replace(/\n$/, '');
     const e = this.extractTimestamp(line);
     if (!e) return false;
-    const node = { message: line, type: e.type, a0: 0n, a1: 0n };
+    const separator = line.indexOf(INTERPRETATION_SEPARATOR);
+    const node = {
+      message: separator < 0 ? line : line.slice(0, separator),
+      interp: separator < 0 ? null : line.slice(separator + 1),
+      type: e.type, a0: 0n, a1: 0n,
+    };
     for (const slot of this.slots) {
       if (slot.status !== 'building' || !slot.event) continue;
       const other = slot.event.e;

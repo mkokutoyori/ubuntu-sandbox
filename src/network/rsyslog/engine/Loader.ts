@@ -1,6 +1,7 @@
-import { NvList, type ConfigObject, type Location, type Stmt } from '../config/Ast';
+import { NvList, type ConfigObject, type Expr, type Location, type Stmt } from '../config/Ast';
 import { decodePriorityFilter, decodePropertyFilter } from '../config/Filters';
-import { prepareFunctions, checkFunctionCall } from '../config/Expressions';
+import { bindFunctionData, prepareFunctions, checkFunctionCall } from '../config/Expressions';
+import { LookupRef } from './LookupTable';
 import { ConfigScanner, type Diagnostic, type ScannerEnvironment } from '../config/Lexer';
 import { ConfigParser, type ConfigSink } from '../config/Parser';
 import {
@@ -9,7 +10,7 @@ import {
 } from '../config/Params';
 import { DEFAULT_RFC3164_SETTINGS, Rfc3164Parser, Rfc5424Parser, defaultParserChain, type Rfc3164ParserSettings } from '../MessageParser';
 import { parseLegacyTemplate, standardTemplates, templateFromObject, TemplateError, type Template } from '../Template';
-import type { ActionDefinition, ActionOptions, LoadedConfig, RulesetDefinition } from './Config';
+import type { ActionDefinition, ActionOptions, ActionRateLimit, LoadedConfig, RulesetDefinition } from './Config';
 import { applyDirective } from './Directives';
 import type { RsyslogHost } from './Host';
 import { DiagnosticLog, RS_RET } from './Log';
@@ -19,8 +20,13 @@ import type {
 } from './Modules';
 import { AllowedSenderList, parseAllowedSenderEntries, type AllowedSenderEnvironment } from './AllowedSenders';
 import { LocalClock } from './LocalClock';
+import { Janitor } from './Janitor';
 import { RateLimiter } from './RateLimiter';
+import { RateLimitRegistry, type SharedRateLimit } from './SharedRateLimit';
 import { SenderResolver } from './SenderResolver';
+import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
+import { PercentileStatsRegistry } from './PercentileStats';
+import { Statistics } from './Statistics';
 import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type QueueSettings } from './Settings';
 
 export interface ModuleCatalog {
@@ -78,7 +84,25 @@ const PARSER_PARAMS: readonly ParamDescriptor[] = [
 
 const RATELIMIT_PARAMS: readonly ParamDescriptor[] = [
   { name: 'name', type: 'string', required: true }, { name: 'interval', type: 'int' }, { name: 'burst', type: 'int' },
-  { name: 'severity', type: 'int' }, { name: 'policy', type: 'string' },
+  { name: 'severity', type: 'severity' }, { name: 'policy', type: 'string' }, { name: 'policyWatch', type: 'binary' },
+  { name: 'policyWatchDebounce', type: 'string' }, { name: 'perSource', type: 'binary' }, { name: 'perSourcePolicy', type: 'string' },
+  { name: 'perSourceKeyTpl', type: 'string' }, { name: 'perSourceMaxStates', type: 'int' }, { name: 'perSourceTopN', type: 'int' },
+];
+
+const LOOKUP_TABLE_PARAMS: readonly ParamDescriptor[] = [
+  { name: 'name', type: 'string', required: true }, { name: 'file', type: 'string', required: true }, { name: 'reloadOnHUP', type: 'binary' },
+];
+
+const DYN_STATS_PARAMS: readonly ParamDescriptor[] = [
+  { name: 'name', type: 'string', required: true }, { name: 'resettable', type: 'binary' },
+  { name: 'maxCardinality', type: 'positive' }, { name: 'unusedMetricLife', type: 'positive' },
+  { name: 'persistStateInterval', type: 'positive' }, { name: 'persistStateTimeInterval', type: 'positive' },
+  { name: 'statefile.directory', type: 'string' },
+];
+
+const PERCENTILE_STATS_PARAMS: readonly ParamDescriptor[] = [
+  { name: 'name', type: 'string', required: true }, { name: 'delimiter', type: 'string' },
+  { name: 'percentiles', type: 'array' }, { name: 'windowSize', type: 'positive' },
 ];
 
 const TIMEZONE_PARAMS: readonly ParamDescriptor[] = [{ name: 'id', type: 'string', required: true }, { name: 'offset', type: 'string', required: true }];
@@ -145,9 +169,16 @@ export class ConfigLoader implements ConfigSink {
 
   constructor(private readonly options: LoaderOptions) {
     const settings = defaultGlobalSettings();
+    const statistics = new Statistics();
     this.config = {
       settings, templates: new Map(), rulesets: new Map(), modules: new Map(), inputs: [], actions: [], parsers: new Map(),
-      rateLimits: new Map(), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
+      rateLimits: new RateLimitRegistry({
+        runtime: () => this.runtimeSink, files: options.host.files, statistics, template: (name) => this.config.templates.get(name),
+        schedule: (callback, delay) => options.host.schedule(callback, delay), nowMs: () => options.host.clock.wallMs(),
+      }),
+      lookupTables: [], statistics, janitor: new Janitor(),
+      dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), runtime: () => this.runtimeSink, files: options.host.files, workDirectory: () => settings.workDirectory }),
+      percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, fatalConfigError: null, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -165,6 +196,9 @@ export class ConfigLoader implements ConfigSink {
         internal: (severity, code, text, mark, facility) => this.runtimeSink.internal(severity, code, text, mark, facility),
       },
       settings,
+      statistics: this.config.statistics,
+      janitor: this.config.janitor,
+      recordSender: (sender, messages, seconds) => this.recordSender(sender, messages, seconds),
       template: (name) => this.config.templates.get(name),
       report: (message) => this.reportAt(message),
       warn: (message) => this.warnAt(message),
@@ -293,19 +327,30 @@ export class ConfigLoader implements ConfigSink {
     return '';
   }
 
+  private recordSender(sender: string, messages: number, seconds: number): void {
+    if (!this.config.settings.senders.keepTrack) return;
+    this.config.statistics.senders.record(sender, messages, seconds, () => {
+      if (this.config.settings.senders.reportNew) this.runtimeSink.info(`new sender '${sender}'`, RS_RET.SENDER_APPEARED);
+    });
+  }
+
   private createModuleRateLimiter(spec: ModuleRateLimitSpec): { readonly limiter: ModuleRateLimiter | null } | null {
     let interval = spec.interval;
     let burst = spec.burst;
-    let severity = spec.severity ?? 0;
+    const severity = spec.severity ?? 0;
+    let shared: SharedRateLimit | undefined;
     if (spec.configName !== null) {
-      const shared = this.config.rateLimits.get(spec.configName);
+      shared = this.config.rateLimits.find(spec.configName);
       if (shared === undefined) {
         this.runtimeSink.error(`ratelimit config '${spec.configName}' not found`, RS_RET.NOT_FOUND);
         return null;
       }
+      if (shared.scope !== 'input') {
+        this.runtimeSink.error(`ratelimit config '${spec.configName}' has incompatible scope for ${spec.module}`, RS_RET.CONFIG_ERROR);
+        return null;
+      }
       interval = shared.interval;
       burst = shared.burst;
-      severity = Math.max(0, shared.severity);
     } else if (interval <= 0 && spec.forInput !== true) {
       return { limiter: null };
     }
@@ -315,8 +360,33 @@ export class ConfigLoader implements ConfigSink {
         name: spec.dynamicName === undefined ? spec.module : `${spec.module}[${spec.dynamicName}]`, interval, burst, severityThreshold: severity, reduceRepeated: spec.forInput === true && this.config.settings.repeatedMessageReduction,
         internal: (level, code, text) => this.runtimeSink.internal(level, code, text),
         nowSeconds: () => Math.floor(host.clock.wallMs() / 1000),
+        shared, registry: this.config.rateLimits,
       }),
     };
+  }
+
+  private createOutputRateLimiter(configName: string, actionName: string, direct: boolean): ActionRateLimit | null {
+    const shared = this.config.rateLimits.find(configName);
+    if (shared === undefined) {
+      this.runtimeSink.error(`ratelimit config '${configName}' not found`, RS_RET.NOT_FOUND);
+      return null;
+    }
+    if (shared.scope !== 'output') {
+      this.runtimeSink.error(`ratelimit config '${configName}' has incompatible scope for action`, RS_RET.CONFIG_ERROR);
+      return null;
+    }
+    const host = this.options.host;
+    const limiter = new RateLimiter({
+      name: `action[${actionName}]`, interval: shared.interval, burst: shared.burst, severityThreshold: 0, reduceRepeated: false,
+      internal: (level, code, text) => this.runtimeSink.internal(level, code, text),
+      nowSeconds: () => Math.floor(host.clock.wallMs() / 1000), shared, registry: this.config.rateLimits, noTimeCache: true,
+    });
+    if (direct) shared.outputPaceForbidden = true;
+    if (shared.outputMode === 'pace' && direct) {
+      this.runtimeSink.error(`action '${actionName}': action.ratelimit.name='${configName}' uses pace mode, which requires a non-direct action queue`, RS_RET.CONFIG_ERROR);
+      return null;
+    }
+    return { limiter, shared };
   }
 
   private takeScannerDiagnostic(diagnostic: Diagnostic): void {
@@ -575,10 +645,9 @@ export class ConfigLoader implements ConfigSink {
       case 'ruleset': this.processRuleset(object); break;
       case 'parser': this.processParser(object); break;
       case 'ratelimit': this.processRateLimit(object); break;
-      case 'lookup_table':
-      case 'dyn_stats':
-      case 'percentile_stats':
-        break;
+      case 'lookup_table': this.processLookupTable(object); break;
+      case 'dyn_stats': this.processDynStats(object); break;
+      case 'percentile_stats': this.processPercentileStats(object); break;
       default: return;
     }
     reportUnused(object.params, (message) => this.reportAt(message, object.location));
@@ -732,21 +801,108 @@ export class ConfigLoader implements ConfigSink {
     }
   }
 
+  private findLookupTable(name: string): LookupRef | undefined {
+    return this.config.lookupTables.find((table) => table.name === name);
+  }
+
+  private processLookupTable(object: ConfigObject): void {
+    const values = getParams(object.params, LOOKUP_TABLE_PARAMS, this.paramEnvironment());
+    if (values === null) return;
+    const name = stringParam(values, 'name');
+    const file = stringParam(values, 'file');
+    if (name === undefined || file === undefined) return;
+    if (this.findLookupTable(name) !== undefined) {
+      this.log.error(`lookup_table: duplicate name '${name}' in current config set`, RS_RET.CONFIG_ERROR);
+      return;
+    }
+    const table = new LookupRef(
+      name, file, this.options.host.files,
+      { error: (text, code, errno) => this.runtimeSink.error(text, code, errno), info: (text) => this.runtimeSink.info(text) },
+      { schedule: (callback, delay) => this.options.host.schedule(callback, delay) },
+    );
+    const reloadOnHup = numberParam(values, 'reloadOnHUP');
+    if (reloadOnHup !== undefined) table.reloadOnHup = reloadOnHup !== 0;
+    this.config.lookupTables.push(table);
+    table.load();
+  }
+
+  private processDynStats(object: ConfigObject): void {
+    const values = getParams(object.params, DYN_STATS_PARAMS, this.paramEnvironment());
+    if (values === null) return;
+    const name = stringParam(values, 'name');
+    if (name === undefined) return;
+    const resettable = numberParam(values, 'resettable');
+    this.config.dynStats.create({
+      name,
+      resettable: resettable === undefined ? true : resettable !== 0,
+      maxCardinality: numberParam(values, 'maxCardinality') ?? DEFAULT_MAX_CARDINALITY,
+      unusedMetricLifeSeconds: numberParam(values, 'unusedMetricLife') ?? DEFAULT_UNUSED_METRIC_LIFE_SECONDS,
+      persistUpdates: numberParam(values, 'persistStateInterval') ?? 0,
+      persistSeconds: numberParam(values, 'persistStateTimeInterval') ?? 0,
+      stateDirectory: stringParam(values, 'statefile.directory') ?? null,
+    });
+  }
+
+  private processPercentileStats(object: ConfigObject): void {
+    const values = getParams(object.params, PERCENTILE_STATS_PARAMS, this.paramEnvironment());
+    if (values === null) return;
+    const name = stringParam(values, 'name');
+    const requested = arrayParam(values, 'percentiles');
+    if (name === undefined || requested === undefined || requested.length === 0) return;
+    const percentiles: number[] = [];
+    for (const text of requested) {
+      const parsed = /^\s*[+-]?\d+$/.test(text) ? Number.parseInt(text, 10) : Number.NaN;
+      if (!(parsed >= 0 && parsed <= 100)) {
+        this.log.error(`perctile: percentile value '${text}' is invalid - must be an integer between 0 and 100`, RS_RET.PARAM_ERROR);
+        return;
+      }
+      percentiles.push(parsed);
+    }
+    const windowSize = numberParam(values, 'windowSize') ?? 0;
+    if (windowSize < 2) {
+      this.log.error(`percentile_stats: bucket '${name}' needs a windowsize of at least 2 - bucket not created`, RS_RET.CONFIG_ERROR);
+      return;
+    }
+    this.config.percentileStats.create({
+      name,
+      delimiter: stringParam(values, 'delimiter') ?? '.',
+      percentiles,
+      windowSize,
+    });
+  }
+
   private processRateLimit(object: ConfigObject): void {
     const values = getParams(object.params, RATELIMIT_PARAMS, this.paramEnvironment());
     if (values === null) return;
     const name = stringParam(values, 'name') ?? '';
-    const interval = numberParam(values, 'interval') ?? 0;
-    const burst = numberParam(values, 'burst') ?? 10000;
-    if (interval < 0) {
+    const interval = numberParam(values, 'interval');
+    const burst = numberParam(values, 'burst');
+    const severity = numberParam(values, 'severity');
+    const maxStates = numberParam(values, 'perSourceMaxStates');
+    const topN = numberParam(values, 'perSourceTopN');
+    const perSource = numberParam(values, 'perSource');
+    const perSourcePolicy = stringParam(values, 'perSourcePolicy') ?? null;
+    const perSourceKeyTemplate = stringParam(values, 'perSourceKeyTpl') ?? null;
+    const legacyPerSource = [perSource, perSourcePolicy, perSourceKeyTemplate, maxStates, topN].some((value) => value !== undefined && value !== null);
+    if ((maxStates ?? 0) < 0 || (topN ?? 0) < 0) {
+      this.log.error(`ratelimit: perSourceMaxStates/perSourceTopN must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
+      return;
+    }
+    if ((interval ?? 0) < 0) {
       this.log.error(`ratelimit: interval must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
       return;
     }
-    if (burst < 0) {
+    if ((burst ?? 10000) < 0) {
       this.log.error(`ratelimit: burst must be >= 0 for '${name}'`, RS_RET.CONFIG_ERROR);
       return;
     }
-    this.config.rateLimits.set(name, { name, interval, burst, severity: numberParam(values, 'severity') ?? -1 });
+    this.config.rateLimits.add({
+      name, interval: interval ?? 0, burst: burst ?? 10000, severity: severity ?? -1, policyFile: stringParam(values, 'policy') ?? null,
+      policyWatch: (numberParam(values, 'policyWatch') ?? 0) !== 0, policyWatchDebounce: stringParam(values, 'policyWatchDebounce') ?? null,
+      perSource: (perSource ?? 0) !== 0 || perSourcePolicy !== null, perSourcePolicyFile: perSourcePolicy, perSourceKeyTemplate,
+      perSourceMaxStates: maxStates ?? 0, perSourceTopN: topN ?? 0,
+      hasInlinePolicyParams: [interval, burst, severity].some((value) => value !== undefined && value !== null), hasLegacyPerSourceParams: legacyPerSource,
+    });
   }
 
   script(statements: Stmt[]): void {
@@ -780,6 +936,14 @@ export class ConfigLoader implements ConfigSink {
       warn: (message) => this.warnAt(message),
       uidOf: (user) => this.options.host.users.uidOf(user),
       gidOf: (group) => this.options.host.users.gidOf(group),
+      unresolvedId: (message) => {
+        if (this.config.settings.abortOnIdResolutionFail) {
+          this.config.fatalConfigError ??= message;
+          return;
+        }
+        this.log.error(message, RS_RET.NOT_FOUND);
+        this.config.hadErrors = true;
+      },
     });
     if (rest === null) return;
     const remainder = rest.trim();
@@ -945,9 +1109,16 @@ export class ConfigLoader implements ConfigSink {
       }
       templates.push({ request, template });
     }
-    const definition: ActionDefinition = {
-      id: this.nextActionId++, instance, templates, options, moduleDisplayName: module.builtin ? `builtin:${module.name}` : module.name,
-    };
+    const moduleDisplayName = module.builtin ? `builtin:${module.name}` : module.name;
+    let outputLimiter: ActionRateLimit | null = null;
+    if (options.rateLimitName !== null) {
+      outputLimiter = this.createOutputRateLimiter(options.rateLimitName, options.name ?? `action-${this.nextActionId - 1}-${moduleDisplayName}`, options.queue.type === 'Direct');
+      if (outputLimiter === null) {
+        this.config.hadErrors = true;
+        return null;
+      }
+    }
+    const definition: ActionDefinition = { id: this.nextActionId++, instance, templates, options, moduleDisplayName, outputLimiter };
     this.config.actions.push(definition);
     return definition;
   }
@@ -1028,9 +1199,81 @@ export class ConfigLoader implements ConfigSink {
     return { k: 'call', name };
   }
 
-  checkFunction(name: string, argumentCount: number, location: Location): void {
+  checkFunction(name: string, argumentCount: number, location: Location, expression: Expr): void {
     const problem = checkFunctionCall(name, argumentCount);
-    if (problem !== null) this.reportAt(problem, location);
+    if (problem !== null) {
+      this.reportAt(problem, location);
+      return;
+    }
+    if (name === 'lookup' && expression.k === 'func') this.resolveLookupFunction(expression, location);
+    if (name === 'dyn_inc' && expression.k === 'func') this.resolveDynStatsFunction(expression, location);
+    if (name === 'percentile_observe' && expression.k === 'func') this.resolvePercentileFunction(expression, location);
+  }
+
+  private resolvePercentileFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
+    const first = expression.args[0];
+    if (first.k !== 'str') {
+      this.reportAt('percentile-stats bucket-name (param 1) of perctile-stats manipulating functions like percentile_observe must be a constant string', location);
+      return;
+    }
+    const bucket = this.config.percentileStats.find(first.value);
+    if (bucket === undefined) {
+      this.reportAt(`perctile-stats bucket '${first.value}' not found`, location);
+      return;
+    }
+    bindFunctionData(expression, bucket);
+  }
+
+  private resolveDynStatsFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
+    const first = expression.args[0];
+    if (first.k !== 'str') {
+      this.reportAt('dyn-stats bucket-name (param 1) of dyn-stats manipulating functions like dyn_inc must be a constant string', location);
+      return;
+    }
+    const bucket = this.config.dynStats.find(first.value);
+    if (bucket === undefined) {
+      this.reportAt(`dyn-stats bucket '${first.value}' not found`, location);
+      return;
+    }
+    bindFunctionData(expression, bucket);
+  }
+
+  private resolveLookupFunction(expression: Extract<Expr, { k: 'func' }>, location: Location): void {
+    const first = expression.args[0];
+    if (first.k !== 'str') {
+      this.reportAt('table name (param 1) of lookup() must be a constant string', location);
+      return;
+    }
+    const table = this.findLookupTable(first.value);
+    if (table === undefined) {
+      this.reportAt(`lookup table '${first.value}' not found (used in function: lookup)`, location);
+      return;
+    }
+    bindFunctionData(expression, table);
+  }
+
+  private checkReloadLookupStatement(statement: Extract<Stmt, { k: 'reloadLookupTable' }>): Stmt | null {
+    const usage = 'statement ignored: reload_lookup_table(table_name, optional:stub_value_in_case_reload_fails) ';
+    const args = statement.args;
+    if (args.length !== 1 && args.length !== 2) {
+      this.reportAt(`${usage}expected 1 or 2 arguments, but found '${args.length}'\n`);
+      return null;
+    }
+    let failed = false;
+    let stub: string | null = null;
+    if (args.length === 2) {
+      if (args[1].k !== 'str') {
+        this.reportAt(`${usage}expects a litteral string for second argument\n`);
+        failed = true;
+      } else stub = args[1].value;
+    }
+    if (args[0].k !== 'str') {
+      this.reportAt(`${usage}expects a litteral string for first argument\n`);
+      failed = true;
+    }
+    if (failed || args[0].k !== 'str') return null;
+    if (this.findLookupTable(args[0].value) === undefined) this.reportAt(`lookup table '${args[0].value}' not found\n`);
+    return { k: 'reloadLookupTable', args, table: args[0].value, stub };
   }
 
   report(diagnostic: Diagnostic): void {
@@ -1042,6 +1285,11 @@ export class ConfigLoader implements ConfigSink {
     for (const statement of statements) {
       switch (statement.k) {
         case 'nop': break;
+        case 'reloadLookupTable': {
+          const checked = this.checkReloadLookupStatement(statement);
+          if (checked !== null) result.push(checked);
+          break;
+        }
         case 'if': {
           prepareFunctions(statement.expr, (message) => this.reportAt(message));
           result.push({ ...statement, then: this.prepareStatements(statement.then), else: statement.else === null ? null : this.prepareStatements(statement.else) });

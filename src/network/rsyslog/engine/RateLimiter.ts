@@ -1,5 +1,6 @@
 import type { RsyslogMessage } from '../Message';
 import { RS_RET } from './Log';
+import type { RateLimitRegistry, SharedRateLimit } from './SharedRateLimit';
 
 export interface RateLimiterOptions {
   readonly name: string;
@@ -9,6 +10,9 @@ export interface RateLimiterOptions {
   readonly reduceRepeated: boolean;
   readonly internal: (severity: number, code: number, text: string) => void;
   readonly nowSeconds: () => number;
+  readonly shared?: SharedRateLimit;
+  readonly registry?: RateLimitRegistry;
+  readonly noTimeCache?: boolean;
 }
 
 export interface RateLimitDecision {
@@ -26,18 +30,32 @@ export class RateLimiter {
 
   constructor(private readonly options: RateLimiterOptions) {}
 
+  private get interval(): number {
+    return this.options.shared?.interval ?? this.options.interval;
+  }
+
+  private get burst(): number {
+    return this.options.shared?.burst ?? this.options.burst;
+  }
+
+  private get threshold(): number {
+    const shared = this.options.shared;
+    return shared === undefined ? this.options.severityThreshold : Math.max(0, shared.severity);
+  }
+
   private tellLostCount(): void {
     if (this.missed === 0) return;
     this.options.internal(
       6,
       RS_RET.RATE_LIMITED,
-      `${this.options.name}: ${this.missed} messages lost due to rate-limiting (${this.options.burst} allowed within ${this.options.interval} seconds)`,
+      `${this.options.name}: ${this.missed} messages lost due to rate-limiting (${this.burst} allowed within ${this.interval} seconds)`,
     );
     this.missed = 0;
   }
 
   private within(source: string, seconds: number): boolean {
-    const { interval, burst } = this.options;
+    const interval = this.interval;
+    const burst = this.burst;
     if (interval === 0) return true;
     if (this.begin === 0) this.begin = seconds;
     if (seconds > this.begin + interval || seconds < this.begin) {
@@ -72,17 +90,38 @@ export class RateLimiter {
   }
 
   admit(source: string): boolean {
-    if (this.options.interval === 0) return true;
+    if (this.interval === 0) return true;
     return this.within(source, this.options.nowSeconds());
   }
 
+  waitMicroseconds(): number {
+    const interval = this.interval;
+    if (interval === 0) return 0;
+    const seconds = this.options.nowSeconds();
+    if (this.begin === 0) this.begin = seconds;
+    if (seconds >= this.begin + interval || seconds < this.begin) {
+      this.begin = seconds;
+      this.done = 0;
+      this.tellLostCount();
+    }
+    if (this.burst > this.done) {
+      this.done++;
+      return 0;
+    }
+    const resume = this.begin + interval;
+    const wait = resume > seconds ? resume - seconds : 1;
+    return wait > 4294 ? 4294967295 : wait * 1_000_000;
+  }
+
   decide(message: RsyslogMessage): RateLimitDecision {
-    const { interval, severityThreshold, reduceRepeated } = this.options;
+    const { reduceRepeated } = this.options;
+    const interval = this.interval;
+    const severityThreshold = this.threshold;
     const severity = reduceRepeated || severityThreshold > 0 ? message.severity : 0;
     if (interval > 0 && severity >= severityThreshold && !this.within(`${message.hostnameOrSender}:${message.effectiveAppName}`, message.receivedAtSeconds)) {
       return { deliver: null, repeated: null };
     }
-    if (!reduceRepeated) return { deliver: message, repeated: null };
+    if (!reduceRepeated) return this.perSourceVerdict(message, null);
     const previous = this.previous;
     if (
       previous !== null && previous.msg === message.msg && previous.hostnameOrSender === message.hostnameOrSender
@@ -98,6 +137,15 @@ export class RateLimiter {
       this.suppressed = 0;
     }
     this.previous = message;
-    return { deliver: message, repeated };
+    return this.perSourceVerdict(message, repeated);
+  }
+
+  private perSourceVerdict(message: RsyslogMessage, repeated: RsyslogMessage | null): RateLimitDecision {
+    const shared = this.options.shared;
+    const registry = this.options.registry;
+    if (shared === undefined || registry === undefined || !shared.perSource.enabled) return { deliver: message, repeated };
+    const key = shared.perSource.keyOf(message, (template, source) => registry.render(template, source));
+    if (key === null || key.length === 0) return { deliver: message, repeated };
+    return shared.perSource.check(key, message.receivedAtSeconds) ? { deliver: null, repeated } : { deliver: message, repeated };
   }
 }

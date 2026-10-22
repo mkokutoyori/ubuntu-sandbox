@@ -30,6 +30,7 @@ export interface EvaluationEnvironment {
   environment(name: string): string | undefined;
   random(): number;
   warn(message: string): void;
+  error(message: string): void;
 }
 
 export interface FunctionSignature {
@@ -220,6 +221,19 @@ function variableExists(prop: PropertyDescriptor, message: RsyslogMessage, env: 
   const root = prop.id === 'cee' ? message.cee : prop.id === 'local-var' ? message.localVariables : env.render.globalVariables;
   if (prop.name === '' || prop.name === '!') return true;
   return jsonGet(root, prop.name, env.caseSensitiveVariables) !== undefined;
+}
+
+export interface LookupTableReference {
+  readonly keyType: 'string' | 'uint' | 'none';
+  lookup(key: string | number): string;
+}
+
+export interface DynStatsReference {
+  inc(metric: string): number;
+}
+
+export interface PercentileStatsReference {
+  observe(key: string, value: bigint): number;
 }
 
 export interface CompiledRegex {
@@ -444,6 +458,41 @@ const SIGNATURES: FunctionSignature[] = [
   { name: 'ip42num', min: 1, max: 1, call: (a, _p, m, e) => num(ipv4ToNumber(textOf(a[0], m, e))) },
   { name: 'ipv42num', min: 1, max: 1, call: (a, _p, m, e) => num(ipv4ToNumber(textOf(a[0], m, e))) },
   {
+    name: 'lookup', min: 2, max: 2,
+    call: (a, p, m, e) => {
+      const table = p as LookupTableReference | undefined;
+      if (table === undefined) return str('TABLE-NOT-FOUND');
+      const key = evaluate(a[1], m, e);
+      const keyType = table.keyType;
+      if (keyType === 'string') return str(table.lookup(valueToString(key)));
+      if (keyType === 'uint') return str(table.lookup(Number(BigInt.asUintN(32, BigInt(Math.trunc(valueToNumber(key).n))))));
+      return str(table.lookup(0));
+    },
+  },
+  {
+    name: 'dyn_inc', min: 2, max: 2,
+    call: (a, p, m, e) => {
+      const bucket = p as DynStatsReference | undefined;
+      if (bucket === undefined) return num(-1);
+      return num(bucket.inc(textOf(a[1], m, e)));
+    },
+  },
+  {
+    name: 'percentile_observe', min: 3, max: 3,
+    call: (a, p, m, e) => {
+      const bucket = p as PercentileStatsReference | undefined;
+      if (bucket === undefined) return num(-1);
+      const key = textOf(a[1], m, e);
+      const observed = evaluate(a[2], m, e);
+      const parsed = valueToNumber(observed);
+      if (!parsed.ok) {
+        e.error(`rainerscript: percentile_obs - didn't get a valid number: ${valueToString(observed)}\n`);
+        return num(0);
+      }
+      return num(bucket.observe(key, BigInt(Math.trunc(parsed.n))));
+    },
+  },
+  {
     name: 're_match', min: 2, max: 2, prepare: regexPrepare(false),
     call: (a, p, m, e) => num((p as CompiledRegex | null)?.matcher.test(textOf(a[0], m, e)) === true ? 1 : 0),
   },
@@ -644,12 +693,16 @@ function callFunction(expr: Extract<Expr, { k: 'func' }>, message: RsyslogMessag
   return signature.call(expr.args, prepared, message, env);
 }
 
+export function bindFunctionData(expr: Expr, data: unknown): void {
+  PREPARED.set(expr, data);
+}
+
 export function prepareFunctions(expr: Expr, report: (message: string) => void): void {
   switch (expr.k) {
     case 'func': {
       const signature = SIGNATURE_TABLE.get(expr.name);
-      if (signature !== undefined && checkFunctionCall(expr.name, expr.args.length) === null) {
-        PREPARED.set(expr, signature.prepare?.(expr.args, report));
+      if (signature?.prepare !== undefined && checkFunctionCall(expr.name, expr.args.length) === null) {
+        PREPARED.set(expr, signature.prepare(expr.args, report));
       }
       for (const arg of expr.args) prepareFunctions(arg, report);
       break;

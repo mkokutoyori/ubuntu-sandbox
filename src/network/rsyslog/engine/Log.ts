@@ -1,6 +1,6 @@
 import { strerror, type Errno } from '@/network/core/Errno';
 
-export const RSYSLOG_VERSION = '8.2112.0';
+export const RSYSLOG_VERSION = '8.2610.0';
 
 export const RS_RET = {
   ERR: -3000,
@@ -50,11 +50,24 @@ export const RS_RET = {
   DEPRECATED: -2307,
   CONFOBJ_UNSUPPORTED: -2210,
   MISSING_CNFPARAMS: -2211,
+  PARAM_NOT_PERMITTED: -2222,
+  OUT_OF_MEMORY: -6,
+  TIMED_OUT: -2041,
   OK_WARN: -2186,
   RATE_LIMITED: -2177,
   RESUMED: -2359,
   ACTION_FAILED: -2123,
+  DATAFAIL: -2218,
+  SENDER_GONE_AWAY: -2429,
+  SENDER_APPEARED: -2430,
+  STREAM_DISABLED: -2127,
+  NON_SIZELIMITCMD: -2125,
   IO_ERROR: -2027,
+  JSON_UNUSABLE: -2438,
+  CONF_PARAM_INVLD: -2425,
+  OK_VALUE: 0,
+  DISCARDMSG: -2002,
+  FORCE_TERM: -2153,
   PEER_CLOSED_CONN: -2144,
   ERR_UDPSEND: -2354,
   UDP_MSGSIZE_TOO_LARGE: -2440,
@@ -66,6 +79,9 @@ export const RS_RET = {
   NOT_IMPLEMENTED: -7,
   DUP_PARAM: -2220,
   FILE_OPEN_ERROR: -2433,
+  JSON_PARSE_ERR: -2303,
+  READ_ERR: -2356,
+  NONE: -2000,
 } as const;
 
 export type LogSeverity = 'error' | 'warning' | 'info';

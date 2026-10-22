@@ -13,6 +13,10 @@ import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
 import { RateLimiter } from './RateLimiter';
+import { OperatingStateFile } from './OperatingState';
+import { RSYSLOG_VERSION } from './Log';
+import { loadQueueState, queueStatePath, saveQueueState } from './QueueState';
+import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
 
@@ -39,6 +43,7 @@ export class RsyslogEngine implements InputSubmitter {
   private oversizeLog: FileHandle | null = null;
   private internalBacklog: RsyslogMessage[] | null = null;
   private stopCallbacks: Array<() => void> = [];
+  private operatingState: OperatingStateFile | null = null;
   private readonly runtimeLog: RuntimeLog;
 
   constructor(readonly config: LoadedConfig, private readonly host: RsyslogHost, private readonly events: EngineEvents = {}) {
@@ -51,24 +56,24 @@ export class RsyslogEngine implements InputSubmitter {
     };
     this.runtimeLog = runtimeLog;
     config.bindRuntime(runtimeLog);
+    config.rateLimits.bindRenderer((template, message) => renderTemplate(template, message, this.renderContext()));
     this.defaultLimiter = this.newLimiter('rsyslogd', 0, 10000, 0);
     this.internalLimiter = this.newLimiter(
       'rsyslogd[internal_messages]', config.settings.internalMessages.rateInterval, config.settings.internalMessages.rateBurst, 0,
     );
     this.mainQueue = this.newQueue('main Q', config.settings.mainQueue, (message) => this.processThroughRuleset(message));
-    config.actions.forEach((definition) => {
-      this.actions.set(definition.id, new ActionRuntime(definition, this.actionServices(), definition.id - 1));
-    });
     for (const [name, ruleset] of config.rulesets) {
       if (ruleset.queue !== null && ruleset.queue.type !== 'Direct') {
         this.rulesetQueues.set(name, this.newQueue(`ruleset ${name} queue`, ruleset.queue, (message) => this.processThroughRuleset(message)));
       }
     }
     for (const definition of config.actions) {
+      const runtime = new ActionRuntime(definition, this.actionServices(), definition.id - 1);
+      this.actions.set(definition.id, runtime);
+      this.registerActionStatistics(runtime);
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
-      const runtime = this.actions.get(definition.id) as ActionRuntime;
-      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => runtime.commit()));
+      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; runtime.commit(); }));
     }
   }
 
@@ -76,7 +81,7 @@ export class RsyslogEngine implements InputSubmitter {
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
     endBatch: () => void = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
-    return new WorkerQueue<RsyslogMessage>(
+    const queue = new WorkerQueue<RsyslogMessage>(
       name,
       settings,
       {
@@ -88,6 +93,34 @@ export class RsyslogEngine implements InputSubmitter {
       },
       process,
     );
+    if (settings.type !== 'Direct') this.registerQueueStatistics(queue);
+    return queue;
+  }
+
+  private registerQueueStatistics(queue: WorkerQueue<RsyslogMessage>): void {
+    const counters = queue.statistics;
+    const object = this.config.statistics.create(queue.name, { origin: 'core.queue' });
+    object.addCounter({ name: 'size', read: () => queue.length });
+    object.addCounter({ name: 'enqueued', read: () => counters.enqueued, reset: () => { counters.enqueued = 0; } });
+    object.addCounter({ name: 'full', read: () => counters.full, reset: () => { counters.full = 0; } });
+    object.addCounter({ name: 'discarded.full', read: () => counters.discardedFull, reset: () => { counters.discardedFull = 0; } });
+    object.addCounter({ name: 'discarded.nf', read: () => counters.discardedNearlyFull, reset: () => { counters.discardedNearlyFull = 0; } });
+    object.addCounter({ name: 'maxqsize', read: () => counters.maxSize });
+  }
+
+  private registerActionStatistics(runtime: ActionRuntime): void {
+    const object = this.config.statistics.create(runtime.name, { origin: 'core.action' });
+    const counters = runtime.counters;
+    object.addCounter({ name: 'processed', read: () => counters.processed, reset: () => { counters.processed = 0; } });
+    object.addCounter({ name: 'batchesprocessed', read: () => counters.batchesProcessed, reset: () => { counters.batchesProcessed = 0; } });
+    object.addCounter({ name: 'failed', read: () => counters.failed, reset: () => { counters.failed = 0; } });
+    object.addCounter({ name: 'suspended', read: () => counters.suspended, reset: () => { counters.suspended = 0; } });
+    object.addCounter({ name: 'suspended.duration', read: () => counters.suspendedDuration });
+    object.addCounter({ name: 'resumed', read: () => counters.resumed, reset: () => { counters.resumed = 0; } });
+    object.addCounter({ name: 'ratelimit.allowed', read: () => counters.rateLimitAllowed, reset: () => { counters.rateLimitAllowed = 0; } });
+    object.addCounter({ name: 'ratelimit.dropped', read: () => counters.rateLimitDropped, reset: () => { counters.rateLimitDropped = 0; } });
+    object.addCounter({ name: 'ratelimit.paced', read: () => counters.rateLimitPaced, reset: () => { counters.rateLimitPaced = 0; } });
+    object.addCounter({ name: 'ratelimit.paced_usec', read: () => counters.rateLimitPacedMicroseconds, reset: () => { counters.rateLimitPacedMicroseconds = 0; } });
   }
 
   private commitActions(): void {
@@ -150,6 +183,7 @@ export class RsyslogEngine implements InputSubmitter {
       environment: (name) => settings.environment[name] ?? this.host.environment(name),
       random: () => Math.floor(this.host.random() * 0x7fffffff),
       warn: (text) => this.internal(4, -1, text),
+      error: (text) => this.runtimeLog.log(3, RS_RET.CONF_PARSE_ERROR, `error during config processing: ${text}`),
     };
   }
 
@@ -168,6 +202,7 @@ export class RsyslogEngine implements InputSubmitter {
       runAction: (definition, message) => this.runAction(definition, message),
       callRuleset: (name, message, depth) => this.callRuleset(name, message, depth),
       log: (text) => this.internal(4, -1, text),
+      reloadLookupTable: (name, stub) => this.config.lookupTables.find((table) => table.name === name)?.reload(stub),
     };
   }
 
@@ -372,6 +407,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   internal(severity: number, code: number, text: string, mark = false, facility = LOG_SYSLOG): void {
     this.events.onInternalMessage?.(severity, code, text);
+    this.operatingState?.write('MSG', text.replace(/ \[v[^\]]*\]$/, ''));
     if (!this.started) return;
     const sanitized = text.replace(/[\x00-\x1f\x7f]/g, ' ');
     const localName = this.localHostName();
@@ -419,7 +455,19 @@ export class RsyslogEngine implements InputSubmitter {
     if (this.started) return { ok: true };
     this.started = true;
     this.internalBacklog = [];
+    const stateFile = this.config.settings.operatingStateFile;
+    if (stateFile !== null) {
+      this.operatingState = new OperatingStateFile(stateFile, {
+        files: this.host.files, now: () => this.timeAt(this.host.clock.wallMs()), version: RSYSLOG_VERSION,
+        report: (text, level, code) => this.runtimeLog.log(level === 'error' ? 3 : 6, code, text),
+      });
+      this.operatingState.open();
+    }
     replay();
+    if (this.config.fatalConfigError !== null) {
+      this.runtimeLog.log(3, RS_RET.NOT_FOUND, this.config.fatalConfigError);
+      return this.abortStart(RS_RET.NOT_FOUND);
+    }
     const settings = this.config.settings;
     const process = this.host.process;
     if (settings.umask !== null) process?.setUmask(settings.umask);
@@ -462,7 +510,24 @@ export class RsyslogEngine implements InputSubmitter {
     const backlog = this.internalBacklog ?? [];
     this.internalBacklog = null;
     for (const message of backlog) this.processInternal(message);
+    this.restoreQueues();
+    this.stopCallbacks.push(this.host.scheduleEvery(() => this.runJanitor(), Math.max(1, settings.janitorInterval) * 60_000));
     return { ok: true };
+  }
+
+  private runJanitor(): void {
+    this.config.janitor.run();
+    const senders = this.config.settings.senders;
+    const oldestAllowed = Math.floor(this.host.clock.wallMs() / 1000) - senders.timeoutAfter;
+    this.config.statistics.senders.removeStale(oldestAllowed, (record) => {
+      if (!senders.reportGoneAway) return;
+      const time = this.timeAt(record.lastSeen * 1000);
+      const pad = (value: number, width = 2): string => String(value).padStart(width, '0');
+      this.runtimeLog.log(
+        4, RS_RET.SENDER_GONE_AWAY,
+        `removing sender '${record.sender}' from connection table, last seen at ${pad(time.year, 4)}-${pad(time.month)}-${pad(time.day)} ${pad(time.hour)}:${pad(time.minute)}:${pad(time.second)}`,
+      );
+    });
   }
 
   private abortStart(code: number, started: readonly InputInstance[] = []): StartOutcome {
@@ -514,10 +579,16 @@ export class RsyslogEngine implements InputSubmitter {
   stop(): void {
     if (!this.started) return;
     for (const record of this.config.inputs) record.instance.stop();
+    this.saveQueues();
     this.mainQueue.stop();
     for (const queue of this.rulesetQueues.values()) queue.stop();
     for (const queue of this.actionQueues.values()) queue.stop();
     for (const runtime of this.actions.values()) runtime.stop();
+    for (const table of this.config.lookupTables) table.stop();
+    this.config.rateLimits.close();
+    this.config.dynStats.persistAll();
+    this.operatingState?.close();
+    this.operatingState = null;
     for (const callback of this.stopCallbacks) callback();
     this.stopCallbacks = [];
     this.oversizeLog?.close();
@@ -525,8 +596,38 @@ export class RsyslogEngine implements InputSubmitter {
     this.started = false;
   }
 
+  private persistentQueues(): Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> {
+    const all = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+    const found: Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> = [];
+    for (const queue of all) {
+      const path = queueStatePath(queue.settings, this.config.settings.workDirectory);
+      if (path !== null) found.push({ queue, path });
+    }
+    return found;
+  }
+
+  private saveQueues(): void {
+    for (const { queue, path } of this.persistentQueues()) {
+      if (!saveQueueState(this.host.files, path, queue.name, queue.pending())) {
+        this.internal(3, -1, `queue '${queue.name}': could not save the queue state to ${path}`);
+      }
+    }
+  }
+
+  private restoreQueues(): void {
+    for (const { queue, path } of this.persistentQueues()) {
+      const messages = loadQueueState(this.host.files, path);
+      if (messages.length === 0) continue;
+      this.host.files.write(path, '');
+      for (const message of messages) queue.enqueue(message);
+    }
+  }
+
   hup(): void {
     for (const runtime of this.actions.values()) runtime.hup();
+    for (const record of this.config.inputs) record.instance.hup?.();
+    for (const table of this.config.lookupTables) if (table.reloadOnHup) table.reload(null);
+    this.config.rateLimits.hup();
     this.oversizeLog?.close();
     this.oversizeLog = null;
   }

@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
@@ -1628,6 +1629,12 @@ export abstract class LinuxMachine extends EndHost
       udp: this as unknown as RsyslogUdpEndpoint,
       tcp: () => this.getTcpStack(),
       holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
+      resourceUsage: () => {
+        const pid = mainPid();
+        const record = executor.processMgr.get(pid);
+        if (record === undefined) return {};
+        return { userMicroseconds: record.cpuTime * 1000, maxResidentKilobytes: record.rss, openFiles: executor.descriptorCountOf(pid) };
+      },
       descriptorLimitReached: () => {
         const pid = mainPid();
         return pid !== 0 && !executor.processMgr.canOpenDescriptor(pid, executor.descriptorSourcesFor(pid));
@@ -5534,6 +5541,14 @@ export abstract class LinuxMachine extends EndHost
 
   installCrontabContent(content: string, user: string): void {
     this.executor.installCrontab(content, user);
+  }
+
+  followAuditdForeground(line: (text: string) => void, stopped: () => void): () => void {
+    return this.executor.followAuditdForeground(line, stopped);
+  }
+
+  connectUnixStream(path: string, handlers: UnixStreamHandlers): UnixStreamConnectOutcome {
+    return this.executor.connectUnixStream(path, handlers);
   }
 
   followJournal(args: string[], sink: (line: string) => void): () => void {

@@ -147,6 +147,22 @@ function escapeQuoted(text: string): string {
   return `"${text.replace(/["\\]/g, '\\$&')}"`;
 }
 
+interface ImuxsockCounters {
+  submitted: number;
+  rateLimiters: number;
+}
+
+function counters(context: ModuleContext): ImuxsockCounters {
+  return context.moduleState('imuxsock.counters', () => {
+    const state: ImuxsockCounters = { submitted: 0, rateLimiters: 0 };
+    const object = context.statistics.create('imuxsock', { origin: 'imuxsock' });
+    object.addCounter({ name: 'submitted', read: () => state.submitted, reset: () => { state.submitted = 0; } });
+    object.addCounter({ name: 'ratelimit.discarded', read: () => 0, reset: () => undefined });
+    object.addCounter({ name: 'ratelimit.numratelimiters', read: () => state.rateLimiters, reset: () => { state.rateLimiters = 0; } });
+    return state;
+  });
+}
+
 class UnixSocketListener implements InputInstance {
   readonly bindsBeforePrivilegeDrop = true;
   readonly description: string;
@@ -156,6 +172,7 @@ class UnixSocketListener implements InputInstance {
 
   constructor(private readonly settings: SocketSettings, private readonly context: InputContext, private readonly isSystem: boolean) {
     this.description = `imuxsock(${settings.socketName})`;
+    counters(context);
   }
 
   get socketName(): string {
@@ -177,6 +194,7 @@ class UnixSocketListener implements InputInstance {
   start(): boolean {
     const settings = this.settings;
     if (settings.socketName === '') return false;
+    if (settings.rateName !== null && this.defaultRateLimiter() === null) return false;
     const binding = this.context.host.sockets.listen(
       settings.socketName,
       { unlink: settings.unlink, createPath: settings.createPath, credentials: this.usesCredentials },
@@ -206,20 +224,26 @@ class UnixSocketListener implements InputInstance {
     this.pidLimiters.clear();
   }
 
-  private limiterFor(message: LocalSocketMessage): ModuleRateLimiter | undefined {
-    const settings = this.settings;
+  private defaultRateLimiter(): ModuleRateLimiter | null {
     if (this.defaultLimiter === undefined) {
+      const settings = this.settings;
       const created = this.context.rateLimiter({
         module: 'imuxsock', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName,
         forInput: true, severity: settings.rateSeverity,
       });
       this.defaultLimiter = created === null ? null : created.limiter;
     }
-    const fallback = this.defaultLimiter ?? undefined;
+    return this.defaultLimiter;
+  }
+
+  private limiterFor(message: LocalSocketMessage): ModuleRateLimiter | undefined {
+    const settings = this.settings;
+    const fallback = this.defaultRateLimiter() ?? undefined;
     const pid = message.pid;
     if (pid === null || settings.rateInterval <= 0) return fallback;
     const known = this.pidLimiters.get(pid);
     if (known !== undefined) return known;
+    counters(this.context).rateLimiters++;
     this.prunePidLimiters();
     this.enforcePidCap();
     const details = this.context.host.sockets.processDetails(pid);
@@ -283,6 +307,7 @@ class UnixSocketListener implements InputInstance {
       ? this.specialSubmission(raw, receivedAtMs, credentials ? message.pid : null)
       : { ...this.baseSubmission(raw, receivedAtMs), ignoreDate: settings.ignoreTimestamp, parseHostname: settings.parseHostname !== 0 };
     this.context.submitter.submit({ ...submission, limiter, cee });
+    counters(this.context).submitted++;
   }
 
   private effectiveRuleset(): string | null {
@@ -525,7 +550,6 @@ export const imuxsock: InputModule = {
       );
     }
     config.configuredViaModule = true;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   implicitInstances(context) {

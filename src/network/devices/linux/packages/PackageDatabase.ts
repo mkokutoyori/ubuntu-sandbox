@@ -127,7 +127,7 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: '/proc file system utilities', },
   { name: 'psmisc', version: '23.4-2build3', arch: 'amd64',
     summary: 'utilities that use the proc file system', },
-  { name: 'rsyslog', version: '8.2112.0-2ubuntu2', arch: 'amd64',
+  { name: 'rsyslog', version: '8.2610.0-1ubuntu1', arch: 'amd64',
     summary: 'reliable system and kernel logging daemon', units: ['rsyslog'] },
   { name: 'sed', version: '4.8-1ubuntu2', arch: 'amd64',
     summary: 'GNU stream editor for filtering/transforming text', },

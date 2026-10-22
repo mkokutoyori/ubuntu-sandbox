@@ -8,14 +8,33 @@ import { AUDIT_UNSET } from './AuditUserMessage';
 import { K } from './tools/AuditKernelConstants';
 import type { Interpreter } from './tools/AuditInterpret';
 import type { LinuxAuditRules } from './LinuxAuditRules';
+import type { LocalDatagramSockets } from '../syslog/LocalDatagramSockets';
 import {
   AUDITD_CONF_PATH, clearConfig, loadAuditdConfig, type AuditdConfig, type AuditdConfigFs, type AuditMessage,
   type AuditPriority,
 } from './daemon/AuditdConfig';
 import { formatEnriched, formatRaw } from './daemon/AuditdFormat';
 import { AuditdLogWriter, type AuditdLogEnv } from './daemon/AuditdLogWriter';
+import { AudispDispatcher, type DispatcherSettings } from './daemon/dispatch/AudispDispatcher';
+import { AUDISP_PROGRAMS, scriptPlugin } from './daemon/dispatch/AudispPlugins';
 
 export type AuditdState = 'running' | 'stopped' | 'suspended';
+export type AuditdStartupState = 'disable' | 'enable' | 'nochange';
+
+export interface AuditdLaunchOptions {
+  configFile: string;
+  allowLinks: boolean;
+  startup: AuditdStartupState;
+  foreground: boolean;
+}
+
+export interface AuditdLaunchResult {
+  exitCode: number;
+  stderr: string;
+}
+
+const SERVICE_LAUNCH: AuditdLaunchOptions = { configFile: AUDITD_CONF_PATH, allowLinks: false, startup: 'enable', foreground: false };
+export const AUDITD_PID_FILE = '/var/run/auditd.pid';
 
 export const AUDITD_STATE_FILE = '/var/run/auditd.state';
 const AUDIT_VERSION = '3.1.2';
@@ -36,12 +55,33 @@ export interface AuditdDeps {
   kernelRelease: () => string;
   loadRules: () => void;
   trapSignals: (pid: number, signals: readonly string[]) => void;
+  process: {
+    spawn: () => number;
+    exit: (pid: number) => void;
+  };
+  plugins: {
+    listDirectory: (path: string) => readonly string[] | null;
+    spawn: (command: string, ppid: number) => number;
+    isAlive: (pid: number) => boolean;
+    isStopped: (pid: number) => boolean;
+    changeRunlevel: (level: 'single' | 'halt') => void;
+    terminate: (pid: number) => void;
+    libcSyslog: (priorityWithFacility: number, ident: string, pid: number, text: string) => void;
+    runProgram: (pid: number, command: string, input: string) => void;
+    sockets: LocalDatagramSockets;
+  };
 }
 
 export class LinuxAuditDaemon {
   private state: AuditdState = 'stopped';
   private config: AuditdConfig = clearConfig();
   private writer: AuditdLogWriter | null = null;
+  private dispatcher: AudispDispatcher | null = null;
+  private ownPid: number | null = null;
+  private foreground = false;
+  private launching = false;
+  private foregroundLines: string[] = [];
+  private readonly followers = new Set<{ line: (text: string) => void; stopped: () => void }>();
   private readonly subs: Unsubscribe[] = [];
 
   constructor(
@@ -54,7 +94,7 @@ export class LinuxAuditDaemon {
       bus.subscribe('linux.service.stopped', (e) => this.onLifecycle(e.payload, 'stop')),
       bus.subscribe('linux.process.signalled', (e) => this.onSignal(e.payload)),
     );
-    if (deps.serviceMgr.isActive('auditd')) this.runStart();
+    if (deps.serviceMgr.isActive('auditd')) this.runStart(SERVICE_LAUNCH);
   }
 
   dispose(): void {
@@ -81,12 +121,13 @@ export class LinuxAuditDaemon {
 
   private onLifecycle(p: ServiceLifecyclePayload, kind: 'start' | 'stop'): void {
     if (p.deviceId !== this.deviceId || p.name !== 'auditd') return;
-    if (kind === 'start') this.runStart();
+    if (kind === 'start') this.runStart(SERVICE_LAUNCH);
     else this.runStop();
   }
 
   private onSignal(p: ProcessSignalledPayload): void {
     if (p.deviceId !== this.deviceId || !p.delivered) return;
+    if (p.signal === 'SIGCONT') this.dispatcher?.refresh(p.pid);
     const mainPid = this.deps.serviceMgr.status('auditd')?.mainPid;
     if (p.comm !== 'auditd' && p.pid !== mainPid) return;
     if (p.signal === 'SIGHUP') this.runReload();
@@ -97,11 +138,50 @@ export class LinuxAuditDaemon {
   }
 
   private emit(messages: readonly AuditMessage[]): void {
-    for (const entry of messages) this.deps.syslog(entry.priority, entry.text);
+    for (const entry of messages) this.log(entry.priority, entry.text);
+  }
+
+  private log(priority: AuditPriority, text: string): void {
+    if (!this.foreground) {
+      this.deps.syslog(priority, text);
+      return;
+    }
+    if (this.launching) this.foregroundLines.push(`${text}\n`);
+    for (const follower of this.followers) follower.line(text);
+  }
+
+  followForeground(line: (text: string) => void, stopped: () => void): () => void {
+    const follower = { line, stopped };
+    this.followers.add(follower);
+    if (this.state === 'stopped') {
+      this.followers.delete(follower);
+      stopped();
+    }
+    return () => { this.followers.delete(follower); };
   }
 
   private pid(): number {
-    return this.deps.serviceMgr.status('auditd')?.mainPid ?? 1;
+    return this.ownPid ?? this.deps.serviceMgr.status('auditd')?.mainPid ?? 1;
+  }
+
+  launch(options: AuditdLaunchOptions): AuditdLaunchResult {
+    const previousForeground = this.foreground;
+    this.foreground = options.foreground || previousForeground;
+    this.launching = true;
+    this.foregroundLines = [];
+    const previous = this.ownPid;
+    const spawned = this.deps.process.spawn();
+    this.ownPid = spawned;
+    const exitCode = this.runStart(options);
+    const stderr = this.foregroundLines.join('');
+    this.launching = false;
+    this.foregroundLines = [];
+    if (exitCode !== 0 || !options.foreground) this.foreground = previousForeground;
+    if (exitCode !== 0) {
+      this.ownPid = previous;
+      this.deps.process.exit(spawned);
+    }
+    return { exitCode, stderr };
   }
 
   private resolveNode(config: AuditdConfig): boolean {
@@ -110,14 +190,14 @@ export class LinuxAuditDaemon {
         return true;
       case 'USER':
         if (config.nodeName === null) {
-          this.deps.syslog('ERR', 'User defined name missing');
+          this.log('ERR', 'User defined name missing');
           return false;
         }
         return true;
       case 'NUMERIC': {
         const address = this.deps.hostAddress();
         if (address === null) {
-          this.deps.syslog('ERR', `Cannot resolve hostname ${this.deps.hostName()} (Name or service not known)`);
+          this.log('ERR', `Cannot resolve hostname ${this.deps.hostName()} (Name or service not known)`);
           return false;
         }
         config.nodeName = address;
@@ -129,24 +209,51 @@ export class LinuxAuditDaemon {
     }
   }
 
-  private runStart(): void {
-    const loaded = loadAuditdConfig(this.deps.configFs, { configFile: AUDITD_CONF_PATH, allowLinks: false });
+  private abortStart(): number {
+    this.log('ERR', 'Unable to set audit pid, exiting');
+    this.deps.auditLog.record('DAEMON_ABORT', {
+      op: 'set-pid', auid: AUDIT_UNSET, pid: this.pid(), uid: 0, ses: AUDIT_UNSET, subj: 'unconfined', res: 'failed',
+    });
+    this.deps.vfs.deleteFile(AUDITD_PID_FILE);
+    this.deps.vfs.deleteFile(AUDITD_STATE_FILE);
+    return 1;
+  }
+
+  private failStart(): number {
+    this.exitProcess(this.pid());
+    return 1;
+  }
+
+  private exitProcess(pid: number): void {
+    if (pid > 1) this.deps.process.exit(pid);
+  }
+
+  private runStart(options: AuditdLaunchOptions): number {
+    if (this.state !== 'stopped') return this.abortStart();
+    const loaded = loadAuditdConfig(this.deps.configFs, { configFile: options.configFile, allowLinks: options.allowLinks });
     this.emit(loaded.messages);
-    if (loaded.rc !== 0) return;
+    if (loaded.rc !== 0) return 6;
     const config = loaded.config;
-    if (!this.resolveNode(config)) return;
+    if (options.foreground) config.writeLogs = false;
+    if (!this.resolveNode(config)) return this.failStart();
+    this.deps.vfs.writeFile(AUDITD_PID_FILE, `${this.pid()}\n`, 0, 0, 0o133);
     const writer = new AuditdLogWriter(config, {
       ...this.deps.logEnv,
       vfs: this.deps.vfs,
-      syslog: (priority, text) => this.deps.syslog(priority, text),
+      syslog: (priority, text) => this.log(priority, text),
       stopDaemon: () => this.runStop(),
     });
-    if (!writer.start()) return;
+    if (!writer.start()) {
+      this.deps.vfs.deleteFile(AUDITD_PID_FILE);
+      return this.failStart();
+    }
     this.config = config;
     this.writer = writer;
     this.state = 'running';
     this.deps.auditLog.setSink((line) => this.dispatch(line));
-    this.registerWithKernel();
+    this.dispatcher = this.newDispatcher(config);
+    this.dispatcher.init();
+    this.registerWithKernel(options.startup);
     this.deps.trapSignals(this.pid(), TRAPPED_SIGNALS);
     this.deps.auditLog.record('DAEMON_START', {
       op: 'start',
@@ -160,8 +267,48 @@ export class LinuxAuditDaemon {
       subj: 'unconfined',
       res: 'success',
     });
+    this.log('NOTICE', `Init complete, auditd ${AUDIT_VERSION} listening for events (startup state ${options.startup})`);
     this.deps.rules.runAsDaemon(() => this.deps.loadRules());
     this.syncState();
+    return 0;
+  }
+
+  private dispatcherSettings(config: AuditdConfig): DispatcherSettings {
+    return { qDepth: config.qDepth, overflowAction: config.overflowAction, maxRestarts: config.maxRestarts, pluginDir: config.pluginDir };
+  }
+
+  private newDispatcher(config: AuditdConfig): AudispDispatcher {
+    const { vfs, plugins } = this.deps;
+    const programName = (path: string): string | null => {
+      const real = vfs.realpath(path);
+      return real === null ? null : real.slice(real.lastIndexOf('/') + 1);
+    };
+    return new AudispDispatcher({
+      fs: this.deps.configFs,
+      listDirectory: plugins.listDirectory,
+      syslog: (priority, text) => this.log(priority, text),
+      spawn: (plugin) => plugins.spawn([plugin.path ?? '', ...plugin.args].join(' '), this.pid()),
+      isAlive: plugins.isAlive,
+      isStopped: plugins.isStopped,
+      changeRunlevel: plugins.changeRunlevel,
+      terminate: plugins.terminate,
+      programFor: (path) => {
+        const name = programName(path);
+        if (name !== null && AUDISP_PROGRAMS[name] !== undefined) return AUDISP_PROGRAMS[name];
+        const inode = vfs.resolveInode(path);
+        if (inode === null || inode.type !== 'file' || (inode.permissions & 0o111) === 0) return null;
+        return scriptPlugin(plugins.runProgram);
+      },
+      startProgram: (program, plugin, pid) => program(plugin.args, {
+        sockets: plugins.sockets,
+        pid,
+        programPath: plugin.path ?? '',
+        vfs,
+        libcSyslog: (priority, ident, text) => plugins.libcSyslog(priority, ident, pid, text),
+        localTime: this.deps.localTime,
+        interpreter: this.deps.interpreter,
+      }),
+    }, this.dispatcherSettings(config));
   }
 
   private syncState(): void {
@@ -178,16 +325,17 @@ export class LinuxAuditDaemon {
       ? formatEnriched(line, config, this.deps.interpreter())
       : formatRaw(line, config);
     writer.write(formatted);
+    this.dispatcher?.dispatch(config.logFormat === 'ENRICHED' ? formatted : line);
     this.syncState();
   }
 
-  private registerWithKernel(): void {
+  private registerWithKernel(startup: AuditdStartupState): void {
     const kernel = this.deps.rules.kernel;
     this.deps.rules.runAsDaemon(() => {
-      if (kernel.status.enabled < 2) {
+      if (startup !== 'nochange' && kernel.status.enabled < 2) {
         kernel.request(K.AUDIT_SET, 0, {
           kind: 'status',
-          status: { ...kernel.status, mask: K.AUDIT_STATUS_ENABLED, enabled: 1 },
+          status: { ...kernel.status, mask: K.AUDIT_STATUS_ENABLED, enabled: startup === 'enable' ? 1 : 0 },
         });
       }
     });
@@ -205,12 +353,21 @@ export class LinuxAuditDaemon {
       subj: 'unconfined',
       res: 'success',
     });
+    this.dispatcher?.shutdown();
+    this.dispatcher = null;
     this.state = 'stopped';
     this.deps.rules.kernel.status.pid = 0;
     this.deps.auditLog.setSink(null);
     this.writer?.shutdown();
     this.writer = null;
     this.deps.vfs.deleteFile(AUDITD_STATE_FILE);
+    this.deps.vfs.deleteFile(AUDITD_PID_FILE);
+    this.exitProcess(this.pid());
+    this.ownPid = null;
+    this.foreground = false;
+    const followers = [...this.followers];
+    this.followers.clear();
+    for (const follower of followers) follower.stopped();
   }
 
   private runReload(): void {
@@ -218,9 +375,10 @@ export class LinuxAuditDaemon {
     const loaded = loadAuditdConfig(this.deps.configFs, { configFile: AUDITD_CONF_PATH, allowLinks: false });
     this.emit(loaded.messages);
     if (loaded.rc !== 0) return;
-    this.deps.syslog('NOTICE', `config change requested by pid=${this.pid()} auid=${AUDIT_UNSET} subj=?`);
+    this.log('NOTICE', `config change requested by pid=${this.pid()} auid=${AUDIT_UNSET} subj=?`);
     this.writer.reconfigure(loaded.config);
     this.config = this.writer.settings;
+    this.dispatcher?.reconfigure(this.dispatcherSettings(this.config));
     this.deps.auditLog.record('DAEMON_CONFIG', {
       op: 'reconfigure',
       state: 'changed',
@@ -244,6 +402,7 @@ export class LinuxAuditDaemon {
   private runResume(senderPid: number): void {
     if (this.writer === null) return;
     this.writer.resumeLogging();
+    this.dispatcher?.resume();
     this.deps.auditLog.record('DAEMON_RESUME', {
       op: 'resume-logging', auid: AUDIT_UNSET, pid: senderPid, subj: 'unconfined', res: 'success',
     });
@@ -258,12 +417,7 @@ export class LinuxAuditDaemon {
       `current time = ${this.deps.localTime(seconds)}`,
       `process priority = ${-this.config.priorityBoost}`,
       ...this.writer.stateLines(),
-      'Number of active plugins = 0',
-      'current plugin queue depth = 0',
-      'max plugin queue depth used = 0',
-      `plugin queue size = ${this.config.qDepth}`,
-      'plugin queue overflow detected = no',
-      'plugin queueing suspended = no',
+      ...(this.dispatcher?.stateLines() ?? []),
     ];
     this.deps.vfs.writeFile(AUDITD_STATE_FILE, `${lines.join('\n')}\n`, 0, 0, 0o137);
   }

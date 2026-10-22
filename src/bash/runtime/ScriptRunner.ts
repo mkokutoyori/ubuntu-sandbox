@@ -46,7 +46,7 @@ export function runScript(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string },
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -94,7 +94,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
@@ -121,6 +121,7 @@ export function runScriptContent(
       aliases,
       functions,
       daemonMode: identity?.daemonMode,
+      stdin: identity?.stdin,
     });
 
     const result = interp.execute(ast);

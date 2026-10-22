@@ -21,6 +21,8 @@ import {
 } from '@/network/devices/linux/system/Dstat';
 import { interleaveTcpdumpStreams, runTcpdump } from '@/network/devices/linux/network/tcpdump/TcpdumpRunner';
 import { followArguments, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
+import { ncUnixClientPath } from '@/network/devices/linux/commands/net/Nc';
+import { parseAuditdArguments } from '@/network/devices/linux/audit/tools/AuditdCommandTool';
 import { splitChainText, splitPipeStages } from '@/network/devices/linux/LinuxShellParser';
 import type { AsyncJobContext } from '@/terminal/async';
 
@@ -213,6 +215,8 @@ function planStage(
   const verb = toks[0];
   switch (verb) {
     case 'tail': return planTail(dev, session, commandLine);
+    case 'auditd': return planAuditd(dev, session, commandLine, toks);
+    case 'nc': case 'ncat': case 'netcat': return planNcUnix(dev, session, commandLine, toks);
     case 'ping': case 'ping6': return planPing(dev, session, commandLine, toks);
     case 'sudo': case 'traceroute': case 'tcpdump': return planCapture(dev, session, commandLine);
     case 'mtr': return planMtr(dev, commandLine, toks, screen);
@@ -351,6 +355,62 @@ function planMtr(dev: LinuxMachine, commandLine: string, toks: string[], screen:
     }
   }, { prepare: () => { screen.mark(); return true; }, lineOriented: false });
 }
+
+function planAuditd(dev: LinuxMachine, session: LinuxShellSession, commandLine: string, toks: string[]): StreamPlan | null {
+  if (PIPELINE.test(commandLine)) return null;
+  const parsed = parseAuditdArguments(toks.slice(1));
+  if (!('options' in parsed) || !(parsed.options.foreground || parsed.options.noFork)) return null;
+  return job((ctx) => new Promise<void>((resolve) => {
+    if (ctx.cancelled()) { resolve(); return; }
+    let unsubscribe: (() => void) | null = dev.followAuditdForeground(
+      (line) => ctx.sink.line(line),
+      () => { unsubscribe = null; resolve(); },
+    );
+    ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+  }), {
+    prepare: (ctx) => {
+      const out = dev.runCommandFrameInSession(commandLine, session);
+      if (out !== '') emit(ctx, out.replace(/\n$/, ''));
+      return session.lastExitCode === 0;
+    },
+  });
+}
+
+function planNcUnix(dev: LinuxMachine, session: LinuxShellSession, commandLine: string, toks: string[]): StreamPlan | null {
+  if (PIPELINE.test(commandLine)) return null;
+  const path = ncUnixClientPath(toks.slice(1));
+  if (path === null) return null;
+  return job((ctx) => new Promise<void>((resolve) => {
+    if (ctx.cancelled()) { resolve(); return; }
+    let partial = '';
+    const connection = dev.connectUnixStream(path, {
+      onData: (text) => {
+        partial += text;
+        const lines = partial.split('\n');
+        partial = lines.pop() ?? '';
+        for (const line of lines) ctx.sink.line(line);
+      },
+      onClose: () => {
+        if (partial !== '') ctx.sink.line(partial);
+        partial = '';
+        resolve();
+      },
+    });
+    if ('errno' in connection) {
+      ctx.sink.line(`nc: ${path}: ${UNIX_CONNECT_TEXT[connection.errno]}`);
+      resolve();
+      return;
+    }
+    ctx.onCancel(() => { connection.close(); resolve(); });
+  }));
+}
+
+const UNIX_CONNECT_TEXT: Readonly<Record<string, string>> = {
+  ENOENT: 'No such file or directory',
+  ECONNREFUSED: 'Connection refused',
+  EACCES: 'Permission denied',
+  EADDRINUSE: 'Address already in use',
+};
 
 function planWatch(dev: LinuxMachine, session: LinuxShellSession, commandLine: string, toks: string[], screen: StreamScreen): StreamPlan | null {
   if (toks[0] !== 'watch') return null;

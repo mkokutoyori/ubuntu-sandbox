@@ -102,6 +102,7 @@ export interface AuditEventTime {
 
 export interface AuditRecordNode {
   message: string;
+  interp: string | null;
   type: number;
   a0: bigint;
   a1: bigint;
@@ -115,6 +116,10 @@ export class AuditEvent {
 
   constructor(e: AuditEventTime) {
     this.e = e;
+  }
+
+  get enriched(): boolean {
+    return this.records.some((node) => node.interp !== null);
   }
 
   get head(): AuditRecordNode | null {
@@ -141,11 +146,14 @@ export class AuditEvent {
 
 export interface ParseEnvironment {
   userName(uid: number): string | null;
+  interpretation?(name: string): string | null;
   flags: SearchFlags;
   debug?: (message: string) => void;
 }
 
-function lookupUid(env: ParseEnvironment, uid: number): string | null {
+function lookupUid(env: ParseEnvironment, field: string, uid: number): string | null {
+  const recorded = env.interpretation?.(field);
+  if (recorded !== undefined && recorded !== null) return recorded;
   if (uid === 0) return 'root';
   if (uid === UID_UNSET) return 'unset';
   return env.userName(uid);
@@ -242,7 +250,7 @@ function parseTaskInfo(msg: string, type: number, s: SearchItems, env: ParseEnvi
     if (t < 0) return 20;
     s.loginuid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (f.eventUid !== -1 || f.eventTuid) {
     let str: number;
@@ -257,7 +265,7 @@ function parseTaskInfo(msg: string, type: number, s: SearchItems, env: ParseEnvi
     if (t < 0) return 23;
     s.uid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.tuid = lookupUid(env, s.uid);
+    s.tuid = lookupUid(env, 'uid', s.uid);
   }
   if (f.eventGid !== -1) {
     const str = strstr(msg, term, 'gid=');
@@ -276,7 +284,7 @@ function parseTaskInfo(msg: string, type: number, s: SearchItems, env: ParseEnvi
     if (t < 0) return 29;
     s.euid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.teuid = lookupUid(env, s.euid);
+    s.teuid = lookupUid(env, 'euid', s.euid);
   }
   if (f.eventEgid !== -1) {
     const str = strstr(msg, term, 'egid=');
@@ -513,7 +521,7 @@ function parseUser(msg: string, type: number, s: SearchItems, env: ParseEnvironm
     if (t < 0) return 5;
     s.uid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.tuid = lookupUid(env, s.uid);
+    s.tuid = lookupUid(env, 'uid', s.uid);
   }
   if (f.eventLoginuid !== -2 || f.eventTauid) {
     let str = strstr(msg, term, 'auid=');
@@ -527,7 +535,7 @@ function parseUser(msg: string, type: number, s: SearchItems, env: ParseEnvironm
     if (t < 0) return 8;
     s.loginuid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (f.eventSessionId !== -2) {
     const str = strstr(msg, term, 'ses=');
@@ -647,7 +655,7 @@ function parseUser(msg: string, type: number, s: SearchItems, env: ParseEnvironm
       if (t === ptr) return 14;
       s.uid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
-      s.tuid = lookupUid(env, s.uid);
+      s.tuid = lookupUid(env, 'uid', s.uid);
       break;
     }
   }
@@ -787,7 +795,7 @@ function parseLogin(msg: string, s: SearchItems, env: ParseEnvironment): number 
     if (t < 0) return 5;
     s.uid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.tuid = lookupUid(env, s.uid);
+    s.tuid = lookupUid(env, 'uid', s.uid);
   }
   if (f.eventSubject) {
     const str = strstr(msg, term, 'subj=');
@@ -815,7 +823,7 @@ function parseLogin(msg: string, s: SearchItems, env: ParseEnvironment): number 
     s.loginuid = toUint32(strtoul(t < 0 ? msg.slice(ptr) : msg.slice(ptr, t)));
     if (t < 0) nullTerm = true;
     else term = t;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (f.eventSuccess !== S_UNSET) {
     if (nullTerm) term = 0;
@@ -856,7 +864,7 @@ function parseDaemon1(msg: string, s: SearchItems, env: ParseEnvironment): numbe
     if (t < 0) return 2;
     s.loginuid = toUint32(strtoul(msg.slice(ptr, t)));
     term = t;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (f.eventPid !== -1) {
     const str = strstr(msg, term, 'pid=');
@@ -1025,7 +1033,7 @@ function parseIntegrity(msg: string, s: SearchItems, env: ParseEnvironment): num
       if (t < 0) return 3;
       s.uid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
-      s.tuid = lookupUid(env, s.uid);
+      s.tuid = lookupUid(env, 'uid', s.uid);
     }
   }
   if (f.eventLoginuid !== -2 || f.eventTauid) {
@@ -1036,7 +1044,7 @@ function parseIntegrity(msg: string, s: SearchItems, env: ParseEnvironment): num
       if (t < 0) return 5;
       s.loginuid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
-      s.tauid = lookupUid(env, s.loginuid);
+      s.tauid = lookupUid(env, 'auid', s.loginuid);
     }
   }
   if (f.eventSessionId !== -2) {
@@ -1204,7 +1212,7 @@ function parseKernelAnom(msg: string, type: number, s: SearchItems, env: ParseEn
     const t = strchr(msg, ptr, ' ');
     s.loginuid = toUint32(strtoul(t < 0 ? msg.slice(ptr) : msg.slice(ptr, t)));
     term = t < 0 ? ptr : t;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (f.eventUid !== -1 || f.eventTuid) {
     const str = strstr(msg, term, 'uid=');
@@ -1214,7 +1222,7 @@ function parseKernelAnom(msg: string, type: number, s: SearchItems, env: ParseEn
       if (t < 0) return 3;
       s.uid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
-      s.tuid = lookupUid(env, s.uid);
+      s.tuid = lookupUid(env, 'uid', s.uid);
     }
   }
   if (f.eventGid !== -1) {
@@ -1319,7 +1327,7 @@ function parseSimpleMessage(msg: string, type: number, s: SearchItems, env: Pars
       const t = strchr(msg, ptr, ' ');
       s.loginuid = toUint32(strtoul(t < 0 ? msg.slice(ptr) : msg.slice(ptr, t)));
       term = t < 0 ? ptr : t;
-      s.tauid = lookupUid(env, s.loginuid);
+      s.tauid = lookupUid(env, 'auid', s.loginuid);
     }
   }
   if (f.eventSessionId !== -2) {
@@ -1390,7 +1398,7 @@ function parseTty(msg: string, s: SearchItems, env: ParseEnvironment): number {
       if (t < 0) return 3;
       s.uid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
-      s.tuid = lookupUid(env, s.uid);
+      s.tuid = lookupUid(env, 'uid', s.uid);
     }
   }
   if (f.eventLoginuid !== -2 || f.eventTauid) {
@@ -1400,7 +1408,7 @@ function parseTty(msg: string, s: SearchItems, env: ParseEnvironment): number {
     const t = strchr(msg, ptr, ' ');
     s.loginuid = toUint32(strtoul(t < 0 ? msg.slice(ptr) : msg.slice(ptr, t)));
     term = t < 0 ? ptr : t;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (f.eventSessionId !== -2) {
     const str = strstr(msg, term, 'ses=');
@@ -1471,7 +1479,7 @@ function parseKernel(msg: string, s: SearchItems, env: ParseEnvironment): number
       s.uid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
     } else s.uid = 0;
-    s.tuid = lookupUid(env, s.uid);
+    s.tuid = lookupUid(env, 'uid', s.uid);
   }
   if (s.loginuid === LOGINUID_UNSET && !s.tauid && (f.eventLoginuid !== -2 || f.eventTauid)) {
     const str = strstr(msg, term, 'auid=');
@@ -1482,7 +1490,7 @@ function parseKernel(msg: string, s: SearchItems, env: ParseEnvironment): number
       s.loginuid = toUint32(strtoul(msg.slice(ptr, t)));
       term = t;
     } else s.loginuid = UID_UNSET;
-    s.tauid = lookupUid(env, s.loginuid);
+    s.tauid = lookupUid(env, 'auid', s.loginuid);
   }
   if (!s.terminal && f.eventTerminal) {
     const str = strstr(msg, term, 'tty=');

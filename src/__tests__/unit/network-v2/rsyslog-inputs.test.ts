@@ -77,14 +77,14 @@ describe('imudp', () => {
     r.net.reverse.set('10.0.0.1', '6.6.6.6');
     udp(r, '<13>Oct 19 12:00:01 ubuntu alice: hello');
     expect(filed(r.server)[0]).toContain('|10.0.0.1|10.0.0.1|');
-    expect(internal(r.server)).toContain('Malicious PTR record (message accepted, but used IP instead of PTR name: IP = "10.0.0.1" HOST = "6.6.6.6" [v8.2112.0]');
+    expect(internal(r.server)).toContain('Malicious PTR record (message accepted, but used IP instead of PTR name: IP = "10.0.0.1" HOST = "6.6.6.6" [v8.2610.0]');
   });
 
   it('dropMsgsWithMaliciousDnsPTRRecords reports the drop and falls back to the error marker', () => {
     const r = rig(`global(DropMsgsWithMaliciousDnsPTRRecords="on")\n${UDP_CONFIG}`);
     r.net.reverse.set('10.0.0.1', '6.6.6.6');
     udp(r, '<13>Oct 19 12:00:01 ubuntu alice: hello');
-    expect(internal(r.server)).toContain('Malicious PTR record, message dropped IP = "10.0.0.1" HOST = "6.6.6.6" [v8.2112.0 try https://www.rsyslog.com/e/2021 ]');
+    expect(internal(r.server)).toContain('Malicious PTR record, message dropped IP = "10.0.0.1" HOST = "6.6.6.6" [v8.2610.0 try https://www.rsyslog.com/e/2021 ]');
     expect(filed(r.server)[0]).toContain('|?error.obtaining.ip?|?error.obtaining.ip?|');
   });
 
@@ -110,7 +110,7 @@ describe('imudp', () => {
     udp(r, '<13>Oct 19 12:00:01 ubuntu alice: hello');
     expect(filed(r.server)[0].startsWith('fw514|')).toBe(true);
     const old = rig(`${TEMPLATE}module(load="imudp")\ninput(type="imudp" port="514" inputname="legacy")\n${FILE_ACTION}`);
-    expect(old.srv.loader.log.lines()).toContain('rsyslogd: imudp: deprecated parameter inputname used. Suggest to use name instead [v8.2112.0 try https://www.rsyslog.com/e/2307 ]');
+    expect(old.srv.loader.log.lines()).toContain('rsyslogd: imudp: deprecated parameter inputname used. Suggest to use name instead [v8.2610.0 try https://www.rsyslog.com/e/2307 ]');
   });
 
   it('one input with several ports opens one listener per port', () => {
@@ -127,7 +127,7 @@ describe('imudp', () => {
     expect(filed(r.server)).toEqual([]);
     const missing = rig(`${TEMPLATE}module(load="imudp")\ninput(type="imudp" port="514" ruleset="nope")\n${FILE_ACTION}`);
     expect(missing.srv.loader.log.lines()).toContain(
-      "rsyslogd: imudp: ruleset 'nope' for *:514 not found - using default ruleset instead [v8.2112.0]",
+      "rsyslogd: imudp: ruleset 'nope' for *:514 not found - using default ruleset instead [v8.2610.0]",
     );
     udp(missing, '<13>Oct 19 12:00:01 ubuntu alice: hello');
     expect(filed(missing.server)).toHaveLength(1);
@@ -143,7 +143,7 @@ describe('imudp', () => {
     const r = rig(`$AllowedSender UDP, 192.168.0.0/16, [fe80::]/10\n${UDP_CONFIG}`);
     udp(r, '<13>Oct 19 12:00:01 ubuntu alice: refused');
     expect(filed(r.server)).toEqual([]);
-    expect(internal(r.server)).toContain('imudp: UDP message from disallowed sender discarded [v8.2112.0]');
+    expect(internal(r.server)).toContain('imudp: UDP message from disallowed sender discarded [v8.2610.0]');
     const open = rig(`$AllowedSender UDP, 10.0.0.0/24\n${UDP_CONFIG}`);
     udp(open, '<13>Oct 19 12:00:01 ubuntu alice: admitted');
     expect(filed(open.server)).toHaveLength(1);
@@ -190,23 +190,23 @@ describe('imudp', () => {
     server.busyPorts.add(514);
     const started = startRsyslog(server, UDP_CONFIG);
     expect(internal(server)).toEqual([
-      'No UDP socket could successfully be initialized, some functionality may be disabled.  [v8.2112.0]',
-      'imudp: Could not create udp listener, ignoring port 514 bind-address (null). [v8.2112.0]',
-      'activation of module imudp failed [v8.2112.0 try https://www.rsyslog.com/e/-3 ]',
+      'No UDP socket could successfully be initialized, some functionality may be disabled.  [v8.2610.0]',
+      'imudp: Could not create udp listener, ignoring port 514 bind-address (null). [v8.2610.0]',
+      'activation of module imudp failed [v8.2610.0 try https://www.rsyslog.com/e/-3 ]',
     ]);
     expect(started.engine.isStarted).toBe(true);
   });
 
   it('warns when the module is loaded without any listener', () => {
     const r = rig('module(load="imudp")\n*.* /var/log/x.log');
-    expect(r.srv.loader.log.lines()).toContain('rsyslogd: imudp: module loaded, but no listeners defined - no input will be gathered [v8.2112.0 try https://www.rsyslog.com/e/2212 ]');
+    expect(r.srv.loader.log.lines()).toContain('rsyslogd: imudp: module loaded, but no listeners defined - no input will be gathered [v8.2610.0 try https://www.rsyslog.com/e/2212 ]');
   });
 
   it('validates the scheduling parameters the module accepts', () => {
     const r = rig('module(load="imudp" schedulingPolicy="fifo")\ninput(type="imudp" port="514")\n*.* /var/log/x.log');
-    expect(r.srv.loader.log.lines()).toContain('rsyslogd: imudp: scheduling policy set, but without priority - ignoring settings [v8.2112.0 try https://www.rsyslog.com/e/2205 ]');
+    expect(r.srv.loader.log.lines()).toContain('rsyslogd: imudp: scheduling policy set, but without priority - ignoring settings [v8.2610.0 try https://www.rsyslog.com/e/2205 ]');
     const bad = rig('module(load="imudp" schedulingPolicy="lifo" schedulingPriority="3")\ninput(type="imudp" port="514")\n*.* /var/log/x.log');
-    expect(bad.srv.loader.log.lines()).toContain("rsyslogd: imudp: invalid scheduling policy 'lifo' - ignoring setting [v8.2112.0]");
+    expect(bad.srv.loader.log.lines()).toContain("rsyslogd: imudp: invalid scheduling policy 'lifo' - ignoring setting [v8.2610.0]");
   });
 
   it('legacy $UDPServerRun opens a listener and honours $UDPServerAddress and $InputUDPServerBindRuleset', () => {
@@ -259,7 +259,7 @@ describe('imtcp', () => {
     const r = rig(TCP_CONFIG);
     open(r).write('12x<13>Oct 19 12:00:01 ubuntu alice: z\n');
     expect(internal(r.server)).toContain(
-      'imtcp imtcp: Framing Error in received TCP message from peer: (hostname) Client.Example.COM, (ip) 10.0.0.1, (port) 40001: delimiter is not SP but has ASCII value 120. [v8.2112.0]',
+      'imtcp imtcp: Framing Error in received TCP message from peer: (hostname) Client.Example.COM, (ip) 10.0.0.1, (port) 40001: delimiter is not SP but has ASCII value 120. [v8.2610.0]',
     );
     const zero = rig(TCP_CONFIG);
     open(zero).write('0 abc\n');
@@ -278,7 +278,7 @@ describe('imtcp', () => {
     second.write('30 <13>short');
     second.close();
     expect(filed(counted.server)).toEqual([]);
-    expect(internal(counted.server)).toContain('Incomplete frame at end of stream in session - ignoring extra data (a message may be lost). [v8.2112.0]');
+    expect(internal(counted.server)).toContain('Incomplete frame at end of stream in session - ignoring extra data (a message may be lost). [v8.2610.0]');
   });
 
   it('truncates an over-long line at maxMessageSize, or splits it', () => {
@@ -329,14 +329,14 @@ describe('imtcp', () => {
     second.write('<13>Oct 19 12:00:01 ubuntu alice: refused\n');
     first.write('<13>Oct 19 12:00:02 ubuntu alice: kept\n');
     expect(filed(r.server)).toHaveLength(1);
-    expect(internal(r.server)).toContain('too many tcp sessions - dropping incoming request [v8.2112.0 try https://www.rsyslog.com/e/2079 ]');
+    expect(internal(r.server)).toContain('too many tcp sessions - dropping incoming request [v8.2610.0 try https://www.rsyslog.com/e/2079 ]');
   });
 
   it('notifyOnConnectionOpen and notifyOnConnectionClose are reported', () => {
     const r = rig(`${TEMPLATE}module(load="imtcp" notifyOnConnectionOpen="on" notifyOnConnectionClose="on")\ninput(type="imtcp" port="514")\n${FILE_ACTION}`);
     const stream = open(r);
     stream.close();
-    expect(internal(r.server)).toContain('imtcp: connection established with host: Client.Example.COM (10.0.0.1:40001) [v8.2112.0]');
+    expect(internal(r.server)).toContain('imtcp: connection established with host: Client.Example.COM (10.0.0.1:40001) [v8.2610.0]');
     expect(internal(r.server).some((text) => /^Netstream session 0x[0-9a-f]+ closed by remote peer 10\.0\.0\.1:40001\./.test(text))).toBe(true);
   });
 
@@ -344,7 +344,7 @@ describe('imtcp', () => {
     const r = rig(`${TEMPLATE}module(load="imtcp")\ninput(type="imtcp" port="514" allowedSender=["192.168.0.0/16"])\n${FILE_ACTION}`);
     open(r).write('<13>Oct 19 12:00:01 ubuntu alice: refused\n');
     expect(filed(r.server)).toEqual([]);
-    expect(internal(r.server)).toContain('connection request from disallowed sender Client.Example.COM (10.0.0.1:40001) discarded [v8.2112.0 try https://www.rsyslog.com/e/2063 ]');
+    expect(internal(r.server)).toContain('connection request from disallowed sender Client.Example.COM (10.0.0.1:40001) discarded [v8.2610.0 try https://www.rsyslog.com/e/2063 ]');
   });
 
   it('recognises a TLS ClientHello sent to a plain listener and tears the session down', () => {
@@ -380,7 +380,7 @@ describe('imtcp', () => {
 
   it('validates the compression and frame-size parameters', () => {
     const r = rig('module(load="imtcp" maxFrameSize="0")\ninput(type="imtcp" port="514")\n*.* /var/log/x.log');
-    expect(r.srv.loader.log.lines()).toContain("rsyslogd: imtcp: invalid value for 'maxFrameSize' parameter given is 0, valid range is 1..200000000 [v8.2112.0 try https://www.rsyslog.com/e/1000 ]");
+    expect(r.srv.loader.log.lines()).toContain("rsyslogd: imtcp: invalid value for 'maxFrameSize' parameter given is 0, valid range is 1..200000000 [v8.2610.0 try https://www.rsyslog.com/e/1000 ]");
     const bad = rig('module(load="imtcp")\ninput(type="imtcp" port="514" compression.mode="gzip")\n*.* /var/log/x.log');
     expect(bad.srv.loader.log.lines().some((text) => text.includes("invalid compression.mode 'gzip', supported values are 'none' and 'stream:always'"))).toBe(true);
   });
@@ -393,6 +393,6 @@ describe('imtcp', () => {
 
   it('reports the port as invalid when it is out of range', () => {
     const r = rig('module(load="imtcp")\ninput(type="imtcp" port="70000")\n*.* /var/log/x.log');
-    expect(internal(r.server)).toContain('Invalid TCP listen port 70000 - ignored.  [v8.2112.0]');
+    expect(internal(r.server)).toContain('Invalid TCP listen port 70000 - ignored.  [v8.2610.0]');
   });
 });

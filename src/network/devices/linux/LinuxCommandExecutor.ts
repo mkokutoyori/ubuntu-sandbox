@@ -133,6 +133,10 @@ import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { runAuditctl } from './audit/tools/AuditctlTool';
+import { PROGRAM_TRACES } from './audit/trace/ProgramTraces.generated';
+import { replayProgram } from './audit/ProgramTraceReplay';
+import { runAuditdCommand } from './audit/tools/AuditdCommandTool';
+import { runAutrace, type AutraceHost } from './audit/tools/AutraceTool';
 import { runAugenrules } from './audit/tools/AugenrulesTool';
 import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
 import { LinuxAuditRules } from './audit/LinuxAuditRules';
@@ -242,7 +246,7 @@ import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
-import { LocalDatagramSockets } from './syslog/LocalDatagramSockets';
+import { LocalDatagramSockets, type UnixStreamConnectOutcome, type UnixStreamHandlers } from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
@@ -302,7 +306,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'ausyscall', 'aulast', 'aulastlog', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'ausyscall', 'aulast', 'aulastlog', 'aureport', 'auditctl', 'auditd', 'autrace', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -506,6 +510,10 @@ export class LinuxCommandExecutor {
 
   setExecInput(input: string | undefined): void {
     this.execInput = input;
+  }
+
+  private scriptInput(stdin: string | undefined): string | undefined {
+    return stdin ?? this.execInput;
   }
 
   private takeExecInput(cmd: string, args: readonly string[]): string | undefined {
@@ -1304,6 +1312,10 @@ export class LinuxCommandExecutor {
     };
   }
 
+  descriptorCountOf(pid: number): number {
+    return descriptorCount(this.descriptorSourcesFor(pid));
+  }
+
   /** Le processus rsyslog vivant, celui qui tient les journaux ouverts. */
   private rsyslogProcess(): (import('../os/OSProcess').OSProcess) | undefined {
     const info = this.processMgr.list().find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
@@ -1440,12 +1452,12 @@ export class LinuxCommandExecutor {
       rules: this.auditRules,
       vfs: this.vfs,
       serviceMgr: this.serviceMgr,
-      configFs: vfsAuditdConfigFs(this.vfs, this.userMgr),
+      configFs: vfsAuditdConfigFs(this.vfs, this.userMgr, (host) => this.resolveHostAddresses(host).length > 0),
       logEnv: {
         execute: (path) => { void this.executeAsync(path); },
         sendMail: (subject, body, account) => this.deliverLocalMail(account, subject, body),
         changeRunlevel: (level) => {
-          this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : 'poweroff.target');
+          this.changeAuditRunlevel(level);
         },
       },
       syslog: (priority, text) => this.auditdSyslog(priority, text),
@@ -1455,8 +1467,27 @@ export class LinuxCommandExecutor {
       localTime: (seconds) => this.auditStateTime(seconds),
       kernelRelease: () => this.identity.kernel.release,
       loadRules: () => { this.handleAugenrules(['--load']); },
+      plugins: {
+        listDirectory: (path) => this.vfs.listDirectory(path)?.filter((entry) => entry.inode.type === 'file').map((entry) => entry.name) ?? null,
+        spawn: (command, ppid) => this.processMgr.spawn({ command, user: 'root', uid: 0, gid: 0, ppid }).pid,
+        isAlive: (pid) => pid > 0 && this.processMgr.get(pid) !== undefined,
+        isStopped: (pid) => this.processMgr.get(pid)?.state === 'T',
+        changeRunlevel: (level) => this.changeAuditRunlevel(level),
+        terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
+        libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
+        runProgram: (pid, command, input) => this.runAuditPluginProgram(pid, command, input),
+        sockets: this.localDatagramSockets,
+      },
       trapSignals: (pid, signals) => {
         for (const signal of signals) this.processMgr.trapSignal(pid, signal as Signal, () => undefined);
+      },
+      process: {
+        spawn: () => this.processMgr.spawn({ command: '/sbin/auditd', user: 'root', uid: 0, gid: 0, ppid: 1 }).pid,
+        exit: (pid) => {
+          if (this.processMgr.get(pid) === undefined) return;
+          this.processMgr.exit(pid, 0);
+          this.processMgr.reap(pid);
+        },
       },
     });
     // Keep the PAM password-policy config files coherent with the policy
@@ -5065,8 +5096,8 @@ export class LinuxCommandExecutor {
     const suidRoot = !!exeInode && (exeInode.permissions & 0o4000) !== 0 && exeInode.uid === 0;
     const euid = cur === 0 ? 0 : (suidRoot ? 0 : cur);
     return {
-      pid: this.shellPid ?? 1,
-      ppid: this.shellPpid ?? 1,
+      pid: this.currentBashPid() || 1,
+      ppid: this.processMgr.get(this.currentBashPid())?.ppid ?? this.shellPpid ?? 1,
       uid: cur,
       euid,
       gid,
@@ -5091,7 +5122,7 @@ export class LinuxCommandExecutor {
       syscall: syscall ?? (perm === 'x' ? 'execve' : perm === 'w' ? 'open' : perm === 'a' ? 'chmod' : 'openat'),
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success: actor.success, exit: actor.success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
@@ -5104,7 +5135,7 @@ export class LinuxCommandExecutor {
       deviceId: this.attachedDeviceId, path, perm, syscall,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success, exit: success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
@@ -5119,6 +5150,99 @@ export class LinuxCommandExecutor {
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
   }
 
+  followAuditdForeground(line: (text: string) => void, stopped: () => void): () => void {
+    if (this.auditDaemon === null) {
+      stopped();
+      return () => undefined;
+    }
+    return this.auditDaemon.followForeground(line, stopped);
+  }
+
+  connectUnixStream(path: string, handlers: UnixStreamHandlers): UnixStreamConnectOutcome {
+    const gids = this.userMgr.getUserGroups(this.userMgr.currentUser).map((group) => group.gid);
+    return this.localDatagramSockets.connectStream(
+      this.vfs.normalizePath(path, this.cwd),
+      { uid: this.userMgr.currentUid, gids: [this.userMgr.currentGid, ...gids] },
+      handlers,
+    );
+  }
+
+  private changeAuditRunlevel(level: 'single' | 'halt'): void {
+    this.serviceMgr.isolate(level === 'single' ? 'rescue.target' : 'halt.target');
+  }
+
+  private auditPluginRunning = false;
+
+  private runAuditPluginProgram(pid: number, command: string, input: string): void {
+    if (this.auditPluginRunning) return;
+    const saved = {
+      user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid,
+      exit: this.lastExitCode, cwd: this.cwd, head: this.currentCommandHead,
+    };
+    this.auditPluginRunning = true;
+    this.userMgr.currentUser = 'root';
+    this.userMgr.currentUid = 0;
+    this.userMgr.currentGid = 0;
+    this.cwd = '/';
+    try {
+      this.withProcessIdentity(pid, () => this.executeChild(command, input));
+    } finally {
+      this.auditPluginRunning = false;
+      this.userMgr.currentUser = saved.user;
+      this.userMgr.currentUid = saved.uid;
+      this.userMgr.currentGid = saved.gid;
+      this.lastExitCode = saved.exit;
+      this.cwd = saved.cwd;
+      this.currentCommandHead = saved.head;
+    }
+  }
+
+  handleAuditd(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const daemon = this.auditDaemon;
+    if (daemon === null) return { output: '', exitCode: 1, stderr: 'auditd: audit daemon unavailable\n', interleaved: 'auditd: audit daemon unavailable\n' };
+    const result = runAuditdCommand({ isRoot: () => this.userMgr.currentUid === 0, launch: (options) => daemon.launch(options) }, args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  handleAutrace(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const result = runAutrace(this.autraceHost(), args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  private autraceHost(): AutraceHost {
+    const quote = (word: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`);
+    return {
+      isRoot: () => this.userMgr.currentUid === 0,
+      executableState: (path) => {
+        const absolute = path.startsWith('/') ? path : `${this.cwd.replace(/\/$/, '')}/${path}`;
+        const inode = this.vfs.resolveInode(absolute);
+        if (inode === null) return 'missing';
+        return (inode.permissions & 0o111) !== 0 || inode.type === 'directory' ? 'executable' : 'denied';
+      },
+      loadedRuleCount: () => this.auditRules.kernel.allRules().length,
+      auditctl: (args) => runAuditctl(auditctlHost(this, true), args),
+      startChild: (argv) => this.processMgr.spawn({
+        command: argv.map(quote).join(' '),
+        user: this.userMgr.currentUser,
+        uid: this.userMgr.currentUid,
+        gid: this.userMgr.currentGid,
+        ppid: this.currentBashPid(),
+        tty: 'pts/0',
+        cwd: this.cwd,
+      }).pid,
+      runChild: (pid, argv) => {
+        const output = this.withProcessIdentity(pid, () => this.execute(argv.map(quote).join(' ')));
+        return { output, exitCode: this.lastExitCode };
+      },
+      endChild: (pid, exitCode) => {
+        this.processMgr.exit(pid, exitCode);
+        this.processMgr.reap(pid);
+      },
+      terminateChild: (pid) => { this.processMgr.kill(pid, 'SIGTERM'); },
+      sleepSeconds: (seconds) => this.spendSeconds(seconds),
+    };
+  }
+
   handleAugenrules(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const result = runAugenrules(augenrulesHost(this), args);
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
@@ -5129,17 +5253,17 @@ export class LinuxCommandExecutor {
   publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
   publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
 
-  private publishSyscall(syscall: string, path?: string): void {
+  private publishSyscall(syscall: string, path?: string, perm?: FileAccessPerm, trace?: SyscallInvokedPayload['trace']): void {
     if (!this.bus || !this.attachedDeviceId) {
-      this.auditRules.onSyscall(syscall, path);
+      this.auditRules.onSyscall(syscall, path, undefined, perm, trace);
       return;
     }
     const actor = this.snapshotActor();
     const payload: SyscallInvokedPayload = {
-      deviceId: this.attachedDeviceId, syscall, path,
+      deviceId: this.attachedDeviceId, syscall, path, perm, trace,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success: actor.success, exit: actor.success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
@@ -5155,14 +5279,14 @@ export class LinuxCommandExecutor {
       deviceId: this.attachedDeviceId, syscall, path,
       pid: actor.pid, ppid: actor.ppid,
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
-      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty, cwd: actor.cwd,
       success, exit: exit ?? (success ? 0 : -13),
     };
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
   }
 
   private checkAuditdConfig(): { ok: boolean; error?: string; verbatim?: boolean } {
-    const loaded = loadAuditdConfig(vfsAuditdConfigFs(this.vfs, this.userMgr), { configFile: AUDITD_CONF_PATH, allowLinks: false });
+    const loaded = loadAuditdConfig(vfsAuditdConfigFs(this.vfs, this.userMgr, (host) => this.resolveHostAddresses(host).length > 0), { configFile: AUDITD_CONF_PATH, allowLinks: false });
     if (loaded.rc === 0) return { ok: true };
     for (const entry of loaded.messages) this.auditdSyslog(entry.priority, entry.text);
     return {
@@ -5214,6 +5338,43 @@ export class LinuxCommandExecutor {
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+    const result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
+    this.replayProgramTrace(cmd, args, result);
+    return result;
+  }
+
+  private tracedOperands(cmd: string, args: readonly string[]): string[] | null {
+    const trace = PROGRAM_TRACES[cmd];
+    if (trace === undefined || args.some((arg) => arg.startsWith('-'))) return null;
+    const operands = args.map((arg) => this.vfs.normalizePath(arg, this.cwd));
+    if (trace.singleOperand) {
+      return operands.length === 1 && this.vfs.getType(operands[0]) === (trace.operandKind ?? 'directory') ? operands : null;
+    }
+    if (trace.operandBlock === undefined) return operands.length === 0 ? operands : null;
+    if (operands.length === 0 || operands.some((operand) => this.vfs.getType(operand) !== 'file')) return null;
+    return operands;
+  }
+
+  private traceStdoutLength(cmd: string, operands: readonly string[], output: string): number {
+    if (cmd === 'cat') return operands.reduce((sum, operand) => sum + (this.vfs.readFile(operand)?.length ?? 0), 0);
+    return output === '' ? 0 : output.length + 1;
+  }
+
+  private replayProgramTrace(cmd: string, args: readonly string[], result: { output: string; exitCode: number }): void {
+    if (result.exitCode !== 0 || !this.auditRules.hasExitRules) return;
+    const operands = this.tracedOperands(cmd, args);
+    if (operands === null) return;
+    const world = {
+      readContent: (path: string) => this.vfs.readFile(path),
+      listEntries: (path: string) => this.vfs.listDirectory(path)?.map((entry) => entry.name).filter((name) => name !== '.' && name !== '..') ?? null,
+      stdoutLength: this.traceStdoutLength(cmd, operands, result.output),
+    };
+    for (const call of replayProgram(PROGRAM_TRACES[cmd], operands, world)) {
+      this.publishSyscall(call.syscall, call.path, undefined, { args: call.args, exit: call.exit });
+    }
+  }
+
+  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
@@ -5284,9 +5445,10 @@ export class LinuxCommandExecutor {
             return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
           }
         }
+        const traced = this.auditRules.hasExitRules && this.tracedOperands('cat', args) !== null;
         for (const arg of fileArgs) {
           this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
-          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd));
+          if (!traced) this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd), 'r');
         }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');
@@ -5581,6 +5743,8 @@ export class LinuxCommandExecutor {
         return shaped;
       }
       case 'auditctl': return this.handleAuditctl(args);
+      case 'auditd': return this.handleAuditd(args);
+      case 'autrace': return this.handleAutrace(args);
       case 'augenrules': return this.handleAugenrules(args);
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
@@ -5778,12 +5942,12 @@ export class LinuxCommandExecutor {
             runScriptContent(
               parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
               startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, stdin: this.scriptInput(stdin) }, this.aliases, this.functions,
             ));
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }));
         }
         return { output: '', exitCode: 0 };
       }
@@ -6310,7 +6474,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.exists(absPath)) {
             const commandLine = ['/bin/bash', absPath, ...args].join(' ');
             return this.runScriptProcess(commandLine, (identity, bridge) =>
-              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
           }
         }
 

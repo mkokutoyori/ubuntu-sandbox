@@ -123,7 +123,22 @@ export class LabHost implements RsyslogHost {
       this.fileSystem.set(path, text);
       return true;
     },
+    watch: (path: string, onEvent: () => void): (() => void) | null => {
+      if (this.watchUnavailable) return null;
+      const listeners = this.watchers.get(path) ?? new Set<() => void>();
+      listeners.add(onEvent);
+      this.watchers.set(path, listeners);
+      return () => { listeners.delete(onEvent); };
+    },
   };
+  watchUnavailable = false;
+  private readonly watchers = new Map<string, Set<() => void>>();
+
+  rewrite(path: string, text: string): void {
+    this.fileSystem.set(path, text);
+    for (const listener of [...(this.watchers.get(path) ?? [])]) listener();
+  }
+
   readonly connectOptions: { address: string; port: number; options: StreamOptions }[] = [];
   readonly listenOptions: { port: number; options: ListenOptions }[] = [];
   readonly network = {

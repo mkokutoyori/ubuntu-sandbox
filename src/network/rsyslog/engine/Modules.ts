@@ -10,6 +10,8 @@ import type { LocalClock } from './LocalClock';
 import type { RateLimiter } from './RateLimiter';
 import type { ResolvedSender } from './SenderResolver';
 import type { GlobalSettings } from './Settings';
+import type { Janitor } from './Janitor';
+import type { Statistics } from './Statistics';
 
 export type ActionOutcome = 'ok' | 'suspended' | 'discard' | 'fail' | 'disable' | 'defer';
 
@@ -32,6 +34,7 @@ export interface ActionWorker {
   beginTransaction?(): void;
   endTransaction?(): ActionOutcome;
   pauseAfterAction?(): number;
+  failureCode?(): number;
   close(): void;
 }
 
@@ -68,6 +71,9 @@ export interface ModuleContext {
   readonly host: RsyslogHost;
   readonly runtime: RuntimeLog;
   readonly settings: GlobalSettings;
+  readonly statistics: Statistics;
+  readonly janitor: Janitor;
+  recordSender(sender: string, messages: number, seconds: number): void;
   template(name: string): Template | undefined;
   report(message: string): void;
   warn(message: string): void;
@@ -116,6 +122,7 @@ export interface InputInstance {
   check?(): void;
   start(): boolean;
   stop(): void;
+  hup?(): void;
   readonly description: string;
 }
 

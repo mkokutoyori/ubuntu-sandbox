@@ -3239,17 +3239,86 @@ alors que la RFC 6146 autorise de le mettre en file ; (3) aucune commande Cisco/
 documentation constructeur.
 
 
-### [auditd] ce que le demon ne fait pas encore : plugins audisp, binaire auditd, autrace
-`auditd.conf` est lu par un seul analyseur (`audit/daemon/AuditdConfig.ts`, port de `auditd-config.c`) et le demon
-applique au journal la rotation, `max_log_file_action`, les actions d'espace, ENRICHED, `log_group` et les signaux
-(`audit/daemon/AuditdLogWriter.ts`, port de `auditd-event.c`). Le binaire reel n'a pas pu etre lance (il exige
-l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2 et les chaines du binaire du paquet.
-**Reste** : (1) le dispatcher et les plugins de `/etc/audit/plugins.d` (`audisp-syslog`, `audisp-af_unix`,
-`plugin_dir`, `q_depth`, `overflow_action`, `max_restarts`) : `Number of active plugins` vaut toujours 0 dans
-`/var/run/auditd.state` ; (2) la commande `auditd` (`-f -l -n -s -c`) est inconnue du shell, seul le service existe ;
-(3) `autrace` est inconnu : le simulateur n'emet pas d'evenement SYSCALL pour un programme arbitraire, seulement
-pour les operations de fichier qu'il projette, de sorte qu'une regle `-S all -F pid=N` n'aurait presque rien a
-voir ; (4) les actions `EXEC`, `EMAIL`, `SINGLE` et `HALT` des seuils d'espace sont cablees (script lance, courrier
-dans `/var/mail`, isolation de la cible) mais aucune sonde ne les exerce encore ; (5) `hostResolves` de la
-validation de `action_mail_acct` repond toujours oui, le message « failed looking up host » n'est donc jamais emis ;
-(6) la queue et les modes `log_format = ENRICHED` n'utilisent pas encore `name_format` ≠ NONE dans une sonde.
+### [auditd] ce que le demon et autrace ne font pas encore
+`auditd.conf` est lu par un seul analyseur (`audit/daemon/AuditdConfig.ts`, port de `auditd-config.c`), le demon
+applique rotation, actions d'espace, ENRICHED, `log_group` et signaux (`audit/daemon/AuditdLogWriter.ts`, port de
+`auditd-event.c`), le dispatcher audisp lance `audisp-syslog` et `audisp-af_unix` (`audit/daemon/dispatch/`).
+La commande `auditd` (`-f -l -n -s -c`, `audit/tools/AuditdCommandTool.ts`, port du `main` de `auditd.c`) demarre le
+demon a la main, ecrit `/var/run/auditd.pid` et refuse de reprendre le noyau a un demon deja inscrit
+(`Unable to set audit pid, exiting` + `DAEMON_ABORT`). `autrace` (`audit/tools/AutraceTool.ts`, port de `autrace.c`)
+pose les regles `pid=N` et `ppid=N`, execute le programme comme enfant sous ce pid et nettoie.
+Le binaire reel n'a pas pu etre lance (il exige l'ecriture de `/etc/audit`) : l'oracle est le source 3.1.2.
+**Reste** : (1) `auditd -f` et `-n` gardent le terminal (flux du terminal, messages en direct) mais Ctrl-C rend l'invite
+alors que le vrai auditd ignore SIGINT : il faut le tuer depuis une autre session ; le daemon, lui, continue ; (2) `autrace` et toute regle `exit` voient maintenant tous les appels systeme de `cat`, `ls <repertoire>`,
+`stat`/`head`/`tail`/`wc`/`md5sum`/`sha256sum <fichier>`, `whoami`, `hostname` et `uname` (rejeu de la trace strace du binaire reel, `audit/trace/ProgramTraces.generated.ts`,
+produit par `scripts/oracle/record_syscall_traces.py`) ; les autres commandes, `ls` sans operande ou avec option,
+et `exit_group` gardent le seul execve/openat projete (exit_group : le noyau l'ecrit par audit_free sans success ni
+exit, ce que ce conteneur ne permet pas de verifier) ; (3) le « Cannot daemonize » du parent lors d'un second demon n'est pas emis (son errno
+est indetermine dans le source) ; (4) un plugin dont le programme est un script recoit les evenements, mais l'interprete de scripts est synchrone : le
+script est relance une fois par evenement avec la ligne pour entree standard, sous le pid du processus plugin, de sorte
+que ses variables ne survivent pas d'un evenement a l'autre et qu'un evenement produit par le plugin lui-meme n'est pas
+re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connecter (client) : `nc -lU` et `nc -uU` restent refuses, et seul `audisp-af_unix` ecoute une socket UNIX en flux ; la file du dispatcher (`q_depth`, `overflow_action`, profondeur dans `/var/run/auditd.state`) est evaluee, mais la capacite du tube d'un plugin arrete (tampon d'envoi 212992 octets, 576 octets de surcout par message) vient de la disposition du noyau Linux et n'a pas ete verifiee par execution : seule l'existence d'une borne est sondee, pas sa valeur. `poweroff.target` et `halt.target` arretent les unites sans eteindre la machine : le simulateur n'a pas d'etat « eteint » distinct d'un redemarrage de services.
+
+### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
+`statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
+et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
+la persistance de `dyn_stats` : l'ecriture est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
+compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
+(l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
+les statistiques par expediteur (`_sender_stat`) ne sont alimentees que par `imtcp` (le source alimente aussi `imptcp`, absent ici) ; `resource-usage` ne fournit que
+utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
+oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
+source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
+omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
+`windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
+echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
+deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
+
+### [rsyslog] ratelimit() : limites du lecteur YAML, de policyWatch et de la creation des limiteurs
+`ratelimit()` est porte de rsyslog 8.2608.0 (`engine/SharedRateLimit.ts`, `PerSourceRateLimit.ts`, `RateLimitPolicy.ts`, `YamlEvents.ts`) :
+fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
+`YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
+etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
+sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage vers le chemin et de `chmod` du VFS (`onWrite`, `onEntryChange`) ;
+`chown`, `touch` sans ecriture et la creation d'un lien n'en emettent pas ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
+source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
+(`global(senders.keepTrack)`) restent a porter.
+
+### [rsyslog] `action.errorfile` et `action.externalstate.file` : le moteur n'a pas la phase de commit de la source
+Les deux parametres sont evalues (`engine/ActionRuntime.ts`) : le fichier d'etat externe suspend l'action avant chaque message et la
+relance quand il ne dit plus `SUSPENDED` ; le fichier d'erreurs recoit une ligne JSON par message perdu et le compteur `failed`
+suit. Ce qui reste : le moteur execute `doAction()` message par message, la ou la source collecte les messages d'une transaction
+et les valide ensemble ; le fichier d'erreurs est donc alimente a la fin du lot et non par la phase de commit, qui rejoue chaque
+message d'un lot en echec isolement avant de l'ecrire (le module voit un essai de plus dans la source) ; le code de statut ecrit
+vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desactive, `-2125` sans commande de limite de taille,
+`-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
+source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
+
+### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
+Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
+Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
+`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
+`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
+`libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
+`abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
+Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
+`lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
+(et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
+moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
+`dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
+« linkedlist » en memoire.
+
+### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
+Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
+`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
+(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
+Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
+System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
+TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
+(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
+`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
+8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
+hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
+`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
+le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.

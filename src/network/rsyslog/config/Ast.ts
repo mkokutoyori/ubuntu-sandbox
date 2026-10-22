@@ -80,4 +80,4 @@ export type Stmt =
     readonly k: 'propfilt'; readonly printable: string; readonly prop: PropertyDescriptor; readonly operation: PropertyFilterOperation;
     readonly negated: boolean; readonly value: string; readonly then: Stmt[];
   }
-  | { readonly k: 'reloadLookupTable'; readonly args: Expr[] };
+  | { readonly k: 'reloadLookupTable'; readonly args: Expr[]; readonly table?: string; readonly stub?: string | null };

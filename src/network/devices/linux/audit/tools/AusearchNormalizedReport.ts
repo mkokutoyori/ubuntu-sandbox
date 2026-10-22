@@ -54,7 +54,7 @@ export class NormalizedReport {
 
   report(event: AuditEvent, mode: 'csv' | 'text', eoeTimeout: number): void {
     const feed = new AuparseFeed(eoeTimeout, (ready) => (mode === 'csv' ? this.csv(ready) : this.text(ready)));
-    for (const node of event.records) feed.feed(node.message);
+    for (const node of event.records) feed.feed(event.enriched ? `${node.message}\u001d${node.interp ?? ''}` : node.message);
     feed.flush();
   }
 

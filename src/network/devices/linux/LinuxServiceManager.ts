@@ -135,6 +135,9 @@ interface DefaultTarget {
 const DEFAULT_TARGETS: readonly DefaultTarget[] = [
   { name: 'graphical.target', description: 'Graphical Interface', unitLines: ['Requires=multi-user.target', 'After=multi-user.target', 'AllowIsolate=yes'] },
   { name: 'multi-user.target', description: 'Multi-User System', unitLines: ['Requires=basic.target', 'After=basic.target', 'AllowIsolate=yes'] },
+  { name: 'rescue.target', description: 'Rescue Mode', unitLines: ['Requires=sysinit.target', 'After=sysinit.target', 'AllowIsolate=yes'] },
+  { name: 'poweroff.target', description: 'System Power Off', unitLines: ['DefaultDependencies=no', 'AllowIsolate=yes'] },
+  { name: 'halt.target', description: 'System Halt', unitLines: ['DefaultDependencies=no', 'AllowIsolate=yes'] },
   { name: 'basic.target', description: 'Basic System', unitLines: ['Requires=sysinit.target', 'After=sysinit.target'] },
   { name: 'sysinit.target', description: 'System Initialization', unitLines: ['Requires=local-fs.target', 'After=local-fs.target'] },
   { name: 'local-fs.target', description: 'Local File Systems' },

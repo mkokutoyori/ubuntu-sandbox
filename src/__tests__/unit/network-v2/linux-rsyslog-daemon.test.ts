@@ -90,7 +90,7 @@ describe('boot, signals and rotation', () => {
 
   it('rsyslogd -v prints its header; WITNESS: unchanged from the previous command', async () => {
     const { servers: [host] } = lab();
-    expect(await host.executeCommand('rsyslogd -v')).toContain('rsyslogd  8.2112.0 (aka 2021.12) compiled with:');
+    expect(await host.executeCommand('rsyslogd -v')).toContain('rsyslogd  8.2610.0 (aka 2021.12) compiled with:');
   }, 30_000);
 
   it('rsyslogd -N1 reports the first error of a bad rule and exits 1', async () => {

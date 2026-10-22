@@ -77,7 +77,20 @@ class KernelLogReader implements InputInstance {
     this.context.runtime.internal(severity, RS_RET.NO_ERRCODE, text, false, LOG_KERN);
   }
 
+  private ensureLimiter(): void {
+    if (this.limiter !== undefined) return;
+    const settings = this.settings;
+    const created = this.context.rateLimiter({
+      module: 'imklog', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName, forInput: true,
+    });
+    this.limiter = created === null ? null : created.limiter;
+  }
+
   start(): boolean {
+    if (this.settings.rateName !== null) {
+      this.ensureLimiter();
+      if (this.limiter === null) return false;
+    }
     const log = this.context.host.kernelLog;
     if (log === undefined) {
       this.internalMessage(LOG_ERR, `imklog: cannot open kernel log (${this.path}): No such file or directory.`);
@@ -155,12 +168,7 @@ class KernelLogReader implements InputInstance {
       }
     }
     if (!settings.permitNonKernel && (priority >> 3) !== LOG_KERN) return;
-    if (this.limiter === undefined) {
-      const created = this.context.rateLimiter({
-        module: 'imklog', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName, forInput: true,
-      });
-      this.limiter = created === null ? null : created.limiter;
-    }
+    this.ensureLimiter();
     const ruleset = settings.ruleset !== null && this.context.rulesetExists(settings.ruleset) ? settings.ruleset : null;
     this.context.submitter.submit({
       raw: body, inputName: 'imklog', fromHost: null, fromHostIp: '127.0.0.1', fromHostPort: null, ruleset, localOrigin: true,
@@ -235,7 +243,6 @@ export const imklog: InputModule = {
       if (settings.rateBurst === -1) settings.rateBurst = 10000;
     }
     settings.configuredViaModule = true;
-    for (const entry of params.entries) entry.used = true;
     return true;
   },
   implicitInstances(context) {

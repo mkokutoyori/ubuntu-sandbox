@@ -59,4 +59,5 @@ def main():
     json.dump({"tool": "aureport 3.1.2", "logs": ls, "cases": cases}, open(out, "w"), separators=(",", ":"))
     print(len(cases), "cases")
 
-main()
+if __name__ == "__main__":
+    main()

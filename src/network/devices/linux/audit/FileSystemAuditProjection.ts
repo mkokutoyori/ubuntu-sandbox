@@ -28,13 +28,13 @@ export class FileSystemAuditProjection {
 
   private onSyscallInvoked(p: SyscallInvokedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    this.rules.onSyscall(p.syscall, p.path, toContext(p));
+    this.rules.onSyscall(p.syscall, p.path, toContext(p), p.perm, p.trace);
   }
 }
 
 function toContext(p: FileAccessedPayload | SyscallInvokedPayload): AuditActorContext {
   return {
     pid: p.pid, ppid: p.ppid, uid: p.uid, euid: p.euid, gid: p.gid, egid: p.egid,
-    auid: p.auid, comm: p.comm, exe: p.exe, tty: p.tty, success: p.success,
+    auid: p.auid, comm: p.comm, exe: p.exe, tty: p.tty, success: p.success, cwd: p.cwd,
   };
 }

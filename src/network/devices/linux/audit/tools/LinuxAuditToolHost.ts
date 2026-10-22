@@ -29,7 +29,7 @@ export function auditToolHost(executor: LinuxCommandExecutor): AuditSearchHost {
     nowSec: () => Math.floor(simulationNowMs() / 1000),
     uptimeSec: () => parseFloat((vfs.readFile('/proc/uptime') ?? '0').split(' ')[0]) || 0,
     auditConfig: () => {
-      const loaded = loadAuditdConfig(vfsAuditdConfigFs(vfs, userMgr, { uid: userMgr.currentUid, gids: [userMgr.currentGid] }), { configFile: AUDITD_CONF_PATH, allowLinks: false });
+      const loaded = loadAuditdConfig(vfsAuditdConfigFs(vfs, userMgr, (host) => executor.resolveHostAddresses(host).length > 0, { uid: userMgr.currentUid, gids: [userMgr.currentGid] }), { configFile: AUDITD_CONF_PATH, allowLinks: false });
       const note = loaded.rc === 0 ? '' : `NOTE - using built-in logs: ${loaded.config.logFile}\n`;
       return { logFile: loaded.config.logFile, eoeTimeout: loaded.config.endOfEventTimeout, stderr: formatMessages(loaded.messages) + note };
     },
