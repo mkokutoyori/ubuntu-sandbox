@@ -12,6 +12,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { lookupIpv4SpecialPurpose, lookupIpv6SpecialPurpose, type SpecialPurposeEntry } from '@/network/core/SpecialPurposeRegistry';
 
 import type { NetworkPdu } from './NetworkPdu';
 export type { NetworkPdu } from './NetworkPdu';
@@ -145,13 +146,6 @@ export class MACAddress {
 
 // ─── IPv4 Address ────────────────────────────────────────────────────
 
-const RESERVED_IPV4_BLOCKS: ReadonlyArray<readonly [number, number]> = [
-  [0x00000000, 8], [0x0a000000, 8], [0x64400000, 10], [0x7f000000, 8],
-  [0xa9fe0000, 16], [0xac100000, 12], [0xc0000000, 24], [0xc0000200, 24],
-  [0xc0a80000, 16], [0xc6120000, 15], [0xc6336400, 24], [0xcb007100, 24],
-  [0xf0000000, 4], [0xffffffff, 32],
-];
-
 export class IPAddress {
   private readonly octets: number[];
 
@@ -244,9 +238,29 @@ export class IPAddress {
    * ici l'usage special, qui est une autre question que la portee.
    */
   isReserved(): boolean {
-    const n = this.toUint32();
-    return RESERVED_IPV4_BLOCKS.some(([base, prefix]) =>
-      (n >>> (32 - prefix)) === (base >>> (32 - prefix)));
+    const entry = this.specialPurpose();
+    return entry !== null && !entry.global;
+  }
+
+  specialPurpose(): SpecialPurposeEntry | null {
+    return lookupIpv4SpecialPurpose(this.toUint32());
+  }
+
+  isPrivate(): boolean {
+    return this.specialPurpose()?.rfc === 'RFC1918';
+  }
+
+  isDocumentation(): boolean {
+    return this.specialPurpose()?.rfc === 'RFC5737';
+  }
+
+  isLinkLocal(): boolean {
+    return this.octets[0] === 169 && this.octets[1] === 254;
+  }
+
+  isGloballyForwardable(): boolean {
+    const entry = this.specialPurpose();
+    return entry === null || (entry.destination && entry.forwardable && entry.global);
   }
 
   /** Convert to 32-bit unsigned integer (for LPM calculations) */
@@ -462,6 +476,18 @@ export class IPv6Address {
   /** Check if this is a link-local address (fe80::/10) */
   isLinkLocal(): boolean {
     return (this.hextets[0] & 0xffc0) === 0xfe80;
+  }
+
+  specialPurpose(): SpecialPurposeEntry | null {
+    return lookupIpv6SpecialPurpose(this.hextets);
+  }
+
+  isDocumentation(): boolean {
+    return this.specialPurpose()?.rfc === 'RFC3849';
+  }
+
+  isUniqueLocal(): boolean {
+    return (this.hextets[0] & 0xfe00) === 0xfc00;
   }
 
   /** Check if this is a multicast address (ff00::/8) */
