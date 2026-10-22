@@ -22,7 +22,7 @@ import type { MplsPacket } from '@/network/mpls/MplsPacket';
 
 const host = {
   sendLabelled: () => undefined, sendUnlabelled: () => undefined, continueAsIp: () => undefined,
-  continueInVrf: () => undefined, expired: () => undefined, echoRequest: () => undefined, deliverPseudowire: () => undefined,
+  continueInVrf: () => undefined, expired: () => undefined, echoRequest: () => undefined, deliverPseudowire: () => undefined, deliverGach: () => undefined,
 };
 
 function engine(): MplsEngine {
