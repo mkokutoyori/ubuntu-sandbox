@@ -3388,3 +3388,23 @@ memoire un format de sortie. A reprendre avec une capture reelle.
 **Egalement non code** : l'octet-a-octet de la structure d'extension ICMP
 (en-tete, checksum, champ de longueur) - la RFC 4884 qui la definit n'est pas
 dans `docs/rfc/mpls`.
+
+### [mpls] les vues `show mpls ...` reposent sur des lignes d'exemple, pas sur une capture complete
+`show mpls forwarding-table`, `show mpls interfaces`, `show mpls ldp neighbor`,
+`bindings` et `discovery` sont rendues d'apres les en-tetes et les lignes
+d'exemple de IOS-XE que `genie.libs.parser` (`iosxe/show_mpls.py`) cite dans les
+commentaires de ses expressions regulieres. L'indentation absolue des blocs
+(4/8/10 espaces de `ldp neighbor`), la largeur des cellules d'adresses et le
+champ `Up time` au-dela d'un jour ne sont pas lisibles dans ces commentaires.
+`show mpls ldp neighbor detail`, `bindings all detail`, `show mpls ldp
+parameters` et `show mpls forwarding-table detail` ne sont pas servis.
+**Pourquoi ce n'est pas ferme** : CLAUDE.md §8 - une capture integrale d'IOS est
+necessaire pour trancher ; les ntc-templates ne portent que
+`show mpls interfaces` pour IOS.
+
+### [ldp] le reste de la RFC 5036
+Decouverte etendue (Targeted Hello, `R`), Label Request / Label Abort Request
+et mode Downstream on Demand, detection de boucle par Path Vector (codec pret,
+procedure absente), TCP MD5 (§2.9), sessions par interface (ATM/Frame Relay),
+Label Release sur retention conservatrice. La retention liberale et la
+distribution non sollicitee sont implementees.

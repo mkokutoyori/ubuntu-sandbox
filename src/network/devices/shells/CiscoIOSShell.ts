@@ -68,6 +68,8 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
+import { mplsFamily } from '@/cli/commands/mpls/mplsFamily';
+import { mplsHostOf } from './cisco/mplsHost';
 import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
@@ -495,6 +497,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
+      ...mplsFamily(() => mplsHostOf(this.d(), () => this.selectedPortsForConfigIf())),
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),

@@ -3897,6 +3897,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   private ldpEngine: LdpEngine | null = null;
 
+  hasMplsEngines(): boolean {
+    return this.mplsEngine !== null || this.ldpEngine !== null;
+  }
+
   getLdpEngine(): LdpEngine {
     this.ldpEngine ??= new LdpEngine({
       routerId: () => this.ldpRouterId(),
@@ -3914,13 +3918,37 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.ldpEngine;
   }
 
+  private ldpAdoptedRouterId: IPAddress | null = null;
+
   private ldpRouterId(): IPAddress {
+    const desired = this.desiredLdpRouterId();
+    const engine = this.ldpEngine;
+    const inUse = engine !== null && engine.sessions().some(session => session.state === 'operational');
+    if (this.ldpAdoptedRouterId !== null && inUse && engine.routerIdSource?.force !== true) return this.ldpAdoptedRouterId;
+    this.ldpAdoptedRouterId = desired;
+    return desired;
+  }
+
+  private desiredLdpRouterId(): IPAddress {
+    const source = this.ldpEngine?.routerIdSource;
+    if (source) {
+      const port = this.ports.get(source.iface);
+      const address = port?.getIPAddress();
+      if (port && address && port.getIsUp()) return address;
+    }
     const addresses = [...this.ports.entries()]
-      .flatMap(([name, port]) => { const a = port.getIPAddress(); return a ? [{ name, address: a }] : []; });
+      .flatMap(([name, port]) => { const a = port.getIPAddress(); return a && port.getIsUp() ? [{ name, address: a }] : []; });
     const loopbacks = addresses.filter(entry => /^loopback/i.test(entry.name));
     const pool = loopbacks.length > 0 ? loopbacks : addresses;
     const best = pool.reduce<IPAddress | null>((top, entry) => (top === null || entry.address.toUint32() > top.toUint32() ? entry.address : top), null);
     return best ?? new IPAddress('0.0.0.0');
+  }
+
+  setLdpRouterIdSource(iface: string | null, force: boolean): void {
+    const engine = this.getLdpEngine();
+    engine.routerIdSource = iface === null ? null : { iface, force };
+    if (force) engine.resetSessions();
+    engine.reconcile();
   }
 
   private sendLdpHello(iface: string, payload: Uint8Array): void {

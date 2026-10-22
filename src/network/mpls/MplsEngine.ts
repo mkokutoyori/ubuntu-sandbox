@@ -28,6 +28,7 @@ export class MplsEngine implements TtlPolicy {
     labelledIn: 0, labelledOut: 0, imposed: 0, disposed: 0, expired: 0, noBinding: 0, droppedDisabledInterface: 0,
   };
   private readonly interfaces = new Set<string>();
+  private readonly switchedBytes = new Map<number, number>();
 
   constructor(private readonly host: MplsHost) {}
 
@@ -42,6 +43,8 @@ export class MplsEngine implements TtlPolicy {
       return;
     }
     this.counters.labelledIn++;
+    const incoming = packet.stack[0].label.value;
+    this.switchedBytes.set(incoming, (this.switchedBytes.get(incoming) ?? 0) + packet.payload.totalLength);
     const decision = switchLabelled(packet, this.lfib, this);
     switch (decision.kind) {
       case 'labelled':
@@ -68,6 +71,10 @@ export class MplsEngine implements TtlPolicy {
   tunnel(inPort: string, expired: MplsPacket, error: IPv4Packet): void {
     const restamped = expired.stack.map(entry => ({ ...entry, ttl: MAX_MPLS_TTL }));
     this.receive(inPort, { type: 'mpls', stack: restamped, payload: error });
+  }
+
+  bytesSwitched(label: { readonly value: number }): number {
+    return this.switchedBytes.get(label.value) ?? 0;
   }
 
   impose(packet: IPv4Packet, iface: string, nextHop: IPAddress | null): MplsPacket | null {

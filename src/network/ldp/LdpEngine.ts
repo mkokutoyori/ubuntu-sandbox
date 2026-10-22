@@ -64,6 +64,15 @@ export interface LdpLocalBinding {
   readonly fec: LdpFec;
   readonly label: MplsLabel;
   readonly egress: boolean;
+  readonly revision: number;
+}
+
+export interface LdpForwardingRow {
+  readonly localLabel: MplsLabel;
+  readonly outgoing: MplsLabel | 'none';
+  readonly fec: LdpFec;
+  readonly iface: string;
+  readonly nextHop: IPAddress;
 }
 
 const SESSION_RETRY_MS = 2000;
@@ -105,6 +114,9 @@ export class LdpEngine implements LdpSessionOwner {
   private messageCounter = 0;
   private configurationSequence = 0;
   private fingerprint = '';
+  private revisionCounter = 0;
+  private forwardingTable: LdpForwardingRow[] = [];
+  routerIdSource: { readonly iface: string; readonly force: boolean } | null = null;
 
   constructor(
     private readonly host: LdpHost,
@@ -121,6 +133,10 @@ export class LdpEngine implements LdpSessionOwner {
       keepAliveTimeSeconds: this.config.keepAliveSeconds, advertisementMode: 'unsolicited',
       loopDetection: false, maxPduLength: this.config.maxPduLength,
     };
+  }
+
+  nowMs(): number {
+    return this.getScheduler().now();
   }
 
   nextMessageId(): number {
@@ -156,6 +172,27 @@ export class LdpEngine implements LdpSessionOwner {
     this.reconcile();
   }
 
+  private globallyEnabled = true;
+
+  isGloballyEnabled(): boolean {
+    return this.globallyEnabled;
+  }
+
+  setGloballyEnabled(enabled: boolean): void {
+    if (this.globallyEnabled === enabled) return;
+    this.globallyEnabled = enabled;
+    if (!enabled) {
+      if (this.helloTimer !== null) this.getScheduler().clear(this.helloTimer);
+      this.helloTimer = null;
+      this.resetSessions();
+      for (const adjacency of [...this.adjacencyTable.values()]) this.dropAdjacency(adjacency);
+    } else if (this.enabledInterfaces.size > 0) {
+      this.start();
+      for (const iface of this.enabledInterfaces) this.sendHelloOn(iface);
+    }
+    this.reconcile();
+  }
+
   isInterfaceEnabled(iface: string): boolean {
     return this.enabledInterfaces.has(iface);
   }
@@ -168,6 +205,10 @@ export class LdpEngine implements LdpSessionOwner {
     if (this.helloTimer === null) {
       this.helloTimer = this.getScheduler().setInterval(() => this.tick(), this.config.helloIntervalSeconds * 1000);
     }
+  }
+
+  resetSessions(): void {
+    for (const session of [...this.sessionTable.values()]) session.shutdown();
   }
 
   stop(): void {
@@ -191,6 +232,7 @@ export class LdpEngine implements LdpSessionOwner {
   }
 
   private sendHelloOn(iface: string): void {
+    if (!this.globallyEnabled) return;
     const port = this.host.interfaces().find(i => i.name === iface && i.up);
     if (!port) return;
     const bytes = encodePdu({
@@ -204,7 +246,7 @@ export class LdpEngine implements LdpSessionOwner {
   }
 
   receiveHello(inPort: string, source: IPAddress, payload: Uint8Array): void {
-    if (!this.enabledInterfaces.has(inPort)) return;
+    if (!this.globallyEnabled || !this.enabledInterfaces.has(inPort)) return;
     let pdu;
     try { pdu = decodePdu(payload); } catch { return; }
     if (pdu.sender.equals(this.localId) || !pdu.sender.isPlatformWide()) return;
@@ -471,7 +513,9 @@ export class LdpEngine implements LdpSessionOwner {
         this.withdrawEverywhere(existing);
         if (!existing.egress) this.mpls.lfib.releaseLabel(existing.label);
       }
-      this.localBindings.set(key, { fec, label: egress ? MplsLabel.IMPLICIT_NULL : this.mpls.lfib.allocateLabel(), egress });
+      this.localBindings.set(key, {
+        fec, label: egress ? MplsLabel.IMPLICIT_NULL : this.mpls.lfib.allocateLabel(), egress, revision: ++this.revisionCounter,
+      });
     }
 
     for (const [peerKey, session] of this.sessionTable) {
@@ -528,12 +572,14 @@ export class LdpEngine implements LdpSessionOwner {
   private install(fecs: ReadonlyMap<string, { fec: LdpFec; route: LdpRoute }>): void {
     const wantedIlm = new Map<number, true>();
     const wantedFtn = new Map<string, FecInstall>();
+    const rows: LdpForwardingRow[] = [];
     for (const [key, { fec, route }] of fecs) {
       const binding = this.localBindings.get(key);
       if (!binding || binding.egress || !route.nextHop) continue;
       if (!this.enabledInterfaces.has(route.iface)) continue;
       const owner = this.peerOwning(route.nextHop, route.iface);
       const remote = owner ? this.received.get(owner.key)?.get(key) : undefined;
+      rows.push({ localLabel: binding.label, outgoing: remote ?? 'none', fec, iface: route.iface, nextHop: route.nextHop });
       if (!remote) continue;
       if (remote.isImplicitNull()) {
         this.mpls.lfib.setIlm(binding.label, { kind: 'pop', iface: route.iface, nextHop: route.nextHop });
@@ -551,6 +597,7 @@ export class LdpEngine implements LdpSessionOwner {
     for (const [key, entry] of [...this.installedFtn]) {
       if (!wantedFtn.has(key)) this.mpls.lfib.removeFtn(entry.prefix, entry.length);
     }
+    this.forwardingTable = rows;
     this.installedIlm.clear();
     for (const [value] of wantedIlm) this.installedIlm.set(value, true);
     this.installedFtn.clear();
@@ -559,6 +606,20 @@ export class LdpEngine implements LdpSessionOwner {
 
   receiveUdp(inPort: string, source: IPAddress, payload: unknown): void {
     if (payload instanceof Uint8Array) this.receiveHello(inPort, source, payload);
+  }
+
+  forwardingRows(): readonly LdpForwardingRow[] {
+    return this.forwardingTable;
+  }
+
+  setHelloTimers(intervalSeconds: number | null, holdSeconds: number | null): void {
+    if (intervalSeconds !== null) this.config.helloIntervalSeconds = intervalSeconds;
+    if (holdSeconds !== null) this.config.helloHoldSeconds = holdSeconds;
+    if (this.helloTimer !== null) {
+      this.getScheduler().clear(this.helloTimer);
+      this.helloTimer = this.getScheduler().setInterval(() => this.tick(), this.config.helloIntervalSeconds * 1000);
+    }
+    for (const iface of this.enabledInterfaces) this.sendHelloOn(iface);
   }
 
   adjacencies(): readonly LdpAdjacency[] {
