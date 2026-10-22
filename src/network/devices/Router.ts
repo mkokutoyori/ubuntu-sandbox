@@ -257,6 +257,7 @@ import { PseudowireEngine, type PseudowireHost } from '../pw/PseudowireEngine';
 import { VplsEngine } from '../pw/VplsEngine';
 import { MplsTpEngine } from '../mpls/tp/MplsTpEngine';
 import { TpBfdEngine } from '../mpls/tp/TpBfd';
+import { TpPerformanceEngine } from '../mpls/tp/TpPerformance';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -4046,6 +4047,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         }
       },
       deliverGach: (_inPort, delivery) => this.getMplsTpEngine().receive(delivery),
+      deliverTransport: (inPort, lsp, packet) => {
+        this.getMplsTpEngine().receiveClientPacket(lsp, packet);
+        this.processIPv4(inPort, packet, true);
+      },
       deliverPseudowire: (inPort, owner, endpoint, payload) => {
         if (owner === 'vpls') this.getVplsEngine().egress(inPort, endpoint, payload);
         else this.getPseudowireEngine().egress(endpoint, payload);
@@ -4068,6 +4073,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private tpBfd: TpBfdEngine | null = null;
+  private tpPerformance: TpPerformanceEngine | null = null;
+
+  getTpPerformanceEngine(): TpPerformanceEngine {
+    this.tpPerformance ??= new TpPerformanceEngine(this.getMplsTpEngine());
+    return this.tpPerformance;
+  }
 
   getTpBfdEngine(): TpBfdEngine {
     this.tpBfd ??= new TpBfdEngine(this.getMplsTpEngine(), () => this.getScheduler());

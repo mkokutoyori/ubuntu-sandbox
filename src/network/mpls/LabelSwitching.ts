@@ -42,6 +42,7 @@ export type SwitchingDecision =
   | { readonly kind: 'unlabelled'; readonly packet: IPv4Packet; readonly iface: string; readonly nextHop: IPAddress }
   | { readonly kind: 'deliver'; readonly packet: IPv4Packet; readonly ttlAccounted: boolean }
   | { readonly kind: 'deliver-vrf'; readonly packet: IPv4Packet; readonly vrf: string; readonly ttlAccounted: boolean }
+  | { readonly kind: 'deliver-transport'; readonly packet: IPv4Packet; readonly lsp: string }
   | { readonly kind: 'deliver-gach'; readonly payload: GachPayload; readonly lsp: string | null }
   | { readonly kind: 'deliver-pw'; readonly payload: PseudowirePayload; readonly owner: 'xconnect' | 'vpls'; readonly endpoint: string };
 
@@ -103,6 +104,9 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
     return { kind: 'deliver-gach', payload: packet.payload, lsp: null };
   }
   const terminating = lfib.lookupIlm(top.label);
+  if (terminating?.kind === 'tp-lsp' && below.length === 0 && carriesIp(packet)) {
+    return { kind: 'deliver-transport', packet: packet.payload, lsp: terminating.lsp };
+  }
   if (terminating?.kind === 'tp-lsp') {
     const [gal] = below;
     if (below.length !== 1 || !gal.bottom || !gal.label.equals(MplsLabel.GENERIC_ASSOCIATED_CHANNEL) || !isGachPayload(packet.payload)) {

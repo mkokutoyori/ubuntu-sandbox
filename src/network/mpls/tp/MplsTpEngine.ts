@@ -1,4 +1,4 @@
-import type { IPAddress } from '@/network/core/types';
+import type { IPAddress, IPv4Packet } from '@/network/core/types';
 import { makeLabelStackEntry, withBottomOfStack, MAX_MPLS_TTL } from '../LabelStack';
 import type { GachDelivery, MplsEngine } from '../MplsEngine';
 import { MplsLabel } from '../MplsLabel';
@@ -24,6 +24,13 @@ export interface TpEgressLsp {
   readonly inLabel: number;
 }
 
+export interface LspDataCounters {
+  txPackets: bigint;
+  txOctets: bigint;
+  rxPackets: bigint;
+  rxOctets: bigint;
+}
+
 export type GachHandler = (delivery: GachDelivery) => void;
 
 export interface MplsTpHost {
@@ -35,6 +42,7 @@ export class MplsTpEngine {
   private readonly ingress = new Map<string, TpIngressLsp>();
   private readonly handlers = new Map<number, GachHandler>();
   readonly counters = { sent: 0, received: 0, unhandled: 0 };
+  private readonly data = new Map<string, LspDataCounters>();
 
   constructor(private readonly host: MplsTpHost) {}
 
@@ -83,6 +91,36 @@ export class MplsTpEngine {
     const stack = withBottomOfStack([makeLabelStackEntry(MplsLabel.GENERIC_ASSOCIATED_CHANNEL, 1)]);
     this.counters.sent++;
     this.host.sendLabelled(iface, nextHop, { type: 'mpls', stack, payload });
+  }
+
+  dataCounters(lsp: string): Readonly<LspDataCounters> {
+    return this.countersOf(lsp);
+  }
+
+  private countersOf(lsp: string): LspDataCounters {
+    let counters = this.data.get(lsp);
+    if (counters === undefined) {
+      counters = { txPackets: 0n, txOctets: 0n, rxPackets: 0n, rxOctets: 0n };
+      this.data.set(lsp, counters);
+    }
+    return counters;
+  }
+
+  sendClientPacket(name: string, packet: IPv4Packet): boolean {
+    const lsp = this.ingress.get(name);
+    if (lsp === undefined) return false;
+    const counters = this.countersOf(name);
+    counters.txPackets += 1n;
+    counters.txOctets += BigInt(packet.totalLength);
+    const stack = withBottomOfStack([makeLabelStackEntry(MplsLabel.of(lsp.outLabel), MAX_MPLS_TTL)]);
+    this.host.sendLabelled(lsp.iface, lsp.nextHop, { type: 'mpls', stack, payload: packet });
+    return true;
+  }
+
+  receiveClientPacket(lsp: string, packet: IPv4Packet): void {
+    const counters = this.countersOf(lsp);
+    counters.rxPackets += 1n;
+    counters.rxOctets += BigInt(packet.totalLength);
   }
 
   receive(delivery: GachDelivery): void {

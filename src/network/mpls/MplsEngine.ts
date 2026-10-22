@@ -17,6 +17,7 @@ export interface MplsHost {
   echoRequest(inPort: string, packet: MplsPacket): void;
   deliverPseudowire(inPort: string, owner: 'xconnect' | 'vpls', endpoint: string, payload: PseudowirePayload): void;
   deliverGach(inPort: string, delivery: GachDelivery): void;
+  deliverTransport(inPort: string, lsp: string, packet: IPv4Packet): void;
 }
 
 export interface GachDelivery {
@@ -107,6 +108,10 @@ export class MplsEngine implements TtlPolicy {
       case 'deliver-vrf':
         this.counters.disposed++;
         this.host.continueInVrf(inPort, decision.packet, decision.vrf, decision.ttlAccounted);
+        return;
+      case 'deliver-transport':
+        this.counters.disposed++;
+        this.host.deliverTransport(inPort, decision.lsp, decision.packet);
         return;
       case 'deliver-gach':
         this.counters.disposed++;
