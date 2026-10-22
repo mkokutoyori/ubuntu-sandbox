@@ -2817,7 +2817,8 @@ export function filterRouteTableByCode(all: string, codes: readonly string[]): s
 function showIpRouteAll(router: Router): string {
   router.convergeDynamicRouting();
   const rt = bestRoutesPerPrefix(
-    ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
+    ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)
+      && !(r.type === 'connected' && router.vrfOfInterface(r.iface) !== null)),
   );
   // Un seul rendu pour toute la table : voir `renderIpRouteTable`.
   return renderIpRouteTable(routerRouteTableHost(router), rt as any, (route) => {
@@ -2866,28 +2867,15 @@ function showIpRouteSummary(router: Router): string {
 }
 
 function showIpRouteVrf(router: Router, vrfName: string): string {
-  const r = router as unknown as { _vrfs?: Map<string, unknown>; _ciscoVrfRoutes?: Map<string, Array<{ network: string; mask: string; nextHop: string | null; iface: string | null }>> };
-  if (!r._vrfs || !r._vrfs.has(vrfName)) return `% No such VRF, ${vrfName}`;
-  const routes = r._ciscoVrfRoutes?.get(vrfName) ?? [];
-  const codes = [
-    'Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP',
-    '       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area',
-    '       * - candidate default, U - per-user static route, o - ODR',
-    '',
-    `Routing Table: ${vrfName}`,
-    '',
-  ];
-  if (routes.length === 0) {
-    codes.push(`Routes: 0 in VRF ${vrfName}`);
-    return codes.join('\n');
-  }
-  const lines: string[] = [];
-  for (const entry of routes) {
-    const cidr = maskToCIDR(entry.mask);
-    const via = entry.nextHop ? `via ${entry.nextHop}` : entry.iface ? `directly connected, ${entry.iface}` : '';
-    lines.push(`S       ${entry.network}/${cidr} [1/0] ${via}`);
-  }
-  return [...codes, ...lines].join('\n');
+  const store = (router as unknown as { _vrfs?: Map<string, unknown> })._vrfs;
+  if (!store || !store.has(vrfName)) return `% No such VRF, ${vrfName}`;
+  const members = router.vrfMemberAddresses(vrfName);
+  const host = {
+    nowMs: () => router.getMonotonicClockMs(),
+    localAddresses: () => members[Symbol.iterator](),
+  };
+  const table = bestRoutesPerPrefix(router.vrfRouteTable(vrfName) as never[]);
+  return [`Routing Table: ${vrfName}`, renderIpRouteTable(host, table as never)].join('\n');
 }
 
 const DEFAULT_DISTANCE: Record<string, number> = {

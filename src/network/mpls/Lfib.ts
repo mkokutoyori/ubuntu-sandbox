@@ -14,7 +14,18 @@ export interface PopEntry {
   readonly nextHop: IPAddress | null;
 }
 
-export type IlmEntry = SwapEntry | PopEntry;
+export interface VrfEntry {
+  readonly kind: 'vrf';
+  readonly vrf: string;
+}
+
+export interface PseudowireEntry {
+  readonly kind: 'pw';
+  readonly owner: 'xconnect' | 'vpls';
+  readonly endpoint: string;
+}
+
+export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry;
 
 export interface FtnEntry {
   readonly prefix: IPAddress;

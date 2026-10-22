@@ -68,6 +68,8 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
+import { mplsFamily } from '@/cli/commands/mpls/mplsFamily';
+import { mplsHostOf } from './cisco/mplsHost';
 import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
@@ -495,6 +497,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
+      ...mplsFamily(() => mplsHostOf(this.d(), () => this.selectedPortsForConfigIf())),
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
@@ -2749,11 +2752,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return '';
     }
 
+    if (parsed.vrf !== undefined && !vrfStoreOf(router as unknown as VrfHost).has(parsed.vrf)) {
+      return `% VRF ${parsed.vrf} not configured`;
+    }
     this._pendingAsync = this.resoudreCible(router, parsed.target).then((adresse) => {
       if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
       return router
         .executePingSequence(
-          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
+          parsed.vrf === undefined ? undefined : { vrf: parsed.vrf })
         .then(results => formatCiscoPing(
           adresse, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     });

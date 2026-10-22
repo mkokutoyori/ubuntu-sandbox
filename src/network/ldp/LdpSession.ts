@@ -24,6 +24,7 @@ export interface LdpSessionOwner {
   scheduleTimeout(callback: () => void, delayMs: number): number;
   cancelTimeout(handle: number): void;
   nextMessageId(): number;
+  nowMs(): number;
   sessionOperational(session: LdpSession): void;
   sessionMessage(session: LdpSession, message: LdpMessage): void;
   sessionClosed(session: LdpSession, reason: string, rejected: boolean): void;
@@ -34,6 +35,9 @@ export class LdpSession {
   peer: LdpIdentifier | null;
   negotiated: LdpSessionParameters | null = null;
   readonly peerAddresses = new Map<string, IPAddress>();
+  messagesSent = 0;
+  messagesReceived = 0;
+  operationalSinceMs: number | null = null;
   private buffer = new Uint8Array(0);
   private keepAliveTimer: number | null = null;
   private holdTimer: number | null = null;
@@ -63,6 +67,7 @@ export class LdpSession {
   send(messages: readonly LdpMessage[]): void {
     if (this.closed) return;
     const pdu: LdpPdu = { version: LDP_VERSION, sender: this.owner.localId, messages };
+    this.messagesSent += messages.length;
     this.socket.send(encodePdu(pdu));
     this.armKeepAlive();
   }
@@ -120,6 +125,7 @@ export class LdpSession {
       return;
     }
     this.restartHold();
+    this.messagesReceived += pdu.messages.length;
     if (this.peer === null) this.peer = pdu.sender;
     else if (!this.peer.equals(pdu.sender)) {
       this.notify(StatusCode.BadLdpIdentifier);
@@ -205,6 +211,7 @@ export class LdpSession {
   private inOpenRec(message: LdpMessage): void {
     if (message.kind === 'keepalive') {
       this.state = 'operational';
+      this.operationalSinceMs = this.owner.nowMs();
       this.armKeepAlive();
       this.restartHold();
       this.owner.sessionOperational(this);

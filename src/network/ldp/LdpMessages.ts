@@ -40,6 +40,9 @@ export const TlvType = {
   ConfigurationSequenceNumber: 0x0402,
   CommonSessionParameters: 0x0500,
   LabelRequestMessageId: 0x0600,
+  PwStatus: 0x096a,
+  PwInterfaceParameters: 0x096b,
+  MacList: 0x0404,
 } as const;
 
 export const StatusCode = {
@@ -69,6 +72,10 @@ export const StatusCode = {
   UnsupportedAddressFamily: 0x00000017,
   SessionRejectedBadKeepAliveTime: 0x00000018,
   InternalError: 0x00000019,
+  IllegalCBit: 0x00000024,
+  WrongCBit: 0x00000025,
+  PwStatus: 0x00000028,
+  LabelWithdrawPwStatusMethodNotSupported: 0x0000002b,
 } as const;
 
 export const FATAL_STATUS_CODES: ReadonlySet<number> = new Set([
@@ -79,9 +86,46 @@ export const FATAL_STATUS_CODES: ReadonlySet<number> = new Set([
   StatusCode.InternalError,
 ]);
 
+export interface PwInterfaceParameter {
+  readonly type: number;
+  readonly value: Uint8Array;
+}
+
+export interface PwIdFec {
+  readonly kind: 'pwid';
+  readonly controlWord: boolean;
+  readonly pwType: number;
+  readonly groupId: number;
+  readonly pwId: number | null;
+  readonly interfaceParameters: readonly PwInterfaceParameter[];
+}
+
+export interface AttachmentIdentifier {
+  readonly type: number;
+  readonly value: Uint8Array;
+}
+
+export interface GeneralizedPwFec {
+  readonly kind: 'gen-pwid';
+  readonly controlWord: boolean;
+  readonly pwType: number;
+  readonly agi: AttachmentIdentifier;
+  readonly saii: AttachmentIdentifier;
+  readonly taii: AttachmentIdentifier;
+  readonly interfaceParameters: readonly PwInterfaceParameter[];
+}
+
+export type PwFec = PwIdFec | GeneralizedPwFec;
+
 export type FecElement =
   | { readonly kind: 'wildcard' }
-  | { readonly kind: 'prefix'; readonly prefix: IPAddress; readonly length: number };
+  | { readonly kind: 'prefix'; readonly prefix: IPAddress; readonly length: number }
+  | PwIdFec
+  | GeneralizedPwFec;
+
+export function isPwFec(element: FecElement): element is PwFec {
+  return element.kind === 'pwid' || element.kind === 'gen-pwid';
+}
 
 export type AdvertisementMode = 'unsolicited' | 'on-demand';
 
@@ -109,6 +153,13 @@ export interface InitializationMessage {
 
 export interface KeepAliveMessage { readonly kind: 'keepalive'; readonly id: number }
 
+export interface MacWithdrawMessage {
+  readonly kind: 'mac-withdraw';
+  readonly id: number;
+  readonly fec: readonly FecElement[];
+  readonly macs: readonly (readonly number[])[];
+}
+
 export interface AddressMessage {
   readonly kind: 'address' | 'address-withdraw';
   readonly id: number;
@@ -123,6 +174,7 @@ export interface LabelMappingMessage {
   readonly requestMessageId?: number;
   readonly hopCount?: number;
   readonly pathVector?: readonly IPAddress[];
+  readonly pwStatus?: number;
 }
 
 export interface LabelRequestMessage {
@@ -138,6 +190,7 @@ export interface LabelWithdrawMessage {
   readonly id: number;
   readonly fec: readonly FecElement[];
   readonly label?: MplsLabel;
+  readonly status?: number;
 }
 
 export interface NotificationMessage {
@@ -147,6 +200,8 @@ export interface NotificationMessage {
   readonly forward: boolean;
   readonly referencedMessageId: number;
   readonly referencedMessageType: number;
+  readonly pwStatus?: number;
+  readonly fec?: readonly FecElement[];
 }
 
 export interface UnknownMessage {
@@ -157,7 +212,7 @@ export interface UnknownMessage {
 }
 
 export type LdpMessage =
-  | HelloMessage | InitializationMessage | KeepAliveMessage | AddressMessage
+  | HelloMessage | InitializationMessage | KeepAliveMessage | AddressMessage | MacWithdrawMessage
   | LabelMappingMessage | LabelRequestMessage | LabelWithdrawMessage | NotificationMessage | UnknownMessage;
 
 export interface LdpPdu {

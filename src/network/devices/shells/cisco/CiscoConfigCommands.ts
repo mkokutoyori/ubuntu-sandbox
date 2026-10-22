@@ -88,6 +88,7 @@ export interface CiscoShellContext {
   /** Set currently selected DHCP pool name */
   setSelectedDHCPPool(pool: string | null): void;
   /** Routing process currently being configured (config-router) */
+  getMode(): string;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null;
   setSelectedRoutingProto(v: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null): void;
   /** Resolve interface name abbreviation to full name */

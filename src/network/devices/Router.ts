@@ -243,10 +243,18 @@ import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { MplsEngine } from '../mpls/MplsEngine';
 import { LdpEngine, type LdpRoute } from '../ldp/LdpEngine';
+import type { VpnExportSource, VpnV4Host, VpnVrfConfig } from '../bgp/vpn/VpnV4Speaker';
+import { RouterMplsOam } from './router/MplsOam';
+import { MPLS_ECHO_UDP_PORT } from '../mpls/oam/EchoCodec';
+import { isEchoLoopbackDestination, isEchoRequestPacket } from '../mpls/oam/EchoAgent';
+import { lookupVrfRoute, vrfRoutes, type VrfRoute, type VrfRouteSources, type VrfStaticRouteConfig } from '../vrf/VrfForwarding';
+import type { VrfStore } from './shells/cisco/ciscoVrfStore';
 import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
 import { mplsLabelStackObject } from '../icmp/IcmpExtensions';
 import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
-import { isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
+import { carriesIp, isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
+import { PseudowireEngine, type PseudowireHost } from '../pw/PseudowireEngine';
+import { VplsEngine } from '../pw/VplsEngine';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -274,6 +282,7 @@ export interface RouteEntry extends IIPv4Route {
   description?: string;
   track?: string;
   vpnInstance?: string;
+  vpn?: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress };
   permanent?: boolean;
   installedAt?: number;
   /**
@@ -678,6 +687,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getTcpStack: () => this.tcpv2,
       getBus: () => this.getBus(),
     });
+    this.dynamicRouting.bgp.setVpnHost(this.vpnHost());
     this.shell = this.createShell();
     this.dynamicRouting.eigrp.setKeyResolver((chaine) => {
       const cles = this.ipSlaKeyChains()?.getChain(chaine)?.keys;
@@ -1554,6 +1564,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
+        this.pseudowires?.attachmentStateChanged(name);
+        this.vpls?.attachmentStateChanged(name);
         this.syncRouteDebug();
         this.emitLinkTrap(name, port, state === 'up');
         if (state === 'up') this.dhcpClientAgent.onLinkUp(name);
@@ -2139,7 +2151,93 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.lookupRoute(new IPAddress(address))?.iface ?? null;
   }
 
+  _vrfs?: VrfStore;
+  _ciscoVrfRoutes?: Map<string, VrfStaticRouteConfig[]>;
+  private activeVrf: string | null = null;
+  private readonly importedVrfRoutes = new Map<string, VrfRoute[]>();
+
+  vrfOfInterface(iface: string): string | null {
+    for (const [name, vrf] of this._vrfs ?? []) if (vrf.interfaces.has(iface)) return name;
+    return null;
+  }
+
+  runInVrf<T>(vrf: string | null, work: () => T): T {
+    const previous = this.activeVrf;
+    this.activeVrf = vrf;
+    try { return work(); } finally { this.activeVrf = previous; }
+  }
+
+  setImportedVrfRoutes(vrf: string, routes: VrfRoute[]): void {
+    this.importedVrfRoutes.set(vrf, routes);
+  }
+
+  private readonly vrfBgpRedistribution = new Map<string, Set<VpnExportSource>>();
+
+  setVrfBgpRedistribution(vrf: string, sources: Iterable<VpnExportSource>): void {
+    this.vrfBgpRedistribution.set(vrf, new Set(sources));
+    this.dynamicRouting.bgp.vpnSpeaker()?.sync();
+  }
+
+  vrfBgpRedistributionOf(vrf: string): ReadonlySet<VpnExportSource> {
+    return this.vrfBgpRedistribution.get(vrf) ?? new Set();
+  }
+
+  private vpnHost(): Omit<VpnV4Host, 'vpnPeers' | 'localAsn'> {
+    return {
+      localRouterId: () => this.dynamicRouting.bgp.getRouterId(),
+      vrfs: () => this.vpnVrfConfigs(),
+      installImported: (vrf, routes) => this.setImportedVrfRoutes(vrf, routes),
+      allocateLabel: (vrf) => {
+        const lfib = this.getMplsEngine().lfib;
+        const label = lfib.allocateLabel();
+        lfib.setIlm(label, { kind: 'vrf', vrf });
+        return label;
+      },
+      releaseLabel: (label) => this.getMplsEngine().lfib.releaseLabel(label),
+    };
+  }
+
+  private vpnVrfConfigs(): VpnVrfConfig[] {
+    return [...(this._vrfs ?? [])].map(([name, instance]) => ({
+      name, rd: instance.rd ?? null, importRts: instance.rts.import, exportRts: instance.rts.export,
+      redistribute: this.vrfBgpRedistributionOf(name),
+      localRoutes: this.vrfRouteTable(name).flatMap(route => route.type === 'bgp' ? [] : [{
+        network: route.network, prefixLength: route.mask.toCIDR(), source: route.type,
+      }]),
+    }));
+  }
+
+  vrfRouteTable(vrf: string): VrfRoute[] {
+    return vrfRoutes(vrf, this.vrfRouteSources());
+  }
+
+  vrfMemberAddresses(vrf: string): Array<[string, IPAddress]> {
+    return this.vrfRouteSources().memberAddresses(vrf).flatMap(member => [[member.iface, member.address] as [string, IPAddress]]);
+  }
+
+  lookupVrfDestination(vrf: string, destination: IPAddress): VrfRoute | null {
+    return lookupVrfRoute(vrf, destination, this.vrfRouteSources());
+  }
+
+  private vrfRouteSources(): VrfRouteSources {
+    return {
+      memberAddresses: (vrf) => [...(this._vrfs?.get(vrf)?.interfaces ?? [])].flatMap(iface => {
+        const port = this.ports.get(iface);
+        const address = port?.getIPAddress();
+        const mask = port?.getSubnetMask();
+        return address && mask ? [{ iface, address, mask }] : [];
+      }),
+      staticRoutes: (vrf) => this._ciscoVrfRoutes?.get(vrf) ?? [],
+      importedRoutes: (vrf) => this.importedVrfRoutes.get(vrf) ?? [],
+      interfaceUsable: (iface) => this.isRouteInterfaceUsable(iface),
+    };
+  }
+
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
+    if (this.activeVrf !== null) {
+      const route = this.lookupVrfDestination(this.activeVrf, destIP);
+      return route === null ? null : { ...route, ...(route.vpn ? { vpn: route.vpn } : {}) } as RouteEntry;
+    }
     // ECMP: collect every route genuinely tied for best (same prefix
     // length, AD, and metric) instead of freezing on whichever happened
     // to be inserted first, so equal-cost paths actually get used.
@@ -2150,6 +2248,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const destInt = destIP.toUint32();
 
     for (const route of this.routingTable) {
+      if (route.type === 'connected' && this.vrfOfInterface(route.iface) !== null) continue;
       if (!this.isRouteInterfaceUsable(route.iface)) {
         // Interface went down — clear any IPSec SAs using this interface
         // (mirrors IOS: "line protocol down" triggers SA teardown)
@@ -2493,6 +2592,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    if (this.pseudowires?.attaches(portName)) {
+      this.pseudowires.ingress(portName, frame);
+      return;
+    }
+    if (this.vpls?.attaches(portName)) {
+      this.vpls.ingress(portName, frame);
+      return;
+    }
     const tag = (frame as TaggedEthernetFrame).dot1q;
     if (tag) {
       const subif = this.findSubinterfaceForVlan(portName, tag.vid);
@@ -2521,19 +2628,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const delivery = this.getLinkLayer().deliver(portName, frame);
     if (!delivery) return;
 
-    if (frame.etherType === ETHERTYPE_ARP) {
-      this.handleARP(portName, frame.payload as ARPPacket);
-    } else if (frame.etherType === ETHERTYPE_IPV4) {
-      this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
-      this.processIPv4(portName, frame.payload as IPv4Packet);
-    } else if (frame.etherType === ETHERTYPE_MPLS_UNICAST) {
-      if (isMplsPacket(frame.payload)) this.mplsEngine?.receive(portName, frame.payload);
-    } else if (frame.etherType === ETHERTYPE_IPV6) {
-      const ipv6 = frame.payload as IPv6Packet;
-      if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
-        this.ipv6Engine.processPacket(portName, ipv6, frame.srcMAC);
+    this.runInVrf(this.vrfOfInterface(portName), () => {
+      if (frame.etherType === ETHERTYPE_ARP) {
+        this.handleARP(portName, frame.payload as ARPPacket);
+      } else if (frame.etherType === ETHERTYPE_IPV4) {
+        this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
+        this.processIPv4(portName, frame.payload as IPv4Packet);
+      } else if (frame.etherType === ETHERTYPE_MPLS_UNICAST) {
+        if (isMplsPacket(frame.payload)) this.mplsEngine?.receive(portName, frame.payload);
+      } else if (frame.etherType === ETHERTYPE_IPV6) {
+        const ipv6 = frame.payload as IPv6Packet;
+        if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
+          this.ipv6Engine.processPacket(portName, ipv6, frame.srcMAC);
+        }
       }
-    }
+    });
   }
 
   protected override ownsLocalUnicast(iface: string, destination: MACAddress): boolean {
@@ -2728,6 +2837,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.counters.ipInHdrErrors++;
       Logger.warn(this.id, 'router:source-route-malformed',
         `${this.name}: malformed source route from ${ipPkt.sourceIP}, dropping`);
+      return;
+    }
+
+    if (!reinjected && this.hasMplsEngines() && isEchoRequestPacket(ipPkt) && isEchoLoopbackDestination(ipPkt.destinationIP)) {
+      this.getMplsOam().receiveRequest(inPort, ipPkt, [], null);
       return;
     }
 
@@ -3375,6 +3489,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     let fwdPkt: IPv4Packet = decision.packet;
 
+    if (route.vpn) {
+      this.forwardOverVpn(inPort, fwdPkt, route.vpn);
+      return;
+    }
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
     if (!this.zoneFirewallPermits(inPort, route.iface, fwdPkt)) {
@@ -3686,6 +3804,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       receive: (inPort, ipPkt, udp) => { this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp); },
     });
     claims.set(UDP_PORT_IKE_NAT_T, { owner: 'isakmp-natt', receive: () => undefined });
+    claims.set(MPLS_ECHO_UDP_PORT, {
+      owner: 'mpls-oam',
+      receive: (inPort, ipPkt) => {
+        if (!this.hasMplsEngines()) { this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT); return; }
+        this.getMplsOam().receiveRequest(inPort, ipPkt, [], null);
+      },
+    });
     claims.set(LDP_PORT, {
       owner: 'ldp',
       receive: (inPort, ipPkt, udp) => { this.ldpEngine?.receiveUdp(inPort, ipPkt.sourceIP, udp.payload); },
@@ -3890,12 +4015,81 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.sendIpv4FrameArpAware(iface, packet, nextHop);
       },
       continueAsIp: (inPort, packet, ttlAccounted) => this.processIPv4(inPort, packet, true, ttlAccounted),
+      continueInVrf: (inPort, packet, vrf, ttlAccounted) => this.runInVrf(vrf, () => this.processIPv4(inPort, packet, true, ttlAccounted)),
       expired: (inPort, packet) => this.mplsExpired(inPort, packet),
+      echoRequest: (inPort, packet) => {
+        if (carriesIp(packet)) {
+          this.getMplsOam().receiveRequest(inPort, packet.payload, packet.stack.map(entry => entry.label.value), packet.stack[0].ttl);
+        }
+      },
+      deliverPseudowire: (inPort, owner, endpoint, payload) => {
+        if (owner === 'vpls') this.getVplsEngine().egress(inPort, endpoint, payload);
+        else this.getPseudowireEngine().egress(endpoint, payload);
+      },
     });
     return this.mplsEngine;
   }
 
+  private pseudowires: PseudowireEngine | null = null;
+  private vpls: VplsEngine | null = null;
+
+  private pseudowireHost(): PseudowireHost {
+    return {
+      attachmentMtu: iface => this.ports.get(iface)?.getMTU() ?? 1500,
+      attachmentUp: iface => {
+        const port = this.ports.get(iface);
+        return port !== undefined && port.getIsUp() && port.isConnected();
+      },
+      sendFrame: (iface, frame) => this.sendFrame(iface, frame),
+      transmit: (iface, nextHop, packet) => {
+        const port = this.ports.get(iface);
+        if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
+      },
+    };
+  }
+
+  getPseudowireEngine(): PseudowireEngine {
+    this.pseudowires ??= new PseudowireEngine(this.pseudowireHost(), () => this.getLdpEngine(), () => this.getMplsEngine());
+    return this.pseudowires;
+  }
+
+  getVplsEngine(): VplsEngine {
+    this.vpls ??= new VplsEngine(this.pseudowireHost(), () => this.getLdpEngine(), () => this.getMplsEngine());
+    return this.vpls;
+  }
+
+  private mplsOam: RouterMplsOam | null = null;
+
+  getMplsOam(): RouterMplsOam {
+    this.mplsOam ??= new RouterMplsOam({
+      routerAddress: () => this.ldpRouterId(),
+      interfaceAddress: iface => this.ports.get(iface)?.getIPAddress() ?? null,
+      lfib: () => this.getMplsEngine().lfib,
+      mplsEnabled: iface => this.getMplsEngine().isInterfaceEnabled(iface),
+      ldpBinding: (prefix, length) => this.ldpEngine?.bindings().find(
+        binding => binding.fec.length === length && binding.fec.prefix.equals(prefix)),
+      ldpEnabled: iface => this.ldpEngine?.isInterfaceEnabled(iface) ?? false,
+      vpnPaths: () => this.dynamicRouting.bgp.vpnSpeaker()?.paths() ?? [],
+      claimPort: (port, receive) => {
+        this.controlPlaneUdpClaims().set(port, { owner: 'mpls-oam', receive: (_inPort, packet, udp) => receive(packet, udp) });
+      },
+      releasePort: port => { this.controlPlaneUdpClaims().delete(port); },
+      portTaken: port => this.controlPlaneUdpClaims().has(port),
+      sendIp: packet => this.runInVrf(null, () => this.sendSelfOriginatedIPv4(packet, packet.destinationIP)),
+      sendLabelled: (iface, nextHop, packet) => {
+        const port = this.ports.get(iface);
+        if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
+      },
+      sendUnlabelled: (iface, nextHop, packet) => this.sendIpv4FrameArpAware(iface, packet, nextHop),
+    });
+    return this.mplsOam;
+  }
+
   private ldpEngine: LdpEngine | null = null;
+
+  hasMplsEngines(): boolean {
+    return this.mplsEngine !== null || this.ldpEngine !== null;
+  }
 
   getLdpEngine(): LdpEngine {
     this.ldpEngine ??= new LdpEngine({
@@ -3909,18 +4103,51 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         connected: route.type === 'connected', distance: route.ad, metric: route.metric,
       })).filter(route => route.length > 0),
       sendHello: (iface, payload) => this.sendLdpHello(iface, payload),
+      sendTargetedHello: (destination, payload) => this.sendLdpTargetedHello(destination, payload),
       tcp: () => this.tcpv2,
     }, this.getMplsEngine(), () => this.getScheduler());
     return this.ldpEngine;
   }
 
+  private ldpAdoptedRouterId: IPAddress | null = null;
+
   private ldpRouterId(): IPAddress {
+    const desired = this.desiredLdpRouterId();
+    const engine = this.ldpEngine;
+    const inUse = engine !== null && engine.sessions().some(session => session.state === 'operational');
+    if (this.ldpAdoptedRouterId !== null && inUse && engine.routerIdSource?.force !== true) return this.ldpAdoptedRouterId;
+    this.ldpAdoptedRouterId = desired;
+    return desired;
+  }
+
+  private desiredLdpRouterId(): IPAddress {
+    const source = this.ldpEngine?.routerIdSource;
+    if (source) {
+      const port = this.ports.get(source.iface);
+      const address = port?.getIPAddress();
+      if (port && address && port.getIsUp()) return address;
+    }
     const addresses = [...this.ports.entries()]
-      .flatMap(([name, port]) => { const a = port.getIPAddress(); return a ? [{ name, address: a }] : []; });
+      .flatMap(([name, port]) => { const a = port.getIPAddress(); return a && port.getIsUp() ? [{ name, address: a }] : []; });
     const loopbacks = addresses.filter(entry => /^loopback/i.test(entry.name));
     const pool = loopbacks.length > 0 ? loopbacks : addresses;
     const best = pool.reduce<IPAddress | null>((top, entry) => (top === null || entry.address.toUint32() > top.toUint32() ? entry.address : top), null);
     return best ?? new IPAddress('0.0.0.0');
+  }
+
+  setLdpRouterIdSource(iface: string | null, force: boolean): void {
+    const engine = this.getLdpEngine();
+    engine.routerIdSource = iface === null ? null : { iface, force };
+    if (force) engine.resetSessions();
+    engine.reconcile();
+  }
+
+  private sendLdpTargetedHello(destination: IPAddress, payload: Uint8Array): boolean {
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: LDP_PORT, destinationPort: LDP_PORT, length: 8 + payload.length, checksum: 0, payload,
+    };
+    const packet = createIPv4Packet(this.ldpRouterId(), destination, IP_PROTO_UDP, 255, udp, udp.length);
+    return this.runInVrf(null, () => this.sendSelfOriginatedIPv4(packet, destination));
   }
 
   private sendLdpHello(iface: string, payload: Uint8Array): void {
@@ -3938,6 +4165,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  private forwardOverVpn(
+    inPort: string, packet: IPv4Packet, vpn: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress },
+  ): void {
+    const transport = this.runInVrf(null, () => this.lookupRoute(vpn.bgpNextHop));
+    const outPort = transport === null ? undefined : this.ports.get(transport.iface);
+    if (transport === null || outPort === undefined) {
+      this.counters.ipInAddrErrors++;
+      this.sendICMPError(inPort, packet, 'destination-unreachable', 0);
+      return;
+    }
+    const nextHop = this.nextHopTarget(transport.nextHop, vpn.bgpNextHop);
+    const labelled = this.getMplsEngine().imposeVpn(packet, vpn.label, vpn.bgpNextHop, transport.iface, nextHop);
+    if (labelled === null) {
+      this.counters.ipInAddrErrors++;
+      this.sendICMPError(inPort, packet, 'destination-unreachable', 0);
+      return;
+    }
+    this.counters.ipForwDatagrams++;
+    this.counters.ifOutOctets += packet.totalLength;
+    this.sendMplsFrameArpAware(transport.iface, labelled, nextHop, outPort);
+  }
+
   private sendMplsFrameArpAware(iface: string, packet: MplsPacket, nextHop: IPAddress, port: Port): void {
     const cached = this.arpTable.get(nextHop.toString());
     if (cached) {
@@ -3945,12 +4194,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         srcMAC: port.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_MPLS_UNICAST, payload: packet,
       });
-    } else {
+    } else if (carriesIp(packet)) {
       this.queueAndResolve(packet.payload, iface, nextHop, port, packet);
+    } else {
+      this.sendArpRequestFor(iface, nextHop);
+      const resolved = this.arpTable.get(nextHop.toString());
+      if (resolved) {
+        this.sendFrame(iface, {
+          srcMAC: port.getMAC(), dstMAC: resolved.mac,
+          etherType: ETHERTYPE_MPLS_UNICAST, payload: packet,
+        });
+      }
     }
   }
 
   private mplsExpired(inPort: string, packet: MplsPacket): void {
+    if (!carriesIp(packet)) return;
     const error = this.buildIcmpErrorPacket(
       inPort, packet.payload, 'time-exceeded', 0, undefined, [mplsLabelStackObject(packet.stack)]);
     if (error === null) return;
@@ -5987,6 +6246,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       tos?: number;
       sizeBytes?: number;
       shouldStop?: () => boolean;
+      vrf?: string;
     },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     // 127.0.0.0/8 est TOUJOURS local (RFC 1122 §3.2.1.3) : il n'a pas
@@ -6010,7 +6270,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    const route = this.lookupRoute(targetIP);
+    const route = hooks?.vrf === undefined ? this.lookupRoute(targetIP) : this.runInVrf(hooks.vrf, () => this.lookupRoute(targetIP));
     if (!route) {
       const rows = [];
       for (let seq = 1; seq <= count; seq++) {
@@ -6022,6 +6282,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return rows;
     }
 
+    if (route.vpn) {
+      return this.pingOverVpn(targetIP, hooks?.vrf ?? null, route.vpn, count, timeoutMs, sourceIPStr, hooks);
+    }
     const outPort = this.ports.get(route.iface);
     if (!outPort) return [];
 
@@ -6069,6 +6332,36 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         // different character for each.
         const cause = (err as { pingCause?: string } | null)?.pingCause ?? 'timeout';
         row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: cause };
+      }
+      results.push(row);
+      hooks?.onResult?.(row);
+    }
+    return results;
+  }
+
+  private async pingOverVpn(
+    targetIP: IPAddress, vrf: string | null, vpn: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress },
+    count: number, timeoutMs: number, sourceIPStr: string | undefined,
+    hooks: { onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void; df?: boolean; tos?: number; sizeBytes?: number; shouldStop?: () => boolean } | undefined,
+  ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
+    const source = sourceIPStr === undefined
+      ? (vrf === null ? null : this.vrfMemberAddresses(vrf)[0]?.[1] ?? null)
+      : new IPAddress(sourceIPStr);
+    const results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }> = [];
+    for (let seq = 1; seq <= count; seq++) {
+      if (hooks?.shouldStop?.()) break;
+      let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
+      if (source === null) {
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
+      } else {
+        try {
+          row = await this._sendPing('', undefined as never, source, targetIP, MACAddress.broadcast(), seq, timeoutMs, {
+            df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes,
+            via: (packet) => this.forwardOverVpn('', packet, vpn),
+          });
+        } catch (err) {
+          row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: (err as { pingCause?: string } | null)?.pingCause ?? 'timeout' };
+        }
       }
       results.push(row);
       hooks?.onResult?.(row);
@@ -6472,12 +6765,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async _sendPing(
     iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
     dstMAC: MACAddress, seq: number, timeoutMs: number,
-    opts?: { df?: boolean; tos?: number; sizeBytes?: number },
+    opts?: { df?: boolean; tos?: number; sizeBytes?: number; via?: (packet: IPv4Packet) => void },
   ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
     // Line protocol down — the probe fails immediately instead of burning a
     // full timeout waiting for a reply the severed link can never carry
     // (docs/PRD-Link-State.md §2.1 P4).
-    if (!this.interfaceUsable(iface)) {
+    if (!opts?.via && !this.interfaceUsable(iface)) {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 
@@ -6519,7 +6812,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
 
     // IPSec outbound processing for locally-originated packets
-    if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
+    if (opts?.via) {
+      opts.via(ipPkt);
+    } else if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
       Logger.info(this.id, 'router:zone-firewall-drop',
         `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${iface})`);
     } else if (this.ipsecEngine) {

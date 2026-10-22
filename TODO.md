@@ -3422,3 +3422,82 @@ memoire un format de sortie. A reprendre avec une capture reelle.
 **Egalement non code** : l'octet-a-octet de la structure d'extension ICMP
 (en-tete, checksum, champ de longueur) - la RFC 4884 qui la definit n'est pas
 dans `docs/rfc/mpls`.
+
+### [mpls] les vues `show mpls ...` reposent sur des lignes d'exemple, pas sur une capture complete
+`show mpls forwarding-table`, `show mpls interfaces`, `show mpls ldp neighbor`,
+`bindings` et `discovery` sont rendues d'apres les en-tetes et les lignes
+d'exemple de IOS-XE que `genie.libs.parser` (`iosxe/show_mpls.py`) cite dans les
+commentaires de ses expressions regulieres. L'indentation absolue des blocs
+(4/8/10 espaces de `ldp neighbor`), la largeur des cellules d'adresses et le
+champ `Up time` au-dela d'un jour ne sont pas lisibles dans ces commentaires.
+`show mpls ldp neighbor detail`, `bindings all detail`, `show mpls ldp
+parameters` et `show mpls forwarding-table detail` ne sont pas servis.
+**Pourquoi ce n'est pas ferme** : CLAUDE.md §8 - une capture integrale d'IOS est
+necessaire pour trancher ; les ntc-templates ne portent que
+`show mpls interfaces` pour IOS.
+
+### [ldp] le reste de la RFC 5036
+Decouverte etendue (Targeted Hello, `R`), Label Request / Label Abort Request
+et mode Downstream on Demand, detection de boucle par Path Vector (codec pret,
+procedure absente), TCP MD5 (§2.9), sessions par interface (ATM/Frame Relay),
+Label Release sur retention conservatrice. La retention liberale et la
+distribution non sollicitee sont implementees.
+
+### [vrf] le cache ARP est indexe par adresse IP
+Deux VRF d'un meme PE qui portent la MEME adresse de voisin PE-CE sur deux
+interfaces partagent une entree ARP : le second voisin reutilise la MAC du
+premier. Les prefixes clients qui se chevauchent sont, eux, isoles (une table
+par VRF). **Pourquoi ce n'est pas ferme** : `Router.arpTable` est une
+`Map<string, ...>` lue par une centaine d'appelants ; l'indexer par
+(interface, adresse) est un chantier a part.
+
+### [l3vpn] le reste de la RFC 4364
+Import local VRF vers VRF sur un meme PE, reflecteurs de routes (§4.3.3) et
+inter-AS (§10), une etiquette VPN par prefixe seulement (pas par VRF ni par
+CE), pas de vues `show bgp vpnv4 unicast`, pas de protocole PE-CE autre que
+le statique et le connecte. **Pourquoi ce n'est pas ferme** : chantier de
+fond sur le moteur BGP ; les RFC 4760 et 5492 (multiprotocole, capacites) ne
+sont pas dans `docs/rfc/mpls/` : le codage MP_REACH/MP_UNREACH suit la seule
+RFC 4364.
+
+### [mpls-oam] le reste de la RFC 8029
+Le mode traceroute complet n'est pas construit : le TLV Downstream Detailed
+Mapping (type 20, §3.4) est refuse avec le code 2 et renvoye dans Errored
+TLVs, jamais ignore, donc aucun saut ne valide la FEC avec le DDMAP, aucune
+sous-TLV Multipath (ECMP) ni FEC Stack Change n'est echangee. Absents aussi :
+les FEC RSVP, pseudo-wire, BGP etiquete et IPv6 (decodees comme
+`unsupported`, jamais validees), le Reply Mode 4 (pas de canal de controle
+applicatif : aucune reponse n'est envoyee), le Router Alert sur une reponse
+traversant un LSP, et la commande `ping mpls` / `traceroute mpls` : le format
+de sortie IOS n'est pas source (CLAUDE.md §8), l'API est
+`Router.getMplsOam().ping(fecs, { ttl })`.
+
+### [pseudowire] le reste des RFC 4447 / 4448
+Seul le type 5 (Ethernet, mode brut) sur circuit d'acces par port est servi :
+le type 4 (mode tagge, TLV 0x06) exige des circuits d'acces par VLAN, la FEC
+generalisee 0x81 et l'AGI/SAII/TAII ne sont ni emises ni lues. Le numero de
+sequence du mot de controle est emis a 0 (verification desactivee). Le mot de
+controle se choisit par l'API (`controlWord`), sans commande IOS faute de
+pseudowire-class (`xconnect <ip> <vcid> encapsulation mpls` est servi, sans
+`pw-class`). Le type de sous-TLV d'interface 0x01 (MTU) vient du registre
+IANA, absent de `docs/rfc/mpls/`. Les formats `show mpls l2transport vc` et
+`show xconnect all` ne sont pas servis : seul leur texte de ligne est source
+(genie), ni l'ordre ni les decalages. Une adresse IP sur le circuit d'acces est
+ignoree (le trafic contourne la couche 3) au lieu d'etre refusee.
+
+### [rsvp-te] RFC 3209, 4090, 4124, 5712 : la base RSVP manque
+RSVP-TE (tunnels LSP, FRR, DS-TE, preemption douce) etend RSVP (RFC 2205), dont
+le texte n'est pas dans `docs/rfc/mpls/` et reste injoignable depuis cet
+environnement (rfc-editor.org et datatracker.ietf.org repondent 403 au proxy).
+Le format de l'en-tete commun, des classes d'objet, de SESSION, RSVP_HOP,
+TIME_VALUES, ERROR_SPEC, STYLE et des Tspec vient de la RFC 2205 : CLAUDE.md §8
+interdit de le reconstruire de memoire. A reprendre quand cette RFC est fournie.
+
+### [vpls] le reste de la RFC 4762
+Pas de commande IOS (`l2 vfi`, `bridge-domain`, `xconnect vfi`) : l'API est
+`Router.getVplsEngine()`. Le mode tagge (type 4) et l'apprentissage non
+qualifie sont absents, comme la hierarchie H-VPLS (§10-§11), la double
+attache et les ressources de decouverte (BGP / RADIUS). Le TLV de groupage
+PW (0x096C) et les retraits generiques (longueur d'information 0) de la FEC
+generalisee sont refuses a l'analyse plutot qu'ignores. Le type d'AGI 1
+vient du registre IANA, absent de `docs/rfc/mpls/`.

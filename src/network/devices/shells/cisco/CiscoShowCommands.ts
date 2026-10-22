@@ -5,6 +5,8 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import { mplsGlobalRunningConfig, mplsInterfaceRunningConfig } from '@/cli/commands/mpls/mplsFamily';
+import { mplsHostOf } from './mplsHost';
 import type { EnableSecretAlgorithm } from '../../../equipment/Equipment';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -610,6 +612,7 @@ export function showRunningConfig(router: Router): string {
 
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
+  lines.push(...mplsGlobalRunningConfig(mplsHostOf(router)));
   lines.push(...dhcpRunningConfigLines(dhcp));
   lines.push(...dhcpv6RunningConfigLines(router._getDHCPv6ServerInternal()));
   lines.push(...dhcpSnoopingRunningConfigLines(snoopingConfigOf(router)));
@@ -1206,6 +1209,7 @@ function interfaceConfigLines(
   for (const h of helpers) {
     lines.push(` ip helper-address ${h}`);
   }
+  lines.push(...mplsInterfaceRunningConfig(mplsHostOf(router), name));
   lines.push(...fhrpRunningConfigLines(fhrpViewOf(router, name)));
   lines.push(...runningConfigInterfaceACL(router, name));
   lines.push(...runningConfigInterfaceNAT(router, name));

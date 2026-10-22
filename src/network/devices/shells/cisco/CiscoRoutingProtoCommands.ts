@@ -343,6 +343,15 @@ export function buildRouterSubmodeOn(
     const parsed = parseRedistribute(a);
     if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
+    const family = inFamily();
+    if (p === 'bgp' && family?.kind === 'vrf') {
+      const source = a[0].toLowerCase();
+      if (source !== 'connected' && source !== 'static') return CISCO_ERRORS.INVALID_INPUT;
+      const entry = bgp()?.vrfFamilies.get(family.vrf);
+      if (entry && !entry.redistribute.includes(source)) entry.redistribute.push(source);
+      ctx.r().setVrfBgpRedistribution(family.vrf, entry?.redistribute as Array<'connected' | 'static'> ?? []);
+      return '';
+    }
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
       if (!source) return CISCO_ERRORS.INVALID_INPUT;
@@ -565,6 +574,7 @@ export function buildRouterSubmodeOn(
         else if (a[1] === 'update-source') n.updateSource = a[2];
         else if (a[1] === 'peer-group') n.peerGroup = a[2];
         else if (a[1] === 'activate') n.activated = true;
+        else if (a[1] === 'send-community' && a[2] === 'extended' && inFamily()?.kind === 'vpnv4') n.activated = n.activated ?? false;
         else n.attrs.push(raw ?? a.join(' '));
       }
       // Drive the real BGP engine session config.
@@ -572,8 +582,18 @@ export function buildRouterSubmodeOn(
       let bn = ec.neighbors.get(a[0]);
       if (!bn) { bn = { ip: a[0], activated: false }; ec.neighbors.set(a[0], bn); }
       if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
-      else if (a[1] === 'activate') bn.activated = true;
-      else if (a[1] === 'shutdown') bn.shutdown = true;
+      else if (a[1] === 'update-source') {
+        const resolved = ctx.resolveInterfaceName(a[2] ?? '');
+        if (resolved) bn.updateSource = resolved;
+      } else if (a[1] === 'activate') {
+        bn.activated = true;
+        if (inFamily()?.kind === 'vpnv4') {
+          bn.vpnv4 = true;
+          bgp()?.vpnv4Neighbors.add(a[0]);
+        }
+      } else if (a[1] === 'send-community' && a[2] === 'extended' && inFamily()?.kind === 'vpnv4') {
+        bgp()?.sendCommunityExtended.add(a[0]);
+      } else if (a[1] === 'shutdown') bn.shutdown = true;
       else if (a[1] === 'weight') {
         bn.weight = boundedInteger(a[2], 0, BGP_WEIGHT_MAX) as number;
       } else if (a[1] === 'peer-group' && a[2]) {
@@ -725,16 +745,29 @@ export function buildRouterSubmodeOn(
     bgp()?.extras.push(raw ?? `aggregate-address ${a.join(' ')}`);
     return '';
   });
+  let addressFamily: { kind: 'vpnv4' } | { kind: 'vrf'; vrf: string } | null = null;
+  const inFamily = () => (ctx.getMode() === 'config-router-af' ? addressFamily : null);
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {
     const p = curProto(ctx).proto;
     if (p !== 'bgp') throw new CliInvalidInput();
     const af = a.join(' ');
     const proc = bgp();
+    addressFamily = null;
+    if (a[0]?.toLowerCase() === 'vpnv4') {
+      addressFamily = { kind: 'vpnv4' };
+    } else if (a[0]?.toLowerCase() === 'ipv4' && a[1]?.toLowerCase() === 'vrf') {
+      if (!a[2]) return CISCO_ERRORS.INCOMPLETE;
+      const known = (ctx.r() as unknown as { _vrfs?: Map<string, unknown> })._vrfs;
+      if (!known?.has(a[2])) return `% VRF ${a[2]} not configured`;
+      addressFamily = { kind: 'vrf', vrf: a[2] };
+      if (proc && !proc.vrfFamilies.has(a[2])) proc.vrfFamilies.set(a[2], { redistribute: [] });
+    }
     if (proc && !proc.addressFamilies.includes(af)) proc.addressFamilies.push(af);
     ctx.setMode('config-router-af');
     return '';
   });
   routerTrie.register('exit-address-family', 'Leave address-family', () => {
+    addressFamily = null;
     ctx.setMode('config-router');
     return '';
   });
