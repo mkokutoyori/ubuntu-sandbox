@@ -3551,6 +3551,16 @@ Non implementees : le MIB LSR expose des lignes `ifTable` de couche MPLS
 d'index entiers stables. A reprendre en ajoutant d'abord les interfaces MPLS
 a l'`ifTable`, puis un module MIB lisant `Lfib` (jamais une copie).
 
+### [mpls-multicast] RFC 5331, 5332 (etiquettes assignees en amont, encapsulation multicast)
+Non implementees : une etiquette assignee en amont n'a de sens que dans un
+contexte (RFC 5331 §3) fourni par un consommateur (mVPN, PIM sur MPLS, LSP
+multipoint) que ce depot ne porte pas encore ; l'ethertype 0x8848 existe
+(`ETHERTYPE_MPLS_MULTICAST`) mais aucun emetteur ne le choisit. A reprendre avec
+le premier consommateur, pas avant : un contexte sans usage serait un critere
+stocke et jamais evalue. Les RFC 3034, 3035, 3037 (FR, ATM, applicabilite LDP) et
+5462 (renommage EXP en TC, deja suivi dans le vocabulaire) n'ajoutent aucun
+comportement a simuler.
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit
