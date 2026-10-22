@@ -245,6 +245,10 @@ function encodeMessage(entry: LdpMessage): Uint8Array {
       if (entry.pathVector) optional.push(tlv(TlvType.PathVector, Uint8Array.from(entry.pathVector.flatMap(ipv4Bytes))));
       return message(MessageType.LabelRequest, entry.id, [encodeFec(entry.fec), ...optional]);
     }
+    case 'label-abort-request':
+      return message(MessageType.LabelAbortRequest, entry.id, [
+        encodeFec(entry.fec), tlv(TlvType.LabelRequestMessageId, new Writer().u32(entry.requestMessageId).toBytes()),
+      ]);
     case 'label-withdraw':
     case 'label-release': {
       const type = entry.kind === 'label-withdraw' ? MessageType.LabelWithdraw : MessageType.LabelRelease;
@@ -257,6 +261,7 @@ function encodeMessage(entry: LdpMessage): Uint8Array {
       return message(MessageType.Notification, entry.id, [
         encodeStatus(entry.statusCode, entry.forward, entry.referencedMessageId, entry.referencedMessageType),
         ...(entry.pwStatus !== undefined ? [tlv(TlvType.PwStatus, new Writer().u32(entry.pwStatus).toBytes(), true)] : []),
+        ...(entry.requestMessageId !== undefined ? [tlv(TlvType.LabelRequestMessageId, new Writer().u32(entry.requestMessageId).toBytes())] : []),
         ...(entry.fec !== undefined ? [encodeFec(entry.fec)] : []),
       ]);
     }
@@ -388,6 +393,11 @@ function decodeMessage(type: number, unknownBit: boolean, id: number, tlvs: read
         ...(path ? { pathVector: decodePathVector(path.value) } : {}),
       };
     }
+    case MessageType.LabelAbortRequest:
+      return {
+        kind: 'label-abort-request', id, fec: decodeFec(required(tlvs, TlvType.Fec).value),
+        requestMessageId: new Reader(required(tlvs, TlvType.LabelRequestMessageId).value).u32(),
+      };
     case MessageType.LabelWithdraw:
     case MessageType.LabelRelease: {
       const label = optional(tlvs, TlvType.GenericLabel);
@@ -404,10 +414,12 @@ function decodeMessage(type: number, unknownBit: boolean, id: number, tlvs: read
       const word = reader.u32();
       const pwStatus = optional(tlvs, TlvType.PwStatus);
       const fec = optional(tlvs, TlvType.Fec);
+      const aborted = optional(tlvs, TlvType.LabelRequestMessageId);
       return {
         kind: 'notification', id, statusCode: word & 0x3fffffff, forward: (word & 0x40000000) !== 0,
         referencedMessageId: reader.u32(), referencedMessageType: reader.u16(),
         ...(pwStatus ? { pwStatus: new Reader(pwStatus.value).u32() } : {}),
+        ...(aborted ? { requestMessageId: new Reader(aborted.value).u32() } : {}),
         ...(fec ? { fec: decodeFec(fec.value) } : {}),
       };
     }

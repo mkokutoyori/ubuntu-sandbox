@@ -3469,14 +3469,19 @@ necessaire pour trancher ; les ntc-templates ne portent que
 `show mpls interfaces` pour IOS.
 
 ### [ldp] le reste de la RFC 5036
-Label Request / Label Abort Request et mode Downstream on Demand, donc la
-detection de boucle sur Label Request (§2.8.1, Path Vector et Hop Count) ;
-celle sur Label Mapping (§2.8.2) est servie en mode non sollicite, avec un
-vecteur de chemin toujours inclus quand elle est negociee (le texte l'autorise)
-et sans reinitialisation du compteur de sauts aux frontieres ATM/Frame Relay.
-Absents aussi : TCP MD5 (§2.9), sessions par interface (ATM/Frame Relay), Label
-Release sur retention conservatrice. La retention liberale, la distribution non
-sollicitee et la decouverte etendue (Targeted Hello) sont implementees.
+Mode Downstream on Demand : sert en controle independant et ordonne (requete,
+abandon, No Route avec nouvel essai apres 60 s, requete en attente), mais
+chaque LSR demande l'etiquette pour son propre compte des qu'il a un saut
+suivant (« Request When Needed » reduit a « toujours »), donc un Label Abort
+Request recu n'est pas propage vers l'aval, et la propagation d'une requete
+avec Hop Count / Path Vector (§2.8.1) n'est pas construite. La detection de
+boucle sur Label Mapping (§2.8.2) est servie en mode non sollicite et
+sollicite, avec un vecteur de chemin toujours inclus quand elle est negociee
+(le texte l'autorise) et sans remise a 1 du compteur aux frontieres ATM/Frame
+Relay. Absents aussi : TCP MD5 (§2.9), sessions par interface (ATM/Frame
+Relay) et Label Release sur retention conservatrice. La retention liberale,
+la distribution non sollicitee et la decouverte etendue (Targeted Hello) sont
+implementees.
 
 ### [vrf] le cache ARP est indexe par adresse IP
 Deux VRF d'un meme PE qui portent la MEME adresse de voisin PE-CE sur deux

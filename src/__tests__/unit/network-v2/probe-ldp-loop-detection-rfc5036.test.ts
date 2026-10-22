@@ -15,33 +15,21 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
-import { Cable } from '@/network/hardware/Cable';
+import { configure, ldpChain, lsr, recordSentMessages, type SentMessage } from './_ldp-chain-lab';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { LdpIdentifier } from '@/network/ldp/LdpIdentifier';
-import { LdpSession } from '@/network/ldp/LdpSession';
-import { StatusCode, type LdpMessage } from '@/network/ldp/LdpMessages';
+import { StatusCode } from '@/network/ldp/LdpMessages';
 import { IPAddress } from '@/network/core/types';
 
 let clock: VirtualTimeScheduler;
-let sent: { from: string; to: string; message: LdpMessage }[];
+let sent: SentMessage[];
 
 beforeEach(() => {
   clock = new VirtualTimeScheduler();
   __setDefaultScheduler(clock);
-  sent = [];
-  const original = LdpSession.prototype.send;
-  vi.spyOn(LdpSession.prototype, 'send').mockImplementation(function (this: LdpSession, messages: readonly LdpMessage[]) {
-    for (const message of messages) sent.push({ from: String((this as unknown as { owner: { localId: LdpIdentifier } }).owner.localId.lsrId), to: String(this.peer?.lsrId), message });
-    return original.call(this, messages);
-  });
+  sent = recordSentMessages();
 });
 afterEach(() => vi.restoreAllMocks());
-
-async function configure(router: CiscoRouter, lines: string[]): Promise<void> {
-  for (const line of ['enable', 'configure terminal', ...lines, 'end']) await router.executeCommand(line);
-}
-
-const lsr = (index: number) => `${index + 101}.${index + 101}.${index + 101}.${index + 101}`;
 
 interface ChainOptions {
   readonly length: number;
@@ -50,33 +38,10 @@ interface ChainOptions {
   readonly setup?: (routers: CiscoRouter[]) => void;
 }
 
-async function chain(options: ChainOptions) {
-  const routers = Array.from({ length: options.length }, (_, i) => new CiscoRouter(`R${i + 1}`));
-  for (let i = 0; i + 1 < routers.length; i++) {
-    new Cable(`l${i}`).connect(routers[i].getPort('GigabitEthernet0/1')!, routers[i + 1].getPort('GigabitEthernet0/0')!);
-  }
-  const egress = options.egress ?? true;
-  for (let i = 0; i < routers.length; i++) {
-    const previous = i > 0;
-    const next = i + 1 < routers.length;
-    await configure(routers[i], [
-      'interface Loopback0', `ip address ${lsr(i)} 255.255.255.255`, 'exit',
-      ...(egress && !next ? ['interface Loopback9', 'ip address 9.9.9.1 255.255.255.0', 'exit'] : []),
-      ...(previous ? ['interface GigabitEthernet0/0', `ip address 10.${i - 1}.0.2 255.255.255.0`, 'no shutdown', 'exit',
-        `ip route ${lsr(i - 1)} 255.255.255.255 10.${i - 1}.0.1`] : []),
-      ...(next ? ['interface GigabitEthernet0/1', `ip address 10.${i}.0.1 255.255.255.0`, 'no shutdown', 'exit',
-        `ip route ${lsr(i + 1)} 255.255.255.255 10.${i}.0.2`, `ip route 9.9.9.0 255.255.255.0 10.${i}.0.2`] : []),
-    ]);
-  }
-  options.setup?.(routers);
-  routers.forEach((router, i) => router.getLdpEngine().setLoopDetection(options.detection[i]));
-  routers.forEach((router, i) => {
-    if (i > 0) router.getLdpEngine().enableInterface('GigabitEthernet0/0');
-    if (i + 1 < routers.length) router.getLdpEngine().enableInterface('GigabitEthernet0/1');
-  });
-  clock.advance(60000);
-  return routers;
-}
+const chain = (options: ChainOptions) => ldpChain(clock, {
+  length: options.length, egress: options.egress, setup: options.setup,
+  engines: (router, i) => router.getLdpEngine().setLoopDetection(options.detection[i]),
+});
 
 async function loop(detection: readonly [boolean, boolean]) {
   const routers = await chain({

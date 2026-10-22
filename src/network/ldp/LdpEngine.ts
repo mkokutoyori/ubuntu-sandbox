@@ -7,7 +7,7 @@ import { decodePdu, encodePdu } from './LdpCodec';
 import { LdpIdentifier } from './LdpIdentifier';
 import {
   LDP_HOLD_TIME_INFINITE, LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, LDP_EGRESS_LSP_MTU, LDP_LABEL_BYTES, LDP_PORT, LDP_VERSION, StatusCode,
-  type FecElement, type LabelMappingMessage, type LdpMessage, type PwFec, isPwFec,
+  type FecElement, type LabelMappingMessage, MessageType, type LdpMessage, type PwFec, isPwFec,
 } from './LdpMessages';
 import { LdpSession, type LdpSessionOwner, type LdpSessionParameters } from './LdpSession';
 
@@ -61,6 +61,13 @@ export interface LdpConfig {
   loopDetection: boolean;
   pathVectorLimit: number;
   maxHopCount: number;
+  advertisementMode: 'unsolicited' | 'on-demand';
+  noRouteRetrySeconds: number;
+}
+
+interface LabelRequestRecord {
+  readonly id: number;
+  readonly element: FecElement;
 }
 
 interface LoopAttributes {
@@ -122,6 +129,7 @@ export class LdpEngine implements LdpSessionOwner {
     controlMode: 'independent', maxPduLength: 4096,
     targetedHelloIntervalSeconds: 15, targetedHelloHoldSeconds: LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, acceptTargetedHellos: false,
     loopDetection: false, pathVectorLimit: 16, maxHopCount: 255,
+    advertisementMode: 'unsolicited', noRouteRetrySeconds: 60,
   };
   private readonly enabledInterfaces = new Set<string>();
   private readonly adjacencyTable = new Map<string, LdpAdjacency>();
@@ -137,6 +145,9 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly advertisedMtu = new Map<string, Map<string, number>>();
   private readonly receivedLoop = new Map<string, Map<string, LoopAttributes>>();
   private readonly advertisedLoop = new Map<string, Map<string, string>>();
+  private readonly outstandingRequests = new Map<string, Map<string, LabelRequestRecord>>();
+  private readonly pendingRequests = new Map<string, Map<string, LabelRequestRecord>>();
+  private readonly noRouteAt = new Map<string, number>();
   private readonly installedIlm = new Map<number, true>();
   private readonly installedFtn = new Map<string, FecInstall>();
   private readonly retryHandles = new Map<string, number>();
@@ -167,7 +178,7 @@ export class LdpEngine implements LdpSessionOwner {
 
   get parameters(): LdpSessionParameters {
     return {
-      keepAliveTimeSeconds: this.config.keepAliveSeconds, advertisementMode: 'unsolicited',
+      keepAliveTimeSeconds: this.config.keepAliveSeconds, advertisementMode: this.config.advertisementMode,
       loopDetection: this.config.loopDetection, pathVectorLimit: this.config.pathVectorLimit, maxPduLength: this.config.maxPduLength,
     };
   }
@@ -260,7 +271,7 @@ export class LdpEngine implements LdpSessionOwner {
     for (const iface of this.enabledInterfaces) this.sendHelloOn(iface);
     this.sendTargetedHellos();
     const current = this.routeFingerprint();
-    if (current !== this.fingerprint) this.reconcile();
+    if (current !== this.fingerprint || this.noRouteRetryDue()) this.reconcile();
   }
 
   private routeFingerprint(): string {
@@ -477,6 +488,8 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertisedMtu.set(peerKey, new Map());
     this.receivedLoop.set(peerKey, new Map());
     this.advertisedLoop.set(peerKey, new Map());
+    this.outstandingRequests.set(peerKey, new Map());
+    this.pendingRequests.set(peerKey, new Map());
     this.advertisedAddresses.set(peerKey, new Set());
     this.syncAddresses(session, peerKey);
     this.reconcile();
@@ -496,6 +509,9 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertisedMtu.delete(peerKey);
     this.receivedLoop.delete(peerKey);
     this.advertisedLoop.delete(peerKey);
+    this.outstandingRequests.delete(peerKey);
+    this.pendingRequests.delete(peerKey);
+    for (const key of [...this.noRouteAt.keys()]) if (key.startsWith(`${peerKey}|`)) this.noRouteAt.delete(key);
     this.advertisedAddresses.delete(peerKey);
     if (rejected && session.role === 'active') {
       const previous = this.backoff.get(peerKey);
@@ -537,6 +553,7 @@ export class LdpEngine implements LdpSessionOwner {
         this.onMapping(session, peerKey, message);
         return;
       case 'notification':
+        if (message.referencedMessageType === MessageType.LabelRequest) this.onRequestRefused(peerKey, message.statusCode, message.referencedMessageId);
         if (message.pwStatus !== undefined) {
           for (const element of message.fec ?? []) {
             if (isPwFec(element)) for (const handler of this.pwHandlers) handler.notification(session.peer as LdpIdentifier, element, message.pwStatus);
@@ -550,6 +567,9 @@ export class LdpEngine implements LdpSessionOwner {
         return;
       case 'label-request':
         this.onRequest(session, peerKey, message.fec, message.id);
+        return;
+      case 'label-abort-request':
+        this.onAbort(session, peerKey, message.fec, message.requestMessageId, message.id);
         return;
       case 'label-withdraw':
         for (const element of message.fec) {
@@ -582,6 +602,7 @@ export class LdpEngine implements LdpSessionOwner {
         }
         this.receivedLoop.get(peerKey)?.set(fec.key, { hopCount: message.hopCount ?? 0, pathVector: message.pathVector ?? [] });
       }
+      this.outstandingRequests.get(peerKey)?.delete(fec.key);
       table.set(fec.key, message.label);
       if (message.entropyLabelCapable === true) elc?.add(fec.key);
       else elc?.delete(fec.key);
@@ -593,21 +614,120 @@ export class LdpEngine implements LdpSessionOwner {
   }
 
   private onRequest(session: LdpSession, peerKey: string, fecs: readonly FecElement[], requestId: number): void {
+    const known = this.computeFecs();
+    let waiting = false;
     for (const element of fecs) {
       const fec = fecOf(element);
       if (!fec) continue;
       const binding = this.localBindings.get(fec.key);
       if (!binding) {
-        session.send([{
-          kind: 'notification', id: this.nextMessageId(), statusCode: StatusCode.NoRoute, forward: false,
-          referencedMessageId: requestId, referencedMessageType: 0x0401,
-        }]);
+        this.refuse(session, requestId);
         continue;
       }
-      this.advertised.get(peerKey)?.set(fec.key, binding.label);
+      const entry = known.get(fec.key);
+      if (this.config.controlMode === 'ordered' && !binding.egress && !this.hasDownstreamLabel(entry)) {
+        this.pendingRequests.get(peerKey)?.set(fec.key, { id: requestId, element });
+        waiting = true;
+        continue;
+      }
+      const mapping = this.mappingMessage(session, peerKey, fec.key, binding, entry, requestId);
+      if (mapping !== null) session.send([mapping]);
+    }
+    if (waiting) this.reconcile();
+  }
+
+  private refuse(session: LdpSession, requestId: number): void {
+    session.send([{
+      kind: 'notification', id: this.nextMessageId(), statusCode: StatusCode.NoRoute, forward: false,
+      referencedMessageId: requestId, referencedMessageType: MessageType.LabelRequest,
+    }]);
+  }
+
+  private onAbort(
+    session: LdpSession, peerKey: string, fecs: readonly FecElement[], requestId: number, abortId: number,
+  ): void {
+    const pending = this.pendingRequests.get(peerKey);
+    for (const element of fecs) {
+      const fec = fecOf(element);
+      const held = fec === null ? undefined : pending?.get(fec.key);
+      if (fec === null || held === undefined || held.id !== requestId) continue;
+      pending?.delete(fec.key);
       session.send([{
-        kind: 'label-mapping', id: this.nextMessageId(), fec: [element], label: binding.label, requestMessageId: requestId,
+        kind: 'notification', id: this.nextMessageId(), statusCode: StatusCode.LabelRequestAborted, forward: false,
+        referencedMessageId: abortId, referencedMessageType: MessageType.LabelAbortRequest, requestMessageId: requestId,
       }]);
+    }
+  }
+
+  private onRequestRefused(peerKey: string, statusCode: number, requestId: number): void {
+    const requests = this.outstandingRequests.get(peerKey);
+    for (const [key, record] of [...requests ?? []]) {
+      if (record.id !== requestId) continue;
+      requests?.delete(key);
+      if (statusCode !== StatusCode.NoRoute) continue;
+      this.noRouteAt.set(`${peerKey}|${key}`, this.nowMs());
+      for (const [requester, held] of this.pendingRequests) {
+        const waiting = held.get(key);
+        if (waiting === undefined) continue;
+        held.delete(key);
+        const session = this.sessionTable.get(requester);
+        if (session?.state === 'operational') this.refuse(session, waiting.id);
+      }
+    }
+  }
+
+  private noRouteRetryDue(): boolean {
+    const now = this.nowMs();
+    return [...this.noRouteAt.values()].some(at => now - at >= this.config.noRouteRetrySeconds * 1000);
+  }
+
+  private requestLabels(fecs: ReadonlyMap<string, { fec: LdpFec; route: LdpRoute }>): void {
+    for (const [peerKey, requests] of this.outstandingRequests) {
+      const session = this.sessionTable.get(peerKey);
+      for (const [key, record] of [...requests]) {
+        const entry = fecs.get(key);
+        const owner = entry?.route.nextHop && !entry.route.connected ? this.peerOwning(entry.route.nextHop, entry.route.iface) : null;
+        if (owner?.key === peerKey) continue;
+        requests.delete(key);
+        if (session?.state === 'operational') {
+          session.send([{ kind: 'label-abort-request', id: this.nextMessageId(), fec: [record.element], requestMessageId: record.id }]);
+        }
+      }
+    }
+    const now = this.nowMs();
+    for (const [key, { fec, route }] of fecs) {
+      if (route.connected || !route.nextHop) continue;
+      const owner = this.peerOwning(route.nextHop, route.iface);
+      if (owner === null || owner.session.state !== 'operational' || owner.session.negotiated?.advertisementMode !== 'on-demand') continue;
+      const requests = this.outstandingRequests.get(owner.key);
+      if (requests === undefined || requests.has(key) || this.received.get(owner.key)?.has(key)) continue;
+      const refusedAt = this.noRouteAt.get(`${owner.key}|${key}`);
+      if (refusedAt !== undefined && now - refusedAt < this.config.noRouteRetrySeconds * 1000) continue;
+      this.noRouteAt.delete(`${owner.key}|${key}`);
+      const element: FecElement = { kind: 'prefix', prefix: fec.prefix, length: fec.length };
+      const id = this.nextMessageId();
+      requests.set(key, { id, element });
+      owner.session.send([{ kind: 'label-request', id, fec: [element] }]);
+    }
+  }
+
+  private answerPending(fecs: ReadonlyMap<string, { fec: LdpFec; route: LdpRoute }>): void {
+    for (const [peerKey, held] of this.pendingRequests) {
+      const session = this.sessionTable.get(peerKey);
+      if (session?.state !== 'operational') continue;
+      for (const [key, record] of [...held]) {
+        const binding = this.localBindings.get(key);
+        if (binding === undefined) {
+          held.delete(key);
+          this.refuse(session, record.id);
+          continue;
+        }
+        const entry = fecs.get(key);
+        if (!binding.egress && !this.hasDownstreamLabel(entry)) continue;
+        held.delete(key);
+        const mapping = this.mappingMessage(session, peerKey, key, binding, entry, record.id);
+        if (mapping !== null) session.send([mapping]);
+      }
     }
   }
 
@@ -751,6 +871,8 @@ export class LdpEngine implements LdpSessionOwner {
       this.advertiseTo(session, peerKey, fecs);
     }
     this.install(fecs);
+    this.requestLabels(fecs);
+    this.answerPending(fecs);
   }
 
   private withdrawEverywhere(binding: LdpLocalBinding): void {
@@ -771,30 +893,11 @@ export class LdpEngine implements LdpSessionOwner {
     const table = this.advertised.get(peerKey);
     if (!table) return;
     const outgoing: LdpMessage[] = [];
-    const sentElc = this.advertisedElc.get(peerKey) ?? new Set<string>();
-    const sentMtu = this.advertisedMtu.get(peerKey) ?? new Map<string, number>();
-    const sentLoop = this.advertisedLoop.get(peerKey) ?? new Map<string, string>();
+    const onDemand = session.negotiated?.advertisementMode === 'on-demand';
     for (const [key, binding] of this.localBindings) {
-      const elc = this.entropyCapableFor(key, binding, fecs.get(key));
-      const lspMtu = this.lspMtuFor(key, binding, fecs.get(key));
-      const loop = this.loopAttributes(session, key, binding, fecs.get(key));
-      if (loop === 'exceeded') continue;
-      const loopSignature = loop === null ? '' : `${loop.hopCount}|${loop.pathVector.join(',')}`;
-      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc && sentMtu.get(key) === lspMtu
-        && (sentLoop.get(key) ?? '') === loopSignature) continue;
-      if (this.config.controlMode === 'ordered' && !binding.egress && !this.hasDownstreamLabel(fecs.get(key))) continue;
-      table.set(key, binding.label);
-      if (elc) sentElc.add(key);
-      else sentElc.delete(key);
-      sentMtu.set(key, lspMtu);
-      sentLoop.set(key, loopSignature);
-      outgoing.push({
-        kind: 'label-mapping', id: this.nextMessageId(),
-        fec: [{ kind: 'prefix', prefix: binding.fec.prefix, length: binding.fec.length }], label: binding.label,
-        ...(elc ? { entropyLabelCapable: true } : {}),
-        ...(loop === null ? {} : { hopCount: loop.hopCount, ...(loop.pathVector.length > 0 ? { pathVector: loop.pathVector } : {}) }),
-        lspMtu,
-      });
+      if (onDemand && !table.has(key)) continue;
+      const mapping = this.mappingMessage(session, peerKey, key, binding, fecs.get(key));
+      if (mapping !== null) outgoing.push(mapping);
     }
     if (outgoing.length > 0) session.send(outgoing);
     for (const [key, label] of [...table]) {
@@ -804,6 +907,40 @@ export class LdpEngine implements LdpSessionOwner {
       if (!fec) continue;
       session.send([{ kind: 'label-withdraw', id: this.nextMessageId(), fec: [{ kind: 'prefix', prefix: fec.prefix, length: fec.length }], label }]);
     }
+  }
+
+  private mappingMessage(
+    session: LdpSession, peerKey: string, key: string, binding: LdpLocalBinding,
+    entry: { fec: LdpFec; route: LdpRoute } | undefined, requestMessageId?: number,
+  ): LabelMappingMessage | null {
+    const table = this.advertised.get(peerKey);
+    if (!table) return null;
+    const sentElc = this.advertisedElc.get(peerKey) ?? new Set<string>();
+    const sentMtu = this.advertisedMtu.get(peerKey) ?? new Map<string, number>();
+    const sentLoop = this.advertisedLoop.get(peerKey) ?? new Map<string, string>();
+    const elc = this.entropyCapableFor(key, binding, entry);
+    const lspMtu = this.lspMtuFor(key, binding, entry);
+    const loop = this.loopAttributes(session, key, binding, entry);
+    if (loop === 'exceeded') return null;
+    const loopSignature = loop === null ? '' : `${loop.hopCount}|${loop.pathVector.join(',')}`;
+    if (requestMessageId === undefined) {
+      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc && sentMtu.get(key) === lspMtu
+        && (sentLoop.get(key) ?? '') === loopSignature) return null;
+      if (this.config.controlMode === 'ordered' && !binding.egress && !this.hasDownstreamLabel(entry)) return null;
+    }
+    table.set(key, binding.label);
+    if (elc) sentElc.add(key);
+    else sentElc.delete(key);
+    sentMtu.set(key, lspMtu);
+    sentLoop.set(key, loopSignature);
+    return {
+      kind: 'label-mapping', id: this.nextMessageId(),
+      fec: [{ kind: 'prefix', prefix: binding.fec.prefix, length: binding.fec.length }], label: binding.label,
+      ...(requestMessageId === undefined ? {} : { requestMessageId }),
+      ...(elc ? { entropyLabelCapable: true } : {}),
+      ...(loop === null ? {} : { hopCount: loop.hopCount, ...(loop.pathVector.length > 0 ? { pathVector: loop.pathVector } : {}) }),
+      lspMtu,
+    };
   }
 
   private lspMtuFor(key: string, binding: LdpLocalBinding, entry: { fec: LdpFec; route: LdpRoute } | undefined): number {
@@ -881,6 +1018,11 @@ export class LdpEngine implements LdpSessionOwner {
 
   forwardingRows(): readonly LdpForwardingRow[] {
     return this.forwardingTable;
+  }
+
+  setAdvertisementMode(mode: 'unsolicited' | 'on-demand'): void {
+    this.config.advertisementMode = mode;
+    this.resetSessions();
   }
 
   setLoopDetection(enabled: boolean, pathVectorLimit: number | null = null, maxHopCount: number | null = null): void {

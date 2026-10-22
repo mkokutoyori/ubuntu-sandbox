@@ -242,7 +242,7 @@ export class LdpSession {
     }
     this.negotiated = {
       keepAliveTimeSeconds: Math.min(local.keepAliveTimeSeconds, proposal.keepAliveTimeSeconds),
-      advertisementMode: 'unsolicited',
+      advertisementMode: local.advertisementMode === 'on-demand' && proposal.advertisementMode === 'on-demand' ? 'on-demand' : 'unsolicited',
       loopDetection: local.loopDetection && proposal.loopDetection,
       pathVectorLimit: local.pathVectorLimit ?? 0,
       maxPduLength: proposal.maxPduLength === 0 ? local.maxPduLength : Math.min(local.maxPduLength, proposal.maxPduLength),

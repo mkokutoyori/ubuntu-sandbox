@@ -191,6 +191,13 @@ export interface LabelRequestMessage {
   readonly pathVector?: readonly IPAddress[];
 }
 
+export interface LabelAbortRequestMessage {
+  readonly kind: 'label-abort-request';
+  readonly id: number;
+  readonly fec: readonly FecElement[];
+  readonly requestMessageId: number;
+}
+
 export interface LabelWithdrawMessage {
   readonly kind: 'label-withdraw' | 'label-release';
   readonly id: number;
@@ -207,6 +214,7 @@ export interface NotificationMessage {
   readonly referencedMessageId: number;
   readonly referencedMessageType: number;
   readonly pwStatus?: number;
+  readonly requestMessageId?: number;
   readonly fec?: readonly FecElement[];
 }
 
@@ -219,7 +227,7 @@ export interface UnknownMessage {
 
 export type LdpMessage =
   | HelloMessage | InitializationMessage | KeepAliveMessage | AddressMessage | MacWithdrawMessage
-  | LabelMappingMessage | LabelRequestMessage | LabelWithdrawMessage | NotificationMessage | UnknownMessage;
+  | LabelMappingMessage | LabelRequestMessage | LabelAbortRequestMessage | LabelWithdrawMessage | NotificationMessage | UnknownMessage;
 
 export interface LdpPdu {
   readonly version: number;
