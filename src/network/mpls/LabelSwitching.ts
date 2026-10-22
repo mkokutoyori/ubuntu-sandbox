@@ -4,10 +4,35 @@ import { Lfib, type FtnEntry } from './Lfib';
 import { carriesIp, type MplsPacket } from './MplsPacket';
 import { MplsLabel } from './MplsLabel';
 import type { PseudowirePayload } from '@/network/pw/PseudowirePacket';
+import { isGachPayload, type GachPayload } from './tp/GachPacket';
+
+export type DiffServModel = 'uniform' | 'pipe' | 'short-pipe';
 
 export interface TtlPolicy {
   readonly propagateTtl: boolean;
   readonly entropyLabelCapable?: boolean;
+  readonly diffServModel?: DiffServModel;
+  readonly tunnelTrafficClass?: number;
+  dscpToTrafficClass?(dscp: number): number;
+  trafficClassToDscp?(trafficClass: number): number;
+}
+
+const DSCP_SHIFT = 2;
+const ECN_MASK = 0x03;
+
+export function dscpOf(packet: IPv4Packet): number {
+  return packet.tos >> DSCP_SHIFT;
+}
+
+function withDscp(packet: IPv4Packet, dscp: number): IPv4Packet {
+  const updated: IPv4Packet = { ...packet, tos: (dscp << DSCP_SHIFT) | (packet.tos & ECN_MASK), headerChecksum: 0 };
+  updated.headerChecksum = computeIPv4Checksum(updated);
+  return updated;
+}
+
+export function impositionTrafficClass(packet: IPv4Packet, policy: TtlPolicy): number {
+  if ((policy.diffServModel ?? 'pipe') === 'uniform') return policy.dscpToTrafficClass?.(dscpOf(packet)) ?? 0;
+  return policy.tunnelTrafficClass ?? 0;
 }
 
 export type SwitchingDecision =
@@ -17,6 +42,7 @@ export type SwitchingDecision =
   | { readonly kind: 'unlabelled'; readonly packet: IPv4Packet; readonly iface: string; readonly nextHop: IPAddress }
   | { readonly kind: 'deliver'; readonly packet: IPv4Packet; readonly ttlAccounted: boolean }
   | { readonly kind: 'deliver-vrf'; readonly packet: IPv4Packet; readonly vrf: string; readonly ttlAccounted: boolean }
+  | { readonly kind: 'deliver-gach'; readonly payload: GachPayload; readonly lsp: string | null }
   | { readonly kind: 'deliver-pw'; readonly payload: PseudowirePayload; readonly owner: 'xconnect' | 'vpls'; readonly endpoint: string };
 
 function withIpTtl(packet: IPv4Packet, ttl: number): IPv4Packet {
@@ -29,21 +55,26 @@ function outgoingTtl(incoming: number): number {
   return Math.max(incoming - 1, 0);
 }
 
-function exposed(packet: MplsPacket, remaining: readonly LabelStackEntry[], ttl: number, policy: TtlPolicy): MplsPacket | IPv4Packet | null {
+function exposed(
+  packet: MplsPacket, remaining: readonly LabelStackEntry[], ttl: number, policy: TtlPolicy, poppedClass: number,
+): MplsPacket | IPv4Packet | null {
+  const uniform = (policy.diffServModel ?? 'pipe') === 'uniform';
   if (remaining.length === 0) {
     if (!carriesIp(packet)) return null;
-    return policy.propagateTtl ? withIpTtl(packet.payload, ttl) : packet.payload;
+    const ip = uniform ? withDscp(packet.payload, policy.trafficClassToDscp?.(poppedClass) ?? 0) : packet.payload;
+    return policy.propagateTtl ? withIpTtl(ip, ttl) : ip;
   }
   const [top, ...rest] = remaining;
-  const retained = policy.propagateTtl ? { ...top, ttl } : top;
+  const retained = { ...top, ...(policy.propagateTtl ? { ttl } : {}), ...(uniform ? { trafficClass: poppedClass } : {}) };
   return { ...packet, stack: withBottomOfStack([retained, ...rest]) };
 }
 
 export function imposeLabels(packet: IPv4Packet, entry: FtnEntry, policy: TtlPolicy, entropyLabel?: MplsLabel): MplsPacket {
   const ttl = policy.propagateTtl ? packet.ttl : MAX_MPLS_TTL;
-  const entries = entry.outLabels.map(label => makeLabelStackEntry(label, ttl));
+  const trafficClass = impositionTrafficClass(packet, policy);
+  const entries = entry.outLabels.map(label => makeLabelStackEntry(label, ttl, trafficClass));
   if (entropyLabel !== undefined) {
-    entries.push(makeLabelStackEntry(MplsLabel.ENTROPY_LABEL_INDICATOR, ttl), makeLabelStackEntry(entropyLabel, 0));
+    entries.push(makeLabelStackEntry(MplsLabel.ENTROPY_LABEL_INDICATOR, ttl, trafficClass), makeLabelStackEntry(entropyLabel, 0, trafficClass));
   }
   return { type: 'mpls', stack: withBottomOfStack(entries), payload: packet };
 }
@@ -52,17 +83,33 @@ function continueAfterPop(
   packet: MplsPacket, remaining: readonly LabelStackEntry[], ttl: number, lfib: Lfib, policy: TtlPolicy,
 ): SwitchingDecision {
   if (remaining.length === 0) {
-    const ip = exposed({ ...packet, stack: [] }, [], ttl, policy);
+    const ip = exposed({ ...packet, stack: [] }, [], ttl, policy, packet.stack[0].trafficClass);
     if (ip !== null && ip.type === 'ipv4') return { kind: 'deliver', packet: ip, ttlAccounted: policy.propagateTtl };
     return { kind: 'no-binding', packet };
   }
   const [next, ...deeper] = remaining;
-  const carried = policy.propagateTtl ? { ...next, ttl: Math.min(next.ttl, ttl + 1) } : next;
+  const uniform = (policy.diffServModel ?? 'pipe') === 'uniform';
+  const carried = {
+    ...next, ...(policy.propagateTtl ? { ttl: Math.min(next.ttl, ttl + 1) } : {}),
+    ...(uniform ? { trafficClass: packet.stack[0].trafficClass } : {}),
+  };
   return switchLabelled({ ...packet, stack: withBottomOfStack([carried, ...deeper]) }, lfib, policy);
 }
 
 export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy): SwitchingDecision {
   const [top, ...below] = packet.stack;
+  if (top.label.equals(MplsLabel.GENERIC_ASSOCIATED_CHANNEL)) {
+    if (!top.bottom || !isGachPayload(packet.payload)) return { kind: 'no-binding', packet };
+    return { kind: 'deliver-gach', payload: packet.payload, lsp: null };
+  }
+  const terminating = lfib.lookupIlm(top.label);
+  if (terminating?.kind === 'tp-lsp') {
+    const [gal] = below;
+    if (below.length !== 1 || !gal.bottom || !gal.label.equals(MplsLabel.GENERIC_ASSOCIATED_CHANNEL) || !isGachPayload(packet.payload)) {
+      return { kind: 'no-binding', packet };
+    }
+    return { kind: 'deliver-gach', payload: packet.payload, lsp: terminating.lsp };
+  }
   const ttl = outgoingTtl(top.ttl);
   if (ttl === 0) return { kind: 'expired', packet };
 
@@ -74,7 +121,7 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
   }
 
   const entry = lfib.lookupIlm(top.label);
-  if (entry === undefined) return { kind: 'no-binding', packet };
+  if (entry === undefined || entry.kind === 'tp-lsp') return { kind: 'no-binding', packet };
 
   if (entry.kind === 'pw') {
     if (below.length > 0 || packet.payload.type !== 'pw-ethernet') return { kind: 'no-binding', packet };
@@ -82,14 +129,14 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
   }
 
   if (entry.kind === 'vrf') {
-    const result = exposed(packet, below, ttl, policy);
+    const result = exposed(packet, below, ttl, policy, top.trafficClass);
     if (result === null || result.type !== 'ipv4') return { kind: 'no-binding', packet };
     return { kind: 'deliver-vrf', packet: result, vrf: entry.vrf, ttlAccounted: policy.propagateTtl };
   }
 
   if (entry.kind === 'pop') {
     if (entry.iface === null && below.length > 0) return continueAfterPop(packet, below, ttl, lfib, policy);
-    const result = exposed(packet, below, ttl, policy);
+    const result = exposed(packet, below, ttl, policy, top.trafficClass);
     if (result === null) return { kind: 'no-binding', packet };
     if (result.type === 'ipv4') {
       if (entry.iface === null || entry.nextHop === null) {
