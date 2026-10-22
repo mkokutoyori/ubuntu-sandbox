@@ -2,7 +2,7 @@ import type { IPAddress, IPv4Packet } from '@/network/core/types';
 import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack, type LabelStackEntry } from './LabelStack';
 import { MplsLabel, MPLS_FIRST_UNRESERVED_LABEL, MPLS_LABEL_MAX } from './MplsLabel';
 import { Lfib, type FtnEntry } from './Lfib';
-import { imposeLabels, switchLabelled, type TtlPolicy } from './LabelSwitching';
+import { imposeLabels, impositionTrafficClass, switchLabelled, type DiffServModel, type TtlPolicy } from './LabelSwitching';
 import { carriesIp, type MplsPacket } from './MplsPacket';
 import { isEchoRequestPacket } from './oam/EchoAgent';
 import type { PseudowirePayload } from '@/network/pw/PseudowirePacket';
@@ -44,6 +44,15 @@ export class MplsEngine implements TtlPolicy {
   propagateTtl = true;
   entropyLabelCapable = false;
   imposeEntropyLabels = false;
+  diffServModel: DiffServModel = 'pipe';
+  tunnelTrafficClass = 0;
+  private readonly dscpToTrafficClassMap = new Map<number, number>();
+  private readonly trafficClassToDscpMap = new Map<number, number>();
+
+  dscpToTrafficClass(dscp: number): number { return this.dscpToTrafficClassMap.get(dscp) ?? 0; }
+  trafficClassToDscp(trafficClass: number): number { return this.trafficClassToDscpMap.get(trafficClass) ?? 0; }
+  mapDscp(dscp: number, trafficClass: number): void { this.dscpToTrafficClassMap.set(dscp, trafficClass); }
+  mapTrafficClass(trafficClass: number, dscp: number): void { this.trafficClassToDscpMap.set(trafficClass, dscp); }
   readonly counters: MplsCounters = {
     labelledIn: 0, labelledOut: 0, imposed: 0, disposed: 0, expired: 0, noBinding: 0, droppedDisabledInterface: 0, echoRequests: 0,
   };
@@ -122,7 +131,8 @@ export class MplsEngine implements TtlPolicy {
     const entry = this.lfib.lookupFtn(bgpNextHop);
     if (entry === undefined || entry.iface !== iface || !entry.nextHop.equals(nextHop)) return null;
     const ttl = this.propagateTtl ? packet.ttl : MAX_MPLS_TTL;
-    const stack = withBottomOfStack([...this.tunnelEntries(entry, ttl, flowKeyOf(packet)), makeLabelStackEntry(vpnLabel, ttl)]);
+    const trafficClass = impositionTrafficClass(packet, this);
+    const stack = withBottomOfStack([...this.tunnelEntries(entry, ttl, flowKeyOf(packet), trafficClass), makeLabelStackEntry(vpnLabel, ttl, trafficClass)]);
     this.counters.imposed++;
     return { type: 'mpls', stack, payload: packet };
   }
@@ -133,7 +143,8 @@ export class MplsEngine implements TtlPolicy {
     const entry = this.lfib.lookupFtn(target);
     if (entry === undefined || !this.interfaces.has(entry.iface)) return null;
     const flowKey = `${payload.frame.srcMAC}|${payload.frame.dstMAC}`;
-    const stack = withBottomOfStack([...this.tunnelEntries(entry, MAX_MPLS_TTL, flowKey), makeLabelStackEntry(serviceLabel, MAX_MPLS_TTL)]);
+    const trafficClass = this.tunnelTrafficClass;
+    const stack = withBottomOfStack([...this.tunnelEntries(entry, MAX_MPLS_TTL, flowKey, trafficClass), makeLabelStackEntry(serviceLabel, MAX_MPLS_TTL, trafficClass)]);
     this.counters.imposed++;
     return { packet: { type: 'mpls', stack, payload }, iface: entry.iface, nextHop: entry.nextHop };
   }
@@ -158,10 +169,12 @@ export class MplsEngine implements TtlPolicy {
       ? entropyLabelFor(flowKey) : undefined;
   }
 
-  private tunnelEntries(entry: FtnEntry, ttl: number, flowKey: string): LabelStackEntry[] {
-    const entries = entry.outLabels.map(label => makeLabelStackEntry(label, ttl));
+  private tunnelEntries(entry: FtnEntry, ttl: number, flowKey: string, trafficClass: number): LabelStackEntry[] {
+    const entries = entry.outLabels.map(label => makeLabelStackEntry(label, ttl, trafficClass));
     const entropy = this.entropyFor(entry, flowKey);
-    if (entropy !== undefined) entries.push(makeLabelStackEntry(MplsLabel.ENTROPY_LABEL_INDICATOR, ttl), makeLabelStackEntry(entropy, 0));
+    if (entropy !== undefined) {
+      entries.push(makeLabelStackEntry(MplsLabel.ENTROPY_LABEL_INDICATOR, ttl, trafficClass), makeLabelStackEntry(entropy, 0, trafficClass));
+    }
     return entries;
   }
 }

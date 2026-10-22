@@ -3527,3 +3527,10 @@ la charge sur le label d'entropie parce que `Router` n'a pas de FIB multichemin
 (voir « Known limits ») : l'EL est poussee, transportee et retiree, mais
 ne choisit encore aucun chemin. Le pseudo-fil (RFC 6391, label de flux) et les
 LSP multipoints ne sont pas traites.
+
+### [diffserv-mpls] le reste de la RFC 3270
+Les modeles pipe, short-pipe et uniform du plan de donnees sont servis (classe de trafic a la
+pose, au swap et au depilage), mais `short-pipe` n'a pas d'effet distinct de `pipe` : la
+difference porte sur la file choisie a l'egress, et aucune file n'est simulee. Les L-LSP
+(PSC portee par l'etiquette), la signalisation du mapping EXP<->PHB (objet DIFFSERV RSVP, TLV LDP),
+le mapping ATM/Frame Relay et la commande IOS (`mls qos map`, `set mpls experimental`) sont absents.
