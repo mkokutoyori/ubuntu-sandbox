@@ -3557,3 +3557,11 @@ LDI et LKI/LKR (§3.7.2), l'authentification et les formes Section / PW du
 MEP-ID ne sont pas construits. Les LSP statiques se definissent par l'API
 `Router.getMplsTpEngine()` ; ni commande IOS (`mpls tp`) ni transport de
 trafic client sur ces LSP (seul le G-ACh circule).
+
+### [mpls-pm] le reste de la RFC 6374
+Servis : le delai bidirectionnel (formats PTP tronque et NTP, negociation §4.3.5) et la perte directe
+(compteurs 64 bits, paquets ou octets, G-ACh exclu) sur une paire de LSP statiques. Absents : la perte
+inferee (§4.2.9) et les messages combines (types 0x000B, 0x000D, 0x000E), les TLV (remplissage,
+adressage, boucle, intervalle de session §3.5), la reponse hors bande (refusee par le code 0x12), les
+compteurs par classe de trafic (refuses par 0x13), le delai unidirectionnel (suppose des horloges
+synchronisees) et le calcul sur 32 bits ; les voies PW et section ne sont pas servies non plus.
