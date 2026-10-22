@@ -243,6 +243,7 @@ import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { MplsEngine } from '../mpls/MplsEngine';
 import { LdpEngine, type LdpRoute } from '../ldp/LdpEngine';
+import type { VpnExportSource, VpnV4Host, VpnVrfConfig } from '../bgp/vpn/VpnV4Speaker';
 import { lookupVrfRoute, vrfRoutes, type VrfRoute, type VrfRouteSources, type VrfStaticRouteConfig } from '../vrf/VrfForwarding';
 import type { VrfStore } from './shells/cisco/ciscoVrfStore';
 import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
@@ -681,6 +682,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getTcpStack: () => this.tcpv2,
       getBus: () => this.getBus(),
     });
+    this.dynamicRouting.bgp.setVpnHost(this.vpnHost());
     this.shell = this.createShell();
     this.dynamicRouting.eigrp.setKeyResolver((chaine) => {
       const cles = this.ipSlaKeyChains()?.getChain(chaine)?.keys;
@@ -2162,6 +2164,42 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.importedVrfRoutes.set(vrf, routes);
   }
 
+  private readonly vrfBgpRedistribution = new Map<string, Set<VpnExportSource>>();
+
+  setVrfBgpRedistribution(vrf: string, sources: Iterable<VpnExportSource>): void {
+    this.vrfBgpRedistribution.set(vrf, new Set(sources));
+    this.dynamicRouting.bgp.vpnSpeaker()?.sync();
+  }
+
+  vrfBgpRedistributionOf(vrf: string): ReadonlySet<VpnExportSource> {
+    return this.vrfBgpRedistribution.get(vrf) ?? new Set();
+  }
+
+  private vpnHost(): Omit<VpnV4Host, 'vpnPeers' | 'localAsn'> {
+    return {
+      localRouterId: () => this.dynamicRouting.bgp.getRouterId(),
+      vrfs: () => this.vpnVrfConfigs(),
+      installImported: (vrf, routes) => this.setImportedVrfRoutes(vrf, routes),
+      allocateLabel: (vrf) => {
+        const lfib = this.getMplsEngine().lfib;
+        const label = lfib.allocateLabel();
+        lfib.setIlm(label, { kind: 'vrf', vrf });
+        return label;
+      },
+      releaseLabel: (label) => this.getMplsEngine().lfib.releaseLabel(label),
+    };
+  }
+
+  private vpnVrfConfigs(): VpnVrfConfig[] {
+    return [...(this._vrfs ?? [])].map(([name, instance]) => ({
+      name, rd: instance.rd ?? null, importRts: instance.rts.import, exportRts: instance.rts.export,
+      redistribute: this.vrfBgpRedistributionOf(name),
+      localRoutes: this.vrfRouteTable(name).flatMap(route => route.type === 'bgp' ? [] : [{
+        network: route.network, prefixLength: route.mask.toCIDR(), source: route.type,
+      }]),
+    }));
+  }
+
   vrfRouteTable(vrf: string): VrfRoute[] {
     return vrfRoutes(vrf, this.vrfRouteSources());
   }
@@ -3431,6 +3469,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     let fwdPkt: IPv4Packet = decision.packet;
 
+    if (route.vpn) {
+      this.forwardOverVpn(inPort, fwdPkt, route.vpn);
+      return;
+    }
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
     if (!this.zoneFirewallPermits(inPort, route.iface, fwdPkt)) {
@@ -3946,6 +3988,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.sendIpv4FrameArpAware(iface, packet, nextHop);
       },
       continueAsIp: (inPort, packet, ttlAccounted) => this.processIPv4(inPort, packet, true, ttlAccounted),
+      continueInVrf: (inPort, packet, vrf, ttlAccounted) => this.runInVrf(vrf, () => this.processIPv4(inPort, packet, true, ttlAccounted)),
       expired: (inPort, packet) => this.mplsExpired(inPort, packet),
     });
     return this.mplsEngine;
@@ -4020,6 +4063,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       srcMAC: port.getMAC(), dstMAC: new MACAddress(ipv4MulticastToMac(LDP_ALL_ROUTERS_GROUP)),
       etherType: ETHERTYPE_IPV4, payload: packet,
     });
+  }
+
+  private forwardOverVpn(
+    inPort: string, packet: IPv4Packet, vpn: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress },
+  ): void {
+    const transport = this.runInVrf(null, () => this.lookupRoute(vpn.bgpNextHop));
+    const outPort = transport === null ? undefined : this.ports.get(transport.iface);
+    if (transport === null || outPort === undefined) {
+      this.counters.ipInAddrErrors++;
+      this.sendICMPError(inPort, packet, 'destination-unreachable', 0);
+      return;
+    }
+    const nextHop = this.nextHopTarget(transport.nextHop, vpn.bgpNextHop);
+    const labelled = this.getMplsEngine().imposeVpn(packet, vpn.label, vpn.bgpNextHop, transport.iface, nextHop);
+    if (labelled === null) {
+      this.counters.ipInAddrErrors++;
+      this.sendICMPError(inPort, packet, 'destination-unreachable', 0);
+      return;
+    }
+    this.counters.ipForwDatagrams++;
+    this.counters.ifOutOctets += packet.totalLength;
+    this.sendMplsFrameArpAware(transport.iface, labelled, nextHop, outPort);
   }
 
   private sendMplsFrameArpAware(iface: string, packet: MplsPacket, nextHop: IPAddress, port: Port): void {
@@ -6107,6 +6172,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return rows;
     }
 
+    if (route.vpn) {
+      return this.pingOverVpn(targetIP, hooks?.vrf ?? null, route.vpn, count, timeoutMs, sourceIPStr, hooks);
+    }
     const outPort = this.ports.get(route.iface);
     if (!outPort) return [];
 
@@ -6154,6 +6222,36 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         // different character for each.
         const cause = (err as { pingCause?: string } | null)?.pingCause ?? 'timeout';
         row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: cause };
+      }
+      results.push(row);
+      hooks?.onResult?.(row);
+    }
+    return results;
+  }
+
+  private async pingOverVpn(
+    targetIP: IPAddress, vrf: string | null, vpn: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress },
+    count: number, timeoutMs: number, sourceIPStr: string | undefined,
+    hooks: { onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void; df?: boolean; tos?: number; sizeBytes?: number; shouldStop?: () => boolean } | undefined,
+  ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
+    const source = sourceIPStr === undefined
+      ? (vrf === null ? null : this.vrfMemberAddresses(vrf)[0]?.[1] ?? null)
+      : new IPAddress(sourceIPStr);
+    const results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }> = [];
+    for (let seq = 1; seq <= count; seq++) {
+      if (hooks?.shouldStop?.()) break;
+      let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
+      if (source === null) {
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
+      } else {
+        try {
+          row = await this._sendPing('', undefined as never, source, targetIP, MACAddress.broadcast(), seq, timeoutMs, {
+            df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes,
+            via: (packet) => this.forwardOverVpn('', packet, vpn),
+          });
+        } catch (err) {
+          row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: (err as { pingCause?: string } | null)?.pingCause ?? 'timeout' };
+        }
       }
       results.push(row);
       hooks?.onResult?.(row);
@@ -6557,12 +6655,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async _sendPing(
     iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
     dstMAC: MACAddress, seq: number, timeoutMs: number,
-    opts?: { df?: boolean; tos?: number; sizeBytes?: number },
+    opts?: { df?: boolean; tos?: number; sizeBytes?: number; via?: (packet: IPv4Packet) => void },
   ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
     // Line protocol down — the probe fails immediately instead of burning a
     // full timeout waiting for a reply the severed link can never carry
     // (docs/PRD-Link-State.md §2.1 P4).
-    if (!this.interfaceUsable(iface)) {
+    if (!opts?.via && !this.interfaceUsable(iface)) {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 
@@ -6604,7 +6702,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
 
     // IPSec outbound processing for locally-originated packets
-    if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
+    if (opts?.via) {
+      opts.via(ipPkt);
+    } else if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
       Logger.info(this.id, 'router:zone-firewall-drop',
         `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${iface})`);
     } else if (this.ipsecEngine) {

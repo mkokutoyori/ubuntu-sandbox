@@ -45,6 +45,54 @@ export interface BgpOpenMessage {
   readonly holdTimeSec: number;
   /** BGP Identifier (router-id), dotted quad (RFC 4271 §4.2). */
   readonly bgpIdentifier: string;
+  readonly capabilities?: BgpCapabilities;
+}
+
+export const AFI_IPV4 = 1;
+export const SAFI_MPLS_VPN = 128;
+
+export interface BgpAddressFamily {
+  readonly afi: number;
+  readonly safi: number;
+}
+
+export interface BgpCapabilities {
+  readonly multiprotocol: readonly BgpAddressFamily[];
+}
+
+export interface BgpVpnv4Nlri {
+  readonly rd: string;
+  readonly network: string;
+  readonly prefixLength: number;
+  readonly label: number;
+}
+
+export interface BgpVpnv4Withdrawal {
+  readonly rd: string;
+  readonly network: string;
+  readonly prefixLength: number;
+}
+
+export interface BgpVpnv4Attributes {
+  readonly origin: BgpOrigin;
+  readonly asPath: readonly number[];
+  readonly localPref?: number;
+  readonly med?: number;
+  readonly extendedCommunities: readonly string[];
+}
+
+export interface BgpMpReach {
+  readonly afi: number;
+  readonly safi: number;
+  readonly nextHop: string;
+  readonly nlri: readonly BgpVpnv4Nlri[];
+  readonly attributes: BgpVpnv4Attributes;
+}
+
+export interface BgpMpUnreach {
+  readonly afi: number;
+  readonly safi: number;
+  readonly nlri: readonly BgpVpnv4Withdrawal[];
 }
 
 /** A single NLRI prefix, announced or withdrawn (RFC 4271 §4.3). */
@@ -77,6 +125,8 @@ export interface BgpUpdateMessage {
   readonly withdrawn: readonly BgpNlri[];
   readonly announced: readonly BgpNlri[];
   readonly attributes?: BgpPathAttributes;
+  readonly mpReach?: BgpMpReach;
+  readonly mpUnreach?: BgpMpUnreach;
 }
 
 /** KEEPALIVE (RFC 4271 §4.4) — header only; resets the peer's Hold Timer. */

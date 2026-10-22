@@ -584,6 +584,8 @@ export class LdpEngine implements LdpSessionOwner {
       if (remote.isImplicitNull()) {
         this.mpls.lfib.setIlm(binding.label, { kind: 'pop', iface: route.iface, nextHop: route.nextHop });
         wantedIlm.set(binding.label.value, true);
+        this.mpls.lfib.setFtn({ prefix: fec.prefix, prefixLength: fec.length, outLabels: [], iface: route.iface, nextHop: route.nextHop });
+        wantedFtn.set(key, { prefix: fec.prefix, length: fec.length });
         continue;
       }
       this.mpls.lfib.setIlm(binding.label, { kind: 'swap', outLabels: [remote], iface: route.iface, nextHop: route.nextHop });

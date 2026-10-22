@@ -3416,3 +3416,12 @@ premier. Les prefixes clients qui se chevauchent sont, eux, isoles (une table
 par VRF). **Pourquoi ce n'est pas ferme** : `Router.arpTable` est une
 `Map<string, ...>` lue par une centaine d'appelants ; l'indexer par
 (interface, adresse) est un chantier a part.
+
+### [l3vpn] le reste de la RFC 4364
+Import local VRF vers VRF sur un meme PE, reflecteurs de routes (§4.3.3) et
+inter-AS (§10), une etiquette VPN par prefixe seulement (pas par VRF ni par
+CE), pas de vues `show bgp vpnv4 unicast`, pas de protocole PE-CE autre que
+le statique et le connecte. **Pourquoi ce n'est pas ferme** : chantier de
+fond sur le moteur BGP ; les RFC 4760 et 5492 (multiprotocole, capacites) ne
+sont pas dans `docs/rfc/mpls/` : le codage MP_REACH/MP_UNREACH suit la seule
+RFC 4364.

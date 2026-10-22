@@ -1,5 +1,6 @@
 import type { IPAddress, IPv4Packet } from '@/network/core/types';
-import { MAX_MPLS_TTL } from './LabelStack';
+import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack } from './LabelStack';
+import type { MplsLabel } from './MplsLabel';
 import { Lfib } from './Lfib';
 import { imposeLabels, switchLabelled, type TtlPolicy } from './LabelSwitching';
 import type { MplsPacket } from './MplsPacket';
@@ -8,6 +9,7 @@ export interface MplsHost {
   sendLabelled(iface: string, nextHop: IPAddress, packet: MplsPacket): void;
   sendUnlabelled(iface: string, nextHop: IPAddress, packet: IPv4Packet): void;
   continueAsIp(inPort: string, packet: IPv4Packet, ttlAccounted: boolean): void;
+  continueInVrf(inPort: string, packet: IPv4Packet, vrf: string, ttlAccounted: boolean): void;
   expired(inPort: string, packet: MplsPacket): void;
 }
 
@@ -59,6 +61,10 @@ export class MplsEngine implements TtlPolicy {
         this.counters.disposed++;
         this.host.continueAsIp(inPort, decision.packet, decision.ttlAccounted);
         return;
+      case 'deliver-vrf':
+        this.counters.disposed++;
+        this.host.continueInVrf(inPort, decision.packet, decision.vrf, decision.ttlAccounted);
+        return;
       case 'expired':
         this.counters.expired++;
         this.host.expired(inPort, decision.packet);
@@ -77,10 +83,20 @@ export class MplsEngine implements TtlPolicy {
     return this.switchedBytes.get(label.value) ?? 0;
   }
 
+  imposeVpn(packet: IPv4Packet, vpnLabel: MplsLabel, bgpNextHop: IPAddress, iface: string, nextHop: IPAddress): MplsPacket | null {
+    if (!this.interfaces.has(iface)) return null;
+    const entry = this.lfib.lookupFtn(bgpNextHop);
+    if (entry === undefined || entry.iface !== iface || !entry.nextHop.equals(nextHop)) return null;
+    const ttl = this.propagateTtl ? packet.ttl : MAX_MPLS_TTL;
+    const stack = withBottomOfStack([...entry.outLabels, vpnLabel].map(label => makeLabelStackEntry(label, ttl)));
+    this.counters.imposed++;
+    return { type: 'mpls', stack, payload: packet };
+  }
+
   impose(packet: IPv4Packet, iface: string, nextHop: IPAddress | null): MplsPacket | null {
     if (!this.interfaces.has(iface)) return null;
     const entry = this.lfib.lookupFtn(packet.destinationIP);
-    if (entry === undefined || entry.iface !== iface) return null;
+    if (entry === undefined || entry.iface !== iface || entry.outLabels.length === 0) return null;
     if (nextHop !== null && !entry.nextHop.equals(nextHop)) return null;
     this.counters.imposed++;
     return imposeLabels(packet, entry, this);

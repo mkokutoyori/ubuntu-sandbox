@@ -258,6 +258,17 @@ export function routingProcessConfigLines(
     for (const network of bgp.networks) lines.push(` network ${network}`);
     for (const source of bgp.redistribute) lines.push(` redistribute ${renderRedistribute(source)}`);
     for (const extra of bgp.extras) lines.push(` ${extra}`);
+    if (bgp.vpnv4Neighbors.size > 0 || bgp.sendCommunityExtended.size > 0) {
+      lines.push(' address-family vpnv4');
+      for (const ip of [...bgp.vpnv4Neighbors].sort()) lines.push(`  neighbor ${ip} activate`);
+      for (const ip of [...bgp.sendCommunityExtended].sort()) lines.push(`  neighbor ${ip} send-community extended`);
+      lines.push(' exit-address-family');
+    }
+    for (const [vrf, family] of [...bgp.vrfFamilies.entries()].sort()) {
+      lines.push(` address-family ipv4 vrf ${vrf}`);
+      for (const source of family.redistribute) lines.push(`  redistribute ${source}`);
+      lines.push(' exit-address-family');
+    }
     lines.push('!');
   }
 

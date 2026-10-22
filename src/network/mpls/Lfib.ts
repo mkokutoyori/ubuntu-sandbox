@@ -14,7 +14,12 @@ export interface PopEntry {
   readonly nextHop: IPAddress | null;
 }
 
-export type IlmEntry = SwapEntry | PopEntry;
+export interface VrfEntry {
+  readonly kind: 'vrf';
+  readonly vrf: string;
+}
+
+export type IlmEntry = SwapEntry | PopEntry | VrfEntry;
 
 export interface FtnEntry {
   readonly prefix: IPAddress;

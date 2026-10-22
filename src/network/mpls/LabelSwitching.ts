@@ -12,7 +12,8 @@ export type SwitchingDecision =
   | { readonly kind: 'expired'; readonly packet: MplsPacket }
   | { readonly kind: 'labelled'; readonly packet: MplsPacket; readonly iface: string; readonly nextHop: IPAddress }
   | { readonly kind: 'unlabelled'; readonly packet: IPv4Packet; readonly iface: string; readonly nextHop: IPAddress }
-  | { readonly kind: 'deliver'; readonly packet: IPv4Packet; readonly ttlAccounted: boolean };
+  | { readonly kind: 'deliver'; readonly packet: IPv4Packet; readonly ttlAccounted: boolean }
+  | { readonly kind: 'deliver-vrf'; readonly packet: IPv4Packet; readonly vrf: string; readonly ttlAccounted: boolean };
 
 function withIpTtl(packet: IPv4Packet, ttl: number): IPv4Packet {
   const updated: IPv4Packet = { ...packet, ttl, headerChecksum: 0 };
@@ -50,6 +51,12 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
 
   const entry = lfib.lookupIlm(top.label);
   if (entry === undefined) return { kind: 'no-binding', packet };
+
+  if (entry.kind === 'vrf') {
+    const result = exposed(packet, below, ttl, policy);
+    if (result.type !== 'ipv4') return { kind: 'no-binding', packet };
+    return { kind: 'deliver-vrf', packet: result, vrf: entry.vrf, ttlAccounted: policy.propagateTtl };
+  }
 
   if (entry.kind === 'pop') {
     const result = exposed(packet, below, ttl, policy);
