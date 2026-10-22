@@ -3408,3 +3408,11 @@ et mode Downstream on Demand, detection de boucle par Path Vector (codec pret,
 procedure absente), TCP MD5 (§2.9), sessions par interface (ATM/Frame Relay),
 Label Release sur retention conservatrice. La retention liberale et la
 distribution non sollicitee sont implementees.
+
+### [vrf] le cache ARP est indexe par adresse IP
+Deux VRF d'un meme PE qui portent la MEME adresse de voisin PE-CE sur deux
+interfaces partagent une entree ARP : le second voisin reutilise la MAC du
+premier. Les prefixes clients qui se chevauchent sont, eux, isoles (une table
+par VRF). **Pourquoi ce n'est pas ferme** : `Router.arpTable` est une
+`Map<string, ...>` lue par une centaine d'appelants ; l'indexer par
+(interface, adresse) est un chantier a part.
