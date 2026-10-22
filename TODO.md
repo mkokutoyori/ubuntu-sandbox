@@ -3450,3 +3450,11 @@ IANA, absent de `docs/rfc/mpls/`. Les formats `show mpls l2transport vc` et
 `show xconnect all` ne sont pas servis : seul leur texte de ligne est source
 (genie), ni l'ordre ni les decalages. Une adresse IP sur le circuit d'acces est
 ignoree (le trafic contourne la couche 3) au lieu d'etre refusee.
+
+### [rsvp-te] RFC 3209, 4090, 4124, 5712 : la base RSVP manque
+RSVP-TE (tunnels LSP, FRR, DS-TE, preemption douce) etend RSVP (RFC 2205), dont
+le texte n'est pas dans `docs/rfc/mpls/` et reste injoignable depuis cet
+environnement (rfc-editor.org et datatracker.ietf.org repondent 403 au proxy).
+Le format de l'en-tete commun, des classes d'objet, de SESSION, RSVP_HOP,
+TIME_VALUES, ERROR_SPEC, STYLE et des Tspec vient de la RFC 2205 : CLAUDE.md §8
+interdit de le reconstruire de memoire. A reprendre quand cette RFC est fournie.
