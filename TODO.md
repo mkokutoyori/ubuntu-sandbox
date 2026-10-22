@@ -3425,3 +3425,15 @@ le statique et le connecte. **Pourquoi ce n'est pas ferme** : chantier de
 fond sur le moteur BGP ; les RFC 4760 et 5492 (multiprotocole, capacites) ne
 sont pas dans `docs/rfc/mpls/` : le codage MP_REACH/MP_UNREACH suit la seule
 RFC 4364.
+
+### [mpls-oam] le reste de la RFC 8029
+Le mode traceroute complet n'est pas construit : le TLV Downstream Detailed
+Mapping (type 20, §3.4) est refuse avec le code 2 et renvoye dans Errored
+TLVs, jamais ignore, donc aucun saut ne valide la FEC avec le DDMAP, aucune
+sous-TLV Multipath (ECMP) ni FEC Stack Change n'est echangee. Absents aussi :
+les FEC RSVP, pseudo-wire, BGP etiquete et IPv6 (decodees comme
+`unsupported`, jamais validees), le Reply Mode 4 (pas de canal de controle
+applicatif : aucune reponse n'est envoyee), le Router Alert sur une reponse
+traversant un LSP, et la commande `ping mpls` / `traceroute mpls` : le format
+de sortie IOS n'est pas source (CLAUDE.md §8), l'API est
+`Router.getMplsOam().ping(fecs, { ttl })`.

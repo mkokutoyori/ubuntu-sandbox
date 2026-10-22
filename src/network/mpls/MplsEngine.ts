@@ -1,9 +1,10 @@
 import type { IPAddress, IPv4Packet } from '@/network/core/types';
 import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack } from './LabelStack';
-import type { MplsLabel } from './MplsLabel';
+import { MplsLabel } from './MplsLabel';
 import { Lfib } from './Lfib';
 import { imposeLabels, switchLabelled, type TtlPolicy } from './LabelSwitching';
 import type { MplsPacket } from './MplsPacket';
+import { isEchoRequestPacket } from './oam/EchoAgent';
 
 export interface MplsHost {
   sendLabelled(iface: string, nextHop: IPAddress, packet: MplsPacket): void;
@@ -11,6 +12,7 @@ export interface MplsHost {
   continueAsIp(inPort: string, packet: IPv4Packet, ttlAccounted: boolean): void;
   continueInVrf(inPort: string, packet: IPv4Packet, vrf: string, ttlAccounted: boolean): void;
   expired(inPort: string, packet: MplsPacket): void;
+  echoRequest(inPort: string, packet: MplsPacket): void;
 }
 
 export interface MplsCounters {
@@ -21,13 +23,14 @@ export interface MplsCounters {
   expired: number;
   noBinding: number;
   droppedDisabledInterface: number;
+  echoRequests: number;
 }
 
 export class MplsEngine implements TtlPolicy {
   readonly lfib = new Lfib();
   propagateTtl = true;
   readonly counters: MplsCounters = {
-    labelledIn: 0, labelledOut: 0, imposed: 0, disposed: 0, expired: 0, noBinding: 0, droppedDisabledInterface: 0,
+    labelledIn: 0, labelledOut: 0, imposed: 0, disposed: 0, expired: 0, noBinding: 0, droppedDisabledInterface: 0, echoRequests: 0,
   };
   private readonly interfaces = new Set<string>();
   private readonly switchedBytes = new Map<number, number>();
@@ -48,6 +51,11 @@ export class MplsEngine implements TtlPolicy {
     const incoming = packet.stack[0].label.value;
     this.switchedBytes.set(incoming, (this.switchedBytes.get(incoming) ?? 0) + packet.payload.totalLength);
     const decision = switchLabelled(packet, this.lfib, this);
+    if (isEchoRequestPacket(packet.payload) && this.trapsEcho(packet, decision.kind)) {
+      this.counters.echoRequests++;
+      this.host.echoRequest(inPort, packet);
+      return;
+    }
     switch (decision.kind) {
       case 'labelled':
         this.counters.labelledOut++;
@@ -72,6 +80,11 @@ export class MplsEngine implements TtlPolicy {
       case 'no-binding':
         this.counters.noBinding++;
     }
+  }
+
+  private trapsEcho(packet: MplsPacket, decision: string): boolean {
+    if (decision === 'expired' || decision === 'deliver' || decision === 'deliver-vrf') return true;
+    return decision === 'no-binding' && packet.stack[0].label.equals(MplsLabel.ROUTER_ALERT);
   }
 
   tunnel(inPort: string, expired: MplsPacket, error: IPv4Packet): void {

@@ -244,6 +244,9 @@ import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 import { MplsEngine } from '../mpls/MplsEngine';
 import { LdpEngine, type LdpRoute } from '../ldp/LdpEngine';
 import type { VpnExportSource, VpnV4Host, VpnVrfConfig } from '../bgp/vpn/VpnV4Speaker';
+import { RouterMplsOam } from './router/MplsOam';
+import { MPLS_ECHO_UDP_PORT } from '../mpls/oam/EchoCodec';
+import { isEchoLoopbackDestination, isEchoRequestPacket } from '../mpls/oam/EchoAgent';
 import { lookupVrfRoute, vrfRoutes, type VrfRoute, type VrfRouteSources, type VrfStaticRouteConfig } from '../vrf/VrfForwarding';
 import type { VrfStore } from './shells/cisco/ciscoVrfStore';
 import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
@@ -2825,6 +2828,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
+    if (!reinjected && this.hasMplsEngines() && isEchoRequestPacket(ipPkt) && isEchoLoopbackDestination(ipPkt.destinationIP)) {
+      this.getMplsOam().receiveRequest(inPort, ipPkt, [], null);
+      return;
+    }
+
     if (routedBySource.kind !== 'pending'
       && this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 
@@ -3784,6 +3792,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       receive: (inPort, ipPkt, udp) => { this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp); },
     });
     claims.set(UDP_PORT_IKE_NAT_T, { owner: 'isakmp-natt', receive: () => undefined });
+    claims.set(MPLS_ECHO_UDP_PORT, {
+      owner: 'mpls-oam',
+      receive: (inPort, ipPkt) => {
+        if (!this.hasMplsEngines()) { this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT); return; }
+        this.getMplsOam().receiveRequest(inPort, ipPkt, [], null);
+      },
+    });
     claims.set(LDP_PORT, {
       owner: 'ldp',
       receive: (inPort, ipPkt, udp) => { this.ldpEngine?.receiveUdp(inPort, ipPkt.sourceIP, udp.payload); },
@@ -3990,8 +4005,37 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       continueAsIp: (inPort, packet, ttlAccounted) => this.processIPv4(inPort, packet, true, ttlAccounted),
       continueInVrf: (inPort, packet, vrf, ttlAccounted) => this.runInVrf(vrf, () => this.processIPv4(inPort, packet, true, ttlAccounted)),
       expired: (inPort, packet) => this.mplsExpired(inPort, packet),
+      echoRequest: (inPort, packet) => this.getMplsOam().receiveRequest(
+        inPort, packet.payload, packet.stack.map(entry => entry.label.value), packet.stack[0].ttl),
     });
     return this.mplsEngine;
+  }
+
+  private mplsOam: RouterMplsOam | null = null;
+
+  getMplsOam(): RouterMplsOam {
+    this.mplsOam ??= new RouterMplsOam({
+      routerAddress: () => this.ldpRouterId(),
+      interfaceAddress: iface => this.ports.get(iface)?.getIPAddress() ?? null,
+      lfib: () => this.getMplsEngine().lfib,
+      mplsEnabled: iface => this.getMplsEngine().isInterfaceEnabled(iface),
+      ldpBinding: (prefix, length) => this.ldpEngine?.bindings().find(
+        binding => binding.fec.length === length && binding.fec.prefix.equals(prefix)),
+      ldpEnabled: iface => this.ldpEngine?.isInterfaceEnabled(iface) ?? false,
+      vpnPaths: () => this.dynamicRouting.bgp.vpnSpeaker()?.paths() ?? [],
+      claimPort: (port, receive) => {
+        this.controlPlaneUdpClaims().set(port, { owner: 'mpls-oam', receive: (_inPort, packet, udp) => receive(packet, udp) });
+      },
+      releasePort: port => { this.controlPlaneUdpClaims().delete(port); },
+      portTaken: port => this.controlPlaneUdpClaims().has(port),
+      sendIp: packet => this.runInVrf(null, () => this.sendSelfOriginatedIPv4(packet, packet.destinationIP)),
+      sendLabelled: (iface, nextHop, packet) => {
+        const port = this.ports.get(iface);
+        if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
+      },
+      sendUnlabelled: (iface, nextHop, packet) => this.sendIpv4FrameArpAware(iface, packet, nextHop),
+    });
+    return this.mplsOam;
   }
 
   private ldpEngine: LdpEngine | null = null;
