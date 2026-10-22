@@ -19,7 +19,12 @@ export interface VrfEntry {
   readonly vrf: string;
 }
 
-export type IlmEntry = SwapEntry | PopEntry | VrfEntry;
+export interface PseudowireEntry {
+  readonly kind: 'pw';
+  readonly attachmentCircuit: string;
+}
+
+export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry;
 
 export interface FtnEntry {
   readonly prefix: IPAddress;

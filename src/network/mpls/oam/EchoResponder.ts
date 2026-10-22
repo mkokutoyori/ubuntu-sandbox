@@ -46,7 +46,7 @@ function answer(returnCode: number, returnSubcode: number, extra: Partial<Extrac
 
 function isPopAndContinue(label: MplsLabel, entry: IlmEntry | undefined): boolean {
   if (label.isExplicitNull() || label.equals(MplsLabel.ROUTER_ALERT)) return true;
-  return entry !== undefined && (entry.kind === 'vrf' || (entry.kind === 'pop' && entry.iface === null));
+  return entry !== undefined && (entry.kind === 'vrf' || entry.kind === 'pw' || (entry.kind === 'pop' && entry.iface === null));
 }
 
 function validateFec(
@@ -87,7 +87,7 @@ export function evaluateEchoRequest(request: EchoMessage, receipt: EchoReceipt, 
       continue;
     }
     if (entry === undefined) return answer(ReturnCode.NoLabelEntry, depth);
-    if (entry.kind !== 'vrf' && entry.iface !== null && !host.mplsEnabled(entry.iface)) {
+    if (entry.kind !== 'vrf' && entry.kind !== 'pw' && entry.iface !== null && !host.mplsEnabled(entry.iface)) {
       return answer(ReturnCode.SwitchedNoMplsForwarding, depth);
     }
     return answer(ReturnCode.Switched, depth);

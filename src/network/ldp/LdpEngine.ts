@@ -7,7 +7,7 @@ import { decodePdu, encodePdu } from './LdpCodec';
 import { LdpIdentifier } from './LdpIdentifier';
 import {
   LDP_HOLD_TIME_INFINITE, LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, LDP_PORT, LDP_VERSION, StatusCode,
-  type FecElement, type LabelMappingMessage, type LdpMessage,
+  type FecElement, type LabelMappingMessage, type LdpMessage, type PwIdFec,
 } from './LdpMessages';
 import { LdpSession, type LdpSessionOwner, type LdpSessionParameters } from './LdpSession';
 
@@ -34,6 +34,15 @@ export interface LdpHost {
   sendHello(iface: string, payload: Uint8Array): void;
   sendTargetedHello(destination: IPAddress, payload: Uint8Array): boolean;
   tcp(): TcpStack;
+}
+
+export interface LdpPwHandler {
+  sessionOperational(peer: LdpIdentifier): void;
+  sessionClosed(peer: LdpIdentifier): void;
+  mapping(peer: LdpIdentifier, fec: PwIdFec, label: MplsLabel, pwStatus: number | undefined): void;
+  withdraw(peer: LdpIdentifier, fec: PwIdFec, label: MplsLabel | undefined, status: number | undefined): void;
+  release(peer: LdpIdentifier, fec: PwIdFec, label: MplsLabel | undefined, status: number | undefined): void;
+  notification(peer: LdpIdentifier, fec: PwIdFec, pwStatus: number): void;
 }
 
 export type LdpControlMode = 'independent' | 'ordered';
@@ -117,6 +126,7 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly backoff = new Map<string, { until: number; delay: number }>();
   private readonly targetedPeers = new Map<string, { readonly address: IPAddress; readonly configured: boolean }>();
   private readonly targetedNextSendMs = new Map<string, number>();
+  private pwHandler: LdpPwHandler | null = null;
   private helloTimer: number | null = null;
   private listening = false;
   private messageCounter = 0;
@@ -436,6 +446,7 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertisedAddresses.set(peerKey, new Set());
     this.syncAddresses(session, peerKey);
     this.reconcile();
+    this.pwHandler?.sessionOperational(session.peer as LdpIdentifier);
   }
 
   sessionClosed(session: LdpSession, _reason: string, rejected: boolean): void {
@@ -454,6 +465,18 @@ export class LdpEngine implements LdpSessionOwner {
     this.reconcile();
     const adjacency = [...this.adjacencyTable.values()].find(a => a.peer.equals(session.peer as LdpIdentifier));
     if (adjacency) this.ensureSession(adjacency);
+    this.pwHandler?.sessionClosed(session.peer);
+  }
+
+  setPwHandler(handler: LdpPwHandler | null): void {
+    this.pwHandler = handler;
+  }
+
+  sendToPeer(peerLsrId: IPAddress, messages: readonly LdpMessage[]): boolean {
+    const session = this.sessionTable.get(peerLsrId.toString());
+    if (session === undefined || session.state !== 'operational') return false;
+    session.send(messages);
+    return true;
   }
 
   sessionMessage(session: LdpSession, message: LdpMessage): void {
@@ -468,15 +491,31 @@ export class LdpEngine implements LdpSessionOwner {
         this.reconcile();
         return;
       case 'label-mapping':
+        for (const element of message.fec) {
+          if (element.kind === 'pwid') this.pwHandler?.mapping(session.peer as LdpIdentifier, element, message.label, message.pwStatus);
+        }
         this.onMapping(session, peerKey, message);
+        return;
+      case 'notification':
+        if (message.pwStatus !== undefined) {
+          for (const element of message.fec ?? []) {
+            if (element.kind === 'pwid') this.pwHandler?.notification(session.peer as LdpIdentifier, element, message.pwStatus);
+          }
+        }
         return;
       case 'label-request':
         this.onRequest(session, peerKey, message.fec, message.id);
         return;
       case 'label-withdraw':
+        for (const element of message.fec) {
+          if (element.kind === 'pwid') this.pwHandler?.withdraw(session.peer as LdpIdentifier, element, message.label, message.status);
+        }
         this.onWithdraw(session, peerKey, message.fec, message.label, message.id);
         return;
       case 'label-release':
+        for (const element of message.fec) {
+          if (element.kind === 'pwid') this.pwHandler?.release(session.peer as LdpIdentifier, element, message.label, message.status);
+        }
         this.onRelease(peerKey, message.fec, message.label);
         return;
       default:
@@ -529,7 +568,10 @@ export class LdpEngine implements LdpSessionOwner {
       const held = table.get(fec.key);
       if (held && (!label || held.equals(label))) table.delete(fec.key);
     }
-    session.send([{ kind: 'label-release', id: this.nextMessageId(), fec: [...fecs], ...(label ? { label } : {}) }]);
+    const prefixFecs = fecs.filter(element => element.kind !== 'pwid');
+    if (prefixFecs.length > 0) {
+      session.send([{ kind: 'label-release', id: this.nextMessageId(), fec: prefixFecs, ...(label ? { label } : {}) }]);
+    }
     void withdrawId;
     this.reconcile();
   }

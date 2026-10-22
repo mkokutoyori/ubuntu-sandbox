@@ -3,8 +3,9 @@ import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack } from './LabelSta
 import { MplsLabel } from './MplsLabel';
 import { Lfib } from './Lfib';
 import { imposeLabels, switchLabelled, type TtlPolicy } from './LabelSwitching';
-import type { MplsPacket } from './MplsPacket';
+import { carriesIp, type MplsPacket } from './MplsPacket';
 import { isEchoRequestPacket } from './oam/EchoAgent';
+import type { PseudowirePayload } from '@/network/pw/PseudowirePacket';
 
 export interface MplsHost {
   sendLabelled(iface: string, nextHop: IPAddress, packet: MplsPacket): void;
@@ -13,6 +14,7 @@ export interface MplsHost {
   continueInVrf(inPort: string, packet: IPv4Packet, vrf: string, ttlAccounted: boolean): void;
   expired(inPort: string, packet: MplsPacket): void;
   echoRequest(inPort: string, packet: MplsPacket): void;
+  deliverPseudowire(inPort: string, attachmentCircuit: string, payload: PseudowirePayload): void;
 }
 
 export interface MplsCounters {
@@ -49,9 +51,11 @@ export class MplsEngine implements TtlPolicy {
     }
     this.counters.labelledIn++;
     const incoming = packet.stack[0].label.value;
-    this.switchedBytes.set(incoming, (this.switchedBytes.get(incoming) ?? 0) + packet.payload.totalLength);
     const decision = switchLabelled(packet, this.lfib, this);
-    if (isEchoRequestPacket(packet.payload) && this.trapsEcho(packet, decision.kind)) {
+    if (carriesIp(packet)) {
+      this.switchedBytes.set(incoming, (this.switchedBytes.get(incoming) ?? 0) + packet.payload.totalLength);
+    }
+    if (carriesIp(packet) && isEchoRequestPacket(packet.payload) && this.trapsEcho(packet, decision.kind)) {
       this.counters.echoRequests++;
       this.host.echoRequest(inPort, packet);
       return;
@@ -72,6 +76,10 @@ export class MplsEngine implements TtlPolicy {
       case 'deliver-vrf':
         this.counters.disposed++;
         this.host.continueInVrf(inPort, decision.packet, decision.vrf, decision.ttlAccounted);
+        return;
+      case 'deliver-pw':
+        this.counters.disposed++;
+        this.host.deliverPseudowire(inPort, decision.attachmentCircuit, decision.payload);
         return;
       case 'expired':
         this.counters.expired++;
@@ -104,6 +112,16 @@ export class MplsEngine implements TtlPolicy {
     const stack = withBottomOfStack([...entry.outLabels, vpnLabel].map(label => makeLabelStackEntry(label, ttl)));
     this.counters.imposed++;
     return { type: 'mpls', stack, payload: packet };
+  }
+
+  imposeUnderlay(
+    payload: PseudowirePayload, serviceLabel: MplsLabel, target: IPAddress,
+  ): { readonly packet: MplsPacket; readonly iface: string; readonly nextHop: IPAddress } | null {
+    const entry = this.lfib.lookupFtn(target);
+    if (entry === undefined || !this.interfaces.has(entry.iface)) return null;
+    const stack = withBottomOfStack([...entry.outLabels, serviceLabel].map(label => makeLabelStackEntry(label, MAX_MPLS_TTL)));
+    this.counters.imposed++;
+    return { packet: { type: 'mpls', stack, payload }, iface: entry.iface, nextHop: entry.nextHop };
   }
 
   impose(packet: IPv4Packet, iface: string, nextHop: IPAddress | null): MplsPacket | null {

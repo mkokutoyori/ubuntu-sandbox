@@ -3437,3 +3437,15 @@ applicatif : aucune reponse n'est envoyee), le Router Alert sur une reponse
 traversant un LSP, et la commande `ping mpls` / `traceroute mpls` : le format
 de sortie IOS n'est pas source (CLAUDE.md §8), l'API est
 `Router.getMplsOam().ping(fecs, { ttl })`.
+
+### [pseudowire] le reste des RFC 4447 / 4448
+Seul le type 5 (Ethernet, mode brut) sur circuit d'acces par port est servi :
+le type 4 (mode tagge, TLV 0x06) exige des circuits d'acces par VLAN, la FEC
+generalisee 0x81 et l'AGI/SAII/TAII ne sont ni emises ni lues. Le numero de
+sequence du mot de controle est emis a 0 (verification desactivee). Le mot de
+controle se choisit par l'API (`controlWord`), sans commande IOS faute de
+pseudowire-class. Le type de sous-TLV d'interface 0x01 (MTU) vient du registre
+IANA, absent de `docs/rfc/mpls/`. Les formats `show mpls l2transport vc` et
+`show xconnect all` ne sont pas servis : seul leur texte de ligne est source
+(genie), ni l'ordre ni les decalages. Une adresse IP sur le circuit d'acces est
+ignoree (le trafic contourne la couche 3) au lieu d'etre refusee.

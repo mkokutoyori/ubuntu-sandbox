@@ -40,6 +40,7 @@ export const TlvType = {
   ConfigurationSequenceNumber: 0x0402,
   CommonSessionParameters: 0x0500,
   LabelRequestMessageId: 0x0600,
+  PwStatus: 0x096a,
 } as const;
 
 export const StatusCode = {
@@ -69,6 +70,10 @@ export const StatusCode = {
   UnsupportedAddressFamily: 0x00000017,
   SessionRejectedBadKeepAliveTime: 0x00000018,
   InternalError: 0x00000019,
+  IllegalCBit: 0x00000024,
+  WrongCBit: 0x00000025,
+  PwStatus: 0x00000028,
+  LabelWithdrawPwStatusMethodNotSupported: 0x0000002b,
 } as const;
 
 export const FATAL_STATUS_CODES: ReadonlySet<number> = new Set([
@@ -79,9 +84,24 @@ export const FATAL_STATUS_CODES: ReadonlySet<number> = new Set([
   StatusCode.InternalError,
 ]);
 
+export interface PwInterfaceParameter {
+  readonly type: number;
+  readonly value: Uint8Array;
+}
+
+export interface PwIdFec {
+  readonly kind: 'pwid';
+  readonly controlWord: boolean;
+  readonly pwType: number;
+  readonly groupId: number;
+  readonly pwId: number | null;
+  readonly interfaceParameters: readonly PwInterfaceParameter[];
+}
+
 export type FecElement =
   | { readonly kind: 'wildcard' }
-  | { readonly kind: 'prefix'; readonly prefix: IPAddress; readonly length: number };
+  | { readonly kind: 'prefix'; readonly prefix: IPAddress; readonly length: number }
+  | PwIdFec;
 
 export type AdvertisementMode = 'unsolicited' | 'on-demand';
 
@@ -123,6 +143,7 @@ export interface LabelMappingMessage {
   readonly requestMessageId?: number;
   readonly hopCount?: number;
   readonly pathVector?: readonly IPAddress[];
+  readonly pwStatus?: number;
 }
 
 export interface LabelRequestMessage {
@@ -138,6 +159,7 @@ export interface LabelWithdrawMessage {
   readonly id: number;
   readonly fec: readonly FecElement[];
   readonly label?: MplsLabel;
+  readonly status?: number;
 }
 
 export interface NotificationMessage {
@@ -147,6 +169,8 @@ export interface NotificationMessage {
   readonly forward: boolean;
   readonly referencedMessageId: number;
   readonly referencedMessageType: number;
+  readonly pwStatus?: number;
+  readonly fec?: readonly FecElement[];
 }
 
 export interface UnknownMessage {

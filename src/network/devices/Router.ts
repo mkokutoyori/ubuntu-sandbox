@@ -252,7 +252,8 @@ import type { VrfStore } from './shells/cisco/ciscoVrfStore';
 import { LDP_ALL_ROUTERS_GROUP, LDP_PORT } from '../ldp/LdpMessages';
 import { mplsLabelStackObject } from '../icmp/IcmpExtensions';
 import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
-import { isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
+import { carriesIp, isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
+import { PseudowireEngine } from '../pw/PseudowireEngine';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -1562,6 +1563,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
+        this.pseudowires?.attachmentStateChanged(name);
         this.syncRouteDebug();
         this.emitLinkTrap(name, port, state === 'up');
         if (state === 'up') this.dhcpClientAgent.onLinkUp(name);
@@ -2588,6 +2590,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    if (this.pseudowires?.attaches(portName)) {
+      this.pseudowires.ingress(portName, frame);
+      return;
+    }
     const tag = (frame as TaggedEthernetFrame).dot1q;
     if (tag) {
       const subif = this.findSubinterfaceForVlan(portName, tag.vid);
@@ -4005,10 +4011,32 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       continueAsIp: (inPort, packet, ttlAccounted) => this.processIPv4(inPort, packet, true, ttlAccounted),
       continueInVrf: (inPort, packet, vrf, ttlAccounted) => this.runInVrf(vrf, () => this.processIPv4(inPort, packet, true, ttlAccounted)),
       expired: (inPort, packet) => this.mplsExpired(inPort, packet),
-      echoRequest: (inPort, packet) => this.getMplsOam().receiveRequest(
-        inPort, packet.payload, packet.stack.map(entry => entry.label.value), packet.stack[0].ttl),
+      echoRequest: (inPort, packet) => {
+        if (carriesIp(packet)) {
+          this.getMplsOam().receiveRequest(inPort, packet.payload, packet.stack.map(entry => entry.label.value), packet.stack[0].ttl);
+        }
+      },
+      deliverPseudowire: (_inPort, attachmentCircuit, payload) => this.getPseudowireEngine().egress(attachmentCircuit, payload),
     });
     return this.mplsEngine;
+  }
+
+  private pseudowires: PseudowireEngine | null = null;
+
+  getPseudowireEngine(): PseudowireEngine {
+    this.pseudowires ??= new PseudowireEngine({
+      attachmentMtu: iface => this.ports.get(iface)?.getMTU() ?? 1500,
+      attachmentUp: iface => {
+        const port = this.ports.get(iface);
+        return port !== undefined && port.getIsUp() && port.isConnected();
+      },
+      sendFrame: (iface, frame) => this.sendFrame(iface, frame),
+      transmit: (iface, nextHop, packet) => {
+        const port = this.ports.get(iface);
+        if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
+      },
+    }, () => this.getLdpEngine(), () => this.getMplsEngine());
+    return this.pseudowires;
   }
 
   private mplsOam: RouterMplsOam | null = null;
@@ -4147,12 +4175,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         srcMAC: port.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_MPLS_UNICAST, payload: packet,
       });
-    } else {
+    } else if (carriesIp(packet)) {
       this.queueAndResolve(packet.payload, iface, nextHop, port, packet);
+    } else {
+      this.sendArpRequestFor(iface, nextHop);
+      const resolved = this.arpTable.get(nextHop.toString());
+      if (resolved) {
+        this.sendFrame(iface, {
+          srcMAC: port.getMAC(), dstMAC: resolved.mac,
+          etherType: ETHERTYPE_MPLS_UNICAST, payload: packet,
+        });
+      }
     }
   }
 
   private mplsExpired(inPort: string, packet: MplsPacket): void {
+    if (!carriesIp(packet)) return;
     const error = this.buildIcmpErrorPacket(
       inPort, packet.payload, 'time-exceeded', 0, undefined, [mplsLabelStackObject(packet.stack)]);
     if (error === null) return;
