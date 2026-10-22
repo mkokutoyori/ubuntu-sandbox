@@ -7,6 +7,7 @@ export function mplsHostOf(router: Router, selectedInterfaces: () => string[] = 
     present: () => router.hasMplsEngines(),
     mpls: () => router.getMplsEngine(),
     ldp: () => router.getLdpEngine(),
+    pseudowires: () => router.getPseudowireEngine(),
     selectedInterfaces,
     interfaceNames: () => router.getPortNames(),
     interfaceIsUp: (name) => router.getPort(name)?.getIsUp() === true,

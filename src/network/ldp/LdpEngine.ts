@@ -334,6 +334,10 @@ export class LdpEngine implements LdpSessionOwner {
     return [...this.targetedPeers.values()].map(entry => entry.address);
   }
 
+  configuredTargets(): readonly IPAddress[] {
+    return [...this.targetedPeers.values()].filter(entry => entry.configured).map(entry => entry.address);
+  }
+
   private sendTargetedHellos(): void {
     if (!this.globallyEnabled) return;
     const now = this.nowMs();

@@ -129,6 +129,10 @@ export class PseudowireEngine implements LdpPwHandler {
     }));
   }
 
+  configuration(): readonly PseudowireConfig[] {
+    return [...this.wires.values()].map(wire => wire.config);
+  }
+
   attaches(iface: string): boolean {
     return this.wires.has(iface);
   }

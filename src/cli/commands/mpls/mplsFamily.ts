@@ -1,6 +1,8 @@
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { LdpEngine } from '@/network/ldp/LdpEngine';
 import type { MplsEngine } from '@/network/mpls/MplsEngine';
+import { IPAddress } from '@/network/core/types';
+import type { PseudowireEngine } from '@/network/pw/PseudowireEngine';
 import {
   formatLdpBindings, formatLdpDiscovery, formatLdpNeighbors, formatMplsForwardingTable, formatMplsInterfaces,
   type LdpBindingView, type LdpNeighborView, type MplsForwardingView, type MplsInterfaceRow,
@@ -10,6 +12,7 @@ export interface MplsShellHost {
   present(): boolean;
   mpls(): MplsEngine;
   ldp(): LdpEngine;
+  pseudowires(): PseudowireEngine;
   selectedInterfaces(): string[];
   interfaceNames(): string[];
   interfaceIsUp(name: string): boolean;
@@ -148,6 +151,47 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
       undo: () => { host().ldp().setHelloTimers(DEFAULT_HELLO_INTERVAL_SECONDS, null); return ''; },
     },
     {
+      id: 'mpls-ldp-neighbor-targeted',
+      path: ['mpls', 'ldp', 'neighbor', { name: 'address', type: 'IP_ADDR', description: 'LDP neighbor address' }, 'targeted',
+        { name: 'protocol', type: 'ENUM', optional: true, values: [{ keyword: 'ldp', description: 'Use LDP for the targeted session' }] }],
+      description: 'Establish a targeted LDP session with a neighbor',
+      undoDescription: 'Remove the targeted LDP session',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: false,
+      run: (_session, args) => { host().ldp().addTargetedPeer(new IPAddress(String(args.address))); return ''; },
+      undo: (_session, args) => { host().ldp().removeTargetedPeer(new IPAddress(String(args.address))); return ''; },
+    },
+    {
+      id: 'mpls-ldp-discovery-targeted-hello-accept',
+      path: ['mpls', 'ldp', 'discovery', 'targeted-hello', 'accept'],
+      description: 'Accept targeted Hellos from any LSR',
+      undoDescription: 'Stop accepting unsolicited targeted Hellos',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().ldp().setAcceptTargetedHellos(true); return ''; },
+      undo: () => { host().ldp().setAcceptTargetedHellos(false); return ''; },
+    },
+    {
+      id: 'xconnect-mpls',
+      path: ['xconnect', { name: 'peer', type: 'IP_ADDR', description: 'Peer router id' },
+        { name: 'vcid', type: 'INT', range: [1, 4294967295], description: 'Pseudowire (VC) identifier' },
+        'encapsulation', 'mpls'],
+      description: 'Bind an attachment circuit to an MPLS pseudowire',
+      undoDescription: 'Unbind the attachment circuit from the pseudowire',
+      modes: INTERFACE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => {
+        for (const iface of host().selectedInterfaces()) {
+          host().pseudowires().add({
+            attachmentCircuit: iface, peer: new IPAddress(String(args.peer)), pwId: Number(args.vcid),
+            controlWord: 'not-preferred', groupId: 0,
+          });
+        }
+        return '';
+      },
+      undo: () => {
+        for (const iface of host().selectedInterfaces()) host().pseudowires().remove(iface);
+        return '';
+      },
+    },
+    {
       id: 'show-mpls-interfaces',
       path: ['show', 'mpls', 'interfaces'],
       description: 'Interface label switching states',
@@ -202,6 +246,8 @@ export function mplsGlobalRunningConfig(host: MplsShellHost): string[] {
   const source = host.routerIdSourceText();
   if (source) lines.push(`mpls ldp router-id ${source}`);
   if (!host.mpls().propagateTtl) lines.push('no mpls ip propagate-ttl');
+  if (host.ldp().config.acceptTargetedHellos) lines.push('mpls ldp discovery targeted-hello accept');
+  for (const target of host.ldp().configuredTargets()) lines.push(`mpls ldp neighbor ${target} targeted ldp`);
   const config = host.ldp().config;
   if (config.helloHoldSeconds !== DEFAULT_HELLO_HOLD_SECONDS) lines.push(`mpls ldp discovery hello holdtime ${config.helloHoldSeconds}`);
   if (config.helloIntervalSeconds !== DEFAULT_HELLO_INTERVAL_SECONDS) lines.push(`mpls ldp discovery hello interval ${config.helloIntervalSeconds}`);
@@ -209,5 +255,10 @@ export function mplsGlobalRunningConfig(host: MplsShellHost): string[] {
 }
 
 export function mplsInterfaceRunningConfig(host: MplsShellHost, iface: string): string[] {
-  return host.present() && host.ldp().isInterfaceEnabled(iface) ? [' mpls ip'] : [];
+  if (!host.present()) return [];
+  const lines = host.ldp().isInterfaceEnabled(iface) ? [' mpls ip'] : [];
+  for (const wire of host.pseudowires().configuration()) {
+    if (wire.attachmentCircuit === iface) lines.push(` xconnect ${wire.peer} ${wire.pwId} encapsulation mpls`);
+  }
+  return lines;
 }
