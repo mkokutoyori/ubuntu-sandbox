@@ -2077,7 +2077,7 @@ function ospfIfStateAbbr(state: string): string {
   switch (state) {
     case 'DR': return 'DR';
     case 'Backup': return 'BDR';
-    case 'DROther': return 'DROTHER';
+    case 'DROther': return 'DROTH';
     case 'PointToPoint': return 'P2P';
     case 'Waiting': return 'WAIT';
     case 'Loopback': return 'LOOP';

@@ -21,10 +21,15 @@
  * `broadcast`), il attend a present `FULL/DR` ou `FULL/BDR` ; l'autre exigeait `FULL/ -` pour OSPFv3 sur un lien
  * Ethernet, il attend un role.  Le test IPv4 a reseau `point-to-point` declare garde le tiret.
  *
- * Discrimine par `git stash` sur src/network : 5 des 7 cas tombent avant.  Les 2 qui passent des deux cotes sont
- * des TEMOINS nommes ici : « un lien declare point-to-point garde le tiret » (la regle que la correction ne doit
- * pas casser) et « le DR de l'interface est bien celui que dit show ip ospf interface » (la verite contre laquelle
- * les autres cas comparent).
+ * `show ip ospf interface brief` rendait l'etat `DROther` en entier (`DROTHER1/1`, la colonne des voisins collee) :
+ * le tableau d'IOS tient l'etat sur cinq cellules sous l'en-tete `State` (la documentation officielle du depot,
+ * ios-ip-routing-ospf-command-reference-2024.pdf, montre `DOWN`, `P2P`, `LOOP` dans cette colonne ; `DROTH` est la
+ * forme de cinq cellules de DROTHER, telle qu'IOS l'ecrit -- le PDF n'en porte pas d'exemple).
+ *
+ * Discrimine par `git stash` sur src/network : 6 des 9 cas tombent avant (5 du tableau des voisins, 1 du resume des
+ * interfaces).  Les 3 qui passent des deux cotes sont des TEMOINS nommes ici : « un lien declare point-to-point garde
+ * le tiret » et « ... ecrit P2P dans la meme colonne » (les regles que la correction ne doit pas casser) et « le DR
+ * de l'interface est bien celui que dit show ip ospf interface » (la verite contre laquelle les autres cas comparent).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
@@ -110,6 +115,42 @@ describe('show ip ospf neighbor dit le role du voisin sur un segment Ethernet', 
     const [, , r3] = await segment([255, 100, 0, 0]);
     expect(await r3.executeCommand('show ip ospf neighbor detail')).toContain('State is 2WAY');
     expect(await r3.executeCommand('show ip ospf neighbor detail')).not.toContain('TWOWAY');
+  });
+});
+
+describe('show ip ospf interface brief tient l etat sur cinq cellules', () => {
+  const stateCell = (table: string, address: string): string => {
+    const header = table.split('\n')[0];
+    const row = table.split('\n').find((line) => line.includes(`${address}/`)) ?? '';
+    return row.slice(header.indexOf('State'), header.indexOf('Nbrs')).trimEnd();
+  };
+
+  it('DR, BDR et DROTH ouvrent la colonne State et laissent Nbrs F/C sous son en-tete', async () => {
+    const [r1, r2, r3] = await segment([255, 100, 0]);
+    const brief = [await r1.executeCommand('show ip ospf interface brief'), await r2.executeCommand('show ip ospf interface brief'), await r3.executeCommand('show ip ospf interface brief')];
+    expect(stateCell(brief[0], '192.168.1.1')).toBe('DR');
+    expect(stateCell(brief[1], '192.168.1.2')).toBe('BDR');
+    expect(stateCell(brief[2], '192.168.1.3')).toBe('DROTH');
+    for (const table of brief) {
+      const header = table.split('\n')[0];
+      const row = table.split('\n')[1];
+      expect(row.slice(header.indexOf('Nbrs'))).toMatch(/^\d+\/\d+$/);
+    }
+  });
+
+  it('TEMOIN — un lien point-to-point declare ecrit P2P dans la meme colonne', async () => {
+    const routers = [new CiscoRouter('R1'), new CiscoRouter('R2')];
+    for (let i = 0; i < 2; i++) {
+      await configure(routers[i], [
+        'interface GigabitEthernet0/0', `ip address 10.0.0.${i + 1} 255.255.255.252`, 'ip ospf network point-to-point', 'no shutdown', 'exit',
+        'router ospf 1', `router-id ${i + 1}.${i + 1}.${i + 1}.${i + 1}`, 'network 10.0.0.0 0.0.0.3 area 0',
+      ]);
+    }
+    new Cable('c').connect(routers[0].getPort('GigabitEthernet0/0')!, routers[1].getPort('GigabitEthernet0/0')!);
+    horloge.advance(45_000);
+    const table = await routers[0].executeCommand('show ip ospf interface brief');
+    expect(stateCell(table, '10.0.0.1')).toBe('P2P');
+    expect(table.split('\n')[1].slice(table.split('\n')[0].indexOf('Nbrs'))).toBe('1/1');
   });
 });
 

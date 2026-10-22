@@ -1520,9 +1520,6 @@ on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
   elit une fois les voisins connus et reste juste. Non ferme : relancer
   l'election exige de reevaluer les adjacences (AdjOK), que la voie
   rapide vers Full de v3 (`shouldFormAdjacency`) ne fait pas.
-- `show ip ospf interface brief` rend l'etat `DROTHER` en entier
-  (`DROTHER1/1`, la colonne des voisins collee) ; IOS tient l'etat sur
-  cinq cellules (`DROTH`).
 - `ip ospf message-digest-key 1 md5 SECRET` range la cle comme une cle
   SIMPLE (`setPendingOspfIf({ authKey })`, l'identifiant est ignore) et le
   `running-config` rend `ip ospf authentication-key SECRET` : la ligne que
