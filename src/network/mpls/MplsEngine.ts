@@ -1,7 +1,7 @@
 import type { IPAddress, IPv4Packet } from '@/network/core/types';
-import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack } from './LabelStack';
-import { MplsLabel } from './MplsLabel';
-import { Lfib } from './Lfib';
+import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack, type LabelStackEntry } from './LabelStack';
+import { MplsLabel, MPLS_FIRST_UNRESERVED_LABEL, MPLS_LABEL_MAX } from './MplsLabel';
+import { Lfib, type FtnEntry } from './Lfib';
 import { imposeLabels, switchLabelled, type TtlPolicy } from './LabelSwitching';
 import { carriesIp, type MplsPacket } from './MplsPacket';
 import { isEchoRequestPacket } from './oam/EchoAgent';
@@ -28,9 +28,22 @@ export interface MplsCounters {
   echoRequests: number;
 }
 
+export function entropyLabelFor(flowKey: string): MplsLabel {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < flowKey.length; i++) hash = Math.imul(hash ^ flowKey.charCodeAt(i), 0x01000193) >>> 0;
+  return MplsLabel.of(MPLS_FIRST_UNRESERVED_LABEL + (hash % (MPLS_LABEL_MAX - MPLS_FIRST_UNRESERVED_LABEL + 1)));
+}
+
+function flowKeyOf(packet: IPv4Packet): string {
+  const transport = packet.payload as { sourcePort?: number; destinationPort?: number } | null;
+  return `${packet.sourceIP}|${packet.destinationIP}|${packet.protocol}|${transport?.sourcePort ?? 0}|${transport?.destinationPort ?? 0}`;
+}
+
 export class MplsEngine implements TtlPolicy {
   readonly lfib = new Lfib();
   propagateTtl = true;
+  entropyLabelCapable = false;
+  imposeEntropyLabels = false;
   readonly counters: MplsCounters = {
     labelledIn: 0, labelledOut: 0, imposed: 0, disposed: 0, expired: 0, noBinding: 0, droppedDisabledInterface: 0, echoRequests: 0,
   };
@@ -109,7 +122,7 @@ export class MplsEngine implements TtlPolicy {
     const entry = this.lfib.lookupFtn(bgpNextHop);
     if (entry === undefined || entry.iface !== iface || !entry.nextHop.equals(nextHop)) return null;
     const ttl = this.propagateTtl ? packet.ttl : MAX_MPLS_TTL;
-    const stack = withBottomOfStack([...entry.outLabels, vpnLabel].map(label => makeLabelStackEntry(label, ttl)));
+    const stack = withBottomOfStack([...this.tunnelEntries(entry, ttl, flowKeyOf(packet)), makeLabelStackEntry(vpnLabel, ttl)]);
     this.counters.imposed++;
     return { type: 'mpls', stack, payload: packet };
   }
@@ -119,7 +132,8 @@ export class MplsEngine implements TtlPolicy {
   ): { readonly packet: MplsPacket; readonly iface: string; readonly nextHop: IPAddress } | null {
     const entry = this.lfib.lookupFtn(target);
     if (entry === undefined || !this.interfaces.has(entry.iface)) return null;
-    const stack = withBottomOfStack([...entry.outLabels, serviceLabel].map(label => makeLabelStackEntry(label, MAX_MPLS_TTL)));
+    const flowKey = `${payload.frame.srcMAC}|${payload.frame.dstMAC}`;
+    const stack = withBottomOfStack([...this.tunnelEntries(entry, MAX_MPLS_TTL, flowKey), makeLabelStackEntry(serviceLabel, MAX_MPLS_TTL)]);
     this.counters.imposed++;
     return { packet: { type: 'mpls', stack, payload }, iface: entry.iface, nextHop: entry.nextHop };
   }
@@ -130,6 +144,19 @@ export class MplsEngine implements TtlPolicy {
     if (entry === undefined || entry.iface !== iface || entry.outLabels.length === 0) return null;
     if (nextHop !== null && !entry.nextHop.equals(nextHop)) return null;
     this.counters.imposed++;
-    return imposeLabels(packet, entry, this);
+    const entropy = this.entropyFor(entry, flowKeyOf(packet));
+    return imposeLabels(packet, entry, this, entropy);
+  }
+
+  private entropyFor(entry: FtnEntry, flowKey: string): MplsLabel | undefined {
+    return this.imposeEntropyLabels && entry.entropyLabelCapable === true && entry.outLabels.length > 0
+      ? entropyLabelFor(flowKey) : undefined;
+  }
+
+  private tunnelEntries(entry: FtnEntry, ttl: number, flowKey: string): LabelStackEntry[] {
+    const entries = entry.outLabels.map(label => makeLabelStackEntry(label, ttl));
+    const entropy = this.entropyFor(entry, flowKey);
+    if (entropy !== undefined) entries.push(makeLabelStackEntry(MplsLabel.ENTROPY_LABEL_INDICATOR, ttl), makeLabelStackEntry(entropy, 0));
+    return entries;
   }
 }

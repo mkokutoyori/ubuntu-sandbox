@@ -2,10 +2,12 @@ import { computeIPv4Checksum, type IPAddress, type IPv4Packet } from '@/network/
 import { makeLabelStackEntry, withBottomOfStack, MAX_MPLS_TTL, type LabelStackEntry } from './LabelStack';
 import { Lfib, type FtnEntry } from './Lfib';
 import { carriesIp, type MplsPacket } from './MplsPacket';
+import { MplsLabel } from './MplsLabel';
 import type { PseudowirePayload } from '@/network/pw/PseudowirePacket';
 
 export interface TtlPolicy {
   readonly propagateTtl: boolean;
+  readonly entropyLabelCapable?: boolean;
 }
 
 export type SwitchingDecision =
@@ -37,10 +39,26 @@ function exposed(packet: MplsPacket, remaining: readonly LabelStackEntry[], ttl:
   return { ...packet, stack: withBottomOfStack([retained, ...rest]) };
 }
 
-export function imposeLabels(packet: IPv4Packet, entry: FtnEntry, policy: TtlPolicy): MplsPacket {
+export function imposeLabels(packet: IPv4Packet, entry: FtnEntry, policy: TtlPolicy, entropyLabel?: MplsLabel): MplsPacket {
   const ttl = policy.propagateTtl ? packet.ttl : MAX_MPLS_TTL;
-  const stack = withBottomOfStack(entry.outLabels.map(label => makeLabelStackEntry(label, ttl)));
-  return { type: 'mpls', stack, payload: packet };
+  const entries = entry.outLabels.map(label => makeLabelStackEntry(label, ttl));
+  if (entropyLabel !== undefined) {
+    entries.push(makeLabelStackEntry(MplsLabel.ENTROPY_LABEL_INDICATOR, ttl), makeLabelStackEntry(entropyLabel, 0));
+  }
+  return { type: 'mpls', stack: withBottomOfStack(entries), payload: packet };
+}
+
+function continueAfterPop(
+  packet: MplsPacket, remaining: readonly LabelStackEntry[], ttl: number, lfib: Lfib, policy: TtlPolicy,
+): SwitchingDecision {
+  if (remaining.length === 0) {
+    const ip = exposed({ ...packet, stack: [] }, [], ttl, policy);
+    if (ip !== null && ip.type === 'ipv4') return { kind: 'deliver', packet: ip, ttlAccounted: policy.propagateTtl };
+    return { kind: 'no-binding', packet };
+  }
+  const [next, ...deeper] = remaining;
+  const carried = policy.propagateTtl ? { ...next, ttl: Math.min(next.ttl, ttl + 1) } : next;
+  return switchLabelled({ ...packet, stack: withBottomOfStack([carried, ...deeper]) }, lfib, policy);
 }
 
 export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy): SwitchingDecision {
@@ -48,15 +66,11 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
   const ttl = outgoingTtl(top.ttl);
   if (ttl === 0) return { kind: 'expired', packet };
 
-  if (top.label.isExplicitNull()) {
-    if (below.length > 0) {
-      const [next, ...deeper] = below;
-      const exposedTop = policy.propagateTtl ? { ...next, ttl: Math.min(next.ttl, top.ttl) } : next;
-      return switchLabelled({ ...packet, stack: withBottomOfStack([exposedTop, ...deeper]) }, lfib, policy);
-    }
-    const ip = exposed(packet, below, ttl, policy);
-    if (ip !== null && ip.type === 'ipv4') return { kind: 'deliver', packet: ip, ttlAccounted: policy.propagateTtl };
-    return { kind: 'no-binding', packet };
+  if (top.label.isExplicitNull()) return continueAfterPop(packet, below, ttl, lfib, policy);
+
+  if (top.label.equals(MplsLabel.ENTROPY_LABEL_INDICATOR)) {
+    if (!policy.entropyLabelCapable || top.bottom || below.length === 0) return { kind: 'no-binding', packet };
+    return continueAfterPop(packet, below.slice(1), ttl, lfib, policy);
   }
 
   const entry = lfib.lookupIlm(top.label);
@@ -74,6 +88,7 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
   }
 
   if (entry.kind === 'pop') {
+    if (entry.iface === null && below.length > 0) return continueAfterPop(packet, below, ttl, lfib, policy);
     const result = exposed(packet, below, ttl, policy);
     if (result === null) return { kind: 'no-binding', packet };
     if (result.type === 'ipv4') {

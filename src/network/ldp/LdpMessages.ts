@@ -42,6 +42,7 @@ export const TlvType = {
   LabelRequestMessageId: 0x0600,
   PwStatus: 0x096a,
   PwInterfaceParameters: 0x096b,
+  EntropyLabelCapability: 0x0206,
   MacList: 0x0404,
 } as const;
 
@@ -175,6 +176,7 @@ export interface LabelMappingMessage {
   readonly hopCount?: number;
   readonly pathVector?: readonly IPAddress[];
   readonly pwStatus?: number;
+  readonly entropyLabelCapable?: boolean;
 }
 
 export interface LabelRequestMessage {

@@ -33,6 +33,7 @@ export interface FtnEntry {
   readonly outLabels: readonly MplsLabel[];
   readonly iface: string;
   readonly nextHop: IPAddress;
+  readonly entropyLabelCapable?: boolean;
 }
 
 export class Lfib {

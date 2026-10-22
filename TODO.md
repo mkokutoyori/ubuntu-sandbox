@@ -3501,3 +3501,11 @@ attache et les ressources de decouverte (BGP / RADIUS). Le TLV de groupage
 PW (0x096C) et les retraits generiques (longueur d'information 0) de la FEC
 generalisee sont refuses a l'analyse plutot qu'ignores. Le type d'AGI 1
 vient du registre IANA, absent de `docs/rfc/mpls/`.
+
+### [entropy-label] le reste de la RFC 6790
+Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
+drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit
+la charge sur le label d'entropie parce que `Router` n'a pas de FIB multichemin
+(voir « Known limits ») : l'EL est poussee, transportee et retiree, mais
+ne choisit encore aucun chemin. Le pseudo-fil (RFC 6391, label de flux) et les
+LSP multipoints ne sont pas traites.

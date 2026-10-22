@@ -121,6 +121,8 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly received = new Map<string, Map<string, MplsLabel>>();
   private readonly advertised = new Map<string, Map<string, MplsLabel>>();
   private readonly advertisedAddresses = new Map<string, Set<string>>();
+  private readonly receivedElc = new Map<string, Set<string>>();
+  private readonly advertisedElc = new Map<string, Set<string>>();
   private readonly installedIlm = new Map<number, true>();
   private readonly installedFtn = new Map<string, FecInstall>();
   private readonly retryHandles = new Map<string, number>();
@@ -318,6 +320,11 @@ export class LdpEngine implements LdpSessionOwner {
     this.reconcile();
   }
 
+  setEntropyLabelCapable(enabled: boolean): void {
+    this.mpls.entropyLabelCapable = enabled;
+    this.reconcile();
+  }
+
   setAcceptTargetedHellos(accept: boolean): void {
     this.config.acceptTargetedHellos = accept;
     if (accept) { this.start(); return; }
@@ -448,6 +455,8 @@ export class LdpEngine implements LdpSessionOwner {
     this.backoff.delete(peerKey);
     this.received.set(peerKey, new Map());
     this.advertised.set(peerKey, new Map());
+    this.receivedElc.set(peerKey, new Set());
+    this.advertisedElc.set(peerKey, new Set());
     this.advertisedAddresses.set(peerKey, new Set());
     this.syncAddresses(session, peerKey);
     this.reconcile();
@@ -461,6 +470,8 @@ export class LdpEngine implements LdpSessionOwner {
     if (this.sessionTable.get(peerKey) === session) this.sessionTable.delete(peerKey);
     this.received.delete(peerKey);
     this.advertised.delete(peerKey);
+    this.receivedElc.delete(peerKey);
+    this.advertisedElc.delete(peerKey);
     this.advertisedAddresses.delete(peerKey);
     if (rejected && session.role === 'active') {
       const previous = this.backoff.get(peerKey);
@@ -536,9 +547,13 @@ export class LdpEngine implements LdpSessionOwner {
   private onMapping(session: LdpSession, peerKey: string, message: LabelMappingMessage): void {
     const table = this.received.get(peerKey);
     if (!table) return;
+    const elc = this.receivedElc.get(peerKey);
     for (const element of message.fec) {
       const fec = fecOf(element);
-      if (fec) table.set(fec.key, message.label);
+      if (!fec) continue;
+      table.set(fec.key, message.label);
+      if (message.entropyLabelCapable === true) elc?.add(fec.key);
+      else elc?.delete(fec.key);
     }
     this.reconcile();
     void session;
@@ -576,7 +591,10 @@ export class LdpEngine implements LdpSessionOwner {
       const fec = fecOf(element);
       if (!fec) continue;
       const held = table.get(fec.key);
-      if (held && (!label || held.equals(label))) table.delete(fec.key);
+      if (held && (!label || held.equals(label))) {
+        table.delete(fec.key);
+        this.receivedElc.get(peerKey)?.delete(fec.key);
+      }
     }
     const prefixFecs = fecs.filter(element => !isPwFec(element));
     if (prefixFecs.length > 0) {
@@ -685,13 +703,18 @@ export class LdpEngine implements LdpSessionOwner {
     const table = this.advertised.get(peerKey);
     if (!table) return;
     const outgoing: LdpMessage[] = [];
+    const sentElc = this.advertisedElc.get(peerKey) ?? new Set<string>();
     for (const [key, binding] of this.localBindings) {
-      if (table.get(key)?.equals(binding.label)) continue;
+      const elc = this.entropyCapableFor(key, binding, fecs.get(key));
+      if (table.get(key)?.equals(binding.label) && sentElc.has(key) === elc) continue;
       if (this.config.controlMode === 'ordered' && !binding.egress && !this.hasDownstreamLabel(fecs.get(key))) continue;
       table.set(key, binding.label);
+      if (elc) sentElc.add(key);
+      else sentElc.delete(key);
       outgoing.push({
         kind: 'label-mapping', id: this.nextMessageId(),
         fec: [{ kind: 'prefix', prefix: binding.fec.prefix, length: binding.fec.length }], label: binding.label,
+        ...(elc ? { entropyLabelCapable: true } : {}),
       });
     }
     if (outgoing.length > 0) session.send(outgoing);
@@ -702,6 +725,14 @@ export class LdpEngine implements LdpSessionOwner {
       if (!fec) continue;
       session.send([{ kind: 'label-withdraw', id: this.nextMessageId(), fec: [{ kind: 'prefix', prefix: fec.prefix, length: fec.length }], label }]);
     }
+  }
+
+  private entropyCapableFor(key: string, binding: LdpLocalBinding, entry: { fec: LdpFec; route: LdpRoute } | undefined): boolean {
+    if (!this.mpls.entropyLabelCapable) return false;
+    if (binding.egress) return true;
+    if (!entry?.route.nextHop) return false;
+    const owner = this.peerOwning(entry.route.nextHop, entry.route.iface);
+    return owner !== null && this.receivedElc.get(owner.key)?.has(key) === true;
   }
 
   private hasDownstreamLabel(entry: { fec: LdpFec; route: LdpRoute } | undefined): boolean {
@@ -731,7 +762,10 @@ export class LdpEngine implements LdpSessionOwner {
       }
       this.mpls.lfib.setIlm(binding.label, { kind: 'swap', outLabels: [remote], iface: route.iface, nextHop: route.nextHop });
       wantedIlm.set(binding.label.value, true);
-      this.mpls.lfib.setFtn({ prefix: fec.prefix, prefixLength: fec.length, outLabels: [remote], iface: route.iface, nextHop: route.nextHop });
+      this.mpls.lfib.setFtn({
+        prefix: fec.prefix, prefixLength: fec.length, outLabels: [remote], iface: route.iface, nextHop: route.nextHop,
+        entropyLabelCapable: owner !== null && this.receivedElc.get(owner.key)?.has(key) === true,
+      });
       wantedFtn.set(key, { prefix: fec.prefix, length: fec.length });
     }
     for (const value of [...this.installedIlm.keys()]) {
