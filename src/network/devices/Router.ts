@@ -255,6 +255,7 @@ import { ETHERTYPE_MPLS_UNICAST } from '../mpls/MplsLabel';
 import { carriesIp, isMplsPacket, type MplsPacket } from '../mpls/MplsPacket';
 import { PseudowireEngine, type PseudowireHost } from '../pw/PseudowireEngine';
 import { VplsEngine } from '../pw/VplsEngine';
+import { MplsTpEngine } from '../mpls/tp/MplsTpEngine';
 import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
@@ -4043,12 +4044,26 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           this.getMplsOam().receiveRequest(inPort, packet.payload, packet.stack.map(entry => entry.label.value), packet.stack[0].ttl);
         }
       },
+      deliverGach: (_inPort, delivery) => this.getMplsTpEngine().receive(delivery),
       deliverPseudowire: (inPort, owner, endpoint, payload) => {
         if (owner === 'vpls') this.getVplsEngine().egress(inPort, endpoint, payload);
         else this.getPseudowireEngine().egress(endpoint, payload);
       },
     });
     return this.mplsEngine;
+  }
+
+  private mplsTp: MplsTpEngine | null = null;
+
+  getMplsTpEngine(): MplsTpEngine {
+    this.mplsTp ??= new MplsTpEngine({
+      mpls: () => this.getMplsEngine(),
+      sendLabelled: (iface, nextHop, packet) => {
+        const port = this.ports.get(iface);
+        if (port) this.sendMplsFrameArpAware(iface, packet, nextHop, port);
+      },
+    });
+    return this.mplsTp;
   }
 
   private pseudowires: PseudowireEngine | null = null;

@@ -4,6 +4,7 @@ import { Lfib, type FtnEntry } from './Lfib';
 import { carriesIp, type MplsPacket } from './MplsPacket';
 import { MplsLabel } from './MplsLabel';
 import type { PseudowirePayload } from '@/network/pw/PseudowirePacket';
+import { isGachPayload, type GachPayload } from './tp/GachPacket';
 
 export type DiffServModel = 'uniform' | 'pipe' | 'short-pipe';
 
@@ -41,6 +42,7 @@ export type SwitchingDecision =
   | { readonly kind: 'unlabelled'; readonly packet: IPv4Packet; readonly iface: string; readonly nextHop: IPAddress }
   | { readonly kind: 'deliver'; readonly packet: IPv4Packet; readonly ttlAccounted: boolean }
   | { readonly kind: 'deliver-vrf'; readonly packet: IPv4Packet; readonly vrf: string; readonly ttlAccounted: boolean }
+  | { readonly kind: 'deliver-gach'; readonly payload: GachPayload; readonly lsp: string | null }
   | { readonly kind: 'deliver-pw'; readonly payload: PseudowirePayload; readonly owner: 'xconnect' | 'vpls'; readonly endpoint: string };
 
 function withIpTtl(packet: IPv4Packet, ttl: number): IPv4Packet {
@@ -96,6 +98,18 @@ function continueAfterPop(
 
 export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy): SwitchingDecision {
   const [top, ...below] = packet.stack;
+  if (top.label.equals(MplsLabel.GENERIC_ASSOCIATED_CHANNEL)) {
+    if (!top.bottom || !isGachPayload(packet.payload)) return { kind: 'no-binding', packet };
+    return { kind: 'deliver-gach', payload: packet.payload, lsp: null };
+  }
+  const terminating = lfib.lookupIlm(top.label);
+  if (terminating?.kind === 'tp-lsp') {
+    const [gal] = below;
+    if (below.length !== 1 || !gal.bottom || !gal.label.equals(MplsLabel.GENERIC_ASSOCIATED_CHANNEL) || !isGachPayload(packet.payload)) {
+      return { kind: 'no-binding', packet };
+    }
+    return { kind: 'deliver-gach', payload: packet.payload, lsp: terminating.lsp };
+  }
   const ttl = outgoingTtl(top.ttl);
   if (ttl === 0) return { kind: 'expired', packet };
 
@@ -107,7 +121,7 @@ export function switchLabelled(packet: MplsPacket, lfib: Lfib, policy: TtlPolicy
   }
 
   const entry = lfib.lookupIlm(top.label);
-  if (entry === undefined) return { kind: 'no-binding', packet };
+  if (entry === undefined || entry.kind === 'tp-lsp') return { kind: 'no-binding', packet };
 
   if (entry.kind === 'pw') {
     if (below.length > 0 || packet.payload.type !== 'pw-ethernet') return { kind: 'no-binding', packet };

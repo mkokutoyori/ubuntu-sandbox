@@ -25,7 +25,12 @@ export interface PseudowireEntry {
   readonly endpoint: string;
 }
 
-export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry;
+export interface TransportLspEntry {
+  readonly kind: 'tp-lsp';
+  readonly lsp: string;
+}
+
+export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry | TransportLspEntry;
 
 export interface FtnEntry {
   readonly prefix: IPAddress;

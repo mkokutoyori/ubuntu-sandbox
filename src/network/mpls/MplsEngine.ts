@@ -6,6 +6,7 @@ import { imposeLabels, impositionTrafficClass, switchLabelled, type DiffServMode
 import { carriesIp, type MplsPacket } from './MplsPacket';
 import { isEchoRequestPacket } from './oam/EchoAgent';
 import type { PseudowirePayload } from '@/network/pw/PseudowirePacket';
+import { isGachPayload, type GachPayload } from './tp/GachPacket';
 
 export interface MplsHost {
   sendLabelled(iface: string, nextHop: IPAddress, packet: MplsPacket): void;
@@ -15,6 +16,14 @@ export interface MplsHost {
   expired(inPort: string, packet: MplsPacket): void;
   echoRequest(inPort: string, packet: MplsPacket): void;
   deliverPseudowire(inPort: string, owner: 'xconnect' | 'vpls', endpoint: string, payload: PseudowirePayload): void;
+  deliverGach(inPort: string, delivery: GachDelivery): void;
+}
+
+export interface GachDelivery {
+  readonly payload: GachPayload;
+  readonly lsp: string | null;
+  readonly reason: 'terminated' | 'ttl-expired';
+  readonly stack: readonly LabelStackEntry[];
 }
 
 export interface MplsCounters {
@@ -99,12 +108,20 @@ export class MplsEngine implements TtlPolicy {
         this.counters.disposed++;
         this.host.continueInVrf(inPort, decision.packet, decision.vrf, decision.ttlAccounted);
         return;
+      case 'deliver-gach':
+        this.counters.disposed++;
+        this.host.deliverGach(inPort, { payload: decision.payload, lsp: decision.lsp, reason: 'terminated', stack: packet.stack });
+        return;
       case 'deliver-pw':
         this.counters.disposed++;
         this.host.deliverPseudowire(inPort, decision.owner, decision.endpoint, decision.payload);
         return;
       case 'expired':
         this.counters.expired++;
+        if (isGachPayload(packet.payload) && packet.stack[packet.stack.length - 1].label.equals(MplsLabel.GENERIC_ASSOCIATED_CHANNEL)) {
+          this.host.deliverGach(inPort, { payload: packet.payload, lsp: null, reason: 'ttl-expired', stack: packet.stack });
+          return;
+        }
         this.host.expired(inPort, decision.packet);
         return;
       case 'no-binding':
