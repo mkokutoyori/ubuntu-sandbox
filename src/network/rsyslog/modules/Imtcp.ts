@@ -189,6 +189,7 @@ class ImtcpListener implements InputInstance {
 
   start(): boolean {
     const settings = this.settings;
+    if (settings.rateName !== null && (this.limiterForSubmissions(), this.limiter === null)) return false;
     let port = settings.port;
     const numericPrefix = /^\d*/.exec(port)?.[0] ?? '';
     const portNumber = numericPrefix === '' ? 0 : Number(numericPrefix);

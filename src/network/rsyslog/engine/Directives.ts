@@ -12,6 +12,7 @@ export interface DirectiveEnvironment {
   warn(message: string): void;
   uidOf(name: string): number | null;
   gidOf(name: string): number | null;
+  unresolvedId(message: string): void;
 }
 
 function skipSpaces(text: string, position: number): number {
@@ -103,7 +104,7 @@ export function applyDirective(registration: DirectiveRegistration, rest: string
       const word = readWord(text, 0);
       const id = registration.type === 'uid' ? env.uidOf(word.word) : env.gidOf(word.word);
       if (id === null) {
-        env.report(registration.type === 'uid' ? `ID for user '${word.word}' could not be found: No such file or directory` : `ID for group ${word.word} could not be found`);
+        env.unresolvedId(registration.type === 'uid' ? `ID for user '${word.word}' could not be found or error` : `ID for group '${word.word}' could not be found or error`);
         return text.slice(word.next);
       }
       registration.apply(id, env.context);

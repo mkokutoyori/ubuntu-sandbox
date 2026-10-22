@@ -194,6 +194,7 @@ class UnixSocketListener implements InputInstance {
   start(): boolean {
     const settings = this.settings;
     if (settings.socketName === '') return false;
+    if (settings.rateName !== null && this.defaultRateLimiter() === null) return false;
     const binding = this.context.host.sockets.listen(
       settings.socketName,
       { unlink: settings.unlink, createPath: settings.createPath, credentials: this.usesCredentials },
@@ -223,16 +224,21 @@ class UnixSocketListener implements InputInstance {
     this.pidLimiters.clear();
   }
 
-  private limiterFor(message: LocalSocketMessage): ModuleRateLimiter | undefined {
-    const settings = this.settings;
+  private defaultRateLimiter(): ModuleRateLimiter | null {
     if (this.defaultLimiter === undefined) {
+      const settings = this.settings;
       const created = this.context.rateLimiter({
         module: 'imuxsock', interval: settings.rateInterval, burst: settings.rateBurst, configName: settings.rateName,
         forInput: true, severity: settings.rateSeverity,
       });
       this.defaultLimiter = created === null ? null : created.limiter;
     }
-    const fallback = this.defaultLimiter ?? undefined;
+    return this.defaultLimiter;
+  }
+
+  private limiterFor(message: LocalSocketMessage): ModuleRateLimiter | undefined {
+    const settings = this.settings;
+    const fallback = this.defaultRateLimiter() ?? undefined;
     const pid = message.pid;
     if (pid === null || settings.rateInterval <= 0) return fallback;
     const known = this.pidLimiters.get(pid);

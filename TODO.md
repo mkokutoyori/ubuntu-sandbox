@@ -3279,10 +3279,8 @@ deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le sou
 fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
 `YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
 etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
-sont reproduits ; policyWatch repose sur l'evenement d'ecriture du VFS (`onWrite`) : un `mv` qui amene le fichier en place (IN_MOVED_TO) ou
-un `chmod` (IN_ATTRIB) n'emet aucun evenement, la ou inotify les signale ; `imudp` cree ses limiteurs au demarrage comme le source, mais
-`imtcp`, `imuxsock` et `imklog` les creent au premier message, si bien qu'un `ratelimit.name` inconnu n'y est signale qu'a ce moment et que
-le listener n'est pas refuse ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
+sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage vers le chemin et de `chmod` du VFS (`onWrite`, `onEntryChange`) ;
+`chown`, `touch` sans ecriture et la creation d'un lien n'en emettent pas ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
 source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
 (`global(senders.keepTrack)`) restent a porter.
 
@@ -3299,8 +3297,7 @@ source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel qu
 ### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
 Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
 Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
-`security.abortOnIDResolutionFail` (cfsysline.c : un `$FileOwner` ou `$PrivDropToUser` d'un utilisateur inconnu arrete le demon avec
-`exit(1)` au lieu de journaliser), `reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
+`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
 `inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `operatingStateFile` (operatingstate.c : fichier d'etat qui detecte un arret
 non propre), `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
 `allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,

@@ -269,7 +269,14 @@ export class LinuxRsyslogHost implements RsyslogHost {
       return { text: content.slice(offset), size: content.length, inode: String(inode.id) };
     },
     write: (path: string, text: string): boolean => this.platform.vfs.writeFile(path, text, 0, 0, 0o022),
-    watch: (path: string, onEvent: () => void): (() => void) | null => this.platform.vfs.onWrite(path, () => onEvent()),
+    watch: (path: string, onEvent: () => void): (() => void) | null => {
+      const stopWrites = this.platform.vfs.onWrite(path, () => onEvent());
+      const stopEntries = this.platform.vfs.onEntryChange(path, onEvent);
+      return () => {
+        stopWrites();
+        stopEntries();
+      };
+    },
   };
 
   readonly users = {

@@ -84,6 +84,7 @@ export interface LoadedConfig {
   readonly senderResolver: SenderResolver;
   readonly localClock: LocalClock;
   hadErrors: boolean;
+  fatalConfigError: string | null;
   inputDeclarationFailed: boolean;
   bindRuntime(sink: RuntimeLog): void;
 }

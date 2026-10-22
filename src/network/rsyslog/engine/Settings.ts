@@ -59,6 +59,7 @@ export interface GlobalSettings {
   netstreamDriverCaExtraFiles: string | null;
   dropMessagesWithMaliciousDnsPtrRecords: boolean;
   abortOnUncleanConfig: boolean;
+  abortOnIdResolutionFail: boolean;
   compatDefaultsSecure: 'backward-compatible' | 'strict' | 'warn';
   ipProtocol: 'unspecified' | 'ipv4-only' | 'ipv6-only';
   supportCompressionExtension: boolean;
@@ -104,6 +105,7 @@ export function defaultGlobalSettings(): GlobalSettings {
     netstreamDriverCaExtraFiles: null,
     dropMessagesWithMaliciousDnsPtrRecords: false,
     abortOnUncleanConfig: false,
+    abortOnIdResolutionFail: true,
     compatDefaultsSecure: 'backward-compatible',
     ipProtocol: 'unspecified',
     supportCompressionExtension: true,
@@ -232,6 +234,7 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.processInternalMessages = flag(values, 'processinternalmessages') ?? settings.processInternalMessages;
   settings.variablesCaseSensitive = flag(values, 'variables.casesensitive') ?? settings.variablesCaseSensitive;
   settings.abortOnUncleanConfig = flag(values, 'abortonuncleanconfig') ?? settings.abortOnUncleanConfig;
+  settings.abortOnIdResolutionFail = flag(values, 'security.abortonidresolutionfail') ?? settings.abortOnIdResolutionFail;
   settings.aclAddHostnameOnFail = flag(values, 'net.acladdhostnameonfail') ?? settings.aclAddHostnameOnFail;
   const resolveHostNames = flag(values, 'net.aclresolvehostname');
   if (resolveHostNames !== undefined) settings.aclDontResolve = !resolveHostNames;

@@ -178,7 +178,7 @@ export class ConfigLoader implements ConfigSink {
       }),
       lookupTables: [], statistics, janitor: new Janitor(),
       dynStats: new DynStatsRegistry(statistics, { nowMs: () => options.host.clock.wallMs(), runtime: () => this.runtimeSink, files: options.host.files, workDirectory: () => settings.workDirectory }),
-      percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, inputDeclarationFailed: false, outchannels: [],
+      percentileStats: new PercentileStatsRegistry(statistics, { error: (text, code) => this.runtimeSink.error(text, code) }), timezones: new Map(), hadErrors: false, fatalConfigError: null, inputDeclarationFailed: false, outchannels: [],
       senderResolver: new SenderResolver(options.host, () => settings, () => this.runtimeSink),
       localClock: new LocalClock(options.host, () => this.config.timezones),
       bindRuntime: (sink) => { this.runtimeSink = sink; },
@@ -936,6 +936,14 @@ export class ConfigLoader implements ConfigSink {
       warn: (message) => this.warnAt(message),
       uidOf: (user) => this.options.host.users.uidOf(user),
       gidOf: (group) => this.options.host.users.gidOf(group),
+      unresolvedId: (message) => {
+        if (this.config.settings.abortOnIdResolutionFail) {
+          this.config.fatalConfigError ??= message;
+          return;
+        }
+        this.log.error(message, RS_RET.NOT_FOUND);
+        this.config.hadErrors = true;
+      },
     });
     if (rest === null) return;
     const remainder = rest.trim();

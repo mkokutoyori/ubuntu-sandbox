@@ -451,6 +451,10 @@ export class RsyslogEngine implements InputSubmitter {
     this.started = true;
     this.internalBacklog = [];
     replay();
+    if (this.config.fatalConfigError !== null) {
+      this.runtimeLog.log(3, RS_RET.NOT_FOUND, this.config.fatalConfigError);
+      return this.abortStart(RS_RET.NOT_FOUND);
+    }
     const settings = this.config.settings;
     const process = this.host.process;
     if (settings.umask !== null) process?.setUmask(settings.umask);
