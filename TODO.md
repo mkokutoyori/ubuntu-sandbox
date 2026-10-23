@@ -3734,3 +3734,12 @@ tapees (`^X^C` sous `stty -isig`). Dans un terminal ouvert sur un hote distant (
 sur le canal sans consulter le tty distant. `stty -F /dev/ptmx` n'ouvre pas de nouveau pty ; le noeud `/dev/pts/N` d'un terminal
 local n'est pas materialise dans le VFS (seules les sessions SSH le sont), `stty -F` et `tty` le resolvent par le
 tty vivant.
+
+### [tcpdump-options] ce que -nn, -tttt, -vvv et -XX ne couvrent pas encore (mesure contre tcpdump 4.99.4)
+Mesure par `scripts/oracle/record_tcpdump_options.py` sur deux labos (LAN ICMP/TCP/UDP/IPv6/NDP/fragments/HTTP/FTP/SMTP/SSH ;
+BIND A/MX/AAAA/SOA/NS/ANY/NXDOMAIN/troncature/DNS sur TCP) : le texte complet est identique pour 11 jeux d'options. Non mesures
+faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-telnet.c`, les commandes IAC), les options IPv4
+(`ping -R`, `-Q`) et les en-tetes d'extension IPv6, ESP/AH/GRE/OSPF/BGP/SNMP/DHCPv6, MPTCP, les messages MLD et le routage
+(RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` n'est pas porte (le texte ASCII est imprime
+sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
+(`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).

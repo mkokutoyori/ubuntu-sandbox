@@ -79,6 +79,15 @@ function portHoldsAddress(port: Port, address: string): boolean {
     (entry) => normalisedIpv6(entry.address.toString()) === wanted);
 }
 
+export function topologyHoldsAddress(address: string, from?: Equipment | null): boolean {
+  for (const dev of reachableDevices(from)) {
+    if (dev.getPorts().some(port => portHoldsAddress(port, address))) return true;
+    const svis = (dev as unknown as { getSvis?: () => Array<{ ip?: { toString(): string } }> }).getSvis?.() ?? [];
+    if (svis.some(svi => svi.ip?.toString() === address)) return true;
+  }
+  return false;
+}
+
 export function isPathReachable(srcIp: string, dstIp: string, from?: Equipment | null): boolean {
   if (srcIp === dstIp) return true;
   if (!srcIp || srcIp === '127.0.0.1' || srcIp.startsWith('169.254.')) return true;
