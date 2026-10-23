@@ -36,6 +36,8 @@ export class LdpSession {
   peer: LdpIdentifier | null;
   negotiated: LdpSessionParameters | null = null;
   readonly peerAddresses = new Map<string, IPAddress>();
+  uid = 0;
+  peerIndex = 0;
   messagesSent = 0;
   messagesReceived = 0;
   operationalSinceMs: number | null = null;

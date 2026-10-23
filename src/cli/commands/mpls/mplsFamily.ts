@@ -1,10 +1,12 @@
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { LdpEngine } from '@/network/ldp/LdpEngine';
 import type { MplsEngine } from '@/network/mpls/MplsEngine';
+import type { MplsLabel } from '@/network/mpls/MplsLabel';
 import { IPAddress } from '@/network/core/types';
 import type { PseudowireEngine } from '@/network/pw/PseudowireEngine';
 import {
-  formatLdpBindings, formatLdpDiscovery, formatLdpNeighbors, formatMplsForwardingTable, formatMplsInterfaces,
+  formatLdpBackoff, formatLdpBindings, formatLdpCapabilities, formatLdpDiscovery, formatLdpNeighbors, formatLdpParameters,
+  formatMplsForwardingTable, formatMplsInterfaces,
   type LdpBindingView, type LdpNeighborView, type MplsForwardingView, type MplsInterfaceRow,
 } from './mplsShow';
 
@@ -19,6 +21,10 @@ export interface MplsShellHost {
   setRouterIdSource(iface: string | null, force: boolean): void;
   resolveInterface(text: string): string | null;
   routerIdSourceText(): string | null;
+  interfaceMtu(name: string): number;
+  interfaceMac(name: string): string | null;
+  neighbourMac(address: string): string | null;
+  vpnLocalLabels(): ReadonlyArray<{ readonly label: MplsLabel; readonly network: string; readonly length: number; readonly vrf: string }>;
 }
 
 const GLOBAL = Object.freeze(['config']);
@@ -28,24 +34,31 @@ const SHOW = Object.freeze(['user', 'privileged']);
 const DEFAULT_HELLO_INTERVAL_SECONDS = 5;
 const DEFAULT_HELLO_HOLD_SECONDS = 15;
 
-export function mplsNeighborViews(host: MplsShellHost): LdpNeighborView[] {
+export function mplsNeighborViews(host: MplsShellHost, filter: { readonly address?: string; readonly iface?: string } = {}): LdpNeighborView[] {
   const engine = host.ldp();
   const config = engine.config;
   return engine.sessions().filter(session => session.state === 'operational' && session.peer).map(session => {
     const peer = session.peer!;
     const sources = engine.adjacencies().filter(a => a.peer.equals(peer)).map(a => ({
-      iface: a.iface, source: a.source.toString(),
-      holdMs: a.holdSeconds * 1000, intervalMs: config.helloIntervalSeconds * 1000,
+      targeted: a.targeted, label: a.iface, source: a.source.toString(), role: engine.targetedRole(a.source),
+      localAddress: engine.localId.lsrId.toString(), holdMs: a.holdSeconds * 1000,
+      intervalMs: (a.targeted ? config.targetedHelloIntervalSeconds : config.helloIntervalSeconds) * 1000,
     }));
+    const keepAliveSeconds = session.negotiated?.keepAliveTimeSeconds ?? config.keepAliveSeconds;
     return {
       peerId: peer.toString(), localId: engine.localId.toString(),
       remoteTransport: session.socket.remoteIp, remotePort: session.socket.remotePort,
       localTransport: session.socket.localIp, localPort: session.socket.localPort,
-      state: 'Oper', messagesSent: session.messagesSent, messagesReceived: session.messagesReceived,
+      state: 'Oper', mode: session.negotiated?.advertisementMode ?? 'unsolicited',
+      messagesSent: session.messagesSent, messagesReceived: session.messagesReceived,
+      lastRevisionSent: engine.lastRevisionSent(peer),
       upMs: session.operationalSinceMs === null ? 0 : Math.max(0, engine.nowMs() - session.operationalSinceMs),
+      uid: session.uid, peerIndex: session.peerIndex,
+      peerHoldMs: keepAliveSeconds * 1000, keepAliveMs: Math.floor(keepAliveSeconds / 3) * 1000,
       sources, addresses: [...session.peerAddresses.keys()].sort(addressOrder),
     };
-  });
+  }).filter(view => (filter.address === undefined || view.peerId.startsWith(`${filter.address}:`) || view.addresses.includes(filter.address))
+    && (filter.iface === undefined || view.sources.some(source => source.label === filter.iface)));
 }
 
 function addressOrder(a: string, b: string): number {
@@ -55,24 +68,98 @@ function addressOrder(a: string, b: string): number {
   return 0;
 }
 
-export function mplsBindingViews(host: MplsShellHost): LdpBindingView[] {
+export interface BindingFilter {
+  readonly network?: string;
+  readonly length?: number;
+  readonly longerPrefixes?: boolean;
+  readonly localLabel?: number;
+  readonly remoteLabel?: number;
+  readonly neighbor?: string;
+  readonly localOnly?: boolean;
+}
+
+function prefixMatches(prefix: string, length: number, filter: BindingFilter): boolean {
+  if (filter.network === undefined || filter.length === undefined) return true;
+  if (!filter.longerPrefixes) return prefix === filter.network && length === filter.length;
+  if (length < filter.length) return false;
+  const mask = filter.length === 0 ? 0 : (0xffffffff << (32 - filter.length)) >>> 0;
+  return ((ipToInt(prefix) & mask) >>> 0) === ((ipToInt(filter.network) & mask) >>> 0);
+}
+
+function ipToInt(text: string): number {
+  return text.split('.').reduce((acc, part) => ((acc << 8) | Number(part)) >>> 0, 0);
+}
+
+export function mplsBindingViews(host: MplsShellHost, filter: BindingFilter = {}): LdpBindingView[] {
   const engine = host.ldp();
   const peers = engine.sessions().filter(session => session.state === 'operational' && session.peer);
   return engine.bindings().map(binding => ({
     prefix: binding.fec.prefix.toString(), length: binding.fec.length, revision: binding.revision, local: binding.label,
+    advertisedTo: engine.advertisedTo(binding.fec.key).map(peer => peer.toString()),
     remote: peers.flatMap(session => {
       const label = engine.remoteBindings(session.peer!).get(binding.fec.key);
       return label ? [{ peerId: session.peer!.toString(), label }] : [];
     }),
-  })).sort((a, b) => addressOrder(a.prefix, b.prefix) || a.length - b.length);
+  })).filter(view => prefixMatches(view.prefix, view.length, filter)
+    && (filter.localLabel === undefined || view.local.value === filter.localLabel)
+    && (filter.remoteLabel === undefined || view.remote.some(remote => remote.label.value === filter.remoteLabel))
+    && (filter.neighbor === undefined || view.remote.some(remote => remote.peerId.startsWith(`${filter.neighbor}:`)))
+  ).map(view => filter.neighbor === undefined ? view
+    : { ...view, remote: view.remote.filter(remote => remote.peerId.startsWith(`${filter.neighbor}:`)) })
+    .sort((a, b) => addressOrder(a.prefix, b.prefix) || a.length - b.length);
 }
 
-export function mplsForwardingViews(host: MplsShellHost): MplsForwardingView[] {
+export interface ForwardingFilter {
+  readonly network?: string;
+  readonly length?: number;
+  readonly iface?: string;
+  readonly label?: number;
+  readonly nextHop?: string;
+  readonly vrf?: string;
+}
+
+export function mplsForwardingViews(host: MplsShellHost, filter: ForwardingFilter = {}, detail = false): MplsForwardingView[] {
   const mpls = host.mpls();
-  return host.ldp().forwardingRows().map(row => ({
-    localLabel: row.localLabel, outgoing: row.outgoing, prefix: `${row.fec.prefix}/${row.fec.length}`,
-    bytes: mpls.bytesSwitched(row.localLabel), iface: row.iface, nextHop: row.nextHop,
-  })).sort((a, b) => a.localLabel.value - b.localLabel.value);
+  const labelled: MplsForwardingView[] = host.ldp().forwardingRows().map(row => {
+    const stack = row.outgoing === 'none' ? [] : [row.outgoing.value];
+    return {
+      localLabel: row.localLabel, outgoing: row.outgoing, prefix: `${row.fec.prefix}/${row.fec.length}`,
+      bytes: mpls.bytesSwitched(row.localLabel), iface: row.iface, nextHop: String(row.nextHop),
+      ...(detail ? { detail: forwardingDetail(host, row.iface, String(row.nextHop), stack, null) } : {}),
+    };
+  });
+  const vpn: MplsForwardingView[] = host.vpnLocalLabels().map(entry => ({
+    localLabel: entry.label, outgoing: 'aggregate' as const, prefix: `${entry.network}/${entry.length}[V]`,
+    bytes: mpls.bytesSwitched(entry.label), iface: entry.vrf, nextHop: '',
+    ...(detail ? { detail: { encapsulationBytes: 0, mtu: 0, labelStack: [], header: '', vpn: entry.vrf } } : {}),
+  }));
+  return [...labelled, ...vpn].filter(row => {
+    const [network, length] = row.prefix.replace('[V]', '').split('/');
+    return (filter.network === undefined || (network === filter.network && Number(length) === filter.length))
+      && (filter.iface === undefined || row.iface === filter.iface)
+      && (filter.label === undefined || row.localLabel.value === filter.label)
+      && (filter.nextHop === undefined || row.nextHop === filter.nextHop)
+      && (filter.vrf === undefined || row.iface === filter.vrf);
+  }).sort((a, b) => a.localLabel.value - b.localLabel.value);
+}
+
+function forwardingDetail(host: MplsShellHost, iface: string, nextHop: string, stack: readonly number[], vpn: string | null) {
+  const mac = host.interfaceMac(iface);
+  const destination = host.neighbourMac(nextHop);
+  const header = destination === null || mac === null ? '' : `${destination}${mac}8847`.replace(/[:.-]/g, '').toUpperCase();
+  const explicit = stack.filter(label => label !== 3);
+  return { encapsulationBytes: header.length / 2, mtu: host.interfaceMtu(iface) + 4 - 4 * explicit.length, labelStack: stack, header, vpn };
+}
+
+function maskLength(text: string): number | null {
+  if (/^\d+$/.test(text)) {
+    const value = Number(text);
+    return value <= 32 ? value : null;
+  }
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(text)) return null;
+  const bits = text.split('.').reduce((acc, part) => ((acc << 8) | Number(part)) >>> 0, 0);
+  const ones = bits.toString(2).replace(/0+$/, '');
+  return /^1*$/.test(ones) && bits.toString(2).padStart(32, '0').indexOf('01') < 0 ? ones.length : null;
 }
 
 export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
@@ -193,48 +280,180 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
     },
     {
       id: 'show-mpls-interfaces',
-      path: ['show', 'mpls', 'interfaces'],
+      path: ['show', 'mpls', 'interfaces', { name: 'iface', type: 'INTERFACE', optional: true, description: 'Interface to display' }],
       description: 'Interface label switching states',
       modes: SHOW, minPrivilege: 1,
-      run: () => {
-        const rows: MplsInterfaceRow[] = host().interfaceNames().filter(name => host().ldp().isInterfaceEnabled(name))
+      options: [{ keyword: 'detail', description: 'Display detailed label switching information' }],
+      run: (_session, args) => {
+        const wanted = args.iface === undefined ? null : host().resolveInterface(String(args.iface));
+        if (args.iface !== undefined && wanted === null) return '% Invalid interface';
+        const rows: MplsInterfaceRow[] = host().interfaceNames()
+          .filter(name => host().ldp().isInterfaceEnabled(name) && (wanted === null || name === wanted))
           .map(name => ({ name, labelling: true, operational: host().interfaceIsUp(name) }));
-        return rows.length === 0 ? '' : formatMplsInterfaces(rows);
+        if (rows.length === 0) return '';
+        if (args.detail === undefined) return formatMplsInterfaces(rows);
+        return rows.map(row => [
+          `Interface ${row.name}:`, '        IP labeling enabled (ldp)', '        LSP Tunnel labeling not enabled',
+          row.operational ? '        MPLS operational' : '        MPLS not operational', `        MTU = ${host().interfaceMtu(row.name)}`,
+        ].join('\n')).join('\n');
       },
     },
     {
       id: 'show-mpls-ldp-neighbor',
-      path: ['show', 'mpls', 'ldp', 'neighbor'],
+      path: ['show', 'mpls', 'ldp', 'neighbor',
+        { name: 'selector', type: 'WORD', optional: true, description: 'Neighbor address, or interface over which neighbors are accessible' }],
       description: 'Show LDP neighbor information',
       modes: SHOW, minPrivilege: 1,
-      run: () => formatLdpNeighbors(mplsNeighborViews(host())),
+      options: [{ keyword: 'detail', description: 'Display information in long form' }],
+      run: (_session, args) => {
+        const detail = args.detail !== undefined || args.selector === 'detail';
+        if (args.selector === undefined || args.selector === 'detail') return formatLdpNeighbors(mplsNeighborViews(host()), detail);
+        const text = String(args.selector);
+        if (/^\d+\.\d+\.\d+\.\d+$/.test(text)) return formatLdpNeighbors(mplsNeighborViews(host(), { address: text }), detail);
+        const iface = host().resolveInterface(text);
+        return iface === null ? "% Invalid input detected at '^' marker." : formatLdpNeighbors(mplsNeighborViews(host(), { iface }), detail);
+      },
     },
     {
       id: 'show-mpls-ldp-bindings',
-      path: ['show', 'mpls', 'ldp', 'bindings'],
+      path: ['show', 'mpls', 'ldp', 'bindings',
+        { name: 'network', type: 'IP_ADDR', optional: true, description: 'Destination network number' },
+        { name: 'mask', type: 'WORD', optional: true, description: 'Mask length (0-32) or dotted mask' }],
       description: 'Show the label information base',
       modes: SHOW, minPrivilege: 1,
-      run: () => formatLdpBindings(mplsBindingViews(host())),
+      options: [
+        { keyword: 'longer-prefixes', description: 'Select any prefix longer than the given one' },
+        { keyword: 'local-label', description: 'Entries matching a local label', argument: { name: 'localLabel', type: 'INT', range: [0, 1048575], description: 'Label value' } },
+        { keyword: 'remote-label', description: 'Entries matching a label assigned by a neighbor', argument: { name: 'remoteLabel', type: 'INT', range: [0, 1048575], description: 'Label value' } },
+        { keyword: 'neighbor', description: 'Label bindings assigned by this neighbor', argument: { name: 'neighbor', type: 'IP_ADDR', description: 'LDP neighbor' } },
+        { keyword: 'local', description: 'Local label bindings only' },
+        { keyword: 'detail', description: 'Display where each local binding was advertised' },
+      ],
+      run: (_session, args) => {
+        let length: number | undefined;
+        if (args.network !== undefined) {
+          if (args.mask === undefined) return '% Incomplete command.';
+          length = maskLength(String(args.mask));
+          if (length === null) return "% Invalid input detected at '^' marker.";
+        }
+        const views = mplsBindingViews(host(), {
+          ...(args.network === undefined ? {} : { network: String(args.network), length, longerPrefixes: args['longer-prefixes'] !== undefined }),
+          ...(args.localLabel === undefined ? {} : { localLabel: Number(args.localLabel) }),
+          ...(args.remoteLabel === undefined ? {} : { remoteLabel: Number(args.remoteLabel) }),
+          ...(args.neighbor === undefined ? {} : { neighbor: String(args.neighbor) }),
+        });
+        const localOnly = args.local !== undefined;
+        return formatLdpBindings(localOnly ? views.map(view => ({ ...view, remote: [] })) : views, {
+          detail: args.detail !== undefined, showLocal: args.neighbor === undefined,
+        });
+      },
     },
     {
       id: 'show-mpls-ldp-discovery',
       path: ['show', 'mpls', 'ldp', 'discovery'],
       description: 'Show LDP discovery information',
       modes: SHOW, minPrivilege: 1,
-      run: () => {
+      options: [{ keyword: 'detail', description: 'Display detailed information about all LDP discovery sources' }],
+      run: (_session, args) => {
         const engine = host().ldp();
+        const adjacencies = engine.adjacencies();
         const interfaces = host().interfaceNames().filter(name => engine.isInterfaceEnabled(name)).map(iface => ({
-          iface, peers: engine.adjacencies().filter(a => a.iface === iface).map(a => a.peer.toString()),
+          iface,
+          peers: adjacencies.filter(a => a.iface === iface && !a.targeted).map(a => ({
+            id: a.peer.toString(), source: a.source.toString(), transport: a.transport.toString(), holdSeconds: a.holdSeconds,
+            proposedLocal: engine.config.helloHoldSeconds, proposedPeer: a.proposedHoldSeconds,
+          })),
         }));
-        return formatLdpDiscovery({ localId: engine.localId.toString(), interfaces });
+        const targeted = engine.targetedAddresses().map(address => {
+          const adjacency = adjacencies.find(a => a.targeted && a.source.equals(address));
+          return {
+            localAddress: engine.localId.lsrId.toString(), remote: address.toString(), role: engine.targetedRole(address),
+            peerId: adjacency?.peer.toString() ?? null, transport: adjacency?.transport.toString() ?? null,
+            holdSeconds: adjacency?.holdSeconds ?? 0, proposedLocal: engine.config.targetedHelloHoldSeconds,
+            proposedPeer: adjacency?.proposedHoldSeconds ?? 0,
+          };
+        });
+        return formatLdpDiscovery({
+          localId: engine.localId.toString(), helloIntervalMs: engine.config.helloIntervalSeconds * 1000,
+          transportAddress: engine.localId.lsrId.toString(), interfaces, targeted,
+          targetedIntervalMs: engine.config.targetedHelloIntervalSeconds * 1000,
+        }, args.detail !== undefined);
+      },
+    },
+    {
+      id: 'show-mpls-ldp-parameters',
+      path: ['show', 'mpls', 'ldp', 'parameters'],
+      description: 'Show LDP parameters',
+      modes: SHOW, minPrivilege: 1,
+      run: () => {
+        const config = host().ldp().config;
+        const range = host().mpls().lfib.labelRange();
+        const backoff = host().ldp().backoffParameters();
+        return formatLdpParameters({
+          labelMin: range.min, labelMax: range.max, sessionHoldSeconds: config.keepAliveSeconds,
+          keepAliveSeconds: Math.floor(config.keepAliveSeconds / 3), helloHoldSeconds: config.helloHoldSeconds,
+          helloIntervalSeconds: config.helloIntervalSeconds, targetedHoldSeconds: config.targetedHelloHoldSeconds,
+          targetedIntervalSeconds: config.targetedHelloIntervalSeconds, backoffInitialSeconds: backoff.initialSeconds,
+          backoffMaximumSeconds: backoff.maximumSeconds,
+        });
+      },
+    },
+    {
+      id: 'show-mpls-ldp-capabilities',
+      path: ['show', 'mpls', 'ldp', 'capabilities'],
+      description: 'Show LDP capabilities',
+      modes: SHOW, minPrivilege: 1,
+      run: () => formatLdpCapabilities([]),
+    },
+    {
+      id: 'show-mpls-ldp-backoff',
+      path: ['show', 'mpls', 'ldp', 'backoff'],
+      description: 'Show LDP session setup backoff',
+      modes: SHOW, minPrivilege: 1,
+      run: () => formatLdpBackoff(host().ldp().backoffParameters(), host().ldp().backoffEntries()),
+    },
+    {
+      id: 'show-mpls-label-range',
+      path: ['show', 'mpls', 'label', 'range'],
+      description: 'Show the range of local labels',
+      modes: SHOW, minPrivilege: 15,
+      run: () => {
+        const range = host().mpls().lfib.labelRange();
+        return `Downstream label pool: Min/Max label: ${range.min}/${range.max}`;
       },
     },
     {
       id: 'show-mpls-forwarding-table',
-      path: ['show', 'mpls', 'forwarding-table'],
+      path: ['show', 'mpls', 'forwarding-table',
+        { name: 'network', type: 'IP_ADDR', optional: true, description: 'Destination network number' },
+        { name: 'mask', type: 'WORD', optional: true, description: 'Mask length (0-32) or dotted mask' }],
       description: 'Show the MPLS forwarding table',
       modes: SHOW, minPrivilege: 1,
-      run: () => formatMplsForwardingTable(mplsForwardingViews(host())),
+      options: [
+        { keyword: 'interface', description: 'Entries with this outgoing interface', argument: { name: 'iface', type: 'INTERFACE', description: 'Interface' } },
+        { keyword: 'labels', description: 'Entries with this local label', argument: { name: 'label', type: 'INT', range: [0, 1048575], description: 'Local label' } },
+        { keyword: 'next-hop', description: 'Entries with this neighbor as next hop', argument: { name: 'hop', type: 'IP_ADDR', description: 'Next hop' } },
+        { keyword: 'vrf', description: 'Entries of this VRF', argument: { name: 'vrf', type: 'WORD', description: 'VRF name' } },
+        { keyword: 'detail', description: 'Display information in long form' },
+      ],
+      run: (_session, args) => {
+        let length: number | undefined;
+        if (args.network !== undefined) {
+          if (args.mask === undefined) return '% Incomplete command.';
+          length = maskLength(String(args.mask));
+          if (length === null) return "% Invalid input detected at '^' marker.";
+        }
+        const iface = args.iface === undefined ? undefined : host().resolveInterface(String(args.iface)) ?? undefined;
+        if (args.iface !== undefined && iface === undefined) return '% Invalid interface';
+        const detail = args.detail !== undefined;
+        return formatMplsForwardingTable(mplsForwardingViews(host(), {
+          ...(args.network === undefined ? {} : { network: String(args.network), length }),
+          ...(iface === undefined ? {} : { iface }),
+          ...(args.label === undefined ? {} : { label: Number(args.label) }),
+          ...(args.hop === undefined ? {} : { nextHop: String(args.hop) }),
+          ...(args.vrf === undefined ? {} : { vrf: String(args.vrf) }),
+        }, detail), detail);
+      },
     },
   ];
 }

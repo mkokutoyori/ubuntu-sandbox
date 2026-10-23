@@ -3574,6 +3574,17 @@ stocke et jamais evalue. Les RFC 3034, 3035, 3037 (FR, ATM, applicabilite LDP) e
 5462 (renommage EXP en TC, deja suivi dans le vocabulaire) n'ajoutent aucun
 comportement a simuler.
 
+### [cli-mpls] le reste des vues MPLS du livre Cisco (mp-cr-book.pdf)
+Servies : `show mpls ldp neighbor|discovery|bindings|parameters|capabilities|backoff`,
+`show mpls label range`, `show mpls forwarding-table` (filtres, lignes VPN
+`[V]`, detail) et `show mpls interfaces [detail]`. Absentes : les variantes
+`vrf` / `all` (le LDP ici ne tourne pas par VRF), la plage `labels N - N`,
+les lignes `Password:` (pas de TCP MD5) et le graceful-restart, `show mpls ldp
+igp sync`, `show mpls ldp checkpoint`. Le texte du PDF perd l'indentation et la
+ligne des « Targeted Hellos » de l'exemple : la forme suit le tableau des
+champs du livre. `show mpls ldp capabilities` ne liste rien parce que ce LSR
+n'annonce aucun TLV de capacite.
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit

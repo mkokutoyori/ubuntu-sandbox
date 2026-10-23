@@ -17,5 +17,16 @@ export function mplsHostOf(router: Router, selectedInterfaces: () => string[] = 
       const source = router.getLdpEngine().routerIdSource;
       return source ? `${source.iface}${source.force ? ' force' : ''}` : null;
     },
+    interfaceMtu: (name) => router.getPort(name)?.getMTU() ?? 1500,
+    interfaceMac: (name) => router.getPort(name)?.getMAC().toString() ?? null,
+    neighbourMac: (address) => router._getArpTableInternal().get(address)?.mac.toString() ?? null,
+    vpnLocalLabels: () => {
+      const lfib = router.getMplsEngine().lfib;
+      return (router.getBGPEngine().vpnSpeaker()?.paths() ?? []).flatMap(path => {
+        const entry = lfib.lookupIlm(path.label);
+        return path.source === 'local' && entry?.kind === 'vrf'
+          ? [{ label: path.label, network: path.network.toString(), length: path.prefixLength, vrf: entry.vrf }] : [];
+      });
+    },
   };
 }

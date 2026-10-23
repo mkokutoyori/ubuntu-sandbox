@@ -32,6 +32,14 @@ export interface TransportLspEntry {
 
 export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry | TransportLspEntry;
 
+export const LABEL_RANGE_DEFAULT_MIN = 16;
+export const LABEL_RANGE_DEFAULT_MAX = 100000;
+
+export interface LabelRange {
+  readonly min: number;
+  readonly max: number;
+}
+
 export interface FtnEntry {
   readonly prefix: IPAddress;
   readonly prefixLength: number;
@@ -45,21 +53,33 @@ export interface FtnEntry {
 export class Lfib {
   private readonly ilm = new Map<number, IlmEntry>();
   private ftn: FtnEntry[] = [];
-  private nextDynamicLabel = MPLS_FIRST_UNRESERVED_LABEL;
+  private nextDynamicLabel = LABEL_RANGE_DEFAULT_MIN;
   private readonly released: number[] = [];
+  private range: LabelRange = { min: LABEL_RANGE_DEFAULT_MIN, max: LABEL_RANGE_DEFAULT_MAX };
+
+  labelRange(): LabelRange {
+    return this.range;
+  }
+
+  setLabelRange(min: number, max: number): void {
+    if (min < MPLS_FIRST_UNRESERVED_LABEL || max > MPLS_LABEL_MAX || min >= max) throw new RangeError(`Invalid label range ${min}-${max}`);
+    this.range = { min, max };
+    this.nextDynamicLabel = min;
+    this.released.length = 0;
+  }
 
   allocateLabel(): MplsLabel {
-    const reused = this.released.shift();
-    if (reused !== undefined) return MplsLabel.of(reused);
+    const reusable = this.released.findIndex(value => value >= this.range.min && value <= this.range.max);
+    if (reusable >= 0) return MplsLabel.of(this.released.splice(reusable, 1)[0]);
     while (this.ilm.has(this.nextDynamicLabel)) this.nextDynamicLabel++;
-    if (this.nextDynamicLabel > MPLS_LABEL_MAX) throw new RangeError('MPLS label space exhausted');
+    if (this.nextDynamicLabel > this.range.max) throw new RangeError('MPLS label space exhausted');
     return MplsLabel.of(this.nextDynamicLabel++);
   }
 
   allocateLabelBlock(size: number, entryAt: (offset: number) => IlmEntry): MplsLabel {
     let base = this.nextDynamicLabel;
     for (;;) {
-      if (base + size - 1 > MPLS_LABEL_MAX) throw new RangeError('MPLS label space exhausted');
+      if (base + size - 1 > this.range.max) throw new RangeError('MPLS label space exhausted');
       let clash = -1;
       for (let offset = 0; offset < size; offset++) if (this.ilm.has(base + offset)) clash = offset;
       if (clash < 0) break;
@@ -124,6 +144,6 @@ export class Lfib {
     this.ilm.clear();
     this.ftn = [];
     this.released.length = 0;
-    this.nextDynamicLabel = MPLS_FIRST_UNRESERVED_LABEL;
+    this.nextDynamicLabel = this.range.min;
   }
 }

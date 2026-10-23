@@ -81,6 +81,7 @@ export interface LdpAdjacency {
   readonly source: IPAddress;
   readonly transport: IPAddress;
   readonly holdSeconds: number;
+  readonly proposedHoldSeconds: number;
   readonly targeted: boolean;
   timer: number | null;
 }
@@ -145,6 +146,8 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly advertisedMtu = new Map<string, Map<string, number>>();
   private readonly receivedLoop = new Map<string, Map<string, LoopAttributes>>();
   private readonly advertisedLoop = new Map<string, Map<string, string>>();
+  private sessionUidCounter = 0;
+  private readonly peerIndexes = new Map<string, number>();
   private readonly outstandingRequests = new Map<string, Map<string, LabelRequestRecord>>();
   private readonly pendingRequests = new Map<string, Map<string, LabelRequestRecord>>();
   private readonly noRouteAt = new Map<string, number>();
@@ -309,7 +312,7 @@ export class LdpEngine implements LdpSessionOwner {
       if (!this.enabledInterfaces.has(inPort)) continue;
       const requested = message.holdTimeSeconds === 0 ? LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS : message.holdTimeSeconds;
       const hold = requested === LDP_HOLD_TIME_INFINITE ? requested : Math.min(requested, this.config.helloHoldSeconds);
-      this.refreshAdjacency(pdu.sender, inPort, source, transport, hold, false);
+      this.refreshAdjacency(pdu.sender, inPort, source, transport, hold, false, requested);
     }
   }
 
@@ -321,7 +324,7 @@ export class LdpEngine implements LdpSessionOwner {
     if (configured === undefined && !this.config.acceptTargetedHellos) return;
     const requested = message.holdTimeSeconds === 0 ? LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS : message.holdTimeSeconds;
     const hold = requested === LDP_HOLD_TIME_INFINITE ? requested : Math.min(requested, this.config.targetedHelloHoldSeconds);
-    this.refreshAdjacency(peer, `targeted:${source}`, source, transport, hold, true);
+    this.refreshAdjacency(peer, `targeted:${source}`, source, transport, hold, true, requested);
     if (message.requestTargetedHellos && configured === undefined) {
       this.targetedPeers.set(source.toString(), { address: source, configured: false });
       this.start();
@@ -396,11 +399,11 @@ export class LdpEngine implements LdpSessionOwner {
     this.targetedNextSendMs.set(destination.toString(), this.nowMs() + this.config.targetedHelloIntervalSeconds * 1000);
   }
 
-  private refreshAdjacency(peer: LdpIdentifier, iface: string, source: IPAddress, transport: IPAddress, hold: number, targeted: boolean): void {
+  private refreshAdjacency(peer: LdpIdentifier, iface: string, source: IPAddress, transport: IPAddress, hold: number, targeted: boolean, proposed: number): void {
     const key = `${peer}@${iface}`;
     const existing = this.adjacencyTable.get(key);
     if (existing?.timer != null) this.cancelTimeout(existing.timer);
-    const adjacency: LdpAdjacency = { peer, iface, source, transport, holdSeconds: hold, targeted, timer: null };
+    const adjacency: LdpAdjacency = { peer, iface, source, transport, holdSeconds: hold, proposedHoldSeconds: proposed, targeted, timer: null };
     if (hold !== LDP_HOLD_TIME_INFINITE) {
       adjacency.timer = this.scheduleTimeout(() => this.expireAdjacency(key), hold * 1000);
     }
@@ -479,6 +482,9 @@ export class LdpEngine implements LdpSessionOwner {
       return;
     }
     this.sessionTable.set(peerKey, session);
+    session.uid = ++this.sessionUidCounter;
+    if (!this.peerIndexes.has(peerKey)) this.peerIndexes.set(peerKey, this.peerIndexes.size);
+    session.peerIndex = this.peerIndexes.get(peerKey)!;
     this.backoff.delete(peerKey);
     this.received.set(peerKey, new Map());
     this.advertised.set(peerKey, new Map());
@@ -1018,6 +1024,32 @@ export class LdpEngine implements LdpSessionOwner {
 
   forwardingRows(): readonly LdpForwardingRow[] {
     return this.forwardingTable;
+  }
+
+  lastRevisionSent(peer: LdpIdentifier): number {
+    const sent = this.advertised.get(peer.lsrId.toString());
+    return Math.max(0, ...[...sent?.keys() ?? []].map(key => this.localBindings.get(key)?.revision ?? 0));
+  }
+
+  advertisedTo(fecKey: string): readonly LdpIdentifier[] {
+    return [...this.sessionTable.values()]
+      .filter(session => session.peer !== null && this.advertised.get(session.peer.lsrId.toString())?.has(fecKey) === true)
+      .map(session => session.peer as LdpIdentifier);
+  }
+
+  backoffParameters(): { readonly initialSeconds: number; readonly maximumSeconds: number } {
+    return { initialSeconds: INIT_BACKOFF_FIRST_MS / 1000, maximumSeconds: INIT_BACKOFF_MAX_MS / 1000 };
+  }
+
+  backoffEntries(): ReadonlyArray<{ readonly peer: string; readonly backoffSeconds: number; readonly waitingSeconds: number }> {
+    const now = this.getScheduler().now();
+    return [...this.backoff.entries()].filter(([, wait]) => wait.until > now).map(([peer, wait]) => ({
+      peer, backoffSeconds: Math.round(wait.delay / 1000), waitingSeconds: Math.round((now - (wait.until - wait.delay)) / 1000),
+    }));
+  }
+
+  targetedRole(source: IPAddress): 'active' | 'passive' {
+    return this.targetedPeers.get(source.toString())?.configured === true ? 'active' : 'passive';
   }
 
   installsIlm(label: MplsLabel): boolean {
