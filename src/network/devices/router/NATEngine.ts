@@ -559,6 +559,15 @@ export class NATEngine {
       }
     }
 
+    if (isOutside) {
+      for (const binding of this.hostBindings.values()) {
+        if (binding.globalIP !== dstIP) continue;
+        binding.timestamp = simulationNowMs();
+        this.hitCount++;
+        return rewriteDestIP(ipPkt, binding.localIP);
+      }
+    }
+
     // A packet arriving on an INSIDE interface that matched no hairpin
     // candidate above isn't a NAT miss at all — it's just ordinary
     // inside-to-outside traffic that `translateOutbound()` will translate

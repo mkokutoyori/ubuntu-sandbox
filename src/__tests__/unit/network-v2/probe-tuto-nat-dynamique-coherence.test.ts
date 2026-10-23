@@ -3,7 +3,8 @@
  * entre protocoles et clients.
  *
  * Mesure avant correction (11 cas, 10 tombent ; le temoin passe)
- * Seconde passe (3 derniers cas, 3 tombent) : `Translation errors` figé a 0, `ip nat translation timeout` pose aussi tcp/udp/icmp, et la forme verbose omettait les lignes statiques de la forme simple : une adresse de pool epuisee laissait passer le
+ * Troisieme passe : l'entree de couple d'adresses ouvre aussi l'acces depuis l'exterieur (dernier cas).
+ * Seconde passe (3 cas avant l'avant-dernier, 3 tombent) : `Translation errors` figé a 0, `ip nat translation timeout` pose aussi tcp/udp/icmp, et la forme verbose omettait les lignes statiques de la forme simple : une adresse de pool epuisee laissait passer le
  * paquet NON traduit au lieu de le jeter (le routeur repondait pourtant « Misses » ; le client
  * recevait la reponse de l'hote exterieur avec son adresse privee) ; une connexion TCP terminee
  * gardait 24 h de vie au lieu des 60 s de `finrst-timeout` ; un echange DNS (UDP/53) vivait 300 s
@@ -120,5 +121,15 @@ describe('dynamic NAT coherence', () => {
     const { r } = await tutoNatLab(['ip nat outside source static 198.51.100.77 10.9.9.9']);
     expect(await r.executeCommand('show ip nat translations')).toContain('198.51.100.77');
     expect(await r.executeCommand('show ip nat translations verbose')).toContain('198.51.100.77');
+  });
+
+  it('lets the outside reach an inside host through its bound pool address, and only while the binding lasts', async () => {
+    const { r, isp, lin } = await tutoNatLab(POOL_ONE);
+    const sent = (out: string) => /Success rate is (\d+) percent/.exec(out)?.[1];
+    expect(sent(await isp.executeCommand('ping 203.0.113.4'))).toBe('0');
+    await lin.executeCommand('ping -c 1 203.0.113.9');
+    expect(sent(await isp.executeCommand('ping 203.0.113.4'))).toBe('100');
+    await r.executeCommand('clear ip nat translation *');
+    expect(sent(await isp.executeCommand('ping 203.0.113.4'))).toBe('0');
   });
 });
