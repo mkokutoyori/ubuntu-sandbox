@@ -3626,6 +3626,15 @@ les trames Ethernet (octets sans FCS), pas des paquets MPLS. `Create time` et `l
 status change time` sont des durees depuis l'evenement, mesurees quand un evenement de
 signalisation ou une lecture observe le changement d'etat.
 
+### [cli-mpls-l3vpn] le reste des vues L3VPN du livre
+Servies : `show ip vrf [brief|detail|interfaces] [nom]`, `show vrf [brief|detail]`,
+`show ip bgp vpnv4 {all|rd|vrf} [labels|summary]` avec l'en-tete « Route Distinguisher
+... (default for vrf X) », le statut `*>i` et le numero de version de table. Pas
+servies : `show ip vrf id`, `show vrf select|lock|ipv6`, le detail d'une entree reseau
+(`show ip bgp vpnv4 ... A.B.C.D`), `neighbors`, `network`, `tags`, `regexp`, `inconsistent-as`.
+Dans le resume, `TblVer`, `InQ` et `OutQ` valent toujours 0 (pas de file de sortie ni de
+version par voisin exposee) ; `MsgRcvd`/`MsgSent` sont les compteurs reels de la session.
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit

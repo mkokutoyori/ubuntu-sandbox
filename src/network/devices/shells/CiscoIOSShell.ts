@@ -69,6 +69,8 @@ import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
 import { mplsFamily } from '@/cli/commands/mpls/mplsFamily';
+import { l3vpnFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
+import { l3vpnHostOf } from './cisco/l3vpnHost';
 import { mplsHostOf } from './cisco/mplsHost';
 import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
@@ -497,6 +499,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
+      ...l3vpnFamily(() => l3vpnHostOf(this.d())),
       ...mplsFamily(() => mplsHostOf(this.d(), {
         selectedInterfaces: () => this.selectedPortsForConfigIf(),
         pseudowireClass: { get: () => this.selectedPwClass, set: name => { this.selectedPwClass = name; } },
