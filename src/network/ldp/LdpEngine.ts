@@ -1020,6 +1020,10 @@ export class LdpEngine implements LdpSessionOwner {
     return this.forwardingTable;
   }
 
+  installsIlm(label: MplsLabel): boolean {
+    return this.installedIlm.has(label.value);
+  }
+
   setAdvertisementMode(mode: 'unsolicited' | 'on-demand'): void {
     this.config.advertisementMode = mode;
     this.resetSessions();

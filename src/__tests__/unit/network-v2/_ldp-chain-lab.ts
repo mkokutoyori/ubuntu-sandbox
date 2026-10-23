@@ -32,6 +32,7 @@ export const lsr = (index: number) => `${index + 101}.${index + 101}.${index + 1
 export interface ChainOptions {
   readonly length: number;
   readonly egress?: boolean;
+  readonly fullRouting?: boolean;
   readonly setup?: (routers: CiscoRouter[]) => void;
   readonly engines?: (router: CiscoRouter, index: number) => void;
 }
@@ -53,6 +54,14 @@ export async function ldpChain(clock: VirtualTimeScheduler, options: ChainOption
       ...(next ? ['interface GigabitEthernet0/1', `ip address 10.${i}.0.1 255.255.255.0`, 'no shutdown', 'exit',
         `ip route ${lsr(i + 1)} 255.255.255.255 10.${i}.0.2`, `ip route 9.9.9.0 255.255.255.0 10.${i}.0.2`] : []),
     ]);
+  }
+  if (options.fullRouting === true) {
+    for (let i = 0; i < routers.length; i++) {
+      await configure(routers[i], routers.flatMap((_, j) => {
+        if (j === i || Math.abs(j - i) === 1) return [];
+        return [`ip route ${lsr(j)} 255.255.255.255 ${j > i ? `10.${i}.0.2` : `10.${i - 1}.0.1`}`];
+      }));
+    }
   }
   options.setup?.(routers);
   routers.forEach((router, i) => options.engines?.(router, i));

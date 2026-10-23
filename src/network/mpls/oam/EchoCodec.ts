@@ -42,6 +42,12 @@ export const EchoTlvType = {
   DownstreamDetailedMapping: 20,
 } as const;
 
+export const DdmapSubTlv = { Multipath: 1, LabelStack: 2, FecStackChange: 3 } as const;
+export const DdmapAddressType = { Ipv4Numbered: 1, Ipv4Unnumbered: 2 } as const;
+export const DdmapProtocol = { Unknown: 0, Static: 1, Bgp: 2, Ldp: 3, RsvpTe: 4 } as const;
+export const DDMAP_UNKNOWN_DOWNSTREAM = '127.0.0.1';
+export const DDMAP_ALL_ROUTERS = '224.0.0.2';
+
 export const PadInstruction = { DropFromReply: 1, CopyToReply: 2 } as const;
 
 const FecSubType = { LdpIpv4: 1, VpnIpv4: 6, GenericIpv4: 14, Nil: 16 } as const;
@@ -67,6 +73,29 @@ export interface InterfaceAndLabelStack {
   readonly labels: readonly number[];
 }
 
+export interface DdmapLabel { readonly label: number; readonly protocol: number }
+
+export interface FecStackChange {
+  readonly operation: 'push' | 'pop';
+  readonly peer: IPAddress | null;
+  readonly fec: TargetFec | null;
+}
+
+export interface Ddmap {
+  readonly mtu: number;
+  readonly addressType: number;
+  readonly interfaceAndLabelStackRequested: boolean;
+  readonly nonIp: boolean;
+  readonly downstreamAddress: IPAddress;
+  readonly downstreamInterface: IPAddress;
+  readonly returnCode: number;
+  readonly returnSubcode: number;
+  readonly multipathType: number;
+  readonly multipathInformation: Uint8Array;
+  readonly labelStack: readonly DdmapLabel[];
+  readonly fecStackChanges: readonly FecStackChange[];
+}
+
 export interface ErroredTlv { readonly type: number; readonly value: Uint8Array }
 
 export interface EchoMessage {
@@ -84,6 +113,7 @@ export interface EchoMessage {
   readonly pad: { readonly instruction: number; readonly length: number } | null;
   readonly replyTosByte: number | null;
   readonly interfaceAndLabelStack: InterfaceAndLabelStack | null;
+  readonly ddmaps: readonly Ddmap[];
   readonly erroredTlvs: readonly ErroredTlv[];
   readonly unrecognisedMandatory: readonly ErroredTlv[];
 }
@@ -94,7 +124,7 @@ export function newEchoMessage(fields: Partial<EchoMessage> & Pick<EchoMessage, 
   return {
     version: MPLS_ECHO_VERSION, globalFlags: 0, replyMode: ReplyMode.Udp, returnCode: ReturnCode.None, returnSubcode: 0,
     timestampSent: 0n, timestampReceived: 0n, targetFecs: [], pad: null, replyTosByte: null,
-    interfaceAndLabelStack: null, erroredTlvs: [], unrecognisedMandatory: [], ...fields,
+    interfaceAndLabelStack: null, ddmaps: [], erroredTlvs: [], unrecognisedMandatory: [], ...fields,
   };
 }
 
@@ -204,6 +234,91 @@ function decodeInterfaceAndLabelStack(value: Uint8Array): InterfaceAndLabelStack
   return { address, interfaceAddress, labels };
 }
 
+const DDMAP_FIXED_BYTES = 16;
+const FLAG_INTERFACE_AND_LABEL_STACK = 0x2;
+const FLAG_NON_IP = 0x1;
+const FEC_STACK_OPERATION = { push: 1, pop: 2 } as const;
+
+function encodeDdmap(ddmap: Ddmap): Uint8Array {
+  const subTlvs = new ByteWriter();
+  subTlvs.bytes(tlv(DdmapSubTlv.Multipath, new ByteWriter()
+    .u8(ddmap.multipathType).u16(ddmap.multipathInformation.length).u8(0).bytes(ddmap.multipathInformation).toBytes()));
+  const stack = new ByteWriter();
+  ddmap.labelStack.forEach((entry, index) => {
+    const last = index === ddmap.labelStack.length - 1;
+    stack.u8((entry.label >>> 12) & 0xff).u8((entry.label >>> 4) & 0xff).u8(((entry.label & 0xf) << 4) | (last ? 1 : 0)).u8(entry.protocol);
+  });
+  subTlvs.bytes(tlv(DdmapSubTlv.LabelStack, stack.toBytes()));
+  for (const change of ddmap.fecStackChanges) {
+    const fec = change.fec === null ? new Uint8Array(0) : encodeFec(change.fec);
+    subTlvs.bytes(tlv(DdmapSubTlv.FecStackChange, new ByteWriter()
+      .u8(FEC_STACK_OPERATION[change.operation]).u8(change.peer === null ? 0 : 1).u8(fec.length).u8(0)
+      .bytes(change.peer === null ? new Uint8Array(0) : change.peer.getOctets()).bytes(fec).toBytes()));
+  }
+  const body = subTlvs.toBytes();
+  const flags = (ddmap.interfaceAndLabelStackRequested ? FLAG_INTERFACE_AND_LABEL_STACK : 0) | (ddmap.nonIp ? FLAG_NON_IP : 0);
+  return tlv(EchoTlvType.DownstreamDetailedMapping, new ByteWriter()
+    .u16(ddmap.mtu).u8(ddmap.addressType).u8(flags)
+    .bytes(ddmap.downstreamAddress.getOctets()).bytes(ddmap.downstreamInterface.getOctets())
+    .u8(ddmap.returnCode).u8(ddmap.returnSubcode).u16(body.length).bytes(body).toBytes());
+}
+
+function decodeDdmap(value: Uint8Array): Ddmap | null {
+  if (value.length < DDMAP_FIXED_BYTES) throw new EchoDecodeError('Downstream Detailed Mapping shorter than its fixed part');
+  const reader = new ByteReader(value);
+  const mtu = reader.u16();
+  const addressType = reader.u8();
+  if (addressType !== DdmapAddressType.Ipv4Numbered && addressType !== DdmapAddressType.Ipv4Unnumbered) return null;
+  const flags = reader.u8();
+  const downstreamAddress = readAddress(reader);
+  const downstreamInterface = readAddress(reader);
+  const returnCode = reader.u8();
+  const returnSubcode = reader.u8();
+  const length = reader.u16();
+  if (length !== reader.remaining) throw new EchoDecodeError('Downstream Detailed Mapping sub-TLV length mismatch');
+  let multipathType = 0;
+  let multipathInformation: Uint8Array = new Uint8Array(0);
+  const labelStack: DdmapLabel[] = [];
+  const fecStackChanges: FecStackChange[] = [];
+  for (const sub of readTlvs(reader.take(length))) {
+    const part = new ByteReader(sub.value);
+    if (sub.type === DdmapSubTlv.Multipath) {
+      multipathType = part.u8();
+      const informationLength = part.u16();
+      part.u8();
+      if (informationLength !== part.remaining) throw new EchoDecodeError('multipath length mismatch');
+      multipathInformation = part.take(informationLength);
+    } else if (sub.type === DdmapSubTlv.LabelStack) {
+      if (sub.value.length % 4 !== 0) throw new EchoDecodeError('label stack sub-TLV is not a multiple of 4 octets');
+      while (part.remaining > 0) {
+        const word = part.u32();
+        labelStack.push({ label: word >>> 12, protocol: word & 0xff });
+      }
+    } else if (sub.type === DdmapSubTlv.FecStackChange) {
+      const operation = part.u8();
+      const peerType = part.u8();
+      const fecLength = part.u8();
+      part.u8();
+      if (operation !== FEC_STACK_OPERATION.push && operation !== FEC_STACK_OPERATION.pop) throw new EchoDecodeError(`FEC stack operation ${operation}`);
+      if (peerType > 1) return null;
+      const peer = peerType === 1 ? readAddress(part) : null;
+      let fec: TargetFec | null = null;
+      if (fecLength > 0) {
+        const nested = readTlvs(part.take(fecLength));
+        if (nested.length !== 1) throw new EchoDecodeError('FEC stack change must carry exactly one FEC');
+        fec = decodeFec(nested[0].type, nested[0].value);
+      }
+      fecStackChanges.push({ operation: operation === FEC_STACK_OPERATION.push ? 'push' : 'pop', peer, fec });
+    } else {
+      return null;
+    }
+  }
+  return {
+    mtu, addressType, interfaceAndLabelStackRequested: (flags & FLAG_INTERFACE_AND_LABEL_STACK) !== 0, nonIp: (flags & FLAG_NON_IP) !== 0,
+    downstreamAddress, downstreamInterface, returnCode, returnSubcode, multipathType, multipathInformation, labelStack, fecStackChanges,
+  };
+}
+
 export function encodeEcho(message: EchoMessage): Uint8Array {
   const sent = splitTimestamp(message.timestampSent);
   const received = splitTimestamp(message.timestampReceived);
@@ -228,6 +343,7 @@ export function encodeEcho(message: EchoMessage): Uint8Array {
     for (const label of labels) value.u32(label << 12);
     out.bytes(tlv(EchoTlvType.InterfaceAndLabelStack, value.toBytes()));
   }
+  for (const ddmap of message.ddmaps) out.bytes(encodeDdmap(ddmap));
   if (message.erroredTlvs.length > 0) {
     const nested = new ByteWriter();
     for (const errored of message.erroredTlvs) nested.bytes(tlv(errored.type, errored.value));
@@ -253,6 +369,7 @@ export function decodeEcho(data: Uint8Array): EchoMessage {
   let pad: EchoMessage['pad'] = null;
   let replyTosByte: number | null = null;
   let interfaceAndLabelStack: InterfaceAndLabelStack | null = null;
+  const ddmaps: Ddmap[] = [];
   const erroredTlvs: ErroredTlv[] = [];
   const unrecognisedMandatory: ErroredTlv[] = [];
   for (const { type, value } of readTlvs(data.subarray(ECHO_HEADER_BYTES))) {
@@ -273,6 +390,12 @@ export function decodeEcho(data: Uint8Array): EchoMessage {
       case EchoTlvType.InterfaceAndLabelStack:
         interfaceAndLabelStack = decodeInterfaceAndLabelStack(value);
         break;
+      case EchoTlvType.DownstreamDetailedMapping: {
+        const ddmap = decodeDdmap(value);
+        if (ddmap === null) unrecognisedMandatory.push({ type, value });
+        else ddmaps.push(ddmap);
+        break;
+      }
       case EchoTlvType.ErroredTlvs:
         for (const nested of readTlvs(value)) erroredTlvs.push(nested);
         break;
@@ -282,6 +405,6 @@ export function decodeEcho(data: Uint8Array): EchoMessage {
   }
   return {
     version, globalFlags, messageType, replyMode, returnCode, returnSubcode, senderHandle, sequenceNumber,
-    timestampSent, timestampReceived, targetFecs, pad, replyTosByte, interfaceAndLabelStack, erroredTlvs, unrecognisedMandatory,
+    timestampSent, timestampReceived, targetFecs, pad, replyTosByte, interfaceAndLabelStack, ddmaps, erroredTlvs, unrecognisedMandatory,
   };
 }

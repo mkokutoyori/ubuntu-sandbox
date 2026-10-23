@@ -3501,16 +3501,21 @@ sont pas dans `docs/rfc/mpls/` : le codage MP_REACH/MP_UNREACH suit la seule
 RFC 4364.
 
 ### [mpls-oam] le reste de la RFC 8029
-Le mode traceroute complet n'est pas construit : le TLV Downstream Detailed
-Mapping (type 20, §3.4) est refuse avec le code 2 et renvoye dans Errored
-TLVs, jamais ignore, donc aucun saut ne valide la FEC avec le DDMAP, aucune
-sous-TLV Multipath (ECMP) ni FEC Stack Change n'est echangee. Absents aussi :
-les FEC RSVP, pseudo-wire, BGP etiquete et IPv6 (decodees comme
-`unsupported`, jamais validees), le Reply Mode 4 (pas de canal de controle
-applicatif : aucune reponse n'est envoyee), le Router Alert sur une reponse
-traversant un LSP, et la commande `ping mpls` / `traceroute mpls` : le format
-de sortie IOS n'est pas source (CLAUDE.md §8), l'API est
-`Router.getMplsOam().ping(fecs, { ttl })`.
+Le traceroute LSP avec Downstream Detailed Mapping (§3.4, §4.4, §4.6) est
+servi sur LDP et sur la pile L3VPN : `Router.getMplsOam().traceroute(fecs)`.
+Restent absents : les types d'adresse IPv6 et non numerotes (un DDMAP qui en
+porte un est refuse comme TLV obligatoire non pris en charge, jamais ignore),
+l'ECMP (le sous-TLV Multipath est toujours de type 0 et l'information recue
+n'est pas evaluee : un routeur ici n'a qu'un saut suivant), le drapeau V
+(Validate FEC Stack) sur un routeur de transit (le egress valide toujours la
+pile FEC), et tout routeur qui emette un FEC stack change (pas de LSP recousu
+ni hierarchique hors du VPN) ; le cote origine de l'algorithme du §4.6 est
+couvert sur des entrees fabriquees. Les FEC RSVP, pseudo-wire (128 et 129,
+types 10 et 11 de la section 3.2.9 et 3.2.10), BGP etiquete et IPv6 sont
+decodees comme `unsupported` et jamais validees, le Reply Mode 4 (pas de canal
+de controle applicatif : aucune reponse n'est envoyee) n'est pas servi, ni le
+Router Alert sur une reponse traversant un LSP, ni la commande `ping mpls` /
+`traceroute mpls` : le format de sortie IOS n'est pas source (CLAUDE.md §8).
 
 ### [pseudowire] le reste des RFC 4447 / 4448
 Seul le type 5 (Ethernet, mode brut) sur circuit d'acces par port est servi :

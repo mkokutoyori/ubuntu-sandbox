@@ -1,13 +1,17 @@
 import { IPAddress, type IPv4Packet, type UDPPacket } from '@/network/core/types';
 import type { VpnPath } from '@/network/bgp/vpn/VpnV4Speaker';
 import type { LdpLocalBinding } from '@/network/ldp/LdpEngine';
-import type { Lfib } from '@/network/mpls/Lfib';
+import type { IlmEntry, Lfib } from '@/network/mpls/Lfib';
 import { MplsLabel } from '@/network/mpls/MplsLabel';
 import { MAX_MPLS_TTL, makeLabelStackEntry, withBottomOfStack } from '@/network/mpls/LabelStack';
 import type { MplsPacket } from '@/network/mpls/MplsPacket';
 import { MplsEchoAgent, type EchoReply, type EchoRequestOptions } from '@/network/mpls/oam/EchoAgent';
-import type { TargetFec } from '@/network/mpls/oam/EchoCodec';
-import type { EchoReceipt, EchoResponderHost, FecMapping } from '@/network/mpls/oam/EchoResponder';
+import {
+  DdmapAddressType, DdmapProtocol, ReturnCode,
+  type Ddmap, type TargetFec,
+} from '@/network/mpls/oam/EchoCodec';
+import type { DownstreamPath, EchoReceipt, EchoResponderHost, FecMapping } from '@/network/mpls/oam/EchoResponder';
+import { fecStackAfter } from '@/network/mpls/oam/FecStackChange';
 import { allocateEphemeralPort } from '@/network/layers/transport/EphemeralPorts';
 
 const EPHEMERAL_FIRST = 49152;
@@ -20,6 +24,8 @@ export interface MplsOamHost {
   mplsEnabled(iface: string): boolean;
   ldpBinding(prefix: IPAddress, length: number): LdpLocalBinding | undefined;
   ldpEnabled(iface: string): boolean;
+  ldpInstalls(label: MplsLabel): boolean;
+  interfaceMtu(iface: string): number;
   vpnPaths(): readonly VpnPath[];
   claimPort(port: number, receive: (packet: IPv4Packet, udp: UDPPacket) => void): void;
   releasePort(port: number): void;
@@ -31,6 +37,16 @@ export interface MplsOamHost {
 
 export interface LspPingOptions extends EchoRequestOptions {
   readonly ttl?: number;
+}
+
+export interface LspTraceOptions extends EchoRequestOptions {
+  readonly maxTtl?: number;
+}
+
+export interface LspTraceHop {
+  readonly ttl: number;
+  readonly outcome: LspPingOutcome;
+  readonly downstream: Ddmap | null;
 }
 
 export type LspPingOutcome =
@@ -70,6 +86,55 @@ export class RouterMplsOam implements EchoResponderHost {
     } finally {
       this.agent.finish(built.pending);
     }
+  }
+
+  traceroute(fecs: readonly TargetFec[], options: LspTraceOptions = {}): LspTraceHop[] {
+    const route = this.routeFor(fecs);
+    if (route === 'no-label-binding' || route === 'no-vpn-route') return [];
+    const hops: LspTraceHop[] = [];
+    let ddmap: Ddmap | undefined = options.ddmap ?? this.firstHopMapping(route);
+    let traced: readonly TargetFec[] = fecs;
+    for (let ttl = 1; ttl <= (options.maxTtl ?? 30); ttl++) {
+      const outcome = this.ping(traced, { ...options, ttl, ddmap });
+      const reply = outcome.kind === 'reply' ? outcome.reply.message : null;
+      const downstream = reply?.ddmaps[0] ?? null;
+      hops.push({ ttl, outcome, downstream });
+      if (reply === null || downstream === null) break;
+      if (reply.returnCode !== ReturnCode.Switched && reply.returnCode !== ReturnCode.UpstreamInterfaceUnknown) break;
+      const changed = fecStackAfter(traced, downstream.fecStackChanges);
+      if (changed === null) break;
+      traced = changed;
+      ddmap = { ...downstream, returnCode: ReturnCode.None, returnSubcode: 0 };
+    }
+    return hops;
+  }
+
+  private firstHopMapping(route: { iface: string; nextHop: IPAddress; labels: number[] }): Ddmap {
+    return {
+      mtu: this.host.interfaceMtu(route.iface), addressType: DdmapAddressType.Ipv4Numbered,
+      interfaceAndLabelStackRequested: false, nonIp: false,
+      downstreamAddress: route.nextHop, downstreamInterface: route.nextHop, returnCode: ReturnCode.None, returnSubcode: 0,
+      multipathType: 0, multipathInformation: new Uint8Array(0),
+      labelStack: route.labels.map(label => ({ label, protocol: DdmapProtocol.Ldp })), fecStackChanges: [],
+    };
+  }
+
+  downstream(entry: IlmEntry, received: readonly number[]): DownstreamPath | null {
+    if (entry.kind === 'swap') {
+      return {
+        nextHop: entry.nextHop, mtu: this.host.interfaceMtu(entry.iface),
+        labels: [...entry.outLabels.map(label => label.value), ...received.slice(1)],
+        protocol: this.host.ldpInstalls(MplsLabel.of(received[0])) ? DdmapProtocol.Ldp : DdmapProtocol.Unknown,
+      };
+    }
+    if (entry.kind === 'pop' && entry.iface !== null && entry.nextHop !== null) {
+      return {
+        nextHop: entry.nextHop, mtu: this.host.interfaceMtu(entry.iface),
+        labels: [MplsLabel.IMPLICIT_NULL.value, ...received.slice(1)],
+        protocol: this.host.ldpInstalls(MplsLabel.of(received[0])) ? DdmapProtocol.Ldp : DdmapProtocol.Unknown,
+      };
+    }
+    return null;
   }
 
   receiveRequest(inPort: string, packet: IPv4Packet, labels: readonly number[], topTtl: number | null): void {

@@ -10,8 +10,8 @@
  * Interpretation recorded: on success the Return Subcode is the index of the last
  * FEC validated; Label-L at the egress is the label actually popped (the RFC text
  * resets it to Implicit Null, which would fail every VPN FEC).
- * Not built: Downstream Detailed Mapping (type 20) is refused with code 2 and
- * echoed in Errored TLVs, never stored and ignored (TODO.md).
+ * Downstream Detailed Mapping is covered by probe-mpls-oam-ddmap-rfc8029; the
+ * unknown-mandatory-TLV cases below use type 30, which no supported TLV claims.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -21,7 +21,7 @@ import { IPAddress } from '@/network/core/types';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { MplsLabel } from '@/network/mpls/MplsLabel';
 import {
-  EchoMessageType, EchoTlvType, GlobalFlag, type TargetFec, PadInstruction, ReplyMode, ReturnCode, decodeEcho, encodeEcho, newEchoMessage,
+  EchoMessageType, GlobalFlag, type TargetFec, PadInstruction, ReplyMode, ReturnCode, decodeEcho, encodeEcho, newEchoMessage,
 } from '@/network/mpls/oam/EchoCodec';
 import { evaluateEchoRequest, type EchoResponderHost } from '@/network/mpls/oam/EchoResponder';
 
@@ -73,12 +73,12 @@ describe('echo message codec (§3)', () => {
 
   it('a mandatory TLV the receiver does not know is collected; an optional one is ignored', () => {
     const bytes = encodeEcho(newEchoMessage({ messageType: 1, senderHandle: 1, sequenceNumber: 1, targetFecs: [ldp('1.1.1.1')] }));
-    const mandatory = Uint8Array.from([0, 20, 0, 4, 1, 2, 3, 4]);
+    const mandatory = Uint8Array.from([0, 30, 0, 4, 1, 2, 3, 4]);
     const optional = Uint8Array.from([0x80, 1, 0, 4, 9, 9, 9, 9]);
     const joined = new Uint8Array(bytes.length + 16);
     joined.set(bytes); joined.set(mandatory, bytes.length); joined.set(optional, bytes.length + 8);
     const decoded = decodeEcho(joined);
-    expect(decoded.unrecognisedMandatory.map(tlv => tlv.type)).toEqual([EchoTlvType.DownstreamDetailedMapping]);
+    expect(decoded.unrecognisedMandatory.map(tlv => tlv.type)).toEqual([30]);
   });
 
   it('refuses a message shorter than the fixed header', () => {
@@ -89,7 +89,7 @@ describe('echo message codec (§3)', () => {
 describe('receiving an echo request (§4.4) against a stub ILM', () => {
   const noMapping = { present: false, label: null, protocolOnInterface: true };
   function host(over: Partial<EchoResponderHost> = {}): EchoResponderHost {
-    return { ilm: () => undefined, mplsEnabled: () => true, fecMapping: () => noMapping, ...over };
+    return { ilm: () => undefined, mplsEnabled: () => true, fecMapping: () => noMapping, downstream: () => null, ...over };
   }
   const receipt = (labels: number[], topTtl: number | null = null) => ({
     interfaceName: 'g0', routerAddress: new IPAddress('3.3.3.3'), interfaceAddress: new IPAddress('10.0.0.3'), labels, topTtl,
@@ -137,9 +137,9 @@ describe('receiving an echo request (§4.4) against a stub ILM', () => {
   });
 
   it('an unknown mandatory TLV: code 2 with the offending TLV echoed', () => {
-    const message = { ...request(), unrecognisedMandatory: [{ type: 20, value: Uint8Array.from([1, 2, 3, 4]) }] };
+    const message = { ...request(), unrecognisedMandatory: [{ type: 30, value: Uint8Array.from([1, 2, 3, 4]) }] };
     const verdict = evaluateEchoRequest(message, receipt([]), host());
-    expect(verdict).toMatchObject({ returnCode: ReturnCode.TlvNotUnderstood, erroredTlvs: [{ type: 20 }] });
+    expect(verdict).toMatchObject({ returnCode: ReturnCode.TlvNotUnderstood, erroredTlvs: [{ type: 30 }] });
   });
 
   it('a Nil FEC on top skips validation (§4.4.1)', () => {

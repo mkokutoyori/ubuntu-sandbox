@@ -4,7 +4,7 @@ import { timestampFromMs } from '@/network/ntp/timestamp';
 import {
   EchoDecodeError, EchoMessageType, MPLS_ECHO_UDP_PORT, MPLS_ECHO_VERSION, PadInstruction, ROUTER_ALERT_OPTION_VALUE,
   ReplyMode, ReturnCode, decodeEcho, encodeEcho, newEchoMessage,
-  type EchoMessage, type TargetFec,
+  type Ddmap, type EchoMessage, type TargetFec,
 } from './EchoCodec';
 import { evaluateEchoRequest, type EchoReceipt, type EchoResponderHost } from './EchoResponder';
 
@@ -32,6 +32,7 @@ export interface EchoRequestOptions {
   readonly globalFlags?: number;
   readonly pad?: { readonly instruction: number; readonly length: number };
   readonly replyTosByte?: number;
+  readonly ddmap?: Ddmap;
 }
 
 export interface BuiltEchoRequest {
@@ -80,6 +81,7 @@ export class MplsEchoAgent {
       replyMode: options.replyMode ?? ReplyMode.Udp, globalFlags: options.globalFlags ?? 0,
       timestampSent: timestampFromMs(sentAt), targetFecs: fecs,
       pad: options.pad ?? null, replyTosByte: options.replyTosByte ?? null,
+      ddmaps: options.ddmap === undefined ? [] : [options.ddmap],
     });
     const payload = encodeEcho(message);
     const sourcePort = this.host.allocatePort();
@@ -131,7 +133,7 @@ export class MplsEchoAgent {
       replyMode: message.replyMode, returnCode: verdict.returnCode, returnSubcode: verdict.returnSubcode,
       timestampSent: message.timestampSent, timestampReceived: timestampFromMs(arrivedAt),
       targetFecs: message.targetFecs, pad: copyPad ? message.pad : null,
-      interfaceAndLabelStack: verdict.interfaceAndLabelStack, erroredTlvs: verdict.erroredTlvs,
+      interfaceAndLabelStack: verdict.interfaceAndLabelStack, ddmaps: verdict.ddmaps, erroredTlvs: verdict.erroredTlvs,
     });
     this.sendReply(request, reply, message.replyTosByte, message.replyMode === ReplyMode.UdpRouterAlert);
   }
