@@ -101,7 +101,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const dump = await captureDns(pc, `udp port 53`, () => pc.executeCommand(`dig @${NS1_IP} www.example.com A`));
 
       expect(dump).toMatch(/A\? www\.example\.com/);
-      expect(dump).toMatch(/A 10\.0\.1\.80 ttl 3600/);
+      expect(dump).toMatch(/www\.example\.com\. \[1h\] A 10\.0\.1\.80/);
     });
 
     it('réponse MX : priorité, serveur de mail et TTL visibles sans dig', async () => {
@@ -109,7 +109,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const dump = await captureDns(pc, `udp port 53`, () => pc.executeCommand(`dig @${NS1_IP} example.com MX`));
 
       expect(dump).toMatch(/MX\? example\.com/);
-      expect(dump).toMatch(/MX 10 mail\.example\.com\.? ttl 3600/);
+      expect(dump).toMatch(/example\.com\. \[1h\] MX mail\.example\.com\. 10/);
     });
 
     it('réponse AAAA : adresse IPv6 et TTL visibles sans dig', async () => {
@@ -117,7 +117,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const dump = await captureDns(pc, `udp port 53`, () => pc.executeCommand(`dig @${NS1_IP} www6.example.com AAAA`));
 
       expect(dump).toMatch(/AAAA\? www6\.example\.com/);
-      expect(dump).toMatch(/AAAA 2001:db8::80 ttl 3600/);
+      expect(dump).toMatch(/www6\.example\.com\. \[1h\] AAAA 2001:db8::80/);
     });
 
     it('résolution d\'un nom inexistant : NXDOMAIN dans les flags avec AUTHORITY SECTION pointant vers la SOA de la zone', async () => {
@@ -125,7 +125,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const dump = await captureDns(pc, `udp port 53`, () => pc.executeCommand(`dig @${NS1_IP} doesnotexist.example.com`));
 
       expect(dump).toMatch(/NXDomain/);
-      expect(dump).toMatch(/authority: SOA ns1\.example\.com/);
+      expect(dump).toMatch(/ns: example\.com\. \[\w+\] SOA ns1\.example\.com\./);
     });
   });
 
@@ -135,7 +135,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const dump = await captureDns(pc, `port 53`, () => pc.executeCommand(`dig @${NS1_IP} many.example.com A`));
 
       const lines = dump.split('\n');
-      const truncatedUdpIdx = lines.findIndex((l) => l.includes('truncated, TC'));
+      const truncatedUdpIdx = lines.findIndex((l) => /\d+\*-\| /.test(l));
       expect(truncatedUdpIdx).toBeGreaterThanOrEqual(0);
 
       const after = lines.slice(truncatedUdpIdx + 1).join('\n');
@@ -153,7 +153,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const dump = await captureDns(pc, `port 53`, () => pc.executeCommand(`dig @${NS1_IP} many.example.com ANY`));
 
       expect(dump).toMatch(/ANY\? many\.example\.com/);
-      expect(dump).toMatch(/truncated, TC/);
+      expect(dump).toMatch(/\d+\*-\| /);
       expect(dump).toMatch(/Flags \[S\]/);
     });
   });
@@ -163,10 +163,11 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const { pc } = await buildDnsLab();
       const dump = await captureDns(pc, `tcp port 53`, () => pc.executeCommand(`dig @${NS1_IP} many.example.com A`));
 
-      const ttls = Array.from(dump.matchAll(/A 198\.51\.100\.\d+ ttl (\d+)/g)).map((m) => Number(m[1]));
+      const seconds = (text: string): number => Array.from(text.matchAll(/(\d+)([hms])/g)).reduce((sum, m) => sum + Number(m[1]) * { h: 3600, m: 60, s: 1 }[m[2] as 'h' | 'm' | 's'], 0);
+      const ttls = Array.from(dump.matchAll(/\[(\w+)\] A 198\.51\.100\.\d+/g)).map((m) => seconds(m[1]));
       expect(ttls.length).toBeGreaterThan(1);
 
-      const ips = new Set(Array.from(dump.matchAll(/A (198\.51\.100\.\d+) ttl/g)).map((m) => m[1]));
+      const ips = new Set(Array.from(dump.matchAll(/\] A (198\.51\.100\.\d+)/g)).map((m) => m[1]));
       expect(ips.size).toBeGreaterThan(1);
 
       expect(Math.min(...ttls)).toBeLessThan(60);
@@ -179,7 +180,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       const { pc } = await buildDnsLab();
 
       const okDump = await captureDns(pc, `udp port 53`, () => pc.executeCommand(`dig @${NS1_IP} www.example.com A`));
-      expect(okDump).toMatch(/A 10\.0\.1\.80 ttl 3600/);
+      expect(okDump).toMatch(/\[1h\] A 10\.0\.1\.80/);
       expect(okDump).not.toMatch(/NXDomain|ServFail/);
 
       const nxDump = await captureDns(pc, `udp port 53`, () => pc.executeCommand(`dig @${NS1_IP} nope.example.com A`));

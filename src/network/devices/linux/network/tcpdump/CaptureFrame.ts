@@ -18,10 +18,13 @@ import {
   type ARPPacket,
   type ICMPPacket,
   type ICMPv6Packet,
+  type NDPMessage,
+  type NDPOption,
   type UDPPacket,
   type UDPLitePacket,
 } from '@/network/core/types';
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
+import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
 import { computeTcpChecksum, tcpFlagBits } from '@/network/tcp/types';
@@ -34,6 +37,7 @@ import { unframeDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
 import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
+import { icmpWireBytes, icmpv6WireBytes, tcpWireBytes, transportChecksum, udpWireBytes, u16, u32, WIRE_PROTOCOLS } from './CaptureWire';
 
 export type CaptureDirection = 'in' | 'out';
 export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'other';
@@ -149,6 +153,7 @@ export interface IcmpOrigInfo {
   srcPort?: number;
   dstPort?: number;
   payloadLength?: number;
+  quoted?: CaptureFrame;
 }
 
 function formatResourceRecordData(rr: ResourceRecord<ResourceRecordData>): string {
@@ -248,46 +253,45 @@ function ipv6Bytes(hextets: readonly number[]): number[] {
   return bytes;
 }
 
-function u16(value: number): number[] {
-  return [(value >> 8) & 0xff, value & 0xff];
+function padTo(bytes: number[], length: number): number[] {
+  while (bytes.length < length) bytes.push(0);
+  return bytes;
 }
 
-function u32(value: number): number[] {
-  return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
+function addressText(address: { toString(): string }): string {
+  return address.toString().replace(/%.*$/, '');
 }
 
-function synthIcmpBytes(icmp: ICMPPacket): number[] {
-  const type = icmpTypeNumber(icmp.icmpType);
-  const header = [type, icmp.code & 0xff, ...u16(0), ...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff)];
-  if (icmp.timestamps) {
-    return [...header, ...u32(icmp.timestamps.originate), ...u32(icmp.timestamps.receive), ...u32(icmp.timestamps.transmit)];
-  }
-  const data: number[] = [];
-  for (let i = 0; i < (icmp.dataSize ?? 0); i++) data.push(i & 0xff);
-  return [...header, ...data];
+function synthIcmpBytes(icmp: ICMPPacket, expectedLength: number): number[] {
+  const quoted = icmp.originalPacket === undefined ? undefined : synthIpv4Bytes(icmp.originalPacket);
+  const message = icmpWireBytes({
+    type: icmpTypeNumber(icmp.icmpType), code: icmp.code, id: icmp.id, sequence: icmp.sequence,
+    mtu: icmp.mtu, pointer: icmp.pointer, gateway: icmp.gateway === undefined ? undefined : ipBytes(icmp.gateway.toString()),
+    timestamps: icmp.timestamps, quoted, dataSize: icmp.dataSize ?? 0,
+  });
+  if (message.length >= expectedLength) return message;
+  return icmpWireBytes({
+    type: icmpTypeNumber(icmp.icmpType), code: icmp.code, id: icmp.id, sequence: icmp.sequence,
+    mtu: icmp.mtu, pointer: icmp.pointer, gateway: icmp.gateway === undefined ? undefined : ipBytes(icmp.gateway.toString()),
+    timestamps: icmp.timestamps, quoted: padTo(quoted ?? [], expectedLength - 8), dataSize: Math.max(icmp.dataSize ?? 0, expectedLength - 8),
+  });
 }
 
-function synthTcpBytes(seg: TcpSegment): number[] {
-  const dataOffset = Math.max(5, seg.dataOffset || 5);
-  const optionBytes = new Array((dataOffset - 5) * 4).fill(0);
-  return [
-    ...u16(seg.sourcePort), ...u16(seg.destinationPort),
-    ...u32(seg.sequence >>> 0), ...u32(seg.acknowledgement >>> 0),
-    dataOffset << 4, tcpFlagBits(seg.flags),
-    ...u16(seg.window & 0xffff),
-    ...u16(seg.checksum & 0xffff),
-    ...u16(seg.urgentPointer & 0xffff),
-    ...optionBytes,
-    ...(appPayloadBytes(seg.payload) ?? []),
-  ];
+function synthTcpBytes(seg: TcpSegment, sourceIp: string, destinationIp: string, payloadLength: number): number[] {
+  const corrupt = seg.checksum !== 0 && computeTcpChecksum(seg, sourceIp, destinationIp) !== seg.checksum;
+  const payload = padTo(appPayloadBytes(seg.payload) ?? [], payloadLength);
+  return tcpWireBytes({
+    sourcePort: seg.sourcePort, destinationPort: seg.destinationPort, sequence: seg.sequence, acknowledgement: seg.acknowledgement,
+    dataOffset: Math.max(5, seg.dataOffset || 5), flagBits: tcpFlagBits(seg.flags), window: seg.window,
+    urgentPointer: seg.urgentPointer, options: seg.options, payload,
+  }, sourceIp, destinationIp, corrupt);
 }
 
-function synthUdpBytes(udp: UDPPacket): number[] {
-  return [
-    ...u16(udp.sourcePort), ...u16(udp.destinationPort),
-    ...u16(udp.length), ...u16(udp.checksum & 0xffff),
-    ...(appPayloadBytes(udp.payload) ?? []),
-  ];
+function synthUdpBytes(udp: UDPPacket, sourceIp: string, destinationIp: string): number[] {
+  const payload = padTo(appPayloadBytes(udp.payload) ?? [], Math.max(0, udp.length - 8));
+  const present = udp.checksum !== 0 || sourceIp.includes(':');
+  const corrupt = udp.checksum !== 0 && computeUdpChecksum(udp, sourceIp, destinationIp) !== udp.checksum;
+  return udpWireBytes(udp.sourcePort, udp.destinationPort, udp.length, payload, sourceIp, destinationIp, present, corrupt);
 }
 
 function synthUdpLiteBytes(udp: UDPLitePacket): number[] {
@@ -300,11 +304,42 @@ function synthUdpLiteBytes(udp: UDPLitePacket): number[] {
 
 function synthL4Bytes(pkt: IPv4Packet): number[] {
   const payload = pkt.payload as { type?: string };
-  if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket);
-  if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
-  if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
+  const source = pkt.sourceIP.toString();
+  const destination = pkt.destinationIP.toString();
+  const l4Length = Math.max(0, (pkt.totalLength ?? 20) - (pkt.ihl ?? 5) * 4);
+  if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket, l4Length);
+  if (payload?.type === 'tcp') {
+    const seg = normalizeTcpSegment(pkt.payload);
+    return synthTcpBytes(seg, source, destination, Math.max(0, l4Length - Math.max(5, seg.dataOffset || 5) * 4));
+  }
+  if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket, source, destination);
   if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   return [];
+}
+
+const FRAGMENT_BODY_CACHE_LIMIT = 64;
+const fragmentBodies = new Map<string, number[]>();
+
+function rememberFragmentBody(key: string, body: number[]): void {
+  fragmentBodies.delete(key);
+  fragmentBodies.set(key, body);
+  if (fragmentBodies.size > FRAGMENT_BODY_CACHE_LIMIT) fragmentBodies.delete(fragmentBodies.keys().next().value as string);
+}
+
+function fragmentSlice(key: string, offsetBytes: number, length: number): number[] {
+  const whole = fragmentBodies.get(key) ?? [];
+  return padTo(whole.slice(offsetBytes, offsetBytes + length), length);
+}
+
+function ipv4FragmentBody(pkt: IPv4Packet, headerBytes: number): number[] {
+  const length = Math.max(0, (pkt.totalLength ?? 20) - headerBytes);
+  const key = `4|${pkt.sourceIP}|${pkt.destinationIP}|${pkt.identification}|${pkt.protocol}`;
+  if (pkt.fragmentOffset === 0 && !isIPv4FragmentData(pkt.payload)) {
+    const whole = synthL4Bytes(pkt);
+    rememberFragmentBody(key, whole);
+    return padTo(whole.slice(0, length), length);
+  }
+  return fragmentSlice(key, pkt.fragmentOffset * 8, length);
 }
 
 function synthIpv4Bytes(pkt: IPv4Packet): number[] {
@@ -324,25 +359,74 @@ function synthIpv4Bytes(pkt: IPv4Packet): number[] {
     ...ipBytes(pkt.destinationIP.toString()),
     ...optionBytes,
   ];
-  return [...header, ...synthL4Bytes(pkt)];
+  const fragmentOfDatagram = pkt.fragmentOffset > 0 || (pkt.flags & 0x1) !== 0;
+  return [...header, ...(fragmentOfDatagram ? ipv4FragmentBody(pkt, (pkt.ihl ?? 5) * 4) : synthL4Bytes(pkt))];
 }
 
-function synthIcmpv6Bytes(icmp: ICMPv6Packet): number[] {
-  const type = icmpv6TypeNumber(icmp.icmpType);
-  const header = [type, icmp.code & 0xff, ...u16(0)];
-  if (icmp.id !== undefined && icmp.sequence !== undefined) {
-    header.push(...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff));
+const NDP_OPTION_SOURCE_LINK = 1;
+const NDP_OPTION_TARGET_LINK = 2;
+const NDP_OPTION_PREFIX = 3;
+const NDP_OPTION_MTU = 5;
+
+function ndpOptionBytes(options: readonly NDPOption[]): number[] {
+  const bytes: number[] = [];
+  for (const option of options) {
+    if (option.optionType === 'source-link-layer' || option.optionType === 'target-link-layer') {
+      bytes.push(option.optionType === 'source-link-layer' ? NDP_OPTION_SOURCE_LINK : NDP_OPTION_TARGET_LINK, 1, ...macBytes(option.address.toString()));
+    } else if (option.optionType === 'prefix-info') {
+      bytes.push(NDP_OPTION_PREFIX, 4, option.prefixLength & 0xff, (option.onLink ? 0x80 : 0) | (option.autonomous ? 0x40 : 0),
+        ...u32(option.validLifetime >>> 0), ...u32(option.preferredLifetime >>> 0), 0, 0, 0, 0,
+        ...ipv6Bytes(option.prefix.getHextets()));
+    } else if (option.optionType === 'mtu') {
+      bytes.push(NDP_OPTION_MTU, 1, 0, 0, ...u32(option.mtu >>> 0));
+    }
   }
-  const data: number[] = [];
-  for (let i = 0; i < (icmp.dataSize ?? 0); i++) data.push(i & 0xff);
-  return [...header, ...data];
+  return bytes;
+}
+
+function ndpBodyBytes(ndp: NDPMessage): number[] {
+  switch (ndp.ndpType) {
+    case 'router-solicitation': return [0, 0, 0, 0, ...ndpOptionBytes(ndp.options)];
+    case 'router-advertisement':
+      return [ndp.curHopLimit & 0xff, (ndp.managedFlag ? 0x80 : 0) | (ndp.otherConfigFlag ? 0x40 : 0), ...u16(ndp.routerLifetime & 0xffff),
+        ...u32(ndp.reachableTime >>> 0), ...u32(ndp.retransTimer >>> 0), ...ndpOptionBytes(ndp.options)];
+    case 'neighbor-solicitation': return [0, 0, 0, 0, ...ipv6Bytes(ndp.targetAddress.getHextets()), ...ndpOptionBytes(ndp.options)];
+    case 'neighbor-advertisement':
+      return [(ndp.routerFlag ? 0x80 : 0) | (ndp.solicitedFlag ? 0x40 : 0) | (ndp.overrideFlag ? 0x20 : 0), 0, 0, 0,
+        ...ipv6Bytes(ndp.targetAddress.getHextets()), ...ndpOptionBytes(ndp.options)];
+  }
+}
+
+function synthIcmpv6Bytes(icmp: ICMPv6Packet, sourceIp: string, destinationIp: string, expectedLength: number): number[] {
+  const type = icmpv6TypeNumber(icmp.icmpType);
+  let rest: number[];
+  if (icmp.ndp !== undefined) {
+    rest = ndpBodyBytes(icmp.ndp);
+  } else if (type === 128 || type === 129) {
+    rest = [...u16((icmp.id ?? 0) & 0xffff), ...u16((icmp.sequence ?? 0) & 0xffff)];
+    for (let i = 0; i < (icmp.dataSize ?? 0); i++) rest.push(i & 0xff);
+  } else if (type === 2) {
+    rest = u32((icmp.mtu ?? 0) >>> 0);
+  } else if (type === 4) {
+    rest = u32((icmp.pointer ?? 0) >>> 0);
+  } else {
+    rest = [0, 0, 0, 0];
+  }
+  if (icmp.invokingPacket !== undefined && type >= 1 && type <= 4) rest.push(...synthIpv6Bytes(icmp.invokingPacket));
+  if (expectedLength > 4) padTo(rest, expectedLength - 4);
+  return icmpv6WireBytes(type, icmp.code, rest, sourceIp, destinationIp);
 }
 
 function synthL4BytesV6(pkt: IPv6Packet): number[] {
   const payload = pkt.payload as { type?: string };
-  if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
-  if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
-  if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
+  const source = addressText(pkt.sourceIP);
+  const destination = addressText(pkt.destinationIP);
+  if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet, source, destination, pkt.payloadLength);
+  if (payload?.type === 'tcp') {
+    const seg = normalizeTcpSegment(pkt.payload);
+    return synthTcpBytes(seg, source, destination, Math.max(0, pkt.payloadLength - Math.max(5, seg.dataOffset || 5) * 4));
+  }
+  if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket, source, destination);
   if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   return [];
 }
@@ -352,21 +436,28 @@ function synthIpv6PayloadBytes(pkt: IPv6Packet): number[] {
   if (fragment === null) return synthL4BytesV6(pkt);
   const offsetField = ((fragment.fragmentOffset & 0x1fff) << 3) | (fragment.moreFragments ? 1 : 0);
   const header = [fragment.nextHeader & 0xff, 0, ...u16(offsetField), ...u32(fragment.identification >>> 0)];
+  const key = `6|${pkt.sourceIP}|${pkt.destinationIP}|${fragment.identification}`;
   const first = ipv6FirstFragmentView(pkt);
-  return first === null ? header : [...header, ...synthL4BytesV6(first)];
+  if (first !== null) {
+    const whole = synthL4BytesV6(first);
+    rememberFragmentBody(key, whole);
+    return [...header, ...padTo(whole.slice(0, fragment.length), fragment.length)];
+  }
+  return [...header, ...fragmentSlice(key, fragment.fragmentOffset * 8, fragment.length)];
 }
 
 function synthIpv6Bytes(pkt: IPv6Packet): number[] {
   const versionTrafficFlow = (6 << 28) | ((pkt.trafficClass & 0xff) << 20) | (pkt.flowLabel & 0xfffff);
+  const payload = synthIpv6PayloadBytes(pkt);
   const header = [
     ...u32(versionTrafficFlow >>> 0),
-    ...u16(pkt.payloadLength & 0xffff),
+    ...u16(Math.max(pkt.payloadLength, payload.length) & 0xffff),
     pkt.nextHeader & 0xff,
     pkt.hopLimit & 0xff,
     ...ipv6Bytes(pkt.sourceIP.getHextets()),
     ...ipv6Bytes(pkt.destinationIP.getHextets()),
   ];
-  return [...header, ...synthIpv6PayloadBytes(pkt)];
+  return [...header, ...payload];
 }
 
 function synthArpBytes(arp: ARPPacket): number[] {
@@ -378,7 +469,7 @@ function synthArpBytes(arp: ARPPacket): number[] {
     ...u16(arp.operation === 'reply' ? 2 : 1),
     ...macBytes(arp.senderMAC.toString()),
     ...ipBytes(arp.senderIP.toString()),
-    ...macBytes(arp.targetMAC.toString()),
+    ...(arp.operation === 'reply' ? macBytes(arp.targetMAC.toString()) : [0, 0, 0, 0, 0, 0]),
     ...ipBytes(arp.targetIP.toString()),
   ];
 }
@@ -403,7 +494,7 @@ function withEthernet(frame: EthernetFrame, l3Bytes: number[]): { raw: number[];
 
 const MINIMUM_RECEIVED_FRAME_BYTES = 60;
 
-export function decodeEthernetFrame(
+function decodeEthernetFrameBytes(
   frame: EthernetFrame,
   iface: string,
   direction: CaptureDirection,
@@ -439,9 +530,9 @@ export function decodeEthernetFrame(
     base.arpSenderIp = arp.senderIP.toString();
     base.arpSenderMac = arp.senderMAC.toString();
     base.arpTargetIp = arp.targetIP.toString();
-    base.arpTargetMac = arp.targetMAC.toString();
+    base.arpTargetMac = arp.operation === 'reply' ? arp.targetMAC.toString() : '00:00:00:00:00:00';
     const built = withEthernet(frame, synthArpBytes(arp));
-    base.raw = built.raw;
+    base.raw = padTo(built.raw, base.length);
     base.rawLinkOffset = built.offset;
     return base;
   }
@@ -465,14 +556,15 @@ export function decodeEthernetFrame(
     const built = withEthernet(frame, synthIpv4Bytes(ip));
     base.raw = built.raw;
     base.rawLinkOffset = built.offset;
+    reconcileTransportChecksums(base, (ip.ihl ?? 5) * 4);
     return base;
   }
 
   if (frame.etherType === ETHERTYPE_IPV6) {
     const ip6 = frame.payload as IPv6Packet;
     base.l3 = 'ipv6';
-    base.srcIp = ip6.sourceIP.toString();
-    base.dstIp = ip6.destinationIP.toString();
+    base.srcIp = addressText(ip6.sourceIP);
+    base.dstIp = addressText(ip6.destinationIP);
     base.ttl = ip6.hopLimit;
     base.ipTrafficClass = ip6.trafficClass;
     base.ipFlowLabel = ip6.flowLabel;
@@ -483,6 +575,7 @@ export function decodeEthernetFrame(
     const built = withEthernet(frame, synthIpv6Bytes(ip6));
     base.raw = built.raw;
     base.rawLinkOffset = built.offset;
+    if (base.fragment6 === undefined) reconcileTransportChecksums(base, 40);
     return base;
   }
 
@@ -492,7 +585,47 @@ export function decodeEthernetFrame(
   return base;
 }
 
-function decodeIcmpOrig(orig: IPv4Packet): IcmpOrigInfo {
+function reconcileTransportChecksums(base: CaptureFrame, networkHeaderBytes: number): void {
+  if (base.l4 !== 'tcp' && base.l4 !== 'udp') return;
+  if (base.l3 === 'ipv4' && (base.ipFragmentOffset ?? 0) > 0) return;
+  const start = base.rawLinkOffset + networkHeaderBytes;
+  const length = (base.ipTotalLength ?? 0) - networkHeaderBytes;
+  if (length <= 0 || base.raw.length < start + length) return;
+  const segment = base.raw.slice(start, start + length);
+  const field = base.l4 === 'tcp' ? 16 : 6;
+  const stored = (segment[field] << 8) | segment[field + 1];
+  segment[field] = 0;
+  segment[field + 1] = 0;
+  const real = transportChecksum(base.srcIp ?? '', base.dstIp ?? '', base.l4 === 'tcp' ? WIRE_PROTOCOLS.tcp : WIRE_PROTOCOLS.udp, segment);
+  if (base.l4 === 'tcp') {
+    base.tcpChecksum = stored;
+    base.tcpChecksumComputed = real;
+    base.tcpChecksumOk = stored === real;
+    return;
+  }
+  base.udpChecksum = stored;
+  base.udpChecksumComputed = real === 0 ? 0xffff : real;
+  base.udpChecksumOk = (stored === 0 && base.l3 === 'ipv4') || stored === base.udpChecksumComputed;
+}
+
+export function decodeEthernetFrame(
+  frame: EthernetFrame,
+  iface: string,
+  direction: CaptureDirection,
+  at: Date,
+  atMicros?: number,
+): CaptureFrame {
+  const base = decodeEthernetFrameBytes(frame, iface, direction, at, atMicros);
+  if (base.l3 === 'ipv6' && base.fragment6 === undefined) {
+    const carried = base.raw.length - base.rawLinkOffset;
+    if (carried > (base.ipTotalLength ?? 0)) base.ipTotalLength = carried;
+  }
+  base.length = Math.max(base.length, base.raw.length);
+  base.raw = padTo(base.raw, base.length);
+  return base;
+}
+
+function decodeIcmpOrig(orig: IPv4Packet, outer: CaptureFrame): IcmpOrigInfo {
   const info: IcmpOrigInfo = {
     srcIp: orig.sourceIP.toString(),
     dstIp: orig.destinationIP.toString(),
@@ -503,6 +636,10 @@ function decodeIcmpOrig(orig: IPv4Packet): IcmpOrigInfo {
     ipFlags: orig.flags,
     ipTotalLength: orig.totalLength,
     l4: 'other',
+    quoted: decodeEthernetFrame(
+      { srcMAC: LOOPBACK_MAC, dstMAC: LOOPBACK_MAC, etherType: ETHERTYPE_IPV4, payload: orig },
+      outer.iface, outer.direction, outer.at, outer.atMicros,
+    ),
   };
   if (orig.protocol === IP_PROTO_UDP) {
     const udp = orig.payload as UDPPacket;
@@ -542,7 +679,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.icmpTimestamps = icmp.timestamps;
     base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
     base.icmpNextHopMtu = icmp.mtu;
-    if (icmp.originalPacket) base.icmpOrig = decodeIcmpOrig(icmp.originalPacket);
+    if (icmp.originalPacket) base.icmpOrig = decodeIcmpOrig(icmp.originalPacket, base);
     return;
   }
   if (ip.protocol === IP_PROTO_TCP) {
@@ -609,8 +746,8 @@ function decodeIpv6Fragmentable(base: CaptureFrame, ip6: IPv6Packet): void {
 
 function decodeIcmpOrig6(orig: IPv6Packet): IcmpOrigInfo {
   const info: IcmpOrigInfo = {
-    srcIp: orig.sourceIP.toString(),
-    dstIp: orig.destinationIP.toString(),
+    srcIp: addressText(orig.sourceIP),
+    dstIp: addressText(orig.destinationIP),
     ttl: orig.hopLimit,
     ipId: 0,
     ipTos: orig.trafficClass,

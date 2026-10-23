@@ -76,8 +76,8 @@ describe('tcpdump IP fragmentation flags + minimal DNS summary (PRD-tcpdump.md P
     // before `dig` ever runs. Real `dig` also uses an unpredictable
     // (random) query ID for cache-poisoning resistance, so an exact value
     // was never a realistic assertion to begin with — match any ID instead.
-    expect(output).toMatch(/\d+\+ A\? www\.example\.com \(\d+\)/);
-    expect(output).toMatch(/\d+ 1\/0\/0 A 10\.0\.1\.80 \(\d+\)/);
+    expect(output).toMatch(/\d+\+ A\? www\.example\.com\. \(\d+\)/);
+    expect(output).toMatch(/\d+\*- 1\/0\/0 A 10\.0\.1\.80 \(\d+\)/);
     expect(output).not.toContain('UDP, length');
   }, 20000);
 

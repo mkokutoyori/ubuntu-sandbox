@@ -65,10 +65,11 @@ export async function launchTelnet(
   }
   const port = declaredPort.value;
 
-  const found = findHostByAddress(host, deps.resolverVfs, deps.device);
+  const literal = parseDialAddress(host);
+  const found = literal !== null ? { ip: host } : findHostByAddress(host, deps.resolverVfs, deps.device);
   if (!found) return fail(dialect.unresolved(host, port));
 
-  const destination = parseDialAddress(found.ip);
+  const destination = literal ?? parseDialAddress(found.ip);
   if (!destination) return fail(dialect.unresolved(host, port));
 
   const reach = await wireReachOutcomeRetransmitting(deps.device, found.ip, port);

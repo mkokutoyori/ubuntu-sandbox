@@ -15,7 +15,8 @@
  * frames and writes no log line.
  */
 
-import { isPathReachable } from '@/network/devices/linux/network/HostLookup';
+import { isPathReachable, topologyHoldsAddress } from '@/network/devices/linux/network/HostLookup';
+import { IPAddress } from '@/network/core/types';
 import type { Equipment } from '@/network/equipment/Equipment';
 
 /** Anything that knows whether its own transport is still up. */
@@ -102,6 +103,18 @@ export function firstSviAddress(dev: Equipment): string | undefined {
   return sviAddresses(dev)[0];
 }
 
+function reachedThroughGateway(device: Equipment, address: string): boolean {
+  if (!IPAddress.isValid(address)) return false;
+  const stack = (device as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } }).getTcpStack?.();
+  if (!stack?.hasEgressTo(address)) return false;
+  const target = new IPAddress(address);
+  return !device.getPorts().some((port) => {
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    return ip !== null && mask !== null && ip.isInSameSubnet(target, mask);
+  });
+}
+
 function isOwnAddress(device: Equipment, address: string): boolean {
   if (address === 'localhost' || address === '::1' || /^127\./.test(address)) return true;
   return device.getPorts().some((port) => port.getIPAddress()?.toString() === address);
@@ -119,5 +132,6 @@ export function peerLiveness(sourceDevice: Equipment, peerHost: string): () => b
   const sourceIp = firstConfiguredIp(sourceDevice);
   if (!sourceIp) return () => true;
   if (isOwnAddress(sourceDevice, peerHost)) return () => true;
+  if (!topologyHoldsAddress(peerHost, sourceDevice) && reachedThroughGateway(sourceDevice, peerHost)) return () => true;
   return pathLiveness(sourceIp, peerHost, sourceDevice);
 }
