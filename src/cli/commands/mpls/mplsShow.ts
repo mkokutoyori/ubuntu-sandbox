@@ -50,6 +50,7 @@ export interface LdpNeighborView {
   readonly peerIndex: number;
   readonly peerHoldMs: number;
   readonly keepAliveMs: number;
+  readonly loop: { readonly peer: boolean; readonly local: boolean; readonly peerLimit: number; readonly localLimit: number } | null;
   readonly sources: readonly LdpNeighborSource[];
   readonly addresses: readonly string[];
 }
@@ -93,6 +94,10 @@ export function formatLdpNeighbors(neighbors: readonly LdpNeighborView[], detail
     '        Addresses bound to peer LDP Ident:',
     ...addressRows(n.addresses),
     ...(detail ? [`        Peer holdtime: ${n.peerHoldMs} ms; KA interval: ${n.keepAliveMs} ms; Peer state: estab`] : []),
+    ...(detail && n.loop !== null ? [
+      `        Path Vector Loop Detection Peer/Local: ${n.loop.peer ? 'On' : 'Off'}/${n.loop.local ? 'On' : 'Off'}`,
+      `        Path Vector Limit Peer/Local: ${n.loop.peerLimit}/${n.loop.localLimit}`,
+    ] : []),
   ].join('\n'));
   return blocks.join('\n');
 }
@@ -175,6 +180,7 @@ export interface LdpParametersView {
   readonly targetedIntervalSeconds: number;
   readonly backoffInitialSeconds: number;
   readonly backoffMaximumSeconds: number;
+  readonly loop: { readonly maxHops: number; readonly pathVectorLimit: number } | null;
 }
 
 export function formatLdpParameters(view: LdpParametersView): string {
@@ -184,7 +190,12 @@ export function formatLdpParameters(view: LdpParametersView): string {
     `Session hold time: ${view.sessionHoldSeconds} sec; keep alive interval: ${view.keepAliveSeconds} sec`,
     `Discovery hello: holdtime: ${view.helloHoldSeconds} sec; interval: ${view.helloIntervalSeconds} sec`,
     `Discovery targeted hello: holdtime: ${view.targetedHoldSeconds} sec; interval: ${view.targetedIntervalSeconds} sec`,
+    ...(view.loop === null ? [] : [
+      `Downstream on Demand max hop count: ${view.loop.maxHops}`,
+      `Downstream on Demand Path Vector Limit: ${view.loop.pathVectorLimit}`,
+    ]),
     `LDP initial/maximum backoff: ${view.backoffInitialSeconds}/${view.backoffMaximumSeconds} sec`,
+    ...(view.loop === null ? [] : ['LDP loop detection: on']),
   ].join('\n');
 }
 

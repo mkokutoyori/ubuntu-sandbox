@@ -63,6 +63,10 @@ export interface LdpConfig {
   maxHopCount: number;
   advertisementMode: 'unsolicited' | 'on-demand';
   noRouteRetrySeconds: number;
+  pathVectorExplicit: boolean;
+  explicitNull: boolean;
+  backoffInitialSeconds: number;
+  backoffMaximumSeconds: number;
 }
 
 interface LabelRequestRecord {
@@ -108,8 +112,6 @@ export interface LdpForwardingRow {
 }
 
 const SESSION_RETRY_MS = 2000;
-const INIT_BACKOFF_FIRST_MS = 15000;
-const INIT_BACKOFF_MAX_MS = 120000;
 
 function fecKey(prefix: IPAddress, length: number): string {
   return `${prefix}/${length}`;
@@ -128,9 +130,10 @@ export class LdpEngine implements LdpSessionOwner {
   readonly config: LdpConfig = {
     helloIntervalSeconds: 5, helloHoldSeconds: LDP_LINK_HELLO_DEFAULT_HOLD_SECONDS, keepAliveSeconds: 180,
     controlMode: 'independent', maxPduLength: 4096,
-    targetedHelloIntervalSeconds: 15, targetedHelloHoldSeconds: LDP_TARGETED_HELLO_DEFAULT_HOLD_SECONDS, acceptTargetedHellos: false,
-    loopDetection: false, pathVectorLimit: 16, maxHopCount: 255,
+    targetedHelloIntervalSeconds: 10, targetedHelloHoldSeconds: 90, acceptTargetedHellos: false,
+    loopDetection: false, pathVectorLimit: 254, maxHopCount: 254,
     advertisementMode: 'unsolicited', noRouteRetrySeconds: 60,
+    pathVectorExplicit: false, explicitNull: false, backoffInitialSeconds: 15, backoffMaximumSeconds: 120,
   };
   private readonly enabledInterfaces = new Set<string>();
   private readonly adjacencyTable = new Map<string, LdpAdjacency>();
@@ -521,7 +524,7 @@ export class LdpEngine implements LdpSessionOwner {
     this.advertisedAddresses.delete(peerKey);
     if (rejected && session.role === 'active') {
       const previous = this.backoff.get(peerKey);
-      const delay = previous ? Math.min(previous.delay * 2, INIT_BACKOFF_MAX_MS) : INIT_BACKOFF_FIRST_MS;
+      const delay = previous ? Math.min(previous.delay * 2, this.config.backoffMaximumSeconds * 1000) : this.config.backoffInitialSeconds * 1000;
       this.backoff.set(peerKey, { until: this.getScheduler().now() + delay, delay });
     }
     this.reconcile();
@@ -742,7 +745,7 @@ export class LdpEngine implements LdpSessionOwner {
     const pathVector = message.pathVector ?? [];
     return hopCount > this.config.maxHopCount
       || pathVector.some(hop => hop.equals(this.localId.lsrId))
-      || pathVector.length > this.config.pathVectorLimit;
+      || (this.config.pathVectorLimit > 0 && pathVector.length > this.config.pathVectorLimit);
   }
 
   private dropLoopingMapping(session: LdpSession, peerKey: string, element: FecElement, key: string, label: MplsLabel): void {
@@ -759,10 +762,11 @@ export class LdpEngine implements LdpSessionOwner {
   ): LoopAttributes | null | 'exceeded' {
     if (session.negotiated?.loopDetection !== true) return null;
     if (binding.egress) return { hopCount: 1, pathVector: [] };
+    const usesPathVector = this.config.pathVectorLimit > 0;
     const owner = entry?.route.nextHop ? this.peerOwning(entry.route.nextHop, entry.route.iface) : null;
     const learned = owner === null ? undefined : this.receivedLoop.get(owner.key)?.get(key);
-    const pathVector = [...(learned?.pathVector ?? []), this.localId.lsrId];
-    if (pathVector.length > this.config.pathVectorLimit) return 'exceeded';
+    const pathVector = usesPathVector ? [...(learned?.pathVector ?? []), this.localId.lsrId] : [];
+    if (usesPathVector && pathVector.length > this.config.pathVectorLimit) return 'exceeded';
     return { hopCount: learned === undefined || learned.hopCount === 0 ? 0 : learned.hopCount + 1, pathVector };
   }
 
@@ -860,14 +864,14 @@ export class LdpEngine implements LdpSessionOwner {
     for (const [key, { fec, route }] of fecs) {
       const existing = this.localBindings.get(key);
       const egress = route.connected;
-      if (existing && existing.egress === egress) continue;
+      if (existing && existing.egress === egress && (!egress || existing.label.equals(this.egressLabel()))) continue;
       if (existing) {
         this.localBindings.delete(key);
         this.withdrawEverywhere(existing);
         if (!existing.egress) this.mpls.lfib.releaseLabel(existing.label);
       }
       this.localBindings.set(key, {
-        fec, label: egress ? MplsLabel.IMPLICIT_NULL : this.mpls.lfib.allocateLabel(), egress, revision: ++this.revisionCounter,
+        fec, label: egress ? this.egressLabel() : this.mpls.lfib.allocateLabel(), egress, revision: ++this.revisionCounter,
       });
     }
 
@@ -1038,7 +1042,7 @@ export class LdpEngine implements LdpSessionOwner {
   }
 
   backoffParameters(): { readonly initialSeconds: number; readonly maximumSeconds: number } {
-    return { initialSeconds: INIT_BACKOFF_FIRST_MS / 1000, maximumSeconds: INIT_BACKOFF_MAX_MS / 1000 };
+    return { initialSeconds: this.config.backoffInitialSeconds, maximumSeconds: this.config.backoffMaximumSeconds };
   }
 
   backoffEntries(): ReadonlyArray<{ readonly peer: string; readonly backoffSeconds: number; readonly waitingSeconds: number }> {
@@ -1054,6 +1058,41 @@ export class LdpEngine implements LdpSessionOwner {
 
   installsIlm(label: MplsLabel): boolean {
     return this.installedIlm.has(label.value);
+  }
+
+  private egressLabel(): MplsLabel {
+    return this.config.explicitNull ? MplsLabel.IPV4_EXPLICIT_NULL : MplsLabel.IMPLICIT_NULL;
+  }
+
+  setExplicitNull(enabled: boolean): void {
+    this.config.explicitNull = enabled;
+    this.reconcile();
+  }
+
+  setHoldTime(seconds: number): void {
+    this.config.keepAliveSeconds = seconds;
+  }
+
+  setTargetedHelloTimers(intervalSeconds: number | null, holdSeconds: number | null): void {
+    if (intervalSeconds !== null) this.config.targetedHelloIntervalSeconds = intervalSeconds;
+    if (holdSeconds !== null) this.config.targetedHelloHoldSeconds = holdSeconds;
+  }
+
+  setBackoff(initialSeconds: number, maximumSeconds: number): void {
+    this.config.backoffInitialSeconds = initialSeconds;
+    this.config.backoffMaximumSeconds = maximumSeconds;
+  }
+
+  setMaxHops(hops: number): void {
+    this.config.maxHopCount = hops;
+    if (!this.config.pathVectorExplicit) this.config.pathVectorLimit = hops;
+    if (this.config.loopDetection) this.resetSessions();
+  }
+
+  setPathVectorLimit(limit: number | null): void {
+    this.config.pathVectorExplicit = limit !== null;
+    this.config.pathVectorLimit = limit ?? this.config.maxHopCount;
+    if (this.config.loopDetection) this.resetSessions();
   }
 
   setAdvertisementMode(mode: 'unsolicited' | 'on-demand'): void {

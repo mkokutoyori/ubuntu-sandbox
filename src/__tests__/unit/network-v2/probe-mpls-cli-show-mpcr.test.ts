@@ -156,7 +156,7 @@ describe('parameters, capabilities, backoff and label range', () => {
       'Downstream label pool: min label 16; max label 100000',
       'Session hold time: 180 sec; keep alive interval: 60 sec',
       'Discovery hello: holdtime: 15 sec; interval: 5 sec',
-      'Discovery targeted hello: holdtime: 45 sec; interval: 15 sec',
+      'Discovery targeted hello: holdtime: 90 sec; interval: 10 sec',
       'LDP initial/maximum backoff: 15/120 sec',
     ].join('\n'));
   });

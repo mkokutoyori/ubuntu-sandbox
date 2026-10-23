@@ -2,6 +2,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { LdpEngine } from '@/network/ldp/LdpEngine';
 import type { MplsEngine } from '@/network/mpls/MplsEngine';
 import type { MplsLabel } from '@/network/mpls/MplsLabel';
+import { LABEL_RANGE_DEFAULT_MAX, LABEL_RANGE_DEFAULT_MIN } from '@/network/mpls/Lfib';
 import { IPAddress } from '@/network/core/types';
 import type { PseudowireEngine } from '@/network/pw/PseudowireEngine';
 import {
@@ -33,6 +34,12 @@ const GLOBAL_OR_INTERFACE = Object.freeze(['config', 'config-if', 'config-subif'
 const SHOW = Object.freeze(['user', 'privileged']);
 const DEFAULT_HELLO_INTERVAL_SECONDS = 5;
 const DEFAULT_HELLO_HOLD_SECONDS = 15;
+const DEFAULT_MAX_HOPS = 254;
+const DEFAULT_SESSION_HOLD_SECONDS = 180;
+const DEFAULT_TARGETED_HOLD_SECONDS = 90;
+const DEFAULT_TARGETED_INTERVAL_SECONDS = 10;
+const DEFAULT_BACKOFF_INITIAL_SECONDS = 15;
+const DEFAULT_BACKOFF_MAXIMUM_SECONDS = 120;
 
 export function mplsNeighborViews(host: MplsShellHost, filter: { readonly address?: string; readonly iface?: string } = {}): LdpNeighborView[] {
   const engine = host.ldp();
@@ -55,6 +62,9 @@ export function mplsNeighborViews(host: MplsShellHost, filter: { readonly addres
       upMs: session.operationalSinceMs === null ? 0 : Math.max(0, engine.nowMs() - session.operationalSinceMs),
       uid: session.uid, peerIndex: session.peerIndex,
       peerHoldMs: keepAliveSeconds * 1000, keepAliveMs: Math.floor(keepAliveSeconds / 3) * 1000,
+      loop: config.loopDetection ? {
+        peer: session.peerLoopDetection, local: true, peerLimit: session.peerPathVectorLimit, localLimit: config.pathVectorLimit,
+      } : null,
       sources, addresses: [...session.peerAddresses.keys()].sort(addressOrder),
     };
   }).filter(view => (filter.address === undefined || view.peerId.startsWith(`${filter.address}:`) || view.addresses.includes(filter.address))
@@ -218,6 +228,99 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
         return '';
       },
       undo: () => { host().setRouterIdSource(null, false); return ''; },
+    },
+    {
+      id: 'mpls-label-range',
+      path: ['mpls', 'label', 'range',
+        { name: 'minimum', type: 'INT', range: [16, 1048575], description: 'Smallest label allowed in the label space' },
+        { name: 'maximum', type: 'INT', range: [16, 1048575], description: 'Largest label allowed in the label space' }],
+      description: 'Configure the range of local labels',
+      undoDescription: 'Restore the default range of local labels',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => {
+        if (Number(args.minimum) >= Number(args.maximum)) return "% Invalid input detected at '^' marker.";
+        host().mpls().lfib.setLabelRange(Number(args.minimum), Number(args.maximum));
+        return '';
+      },
+      undo: () => { host().mpls().lfib.setLabelRange(LABEL_RANGE_DEFAULT_MIN, LABEL_RANGE_DEFAULT_MAX); return ''; },
+    },
+    {
+      id: 'mpls-ldp-loop-detection',
+      path: ['mpls', 'ldp', 'loop-detection'],
+      description: 'Enable the LDP optional loop detection mechanism',
+      undoDescription: 'Disable LDP loop detection',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().ldp().setLoopDetection(true); return ''; },
+      undo: () => { host().ldp().setLoopDetection(false); return ''; },
+    },
+    {
+      id: 'mpls-ldp-maxhops',
+      path: ['mpls', 'ldp', 'maxhops', { name: 'hops', type: 'INT', range: [1, 255], description: 'Maximum hop count' }],
+      description: 'Limit the number of hops permitted in an LSP',
+      undoDescription: 'Restore the default maximum hop count',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => { host().ldp().setMaxHops(Number(args.hops)); return ''; },
+      undo: () => { host().ldp().setMaxHops(DEFAULT_MAX_HOPS); return ''; },
+    },
+    {
+      id: 'mpls-ldp-path-vector-maxlength',
+      path: ['mpls', 'ldp', 'path-vector', 'maxlength', { name: 'length', type: 'INT', range: [0, 254], description: 'Maximum number of router IDs in the path vector (0 disables it)' }],
+      description: 'Set the maximum path vector length',
+      undoDescription: 'Track the maximum hop count again',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => { host().ldp().setPathVectorLimit(Number(args.length)); return ''; },
+      undo: () => { host().ldp().setPathVectorLimit(null); return ''; },
+    },
+    {
+      id: 'mpls-ldp-holdtime',
+      path: ['mpls', 'ldp', 'holdtime', { name: 'seconds', type: 'INT', range: [15, 65535], description: 'Session hold time in seconds' }],
+      description: 'Change the time an LDP session is kept without messages',
+      undoDescription: 'Restore the default session hold time',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => { host().ldp().setHoldTime(Number(args.seconds)); return ''; },
+      undo: () => { host().ldp().setHoldTime(DEFAULT_SESSION_HOLD_SECONDS); return ''; },
+    },
+    {
+      id: 'mpls-ldp-discovery-targeted-hello-holdtime',
+      path: ['mpls', 'ldp', 'discovery', 'targeted-hello', 'holdtime', { name: 'seconds', type: 'INT', range: [1, 65535], description: 'Hold time in seconds' }],
+      description: 'LDP discovery targeted Hello hold time',
+      undoDescription: 'Restore the default targeted Hello hold time',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => { host().ldp().setTargetedHelloTimers(null, Number(args.seconds)); return ''; },
+      undo: () => { host().ldp().setTargetedHelloTimers(null, DEFAULT_TARGETED_HOLD_SECONDS); return ''; },
+    },
+    {
+      id: 'mpls-ldp-discovery-targeted-hello-interval',
+      path: ['mpls', 'ldp', 'discovery', 'targeted-hello', 'interval', { name: 'seconds', type: 'INT', range: [1, 65535], description: 'Interval in seconds' }],
+      description: 'LDP discovery targeted Hello interval',
+      undoDescription: 'Restore the default targeted Hello interval',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => { host().ldp().setTargetedHelloTimers(Number(args.seconds), null); return ''; },
+      undo: () => { host().ldp().setTargetedHelloTimers(DEFAULT_TARGETED_INTERVAL_SECONDS, null); return ''; },
+    },
+    {
+      id: 'mpls-ldp-backoff',
+      path: ['mpls', 'ldp', 'backoff',
+        { name: 'initial', type: 'INT', range: [5, 2147483], description: 'Initial backoff in seconds' },
+        { name: 'maximum', type: 'INT', range: [5, 2147483], description: 'Maximum backoff in seconds' }],
+      description: 'Configure the LDP session setup backoff',
+      undoDescription: 'Restore the default backoff',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => {
+        if (Number(args.initial) > Number(args.maximum)) return "% Invalid input detected at '^' marker.";
+        host().ldp().setBackoff(Number(args.initial), Number(args.maximum));
+        return '';
+      },
+      undo: () => { host().ldp().setBackoff(DEFAULT_BACKOFF_INITIAL_SECONDS, DEFAULT_BACKOFF_MAXIMUM_SECONDS); return ''; },
+    },
+    {
+      id: 'mpls-ldp-explicit-null',
+      path: ['mpls', 'ldp', 'explicit-null'],
+      description: 'Advertise Explicit Null instead of Implicit Null',
+      undoDescription: 'Advertise Implicit Null again',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().ldp().setExplicitNull(true); return ''; },
+      undo: () => { host().ldp().setExplicitNull(false); return ''; },
     },
     {
       id: 'mpls-ldp-discovery-hello-holdtime',
@@ -395,6 +498,7 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
           helloIntervalSeconds: config.helloIntervalSeconds, targetedHoldSeconds: config.targetedHelloHoldSeconds,
           targetedIntervalSeconds: config.targetedHelloIntervalSeconds, backoffInitialSeconds: backoff.initialSeconds,
           backoffMaximumSeconds: backoff.maximumSeconds,
+          loop: config.loopDetection ? { maxHops: config.maxHopCount, pathVectorLimit: config.pathVectorLimit } : null,
         });
       },
     },
@@ -468,6 +572,18 @@ export function mplsGlobalRunningConfig(host: MplsShellHost): string[] {
   if (host.ldp().config.acceptTargetedHellos) lines.push('mpls ldp discovery targeted-hello accept');
   for (const target of host.ldp().configuredTargets()) lines.push(`mpls ldp neighbor ${target} targeted ldp`);
   const config = host.ldp().config;
+  const range = host.mpls().lfib.labelRange();
+  if (range.min !== LABEL_RANGE_DEFAULT_MIN || range.max !== LABEL_RANGE_DEFAULT_MAX) lines.push(`mpls label range ${range.min} ${range.max}`);
+  if (config.loopDetection) lines.push('mpls ldp loop-detection');
+  if (config.maxHopCount !== DEFAULT_MAX_HOPS) lines.push(`mpls ldp maxhops ${config.maxHopCount}`);
+  if (config.pathVectorExplicit) lines.push(`mpls ldp path-vector maxlength ${config.pathVectorLimit}`);
+  if (config.keepAliveSeconds !== DEFAULT_SESSION_HOLD_SECONDS) lines.push(`mpls ldp holdtime ${config.keepAliveSeconds}`);
+  if (config.targetedHelloHoldSeconds !== DEFAULT_TARGETED_HOLD_SECONDS) lines.push(`mpls ldp discovery targeted-hello holdtime ${config.targetedHelloHoldSeconds}`);
+  if (config.targetedHelloIntervalSeconds !== DEFAULT_TARGETED_INTERVAL_SECONDS) lines.push(`mpls ldp discovery targeted-hello interval ${config.targetedHelloIntervalSeconds}`);
+  if (config.backoffInitialSeconds !== DEFAULT_BACKOFF_INITIAL_SECONDS || config.backoffMaximumSeconds !== DEFAULT_BACKOFF_MAXIMUM_SECONDS) {
+    lines.push(`mpls ldp backoff ${config.backoffInitialSeconds} ${config.backoffMaximumSeconds}`);
+  }
+  if (config.explicitNull) lines.push('mpls ldp explicit-null');
   if (config.helloHoldSeconds !== DEFAULT_HELLO_HOLD_SECONDS) lines.push(`mpls ldp discovery hello holdtime ${config.helloHoldSeconds}`);
   if (config.helloIntervalSeconds !== DEFAULT_HELLO_INTERVAL_SECONDS) lines.push(`mpls ldp discovery hello interval ${config.helloIntervalSeconds}`);
   return lines;

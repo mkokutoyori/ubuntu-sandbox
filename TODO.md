@@ -3585,6 +3585,20 @@ ligne des « Targeted Hellos » de l'exemple : la forme suit le tableau des
 champs du livre. `show mpls ldp capabilities` ne liste rien parce que ce LSR
 n'annonce aucun TLV de capacite.
 
+### [cli-mpls-config] les commandes de configuration MPLS du livre non evaluees
+Servies et evaluees : `mpls label range`, `mpls ldp loop-detection | maxhops |
+path-vector maxlength | holdtime | backoff | explicit-null` et les minuteries
+`discovery hello | targeted-hello`. Refusees faute de moteur : la forme `static`
+de `mpls label range` (aucune liaison statique `mpls static binding ipv4`), les
+formes `for` / `to` de `explicit-null` et toute commande `advertise-labels` /
+`neighbor labels accept` (pas de filtrage des annonces par ACL), `mpls ldp
+discovery transport-address`, `session protection`, `igp sync`, `graceful-restart`
+et les mots de passe MD5. Un `mpls label range` qui chevauche la plage utilisee
+est applique immediatement, comme le livre l'autorise pour les logiciels a MFI,
+y compris quand elle ne chevauche pas (le livre exige alors un rechargement).
+Le livre dit de `loop-detection` et `maxhops` qu'ils servent le mode Downstream on
+Demand des commutateurs ATM : ici ils pilotent aussi le mode non sollicite.
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit
