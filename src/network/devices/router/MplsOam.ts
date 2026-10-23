@@ -37,6 +37,7 @@ export interface MplsOamHost {
 
 export interface LspPingOptions extends EchoRequestOptions {
   readonly ttl?: number;
+  readonly trafficClass?: number;
 }
 
 export interface LspTraceOptions extends EchoRequestOptions {
@@ -51,7 +52,7 @@ export interface LspTraceHop {
 
 export type LspPingOutcome =
   | { readonly kind: 'reply'; readonly reply: EchoReply }
-  | { readonly kind: 'not-sent'; readonly reason: 'no-label-binding' | 'no-vpn-route' | 'interface-not-mpls' }
+  | { readonly kind: 'not-sent'; readonly reason: 'no-label-binding' | 'no-vpn-route' | 'interface-not-mpls' | 'size-exceeds-mtu' }
   | { readonly kind: 'timeout' };
 
 export class RouterMplsOam implements EchoResponderHost {
@@ -70,7 +71,10 @@ export class RouterMplsOam implements EchoResponderHost {
     const route = this.routeFor(fecs);
     if (route === 'no-label-binding' || route === 'no-vpn-route') return { kind: 'not-sent', reason: route };
     if (!this.host.mplsEnabled(route.iface) && route.labels.length > 0) return { kind: 'not-sent', reason: 'interface-not-mpls' };
-    const built = this.agent.buildRequest(this.host.routerAddress(), fecs, options);
+    if (options.targetSize !== undefined && options.targetSize > this.host.interfaceMtu(route.iface)) {
+      return { kind: 'not-sent', reason: 'size-exceeds-mtu' };
+    }
+    const built = this.agent.buildRequest(this.host.routerAddress(), fecs, { ...options, labelBytes: 4 * route.labels.length });
     this.host.claimPort(built.pending.sourcePort, (packet, udp) => this.agent.receiveReply(packet.sourceIP, udp));
     try {
       if (route.labels.length === 0) {
@@ -78,7 +82,7 @@ export class RouterMplsOam implements EchoResponderHost {
       } else {
         const outer = options.ttl ?? MAX_MPLS_TTL;
         const entries = route.labels.map((label, index) => makeLabelStackEntry(
-          MplsLabel.of(label), index === route.labels.length - 1 && route.innermostTtl !== null ? route.innermostTtl : outer));
+          MplsLabel.of(label), index === route.labels.length - 1 && route.innermostTtl !== null ? route.innermostTtl : outer, options.trafficClass ?? 0));
         this.host.sendLabelled(route.iface, route.nextHop, { type: 'mpls', stack: withBottomOfStack(entries), payload: built.packet });
       }
       const reply = built.pending.reply;
@@ -92,7 +96,7 @@ export class RouterMplsOam implements EchoResponderHost {
     const route = this.routeFor(fecs);
     if (route === 'no-label-binding' || route === 'no-vpn-route') return [];
     const hops: LspTraceHop[] = [];
-    let ddmap: Ddmap | undefined = options.ddmap ?? this.firstHopMapping(route);
+    let ddmap: Ddmap | undefined = options.ddmap ?? this.mappingTowards(route);
     let traced: readonly TargetFec[] = fecs;
     for (let ttl = 1; ttl <= (options.maxTtl ?? 30); ttl++) {
       const outcome = this.ping(traced, { ...options, ttl, ddmap });
@@ -109,7 +113,21 @@ export class RouterMplsOam implements EchoResponderHost {
     return hops;
   }
 
-  private firstHopMapping(route: { iface: string; nextHop: IPAddress; labels: number[] }): Ddmap {
+  describeFirstHop(fecs: readonly TargetFec[]): { readonly interfaceAddress: IPAddress; readonly mtu: number; readonly labels: readonly number[] } | null {
+    const route = this.routeFor(fecs);
+    if (route === 'no-label-binding' || route === 'no-vpn-route') return null;
+    return {
+      interfaceAddress: this.host.interfaceAddress(route.iface) ?? this.host.routerAddress(),
+      mtu: this.host.interfaceMtu(route.iface), labels: route.labels,
+    };
+  }
+
+  firstHopMapping(fecs: readonly TargetFec[]): Ddmap | null {
+    const route = this.routeFor(fecs);
+    return route === 'no-label-binding' || route === 'no-vpn-route' ? null : this.mappingTowards(route);
+  }
+
+  private mappingTowards(route: { iface: string; nextHop: IPAddress; labels: number[] }): Ddmap {
     return {
       mtu: this.host.interfaceMtu(route.iface), addressType: DdmapAddressType.Ipv4Numbered,
       interfaceAndLabelStackRequested: false, nonIp: false,

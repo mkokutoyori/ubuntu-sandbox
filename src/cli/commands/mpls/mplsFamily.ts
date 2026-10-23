@@ -1,6 +1,9 @@
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { LdpEngine } from '@/network/ldp/LdpEngine';
 import type { MplsEngine } from '@/network/mpls/MplsEngine';
+import type { RouterMplsOam } from '@/network/devices/router/MplsOam';
+import { PadInstruction, ReplyMode, type TargetFec } from '@/network/mpls/oam/EchoCodec';
+import { formatPingMpls, formatTraceMpls } from './mplsOamShow';
 import type { MplsLabel } from '@/network/mpls/MplsLabel';
 import { LABEL_RANGE_DEFAULT_MAX, LABEL_RANGE_DEFAULT_MIN } from '@/network/mpls/Lfib';
 import { IPAddress } from '@/network/core/types';
@@ -25,6 +28,7 @@ export interface MplsShellHost {
   interfaceMtu(name: string): number;
   interfaceMac(name: string): string | null;
   neighbourMac(address: string): string | null;
+  oam(): RouterMplsOam;
   vpnLocalLabels(): ReadonlyArray<{ readonly label: MplsLabel; readonly network: string; readonly length: number; readonly vrf: string }>;
 }
 
@@ -32,6 +36,7 @@ const GLOBAL = Object.freeze(['config']);
 const INTERFACE = Object.freeze(['config-if', 'config-subif']);
 const GLOBAL_OR_INTERFACE = Object.freeze(['config', 'config-if', 'config-subif']);
 const SHOW = Object.freeze(['user', 'privileged']);
+const PRIVILEGED = Object.freeze(['privileged']);
 const DEFAULT_HELLO_INTERVAL_SECONDS = 5;
 const DEFAULT_HELLO_HOLD_SECONDS = 15;
 const DEFAULT_MAX_HOPS = 254;
@@ -159,6 +164,59 @@ function forwardingDetail(host: MplsShellHost, iface: string, nextHop: string, s
   const header = destination === null || mac === null ? '' : `${destination}${mac}8847`.replace(/[:.-]/g, '').toUpperCase();
   const explicit = stack.filter(label => label !== 3);
   return { encapsulationBytes: header.length / 2, mtu: host.interfaceMtu(iface) + 4 - 4 * explicit.length, labelStack: stack, header, vpn };
+}
+
+function ldpFec(text: string): TargetFec | null {
+  const [address, length] = text.split('/');
+  const bits = Number(length);
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(address) || !Number.isInteger(bits) || bits < 0 || bits > 32) return null;
+  return { kind: 'ldp-ipv4', prefix: new IPAddress(address), length: bits };
+}
+
+const DEFAULT_PING_REPEAT = 5;
+const DEFAULT_PING_SIZE = 100;
+const DEFAULT_OAM_TIMEOUT_SECONDS = 2;
+
+function echoOptions(args: Record<string, string>) {
+  return {
+    replyMode: args.mode === 'router-alert' ? ReplyMode.UdpRouterAlert : ReplyMode.Udp,
+    ...(args.dscp === undefined ? {} : { replyTosByte: Number(args.dscp) << 2 }),
+    ...(args.reply !== 'pad-tlv' ? {} : { pad: { instruction: PadInstruction.CopyToReply, length: 1 } }),
+    ...(args.exp === undefined ? {} : { trafficClass: Number(args.exp) }),
+  };
+}
+
+function runPingMpls(host: MplsShellHost, args: Record<string, string>): string {
+  const fec = ldpFec(String(args.target));
+  if (fec === null) return "% Invalid input detected at '^' marker.";
+  const count = args.count === undefined ? DEFAULT_PING_REPEAT : Number(args.count);
+  const size = args.size === undefined ? DEFAULT_PING_SIZE : Number(args.size);
+  const timeoutSeconds = args.timeout === undefined ? DEFAULT_OAM_TIMEOUT_SECONDS : Number(args.timeout);
+  const outcomes = [];
+  for (let attempt = 0; attempt < count; attempt++) {
+    const outcome = host.oam().ping([fec], {
+      ...echoOptions(args), targetSize: size,
+      ...(args.ttl === undefined ? {} : { ttl: Number(args.ttl) }),
+      ...(args.dsmap === undefined ? {} : { ddmap: host.oam().firstHopMapping([fec]) ?? undefined }),
+    });
+    outcomes.push({ outcome, counted: outcome.kind !== 'reply' || outcome.reply.roundTripMs <= timeoutSeconds * 1000 });
+  }
+  const settled = outcomes.map(entry => entry.counted ? entry : { outcome: { kind: 'timeout' as const }, counted: false });
+  return formatPingMpls({ count, size, target: String(args.target).split('/')[0], timeoutSeconds }, settled, args.verbose !== undefined);
+}
+
+function runTraceMpls(host: MplsShellHost, args: Record<string, string>): string {
+  const fec = ldpFec(String(args.target));
+  if (fec === null) return "% Invalid input detected at '^' marker.";
+  const origin = host.oam().describeFirstHop([fec]);
+  const timeoutSeconds = args.timeout === undefined ? DEFAULT_OAM_TIMEOUT_SECONDS : Number(args.timeout);
+  if (origin === null) {
+    return `Tracing MPLS Label Switched Path to ${args.target}, timeout is ${timeoutSeconds} seconds\nQ 1`;
+  }
+  const hops = host.oam().traceroute([fec], { ...echoOptions(args), ...(args.ttl === undefined ? {} : { maxTtl: Number(args.ttl) }) });
+  return formatTraceMpls({ target: String(args.target), timeoutSeconds }, {
+    interfaceAddress: String(origin.interfaceAddress), mtu: origin.mtu, labels: origin.labels,
+  }, hops);
 }
 
 function maskLength(text: string): number | null {
@@ -380,6 +438,52 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
         for (const iface of host().selectedInterfaces()) host().pseudowires().remove(iface);
         return '';
       },
+    },
+    {
+      id: 'ping-mpls-ipv4',
+      path: ['ping', 'mpls', 'ipv4', { name: 'target', type: 'IP_PREFIX', description: 'Address prefix of the target to be tested (address/mask-length)' }],
+      description: 'Check MPLS LSP connectivity',
+      modes: PRIVILEGED, minPrivilege: 15,
+      options: [
+        { keyword: 'repeat', description: 'Number of times to resend the same packet', argument: { name: 'count', type: 'INT', range: [1, 2147483647], description: 'Repeat count' } },
+        { keyword: 'size', description: 'Size of the packet with the label stack imposed', argument: { name: 'size', type: 'INT', range: [40, 18024], description: 'Packet size' } },
+        { keyword: 'timeout', description: 'Timeout interval for an MPLS request packet', argument: { name: 'timeout', type: 'INT', range: [0, 3600], description: 'Seconds' } },
+        { keyword: 'ttl', description: 'Time-to-live of the outermost label', argument: { name: 'ttl', type: 'INT', range: [1, 255], description: 'Time to live' } },
+        { keyword: 'exp', description: 'MPLS experimental field value in the MPLS header', argument: { name: 'exp', type: 'INT', range: [0, 7], description: 'EXP bits' } },
+        {
+          keyword: 'reply', description: 'Reply options',
+          choices: [
+            { keyword: 'mode', description: 'Reply mode', argument: { name: 'mode', type: 'ENUM', description: 'Reply mode', values: [
+              { keyword: 'ipv4', description: 'Reply with an IPv4 UDP packet' }, { keyword: 'router-alert', description: 'Reply with an IPv4 UDP packet with router alert' }] } },
+            { keyword: 'dscp', description: 'DSCP of the echo reply', argument: { name: 'dscp', type: 'INT', range: [0, 63], description: 'DSCP value' } },
+            { keyword: 'pad-tlv', description: 'Ask the replier to copy the pad TLV' },
+          ],
+        },
+        { keyword: 'dsmap', description: 'Interrogate a transit router for downstream mapping information' },
+        { keyword: 'verbose', description: 'Display the reply sender address and the return codes' },
+      ],
+      run: (_session, args) => runPingMpls(host(), args),
+    },
+    {
+      id: 'traceroute-mpls-ipv4',
+      path: ['traceroute', 'mpls', 'ipv4', { name: 'target', type: 'IP_PREFIX', description: 'Address prefix of the target to be tested (address/mask-length)' }],
+      description: 'Discover MPLS LSP routes',
+      modes: PRIVILEGED, minPrivilege: 15,
+      options: [
+        { keyword: 'timeout', description: 'Timeout interval for an MPLS request packet', argument: { name: 'timeout', type: 'INT', range: [0, 3600], description: 'Seconds' } },
+        { keyword: 'ttl', description: 'Maximum time-to-live', argument: { name: 'ttl', type: 'INT', range: [1, 255], description: 'Maximum hop count' } },
+        { keyword: 'exp', description: 'MPLS experimental field value in the MPLS header', argument: { name: 'exp', type: 'INT', range: [0, 7], description: 'EXP bits' } },
+        {
+          keyword: 'reply', description: 'Reply options',
+          choices: [
+            { keyword: 'mode', description: 'Reply mode', argument: { name: 'mode', type: 'ENUM', description: 'Reply mode', values: [
+              { keyword: 'ipv4', description: 'Reply with an IPv4 UDP packet' }, { keyword: 'router-alert', description: 'Reply with an IPv4 UDP packet with router alert' }] } },
+            { keyword: 'dscp', description: 'DSCP of the echo reply', argument: { name: 'dscp', type: 'INT', range: [0, 63], description: 'DSCP value' } },
+            { keyword: 'pad-tlv', description: 'Ask the replier to copy the pad TLV' },
+          ],
+        },
+      ],
+      run: (_session, args) => runTraceMpls(host(), args),
     },
     {
       id: 'show-mpls-interfaces',

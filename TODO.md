@@ -3599,6 +3599,21 @@ y compris quand elle ne chevauche pas (le livre exige alors un rechargement).
 Le livre dit de `loop-detection` et `maxhops` qu'ils servent le mode Downstream on
 Demand des commutateurs ATM : ici ils pilotent aussi le mode non sollicite.
 
+### [cli-mpls-oam] le reste de `ping mpls` / `traceroute mpls` du livre
+Servis : la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
+`reply mode | dscp | pad-tlv`, `dsmap` et `verbose` pour le ping ; `timeout`,
+`ttl`, `exp` et `reply ...` pour le traceroute. Absents (refuses, jamais
+acceptes sans effet) : `pseudowire` (la FEC 128/129 de la RFC 8029 n'est pas
+validee), `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
+`force-explicit-null`, `output`, `revision`, `flags fec`, `hashkey`,
+`destination` (plages 127/8) et `traceroute mpls multipath`. Une seule clause
+`reply` par commande : le sac d'options ne propose un mot-cle qu'une fois,
+alors qu'IOS accepte `reply mode ... reply dscp ...`. Le mode interactif
+(`ping` puis `Protocol [ip]: mpls`) n'existe pas. Les temps aller-retour sont
+ceux de `PathClock` : quelques microsecondes, donc `0/0/0 ms` en LAN.
+Les lettres `L` et `B` du bloc Codes ne sont pas produites : `B` pour le code
+9, `L` jamais (le livre ne dit pas a quel code elle correspond).
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit

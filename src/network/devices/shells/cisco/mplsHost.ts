@@ -17,6 +17,7 @@ export function mplsHostOf(router: Router, selectedInterfaces: () => string[] = 
       const source = router.getLdpEngine().routerIdSource;
       return source ? `${source.iface}${source.force ? ' force' : ''}` : null;
     },
+    oam: () => router.getMplsOam(),
     interfaceMtu: (name) => router.getPort(name)?.getMTU() ?? 1500,
     interfaceMac: (name) => router.getPort(name)?.getMAC().toString() ?? null,
     neighbourMac: (address) => router._getArpTableInternal().get(address)?.mac.toString() ?? null,
