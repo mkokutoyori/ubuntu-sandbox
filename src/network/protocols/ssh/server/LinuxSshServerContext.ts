@@ -63,7 +63,7 @@ import { NestedSshLogin, type NestedSshLaunch } from '@/shell/NestedSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
-import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { editorLaunchFailure, launchedFilePath, parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklogs';
@@ -705,10 +705,12 @@ export class LinuxSshServerContext implements ISshServerContext {
           const launch = parseEditorLaunch(commandLine);
           if (!launch) return null;
           const fs = new LinuxEditorFsContext(device, session);
-          const content = launch.filePath === '' ? null : fs.readFile(launch.filePath);
+          if (editorLaunchFailure(fs, launch) !== null) return null;
+          const filePath = launchedFilePath(fs, launch);
+          const content = filePath === '' ? null : fs.readFile(filePath);
           return createEditorSession(launch.editor, {
             fs,
-            filePath: launch.filePath === '' ? '' : fs.resolvePath(launch.filePath),
+            filePath,
             content: content ?? '',
             isNewFile: content === null,
             owner: userCtx.username,

@@ -28,12 +28,13 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   private shellLog: string[] = [];
   private shellHandler: (cmd: string) => string;
   private filterHandler?: (cmd: string, input: string) => string;
-  private childShell?: (cmd: string, stdin: string | undefined) => ChildShellRun;
+  private childShell?: (cmd: string, stdin: string | undefined, workingDirectory: string | undefined) => ChildShellRun;
 
   constructor(
     initial: Record<string, string> = {},
     shellHandler: (cmd: string) => string = () => '',
     filterHandler?: (cmd: string, input: string) => string,
+    private readonly workingDirectory = '/tmp',
   ) {
     for (const [path, content] of Object.entries(initial)) {
       this.files.set(path, content);
@@ -51,7 +52,7 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   }
 
   resolvePath(path: string): string {
-    return this.normalize(path.startsWith('/') ? path : `/tmp/${path}`);
+    return this.normalize(path.startsWith('/') ? path : `${this.workingDirectory}/${path}`);
   }
 
   readFile(path: string): string | null {
@@ -78,7 +79,7 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     const resolved = this.resolvePath(path);
     if (this.files.has(resolved)) return 'file';
     if (DEVICE_PATHS.has(resolved)) return 'device';
-    if (resolved === '/' || resolved === '/tmp') return 'directory';
+    if (resolved === '/' || resolved === '/tmp' || resolved === this.workingDirectory || this.workingDirectory.startsWith(`${resolved}/`)) return 'directory';
     const prefix = `${resolved}/`;
     return [...this.files.keys()].some((name) => name.startsWith(prefix)) ? 'directory' : 'missing';
   }
@@ -116,12 +117,12 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     return builtinFilter(cmd, input) ?? input;
   }
 
-  runChildShell(cmd: string, stdin?: string): ChildShellRun {
-    if (this.childShell) return this.childShell(cmd, stdin);
+  runChildShell(cmd: string, stdin?: string, workingDirectory?: string): ChildShellRun {
+    if (this.childShell) return this.childShell(cmd, stdin, workingDirectory);
     return { output: stdin === undefined ? this.runShellCommand(cmd) : this.filterThroughShell(cmd, stdin), status: 0 };
   }
 
-  useChildShell(handler: (cmd: string, stdin: string | undefined) => ChildShellRun): void {
+  useChildShell(handler: (cmd: string, stdin: string | undefined, workingDirectory: string | undefined) => ChildShellRun): void {
     this.childShell = handler;
   }
 

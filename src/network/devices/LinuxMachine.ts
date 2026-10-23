@@ -4877,9 +4877,11 @@ export abstract class LinuxMachine extends EndHost
   }
 
   editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
-    const type = this.executor.vfs.getType(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
-    if (type === null) return 'missing';
-    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
+    return this.executor.editorPathKind(path);
+  }
+
+  editorCanonicalPath(path: string): string | null {
+    return this.executor.vfs.realpath(path, this.executor.getCwd(), true);
   }
 
   editorPathIsReadOnly(path: string): boolean {
@@ -5416,9 +5418,17 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
-  runChildShellForEditor(commandLine: string, stdin: string | undefined, session?: LinuxShellSession): { output: string; status: number } {
+  runChildShellForEditor(commandLine: string, stdin: string | undefined, session?: LinuxShellSession, workingDirectory?: string): { output: string; status: number } {
     if (!this.isPoweredOn || (session !== undefined && session.disposed)) return { output: '', status: 1 };
-    const run = (): { output: string; status: number } => this.executor.executeChild(commandLine, stdin);
+    const run = (): { output: string; status: number } => {
+      const callerDirectory = this.executor.getCwd();
+      if (workingDirectory !== undefined) this.executor.setCwd(workingDirectory);
+      try {
+        return this.executor.executeChild(commandLine, stdin);
+      } finally {
+        this.executor.setCwd(callerDirectory);
+      }
+    };
     if (session !== undefined) return this.sessionSwap.withinSync(session, run, { capture: false });
     const baseline = this.executor.snapshotState();
     try {

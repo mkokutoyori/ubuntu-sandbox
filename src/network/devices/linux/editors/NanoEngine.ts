@@ -21,12 +21,14 @@ import {
 } from './nano/NanoJustify';
 import { nextBlockLine, nextWordSpot, previousBlockLine, previousWordSpot } from './nano/NanoMotion';
 import type { NanoMenuName } from './nano/NanoMenus';
-import { helpAction, unboundKeyMessage } from './nano/NanoHelpKeys';
+import { helpAction, helpCursorMotion, unboundKeyMessage } from './nano/NanoHelpKeys';
 import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
+import { WorkingDirectoryFs } from './WorkingDirectoryFs';
 
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
@@ -42,6 +44,13 @@ const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 
   h: { flag: 'smarthome', epithet: 'Smart home key' },
   k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
 };
+
+function swappedDeleteKey(input: EditorKeyInput): EditorKeyInput {
+  if (input.ctrl || input.alt) return input;
+  if (input.key === 'Backspace') return { ...input, key: 'Delete' };
+  if (input.key === 'Delete') return { ...input, key: 'Backspace' };
+  return input;
+}
 
 const CONTROL_MOTIONS: Readonly<Record<string, string>> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
 const STATUS_LINGER_KEYS = 20;
@@ -212,8 +221,11 @@ export class NanoEngine {
   // step; a cursor move or a different action kind starts a new step.
   private readonly undo = new NanoUndoStack();
 
+  private readonly fs: EditorFsContext;
+  private readonly operating: OperatingDirectory | null;
+
   constructor(
-    private readonly fs: EditorFsContext,
+    fsContext: EditorFsContext,
     filePath: string,
     initialContent: string,
     isNewFile: boolean,
@@ -226,8 +238,13 @@ export class NanoEngine {
     this.staleFooter = launch.staleFooter ?? null;
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
     this.launchIdentity = launch.identity;
+    const operatingRoot = this.settings.operatingdir === null ? null : operatingDirectoryRoot(fsContext, this.settings.operatingdir);
+    this.fs = operatingRoot === null ? fsContext : new WorkingDirectoryFs(fsContext, operatingRoot.replace(/\/$/, '') || '/');
+    this.operating = operatingRoot === null ? null : new OperatingDirectory(operatingRoot, this.fs);
     const typedName = launch.displayName ?? filePath;
-    const opening = openingFor(typedName, filePath, fs, this.identity().user);
+    const confined = this.operating !== null && filePath !== '' && this.operating.outside(typedName);
+    const opening = confined ? { path: '', alert: this.operating!.readRefusal(), lockable: false } : openingFor(typedName, filePath, this.fs, this.identity().user);
+    const content = confined ? '' : initialContent;
     const named = opening.path !== '';
     this.live = { ...this.settings, view: this.settings.view && named };
     if (this.live.restricted) this.live.backup = false;
@@ -250,7 +267,7 @@ export class NanoEngine {
       }),
     );
     const unread = this.live.noread && named;
-    const decoded = unread || initialContent.length === 0 ? { lines: [''], format: 'unix' as NanoFileFormat, count: 0 } : decodeFile(initialContent, !this.live.noconvert, !this.live.nonewlines);
+    const decoded = unread || content.length === 0 ? { lines: [''], format: 'unix' as NanoFileFormat, count: 0 } : decodeFile(content, !this.live.noconvert, !this.live.nonewlines);
     this.linesArr = decoded.lines;
     this.fileFormat = this.live.unix ? 'unix' : decoded.format;
     this.ensureTrailingBlankLine();
@@ -341,8 +358,9 @@ export class NanoEngine {
 
   // ── Key dispatch ─────────────────────────────────────────────────
 
-  applyKey(k: EditorKeyInput): void {
+  applyKey(input: EditorKeyInput): void {
     if (this._exited) return;
+    const k = this.live.rebinddelete ? swappedDeleteKey(input) : input;
     if (this.live.preserve && k.ctrl && (k.key.toLowerCase() === 'q' || k.key.toLowerCase() === 's')) return;
     if (k.alt) this.metaKeyUsed = true;
     if (this.helpViewer !== null) {
@@ -485,7 +503,7 @@ export class NanoEngine {
   }
 
   private readFileLabel(): string {
-    return `File to insert${this.live.noconvert ? ' unconverted' : ''} [from ./]`;
+    return `File to insert${this.live.noconvert ? ' unconverted' : ''} [from ${this.operating?.root ?? './'}]`;
   }
 
   private saveInPlace(): void {
@@ -1909,6 +1927,12 @@ export class NanoEngine {
   }
 
   private writeBuffer(name: string, target: string, exiting: boolean, selection: boolean): void {
+    if (this.operating?.outside(name)) {
+      this.exitAfterSave = false;
+      this._mode = 'edit';
+      this._statusMessage = `[ ${this.operating.writeRefusal()} ]`;
+      return;
+    }
     const region = selection ? this.getMarkedRegion() : null;
     const written = region === null ? this.serialize() : this.serializeRegion(region);
     const method = this.writeMethod;
@@ -2170,6 +2194,8 @@ export class NanoEngine {
       zero: false,
       view: false,
       restricted: false,
+      rebinddelete: false,
+      operatingdir: null,
       nonewlines: true,
       locking: false,
       constantshow: false,
@@ -2208,6 +2234,11 @@ export class NanoEngine {
   }
 
   private applyHelpViewerKey(k: EditorKeyInput): void {
+    const cursorMotion = this.live.showcursor ? helpCursorMotion(k) : null;
+    if (cursorMotion !== null) {
+      this.applyEditKey(cursorMotion);
+      return;
+    }
     const action = helpAction(k, this.live.preserve);
     switch (action) {
       case 'scroll-up':
@@ -2428,6 +2459,10 @@ export class NanoEngine {
   }
 
   private insertFileNamed(name: string): void {
+    if (this.operating?.outside(name)) {
+      this._statusMessage = `[ ${this.operating.readRefusal()} ]`;
+      return;
+    }
     const kind = this.pathKind(name);
     if (kind === 'missing') {
       this._statusMessage = `[ File "${name}" not found ]`;

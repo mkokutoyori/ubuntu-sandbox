@@ -1,4 +1,4 @@
-import type { EditorFsContext, EditorPathKind } from '../EditorFsContext';
+import type { EditorFsContext } from '../EditorFsContext';
 
 export interface NanoOpening {
   readonly path: string;
@@ -15,19 +15,24 @@ export function directoryNameOf(path: string): string {
   return parent === '' ? '/' : parent;
 }
 
-function kindOfTyped(typed: string, fs: EditorFsContext): EditorPathKind {
-  const absolute = fs.resolvePath(typed);
-  return fs.kindOf?.(absolute) ?? (fs.exists(absolute) ? 'file' : 'missing');
+type PathHost = Pick<EditorFsContext, 'resolvePath' | 'exists' | 'kindOf' | 'canonicalPath'>;
+
+function canonicalOf(absolute: string, fs: PathHost): string | null {
+  if (fs.canonicalPath !== undefined) return fs.canonicalPath(absolute);
+  return (fs.kindOf?.(absolute) ?? (fs.exists(absolute) ? 'file' : 'missing')) === 'missing' ? null : absolute;
 }
 
-export function fullPathOf(typed: string, fs: EditorFsContext): string | null {
-  const absolute = fs.resolvePath(typed);
-  const kind = kindOfTyped(typed, fs);
-  if (kind !== 'missing') return kind === 'directory' && absolute !== '/' ? `${absolute}/` : absolute;
+function isDirectory(absolute: string, fs: PathHost): boolean {
+  return (fs.kindOf?.(absolute) ?? (fs.exists(absolute) ? 'file' : 'missing')) === 'directory';
+}
+
+export function fullPathOf(typed: string, fs: PathHost): string | null {
+  const real = canonicalOf(fs.resolvePath(typed), fs);
+  if (real !== null) return isDirectory(real, fs) && real !== '/' ? `${real}/` : real;
   const slash = typed.lastIndexOf('/');
   const parent = slash < 0 ? '.' : typed.slice(0, slash) || '/';
-  if (kindOfTyped(parent, fs) !== 'directory') return null;
-  const base = fs.resolvePath(parent);
+  const base = canonicalOf(fs.resolvePath(parent), fs);
+  if (base === null || !isDirectory(base, fs)) return null;
   return `${base === '/' ? '' : base}/${slash < 0 ? typed : typed.slice(slash + 1)}`;
 }
 

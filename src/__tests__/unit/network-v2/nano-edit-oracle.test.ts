@@ -25,6 +25,10 @@
  * sur les 277 cas hors `-O`) 186 cas sur 277 (seed 1), 177 sur 277 (seed 2) et 182 sur 277 (seed 3) tombaient
  * avant, 0 apres.  Les seeds 1 a 3 ont ete enregistres ensemble une fois le premier corpus (non retenu) ayant
  * montre que les options passaient « a vide » faute d'etre exercees.
+ *
+ * Le seed 4 a ete enregistre apres `-d` (--rebinddelete) : `-d` y est en vedette (Retour arriere, Suppr, fleches,
+ * marque) et se combine aux autres options, 25 cas sur 210 ; 19 cas sur 210 tombaient sur le moteur d'avant
+ * (qui rangeait `-d` dans les reglages sans jamais l'evaluer), 0 apres.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';

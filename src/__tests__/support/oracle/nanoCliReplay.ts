@@ -1,6 +1,7 @@
 import { parseNanoCommandLine } from '@/network/devices/linux/editors/nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from '@/network/devices/linux/editors/nano/NanoSettings';
-import { replayNanoScreenCase, type NanoScreenCase } from './nanoScreenReplay';
+import { editorLaunchFailure } from '@/network/devices/linux/editors/editorLaunch';
+import { replayNanoScreenCase, seededFileSystem, type NanoScreenCase } from './nanoScreenReplay';
 
 export interface NanoCliCase extends NanoScreenCase {
   args: string[];
@@ -13,7 +14,7 @@ export interface NanoCliCase extends NanoScreenCase {
 const SCREEN_PORTED_FLAGS: ReadonlySet<string> = new Set(['view', 'constantshow', 'linenumbers', 'softwrap', 'nohelp', 'emptyline', 'stateflags', 'minibar', 'zero',
   'tabsize', 'tabstospaces', 'autoindent', 'smarthome', 'cutfromcursor', 'zap', 'nonewlines', 'afterends', 'wordbounds', 'wordchars', 'jumpyscrolling',
   'bookstyle', 'trimblanks', 'breaklonglines', 'fill', 'atblanks', 'quotestr', 'locking', 'backup', 'backupdir', 'noconvert', 'unix', 'noread', 'saveonexit', 'restricted', 'preserve',
-  'boldtext', 'guidestripe', 'indicator', 'quickblank',
+  'boldtext', 'guidestripe', 'indicator', 'quickblank', 'rebinddelete', 'showcursor', 'operatingdir',
 ]);
 
 export function screenIsPorted(args: readonly string[]): boolean {
@@ -27,8 +28,11 @@ export function screenIsPorted(args: readonly string[]): boolean {
 export function replayNanoCliCase(c: NanoCliCase): string | null {
   const invocation = parseNanoCommandLine(c.args);
   if (!c.opens) {
+    const failure = invocation.kind === 'open'
+      ? editorLaunchFailure(seededFileSystem(c), { editor: 'nano', filePath: invocation.files[0]?.path ?? '', nano: { settings: invocation.settings, start: null } })
+      : null;
     const got = invocation.kind === 'open'
-      ? { status: 'opens', stdout: '', stderr: '' }
+      ? failure === null ? { status: 'opens', stdout: '', stderr: '' } : { status: 1, stdout: '', stderr: failure }
       : invocation.kind === 'print'
         ? { status: 0, stdout: invocation.stdout, stderr: '' }
         : { status: 1, stdout: invocation.stdout, stderr: invocation.stderr };
