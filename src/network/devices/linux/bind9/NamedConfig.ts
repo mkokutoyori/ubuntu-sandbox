@@ -33,6 +33,7 @@ export interface NamedOptions {
   readonly dnssecValidation: DnssecValidationMode;
   readonly listenOnPort: number;
   readonly servfailTtl: number;
+  readonly emptyZonesEnable: boolean;
   readonly listenOn: AddressMatchList;
   readonly allowQuery: AddressMatchList;
   readonly allowRecursion: AddressMatchList;
@@ -155,6 +156,7 @@ interface MutableOptions {
   dnssecValidation: DnssecValidationMode;
   listenOnPort: number;
   servfailTtl: number;
+  emptyZonesEnable: boolean;
   listenOn: AddressMatchList;
   allowQuery: AddressMatchList;
   allowRecursion: AddressMatchList;
@@ -172,6 +174,7 @@ function defaultOptions(): MutableOptions {
     dnssecValidation: 'auto',
     listenOnPort: DEFAULT_DNS_PORT,
     servfailTtl: DEFAULT_SERVFAIL_TTL,
+    emptyZonesEnable: true,
     listenOn: AddressMatchList.any(),
     allowQuery: AddressMatchList.any(),
     allowRecursion: AddressMatchList.localTrust(),
@@ -195,6 +198,9 @@ function parseOptions(
         break;
       case 'recursion':
         options.recursion = parseBoolean(entry);
+        break;
+      case 'empty-zones-enable':
+        options.emptyZonesEnable = parseBoolean(entry);
         break;
       case 'querylog':
         options.queryLog = parseBoolean(entry);

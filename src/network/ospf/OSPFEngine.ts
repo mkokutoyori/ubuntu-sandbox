@@ -16,7 +16,7 @@
 
 import {
   OSPFConfig, OSPFInterface, OSPFNeighbor, OSPFNeighborState, OSPFNeighborEvent,
-  OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType, OSPFPacketStats,
+  OSPFInterfaceOptions, OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType, OSPFPacketStats,
   OSPFLsuRetransmission,
   LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ASBRSummaryLSA,
   ExternalLSA, NSSAExternalLSA,
@@ -36,6 +36,7 @@ import {
   OSPF_INFINITY_METRIC,
   OSPF_VERSION_2,
   createDefaultOSPFConfig,
+  adjacencyChangeIsLogged,
   OSPF_ROUTER_ID_ABSENT,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
@@ -61,6 +62,7 @@ import {
   type OspfInterfaceVM,
   type OspfLSDBSummaryVM,
 } from './observables';
+import { signOspfPacket, ospfDigestMatches } from './OspfCryptographicAuth';
 import {
   computeOSPFLSAChecksum as _computeOSPFLSAChecksum,
   verifyOSPFLSAChecksum as _verifyOSPFLSAChecksum,
@@ -102,6 +104,17 @@ function lsaContents(lsa: LSA): string {
 
 const FLOODING_STATES: ReadonlySet<OSPFNeighborState> = new Set<OSPFNeighborState>(['Exchange', 'Loading', 'Full']);
 
+export interface RedistributedRoute {
+  readonly network: string;
+  readonly mask: string;
+  readonly metric: number;
+  readonly metricType: 1 | 2;
+}
+
+function redistributedPrefixKey(network: string, mask: string): string {
+  return `${network}/${mask}`;
+}
+
 function sameLsa(a: LSAHeader, b: LSAHeader): boolean {
   return a.lsType === b.lsType && a.linkStateId === b.linkStateId && a.advertisingRouter === b.advertisingRouter;
 }
@@ -119,6 +132,7 @@ export class OSPFEngine implements IProtocolEngine {
   private readonly lastSequence = new Map<LSDBKey, number>();
   private readonly lastOriginationAt = new Map<LSDBKey, number>();
   private readonly deferredOriginations = new Map<LSDBKey, { areaId: string; lsa: LSA; timer: symbol }>();
+  private readonly redistributedPrefixes = new Map<string, { network: string; mask: string }>();
 
   /** LSA aging timer (fires every 1 second). TimerSet token. */
   private lsAgeTimer: symbol | null = null;
@@ -169,6 +183,7 @@ export class OSPFEngine implements IProtocolEngine {
   private lastSpfAt: number | null = null;
   private lsaOriginatedCount = 0;
   private lsaReceivedCount = 0;
+  private cryptoSequence = 0;
 
   /** Total number of neighbor state changes logged */
   private neighborChangeCount = 0;
@@ -533,19 +548,47 @@ export class OSPFEngine implements IProtocolEngine {
     packet: OSPFPacket,
     destIp: string,
   ): void {
-    const onTheWire = structuredClone(packet);
-    // RFC 2328 §8.2 / Appendix D — outgoing packets carry the interface auth.
-    const ifc = this.interfaces.get(iface);
-    if (ifc) {
-      onTheWire.authType = ifc.authType ?? 0;
-      onTheWire.authKey = (ifc.authType ?? 0) !== 0 ? ifc.authKey : undefined;
+    for (const onTheWire of this.authenticatedCopies(iface, packet)) {
+      this.incrementStat(onTheWire.packetType, 'tx');
+      this.getBus().publish({
+        topic: 'ospf.packet.outgoing',
+        payload: { ...this.routerRef(), iface, destIp, packet: onTheWire },
+      });
+      this.sendCallback?.(iface, onTheWire, destIp);
     }
-    this.incrementStat(onTheWire.packetType, 'tx');
-    this.getBus().publish({
-      topic: 'ospf.packet.outgoing',
-      payload: { ...this.routerRef(), iface, destIp, packet: onTheWire },
-    });
-    this.sendCallback?.(iface, onTheWire, destIp);
+  }
+
+  private authenticatedCopies(iface: string, packet: OSPFPacket): OSPFPacket[] {
+    const ifc = this.interfaces.get(iface);
+    const authType = ifc?.authType ?? 0;
+    if (!ifc || authType === 0) return [{ ...structuredClone(packet), authType: 0, authKey: undefined }];
+    if (authType === 1) return [{ ...structuredClone(packet), authType: 1, authKey: ifc.authKey }];
+    const keys = [...(ifc.md5Keys ?? [])].sort(([first], [second]) => second - first);
+    if (keys.length === 0) return [];
+    const sequence = this.nextCryptoSequence();
+    const newestKeyId = keys[0][0];
+    const everyNeighborUsesNewest = ifc.neighbors.size > 0
+      && [...ifc.neighbors.values()].every((neighbor) => neighbor.authKeyId === newestKeyId);
+    return (everyNeighborUsesNewest ? [keys[0]] : keys)
+      .map(([keyId, secret]) => signOspfPacket(structuredClone(packet), keyId, secret, sequence));
+  }
+
+  private nextCryptoSequence(): number {
+    this.cryptoSequence = Math.max(this.cryptoSequence + 1, Math.floor(this.now() / 1000));
+    return this.cryptoSequence;
+  }
+
+  private authenticationRejection(iface: OSPFInterface, packet: OSPFPacket): string | null {
+    const localType = iface.authType ?? 0;
+    if (localType !== (packet.authType ?? 0)) return 'type';
+    if (localType === 1) return iface.authKey === packet.authKey ? null : 'key';
+    if (localType !== 2) return null;
+    const secret = iface.md5Keys?.get(packet.authKeyId ?? -1);
+    if (secret === undefined) return 'key id';
+    if (!ospfDigestMatches(packet, secret)) return 'digest';
+    const lastSequence = iface.neighbors.get(packet.routerId)?.authSequence;
+    if (lastSequence !== undefined && (packet.authSequence ?? 0) < lastSequence) return 'sequence';
+    return null;
   }
 
   private incrementStat(packetType: number, direction: 'rx' | 'tx'): void {
@@ -899,19 +942,7 @@ export class OSPFEngine implements IProtocolEngine {
     ipAddress: string,
     mask: string,
     areaId: string,
-    options?: {
-      cost?: number;
-      priority?: number;
-      networkType?: OSPFNetworkType;
-      helloInterval?: number;
-      deadInterval?: number;
-      /** Interface MTU in bytes (default 1500) */
-      mtu?: number;
-      /** One-way propagation delay in ms (default 0 = synchronous) */
-      propagationDelayMs?: number;
-      /** Interface bandwidth in bps (overrides the heuristic derived from the name) */
-      bandwidthBps?: number;
-    }
+    options?: OSPFInterfaceOptions
   ): OSPFInterface {
     this.ensureArea(areaId);
     const bandwidth = options?.bandwidthBps ?? OSPFEngine.inferInterfaceBandwidthBps(name);
@@ -949,8 +980,9 @@ export class OSPFEngine implements IProtocolEngine {
       waitTimer: null,
       neighbors: new Map(),
       passive: this.config.passiveInterfaces.has(name),
-      authType: 0,
-      authKey: '',
+      authType: options?.authType ?? 0,
+      authKey: options?.authKey ?? '',
+      md5Keys: new Map(options?.md5Keys),
       mtu: options?.mtu ?? 1500,
       propagationDelayMs: options?.propagationDelayMs ?? 0,
     };
@@ -975,16 +1007,7 @@ export class OSPFEngine implements IProtocolEngine {
     mask: string,
     areaId: string,
     defaultCost: number,
-    options?: {
-      cost?: number;
-      priority?: number;
-      networkType?: OSPFNetworkType;
-      helloInterval?: number;
-      deadInterval?: number;
-      mtu?: number;
-      propagationDelayMs?: number;
-      bandwidthBps?: number;
-    },
+    options?: OSPFInterfaceOptions,
   ): OSPFInterface {
     const networkType = options?.networkType
       ?? (/^Loopback/i.test(iface.name) ? 'loopback' : iface.networkType);
@@ -1003,6 +1026,9 @@ export class OSPFEngine implements IProtocolEngine {
     iface.deadInterval = options?.deadInterval ?? iface.deadInterval;
     iface.mtu = options?.mtu ?? iface.mtu;
     iface.propagationDelayMs = options?.propagationDelayMs ?? iface.propagationDelayMs;
+    iface.authType = options?.authType ?? iface.authType;
+    iface.authKey = options?.authKey ?? iface.authKey;
+    if (options?.md5Keys !== undefined) iface.md5Keys = new Map(options.md5Keys);
     iface.passive = this.config.passiveInterfaces.has(iface.name);
     if (options?.cost !== undefined) {
       iface.cost = options.cost;
@@ -1109,17 +1135,17 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   private flushOwnLSA(areaId: string, lsType: number, linkStateId: string): void {
-    const areaDB = this.lsdb.areas.get(areaId);
-    if (!areaDB) return;
+    const store: Map<LSDBKey, LSA> | undefined = lsType === 5 ? this.lsdb.external : this.lsdb.areas.get(areaId);
+    if (!store) return;
     const key = makeLSDBKey(lsType, linkStateId, this.config.routerId);
-    const lsa = areaDB.get(key);
+    const lsa = store.get(key);
     if (!lsa) return;
 
     this.cancelDeferredOrigination(key);
     this.lastSequence.set(key, Math.max(this.lastSequence.get(key) ?? 0, lsa.lsSequenceNumber));
     const flushed = { ...lsa, lsAge: OSPF_MAX_AGE } as LSA;
     this.floodLSA(areaId, flushed, null);
-    areaDB.delete(key);
+    store.delete(key);
 
     this.getBus().publish({
       topic: 'ospf.lsa.flushed',
@@ -1690,7 +1716,8 @@ export class OSPFEngine implements IProtocolEngine {
 
     this.eventLog.push(`OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${from} -> ${next} (${event})`);
     this.neighborChangeCount++;
-    if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
+    const logged = adjacencyChangeIsLogged(this.config, from, next);
+    if (this.logAdjacencyChanges || logged) {
       this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${from} to ${next}, ${event}`);
     }
 
@@ -1703,8 +1730,14 @@ export class OSPFEngine implements IProtocolEngine {
         oldState: from,
         newState: next,
         event,
+        logged,
       },
     });
+  }
+
+  setAdjacencyLogging(enabled: boolean, detail: boolean): void {
+    this.config.logAdjacencyChanges = enabled;
+    this.config.logAdjacencyChangesDetail = detail;
   }
 
   /**
@@ -2820,6 +2853,7 @@ export class OSPFEngine implements IProtocolEngine {
   isASBR(): boolean {
     return this.config.redistributeConnected ||
            this.config.redistributeStatic ||
+           this.config.redistributeRip ||
            this.config.defaultInformationOriginate;
   }
 
@@ -2835,6 +2869,10 @@ export class OSPFEngine implements IProtocolEngine {
    */
   setRedistributeStatic(enable: boolean): void {
     this.config.redistributeStatic = enable;
+  }
+
+  setRedistributeRip(enable: boolean): void {
+    this.config.redistributeRip = enable;
   }
 
   // ─── Type 3 Summary LSA (RFC 2328 §12.4.3) ────────────────────
@@ -3007,6 +3045,26 @@ export class OSPFEngine implements IProtocolEngine {
     // Fallback: no interfaces configured yet — originate Type 5
     if (!generatedType5 && usedAreaIds.size === 0) {
       this.originateExternalLSA(network, mask, metric, metricType, forwardingAddress);
+    }
+    this.redistributedPrefixes.set(redistributedPrefixKey(network, mask), { network, mask });
+  }
+
+  replaceRedistributedRoutes(routes: readonly RedistributedRoute[]): void {
+    const wanted = new Set<string>();
+    for (const route of routes) {
+      wanted.add(redistributedPrefixKey(route.network, route.mask));
+      this.redistributeExternalRoute(route.network, route.mask, route.metric, route.metricType);
+    }
+    for (const [key, prefix] of [...this.redistributedPrefixes]) {
+      if (!wanted.has(key)) this.withdrawExternalRoute(prefix.network, prefix.mask);
+    }
+  }
+
+  withdrawExternalRoute(network: string, mask: string): void {
+    this.redistributedPrefixes.delete(redistributedPrefixKey(network, mask));
+    this.flushOwnLSA(OSPF_BACKBONE_AREA, 5, network);
+    for (const [areaId, area] of this.config.areas) {
+      if (area.type === 'nssa') this.flushOwnLSA(areaId, 7, network);
     }
   }
 
@@ -4234,10 +4292,7 @@ export class OSPFEngine implements IProtocolEngine {
     const rxIface = this.interfaces.get(ifaceName);
     if (rxIface?.state === 'Down') return;
     if (rxIface) {
-      const localAuthType = rxIface.authType ?? 0;
-      const pktAuthType = packet.authType ?? 0;
-      if (localAuthType !== pktAuthType
-        || (localAuthType !== 0 && rxIface.authKey !== packet.authKey)) {
+      if (this.authenticationRejection(rxIface, packet) !== null) {
         Logger.warn(this.deviceId ?? 'ospf', 'ospf:auth-fail',
           `OSPF packet type ${packet.packetType} from ${srcIP} dropped on ${ifaceName}: authentication mismatch`);
         return;
@@ -4262,6 +4317,11 @@ export class OSPFEngine implements IProtocolEngine {
       case 5:
         this.processLSAck(ifaceName, srcIP, packet as OSPFLSAckPacket);
         break;
+    }
+    const sender = rxIface?.authType === 2 ? rxIface.neighbors.get(packet.routerId) : undefined;
+    if (sender) {
+      sender.authSequence = packet.authSequence;
+      sender.authKeyId = packet.authKeyId;
     }
   }
 

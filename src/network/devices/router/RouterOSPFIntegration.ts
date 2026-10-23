@@ -20,7 +20,7 @@ import {
 import { resolveAcrossTransparentDevices } from '../../equipment/TopologyWalk';
 import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
-import { OSPFEngine } from '../../ospf/OSPFEngine';
+import { OSPFEngine, type RedistributedRoute } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
 import type { OSPFNeighbor, OSPFPacket, OSPFInterface, OSPFNetworkType } from '../../ospf/types';
 import { OSPF_ROUTER_ID_ABSENT, areasEqual } from '../../ospf/types';
@@ -39,15 +39,30 @@ import type { Equipment } from '@/network/equipment/Equipment';
 export interface OspfInterfaceSettings {
   cost?: number; priority?: number;
   helloInterval?: number; deadInterval?: number;
-  authType?: number; authKey?: string;
+  authType?: number; authKey?: string; md5Keys?: ReadonlyMap<number, string>;
   demandCircuit?: boolean; networkType?: string;
   mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
-  authKeyId?: number; silent?: boolean;
+  silent?: boolean;
   bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
   bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
   floodReduction?: boolean; databaseFilterAllOut?: boolean;
   area?: string; processId?: number;
 }
+
+function applyInterfaceAuthentication(iface: OSPFInterface, settings: OspfInterfaceSettings): void {
+  if (settings.authType !== undefined) iface.authType = settings.authType;
+  if (settings.authKey !== undefined) iface.authKey = settings.authKey;
+  if (settings.md5Keys !== undefined) iface.md5Keys = new Map(settings.md5Keys);
+}
+
+export interface DefaultInformationOriginate {
+  always: boolean;
+  metric?: number;
+  metricType: 1 | 2;
+  routeMap?: string;
+}
+
+export const DEFAULT_INFORMATION_METRIC = 10;
 
 export interface OSPFExtraConfig {
   spfThrottle?: { initial: number; hold: number; max: number };
@@ -62,8 +77,8 @@ export interface OSPFExtraConfig {
   areaAuthentication: Map<string, 'simple' | 'message-digest' | 'null'>;
   shamLinks?: Map<string, { areaId: string; source: string; destination: string }>;
   distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
-  defaultInfoMetricType?: number;
-  defaultInfoAlways?: boolean;
+  defaultInformation?: DefaultInformationOriginate;
+  defaultMetric?: number;
   pendingIfConfig: Map<string, OspfInterfaceSettings>;
   pendingV3IfConfig: Map<string, {
     cost?: number; priority?: number;
@@ -78,9 +93,6 @@ export interface OSPFExtraConfig {
   nbmaNeighbors?: Array<{ ip: string; priority?: number; pollInterval?: number }>;
   summaryAddresses?: Array<{ network: string; mask: string }>;
   capabilities?: { transit?: boolean; opaque?: boolean };
-  logAdjacencyChanges?: boolean;
-  /** `log-adjacency-changes detail` — journalise chaque transition d'état. */
-  logAdjacencyChangesDetail?: boolean;
 }
 
 // ─── Router Context Interface ───────────────────────────────────
@@ -261,6 +273,11 @@ export class RouterOSPFIntegration {
   getOSPFEngine(): OSPFEngine | null { return this.ospfEngine; }
   getOSPFv3Engine(): OSPFv3Engine | null { return this.ospfv3Engine; }
   isOSPFEnabled(): boolean { return this.ospfEngine !== null; }
+
+  staticRoutesChanged(): void {
+    if (!this.ospfEngine) return;
+    if (this.extraConfig.redistributeStatic || this.extraConfig.defaultInformation) this.autoConverge();
+  }
   isOSPFv3Enabled(): boolean { return this.ospfv3Engine !== null; }
   getExtraConfig(): OSPFExtraConfig { return this.extraConfig; }
 
@@ -614,8 +631,7 @@ export class RouterOSPFIntegration {
       }
       if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
       if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
-      if (updates.authType !== undefined) iface.authType = updates.authType;
-      if (updates.authKey !== undefined) iface.authKey = updates.authKey;
+      applyInterfaceAuthentication(iface, updates);
       if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
       if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
     }
@@ -708,12 +724,13 @@ export class RouterOSPFIntegration {
           helloInterval: pending?.helloInterval,
           deadInterval: pending?.deadInterval,
           networkType: pending?.networkType as any,
+          authType: pending?.authType,
+          authKey: pending?.authKey,
+          md5Keys: pending?.md5Keys,
         });
         if (pending) {
           const iface = this.ospfEngine.getInterface(m.name);
           if (iface) {
-            if (pending.authType !== undefined) iface.authType = pending.authType;
-            if (pending.authKey !== undefined) iface.authKey = pending.authKey;
             if (pending.retransmitInterval !== undefined) iface.retransmitInterval = pending.retransmitInterval;
             if (pending.transmitDelay !== undefined) iface.transmitDelay = pending.transmitDelay;
           }
@@ -753,14 +770,10 @@ export class RouterOSPFIntegration {
           helloInterval: rPending?.helloInterval,
           deadInterval: rPending?.deadInterval,
           networkType: rPending?.networkType as any,
+          authType: rPending?.authType,
+          authKey: rPending?.authKey,
+          md5Keys: rPending?.md5Keys,
         });
-        if (rPending) {
-          const iface = remote.ospfEngine.getInterface(rm.name);
-          if (iface) {
-            if (rPending.authType !== undefined) iface.authType = rPending.authType;
-            if (rPending.authKey !== undefined) iface.authKey = rPending.authKey;
-          }
-        }
       }
     }
   }
@@ -1673,6 +1686,7 @@ export class RouterOSPFIntegration {
    */
   private originateRedistributedRoutes(): void {
     if (!this.ospfEngine) return;
+    this.syncAutonomousSystemBoundaryFlags(this.ospfEngine);
     // No active interfaces yet (e.g. `redistribute` typed before any
     // `network` statement matched one): redistributeExternalRoute() would
     // fall back to an area-less Type-5, which then never gets superseded
@@ -1680,16 +1694,15 @@ export class RouterOSPFIntegration {
     // redistribute onto yet — the next autoConverge (post-`network`) retries.
     if (this.ospfEngine.getInterfaces().size === 0) return;
     const extra = this.extraConfig;
+    const routes: RedistributedRoute[] = [];
 
-    if (this.ospfEngine.getConfig().defaultInformationOriginate) {
-      const hasDefault = extra.defaultInfoAlways === true
-        || this.ctx.getRoutingTable().some(rt =>
-          rt.type === 'default' || (rt.type === 'static' &&
-            rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
-      if (hasDefault) {
-        const metricType = (extra.defaultInfoMetricType ?? 2) as 1 | 2;
-        this.ospfEngine.redistributeExternalRoute('0.0.0.0', '0.0.0.0', 1, metricType);
-      }
+    const defaultInformation = extra.defaultInformation;
+    if (defaultInformation && this.defaultRouteIsOriginable(defaultInformation)) {
+      routes.push({
+        network: '0.0.0.0', mask: '0.0.0.0',
+        metric: defaultInformation.metric ?? extra.defaultMetric ?? DEFAULT_INFORMATION_METRIC,
+        metricType: defaultInformation.metricType,
+      });
     }
 
     if (extra.redistributeStatic) {
@@ -1698,7 +1711,7 @@ export class RouterOSPFIntegration {
         if (rt.type !== 'static') continue;
         if (rt.network.toString() === '0.0.0.0') continue;
         if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
-        this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), 20, metricType);
+        routes.push({ network: rt.network.toString(), mask: rt.mask.toString(), metric: 20, metricType });
       }
     }
 
@@ -1708,7 +1721,7 @@ export class RouterOSPFIntegration {
       for (const rt of this.ctx.getRoutingTable()) {
         if (rt.type !== 'rip') continue;
         if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
-        this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), metric, metricType);
+        routes.push({ network: rt.network.toString(), mask: rt.mask.toString(), metric, metricType });
       }
     }
 
@@ -1717,9 +1730,26 @@ export class RouterOSPFIntegration {
         if (rt.type !== 'connected') continue;
         if (this.ospfEngine.getInterface(rt.iface)) continue; // already an OSPF interface
         if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
-        this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), 20, 2);
+        routes.push({ network: rt.network.toString(), mask: rt.mask.toString(), metric: 20, metricType: 2 });
       }
     }
+
+    this.ospfEngine.replaceRedistributedRoutes(routes);
+  }
+
+  private syncAutonomousSystemBoundaryFlags(engine: OSPFEngine): void {
+    const extra = this.extraConfig;
+    engine.setDefaultInformationOriginate(extra.defaultInformation !== undefined);
+    engine.setRedistributeStatic(extra.redistributeStatic !== undefined);
+    engine.setRedistributeConnected(extra.redistributeConnected !== undefined);
+    engine.setRedistributeRip(extra.redistributeRip !== undefined);
+  }
+
+  private defaultRouteIsOriginable(info: DefaultInformationOriginate): boolean {
+    if (info.routeMap !== undefined || info.always) return true;
+    return this.ctx.getRoutingTable().some(rt =>
+      rt.type === 'default' || (rt.type === 'static' &&
+        rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
   }
 
   // ── Next-Hop Resolution ──

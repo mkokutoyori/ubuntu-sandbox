@@ -7,4 +7,5 @@ export interface CurlHost {
   trustAnchors(): readonly X509Certificate[];
   readFile(path: string): string | null;
   writeFile(target: string, content: string): boolean;
+  readonly signal?: AbortSignal;
 }

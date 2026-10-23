@@ -272,7 +272,8 @@ export type DialOutcome =
   | { readonly kind: 'bind-failed' }
   | { readonly kind: 'refused'; readonly elapsedMs: number }
   | { readonly kind: 'kernel-timeout'; readonly elapsedMs: number }
-  | { readonly kind: 'timeout'; readonly elapsedMs: number };
+  | { readonly kind: 'timeout'; readonly elapsedMs: number }
+  | { readonly kind: 'aborted' };
 
 const CURL_DEFAULT_CONNECT_TIMEOUT_MS = 300_000;
 
@@ -312,6 +313,8 @@ export async function dial(
 ): Promise<DialOutcome> {
   const stack = host.tcpStack();
   const clock = stack.clock();
+  const signal = host.signal;
+  if (signal?.aborted) return { kind: 'aborted' };
   const startedAt = clock.now();
   const limitMs = connectLimitMs(budget, startedAt);
   const elapsed = (): number => Math.round(clock.now() - startedAt);
@@ -319,6 +322,11 @@ export async function dial(
   if (localPort === null) return { kind: 'bind-failed' };
   const socket = stack.connect(address, port, { localPort });
   if (!socket) return { kind: 'refused', elapsedMs: elapsed() };
+  if (signal) {
+    const closeOnAbort = (): void => { socket.close(); };
+    signal.addEventListener('abort', closeOnAbort, { once: true });
+    socket.onClose(() => signal.removeEventListener('abort', closeOnAbort));
+  }
   const settled = await new Promise<'open' | 'closed' | 'deadline'>((resolve) => {
     if (socket.state === 'established') { resolve('open'); return; }
     if (socket.closed) { resolve('closed'); return; }
@@ -326,6 +334,7 @@ export async function dial(
     const offOpen = socket.onOpen(() => { clock.clear(timer); offOpen(); offClose(); resolve('open'); });
     const offClose = socket.onClose(() => { clock.clear(timer); offOpen(); offClose(); resolve('closed'); });
   });
+  if (signal?.aborted) return { kind: 'aborted' };
   if (settled === 'open') return { kind: 'open', socket };
   if (settled === 'deadline') {
     socket.close();
@@ -342,6 +351,9 @@ export function connectFailure(
 ): CurlFailure {
   if (outcome.kind === 'timeout') {
     return connectTimeoutFailure(url, outcome.elapsedMs, remoteIp, method, numRedirects, trace);
+  }
+  if (outcome.kind === 'aborted') {
+    return { ok: false, code: 130, message: '', url, remoteIp, method, numRedirects, trace };
   }
   if (outcome.kind === 'bind-failed') {
     return {

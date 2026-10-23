@@ -19,7 +19,7 @@
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
-  type BgpErrorCode, type BgpMessage, type BgpOpenMessage, type BgpUpdateMessage,
+  type BgpAddressFamily, type BgpErrorCode, type BgpMessage, type BgpOpenMessage, type BgpUpdateMessage,
   errorCodeOf, keepalive,
   BGP_VERSION, BGP_DEFAULT_HOLD_SEC, BGP_DEFAULT_KEEPALIVE_SEC,
   BGP_ERROR, BGP_OPEN_ERROR,
@@ -47,6 +47,7 @@ export interface BgpSessionConfig {
   readonly holdTimeSec?: number;
   /** Expected peer AS (`neighbor <ip> remote-as`); a mismatch is rejected. */
   readonly expectedPeerAsn?: number;
+  readonly capabilities?: readonly BgpAddressFamily[];
 }
 
 export interface BgpSessionCallbacks {
@@ -72,6 +73,7 @@ export class BgpSession {
   private notificationsOut = 0;
   private peerAsn: number | null = null;
   private peerRouterId: string | null = null;
+  private peerFamilies: readonly BgpAddressFamily[] = [];
   private sentOpen = false;
   private negotiatedHoldSec: number;
   private readonly timers: TimerSet;
@@ -101,6 +103,10 @@ export class BgpSession {
   get remoteAsn(): number | null { return this.peerAsn; }
   get remoteRouterId(): string | null { return this.peerRouterId; }
   isEstablished(): boolean { return this._state === 'Established'; }
+  negotiatedFamily(afi: number, safi: number): boolean {
+    const offered = (this.cfg.capabilities ?? []).some(f => f.afi === afi && f.safi === safi);
+    return offered && this.peerFamilies.some(f => f.afi === afi && f.safi === safi);
+  }
 
   /**
    * The TCP connection is up (RFC 4271 §8.2.2, event 17): send our OPEN
@@ -175,6 +181,7 @@ export class BgpSession {
     }
     this.peerAsn = open.asn;
     this.peerRouterId = open.bgpIdentifier;
+    this.peerFamilies = open.capabilities?.multiprotocol ?? [];
     // Negotiate the Hold Time down to the smaller of the two (§4.2).
     this.negotiatedHoldSec = Math.min(
       this.cfg.holdTimeSec ?? BGP_DEFAULT_HOLD_SEC, open.holdTimeSec);
@@ -211,6 +218,8 @@ export class BgpSession {
       asn: this.cfg.localAsn,
       holdTimeSec: this.cfg.holdTimeSec ?? BGP_DEFAULT_HOLD_SEC,
       bgpIdentifier: this.cfg.localRouterId,
+      ...(this.cfg.capabilities && this.cfg.capabilities.length > 0
+        ? { capabilities: { multiprotocol: this.cfg.capabilities } } : {}),
     };
     this.emit(open);
   }
@@ -233,6 +242,7 @@ export class BgpSession {
     this.transition('Idle');
     this.peerAsn = null;
     this.peerRouterId = null;
+    this.peerFamilies = [];
     this.sentOpen = false;
     this.pendingUpdates = [];
     if (closeTransport) this.transport.close();

@@ -195,6 +195,19 @@ export function softBackspace(line: string, col: number, settings: TabSettings, 
   return { line: text, col: at };
 }
 
+function singleCharacterCase(character: string, converted: string): string {
+  const [first, ...rest] = [...converted];
+  return rest.every((extra) => /\p{M}/u.test(extra)) ? first : character;
+}
+
+export function upperCaseChar(character: string): string {
+  return singleCharacterCase(character, character.toUpperCase());
+}
+
+export function lowerCaseChar(character: string): string {
+  return singleCharacterCase(character, character.toLowerCase());
+}
+
 export function swapCase(ch: string): string {
   const up = ch.toUpperCase();
   const low = ch.toLowerCase();

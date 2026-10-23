@@ -114,7 +114,7 @@ import {
 } from '../core/types';
 
 // Linux kernel / userspace
-import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { LinuxCommandExecutor, type ForegroundResult } from './linux/LinuxCommandExecutor';
 import { SIGNAL_NUMBERS, type Signal } from './linux/LinuxProcessManager';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
@@ -831,6 +831,7 @@ export abstract class LinuxMachine extends EndHost
       const cmd = this.commands.get(name);
       return !!cmd && !!cmd.needsNetworkContext;
     });
+    this.executor.setForegroundClientPredicate((name) => this.commands.get(name)?.foregroundClient === true);
     this.executor.setScheduler(() => this.getScheduler());
 
     this.executor.serviceMgr.onLifecycle((event, name) => {
@@ -3240,6 +3241,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Build the context object passed to every `LinuxCommand.run()` call. */
   private onProcessExit(pid: number, listener: (signal: Signal | null) => void): () => void {
+    this.executor.markSignalAware(pid);
     return this.getBus().subscribeWhere('linux.process.exited',
       (p) => p.deviceId === this.id && p.pid === pid,
       ({ payload }) => listener(payload.signal !== undefined && payload.signal in SIGNAL_NUMBERS ? payload.signal as Signal : null));
@@ -3251,7 +3253,10 @@ export abstract class LinuxMachine extends EndHost
       outputPiped,
       ...(invokedAs === undefined ? {} : { invokedAs }),
       sshDaemon: this.sshDaemonPort(),
-      whenKilled: (listener) => this.onProcessExit(pid, (signal) => { if (signal !== null) listener(signal); }),
+      whenKilled: (listener) => {
+        this.executor.markSignalAware(pid);
+        return this.executor.processMgr.whenKilled(pid, listener);
+      },
       supervised: this.executor.isSupervised(pid),
       executor: this.executor,
       net: this.net,
@@ -4056,6 +4061,14 @@ export abstract class LinuxMachine extends EndHost
         this.executor.lastExitCode = unavailable.exitCode;
         return unavailable.output;
       }
+      const settle = async (start: () => Promise<ForegroundResult>): Promise<string> => {
+        const result = cmd.foregroundClient === true
+          ? await this.executor.runForegroundCommand([firstCmd, ...cmdArgs], start)
+          : await start();
+        this.executor.lastExitCode = result.exitCode;
+        if (result.interleaved !== undefined) return result.interleaved;
+        return [result.output, result.stderr].filter((s) => s).join('\n');
+      };
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
         async () => {
@@ -4065,14 +4078,8 @@ export abstract class LinuxMachine extends EndHost
             if (result.interleaved !== undefined) return result.interleaved;
             return [result.output, result.stderr].filter((s) => s).join('\n');
           }
-          if (cmd.runWithStatus) {
-            const result = await cmd.runWithStatus(this.buildCommandContext(), cmdArgs);
-            this.executor.lastExitCode = result.exitCode;
-            if (result.interleaved !== undefined) return result.interleaved;
-            return [result.output, result.stderr].filter((s) => s).join('\n');
-          }
-          this.executor.lastExitCode = 0;
-          return cmd.run(this.buildCommandContext(), cmdArgs);
+          if (cmd.runWithStatus) return settle(() => cmd.runWithStatus!(this.buildCommandContext(), cmdArgs));
+          return settle(async () => ({ output: await cmd.run(this.buildCommandContext(), cmdArgs), exitCode: 0 }));
         },
       );
     }
@@ -5359,17 +5366,30 @@ export abstract class LinuxMachine extends EndHost
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
-      return this.sessionSwap.within(session, async () => {
-        this.executor.displayColor = opts?.color ?? true;
-        this.executor.setExecInput(opts?.stdin);
-        try {
-          return await this.executeCommand(command);
-        } finally {
-          this.executor.displayColor = false;
-          this.executor.setExecInput(undefined);
-        }
-      });
+      this.foregroundSession = session;
+      try {
+        return await this.sessionSwap.within(session, async () => {
+          this.executor.displayColor = opts?.color ?? true;
+          this.executor.setExecInput(opts?.stdin);
+          try {
+            return await this.executeCommand(command);
+          } finally {
+            this.executor.displayColor = false;
+            this.executor.setExecInput(undefined);
+          }
+        });
+      } finally {
+        this.foregroundSession = null;
+      }
     });
+  }
+
+  private foregroundSession: LinuxShellSession | null = null;
+
+  interruptForeground(session: LinuxShellSession): boolean {
+    const pid = this.executor.foregroundProcessId();
+    if (this.foregroundSession !== session || pid === null) return false;
+    return this.executor.processMgr.kill(pid, 'SIGINT');
   }
 
   /**

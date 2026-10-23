@@ -40,8 +40,13 @@
  *   :.,$d   -> (vide)
  *   :$d     -> alpha,bravo,charlie
  *   :0d     -> bravo,charlie,delta        (la ligne 0 vaut la ligne 1)
- *   :1,99d  -> E16: Invalid range: 1,99d           rien supprime
- *   :3,1d   -> E493: Backwards range given: 3,1d   rien supprime
+ *   :1,99d  -> E16: Invalid range                  rien supprime
+ *   :3,1d   -> « Backwards range given, OK to swap (y/n)? » ; n ne supprime rien, y supprime 1,3
+ *
+ * (Les textes `E16: Invalid range: 1,99d' et `E493: Backwards range given: 3,1d'
+ * que ce lab epinglait venaient d'un vim lance en script (`-es', `:execute') ; un vim
+ * interactif, mesure sous tmux, affiche `E16: Invalid range' sans suffixe et DEMANDE avant
+ * d'echanger une plage a l'envers. Le test epinglait le defaut, il est corrige.)
  *   :set nosuchopt       -> E518: Unknown option: nosuchopt
  *   :set zorglub=abc     -> E518: Unknown option: zorglub=abc
  *   :set shiftwidth=xyz  -> E521: Number required after =: shiftwidth=xyz
@@ -146,14 +151,24 @@ describe('les commandes ex a plage existent, et le disent', () => {
 
   it('une plage au-dela du tampon rend E16 et ne supprime rien', () => {
     const e = vim();
-    expect(ex(e, '1,99d')).toBe('E16: Invalid range: 1,99d');
+    expect(ex(e, '1,99d')).toBe('E16: Invalid range');
     expect(e.lines.join(',')).toBe('alpha,bravo,charlie,delta');
   });
 
-  it('une plage a l envers rend E493 et ne supprime rien', () => {
+  it('une plage a l envers demande avant d echanger, et n ne supprime rien', () => {
     const e = vim();
-    expect(ex(e, '3,1d')).toBe('E493: Backwards range given: 3,1d');
+    ex(e, '3,1d');
+    expect(e.mode).toBe('ask-swap-range');
+    press(e, 'n');
+    expect(e.mode).toBe('normal');
     expect(e.lines.join(',')).toBe('alpha,bravo,charlie,delta');
+  });
+
+  it('une plage a l envers echangee avec y supprime 1,3', () => {
+    const e = vim();
+    ex(e, '3,1d');
+    press(e, 'y');
+    expect(e.lines.join(',')).toBe('delta');
   });
 
   it('une option inconnue rend E518, pas E492', () => {

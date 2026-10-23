@@ -260,6 +260,7 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
 export const tracepathCommand: LinuxCommand = {
   name: 'tracepath',
   needsNetworkContext: true,
+  foregroundClient: true,
   ownsHelpOption: true,
   manSection: 8,
   usage: 'tracepath [options] <destination>',

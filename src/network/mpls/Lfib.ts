@@ -1,0 +1,149 @@
+import { IPAddress, SubnetMask } from '@/network/core/types';
+import { MplsLabel, MPLS_FIRST_UNRESERVED_LABEL, MPLS_LABEL_MAX } from './MplsLabel';
+
+export interface SwapEntry {
+  readonly kind: 'swap';
+  readonly outLabels: readonly MplsLabel[];
+  readonly iface: string;
+  readonly nextHop: IPAddress;
+}
+
+export interface PopEntry {
+  readonly kind: 'pop';
+  readonly iface: string | null;
+  readonly nextHop: IPAddress | null;
+}
+
+export interface VrfEntry {
+  readonly kind: 'vrf';
+  readonly vrf: string;
+}
+
+export interface PseudowireEntry {
+  readonly kind: 'pw';
+  readonly owner: 'xconnect' | 'vpls';
+  readonly endpoint: string;
+}
+
+export interface TransportLspEntry {
+  readonly kind: 'tp-lsp';
+  readonly lsp: string;
+}
+
+export type IlmEntry = SwapEntry | PopEntry | VrfEntry | PseudowireEntry | TransportLspEntry;
+
+export const LABEL_RANGE_DEFAULT_MIN = 16;
+export const LABEL_RANGE_DEFAULT_MAX = 100000;
+
+export interface LabelRange {
+  readonly min: number;
+  readonly max: number;
+}
+
+export interface FtnEntry {
+  readonly prefix: IPAddress;
+  readonly prefixLength: number;
+  readonly outLabels: readonly MplsLabel[];
+  readonly iface: string;
+  readonly nextHop: IPAddress;
+  readonly entropyLabelCapable?: boolean;
+  readonly lspMtu?: number;
+}
+
+export class Lfib {
+  private readonly ilm = new Map<number, IlmEntry>();
+  private ftn: FtnEntry[] = [];
+  private nextDynamicLabel = LABEL_RANGE_DEFAULT_MIN;
+  private readonly released: number[] = [];
+  private range: LabelRange = { min: LABEL_RANGE_DEFAULT_MIN, max: LABEL_RANGE_DEFAULT_MAX };
+
+  labelRange(): LabelRange {
+    return this.range;
+  }
+
+  setLabelRange(min: number, max: number): void {
+    if (min < MPLS_FIRST_UNRESERVED_LABEL || max > MPLS_LABEL_MAX || min >= max) throw new RangeError(`Invalid label range ${min}-${max}`);
+    this.range = { min, max };
+    this.nextDynamicLabel = min;
+    this.released.length = 0;
+  }
+
+  allocateLabel(): MplsLabel {
+    const reusable = this.released.findIndex(value => value >= this.range.min && value <= this.range.max);
+    if (reusable >= 0) return MplsLabel.of(this.released.splice(reusable, 1)[0]);
+    while (this.ilm.has(this.nextDynamicLabel)) this.nextDynamicLabel++;
+    if (this.nextDynamicLabel > this.range.max) throw new RangeError('MPLS label space exhausted');
+    return MplsLabel.of(this.nextDynamicLabel++);
+  }
+
+  allocateLabelBlock(size: number, entryAt: (offset: number) => IlmEntry): MplsLabel {
+    let base = this.nextDynamicLabel;
+    for (;;) {
+      if (base + size - 1 > this.range.max) throw new RangeError('MPLS label space exhausted');
+      let clash = -1;
+      for (let offset = 0; offset < size; offset++) if (this.ilm.has(base + offset)) clash = offset;
+      if (clash < 0) break;
+      base += clash + 1;
+    }
+    for (let offset = 0; offset < size; offset++) this.ilm.set(base + offset, entryAt(offset));
+    this.nextDynamicLabel = Math.max(this.nextDynamicLabel, base + size);
+    return MplsLabel.of(base);
+  }
+
+  releaseLabelBlock(base: MplsLabel, size: number): void {
+    for (let offset = 0; offset < size; offset++) this.ilm.delete(base.value + offset);
+  }
+
+  releaseLabel(label: MplsLabel): void {
+    this.ilm.delete(label.value);
+    if (!label.isSpecialPurpose() && !this.released.includes(label.value)) this.released.push(label.value);
+  }
+
+  setIlm(incoming: MplsLabel, entry: IlmEntry): void {
+    this.ilm.set(incoming.value, entry);
+  }
+
+  removeIlm(incoming: MplsLabel): boolean {
+    return this.ilm.delete(incoming.value);
+  }
+
+  lookupIlm(incoming: MplsLabel): IlmEntry | undefined {
+    return this.ilm.get(incoming.value);
+  }
+
+  ilmEntries(): ReadonlyArray<readonly [MplsLabel, IlmEntry]> {
+    return [...this.ilm.entries()].sort((a, b) => a[0] - b[0]).map(([value, entry]) => [MplsLabel.of(value), entry] as const);
+  }
+
+  setFtn(entry: FtnEntry): void {
+    this.ftn = this.ftn.filter(e => !(e.prefix.equals(entry.prefix) && e.prefixLength === entry.prefixLength));
+    this.ftn.push(entry);
+  }
+
+  removeFtn(prefix: IPAddress, prefixLength: number): boolean {
+    const before = this.ftn.length;
+    this.ftn = this.ftn.filter(e => !(e.prefix.equals(prefix) && e.prefixLength === prefixLength));
+    return this.ftn.length !== before;
+  }
+
+  lookupFtn(destination: IPAddress): FtnEntry | undefined {
+    let best: FtnEntry | undefined;
+    for (const entry of this.ftn) {
+      const mask = SubnetMask.fromCIDR(entry.prefixLength);
+      if (!destination.isInSameSubnet(entry.prefix, mask)) continue;
+      if (best === undefined || entry.prefixLength > best.prefixLength) best = entry;
+    }
+    return best;
+  }
+
+  ftnEntries(): readonly FtnEntry[] {
+    return [...this.ftn];
+  }
+
+  clear(): void {
+    this.ilm.clear();
+    this.ftn = [];
+    this.released.length = 0;
+    this.nextDynamicLabel = this.range.min;
+  }
+}

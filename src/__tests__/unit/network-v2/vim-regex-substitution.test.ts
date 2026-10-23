@@ -30,11 +30,18 @@ function newEngine(content: string, path = '/tmp/t.txt'): VimEngine {
 }
 
 describe('Scénario 2 — :%s substitution globale simple', () => {
-  it('replaces every occurrence on every line and reports the count', () => {
+  it('replaces every occurrence on every line and reports the count above report', () => {
+    const vim = newEngine('192.168.1.100\n192.168.1.101\n192.168.1.102\nno match here\n');
+    exCmd(vim, '%s/192.168.1/10.10.10/g');
+    expect(vim.lines).toEqual(['10.10.10.100', '10.10.10.101', '10.10.10.102', 'no match here']);
+    expect(vim.message).toMatch(/3 substitutions? on 3 lines?/);
+  });
+
+  it('says nothing when the count does not exceed report (default 2), as vim does', () => {
     const vim = newEngine('192.168.1.100\n192.168.1.101\nno match here\n');
     exCmd(vim, '%s/192.168.1/10.10.10/g');
     expect(vim.lines).toEqual(['10.10.10.100', '10.10.10.101', 'no match here']);
-    expect(vim.message).toMatch(/2 substitutions? on 2 lines?/);
+    expect(vim.message).toBe('');
   });
 
   it('without the g flag only replaces the first occurrence per line', () => {

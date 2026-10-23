@@ -49,6 +49,7 @@ export const nmapCommand: LinuxCommand = {
   name: 'nmap',
   package: 'nmap',
   needsNetworkContext: true,
+  foregroundClient: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-D', '-F', '-O', '-P0', '-Pn', '-R', '-S', '-T', '-d', '-iL', '-iR', '-n',
       '-e', '-f', '-ff', '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',

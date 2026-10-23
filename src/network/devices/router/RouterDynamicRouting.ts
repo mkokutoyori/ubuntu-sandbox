@@ -139,14 +139,18 @@ export class RouterDynamicRouting {
   /** Open an outbound TCP/179 session to a configured neighbour. */
   private bgpConnect(neighborIp: string): BgpPeerLink | null {
     const egress = this.egressToward(neighborIp);
-    if (!egress) return null;                 // not a cabled, same-subnet peer
-    const socket = this.ctx.getTcpStack().connect(neighborIp, BGP_PORT);
+    const updateSource = this.bgp.hasNeighbor(neighborIp)?.updateSource;
+    const sourcePort = updateSource === undefined ? undefined : this.ctx.getPorts().get(updateSource);
+    const sourceAddress = sourcePort?.getIPAddress()?.toString();
+    if (!egress && sourceAddress === undefined) return null;
+    const socket = this.ctx.getTcpStack().connect(
+      neighborIp, BGP_PORT, sourceAddress === undefined ? undefined : { localIp: sourceAddress });
     // No listener yet (peer not running BGP) ⇒ RST during the synchronous
     // handshake. Don't hand back a dead socket — stay Idle and retry later.
     if (!socket || socket.state !== 'established') { socket?.close(); return null; }
     return {
       neighborIp,
-      localIp: egress.localIp, localIface: egress.localIface,
+      localIp: sourceAddress ?? egress!.localIp, localIface: egress?.localIface ?? '',
       transport: bgpTransport(socket),
     };
   }

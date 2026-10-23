@@ -33,6 +33,10 @@ const TRACE_TARGET: ArgumentSpec = {
   description: 'Trace route to destination address or hostname',
 };
 
+const VRF_NAME: ArgumentSpec = {
+  name: 'vrf', type: 'WORD', description: 'VPN Routing/Forwarding instance name',
+};
+
 const POSITIVE_MAX = 4294967295;
 
 const PING_OPTIONS: readonly OptionSpec[] = [
@@ -97,7 +101,7 @@ const entier = (args: Record<string, string>, nom: string, defaut: number): numb
   args[nom] === undefined ? defaut : Number(args[nom]);
 
 const FAMILLE_PAR_SPEC: Readonly<Record<string, 'ip' | 'ipv6'>> = {
-  'ping-destination': 'ip', 'ping-ip': 'ip', 'ping-ipv6': 'ipv6',
+  'ping-destination': 'ip', 'ping-ip': 'ip', 'ping-ipv6': 'ipv6', 'ping-vrf': 'ip',
 };
 
 export function pingRequestOfSpec(
@@ -123,6 +127,7 @@ function pingRequest(
       ? null
       : `${args.source}${args.sourceUnit ?? ''}`,
     protocol: famille.protocol,
+    ...(args.vrf === undefined ? {} : { vrf: args.vrf }),
   };
 }
 
@@ -172,6 +177,18 @@ export function echoSpecs(
       },
     },
   ];
+
+  specs.push({
+    id: 'ping-vrf',
+    path: ['ping', 'vrf', VRF_NAME, PING_TARGET],
+    description: 'Send echo messages in a VPN Routing/Forwarding instance',
+    modes: MODES, minPrivilege: 1,
+    options: PING_OPTIONS,
+    run: (_s, args) => {
+      const demande = pingRequest(args, 'ip');
+      return typeof demande === 'string' ? demande : ctx().runPing(demande);
+    },
+  });
 
   for (const [mot, famille] of familles) {
     specs.push({

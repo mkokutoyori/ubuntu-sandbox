@@ -741,6 +741,7 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
+    if (this.holdTypedAhead()) return;
     // Drain BOTH input buffers — `this.input` is the canonical local
     // console buffer, `_inputBuf` is the sub-shell buffer. When a
     // sub-shell unwinds back to the root bash, programmatic drivers /
@@ -790,6 +791,11 @@ export class LinuxTerminalSession extends TerminalSession {
     const done = this.executeCommand(cmd);
     this.notify();
     return done;
+  }
+
+  protected override interruptForegroundCommand(): boolean {
+    const dev = this.device;
+    return dev instanceof LinuxMachine && this.shell !== null && dev.interruptForeground(this.shell);
   }
 
   private plannedStreamScreen(): StreamScreen {
@@ -1031,7 +1037,7 @@ export class LinuxTerminalSession extends TerminalSession {
         }
         let result;
         try {
-          result = await shell.processLine(trimmed);
+          result = await this.inForeground(() => shell.processLine(trimmed));
         } finally {
           if (interactiveExecutor) {
             interactiveExecutor.interactiveTerminal = false;
@@ -1093,6 +1099,7 @@ export class LinuxTerminalSession extends TerminalSession {
         }
       }
       this.syncDeviceState();
+      void this.drainTypedAhead();
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
         // The bus-driven path (TerminalManager.onDevicePoweredOff) already

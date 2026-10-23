@@ -5,6 +5,8 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import { mplsGlobalRunningConfig, mplsInterfaceRunningConfig } from '@/cli/commands/mpls/mplsFamily';
+import { mplsHostOf } from './mplsHost';
 import type { EnableSecretAlgorithm } from '../../../equipment/Equipment';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -12,6 +14,7 @@ import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { OSPF_DEFAULT_REFERENCE_BANDWIDTH } from '../../../ospf/types';
 import { ARP_TIMEOUT_DEFAULT_SEC } from '../../../arp/ArpCache';
 import type { Router } from '../../Router';
+import type { DefaultInformationOriginate } from '../../router/RouterOSPFIntegration';
 import { iosClockConfigLines } from './CiscoCommonShow';
 import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import { loadIntervalLabel, DEFAULT_LOAD_INTERVAL_SEC } from '../../../hardware/PortLoad';
@@ -610,6 +613,7 @@ export function showRunningConfig(router: Router): string {
 
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
+  lines.push(...mplsGlobalRunningConfig(mplsHostOf(router)));
   lines.push(...dhcpRunningConfigLines(dhcp));
   lines.push(...dhcpv6RunningConfigLines(router._getDHCPv6ServerInternal()));
   lines.push(...dhcpSnoopingRunningConfigLines(snoopingConfigOf(router)));
@@ -981,10 +985,15 @@ function lignesDAire(
   router: Router,
   ospfCfg: {
     referenceBandwidth: number;
+    logAdjacencyChanges: boolean;
+    logAdjacencyChangesDetail: boolean;
     areas: Map<string, { type: string; ranges?: Array<{ network: string; mask: string; advertise: boolean }>; defaultCost?: number; authentication?: string }>;
   },
 ): string[] {
   const lignes: string[] = [];
+  if (ospfCfg.logAdjacencyChanges) {
+    lignes.push(ospfCfg.logAdjacencyChangesDetail ? 'log-adjacency-changes detail' : 'log-adjacency-changes');
+  }
   for (const [id, aire] of ospfCfg.areas) {
     if (aire.authentication === 'simple') lignes.push(`area ${id} authentication`);
     else if (aire.authentication === 'message-digest') {
@@ -1007,6 +1016,8 @@ function lignesDAire(
       capabilities?: { transit?: boolean; opaque?: boolean };
       timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
       spfThrottle?: { initial: number; hold: number; max: number };
+      defaultInformation?: DefaultInformationOriginate;
+      defaultMetric?: number;
     };
   })._getOSPFExtraConfig?.();
   for (const [id, voisin] of extra?.virtualLinks ?? []) {
@@ -1030,7 +1041,18 @@ function lignesDAire(
       + `${voisin.priority !== undefined ? ` priority ${voisin.priority}` : ''}`
       + `${voisin.pollInterval !== undefined ? ` poll-interval ${voisin.pollInterval}` : ''}`);
   }
+  if (extra?.defaultMetric !== undefined) lignes.push(`default-metric ${extra.defaultMetric}`);
+  if (extra?.defaultInformation) lignes.push(defaultInformationLine(extra.defaultInformation));
   return lignes;
+}
+
+function defaultInformationLine(info: DefaultInformationOriginate): string {
+  return ['default-information originate',
+    ...(info.always ? ['always'] : []),
+    ...(info.metric !== undefined ? ['metric', String(info.metric)] : []),
+    ...(info.metricType === 1 ? ['metric-type 1'] : []),
+    ...(info.routeMap !== undefined ? ['route-map', info.routeMap] : []),
+  ].join(' ');
 }
 
 export function configProvenanceLines(router: Router): string[] {
@@ -1090,7 +1112,7 @@ const OSPF_IF_DEFAULTS: Record<string, unknown> = {
   retransmitInterval: 5, transmitDelay: 1, authType: 0,
 };
 
-function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): string[] {
+function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>, serviceEncryption: boolean): string[] {
   const lines: string[] = [];
   const ecart = (cle: string) =>
     pending[cle] !== undefined && pending[cle] !== OSPF_IF_DEFAULTS[cle];
@@ -1105,6 +1127,10 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
   if (pending.authType === 1) lines.push(' ip ospf authentication');
   if (pending.authType === 2) lines.push(' ip ospf authentication message-digest');
   if (pending.authKey) lines.push(` ip ospf authentication-key ${pending.authKey}`);
+  const md5Keys = [...((pending.md5Keys as ReadonlyMap<number, string> | undefined) ?? [])].sort(([first], [second]) => first - second);
+  for (const [keyId, secret] of md5Keys) {
+    lines.push(` ip ospf message-digest-key ${keyId} md5 ${renderPasswordField(secret, 'plain', serviceEncryption, false, `ospf-md5:${keyId}`)}`);
+  }
   if (pending.mtuIgnore) lines.push(' ip ospf mtu-ignore');
   if (pending.demandCircuit) lines.push(' ip ospf demand-circuit');
   if (pending.bfd) lines.push(' ip ospf bfd');
@@ -1202,6 +1228,7 @@ function interfaceConfigLines(
   for (const h of helpers) {
     lines.push(` ip helper-address ${h}`);
   }
+  lines.push(...mplsInterfaceRunningConfig(mplsHostOf(router), name));
   lines.push(...fhrpRunningConfigLines(fhrpViewOf(router, name)));
   lines.push(...runningConfigInterfaceACL(router, name));
   lines.push(...runningConfigInterfaceNAT(router, name));
@@ -1230,7 +1257,7 @@ function interfaceConfigLines(
   const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
   const pending = ospfExtra?.pendingIfConfig.get(name);
   if (pending) {
-    lines.push(...ospfInterfaceRunningConfigLines(pending));
+    lines.push(...ospfInterfaceRunningConfigLines(pending, router.getServiceFlags().get('password-encryption') === true));
     if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
     if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
     if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);

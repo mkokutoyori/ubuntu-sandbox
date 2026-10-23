@@ -124,7 +124,7 @@ describe('OSPF routes carry their age', () => {
     const table = await r2.executeCommand('show ip route');
     const afterGateway = table.split('Gateway of last resort is 10.0.12.1 to network 0.0.0.0\n\n')[1] ?? '';
     expect(afterGateway.split('\n')[0])
-      .toBe('O*E2  0.0.0.0/0 [110/1] via 10.0.12.1, 00:00:25, GigabitEthernet0/0');
+      .toBe('O*E2  0.0.0.0/0 [110/10] via 10.0.12.1, 00:00:25, GigabitEthernet0/0');
   });
 
   it('show ip route ospf is the routing table filtered to OSPF, legend and ages included', async () => {

@@ -86,6 +86,7 @@ export const radtestCommand: LinuxCommand = {
   name: 'radtest',
   package: 'freeradius-utils',
   needsNetworkContext: true,
+  foregroundClient: true,
   manSection: 1,
   usage: USAGE,
   help: 'Send a RADIUS Access-Request to a server and print the reply.',

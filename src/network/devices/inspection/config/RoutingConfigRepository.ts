@@ -161,6 +161,9 @@ export interface BgpProcess {
   /** Les gabarits, tenus à part des voisins pour qu'on ne puisse pas les confondre. */
   peerGroups: Map<string, BgpPeerGroup>;
   addressFamilies: string[];
+  vpnv4Neighbors: Set<string>;
+  sendCommunityExtended: Set<string>;
+  vrfFamilies: Map<string, { redistribute: string[] }>;
   /**
    * `no bgp default ipv4-unicast`. Quand la famille par défaut est
    * désactivée, un voisin doit être explicitement `activate`é dans son
@@ -202,7 +205,8 @@ export class RoutingConfigRepository {
     if (!this.bgp) {
       this.bgp = { asn, networks: [], redistribute: [],
         neighbors: new Map(), peerGroups: new Map(),
-        addressFamilies: [], defaultIpv4Unicast: true, extras: [] };
+        addressFamilies: [], vpnv4Neighbors: new Set(), sendCommunityExtended: new Set(),
+        vrfFamilies: new Map(), defaultIpv4Unicast: true, extras: [] };
     }
     return this.bgp;
   }

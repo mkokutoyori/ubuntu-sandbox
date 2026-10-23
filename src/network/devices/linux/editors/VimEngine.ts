@@ -11,7 +11,11 @@ import { buildScreen } from './vim/VimScreen';
 import type { ViewState } from './vim/VimWindow';
 import type { EditorScreen, ScreenStyle } from './screen/EditorScreen';
 import { textObject } from './vim/VimTextObjects';
-import { compileVimPattern, type VimRegExp } from './vim/VimPattern';
+import { BufferText, compileVimPattern, type MultiMatch } from './vim/VimPattern';
+import {
+  expandTilde, freshSubstituteMemory, joinedCursorColumn, parseSubstitute, runSubstitution, substitutionMessage,
+  type AskAnswer, type AskStep, type LineTracker, type SubstituteMemory, type SubstituteRun,
+} from './vim/VimSubstitute';
 import { skipRegexp, type PatternContext } from './vim/VimRegex';
 import {
   NO_OFFSET, findMatch, highlightSpans, identUnderCursor, matchesEverything, parseSearchInput, patternForIdent, resolveTarget, searchPatternError, stepBack, stepForward,
@@ -19,8 +23,10 @@ import {
 } from './vim/VimSearch';
 import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reindentLine, removeChars, roundedIndent, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
 import { VimOptions } from './vim/VimOptions';
+import { parseRange, type RangeEnvironment } from './vim/VimExRange';
+import { evaluateReplacementExpression } from './vim/VimExpression';
 
-export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
+export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'ask-swap-range' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
 
 interface UndoSnapshot {
@@ -56,37 +62,32 @@ function parseSwapMeta(raw: string): SwapMeta | null {
   }
 }
 
+interface SubstitutionState {
+  readonly generator: Generator<AskStep, void, AskAnswer>;
+  readonly run: SubstituteRun;
+  readonly startSubstitutions: number;
+  readonly oldCursor: { line: number; col: number };
+  readonly usedPattern: string;
+  readonly nextCommand: string | null;
+  readonly savedAll: boolean;
+  readonly savedAsk: boolean;
+  readonly keptCursorColumn: boolean;
+}
+
+interface GlobalRun {
+  marks: number[];
+  readonly command: string;
+  readonly oldLineCount: number;
+  needBeginline: boolean;
+  readonly tracker: LineTracker;
+}
+
 export interface PendingSubstMatch {
   line: number;
   start: number;
   end: number;
   matchText: string;
   replacementPreview: string;
-}
-
-/** Search `line` for the next match of `regex` at or after column `fromCol`. */
-function execFrom(lines: readonly string[], lineIndex: number, regex: VimRegExp, fromCol: number): RegExpExecArray | null {
-  return regex.execLine(lines, lineIndex, fromCol);
-}
-
-/** Apply a vim-style replacement template (`\1`.._`\9`, `&`, `\&`, `\\`) against a JS match array. */
-function applyVimReplacement(template: string, m: RegExpExecArray): string {
-  let out = '';
-  for (let i = 0; i < template.length; i++) {
-    const c = template[i];
-    if (c === '\\') {
-      const n = template[i + 1];
-      if (n !== undefined && n >= '0' && n <= '9') { out += m[parseInt(n, 10)] ?? ''; i++; continue; }
-      if (n === '&') { out += '&'; i++; continue; }
-      if (n === '\\') { out += '\\'; i++; continue; }
-      out += n !== undefined ? n : '\\';
-      if (n !== undefined) i++;
-      continue;
-    }
-    if (c === '&') { out += m[0]; continue; }
-    out += c;
-  }
-  return out;
 }
 
 type CharClass = 0 | 1 | 2; // 0 = blank, 1 = word, 2 = punctuation
@@ -197,6 +198,7 @@ interface ExRange {
   end: number | null;
   rest: string;
   literal: string;
+  error?: string;
 }
 
 const LAYOUT_OPTIONS: ReadonlySet<string> = new Set([
@@ -287,9 +289,17 @@ export class VimEngine {
   private originalDiskLines: string[] = [];
   private _readOnly = false;
   private readonly owner: string;
-  private lastSubstituteReplacement: string | null = null;
-  private substState: { rangeEnd: number; regex: VimRegExp; replacementTemplate: string; global: boolean; currentLine: number; currentCol: number; totalReplaced: number; linesTouched: Set<number> } | null = null;
+  private substituteMemory: SubstituteMemory = freshSubstituteMemory();
+  private substitutePattern: string | null = null;
+  private searchSlotPattern: string | null = null;
+  private substitution: SubstitutionState | null = null;
+  private globalRun: GlobalRun | null = null;
+  private substitutionCount = 0;
+  private substitutionLines = 0;
+  private expressionError: string | null = null;
+  private readonly lambdaCounter = { next: 1 };
   private _pendingMatch: PendingSubstMatch | null = null;
+  private pendingBackwardsRange: string | null = null;
 
   // Undo/redo — one snapshot per logical change (an entire insert session
   // counts as one step, matching real vim).
@@ -578,6 +588,7 @@ export class VimEngine {
       case 'command': return this.applyCommandKey(k);
       case 'search': return this.applySearchKey(k);
       case 'confirm-substitute': return this.applyConfirmSubstKey(k);
+      case 'ask-swap-range': return this.applySwapRangeKey(k);
       case 'visual': case 'visual-line': case 'visual-block': return this.applyVisualKey(k);
       case 'swap-recovery': return this.applySwapRecoveryKey(k);
       case 'binary-warning': return this.applyBinaryWarningKey(k);
@@ -932,6 +943,7 @@ export class VimEngine {
       case 'P': this.paste(false); return;
       case 'J': this.joinCommand(true); return;
       case '~': this.tildeCommand(); return;
+      case '&': this.repeatSubstituteKey('s'); return;
       case 'U': this.undoLine(); return;
       case 'u': {
         const n = this.takeCount() ?? 1;
@@ -965,6 +977,7 @@ export class VimEngine {
     if (key === '~' || key === 'u' || key === 'U') { this.beginOperator(`g${key}` as Operator); return true; }
     if (key === 'J') { this.joinCommand(false); return true; }
     if (key === 'I') { this.beginInsert('gI'); return true; }
+    if (key === '&') { this.repeatSubstituteKey('%s//~/&'); return true; }
     return this.tryGMotion(key);
   }
 
@@ -1669,6 +1682,7 @@ export class VimEngine {
     if (this._mode === 'confirm-substitute' && this._pendingMatch) {
       return { text: `replace with ${this._pendingMatch.replacementPreview} (y/n/a/q/l/^E/^Y)?`, style: null };
     }
+    if (this._mode === 'ask-swap-range') return { text: 'Backwards range given, OK to swap (y/n)?', style: null };
     const showmode = this.options.bool('showmode');
     const label = ({ visual: '-- VISUAL --', 'visual-line': '-- VISUAL LINE --', 'visual-block': '-- VISUAL BLOCK --' } as Record<string, string>)[this._mode];
     if (label !== undefined) return { text: showmode ? label + recording : recording, style: 'modemsg' };
@@ -1905,8 +1919,7 @@ export class VimEngine {
         return;
       }
       case ':':
-        this.lastVisualStart = Math.min(this.visualAnchorLine, this._cursorLine);
-        this.lastVisualEnd = Math.max(this.visualAnchorLine, this._cursorLine);
+        this.exitVisual();
         this.commandBuffer = "'<,'>";
         this._mode = 'command';
         this.beginIncSearch();
@@ -2584,7 +2597,9 @@ export class VimEngine {
       this.finishIncSearch(false);
       this.window.noteWholeLineEdit();
       const before = this.linesArr.join('\n');
+      const undoBase = this.undoStack.length;
       this.executeExCommand(this.commandBuffer);
+      if (this.substitution === null && this.globalRun === null && this.undoStack.length > undoBase + 1) this.undoStack.splice(undoBase + 1);
       if (this.cmdlineColumn !== null && this.linesArr.join('\n') !== before) this.cmdlineColumn = null;
       return;
     }
@@ -2671,34 +2686,51 @@ export class VimEngine {
   }
 
   /** Parse an optional leading ex range (`%`, `N`, `N,M`, `$`, `.`, `'<,'>`) off a command string. */
-  private parseExRange(s: string): ExRange {
-    if (s.startsWith('%')) {
-      return { start: 0, end: this.linesArr.length - 1, rest: s.slice(1), literal: '%' };
-    }
-    const address = (text: string): { line: number; length: number } | null => {
-      const m = /^(\$|\.|'<|'>|\d+)?((?:[+-]\d*)*)/.exec(text);
-      if (m === null || m[0] === '') return null;
-      let line = this._cursorLine;
-      if (m[1] === '$') line = this.linesArr.length - 1;
-      else if (m[1] === "'<") line = this.lastVisualStart;
-      else if (m[1] === "'>") line = this.lastVisualEnd;
-      else if (m[1] !== undefined && m[1] !== '.') line = parseInt(m[1], 10) - 1;
-      for (const step of m[2].matchAll(/([+-])(\d*)/g)) line += (step[1] === '+' ? 1 : -1) * (step[2] === '' ? 1 : parseInt(step[2], 10));
-      return { line, length: m[0].length };
+  private rangeEnvironment(preview: boolean): RangeEnvironment {
+    return {
+      lineCount: this.linesArr.length,
+      cursorLine: this._cursorLine + 1,
+      mark: (name) => {
+        const position = this.patternMark(name);
+        return position === null ? null : position.line + 1;
+      },
+      search: (pattern, forward, fromLine) => this.searchAddress(pattern, forward, fromLine, preview),
+      repeatSearch: (source, forward, fromLine) => {
+        const pattern = source === 'substitute' ? this.substitutePattern : this.searchSlotPattern;
+        if (pattern === null) {
+          return { error: source === 'substitute' ? 'E33: No previous substitute regular expression' : 'E35: No previous regular expression' };
+        }
+        return this.searchAddress(pattern, forward, fromLine, preview);
+      },
     };
-    const first = address(s);
-    if (first === null) return { start: null, end: null, rest: s, literal: '' };
-    const second = s[first.length] === ',' ? address(s.slice(first.length + 1)) : null;
-    const length = first.length + (second === null ? 0 : 1 + second.length);
-    return { start: first.line, end: second === null ? first.line : second.line, rest: s.slice(length), literal: s.slice(0, length) };
   }
 
-  private rangeRefusal(range: ExRange, typed: string): string | null {
-    if (range.start === null || range.end === null || range.literal === '%') return null;
-    const last = this.linesArr.length - 1;
-    if (range.start > last || range.end > last) return `E16: Invalid range: ${typed}`;
-    if (range.start > range.end) return `E493: Backwards range given: ${typed}`;
-    return null;
+  private searchAddress(pattern: string, forward: boolean, fromLine: number, preview: boolean): { line: number } | { error: string } {
+    const remembered = pattern === '' ? this.lastSearch?.pattern ?? '' : pattern;
+    if (remembered === '') return { error: 'E35: No previous regular expression' };
+    if (!preview) this.rememberSearchPattern(remembered);
+    const refusal = searchPatternError(remembered, this.options.bool('ignorecase'), this.patternContext());
+    if (refusal !== null) return { error: refusal };
+    const lineIndex = Math.max(fromLine - 1, 0);
+    const origin = forward && fromLine > 0
+      ? { line: lineIndex, col: (this.linesArr[lineIndex] ?? '').length }
+      : { line: lineIndex, col: 0 };
+    const found = findMatch(this.linesArr, fromLine <= 0 && forward ? { line: 0, col: -1 } : origin, remembered, {
+      forward, count: 1, wrapscan: this.options.bool('wrapscan'), anchor: 'start',
+      ignoreCase: this.options.bool('ignorecase'), context: this.patternContext(),
+    });
+    if (found === null) return { error: this.searchFailure(remembered, forward) };
+    return { line: found.start.line + 1 };
+  }
+
+  private parseExRange(s: string, preview = false): ExRange {
+    const parsed = parseRange(s, this.rangeEnvironment(preview));
+    if (!preview && parsed.cursorAfter !== null) this._cursorLine = Math.max(0, Math.min(parsed.cursorAfter - 1, this.linesArr.length - 1));
+    if (parsed.error !== null) return { start: null, end: null, rest: parsed.rest, literal: parsed.literal, error: parsed.error };
+    if (parsed.addressCount === 0 || parsed.first === null || parsed.last === null) {
+      return { start: null, end: null, rest: parsed.rest, literal: parsed.literal };
+    }
+    return { start: parsed.first - 1, end: parsed.last - 1, rest: parsed.rest, literal: parsed.literal };
   }
 
   private applyRangeCommand(range: ExRange, verbe: string, cible: string): boolean {
@@ -2774,43 +2806,18 @@ export class VimEngine {
       return;
     }
     this.pushUndoSnapshot();
+    const before = this.linesArr.length;
     this.linesArr.splice(lo, hi - lo + 1);
     if (this.linesArr.length === 0) this.linesArr.push('');
     this._cursorLine = Math.min(lo, this.linesArr.length - 1);
-    this._cursorCol = 0;
+    this._cursorCol = this.beginLineColumn(this._cursorLine);
     this._modified = true;
-    this._message = '';
+    this._message = this.fewerLinesMessage(before - this.linesArr.length);
   }
 
-  private parseSubstituteCmd(s: string): { pattern: string; replacement: string; flags: string } | null {
-    const head = /^s(?:u(?:b(?:s(?:t(?:i(?:t(?:u(?:t(?:e)?)?)?)?)?)?)?)?)?\s*([^\w\s"|\\])/.exec(s);
-    if (head === null) return null;
-    const delimiter = head[1];
-    let at = head[0].length;
-    const take = (): { text: string; closed: boolean } => {
-      let text = '';
-      for (; at < s.length; at++) {
-        const c = s[at];
-        if (c === '\\' && at + 1 < s.length) {
-          text += c + s[at + 1];
-          at++;
-        } else if (c === delimiter) {
-          at++;
-          return { text, closed: true };
-        } else {
-          text += c;
-        }
-      }
-      return { text, closed: false };
-    };
-    const patternEnd = skipRegexp(s, at, delimiter);
-    const pattern = { text: s.slice(at, patternEnd), closed: patternEnd < s.length };
-    at = patternEnd + 1;
-    if (!pattern.closed) return { pattern: pattern.text, replacement: '', flags: '' };
-    const replacement = take();
-    if (!replacement.closed) return { pattern: pattern.text, replacement: replacement.text, flags: '' };
-    const flags = s.slice(at);
-    return /^[a-zA-Z&]*$/.test(flags) ? { pattern: pattern.text, replacement: replacement.text, flags } : null;
+  private fewerLinesMessage(removed: number): string {
+    if (removed <= this.options.number('report')) return '';
+    return removed === 1 ? '1 line less' : `${removed} fewer lines`;
   }
 
   private parseGlobalCmd(s: string): { inverse: boolean; pattern: string; command: string } | null {
@@ -2826,12 +2833,40 @@ export class VimEngine {
     };
   }
 
-  protected executeExCommand(raw: string): void {
-    const trimmed = raw.trim();
+  protected executeExCommand(raw: string, swapped = false): void {
+    const trimmed = raw.trim().replace(/^[:\s]+/, '');
     const range = this.parseExRange(trimmed);
+    if (range.error !== undefined) {
+      this._message = range.error;
+      this._mode = 'normal';
+      return;
+    }
+    if (range.start !== null && range.end !== null && range.rest.trim() !== '') {
+      if (range.start > range.end && !swapped && this.globalRun === null) {
+        this.pendingBackwardsRange = trimmed;
+        this._message = '';
+        this._mode = 'ask-swap-range';
+        return;
+      }
+      if (swapped) [range.start, range.end] = [range.end, range.start];
+      const lastLine = this.linesArr.length - 1;
+      if (range.start < -1 || range.end < -1 || range.start > range.end || range.end > lastLine) {
+        this._message = 'E16: Invalid range';
+        this._mode = 'normal';
+        return;
+      }
+    }
     const { start: rangeStart, end: rangeEnd, rest } = range;
 
     const ligne = rest.trim();
+    if (ligne === '') {
+      if (range.end !== null) {
+        this.gotoLine(range.end);
+        this._message = '';
+      }
+      this._mode = 'normal';
+      return;
+    }
     if (range.literal !== '' && (SET_COMMAND.test(ligne) || isAbbreviation(ligne, 'nohlsearch', 3))) {
       this._message = 'E481: No range allowed';
       this._mode = 'normal';
@@ -2839,12 +2874,6 @@ export class VimEngine {
     }
     const parPlage = ligne.match(/^([dy]|j|[<>]|m|co?|t)\s*(\S*)$/);
     if (parPlage !== null && (parPlage[2] === '' || /^(m|co?|t)$/.test(parPlage[1]))) {
-      const refus = this.rangeRefusal(range, trimmed);
-      if (refus !== null) {
-        this._message = refus;
-        this._mode = 'normal';
-        return;
-      }
       const applique = this.applyRangeCommand(range, parPlage[1], parPlage[2]);
       if (applique) {
         this._mode = 'normal';
@@ -2919,43 +2948,9 @@ export class VimEngine {
       return;
     }
 
-    if (rest === 's' || /^s(?:u(?:b(?:s(?:t(?:i(?:t(?:u(?:t(?:e)?)?)?)?)?)?)?)?)?\s*[^\w\s"|\\]/.test(rest)) {
-      const parsed = this.parseSubstituteCmd(rest);
-      if (!parsed) {
-        this._message = 'E486: no previous substitute regular expression';
-        this._mode = 'normal';
-        return;
-      }
-      if (parsed.pattern !== '') this.rememberSearchPattern(parsed.pattern);
-      const pattern = parsed.pattern === '' ? this.lastSearch?.pattern ?? '' : parsed.pattern;
-      if (pattern === '') {
-        this._message = 'E35: No previous regular expression';
-        this._mode = 'normal';
-        return;
-      }
-      const s = rangeStart ?? this._cursorLine;
-      const e = rangeEnd ?? this._cursorLine;
-      if (this.refusesPattern(pattern, this.substituteIgnoresCase(parsed.flags))) {
-        this._mode = 'normal';
-        return;
-      }
-      if (parsed.flags.includes('c')) {
-        this.startConfirmSubstitute(s, e, pattern, parsed.replacement, parsed.flags);
-        this.lastSubstituteReplacement = parsed.replacement;
-      } else {
-        this.pushUndoSnapshot();
-        const result = this.executeSubstitute(s, e, pattern, parsed.replacement, parsed.flags);
-        this.lastSubstituteReplacement = parsed.replacement;
-        if (result.count > 0) {
-          this._modified = true;
-          this.moveToFirstNonBlank(result.lastLine);
-          this._message = `${result.count} substitution${result.count === 1 ? '' : 's'} on ${result.lines} line${result.lines === 1 ? '' : 's'}`;
-        } else {
-          this.undoStack.pop(); // nothing actually changed
-          this._message = `E486: Pattern not found: ${pattern}`;
-        }
-        this._mode = 'normal';
-      }
+    const substitute = this.substituteCommandName(rest.trimStart());
+    if (substitute !== null) {
+      this.executeSubstitute(substitute.name, substitute.argument, range);
       return;
     }
 
@@ -3090,7 +3085,7 @@ export class VimEngine {
       tabstop: this.tabstop,
       cursor: { line: this._cursorLine, col: this._cursorCol },
       mark: (name) => this.patternMark(name),
-      lastSubstitute: this.lastSubstituteReplacement,
+      lastSubstitute: this.substituteMemory.previousExpansion,
       visual: live
         ? { mode: this._mode as 'visual' | 'visual-line' | 'visual-block', anchor: { line: this.visualAnchorLine, col: this.visualAnchorCol }, cursor: { line: this._cursorLine, col: this._cursorCol } }
         : this.lastVisual,
@@ -3108,8 +3103,10 @@ export class VimEngine {
     return this.marks.get(name) ?? null;
   }
 
-  private substituteIgnoresCase(flags: string): boolean {
-    return flags.includes('i') || (this.options.bool('ignorecase') && !flags.includes('I'));
+  private substituteIgnoresCase(override: '' | 'i' | 'I'): boolean {
+    if (override === 'i') return true;
+    if (override === 'I') return false;
+    return this.options.bool('ignorecase');
   }
 
   private refusesPattern(pattern: string, ignoreCase: boolean): boolean {
@@ -3119,41 +3116,233 @@ export class VimEngine {
     return true;
   }
 
-  private executeSubstitute(startLine: number, endLine: number, pattern: string, replacement: string, flags: string): { count: number; lines: number; lastLine: number } {
-    const regex = compileVimPattern(pattern, this.substituteIgnoresCase(flags), this.patternContext());
-    let count = 0;
-    let linesChanged = 0;
-    let lastLine = -1;
-    const lo = Math.max(0, Math.min(startLine, endLine));
-    const hi = Math.min(this.linesArr.length - 1, Math.max(startLine, endLine));
-    const everywhere = flags.includes('g');
-    for (let li = lo; li <= hi; li++) {
-      const line = this.linesArr[li];
-      let out = '';
-      let copied = 0;
-      let from = 0;
-      let previousEnd = -1;
-      let changed = false;
-      for (;;) {
-        const m = execFrom(this.linesArr, li, regex, from);
-        if (!m) break;
-        const end = m.index + m[0].length;
-        if (m[0].length === 0 && m.index === previousEnd) {
-          if (m.index >= line.length) break;
-          from = m.index + 1;
-          continue;
-        }
-        out += line.slice(copied, m.index) + applyVimReplacement(replacement, m);
-        copied = end;
-        previousEnd = end;
-        count++;
-        changed = true;
-        from = m[0].length === 0 ? end + 1 : end;
-        if (!everywhere || from >= line.length) break;
-      }
-      if (changed) { this.linesArr[li] = out + line.slice(copied); linesChanged++; lastLine = li; }
+  private repeatSubstituteKey(command: string): void {
+    this.pendingCountStr = '';
+    this.executeExCommand(command);
+  }
+
+  private beginLineColumn(line: number): number {
+    const text = this.linesArr[line] ?? '';
+    const column = firstNonBlank(text);
+    return column >= text.length && text.length > 0 ? text.length - 1 : column;
+  }
+
+  private substituteCommandName(rest: string): { name: 's' | '&' | '~'; argument: string } | null {
+    if (rest.startsWith('&')) return { name: '&', argument: rest.slice(1) };
+    if (rest.startsWith('~')) return { name: '~', argument: rest.slice(1) };
+    const spelled = /^s(?:u(?:b(?:s(?:t(?:i(?:t(?:u(?:t(?:e)?)?)?)?)?)?)?)?)?(?![A-Za-z])/.exec(rest);
+    if (spelled !== null) return { name: 's', argument: rest.slice(spelled[0].length) };
+    if (/^s[cgiIr]/.test(rest) && !/^s(?:re|cr|cs|im|ig|il)/.test(rest)) return { name: 's', argument: rest.slice(1) };
+    return null;
+  }
+
+  private executeSubstitute(name: 's' | '&' | '~', argument: string, range: ExRange): void {
+    const outcome = parseSubstitute(name, argument.trimStart(), this.substituteMemory, this.options.bool('gdefault'));
+    this._mode = 'normal';
+    if ('error' in outcome) {
+      this._message = outcome.error;
+      return;
     }
-    return { count, lines: linesChanged, lastLine };
+    const parsed = outcome.parsed;
+    const total = this.linesArr.length;
+    let first = (range.start ?? this._cursorLine) + 1;
+    let last = (range.end ?? this._cursorLine) + 1;
+    if (first > total || last > total) {
+      this._message = 'E16: Invalid range';
+      return;
+    }
+    if (first > last) [first, last] = [last, first];
+    if (first < 1) first = 1;
+    if (last < 1) last = 1;
+    const global = this.globalRun;
+    if (!global) {
+      this.substitutionCount = 0;
+      this.substitutionLines = 0;
+      this.expressionError = null;
+    }
+
+    if (parsed.join) {
+      this.joinForSubstitute(first, last, parsed.joinFlag);
+      return;
+    }
+    if (parsed.count !== null) {
+      first = last;
+      last = Math.min(last + parsed.count - 1, total);
+    }
+
+    const flags = this.substituteMemory.flags;
+    let pattern: string;
+    if (parsed.pattern === null || parsed.pattern === '') {
+      const remembered = parsed.source === 'last' ? this.lastSearch?.pattern ?? null
+        : parsed.source === 'substitute' ? this.substitutePattern : this.searchSlotPattern;
+      if (remembered === null) {
+        this._message = parsed.source === 'substitute'
+          ? 'E33: No previous substitute regular expression' : 'E35: No previous regular expression';
+        return;
+      }
+      pattern = remembered;
+    } else {
+      pattern = parsed.pattern;
+    }
+    if (parsed.source !== 'substitute') this.rememberSubstitutePattern(pattern);
+    const ignoreCase = this.substituteIgnoresCase(flags.ignoreCase);
+    if (this.refusesPattern(pattern, ignoreCase)) return;
+    const regex = compileVimPattern(pattern, ignoreCase, this.patternContext());
+
+    let template = parsed.replacement;
+    if (!template.startsWith('\\=')) {
+      template = expandTilde(template, this.substituteMemory.previousExpansion);
+      this.substituteMemory.previousExpansion = template;
+    }
+
+    if (!flags.count && !global) this.pushUndoSnapshot();
+    const run: SubstituteRun = {
+      lines: this.linesArr, regex, template, flags, tracker: global?.tracker ?? null, expression: null,
+      line1: first, line2: last, cursorLine: this._cursorLine + 1, cursorColumn: this._cursorCol,
+      substitutions: this.substitutionCount, linesChanged: this.substitutionLines,
+      gotMatch: false, gotQuit: false, firstMatchFrom: null,
+    };
+    if (template.startsWith('\\=')) {
+      run.expression = (match, lineNumber, column) => this.evaluateReplacement(template.slice(2), match, lineNumber, column);
+    }
+    const state: SubstitutionState = {
+      generator: runSubstitution(run), run, startSubstitutions: this.substitutionCount,
+      oldCursor: { line: this._cursorLine + 1, col: this._cursorCol }, usedPattern: pattern, nextCommand: parsed.nextCommand,
+      savedAll: flags.all, savedAsk: flags.ask, keptCursorColumn: parsed.keptCursorColumn,
+    };
+    this.substitution = state;
+    this.advanceSubstitution(undefined);
+  }
+
+  private advanceSubstitution(answer: AskAnswer | undefined): void {
+    const state = this.substitution!;
+    const step = state.generator.next(answer as AskAnswer);
+    if (step.done !== true) {
+      const ask = step.value;
+      this._mode = 'confirm-substitute';
+      this._cursorLine = ask.line - 1;
+      this._cursorCol = ask.column;
+      this._pendingMatch = {
+        line: ask.line - 1, start: ask.column, end: ask.endColumn, matchText: ask.matchText, replacementPreview: ask.template,
+      };
+      return;
+    }
+    this.finishSubstitution(state);
+  }
+
+  private finishSubstitution(state: SubstitutionState): void {
+    const { run } = state;
+    const flags = run.flags;
+    const global = this.globalRun;
+    this.substitution = null;
+    this._pendingMatch = null;
+    this._mode = 'normal';
+    this.substitutionCount = run.substitutions;
+    this.substitutionLines = run.linesChanged;
+    if (run.firstMatchFrom !== null) this.lastJumpPosition = { line: run.firstMatchFrom.line - 1, col: run.firstMatchFrom.column };
+    const changed = run.substitutions > state.startSubstitutions;
+    this._cursorLine = Math.max(0, Math.min(run.cursorLine - 1, this.linesArr.length - 1));
+    this._cursorCol = run.gotMatch ? run.cursorColumn : state.oldCursor.col;
+    if (flags.count) {
+      this._cursorLine = state.oldCursor.line - 1;
+      this._cursorCol = state.oldCursor.col;
+    }
+    this._message = '';
+    if (changed) {
+      if (!global) {
+        if (!flags.ask) this._cursorCol = this.beginLineColumn(this._cursorLine);
+        const report = this.options.number('report');
+        if (run.substitutions > report || flags.count) {
+          this._message = substitutionMessage(run.substitutions, run.linesChanged, flags.count);
+        }
+      } else {
+        global.needBeginline = true;
+      }
+      if (flags.print) this._message = this.printedLine(this._cursorLine, flags.number, flags.list);
+    } else if (!global && !run.gotMatch && flags.error) {
+      this._message = `E486: Pattern not found: ${state.usedPattern}`;
+    }
+    flags.all = state.savedAll;
+    flags.ask = state.savedAsk;
+    if (!global && this.expressionError !== null) this._message = this.expressionError;
+    if (changed && !flags.count) this._modified = true;
+    else if (!global && !flags.count) this.undoStack.pop();
+    if (global) {
+      this.stepGlobal();
+      return;
+    }
+    if (state.nextCommand !== null && state.nextCommand.trim() !== '' && !/^E\d+:/.test(this._message)) this.executeExCommand(state.nextCommand);
+  }
+
+  private evaluateReplacement(source: string, match: MultiMatch, lineNumber: number, columnIndex: number): string {
+    const outcome = evaluateReplacementExpression(source, {
+      lines: this.linesArr,
+      lineNumber,
+      columnIndex,
+      tabstop: this.tabstop,
+      ignoreCase: this.options.bool('ignorecase'),
+      searchForward: this.lastSearch?.forward ?? true,
+      highlightSearch: this.options.bool('hlsearch') && !this.noHlsearch,
+      windowTop: this.window.top + 1,
+      windowBottom: this.window.top + this.window.height,
+      lambdaCounter: this.lambdaCounter,
+      submatch: (index) => match.groups[index],
+      mark: (name) => this.patternMark(name),
+      register: (name) => this.registerContent(name),
+      option: (name, scope) => this.options.lookup(name, scope),
+      environment: (name) => this.environmentVariable(name),
+    });
+    if (outcome.errors.length > 0 && this.expressionError === null) this.expressionError = outcome.errors[0];
+    return outcome.text;
+  }
+
+  private registerContent(name: string): string | null {
+    const register = this.registers.get(name);
+    if (register === undefined) return null;
+    return register.lines.join('\n') + (register.linewise ? '\n' : '');
+  }
+
+  private environmentVariable(name: string): string {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? this.fs.runShellCommand(`printenv ${name}`) : '';
+  }
+
+  private printedLine(line: number, numbered: boolean, listed: boolean): string {
+    let text = this.linesArr[line] ?? '';
+    if (listed) text = `${text.replace(/\t/g, '^I')}$`;
+    return numbered ? `${String(line + 1).padStart(Math.max(3, this.options.number('numberwidth') - 1))} ${text}` : text;
+  }
+
+  private joinForSubstitute(first: number, last: number, flag: string): void {
+    const global = this.globalRun;
+    this._cursorLine = first - 1;
+    let count = last - first + 1;
+    if (last < this.linesArr.length) count++;
+    this._message = '';
+    if (count > 1) {
+      if (!global) this.pushUndoSnapshot();
+      const column = joinedCursorColumn(this.linesArr, first - 1, count);
+      const merged = this.linesArr.slice(first - 1, first - 1 + count).join('');
+      this.linesArr.splice(first - 1, count, merged);
+      global?.tracker.deleted(first, count - 1);
+      this._cursorCol = Math.min(column, Math.max(merged.length - 1, 0));
+      this._modified = true;
+      this.substitutionCount = count - 1;
+      this.substitutionLines = 1;
+      if (this.substitutionCount > this.options.number('report')) {
+        this._message = substitutionMessage(this.substitutionCount, 1, false);
+      }
+      if (flag === 'l' || flag === 'p' || flag === '#') this._message = this.printedLine(this._cursorLine, flag === '#', flag === 'l');
+    }
+    this.rememberSubstitutePattern('\\n');
+    if (global) this.stepGlobal();
+  }
+
+  private rememberSubstitutePattern(pattern: string): void {
+    this.substitutePattern = pattern;
+    const previous = this.lastSearch;
+    this.lastSearch = { pattern, forward: previous?.forward ?? true, offset: previous?.offset ?? NO_OFFSET };
+    this.registers.set('/', { linewise: false, lines: [pattern] });
+    this.noHlsearch = false;
   }
 
   // ── :g/pattern/cmd global command ───────────────────────────────────
@@ -3162,143 +3351,113 @@ export class VimEngine {
     const regex = compileVimPattern(pattern, this.options.bool('ignorecase'), this.patternContext());
     const lo = Math.max(0, Math.min(startLine, endLine));
     const hi = Math.min(this.linesArr.length - 1, Math.max(startLine, endLine));
-    const matchingIndices: number[] = [];
+    const buffer = new BufferText(this.linesArr);
+    const marks: number[] = [];
     for (let i = lo; i <= hi; i++) {
-      if ((regex.execLine(this.linesArr, i, 0) !== null) !== inverse) matchingIndices.push(i);
+      if ((regex.execMulti(buffer, i, 0) !== null) !== inverse) marks.push(i);
     }
-    if (matchingIndices.length === 0) {
+    if (marks.length === 0) {
       this._message = inverse ? `Pattern found in every line: ${pattern}` : `Pattern not found: ${pattern}`;
+      this.undoStack.pop();
       return;
     }
-    let deleted = 0;
-    let substituted = false;
-    let lastLine = this._cursorLine;
-    const trimmedCmd = cmd.trim();
-    for (const origIdx of matchingIndices) {
-      const idx = origIdx - deleted;
-      lastLine = idx;
-      if (trimmedCmd === 'd' || trimmedCmd === 'delete') {
-        this.linesArr.splice(idx, 1);
-        deleted++;
-      } else {
-        const parsed = this.parseSubstituteCmd(trimmedCmd);
-        if (parsed !== null) {
-          const inner = parsed.pattern === '' ? pattern : parsed.pattern;
-          this.rememberSearchPattern(inner);
-          const result = this.executeSubstitute(idx, idx, inner, parsed.replacement, parsed.flags);
-          this.lastSubstituteReplacement = parsed.replacement;
-          if (result.count > 0) substituted = true;
-        }
-      }
-    }
-    if (this.linesArr.length === 0) this.linesArr.push('');
-    this.cmdlineColumn = null;
-    if (deleted > 0 || substituted) {
-      this.moveToFirstNonBlank(lastLine);
-    } else {
-      this._cursorLine = Math.min(lastLine, this.linesArr.length - 1);
+    const run: GlobalRun = {
+      marks, command: cmd, oldLineCount: this.linesArr.length, needBeginline: false,
+      tracker: {
+        inserted: (index, count) => {
+          run.marks = run.marks.map((mark) => (mark >= index ? mark + count : mark));
+        },
+        deleted: (index, count) => {
+          run.marks = run.marks.filter((mark) => mark < index || mark >= index + count).map((mark) => (mark >= index + count ? mark - count : mark));
+        },
+      },
+    };
+    this.globalRun = run;
+    this.substitutionCount = 0;
+    this.substitutionLines = 0;
+    this.stepGlobal();
+  }
+
+  private stepGlobal(): void {
+    const run = this.globalRun;
+    if (run === null) return;
+    while (run.marks.length > 0) {
+      if (this.substitution !== null) return;
+      const line = run.marks.shift()!;
+      if (line >= this.linesArr.length) continue;
+      this._cursorLine = line;
       this._cursorCol = 0;
+      this.runGlobalCommand(run.command.trim());
+      if (this.substitution !== null) return;
     }
+    this.finishGlobal(run);
+  }
+
+  private runGlobalCommand(command: string): void {
+    const global = this.globalRun!;
+    if (command === 'd' || command === 'delete') {
+      this.linesArr.splice(this._cursorLine, 1);
+      global.tracker.deleted(this._cursorLine, 1);
+      if (this.linesArr.length === 0) this.linesArr.push('');
+      global.needBeginline = true;
+      return;
+    }
+    const substitute = this.substituteCommandName(command);
+    if (substitute !== null) {
+      this.executeSubstitute(substitute.name, substitute.argument, { start: null, end: null, rest: '', literal: '' });
+    }
+  }
+
+  private finishGlobal(run: GlobalRun): void {
+    this.globalRun = null;
+    this.cmdlineColumn = null;
+    const last = Math.min(this._cursorLine, this.linesArr.length - 1);
+    this._cursorLine = last;
+    this._cursorCol = run.needBeginline ? this.beginLineColumn(last) : Math.min(this._cursorCol, Math.max(this.linesArr[last].length - 1, 0));
+    this._message = '';
+    const report = this.options.number('report');
+    const delta = this.linesArr.length - run.oldLineCount;
+    const expressionError = this.expressionError;
+    if (this.substitutionCount > 0 && this.substitutionCount > report) {
+      this._message = substitutionMessage(this.substitutionCount, this.substitutionLines, false);
+    } else if (Math.abs(delta) > report) {
+      const size = Math.abs(delta);
+      this._message = delta > 0 ? `${size} more line${size === 1 ? '' : 's'}` : `${size} ${size === 1 ? 'line less' : 'fewer lines'}`;
+    }
+    if (expressionError !== null) this._message = expressionError;
     this._modified = true;
   }
 
   // ── :s///c interactive confirm ──────────────────────────────────────
 
-  private startConfirmSubstitute(startLine: number, endLine: number, pattern: string, replacement: string, flags: string): void {
-    this.pushUndoSnapshot();
-    this.substState = {
-      rangeEnd: Math.min(this.linesArr.length - 1, Math.max(startLine, endLine)),
-      regex: compileVimPattern(pattern, this.substituteIgnoresCase(flags), this.patternContext()),
-      replacementTemplate: replacement,
-      global: flags.includes('g'),
-      currentLine: Math.max(0, Math.min(startLine, endLine)),
-      currentCol: 0,
-      totalReplaced: 0,
-      linesTouched: new Set<number>(),
-    };
-    if (!this.advanceToNextMatch()) this.finishConfirmSubstitute();
-  }
-
-  private advanceToNextMatch(): boolean {
-    const st = this.substState;
-    if (!st) return false;
-    while (st.currentLine <= st.rangeEnd) {
-      const m = execFrom(this.linesArr, st.currentLine, st.regex, st.currentCol);
-      if (m) {
-        this._pendingMatch = {
-          line: st.currentLine,
-          start: m.index,
-          end: m.index + m[0].length,
-          matchText: m[0],
-          replacementPreview: applyVimReplacement(st.replacementTemplate, m),
-        };
-        this._mode = 'confirm-substitute';
-        return true;
-      }
-      st.currentLine++;
-      st.currentCol = 0;
+  private applySwapRangeKey(k: EditorKeyInput): void {
+    const command = this.pendingBackwardsRange;
+    const key = k.key.toLowerCase();
+    if (command === null) {
+      this._mode = 'normal';
+      return;
     }
-    return false;
-  }
-
-  private applyPendingMatch(): void {
-    const st = this.substState!;
-    const pm = this._pendingMatch!;
-    const line = this.linesArr[pm.line];
-    this.linesArr[pm.line] = line.slice(0, pm.start) + pm.replacementPreview + line.slice(pm.end);
-    st.totalReplaced++;
-    st.linesTouched.add(pm.line);
-    this._modified = true;
-    const delta = pm.replacementPreview.length - (pm.end - pm.start);
-    if (st.global) { st.currentCol = pm.end + delta; } else { st.currentLine++; st.currentCol = 0; }
-  }
-
-  private skipPendingMatch(): void {
-    const st = this.substState!;
-    const pm = this._pendingMatch!;
-    if (st.global) { st.currentCol = pm.end; } else { st.currentLine++; st.currentCol = 0; }
+    if (key === 'y' && !k.ctrl) {
+      this.pendingBackwardsRange = null;
+      this._mode = 'normal';
+      this.executeExCommand(command, true);
+    } else if ((key === 'n' && !k.ctrl) || k.key === 'Escape' || (k.ctrl && key === 'c')) {
+      this.pendingBackwardsRange = null;
+      this._mode = 'normal';
+      this._message = '';
+    }
   }
 
   private applyConfirmSubstKey(k: EditorKeyInput): void {
+    if (this.substitution === null) {
+      this._mode = 'normal';
+      return;
+    }
     const key = k.key.toLowerCase();
-    if (k.key === 'Escape' || key === 'q') { this.finishConfirmSubstitute(); return; }
-    if (key === 'y') {
-      this.applyPendingMatch();
-      this._pendingMatch = null;
-      if (!this.advanceToNextMatch()) this.finishConfirmSubstitute();
-      return;
-    }
-    if (key === 'n') {
-      this.skipPendingMatch();
-      this._pendingMatch = null;
-      if (!this.advanceToNextMatch()) this.finishConfirmSubstitute();
-      return;
-    }
-    if (key === 'l') {
-      this.applyPendingMatch();
-      this.finishConfirmSubstitute();
-      return;
-    }
-    if (key === 'a') {
-      this.applyPendingMatch();
-      this._pendingMatch = null;
-      while (this.advanceToNextMatch()) this.applyPendingMatch();
-      this._pendingMatch = null;
-      this.finishConfirmSubstitute();
-      return;
-    }
-  }
-
-  private finishConfirmSubstitute(): void {
-    const st = this.substState;
-    this._mode = 'normal';
-    this._pendingMatch = null;
-    this.substState = null;
-    if (st && st.totalReplaced > 0) {
-      const n = st.linesTouched.size;
-      this._message = `${st.totalReplaced} substitution${st.totalReplaced === 1 ? '' : 's'} on ${n} line${n === 1 ? '' : 's'}`;
-    } else {
-      this.undoStack.pop(); // nothing was actually confirmed
+    if (k.key === 'Escape' || (k.ctrl && key === 'c') || key === 'q') {
+      this.advanceSubstitution('q');
+    } else if (!k.ctrl && (key === 'y' || key === 'n' || key === 'a' || key === 'l')) {
+      this.advanceSubstitution(key as AskAnswer);
     }
   }
 
@@ -3407,7 +3566,7 @@ export class VimEngine {
       const parsed = parseSearchInput(typed, forward ? '/' : '?');
       return { pattern: typed === '' ? '' : parsed.pattern === '' ? this.lastSearch?.pattern ?? '' : parsed.pattern, forward, range: null };
     }
-    const range = this.parseExRange(this.commandBuffer.replace(/^[\s:]+/, ''));
+    const range = this.parseExRange(this.commandBuffer.replace(/^[\s:]+/, ''), true);
     const command = INC_COMMAND.exec(range.rest.replace(/^\s+/, ''));
     if (command === null) return null;
     const delimiter = command[2];
@@ -3581,6 +3740,7 @@ export class VimEngine {
   }
 
   private rememberSearchPattern(pattern: string): void {
+    this.searchSlotPattern = pattern;
     const previous = this.lastSearch;
     this.lastSearch = { pattern, forward: previous?.forward ?? true, offset: previous?.offset ?? NO_OFFSET };
     this.registers.set('/', { linewise: false, lines: [pattern] });

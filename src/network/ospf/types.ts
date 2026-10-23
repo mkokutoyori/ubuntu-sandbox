@@ -188,6 +188,9 @@ export interface OSPFNeighbor {
   lastHelloReceived: number;
   /** Options field from Hello */
   options: number;
+  interfaceId?: number;
+  authSequence?: number;
+  authKeyId?: number;
   /** DD retransmission timer handle (RFC 2328 §10.6) */
   ddRetransmitTimer: symbol | null;
   /** LSR retransmission timer handle (RFC 2328 §10.9) */
@@ -236,6 +239,23 @@ export type OSPFNetworkType =
    */
   | 'loopback';
 
+export interface OSPFInterfaceOptions {
+  cost?: number;
+  priority?: number;
+  networkType?: OSPFNetworkType;
+  helloInterval?: number;
+  deadInterval?: number;
+  /** Interface MTU in bytes (default 1500) */
+  mtu?: number;
+  /** One-way propagation delay in ms (default 0 = synchronous) */
+  propagationDelayMs?: number;
+  /** Interface bandwidth in bps (overrides the heuristic derived from the name) */
+  bandwidthBps?: number;
+  authType?: number;
+  authKey?: string;
+  md5Keys?: ReadonlyMap<number, string>;
+}
+
 export interface OSPFInterface {
   /** Interface name (e.g., GigabitEthernet0/0) */
   name: string;
@@ -278,6 +298,7 @@ export interface OSPFInterface {
   authType: number;
   /** Authentication key */
   authKey: string;
+  md5Keys?: Map<number, string>;
   /** Interface MTU in bytes (used for DD/LSR/LSU fragmentation) */
   mtu: number;
   /** One-way propagation delay in milliseconds (0 = synchronous delivery) */
@@ -505,6 +526,9 @@ export interface OSPFPacketHeader extends NetworkPdu {
   authType?: number;
   /** Auth data — stamped at egress, validated at ingress (RFC 2328 §8.2). */
   authKey?: string;
+  authKeyId?: number;
+  authSequence?: number;
+  authDigest?: string;
 }
 
 /** Type 1: Hello Packet (RFC 2328 §A.3.2) */
@@ -624,16 +648,29 @@ export interface OSPFConfig {
   redistributeConnected: boolean;
   /** Redistribute static */
   redistributeStatic: boolean;
+  redistributeRip: boolean;
   /** Passive interfaces (no hellos sent) */
   passiveInterfaces: Set<string>;
   passiveInterfaceDefault?: boolean;
   /** Log adjacency changes */
   logAdjacencyChanges: boolean;
+  logAdjacencyChangesDetail: boolean;
   /** Auto-cost reference bandwidth (Kbps for Cisco) */
   autoCostReferenceBandwidth: number;
 }
 
 export const OSPF_ROUTER_ID_ABSENT = '0.0.0.0';
+
+export const DEFAULT_ADJACENCY_LOGGING = { logAdjacencyChanges: true, logAdjacencyChangesDetail: false } as const;
+
+export function adjacencyChangeIsLogged(
+  config: Pick<OSPFConfig, 'logAdjacencyChanges' | 'logAdjacencyChangesDetail'>,
+  from: OSPFNeighborState,
+  to: OSPFNeighborState,
+): boolean {
+  if (!config.logAdjacencyChanges) return false;
+  return config.logAdjacencyChangesDetail || from === 'Full' || to === 'Full';
+}
 
 export function createDefaultOSPFConfig(processId: number = 1): OSPFConfig {
   return {
@@ -645,8 +682,10 @@ export function createDefaultOSPFConfig(processId: number = 1): OSPFConfig {
     defaultInformationOriginate: false,
     redistributeConnected: false,
     redistributeStatic: false,
+    redistributeRip: false,
     passiveInterfaces: new Set(),
     logAdjacencyChanges: true,
+    logAdjacencyChangesDetail: false,
     autoCostReferenceBandwidth: 100, // 100 Mbps in Mbps
   };
 }

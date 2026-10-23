@@ -1,4 +1,5 @@
 import type { Router } from '../../Router';
+import { IPAddress } from '../../../core/types';
 import { getSecurityConfig } from '../../shells/cisco/CiscoSecurityCommands';
 import type { AaaMethodEntry, AaaServerGroup, CiscoSecurityConfig, RadiusServer, TacacsServer } from '../security/CiscoSecurityConfig';
 import { radiusAuthPort, tacacsServerPort } from '../security/CiscoSecurityConfig';
@@ -463,7 +464,7 @@ export class AaaAuthenticator {
       selector.acquire(address);
       let outcome: Awaited<ReturnType<typeof client.authenticateWithOutcome>>;
       try {
-        outcome = await client.authenticateWithOutcome(wireName, password, address);
+        outcome = await this.inServerVrf(address, () => client.authenticateWithOutcome(wireName, password, address));
       } finally {
         selector.release(address);
       }
@@ -494,11 +495,24 @@ export class AaaAuthenticator {
     return server === undefined ? null : { user: split.user, server };
   }
 
+  private inServerVrf<T>(address: string, work: () => T): T {
+    const owner = (this.router as unknown as { runInVrf?: <R>(vrf: string | null, run: () => R) => R }).runInVrf;
+    return owner === undefined ? work() : owner.call(this.router, this.vrfOfServer(address), work);
+  }
+
   private vrfOfServer(address: string): string | null {
-    const egress = (this.router as unknown as { egressInterfaceFor?: (a: string) => string | null }).egressInterfaceFor?.(address);
-    if (!egress) return null;
-    for (const vrf of vrfStoreOf(this.router as unknown as VrfHost).values()) {
-      if (vrf.interfaces.has(egress)) return vrf.name;
+    const host = this.router as unknown as {
+      egressInterfaceFor?: (a: string) => string | null;
+      lookupVrfDestination?: (vrf: string, destination: IPAddress) => unknown;
+    };
+    const egress = host.egressInterfaceFor?.(address);
+    const vrfs = vrfStoreOf(this.router as unknown as VrfHost);
+    if (egress) {
+      for (const vrf of vrfs.values()) if (vrf.interfaces.has(egress)) return vrf.name;
+      return null;
+    }
+    for (const vrf of vrfs.values()) {
+      if (host.lookupVrfDestination?.(vrf.name, new IPAddress(address)) != null) return vrf.name;
     }
     return null;
   }

@@ -487,6 +487,13 @@ const AUDIT_SYSLOG_PRIORITY: Readonly<Record<AuditPriority, number>> = {
   EMERG: 0, ALERT: 1, CRIT: 2, ERR: 3, WARNING: 4, NOTICE: 5, INFO: 6,
 };
 
+export interface ForegroundResult {
+  output: string;
+  exitCode: number;
+  stderr?: string;
+  interleaved?: string;
+}
+
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
   interactiveOutput: ((line: string) => void) | null = null;
@@ -3925,6 +3932,12 @@ export class LinuxCommandExecutor {
     this.networkRunner = runner;
   }
 
+  private isForegroundClient: (name: string) => boolean = () => false;
+
+  setForegroundClientPredicate(pred: (name: string) => boolean): void {
+    this.isForegroundClient = pred;
+  }
+
   /** Side-effect-free companion to `networkRunner`: is `name` a network-routed command? */
   private isNetworkCommandName: (name: string) => boolean = () => false;
 
@@ -4041,7 +4054,10 @@ export class LinuxCommandExecutor {
       const effective = viaSudo ? argv.slice(1) : argv;
       const previousEnv = this._cmdEnv;
       this._cmdEnv = env;
-      const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin, outputPiped) : null;
+      const runner = this.networkRunner;
+      const pending = effective.length > 0
+        ? this.runNetworkInForeground(effective, () => runner(effective, env, viaSudo, stdin, outputPiped))
+        : null;
       if (pending) return pending.finally(() => { this._cmdEnv = previousEnv; });
       const wrapped = this.networkCommandBehindWrapper(effective, env, viaSudo, stdin, outputPiped);
       if (wrapped) return wrapped.finally(() => { this._cmdEnv = previousEnv; });
@@ -4162,6 +4178,74 @@ export class LinuxCommandExecutor {
   }
 
   private readonly bashPids: number[] = [];
+
+  private foregroundNetworkPid: number | null = null;
+
+  foregroundProcessId(): number | null {
+    return this.foregroundNetworkPid;
+  }
+
+  private readonly signalAwarePids = new Set<number>();
+
+  markSignalAware(pid: number): void {
+    if (pid === this.foregroundNetworkPid || this.supervisedPids.has(pid)) this.signalAwarePids.add(pid);
+  }
+
+  private runNetworkInForeground(
+    argv: string[],
+    start: () => Promise<ForegroundResult> | null,
+  ): Promise<ForegroundResult> | null {
+    if (!this.isForegroundClient(argv[0])) return start();
+    const launched: { pending: Promise<ForegroundResult> | null } = { pending: null };
+    const outcome = this.runForegroundCommand(argv, () => {
+      launched.pending = start();
+      return launched.pending ?? Promise.resolve({ output: '', exitCode: 0 });
+    });
+    return launched.pending === null ? null : outcome;
+  }
+
+  async runForegroundCommand<R extends ForegroundResult>(argv: string[], start: () => Promise<R>): Promise<R | ForegroundResult> {
+    const proc = this.spawnForegroundProcess(argv);
+    let stopListening = (): void => undefined;
+    let outcome: R | ForegroundResult = { output: '', exitCode: 1 };
+    try {
+      const pending = this.withProcessIdentity(proc.pid, start);
+      pending.catch(() => undefined);
+      const preempted = new Promise<ForegroundResult>((resolve) => {
+        stopListening = this.processMgr.whenKilled(proc.pid, (signal) => {
+          if (!this.signalAwarePids.has(proc.pid)) resolve({ output: '', exitCode: 128 + SIGNAL_NUMBERS[signal] });
+        });
+      });
+      outcome = await Promise.race([pending, preempted]);
+      return outcome;
+    } finally {
+      stopListening();
+      this.signalAwarePids.delete(proc.pid);
+      this.reapForegroundProcess(proc.pid, outcome.exitCode);
+    }
+  }
+
+  private spawnForegroundProcess(argv: string[]) {
+    const proc = this.processMgr.spawn({
+      command: argv.join(' '),
+      comm: argv[0].split('/').pop() ?? argv[0],
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      ppid: this.currentBashPid(),
+      tty: 'pts/0',
+      cwd: this.cwd,
+    });
+    this.foregroundNetworkPid = proc.pid;
+    return proc;
+  }
+
+  private reapForegroundProcess(pid: number, exitCode: number): void {
+    if (this.foregroundNetworkPid === pid) this.foregroundNetworkPid = null;
+    if (!this.processMgr.get(pid)) return;
+    if ((this.socketTable?.listByPid(pid).length ?? 0) > 0) return;
+    this.processMgr.exit(pid, exitCode);
+  }
 
   /** True while executing a backgrounded job's own script — inherited by
    *  anything it dispatches (e.g. a nested `bash -c`), so an unconditional
@@ -8442,7 +8526,16 @@ export class LinuxCommandExecutor {
         }
       }, invocation.durationSeconds * 1000));
     }
-    return pending.then((result) => {
+    pending.catch(() => undefined);
+    let stopListening = (): void => undefined;
+    const preempted = new Promise<{ output: string; exitCode: number; stderr?: string }>((resolve) => {
+      stopListening = this.processMgr.whenKilled(proc.pid, (signal) => {
+        if (!this.signalAwarePids.has(proc.pid)) resolve({ output: '', exitCode: 128 + SIGNAL_NUMBERS[signal] });
+      });
+    });
+    return Promise.race([pending, preempted]).then((result) => {
+      stopListening();
+      this.signalAwarePids.delete(proc.pid);
       for (const timer of timers) scheduler.clear(timer);
       this.supervisedPids.delete(proc.pid);
       if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);

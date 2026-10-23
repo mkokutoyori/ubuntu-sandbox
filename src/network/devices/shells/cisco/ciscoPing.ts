@@ -61,6 +61,7 @@ export interface ParsedPing {
   sourceIP: string | null;
   /** Which protocol the target belongs to — IOS keys the whole probe on it. */
   protocol: 'ip' | 'ipv6';
+  vrf?: string;
   /** Set when the target is missing or malformed — caller should echo it. */
   error?: string;
   badToken?: string;

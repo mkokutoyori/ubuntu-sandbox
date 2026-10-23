@@ -1,11 +1,13 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
+import { listenForInterruption } from '../CommandInterruption';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl, CURL_FLAGS, CURL_USAGE } from '@/network/http/curl/CurlEngine';
 
-function linuxCurlHost(ctx: LinuxCommandContext): CurlHost {
+function linuxCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost {
   return {
+    signal,
     async resolveHostname(name: string): Promise<string | null> {
       if (!name.includes(':')) {
         const ip = await ctx.net.resolveHostname(name);
@@ -33,10 +35,23 @@ function linuxCurlHost(ctx: LinuxCommandContext): CurlHost {
   };
 }
 
+async function runCurlInterruptibly(ctx: LinuxCommandContext, args: string[]) {
+  const interruption = listenForInterruption(ctx);
+  try {
+    const result = await runCurl(linuxCurlHost(ctx, interruption.signal), args);
+    const status = interruption.exitStatus();
+    if (status !== null) return { output: '', exitCode: status, stderr: '' };
+    return { output: result.output, exitCode: result.exitCode, stderr: result.stderr };
+  } finally {
+    interruption.release();
+  }
+}
+
 export const curlCommand: LinuxCommand = {
   name: 'curl',
   package: 'curl',
   needsNetworkContext: true,
+  foregroundClient: true,
   complete: makeArgCompleter({ flags: [...CURL_FLAGS] }),
   manSection: 1,
   usage: CURL_USAGE,
@@ -63,12 +78,9 @@ export const curlCommand: LinuxCommand = {
   ],
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    const result = await runCurl(linuxCurlHost(ctx), args);
+    const result = await runCurlInterruptibly(ctx, args);
     return [result.output, result.stderr].filter((s) => s.length > 0).join('\n');
   },
 
-  async runWithStatus(ctx: LinuxCommandContext, args: string[]) {
-    const result = await runCurl(linuxCurlHost(ctx), args);
-    return { output: result.output, exitCode: result.exitCode, stderr: result.stderr };
-  },
+  runWithStatus: runCurlInterruptibly,
 };

@@ -464,6 +464,45 @@ export abstract class TerminalSession {
 
   get hasForegroundAsyncJob(): boolean { return this.asyncRuntime.hasForegroundJob; }
 
+  private commandInFlight = false;
+  private typedAhead: string[] = [];
+  private drainingTypedAhead = false;
+
+  protected async inForeground<T>(run: () => Promise<T>): Promise<T> {
+    this.commandInFlight = true;
+    try {
+      return await run();
+    } finally {
+      this.commandInFlight = false;
+    }
+  }
+
+  protected holdTypedAhead(): boolean {
+    if (!this.commandInFlight) return false;
+    this.addLine(this.input);
+    this.typedAhead.push(this.input);
+    this.input = '';
+    this.notify();
+    return true;
+  }
+
+  protected interruptForegroundCommand(): boolean {
+    return false;
+  }
+
+  protected async drainTypedAhead(): Promise<void> {
+    if (this.drainingTypedAhead) return;
+    this.drainingTypedAhead = true;
+    try {
+      while (this.typedAhead.length > 0 && !this.commandInFlight && !this.hasForegroundAsyncJob) {
+        this.input = this.typedAhead.shift()!;
+        await this.onEnter();
+      }
+    } finally {
+      this.drainingTypedAhead = false;
+    }
+  }
+
   get hasBackgroundAsyncJobs(): boolean { return this.asyncRuntime.hasBackgroundJobs; }
 
   // ── React subscription API ──────────────────────────────────────
@@ -1619,10 +1658,19 @@ export abstract class TerminalSession {
   /** Called on Ctrl+C in normal mode. */
   protected onCtrlC(): void {
     if (this.asyncRuntime.interruptForeground()) return;
-    this.addLine(`${this.getPrompt()}${this.input}^C`);
+    if (this.commandInFlight && this.interruptForegroundCommand()) {
+      this.typedAhead = [];
+      this.input = '';
+      this.addLine('^C');
+      this.notify();
+      return;
+    }
+    this.addLine(`${this.getPrompt()}${this.input}^C`, this.interruptLineType);
     this.input = '';
     this.notify();
   }
+
+  protected readonly interruptLineType: string = 'normal';
 
   /** Called on Tab in normal mode. Shift+Tab passes reverse=true. */
   protected abstract onTab(reverse?: boolean): void;

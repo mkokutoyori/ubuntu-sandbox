@@ -21,8 +21,10 @@ import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 import { parseAreaId, type LSAHeader, type OSPFNeighbor } from '@/network/ospf/types';
-import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
+import type { DefaultInformationOriginate, OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+
+const VRP_DEFAULT_ROUTE_COST = 1;
 
 const VRP_IMPORTABLE_PROTOCOLS = new Set([
   'direct', 'connected', 'static', 'rip', 'isis', 'bgp', 'ospf', 'unr',
@@ -159,15 +161,16 @@ export function buildOSPFViewCommands(
   trie.registerGreedy('default-route-advertise', 'Advertise default route', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
-    ospf.setDefaultInformationOriginate(true);
-    const extra = ctx.r()._getOSPFExtraConfig() as any;
-    extra.defaultRouteAdvertise = extra.defaultRouteAdvertise || {};
+    const advertised: DefaultInformationOriginate = { always: false, metric: VRP_DEFAULT_ROUTE_COST, metricType: 2 };
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
-      if (a === 'always') extra.defaultRouteAdvertise.always = true;
-      else if (a === 'cost' && args[i + 1]) { extra.defaultRouteAdvertise.cost = parseInt(args[++i], 10); }
-      else if (a === 'type' && args[i + 1]) { extra.defaultRouteAdvertise.metricType = parseInt(args[++i], 10); }
+      if (a === 'always') advertised.always = true;
+      else if (a === 'cost' && args[i + 1]) {
+        const cost = parseInt(args[++i], 10);
+        if (!Number.isNaN(cost)) advertised.metric = cost;
+      } else if (a === 'type' && args[i + 1]) advertised.metricType = parseInt(args[++i], 10) === 1 ? 1 : 2;
     }
+    ctx.r()._getOSPFExtraConfig().defaultInformation = advertised;
     ctx.r()._ospfAutoConverge();
     return '';
   });
@@ -308,10 +311,7 @@ export function buildOSPFViewCommands(
   });
 
   trie.register('log-peer-change', 'Log OSPF adjacency changes', () => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.logAdjacencyChanges = true;
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (ospf) ospf.logAdjacencyChanges = true;
+    ctx.r()._getOSPFEngineInternal()?.setAdjacencyLogging(true, false);
     return '';
   });
 
@@ -621,7 +621,7 @@ export function registerOSPFInterfaceCommands(
     if (mode === 'md5') {
       const keyId = parseInt(args[1] ?? '', 10);
       if (isNaN(keyId)) return 'Error: Incomplete command.';
-      setPendingOspfIf(ifName, { authType: 2, authKeyId: keyId, authKey: cle(2) });
+      setPendingOspfIf(ifName, { authType: 2, md5Keys: new Map([[keyId, cle(2) ?? '']]) });
     } else if (mode === 'simple') {
       setPendingOspfIf(ifName, { authType: 1, authKey: cle(1) });
     } else if (mode === 'null') {

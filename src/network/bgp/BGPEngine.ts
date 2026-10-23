@@ -35,6 +35,9 @@ import {
   type BgpErrorCode, type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
 import { TimerSet } from '@/events/TimerSet';
+import { VpnV4Speaker, type VpnPeer, type VpnV4Host } from './vpn/VpnV4Speaker';
+import { AFI_IPV4, SAFI_MPLS_VPN, AFI_L2VPN, SAFI_VPLS, type BgpAddressFamily } from './messages';
+import { VplsBgpSpeaker, type VplsPeer, type VplsBgpHost } from './vpls/VplsBgpSpeaker';
 import { electRouterId } from '../routing/RouterIdElection';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
@@ -45,6 +48,9 @@ export interface BgpNeighborCfg {
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
   shutdown?: boolean;
+  updateSource?: string;
+  vpnv4?: boolean;
+  vpls?: boolean;
 }
 export interface BGPConfig {
   asn: number;
@@ -151,6 +157,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private propagating = false;
   /** True while {@link refreshFromCache} runs: recompute, never dial. */
   private cacheOnly = false;
+  private vpn: VpnV4Speaker | null = null;
+  private vplsSpeaker: VplsBgpSpeaker | null = null;
 
   // ── ConnectRetryTimer (RFC 4271 §8.2.2) ────────────────────────────
   private readonly timers = new TimerSet(() => this.getScheduler());
@@ -189,6 +197,54 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   get asn(): number { return this.config.asn; }
   hasNeighbor(ip: string): BgpNeighborCfg | undefined {
     return this.config.neighbors.get(ip);
+  }
+
+  setVpnHost(host: Omit<VpnV4Host, 'vpnPeers' | 'localAsn'>): void {
+    this.vpn = new VpnV4Speaker({
+      ...host,
+      localAsn: () => this.config.asn,
+      vpnPeers: () => this.vpnPeers(),
+    });
+  }
+
+  vpnSpeaker(): VpnV4Speaker | null { return this.vpn; }
+
+  setVplsHost(host: Omit<VplsBgpHost, 'peers' | 'localAsn'>): void {
+    this.vplsSpeaker = new VplsBgpSpeaker({
+      ...host,
+      localAsn: () => this.config.asn,
+      peers: () => this.vplsPeers(),
+    });
+  }
+
+  vplsBgpSpeaker(): VplsBgpSpeaker | null { return this.vplsSpeaker; }
+
+  private vplsPeerOf(ip: string): VplsPeer | null {
+    const ps = this.peers.get(ip);
+    if (!ps || !ps.session.isEstablished() || !this.config.neighbors.get(ip)?.vpls) return null;
+    if (!ps.session.negotiatedFamily(AFI_L2VPN, SAFI_VPLS)) return null;
+    return {
+      ip, remoteAsn: ps.session.remoteAsn ?? 0, localIp: ps.link.localIp,
+      send: (update) => ps.session.sendUpdate(update),
+    };
+  }
+
+  private vplsPeers(): VplsPeer[] {
+    return [...this.peers.keys()].flatMap(ip => { const peer = this.vplsPeerOf(ip); return peer ? [peer] : []; });
+  }
+
+  private vpnPeerOf(ip: string): VpnPeer | null {
+    const ps = this.peers.get(ip);
+    if (!ps || !ps.session.isEstablished() || !this.config.neighbors.get(ip)?.vpnv4) return null;
+    if (!ps.session.negotiatedFamily(AFI_IPV4, SAFI_MPLS_VPN)) return null;
+    return {
+      ip, remoteAsn: ps.session.remoteAsn ?? 0, remoteRouterId: ps.session.remoteRouterId ?? ip,
+      localIp: ps.link.localIp, send: (update) => ps.session.sendUpdate(update),
+    };
+  }
+
+  private vpnPeers(): VpnPeer[] {
+    return [...this.peers.keys()].flatMap(ip => { const peer = this.vpnPeerOf(ip); return peer ? [peer] : []; });
   }
 
   /** Inject the TCP/179 transport seam (device integration). */
@@ -384,6 +440,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         localAsn: this.config.asn,
         localRouterId: this.routerId(),
         expectedPeerAsn: cfg?.remoteAs,
+        ...(cfg?.vpnv4 || cfg?.vpls ? { capabilities: this.capabilitiesFor(cfg) } : {}),
       }, {
         onEstablished: () => this.onEstablished(ip),
         onUpdate: (u) => this.onUpdate(ip, u),
@@ -395,6 +452,13 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     if (initiator) ps.session.tcpEstablished();
   }
 
+  private capabilitiesFor(cfg: BgpNeighborCfg): BgpAddressFamily[] {
+    return [
+      ...(cfg.vpnv4 ? [{ afi: AFI_IPV4, safi: SAFI_MPLS_VPN }] : []),
+      ...(cfg.vpls ? [{ afi: AFI_L2VPN, safi: SAFI_VPLS }] : []),
+    ];
+  }
+
   private onEstablished(ip: string): void {
     // §8.2.2: the ConnectRetryTimer is cleared once the peering is up —
     // and this is the one place that covers both directions, since an
@@ -402,6 +466,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     this.clearConnectRetry(ip);
     // Advertise our full table to the freshly-up peer.
     this.advertiseTo(ip);
+    if (this.vpnPeerOf(ip)) this.vpn?.peerUp(ip);
+    if (this.vplsPeerOf(ip)) this.vplsSpeaker?.peerUp(ip);
   }
 
   private traceUpdate(topic: 'bgp.update.sent' | 'bgp.update.received', ip: string, update: BgpUpdateMessage): void {
@@ -422,6 +488,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const ps = this.peers.get(ip);
     if (!ps) return;
     this.traceUpdate('bgp.update.received', ip, update);
+    if (update.vplsReach || update.vplsUnreach) {
+      const vplsPeer = this.vplsPeerOf(ip);
+      if (vplsPeer) this.vplsSpeaker?.onUpdate(vplsPeer, update);
+    }
+    if (update.mpReach || update.mpUnreach) {
+      const vpnPeer = this.vpnPeerOf(ip);
+      if (vpnPeer) this.vpn?.onUpdate(vpnPeer, update);
+    }
     for (const w of update.withdrawn) {
       ps.adjRibIn.delete(`${w.network}/${this.maskOf(w)}`);
     }
@@ -445,6 +519,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     ps.adjRibIn.clear();
     ps.adjRibOut.clear();
     this.peers.delete(ip);
+    this.vpn?.peerDown(ip);
+    this.vplsSpeaker?.peerDown(ip);
     // A peering that goes down restarts the ConnectRetryTimer (§8.2.2):
     // the FSM falls back to Active and waits out the clock rather than
     // re-dialling at whatever rate the rest of the system converges.
@@ -703,6 +779,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       // up earlier — a triggered update. The Adj-RIB-Out delta cache keeps
       // it to genuine changes only.
       this.propagate();
+      this.vpn?.sync();
+      this.vplsSpeaker?.sync();
     }
     const keep = new Set<string>();
     for (const [ip, cfg] of this.config.neighbors) {

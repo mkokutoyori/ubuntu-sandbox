@@ -10,12 +10,12 @@
  */
 
 import type { Router } from '../../Router';
-import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
+import type { DefaultInformationOriginate, OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { formatIosElapsed } from './iosElapsed';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
-import { isAreaId, isBackboneAreaId, type LSAHeader } from '../../../ospf/types';
+import { isAreaId, isBackboneAreaId, type LSAHeader, type OSPFNeighborState, type OSPFNetworkType } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 import { CISCO_ERRORS } from '../cli-utils';
@@ -40,10 +40,40 @@ import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { toutesLesSuites } from './ciscoContinuations';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { decryptType7 } from '@/crypto';
 
 const OSPF_METRIC_MAX = 16777214;
 const OSPF_TIMER_MAX_MS = 600000;
 const OSPF_MAX_LSA = 4294967294;
+
+const DEFAULT_INFORMATION_KEYWORDS: ReadonlySet<string> = new Set(['always', 'metric', 'metric-type', 'route-map']);
+
+function parseDefaultInformation(args: readonly string[]): DefaultInformationOriginate | string {
+  const parsed: DefaultInformationOriginate = { always: false, metricType: 2 };
+  const seen = new Set<string>();
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i].toLowerCase();
+    if (!DEFAULT_INFORMATION_KEYWORDS.has(word) || seen.has(word)) throw new CliInvalidInput({ token: args[i] });
+    seen.add(word);
+    if (word === 'always') {
+      parsed.always = true;
+      continue;
+    }
+    const value = args[++i];
+    if (value === undefined) return '% Incomplete command.';
+    if (word === 'metric') {
+      const metric = boundedInteger(value, 0, OSPF_METRIC_MAX);
+      if (metric === null) throw new CliInvalidInput({ token: value });
+      parsed.metric = metric;
+    } else if (word === 'metric-type') {
+      if (value !== '1' && value !== '2') throw new CliInvalidInput({ token: value });
+      parsed.metricType = value === '1' ? 1 : 2;
+    } else {
+      parsed.routeMap = value;
+    }
+  }
+  return parsed;
+}
 
 export function setOspfv3InterfaceParams(
   router: Router, ifName: string, updates: Record<string, unknown>,
@@ -143,8 +173,7 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
 
 export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   const extra = () => ctx.r()._getOSPFExtraConfig() as unknown as Record<string, unknown> & {
-    maximumPaths?: number; defaultMetric?: number; compatibleRfc1583?: boolean;
-    logAdjacencyChanges?: boolean; logAdjacencyChangesDetail?: boolean;
+    maximumPaths?: number; compatibleRfc1583?: boolean;
     distance?: { intraArea?: number; interArea?: number; external?: number };
     timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
     timersLsaArrivalMs?: number;
@@ -168,7 +197,7 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
   });
   trie.registerGreedy('default-metric', 'Default metric', (args) => {
     const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().defaultMetric = n;
+    if (!isNaN(n)) ctx.r()._getOSPFExtraConfig().defaultMetric = n;
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -321,20 +350,10 @@ function adresseReseau(ip: string, wildcard: string): string {
   });
 
   trie.registerGreedy('default-information originate', 'Distribute default route', (args) => {
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not configured';
-    ospf.setDefaultInformationOriginate(true);
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.defaultInfoAlways = args.some(a => a.toLowerCase() === 'always');
-    for (let i = 0; i < args.length - 1; i++) {
-      const mot = args[i].toLowerCase();
-      if (mot !== 'metric' && mot !== 'metric-type') continue;
-
-      const valeur = boundedInteger(args[i + 1], 0, OSPF_METRIC_MAX);
-      if (valeur === null) throw new CliInvalidInput({ token: args[i + 1] });
-      if (mot === 'metric-type') extra.defaultInfoMetricType = valeur;
-    }
-    if (extra.defaultInfoMetricType === undefined) extra.defaultInfoMetricType = 2;
+    if (!ctx.r()._getOSPFEngineInternal()) return '% OSPF is not configured';
+    const parsed = parseDefaultInformation(args);
+    if (typeof parsed === 'string') return parsed;
+    ctx.r()._getOSPFExtraConfig().defaultInformation = parsed;
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -381,10 +400,16 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('no default-information originate', 'Stop distributing default route', () => {
-    ctx.r()._getOSPFEngineInternal()?.setDefaultInformationOriginate(false);
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.defaultInfoMetricType = undefined;
+  trie.registerGreedy('no default-information originate', 'Stop distributing default route', (args) => {
+    const parsed = parseDefaultInformation(args);
+    if (typeof parsed === 'string') return parsed;
+    ctx.r()._getOSPFExtraConfig().defaultInformation = undefined;
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no default-metric', 'Stop using a default metric', () => {
+    ctx.r()._getOSPFExtraConfig().defaultMetric = undefined;
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -455,19 +480,19 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  // `detail` était refusé faute d'être greedy — le suffixe le plus
-  // courant en cours (il fait journaliser CHAQUE transition d'état de
-  // l'adjacence, pas seulement l'entrée et la sortie de Full).
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
-    if (args.length > 0 && args[0] !== 'detail') {
-      throw new CliInvalidInput();
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'detail')) {
+      throw new CliInvalidInput({ token: args.length > 1 ? args[1] : args[0] });
     }
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.logAdjacencyChanges = true;
-    extra.logAdjacencyChangesDetail = args[0] === 'detail';
-    // Enable in the OSPF engine if already running
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (ospf) ospf.logAdjacencyChanges = true;
+    ctx.r()._getOSPFEngineInternal()?.setAdjacencyLogging(true, args.length === 1);
+    return '';
+  });
+
+  trie.registerGreedy('no log-adjacency-changes', 'Stop logging OSPF adjacency changes', (args) => {
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'detail')) {
+      throw new CliInvalidInput({ token: args.length > 1 ? args[1] : args[0] });
+    }
+    ctx.r()._getOSPFEngineInternal()?.setAdjacencyLogging(args.length === 1, false);
     return '';
   });
 
@@ -691,6 +716,10 @@ const SECONDES_OSPF = (description: string): ArgumentSpec => ({
   name: 'secondes', type: 'INT', description, range: [1, 65535],
 });
 
+const MESSAGE_DIGEST_KEY_ID: ArgumentSpec = {
+  name: 'identifiant', type: 'INT', description: 'Key identifier', range: [1, 255],
+};
+
 const OSPF_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip ospf bfd': null,
@@ -733,8 +762,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'The authentication key itself',
   },
   'ip ospf message-digest-key': [
-    { name: 'identifiant', type: 'INT', description: 'Key identifier',
-      range: [1, 255] },
+    MESSAGE_DIGEST_KEY_ID,
     { name: 'reste', type: 'REST', description: '`md5` then the key itself' },
   ],
   'ip ospf area': {
@@ -754,7 +782,35 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
+function messageDigestKeys(ctx: CiscoShellContext, ifName: string): ReadonlyMap<number, string> {
+  return ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName)?.md5Keys ?? new Map();
+}
+
+function messageDigestKeyUndoSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [{
+    id: 'config-if-ip-ospf-message-digest-key-identifiant',
+    path: ['ip', 'ospf', 'message-digest-key', MESSAGE_DIGEST_KEY_ID],
+    description: 'Set an MD5 key',
+    undoDescription: 'Remove one MD5 key',
+    modes: MODES_INTERFACE, minPrivilege: 15,
+    existsOnlyNegated: true,
+    run: () => '% Incomplete command.',
+    undo: (_session, args) => {
+      const ifName = ctx.getSelectedInterface();
+      if (!ifName) return '% No interface selected';
+      const remaining = new Map(messageDigestKeys(ctx, ifName));
+      remaining.delete(Number(args.identifiant));
+      ctx.r()._getOSPFIntegration().applyInterfaceSettings(ifName, { md5Keys: remaining });
+      return '';
+    },
+  }];
+}
+
 export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [...ospfTrieInterfaceSpecs(ctx), ...messageDigestKeyUndoSpecs(ctx)];
+}
+
+function ospfTrieInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) =>
       registerOSPFInterfaceCommands(collector as unknown as CommandTrie, ctx),
@@ -765,6 +821,16 @@ export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
       keywordsFor: toutesLesSuites,
     },
   );
+}
+
+const PLAIN_KEY_ENCRYPTION = '0';
+const TYPE_7_KEY_ENCRYPTION = '7';
+
+function messageDigestSecret(words: readonly string[]): string | null {
+  if (words.length === 1) return words[0];
+  if (words[0] === PLAIN_KEY_ENCRYPTION) return words[1];
+  if (words[0] !== TYPE_7_KEY_ENCRYPTION) return null;
+  try { return decryptType7(words[1]); } catch { return null; }
 }
 
 export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: CiscoShellContext): void {
@@ -917,11 +983,13 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   configIfTrie.registerGreedy('ip ospf message-digest-key', 'Set MD5 key', (args) => {
-    // ip ospf message-digest-key <id> md5 <key>
     if (args.length < 3) return '% Incomplete command.';
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    setPendingOspfIf(ifName, { authKey: args[2] });
+    const keyId = Number(args[0]);
+    const secret = args[1].toLowerCase() === 'md5' ? messageDigestSecret(args.slice(2)) : null;
+    if (!Number.isInteger(keyId) || secret === null) return "% Invalid input detected at '^' marker.";
+    setPendingOspfIf(ifName, { md5Keys: new Map([...messageDigestKeys(ctx, ifName), [keyId, secret]]) });
     return '';
   });
 
@@ -932,7 +1000,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     'no ip ospf network': { networkType: 'broadcast' },
     'no ip ospf authentication': { authType: 0 },
     'no ip ospf authentication-key': { authKey: '' },
-    'no ip ospf message-digest-key': { authType: 0, authKey: '' },
     'no ip ospf retransmit-interval': { retransmitInterval: 5 },
     'no ip ospf transmit-delay': { transmitDelay: 1 },
     'no ip ospf mtu-ignore': { mtuIgnore: false },
@@ -1167,7 +1234,12 @@ Readonly<Record<string, ReadonlyArray<{
     { keyword: 'transit', description: 'Transit area capability' },
   ],
   compatible: [{ keyword: 'rfc1583', description: 'RFC 1583 compatible route selection' }],
-  'default-information originate': [{ keyword: 'metric-type', description: 'OSPF metric type for default routes' }],
+  'default-information originate': [
+    { keyword: 'always', description: 'Always advertise the default route' },
+    { keyword: 'metric', description: 'Metric used for generating the default route' },
+    { keyword: 'metric-type', description: 'External link type of the default route' },
+    { keyword: 'route-map', description: 'Generate the default route if the route map is satisfied' },
+  ],
   'discard-route': [{ keyword: 'external', description: 'Discard route for external summary' }],
   distance: [
     { keyword: 'external', description: 'External type 5 and type 7 routes' },
@@ -1664,6 +1736,7 @@ function showIpOspf(router: Router): string {
   const extra = router._getOSPFExtraConfig();
   const lines = [
     `Routing Process "ospf ${config.processId}" with ID ${config.routerId}`,
+    ...(ospf.isASBR() ? [' It is an autonomous system boundary router'] : []),
     ` Number of areas in this router is ${config.areas.size}`,
     ` Reference bandwidth unit is ${config.autoCostReferenceBandwidth} mbps`,
   ];
@@ -1692,9 +1765,6 @@ function showIpOspf(router: Router): string {
   }
   if (extra.gracefulRestart?.enabled) {
     lines.push(` Graceful restart enabled, grace period ${extra.gracefulRestart.gracePeriod}`);
-  }
-  if (extra.logAdjacencyChanges) {
-    lines.push(` Log-Adjacency-Changes: enabled`);
   }
 
   // NBMA neighbors
@@ -1732,6 +1802,35 @@ function showIpOspf(router: Router): string {
   return lines.join('\n');
 }
 
+const NEIGHBOR_STATE_LABELS: Readonly<Record<OSPFNeighborState, string>> = {
+  Down: 'DOWN',
+  Attempt: 'ATTEMPT',
+  Init: 'INIT',
+  TwoWay: '2WAY',
+  ExStart: 'EXSTART',
+  Exchange: 'EXCHANGE',
+  Loading: 'LOADING',
+  Full: 'FULL',
+};
+
+export function ospfNeighborStateLabel(state: OSPFNeighborState): string {
+  return NEIGHBOR_STATE_LABELS[state];
+}
+
+export function ospfNeighborRole(networkType: OSPFNetworkType, isDesignatedRouter: boolean, isBackup: boolean): string {
+  if (networkType !== 'broadcast' && networkType !== 'nbma') return '-';
+  if (isDesignatedRouter) return 'DR';
+  return isBackup ? 'BDR' : 'DROTHER';
+}
+
+function ospfNeighborStateColumn(state: OSPFNeighborState, role: string): string {
+  return `${ospfNeighborStateLabel(state)}/${role === '-' ? '  -' : role}`;
+}
+
+function ospfNeighborLine(routerId: string, priority: number, stateColumn: string, deadTime: string, thirdColumn: string, iface: string): string {
+  return `${padToWidth(routerId, 16)}${String(priority).padStart(3)}   ${padToWidth(stateColumn, 16)}${padToWidth(deadTime, 12)}${padToWidth(thirdColumn, 16)}${iface}`;
+}
+
 export function showIpOspfNeighbor(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
@@ -1744,14 +1843,11 @@ export function showIpOspfNeighbor(router: Router): string {
   for (const n of neighbors) {
     const iface = ospf.getInterface(n.iface);
     if (!iface || iface.state === 'Down') continue;
-    const stateStr = `${n.state.toUpperCase()}/  -`;
-    const deadTime = compteARebours(iface, n.lastHelloReceived, ospf.now());
-
-    lines.push(
-      `${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}` +
-      `${padToWidth(stateStr, 16)}${padToWidth(deadTime, 12)}` +
-      `${padToWidth(n.ipAddress, 16)}${n.iface}`
-    );
+    const role = ospfNeighborRole(iface.networkType, n.ipAddress === iface.dr, n.ipAddress === iface.bdr);
+    lines.push(ospfNeighborLine(
+      n.routerId, n.priority, ospfNeighborStateColumn(n.state, role),
+      compteARebours(iface, n.lastHelloReceived, ospf.now()), n.ipAddress, n.iface,
+    ));
   }
 
   return lines.join('\n');
@@ -1841,18 +1937,27 @@ function showIpOspfDatabase(router: Router): string {
       lines.push(`                Net Link States (Area ${areaId})`);
       lines.push('');
       lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
-      for (const lsa of networkLSAs) {
-        lines.push(
-          `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
-          `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
-          `0x${lsa.checksum.toString(16)}`
-        );
-      }
+      for (const lsa of networkLSAs) lines.push(lsaHeaderRow(lsa));
       lines.push('');
     }
   }
 
+  const externalLSAs = [...lsdb.external.values()];
+  if (externalLSAs.length > 0) {
+    lines.push('                Type-5 AS External Link States');
+    lines.push('');
+    lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
+    for (const lsa of externalLSAs) lines.push(lsaHeaderRow(lsa));
+    lines.push('');
+  }
+
   return lines.join('\n');
+}
+
+function lsaHeaderRow(lsa: LSAHeader): string {
+  return `${padToWidth(lsa.linkStateId, 16)}${padToWidth(lsa.advertisingRouter, 16)}` +
+    `${padToWidth(String(lsa.lsAge), 12)}0x${padToWidth(lsa.lsSequenceNumber.toString(16), 16)}` +
+    `0x${lsa.checksum.toString(16)}`;
 }
 
 function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
@@ -1894,10 +1999,6 @@ function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
         `Forward Address: ${e.forwardingAddress ?? '0.0.0.0'}`
       );
     }
-    // If no LSAs and a network filter was given, show a placeholder row to maintain compatibility
-    if (externalLSAs.length === 0 && args.length > 0 && args[0] !== 'detail') {
-      lines.push(`${padToWidth(args[0], 16)}${padToWidth(ospf.getRouterId(), 16)}0           0x80000001      0x0000    0    Forward Address: 0.0.0.0`);
-    }
   } else {
     for (const lsa of externalLSAs) {
       const e = lsa as any;
@@ -1911,13 +2012,11 @@ function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
       lines.push(`  Length: ${lsa.length ?? 36}`);
       lines.push(`  Network Mask: /${maskToCIDR(e.networkMask ?? '0.0.0.0')}`);
       lines.push(`        Metric Type: ${e.metricType === 1 ? '1 (Comparable directly to link state metric)' : '2 (Larger than any link state path)'}`);
-      lines.push(`        MTRIC: ${e.metric ?? 20}`);
+      lines.push(`        TOS: 0`);
+      lines.push(`        Metric: ${e.metric ?? 20}`);
       lines.push(`        Forward Address: ${e.forwardingAddress ?? '0.0.0.0'}`);
       lines.push(`        External Route Tag: ${e.externalRouteTag ?? 0}`);
       lines.push('');
-    }
-    if (externalLSAs.length === 0) {
-      lines.push('  (No external LSAs in database)');
     }
   }
 
@@ -2051,7 +2150,7 @@ function ospfIfStateAbbr(state: string): string {
   switch (state) {
     case 'DR': return 'DR';
     case 'Backup': return 'BDR';
-    case 'DROther': return 'DROTHER';
+    case 'DROther': return 'DROTH';
     case 'PointToPoint': return 'P2P';
     case 'Waiting': return 'WAIT';
     case 'Loopback': return 'LOOP';
@@ -2078,7 +2177,7 @@ function showIpOspfNeighborDetail(router: Router): string {
 
     lines.push(` Neighbor ${n.routerId}, interface address ${n.ipAddress}`);
     lines.push(`    In the area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
-    lines.push(`    Neighbor priority is ${n.priority}, State is ${n.state.toUpperCase()}, ${ospf.getNeighborChangeCount()} state changes`);
+    lines.push(`    Neighbor priority is ${n.priority}, State is ${ospfNeighborStateLabel(n.state)}, ${ospf.getNeighborChangeCount()} state changes`);
     const drId = iface?.dr && iface.dr !== '0.0.0.0' ? iface.dr : n.neighborDR;
     const bdrId = iface?.bdr && iface.bdr !== '0.0.0.0' ? iface.bdr : n.neighborBDR;
     lines.push(`    DR is ${drId} BDR is ${bdrId}`);
@@ -2748,7 +2847,8 @@ export function filterRouteTableByCode(all: string, codes: readonly string[]): s
 function showIpRouteAll(router: Router): string {
   router.convergeDynamicRouting();
   const rt = bestRoutesPerPrefix(
-    ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
+    ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)
+      && !(r.type === 'connected' && router.vrfOfInterface(r.iface) !== null)),
   );
   // Un seul rendu pour toute la table : voir `renderIpRouteTable`.
   return renderIpRouteTable(routerRouteTableHost(router), rt as any, (route) => {
@@ -2797,28 +2897,15 @@ function showIpRouteSummary(router: Router): string {
 }
 
 function showIpRouteVrf(router: Router, vrfName: string): string {
-  const r = router as unknown as { _vrfs?: Map<string, unknown>; _ciscoVrfRoutes?: Map<string, Array<{ network: string; mask: string; nextHop: string | null; iface: string | null }>> };
-  if (!r._vrfs || !r._vrfs.has(vrfName)) return `% No such VRF, ${vrfName}`;
-  const routes = r._ciscoVrfRoutes?.get(vrfName) ?? [];
-  const codes = [
-    'Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP',
-    '       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area',
-    '       * - candidate default, U - per-user static route, o - ODR',
-    '',
-    `Routing Table: ${vrfName}`,
-    '',
-  ];
-  if (routes.length === 0) {
-    codes.push(`Routes: 0 in VRF ${vrfName}`);
-    return codes.join('\n');
-  }
-  const lines: string[] = [];
-  for (const entry of routes) {
-    const cidr = maskToCIDR(entry.mask);
-    const via = entry.nextHop ? `via ${entry.nextHop}` : entry.iface ? `directly connected, ${entry.iface}` : '';
-    lines.push(`S       ${entry.network}/${cidr} [1/0] ${via}`);
-  }
-  return [...codes, ...lines].join('\n');
+  const store = (router as unknown as { _vrfs?: Map<string, unknown> })._vrfs;
+  if (!store || !store.has(vrfName)) return `% No such VRF, ${vrfName}`;
+  const members = router.vrfMemberAddresses(vrfName);
+  const host = {
+    nowMs: () => router.getMonotonicClockMs(),
+    localAddresses: () => members[Symbol.iterator](),
+  };
+  const table = bestRoutesPerPrefix(router.vrfRouteTable(vrfName) as never[]);
+  return [`Routing Table: ${vrfName}`, renderIpRouteTable(host, table as never)].join('\n');
 }
 
 const DEFAULT_DISTANCE: Record<string, number> = {
@@ -2949,7 +3036,7 @@ function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?
   }
 
   if (isDefault) {
-    const mt = extra.defaultInfoMetricType ?? 2;
+    const mt = extra.defaultInformation?.metricType ?? 2;
     return mt === 1 ? 'O*E1' : 'O*E2';
   }
 
@@ -2986,10 +3073,15 @@ function showIpv6Ospf(router: Router, processId?: number): string {
 function showIpv6OspfNeighbor(router: Router): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return '% OSPFv3 is not configured';
-  const neighbors = v3.getNeighbors();
-  const lines = ['Neighbor ID     Pri   State           Dead Time   Interface'];
-  for (const n of neighbors) {
-    lines.push(`${padToWidth(n.routerId, 16)}${padToWidth(String(n.priority), 6)}FULL/ -         ${n.iface}`);
+  const lines = ['Neighbor ID     Pri   State           Dead Time   Interface ID    Interface'];
+  for (const n of v3.getNeighbors()) {
+    const iface = v3.getInterface(n.iface);
+    if (!iface) continue;
+    const role = ospfNeighborRole(iface.networkType, n.routerId === iface.dr, n.routerId === iface.bdr);
+    lines.push(ospfNeighborLine(
+      n.routerId, n.priority, ospfNeighborStateColumn(n.state, role),
+      compteARebours(iface, n.lastHelloReceived, v3.now()), String(n.interfaceId ?? 0), n.iface,
+    ));
   }
   return lines.join('\n');
 }

@@ -348,19 +348,22 @@ export class FirewallRouting {
     for (const matched of this.ospf.matchInterfaces(declared)) {
       const settings = this.ospfConfig.interfaces.find(
         entry => entry.iface === matched.name);
-      const iface = this.ospf.activateInterface(
+      const authType = authTypeOf(settings?.authentication);
+      const authentication = {
+        authType,
+        authKey: authType === 1 ? (settings?.md5Keys[0]?.key ?? '') : undefined,
+        md5Keys: new Map((settings?.md5Keys ?? []).map(entry => [entry.id, entry.key] as const)),
+      };
+      this.ospf.activateInterface(
         matched.name, matched.ip, matched.mask, matched.areaId,
-        settings === undefined ? undefined : {
+        settings === undefined ? authentication : {
           cost: settings.cost,
           priority: settings.priority,
           networkType: engineNetworkType(settings.networkType),
           helloInterval: settings.helloIntervalSec,
           deadInterval: settings.deadIntervalSec,
+          ...authentication,
         });
-
-      iface.authType = authTypeOf(settings?.authentication);
-      iface.authKey = iface.authType === 0
-        ? undefined : (settings?.md5Keys[0]?.key ?? '');
 
       if (this.ospfConfig.passiveInterfaces.includes(matched.name)) {
         this.ospf.setPassiveInterface(matched.name);

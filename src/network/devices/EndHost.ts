@@ -104,6 +104,7 @@ import {
 } from '../layers/transport/UdpEgress';
 import type { HostIcmpEchoFailedPayload, HostIcmpEchoReplyPayload, HostIcmpUnreachablePayload } from './host/events';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
+import type { IcmpExtensionObject } from '../icmp/IcmpExtensions';
 import { Logger } from '../core/Logger';
 import { strerror, type Errno } from '../core/Errno';
 import { MTU } from '../core/constants';
@@ -237,6 +238,7 @@ export interface TracerouteProbeResult {
   ip?: string;
   unreachable?: boolean;
   icmpCode?: number;
+  extensions?: readonly IcmpExtensionObject[];
 }
 
 export type TraceProbeMethod =
@@ -356,6 +358,7 @@ interface TraceProbeOutcome {
   rttMs?: number;
   unreachable?: boolean;
   icmpCode?: number;
+  extensions?: readonly IcmpExtensionObject[];
 }
 
 const TRACE_UDP_DATA_BYTES = 32;
@@ -1311,6 +1314,8 @@ export abstract class EndHost extends Equipment {
     this.dhcpClient.setBroadcastFlag(false);
     this.dhcpClient.setPersonality(ISC_DHCLIENT_PERSONALITY);
     this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
+    this.dhcpClient.setLinkLocalProber((iface, ip) => this.addressAnsweredOnLink(iface, ip));
+    this.dhcpClient.setLinkLocalAnnouncer((iface, ip) => { this.sendGratuitousArp(iface, new IPAddress(ip)); });
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
     this.dhcpClient.setForwardRegistrationPolicy(() => this.registersOwnForwardDns());
@@ -2628,6 +2633,7 @@ export abstract class EndHost extends Equipment {
           localMac: port.getMAC().toString(),
         },
       });
+      if (myIP.isLinkLocal()) this.dhcpClient.handleLinkLocalConflict(portName);
     }
 
     if (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP)) {
@@ -2644,7 +2650,7 @@ export abstract class EndHost extends Equipment {
 
       this.getLinkLayer().send({
         iface: portName,
-        destination: arp.senderMAC,
+        destination: arp.targetIP.isLinkLocal() ? MACAddress.broadcast() : arp.senderMAC,
         etherType: ETHERTYPE_ARP,
         payload: reply,
       });
@@ -5613,7 +5619,7 @@ export abstract class EndHost extends Equipment {
     if (answer === null) return { timeout: true, reached: false };
     const { payload: pl, rttMs } = answer;
     if (pl.code === 'ttl-exceeded') {
-      return { timeout: false, reached: false, ip: pl.fromIp, rttMs };
+      return { timeout: false, reached: false, ip: pl.fromIp, rttMs, ...(pl.extensions ? { extensions: pl.extensions } : {}) };
     }
     if (isArrival(pl.code) && pl.fromIp === targetIP.toString()) {
       return { timeout: false, reached: true, ip: pl.fromIp, rttMs };
@@ -5695,7 +5701,7 @@ export abstract class EndHost extends Equipment {
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
       if (hooks?.shouldStop?.()) break;
-      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> = [];
+      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number; extensions?: readonly IcmpExtensionObject[] }> = [];
       let destinationReached = false;
 
       for (let p = 0; p < probesPerHop; p++) {
@@ -5712,6 +5718,7 @@ export abstract class EndHost extends Equipment {
             ip: outcome.ip,
             unreachable: outcome.unreachable,
             icmpCode: outcome.icmpCode,
+            ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
           });
           if (outcome.reached) destinationReached = true;
           continue;

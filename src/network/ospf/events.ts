@@ -35,6 +35,7 @@ export interface OspfNeighborStateChangedPayload extends OspfRouterRef {
   oldState: OSPFNeighborState;
   newState: OSPFNeighborState;
   event: OSPFNeighborEvent;
+  logged?: boolean;
 }
 
 // ── Interface state ─────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import type {
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { answerSpecialUseName, classifySpecialUseName } from '@/network/dns/resolver/SpecialUseNames';
 import { DnsValidator, capTtlsToSignatures } from '@/network/dns/dnssec/DnsValidator';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
 
@@ -37,6 +38,8 @@ export interface RecursiveResolverOptions {
   readonly forwardRecursively?: boolean;
   readonly dnssec?: RecursiveResolverDnssecOptions;
   readonly servfailTtlSeconds?: number;
+  readonly resolveSpecialUseNamesUpstream?: boolean;
+  readonly refuseTestNames?: boolean;
 }
 
 interface IterationOutcome {
@@ -87,6 +90,8 @@ export class RecursiveResolver {
   private validatorInstance: DnsValidator | null = null;
   private readonly dnssecOptions: RecursiveResolverDnssecOptions | null;
   private readonly servfailTtlSeconds: number;
+  private readonly resolveSpecialUseNamesUpstream: boolean;
+  private readonly refuseTestNames: boolean;
 
   constructor(
     private readonly host: EndHost,
@@ -100,6 +105,8 @@ export class RecursiveResolver {
     this.forwardRecursively = options.forwardRecursively ?? false;
     this.dnssecOptions = options.dnssec ?? null;
     this.servfailTtlSeconds = options.servfailTtlSeconds ?? 0;
+    this.resolveSpecialUseNamesUpstream = options.resolveSpecialUseNamesUpstream ?? false;
+    this.refuseTestNames = options.refuseTestNames ?? false;
   }
 
   private nowSeconds(): number {
@@ -129,6 +136,11 @@ export class RecursiveResolver {
   private async resolveWithDepth(
     qname: string, qtype: number, depth: number, raw: boolean,
   ): Promise<ResolutionResult> {
+    const special = classifySpecialUseName(qname);
+    const refused = special === 'test' ? this.refuseTestNames : !this.resolveSpecialUseNamesUpstream;
+    if (special !== null && (special === 'localhost' || refused)) {
+      return { ...answerSpecialUseName(special, qname, qtype), fromCache: false };
+    }
     if (!raw) {
       const cached = this.cache.lookup(qname, qtype);
       if (cached.kind === 'hit') {

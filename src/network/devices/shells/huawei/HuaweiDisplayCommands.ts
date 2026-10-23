@@ -1280,8 +1280,8 @@ export function vrpOspfInterfaceLines(pending: Record<string, unknown> | undefin
     lines.push(` ospf authentication-mode simple${pending.authKey ? ` cipher ${pending.authKey}` : ''}`);
   }
   if (pending.authType === 2) {
-    const keyId = pending.authKeyId ?? 1;
-    lines.push(` ospf authentication-mode md5 ${keyId}${pending.authKey ? ` cipher ${pending.authKey}` : ''}`);
+    const [keyId, secret] = [...((pending.md5Keys as ReadonlyMap<number, string> | undefined) ?? [])][0] ?? [1, ''];
+    lines.push(` ospf authentication-mode md5 ${keyId}${secret ? ` cipher ${secret}` : ''}`);
   }
   if (pending.silent) lines.push(' ospf silent-interface');
   return lines;

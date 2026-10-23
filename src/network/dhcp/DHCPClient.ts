@@ -46,6 +46,10 @@ import {
   type DHCPClientObservables,
 } from './observables';
 import { DHCPClientSignalRefreshActor } from './actors';
+import {
+  LinkLocalCandidates, LINK_LOCAL_ANNOUNCE_INTERVAL_MS, LINK_LOCAL_ANNOUNCE_NUM, LINK_LOCAL_DEFEND_INTERVAL_MS,
+  LINK_LOCAL_MAX_CONFLICTS, LINK_LOCAL_PROBE_NUM, LINK_LOCAL_RATE_LIMIT_INTERVAL_MS,
+} from './LinkLocalClaim';
 import type { DhcpServerChannel } from './DhcpServerChannel';
 
 /** In-memory channel to a DHCPServer object — fallback for uncabled topologies. */
@@ -259,6 +263,73 @@ export class DHCPClient implements IProtocolEngine {
   }
 
   private linkLocalAutoconfiguration: () => boolean = () => false;
+  private linkLocalProber: ((iface: string, ip: string) => boolean) | null = null;
+  private linkLocalAnnouncer: ((iface: string, ip: string) => void) | null = null;
+  private readonly linkLocalCandidates = new Map<string, LinkLocalCandidates>();
+  private readonly linkLocalConflicts = new Map<string, number>();
+  private readonly linkLocalLastConflictMs = new Map<string, number>();
+
+  setLinkLocalProber(prober: (iface: string, ip: string) => boolean): void {
+    this.linkLocalProber = prober;
+  }
+
+  setLinkLocalAnnouncer(announcer: (iface: string, ip: string) => void): void {
+    this.linkLocalAnnouncer = announcer;
+  }
+
+  handleLinkLocalConflict(iface: string): void {
+    const state = this.ifaceStates.get(iface);
+    if (!state?.lease || state.lease.serverIdentifier !== '0.0.0.0') return;
+    const now = this.clock();
+    const previous = this.linkLocalLastConflictMs.get(iface);
+    this.linkLocalLastConflictMs.set(iface, now);
+    if (previous === undefined || now - previous >= LINK_LOCAL_DEFEND_INTERVAL_MS) {
+      this.linkLocalAnnouncer?.(iface, state.lease.ipAddress);
+      state.logs.push(`defending ${state.lease.ipAddress} (link-local)`);
+      return;
+    }
+    state.logs.push(`conflict on ${state.lease.ipAddress} repeated within DEFEND_INTERVAL - abandoning`);
+    this.linkLocalLastConflictMs.delete(iface);
+    this.clearTimers(state);
+    this.clearIP(iface);
+    state.lease = null;
+    state.state = 'INIT';
+    this.autoAssignLease(iface, state);
+  }
+
+  private claimLinkLocal(iface: string): string | null {
+    let candidates = this.linkLocalCandidates.get(iface);
+    if (!candidates) {
+      candidates = new LinkLocalCandidates(this.getMACForIface(iface));
+      this.linkLocalCandidates.set(iface, candidates);
+    }
+    for (;;) {
+      const candidate = candidates.next().toString();
+      const conflicts = this.linkLocalConflicts.get(iface) ?? 0;
+      if (conflicts >= LINK_LOCAL_MAX_CONFLICTS) return null;
+      if (!this.linkLocalProber) return candidate;
+      let inUse = false;
+      for (let probe = 0; probe < LINK_LOCAL_PROBE_NUM && !inUse; probe++) {
+        inUse = this.linkLocalProber(iface, candidate);
+      }
+      if (!inUse) {
+        this.linkLocalConflicts.delete(iface);
+        return candidate;
+      }
+      this.linkLocalConflicts.set(iface, conflicts + 1);
+      this.conflicts++;
+    }
+  }
+
+  private announceLinkLocal(iface: string, ip: string): void {
+    if (!this.linkLocalAnnouncer) return;
+    this.linkLocalAnnouncer(iface, ip);
+    for (let n = 1; n < LINK_LOCAL_ANNOUNCE_NUM; n++) {
+      this.timers.setTimeout(() => {
+        if (this.ifaceStates.get(iface)?.lease?.ipAddress === ip) this.linkLocalAnnouncer?.(iface, ip);
+      }, n * LINK_LOCAL_ANNOUNCE_INTERVAL_MS);
+    }
+  }
 
   setLinkLocalAutoconfiguration(decide: () => boolean): void {
     this.linkLocalAutoconfiguration = decide;
@@ -989,13 +1060,15 @@ export class DHCPClient implements IProtocolEngine {
   }
 
   private autoAssignLease(iface: string, state: DHCPClientIfaceState): string {
-    const mac = this.getMACForIface(iface);
-    const macParts = mac.split(':');
-
-    // Derive APIPA octets from MAC (RFC 3927: 169.254.1.0 - 169.254.254.255)
-    const octet3 = (parseInt(macParts[4] || '01', 16) % 254) + 1; // 1-254
-    const octet4 = parseInt(macParts[5] || '02', 16);              // 0-255
-    const ip = `169.254.${octet3}.${octet4}`;
+    const ip = this.claimLinkLocal(iface);
+    if (ip === null) {
+      state.logs.push(`link-local: ${LINK_LOCAL_MAX_CONFLICTS} conflicts - next attempt in ${LINK_LOCAL_RATE_LIMIT_INTERVAL_MS / 1000}s`);
+      this.linkLocalConflicts.set(iface, LINK_LOCAL_MAX_CONFLICTS - 1);
+      this.timers.setTimeout(() => {
+        if (!this.ifaceStates.get(iface)?.lease) this.autoAssignLease(iface, state);
+      }, LINK_LOCAL_RATE_LIMIT_INTERVAL_MS);
+      return '';
+    }
     const mask = '255.255.0.0';
     const now = this.clock();
     const leaseDuration = 86400; // APIPA doesn't have a real lease, but we set one for consistency
@@ -1032,6 +1105,7 @@ export class DHCPClient implements IProtocolEngine {
 
     this.configureIP(iface, ip, mask, null, 'link-local');
     this.setupLeaseTimers(iface, state);
+    this.announceLinkLocal(iface, ip);
 
     return '';
   }

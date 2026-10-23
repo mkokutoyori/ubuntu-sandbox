@@ -68,6 +68,10 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
+import { mplsFamily } from '@/cli/commands/mpls/mplsFamily';
+import { l3vpnFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
+import { l3vpnHostOf } from './cisco/l3vpnHost';
+import { mplsHostOf } from './cisco/mplsHost';
 import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
@@ -495,6 +499,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
+      ...l3vpnFamily(() => l3vpnHostOf(this.d())),
+      ...mplsFamily(() => mplsHostOf(this.d(), {
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+        pseudowireClass: { get: () => this.selectedPwClass, set: name => { this.selectedPwClass = name; } },
+        vfi: { get: () => this.selectedVfi, set: name => { this.selectedVfi = name; } },
+      })),
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
@@ -1536,6 +1546,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configCryptoEzvpnTrie = new CommandTrie();
   private configIsakmpGroupTrie = new CommandTrie();
   private configCaServerTrie = new CommandTrie();
+  private configPwTrie = new CommandTrie();
+  private configVfiTrie = new CommandTrie();
+  private selectedPwClass: string | null = null;
+  private selectedVfi: string | null = null;
   private selectedApplet: string | null = null;
   private selectedFlowExporter: string | null = null;
   private selectedFlowRecord: string | null = null;
@@ -2309,6 +2323,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
       case 'config-ca-server': return this.configCaServerTrie;
+      case 'config-pw': return this.configPwTrie;
+      case 'config-vfi': return this.configVfiTrie;
       case 'config-ca-trustpool': return this.configCaTrustpoolTrie;
       case 'config-isakmp-group': return this.configIsakmpGroupTrie;
       case 'config-crypto-ezvpn': return this.configCryptoEzvpnTrie;
@@ -2383,6 +2399,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
       if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
       if (f === 'selectedPkiServer') this.selectedPkiServer = null;
+      if (f === 'selectedPwClass') this.selectedPwClass = null;
+      if (f === 'selectedVfi') this.selectedVfi = null;
       if (f === 'selectedIsakmpGroup') this.selectedIsakmpGroup = null;
       if (f === 'selectedEzvpnTunnel') this.selectedEzvpnTunnel = null;
       if (f === 'selectedBrowserProxy') this.selectedBrowserProxy = null;
@@ -2749,11 +2767,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return '';
     }
 
+    if (parsed.vrf !== undefined && !vrfStoreOf(router as unknown as VrfHost).has(parsed.vrf)) {
+      return `% VRF ${parsed.vrf} not configured`;
+    }
     this._pendingAsync = this.resoudreCible(router, parsed.target).then((adresse) => {
       if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
       return router
         .executePingSequence(
-          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
+          parsed.vrf === undefined ? undefined : { vrf: parsed.vrf })
         .then(results => formatCiscoPing(
           adresse, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     });

@@ -778,14 +778,12 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- **`:s` multi-ligne** : `%s/\n//` et `%s/$\n^/+/` ne trouvent rien (8 cas non
-  portes) ; vim joint les lignes. `applyVimReplacement` ne lit pas non plus `\r`
-  (coupure de ligne), `\n` (NUL), `\t`, `~`, `\u \U \l \L \e \E` ni `\=`.
 - **`:g`** n'execute que `d` et `s///` : toute autre commande (`:g/x/normal dd`,
   `m0`, `t.`, `j`) est ignoree sans message. Le moteur n'a pas d'identite de
-  ligne a marquer comme `ml_setmarked` ; ni `:g` ni `:s` ne disent « N fewer
-  lines » ou ne respectent 'report' (l'option n'existe pas : `:s` annonce
-  toujours le compte, vim seulement au-dela de 2).
+  ligne a marquer comme `ml_setmarked` : `LineTracker` ne suit que les lignes
+  que `:d` et `:s` inserent ou retirent, il faudrait que chaque commande ex qui
+  deplace des lignes (`:m`, `:t`, `:j`, `:normal`, `:>`...) previenne le meme
+  suiveur. 'report' est desormais respecte par `:g` et `:s`.
 - **Classe de mot ecrite quatre fois** : `isKeywordChar` (`VimCursor`, a present
   aussi pour la recherche et `\k \<`), `VimEngine.charClass` (`cw dw ce`, ASCII seul :
   `cw` sur `é` traite la lettre comme une ponctuation alors que `w` la saute
@@ -796,7 +794,60 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   colonnes de caracteres ; `\@123<=` borne la remontee en caracteres ; `[[=e=]]`
   utilise la decomposition Unicode.
 
+### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
+Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
+- **Ordre des dictionnaires** : `keys()`, `values()`, `items()`, `string()`,
+  `map()` parcourent un dictionnaire dans l'ordre d'insertion ; vim suit sa
+  table de hachage (`hash_hash` puis perturbation). Reproduire l'ordre demande
+  de porter `hashtab.c` (taille initiale 16, croissance a 2/3).
+- **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
+  function` meme quand vim le connait (`strftime`, `reduce`, `mapnew`, `trim`
+  avec masque multioctet, `json_encode`, `sha256`, `system`...).
+- **Pas de variables ni de `:let`** : `g:x`, `s:x`, `l:x`, `b:x`, `w:x` repondent
+  E121. Une lambda ne capture que les parametres des lambdas qui l'entourent.
+- **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
+  moteur n'a ni l'un ni l'autre.
+- **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
+  que le moteur ne modelise pas, enregistree par
+  `scripts/oracle/record_vim_option_defaults.py` sous `vim -u NONE -N` ; les
+  options qui dependent de la machine (`columns`, `shell`, `runtimepath`,
+  `viminfo`...) en sont exclues et repondent E113.
+
 ---
+
+### [terminal] Ctrl-C ne libere le terminal que pour les clients declares `foregroundClient`
+**Mesure** (nat-lab : `curl http://170.20.0.2` vers un hote qui ne repond pas,
+Ctrl-C, puis `ls`) : `curl` attend 127 s comme le noyau, puis la commande
+suivante s'execute. Corrige pour `curl`, `dig`, `nslookup`, `host`, `nmap`,
+`ldapsearch`, `snmpwalk`, `hping3`, `arping`, `radtest`, `tracepath`, `ntpq`
+(`LinuxCommand.foregroundClient` : le client est un processus de la table, SIGINT
+le tue, la commande rend la main, la file de la machine est liberee). Reste :
+- `nc`, `openssl`, `ssh`, `telnet`, `ftp`, `scp`, `sftp` et les serveurs qui
+  rendent la main en laissant un ecouteur (`nc -l`, `openssl s_server`) ne sont
+  PAS declares : un ecouteur est attribue a son processus par NOM
+  (`reapProcessSockets`), la mort du processus d'une commande voisine de meme
+  nom fermerait l'ecouteur (mesure : le second client de `openssl s_server`
+  trouvait le port ferme). Tant que l'attribution n'est pas faite par pid, ces
+  commandes tiennent la file jusqu'a leur fin naturelle.
+- Seul `curl` ferme ses sockets a l'interruption (`CurlHost.signal`). Les autres
+  clients declares sont liberes par preemption (la commande est abandonnee, sa
+  sortie jetee) : leur travail se poursuit en arriere-plan jusqu'a sa fin
+  naturelle, sans rien ecrire.
+- La file de commandes est UNE par machine (`SessionWorkQueue`) : une commande
+  de premier plan dans un terminal tient les autres terminaux de la meme
+  machine, ce qu'un vrai noyau ne fait pas.
+- Windows : seul `curl.exe` est interruptible (`WindowsShellSession.foregroundAbort`,
+  pas de table de processus Windows) ; les autres commandes bloquantes d'un
+  terminal Windows n'ont pas ete mesurees.
+- Un terminal SSH vers une machine Linux (`SshInteractiveShell`) ne passe pas par
+  `LinuxTerminalSession` : l'interruption n'y est pas mesuree.
+- `wget`, `telnet` et `nc` vers un hote qui laisse tomber les SYN rendent leur
+  verdict AU CLIC (`Connection refused` / `Connection timed out` immediat, aller-
+  retour TCP synchrone) la ou un vrai Linux attend ~127 s : ce n'est pas un blocage,
+  mais la chronologie n'est pas celle du noyau.
+**Pourquoi ce n'est pas ferme** : chaque client doit etre lu pour savoir ce qu'il
+laisse derriere lui ; la preemption generale a ete restreinte aux clients dont la
+fin ne laisse rien (voir la mesure sur `openssl s_server`).
 
 ## Gestion (SNMP, NTP, syslog)
 
@@ -1502,6 +1553,91 @@ declare sur le seul routeur, contre l'uniformite visee entre
 equipements Cisco.
 **Report** : demande de choisir ce qu'un groupe veut dire pour une VACL
 avant de le declarer.
+
+### [ospf] ce que montre OSPF sur deux routeurs Cisco cables en Ethernet (R-AKWA / R-ISP, aire 0, un /28)
+**Mesure** : la topologie d'un utilisateur importee par `importTopology`,
+`router ospf 1` + `network … area 0` des deux cotes, horloge virtuelle quand
+on veut laisser passer le temps. Le voisinage passe a FULL, R-AKWA est DR
+(configure le premier, pas de preemption), R-ISP apprend les quatre LAN en
+`O [110/2]`, `ping` et `traceroute` de bout en bout, l'echec d'aire / de hello
+/ d'authentification se voit dans `%OSPF-4-ERRRCV` et tombe a 40 s
+(`InactivityTimer`). Ce qui sonne faux :
+- OSPFv3 : deux routeurs relies par un cable direct, sans horloge, s'elisent
+  CHACUN DR (R1 voit `dr = 1.1.1.1`, R2 `dr = 2.2.2.2`, BDR `0.0.0.0`).
+  L'accelerateur de WaitTimer de `v3AutoConverge` elit pendant que le voisin
+  est encore en Init (exclu des candidats) et `processHello` de
+  `OSPFv3Engine` ne relance pas l'election sur NbrChange (RFC 2328 §9.2, ce
+  que fait `processHello` de `OSPFEngine`) ; la voie « commutateur + horloge »
+  elit une fois les voisins connus et reste juste. Non ferme : relancer
+  l'election exige de reevaluer les adjacences (AdjOK), que la voie
+  rapide vers Full de v3 (`shouldFormAdjacency`) ne fait pas.
+- L'authentification OSPF n'a que deux etats (`authType` 0 / 1 / 2) et
+  l'AIRE n'est jamais lue : `area 0 authentication message-digest` est
+  range par `setAreaAuthentication` et rendu, mais le moteur ne lit pas
+  `OSPFArea.authentication` — une interface sans commande `ip ospf
+  authentication` devrait heriter de celle de son aire (« the area default
+  is null authentication », ios-ip-routing-ospf-command-reference-2024.pdf,
+  `ip ospf authentication`). Dans le meme gestionnaire, `ip ospf
+  authentication null` (qui doit ecraser l'aire) et `ip ospf authentication
+  key-chain NOM` sont acceptes et ignores : le premier est lu comme
+  `simple`, le second aussi, et `null` tape apres `message-digest` ne
+  change rien. Le `null` explicite exige un etat « non configure » distinct
+  de « null » pour l'heritage ET pour rendre la ligne tapee ; `key-chain`
+  exige le sous-systeme de chaines de cles (algorithmes HMAC-SHA) que
+  l'OSPF ne lit pas. Mesure par `show running-config` apres la serie de
+  commandes ci-dessus.
+- Le condense MD5 d'OSPF (`OspfCryptographicAuth`) couvre la serialisation
+  canonique de l'objet paquet : le simulateur n'a pas de codec binaire
+  OSPF, donc la disposition d'octets de la RFC 2328 Appendix D (en-tete de
+  24 octets, champ d'authentification de 8, condense de 16 apres le
+  paquet) n'est pas reproduite. Rien ne l'interopere avec un vrai routeur.
+- `default-information originate [always] [metric] [metric-type] [route-map]`
+  est evalue (metrique, type, existence de la route par defaut, retrait de
+  la LSA, rendu en running-config, ligne ASBR), mais la ROUTE-MAP n'est que
+  rangee et rendue : elle dispense la route par defaut d'exister et fait
+  ignorer `always` (ce que dit la reference OSPF de Cisco), et ses clauses
+  `match` ne sont evaluees nulle part — le simulateur n'a aucun evaluateur
+  de route-map (BGP `neighbor … route-map` et `redistribute … route-map`
+  sont dans le meme cas). La reference ne dit pas non plus CONTRE QUOI la
+  clause est jugee. Meme famille, mesuree dans `originateRedistributedRoutes` :
+  `redistribute static metric N` et `subnets` sont ranges et ignores (metrique
+  20 en dur), `default-metric` ne sert qu'a `default-information`, et
+  `redistribute eigrp|bgp|isis|ospf` est accepte sans rien ranger.
+- Huawei `default-route-advertise [always] [cost n] [type 1|2]` evalue
+  maintenant ses trois mots, mais ses valeurs par defaut (cout 1, type 2)
+  sont celles que le code portait deja : `official_docs/` n'a aucune
+  reference Huawei, donc rien ne les atteste.
+- `show ip ospf database` : la section « Type-5 AS External Link States »
+  porte les cinq colonnes que la reference decrit (Link ID, ADV Router, Age,
+  Seq#, Checksum) et PAS la colonne Tag, qu'aucun exemple officiel ne montre.
+  La reference montre aussi `database external` SANS `detail` comme un bloc
+  detaille par LSA (`Metric Type`, `TOS: 0`, `Metric:`…) ; le simulateur
+  imprime un tableau et ne filtre pas sur un `<ls-id>` tape. `show ip ospf`
+  n'imprime ni les trois lignes `Supports …` ni le bloc `Redistributing
+  External Routes from,` (le seul exemple officiel est
+  `static, includes subnets in redistribution`).
+- `show ip ospf interface brief` ecrit l'etat `DROTH` pour un routeur ni DR
+  ni BDR. Aucune source atteignable ne l'atteste : ni les PDF de
+  `official_docs/` (le seul exemple officiel montre `LOOP` et `P2P`), ni les
+  captures de vrais IOS de `ntc-templates` et de `genieparser` (`LOOP`,
+  `P2P`, `BDR`, `DR`, `DOWN`), et les pages de reference (cisco.com,
+  community.cisco.com, netstuts.com) sont refusees par la politique reseau de
+  la session. La largeur de la colonne `State` (5 caracteres) tient `DROTH`
+  sans l'imposer. A verifier sur une capture avant d'y toucher. A l'inverse,
+  la table de `show ip ospf neighbor` (priorite alignee a droite sous
+  `Pri`, `State` a la colonne 22, `Dead Time` a 38, `Address` a 50,
+  `Interface` a 66) est celle de la capture IOS
+  `ntc-templates/tests/cisco_ios/show_ip_ospf_neighbor`, et les roles
+  `FULL/DR`, `FULL/BDR`, `FULL/-` y figurent aussi.
+- Le LIBELLE des lignes `%OSPF-5-ADJCHG` (`from Loading to Full,
+  LoadingDone`, `from Full to Down, InactivityTimer` / `KillNbr`) n'est
+  atteste par aucun document du depot : la reference OSPF de Cisco decrit
+  `log-adjacency-changes [detail]` (quels evenements sont journalises, et
+  c'est evalue) mais ne donne pas le texte du message. Rien ne dit non plus
+  si IOS ecrit les etats en capitales ; a verifier avant d'y toucher.
+**Pourquoi ce n'est pas ferme** : relever, pas corriger — l'exploration
+etait demandee sans correctif. Chaque point a une sonde evidente
+(`showIpOspfNeighbor` lit deja `iface.dr` / `n.neighborDR`).
 
 ## Pare-feu FortiGate
 
@@ -3322,3 +3458,231 @@ TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesur
 hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
 `systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
 le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
+
+### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
+Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
+de la RFC 4950 dans l'ICMP time-exceeded, et la sonde de `executeTraceroute` le
+porte jusqu'a `TracerouteProbeResult.extensions`. Aucun rendu n'en est fait :
+ni la disposition de `traceroute -e` (Linux), ni celle de `traceroute` IOS
+(`[MPLS: Label 17 Exp 0]`) ne sont lisibles dans un texte de reference de ce
+depot (la RFC 4950 n'illustre que la sortie generique de sa figure 1).
+**Pourquoi ce n'est pas ferme** : CLAUDE.md §8 interdit de reconstituer de
+memoire un format de sortie. A reprendre avec une capture reelle.
+**Egalement non code** : l'octet-a-octet de la structure d'extension ICMP
+(en-tete, checksum, champ de longueur) - la RFC 4884 qui la definit n'est pas
+dans `docs/rfc/mpls`.
+
+### [mpls] les vues `show mpls ...` : contenu du livre Cisco, mise en page des transcriptions
+Le contenu et les arguments des vues suivent maintenant `official_docs/cisco/mp-cr-book.pdf`
+(voir `[cli-mpls]`). La mise en page absolue (indentation 4/8/10 espaces de `ldp neighbor`,
+largeur des cellules d'adresses, `Up time` au-dela d'un jour) reste celle des lignes d'exemple
+d'IOS-XE citees par `genie.libs.parser` : le texte du PDF perd l'indentation.
+**Pourquoi ce n'est pas ferme** : CLAUDE.md §8 - une capture integrale d'IOS est
+necessaire pour trancher l'indentation ; le livre ne porte pas non plus la sortie de
+`traceroute` avec l'objet « MPLS Label Stack » de la RFC 4950.
+
+### [ldp] le reste de la RFC 5036
+Mode Downstream on Demand : sert en controle independant et ordonne (requete,
+abandon, No Route avec nouvel essai apres 60 s, requete en attente), mais
+chaque LSR demande l'etiquette pour son propre compte des qu'il a un saut
+suivant (« Request When Needed » reduit a « toujours »), donc un Label Abort
+Request recu n'est pas propage vers l'aval, et la propagation d'une requete
+avec Hop Count / Path Vector (§2.8.1) n'est pas construite. La detection de
+boucle sur Label Mapping (§2.8.2) est servie en mode non sollicite et
+sollicite, avec un vecteur de chemin toujours inclus quand elle est negociee
+(le texte l'autorise) et sans remise a 1 du compteur aux frontieres ATM/Frame
+Relay. Absents aussi : TCP MD5 (§2.9), sessions par interface (ATM/Frame
+Relay) et Label Release sur retention conservatrice. La retention liberale,
+la distribution non sollicitee et la decouverte etendue (Targeted Hello) sont
+implementees.
+
+### [vrf] le cache ARP est indexe par adresse IP
+Deux VRF d'un meme PE qui portent la MEME adresse de voisin PE-CE sur deux
+interfaces partagent une entree ARP : le second voisin reutilise la MAC du
+premier. Les prefixes clients qui se chevauchent sont, eux, isoles (une table
+par VRF). **Pourquoi ce n'est pas ferme** : `Router.arpTable` est une
+`Map<string, ...>` lue par une centaine d'appelants ; l'indexer par
+(interface, adresse) est un chantier a part.
+
+### [l3vpn] le reste de la RFC 4364
+Import local VRF vers VRF sur un meme PE, reflecteurs de routes (§4.3.3) et
+inter-AS (§10), une etiquette VPN par prefixe seulement (pas par VRF ni par
+CE), pas de vues `show bgp vpnv4 unicast`, pas de protocole PE-CE autre que
+le statique et le connecte. **Pourquoi ce n'est pas ferme** : chantier de
+fond sur le moteur BGP ; les RFC 4760 et 5492 (multiprotocole, capacites) ne
+sont pas dans `docs/rfc/mpls/` : le codage MP_REACH/MP_UNREACH suit la seule
+RFC 4364.
+
+### [mpls-oam] le reste de la RFC 8029
+Le traceroute LSP avec Downstream Detailed Mapping (§3.4, §4.4, §4.6) est
+servi sur LDP et sur la pile L3VPN : `Router.getMplsOam().traceroute(fecs)`.
+Restent absents : les types d'adresse IPv6 et non numerotes (un DDMAP qui en
+porte un est refuse comme TLV obligatoire non pris en charge, jamais ignore),
+l'ECMP (le sous-TLV Multipath est toujours de type 0 et l'information recue
+n'est pas evaluee : un routeur ici n'a qu'un saut suivant), le drapeau V
+(Validate FEC Stack) sur un routeur de transit (le egress valide toujours la
+pile FEC), et tout routeur qui emette un FEC stack change (pas de LSP recousu
+ni hierarchique hors du VPN) ; le cote origine de l'algorithme du §4.6 est
+couvert sur des entrees fabriquees. Les FEC RSVP, pseudo-wire (128 et 129,
+types 10 et 11 de la section 3.2.9 et 3.2.10), BGP etiquete et IPv6 sont
+decodees comme `unsupported` et jamais validees, le Reply Mode 4 (pas de canal
+de controle applicatif : aucune reponse n'est envoyee) n'est pas servi, ni le
+Router Alert sur une reponse traversant un LSP, ni la commande `ping mpls` /
+`traceroute mpls` : le format de sortie IOS n'est pas source (CLAUDE.md §8).
+
+### [pseudowire] le reste des RFC 4447 / 4448
+Seul le type 5 (Ethernet, mode brut) sur circuit d'acces par port est servi :
+le type 4 (mode tagge, TLV 0x06) exige des circuits d'acces par VLAN. La FEC
+generalisee 0x81 avec AGI/SAII/TAII est servie par le VPLS. Le numero de
+sequence du mot de controle est emis a 0 (verification desactivee). Le mot de
+controle se choisit par l'API (`controlWord`), sans commande IOS faute de
+pseudowire-class (`xconnect <ip> <vcid> encapsulation mpls` est servi, sans
+`pw-class`). Le type de sous-TLV d'interface 0x01 (MTU) vient du registre
+IANA, absent de `docs/rfc/mpls/`. Les formats `show mpls l2transport vc` et
+`show xconnect all` ne sont pas servis : seul leur texte de ligne est source
+(genie), ni l'ordre ni les decalages. Une adresse IP sur le circuit d'acces est
+ignoree (le trafic contourne la couche 3) au lieu d'etre refusee.
+
+### [rsvp-te] RFC 3209, 4090, 4124, 5712 : la base RSVP manque
+RSVP-TE (tunnels LSP, FRR, DS-TE, preemption douce) etend RSVP (RFC 2205), dont
+le texte n'est pas dans `docs/rfc/mpls/` et reste injoignable depuis cet
+environnement (rfc-editor.org et datatracker.ietf.org repondent 403 au proxy).
+Le format de l'en-tete commun, des classes d'objet, de SESSION, RSVP_HOP,
+TIME_VALUES, ERROR_SPEC, STYLE et des Tspec vient de la RFC 2205 : CLAUDE.md §8
+interdit de le reconstruire de memoire. A reprendre quand cette RFC est fournie.
+
+### [vpls] le reste de la RFC 4762
+Pas de commande IOS (`l2 vfi`, `bridge-domain`, `xconnect vfi`) : l'API est
+`Router.getVplsEngine()`. Le mode tagge (type 4) et l'apprentissage non
+qualifie sont absents, comme la hierarchie H-VPLS (§10-§11), la double
+attache et les ressources de decouverte (BGP / RADIUS). Le TLV de groupage
+PW (0x096C) et les retraits generiques (longueur d'information 0) de la FEC
+generalisee sont refuses a l'analyse plutot qu'ignores. Le type d'AGI 1
+vient du registre IANA, absent de `docs/rfc/mpls/`.
+
+### [vpls-bgp] le reste de la RFC 4761
+Seul le cas iBGP en maillage complet avec un VE par instance et par PE est
+servi : pas de route reflector, pas de multi-AS (§5, options a/b/c), pas de
+double attache ni de selection de VE (D-bit, preference locale du §3.2.4), un
+seul bloc d'etiquettes de 8 VE commencant au VE-ID 1, pas de numero de
+sequence (un pair qui annonce S=1 laisse le pseudo-fil hors service) et pas d'etiquette de
+decouverte `vpls` dans la CLI : l'API est `Router.getVplsEngine().defineBgp`
+et le drapeau `vpls` du voisin BGP. Les valeurs du registre IANA (AFI 25,
+SAFI 65, type de communaute 0x800A) viennent du corps de la RFC.
+
+### [mpls-mib] RFC 3811, 3812, 3813 (MPLS-TC, MPLS-TE, MPLS-LSR)
+Non implementees : le MIB LSR expose des lignes `ifTable` de couche MPLS
+(ifType 166) que ni `Router` ni le moteur SNMP ne portent, et plusieurs tables
+(`mplsInSegmentTable`, `mplsXCTable`) exigent de rendre le LFIB sous la forme
+d'index entiers stables. A reprendre en ajoutant d'abord les interfaces MPLS
+a l'`ifTable`, puis un module MIB lisant `Lfib` (jamais une copie).
+
+### [mpls-multicast] RFC 5331, 5332 (etiquettes assignees en amont, encapsulation multicast)
+Non implementees : une etiquette assignee en amont n'a de sens que dans un
+contexte (RFC 5331 §3) fourni par un consommateur (mVPN, PIM sur MPLS, LSP
+multipoint) que ce depot ne porte pas encore ; l'ethertype 0x8848 existe
+(`ETHERTYPE_MPLS_MULTICAST`) mais aucun emetteur ne le choisit. A reprendre avec
+le premier consommateur, pas avant : un contexte sans usage serait un critere
+stocke et jamais evalue. Les RFC 3034, 3035, 3037 (FR, ATM, applicabilite LDP) et
+5462 (renommage EXP en TC, deja suivi dans le vocabulaire) n'ajoutent aucun
+comportement a simuler.
+
+### [cli-mpls] le reste des vues MPLS du livre Cisco (mp-cr-book.pdf)
+Servies : `show mpls ldp neighbor|discovery|bindings|parameters|capabilities|backoff`,
+`show mpls label range`, `show mpls forwarding-table` (filtres, lignes VPN
+`[V]`, detail) et `show mpls interfaces [detail]`. Absentes : les variantes
+`vrf` / `all` (le LDP ici ne tourne pas par VRF), la plage `labels N - N`,
+les lignes `Password:` (pas de TCP MD5) et le graceful-restart, `show mpls ldp
+igp sync`, `show mpls ldp checkpoint`. Le texte du PDF perd l'indentation et la
+ligne des « Targeted Hellos » de l'exemple : la forme suit le tableau des
+champs du livre. `show mpls ldp capabilities` ne liste rien parce que ce LSR
+n'annonce aucun TLV de capacite.
+
+### [cli-mpls-config] les commandes de configuration MPLS du livre non evaluees
+Servies et evaluees : `mpls ldp advertise-labels [for A [to B]]` (premiere regle dont
+l'ACL de prefixe autorise, ACL de pairs sur le router-id LDP) et `mpls ldp neighbor A
+labels accept ACL` (ACL standard evaluee sur l'adresse du prefixe ; une ACL inexistante
+refuse, securite fermee) ; `mpls label range`, `mpls ldp loop-detection | maxhops |
+path-vector maxlength | holdtime | backoff | explicit-null` et les minuteries
+`discovery hello | targeted-hello`. Refusees faute de moteur : la forme `static`
+de `mpls label range` (aucune liaison statique `mpls static binding ipv4`), les
+formes `for` / `to` de `explicit-null`, `advertise-labels vrf | interface`,
+`neighbor vrf ... labels accept`, `mpls request-labels for` et `mpls ldp
+discovery transport-address`, `session protection`, `igp sync`, `graceful-restart`
+et les mots de passe MD5. Un `mpls label range` qui chevauche la plage utilisee
+est applique immediatement, comme le livre l'autorise pour les logiciels a MFI,
+y compris quand elle ne chevauche pas (le livre exige alors un rechargement).
+Le livre dit de `loop-detection` et `maxhops` qu'ils servent le mode Downstream on
+Demand des commutateurs ATM : ici ils pilotent aussi le mode non sollicite.
+
+### [cli-mpls-oam] le reste de `ping mpls` / `traceroute mpls` du livre
+Servis : `pseudowire A VCID` (FEC 128 de la RFC 8029 §3.2.9, validee a la sortie) et la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
+`reply mode | dscp | pad-tlv`, `dsmap` et `verbose` pour le ping ; `timeout`,
+`ttl`, `exp` et `reply ...` pour le traceroute. Absents (refuses, jamais
+acceptes sans effet) : `pseudowire ... segment` (pas de pseudo-fil multi-segments), la
+FEC 129 et les FEC IPv6, `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
+`force-explicit-null`, `output`, `revision`, `flags fec`, `hashkey`,
+`destination` (plages 127/8) et `traceroute mpls multipath`. Une seule clause
+`reply` par commande : le sac d'options ne propose un mot-cle qu'une fois,
+alors qu'IOS accepte `reply mode ... reply dscp ...`. Le mode interactif
+(`ping` puis `Protocol [ip]: mpls`) n'existe pas. Les temps aller-retour sont
+ceux de `PathClock` : quelques microsecondes, donc `0/0/0 ms` en LAN.
+Les lettres `L` et `B` du bloc Codes ne sont pas produites : `B` pour le code
+9, `L` jamais (le livre ne dit pas a quel code elle correspond).
+
+### [cli-mpls-l2vpn] le reste des commandes L2VPN du livre
+Servies : `pseudowire-class` (encapsulation mpls, control-word), `xconnect A N
+pw-class C` et `encapsulation mpls [pw-class C]`, `xconnect vfi V`, `l2 vfi V manual`
+avec `vpn id` et `neighbor A encapsulation mpls`, `show mpls l2transport vc
+[detail]`, `show xconnect all | peer | interface [detail]`, `show vfi [name V]`.
+Refusees faute de moteur : `neighbor ... no-split-horizon` (l'horizon partage est
+toujours actif), `encapsulation l2tpv3`, les pseudo-fils statiques `manual` et
+`mpls label`, `preferred-path`, `sequencing`, `interworking`, la decouverte
+automatique (`l2 vfi ... autodiscovery`), `bridge-domain` / `member`, `l2vpn xconnect
+context`, `show mpls l2transport binding | summary | checkpoint`, `show l2vpn atom`.
+L'attachement est un port routeur, pas un VLAN ni une instance de service : la
+colonne « Local circuit » affiche toujours Ethernet. Les statistiques VC comptent
+les trames Ethernet (octets sans FCS), pas des paquets MPLS. `Create time` et `last
+status change time` sont des durees depuis l'evenement, mesurees quand un evenement de
+signalisation ou une lecture observe le changement d'etat.
+
+### [cli-mpls-l3vpn] le reste des vues L3VPN du livre
+Servies : `show ip vrf [brief|detail|interfaces] [nom]`, `show vrf [brief|detail]`,
+`show ip bgp vpnv4 {all|rd|vrf} [labels|summary]` avec l'en-tete « Route Distinguisher
+... (default for vrf X) », le statut `*>i` et le numero de version de table. Pas
+servies : `show ip vrf id`, `show vrf select|lock|ipv6`, le detail d'une entree reseau
+(`show ip bgp vpnv4 ... A.B.C.D`), `neighbors`, `network`, `tags`, `regexp`, `inconsistent-as`.
+Dans le resume, `TblVer`, `InQ` et `OutQ` valent toujours 0 (pas de file de sortie ni de
+version par voisin exposee) ; `MsgRcvd`/`MsgSent` sont les compteurs reels de la session.
+
+### [entropy-label] le reste de la RFC 6790
+Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
+drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit
+la charge sur le label d'entropie parce que `Router` n'a pas de FIB multichemin
+(voir « Known limits ») : l'EL est poussee, transportee et retiree, mais
+ne choisit encore aucun chemin. Le pseudo-fil (RFC 6391, label de flux) et les
+LSP multipoints ne sont pas traites.
+
+### [diffserv-mpls] le reste de la RFC 3270
+Les modeles pipe, short-pipe et uniform du plan de donnees sont servis (classe de trafic a la
+pose, au swap et au depilage), mais `short-pipe` n'a pas d'effet distinct de `pipe` : la
+difference porte sur la file choisie a l'egress, et aucune file n'est simulee. Les L-LSP
+(PSC portee par l'etiquette), la signalisation du mapping EXP<->PHB (objet DIFFSERV RSVP, TLV LDP),
+le mapping ATM/Frame Relay et la commande IOS (`mls qos map`, `set mpls experimental`) sont absents.
+
+### [mpls-tp] le reste des RFC 6428 et 5960
+BFD CC/CV/RDI est servi en mode coordonne sur une paire de LSP statiques, avec
+l'identifiant MEP de LSP (§3.5.2) : le rythme est fixe des le depart (pas de
+migration Poll/Final §3.7.1), le mode independant (MinRx = 0), les entrees
+LDI et LKI/LKR (§3.7.2), l'authentification et les formes Section / PW du
+MEP-ID ne sont pas construits. Les LSP statiques se definissent par l'API
+`Router.getMplsTpEngine()` ; ni commande IOS (`mpls tp`) ni transport de
+trafic client sur ces LSP (seul le G-ACh circule).
+
+### [mpls-pm] le reste de la RFC 6374
+Servis : le delai bidirectionnel (formats PTP tronque et NTP, negociation §4.3.5) et la perte directe
+(compteurs 64 bits, paquets ou octets, G-ACh exclu) sur une paire de LSP statiques. Absents : la perte
+inferee (§4.2.9) et les messages combines (types 0x000B, 0x000D, 0x000E), les TLV (remplissage,
+adressage, boucle, intervalle de session §3.5), la reponse hors bande (refusee par le code 0x12), les
+compteurs par classe de trafic (refuses par 0x13), le delai unidirectionnel (suppose des horloges
+synchronisees) et le calcul sur 32 bits ; les voies PW et section ne sont pas servies non plus.

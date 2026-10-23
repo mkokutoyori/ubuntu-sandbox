@@ -205,6 +205,7 @@ export const ldapsearchCommand: LinuxCommand = {
   name: 'ldapsearch',
   package: 'ldap-utils',
   needsNetworkContext: true,
+  foregroundClient: true,
   readsStdin: true,
   manSection: 1,
   usage: 'ldapsearch [options] [filter [attributes...]]',

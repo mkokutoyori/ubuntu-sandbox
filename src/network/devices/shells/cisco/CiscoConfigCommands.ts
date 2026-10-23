@@ -68,6 +68,7 @@ export type CiscoShellMode =
   | 'config-cp' | 'config-zone' | 'config-zone-pair'
   | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group'
   | 'config-ca-trustpoint' | 'config-ca-trustpool' | 'config-ca-server' | 'config-isakmp-group' | 'config-crypto-ezvpn' | 'config-browser-proxy' | 'config-crypto-identity'
+  | 'config-pw' | 'config-vfi'
   | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
   | 'config-archive' | 'config-archive-log'
   | 'config-ssh-pubkey' | 'config-ssh-pubkey-user' | 'config-ssh-pubkey-server' | 'config-ssh-pubkey-data'
@@ -88,6 +89,7 @@ export interface CiscoShellContext {
   /** Set currently selected DHCP pool name */
   setSelectedDHCPPool(pool: string | null): void;
   /** Routing process currently being configured (config-router) */
+  getMode(): string;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null;
   setSelectedRoutingProto(v: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null): void;
   /** Resolve interface name abbreviation to full name */

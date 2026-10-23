@@ -72,6 +72,7 @@ export const ntpqCommand: LinuxCommand = {
   name: 'ntpq',
   package: 'ntpsec',
   needsNetworkContext: true,
+  foregroundClient: true,
   binaryPath: '/usr/bin/ntpq',
   usage: 'ntpq [-n] [-p] [-c command] [host]',
   run(ctx: LinuxCommandContext, argv: string[]): string {

@@ -29,6 +29,7 @@ import {
   OSPF_BACKBONE_AREA, OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
   OSPF_VERSION_3,
   createDefaultOSPFConfig,
+  adjacencyChangeIsLogged,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { type IEventBus } from '@/events/EventBus';
@@ -217,6 +218,7 @@ export class OSPFv3Engine implements IProtocolEngine {
         oldState,
         newState,
         event: cause,
+        logged: adjacencyChangeIsLogged(this.config, oldState, newState),
       },
     });
   }
@@ -555,6 +557,7 @@ export class OSPFv3Engine implements IProtocolEngine {
     neighbor.neighborBDR = hello.backupDesignatedRouter;
     neighbor.lastHelloReceived = this.now();
     neighbor.options = hello.options;
+    neighbor.interfaceId = hello.interfaceId;
 
     // HelloReceived
     this.resetDeadTimer(iface, neighbor);

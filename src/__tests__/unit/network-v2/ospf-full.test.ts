@@ -75,7 +75,7 @@ describe('OSPFv2 – Basic Single Area', () => {
     // Verify OSPF neighbor on R1
     const neighOutput = await r1.executeCommand('show ip ospf neighbor');
     expect(neighOutput).toContain('10.0.12.2');
-    expect(neighOutput).toContain('FULL/  -'); // DR/BDR not applicable on p2p, so dash
+    expect(neighOutput).toMatch(/FULL\/(DR|BDR) /);
 
     // Verify routing table on R1 – should have connected route and maybe the OSPF route (same subnet)
     const routeOutput = await r1.executeCommand('show ip route ospf');
@@ -898,7 +898,7 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
     const neigh = await r1.executeCommand('show ipv6 ospf neighbor');
     expect(neigh).toContain('2.2.2.2');
-    expect(neigh).toContain('FULL/ -');
+    expect(neigh).toMatch(/ FULL\/[A-Z]+ /);
 
     const route = await r1.executeCommand('show ipv6 route 2001:db8:1::1/128');
     expect(route).toContain('Connected via Loopback0'); // local, not needed but check OSPF route from R2?

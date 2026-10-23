@@ -59,6 +59,20 @@ export class BridgeFdb {
     return removed;
   }
 
+  forget(mac: string): boolean {
+    return this.macs.delete(mac.toLowerCase());
+  }
+
+  forgetExcept(port: string): number {
+    let removed = 0;
+    for (const [mac, learned] of this.macs) {
+      if (learned.port === port) continue;
+      this.macs.delete(mac);
+      removed++;
+    }
+    return removed;
+  }
+
   clear(): void {
     this.macs.clear();
   }

@@ -12,6 +12,8 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { vrfShowFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
+import { vrfShowHostOf } from './cisco/l3vpnHost';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
 import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
@@ -198,8 +200,8 @@ import {
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
   showNtpPackets,
-  showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics, showVrf,
-  showVrfDetail, showVrfInterfaces, showRedundancy, showFileSystems, showCalendar, showTerminal,
+  showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics,
+  showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable, ciscoClockReading,
@@ -715,7 +717,7 @@ const CONNEXION_SORTANTE: ArgumentSpec = {
 const SHOW_PARTAGEES: ReadonlySet<string> = new Set([
   'show interfaces counters errors', 'show mac address-table', 'terminal',
   'show ntp packets', 'show cdp', 'show lldp', 'show snmp', 'show parser view',
-  'show hosts', 'show ip dns statistics', 'show ip vrf', 'show vrf',
+  'show hosts', 'show ip dns statistics',
   'show redundancy', 'show aaa',
 ]);
 /*
@@ -6060,6 +6062,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleSpecs(): readonly CommandSpec[] {
     return [
+      ...vrfShowFamily(() => vrfShowHostOf(this.d())),
       {
         id: 'crypto-ligne-non-honoree',
         path: ['crypto', {
@@ -9628,24 +9631,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     registerCiscoDnsExecCommands(target, this.dnsCommandContext());
     trie.registerGreedy('show ip dns statistics', 'Display DNS server statistics', () =>
       showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]));
-    trie.registerGreedy('show ip vrf', 'Display VRFs', (args) => {
-      const sub = args[0]?.toLowerCase();
-      if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
-      if (sub === 'interfaces') return showVrfInterfaces(this.d());
-      return showVrf(this.d());
-    }, [
-      { keyword: 'detail', description: 'Detailed VRF information' },
-      { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
-    ]);
-    trie.registerGreedy('show vrf', 'Display VRFs', (args) => {
-      const sub = args[0]?.toLowerCase();
-      if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
-      if (sub === 'interfaces') return showVrfInterfaces(this.d());
-      return showVrf(this.d());
-    }, [
-      { keyword: 'detail', description: 'Detailed VRF information' },
-      { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
-    ]);
     if (this.hasSwitchingHardware()) {
       trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
         showRedundancy());
