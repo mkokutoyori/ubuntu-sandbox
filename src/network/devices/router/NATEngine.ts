@@ -232,6 +232,7 @@ export class NATEngine {
   getMaxEntriesAllHost(): number | null { return this.maxEntriesAllHost; }
 
   private outboundRefused = false;
+  private translationErrors = 0;
   private readonly hostBindings = new Map<string, NatHostBinding>();
 
   getHostBindings(): readonly NatHostBinding[] { return [...this.hostBindings.values()]; }
@@ -451,11 +452,11 @@ export class NATEngine {
 
   /** Hit/miss/expired counters for show statistics. */
   getCounters() {
-    return { hits: this.hitCount, misses: this.missCount, expired: this.expiredCount };
+    return { hits: this.hitCount, misses: this.missCount, expired: this.expiredCount, errors: this.translationErrors };
   }
 
   resetCounters(): void {
-    this.hitCount = 0; this.missCount = 0; this.expiredCount = 0;
+    this.hitCount = 0; this.missCount = 0; this.expiredCount = 0; this.translationErrors = 0;
   }
 
   // ─── Translation API (called from Router.forwardPacket) ───────────
@@ -804,6 +805,7 @@ export class NATEngine {
     }
 
     this.outboundRefused = refused;
+    if (refused) this.translationErrors++;
     this.missCount++;
     this.debugLog(`s=${srcIP}, d=${dstIP} [not translated]`, false);
     return null;

@@ -2,7 +2,8 @@
  * Tuto NAT, NAT dynamique (pool, pool overload, interface overload) : coherence des translations
  * entre protocoles et clients.
  *
- * Mesure avant correction (8 cas, 7 tombent ; le temoin passe) : une adresse de pool epuisee laissait passer le
+ * Mesure avant correction (11 cas, 10 tombent ; le temoin passe)
+ * Seconde passe (3 derniers cas, 3 tombent) : `Translation errors` figé a 0, `ip nat translation timeout` pose aussi tcp/udp/icmp, et la forme verbose omettait les lignes statiques de la forme simple : une adresse de pool epuisee laissait passer le
  * paquet NON traduit au lieu de le jeter (le routeur repondait pourtant « Misses » ; le client
  * recevait la reponse de l'hote exterieur avec son adresse privee) ; une connexion TCP terminee
  * gardait 24 h de vie au lieu des 60 s de `finrst-timeout` ; un echange DNS (UDP/53) vivait 300 s
@@ -88,5 +89,36 @@ describe('dynamic NAT coherence', () => {
     };
     expect(left('tcp')).toMatch(/left: 0d:00h:00m:\d\ds/);
     expect(left('udp')).toMatch(/left: 0d:00h:00m:\d\ds/);
+  });
+
+  it('counts a refused translation in Translation errors and resets it with clear ip nat statistics', async () => {
+    const { r, lin, win } = await tutoNatLab(POOL_ONE);
+    await lin.executeCommand('ping -c 1 203.0.113.9');
+    expect(await r.executeCommand('show ip nat statistics')).toContain('Translation errors: 0');
+    await win.executeCommand('ping -n 1 203.0.113.9');
+    expect(await r.executeCommand('show ip nat statistics')).toContain('Translation errors: 1');
+    await r.executeCommand('clear ip nat statistics');
+    expect(await r.executeCommand('show ip nat statistics')).toContain('Translation errors: 0');
+  });
+
+  it('applies ip nat translation timeout to the address pair entries only', async () => {
+    const { r, lin } = await tutoNatLab([...POOL_ONE, 'ip nat translation timeout 5']);
+    const timeouts = await r.executeCommand('show ip nat translations timeout');
+    expect(timeouts).toContain('timeout: 5');
+    expect(timeouts).toContain('tcp-timeout: 86400');
+    expect(timeouts).toContain('icmp-timeout: 60');
+    expect(await r.executeCommand('show running-config | section ip nat')).toContain('ip nat translation timeout 5');
+    await lin.executeCommand('ping -c 1 203.0.113.9');
+    const lines = (await r.executeCommand('show ip nat translations verbose')).split('\n');
+    const pair = lines.findIndex(l => /^---\s+203\.0\.113\.4/.test(l));
+    expect(lines[pair + 1]).toMatch(/left: 0d:00h:00m:0\ds/);
+    const echo = lines.findIndex(l => l.startsWith('icmp'));
+    expect(lines[echo + 1]).toMatch(/left: 0d:00h:00m:[56]\ds/);
+  });
+
+  it('renders the outside static entries in the verbose form as in the plain one', async () => {
+    const { r } = await tutoNatLab(['ip nat outside source static 198.51.100.77 10.9.9.9']);
+    expect(await r.executeCommand('show ip nat translations')).toContain('198.51.100.77');
+    expect(await r.executeCommand('show ip nat translations verbose')).toContain('198.51.100.77');
   });
 });

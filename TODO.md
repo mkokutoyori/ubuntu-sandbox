@@ -3743,7 +3743,3 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 (RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` n'est pas porte (le texte ASCII est imprime
 sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
 (`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
-
-### [nat-dynamique] `show ip nat translations` et `verbose` sont deux rendus, et l'IOS compte autrement (mesure : natlab, pool / pool overload / interface overload)
-
-Le `show ip nat translations` simple (`showNATTranslations`) ajoute les lignes de NAT statique de reseau et de NAT exterieur statique ; la forme `verbose` (`showNATTranslationsVerbose`) ne les ajoute pas : deux rendus d'une meme table, qui peuvent se contredire sur la meme machine. A reunir sur un seul rendu de lignes. Reste aussi : `ip nat translation timeout` pose encore tcp/udp/icmp en plus du delai des entrees de couple d'adresses (l'IOS ne l'applique qu'aux traductions dynamiques sans surcharge), `Translation errors` est fige a 0 alors qu'une adresse de pool epuisee est une erreur de traduction, et le delai `left:` d'une entree de couple d'adresses n'est pas reduit par `clear ip nat translation inside`.

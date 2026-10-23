@@ -2669,7 +2669,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('configure terminal');
       await topo.r1.executeCommand('access-list 1 permit 192.168.1.0 0.0.0.255');
       await topo.r1.executeCommand('ip nat inside source list 1 interface GigabitEthernet0/1 overload');
-      await topo.r1.executeCommand('ip nat translation timeout 1'); // set very low timeout
+      await topo.r1.executeCommand('ip nat translation icmp-timeout 1'); // set very low timeout
       await topo.r1.executeCommand('end');
 
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10');
