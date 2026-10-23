@@ -45,6 +45,19 @@
  * after.  Seeds 72, 73 and 74 were recorded after the fit to seed 71: seed 72 found two divergences (the white
  * space a <Tab> rewrites under softtabstop, <BS> joining two lines under autoindent), seed 73 one (<C-w> at the
  * very start of the buffer), seed 74 none; all closed.  Seeds 73 and 74 are not kept, they only checked the fit.
+ * A sixth corpus (seeds 81, 82 and 83, 600 transcripts each, vocabulary `words`, recorded under `encoding=utf-8`) runs the
+ * word motions w W b B e E ge gE, the operators d c y g~ gU gu over them and over iw aw iW aW (also in Visual mode with a
+ * count), * # g* g#, / ? with \< \> \k \K [[:keyword:]], :s :g, and <C-w> in Insert mode, over lines that mix Latin-1 letters,
+ * Greek, Cyrillic, hiragana, katakana, CJK, hangul, braille, super/subscripts, punctuation, NBSP, and under random
+ * 'iskeyword' values and 'ignorecase' / 'smartcase'.  vim classes every character above U+00FF with a table
+ * (utf_class_buf) and `w`, `*`, \< \> and <C-w> stop at a change of class, not at the end of the keyword characters.
+ * Against this corpus the engine of the previous commit, whose word class was ASCII-only (and wrote four times), which had
+ * neither 'iskeyword' nor 'smartcase', fails 609 of the 1800; 0 fail after.  Seed 82 was recorded after the fit to seed 81
+ * and found three divergences (the count of a Visual `2iw` that runs out of words keeps the part it selected; a failing `aw`
+ * on trailing white space leaves the cursor where it stopped; <C-w> separates keyword from non-keyword characters and
+ * classes, with NBSP not a space), seed 83 one (`aw` on trailing white space); all closed.  Seeds 84 and 85 (600 each) were
+ * recorded after the fit and found nothing; they are not kept.  `gn` and `dgn` on a zero-width last pattern (left by
+ * :s/^/>/ or :s/$/!/) diverge and are not in this corpus (TODO.md).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -87,7 +100,10 @@ const visualFixture = loadFixture('vim-9.1-visual-seed61.json');
 const visualFixture2 = loadFixture('vim-9.1-visual-seed62.json');
 const insertFixture = loadFixture('vim-9.1-insert-seed71.json');
 const insertFixture2 = loadFixture('vim-9.1-insert-seed72.json');
-const fixture = { vim: editFixture.vim, cases: [...editFixture.cases, ...searchFixture.cases, ...tabsFixture.cases, ...visualFixture.cases, ...visualFixture2.cases, ...insertFixture.cases, ...insertFixture2.cases] };
+const wordsFixture = loadFixture('vim-9.1-words-seed81.json');
+const wordsFixture2 = loadFixture('vim-9.1-words-seed82.json');
+const wordsFixture3 = loadFixture('vim-9.1-words-seed83.json');
+const fixture = { vim: editFixture.vim, cases: [...editFixture.cases, ...searchFixture.cases, ...tabsFixture.cases, ...visualFixture.cases, ...visualFixture2.cases, ...insertFixture.cases, ...insertFixture2.cases, ...wordsFixture.cases, ...wordsFixture2.cases, ...wordsFixture3.cases] };
 
 function replay(c: OracleCase): string | null {
   const content = c.text.join('\n') + '\n';
@@ -100,7 +116,7 @@ function replay(c: OracleCase): string | null {
     for (const k of keysOf(c.steps[s])) vim.applyKey(k);
     if (vim.mode !== 'normal') vim.applyKey(editorKey('Escape'));
     const want = c.after[s];
-    const got = { line: vim.cursorLine + 1, col: vim.cursorCol + 1, text: vim.lines };
+    const got = { line: vim.cursorLine + 1, col: new TextEncoder().encode((vim.lines[vim.cursorLine] ?? '').slice(0, vim.cursorCol)).length + 1, text: vim.lines };
     if (got.line !== want.line || got.col !== want.col || got.text.join('\n') !== want.text.join('\n')) {
       return `${c.id} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}: want ${want.line}:${want.col} ${JSON.stringify(want.text)}, got ${got.line}:${got.col} ${JSON.stringify(got.text)}`;
     }
@@ -118,6 +134,9 @@ describe('vim cursor and buffer transcripts recorded from a real vim', () => {
     expect(visualFixture2.cases.length).toBe(800);
     expect(insertFixture.cases.length).toBe(800);
     expect(insertFixture2.cases.length).toBe(800);
+    expect(wordsFixture.cases.length).toBe(600);
+    expect(wordsFixture2.cases.length).toBe(600);
+    expect(wordsFixture3.cases.length).toBe(600);
   });
 
   it('replays every recorded transcript with the same cursor and the same buffer', () => {

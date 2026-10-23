@@ -11,6 +11,7 @@ export interface ObjectRange {
   readonly type: MotionType;
   readonly inclusive: boolean;
   readonly visualEnd?: Pos;
+  readonly partial?: { readonly anchor: Pos | null };
 }
 
 function lessOrEqual(a: Pos, b: Pos): boolean {
@@ -31,7 +32,7 @@ function currentWord(buf: MotionBuffer, from: Pos, count: number, include: boole
   c.backInLine(big);
   startPos = c.pos();
   if ((c.cls(big) === 0) === include) {
-    if (!endWord(c, 1, big, true, true)) return null;
+    if (!endWord(c, 1, big, true, true)) return { start: from, end: c.pos(), type: 'char', inclusive: true, partial: { anchor: null } };
   } else {
     fwdWord(c, 1, big, true);
     if (c.col === 0) c.decl();
@@ -40,14 +41,15 @@ function currentWord(buf: MotionBuffer, from: Pos, count: number, include: boole
   }
   remaining--;
 
+  const stopped = (): ObjectRange => ({ start: startPos, end: c.pos(), type: 'char', inclusive, partial: { anchor: startPos } });
   while (remaining > 0) {
     inclusive = true;
-    if (c.incl() === -1) return null;
+    if (c.incl() === -1) return stopped();
     if (include !== (c.cls(big) === 0)) {
-      if (!fwdWord(c, 1, big, true) && remaining > 1) return null;
+      if (!fwdWord(c, 1, big, true) && remaining > 1) return stopped();
       if (!c.oneLeft()) inclusive = false;
     } else if (!endWord(c, 1, big, true, true)) {
-      return null;
+      return stopped();
     }
     remaining--;
   }

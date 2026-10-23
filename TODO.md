@@ -784,15 +784,19 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   que `:d` et `:s` inserent ou retirent, il faudrait que chaque commande ex qui
   deplace des lignes (`:m`, `:t`, `:j`, `:normal`, `:>`...) previenne le meme
   suiveur. 'report' est desormais respecte par `:g` et `:s`.
-- **Classe de mot ecrite quatre fois** : `isKeywordChar` (`VimCursor`, a present
-  aussi pour la recherche et `\k \<`), `VimEngine.charClass` (`cw dw ce`, ASCII seul :
-  `cw` sur `é` traite la lettre comme une ponctuation alors que `w` la saute
-  comme un mot), `VimEditing.backspaceClass` et le motif de `VimRegex`.
-  'iskeyword' n'existe pas ; remplacer les quatre par une seule table lue sur
-  l'option.
-- **'smartcase'** est absent de la table des options ; `\%V` en bloc compte des
-  colonnes de caracteres ; `\@123<=` borne la remontee en caracteres ; `[[=e=]]`
-  utilise la decomposition Unicode.
+- **Caracteres hors du plan de base** : `Cursor.inc` / `dec` et les motions avancent
+  d'une unite UTF-16 ; un emoji (U+1F600) est donc deux colonnes pour `l`, `x`,
+  `w`, `~`. Sa classe de mot est juste (`VimCharClass`), c'est le curseur qui
+  coupe la paire de substitution. Les caracteres combinants (`e` + U+0301) ne
+  sont pas accroches au caractere precedent non plus.
+- **`gn` / `dgn` / `cgn` sur un motif de largeur nulle** (`^`, `$`, `x*`, ce
+  que laisse `:s/^/>/`) : le moteur confond un appariement vide en colonne 0 avec
+  la fin de la ligne precedente et selectionne le saut de ligne ; vim passe par
+  `current_search` (aller-retour avec `p_ws` coupe, `zero_width`, curseur remis
+  sur `pos`). Mesure par trois transcripts du corpus `words`, retires du
+  vocabulaire plutot qu'epingles.
+- `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
+  en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :

@@ -1,4 +1,5 @@
 import { codePointWidth } from './VimCells';
+import { DEFAULT_WORD_CLASSES, type WordClasses } from './VimCharClass';
 import type { WindowView } from './VimWindow';
 
 export interface MotionBuffer {
@@ -8,6 +9,7 @@ export interface MotionBuffer {
   readonly ctrlTab?: boolean;
   readonly window?: WindowView;
   readonly pairs?: Readonly<Record<string, string>>;
+  readonly words?: WordClasses;
 }
 
 export const MAXCOL = Number.MAX_SAFE_INTEGER;
@@ -47,19 +49,12 @@ export function isWhite(ch: string | undefined): boolean {
   return ch === ' ' || ch === '\t';
 }
 
-export const KEYWORD_CLASS = 'A-Za-z0-9_\\u00C0-\\u{10FFFF}';
-
-const KEYWORD_CHAR = new RegExp(`[${KEYWORD_CLASS}]`, 'u');
-
-export function isKeywordChar(ch: string): boolean {
-  return KEYWORD_CHAR.test(ch);
-}
-
-export function charClassAt(line: string, col: number, big: boolean): 0 | 1 | 2 {
+export function wordClassAt(words: WordClasses, line: string, col: number, big: boolean): number {
   const ch = line[col];
   if (ch === undefined || ch === ' ' || ch === '\t') return 0;
-  if (big) return 1;
-  return isKeywordChar(ch) ? 2 : 1;
+  const code = line.codePointAt(col)!;
+  const cls = words.classOf(String.fromCodePoint(code));
+  return cls !== 0 && big ? 1 : cls;
 }
 
 export function charCells(ch: string, vcol: number, tabstop: number, ctrlTab = false): number {
@@ -118,7 +113,7 @@ export class Cursor {
   text(): string { return this.buf.lines[this.line] ?? ''; }
   lastLine(): number { return this.buf.lines.length - 1; }
 
-  cls(big: boolean): 0 | 1 | 2 { return charClassAt(this.text(), this.col, big); }
+  cls(big: boolean): number { return wordClassAt(this.buf.words ?? DEFAULT_WORD_CLASSES, this.text(), this.col, big); }
 
   inc(): number {
     const text = this.text();

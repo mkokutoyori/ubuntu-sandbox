@@ -1,4 +1,5 @@
 import { charCells, cursorVcol, isWhite, type Pos } from './VimCursor';
+import { DEFAULT_WORD_CLASSES, type WordClasses } from './VimCharClass';
 
 export interface RegisterText {
   linewise: boolean;
@@ -44,27 +45,28 @@ export function indentString(width: number, tabstop: number, expandtab = false):
   return '\t'.repeat(Math.floor(width / tabstop)) + ' '.repeat(width % tabstop);
 }
 
-function backspaceClass(ch: string): number {
-  if (ch === ' ' || ch === '\t') return 0;
-  const code = ch.codePointAt(0)!;
-  if (code < 0x80) return /[A-Za-z0-9_]/.test(ch) ? 2 : 1;
-  if (code >= 0x4e00 && code <= 0x9fff) return 0x4e00;
-  if (code >= 0x3040 && code <= 0x30ff) return 0x3040;
-  if (code >= 0xac00 && code <= 0xd7a3) return 0xac00;
-  return code >= 0xc0 ? 2 : 1;
+function isAsciiSpace(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return (code >= 9 && code <= 13) || code === 32;
 }
 
-export function backspaceTarget(line: string, col: number, floor: number, stopAt: number, word: boolean): number {
+export function backspaceTarget(line: string, col: number, floor: number, stopAt: number, word: boolean, words: WordClasses = DEFAULT_WORD_CLASSES): number {
   let cur = col;
   let inRun = false;
-  let runClass = 0;
+  let runIsKeyword = false;
+  let cclass = col < line.length ? words.classOf(line[col]) : 0;
   for (;;) {
     cur--;
-    const cls = backspaceClass(line[cur]);
+    const ch = line[cur];
+    const previousClass = cclass;
+    cclass = words.classOf(ch);
     if (word) {
       if (!inRun) {
-        if (cls !== 0) { inRun = true; runClass = cls; }
-      } else if (cls === 0 || cls !== runClass) {
+        if (!isAsciiSpace(ch)) {
+          inRun = true;
+          runIsKeyword = words.isKeyword(ch);
+        }
+      } else if (isAsciiSpace(ch) || words.isKeyword(ch) !== runIsKeyword || previousClass !== cclass) {
         cur++;
         break;
       }
@@ -209,8 +211,8 @@ export function lowerCaseChar(character: string): string {
 }
 
 export function swapCase(ch: string): string {
-  const up = ch.toUpperCase();
-  const low = ch.toLowerCase();
+  const up = upperCaseChar(ch);
+  const low = lowerCaseChar(ch);
   if (ch === up && ch !== low) return low;
   if (ch === low && ch !== up) return up;
   return ch;
