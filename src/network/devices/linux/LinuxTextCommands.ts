@@ -393,7 +393,10 @@ export function cmdHead(ctx: ShellContext, args: string[], stdin?: string): stri
   const showHeaders = verbose || (!quiet && files.length > 1);
   let out = '';
   files.forEach((f, index) => {
-    const content = f === '-' ? (stdin ?? '') : ctx.vfs.readFile(ctx.vfs.normalizePath(f, ctx.cwd));
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    const content = f === '-' ? (stdin ?? '')
+      : bytes !== undefined && ctx.vfs.exists(absPath) ? ctx.vfs.readFileBytes(absPath, bytes)
+      : ctx.vfs.readFile(absPath);
     if (content === null) {
       out += `head: cannot open '${f}' for reading: No such file or directory\n`;
       return;

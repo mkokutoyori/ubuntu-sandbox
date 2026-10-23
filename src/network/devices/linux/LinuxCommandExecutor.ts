@@ -418,6 +418,20 @@ function wrappedArgv(name: string, args: readonly string[]): readonly string[] {
   return args.slice(i);
 }
 
+const SSH_FAMILY_CLIENTS: ReadonlySet<string> = new Set(['ssh', 'scp', 'sftp']);
+const SSH_CLIENT_FAILURE_STATUS = 255;
+const WRAPPER_FAILURE_STATUS = 125;
+const SHELL_CANNOT_EXEC_STATUSES: ReadonlySet<number> = new Set([126, 127]);
+
+function reportsOwnFailure(argv: readonly string[], exitCode: number): boolean {
+  if (SHELL_CANNOT_EXEC_STATUSES.has(exitCode)) return true;
+  const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
+  const name = lead[0]?.split('/').pop();
+  if (name === undefined) return false;
+  if (exitCode === SSH_CLIENT_FAILURE_STATUS) return SSH_FAMILY_CLIENTS.has(name);
+  return exitCode === WRAPPER_FAILURE_STATUS && COMMAND_WRAPPERS.has(name);
+}
+
 function writesLines(argv: readonly string[]): boolean {
   const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
   const name = lead[0]?.split('/').pop();
@@ -4107,8 +4121,8 @@ export class LinuxCommandExecutor {
     const outcome = this.dispatchNetworkAware(argv, env, background, stdin, outputPiped);
     const lineOriented = writesLines(argv);
     return outcome instanceof Promise
-      ? outcome.then((result) => ({ ...result, lineOriented }))
-      : { ...outcome, lineOriented };
+      ? outcome.then((result) => ({ ...result, lineOriented: lineOriented || reportsOwnFailure(argv, result.exitCode) }))
+      : { ...outcome, lineOriented: lineOriented || reportsOwnFailure(argv, outcome.exitCode) };
   }
 
   private dispatchNetworkAware(
@@ -4574,7 +4588,7 @@ export class LinuxCommandExecutor {
     interpreterStdin?: string,
   ): { output: string; exitCode: number; backgroundPid?: number; lineOriented?: boolean } {
     const result = this.dispatchResolved(argv, env, background, outputPiped, interpreterStdin);
-    return { ...result, lineOriented: writesLines(argv) };
+    return { ...result, lineOriented: writesLines(argv) || reportsOwnFailure(argv, result.exitCode) };
   }
 
   private dispatchResolved(

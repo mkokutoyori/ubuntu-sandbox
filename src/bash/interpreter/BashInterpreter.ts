@@ -1304,9 +1304,9 @@ export class BashInterpreter {
       }
     }
     const opened = new Set<string>();
-    const deliver = (content: string, sink: Sink): boolean => {
+    const deliver = (content: string, sink: Sink, isStderr = false): boolean => {
       if (sink.kind === 'fd1') {
-        if (content) this.output.push(terminalText(content, this.lastLineOriented));
+        if (content) this.output.push(isStderr ? ensureTrailingNewline(content) : terminalText(content, this.lastLineOriented));
         return true;
       }
       if (sink.kind === 'fd2') {
@@ -1325,7 +1325,7 @@ export class BashInterpreter {
         return false;
       }
     };
-    if (deliver(stdout, fd1)) deliver(stderr, fd2);
+    if (deliver(stdout, fd1)) deliver(stderr, fd2, true);
   }
 
   private redirectFailureText(error: Error, command: string | undefined): string {

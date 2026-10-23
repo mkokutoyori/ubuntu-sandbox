@@ -4068,7 +4068,7 @@ export abstract class LinuxMachine extends EndHost
           : await start();
         this.executor.lastExitCode = result.exitCode;
         if (result.interleaved !== undefined) return result.interleaved;
-        return [result.output, result.stderr].filter((s) => s).join('\n');
+        return [result.output, result.stderr].filter((s) => s).join('\n').replace(/\n$/, '');
       };
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
