@@ -3455,18 +3455,14 @@ memoire un format de sortie. A reprendre avec une capture reelle.
 (en-tete, checksum, champ de longueur) - la RFC 4884 qui la definit n'est pas
 dans `docs/rfc/mpls`.
 
-### [mpls] les vues `show mpls ...` reposent sur des lignes d'exemple, pas sur une capture complete
-`show mpls forwarding-table`, `show mpls interfaces`, `show mpls ldp neighbor`,
-`bindings` et `discovery` sont rendues d'apres les en-tetes et les lignes
-d'exemple de IOS-XE que `genie.libs.parser` (`iosxe/show_mpls.py`) cite dans les
-commentaires de ses expressions regulieres. L'indentation absolue des blocs
-(4/8/10 espaces de `ldp neighbor`), la largeur des cellules d'adresses et le
-champ `Up time` au-dela d'un jour ne sont pas lisibles dans ces commentaires.
-`show mpls ldp neighbor detail`, `bindings all detail`, `show mpls ldp
-parameters` et `show mpls forwarding-table detail` ne sont pas servis.
+### [mpls] les vues `show mpls ...` : contenu du livre Cisco, mise en page des transcriptions
+Le contenu et les arguments des vues suivent maintenant `official_docs/cisco/mp-cr-book.pdf`
+(voir `[cli-mpls]`). La mise en page absolue (indentation 4/8/10 espaces de `ldp neighbor`,
+largeur des cellules d'adresses, `Up time` au-dela d'un jour) reste celle des lignes d'exemple
+d'IOS-XE citees par `genie.libs.parser` : le texte du PDF perd l'indentation.
 **Pourquoi ce n'est pas ferme** : CLAUDE.md §8 - une capture integrale d'IOS est
-necessaire pour trancher ; les ntc-templates ne portent que
-`show mpls interfaces` pour IOS.
+necessaire pour trancher l'indentation ; le livre ne porte pas non plus la sortie de
+`traceroute` avec l'objet « MPLS Label Stack » de la RFC 4950.
 
 ### [ldp] le reste de la RFC 5036
 Mode Downstream on Demand : sert en controle independant et ordonne (requete,
