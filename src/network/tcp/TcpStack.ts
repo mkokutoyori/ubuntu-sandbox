@@ -359,6 +359,7 @@ export interface TcpExchangeOptions {
 export interface TcpConnectOptions {
   localPort?: PortNumber;
   localIp?: string;
+  reuseAddress?: boolean;
   onOpen?: TcpOpenHandler;
   onData?: TcpDataHandler;
   onClose?: TcpCloseHandler;
@@ -1143,13 +1144,27 @@ export class TcpStack {
     return false;
   }
 
+  private bindConflicts(port: PortNumber, rawRemoteIp: string, remotePort: number, reuseAddress: boolean): boolean {
+    if (!reuseAddress) return this.localPortInUse(port, rawRemoteIp);
+    const remoteIp = canonicalIpText(rawRemoteIp);
+    const localIp = this.resolveEgress(remoteIp)?.srcIp;
+    for (const socket of this.sockets.values()) {
+      if (socket.localPort === port.value && socket.localIp === localIp && socket.remoteIp === remoteIp
+        && socket.remotePort === remotePort && socket.state !== 'time-wait') return true;
+    }
+    for (const listener of this.listeners.values()) {
+      if (listener.localPort === port.value && (listener.localIp === localIp || listener.localIp === '0.0.0.0')) return true;
+    }
+    return false;
+  }
+
   connect(rawRemoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
     const remoteIp = canonicalIpText(rawRemoteIp);
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
     const localIp = opts.localIp ?? egress.srcIp;
-    if (opts.localPort && this.localPortInUse(opts.localPort, remoteIp)) {
+    if (opts.localPort && this.bindConflicts(opts.localPort, remoteIp, remotePort, opts.reuseAddress ?? false)) {
       this.dropped(remoteIp, remotePort, 'addr-in-use');
       return null;
     }

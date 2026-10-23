@@ -5013,6 +5013,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return ip6 ? ip6.toString() : null;
       },
       tcpStack: () => this.getTcpStack(),
+      interfaceAddress: (name: string): string | null => this.getPorts().find(port => port.getName() === name)?.getIPAddress()?.toString() ?? null,
+      ownsAddress: (address: string): boolean => {
+        const ip = IPAddress.tryParse(address);
+        return ip !== null && this.isLocalAddress(ip);
+      },
       trustAnchors: () => this.trustedCAs,
       readFile: (path: string): string | null => {
         const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));

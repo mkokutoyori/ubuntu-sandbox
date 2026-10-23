@@ -3743,3 +3743,7 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 (RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` n'est pas porte (le texte ASCII est imprime
 sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
 (`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
+
+### [nat-ftp-actif] le mode actif FTP ne traverse pas un NAT (mesure : natlab, curl -P - contre vsftpd, pool et interface overload)
+
+Mesure avec `curl -P -` depuis PC-LINUX vers le vsftpd d'EXT a travers R-AKWA, que l'ALG FTP soit regle par defaut. (1) `inspectAndRewriteFtpAlg` ne reconnait que `PORT` : un `EPRT |1|192.168.10.22|n|` traverse intact, vsftpd repond `500 Illegal EPRT command.` (l'adresse annoncee n'est pas celle du pair de controle). (2) Pour `PORT`, `Router.processIPv4` passe a l'ALG l'adresse de l'interface de sortie et non l'adresse source traduite : avec un pool, l'entree creee est `203.0.113.2:40000` alors que la connexion de controle porte `203.0.113.4`. (3) Apres la reecriture de la commande, la longueur du segment change sans ajustement des numeros de sequence et d'acquittement : la reponse du serveur n'arrive jamais et curl attend son delai. A fermer dans `nat/FtpAlg.ts` et dans la table de sessions de `NATEngine` (delta de sequence par session), avec EPRT, puis rejouer curl -P en probe.

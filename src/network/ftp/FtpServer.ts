@@ -49,6 +49,7 @@ export class FtpServer {
     let tls: TlsServerSession | null = null;
     let clientSeq = 0;
     let serverSeq = 0;
+    let pendingText = '';
 
     const writeReply = (r: FtpReply): void => {
       const text = encodeReply(r);
@@ -61,7 +62,7 @@ export class FtpServer {
       }
     };
 
-    const session = new FtpServerSession(this.config, this.tcpStack, socket.localIp || this.localIp, writeReply);
+    const session = new FtpServerSession(this.config, this.tcpStack, socket.localIp || this.localIp, writeReply, socket.remoteIp);
     this.config.eventBus?.publish({
       topic: 'ftp.control.connected', payload: { connectionId: session.connectionId },
     });
@@ -94,21 +95,27 @@ export class FtpServer {
         text = String(data);
       }
 
-      const cmd = decodeCommand(text);
-      if (!cmd) {
-        writeReply(reply(500, 'Syntax error, command unrecognized.'));
-        return;
-      }
-      for (const r of session.handle(cmd)) writeReply(r);
+      const buffered = pendingText + text;
+      const lines = buffered.includes('\n') ? buffered.split(/\r?\n/) : [buffered];
+      pendingText = buffered.includes('\n') ? lines.pop() ?? '' : '';
+      for (const line of lines) {
+        const cmd = decodeCommand(line);
+        if (!cmd) {
+          writeReply(reply(500, 'Syntax error, command unrecognized.'));
+          continue;
+        }
+        for (const r of session.handle(cmd)) writeReply(r);
 
-      if (session.consumeTlsUpgradeSignal() && this.config.ftps) {
-        tls = new TlsServerSession(this.config.ftps);
-        wireState = 'tls-handshake';
-      }
+        if (session.consumeTlsUpgradeSignal() && this.config.ftps) {
+          tls = new TlsServerSession(this.config.ftps);
+          wireState = 'tls-handshake';
+        }
 
-      if (session.result === 'closed') {
-        unsubscribe();
-        socket.close();
+        if (session.result === 'closed') {
+          unsubscribe();
+          socket.close();
+          return;
+        }
       }
     });
   }

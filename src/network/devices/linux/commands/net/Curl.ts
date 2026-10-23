@@ -2,6 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import { listenForInterruption } from '../CommandInterruption';
+import { IPAddress } from '@/network/core/types';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl, CURL_FLAGS, CURL_USAGE } from '@/network/http/curl/CurlEngine';
 
@@ -17,6 +18,11 @@ function linuxCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost 
       return ip6 ? ip6.toString() : null;
     },
     tcpStack: () => ctx.net.getTcpStack(),
+    interfaceAddress: (name: string): string | null => ctx.net.getPorts().get(name)?.getIPAddress()?.toString() ?? null,
+    ownsAddress: (address: string): boolean => {
+      const ip = IPAddress.tryParse(address);
+      return ip !== null && ctx.net.isLocalAddress(ip);
+    },
     trustAnchors: () => ctx.tlsTrustAnchors,
     readFile(path: string): string | null {
       const vfs = ctx.executor.vfs;

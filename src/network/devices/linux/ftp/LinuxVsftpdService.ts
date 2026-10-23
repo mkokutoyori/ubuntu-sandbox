@@ -75,6 +75,19 @@ const BOOLEAN_DEFAULTS: Readonly<Record<string, boolean>> = {
   anon_mkdir_write_enable: false,
   anon_other_write_enable: false,
   chroot_local_user: false,
+  port_enable: true,
+  pasv_enable: true,
+  connect_from_port_20: false,
+  port_promiscuous: false,
+  pasv_promiscuous: false,
+  download_enable: true,
+  dirlist_enable: true,
+};
+
+const NUMBER_DEFAULTS: Readonly<Record<string, number>> = {
+  pasv_min_port: 5001,
+  pasv_max_port: 0,
+  ftp_data_port: 20,
 };
 
 const STRING_DEFAULTS: Readonly<Record<string, string | null>> = {
@@ -82,16 +95,18 @@ const STRING_DEFAULTS: Readonly<Record<string, string | null>> = {
   ftp_username: 'ftp',
   ftpd_banner: null,
   pam_service_name: 'ftp',
+  pasv_address: null,
 };
 
 const HARMLESS_DIRECTIVES: ReadonlySet<string> = new Set([
-  'dirmessage_enable', 'xferlog_enable', 'xferlog_std_format', 'connect_from_port_20',
+  'dirmessage_enable', 'xferlog_enable', 'xferlog_std_format',
   'listen', 'listen_ipv6', 'use_localtime', 'secure_chroot_dir',
 ]);
 
 export interface VsftpdSettings {
   readonly flags: Readonly<Record<string, boolean>>;
   readonly strings: Readonly<Record<string, string | null>>;
+  readonly numbers: Readonly<Record<string, number>>;
 }
 
 export type VsftpdConfResult =
@@ -101,6 +116,7 @@ export type VsftpdConfResult =
 export function parseVsftpdConf(text: string): VsftpdConfResult {
   const flags: Record<string, boolean> = { ...BOOLEAN_DEFAULTS };
   const strings: Record<string, string | null> = { ...STRING_DEFAULTS };
+  const numbers: Record<string, number> = { ...NUMBER_DEFAULTS };
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (line === '' || line.startsWith('#')) continue;
@@ -114,13 +130,18 @@ export function parseVsftpdConf(text: string): VsftpdConfResult {
         return { ok: false, error: `500 OOPS: bad bool value in config file for: ${key}` };
       }
       flags[key] = upper === 'YES' || upper === 'TRUE' || value === '1';
+    } else if (key in NUMBER_DEFAULTS) {
+      numbers[key] = value.startsWith('0') ? parseInt(value, 8) || 0 : parseInt(value, 10) || 0;
     } else if (key in STRING_DEFAULTS) {
+      if (key === 'pasv_address' && !/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
+        return { ok: false, error: 'vsftpd: invalid pasv_address' };
+      }
       strings[key] = value;
     } else if (!HARMLESS_DIRECTIVES.has(key)) {
       return { ok: false, error: `vsftpd: ${key} is not supported by this simulator` };
     }
   }
-  return { ok: true, settings: { flags, strings } };
+  return { ok: true, settings: { flags, strings, numbers } };
 }
 
 export interface VsftpdAccount {
@@ -158,6 +179,7 @@ export class LinuxVsftpdService implements ServiceSocketServer {
   open(spec: PortSpec, identity?: ListenerIdentity): boolean {
     const loaded = this.loadSettings();
     if (!loaded.ok) return false;
+    this.server?.stop();
     this.server = new FtpServer(this.host.tcpStack(), '0.0.0.0', this.configFrom(loaded.settings), spec.port);
     this.server.start(identity, VSFTPD_LISTEN_BACKLOG);
     return true;
@@ -169,15 +191,10 @@ export class LinuxVsftpdService implements ServiceSocketServer {
   }
 
   private configFrom(settings: VsftpdSettings): FtpServerConfig {
-    const { flags, strings } = settings;
+    const { flags, strings, numbers } = settings;
     return {
       users: new Map(),
       fs: this.fileSystemAs(0, 0, 'root', '/'),
-      messages: {
-        greeting: strings.ftpd_banner ?? `(vsFTPd ${VSFTPD_VERSION})`,
-        passwordRequired: 'Please specify the password.',
-        loggedIn: 'Login successful.',
-      },
       rejectUser: (username) => (!flags.local_enable && !isAnonymous(username)
         ? 'This FTP server is anonymous only.' : null),
       authenticate: (username, password) => {
@@ -188,6 +205,30 @@ export class LinuxVsftpdService implements ServiceSocketServer {
       sessionFor: (username) => this.sessionFor(username, flags, strings),
       permitsWrite: (username, verb) => permitsWrite(flags, isAnonymous(username), verb),
       listLine: (entry) => this.listLine(entry, this.host.nowMs()),
+      commandEnabled: (verb) => commandEnabled(flags, verb),
+      dataPolicy: {
+        activeSourcePort: flags.connect_from_port_20 ? numbers.ftp_data_port : null,
+        passiveRange: passiveRange(numbers),
+        passiveAddress: strings.pasv_address ?? null,
+        activeAnyPeer: flags.port_promiscuous,
+        passiveAnyPeer: flags.pasv_promiscuous,
+        random: Math.random,
+      },
+      messages: {
+        greeting: strings.ftpd_banner ?? `(vsFTPd ${VSFTPD_VERSION})`,
+        passwordRequired: 'Please specify the password.',
+        loggedIn: 'Login successful.',
+        portOk: 'PORT command successful. Consider using PASV.',
+        currentDirectory: (path) => `"${path}" is the current directory`,
+        typeSet: (type) => (type === 'A' ? 'Switching to ASCII mode.' : 'Switching to Binary mode.'),
+        opening: (_type, name, size) => `Opening BINARY mode data connection for ${name} (${size} bytes).`,
+        storeOk: 'Ok to send data.',
+        sizeFailed: 'Could not get file size.',
+        openFailed: 'Failed to open file.',
+        noDataChannel: 'Use PORT or PASV first.',
+        dataConnectFailed: 'Failed to establish connection.',
+        eprtOk: 'EPRT command successful. Consider using EPSV.',
+      },
     };
   }
 
@@ -246,6 +287,27 @@ function vsftpdDate(mtime: number, now: number): string {
   return mtime > now || now - mtime > HALF_YEAR_MS
     ? `${day}  ${date.getUTCFullYear()}`
     : `${day} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+const PASSIVE_PORT_FLOOR = 1024;
+const PASSIVE_PORT_CEILING = 65535;
+
+function passiveRange(numbers: Readonly<Record<string, number>>): { min: number; max: number } {
+  let min = PASSIVE_PORT_FLOOR;
+  let max = PASSIVE_PORT_CEILING;
+  if (numbers.pasv_min_port > min && numbers.pasv_min_port <= max) min = numbers.pasv_min_port;
+  if (numbers.pasv_max_port >= min && numbers.pasv_max_port < max) max = numbers.pasv_max_port;
+  return { min, max };
+}
+
+function commandEnabled(flags: Readonly<Record<string, boolean>>, verb: string): boolean {
+  switch (verb) {
+    case 'PORT': case 'EPRT': return flags.port_enable;
+    case 'PASV': case 'EPSV': return flags.pasv_enable;
+    case 'RETR': return flags.download_enable;
+    case 'LIST': case 'NLST': case 'MLSD': return flags.dirlist_enable;
+    default: return true;
+  }
 }
 
 function permitsWrite(flags: Readonly<Record<string, boolean>>, anonymous: boolean, verb: FtpWriteVerb): boolean {

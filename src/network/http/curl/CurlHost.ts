@@ -4,6 +4,8 @@ import type { X509Certificate } from '@/network/pki/X509Certificate';
 export interface CurlHost {
   resolveHostname(name: string): Promise<string | null>;
   tcpStack(): TcpStack;
+  interfaceAddress(name: string): string | null;
+  ownsAddress(address: string): boolean;
   trustAnchors(): readonly X509Certificate[];
   readFile(path: string): string | null;
   writeFile(target: string, content: string): boolean;

@@ -1,0 +1,632 @@
+{
+ "vsftpd": "3.0.5",
+ "curl": "8.5.0",
+ "client": "127.0.0.1",
+ "other": "127.0.0.2",
+ "cases": {
+  "passive-download": {
+   "conf": "",
+   "args": [],
+   "path": "/test.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||15133|)",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 150 Opening BINARY mode data connection for test.txt (10 bytes).",
+    "< 226 Transfer complete."
+   ]
+  },
+  "passive-no-epsv": {
+   "conf": "",
+   "args": [
+    "--disable-epsv"
+   ],
+   "path": "/test.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> PASV",
+    "< 227 Entering Passive Mode (127,0,0,1,248,214).",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 150 Opening BINARY mode data connection for test.txt (10 bytes).",
+    "< 226 Transfer complete."
+   ]
+  },
+  "passive-list": {
+   "conf": "",
+   "args": [],
+   "path": "/",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||33704|)",
+    "> TYPE A",
+    "< 200 Switching to ASCII mode.",
+    "> LIST",
+    "< 150 Here comes the directory listing.",
+    "< 226 Directory send OK."
+   ]
+  },
+  "passive-missing-file": {
+   "conf": "",
+   "args": [],
+   "path": "/nosuch.txt",
+   "exit": 78,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||12648|)",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE nosuch.txt",
+    "< 550 Could not get file size."
+   ]
+  },
+  "active-eprt": {
+   "conf": "",
+   "args": [
+    "-P",
+    "-"
+   ],
+   "path": "/test.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|53633|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 150 Opening BINARY mode data connection for test.txt (10 bytes).",
+    "< 226 Transfer complete."
+   ]
+  },
+  "active-port": {
+   "conf": "",
+   "args": [
+    "-P",
+    "-",
+    "--disable-eprt"
+   ],
+   "path": "/test.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> PORT 127,0,0,1,175,55",
+    "< 200 PORT command successful. Consider using PASV.",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 150 Opening BINARY mode data connection for test.txt (10 bytes).",
+    "< 226 Transfer complete."
+   ]
+  },
+  "active-port-range": {
+   "conf": "",
+   "args": [
+    "-P",
+    "127.0.0.1:50000-50010"
+   ],
+   "path": "/test.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|50000|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 150 Opening BINARY mode data connection for test.txt (10 bytes).",
+    "< 226 Transfer complete."
+   ]
+  },
+  "active-other-address": {
+   "conf": "",
+   "args": [
+    "-P",
+    "127.0.0.2"
+   ],
+   "path": "/test.txt",
+   "exit": 30,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.2|53819|",
+    "< 500 Illegal EPRT command.",
+    "> PORT 127,0,0,2,209,229",
+    "< 500 Illegal PORT command."
+   ]
+  },
+  "active-reserved-port": {
+   "conf": "",
+   "args": [
+    "-P",
+    "127.0.0.1:500"
+   ],
+   "path": "/test.txt",
+   "exit": 30,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|500|",
+    "< 500 Illegal EPRT command."
+   ]
+  },
+  "active-list": {
+   "conf": "",
+   "args": [
+    "-P",
+    "-"
+   ],
+   "path": "/",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|35137|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE A",
+    "< 200 Switching to ASCII mode.",
+    "> LIST",
+    "< 150 Here comes the directory listing.",
+    "< 226 Directory send OK."
+   ]
+  },
+  "active-nlst": {
+   "conf": "",
+   "args": [
+    "-P",
+    "-",
+    "-l"
+   ],
+   "path": "/",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|56939|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE A",
+    "< 200 Switching to ASCII mode.",
+    "> NLST",
+    "< 150 Here comes the directory listing.",
+    "< 226 Directory send OK."
+   ]
+  },
+  "active-upload": {
+   "conf": "write_enable=YES\nanon_upload_enable=YES",
+   "args": [
+    "-P",
+    "-",
+    "-T",
+    "UPLOAD"
+   ],
+   "path": "/up/active.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> CWD up",
+    "< 250 Directory successfully changed.",
+    "> EPRT |1|127.0.0.1|53765|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> STOR active.txt",
+    "< 150 Ok to send data.",
+    "< 226 Transfer complete."
+   ]
+  },
+  "passive-upload": {
+   "conf": "write_enable=YES\nanon_upload_enable=YES",
+   "args": [
+    "-T",
+    "UPLOAD"
+   ],
+   "path": "/up/passive.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> CWD up",
+    "< 250 Directory successfully changed.",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||45921|)",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> STOR passive.txt",
+    "< 150 Ok to send data.",
+    "< 226 Transfer complete."
+   ]
+  },
+  "port-disabled": {
+   "conf": "port_enable=NO",
+   "args": [
+    "-P",
+    "-"
+   ],
+   "path": "/test.txt",
+   "exit": 30,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|45381|",
+    "< 550 Permission denied.",
+    "> PORT 127,0,0,1,172,183",
+    "< 550 Permission denied."
+   ]
+  },
+  "pasv-disabled": {
+   "conf": "pasv_enable=NO",
+   "args": [],
+   "path": "/test.txt",
+   "exit": 13,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPSV",
+    "< 550 Permission denied.",
+    "> PASV",
+    "< 550 Permission denied."
+   ]
+  },
+  "pasv-disabled-active": {
+   "conf": "pasv_enable=NO",
+   "args": [
+    "-P",
+    "-"
+   ],
+   "path": "/test.txt",
+   "exit": 0,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|33153|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 150 Opening BINARY mode data connection for test.txt (10 bytes).",
+    "< 226 Transfer complete."
+   ]
+  },
+  "download-disabled": {
+   "conf": "download_enable=NO",
+   "args": [],
+   "path": "/test.txt",
+   "exit": 78,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||39815|)",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 550 Permission denied."
+   ]
+  },
+  "dirlist-disabled": {
+   "conf": "dirlist_enable=NO",
+   "args": [
+    "-l"
+   ],
+   "path": "/",
+   "exit": 19,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||27207|)",
+    "> TYPE A",
+    "< 200 Switching to ASCII mode.",
+    "> NLST",
+    "< 550 Permission denied."
+   ]
+  },
+  "port-promiscuous": {
+   "conf": "port_promiscuous=YES",
+   "args": [
+    "-P",
+    "127.0.0.1:500"
+   ],
+   "path": "/test.txt",
+   "exit": 19,
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS ftp@example.com",
+    "< 230 Login successful.",
+    "> PWD",
+    "< 257 \"/\" is the current directory",
+    "> EPRT |1|127.0.0.1|500|",
+    "< 200 EPRT command successful. Consider using EPSV.",
+    "> TYPE I",
+    "< 200 Switching to Binary mode.",
+    "> SIZE test.txt",
+    "< 213 10",
+    "> RETR test.txt",
+    "< 500 OOPS: Illegal port request"
+   ]
+  }
+ },
+ "raw": {
+  "pasv-address": {
+   "conf": "pasv_address=1.2.3.4",
+   "commands": [
+    "USER anonymous",
+    "PASS x",
+    "PASV"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS x",
+    "< 230 Login successful.",
+    "> PASV",
+    "< 227 Entering Passive Mode (1,2,3,4,168,102)."
+   ]
+  },
+  "pasv-port-range": {
+   "conf": "pasv_min_port=40000\npasv_max_port=40010",
+   "commands": [
+    "USER anonymous",
+    "PASS x",
+    "EPSV",
+    "EPSV",
+    "EPSV"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS x",
+    "< 230 Login successful.",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||40002|)",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||40001|)",
+    "> EPSV",
+    "< 229 Entering Extended Passive Mode (|||40008|)"
+   ]
+  },
+  "illegal-port-commands": {
+   "conf": "",
+   "commands": [
+    "USER anonymous",
+    "PASS x",
+    "PORT 1,2,3,4,5,6",
+    "PORT 127,0,0,1,0,80",
+    "PORT garbage",
+    "EPRT |3|1.2.3.4|5|",
+    "EPRT |1|bad|5|",
+    "EPRT garbage",
+    "EPRT |1|127.0.0.1|500|"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS x",
+    "< 230 Login successful.",
+    "> PORT 1,2,3,4,5,6",
+    "< 500 Illegal PORT command.",
+    "> PORT 127,0,0,1,0,80",
+    "< 500 Illegal PORT command.",
+    "> PORT garbage",
+    "< 500 Illegal PORT command.",
+    "> EPRT |3|1.2.3.4|5|",
+    "< 500 Bad EPRT protocol.",
+    "> EPRT |1|bad|5|",
+    "< 500 Bad EPRT command.",
+    "> EPRT garbage",
+    "< 500 Bad EPRT command.",
+    "> EPRT |1|127.0.0.1|500|",
+    "< 500 Illegal EPRT command."
+   ]
+  },
+  "port-before-login": {
+   "conf": "",
+   "commands": [
+    "PORT 127,0,0,1,200,1",
+    "PASV"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> PORT 127,0,0,1,200,1",
+    "< 530 Please login with USER and PASS.",
+    "> PASV",
+    "< 530 Please login with USER and PASS."
+   ]
+  },
+  "retr-without-channel": {
+   "conf": "",
+   "commands": [
+    "USER anonymous",
+    "PASS x",
+    "RETR test.txt",
+    "RETR nosuch.txt",
+    "LIST",
+    "STOR x.txt"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS x",
+    "< 230 Login successful.",
+    "> RETR test.txt",
+    "< 425 Use PORT or PASV first.",
+    "> RETR nosuch.txt",
+    "< 425 Use PORT or PASV first.",
+    "> LIST",
+    "< 425 Use PORT or PASV first.",
+    "> STOR x.txt",
+    "< 550 Permission denied."
+   ]
+  },
+  "promiscuous-port-commands": {
+   "conf": "port_promiscuous=YES",
+   "commands": [
+    "USER anonymous",
+    "PASS x",
+    "PORT 1,2,3,4,5,6",
+    "EPRT |1|1.2.3.4|5|"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS x",
+    "< 230 Login successful.",
+    "> PORT 1,2,3,4,5,6",
+    "< 200 PORT command successful. Consider using PASV.",
+    "> EPRT |1|1.2.3.4|5|",
+    "< 200 EPRT command successful. Consider using EPSV."
+   ]
+  },
+  "pasv-after-port-disabled": {
+   "conf": "port_enable=NO",
+   "commands": [
+    "USER anonymous",
+    "PASS x",
+    "PORT 127,0,0,1,200,1",
+    "EPRT |1|127.0.0.1|50000|",
+    "PASV"
+   ],
+   "lines": [
+    "< 220 (vsFTPd 3.0.5)",
+    "> USER anonymous",
+    "< 331 Please specify the password.",
+    "> PASS x",
+    "< 230 Login successful.",
+    "> PORT 127,0,0,1,200,1",
+    "< 550 Permission denied.",
+    "> EPRT |1|127.0.0.1|50000|",
+    "< 550 Permission denied.",
+    "> PASV",
+    "< 227 Entering Passive Mode (127,0,0,1,118,10)."
+   ]
+  }
+ }
+}
