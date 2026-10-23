@@ -10,7 +10,7 @@ import {
 import type { MplsLabel } from '@/network/mpls/MplsLabel';
 import { LABEL_RANGE_DEFAULT_MAX, LABEL_RANGE_DEFAULT_MIN } from '@/network/mpls/Lfib';
 import { IPAddress } from '@/network/core/types';
-import type { PseudowireEngine } from '@/network/pw/PseudowireEngine';
+import { PW_TYPE_ETHERNET_RAW, type PseudowireEngine } from '@/network/pw/PseudowireEngine';
 import type { VplsEngine } from '@/network/pw/VplsEngine';
 import {
   formatLdpBackoff, formatLdpBindings, formatLdpCapabilities, formatLdpDiscovery, formatLdpNeighbors, formatLdpParameters,
@@ -227,9 +227,32 @@ function echoOptions(args: Record<string, string>) {
   };
 }
 
+const PING_MPLS_OPTIONS: CommandSpec['options'] = [
+        { keyword: 'repeat', description: 'Number of times to resend the same packet', argument: { name: 'count', type: 'INT', range: [1, 2147483647], description: 'Repeat count' } },
+        { keyword: 'size', description: 'Size of the packet with the label stack imposed', argument: { name: 'size', type: 'INT', range: [40, 18024], description: 'Packet size' } },
+        { keyword: 'timeout', description: 'Timeout interval for an MPLS request packet', argument: { name: 'timeout', type: 'INT', range: [0, 3600], description: 'Seconds' } },
+        { keyword: 'ttl', description: 'Time-to-live of the outermost label', argument: { name: 'ttl', type: 'INT', range: [1, 255], description: 'Time to live' } },
+        { keyword: 'exp', description: 'MPLS experimental field value in the MPLS header', argument: { name: 'exp', type: 'INT', range: [0, 7], description: 'EXP bits' } },
+        {
+          keyword: 'reply', description: 'Reply options',
+          choices: [
+            { keyword: 'mode', description: 'Reply mode', argument: { name: 'mode', type: 'ENUM', description: 'Reply mode', values: [
+              { keyword: 'ipv4', description: 'Reply with an IPv4 UDP packet' }, { keyword: 'router-alert', description: 'Reply with an IPv4 UDP packet with router alert' }] } },
+            { keyword: 'dscp', description: 'DSCP of the echo reply', argument: { name: 'dscp', type: 'INT', range: [0, 63], description: 'DSCP value' } },
+            { keyword: 'pad-tlv', description: 'Ask the replier to copy the pad TLV' },
+          ],
+        },
+        { keyword: 'dsmap', description: 'Interrogate a transit router for downstream mapping information' },
+        { keyword: 'verbose', description: 'Display the reply sender address and the return codes' },
+      ];
+
 function runPingMpls(host: MplsShellHost, args: Record<string, string>): string {
   const fec = ldpFec(String(args.target));
   if (fec === null) return "% Invalid input detected at '^' marker.";
+  return pingFec(host, args, fec, String(args.target).split('/')[0]);
+}
+
+function pingFec(host: MplsShellHost, args: Record<string, string>, fec: TargetFec, target: string): string {
   const count = args.count === undefined ? DEFAULT_PING_REPEAT : Number(args.count);
   const size = args.size === undefined ? DEFAULT_PING_SIZE : Number(args.size);
   const timeoutSeconds = args.timeout === undefined ? DEFAULT_OAM_TIMEOUT_SECONDS : Number(args.timeout);
@@ -243,7 +266,7 @@ function runPingMpls(host: MplsShellHost, args: Record<string, string>): string 
     outcomes.push({ outcome, counted: outcome.kind !== 'reply' || outcome.reply.roundTripMs <= timeoutSeconds * 1000 });
   }
   const settled = outcomes.map(entry => entry.counted ? entry : { outcome: { kind: 'timeout' as const }, counted: false });
-  return formatPingMpls({ count, size, target: String(args.target).split('/')[0], timeoutSeconds }, settled, args.verbose !== undefined);
+  return formatPingMpls({ count, size, target, timeoutSeconds }, settled, args.verbose !== undefined);
 }
 
 function runTraceMpls(host: MplsShellHost, args: Record<string, string>): string {
@@ -438,6 +461,44 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
       modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: true,
       run: (_session, args) => { host().ldp().setHelloTimers(Number(args.seconds), null); return ''; },
       undo: () => { host().ldp().setHelloTimers(DEFAULT_HELLO_INTERVAL_SECONDS, null); return ''; },
+    },
+    {
+      id: 'mpls-ldp-advertise-labels',
+      path: ['mpls', 'ldp', 'advertise-labels'],
+      description: 'Control the distribution of locally assigned labels',
+      undoDescription: 'Stop advertising locally assigned labels',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: false,
+      options: [
+        { keyword: 'for', description: 'Destinations whose labels are advertised', argument: { name: 'prefixAcl', type: 'WORD', description: 'Prefix access list' } },
+        { keyword: 'to', description: 'LDP neighbors that receive the advertisements', argument: { name: 'peerAcl', type: 'WORD', description: 'Peer access list' } },
+      ],
+      run: (_session, args) => {
+        if (args.prefixAcl === undefined) {
+          if (args.peerAcl !== undefined) return "% Invalid input detected at '^' marker.";
+          host().ldp().setAdvertiseAll(true);
+          return '';
+        }
+        host().ldp().addAdvertiseRule({ prefixAcl: String(args.prefixAcl), peerAcl: args.peerAcl === undefined ? null : String(args.peerAcl) });
+        return '';
+      },
+      undo: (_session, args) => {
+        if (args.prefixAcl === undefined) {
+          host().ldp().setAdvertiseAll(false);
+          return '';
+        }
+        host().ldp().removeAdvertiseRule({ prefixAcl: String(args.prefixAcl), peerAcl: args.peerAcl === undefined ? null : String(args.peerAcl) });
+        return '';
+      },
+    },
+    {
+      id: 'mpls-ldp-neighbor-labels-accept',
+      path: ['mpls', 'ldp', 'neighbor', { name: 'address', type: 'IP_ADDR', description: 'LDP neighbor address' }, 'labels', 'accept',
+        { name: 'acl', type: 'WORD', description: 'Access list of the prefixes that are acceptable' }],
+      description: 'Filter the inbound label bindings of an LDP neighbor',
+      undoDescription: 'Stop filtering the inbound label bindings of the neighbor',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: false,
+      run: (_session, args) => { host().ldp().setInboundFilter(new IPAddress(String(args.address)), String(args.acl)); return ''; },
+      undo: (_session, args) => { host().ldp().setInboundFilter(new IPAddress(String(args.address)), null); return ''; },
     },
     {
       id: 'mpls-ldp-neighbor-targeted',
@@ -648,25 +709,25 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
       path: ['ping', 'mpls', 'ipv4', { name: 'target', type: 'IP_PREFIX', description: 'Address prefix of the target to be tested (address/mask-length)' }],
       description: 'Check MPLS LSP connectivity',
       modes: PRIVILEGED, minPrivilege: 15,
-      options: [
-        { keyword: 'repeat', description: 'Number of times to resend the same packet', argument: { name: 'count', type: 'INT', range: [1, 2147483647], description: 'Repeat count' } },
-        { keyword: 'size', description: 'Size of the packet with the label stack imposed', argument: { name: 'size', type: 'INT', range: [40, 18024], description: 'Packet size' } },
-        { keyword: 'timeout', description: 'Timeout interval for an MPLS request packet', argument: { name: 'timeout', type: 'INT', range: [0, 3600], description: 'Seconds' } },
-        { keyword: 'ttl', description: 'Time-to-live of the outermost label', argument: { name: 'ttl', type: 'INT', range: [1, 255], description: 'Time to live' } },
-        { keyword: 'exp', description: 'MPLS experimental field value in the MPLS header', argument: { name: 'exp', type: 'INT', range: [0, 7], description: 'EXP bits' } },
-        {
-          keyword: 'reply', description: 'Reply options',
-          choices: [
-            { keyword: 'mode', description: 'Reply mode', argument: { name: 'mode', type: 'ENUM', description: 'Reply mode', values: [
-              { keyword: 'ipv4', description: 'Reply with an IPv4 UDP packet' }, { keyword: 'router-alert', description: 'Reply with an IPv4 UDP packet with router alert' }] } },
-            { keyword: 'dscp', description: 'DSCP of the echo reply', argument: { name: 'dscp', type: 'INT', range: [0, 63], description: 'DSCP value' } },
-            { keyword: 'pad-tlv', description: 'Ask the replier to copy the pad TLV' },
-          ],
-        },
-        { keyword: 'dsmap', description: 'Interrogate a transit router for downstream mapping information' },
-        { keyword: 'verbose', description: 'Display the reply sender address and the return codes' },
-      ],
+      options: PING_MPLS_OPTIONS,
       run: (_session, args) => runPingMpls(host(), args),
+    },
+    {
+      id: 'ping-mpls-pseudowire',
+      path: ['ping', 'mpls', 'pseudowire', { name: 'peer', type: 'IP_ADDR', description: 'IPv4 address of the AToM VC to be tested' },
+        { name: 'vcid', type: 'INT', range: [1, 4294967295], description: 'VC identifier of the AToM VC to be tested' }],
+      description: 'Check MPLS pseudowire connectivity',
+      modes: PRIVILEGED, minPrivilege: 15,
+      options: PING_MPLS_OPTIONS,
+      run: (_session, args) => {
+        const peer = new IPAddress(String(args.peer));
+        const view = host().pseudowires().views().find(candidate => candidate.peer.equals(peer) && candidate.pwId === Number(args.vcid));
+        const fec: TargetFec = {
+          kind: 'pw-ipv4', sender: host().oam().localAddress(), remote: peer,
+          pwId: Number(args.vcid), pwType: view?.pwType ?? PW_TYPE_ETHERNET_RAW,
+        };
+        return pingFec(host(), args, fec, String(args.peer));
+      },
     },
     {
       id: 'traceroute-mpls-ipv4',
@@ -892,6 +953,10 @@ export function mplsGlobalRunningConfig(host: MplsShellHost): string[] {
     lines.push(`mpls ldp backoff ${config.backoffInitialSeconds} ${config.backoffMaximumSeconds}`);
   }
   if (config.explicitNull) lines.push('mpls ldp explicit-null');
+  const rules = host.ldp().advertiseRules();
+  if (host.ldp().advertiseRestrictionConfigured() && rules.length === 0) lines.push('no mpls ldp advertise-labels');
+  for (const rule of rules) lines.push(`mpls ldp advertise-labels for ${rule.prefixAcl}${rule.peerAcl === null ? '' : ` to ${rule.peerAcl}`}`);
+  for (const [peer, acl] of host.ldp().inboundFilterEntries()) lines.push(`mpls ldp neighbor ${peer} labels accept ${acl}`);
   if (config.helloHoldSeconds !== DEFAULT_HELLO_HOLD_SECONDS) lines.push(`mpls ldp discovery hello holdtime ${config.helloHoldSeconds}`);
   if (config.helloIntervalSeconds !== DEFAULT_HELLO_INTERVAL_SECONDS) lines.push(`mpls ldp discovery hello interval ${config.helloIntervalSeconds}`);
   for (const [name, definition] of host.pseudowires().pseudowireClasses()) {

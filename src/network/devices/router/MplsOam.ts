@@ -1,5 +1,6 @@
 import { IPAddress, type IPv4Packet, type UDPPacket } from '@/network/core/types';
 import type { VpnPath } from '@/network/bgp/vpn/VpnV4Speaker';
+import type { PseudowireView } from '@/network/pw/PseudowireEngine';
 import type { LdpLocalBinding } from '@/network/ldp/LdpEngine';
 import type { IlmEntry, Lfib } from '@/network/mpls/Lfib';
 import { MplsLabel } from '@/network/mpls/MplsLabel';
@@ -27,6 +28,7 @@ export interface MplsOamHost {
   ldpInstalls(label: MplsLabel): boolean;
   interfaceMtu(iface: string): number;
   vpnPaths(): readonly VpnPath[];
+  pseudowires(): readonly PseudowireView[];
   claimPort(port: number, receive: (packet: IPv4Packet, udp: UDPPacket) => void): void;
   releasePort(port: number): void;
   portTaken(port: number): boolean;
@@ -52,7 +54,7 @@ export interface LspTraceHop {
 
 export type LspPingOutcome =
   | { readonly kind: 'reply'; readonly reply: EchoReply }
-  | { readonly kind: 'not-sent'; readonly reason: 'no-label-binding' | 'no-vpn-route' | 'interface-not-mpls' | 'size-exceeds-mtu' }
+  | { readonly kind: 'not-sent'; readonly reason: 'no-label-binding' | 'no-vpn-route' | 'no-pseudowire' | 'interface-not-mpls' | 'size-exceeds-mtu' }
   | { readonly kind: 'timeout' };
 
 export class RouterMplsOam implements EchoResponderHost {
@@ -67,9 +69,11 @@ export class RouterMplsOam implements EchoResponderHost {
     });
   }
 
+  localAddress(): IPAddress { return this.host.routerAddress(); }
+
   ping(fecs: readonly TargetFec[], options: LspPingOptions = {}): LspPingOutcome {
     const route = this.routeFor(fecs);
-    if (route === 'no-label-binding' || route === 'no-vpn-route') return { kind: 'not-sent', reason: route };
+    if (typeof route === 'string') return { kind: 'not-sent', reason: route };
     if (!this.host.mplsEnabled(route.iface) && route.labels.length > 0) return { kind: 'not-sent', reason: 'interface-not-mpls' };
     if (options.targetSize !== undefined && options.targetSize > this.host.interfaceMtu(route.iface)) {
       return { kind: 'not-sent', reason: 'size-exceeds-mtu' };
@@ -94,7 +98,7 @@ export class RouterMplsOam implements EchoResponderHost {
 
   traceroute(fecs: readonly TargetFec[], options: LspTraceOptions = {}): LspTraceHop[] {
     const route = this.routeFor(fecs);
-    if (route === 'no-label-binding' || route === 'no-vpn-route') return [];
+    if (typeof route === 'string') return [];
     const hops: LspTraceHop[] = [];
     let ddmap: Ddmap | undefined = options.ddmap ?? this.mappingTowards(route);
     let traced: readonly TargetFec[] = fecs;
@@ -115,7 +119,7 @@ export class RouterMplsOam implements EchoResponderHost {
 
   describeFirstHop(fecs: readonly TargetFec[]): { readonly interfaceAddress: IPAddress; readonly mtu: number; readonly labels: readonly number[] } | null {
     const route = this.routeFor(fecs);
-    if (route === 'no-label-binding' || route === 'no-vpn-route') return null;
+    if (typeof route === 'string') return null;
     return {
       interfaceAddress: this.host.interfaceAddress(route.iface) ?? this.host.routerAddress(),
       mtu: this.host.interfaceMtu(route.iface), labels: route.labels,
@@ -124,7 +128,7 @@ export class RouterMplsOam implements EchoResponderHost {
 
   firstHopMapping(fecs: readonly TargetFec[]): Ddmap | null {
     const route = this.routeFor(fecs);
-    return route === 'no-label-binding' || route === 'no-vpn-route' ? null : this.mappingTowards(route);
+    return typeof route === 'string' ? null : this.mappingTowards(route);
   }
 
   private mappingTowards(route: { iface: string; nextHop: IPAddress; labels: number[] }): Ddmap {
@@ -181,13 +185,30 @@ export class RouterMplsOam implements EchoResponderHost {
       if (local === undefined) return { present: false, label: null, protocolOnInterface: true };
       return { present: true, label: local.label.value, protocolOnInterface: true };
     }
+    if (fec.kind === 'pw-ipv4') {
+      const local = this.host.pseudowires().find(view => view.state === 'up' && view.peer.equals(fec.sender)
+        && view.pwId === fec.pwId && view.pwType === fec.pwType);
+      if (local === undefined || local.localLabel === null) return { present: false, label: null, protocolOnInterface: true };
+      return { present: true, label: local.localLabel.value, protocolOnInterface: true };
+    }
     return { present: false, label: null, protocolOnInterface: true };
   }
 
   private routeFor(fecs: readonly TargetFec[]):
     | { iface: string; nextHop: IPAddress; labels: number[]; innermostTtl: number | null }
-    | 'no-label-binding' | 'no-vpn-route' {
+    | 'no-label-binding' | 'no-vpn-route' | 'no-pseudowire' {
     const top = fecs[0];
+    if (top.kind === 'pw-ipv4') {
+      const view = this.host.pseudowires().find(candidate => candidate.state === 'up' && candidate.peer.equals(top.remote)
+        && candidate.pwId === top.pwId && candidate.pwType === top.pwType);
+      if (view === undefined || view.remoteLabel === null) return 'no-pseudowire';
+      const transport = this.host.lfib().lookupFtn(top.remote);
+      if (transport === undefined) return 'no-label-binding';
+      return {
+        iface: transport.iface, nextHop: transport.nextHop,
+        labels: [...transport.outLabels.map(label => label.value), view.remoteLabel.value], innermostTtl: 1,
+      };
+    }
     const vpn = fecs.find(fec => fec.kind === 'vpn-ipv4');
     if (top.kind === 'vpn-ipv4' || vpn !== undefined) {
       const fec = vpn as Extract<TargetFec, { kind: 'vpn-ipv4' }>;

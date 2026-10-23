@@ -3603,12 +3603,15 @@ champs du livre. `show mpls ldp capabilities` ne liste rien parce que ce LSR
 n'annonce aucun TLV de capacite.
 
 ### [cli-mpls-config] les commandes de configuration MPLS du livre non evaluees
-Servies et evaluees : `mpls label range`, `mpls ldp loop-detection | maxhops |
+Servies et evaluees : `mpls ldp advertise-labels [for A [to B]]` (premiere regle dont
+l'ACL de prefixe autorise, ACL de pairs sur le router-id LDP) et `mpls ldp neighbor A
+labels accept ACL` (ACL standard evaluee sur l'adresse du prefixe ; une ACL inexistante
+refuse, securite fermee) ; `mpls label range`, `mpls ldp loop-detection | maxhops |
 path-vector maxlength | holdtime | backoff | explicit-null` et les minuteries
 `discovery hello | targeted-hello`. Refusees faute de moteur : la forme `static`
 de `mpls label range` (aucune liaison statique `mpls static binding ipv4`), les
-formes `for` / `to` de `explicit-null` et toute commande `advertise-labels` /
-`neighbor labels accept` (pas de filtrage des annonces par ACL), `mpls ldp
+formes `for` / `to` de `explicit-null`, `advertise-labels vrf | interface`,
+`neighbor vrf ... labels accept`, `mpls request-labels for` et `mpls ldp
 discovery transport-address`, `session protection`, `igp sync`, `graceful-restart`
 et les mots de passe MD5. Un `mpls label range` qui chevauche la plage utilisee
 est applique immediatement, comme le livre l'autorise pour les logiciels a MFI,
@@ -3617,11 +3620,11 @@ Le livre dit de `loop-detection` et `maxhops` qu'ils servent le mode Downstream 
 Demand des commutateurs ATM : ici ils pilotent aussi le mode non sollicite.
 
 ### [cli-mpls-oam] le reste de `ping mpls` / `traceroute mpls` du livre
-Servis : la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
+Servis : `pseudowire A VCID` (FEC 128 de la RFC 8029 §3.2.9, validee a la sortie) et la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
 `reply mode | dscp | pad-tlv`, `dsmap` et `verbose` pour le ping ; `timeout`,
 `ttl`, `exp` et `reply ...` pour le traceroute. Absents (refuses, jamais
-acceptes sans effet) : `pseudowire` (la FEC 128/129 de la RFC 8029 n'est pas
-validee), `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
+acceptes sans effet) : `pseudowire ... segment` (pas de pseudo-fil multi-segments), la
+FEC 129 et les FEC IPv6, `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
 `force-explicit-null`, `output`, `revision`, `flags fec`, `hashkey`,
 `destination` (plages 127/8) et `traceroute mpls multipath`. Une seule clause
 `reply` par commande : le sac d'options ne propose un mot-cle qu'une fois,

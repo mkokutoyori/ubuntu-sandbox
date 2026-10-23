@@ -50,7 +50,7 @@ export const DDMAP_ALL_ROUTERS = '224.0.0.2';
 
 export const PadInstruction = { DropFromReply: 1, CopyToReply: 2 } as const;
 
-const FecSubType = { LdpIpv4: 1, VpnIpv4: 6, GenericIpv4: 14, Nil: 16 } as const;
+const FecSubType = { LdpIpv4: 1, VpnIpv4: 6, Pseudowire128: 10, GenericIpv4: 14, Nil: 16 } as const;
 const OPTIONAL_TLV_BIT = 0x8000;
 const ADDRESS_TYPE_IPV4_NUMBERED = 1;
 
@@ -62,10 +62,17 @@ export interface VpnIpv4Fec {
   readonly length: number;
 }
 export interface GenericIpv4Fec { readonly kind: 'generic-ipv4'; readonly prefix: IPAddress; readonly length: number }
+export interface Pseudowire128Fec {
+  readonly kind: 'pw-ipv4';
+  readonly sender: IPAddress;
+  readonly remote: IPAddress;
+  readonly pwId: number;
+  readonly pwType: number;
+}
 export interface NilFec { readonly kind: 'nil'; readonly label: number }
 export interface UnsupportedFec { readonly kind: 'unsupported'; readonly type: number; readonly value: Uint8Array }
 
-export type TargetFec = LdpIpv4Fec | VpnIpv4Fec | GenericIpv4Fec | NilFec | UnsupportedFec;
+export type TargetFec = LdpIpv4Fec | VpnIpv4Fec | GenericIpv4Fec | Pseudowire128Fec | NilFec | UnsupportedFec;
 
 export interface InterfaceAndLabelStack {
   readonly address: IPAddress;
@@ -176,6 +183,11 @@ function encodeFec(fec: TargetFec): Uint8Array {
         .bytes(prefixBytes(fec.prefix, fec.length)).toBytes();
       return tlv(FecSubType.VpnIpv4, value);
     }
+    case 'pw-ipv4': {
+      const value = new ByteWriter().bytes(fec.sender.getOctets()).bytes(fec.remote.getOctets())
+        .u32(fec.pwId).u16(fec.pwType).u16(0).toBytes();
+      return tlv(FecSubType.Pseudowire128, value);
+    }
     case 'nil': return tlv(FecSubType.Nil, new ByteWriter().u32(fec.label << 12).toBytes());
     case 'unsupported': return tlv(fec.type, fec.value);
   }
@@ -197,6 +209,14 @@ function decodeFec(type: number, value: Uint8Array): TargetFec {
     const length = reader.u8();
     if (length > 32) throw new EchoDecodeError(`prefix length ${length} out of range`);
     return { kind: 'vpn-ipv4', routeDistinguisher, prefix, length };
+  }
+  if (type === FecSubType.Pseudowire128) {
+    if (value.length !== 14 && value.length !== 16) throw new EchoDecodeError(`FEC 128 has length ${value.length}`);
+    const sender = readAddress(reader);
+    const remote = readAddress(reader);
+    const pwId = reader.u32();
+    const pwType = reader.u16() & 0x7fff;
+    return { kind: 'pw-ipv4', sender, remote, pwId, pwType };
   }
   if (type === FecSubType.Nil) {
     if (value.length !== 4) throw new EchoDecodeError(`Nil FEC has length ${value.length}`);
