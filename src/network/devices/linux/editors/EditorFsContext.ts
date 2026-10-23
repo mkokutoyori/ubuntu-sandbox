@@ -29,6 +29,7 @@ export interface EditorFsContext {
   writeFile(path: string, content: string): boolean;
   kindOf?(path: string): EditorPathKind;
   isReadOnly?(path: string): boolean;
+  canonicalPath?(path: string): string | null;
   /** Whether a file exists at this (already-resolved) path. */
   exists(path: string): boolean;
   /** Delete a file. Returns whether a file was actually removed. */
@@ -43,5 +44,5 @@ export interface EditorFsContext {
    * stdout. Used by vim's `:%!cmd` buffer filter (e.g. `:%!sort`).
    */
   filterThroughShell(cmd: string, input: string): string;
-  runChildShell?(cmd: string, stdin?: string): ChildShellRun;
+  runChildShell?(cmd: string, stdin?: string, workingDirectory?: string): ChildShellRun;
 }

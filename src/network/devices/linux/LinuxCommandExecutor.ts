@@ -273,6 +273,7 @@ import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
+import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Commands that commonly read from stdin when piped. */
@@ -6441,6 +6442,8 @@ export class LinuxCommandExecutor {
           const invocation = parseNanoCommandLine(args, cmd);
           if (invocation.kind === 'print') return { output: invocation.stdout, exitCode: 0 };
           if (invocation.kind === 'fail') return { output: [invocation.stderr, invocation.stdout].filter((part) => part !== '').join('\n'), exitCode: 1 };
+          const operating = invocation.settings.operatingdir;
+          if (operating !== null && operatingDirectoryRoot(this.operatingDirectoryHost(), operating) === null) return { output: invalidOperatingDirectoryMessage(operating), exitCode: 1 };
           target = invocation.files[0]?.path;
         } else {
           target = args.find((a) => !a.startsWith('-'));
@@ -8196,6 +8199,22 @@ export class LinuxCommandExecutor {
 
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
+
+  private operatingDirectoryHost(): OperatingDirectoryHost {
+    const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
+    return {
+      resolvePath: absolute,
+      exists: (path) => this.vfs.exists(absolute(path)),
+      kindOf: (path) => this.editorPathKind(path),
+      canonicalPath: (path) => this.vfs.realpath(absolute(path), this.cwd, true),
+    };
+  }
+
+  editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
+    const type = this.vfs.getType(this.vfs.normalizePath(path, this.cwd));
+    if (type === null) return 'missing';
+    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
+  }
   getUmask(): number { return this.umask; }
 
   /**

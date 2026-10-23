@@ -2,7 +2,7 @@
  * Nano — surligner l'occurrence concernée pendant "Replace this
  * instance?". Le moteur expose `pendingReplaceMatch` (ligne, colonnes de
  * début/fin en coordonnées RAW du buffer) et son écran la peint en
- * inversion vidéo, aux colonnes AFFICHÉES : un caractère de contrôle
+ * noir sur jaune vif (style `search`, mesuré sur nano 7.2), aux colonnes AFFICHÉES : un caractère de contrôle
  * `^X` qui la précède sur la même ligne la décale de deux colonnes par
  * caractère, une tabulation jusqu'au taquet suivant.
  */
@@ -28,7 +28,7 @@ function highlighted(nano: NanoEngine): string[] {
   const out: string[] = [];
   for (const row of screen.rows) {
     for (const span of row.spans) {
-      if (span.style !== 'reverse') continue;
+      if (span.style !== 'search') continue;
       const text = plainRowText(row);
       if (span.from === 0 && span.to >= row.text.length - 1) continue;
       out.push(text.slice(span.from, span.to));
@@ -51,8 +51,8 @@ function askToReplace(nano: NanoEngine, search: string, replacement: string): vo
   press(nano, 'Enter');
 }
 
-describe('Scénario — l\'occurrence proposée est peinte en inversion vidéo', () => {
-  it('les cellules inversées encadrent exactement le texte trouvé', () => {
+describe('Scénario — l\'occurrence proposée est peinte en noir sur jaune vif', () => {
+  it('les cellules jaunes encadrent exactement le texte trouvé', () => {
     const nano = sized('eth0 up\neth1 up\n');
     askToReplace(nano, 'eth', 'ens');
     expect(nano.pendingReplaceMatch!.line).toBe(0);
@@ -63,7 +63,7 @@ describe('Scénario — l\'occurrence proposée est peinte en inversion vidéo',
     const nano = sized('x\x01eth0\n');
     askToReplace(nano, 'eth', 'ens');
     const row = nano.screen.rows[1];
-    const span = row.spans.find((s) => s.style === 'reverse')!;
+    const span = row.spans.find((s) => s.style === 'search')!;
     expect(plainRowText(row).slice(span.from, span.to)).toBe('eth');
     expect(span.from).toBe(3);
   });
@@ -72,7 +72,7 @@ describe('Scénario — l\'occurrence proposée est peinte en inversion vidéo',
     const nano = sized('aaaa\nbbbb\n');
     askToReplace(nano, 'bb', 'cc');
     const row = nano.screen.rows[2];
-    const span = row.spans.find((s) => s.style === 'reverse')!;
+    const span = row.spans.find((s) => s.style === 'search')!;
     expect(plainRowText(row).slice(span.from, span.to)).toBe('bb');
   });
 });

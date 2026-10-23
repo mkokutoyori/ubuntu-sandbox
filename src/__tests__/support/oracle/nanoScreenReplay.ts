@@ -6,6 +6,7 @@ import { plainRowText, type ScreenRow, type ScreenStyle } from '@/network/device
 import { codePointWidth } from '@/network/devices/linux/editors/vim/VimCells';
 import { parseNanoCommandLine, type NanoInvocation } from '@/network/devices/linux/editors/nano/NanoCommandLine';
 import { buildNanoLock, parseNanoLock, type NanoLockData } from '@/network/devices/linux/editors/nano/NanoLock';
+import { launchedFilePath, type EditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 
 export type RecordedDisk = Record<string, string | { lock: NanoLockData }>;
 
@@ -13,6 +14,7 @@ export interface NanoRecorded { y: number; x: number; rows: string[]; height: nu
 
 export interface NanoScreenCase {
   id: string;
+  casedir?: string;
   text: string[];
   files?: Record<string, string[]>;
   rows: number;
@@ -56,18 +58,29 @@ export function recordedArguments(c: NanoScreenCase): string[] {
   return c.args ?? [...(c.flags ?? []), 't.txt'];
 }
 
+export function workingDirectoryOf(c: NanoScreenCase): string {
+  return c.casedir ?? '/tmp';
+}
+
+export function seededFileSystem(c: NanoScreenCase): InMemoryEditorFsContext {
+  const directory = workingDirectoryOf(c);
+  const initial: Record<string, string> = { [`${directory}/t.txt`]: c.text.join('\n') + '\n' };
+  for (const [extra, extraLines] of Object.entries(c.files ?? {})) initial[`${directory}/${extra}`] = extraLines.join('\n') + '\n';
+  for (const [rawName, hex] of Object.entries(c.raw ?? {})) initial[`${directory}/${rawName}`] = Buffer.from(hex, 'hex').toString('utf8');
+  for (const [lockName, lock] of Object.entries(c.locks ?? {})) initial[`${directory}/${lockName}`] = buildNanoLock(lock);
+  const fs = new InMemoryEditorFsContext(initial, undefined, undefined, directory);
+  fs.refuseWritesIntoMissingDirectories();
+  installRealChildShell(fs, directory);
+  for (const [modeName, mode] of Object.entries(c.modes ?? {})) fs.setMode(`${directory}/${modeName}`, mode);
+  return fs;
+}
+
 export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>, c: NanoScreenCase): { engine: NanoEngine; fs: InMemoryEditorFsContext } {
   const first = invocation.files[0];
   const name = first?.path ?? '';
-  const initial: Record<string, string> = { '/tmp/t.txt': c.text.join('\n') + '\n' };
-  for (const [extra, extraLines] of Object.entries(c.files ?? {})) initial[`/tmp/${extra}`] = extraLines.join('\n') + '\n';
-  for (const [rawName, hex] of Object.entries(c.raw ?? {})) initial[`/tmp/${rawName}`] = Buffer.from(hex, 'hex').toString('utf8');
-  for (const [lockName, lock] of Object.entries(c.locks ?? {})) initial[`/tmp/${lockName}`] = buildNanoLock(lock);
-  const fs = new InMemoryEditorFsContext(initial);
-  fs.refuseWritesIntoMissingDirectories();
-  installRealChildShell(fs);
-  for (const [modeName, mode] of Object.entries(c.modes ?? {})) fs.setMode(`/tmp/${modeName}`, mode);
-  const absolute = name === '' ? '' : fs.resolvePath(name);
+  const fs = seededFileSystem(c);
+  const launch: EditorLaunch = { editor: 'nano', filePath: name, nano: { settings: invocation.settings, start: first?.start ?? null } };
+  const absolute = launchedFilePath(fs, launch);
   const content = absolute === '' ? null : fs.readFile(absolute);
   const engine = new NanoEngine(fs, absolute, content ?? '', content === null, false, undefined, false, {
     settings: invocation.settings, start: first?.start ?? null, displayName: name,
@@ -85,10 +98,10 @@ function compareLock(name: string, want: NanoLockData, content: string | null): 
   return same ? null : `\n  disk ${name} want ${JSON.stringify(want)} got ${JSON.stringify(got)}`;
 }
 
-function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: boolean): string | null {
+function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: boolean, directory: string): string | null {
   const failures: string[] = [];
   for (const [name, expected] of Object.entries(want)) {
-    const content = fs.readFile(`/tmp/${name}`);
+    const content = fs.readFile(`${directory}/${name}`);
     if (typeof expected === 'string') {
       if (content !== expected) failures.push(`\n  disk ${name} want ${JSON.stringify(expected)}\n  disk ${name} got  ${JSON.stringify(content)}`);
     } else {
@@ -96,7 +109,7 @@ function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: bo
       if (failure !== null) failures.push(failure);
     }
   }
-  const present = fs.fileNames().map((path) => path.replace(/^\/tmp\//, '')).filter((file) => hidden || !file.startsWith('.'));
+  const present = fs.fileNames().map((path) => (path.startsWith(`${directory}/`) ? path.slice(directory.length + 1) : path)).filter((file) => hidden || !file.split('/').some((part) => part.startsWith('.')));
   const unexpected = present.filter((file) => !(file in want));
   if (unexpected.length > 0) failures.push(`\n  disk has unexpected files ${JSON.stringify(unexpected)}`);
   return failures.length === 0 ? null : failures.join('');
@@ -124,13 +137,13 @@ function visibleLetters(letters: string, text: string): string {
   return [...letters].map((letter, index) => (index >= cell || blank.has(index) ? BLANK_LETTERS[letter] ?? letter : letter)).join('');
 }
 
-export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false): string | null {
+export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false, directory = '/tmp'): string | null {
   const screen = engine.screen;
   const got = screen.rows.map((row) => plainRowText(row).replace(/\s+$/, ''));
   const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows);
   const cursor = screen.cursor;
   const cursorOk = cursor !== null && cursor.row === want.y && cursor.col === want.x;
-  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk, hidden);
+  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk, hidden, directory);
   const gotAttrs = screen.rows.map((row, index) => visibleLetters(attributeLetters(row, want.width), got[index]));
   const wantAttrs = want.attrs?.map((letters, index) => visibleLetters(letters, want.rows[index] ?? ''));
   const attrsOk = wantAttrs === undefined || JSON.stringify(gotAttrs) === JSON.stringify(wantAttrs);
@@ -144,7 +157,7 @@ export function replayNanoScreenCase(c: NanoScreenCase): string | null {
   const invocation = parseNanoCommandLine(args);
   if (invocation.kind !== 'open') return `${c.id} ${JSON.stringify(args)} did not open an editor: ${JSON.stringify(invocation)}`;
   const { engine, fs } = launchNano(invocation, c);
-  const opened = compareNanoScreen(engine, fs, c.opened, c.hidden === true);
+  const opened = compareNanoScreen(engine, fs, c.opened, c.hidden === true, workingDirectoryOf(c));
   if (opened) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} opened${opened}`;
   for (let s = 0; s < c.after.length; s++) {
     const step = c.steps[s];
@@ -154,12 +167,12 @@ export function replayNanoScreenCase(c: NanoScreenCase): string | null {
     } else {
       for (const k of nanoKeysOf(step)) engine.applyKey(k);
     }
-    const failure = compareNanoScreen(engine, fs, c.after[s], c.hidden === true);
+    const failure = compareNanoScreen(engine, fs, c.after[s], c.hidden === true, workingDirectoryOf(c));
     if (failure) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}${failure}`;
   }
   if (c.exit_step === undefined) return null;
   for (const k of nanoKeysOf(c.exit_step)) engine.applyKey(k);
   if (!engine.exited) return `${c.id} ${JSON.stringify(args)} ${JSON.stringify(c.exit_step)} should have made nano exit`;
-  const final = c.final_disk === undefined ? null : compareDisk(fs, c.final_disk, c.hidden === true);
+  const final = c.final_disk === undefined ? null : compareDisk(fs, c.final_disk, c.hidden === true, workingDirectoryOf(c));
   return final === null ? null : `${c.id} ${JSON.stringify(args)} after exit${final}`;
 }

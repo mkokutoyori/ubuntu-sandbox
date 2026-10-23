@@ -10,6 +10,7 @@
 
 import { parseNanoCommandLine, type NanoStart } from './nano/NanoCommandLine';
 import type { NanoSettings } from './nano/NanoSettings';
+import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './nano/NanoOperatingDirectory';
 
 export type EditorName = 'nano' | 'vi' | 'vim';
 
@@ -76,6 +77,18 @@ export function parseEditorArgs(editor: EditorName, args: readonly string[]): Ed
   }
 
   return { editor, filePath, nano: null, initialCursorLine, initialCursorCol };
+}
+
+export function editorLaunchFailure(host: OperatingDirectoryHost, launch: EditorLaunch): string | null {
+  const operating = launch.nano?.settings.operatingdir ?? null;
+  return operating !== null && operatingDirectoryRoot(host, operating) === null ? invalidOperatingDirectoryMessage(operating) : null;
+}
+
+export function launchedFilePath(host: OperatingDirectoryHost, launch: EditorLaunch): string {
+  if (launch.filePath === '') return '';
+  const operating = launch.nano?.settings.operatingdir ?? null;
+  const root = operating === null ? null : operatingDirectoryRoot(host, operating);
+  return host.resolvePath(root === null || launch.filePath.startsWith('/') ? launch.filePath : `${root}${launch.filePath}`);
 }
 
 export function viVariantFor(vimPackageInstalled: boolean): 'vi' | 'vim' {

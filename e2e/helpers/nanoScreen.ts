@@ -42,9 +42,9 @@ export async function nanoHighlighted(page: Page): Promise<string> {
   return page.evaluate(() => {
     const edit = document.querySelector('[data-testid="nano-edit"]');
     if (!edit) return '';
-    const reverse = 'rgb(211, 215, 207)';
+    const spotlight = 'rgb(249, 226, 175)';
     return (Array.from(edit.querySelectorAll('span')) as HTMLElement[])
-      .filter((span) => span.style.backgroundColor === reverse || span.getAttribute('data-testid') === 'nano-cursor')
+      .filter((span) => span.style.backgroundColor === spotlight || span.getAttribute('data-testid') === 'nano-cursor')
       .map((span) => span.textContent ?? '')
       .join('');
   });

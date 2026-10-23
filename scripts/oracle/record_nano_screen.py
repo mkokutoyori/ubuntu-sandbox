@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
 (the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
@@ -15,7 +15,7 @@ record per step: every row of the pane (title bar, edit window, status bar and t
 rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
 corpus) also records the files left in the directory after each step.
 """
-import argparse, itertools, json, os, random, re, shlex, subprocess, tempfile, time, unicodedata
+import argparse, contextlib, itertools, json, os, random, re, shlex, shutil, subprocess, tempfile, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 SESSION_NUMBERS = itertools.count()
@@ -272,7 +272,7 @@ def run_cli_case(case, workdir):
     else:
         done = subprocess.run(["nano", "-I"] + case["args"], cwd=casedir, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env, timeout=10)
         opens = ANSI.sub("", done.stderr).rstrip("\n").endswith("Standard input is not a terminal")
-    record = dict(case, status=0 if done is None else done.returncode)
+    record = dict(case, status=0 if done is None else done.returncode, casedir=casedir)
     hidden = bool(case.get("hidden"))
     disk_dir = casedir if case.get("disk") else None
     if opens:
@@ -281,7 +281,7 @@ def run_cli_case(case, workdir):
         tmux("kill-session", "-t", name)
         tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
              "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s" % (casedir, " ".join(shlex.quote(a) for a in case["args"])))
-        record["opened"] = record_screen(name, disk_dir, hidden)
+        record["opened"] = record_screen(name, disk_dir, hidden, case.get("attrs", False))
         record["after"] = []
         for step in case.get("steps", []):
             if step.startswith("@"):
@@ -290,7 +290,7 @@ def run_cli_case(case, workdir):
                 time.sleep(0.2)
             else:
                 send(name, step)
-            snap = record_screen(name, disk_dir, hidden)
+            snap = record_screen(name, disk_dir, hidden, case.get("attrs", False))
             if snap is None:
                 record["exit_step"] = step
                 if disk_dir is not None:
@@ -467,6 +467,7 @@ EDIT_FOCUS = {
     "-Xab": ["C-Right", "C-Right", "C-Left", "C-Right"],
     "-j": ["Down", "Down", "Down", "Up", "Up", "PageDown", "Down"],
     "-O": ["C-j", "Down", "M-j"],
+    "-d": ["BSpace", "DC", "BSpace", "DC", "Left", "Right", "End", "Home", "M-a"],
 }
 EDIT_KEYS = ["Tab", "Tab", "Enter", "Enter", "Home", "End", "C-a", "C-e", "C-k", "C-k", "C-u", "C-d", "BSpace", "DC", "Left", "Right", "Up", "Down", "C-Left", "C-Right", "M-6", "M-a", "x", "yz", " ", "  ", "a_b", "M-\\", "M-/", "PageDown", "PageUp"]
 
@@ -489,7 +490,7 @@ def gen_edit(seed, count):
         n = r.choice([3, 6, 12, 40]) if flag == "-j" else r.choice([1, 3, 6, 12])
         text = [edit_line(r) for _ in range(n)]
         rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50)]) if flag != "-j" else r.choice([(6, 40), (8, 50), (10, 40)])
-        others = r.sample(["-i", "-E", "-T2", "-T4", "-A", "-k", "-Z", "-L", "-y", "-W", "-l", "-S"], r.choice([0, 0, 1, 1, 2]))
+        others = r.sample(["-i", "-E", "-T2", "-T4", "-A", "-k", "-Z", "-L", "-y", "-W", "-l", "-S", "-d"], r.choice([0, 0, 1, 1, 2]))
         flags = list(dict.fromkeys([flag] + others))
         steps = [r.choice(EDIT_FOCUS[flag] * 2 + EDIT_KEYS) for _ in range(r.randint(4, 14))]
         for _ in range(r.choice([0, 1, 1])):
@@ -960,11 +961,15 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--cases", type=int, default=60)
     ap.add_argument("--from", dest="source")
+    ap.add_argument("--workdir")
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
     runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
-    with tempfile.TemporaryDirectory() as workdir:
+    if a.workdir:
+        shutil.rmtree(a.workdir, ignore_errors=True)
+        os.makedirs(a.workdir)
+    with (contextlib.nullcontext(a.workdir) if a.workdir else tempfile.TemporaryDirectory()) as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))
     version = subprocess.run(["nano", "--version"], capture_output=True, text=True).stdout.splitlines()[0].strip()

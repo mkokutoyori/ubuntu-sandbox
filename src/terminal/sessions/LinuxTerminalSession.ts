@@ -91,7 +91,8 @@ import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubSh
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
-import { parseEditorArgs, parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import { LinuxEditorFsContext } from './LinuxEditorFsContext';
 import {
   createRemoteEditorController,
   type RemoteEditorTransport,
@@ -932,15 +933,15 @@ export class LinuxTerminalSession extends TerminalSession {
       // Run prefix; only open editor if connector semantics permit.
       // For top-level (no prefix) editor invocation we open straight away.
       if (prefix.length === 0) {
-        this.openEditorFromCmd(editorSeg.cmd);
-        if (tail.length > 0) this._pendingChainAfterEditor = tail;
+        if (this.openEditorFromCmd(editorSeg.cmd)) {
+          if (tail.length > 0) this._pendingChainAfterEditor = tail;
+          return;
+        }
+      } else {
+        const prefixCmd = prefix.map((s, i) => i === 0 ? s.cmd : `${s.connector} ${s.cmd}`).join(' ');
+        this.runPrefixThenEditor(prefixCmd, editorSeg, tail);
         return;
       }
-      // Run the prefix as a regular compound command, then evaluate
-      // the editor segment's connector against the resulting exit code.
-      const prefixCmd = prefix.map((s, i) => i === 0 ? s.cmd : `${s.connector} ${s.cmd}`).join(' ');
-      this.runPrefixThenEditor(prefixCmd, editorSeg, tail);
-      return;
     }
 
     // Intercept Oracle CLI tools (only if no sudo prefix). sqlplus and
@@ -1173,8 +1174,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const parts = noSudo.split(/\s+/);
     const head = parts[0];
     if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
-    this.openEditor(head, parts.slice(1));
-    return true;
+    return this.openEditor(head, parts.slice(1));
   }
 
   /**
@@ -1212,7 +1212,9 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     if (this.openEditorFromCmd(editorSeg.cmd)) {
       if (tail.length > 0) this._pendingChainAfterEditor = tail;
+      return;
     }
+    void this.executeChain([{ connector: ';', cmd: editorSeg.cmd }, ...tail], prefixExitCode);
   }
 
   /**
@@ -1469,10 +1471,13 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
+  private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): boolean {
     const launch = parseEditorArgs(editorCmd, args);
-    if (launch === null) return;
+    if (launch === null) return false;
     const { filePath, nano, initialCursorLine, initialCursorCol } = launch;
+    const dev = this.device;
+    const launchFs = this.shell && dev instanceof LinuxMachine ? new LinuxEditorFsContext(dev, this.shell) : null;
+    if (launchFs !== null && editorLaunchFailure(launchFs, launch) !== null) return false;
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against
     // the cwd would collapse to the cwd's OWN directory path (VFS
@@ -1495,15 +1500,14 @@ export class LinuxTerminalSession extends TerminalSession {
         initialCursorCol,
       };
       this.notify();
-      return;
+      return true;
     }
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
     // non-Linux devices.
-    const dev = this.device;
-    const absolutePath = (this.shell && dev instanceof LinuxMachine)
-      ? dev.resolveAbsolutePathInSession(filePath, this.shell)
+    const absolutePath = launchFs !== null
+      ? launchedFilePath(launchFs, launch)
       : this.device.resolveAbsolutePath?.(filePath) ?? filePath;
     const existingContent = (this.shell && dev instanceof LinuxMachine)
       ? dev.readFileForEditorInSession(absolutePath, this.shell)
@@ -1523,6 +1527,7 @@ export class LinuxTerminalSession extends TerminalSession {
       initialCursorCol,
     };
     this.notify();
+    return true;
   }
 
   override editorSave(content: string, filePath: string): void {

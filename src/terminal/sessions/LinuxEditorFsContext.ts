@@ -49,6 +49,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorPathIsReadOnly(this.resolvePath(path));
   }
 
+  canonicalPath(path: string): string | null {
+    return this.dev.editorCanonicalPath(this.resolvePath(path));
+  }
+
   deleteFile(path: string): boolean {
     const abs = this.resolvePath(path);
     return this.session
@@ -66,7 +70,7 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.runChildShell(cmd, input).output;
   }
 
-  runChildShell(cmd: string, stdin?: string): ChildShellRun {
-    return this.dev.runChildShellForEditor(cmd, stdin, this.session);
+  runChildShell(cmd: string, stdin?: string, workingDirectory?: string): ChildShellRun {
+    return this.dev.runChildShellForEditor(cmd, stdin, this.session, workingDirectory);
   }
 }

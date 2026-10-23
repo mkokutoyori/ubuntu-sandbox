@@ -2,30 +2,36 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
 
-const TMP = '/tmp/';
-
-function listedFiles(pc: LinuxPC): string[] {
-  return pc.executeShellCommandSync('ls -A1 /tmp').split('\n').filter((name) => name !== '' && pc.editorPathKind(`${TMP}${name}`) === 'file');
+function listedFiles(pc: LinuxPC, directory: string): string[] {
+  return pc.executeShellCommandSync(`find ${directory} -type f`).split('\n').filter((path) => path.startsWith(`${directory}/`));
 }
 
-export function installRealChildShell(fs: InMemoryEditorFsContext): void {
+function parentOf(path: string): string {
+  return path.slice(0, path.lastIndexOf('/')) || '/';
+}
+
+export function installRealChildShell(fs: InMemoryEditorFsContext, directory = '/tmp'): void {
+  const root = `${directory}/`;
   let pc: LinuxPC | null = null;
   let baseline: ReadonlySet<string> = new Set();
-  fs.useChildShell((command, stdin) => {
+  fs.useChildShell((command, stdin, workingDirectory) => {
     if (pc === null) {
       pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
-      pc.executeShellCommandSync('cd /tmp');
-      baseline = new Set(listedFiles(pc));
+      pc.executeShellCommandSync(`mkdir -p ${directory}`);
+      pc.executeShellCommandSync(`cd ${directory}`);
+      baseline = new Set(listedFiles(pc, directory));
     }
     for (const path of fs.listPaths()) {
-      if (path.startsWith(TMP)) pc.writeFileFromEditor(path, fs.readFile(path) ?? '');
+      if (!path.startsWith(root)) continue;
+      pc.executeShellCommandSync(`mkdir -p ${parentOf(path)}`);
+      pc.writeFileFromEditor(path, fs.readFile(path) ?? '');
     }
-    const run = new LinuxEditorFsContext(pc).runChildShell(command, stdin);
-    const present = new Set(listedFiles(pc).filter((name) => !baseline.has(name)));
+    const run = new LinuxEditorFsContext(pc).runChildShell(command, stdin, workingDirectory);
+    const present = new Set(listedFiles(pc, directory).filter((path) => !baseline.has(path)));
     for (const path of fs.listPaths()) {
-      if (path.startsWith(TMP) && !present.has(path.slice(TMP.length))) fs.deleteFile(path);
+      if (path.startsWith(root) && !present.has(path)) fs.deleteFile(path);
     }
-    for (const name of present) fs.writeFile(`${TMP}${name}`, pc.readFileForEditor(`${TMP}${name}`) ?? '');
+    for (const path of present) fs.writeFile(path, pc.readFileForEditor(path) ?? '');
     return run;
   });
 }

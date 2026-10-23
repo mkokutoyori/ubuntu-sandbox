@@ -44,6 +44,17 @@ export function helpAction(input: EditorKeyInput, preserve = false): HelpAction 
   return NAMED_ACTIONS[key] ?? 'unbound';
 }
 
+const CURSOR_MOTIONS: Readonly<Record<string, string>> = { ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown' };
+const CONTROL_CURSOR_MOTIONS: Readonly<Record<string, string>> = { p: 'ArrowUp', n: 'ArrowDown' };
+
+export function helpCursorMotion(input: EditorKeyInput): EditorKeyInput | null {
+  if (input.alt) return null;
+  const named = input.ctrl ? undefined : CURSOR_MOTIONS[input.key];
+  const control = input.ctrl && input.key.length === 1 ? CONTROL_CURSOR_MOTIONS[input.key.toLowerCase()] : undefined;
+  const key = named ?? control;
+  return key === undefined ? null : { key, ctrl: false, shift: false, alt: false };
+}
+
 const NAMED_CONTROL_CODES: Readonly<Record<string, number>> = { Enter: 13, Tab: 9 };
 
 export function unboundKeyMessage(input: EditorKeyInput): string {
