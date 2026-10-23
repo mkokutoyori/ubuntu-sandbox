@@ -11,9 +11,8 @@
  * `\%l`, `\%c`, `\%v`, `\{-}`, `\V`, `\v`, `\t`, `\k`, `\%[` n'etaient pas lus comme vim les lit ; `~` n'existait pas ; `:g!` et `:v` non plus) ; il en reste 8 apres,
  * tous listes ci-dessous.  Les cas qui passent des deux cotes (`:s/foo/X/`, `:g/foo/d`, `/foo`) servent de temoins.
  *
- * Non porte, mesure et NON epingle (UNPORTED_CASES) : `:s` sur un motif qui contient un saut de ligne (`\n`,
- * `$\n^`) -- vim joint les lignes, le moteur traite chaque ligne separement et ne trouve rien.  Un cas de la liste
- * qui se met a passer fait echouer le test pour qu'on le retire.
+ * Le cas `:s` sur un motif qui contient un saut de ligne, longtemps liste comme non porte, est desormais porte :
+ * voir vim-substitute-oracle.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -29,10 +28,6 @@ interface CommandCase {
   readonly keys?: string;
   readonly result: { readonly lines: readonly string[]; readonly pos: readonly [number, number]; readonly err: string; readonly output: string };
 }
-
-const UNPORTED_CASES: ReadonlySet<string> = new Set([
-  'ex0-53-0', 'ex0-53-1', 'ex0-54-0', 'ex0-54-1', 'ex1-53-0', 'ex1-53-1', 'ex1-54-0', 'ex1-54-1',
-]);
 
 const fixture = JSON.parse(readFileSync('src/__tests__/support/oracle/vim-patterns/vim-9.1-pattern-commands.json', 'utf8')) as { vim: string; cases: CommandCase[] };
 
@@ -67,10 +62,8 @@ function failure(c: CommandCase): string | null {
 describe('vim pattern commands recorded from a real vim', () => {
   it('replays :s, :g, :v and the search keys with the same buffer, cursor and error', () => {
     const outcomes = fixture.cases.map((c) => ({ id: c.id, failure: failure(c) }));
-    const unexpected = outcomes.filter((o) => o.failure !== null && !UNPORTED_CASES.has(o.id)).map((o) => o.failure);
-    const nowPassing = outcomes.filter((o) => o.failure === null && UNPORTED_CASES.has(o.id)).map((o) => o.id);
+    const unexpected = outcomes.filter((o) => o.failure !== null).map((o) => o.failure);
     expect(unexpected.length > 0 ? `${unexpected.length} of ${fixture.cases.length}\n${unexpected.slice(0, 5).join('\n')}` : '').toBe('');
-    expect(nowPassing).toEqual([]);
     expect(outcomes.filter((o) => o.failure === null).length).toBeGreaterThan(450);
   });
 });

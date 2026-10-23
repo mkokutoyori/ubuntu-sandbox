@@ -133,7 +133,7 @@ describe('deplacer, copier, joindre et decaler par plage', () => {
 
   it('NON-REGRESSION : `:1,99d` rend toujours E16 sans rien toucher', () => {
     const e = vim();
-    expect(ex(e, '1,99d')).toBe('E16: Invalid range: 1,99d');
+    expect(ex(e, '1,99d')).toBe('E16: Invalid range');
     expect(e.lines.join(',')).toBe('alpha,bravo,charlie,delta');
   });
 });

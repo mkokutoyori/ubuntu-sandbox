@@ -778,14 +778,12 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- **`:s` multi-ligne** : `%s/\n//` et `%s/$\n^/+/` ne trouvent rien (8 cas non
-  portes) ; vim joint les lignes. `applyVimReplacement` ne lit pas non plus `\r`
-  (coupure de ligne), `\n` (NUL), `\t`, `~`, `\u \U \l \L \e \E` ni `\=`.
 - **`:g`** n'execute que `d` et `s///` : toute autre commande (`:g/x/normal dd`,
   `m0`, `t.`, `j`) est ignoree sans message. Le moteur n'a pas d'identite de
-  ligne a marquer comme `ml_setmarked` ; ni `:g` ni `:s` ne disent « N fewer
-  lines » ou ne respectent 'report' (l'option n'existe pas : `:s` annonce
-  toujours le compte, vim seulement au-dela de 2).
+  ligne a marquer comme `ml_setmarked` : `LineTracker` ne suit que les lignes
+  que `:d` et `:s` inserent ou retirent, il faudrait que chaque commande ex qui
+  deplace des lignes (`:m`, `:t`, `:j`, `:normal`, `:>`...) previenne le meme
+  suiveur. 'report' est desormais respecte par `:g` et `:s`.
 - **Classe de mot ecrite quatre fois** : `isKeywordChar` (`VimCursor`, a present
   aussi pour la recherche et `\k \<`), `VimEngine.charClass` (`cw dw ce`, ASCII seul :
   `cw` sur `é` traite la lettre comme une ponctuation alors que `w` la saute
@@ -795,6 +793,25 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
 - **'smartcase'** est absent de la table des options ; `\%V` en bloc compte des
   colonnes de caracteres ; `\@123<=` borne la remontee en caracteres ; `[[=e=]]`
   utilise la decomposition Unicode.
+
+### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
+Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
+- **Ordre des dictionnaires** : `keys()`, `values()`, `items()`, `string()`,
+  `map()` parcourent un dictionnaire dans l'ordre d'insertion ; vim suit sa
+  table de hachage (`hash_hash` puis perturbation). Reproduire l'ordre demande
+  de porter `hashtab.c` (taille initiale 16, croissance a 2/3).
+- **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
+  function` meme quand vim le connait (`strftime`, `reduce`, `mapnew`, `trim`
+  avec masque multioctet, `json_encode`, `sha256`, `system`...).
+- **Pas de variables ni de `:let`** : `g:x`, `s:x`, `l:x`, `b:x`, `w:x` repondent
+  E121. Une lambda ne capture que les parametres des lambdas qui l'entourent.
+- **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
+  moteur n'a ni l'un ni l'autre.
+- **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
+  que le moteur ne modelise pas, enregistree par
+  `scripts/oracle/record_vim_option_defaults.py` sous `vim -u NONE -N` ; les
+  options qui dependent de la machine (`columns`, `shell`, `runtimepath`,
+  `viminfo`...) en sont exclues et repondent E113.
 
 ---
 

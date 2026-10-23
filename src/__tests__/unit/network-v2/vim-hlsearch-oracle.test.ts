@@ -16,7 +16,7 @@
  *
  * Mesure avec `git stash push -- src/network src/components` : le moteur precedent ne peint aucune cellule
  * Search (le style n'existe pas) ; 155, 165 et 188 des 300 cas tombent avant (508 sur 900), les autres transcripts
- * ne surlignent jamais rien (`hlsearch` coupe ou aucune recherche) ; apres, 29 cas restent, tous dans la liste
+ * ne surlignent jamais rien (`hlsearch` coupe ou aucune recherche) ; apres, 27 cas restent, tous dans la liste
  * ci-dessous.  Le TEMOIN que le lab est sain est hls-off-witness de probe-vim-hlsearch.test.ts.  Seed 6 a ete
  * enregistre apres tout ajustement : 10 divergences sur 300, dont 2 portent sur les cellules Search.
  *
@@ -37,8 +37,8 @@ import { replayScreenCase, type ScreenCase } from '../../support/oracle/vimScree
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
   'hl3-20', 'hl3-62', 'hl3-68', 'hl3-71', 'hl3-123', 'hl3-167', 'hl3-239', 'hl3-270',
-  'hl5-28', 'hl5-40', 'hl5-82', 'hl5-120', 'hl5-132', 'hl5-142', 'hl5-162', 'hl5-168', 'hl5-194', 'hl5-201', 'hl5-262',
-  'hl6-12', 'hl6-21', 'hl6-56', 'hl6-131', 'hl6-141', 'hl6-168', 'hl6-226', 'hl6-243', 'hl6-263', 'hl6-293',
+  'hl5-28', 'hl5-40', 'hl5-82', 'hl5-120', 'hl5-132', 'hl5-142', 'hl5-162', 'hl5-168', 'hl5-194', 'hl5-201',
+  'hl6-12', 'hl6-21', 'hl6-56', 'hl6-131', 'hl6-141', 'hl6-226', 'hl6-243', 'hl6-263', 'hl6-293',
 ]);
 
 const dir = 'src/__tests__/support/oracle/vim-hlsearch';

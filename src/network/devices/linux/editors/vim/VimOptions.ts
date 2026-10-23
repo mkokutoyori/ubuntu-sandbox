@@ -1,3 +1,5 @@
+import { OPTION_DEFAULTS } from './VimOptionDefaults';
+
 export type VimOptionProfile = 'vim' | 'vi';
 
 export type OptionValue = boolean | number | string;
@@ -82,6 +84,8 @@ const DEFS: readonly OptionDef[] = [
   { name: 'incsearch', short: 'is', kind: 'bool', scope: 'global', reset: same(false), startup: { vim: true, vi: false } },
   { name: 'hlsearch', short: 'hls', kind: 'bool', scope: 'global', reset: same(false) },
   { name: 'ignorecase', short: 'ic', kind: 'bool', scope: 'global', reset: same(false) },
+  { name: 'gdefault', short: 'gd', kind: 'bool', scope: 'global', reset: same(false) },
+  { name: 'report', short: 'report', kind: 'number', scope: 'global', reset: same(2), number: { min: 0, max: Number.MAX_SAFE_INTEGER, belowMin: 'E487', clamp: false } },
   { name: 'autoindent', short: 'ai', kind: 'bool', scope: 'local', reset: same(false) },
   { name: 'colorcolumn', short: 'cc', kind: 'string', scope: 'local', reset: same(''), commaList: true, normalize: (v) => (colorcolumnValid(v) ? v : null) },
   { name: 'tabstop', short: 'ts', kind: 'number', scope: 'local', reset: same(8), number: { min: 1, max: 9999, belowMin: 'E487', clamp: false } },
@@ -108,9 +112,13 @@ const BY_NAME: ReadonlyMap<string, OptionDef> = new Map(
   DEFS.flatMap((def) => [[def.name, def] as const, [def.short, def] as const]),
 );
 
+const UNMODELLED_DEFAULTS: ReadonlyMap<string, OptionValue> = new Map(
+  OPTION_DEFAULTS.flatMap(([name, short, value]) => [[name, value] as const, [short, value] as const]),
+);
+
 export type OptionName =
   | 'number' | 'relativenumber' | 'numberwidth' | 'list' | 'listchars' | 'showmatch' | 'matchtime' | 'matchpairs' | 'incsearch'
-  | 'hlsearch' | 'ignorecase' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
+  | 'hlsearch' | 'ignorecase' | 'gdefault' | 'report' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
   | 'expandtab' | 'wrap' | 'scrolloff' | 'sidescroll' | 'sidescrolloff' | 'wrapscan' | 'display'
   | 'ruler' | 'showcmd' | 'showmode' | 'scroll' | 'filetype' | 'fileformat' | 'fileencoding' | 'mouse';
 
@@ -178,6 +186,12 @@ export class VimOptions {
   onChange(listener: (name: OptionName) => void): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
+  }
+
+  lookup(name: string, scope: 'effective' | 'local' | 'global' = 'effective'): OptionValue | undefined {
+    const def = BY_NAME.get(name);
+    if (def !== undefined) return (scope === 'global' ? this.global : this.local).get(def.name);
+    return this.profile === 'vim' ? UNMODELLED_DEFAULTS.get(name) : undefined;
   }
 
   bool(name: OptionName): boolean { return this.local.get(name) as boolean; }

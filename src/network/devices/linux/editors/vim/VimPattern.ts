@@ -9,6 +9,55 @@ export interface VimMatch extends RegExpExecArray {
   readonly attemptEnd: number;
 }
 
+export interface MultiMatch {
+  readonly startLine: number;
+  readonly startCol: number;
+  readonly endLine: number;
+  readonly endCol: number;
+  readonly groups: readonly (string | undefined)[];
+}
+
+export class BufferText {
+  private joined: string | null = null;
+  private lineStarts: number[] | null = null;
+
+  constructor(readonly lines: readonly string[]) {}
+
+  get text(): string {
+    this.joined ??= `${this.lines.join('\n')}\n`;
+    return this.joined;
+  }
+
+  private get starts(): number[] {
+    if (this.lineStarts === null) {
+      let offset = 0;
+      this.lineStarts = this.lines.map((line) => {
+        const start = offset;
+        offset += line.length + 1;
+        return start;
+      });
+    }
+    return this.lineStarts;
+  }
+
+  offsetOf(line: number, col: number): number {
+    return this.starts[line] + col;
+  }
+
+  positionOf(offset: number): { line: number; col: number } {
+    if (offset >= this.text.length) return { line: this.lines.length, col: 0 };
+    const starts = this.starts;
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >> 1;
+      if (starts[middle] <= offset) low = middle;
+      else high = middle - 1;
+    }
+    return { line: low, col: offset - starts[low] };
+  }
+}
+
 export class VimRegExp {
   constructor(
     private readonly regex: RegExp | null,
@@ -57,6 +106,29 @@ export class VimRegExp {
     const found = this.exec(`${lines.join('\n')}\n`, base + col);
     if (found === null || found.index > lineEnd || found[0].includes('\n')) return null;
     return Object.assign(found, { index: found.index - base, attemptIndex: found.attemptIndex - base, attemptEnd: found.attemptEnd - base });
+  }
+
+  get matchesLineBreaks(): boolean {
+    return (this.layout?.needsBuffer ?? false) || (this.layout?.matchesNewline ?? false);
+  }
+
+  execMulti(buffer: BufferText, lineIndex: number, col: number): MultiMatch | null {
+    const lines = buffer.lines;
+    if (!this.matchesLineBreaks) {
+      const found = this.exec(lines[lineIndex], col);
+      if (found === null) return null;
+      return { startLine: 0, startCol: found.index, endLine: 0, endCol: found.index + found[0].length, groups: Array.from(found) };
+    }
+    const base = buffer.offsetOf(lineIndex, 0);
+    const found = this.exec(buffer.text, base + col);
+    if (found === null || found.attemptIndex > base + lines[lineIndex].length) return null;
+    const start = buffer.positionOf(found.index);
+    const end = buffer.positionOf(found.index + found[0].length);
+    return {
+      startLine: start.line - lineIndex, startCol: start.col,
+      endLine: end.line - lineIndex, endCol: end.col,
+      groups: Array.from(found),
+    };
   }
 
   test(text: string): boolean {

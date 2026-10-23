@@ -19,6 +19,7 @@ export interface PatternContext {
 
 export interface PatternLayout {
   readonly needsBuffer: boolean;
+  readonly matchesNewline: boolean;
   readonly groupSlots: readonly (number | undefined)[];
   readonly startMarks: readonly number[];
   readonly endMarks: readonly number[];
@@ -274,6 +275,7 @@ class Translator {
   private readonly endMarks: string[] = [];
   private usesBackReference = false;
   private needsBuffer = false;
+  private matchesNewline = false;
   private emptyTilde = false;
 
   constructor(private readonly pattern: string, private readonly ignoreCase: boolean, private readonly context: PatternContext | null) {}
@@ -298,6 +300,7 @@ class Translator {
       source,
       flags: `dgu${this.ignoreCase && this.usesBackReference ? 'i' : ''}`,
       needsBuffer: this.needsBuffer,
+      matchesNewline: this.matchesNewline,
       groupSlots: slots,
       startMarks: marks(this.startMarks),
       endMarks: marks(this.endMarks),
@@ -542,7 +545,7 @@ class Translator {
       case '<': this.skip(); return { source: `(?<![${KEYWORD_BODY}])(?=[${KEYWORD_BODY}])`, unit: false };
       case '>': this.skip(); return { source: `(?<=[${KEYWORD_BODY}])(?![${KEYWORD_BODY}])`, unit: false };
       case '.': this.skip(); return { source: '[^\\n]', unit: true };
-      case 'n': this.skip(); return { source: '\\n', unit: true };
+      case 'n': this.skip(); this.matchesNewline = true; return { source: '\\n', unit: true };
       case '(': this.skip(); return this.group(true);
       case '_': this.skip(); return this.underscore();
       case '[': return this.collection(false);
@@ -601,6 +604,7 @@ class Translator {
     this.current = null;
     if (next === '^') return { source: START_OF_LINE, unit: false };
     if (next === '$') return { source: END_OF_LINE, unit: false };
+    this.matchesNewline = true;
     if (next === '.') return { source: ANYTHING, unit: true };
     if (next === '[') return this.collection(true);
     if (next in CLASS_BODIES || next in NEGATED_CLASSES) return { source: this.classSource(next, true), unit: true };
@@ -940,6 +944,7 @@ class Translator {
   }
 
   private collectionSource(parsed: CollectionParse): string {
+    if (parsed.newline) this.matchesNewline = true;
     const pieces: string[] = [];
     for (const range of parsed.ranges) {
       pieces.push(range.lo === range.hi ? escapeInClass(range.lo) : `${escapeInClass(range.lo)}-${escapeInClass(range.hi)}`);
