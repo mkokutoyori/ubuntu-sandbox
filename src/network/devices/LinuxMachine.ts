@@ -413,6 +413,7 @@ export abstract class LinuxMachine extends EndHost
     this.enableUdpLite();
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
+    this.executor.attachTtyDevices((name) => this.tty.device(name));
     this.executor.bindClock({
       monotonic: () => this.getMonotonicClockMs(),
       wall: () => this.getSystemClockMs(),
@@ -5316,6 +5317,7 @@ export abstract class LinuxMachine extends EndHost
       cwd,
       env,
       tty,
+      ttyDevice: this.tty.device(tty),
       shellPid: proc.pid,
       shellPpid: ppid,
     });
