@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record cursor/buffer transcripts from a real vim.
 
-usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|visual|insert|all] out.json
+usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|visual|insert|words|all] out.json
 
 Every case is a starting buffer and a list of steps; a step is one complete Normal-mode
 command (ending in <Esc> when it enters Insert mode).  The real vim runs the steps one by
@@ -91,7 +91,54 @@ def insert_step(r):
     pre_step = r.choice([[], [], ["j"], ["k"], ["$"], ["0"], ["w"], ["G"], [">>"], ["l"]])
     return pre_step + [enter + pre + key + post + "<Esc>"]
 
+WORD_TEXT = ["foo", "bar", "héllo", "wörld", "ça", "naïve", "日本語", "こんにちは", "ひらがな", "カタカナ", "한국어", "привет", "αβγ", "foo-bar", "foo_bar",
+             "a.b", "x+y", "(é)", "«quote»", "—", "…", "×", "÷", "µ", "ª", "ß", "ÿ", "ĀĒ", "123", "42é", "!!", "@home", "#tag", "$var", "foo:bar", "a/b",
+             "ünï", "x\u00a0y", "Ünï", "FOO", "Foo", "ÉCOLE", "école", "日本語text", "text日本語", "かな漢字", "ｱｲｳ", "⁰¹²", "₀₁", "⠁⠃", "x²"]
+WORD_SEPS = [" ", " ", " ", "  ", "\t", ", ", ". ", "-", "", ""]
+
+def rand_word_line(r):
+    kind = r.random()
+    if kind < 0.05:
+        return ""
+    words = [r.choice(WORD_TEXT) for _ in range(r.randint(1, 6))]
+    out = ""
+    for w in words:
+        out += w + r.choice(WORD_SEPS)
+    return out.rstrip(" ") if r.random() < 0.7 else out
+
+ISKEYWORD_SETS = [["iskeyword+=-"], ["iskeyword+=."], ["iskeyword+=@-@"], ["iskeyword+=#", "iskeyword+=$"], ["iskeyword-=_"], ["iskeyword=a-z,A-Z,_"],
+                  ["iskeyword=@,48-57,_,192-255,-,."], ["iskeyword+=^é"], ["iskeyword=@,^a-c"], ["iskeyword+=:"], ["iskeyword=@,48-57,_"], ["iskeyword=a-z"],
+                  ["iskeyword+=<", "iskeyword+=>"], ["iskeyword="], ["iskeyword+=ª"], ["iskeyword+=×"], ["iskeyword+=160"], ["iskeyword=@,48-57,_,128-255"], ["iskeyword-=192-255"],
+                  ["iskeyword+=/"], ["iskeyword+=+"], ["iskeyword+=45-47"]]
+
+def word_options(r):
+    chosen = []
+    if r.random() < 0.7:
+        chosen += r.choice(ISKEYWORD_SETS)
+    mode = r.choice(["", "", "ignorecase", "ignorecase smartcase", "ignorecase smartcase", "smartcase"])
+    if mode:
+        chosen += mode.split()
+    return chosen
+
+def word_step(r):
+    n = r.choice(["", "", "", "2", "3"])
+    pat = r.choice(["foo", "Foo", "FOO", "wörld", "Wörld", "école", "École", "ÉCOLE", "\\<foo", "\\<Foo", "foo\\>", "\\kfoo", "\\Cfoo", "\\cFoo", "日本", "こ", "h.llo", "\\<日本語\\>", "x\\k\\+", "\\K", "\\Kx", "[[:keyword:]]\\+", "[[:lower:]]\\+", "\\v<\\k+>", "\\Vfoo", "f\\%[oo]"])
+    pool = [
+        [n + "w"], [n + "W"], [n + "b"], [n + "B"], [n + "e"], [n + "E"], [n + "ge"], [n + "gE"], [n + "w"], [n + "e"], [n + "b"],
+        ["dw"], ["dW"], ["de"], ["dE"], ["db"], ["dB"], ["cwNEW<Esc>"], ["cWNEW<Esc>"], ["ceNEW<Esc>"], ["cbNEW<Esc>"], ["yw"], ["y" + n + "e"], ["d" + n + "w"], ["c" + n + "wNEW<Esc>"],
+        ["diw"], ["daw"], ["diW"], ["daW"], ["ciwNEW<Esc>"], ["caw" + "NEW<Esc>"], ["yiw", "P"], ["yaw", "P"], ["viwd"], ["vawd"], ["viWd"], ["v" + n + "iwy", "P"], ["gUiw"], ["guiw"], ["g~iw"], ["gUaw"], ["g~aw"],
+        ["*"], ["#"], ["g*"], ["g#"], [n + "*"], ["*", "n"], ["#", "n"], ["*", "N"], ["w", "*"], ["e", "#"], ["$", "*"], ["0", "#"], ["d*"], ["c*X<Esc>"],
+        ["/" + pat + "<CR>"], ["?" + pat + "<CR>"], ["/" + pat + "<CR>", "n"], ["/" + pat + "<CR>", "N"], ["d/" + pat + "<CR>"], ["/" + pat + "<CR>", "gn"], ["/" + pat + "<CR>", "cgnX<Esc>"],
+        [":s/" + pat + "/X/<CR>"], [":s/" + pat + "/X/g<CR>"], [":%s/" + pat + "/X/g<CR>"], [":g/" + pat + "/s/$/!/<CR>"], [":g!/" + pat + "/s/^/>/<CR>"],
+        ["A foo<C-w>X<Esc>"], ["A foo bar<C-w><C-w>X<Esc>"], ["A héllo wörld<C-w>X<Esc>"], ["A 日本語こんにちは<C-w>X<Esc>"], ["I<C-w>X<Esc>"], ["A-<C-w>X<Esc>"], ["Afoo-bar<C-w>X<Esc>"], ["Afoo.bar<C-w>X<Esc>"],
+        ["$a<C-w>X<Esc>"], ["wi<C-w>X<Esc>"], ["ea<C-w>X<Esc>"], ["Ofoo bar<C-w><C-w>X<Esc>"], ["A " + "x<C-u>X<Esc>"],
+        ["f-"], ["fx"], ["l"], ["h"], ["$"], ["0"], ["j"], ["k"],
+    ]
+    return r.choice(pool)
+
 def rand_step(r, vocab):
+    if vocab == "words":
+        return word_step(r)
     if vocab == "insert":
         return insert_step(r)
     if vocab == "visual":
@@ -139,14 +186,17 @@ def gen_cases(seed, count, vocab):
     cases = []
     for i in range(count):
         steps = [t for _ in range(r.randint(2, 9)) for t in rand_step(r, vocab)]
-        case = {"id": f"c{seed}-{i}", "text": rand_text(r), "steps": steps}
+        case = {"id": f"c{seed}-{i}", "text": [rand_word_line(r) for _ in range(r.randint(1, 5))] if vocab == "words" else rand_text(r), "steps": steps}
         if vocab in ("tabs", "insert"):
             case["options"] = tab_options(r)
+        if vocab == "words":
+            case["options"] = word_options(r)
         cases.append(case)
     return cases
 
 VIMSCRIPT = r'''
 set nocompatible
+set encoding=utf-8
 set noswapfile nobackup nowritebackup viminfo= tabstop=8 shiftwidth=8 noexpandtab noautoindent
 set nowrapscan
 set wrapscan
@@ -193,7 +243,7 @@ def run_one(case, d):
     vf = os.path.join(d, "run.vim")
     of = os.path.join(d, case["id"] + ".out.json")
     json.dump([case], open(cf, "w"))
-    env = dict(os.environ, VCASES=cf, VOUT=of, TERM="xterm")
+    env = dict(os.environ, VCASES=cf, VOUT=of, TERM="xterm", LANG="C.UTF-8", LC_ALL="C.UTF-8")
     subprocess.run(["vim", "-u", "NONE", "-i", "NONE", "-N", "-es", "-S", vf], env=env, check=False,
                    stdin=subprocess.DEVNULL, timeout=60)
     return json.load(open(of))[0]

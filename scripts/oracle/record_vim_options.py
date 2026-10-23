@@ -14,7 +14,7 @@ OPTIONS = [
     ("number", "nu", "bool"), ("relativenumber", "rnu", "bool"), ("numberwidth", "nuw", "number"),
     ("list", "list", "bool"), ("listchars", "lcs", "string"), ("showmatch", "sm", "bool"),
     ("matchtime", "mat", "number"), ("matchpairs", "mps", "string"),
-    ("incsearch", "is", "bool"), ("hlsearch", "hls", "bool"), ("ignorecase", "ic", "bool"),
+    ("incsearch", "is", "bool"), ("hlsearch", "hls", "bool"), ("ignorecase", "ic", "bool"), ("smartcase", "scs", "bool"), ("iskeyword", "isk", "string"),
     ("autoindent", "ai", "bool"), ("colorcolumn", "cc", "string"), ("tabstop", "ts", "number"),
     ("shiftwidth", "sw", "number"), ("softtabstop", "sts", "number"), ("expandtab", "et", "bool"),
     ("wrap", "wrap", "bool"), ("scrolloff", "so", "number"), ("sidescroll", "ss", "number"),
@@ -79,6 +79,13 @@ EXTRA = [
     ["set mouse=a", "set mouse?"], ["set mouse=nvi", "set mouse?"], ["set mouse=x"], ["set mouse=an", "set mouse?"], ["set mouse+=n", "set mouse?"],
     ["set mouse=a", "set mouse-=a", "set mouse?"], ["set mouse=nn", "set mouse?"], ["set mouse=hr", "set mouse?"], ["set mouse=c", "set mouse?"],
     ["set mouse=", "set mouse?"], ["set mouse=a", "set mouse&", "set mouse?"], ["set mouse=n,v"], ["set mouse=Na"], ["set mouse=ah", "set mouse?"],
+    ["set isk+=-", "set isk?"], ["set isk-=_", "set isk?"], ["set isk=a-z", "set isk?"], ["set isk=300"], ["set isk=@,48-57", "set isk?"], ["set isk&", "set isk?"],
+    ["set isk=a-", "set isk?"], ["set isk+=@-@", "set isk?"], ["set isk=", "set isk?"], ["set isk^=-", "set isk?"], ["set isk=^", "set isk?"], ["set isk=1-255", "set isk?"],
+    ["set isk=b-a"], ["set isk=0"], ["set isk=abc"], ["set isk=a,b", "set isk?"], ["set isk=_,-,128-140,#-43", "set isk?"], ["set isk+=48-57", "set isk?"],
+    ["set isk-=48-57", "set isk?"], ["set isk+=^é", "set isk?"], ["set isk=@,^a-c", "set isk?"], ["set isk+=", "set isk?"], ["set isk+=300", "set isk?"],
+    ["set isk=@,48-57,_,192-255,-,.", "set isk-=.", "set isk?"], ["set isk+=a-z", "set isk?"], ["set isk=, ", "set isk?"], ["set isk=a,,b", "set isk?"],
+    ["set isk=@ ,_", "set isk?"], ["set isk=a ,b", "set isk?"], ["setlocal isk+=-", "set isk?"], ["setlocal isk+=-", "setglobal isk?"], ["setglobal isk+=-", "set isk?"],
+    ["set scs", "set scs?"], ["set noscs", "set scs?"], ["set scs!", "set scs?"], ["set ic scs", "set ic?", "set scs?"], ["set scs&", "set scs?"],
 ]
 
 NAMES = [o[0] for o in OPTIONS]

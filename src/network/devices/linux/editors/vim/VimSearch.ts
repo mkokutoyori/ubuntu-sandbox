@@ -1,4 +1,5 @@
-import { isKeywordChar, isWhite, type Pos } from './VimCursor';
+import { type Pos } from './VimCursor';
+import type { WordClasses } from './VimCharClass';
 import { compileVimPattern, vimPatternError, type VimRegExp } from './VimPattern';
 import { skipRegexp, type PatternContext } from './VimRegex';
 
@@ -19,6 +20,7 @@ export interface LastSearch {
   readonly pattern: string;
   readonly forward: boolean;
   readonly offset: SearchOffset;
+  readonly noSmartcase?: boolean;
 }
 
 export interface MatchResult {
@@ -205,35 +207,57 @@ export function resolveTarget(lines: readonly string[], match: MatchResult, offs
   return { pos: match.start, linewise: false, inclusive: false, wrapped, match };
 }
 
-function isKeyword(ch: string | undefined): boolean {
-  return ch !== undefined && isKeywordChar(ch);
-}
-
 export interface IdentUnderCursor {
   readonly text: string;
   readonly start: Pos;
-  readonly isKeyword: boolean;
+  readonly opensWithKeyword: boolean;
+  readonly closesWithKeyword: boolean;
 }
 
-export function identUnderCursor(lines: readonly string[], from: Pos): IdentUnderCursor | null {
+function characterWidth(text: string, at: number): number {
+  return text.codePointAt(at)! > 0xffff ? 2 : 1;
+}
+
+function previousStart(text: string, at: number): number {
+  const low = text.charCodeAt(at - 1);
+  return low >= 0xdc00 && low <= 0xdfff && at >= 2 ? at - 2 : at - 1;
+}
+
+export function identUnderCursor(lines: readonly string[], from: Pos, words: WordClasses): IdentUnderCursor | null {
   const text = lines[from.line] ?? '';
+  const classAt = (at: number): number => (at < text.length ? words.classOf(String.fromCodePoint(text.codePointAt(at)!)) : 0);
   let col = from.col;
-  while (col < text.length && !isKeyword(text[col])) col++;
-  if (col < text.length) {
-    let start = col;
-    while (start > 0 && isKeyword(text[start - 1])) start--;
-    let end = col;
-    while (end < text.length && isKeyword(text[end])) end++;
-    return { text: text.slice(start, end), start: { line: from.line, col: start }, isKeyword: true };
+  let thisClass = 0;
+  let pass = 0;
+  for (; pass < 2; pass++) {
+    col = from.col;
+    while (col < text.length) {
+      thisClass = classAt(col);
+      if (thisClass !== 0 && (pass === 1 || thisClass !== 1)) break;
+      col += characterWidth(text, col);
+    }
+    thisClass = classAt(col);
+    while (col > 0 && thisClass !== 0) {
+      const before = previousStart(text, col);
+      if (thisClass !== classAt(before)) break;
+      col = before;
+    }
+    if (thisClass > 2) thisClass = 2;
+    if (thisClass === 2) break;
   }
-  col = from.col;
-  while (col < text.length && isWhite(text[col])) col++;
-  if (col >= text.length) return null;
-  let start = col;
-  while (start > 0 && !isWhite(text[start - 1]) && !isKeyword(text[start - 1])) start--;
+  if (col >= text.length || (pass === 0 && thisClass !== 2)) return null;
+  const startClass = classAt(col);
   let end = col;
-  while (end < text.length && !isWhite(text[end])) end++;
-  return { text: text.slice(start, end), start: { line: from.line, col: start }, isKeyword: false };
+  while (end < text.length && (pass === 0 ? classAt(end) === startClass : classAt(end) !== 0)) end += characterWidth(text, end);
+  const found = text.slice(col, end);
+  const first = String.fromCodePoint(found.codePointAt(0)!);
+  const lastStart = previousStart(found, found.length);
+  return {
+    text: found,
+    start: { line: from.line, col },
+    opensWithKeyword: words.isKeyword(first),
+    closesWithKeyword: words.isKeyword(String.fromCodePoint(found.codePointAt(lastStart)!)),
+  };
 }
 
 export function escapeForPattern(text: string, backwardDelimiter: boolean): string {
@@ -243,8 +267,8 @@ export function escapeForPattern(text: string, backwardDelimiter: boolean): stri
 export function patternForIdent(ident: IdentUnderCursor, wholeWord: boolean): string {
   const body = escapeForPattern(ident.text, false);
   if (!wholeWord) return body;
-  const open = isKeyword(ident.text[0]) ? '\\<' : '';
-  const close = isKeyword(ident.text[ident.text.length - 1]) ? '\\>' : '';
+  const open = ident.opensWithKeyword ? '\\<' : '';
+  const close = ident.closesWithKeyword ? '\\>' : '';
   return open + body + close;
 }
 

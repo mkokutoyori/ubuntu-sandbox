@@ -16,6 +16,7 @@ import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
 import { parseReadInvocation, performInteractiveRead } from '../input';
 import { NestedSshLogin } from '../NestedSshLogin';
+import { echoesInput } from '@/network/devices/linux/tty/TtyLineDiscipline';
 
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
@@ -218,8 +219,10 @@ export class LinuxBashShell extends AbstractShell {
     const trimmed = line.trim();
     if (!/^read\b/.test(trimmed)) return null;
     if (/[|<>]/.test(trimmed)) return null;
-    const parsed = parseReadInvocation(trimmed);
-    if (!parsed) return null;
+    const typed = parseReadInvocation(trimmed);
+    if (!typed) return null;
+    const echoing = this.session === null || echoesInput(this.session.ttyDevice.tcgetattr());
+    const parsed = { ...typed, silent: typed.silent || !echoing };
     const ifs = this.session?.env.get('IFS') ?? ' \t\n';
     const outcome = await performInteractiveRead(this.input, parsed, { ifs });
     if (!outcome.handled) return null;

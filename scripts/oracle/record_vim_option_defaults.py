@@ -3,8 +3,9 @@ Records the value every vim 9.1 option has at start-up (`vim -u NONE -N`) and wr
 fallback table of the vim editor's `&option` reads.
 
 The names and abbreviations come from vim's own `options.txt`; the values come from the running vim.
-Options whose value depends on the machine or the terminal (paths, columns, lines, the shell...) are left
-out: reading them stays refused rather than answering with this machine's value.
+Options the engine models itself (the table of VimOptions.ts) are left out, and so are those whose value
+depends on the machine or the terminal (paths, columns, lines, the shell...): reading them stays refused
+rather than answering with this machine's value.
 
     python3 -I scripts/oracle/record_vim_option_defaults.py src/network/devices/linux/editors/vim/VimOptionDefaults.ts
 """
@@ -42,6 +43,12 @@ def quote(text):
     return "'" + text.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
+def modelled_names():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src", "network", "devices", "linux", "editors", "vim", "VimOptions.ts")
+    pairs = re.findall(r"\{ name: '([a-z0-9_]+)', short: '([a-z0-9_]+)'", open(path, encoding="utf-8").read())
+    return {name for pair in pairs for name in pair}
+
+
 def parse_doc():
     entries = []
     for line in open(DOC, encoding="utf-8"):
@@ -65,8 +72,9 @@ def main():
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         values = {name: value for name, value in json.load(open(result_path))}
     rows = []
+    modelled = modelled_names()
     for name, short, kind in sorted(entries):
-        if name in MACHINE_DEPENDENT or short in MACHINE_DEPENDENT or name not in values:
+        if name in MACHINE_DEPENDENT or short in MACHINE_DEPENDENT or name not in values or name in modelled:
             continue
         value = values[name]
         if isinstance(value, str) and re.search(r"/(root|usr|tmp|home|var|etc)\b", value):

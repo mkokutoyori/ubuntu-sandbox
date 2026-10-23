@@ -35,6 +35,8 @@ export interface NanoScreenInput {
   readonly spotlight: { readonly line: number; readonly start: number; readonly end: number } | null;
   readonly tabsize: number;
   readonly softwrap: boolean;
+  readonly emphasis: 'reverse' | 'bold';
+  readonly stripe: number | null;
   readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null; readonly heading?: string };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean; readonly raw?: boolean } | null;
   readonly minibar: MinibarInfo | null;
@@ -90,22 +92,16 @@ function clipped(text: string, width: number, tabsize: number): string {
   return text.slice(0, end);
 }
 
-function headingRow(cols: number, heading: string, tabsize: number): ScreenRow {
-  const canvas = new Canvas(cols);
-  const width = breadth(heading, tabsize);
-  canvas.put(Math.max(0, Math.ceil((cols - width) / 2)), heading);
-  canvas.mark(0, cols, 'reverse');
-  return canvas.fullRow();
-}
+type Emphasis = NanoScreenInput['emphasis'];
 
-export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null = null): ScreenRow {
+export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null, emphasis: Emphasis, inHelp = false): ScreenRow {
   const canvas = new Canvas(cols);
   const flagged = flags !== null && state !== 'View';
   const stateWord = flagged ? STATE_FLAGS_PLACEHOLDER : state;
   let upperleft = branding;
   let verlen = breadth(upperleft, tabsize) + 3;
   let pluglen = 0;
-  if (stateWord === '') pluglen = breadth('Modified', tabsize) + 1;
+  if (stateWord === '' && !inHelp) pluglen = breadth('Modified', tabsize) + 1;
   let statelen = breadth(stateWord, tabsize) + 2;
   let pathlen = breadth(name, tabsize);
   if (statelen > 2) pathlen++;
@@ -143,7 +139,7 @@ export function titleRow(cols: number, name: string, state: TitleState, branding
   } else if (statelen > 0 && statelen <= cols) canvas.put(cols - statelen, state);
   else if (statelen > 0) canvas.put(0, clipped(state, cols, tabsize));
 
-  canvas.mark(0, cols, 'reverse');
+  canvas.mark(0, cols, emphasis);
   return canvas.fullRow();
 }
 
@@ -161,7 +157,7 @@ function selectionBounds(input: NanoScreenInput): { top: Position; bottom: Posit
 
 function drawDataRow(
   input: NanoScreenInput, lineIndex: number, fromCol: number, display: DisplayResult, firstChunk: boolean,
-  sidescrolled: boolean, spanEnd: number,
+  sidescrolled: boolean, sequel: number, barLit: boolean | null,
 ): ScreenRow {
   const window = input.window;
   const margin = window.margin;
@@ -169,9 +165,11 @@ function drawDataRow(
   if (margin > 0) {
     const label = input.softwrap && !firstChunk ? ' '.repeat(margin - 1) : numberLabel(lineIndex, margin - 1);
     canvas.put(0, label);
-    canvas.mark(0, margin - 1, 'reverse');
+    canvas.mark(0, margin - 1, input.emphasis);
   }
   canvas.putCells(margin, display.cells);
+  if (barLit === true) canvas.mark(window.cols - 1, window.cols, 'reverse');
+  drawGuideStripe(input, canvas, fromCol, display, sequel);
   const text = input.lines[lineIndex] ?? '';
   const bounds = selectionBounds(input);
   if (bounds !== null && lineIndex >= bounds.top.line && lineIndex <= bounds.bottom.line) {
@@ -184,7 +182,7 @@ function drawDataRow(
       if (start < 0) start = 0;
       let end = display.cells.length;
       if (bottomX < display.tillX) end = Math.min(end, wideness(text, bottomX, input.tabsize) - fromCol);
-      canvas.mark(margin + start, margin + Math.max(start, end), 'reverse');
+      canvas.mark(margin + start, margin + Math.max(start, end), input.emphasis);
     }
   }
   const light = input.spotlight;
@@ -199,32 +197,68 @@ function drawDataRow(
         isData: false, isPrompt: false, softwrap: false, tabsize: input.tabsize,
       });
       const overshoots = !input.softwrap && wideness(text, light.end, input.tabsize) - fromCol > window.editCols;
-      spotlit = { column: margin + start, cells: word.cells.slice(0, Math.max(0, window.cols - margin - start)), overshoots };
-      canvas.mark(margin + start, margin + end, 'reverse');
+      spotlit = { column: margin + start, cells: word.cells.slice(0, Math.max(0, window.editCols - start)), overshoots };
+      canvas.mark(margin + start, margin + end, 'search');
     } else if (light.start === light.end && light.start >= display.fromX && light.start <= display.tillX) {
       const start = Math.max(0, wideness(text, light.start, input.tabsize) - fromCol);
       const blanked = canvas.cells[margin + start + 1] === CONTINUATION ? 2 : 1;
       spotlit = { column: margin + start, cells: new Array<string>(blanked).fill(' '), overshoots: false };
-      canvas.mark(margin + start, margin + start + 1, 'reverse');
+      canvas.mark(margin + start, margin + start + 1, 'search');
     }
   }
+  const moreAt = window.cols - 1 - window.sidebar;
   if (sidescrolled && fromCol > 0 && display.cells.length > 0) {
     canvas.put(margin, '<');
-    canvas.mark(margin, margin + 1, 'reverse');
+    canvas.mark(margin, margin + 1, input.emphasis);
   }
   if (display.hasMore) {
-    canvas.put(window.cols - 1, '>');
-    canvas.mark(window.cols - 1, window.cols, 'reverse');
+    canvas.put(moreAt, '>');
+    canvas.mark(moreAt, moreAt + 1, input.emphasis);
   }
   if (spotlit !== null) {
     canvas.putCells(spotlit.column, spotlit.cells);
     if (spotlit.overshoots) {
-      canvas.put(window.cols - 1, '>');
-      canvas.mark(window.cols - 1, window.cols, 'reverse');
+      canvas.put(moreAt, '>');
+      canvas.mark(moreAt, moreAt + 1, 'search');
     }
   }
-  void spanEnd;
   return canvas.row();
+}
+
+function drawGuideStripe(input: NanoScreenInput, canvas: Canvas, fromCol: number, display: DisplayResult, sequel: number): void {
+  const stripe = input.stripe;
+  const window = input.window;
+  if (stripe === null || stripe <= fromCol || (sequel !== 0 && stripe > sequel) || stripe > fromCol + window.editCols) return;
+  let column = stripe - fromCol - 1;
+  let width = 1;
+  const cells = display.cells;
+  if (column < cells.length) {
+    if (cells[column] === '') column--;
+    if (cells[column + 1] === '') width = 2;
+  }
+  canvas.mark(window.margin + column, window.margin + column + width, 'reverse');
+}
+
+function scrollbarLit(input: NanoScreenInput): readonly boolean[] | null {
+  const window = input.window;
+  if (window.sidebar === 0) return null;
+  const rows = window.editRows;
+  const fromLine = window.edittop;
+  const totalLines = input.lines.length;
+  let covered = rows;
+  if (input.softwrap) {
+    let line = window.edittop;
+    let extras = window.extraChunksIn(line) - window.chunkFor(window.firstcolumn, line);
+    while (line + 1 + extras < fromLine + rows && line + 1 < totalLines) {
+      line++;
+      extras += window.extraChunksIn(line);
+    }
+    covered = line + 1 - fromLine;
+  }
+  const lowest = Math.floor((fromLine * rows) / totalLines);
+  let highest = lowest + Math.floor((rows * covered) / totalLines);
+  if (rows > totalLines) highest = rows;
+  return Array.from({ length: rows }, (_, row) => row >= lowest && row <= highest);
 }
 
 function editRows(input: NanoScreenInput): ScreenRow[] {
@@ -232,34 +266,36 @@ function editRows(input: NanoScreenInput): ScreenRow[] {
   const rows: ScreenRow[] = [];
   const height = window.editRows;
   const tabsize = input.tabsize;
+  const bar = scrollbarLit(input);
+  const lit = (row: number): boolean | null => (bar === null ? null : bar[row]);
   for (let line = window.edittop; rows.length < height && line < input.lines.length; line++) {
     const text = input.lines[line];
     if (!input.softwrap) {
       const isCurrent = line === input.cursor.line;
       const fromCol = isCurrent ? window.pageStart(wideness(text, input.cursor.col, tabsize)) : 0;
       const display = displayString(text, fromCol, window.editCols, { isData: true, isPrompt: false, softwrap: false, tabsize });
-      rows.push(drawDataRow(input, line, fromCol, display, true, true, window.editCols));
+      rows.push(drawDataRow(input, line, fromCol, display, true, true, 0, lit(rows.length)));
       continue;
     }
     let fromCol = line === window.edittop ? window.firstcolumn : 0;
     for (;;) {
       const { end, endOfLine } = window.breakpoint(text, fromCol);
       const display = displayString(text, fromCol, end - fromCol, { isData: true, isPrompt: false, softwrap: true, tabsize });
-      rows.push(drawDataRow(input, line, fromCol, display, fromCol === 0, false, end));
+      rows.push(drawDataRow(input, line, fromCol, display, fromCol === 0, false, endOfLine ? 0 : end, lit(rows.length)));
       if (endOfLine || rows.length >= height) break;
       fromCol = end;
     }
   }
-  while (rows.length < height) rows.push(SPACE_ROW);
+  while (rows.length < height) rows.push(bar !== null && bar[rows.length] ? { text: '', spans: [{ from: window.cols - 1, to: window.cols, style: 'reverse' }] } : SPACE_ROW);
   return rows;
 }
 
-function statusRow(cols: number, status: { text: string; alert: boolean; more?: boolean; raw?: boolean } | null, tabsize: number): ScreenRow {
+function statusRow(cols: number, status: { text: string; alert: boolean; more?: boolean; raw?: boolean } | null, tabsize: number, emphasis: Emphasis): ScreenRow {
   if (status === null) return SPACE_ROW;
   if (status.raw === true) {
     const left = new Canvas(cols);
     left.put(0, clipped(status.text, cols - 1, tabsize));
-    left.mark(0, cols, 'reverse');
+    left.mark(0, cols, emphasis);
     return left.fullRow();
   }
   const canvas = new Canvas(cols);
@@ -269,7 +305,7 @@ function statusRow(cols: number, status: { text: string; alert: boolean; more?: 
   const bracketed = start > 1;
   const left = bracketed ? start - 2 : start;
   let at = left;
-  const style = status.alert ? 'alert' : 'reverse';
+  const style = status.alert ? 'alert' : emphasis;
   if (bracketed) canvas.put(at, '[ ');
   if (bracketed) at += 2;
   canvas.putCells(at, message);
@@ -287,7 +323,7 @@ function statusRow(cols: number, status: { text: string; alert: boolean; more?: 
   return canvas.row();
 }
 
-export function minibarRow(cols: number, info: MinibarInfo, tabsize: number): ScreenRow {
+export function minibarRow(cols: number, info: MinibarInfo, tabsize: number, emphasis: Emphasis): ScreenRow {
   const canvas = new Canvas(cols);
   const options = { isData: false, isPrompt: false, softwrap: false, tabsize };
   const namewidth = breadth(info.name, tabsize);
@@ -321,7 +357,7 @@ export function minibarRow(cols: number, info: MinibarInfo, tabsize: number): Sc
   if (info.showPosition && namewidth + tallywidth + 28 < cols) canvas.put(cols - 23, info.hex);
   if (info.stateLetters !== null && namewidth + tallywidth + 14 + 2 * padding < cols) canvas.put(cols - 11 - padding, info.stateLetters);
   if (namewidth + 6 < cols) canvas.put(cols - 4 - padding, `${padToWidth(String(info.percent), 3, 'right')}%`);
-  canvas.mark(0, cols, 'reverse');
+  canvas.mark(0, cols, emphasis);
   return canvas.fullRow();
 }
 
@@ -336,7 +372,7 @@ interface PromptView {
   readonly cursorColumn: number;
 }
 
-function promptRow(cols: number, label: string, answer: string, answerCursor: number, tabsize: number): PromptView {
+function promptRow(cols: number, label: string, answer: string, answerCursor: number, tabsize: number, emphasis: Emphasis): PromptView {
   const canvas = new Canvas(cols);
   const prompt = clipped(label, cols < 5 ? 0 : cols - 5, tabsize);
   const base = breadth(prompt, tabsize) + 2;
@@ -348,14 +384,14 @@ function promptRow(cols: number, label: string, answer: string, answerCursor: nu
   const shown = displayString(answer, page, cols - base, { isData: false, isPrompt: true, softwrap: false, tabsize });
   canvas.putCells(base, shown.cells);
   if (page < endPage && base + breadth(answer, tabsize) - page > cols) canvas.put(cols - 1, '>');
-  canvas.mark(0, cols, 'reverse');
+  canvas.mark(0, cols, emphasis);
   return { row: canvas.fullRow(), cursorColumn: column - page };
 }
 
-function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width: number, tabsize: number): void {
+function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width: number, tabsize: number, emphasis: Emphasis): void {
   const keyText = clipped(key, width, tabsize);
   canvas.put(at, keyText);
-  canvas.mark(at, at + breadth(keyText, tabsize), 'reverse');
+  canvas.mark(at, at + breadth(keyText, tabsize), emphasis);
   let remaining = width - breadth(key, tabsize);
   if (remaining < 2) return;
   canvas.put(at + breadth(key, tabsize), ' ');
@@ -363,7 +399,7 @@ function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width:
   canvas.put(at + breadth(key, tabsize) + 1, clipped(tag, remaining, tabsize));
 }
 
-function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number, options: MenuOptions): [ScreenRow, ScreenRow] {
+function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number, options: MenuOptions, emphasis: Emphasis): [ScreenRow, ScreenRow] {
   const { entries, slots } = menuLayout(menu, options);
   const maximum = Math.floor((cols + 40) / 20) * 2;
   const number = Math.min(slots, maximum);
@@ -375,19 +411,19 @@ function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number, options
     if (number % 2 === 1 && index + 2 === number) width += itemwidth;
     if (index + 2 >= number) width += cols % itemwidth;
     const entry = entries[index];
-    postOneKey(canvases[index % 2], Math.floor(index / 2) * itemwidth, entry.key, entry.tag, width, tabsize);
+    postOneKey(canvases[index % 2], Math.floor(index / 2) * itemwidth, entry.key, entry.tag, width, tabsize, emphasis);
   }
   return [canvases[0].row(), canvases[1].row()];
 }
 
-function yesNoRows(cols: number, withAll: boolean, tabsize: number): [ScreenRow, ScreenRow] {
+function yesNoRows(cols: number, withAll: boolean, tabsize: number, emphasis: Emphasis): [ScreenRow, ScreenRow] {
   const width = cols < 32 ? Math.floor(cols / 2) : 16;
   const first = new Canvas(cols);
   const second = new Canvas(cols);
-  postOneKey(first, 0, ' Y', 'Yes', width, tabsize);
-  postOneKey(second, 0, ' N', 'No', width, tabsize);
-  if (withAll) postOneKey(first, width, ' A', 'All', width, tabsize);
-  postOneKey(second, width, '^C', 'Cancel', width, tabsize);
+  postOneKey(first, 0, ' Y', 'Yes', width, tabsize, emphasis);
+  postOneKey(second, 0, ' N', 'No', width, tabsize, emphasis);
+  if (withAll) postOneKey(first, width, ' A', 'All', width, tabsize, emphasis);
+  postOneKey(second, width, '^C', 'Cancel', width, tabsize, emphasis);
   return [first.row(), second.row()];
 }
 
@@ -399,7 +435,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   const rows: ScreenRow[] = new Array(window.rows).fill(SPACE_ROW);
   let cursorAt: { row: number; col: number } | null = null;
 
-  if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? headingRow(cols, input.title.heading, tabsize) : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags);
+  if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? titleRow(cols, input.title.heading, '', '', tabsize, null, input.emphasis, true) : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags, input.emphasis);
 
   const body = editRows(input);
   const bodyTop = layout.editFrom;
@@ -408,25 +444,25 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   let footerStatus: ScreenRow;
   let bars: [ScreenRow, ScreenRow] | null = null;
   if (input.pause !== null) {
-    footerStatus = statusRow(cols, { text: input.pause, alert: true }, tabsize);
-    bars = input.pauseKeepsMenu === true ? shortcutRows(cols, input.menu, tabsize, input.menuOptions) : [SPACE_ROW, SPACE_ROW];
+    footerStatus = statusRow(cols, { text: input.pause, alert: true }, tabsize, input.emphasis);
+    bars = input.pauseKeepsMenu === true ? shortcutRows(cols, input.menu, tabsize, input.menuOptions, input.emphasis) : [SPACE_ROW, SPACE_ROW];
     cursorAt = { row: -1, col: footerStatus.text.trimEnd().length };
   } else if (input.yesNo !== null) {
     const question = clipped(input.yesNo.question, cols - 1, tabsize);
     const canvas = new Canvas(cols);
     canvas.put(0, question);
-    canvas.mark(0, cols, 'reverse');
+    canvas.mark(0, cols, input.emphasis);
     footerStatus = canvas.fullRow();
-    bars = yesNoRows(cols, input.yesNo.withAll, tabsize);
+    bars = yesNoRows(cols, input.yesNo.withAll, tabsize, input.emphasis);
     cursorAt = { row: -1, col: Math.min(breadth(input.yesNo.question, tabsize), cols - 1) };
   } else if (input.prompt !== null) {
-    const view = promptRow(cols, input.prompt.label, input.prompt.answer, input.prompt.cursor, tabsize);
+    const view = promptRow(cols, input.prompt.label, input.prompt.answer, input.prompt.cursor, tabsize, input.emphasis);
     footerStatus = view.row;
-    bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions);
+    bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions, input.emphasis);
     cursorAt = { row: -1, col: view.cursorColumn };
   } else {
-    footerStatus = input.minibar !== null ? minibarRow(cols, input.minibar, tabsize) : statusRow(cols, input.status, tabsize);
-    bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions);
+    footerStatus = input.minibar !== null ? minibarRow(cols, input.minibar, tabsize, input.emphasis) : statusRow(cols, input.status, tabsize, input.emphasis);
+    bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions, input.emphasis);
     const place = window.place(input.cursor);
     cursorAt = { row: bodyTop + place.row, col: window.margin + place.column };
   }

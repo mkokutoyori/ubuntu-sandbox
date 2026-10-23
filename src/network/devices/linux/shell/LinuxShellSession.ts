@@ -22,10 +22,12 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { LinuxJobTable } from '../jobs/LinuxJobTable';
+import { DEFAULT_WINDOW_SIZE, TtyDevice, type WindowSize } from '../tty/TtyDevice';
 
 import type { SuFrame } from '@/shell/ShellContext';
 
 export type { SuFrame };
+export { DEFAULT_WINDOW_SIZE, type WindowSize };
 
 let nextSessionSeq = 1;
 
@@ -37,6 +39,7 @@ let nextSessionSeq = 1;
 export class TtyAllocator {
   private allocated = new Set<number>();
   private next = 0;
+  private readonly devices = new Map<string, TtyDevice>();
 
   allocate(): string {
     // Reuse the lowest free slot, like Linux pty(7).
@@ -44,18 +47,26 @@ export class TtyAllocator {
     while (this.allocated.has(n)) n++;
     this.allocated.add(n);
     if (n >= this.next) this.next = n + 1;
-    return `pts/${n}`;
+    const name = `pts/${n}`;
+    this.devices.set(name, new TtyDevice(name));
+    return name;
   }
 
   release(tty: string): void {
     const m = /^pts\/(\d+)$/.exec(tty);
     if (!m) return;
     this.allocated.delete(parseInt(m[1], 10));
+    this.devices.delete(tty);
+  }
+
+  device(tty: string): TtyDevice | undefined {
+    return this.devices.get(tty);
   }
 
   reset(): void {
     this.allocated.clear();
     this.next = 0;
+    this.devices.clear();
   }
 }
 
@@ -68,6 +79,7 @@ export interface LinuxShellSessionInit {
   /** Initial environment (copied — the session owns its map). */
   env: Map<string, string>;
   tty: string;
+  ttyDevice?: TtyDevice;
   /** PID of the -bash process for this session (allocated by the device). */
   shellPid: number;
   /** Parent PID — typically sshd's PID when SSH, init (1) for console logins. */
@@ -85,13 +97,6 @@ export interface LinuxShellSessionInit {
  * (`$!`, `wait`, process group signalling, `disown`) plug in without
  * reshaping the data model.
  */
-export interface WindowSize {
-  readonly rows: number;
-  readonly cols: number;
-}
-
-export const DEFAULT_WINDOW_SIZE: WindowSize = { rows: 24, cols: 80 };
-
 export class LinuxShellSession {
   readonly id: string;
 
@@ -121,14 +126,17 @@ export class LinuxShellSession {
   readonly jobTable: LinuxJobTable;
   /** When the shell was opened — backs `$SECONDS`. */
   readonly startTime: number = simulationNowMs();
+  readonly ttyDevice: TtyDevice;
   /** The tty's TIOCGWINSZ: what `stty size`, `tput`, `$COLUMNS` and every full-screen program read. */
-  windowSize: WindowSize = DEFAULT_WINDOW_SIZE;
+  get windowSize(): WindowSize { return this.ttyDevice.windowSize; }
+  set windowSize(size: WindowSize) { this.ttyDevice.windowSize = size; }
   /** Whether the session has been disposed. */
   disposed: boolean = false;
 
   constructor(init: LinuxShellSessionInit) {
     this.id = `lshell-${nextSessionSeq++}`;
     this.tty = init.tty;
+    this.ttyDevice = init.ttyDevice ?? new TtyDevice(init.tty);
     this.shellPid = init.shellPid;
     this.shellPpid = init.shellPpid;
     this.pgid = init.shellPid;

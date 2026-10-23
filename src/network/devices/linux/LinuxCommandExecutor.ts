@@ -255,7 +255,9 @@ import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
-import { runStty, runTput } from './tty/Stty';
+import { runStty, type SttyErrno, type SttyHost } from './tty/Stty';
+import { runTput } from './tty/Tput';
+import { TtyDevice } from './tty/TtyDevice';
 import { DEFAULT_WINDOW_SIZE, type LinuxShellSession, type WindowSize } from './shell/LinuxShellSession';
 import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
@@ -2929,12 +2931,45 @@ export class LinuxCommandExecutor {
     return kind === 'routes' ? renderNetstatRoutes(this.ipNetworkCtx) : renderNetstatInterfaces(this.ipNetworkCtx);
   }
 
-  private windowSize: WindowSize = DEFAULT_WINDOW_SIZE;
+  private ttyDevice: TtyDevice = new TtyDevice();
+  private ttyLookup: (name: string) => TtyDevice | undefined = () => undefined;
 
-  getWindowSize(): WindowSize { return this.windowSize; }
+  private get windowSize(): WindowSize { return this.ttyDevice.windowSize; }
+
+  getWindowSize(): WindowSize { return this.ttyDevice.windowSize; }
 
   setWindowSize(size: WindowSize): void {
-    this.windowSize = size;
+    this.ttyDevice.windowSize = size;
+  }
+
+  attachTtyDevices(lookup: (name: string) => TtyDevice | undefined): void {
+    this.ttyLookup = lookup;
+  }
+
+  private hasControllingTty(): boolean {
+    return this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1';
+  }
+
+  private sttyHost(standardInputIsTerminal: boolean, outputPiped: boolean): SttyHost {
+    const exported = Number.parseInt(this._cmdEnv?.['COLUMNS'] ?? '', 10);
+    const fallback = Number.isFinite(exported) && exported > 0 ? exported : 80;
+    const windowColumns = this.windowSize.cols;
+    return {
+      standardInput: standardInputIsTerminal ? this.ttyDevice : null,
+      columns: !outputPiped && windowColumns > 0 ? windowColumns : fallback,
+      openDevice: (path) => this.openTtyDevice(path),
+    };
+  }
+
+  private openTtyDevice(path: string): TtyDevice | { readonly errno: SttyErrno } {
+    const absolute = this.vfs.normalizePath(path, this.cwd);
+    if (absolute === '/dev/tty') return this.hasControllingTty() ? this.ttyDevice : { errno: 'ENXIO' };
+    const slave = /^\/dev\/(pts\/\d+)$/.exec(absolute);
+    const live = slave !== null ? this.ttyLookup(slave[1]) : undefined;
+    const inode = this.vfs.resolveInode(absolute);
+    if (inode === null && live === undefined) return { errno: 'ENOENT' };
+    if (inode !== null && !this.checkPermission(inode, 'r')) return { errno: 'EACCES' };
+    return live ?? { errno: 'ENOTTY' };
   }
 
   terminalColumns(): number {
@@ -3733,7 +3768,7 @@ export class LinuxCommandExecutor {
       shellPpid: this.shellPpid,
       jobTable: this.jobTable,
       lastExitCode: this.lastExitCode,
-      windowSize: this.windowSize,
+      ttyDevice: this.ttyDevice,
     };
   }
 
@@ -3751,7 +3786,7 @@ export class LinuxCommandExecutor {
     this.shellPpid = s.shellPpid;
     this.jobTable = s.jobTable;
     this.lastExitCode = s.lastExitCode;
-    this.windowSize = s.windowSize;
+    this.ttyDevice = s.ttyDevice;
   }
 
   /** @internal */
@@ -3764,7 +3799,6 @@ export class LinuxCommandExecutor {
     s.env = new Map(this.env);
     s.suStack = [...this.suStack];
     s.lastExitCode = this.lastExitCode;
-    s.windowSize = this.windowSize;
     // commandHistory + jobTable are passed by reference, so any in-place
     // mutations during execute() are already reflected on the session.
   }
@@ -3783,7 +3817,7 @@ export class LinuxCommandExecutor {
     this.shellPpid = b.shellPpid;
     this.jobTable = b.jobTable;
     this.lastExitCode = b.lastExitCode;
-    this.windowSize = b.windowSize;
+    this.ttyDevice = b.ttyDevice;
   }
 
   executeChild(input: string, stdin?: string): { output: string; status: number } {
@@ -6202,7 +6236,7 @@ export class LinuxCommandExecutor {
         if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
           return { output: 'not a tty', exitCode: 1 };
         }
-        return { output: cmdTty('pts/0'), exitCode: 0 };
+        return { output: cmdTty(this.ttyDevice.name), exitCode: 0 };
       }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
 
@@ -6385,7 +6419,7 @@ export class LinuxCommandExecutor {
       case 'complete':
         return { output: '', exitCode: 0 };
       case 'stty': {
-        const result = runStty(args, this.windowSize, (size) => this.setWindowSize(size));
+        const result = runStty(args, this.sttyHost(stdin === undefined && this.hasControllingTty(), outputPiped));
         return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'seq': {

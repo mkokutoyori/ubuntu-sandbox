@@ -2,13 +2,14 @@ import { installRealChildShell } from './nanoShellBridge';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
+import { plainRowText, type ScreenRow, type ScreenStyle } from '@/network/devices/linux/editors/screen/EditorScreen';
+import { codePointWidth } from '@/network/devices/linux/editors/vim/VimCells';
 import { parseNanoCommandLine, type NanoInvocation } from '@/network/devices/linux/editors/nano/NanoCommandLine';
 import { buildNanoLock, parseNanoLock, type NanoLockData } from '@/network/devices/linux/editors/nano/NanoLock';
 
 export type RecordedDisk = Record<string, string | { lock: NanoLockData }>;
 
-export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: RecordedDisk }
+export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: RecordedDisk; attrs?: string[] }
 
 export interface NanoScreenCase {
   id: string;
@@ -101,6 +102,28 @@ function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: bo
   return failures.length === 0 ? null : failures.join('');
 }
 
+const STYLE_LETTERS: Partial<Record<ScreenStyle, string>> = { reverse: 'r', bold: 'b', alert: 'a', search: 'y' };
+const BLANK_LETTERS: Readonly<Record<string, string>> = { b: '.', a: 'R' };
+
+export function attributeLetters(row: ScreenRow, width: number): string {
+  const letters = new Array<string>(width).fill('.');
+  for (const span of row.spans) {
+    for (let cell = Math.max(0, span.from); cell < Math.min(width, span.to); cell++) letters[cell] = STYLE_LETTERS[span.style] ?? '?';
+  }
+  return letters.join('');
+}
+
+function visibleLetters(letters: string, text: string): string {
+  const blank = new Set<number>();
+  let cell = 0;
+  for (const ch of text) {
+    const span = codePointWidth(ch.codePointAt(0)!);
+    if (ch === ' ') blank.add(cell);
+    cell += span;
+  }
+  return [...letters].map((letter, index) => (index >= cell || blank.has(index) ? BLANK_LETTERS[letter] ?? letter : letter)).join('');
+}
+
 export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false): string | null {
   const screen = engine.screen;
   const got = screen.rows.map((row) => plainRowText(row).replace(/\s+$/, ''));
@@ -108,8 +131,12 @@ export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContex
   const cursor = screen.cursor;
   const cursorOk = cursor !== null && cursor.row === want.y && cursor.col === want.x;
   const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk, hidden);
-  if (rowsOk && cursorOk) return diskFailure;
-  return `${diskFailure ?? ''}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}`;
+  const gotAttrs = screen.rows.map((row, index) => visibleLetters(attributeLetters(row, want.width), got[index]));
+  const wantAttrs = want.attrs?.map((letters, index) => visibleLetters(letters, want.rows[index] ?? ''));
+  const attrsOk = wantAttrs === undefined || JSON.stringify(gotAttrs) === JSON.stringify(wantAttrs);
+  if (rowsOk && cursorOk && attrsOk) return diskFailure;
+  const attrLines = attrsOk ? '' : wantAttrs!.map((expected, index) => (expected === gotAttrs[index] ? null : `\n  attrs row ${index} ${JSON.stringify(got[index] ?? '')}\n    want ${expected}\n    got  ${gotAttrs[index]}`)).filter((line) => line !== null).join('');
+  return `${diskFailure ?? ''}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}${attrLines}`;
 }
 
 export function replayNanoScreenCase(c: NanoScreenCase): string | null {

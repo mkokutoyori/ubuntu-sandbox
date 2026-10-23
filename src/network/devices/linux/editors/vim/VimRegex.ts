@@ -1,4 +1,5 @@
-import { byteOffset, charCells, cursorVcol, KEYWORD_CLASS, type Pos } from './VimCursor';
+import { byteOffset, charCells, cursorVcol, type Pos } from './VimCursor';
+import { DEFAULT_WORD_CLASSES, type WordClasses } from './VimCharClass';
 
 export class VimPatternError extends Error {}
 
@@ -15,6 +16,7 @@ export interface PatternContext {
   readonly mark: (name: string) => Pos | null;
   readonly visual: VisualArea | null;
   readonly lastSubstitute?: string | null;
+  readonly words?: WordClasses;
 }
 
 export interface PatternLayout {
@@ -67,8 +69,6 @@ const END_OF_LINE = '(?![^\\n])';
 const START_OF_TEXT = '(?<![^])';
 const END_OF_TEXT = '(?=\\n(?![^]))';
 
-const KEYWORD_BODY = KEYWORD_CLASS;
-
 const CLASS_BODIES: Readonly<Record<string, string>> = {
   s: ' \\t',
   d: '0-9',
@@ -81,13 +81,15 @@ const CLASS_BODIES: Readonly<Record<string, string>> = {
   h: 'A-Za-z_',
   i: 'A-Za-z0-9_\\u00C0-\\u00FF',
   I: 'A-Za-z_\\u00C0-\\u00FF',
-  k: KEYWORD_BODY,
-  K: 'A-Za-z_\\u00C0-\\u{10FFFF}',
   f: 'A-Za-z0-9/.\\-_+,#$%~=\\u00C0-\\u00FF\\u{100}-\\u{10FFFF}',
   F: 'A-Za-z/.\\-_+,#$%~=\\u00C0-\\u00FF\\u{100}-\\u{10FFFF}',
   p: '\\u0020-\\u007E\\u00A1-\\u00FF\\u{100}-\\u{10FFFF}',
   P: '\\u0020-\\u002F\\u003A-\\u007E\\u00A1-\\u00FF\\u{100}-\\u{10FFFF}',
 };
+
+function isClassLetter(character: string): boolean {
+  return character in CLASS_BODIES || character in NEGATED_CLASSES || character === 'k' || character === 'K';
+}
 
 const NEGATED_CLASSES: Readonly<Record<string, string>> = {
   S: 's', D: 'd', W: 'w', A: 'a', L: 'l', U: 'u', X: 'x', O: 'o', H: 'h',
@@ -111,7 +113,6 @@ const POSIX_CLASSES: Readonly<Record<string, string>> = {
   escape: '\\u001B',
   backspace: '\\b',
   ident: CLASS_BODIES.i,
-  keyword: KEYWORD_BODY,
   fname: CLASS_BODIES.f,
 };
 
@@ -206,7 +207,7 @@ function classAt(text: string, at: number): { name: string; next: number } | nul
   const end = text.indexOf(':]', at + 2);
   if (end < 0) return null;
   const name = text.slice(at + 2, end);
-  return name in POSIX_CLASSES ? { name, next: end + 2 } : null;
+  return name in POSIX_CLASSES || name === 'keyword' ? { name, next: end + 2 } : null;
 }
 
 function elementAt(text: string, at: number, marker: '=' | '.'): { code: number; next: number } | null {
@@ -255,6 +256,49 @@ export function skipRegexp(text: string, from: number, delimiter: string): numbe
     }
   }
   return at;
+}
+
+function patternMagicLevel(pattern: string): number {
+  let magic = 3;
+  for (let at = 0; at < pattern.length; at++) {
+    const character = pattern[at];
+    if ((character === '[' && magic >= 3) || (character === '\\' && pattern[at + 1] === '[' && magic <= 2)) {
+      at = skipAnyof(pattern, at + 1);
+      if (at >= pattern.length) break;
+    } else if (character === '\\' && at + 1 < pattern.length) {
+      at++;
+      if (pattern[at] === 'v') magic = 4;
+      else if (pattern[at] === 'V') magic = 1;
+    }
+  }
+  return magic;
+}
+
+export function patternHasUppercase(pattern: string): boolean {
+  const magic = patternMagicLevel(pattern);
+  let at = 0;
+  while (at < pattern.length) {
+    const code = pattern.codePointAt(at)!;
+    if (code >= 0x80) {
+      const character = String.fromCodePoint(code);
+      if (character.toLowerCase() !== character) return true;
+      at += character.length;
+      continue;
+    }
+    const character = pattern[at];
+    if (character === '\\' && magic <= 3) {
+      const next = pattern[at + 1];
+      if ((next === '_' || next === '%') && at + 2 < pattern.length) at += 3;
+      else at += next === undefined ? 1 : 2;
+    } else if ((character === '%' || character === '_') && magic === 4) {
+      at += pattern[at + 1] === undefined ? 1 : 2;
+    } else if (character >= 'A' && character <= 'Z') {
+      return true;
+    } else {
+      at++;
+    }
+  }
+  return false;
 }
 
 class Translator {
@@ -542,8 +586,8 @@ class Translator {
     switch (token.ch) {
       case '^': this.skip(); return { source: START_OF_LINE, unit: false };
       case '$': this.skip(); return { source: END_OF_LINE, unit: false };
-      case '<': this.skip(); return { source: `(?<![${KEYWORD_BODY}])(?=[${KEYWORD_BODY}])`, unit: false };
-      case '>': this.skip(); return { source: `(?<=[${KEYWORD_BODY}])(?![${KEYWORD_BODY}])`, unit: false };
+      case '<': this.skip(); return { source: `(?:${this.wordClassBodies().map((body) => `(?<![${body}])(?=[${body}])`).join('|')})`, unit: false };
+      case '>': this.skip(); return { source: `(?:${this.wordClassBodies().map((body) => `(?<=[${body}])(?![${body}])`).join('|')})`, unit: false };
       case '.': this.skip(); return { source: '[^\\n]', unit: true };
       case 'n': this.skip(); this.matchesNewline = true; return { source: '\\n', unit: true };
       case '(': this.skip(); return this.group(true);
@@ -573,7 +617,7 @@ class Translator {
       this.skip();
       return this.backReference(Number(token.ch));
     }
-    if (token.ch in CLASS_BODIES || token.ch in NEGATED_CLASSES) {
+    if (isClassLetter(token.ch)) {
       this.skip();
       return { source: this.classSource(token.ch, false), unit: true };
     }
@@ -589,9 +633,23 @@ class Translator {
     return { source: escapeLiteral(character), unit: true };
   }
 
+  private wordClassBodies(): readonly string[] {
+    return (this.context?.words ?? DEFAULT_WORD_CLASSES).wordClassBodies();
+  }
+
+  private keywordBody(excludeDigits: boolean): string {
+    return (this.context?.words ?? DEFAULT_WORD_CLASSES).keywordBody(excludeDigits);
+  }
+
+  private classBody(name: string): string {
+    if (name === 'k') return this.keywordBody(false);
+    if (name === 'K') return this.keywordBody(true);
+    return CLASS_BODIES[name];
+  }
+
   private classSource(name: string, withNewline: boolean): string {
     const negated = name in NEGATED_CLASSES;
-    const body = CLASS_BODIES[negated ? NEGATED_CLASSES[name] : name];
+    const body = this.classBody(negated ? NEGATED_CLASSES[name] : name);
     if (negated) return withNewline ? `[^${body}]` : `[^${body}\\n]`;
     return withNewline ? `[${body}\\n]` : `[${body}]`;
   }
@@ -607,7 +665,7 @@ class Translator {
     this.matchesNewline = true;
     if (next === '.') return { source: ANYTHING, unit: true };
     if (next === '[') return this.collection(true);
-    if (next in CLASS_BODIES || next in NEGATED_CLASSES) return { source: this.classSource(next, true), unit: true };
+    if (isClassLetter(next)) return { source: this.classSource(next, true), unit: true };
     return this.fail(`E877: ${NFA} Invalid character class: ${next.codePointAt(0)}`);
   }
 
@@ -881,7 +939,7 @@ class Translator {
       const equivalence = posixClass === null ? elementAt(this.pattern, at, '=') : null;
       if (posixClass !== null || equivalence !== null) {
         if (posixClass !== null) {
-          classes.push(POSIX_CLASSES[posixClass.name]);
+          classes.push(posixClass.name === 'keyword' ? this.keywordBody(false) : POSIX_CLASSES[posixClass.name]);
           at = posixClass.next;
         } else {
           ranges.push(...equivalentRanges(equivalence!.code));

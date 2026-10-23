@@ -17,6 +17,7 @@ export interface NanoWindowSettings {
   readonly nohelp: boolean;
   readonly jumpyscrolling: boolean;
   readonly atblanks: boolean;
+  readonly indicator: boolean;
 }
 
 export interface NanoLayoutFlags {
@@ -81,7 +82,9 @@ export class NanoWindow {
     return needed > this.cols - 4 ? 0 : needed;
   }
 
-  get editCols(): number { return this.cols - this.margin; }
+  get sidebar(): number { return this.settings().indicator && this.rows > 5 && this.cols > 9 ? 1 : 0; }
+
+  get editCols(): number { return this.cols - this.margin - this.sidebar; }
 
   get hasTitleBar(): boolean { return this.layout.titleRows > 0; }
 

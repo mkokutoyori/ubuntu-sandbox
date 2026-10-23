@@ -784,15 +784,19 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   que `:d` et `:s` inserent ou retirent, il faudrait que chaque commande ex qui
   deplace des lignes (`:m`, `:t`, `:j`, `:normal`, `:>`...) previenne le meme
   suiveur. 'report' est desormais respecte par `:g` et `:s`.
-- **Classe de mot ecrite quatre fois** : `isKeywordChar` (`VimCursor`, a present
-  aussi pour la recherche et `\k \<`), `VimEngine.charClass` (`cw dw ce`, ASCII seul :
-  `cw` sur `é` traite la lettre comme une ponctuation alors que `w` la saute
-  comme un mot), `VimEditing.backspaceClass` et le motif de `VimRegex`.
-  'iskeyword' n'existe pas ; remplacer les quatre par une seule table lue sur
-  l'option.
-- **'smartcase'** est absent de la table des options ; `\%V` en bloc compte des
-  colonnes de caracteres ; `\@123<=` borne la remontee en caracteres ; `[[=e=]]`
-  utilise la decomposition Unicode.
+- **Caracteres hors du plan de base** : `Cursor.inc` / `dec` et les motions avancent
+  d'une unite UTF-16 ; un emoji (U+1F600) est donc deux colonnes pour `l`, `x`,
+  `w`, `~`. Sa classe de mot est juste (`VimCharClass`), c'est le curseur qui
+  coupe la paire de substitution. Les caracteres combinants (`e` + U+0301) ne
+  sont pas accroches au caractere precedent non plus.
+- **`gn` / `dgn` / `cgn` sur un motif de largeur nulle** (`^`, `$`, `x*`, ce
+  que laisse `:s/^/>/`) : le moteur confond un appariement vide en colonne 0 avec
+  la fin de la ligne precedente et selectionne le saut de ligne ; vim passe par
+  `current_search` (aller-retour avec `p_ws` coupe, `zero_width`, curseur remis
+  sur `pos`). Mesure par trois transcripts du corpus `words`, retires du
+  vocabulaire plutot qu'epingles.
+- `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
+  en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
@@ -812,6 +816,24 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   `scripts/oracle/record_vim_option_defaults.py` sous `vim -u NONE -N` ; les
   options qui dependent de la machine (`columns`, `shell`, `runtimepath`,
   `viminfo`...) en sont exclues et repondent E113.
+
+### [nano] le repeint incremental de nano 7.2 : des rangees que le tampon ne justifie pas
+Mesure avec `nano-attributes-oracle.test.ts` (UNPORTED_CASES : atr3-21,
+atr3-47, atr3-101, bar2-2, bar2-41), 5 cas sur 690 enregistres sur nano 7.2
+dans tmux :
+- **Ligne magique** : un caractere tape sur la derniere ligne (que `PageDown`
+  atteint) cree une nouvelle ligne magique en dessous ; nano ne repeint que la
+  rangee courante, la rangee de la nouvelle ligne magique reste vide, SANS le
+  guide `-J` ni la barre `-q` que la machine y dessine. La machine repeint
+  tout l'ecran a chaque touche (`NanoScreen` est sans etat) et ne peut donc pas
+  dire quelle rangee nano a oublie de rafraichir.
+- **`-S -l` sur une ligne de cinq tranches** : apres `M-\ PageDown C-d BSpace`
+  le binaire laisse la rangee de la derniere tranche vide et le curseur colonne 0
+  de la rangee suivante.
+**Report** : reproduire ces cas demande de porter le suivi des rangees
+sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
+l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
+nano ferait apres un `^L`.
 
 ---
 
@@ -3686,3 +3708,29 @@ inferee (§4.2.9) et les messages combines (types 0x000B, 0x000D, 0x000E), les T
 adressage, boucle, intervalle de session §3.5), la reponse hors bande (refusee par le code 0x12), les
 compteurs par classe de trafic (refuses par 0x13), le delai unidirectionnel (suppose des horloges
 synchronisees) et le calcul sur 32 bits ; les voies PW et section ne sont pas servies non plus.
+
+### [stty] reglages termios stockes que rien ne lit
+`stty` tient l'etat termios complet d'un tty (iflag, oflag, cflag, lflag, c_cc, ligne, vitesses), le refuse et le
+normalise comme un pty (CS8 et CREAD forces, PARENB et ADDRB refuses) et le montre par `stty`, `stty -a`, `stty -g`
+a l'identique de coreutils 9.4 (890 scenarios rejoues contre un vrai pty). Deux reglages ont un lecteur : `intr` avec
+`isig` (la touche d'interruption du terminal local et du `read`) et `echo` (`read` demande un mot de passe quand
+l'echo est coupe). Les autres sont ACCEPTES par la vraie machine et stockes ici sans lecteur, faute du mecanisme :
+- `icanon`, `min`, `time`, `eof`, `eol`, `eol2` : aucun programme du simulateur ne lit le tty en mode non canonique,
+  et la fin de fichier du tty n'arrive a personne ;
+- `opost`, `onlcr`, `ocrnl`, `onlret`, `olcuc`, `ofill`, `ofdel`, `nl1`..`ff1` : le terminal rend des lignes, pas un
+  flux d'octets, donc `stty -onlcr` ne fait pas d'escalier ;
+- `icrnl`, `inlcr`, `igncr`, `iuclc`, `istrip`, `ignpar`, `parmrk`, `inpck`, `ignbrk`, `brkint`, `iutf8`, `imaxbel` ;
+- `ixon`, `ixoff`, `ixany`, `start`, `stop` : pas de controle de flux de la sortie ;
+- `susp`, `quit`, `lnext`, `werase`, `rprnt`, `kill`, `erase`, `discard`, `iexten` : le terminal Linux n'a ni Ctrl+Z ni
+  Ctrl+\, et ses touches d'edition de ligne ne suivent pas les caracteres du tty que readline lie (`stty erase ^H` ne
+  change pas la touche) ;
+- `echoe`, `echok`, `echonl`, `echoctl`, `echoke`, `echoprt`, `xcase`, `tostop`, `noflsh`, `flusho`, `extproc` ;
+- la liaison serie (`cs5`..`cs8`, `parenb`, `parodd`, `cstopb`, `cmspar`, `crtscts`, `clocal`, `hupcl`, les vitesses,
+  `line N`) : un pty n'a pas de ligne, le noyau garde les valeurs telles quelles.
+Mesure par tmux, non reproduite : apres `stty -echo` a l'invite, readline n'ecrit plus ce qu'on tape (il lit ECHO au
+demarrage) ; la transcription est `$ stty -echo`, `$`, `$`, `got=secret` pour `read x` + `secret` + `echo got=$x`.
+Le terminal local continue d'afficher la ligne de commande, et pendant une commande longue il n'echoe pas les touches
+tapees (`^X^C` sous `stty -isig`). Dans un terminal ouvert sur un hote distant (`ssh`), Ctrl+C part en requete `signal` SIGINT
+sur le canal sans consulter le tty distant. `stty -F /dev/ptmx` n'ouvre pas de nouveau pty ; le noeud `/dev/pts/N` d'un terminal
+local n'est pas materialise dans le VFS (seules les sessions SSH le sont), `stty -F` et `tty` le resolvent par le
+tty vivant.

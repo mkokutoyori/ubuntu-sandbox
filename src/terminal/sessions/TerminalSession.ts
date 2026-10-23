@@ -1245,8 +1245,8 @@ export abstract class TerminalSession {
       this.inputHostImpl.submitPending(value);
       return true;
     }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.addLine('^C');
+    if (this.isInterruptKey(e)) {
+      this.addLine(this.interruptEcho());
       this._passwordBuf = '';
       this._inputBuf = '';
       this.inputHostImpl.cancelPending();
@@ -1259,6 +1259,14 @@ export abstract class TerminalSession {
       return true;
     }
     return false;
+  }
+
+  protected isInterruptKey(e: KeyEvent): boolean {
+    return e.key === 'c' && e.ctrlKey;
+  }
+
+  protected interruptEcho(): string {
+    return '^C';
   }
 
   /**
@@ -1279,7 +1287,7 @@ export abstract class TerminalSession {
     }
 
     // Ctrl+C → abort current input
-    if (e.key === 'c' && e.ctrlKey) {
+    if (this.isInterruptKey(e)) {
       this.onCtrlC();
       return true;
     }
@@ -1661,11 +1669,11 @@ export abstract class TerminalSession {
     if (this.commandInFlight && this.interruptForegroundCommand()) {
       this.typedAhead = [];
       this.input = '';
-      this.addLine('^C');
+      this.addLine(this.interruptEcho());
       this.notify();
       return;
     }
-    this.addLine(`${this.getPrompt()}${this.input}^C`, this.interruptLineType);
+    this.addLine(`${this.getPrompt()}${this.input}${this.interruptEcho()}`, this.interruptLineType);
     this.input = '';
     this.notify();
   }

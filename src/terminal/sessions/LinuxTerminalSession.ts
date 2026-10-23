@@ -133,6 +133,8 @@ import {
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector, TcpDialFailure } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
+import { CC } from '@/network/devices/linux/tty/Termios';
+import { echoedControl, echoesInput, interruptsOn } from '@/network/devices/linux/tty/TtyLineDiscipline';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 
@@ -669,6 +671,16 @@ export class LinuxTerminalSession extends TerminalSession {
    * this the buffer survived the interrupt and the next line typed was
    * silently appended to a command the user believed cancelled.
    */
+  protected override isInterruptKey(e: KeyEvent): boolean {
+    const termios = this.shell?.ttyDevice.tcgetattr();
+    return termios === undefined ? super.isInterruptKey(e) : interruptsOn(termios, e);
+  }
+
+  protected override interruptEcho(): string {
+    const termios = this.shell?.ttyDevice.tcgetattr();
+    return termios === undefined ? super.interruptEcho() : echoedControl(termios.cc[CC.VINTR]);
+  }
+
   protected override onCtrlC(): void {
     // Cleared before the base class echoes `^C`, so the line it prints
     // carries PS1 rather than the PS2 being abandoned.
@@ -834,9 +846,10 @@ export class LinuxTerminalSession extends TerminalSession {
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
-    const parsed = parseReadInvocationLib(line.trim());
-    if (!parsed) return false;
+    const typed = parseReadInvocationLib(line.trim());
+    if (!typed) return false;
     if (!this.shell) return false;
+    const parsed = { ...typed, silent: typed.silent || !echoesInput(this.shell.ttyDevice.tcgetattr()) };
     const broker = new PromiseInputBrokerLib(this.getInputHost());
     if (!broker.capabilities().interactive) return false;
     const ifs = this.shell.env.get('IFS') ?? ' \t\n';

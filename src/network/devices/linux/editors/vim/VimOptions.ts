@@ -1,3 +1,4 @@
+import { wordClasses } from './VimCharClass';
 import { OPTION_DEFAULTS } from './VimOptionDefaults';
 
 export type VimOptionProfile = 'vim' | 'vi';
@@ -85,6 +86,8 @@ const DEFS: readonly OptionDef[] = [
   { name: 'hlsearch', short: 'hls', kind: 'bool', scope: 'global', reset: same(false) },
   { name: 'ignorecase', short: 'ic', kind: 'bool', scope: 'global', reset: same(false) },
   { name: 'gdefault', short: 'gd', kind: 'bool', scope: 'global', reset: same(false) },
+  { name: 'smartcase', short: 'scs', kind: 'bool', scope: 'global', reset: same(false) },
+  { name: 'iskeyword', short: 'isk', kind: 'string', scope: 'local', reset: { vim: '@,48-57,_,192-255', vi: '@,48-57,_' }, commaList: true, normalize: (v) => (wordClasses(v) === null ? null : v) },
   { name: 'report', short: 'report', kind: 'number', scope: 'global', reset: same(2), number: { min: 0, max: Number.MAX_SAFE_INTEGER, belowMin: 'E487', clamp: false } },
   { name: 'autoindent', short: 'ai', kind: 'bool', scope: 'local', reset: same(false) },
   { name: 'colorcolumn', short: 'cc', kind: 'string', scope: 'local', reset: same(''), commaList: true, normalize: (v) => (colorcolumnValid(v) ? v : null) },
@@ -118,7 +121,7 @@ const UNMODELLED_DEFAULTS: ReadonlyMap<string, OptionValue> = new Map(
 
 export type OptionName =
   | 'number' | 'relativenumber' | 'numberwidth' | 'list' | 'listchars' | 'showmatch' | 'matchtime' | 'matchpairs' | 'incsearch'
-  | 'hlsearch' | 'ignorecase' | 'gdefault' | 'report' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
+  | 'hlsearch' | 'ignorecase' | 'smartcase' | 'iskeyword' | 'gdefault' | 'report' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
   | 'expandtab' | 'wrap' | 'scrolloff' | 'sidescroll' | 'sidescrolloff' | 'wrapscan' | 'display'
   | 'ruler' | 'showcmd' | 'showmode' | 'scroll' | 'filetype' | 'fileformat' | 'fileencoding' | 'mouse';
 
@@ -369,7 +372,9 @@ export class VimOptions {
     let next = valueText;
     if (operation !== '=') {
       const separator = def.commaList ? ',' : '';
-      if (operation === '+=') next = current === '' || valueText === '' ? current + valueText : current + separator + valueText;
+      const present = def.commaList === true && operation !== '-=' && current.split(',').includes(valueText);
+      if (present) next = current;
+      else if (operation === '+=') next = current === '' || valueText === '' ? current + valueText : current + separator + valueText;
       else if (operation === '^=') next = current === '' || valueText === '' ? valueText + current : valueText + separator + current;
       else if (def.commaList) next = current.split(',').filter((item, index, all) => !(item === valueText && all.indexOf(item) === index)).join(',');
       else next = current.includes(valueText) ? current.replace(valueText, '') : current;
