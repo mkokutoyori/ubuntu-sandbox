@@ -6,6 +6,7 @@ export interface CaptureNames {
   servicePort(name: string, protocol?: 'tcp' | 'udp'): number | null;
   serviceName(port: number, protocol: 'tcp' | 'udp'): string | null;
   protocolNumber(name: string): number | null;
+  protocolName(number: number): string | null;
   networkNumber(name: string): string | null;
   etherName(mac: string): string | null;
   hostAddress(name: string): Promise<string | null>;
@@ -81,6 +82,10 @@ export class CaptureNamer implements AddressNames {
 
   service(port: number, protocol: 'tcp' | 'udp'): string {
     return this.names.serviceName(port, protocol) ?? String(port);
+  }
+
+  protocol(number: number): string | null {
+    return this.names.protocolName(number);
   }
 
   ether(mac: string): string {

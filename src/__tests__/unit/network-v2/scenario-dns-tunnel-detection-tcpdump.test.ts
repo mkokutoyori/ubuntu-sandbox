@@ -149,7 +149,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       const report = await pc.executeCommand(
         `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
         `grep -oP '${QUERY_LINE}' | ` +
-        `awk '{n=split($2, p, "."); print p[n-2]"."p[n-1]"."p[n]}' | sort | uniq -c | sort -rn | head -1`,
+        `awk '{sub(/\\.$/, "", $2); n=split($2, p, "."); print p[n-2]"."p[n-1]"."p[n]}' | sort | uniq -c | sort -rn | head -1`,
       );
 
       expect(report).toContain(TUNNEL_DOMAIN);
@@ -209,7 +209,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
 
       const typeReport = await pc.executeCommand(
         `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
-        `grep -oP 'A\\?|AAAA\\?|TXT\\?|MX\\?|CNAME\\?' | sort | uniq -c | sort -rn`,
+        `grep -oP '${QUERY_LINE}' | grep -oP '^[A-Z]+\\?' | sort | uniq -c | sort -rn`,
       );
       expect(typeReport).toMatch(new RegExp(`${tunnelLabels.length}\\s+TXT\\?`));
     });

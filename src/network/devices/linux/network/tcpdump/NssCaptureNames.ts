@@ -17,6 +17,10 @@ export function nssCaptureNames(nss: NameServiceSwitch): CaptureNames {
       const found = nss.lookup<NssProtocolEntry>('protocols', (s) => s.getprotobyname?.(name));
       return found.status === 'SUCCESS' && found.entry ? found.entry.number : null;
     },
+    protocolName: (number) => {
+      const found = nss.lookup<NssProtocolEntry>('protocols', (s) => s.getprotobynumber?.(number));
+      return found.status === 'SUCCESS' && found.entry ? found.entry.name : null;
+    },
     networkNumber: (name) => {
       const found = nss.lookup<NssNetworkEntry>('networks', (s) => s.getnetbyname?.(name));
       return found.status === 'SUCCESS' && found.entry ? found.entry.network : null;

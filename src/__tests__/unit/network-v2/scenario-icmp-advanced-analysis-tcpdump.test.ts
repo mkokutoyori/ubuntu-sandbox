@@ -96,7 +96,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       // "icmp type-11 code-0 (time exceeded in-transit)".
       expect(analysis).toMatch(new RegExp(`${R1_NEAR_IP} > ${ATTACKER_IP}: ICMP time exceeded in-transit`));
       expect(analysis).toMatch(/\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[[^\]]+\], proto UDP \(17\), length 60\)/);
-      expect(analysis).toMatch(new RegExp(`${ATTACKER_IP}\\.\\d+ > ${TARGET_IP}\\.334\\d\\d: UDP, length 32`));
+      expect(analysis).toMatch(new RegExp(`${ATTACKER_IP}\\.\\d+ > ${TARGET_IP}\\.334\\d\\d: \\[udp sum ok\\] UDP, length 32`));
     });
 
     it('reconstitue la séquence traceroute depuis la capture : TTL croissant → Time Exceeded par saut → réponse finale', async () => {
@@ -219,7 +219,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       // Le paquet déclencheur encapsulé : IP source (attaquant) / IP
       // destination (cible) et port UDP 19999.
       expect(analysis).toMatch(/\tIP \(tos 0x0, ttl \d+, id \d+, offset 0, flags \[[^\]]+\], proto UDP \(17\), length \d+\)/);
-      expect(analysis).toMatch(new RegExp(`${ATTACKER_IP}\\.\\d+ > ${TARGET_IP}\\.19999: UDP`));
+      expect(analysis).toMatch(new RegExp(`${ATTACKER_IP}\\.\\d+ > ${TARGET_IP}\\.19999: \\[udp sum ok\\] UDP`));
     });
   });
 

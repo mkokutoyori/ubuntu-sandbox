@@ -58,7 +58,7 @@ describe('user lab — tcpdump on the HQ side', () => {
     const out = await captureWhile(lab.Server1, 'sudo tcpdump -c 3 -nn -S -i eth0 tcp port 80',
       () => lab.PC1.executeCommand(`curl -s -o /dev/null http://${SERVER1}/`));
     const [syn, synAck, ack] = packets(out);
-    expect(syn).toMatch(/IP 192\.168\.20\.2\.(\d+) > 192\.168\.30\.4\.80: Flags \[S\], seq (\d+), win \d+, options \[mss 1460,sackOK,TS val \d+ ecr 0,wscale 7\], length 0$/);
+    expect(syn).toMatch(/IP 192\.168\.20\.2\.(\d+) > 192\.168\.30\.4\.80: Flags \[S\], seq (\d+), win \d+, options \[mss 1460,sackOK,TS val \d+ ecr 0,nop,wscale 7\], length 0$/);
     const isn = Number(/seq (\d+)/.exec(syn)![1]);
     expect(synAck).toContain(`ack ${isn + 1}, win`);
     expect(ack).toMatch(/Flags \[\.\], ack \d+, win \d+/);
@@ -97,8 +97,8 @@ describe('user lab — tcpdump on the HQ side', () => {
     const out = await captureWhile(lab.PC3, 'sudo tcpdump -e -c 2 arp',
       () => lab.PC3.executeCommand(`ping -c 1 ${WINSERVER1}`));
     const [request, reply] = packets(out);
-    expect(request).toMatch(/ ([0-9a-f:]{17}) \(oui Unknown\) > Broadcast, ethertype ARP \(0x0806\), length 42: ARP, Request who-has 192\.168\.30\.2 tell 192\.168\.30\.6, length 28$/);
-    expect(reply).toMatch(/ \(oui Unknown\) > [0-9a-f:]{17} \(oui Unknown\), ethertype ARP \(0x0806\), length 60: ARP, Reply 192\.168\.30\.2 is-at [0-9a-f:]{17} \(oui Unknown\), length 46$/);
+    expect(request).toMatch(/ ([0-9a-f:]{17}) \(oui Unknown\) > Broadcast, ethertype ARP \(0x0806\), length 42: Request who-has 192\.168\.30\.2 tell 192\.168\.30\.6, length 28$/);
+    expect(reply).toMatch(/ \(oui Unknown\) > [0-9a-f:]{17} \(oui Unknown\), ethertype ARP \(0x0806\), length 60: Reply 192\.168\.30\.2 is-at [0-9a-f:]{17} \(oui Unknown\), length 46$/);
   });
 
   it('-w -C -W writes a numbered ring file that -r --count reads back', async () => {

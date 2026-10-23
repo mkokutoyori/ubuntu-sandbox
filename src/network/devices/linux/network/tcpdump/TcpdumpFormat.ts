@@ -6,7 +6,11 @@ import {
 } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
-import { decodeOptions } from '@/network/tcp/TcpOptionsCodec';
+import { hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
+import { icmp6Text } from './TcpdumpIcmp6';
+import { domainText } from './TcpdumpDomain';
+import { resetDataText, tcpApplicationText } from './TcpdumpTextProtocols';
+import { tcpOptionsText, type RelativeSequenceBase, type TcpOptionsText } from './TcpdumpTcpOptions';
 import { EcnCodepoint } from '@/network/core/IpHeaderFields';
 import {
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, IP_PROTO_TCP, IP_PROTO_UDP,
@@ -17,6 +21,7 @@ export interface AddressNames {
   host(ip: string): string;
   service(port: number, protocol: 'tcp' | 'udp'): string;
   ether(mac: string): string;
+  protocol?(number: number): string | null;
 }
 
 export interface CookedInterfaces {
@@ -62,12 +67,17 @@ function expandedAddress(address: string): string {
   return groups.map((g) => g.padStart(4, '0')).join('');
 }
 
+interface RelativeSeqAck extends RelativeSequenceBase {
+  seq: number;
+  ack: number;
+}
+
 function relativeSeqAck(
   frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState,
-): { seq: number; ack: number } {
+): RelativeSeqAck {
   const seq = frame.tcpSeq ?? 0;
   const ack = frame.tcpAck ?? 0;
-  if (opt.absoluteSeq || !frame.tcpFlags?.ack) return { seq, ack };
+  if (opt.absoluteSeq || !frame.tcpFlags?.ack) return { seq, ack, reverse: false, sequence: 0, acknowledgement: 0 };
   const sport = frame.srcPort ?? 0;
   const dport = frame.dstPort ?? 0;
   const src = frame.srcIp ?? '';
@@ -77,14 +87,13 @@ function relativeSeqAck(
   const key = rev ? `${dst}|${src}|${dport}|${sport}` : `${src}|${dst}|${sport}|${dport}`;
   const entry = state.conversations.get(key);
   if (entry === undefined || frame.tcpFlags.syn) {
-    state.conversations.set(key, rev
-      ? { ack: seq, seq: (ack - 1) >>> 0 }
-      : { seq, ack: (ack - 1) >>> 0 });
-    return { seq, ack };
+    const created = rev ? { ack: seq, seq: (ack - 1) >>> 0 } : { seq, ack: (ack - 1) >>> 0 };
+    state.conversations.set(key, created);
+    return { seq, ack, reverse: rev, sequence: created.seq, acknowledgement: created.ack };
   }
   return rev
-    ? { seq: (seq - entry.ack) >>> 0, ack: (ack - entry.seq) >>> 0 }
-    : { seq: (seq - entry.seq) >>> 0, ack: (ack - entry.ack) >>> 0 };
+    ? { seq: (seq - entry.ack) >>> 0, ack: (ack - entry.seq) >>> 0, reverse: rev, sequence: entry.seq, acknowledgement: entry.ack }
+    : { seq: (seq - entry.seq) >>> 0, ack: (ack - entry.ack) >>> 0, reverse: rev, sequence: entry.seq, acknowledgement: entry.ack };
 }
 
 const LINK_TYPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
@@ -131,12 +140,13 @@ function clockOf(frame: CaptureFrame, nano: boolean): string {
   return frame.at.toTimeString().slice(0, 8) + '.' + fraction(microsOf(frame), nano);
 }
 
-function elapsed(deltaMicros: number, nano: boolean): string {
+function elapsed(signedMicros: number, nano: boolean): string {
+  const deltaMicros = Math.abs(signedMicros);
   const whole = Math.floor(deltaMicros / 1_000_000);
   const hh = String(Math.floor(whole / 3600) % 24).padStart(2, '0');
   const mm = String(Math.floor((whole % 3600) / 60)).padStart(2, '0');
   const ss = String(whole % 60).padStart(2, '0');
-  return ` ${hh}:${mm}:${ss}.${fraction(deltaMicros, nano)} `;
+  return `${signedMicros < 0 ? '-' : ' '}${hh}:${mm}:${ss}.${fraction(deltaMicros, nano)} `;
 }
 
 function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
@@ -148,11 +158,11 @@ function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRende
       return `${Math.floor(microsOf(frame) / 1_000_000)}.${fraction(microsOf(frame), nano)} `;
     case 'delta': {
       const reference = state.prev ?? frame;
-      return elapsed(Math.max(0, microsOf(frame) - microsOf(reference)), nano);
+      return elapsed(microsOf(frame) - microsOf(reference), nano);
     }
     case 'since-first': {
       const reference = state.first ?? frame;
-      return elapsed(Math.max(0, microsOf(frame) - microsOf(reference)), nano);
+      return elapsed(microsOf(frame) - microsOf(reference), nano);
     }
     case 'datetime': {
       const d = frame.at;
@@ -202,23 +212,12 @@ function icmpTimeExceededText(frame: CaptureFrame): string {
   return icmpTimeExceededPhrase(frame.icmpCode ?? 0);
 }
 
-/** Nested "IP (...)\n    src > dst: detail" block for the packet an ICMP error encapsulates (RFC 792), as real `tcpdump -v` renders it. */
+const QUOTING_ICMP_TYPES = new Set(['destination-unreachable', 'source-quench', 'redirect', 'time-exceeded', 'parameter-problem']);
+
 function encapsulatedLines(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
-  if (opt.verbose <= 0 || frame.l4 !== 'icmp' || !frame.icmpOrig) return '';
-  if (frame.icmpType !== 'time-exceeded' && frame.icmpType !== 'destination-unreachable') return '';
-  const orig = frame.icmpOrig;
-  const protoName = orig.l4 === 'tcp' ? 'TCP' : orig.l4 === 'udp' ? 'UDP' : orig.l4 === 'icmp' ? 'ICMP' : 'unknown';
-  const df = (orig.ipFlags & 0x2) !== 0;
-  const mf = (orig.ipFlags & 0x1) !== 0;
-  const flagsToken = mf ? '+' : df ? 'DF' : 'none';
-  const header = `\tIP (tos 0x${(orig.ipTos ?? 0).toString(16)}, ttl ${orig.ttl}, id ${orig.ipId}, offset 0, flags [${flagsToken}], `
-    + `proto ${protoName} (${orig.protocol}), length ${orig.ipTotalLength})`;
-  const transport = transportOf(orig.l4);
-  const withPort = transport !== 'other';
-  const src = endpoint(state, orig.srcIp, withPort ? orig.srcPort : undefined, transport);
-  const dst = endpoint(state, orig.dstIp, withPort ? orig.dstPort : undefined, transport);
-  const detail = orig.l4 === 'other' ? `ip-proto-${orig.protocol}` : `${protoName}, length ${orig.payloadLength ?? 0}`;
-  return `\n${header}\n    ${src} > ${dst}: ${detail}`;
+  if (opt.verbose <= 0 || frame.l4 !== 'icmp' || frame.icmpOrig?.quoted === undefined) return '';
+  if (!QUOTING_ICMP_TYPES.has(frame.icmpType ?? '')) return '';
+  return `\n\t${ipLine(frame.icmpOrig.quoted, opt, state)}`;
 }
 
 /**
@@ -264,57 +263,18 @@ function tcpChecksumToken(frame: CaptureFrame): string {
 
 function udpSumToken(frame: CaptureFrame, verbose: number): string {
   if (verbose === 0 || frame.udpChecksum === undefined) return '';
-  if (frame.udpChecksum === 0) return '[no cksum] ';
-  if (frame.udpChecksumOk) return verbose >= 2 ? '[udp sum ok] ' : '';
   const hex = (n: number): string => `0x${n.toString(16).padStart(4, '0')}`;
+  if (frame.l3 === 'ipv4') {
+    if (verbose < 2) return '';
+    if (frame.udpChecksum === 0) return '[no cksum] ';
+  }
+  if (frame.udpChecksumOk) return '[udp sum ok] ';
   return `[bad udp cksum ${hex(frame.udpChecksum)} -> ${hex(frame.udpChecksumComputed ?? 0)}!] `;
 }
 
-const DNS_RCODE_TEXT: Record<number, string> = {
-  1: 'FormErr',
-  2: 'ServFail',
-  3: 'NXDomain',
-  4: 'NotImp',
-  5: 'Refused',
-};
-
-function dnsLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
-  const length = frame.payloadLength ?? 0;
-  if (!frame.dnsQr) {
-    const rd = frame.dnsRd ? '+' : '';
-    return `${frame.dnsId}${rd} ${frame.dnsQtype}? ${frame.dnsQname} (${length})`;
-  }
-  const counts = frame.dnsCounts
-    ? `${frame.dnsCounts.an}/${frame.dnsCounts.ns}/${frame.dnsCounts.ar}` : '0/0/0';
-  const rcodeText = frame.dnsRcode ? DNS_RCODE_TEXT[frame.dnsRcode] : undefined;
-  const rcodePart = rcodeText ? ` ${rcodeText}` : '';
-  const showTtl = opt.verbose > 0;
-  const answerList = (frame.dnsAnswers ?? []).map((a) => {
-    const base = `${a.type}${a.data ? ` ${a.data}` : ''}`;
-    return showTtl ? `${base} ttl ${a.ttl}` : base;
-  }).join(', ');
-  const tcPart = showTtl && frame.dnsTc ? ' (truncated, TC)' : '';
-  const authorityList = showTtl ? (frame.dnsAuthority ?? []).map((a) => {
-    const base = `${a.type}${a.data ? ` ${a.data}` : ''}`;
-    return `${base} ttl ${a.ttl}`;
-  }).join(', ') : '';
-  const authorityPart = authorityList ? `; authority: ${authorityList}` : '';
-  return `${frame.dnsId}${rcodePart} ${counts}${answerList ? ` ${answerList}` : ''}${tcPart}${authorityPart} (${length})`;
-}
-
-function tcpOptionsToken(frame: CaptureFrame): string {
-  if (!frame.tcpOptions || frame.tcpOptions.length === 0) return '';
-  const decoded = decodeOptions(frame.tcpOptions);
-  const parts: string[] = [];
-  if (decoded.mss !== undefined) parts.push(`mss ${decoded.mss}`);
-  if (decoded.sackPermitted) parts.push('sackOK');
-  if (decoded.timestamp) parts.push(`TS val ${decoded.timestamp.tsVal} ecr ${decoded.timestamp.tsEcr}`);
-  if (decoded.windowScale !== undefined) parts.push(`wscale ${decoded.windowScale}`);
-  if (decoded.sackBlocks && decoded.sackBlocks.length > 0) {
-    const blocks = decoded.sackBlocks.map((b) => `${b.start}:${b.end}`).join(' ');
-    parts.push(`sack ${decoded.sackBlocks.length} {${blocks}}`);
-  }
-  return parts.length > 0 ? `, options [${parts.join(',')}]` : '';
+function tcpOptionsToken(frame: CaptureFrame, relative: RelativeSequenceBase): TcpOptionsText {
+  const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+  return tcpOptionsText(frame.raw.slice(start), relative);
 }
 
 function clockOfDay(milliseconds: number): string {
@@ -324,7 +284,12 @@ function clockOfDay(milliseconds: number): string {
   return `${pad(Math.floor(minutes / 60), 2)}:${pad(minutes % 60, 2)}:${pad(seconds % 60, 2)}.${pad(milliseconds % 1000, 3)}`;
 }
 
-function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+const IPV6_FRAGMENT_HEADER_BYTES = 8;
+const DNS_PORT = 53;
+const MDNS_PORT = 5353;
+const UDP_HEADER_BYTES = 8;
+
+function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState, fragmentedV6 = false): string {
   if (frame.l4 === 'icmp') {
     let phrase: string;
     if (frame.icmpType === 'destination-unreachable') {
@@ -341,7 +306,6 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
       const t = frame.icmpTimestamps ?? { originate: 0, receive: 0, transmit: 0 };
       return `ICMP time stamp reply id ${frame.icmpId ?? 0} seq ${frame.icmpSeq ?? 0}: org ${clockOfDay(t.originate)}, recv ${clockOfDay(t.receive)}, xmit ${clockOfDay(t.transmit)}, length ${frame.payloadLength ?? 0}`;
     }
-    if (opt.quiet) return `ICMP ${phrase}, length ${frame.payloadLength ?? 0}`;
     if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {
       return `ICMP ${phrase}, id ${frame.icmpId ?? 0}, seq ${frame.icmpSeq ?? 0}, length ${frame.payloadLength ?? 0}`;
     }
@@ -352,22 +316,36 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     const cksum = opt.verbose > 0 && !opt.skipChecksumCheck ? tcpChecksumToken(frame) : '';
     const length = frame.payloadLength ?? 0;
     const flags = frame.tcpFlags;
-    const { seq, ack } = relativeSeqAck(frame, opt, state);
+    const relative = relativeSeqAck(frame, opt, state);
+    const { seq, ack } = relative;
     let seqText = '';
     if (opt.verbose > 1 || length > 0 || flags?.syn || flags?.fin || flags?.rst) {
       seqText = `, seq ${seq}${length > 0 ? `:${(seq + length) >>> 0}` : ''}`;
     }
     const ackText = flags?.ack ? `, ack ${ack}` : '';
-    const options = tcpOptionsToken(frame);
+    const options = tcpOptionsToken(frame, relative);
     const urgent = flags?.urg ? `, urg ${frame.tcpUrgentPointer ?? 0}` : '';
-    const base = `Flags [${tcpFlagToken(frame)}]${cksum}${seqText}${ackText}, win ${frame.tcpWindow ?? 0}${urgent}${options}, length ${length}`;
-    if (frame.dnsQr !== undefined && (frame.payloadLength ?? 0) > 0) {
-      return `${base}: ${dnsLine(frame, opt)}`;
+    const head = `Flags [${tcpFlagToken(frame)}]${cksum}${seqText}${ackText}, win ${frame.tcpWindow ?? 0}${urgent}${options.text}`;
+    if (options.bad) return head;
+    const base = `${head}, length ${length}`;
+    if (length === 0) return base;
+    const headerBytes = (frame.raw[frame.rawLinkOffset + (frame.ipHeaderLen ?? 20) + 12] >> 4) * 4;
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20) + headerBytes;
+    const payload = frame.raw.slice(start, start + length);
+    if (flags?.rst && opt.verbose > 0) return `${base}${resetDataText(payload, length)}`;
+    if (frame.srcPort === DNS_PORT || frame.dstPort === DNS_PORT) {
+      return `${base}${domainText(payload, length, { verbose: opt.verbose, overTcp: true, multicast: false })}`;
     }
-    return base;
+    return base + (tcpApplicationText(frame.srcPort ?? 0, frame.dstPort ?? 0, payload, length, opt.verbose) ?? '');
   }
   if (frame.l4 === 'udp') {
-    if (frame.dnsQr !== undefined) return dnsLine(frame, opt);
+    if (!opt.quiet && (frame.srcPort === DNS_PORT || frame.dstPort === DNS_PORT || frame.srcPort === MDNS_PORT || frame.dstPort === MDNS_PORT)) {
+      const multicast = !(frame.srcPort === DNS_PORT || frame.dstPort === DNS_PORT);
+      const length = frame.payloadLength ?? 0;
+      const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20) + UDP_HEADER_BYTES;
+      const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+      return `${cksum}${domainText(frame.raw.slice(start, start + length), length, { verbose: opt.verbose, overTcp: false, multicast })}`;
+    }
     if (frame.bootp && !opt.quiet) return bootpText(frame.bootp, opt.verbose, frame.payloadLength ?? 0);
     if (!opt.quiet && frame.appPayload && (frame.srcPort === 123 || frame.dstPort === 123)) {
       return ntpText(frame.appPayload, opt.verbose, opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose));
@@ -376,27 +354,19 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'icmp6') {
-    const phrase = ICMP6_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
-    const length = `length ${frame.payloadLength ?? 0}`;
-    if (opt.quiet) return `ICMP6, ${phrase}, ${length}`;
-    const errorPhrase = icmp6ErrorPhrase(frame, state);
-    if (errorPhrase !== null) return `ICMP6, ${errorPhrase}, ${length}`;
-    if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {
-      return `ICMP6, ${phrase}, id ${frame.icmpId ?? 0}, seq ${frame.icmpSeq ?? 0}, ${length}`;
-    }
-    if (frame.icmpType === 'neighbor-solicitation' && frame.ndpTarget) {
-      return `ICMP6, ${phrase}, who has ${frame.ndpTarget}, ${length}`;
-    }
-    if (frame.icmpType === 'neighbor-advertisement' && frame.ndpTarget) {
-      return `ICMP6, ${phrase}, tgt is ${frame.ndpTarget}, ${length}`;
-    }
-    return `ICMP6, ${phrase}, ${length}`;
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 40) + (fragmentedV6 ? IPV6_FRAGMENT_HEADER_BYTES : 0);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 40) - (fragmentedV6 ? IPV6_FRAGMENT_HEADER_BYTES : 0);
+    return icmp6Text(frame.raw.slice(start, start + length), {
+      verbose: opt.verbose, sourceIp: frame.srcIp ?? '', destinationIp: frame.dstIp ?? '', fragmented: fragmentedV6,
+      host: (address) => state.host(address), port: (port, protocol) => state.port(port, protocol),
+    });
   }
   // `print-ip.c:506` : « This isn't the first frag, so we're missing the
   // next level protocol header. print the ip addr and the protocol. »
   // Sous `-n`, le protocole se nomme par son numero.
   if ((frame.ipFragmentOffset ?? 0) > 0) {
-    return `ip-proto-${frame.ipProtocol ?? 0}`;
+    const named = opt.numeric ? null : state.names?.protocol?.(frame.ipProtocol ?? 0) ?? null;
+    return named ?? `ip-proto-${frame.ipProtocol ?? 0}`;
   }
   return `length ${frame.payloadLength ?? frame.length}`;
 }
@@ -457,12 +427,23 @@ function ipProtoName(frame: CaptureFrame): string {
   return 'unknown';
 }
 
-function arpLine(frame: CaptureFrame, state: TcpdumpRenderState): string {
+const ARP_HARDWARE_ADDRESS_BYTES = 6;
+const ARP_PROTOCOL_ADDRESS_BYTES = 4;
+const ZERO_MAC = '00:00:00:00:00:00';
+
+function arpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const sender = state.host(frame.arpSenderIp ?? '');
+  const target = state.host(frame.arpTargetIp ?? '');
+  const prefix = opt.linkLevel ? '' : 'ARP, ';
+  const types = opt.verbose > 0
+    ? `Ethernet (len ${ARP_HARDWARE_ADDRESS_BYTES}), IPv4 (len ${ARP_PROTOCOL_ADDRESS_BYTES}), `
+    : '';
+  const length = frame.length - frame.rawLinkOffset;
   if (frame.arpOp === 'reply') {
-    return `ARP, Reply ${sender} is-at ${state.ether(frame.arpSenderMac ?? '')}, length ${frame.length - frame.rawLinkOffset}`;
+    return `${prefix}${types}Reply ${sender} is-at ${state.ether(frame.arpSenderMac ?? '')}, length ${length}`;
   }
-  return `ARP, Request who-has ${state.host(frame.arpTargetIp ?? '')} tell ${sender}, length ${frame.length - frame.rawLinkOffset}`;
+  const targetMac = frame.arpTargetMac === undefined || frame.arpTargetMac === ZERO_MAC ? '' : ` (${state.ether(frame.arpTargetMac)})`;
+  return `${prefix}${types}Request who-has ${target}${targetMac} tell ${sender}, length ${length}`;
 }
 
 function ipFlagsToken(frame: CaptureFrame): string {
@@ -495,11 +476,11 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderSt
   const detail = trunc ?? l4Detail(frame, opt, state);
   if (opt.verbose > 0) {
     const offset = (frame.ipFragmentOffset ?? 0) * 8;
-    const header = `IP (${tosToken(frame)}, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
+    const header = `${opt.linkLevel ? '' : 'IP '}(${tosToken(frame)}, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
       + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
     return `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt, state)}`;
   }
-  return `IP ${src} > ${dst}: ${detail}`;
+  return `${opt.linkLevel ? '' : 'IP '}${src} > ${dst}: ${detail}`;
 }
 
 function ip6FragmentLine(
@@ -507,16 +488,16 @@ function ip6FragmentLine(
 ): string {
   const header = opt.verbose > 0 ? `${ip6VerboseHeader(frame)} ` : '';
   const identification = opt.verbose > 0 ? `0x${fragment.identification.toString(16).padStart(8, '0')}:` : '';
-  const head = `IP6 ${header}${endpoint(state, frame.srcIp, undefined, 'other')} > `
+  const head = `${opt.linkLevel ? '' : 'IP6 '}${header}${endpoint(state, frame.srcIp, undefined, 'other')} > `
     + `${endpoint(state, frame.dstIp, undefined, 'other')}: `
     + `frag (${identification}${fragment.offsetBytes}|${fragment.length})`;
-  const inner = fragment.inner;
-  if (inner === undefined) return head;
+  if (fragment.inner === undefined) return head;
+  const inner: CaptureFrame = { ...fragment.inner, raw: frame.raw, rawLinkOffset: frame.rawLinkOffset };
   const protocol = transportOf(inner.l4);
   const ports = inner.l4 === 'tcp' || inner.l4 === 'udp'
     ? `${state.port(inner.srcPort ?? 0, protocol)} > ${state.port(inner.dstPort ?? 0, protocol)}: `
     : '';
-  return `${head} ${ports}${l4Detail(inner, { ...opt, skipChecksumCheck: true }, state)}`;
+  return `${head} ${ports}${l4Detail(inner, { ...opt, skipChecksumCheck: true }, state, true)}`;
 }
 
 function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
@@ -526,7 +507,7 @@ function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderS
   const src = endpoint(state, frame.srcIp, withPort ? frame.srcPort : undefined, transportOf(frame.l4));
   const dst = endpoint(state, frame.dstIp, withPort ? frame.dstPort : undefined, transportOf(frame.l4));
   const header = opt.verbose > 0 ? `${ip6VerboseHeader(frame)} ` : '';
-  return `IP6 ${header}${src} > ${dst}: ${trunc ?? l4Detail(frame, opt, state)}`;
+  return `${opt.linkLevel ? '' : 'IP6 '}${header}${src} > ${dst}: ${trunc ?? l4Detail(frame, opt, state)}`;
 }
 
 function ip6VerboseHeader(frame: CaptureFrame): string {
@@ -617,24 +598,8 @@ export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: Tcpdump
     ? [...cookedHeader(frame, state.cooked), ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset)]
     : Array.from(frame.raw.slice(0, frame.rawLinkOffset));
   const bytes = (opt.hexLink ? [...link, ...network] : network).slice(0, opt.snaplen);
-  const lines: string[] = [];
-  for (let i = 0; i < bytes.length; i += 16) {
-    const chunk = bytes.slice(i, i + 16);
-    let hex = '';
-    for (let j = 0; j < chunk.length; j++) {
-      hex += chunk[j].toString(16).padStart(2, '0');
-      if (j % 2 === 1) hex += ' ';
-    }
-    hex = padToWidth(hex.trimEnd(), 40);
-    const offset = '0x' + i.toString(16).padStart(4, '0') + ':';
-    if (opt.hex === 'hexascii') {
-      const ascii = chunk.map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.')).join('');
-      lines.push(`\t${offset}  ${hex}  ${ascii}`);
-    } else {
-      lines.push(`\t${offset}  ${hex.trimEnd()}`);
-    }
-  }
-  return lines;
+  const text = opt.hex === 'hexascii' ? hexAndAsciiLines(bytes, '\n\t') : hexPrintLines(bytes, '\n\t');
+  return text === '' ? [] : text.slice(1).split('\n');
 }
 
 export function formatFrame(
@@ -651,7 +616,7 @@ export function formatFrame(
     : opt.linkLevel ? ethPrefix(frame, state) : '';
   let body: string;
   if (frame.l3 === 'arp') {
-    body = `${link}${arpLine(frame, state)}`;
+    body = `${link}${arpLine(frame, opt, state)}`;
   } else if (frame.l3 === 'ipv4') {
     body = `${link}${ipLine(frame, opt, state)}`;
   } else if (frame.l3 === 'ipv6') {

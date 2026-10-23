@@ -39,7 +39,7 @@ async function captureOneSyn(cmd: string): Promise<string> {
 describe('tcpdump verbosity levels + TCP options + checksum display (PRD-tcpdump.md P6)', () => {
   it('a SYN carrying negotiated options shows them by default, without -v', async () => {
     const output = await captureOneSyn('sudo tcpdump -c 1 -nn tcp');
-    expect(output).toMatch(/options \[mss \d+,sackOK,TS val \d+ ecr \d+,wscale \d+\]/);
+    expect(output).toMatch(/options \[mss \d+,sackOK,TS val \d+ ecr \d+,nop,wscale \d+\]/);
     expect(output).not.toContain('cksum');
     expect(output).not.toContain('proto TCP');
   });
