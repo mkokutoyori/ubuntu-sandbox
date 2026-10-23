@@ -5034,9 +5034,10 @@ export abstract class EndHost extends Equipment {
     count: number = 4,
     timeoutMs: number = 2000,
     ttl?: number,
-    opts?: EchoOptions,
+    callerOpts?: EchoOptions,
   ): Promise<PingResult[]> {
-    const firstSeq = opts?.firstSeq ?? 1;
+    const opts: EchoOptions = { ...callerOpts, ident: callerOpts?.ident ?? this.allocateEchoIdent() };
+    const firstSeq = opts.firstSeq ?? 1;
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
     if (this.isLocalAddress(targetIP)) {
@@ -5697,6 +5698,8 @@ export abstract class EndHost extends Equipment {
 
     const hops: TracerouteHopResult[] = [];
     let udpPort = method.kind === 'default-udp' ? method.port : 0;
+    const traceIdent = this.allocateEchoIdent();
+    let traceSequence = 0;
     const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
@@ -5723,9 +5726,8 @@ export abstract class EndHost extends Equipment {
           if (outcome.reached) destinationReached = true;
           continue;
         }
-        this.pingIdCounter++;
-        const id = this.pingIdCounter;
-        const seq = p + 1;
+        const id = traceIdent;
+        const seq = ++traceSequence & 0xffff;
         const targetIpStr = targetIP.toString();
         const sentAt = PathClock.now();
 

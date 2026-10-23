@@ -402,7 +402,7 @@ function tcpEmission(
 }
 
 async function icmpEmission(
-  ctx: LinuxCommandContext, parsed: Hping3Args, seq: number, target: IPAddress,
+  ctx: LinuxCommandContext, parsed: Hping3Args, seq: number, target: IPAddress, ident: number,
 ): Promise<Emission> {
   if (parsed.spoof !== undefined) {
     ctx.net.sendCraftedIcmpEcho(target, {
@@ -411,7 +411,7 @@ async function icmpEmission(
     return { received: false };
   }
   const results = await ctx.net.pingSequence(target, 1, 1000, parsed.ttl, {
-    dataSize: parsed.dataSize,
+    dataSize: parsed.dataSize, ident, firstSeq: seq,
   });
   const answer = results.find((r) => r.success);
   if (!answer) return { received: false };
@@ -542,6 +542,7 @@ async function runHping3(ctx: LinuxCommandContext, args: readonly string[]): Pro
 
   const count = Number.isFinite(parsed.count) ? parsed.count : 1;
   const previousSequence = { value: 0 };
+  const echoIdent = ctx.net.allocateEchoIdent();
   let received = 0;
   let destPort = parsed.destPort;
   for (let seq = 0; seq < count; seq++) {
@@ -550,7 +551,7 @@ async function runHping3(ctx: LinuxCommandContext, args: readonly string[]): Pro
       : (parsed.baseSourcePort + seq) & 0xffff;
     let emission: Emission;
     switch (parsed.mode) {
-      case 'icmp': emission = await icmpEmission(ctx, parsed, seq, target); break;
+      case 'icmp': emission = await icmpEmission(ctx, parsed, seq, target, echoIdent); break;
       case 'udp': emission = udpEmission(ctx, parsed, sourcePort, destPort, target); break;
       case 'rawip': emission = rawIpEmission(ctx, parsed, target); break;
       default:

@@ -703,7 +703,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10'); // Claims 203.0.113.10
       const ping2 = await topo.inside_pc2.executeCommand('ping -n 1 -w 1000 198.51.100.10'); // Blocked! Pool exhausted
-      expect(ping2).toContain('Request timed out');
+      expect(ping2).toContain('Destination host unreachable');
     });
 
     it('57. should show pool exhaustion count in show ip nat statistics', async () => {
@@ -2659,7 +2659,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10');
       const stats = await topo.r1.executeCommand('show ip nat statistics');
-      expect(stats).toContain('Total active translations: 1');
+      expect(stats).toContain('Total active translations: 2');
     });
 
     it('239. should not show expired dynamic entries in translation table', async () => {
@@ -2669,7 +2669,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('configure terminal');
       await topo.r1.executeCommand('access-list 1 permit 192.168.1.0 0.0.0.255');
       await topo.r1.executeCommand('ip nat inside source list 1 interface GigabitEthernet0/1 overload');
-      await topo.r1.executeCommand('ip nat translation timeout 1'); // set very low timeout
+      await topo.r1.executeCommand('ip nat translation icmp-timeout 1'); // set very low timeout
       await topo.r1.executeCommand('end');
 
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10');
@@ -4072,7 +4072,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10'); // claims 1st entry
       const ping2 = await topo.inside_pc2.executeCommand('ping -n 1 -w 1000 198.51.100.10'); // blocked
-      expect(ping2).toContain('Request timed out');
+      expect(ping2).toContain('Destination host unreachable');
     });
 
     it('377. should reject clearing TCP translations if wildcard options format contains syntax errors', async () => {
