@@ -3613,11 +3613,11 @@ Le livre dit de `loop-detection` et `maxhops` qu'ils servent le mode Downstream 
 Demand des commutateurs ATM : ici ils pilotent aussi le mode non sollicite.
 
 ### [cli-mpls-oam] le reste de `ping mpls` / `traceroute mpls` du livre
-Servis : la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
+Servis : `pseudowire A VCID` (FEC 128 de la RFC 8029 §3.2.9, validee a la sortie) et la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
 `reply mode | dscp | pad-tlv`, `dsmap` et `verbose` pour le ping ; `timeout`,
 `ttl`, `exp` et `reply ...` pour le traceroute. Absents (refuses, jamais
-acceptes sans effet) : `pseudowire` (la FEC 128/129 de la RFC 8029 n'est pas
-validee), `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
+acceptes sans effet) : `pseudowire ... segment` (pas de pseudo-fil multi-segments), la
+FEC 129 et les FEC IPv6, `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
 `force-explicit-null`, `output`, `revision`, `flags fec`, `hashkey`,
 `destination` (plages 127/8) et `traceroute mpls multipath`. Une seule clause
 `reply` par commande : le sac d'options ne propose un mot-cle qu'une fois,

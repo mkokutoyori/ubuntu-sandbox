@@ -136,7 +136,8 @@ export class MplsEngine implements TtlPolicy {
 
   private trapsEcho(packet: MplsPacket, decision: string): boolean {
     if (decision === 'expired' || decision === 'deliver' || decision === 'deliver-vrf') return true;
-    return decision === 'no-binding' && packet.stack[0].label.equals(MplsLabel.ROUTER_ALERT);
+    if (decision !== 'no-binding') return false;
+    return packet.stack[0].label.equals(MplsLabel.ROUTER_ALERT) || this.lfib.lookupIlm(packet.stack[0].label)?.kind === 'pw';
   }
 
   tunnel(inPort: string, expired: MplsPacket, error: IPv4Packet): void {

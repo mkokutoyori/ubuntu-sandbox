@@ -4130,6 +4130,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       ldpInstalls: label => this.ldpEngine?.installsIlm(label) ?? false,
       interfaceMtu: iface => this.ports.get(iface)?.getMTU() ?? 1500,
       vpnPaths: () => this.dynamicRouting.bgp.vpnSpeaker()?.paths() ?? [],
+      pseudowires: () => this.getPseudowireEngine().views(),
       claimPort: (port, receive) => {
         this.controlPlaneUdpClaims().set(port, { owner: 'mpls-oam', receive: (_inPort, packet, udp) => receive(packet, udp) });
       },

@@ -8,11 +8,11 @@
  * A chain of four LDP routers, FEC 9.9.9.0/24 owned by the last one (as in
  * probe-mpls-oam-ddmap-rfc8029).
  * Before the change: 13 of 15 cases fail (`ping mpls` is refused). The two that pass either way
- * are the WITNESS cases at the end: the forms the engine cannot serve (pseudowire, traffic-eng, a bad
+ * are the WITNESS cases at the end: the forms the engine cannot serve (pseudowire segment, traffic-eng, a bad
  * mask, source/interval/sweep) stay refused.
  * Not declared, because nothing evaluates them (TODO.md [cli-mpls-oam]): source,
  * interval, sweep, pad pattern, force-explicit-null, output, revision, flags fec,
- * hashkey, destination ranges, pseudowire, traffic-eng, tp and multipath. Only one `reply`
+ * hashkey, destination ranges, pseudowire segment, traffic-eng, tp and multipath. Only one `reply`
  * clause is taken per command (the option bag offers a keyword once).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -161,9 +161,9 @@ describe('traceroute mpls ipv4', () => {
 });
 
 describe('forms the engine cannot serve stay refused', () => {
-  it('WITNESS: pseudowire, traffic-eng and a malformed mask are not accepted', async () => {
+  it('WITNESS: pseudowire segment, traffic-eng and a malformed mask are not accepted', async () => {
     const [first] = await lab();
-    expect(await first.executeCommand('ping mpls pseudowire 104.104.104.104 100')).toContain('Invalid input');
+    expect(await first.executeCommand('ping mpls pseudowire 104.104.104.104 100 segment 2')).toContain('Invalid input');
     expect(await first.executeCommand('ping mpls traffic-eng Tunnel 0')).toContain('Invalid input');
     expect(await first.executeCommand('ping mpls ipv4 9.9.9.0/33')).toContain('Invalid input');
   });
