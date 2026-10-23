@@ -214,7 +214,6 @@ import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
-import { inspectAndRewriteFtpAlg } from './router/nat/FtpAlg';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
@@ -3576,10 +3575,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       && originalPkt.destinationIP.toString() !== fwdPkt.destinationIP.toString();
     const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort,
       isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
-    if (natOutbound) {
-      const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
-      fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
-    }
+    if (natOutbound) fwdPkt = natOutbound;
     else if (this.natEngine.consumeOutboundRefusal()) {
       this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 1);
       return;
