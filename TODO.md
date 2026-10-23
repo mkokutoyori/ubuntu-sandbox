@@ -3614,6 +3614,22 @@ ceux de `PathClock` : quelques microsecondes, donc `0/0/0 ms` en LAN.
 Les lettres `L` et `B` du bloc Codes ne sont pas produites : `B` pour le code
 9, `L` jamais (le livre ne dit pas a quel code elle correspond).
 
+### [cli-mpls-l2vpn] le reste des commandes L2VPN du livre
+Servies : `pseudowire-class` (encapsulation mpls, control-word), `xconnect A N
+pw-class C` et `encapsulation mpls [pw-class C]`, `xconnect vfi V`, `l2 vfi V manual`
+avec `vpn id` et `neighbor A encapsulation mpls`, `show mpls l2transport vc
+[detail]`, `show xconnect all | peer | interface [detail]`, `show vfi [name V]`.
+Refusees faute de moteur : `neighbor ... no-split-horizon` (l'horizon partage est
+toujours actif), `encapsulation l2tpv3`, les pseudo-fils statiques `manual` et
+`mpls label`, `preferred-path`, `sequencing`, `interworking`, la decouverte
+automatique (`l2 vfi ... autodiscovery`), `bridge-domain` / `member`, `l2vpn xconnect
+context`, `show mpls l2transport binding | summary | checkpoint`, `show l2vpn atom`.
+L'attachement est un port routeur, pas un VLAN ni une instance de service : la
+colonne « Local circuit » affiche toujours Ethernet. Les statistiques VC comptent
+les trames Ethernet (octets sans FCS), pas des paquets MPLS. `Create time` et `last
+status change time` sont des durees depuis l'evenement, mesurees quand un evenement de
+signalisation ou une lecture observe le changement d'etat.
+
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le
 drapeau RSVP-TE ne le sont pas (RSVP : voir [rsvp-te]). Aucun routeur ne repartit

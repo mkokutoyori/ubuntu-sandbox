@@ -162,6 +162,8 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-aaa-group':          { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
   'config-ca-trustpoint':      { parent: 'config', clearOnExit: ['selectedPkiTrustpoint'] },
   'config-ca-server':          { parent: 'config', clearOnExit: ['selectedPkiServer'] },
+  'config-pw':                 { parent: 'config', clearOnExit: ['selectedPwClass'] },
+  'config-vfi':                { parent: 'config', clearOnExit: ['selectedVfi'] },
   'config-ca-trustpool':       { parent: 'config', clearOnExit: [] },
   'config-isakmp-group':       { parent: 'config', clearOnExit: ['selectedIsakmpGroup'] },
   'config-crypto-ezvpn':       { parent: 'config', clearOnExit: ['selectedEzvpnTunnel'] },

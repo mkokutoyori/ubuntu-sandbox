@@ -497,7 +497,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
-      ...mplsFamily(() => mplsHostOf(this.d(), () => this.selectedPortsForConfigIf())),
+      ...mplsFamily(() => mplsHostOf(this.d(), {
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+        pseudowireClass: { get: () => this.selectedPwClass, set: name => { this.selectedPwClass = name; } },
+        vfi: { get: () => this.selectedVfi, set: name => { this.selectedVfi = name; } },
+      })),
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
@@ -1539,6 +1543,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configCryptoEzvpnTrie = new CommandTrie();
   private configIsakmpGroupTrie = new CommandTrie();
   private configCaServerTrie = new CommandTrie();
+  private configPwTrie = new CommandTrie();
+  private configVfiTrie = new CommandTrie();
+  private selectedPwClass: string | null = null;
+  private selectedVfi: string | null = null;
   private selectedApplet: string | null = null;
   private selectedFlowExporter: string | null = null;
   private selectedFlowRecord: string | null = null;
@@ -2312,6 +2320,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
       case 'config-ca-server': return this.configCaServerTrie;
+      case 'config-pw': return this.configPwTrie;
+      case 'config-vfi': return this.configVfiTrie;
       case 'config-ca-trustpool': return this.configCaTrustpoolTrie;
       case 'config-isakmp-group': return this.configIsakmpGroupTrie;
       case 'config-crypto-ezvpn': return this.configCryptoEzvpnTrie;
@@ -2386,6 +2396,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
       if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
       if (f === 'selectedPkiServer') this.selectedPkiServer = null;
+      if (f === 'selectedPwClass') this.selectedPwClass = null;
+      if (f === 'selectedVfi') this.selectedVfi = null;
       if (f === 'selectedIsakmpGroup') this.selectedIsakmpGroup = null;
       if (f === 'selectedEzvpnTunnel') this.selectedEzvpnTunnel = null;
       if (f === 'selectedBrowserProxy') this.selectedBrowserProxy = null;

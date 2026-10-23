@@ -2,8 +2,26 @@ import type { Router } from '../../Router';
 import type { MplsShellHost } from '@/cli/commands/mpls/mplsFamily';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 
-export function mplsHostOf(router: Router, selectedInterfaces: () => string[] = () => []): MplsShellHost {
+export interface MplsShellSelection {
+  readonly selectedInterfaces: () => string[];
+  readonly pseudowireClass: { get(): string | null; set(name: string | null): void };
+  readonly vfi: { get(): string | null; set(name: string | null): void };
+}
+
+const NO_SELECTION: MplsShellSelection = {
+  selectedInterfaces: () => [],
+  pseudowireClass: { get: () => null, set: () => undefined },
+  vfi: { get: () => null, set: () => undefined },
+};
+
+export function mplsHostOf(router: Router, selection: MplsShellSelection = NO_SELECTION): MplsShellHost {
+  const { selectedInterfaces } = selection;
   return {
+    vpls: () => router.getVplsEngine(),
+    selectedPseudowireClass: () => selection.pseudowireClass.get(),
+    selectPseudowireClass: name => selection.pseudowireClass.set(name),
+    selectedVfi: () => selection.vfi.get(),
+    selectVfi: name => selection.vfi.set(name),
     present: () => router.hasMplsEngines(),
     mpls: () => router.getMplsEngine(),
     ldp: () => router.getLdpEngine(),

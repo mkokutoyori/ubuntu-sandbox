@@ -4,10 +4,14 @@ import type { MplsEngine } from '@/network/mpls/MplsEngine';
 import type { RouterMplsOam } from '@/network/devices/router/MplsOam';
 import { PadInstruction, ReplyMode, type TargetFec } from '@/network/mpls/oam/EchoCodec';
 import { formatPingMpls, formatTraceMpls } from './mplsOamShow';
+import {
+  formatL2transportDetail, formatL2transportSummary, formatVfi, formatXconnect, type PseudowireRow,
+} from './mplsL2Show';
 import type { MplsLabel } from '@/network/mpls/MplsLabel';
 import { LABEL_RANGE_DEFAULT_MAX, LABEL_RANGE_DEFAULT_MIN } from '@/network/mpls/Lfib';
 import { IPAddress } from '@/network/core/types';
 import type { PseudowireEngine } from '@/network/pw/PseudowireEngine';
+import type { VplsEngine } from '@/network/pw/VplsEngine';
 import {
   formatLdpBackoff, formatLdpBindings, formatLdpCapabilities, formatLdpDiscovery, formatLdpNeighbors, formatLdpParameters,
   formatMplsForwardingTable, formatMplsInterfaces,
@@ -19,6 +23,11 @@ export interface MplsShellHost {
   mpls(): MplsEngine;
   ldp(): LdpEngine;
   pseudowires(): PseudowireEngine;
+  vpls(): VplsEngine;
+  selectedPseudowireClass(): string | null;
+  selectPseudowireClass(name: string | null): void;
+  selectedVfi(): string | null;
+  selectVfi(name: string | null): void;
   selectedInterfaces(): string[];
   interfaceNames(): string[];
   interfaceIsUp(name: string): boolean;
@@ -37,6 +46,10 @@ const INTERFACE = Object.freeze(['config-if', 'config-subif']);
 const GLOBAL_OR_INTERFACE = Object.freeze(['config', 'config-if', 'config-subif']);
 const SHOW = Object.freeze(['user', 'privileged']);
 const PRIVILEGED = Object.freeze(['privileged']);
+const PW_CLASS_MODE = 'config-pw';
+const VFI_MODE = 'config-vfi';
+const PW_CLASS_ONLY = Object.freeze([PW_CLASS_MODE]);
+const VFI_ONLY = Object.freeze([VFI_MODE]);
 const DEFAULT_HELLO_INTERVAL_SECONDS = 5;
 const DEFAULT_HELLO_HOLD_SECONDS = 15;
 const DEFAULT_MAX_HOPS = 254;
@@ -164,6 +177,34 @@ function forwardingDetail(host: MplsShellHost, iface: string, nextHop: string, s
   const header = destination === null || mac === null ? '' : `${destination}${mac}8847`.replace(/[:.-]/g, '').toUpperCase();
   const explicit = stack.filter(label => label !== 3);
   return { encapsulationBytes: header.length / 2, mtu: host.interfaceMtu(iface) + 4 - 4 * explicit.length, labelStack: stack, header, vpn };
+}
+
+export function pseudowireRows(host: MplsShellHost): PseudowireRow[] {
+  const engine = host.ldp();
+  const now = engine.nowMs();
+  return host.pseudowires().views().map(view => {
+    const config = host.pseudowires().configuration().find(candidate => candidate.attachmentCircuit === view.attachmentCircuit);
+    const transport = host.mpls().lfib.lookupFtn(view.peer);
+    const session = engine.sessions().find(candidate => candidate.peer?.lsrId.equals(view.peer) === true);
+    const transportLabels = transport?.outLabels.filter(label => !label.isImplicitNull()).map(label => label.value) ?? [];
+    return {
+      attachmentCircuit: view.attachmentCircuit, attachmentCircuitUp: host.interfaceIsUp(view.attachmentCircuit),
+      lineProtocolUp: host.interfaceIsUp(view.attachmentCircuit), peer: view.peer.toString(), pwId: view.pwId,
+      up: view.state === 'up', pwClass: view.pwClass, localLabel: view.localLabel?.value ?? null,
+      remoteLabel: view.remoteLabel?.value ?? null, mtu: view.mtu, remoteMtu: view.remoteMtu,
+      groupId: config?.groupId ?? 0, remoteGroupId: view.remoteGroupId,
+      output: transport === undefined ? null : {
+        iface: transport.iface, nextHop: transport.nextHop.toString(),
+        tunnelLabel: transportLabels.length === 0 ? 'imp-null' : transportLabels.join('/'),
+        stack: [...transportLabels, ...(view.remoteLabel === null ? [] : [view.remoteLabel.value])],
+      },
+      ageMs: Math.max(0, now - view.createdAtMs), sinceChangeMs: Math.max(0, now - view.statusChangedAtMs),
+      signaling: { peerId: `${view.peer}:0`, up: session?.state === 'operational' },
+      receivedPackets: view.statistics.receivedPackets, receivedBytes: view.statistics.receivedBytes,
+      sentPackets: view.statistics.sentPackets, sentBytes: view.statistics.sentBytes,
+      receiveDrops: view.statistics.receiveDrops, sendDrops: view.statistics.sendDrops,
+    };
+  });
 }
 
 function ldpFec(text: string): TargetFec | null {
@@ -417,19 +458,29 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
       run: () => { host().ldp().setAcceptTargetedHellos(true); return ''; },
       undo: () => { host().ldp().setAcceptTargetedHellos(false); return ''; },
     },
-    {
-      id: 'xconnect-mpls',
+    ...(['encapsulation-mpls', 'pw-class'] as const).map((form): CommandSpec => ({
+      id: form === 'pw-class' ? 'xconnect-pw-class' : 'xconnect-mpls',
       path: ['xconnect', { name: 'peer', type: 'IP_ADDR', description: 'Peer router id' },
         { name: 'vcid', type: 'INT', range: [1, 4294967295], description: 'Pseudowire (VC) identifier' },
-        'encapsulation', 'mpls'],
-      description: 'Bind an attachment circuit to an MPLS pseudowire',
+        ...(form === 'pw-class'
+          ? ['pw-class', { name: 'pwclass', type: 'WORD' as const, description: 'Pseudowire class name' }]
+          : ['encapsulation', 'mpls'])],
+      ...(form === 'encapsulation-mpls' ? { options: [{
+        keyword: 'pw-class', description: 'Pseudowire class for advanced configuration',
+        argument: { name: 'pwclass', type: 'WORD' as const, description: 'Pseudowire class name' },
+      }] } : {}),
+      description: form === 'pw-class' ? 'Bind an attachment circuit to a pseudowire using a pseudowire class' : 'Bind an attachment circuit to an MPLS pseudowire',
       undoDescription: 'Unbind the attachment circuit from the pseudowire',
       modes: INTERFACE, minPrivilege: 15, undoOmitsArguments: true,
       run: (_session, args) => {
+        const pwClass = args.pwclass === undefined ? undefined : String(args.pwclass);
+        const definition = pwClass === undefined ? undefined : host().pseudowires().pseudowireClass(pwClass);
+        if (pwClass !== undefined && definition === undefined) return "% Invalid input detected at '^' marker.";
         for (const iface of host().selectedInterfaces()) {
           host().pseudowires().add({
             attachmentCircuit: iface, peer: new IPAddress(String(args.peer)), pwId: Number(args.vcid),
-            controlWord: 'not-preferred', groupId: 0,
+            controlWord: definition?.controlWord === true ? 'preferred' : 'not-preferred', groupId: 0,
+            ...(pwClass === undefined ? {} : { pwClass }),
           });
         }
         return '';
@@ -437,6 +488,159 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
       undo: () => {
         for (const iface of host().selectedInterfaces()) host().pseudowires().remove(iface);
         return '';
+      },
+    })),
+    {
+      id: 'xconnect-vfi',
+      path: ['xconnect', 'vfi', { name: 'vfi', type: 'WORD', description: 'Name of the Layer 2 VFI' }],
+      description: 'Bind an attachment circuit to a Layer 2 VFI',
+      undoDescription: 'Remove the attachment circuit from the Layer 2 VFI',
+      modes: INTERFACE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_session, args) => {
+        const name = String(args.vfi);
+        if (!host().vpls().views().some(view => view.name === name)) return "% Invalid input detected at '^' marker.";
+        for (const iface of host().selectedInterfaces()) host().vpls().addAttachmentCircuit(name, iface);
+        return '';
+      },
+      undo: () => {
+        for (const iface of host().selectedInterfaces()) {
+          for (const view of host().vpls().views()) if (view.attachmentCircuits.includes(iface)) host().vpls().removeAttachmentCircuit(view.name, iface);
+        }
+        return '';
+      },
+    },
+    {
+      id: 'pseudowire-class',
+      path: ['pseudowire-class', { name: 'name', type: 'WORD', description: 'Pseudowire class name' }],
+      description: 'Configure a pseudowire class',
+      undoDescription: 'Remove the pseudowire class',
+      modes: GLOBAL, minPrivilege: 15, enters: PW_CLASS_MODE,
+      run: (_session, args) => {
+        host().pseudowires().definePseudowireClass(String(args.name));
+        host().selectPseudowireClass(String(args.name));
+        return '';
+      },
+      undo: (_session, args) => { host().pseudowires().removePseudowireClass(String(args.name)); return ''; },
+    },
+    {
+      id: 'pseudowire-class-encapsulation',
+      path: ['encapsulation', 'mpls'],
+      description: 'Specify the tunneling method: MPLS',
+      modes: PW_CLASS_ONLY, minPrivilege: 15,
+      run: () => '',
+    },
+    {
+      id: 'pseudowire-class-control-word',
+      path: ['control-word'],
+      description: 'Enable the control word in the pseudowire class',
+      undoDescription: 'Disable the control word',
+      modes: PW_CLASS_ONLY, minPrivilege: 15,
+      run: () => { const name = host().selectedPseudowireClass(); if (name) host().pseudowires().setClassControlWord(name, true); return ''; },
+      undo: () => { const name = host().selectedPseudowireClass(); if (name) host().pseudowires().setClassControlWord(name, false); return ''; },
+    },
+    {
+      id: 'l2-vfi-manual',
+      path: ['l2', 'vfi', { name: 'name', type: 'WORD', description: 'Name of the Layer 2 VFI' }, 'manual'],
+      description: 'Create a Layer 2 virtual forwarding instance',
+      undoDescription: 'Remove the Layer 2 virtual forwarding instance',
+      modes: GLOBAL, minPrivilege: 15, enters: VFI_MODE, undoOmitsArguments: false,
+      run: (_session, args) => {
+        const name = String(args.name);
+        if (!host().vpls().views().some(view => view.name === name)) host().vpls().define({ name, vpnId: 0, controlWord: 'not-preferred' });
+        host().selectVfi(name);
+        return '';
+      },
+      undo: (_session, args) => { host().vpls().undefine(String(args.name)); return ''; },
+    },
+    {
+      id: 'vfi-vpn-id',
+      path: ['vpn', 'id', { name: 'id', type: 'INT', range: [1, 4294967295], description: 'VPN identifier (RFC 2685)' }],
+      description: 'Set the VPN identifier of the VFI',
+      modes: VFI_ONLY, minPrivilege: 15,
+      run: (_session, args) => { const name = host().selectedVfi(); if (name) host().vpls().setVpnId(name, Number(args.id)); return ''; },
+    },
+    {
+      id: 'vfi-neighbor',
+      path: ['neighbor', { name: 'peer', type: 'IP_ADDR', description: 'Remote router id' }, 'encapsulation', 'mpls'],
+      description: 'Add a pseudowire to a remote PE of the VFI',
+      undoDescription: 'Remove the pseudowire to the remote PE',
+      modes: VFI_ONLY, minPrivilege: 15, undoOmitsArguments: false,
+      run: (_session, args) => { const name = host().selectedVfi(); if (name) host().vpls().addNeighbor(name, new IPAddress(String(args.peer))); return ''; },
+      undo: (_session, args) => { const name = host().selectedVfi(); if (name) host().vpls().removeNeighbor(name, new IPAddress(String(args.peer))); return ''; },
+    },
+    {
+      id: 'show-mpls-l2transport-vc',
+      path: ['show', 'mpls', 'l2transport', 'vc',
+        { name: 'min', type: 'INT', optional: true, range: [1, 4294967295], description: 'Minimum VC ID' },
+        { name: 'max', type: 'INT', optional: true, range: [1, 4294967295], description: 'Maximum VC ID' }],
+      description: 'Show Any Transport over MPLS virtual circuits',
+      modes: SHOW, minPrivilege: 1,
+      options: [
+        { keyword: 'vcid', description: 'A single VC ID', argument: { name: 'vcid', type: 'INT', range: [1, 4294967295], description: 'VC ID' } },
+        { keyword: 'interface', description: 'VCs on this interface', argument: { name: 'iface', type: 'INTERFACE', description: 'Interface' } },
+        { keyword: 'destination', description: 'VCs towards this remote router', argument: { name: 'destination', type: 'IP_ADDR', description: 'Remote router address' } },
+        { keyword: 'detail', description: 'Display detailed information about VCs' },
+      ],
+      run: (_session, args) => {
+        const iface = args.iface === undefined ? undefined : host().resolveInterface(String(args.iface));
+        if (args.iface !== undefined && iface === null) return '% Invalid interface';
+        const min = args.vcid !== undefined ? Number(args.vcid) : args.min === undefined ? 1 : Number(args.min);
+        const max = args.vcid !== undefined ? Number(args.vcid) : args.max === undefined ? (args.min === undefined ? 4294967295 : min) : Number(args.max);
+        const rows = pseudowireRows(host()).filter(row => row.pwId >= min && row.pwId <= max
+          && (iface === undefined || row.attachmentCircuit === iface)
+          && (args.destination === undefined || row.peer === String(args.destination)));
+        return args.detail === undefined ? formatL2transportSummary(rows) : formatL2transportDetail(rows);
+      },
+    },
+    {
+      id: 'show-xconnect-all',
+      path: ['show', 'xconnect', 'all'],
+      description: 'Show all xconnect attachment circuits and pseudowires',
+      modes: SHOW, minPrivilege: 1,
+      options: [{ keyword: 'detail', description: 'Display detailed information' }],
+      run: (_session, args) => formatXconnect(pseudowireRows(host()), args.detail !== undefined),
+    },
+    {
+      id: 'show-xconnect-peer',
+      path: ['show', 'xconnect', 'peer', { name: 'peer', type: 'IP_ADDR', description: 'Peer IP address' },
+        { name: 'selector', type: 'WORD', description: 'all, or vcid followed by the VC ID' },
+        { name: 'vcid', type: 'INT', optional: true, range: [1, 4294967295], description: 'VC ID' }],
+      description: 'Show the xconnects associated with a peer',
+      modes: SHOW, minPrivilege: 1,
+      options: [{ keyword: 'detail', description: 'Display detailed information' }],
+      run: (_session, args) => {
+        const selector = String(args.selector);
+        if (selector !== 'all' && selector !== 'vcid') return "% Invalid input detected at '^' marker.";
+        if (selector === 'vcid' && args.vcid === undefined) return '% Incomplete command.';
+        const rows = pseudowireRows(host()).filter(row => row.peer === String(args.peer) && (selector === 'all' || row.pwId === Number(args.vcid)));
+        return formatXconnect(rows, args.detail !== undefined);
+      },
+    },
+    {
+      id: 'show-xconnect-interface',
+      path: ['show', 'xconnect', 'interface', { name: 'iface', type: 'INTERFACE', description: 'Interface' }],
+      description: 'Show the xconnect of an interface',
+      modes: SHOW, minPrivilege: 1,
+      options: [{ keyword: 'detail', description: 'Display detailed information' }],
+      run: (_session, args) => {
+        const iface = host().resolveInterface(String(args.iface));
+        if (iface === null) return '% Invalid interface';
+        return formatXconnect(pseudowireRows(host()).filter(row => row.attachmentCircuit === iface), args.detail !== undefined);
+      },
+    },
+    {
+      id: 'show-vfi',
+      path: ['show', 'vfi'],
+      description: 'Show Layer 2 virtual forwarding instances',
+      modes: SHOW, minPrivilege: 1,
+      options: [{ keyword: 'name', description: 'Display one VFI', argument: { name: 'name', type: 'WORD', description: 'VFI name' } }],
+      run: (_session, args) => {
+        const wanted = args.name === undefined ? undefined : String(args.name);
+        const rows = host().vpls().views().filter(view => wanted === undefined || view.name === wanted).map(view => ({
+          name: view.name, up: view.state === 'up', vpnId: view.vpnId, attachmentCircuits: view.attachmentCircuits,
+          neighbors: view.neighbors.map(neighbor => ({ peer: neighbor.peer.toString() })),
+        }));
+        return formatVfi(rows);
       },
     },
     {
@@ -690,6 +894,15 @@ export function mplsGlobalRunningConfig(host: MplsShellHost): string[] {
   if (config.explicitNull) lines.push('mpls ldp explicit-null');
   if (config.helloHoldSeconds !== DEFAULT_HELLO_HOLD_SECONDS) lines.push(`mpls ldp discovery hello holdtime ${config.helloHoldSeconds}`);
   if (config.helloIntervalSeconds !== DEFAULT_HELLO_INTERVAL_SECONDS) lines.push(`mpls ldp discovery hello interval ${config.helloIntervalSeconds}`);
+  for (const [name, definition] of host.pseudowires().pseudowireClasses()) {
+    lines.push(`pseudowire-class ${name}`, ` encapsulation ${definition.encapsulation}`);
+    if (definition.controlWord) lines.push(' control-word');
+  }
+  for (const vfi of host.vpls().views()) {
+    lines.push(`l2 vfi ${vfi.name} manual`);
+    if (vfi.vpnId > 0) lines.push(` vpn id ${vfi.vpnId}`);
+    for (const neighbor of vfi.neighbors) lines.push(` neighbor ${neighbor.peer} encapsulation mpls`);
+  }
   return lines;
 }
 
@@ -697,7 +910,11 @@ export function mplsInterfaceRunningConfig(host: MplsShellHost, iface: string): 
   if (!host.present()) return [];
   const lines = host.ldp().isInterfaceEnabled(iface) ? [' mpls ip'] : [];
   for (const wire of host.pseudowires().configuration()) {
-    if (wire.attachmentCircuit === iface) lines.push(` xconnect ${wire.peer} ${wire.pwId} encapsulation mpls`);
+    if (wire.attachmentCircuit !== iface) continue;
+    lines.push(wire.pwClass === undefined
+      ? ` xconnect ${wire.peer} ${wire.pwId} encapsulation mpls`
+      : ` xconnect ${wire.peer} ${wire.pwId} pw-class ${wire.pwClass}`);
   }
+  for (const vfi of host.vpls().views()) if (vfi.attachmentCircuits.includes(iface)) lines.push(` xconnect vfi ${vfi.name}`);
   return lines;
 }
