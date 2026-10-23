@@ -126,7 +126,7 @@ export const tacCommand = coreutil(
   (ctx, args, stdin) => {
     const got = inputs(ctx, args.filter(a => !a.startsWith('-') || a === '-'), stdin, 'tac');
     if (!Array.isArray(got)) return got;
-    return got.map(c => toLines(c).reverse().join('\n')).join('\n');
+    return got.map(c => c.split(/(?<=\n)/).reverse().join('')).join('');
   },
 );
 
@@ -605,8 +605,7 @@ export const base64Command = coreutil(
         const decoded = bytesToFileText(bytes);
         return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
       }
-      const bytes = fileTextToBytes(input.endsWith('\n') ? input : input + '\n');
-      return bytesToBase64(bytes);
+      return `${bytesToBase64(fileTextToBytes(input)).replace(/(.{76})/g, '$1\n').replace(/\n$/, '')}\n`;
     } catch {
       return 'base64: invalid input';
     }

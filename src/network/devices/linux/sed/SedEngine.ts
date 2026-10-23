@@ -87,7 +87,9 @@ export function runSedProgram(program: SedProgram, input: string, opts: SedRunOp
     return inst.negate ? !result : result;
   };
 
+  let emittedOnFinalLine = false;
   while (li < lines.length && !quit) {
+    const emittedBefore = out.length;
     let PS = lines[li]; li++; lineNo++;
     let tFlag = false;
     let deleted = false;
@@ -160,10 +162,11 @@ export function runSedProgram(program: SedProgram, input: string, opts: SedRunOp
 
     if (!opts.quiet && !deleted) out.push(PS);
     for (const a of appendQueue) out.push(a);
+    if (li >= lines.length && out.length > emittedBefore) emittedOnFinalLine = true;
   }
 
   let output = out.join('\n');
-  if (out.length > 0 && opts.inputEndsNewline) output += '\n';
+  if (out.length > 0 && !(emittedOnFinalLine && !opts.inputEndsNewline)) output += '\n';
   return { output, exitCode };
 }
 

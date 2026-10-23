@@ -112,6 +112,10 @@ function ensureTrailingNewline(s: string): string {
   return s.length === 0 || s.endsWith('\n') ? s : s + '\n';
 }
 
+function terminalText(output: string, lineOriented: boolean | undefined): string {
+  return lineOriented === false ? output : ensureTrailingNewline(output);
+}
+
 /** IO context for file redirections. */
 export interface IOContext {
   writeFile(path: string, content: string, append: boolean): void;
@@ -536,6 +540,7 @@ export class BashInterpreter {
     }
   }
 
+  private lastLineOriented: boolean | undefined = undefined;
   private pendingBackground = false;
 
   private *visitAndOrList(node: AndOrList): Effects<void> {
@@ -911,6 +916,7 @@ export class BashInterpreter {
       yield* this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {
       const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined, pipeInput, this.aliases);
+      this.lastLineOriented = false;
       if (result.output) this.output.push(result.output);
       this.env.lastExitCode = result.exitCode;
     } else {
@@ -927,6 +933,7 @@ export class BashInterpreter {
         argv: fullArgs, env: envSnapshot, background, outputPiped,
         stdin: pipeInput,
       });
+      this.lastLineOriented = result.lineOriented;
       if (result.backgroundPid !== undefined) {
         this.env.set('!', String(result.backgroundPid));
         backgroundedPid = result.backgroundPid;
@@ -941,14 +948,14 @@ export class BashInterpreter {
         explicitStderr = result.stderr;
         const terminalView = !hasAnyRedirect && !this.nonLastPipelineStage ? result.interleaved : undefined;
         if (terminalView !== undefined) {
-          if (terminalView) this.output.push(ensureTrailingNewline(terminalView));
+          if (terminalView) this.output.push(terminalText(terminalView, result.lineOriented));
           if (result.stderr) {
             this.stderrParts.push(result.stderr);
             this.markStderrShown(this.stderrParts.length - 1);
           }
         } else {
           if (result.output) {
-            this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : ensureTrailingNewline(result.output));
+            this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : terminalText(result.output, result.lineOriented));
           }
           if (result.stderr) {
             this.stderrParts.push(result.stderr);
@@ -959,7 +966,7 @@ export class BashInterpreter {
         }
       } else if (result.output) {
         // Verbatim on redirect (binary-safe); add trailing newline only when going to the terminal.
-        this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : ensureTrailingNewline(result.output));
+        this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : terminalText(result.output, result.lineOriented));
       }
       this.env.lastExitCode = result.exitCode;
     }
@@ -1227,15 +1234,15 @@ export class BashInterpreter {
     // next pipeline stage's stdin-vs-argument heuristic for single-line,
     // no-trailing-newline output (e.g. `pgrep -x sshd 2>/dev/null | head`).
     if (!stdoutHandled && !stderrHandled && capturedOutput) {
-      this.output.push(ensureTrailingNewline(capturedOutput));
+      this.output.push(terminalText(capturedOutput, this.lastLineOriented));
     } else if (!stdoutHandled && stderrHandled && !isError && capturedOutput) {
       // stdout wasn't redirected but stderr was — show stdout (unless this
       // was a `>&2` dup, in which case the content IS stderr).
-      this.output.push(ensureTrailingNewline(capturedOutput));
+      this.output.push(terminalText(capturedOutput, this.lastLineOriented));
       if (dupToStderr) this.stderrParts.push(capturedOutput);
     } else if (stdoutHandled && !stderrHandled && isError && capturedOutput) {
       // stderr wasn't redirected but stdout was — show stderr
-      this.output.push(ensureTrailingNewline(capturedOutput));
+      this.output.push(terminalText(capturedOutput, this.lastLineOriented));
       this.stderrParts.push(capturedOutput);
     }
   }
@@ -1299,7 +1306,7 @@ export class BashInterpreter {
     const opened = new Set<string>();
     const deliver = (content: string, sink: Sink): boolean => {
       if (sink.kind === 'fd1') {
-        if (content) this.output.push(ensureTrailingNewline(content));
+        if (content) this.output.push(terminalText(content, this.lastLineOriented));
         return true;
       }
       if (sink.kind === 'fd2') {
