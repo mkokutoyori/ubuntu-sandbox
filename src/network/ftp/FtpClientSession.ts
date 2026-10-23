@@ -42,7 +42,8 @@ export class FtpClientSession {
   private socket: TcpSocket | null = null;
   private lastReply: FtpReply | null = null;
   private dataSocket: TcpSocket | null = null;
-  private activeListener: TcpListener | null = null;
+  private activeListeners: TcpListener[] = [];
+  private exchangeObserver: ((line: string) => void) | null = null;
   private pendingDataHandler: ((data: unknown) => void) | null = null;
   /** Mirrors the server's negotiated `MODE S`/`MODE C` (RFC 959 §3.4.2), set once `setTransferMode()`'s `MODE` command succeeds. */
   private transferMode: 'S' | 'C' = 'S';
@@ -63,6 +64,22 @@ export class FtpClientSession {
     /** Only needed to call `authTls()`/negotiate `PROT P` (RFC 2228/4217). */
     private readonly ftpsConfig?: TlsClientConfig,
   ) {}
+
+  observeExchange(observer: (line: string) => void): void {
+    this.exchangeObserver = observer;
+  }
+
+  private announceReply(reply: FtpReply | null): void {
+    if (!this.exchangeObserver || !reply) return;
+    const { code, lines } = reply;
+    if (lines.length === 1) {
+      this.exchangeObserver(`< ${code} ${lines[0]}`);
+      return;
+    }
+    this.exchangeObserver(`< ${code}-${lines[0]}`);
+    for (const middle of lines.slice(1, -1)) this.exchangeObserver(`< ${middle}`);
+    this.exchangeObserver(`< ${code} ${lines[lines.length - 1]}`);
+  }
 
   get dataConnected(): boolean {
     return this.dataSocket !== null;
@@ -97,9 +114,11 @@ export class FtpClientSession {
       const { text, nextSeq } = decryptText(this.controlTls.serverTraffic(), this.controlServerSeq, String(data));
       this.controlServerSeq = nextSeq;
       this.lastReply = decodeReply(text);
+      this.announceReply(this.lastReply);
       return;
     }
     this.lastReply = decodeReply(String(data));
+    this.announceReply(this.lastReply);
   }
 
   /** `AUTH TLS` (RFC 2228/4217) — on success, every subsequent `sendCommand()` is transparently encrypted. */
@@ -133,6 +152,7 @@ export class FtpClientSession {
     if (!this.socket) return null;
     this.lastReply = null;
     const text = encodeCommand(cmd);
+    this.exchangeObserver?.(`> ${text.slice(0, -2)}`);
     if (this.controlTls?.result === 'success') {
       const { wire, nextSeq } = encryptText(this.controlTls.clientTraffic(), this.controlClientSeq, text);
       this.controlClientSeq = nextSeq;
@@ -203,17 +223,28 @@ export class FtpClientSession {
     this.dataTls = startClientHandshake(this.dataSocket, this.ftpsConfig);
   }
 
-  /** `PORT` — the client listens on `port`; the server only dials in once a transfer command is sent. */
-  enterActiveMode(port: number): FtpReply | null {
-    this.closeActiveListener();
+  openActiveListener(port: number, bindIp = '0.0.0.0'): TcpListener {
     this.dataSocket = null;
-    this.activeListener = this.tcpStack.listen(port, {
+    const listener = this.tcpStack.listen(port, {
       onAccept: (socket) => {
         this.dataSocket = socket;
         if (this.pendingDataHandler) socket.onData(this.pendingDataHandler);
       },
-    });
-    return this.sendCommand({ verb: 'PORT', argument: encodePortArgument(this.localIp, port) });
+    }, bindIp);
+    this.activeListeners.push(listener);
+    return listener;
+  }
+
+  announceActiveEndpoint(verb: 'PORT' | 'EPRT', address: string, port: number, protocol: NetProtocol = 1): FtpReply | null {
+    const argument = verb === 'PORT' ? encodePortArgument(address, port) : encodeEprtArgument(protocol, address, port);
+    return this.sendCommand({ verb, argument });
+  }
+
+  /** `PORT` — the client listens on `port`; the server only dials in once a transfer command is sent. */
+  enterActiveMode(port: number): FtpReply | null {
+    this.closeActiveListener();
+    this.openActiveListener(port);
+    return this.announceActiveEndpoint('PORT', this.localIp, port);
   }
 
   /** `EPSV` (RFC 2428) — like `enterPassiveMode()`, but via the protocol-agnostic extended command. */
@@ -224,14 +255,8 @@ export class FtpClientSession {
   /** `EPRT` (RFC 2428) — like `enterActiveMode()`, but via the protocol-agnostic extended command; `protocol` is `1` for IPv4, `2` for IPv6. */
   enterExtendedActiveMode(port: number, protocol: NetProtocol = 1): FtpReply | null {
     this.closeActiveListener();
-    this.dataSocket = null;
-    this.activeListener = this.tcpStack.listen(port, {
-      onAccept: (socket) => {
-        this.dataSocket = socket;
-        if (this.pendingDataHandler) socket.onData(this.pendingDataHandler);
-      },
-    });
-    return this.sendCommand({ verb: 'EPRT', argument: encodeEprtArgument(protocol, this.localIp, port) });
+    this.openActiveListener(port);
+    return this.announceActiveEndpoint('EPRT', this.localIp, port, protocol);
   }
 
   private decryptDataChunk(dataTls: TlsClientSession | null, seqRef: { seq: number }, raw: string): string {
@@ -293,9 +318,8 @@ export class FtpClientSession {
   }
 
   private closeActiveListener(): void {
-    if (!this.activeListener) return;
-    this.tcpStack.closeListener(this.activeListener.localPort, this.activeListener.localIp);
-    this.activeListener = null;
+    for (const listener of this.activeListeners) this.tcpStack.closeListener(listener.localPort, listener.localIp);
+    this.activeListeners = [];
   }
 
   close(): void {
