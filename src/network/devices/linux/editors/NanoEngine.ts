@@ -133,12 +133,13 @@ export class NanoEngine {
   private pauseMillis = PAUSE_MILLIS;
   private pauseKeepsMenu = false;
   private statusMore = false;
+  private openingAlerted = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
   private set _statusMessage(value: string) {
     this.staleFooter = null;
     this.statusText = value;
-    this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
+    this.statusCountdown = value === '' ? 0 : this.live.quickblank ? 1 : STATUS_LINGER_KEYS;
     this.statusAlert = messageLevel(value) >= MESSAGE_LEVEL.ahem;
     this.statusRaw = false;
     this.statusMore = false;
@@ -245,6 +246,7 @@ export class NanoEngine {
         nohelp: this.live.nohelp,
         jumpyscrolling: this.live.jumpyscrolling,
         atblanks: this.live.atblanks,
+        indicator: this.live.indicator,
       }),
     );
     const unread = this.live.noread && named;
@@ -252,6 +254,7 @@ export class NanoEngine {
     this.linesArr = decoded.lines;
     this.fileFormat = this.live.unix ? 'unix' : decoded.format;
     this.ensureTrailingBlankLine();
+    this.openingAlerted = opening.alert !== null;
     if (opening.alert !== null) this._statusMessage = `[ ${opening.alert} ]`;
     else if (!named) {
       if (!this.live.nohelp && this.helpTitle === null) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
@@ -552,6 +555,8 @@ export class NanoEngine {
       spotlight: this._pendingReplaceMatch === null ? this.searchSpotlight : { line: this._pendingReplaceMatch.line, start: this._pendingReplaceMatch.start, end: this._pendingReplaceMatch.end },
       tabsize: this.live.tabsize,
       softwrap: this.live.softwrap,
+      emphasis: this.live.boldtext ? 'bold' : 'reverse',
+      stripe: this.live.guidestripe,
       title: {
         name: this.titleName === '' ? 'New Buffer' : this.titleName,
         state: this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
@@ -699,6 +704,7 @@ export class NanoEngine {
     if (this.sized && (rows !== this.window.rows || cols !== this.window.cols)) {
       this.wipeStatus();
       this.markFlagHidden = false;
+      this.searchSpotlight = null;
     }
     const first = !this.sized;
     this.sized = true;
@@ -2105,7 +2111,7 @@ export class NanoEngine {
     }
     if (start.alerts.length === 0) return;
     this._statusMessage = `[ ${start.alerts[0]} ]`;
-    this.statusMore = start.alerts.length > 1;
+    this.statusMore = start.alerts.length + (this.openingAlerted ? 1 : 0) > 1;
   }
 
   private searchAtStartup(request: NanoSearchRequest): void {
@@ -2154,7 +2160,7 @@ export class NanoEngine {
     const page = helpPage(
       menu,
       { restricted: this.live.restricted, preserve: this.live.preserve, saveonexit: this.live.saveonexit, view: this._readOnly },
-      { columns: cols, rows, leadingBlank: (this.live.minibar || !this.live.emptyline) && rows > 6 },
+      { columns: cols, rows, leadingBlank: (this.live.minibar || !this.live.emptyline) && rows > 6, sidebar: this.window.sidebar },
     );
     const settings = defaultNanoSettings({
       ...this.live,
@@ -2168,6 +2174,7 @@ export class NanoEngine {
       locking: false,
       constantshow: false,
       stateflags: false,
+      guidestripe: null,
     });
     const tiny = this.footerKeepsStaleText();
     const viewer = new NanoEngine(this.fs, '', page.lines.join('\n'), false, false, undefined, false, {

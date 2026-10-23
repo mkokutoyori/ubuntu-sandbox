@@ -3,6 +3,9 @@
 
 usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] out.json
 
+A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
+(the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
+
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
 which resizes the pane (a run of literal text is sent one character at a time, 40 ms apart, because nano
@@ -12,7 +15,7 @@ record per step: every row of the pane (title bar, edit window, status bar and t
 rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
 corpus) also records the files left in the directory after each step.
 """
-import argparse, itertools, json, os, random, re, shlex, subprocess, tempfile, time
+import argparse, itertools, json, os, random, re, shlex, subprocess, tempfile, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 SESSION_NUMBERS = itertools.count()
@@ -37,6 +40,62 @@ def snapshot(name):
         return None
     pane = tmux("capture-pane", "-p", "-t", name).split("\n")
     return int(cur[0]), int(cur[1]), int(cur[2]), int(cur[3]), pane
+
+SGR = re.compile(r"(\x1b\[[0-9;]*m)")
+
+def cell_width(char):
+    if unicodedata.combining(char) or unicodedata.category(char) in ("Mn", "Me", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+
+def style_letter(bold, reverse, fg, bg):
+    if reverse and not bold and fg is None and bg is None:
+        return "r"
+    if bold and not reverse and fg is None and bg is None:
+        return "b"
+    if bold and not reverse and fg == 37 and bg == 41:
+        return "a"
+    if not bold and not reverse and fg == 30 and bg == 103:
+        return "y"
+    if not bold and not reverse and fg is None and bg == 41:
+        return "R"
+    if not bold and not reverse and fg is None and bg is None:
+        return "."
+    return "?"
+
+def capture_attrs(name, width, height):
+    raw = tmux("capture-pane", "-e", "-p", "-N", "-t", name).split("\n")
+    state = {"bold": False, "reverse": False, "fg": None, "bg": None}
+    rows = []
+    for index in range(height):
+        row = raw[index] if index < len(raw) else ""
+        letters = []
+        for token in SGR.split(row):
+            if SGR.fullmatch(token):
+                for code in [int(p) if p else 0 for p in token[2:-1].split(";")] or [0]:
+                    if code == 0:
+                        state.update(bold=False, reverse=False, fg=None, bg=None)
+                    elif code == 1:
+                        state["bold"] = True
+                    elif code == 7:
+                        state["reverse"] = True
+                    elif code == 22:
+                        state["bold"] = False
+                    elif code == 27:
+                        state["reverse"] = False
+                    elif 30 <= code <= 37 or 90 <= code <= 97:
+                        state["fg"] = code
+                    elif code == 39:
+                        state["fg"] = None
+                    elif 40 <= code <= 47 or 100 <= code <= 107:
+                        state["bg"] = code
+                    elif code == 49:
+                        state["bg"] = None
+                continue
+            for char in token:
+                letters.extend(style_letter(state["bold"], state["reverse"], state["fg"], state["bg"]) * cell_width(char))
+        rows.append("".join(letters)[:width].ljust(width, "."))
+    return rows
 
 def settled(name):
     last = None
@@ -84,12 +143,14 @@ def record_disk(casedir, hidden=False):
                 disk[key] = raw.decode("utf-8", "replace")
     return disk
 
-def record_screen(name, casedir=None, hidden=False):
+def record_screen(name, casedir=None, hidden=False, attrs=False):
     snap = settled(name)
     if snap is None:
         return None
     y, x, height, width, pane = snap
     record = {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
+    if attrs:
+        record["attrs"] = capture_attrs(name, width, height)
     if casedir is not None:
         record["disk"] = record_disk(casedir, hidden)
     return record
@@ -103,7 +164,7 @@ def run_case(case, workdir):
     flags = " ".join(case.get("flags", []))
     tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
          "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s t.txt" % (casedir, flags))
-    opened = record_screen(name, casedir if case.get("disk") else None)
+    opened = record_screen(name, casedir if case.get("disk") else None, False, case.get("attrs", False))
     after = []
     for step in case["steps"]:
         if step.startswith("@"):
@@ -114,7 +175,7 @@ def run_case(case, workdir):
             send(name, step)
             if step == "Escape":
                 time.sleep(0.15)
-        snap = record_screen(name, casedir if case.get("disk") else None)
+        snap = record_screen(name, casedir if case.get("disk") else None, False, case.get("attrs", False))
         if snap is None:
             break
         after.append(snap)
@@ -349,6 +410,47 @@ def gen_layout(seed, count):
         if r.random() < 0.2:
             steps.insert(r.randint(0, len(steps)), r.choice(TOGGLES))
         cases.append({"id": "lay%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps})
+    return cases
+
+ATTR_OPTIONS = [[], [], ["-D"], ["-q"], ["-J", "12"], ["-U"], ["-D", "-q"], ["-q", "-J", "20"], ["-D", "-J", "5", "-U"], ["-q", "-l"], ["-q", "-S"],
+                ["-q", "-c"], ["-D", "-l"], ["-D", "-S", "-q"], ["-J", "9", "-l"], ["-J", "9", "-S"], ["-q", "-x"], ["-q", "-%"], ["-D", "-_"], ["-q", "-e"],
+                ["-J", "1"], ["-J", "40"], ["-J", "80"], ["-U", "-c"], ["-D", "-0"], ["-q", "-0"], ["-q", "-_"], ["-l"], ["-S"], ["-c"], ["-%"]]
+ATTR_SIZES = [(5, 40), (6, 40), (7, 40), (8, 9), (8, 10), (8, 12), (10, 30), (10, 40), (12, 50), (14, 60), (24, 80), (12, 100), (24, 40)]
+
+def gen_attrs(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = rand_buffer(r, r.choice([1, 3, 8, 20, 40, 100]))
+        rows, cols = r.choice(ATTR_SIZES)
+        flags = r.choice(ATTR_OPTIONS)
+        steps = [r.choice(MOVES + EDITS + ["M-a", "M-a", "PageDown", "PageDown", "C-v", "C-y"]) for _ in range(r.randint(2, 8))]
+        if r.random() < 0.4:
+            steps = steps + prompt_script(r)
+        if r.random() < 0.25:
+            steps.insert(r.randint(0, len(steps)), "@%dx%d" % (r.choice([5, 6, 8, 12, 20]), r.choice([9, 10, 30, 40, 60, 80])))
+        if r.random() < 0.2:
+            steps.insert(r.randint(0, len(steps)), r.choice(TOGGLES))
+        if r.random() < 0.15:
+            steps = steps + ["C-g", "Down", "PageDown", "C-x"]
+        cases.append({"id": "atr%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "attrs": True, "steps": steps})
+    return cases
+
+BAR_MOVES = ["PageDown", "PageDown", "PageUp", "Down", "Down", "Down", "Up", "C-v", "C-y", "M-\\", "M-/", "End", "Home"]
+
+def gen_bar(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = rand_buffer(r, r.choice([1, 2, 5, 9, 12, 20, 30, 60, 120]))
+        rows, cols = r.choice([(6, 30), (8, 30), (10, 40), (12, 40), (14, 60), (24, 80), (7, 20), (10, 10)])
+        flags = r.choice([["-q"], ["-q", "-S"], ["-q", "-S"], ["-q", "-l"], ["-q", "-S", "-l"], ["-q", "-S", "-c"]])
+        steps = [r.choice(BAR_MOVES) for _ in range(r.randint(2, 8))]
+        if r.random() < 0.3:
+            steps = steps + r.sample(EDITS, 2)
+        if r.random() < 0.2:
+            steps.insert(r.randint(0, len(steps)), "@%dx%d" % (r.choice([6, 8, 12, 20]), r.choice([10, 30, 60, 80])))
+        cases.append({"id": "bar%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "attrs": True, "steps": steps})
     return cases
 
 EDIT_FOCUS = {
@@ -803,6 +905,10 @@ def gen(seed, count, corpus):
         return gen_place(seed, count)
     if corpus == "layout":
         return gen_layout(seed, count)
+    if corpus == "attrs":
+        return gen_attrs(seed, count)
+    if corpus == "bar":
+        return gen_bar(seed, count)
     if corpus == "edit":
         return gen_edit(seed, count)
     if corpus == "wrap":

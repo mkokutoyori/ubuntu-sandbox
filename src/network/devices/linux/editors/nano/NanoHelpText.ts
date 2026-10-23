@@ -293,6 +293,7 @@ export interface HelpLayout {
   readonly columns: number;
   readonly rows: number;
   readonly leadingBlank: boolean;
+  readonly sidebar: number;
 }
 
 export interface HelpPage {
@@ -315,17 +316,17 @@ export function helpPage(menu: HelpMenu, context: HelpContext, layout: HelpLayou
   while (text[pointer] === '\n') pointer++;
   const lines: string[] = [];
   if (layout.leadingBlank) lines.push(' ');
-  let wrappingPoint = Math.min(74, Math.max(40, layout.columns));
+  let wrappingPoint = Math.min(74, Math.max(40, layout.columns)) - layout.sidebar;
   while (pointer < text.length) {
     let line: string;
     let length: number;
-    if (pointer === endOfIntroduction) wrappingPoint = Math.max(40, layout.columns);
+    if (pointer === endOfIntroduction) wrappingPoint = Math.max(40, layout.columns) - layout.sidebar;
     if (pointer < endOfIntroduction || text[pointer - 1] === '\n') {
       length = breakLine(text.slice(pointer), wrappingPoint, 8, true);
       const shim = text[pointer + length - 1] === ' ' ? 0 : 1;
       line = text.slice(pointer, pointer + length + shim - 1);
     } else {
-      length = breakLine(text.slice(pointer), layout.columns < 40 ? 22 : layout.columns - 18, 8, true);
+      length = breakLine(text.slice(pointer), (layout.columns < 40 ? 22 : layout.columns - 18) - layout.sidebar, 8, true);
       line = `\t\t  ${text.slice(pointer, pointer + length)}`;
     }
     lines.push(line);
