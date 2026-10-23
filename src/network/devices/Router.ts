@@ -4166,6 +4166,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       sendHello: (iface, payload) => this.sendLdpHello(iface, payload),
       sendTargetedHello: (destination, payload) => this.sendLdpTargetedHello(destination, payload),
       tcp: () => this.tcpv2,
+      prefixPermitted: (acl, prefix) => this.aclEngine.permitsAddress(acl, prefix),
     }, this.getMplsEngine(), () => this.getScheduler());
     return this.ldpEngine;
   }

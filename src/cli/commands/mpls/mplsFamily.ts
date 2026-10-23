@@ -463,6 +463,44 @@ export function mplsFamily(host: () => MplsShellHost): CommandSpec[] {
       undo: () => { host().ldp().setHelloTimers(DEFAULT_HELLO_INTERVAL_SECONDS, null); return ''; },
     },
     {
+      id: 'mpls-ldp-advertise-labels',
+      path: ['mpls', 'ldp', 'advertise-labels'],
+      description: 'Control the distribution of locally assigned labels',
+      undoDescription: 'Stop advertising locally assigned labels',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: false,
+      options: [
+        { keyword: 'for', description: 'Destinations whose labels are advertised', argument: { name: 'prefixAcl', type: 'WORD', description: 'Prefix access list' } },
+        { keyword: 'to', description: 'LDP neighbors that receive the advertisements', argument: { name: 'peerAcl', type: 'WORD', description: 'Peer access list' } },
+      ],
+      run: (_session, args) => {
+        if (args.prefixAcl === undefined) {
+          if (args.peerAcl !== undefined) return "% Invalid input detected at '^' marker.";
+          host().ldp().setAdvertiseAll(true);
+          return '';
+        }
+        host().ldp().addAdvertiseRule({ prefixAcl: String(args.prefixAcl), peerAcl: args.peerAcl === undefined ? null : String(args.peerAcl) });
+        return '';
+      },
+      undo: (_session, args) => {
+        if (args.prefixAcl === undefined) {
+          host().ldp().setAdvertiseAll(false);
+          return '';
+        }
+        host().ldp().removeAdvertiseRule({ prefixAcl: String(args.prefixAcl), peerAcl: args.peerAcl === undefined ? null : String(args.peerAcl) });
+        return '';
+      },
+    },
+    {
+      id: 'mpls-ldp-neighbor-labels-accept',
+      path: ['mpls', 'ldp', 'neighbor', { name: 'address', type: 'IP_ADDR', description: 'LDP neighbor address' }, 'labels', 'accept',
+        { name: 'acl', type: 'WORD', description: 'Access list of the prefixes that are acceptable' }],
+      description: 'Filter the inbound label bindings of an LDP neighbor',
+      undoDescription: 'Stop filtering the inbound label bindings of the neighbor',
+      modes: GLOBAL, minPrivilege: 15, undoOmitsArguments: false,
+      run: (_session, args) => { host().ldp().setInboundFilter(new IPAddress(String(args.address)), String(args.acl)); return ''; },
+      undo: (_session, args) => { host().ldp().setInboundFilter(new IPAddress(String(args.address)), null); return ''; },
+    },
+    {
       id: 'mpls-ldp-neighbor-targeted',
       path: ['mpls', 'ldp', 'neighbor', { name: 'address', type: 'IP_ADDR', description: 'LDP neighbor address' }, 'targeted',
         { name: 'protocol', type: 'ENUM', optional: true, values: [{ keyword: 'ldp', description: 'Use LDP for the targeted session' }] }],
@@ -915,6 +953,10 @@ export function mplsGlobalRunningConfig(host: MplsShellHost): string[] {
     lines.push(`mpls ldp backoff ${config.backoffInitialSeconds} ${config.backoffMaximumSeconds}`);
   }
   if (config.explicitNull) lines.push('mpls ldp explicit-null');
+  const rules = host.ldp().advertiseRules();
+  if (host.ldp().advertiseRestrictionConfigured() && rules.length === 0) lines.push('no mpls ldp advertise-labels');
+  for (const rule of rules) lines.push(`mpls ldp advertise-labels for ${rule.prefixAcl}${rule.peerAcl === null ? '' : ` to ${rule.peerAcl}`}`);
+  for (const [peer, acl] of host.ldp().inboundFilterEntries()) lines.push(`mpls ldp neighbor ${peer} labels accept ${acl}`);
   if (config.helloHoldSeconds !== DEFAULT_HELLO_HOLD_SECONDS) lines.push(`mpls ldp discovery hello holdtime ${config.helloHoldSeconds}`);
   if (config.helloIntervalSeconds !== DEFAULT_HELLO_INTERVAL_SECONDS) lines.push(`mpls ldp discovery hello interval ${config.helloIntervalSeconds}`);
   for (const [name, definition] of host.pseudowires().pseudowireClasses()) {

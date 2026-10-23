@@ -3599,12 +3599,15 @@ champs du livre. `show mpls ldp capabilities` ne liste rien parce que ce LSR
 n'annonce aucun TLV de capacite.
 
 ### [cli-mpls-config] les commandes de configuration MPLS du livre non evaluees
-Servies et evaluees : `mpls label range`, `mpls ldp loop-detection | maxhops |
+Servies et evaluees : `mpls ldp advertise-labels [for A [to B]]` (premiere regle dont
+l'ACL de prefixe autorise, ACL de pairs sur le router-id LDP) et `mpls ldp neighbor A
+labels accept ACL` (ACL standard evaluee sur l'adresse du prefixe ; une ACL inexistante
+refuse, securite fermee) ; `mpls label range`, `mpls ldp loop-detection | maxhops |
 path-vector maxlength | holdtime | backoff | explicit-null` et les minuteries
 `discovery hello | targeted-hello`. Refusees faute de moteur : la forme `static`
 de `mpls label range` (aucune liaison statique `mpls static binding ipv4`), les
-formes `for` / `to` de `explicit-null` et toute commande `advertise-labels` /
-`neighbor labels accept` (pas de filtrage des annonces par ACL), `mpls ldp
+formes `for` / `to` de `explicit-null`, `advertise-labels vrf | interface`,
+`neighbor vrf ... labels accept`, `mpls request-labels for` et `mpls ldp
 discovery transport-address`, `session protection`, `igp sync`, `graceful-restart`
 et les mots de passe MD5. Un `mpls label range` qui chevauche la plage utilisee
 est applique immediatement, comme le livre l'autorise pour les logiciels a MFI,

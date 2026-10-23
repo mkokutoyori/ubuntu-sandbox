@@ -9,7 +9,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { ipProtocolMatches } from './acl/AclSyntax';
 import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
-import { IPAddress } from '../../core/types';
+import { IPAddress, createIPv4Packet } from '../../core/types';
 import { IP_PROTO_TCP } from '../../core/types';
 import { ReflexiveSessions } from './acl/ReflexiveSessions';
 import { DSCP_CODEPOINTS } from '../../core/IpHeaderFields';
@@ -737,6 +737,11 @@ export class ACLEngine {
   ): 'permit' | 'deny' | null {
     const ref: number | string = /^\d+$/.test(name) ? parseInt(name, 10) : name;
     return this.evaluateACL(ref, ipPkt, now, countMatches);
+  }
+
+  permitsAddress(name: string, address: IPAddress): boolean {
+    const probe = createIPv4Packet(address, address, 0, 1, null);
+    return this.evaluateACLByName(name, probe, undefined, false) === 'permit';
   }
 
   /**

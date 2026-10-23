@@ -35,6 +35,7 @@ export interface LdpHost {
   sendHello(iface: string, payload: Uint8Array): void;
   sendTargetedHello(destination: IPAddress, payload: Uint8Array): boolean;
   tcp(): TcpStack;
+  prefixPermitted(acl: string, prefix: IPAddress): boolean;
 }
 
 export interface LdpPwHandler {
@@ -103,6 +104,11 @@ export interface LdpLocalBinding {
   readonly revision: number;
 }
 
+export interface LdpAdvertiseRule {
+  readonly prefixAcl: string;
+  readonly peerAcl: string | null;
+}
+
 export interface LdpForwardingRow {
   readonly localLabel: MplsLabel;
   readonly outgoing: MplsLabel | 'none';
@@ -142,6 +148,9 @@ export class LdpEngine implements LdpSessionOwner {
   private readonly localBindings = new Map<string, LdpLocalBinding>();
   private readonly received = new Map<string, Map<string, MplsLabel>>();
   private readonly advertised = new Map<string, Map<string, MplsLabel>>();
+  private advertiseRulesList: LdpAdvertiseRule[] = [];
+  private advertiseRestricted = false;
+  private readonly inboundFilters = new Map<string, string>();
   private readonly advertisedAddresses = new Map<string, Set<string>>();
   private readonly receivedElc = new Map<string, Set<string>>();
   private readonly advertisedElc = new Map<string, Set<string>>();
@@ -604,6 +613,7 @@ export class LdpEngine implements LdpSessionOwner {
     for (const element of message.fec) {
       const fec = fecOf(element);
       if (!fec) continue;
+      if (!this.mayAccept(peerKey, fec)) continue;
       if (session.negotiated?.loopDetection === true) {
         if (this.looping(message)) {
           this.dropLoopingMapping(session, peerKey, element, fec.key, message.label);
@@ -911,7 +921,8 @@ export class LdpEngine implements LdpSessionOwner {
     }
     if (outgoing.length > 0) session.send(outgoing);
     for (const [key, label] of [...table]) {
-      if (this.localBindings.has(key)) continue;
+      const current = this.localBindings.get(key);
+      if (current !== undefined && this.mayAdvertise(peerKey, current)) continue;
       table.delete(key);
       const fec = fecs.get(key)?.fec;
       if (!fec) continue;
@@ -925,6 +936,7 @@ export class LdpEngine implements LdpSessionOwner {
   ): LabelMappingMessage | null {
     const table = this.advertised.get(peerKey);
     if (!table) return null;
+    if (!this.mayAdvertise(peerKey, binding)) return null;
     const sentElc = this.advertisedElc.get(peerKey) ?? new Set<string>();
     const sentMtu = this.advertisedMtu.get(peerKey) ?? new Map<string, number>();
     const sentLoop = this.advertisedLoop.get(peerKey) ?? new Map<string, string>();
@@ -1062,6 +1074,66 @@ export class LdpEngine implements LdpSessionOwner {
 
   private egressLabel(): MplsLabel {
     return this.config.explicitNull ? MplsLabel.IPV4_EXPLICIT_NULL : MplsLabel.IMPLICIT_NULL;
+  }
+
+  advertiseRules(): readonly LdpAdvertiseRule[] { return this.advertiseRulesList; }
+
+  advertiseRestrictionConfigured(): boolean { return this.advertiseRestricted; }
+
+  inboundFilter(peer: IPAddress): string | undefined { return this.inboundFilters.get(peer.toString()); }
+
+  inboundFilterEntries(): ReadonlyMap<string, string> { return this.inboundFilters; }
+
+  setAdvertiseAll(enabled: boolean): void {
+    this.advertiseRulesList = [];
+    this.advertiseRestricted = !enabled;
+    this.reconcile();
+  }
+
+  addAdvertiseRule(rule: LdpAdvertiseRule): void {
+    if (!this.advertiseRulesList.some(existing => existing.prefixAcl === rule.prefixAcl && existing.peerAcl === rule.peerAcl)) {
+      this.advertiseRulesList = [...this.advertiseRulesList, rule];
+    }
+    this.advertiseRestricted = true;
+    this.reconcile();
+  }
+
+  removeAdvertiseRule(rule: LdpAdvertiseRule): void {
+    this.advertiseRulesList = this.advertiseRulesList.filter(existing => existing.prefixAcl !== rule.prefixAcl || existing.peerAcl !== rule.peerAcl);
+    this.reconcile();
+  }
+
+  setInboundFilter(peer: IPAddress, acl: string | null): void {
+    if (acl === null) {
+      this.inboundFilters.delete(peer.toString());
+    } else {
+      this.inboundFilters.set(peer.toString(), acl);
+      const table = this.received.get(peer.toString());
+      for (const key of [...(table?.keys() ?? [])]) {
+        const [address] = key.split('/');
+        if (!this.host.prefixPermitted(acl, new IPAddress(address))) {
+          table?.delete(key);
+          this.receivedElc.get(peer.toString())?.delete(key);
+          this.receivedMtu.get(peer.toString())?.delete(key);
+          this.receivedLoop.get(peer.toString())?.delete(key);
+        }
+      }
+    }
+    this.reconcile();
+  }
+
+  private mayAdvertise(peerKey: string, binding: LdpLocalBinding): boolean {
+    if (!this.advertiseRestricted) return true;
+    const prefix = binding.fec.prefix;
+    const rule = this.advertiseRulesList.find(candidate => this.host.prefixPermitted(candidate.prefixAcl, prefix));
+    if (rule === undefined) return false;
+    if (rule.peerAcl === null) return true;
+    return this.host.prefixPermitted(rule.peerAcl, new IPAddress(peerKey));
+  }
+
+  private mayAccept(peerKey: string, fec: LdpFec): boolean {
+    const acl = this.inboundFilters.get(peerKey);
+    return acl === undefined || this.host.prefixPermitted(acl, fec.prefix);
   }
 
   setExplicitNull(enabled: boolean): void {
