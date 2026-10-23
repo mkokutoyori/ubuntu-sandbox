@@ -68,6 +68,7 @@ export type CiscoShellMode =
   | 'config-cp' | 'config-zone' | 'config-zone-pair'
   | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group'
   | 'config-ca-trustpoint' | 'config-ca-trustpool' | 'config-ca-server' | 'config-isakmp-group' | 'config-crypto-ezvpn' | 'config-browser-proxy' | 'config-crypto-identity'
+  | 'config-pw' | 'config-vfi'
   | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
   | 'config-archive' | 'config-archive-log'
   | 'config-ssh-pubkey' | 'config-ssh-pubkey-user' | 'config-ssh-pubkey-server' | 'config-ssh-pubkey-data'

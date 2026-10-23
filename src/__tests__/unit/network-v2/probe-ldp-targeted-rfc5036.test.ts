@@ -77,10 +77,13 @@ describe('LDP Extended Discovery', () => {
     expect(r1.getLdpEngine().sessions().map(s => s.state)).toEqual(['operational']);
   });
 
-  it('the negotiated hold time defaults to 45 s for targeted hellos and expires the adjacency when hellos stop', async () => {
+  it('the negotiated hold time is the lower of the two configured values: 90 s by default (Cisco mpls ldp discovery), 45 s when the initiator proposes 45, and the adjacency expires when hellos stop', async () => {
     const { r1, r3 } = await chain();
     r3.getLdpEngine().setAcceptTargetedHellos(true);
     r1.getLdpEngine().addTargetedPeer(new IPAddress('3.3.3.3'));
+    clock.advance(20000);
+    expect(r3.getLdpEngine().adjacencies()[0].holdSeconds).toBe(90);
+    r1.getLdpEngine().setTargetedHelloTimers(null, 45);
     clock.advance(20000);
     expect(r3.getLdpEngine().adjacencies()[0].holdSeconds).toBe(45);
     r1.getLdpEngine().removeTargetedPeer(new IPAddress('3.3.3.3'));

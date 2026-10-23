@@ -12,6 +12,9 @@ const ECHO_LOOPBACK_PREFIX = '127.';
 const ECHO_REQUEST_IP_TTL = 1;
 const ECHO_REPLY_IP_TTL = 255;
 const MINIMUM_HEADER = 32;
+const IP_HEADER_WITH_ROUTER_ALERT_BYTES = 24;
+const UDP_HEADER_BYTES = 8;
+const TLV_HEADER_BYTES = 4;
 
 export interface EchoReply {
   readonly message: EchoMessage;
@@ -33,6 +36,8 @@ export interface EchoRequestOptions {
   readonly pad?: { readonly instruction: number; readonly length: number };
   readonly replyTosByte?: number;
   readonly ddmap?: Ddmap;
+  readonly targetSize?: number;
+  readonly labelBytes?: number;
 }
 
 export interface BuiltEchoRequest {
@@ -83,7 +88,7 @@ export class MplsEchoAgent {
       pad: options.pad ?? null, replyTosByte: options.replyTosByte ?? null,
       ddmaps: options.ddmap === undefined ? [] : [options.ddmap],
     });
-    const payload = encodeEcho(message);
+    const payload = encodeEcho(options.targetSize === undefined ? message : this.padded(message, options));
     const sourcePort = this.host.allocatePort();
     const destination = new IPAddress(`127.${1 + (handle % 254)}.${1 + (sequence % 254)}.1`);
     const packet = createIPv4Packet(
@@ -93,6 +98,15 @@ export class MplsEchoAgent {
     const pending: PendingEcho = { handle, sequence, sourcePort, sentAt, reply: null };
     this.pendingByPort.set(sourcePort, pending);
     return { packet, pending };
+  }
+
+  private padded(message: EchoMessage, options: EchoRequestOptions): EchoMessage {
+    const unpadded = encodeEcho(message).length;
+    const room = (options.targetSize ?? 0) - (options.labelBytes ?? 0) - IP_HEADER_WITH_ROUTER_ALERT_BYTES - UDP_HEADER_BYTES - unpadded - TLV_HEADER_BYTES;
+    const length = room - (room % 4);
+    if (length < 4) return message;
+    const instruction = message.pad?.instruction ?? PadInstruction.DropFromReply;
+    return { ...message, pad: { instruction, length } };
   }
 
   finish(pending: PendingEcho): void {

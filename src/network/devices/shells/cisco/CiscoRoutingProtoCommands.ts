@@ -70,6 +70,31 @@ export const ROUTER_MODE_OWNERS: ReadonlyMap<string, readonly Proto[]> = new Map
   ['synchronization', ['bgp']],
 ] as ReadonlyArray<[string, readonly Proto[]]>);
 
+export function bgpSummaryText(
+  e: ReturnType<ReturnType<CiscoShellContext["r"]>["getBGPEngine"]>,
+  include: (neighbor: { readonly vpnv4?: boolean }) => boolean,
+  prefixesReceived: (ip: string) => number | null = () => null,
+): string {
+  const c = e.getConfig();
+  const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
+  const rows = [
+    `BGP router identifier ${e.getRouterId()}, local AS number ${c.asn}`,
+    '',
+    'Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd',
+  ];
+  for (const [ip, cfg] of c.neighbors) {
+    if (!include(cfg)) continue;
+    const v = byId.get(ip);
+    const upDown = v && v.isUp ? `${v.uptimeSec}s` : 'never';
+    const prefixes = v && v.isUp ? prefixesReceived(ip) : null;
+    const state = cfg.shutdown === true ? 'Idle (Admin)' : prefixes !== null ? String(prefixes) : v ? v.state : 'Idle';
+    const counts = e.messageCountsFor(ip);
+    rows.push(`${padToWidth(ip, 16)}4 ${String(cfg.remoteAs ?? 0).padStart(5)} ${String(counts.received).padStart(8)} ` +
+      `${String(counts.sent).padStart(8)} ${'0'.padStart(7)} ${'0'.padStart(4)} ${'0'.padStart(4)} ${upDown.padStart(8)} ${state}`);
+  }
+  return rows.join('\n');
+}
+
 export function routerKeywordBelongsTo(keyword: string, proto: Proto): boolean {
   const bare = keyword.toLowerCase().replace(/^no\s+/, '');
   const owners = ROUTER_MODE_OWNERS.get(bare);
@@ -853,21 +878,7 @@ export function registerRoutingProtoShow(
     const e = bgpE();
     if (!e.isEnabled()) return '% BGP not active';
     live();
-    const c = e.getConfig();
-    const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
-    const rows = [
-      `BGP router identifier ${e.getRouterId()}, local AS number ${c.asn}`,
-      '',
-      'Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd',
-    ];
-    for (const [ip, cfg] of c.neighbors) {
-      const v = byId.get(ip);
-      const upDown = v && v.isUp ? `${v.uptimeSec}s` : 'never';
-      const state = cfg.shutdown === true ? 'Idle (Admin)' : v ? v.state : 'Idle';
-      rows.push(`${padToWidth(ip, 16)}4 ${padToWidth(String(cfg.remoteAs ?? 0), 5)}` +
-        `      0        0       0    0    0 ${padToWidth(upDown, 8)} ${state}`);
-    }
-    return rows.join('\n');
+    return bgpSummaryText(e, () => true);
   });
   const BGP_TABLE_HEAD = '     Network          Next Hop            Metric LocPrf Weight Path';
   const bgpTableRows = (rows: ReturnType<ReturnType<typeof bgpE>['getBgpTable']>): string[] =>

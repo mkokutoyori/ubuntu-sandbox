@@ -61,10 +61,10 @@ const mappingsFor = (from: string, to?: string) => sent.filter(s => s.from === f
   .map(s => s.message).filter(m => m.kind === 'label-mapping' && m.fec[0].kind === 'prefix' && String(m.fec[0].prefix) === '9.9.9.0');
 
 describe('LDP loop detection (RFC 5036 §2.8)', () => {
-  it('Initialization carries D=1 and the configured Path Vector Limit when loop detection is on (§3.5.3)', async () => {
+  it('Initialization carries D=1 and the Path Vector Limit (254, the Cisco default that tracks mpls ldp maxhops) when loop detection is on (§3.5.3)', async () => {
     await chain({ length: 2, detection: [true, true] });
     const init = sent.find(s => s.message.kind === 'initialization')!.message;
-    expect(init).toMatchObject({ loopDetection: true, pathVectorLimit: 16 });
+    expect(init).toMatchObject({ loopDetection: true, pathVectorLimit: 254 });
   });
 
   it('the egress sends hop count 1 and no path vector; the next LSR first sends an unknown hop count (0), then 2 with a path vector holding its own id once it has learned the mapping (§2.8.2)', async () => {

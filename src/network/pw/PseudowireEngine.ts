@@ -21,6 +21,7 @@ export interface PseudowireConfig {
   readonly pwId: number;
   readonly controlWord: ControlWordPreference;
   readonly groupId: number;
+  readonly pwClass?: string;
 }
 
 export interface PseudowireHost {
@@ -40,6 +41,22 @@ export interface PseudowireView {
   readonly controlWord: boolean;
   readonly state: 'up' | 'down';
   readonly reason: string | null;
+  readonly pwClass: string | null;
+  readonly mtu: number;
+  readonly remoteMtu: number | null;
+  readonly remoteGroupId: number | null;
+  readonly createdAtMs: number;
+  readonly statusChangedAtMs: number;
+  readonly statistics: PseudowireStatistics;
+}
+
+export interface PseudowireStatistics {
+  receivedPackets: number;
+  receivedBytes: number;
+  sentPackets: number;
+  sentBytes: number;
+  receiveDrops: number;
+  sendDrops: number;
 }
 
 export interface PseudowireCounters {
@@ -53,6 +70,15 @@ export interface PseudowireCounters {
 interface Wire {
   readonly config: PseudowireConfig;
   readonly session: PseudowireSession;
+  readonly createdAtMs: number;
+  readonly statistics: PseudowireStatistics;
+  lastState: 'up' | 'down';
+  statusChangedAtMs: number;
+}
+
+export interface PseudowireClass {
+  readonly encapsulation: 'mpls';
+  readonly controlWord: boolean;
 }
 
 function remoteKey(peer: IPAddress, pwId: number): string {
@@ -87,7 +113,11 @@ export class PseudowireEngine implements LdpPwHandler {
       mtu: () => this.host.attachmentMtu(iface),
       localUp: () => this.host.attachmentUp(iface),
     }, this.ldp, this.mpls);
-    this.wires.set(iface, { config, session });
+    const now = this.ldp().nowMs();
+    this.wires.set(iface, {
+      config, session, createdAtMs: now, lastState: 'down', statusChangedAtMs: now,
+      statistics: { receivedPackets: 0, receivedBytes: 0, sentPackets: 0, sentBytes: 0, receiveDrops: 0, sendDrops: 0 },
+    });
     const held = this.pendingRemote.get(remoteKey(config.peer, config.pwId));
     if (held !== undefined) {
       session.adopt(held);
@@ -108,11 +138,58 @@ export class PseudowireEngine implements LdpPwHandler {
   }
 
   views(): readonly PseudowireView[] {
-    return [...this.wires.values()].map(({ config, session }) => ({
-      attachmentCircuit: config.attachmentCircuit, peer: config.peer, pwId: config.pwId, pwType: PW_TYPE_ETHERNET_RAW,
-      localLabel: session.localLabel, remoteLabel: session.remote?.label ?? null,
-      controlWord: session.usesControlWord, state: session.blocker() === null ? 'up' : 'down', reason: session.blocker(),
-    }));
+    return [...this.wires.values()].map(wire => {
+      this.observe(wire);
+      const { config, session } = wire;
+      return {
+        attachmentCircuit: config.attachmentCircuit, peer: config.peer, pwId: config.pwId, pwType: PW_TYPE_ETHERNET_RAW,
+        localLabel: session.localLabel, remoteLabel: session.remote?.label ?? null,
+        controlWord: session.usesControlWord, state: wire.lastState, reason: session.blocker(),
+        pwClass: config.pwClass ?? null, mtu: this.host.attachmentMtu(config.attachmentCircuit), remoteMtu: session.remote?.mtu ?? null,
+        remoteGroupId: session.remote === null ? null : 0, createdAtMs: wire.createdAtMs, statusChangedAtMs: wire.statusChangedAtMs,
+        statistics: { ...wire.statistics },
+      };
+    });
+  }
+
+  private observeAll(): void {
+    for (const wire of this.wires.values()) this.observe(wire);
+  }
+
+  private observe(wire: Wire): void {
+    const state = wire.session.blocker() === null ? 'up' : 'down';
+    if (state === wire.lastState) return;
+    wire.lastState = state;
+    wire.statusChangedAtMs = this.ldp().nowMs();
+  }
+
+  private readonly pwClasses = new Map<string, PseudowireClass>();
+
+  definePseudowireClass(name: string): void {
+    if (!this.pwClasses.has(name)) this.pwClasses.set(name, { encapsulation: 'mpls', controlWord: false });
+  }
+
+  removePseudowireClass(name: string): void {
+    this.pwClasses.delete(name);
+  }
+
+  pseudowireClass(name: string): PseudowireClass | undefined {
+    return this.pwClasses.get(name);
+  }
+
+  pseudowireClasses(): ReadonlyMap<string, PseudowireClass> {
+    return this.pwClasses;
+  }
+
+  setClassControlWord(name: string, enabled: boolean): void {
+    const current = this.pwClasses.get(name);
+    if (current === undefined) return;
+    this.pwClasses.set(name, { ...current, controlWord: enabled });
+    for (const wire of [...this.wires.values()].filter(candidate => candidate.config.pwClass === name)) {
+      const config = { ...wire.config, controlWord: enabled ? 'preferred' as const : 'not-preferred' as const };
+      this.remove(wire.config.attachmentCircuit);
+      this.add(config);
+    }
   }
 
   configuration(): readonly PseudowireConfig[] {
@@ -129,6 +206,7 @@ export class PseudowireEngine implements LdpPwHandler {
     const remote = wire.session.remote;
     if (wire.session.blocker() !== null || remote === null) {
       this.counters.droppedDown++;
+      wire.statistics.sendDrops++;
       return;
     }
     const payload: PseudowirePayload = {
@@ -137,9 +215,12 @@ export class PseudowireEngine implements LdpPwHandler {
     const imposed = this.mpls().imposeUnderlay(payload, remote.label, wire.config.peer);
     if (imposed === null) {
       this.counters.droppedDown++;
+      wire.statistics.sendDrops++;
       return;
     }
     this.counters.encapsulated++;
+    wire.statistics.sentPackets++;
+    wire.statistics.sentBytes += ethernetFrameBytesWithoutFcs(frame);
     this.host.transmit(imposed.iface, imposed.nextHop, imposed.packet);
   }
 
@@ -147,32 +228,40 @@ export class PseudowireEngine implements LdpPwHandler {
     const wire = this.wires.get(attachmentCircuit);
     if (wire === undefined || wire.session.blocker() !== null) {
       this.counters.droppedDown++;
+      if (wire !== undefined) wire.statistics.receiveDrops++;
       return;
     }
     if (wire.session.usesControlWord !== (payload.controlWord !== null)
       || (payload.controlWord !== null && !isValidControlWord(payload.controlWord))) {
       this.counters.droppedControlWord++;
+      wire.statistics.receiveDrops++;
       return;
     }
     const length = ethernetFrameBytesWithoutFcs(payload.frame) - ETHERNET_HEADER_BYTES;
     if (length > this.host.attachmentMtu(attachmentCircuit)) {
       this.counters.droppedMtu++;
+      wire.statistics.receiveDrops++;
       return;
     }
     this.counters.decapsulated++;
+    wire.statistics.receivedPackets++;
+    wire.statistics.receivedBytes += ethernetFrameBytesWithoutFcs(payload.frame);
     this.host.sendFrame(attachmentCircuit, payload.frame);
   }
 
   attachmentStateChanged(iface: string): void {
     this.wires.get(iface)?.session.localStateChanged();
+    this.observeAll();
   }
 
   sessionOperational(peer: LdpIdentifier): void {
     for (const { config, session } of this.wires.values()) if (config.peer.equals(peer.lsrId)) session.advertise();
+    this.observeAll();
   }
 
   sessionClosed(peer: LdpIdentifier): void {
     for (const { config, session } of this.wires.values()) if (config.peer.equals(peer.lsrId)) session.sessionClosed();
+    this.observeAll();
   }
 
   mapping(peer: LdpIdentifier, fec: PwFec, label: MplsLabel, pwStatus: number | undefined): void {
@@ -185,17 +274,20 @@ export class PseudowireEngine implements LdpPwHandler {
       return;
     }
     wire.session.mapping(peer, fec, label, pwStatus);
+    this.observeAll();
   }
 
   withdraw(peer: LdpIdentifier, fec: PwFec, label: MplsLabel | undefined, status: number | undefined): void {
     if (fec.kind !== 'pwid') return;
     if (fec.pwId !== null) this.pendingRemote.delete(remoteKey(peer.lsrId, fec.pwId));
     this.find(peer, fec)?.session.withdraw(peer, label, status);
+    this.observeAll();
   }
 
   release(peer: LdpIdentifier, fec: PwFec, _label: MplsLabel | undefined, status: number | undefined): void {
     if (fec.kind !== 'pwid') return;
     this.find(peer, fec)?.session.release(status);
+    this.observeAll();
   }
 
   notification(peer: LdpIdentifier, fec: PwFec, pwStatus: number): void {
@@ -205,6 +297,7 @@ export class PseudowireEngine implements LdpPwHandler {
       const wildcard = fec.pwId === null && config.groupId === fec.groupId;
       if (wildcard || fec.pwId === config.pwId) session.notification(pwStatus);
     }
+    this.observeAll();
   }
 
   macWithdraw(): void {}

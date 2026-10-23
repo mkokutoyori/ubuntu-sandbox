@@ -71,7 +71,7 @@ interface BgpState {
 }
 
 interface Instance {
-  readonly config: VplsConfig;
+  config: VplsConfig;
   readonly attachmentCircuits: Set<string>;
   readonly neighbors: Map<string, Neighbor>;
   readonly fdb: BridgeFdb;
@@ -176,7 +176,36 @@ export class VplsEngine implements LdpPwHandler {
       this.pendingRemote.delete(`${instance.config.vpnId}|${peer}`);
     }
     this.ldp().addTargetedPeer(peer);
-    session.advertise();
+    if (instance.config.vpnId > 0) session.advertise();
+  }
+
+  undefine(name: string): void {
+    const instance = this.instances.get(name);
+    if (instance === undefined) return;
+    for (const neighbor of [...instance.neighbors.values()]) this.removeNeighbor(name, neighbor.peer);
+    this.instances.delete(name);
+  }
+
+  views(): ReadonlyArray<{
+    readonly name: string; readonly vpnId: number; readonly state: 'up' | 'down';
+    readonly attachmentCircuits: readonly string[]; readonly neighbors: readonly VplsNeighborView[];
+  }> {
+    return [...this.instances.values()].map(instance => {
+      const neighbors = this.neighborViews(instance.config.name);
+      return {
+        name: instance.config.name, vpnId: instance.config.vpnId,
+        state: neighbors.some(neighbor => neighbor.state === 'up') ? 'up' as const : 'down' as const,
+        attachmentCircuits: [...instance.attachmentCircuits], neighbors,
+      };
+    });
+  }
+
+  setVpnId(name: string, vpnId: number): void {
+    const instance = this.instance(name);
+    if (instance.config.vpnId === vpnId) return;
+    for (const neighbor of instance.neighbors.values()) neighbor.ldp?.teardown();
+    instance.config = { ...instance.config, vpnId };
+    if (vpnId > 0) for (const neighbor of instance.neighbors.values()) neighbor.ldp?.advertise();
   }
 
   removeNeighbor(name: string, peer: IPAddress): void {
@@ -274,7 +303,9 @@ export class VplsEngine implements LdpPwHandler {
   }
 
   sessionOperational(peer: LdpIdentifier): void {
-    for (const instance of this.instances.values()) instance.neighbors.get(peer.lsrId.toString())?.ldp?.advertise();
+    for (const instance of this.instances.values()) {
+      if (instance.config.vpnId > 0) instance.neighbors.get(peer.lsrId.toString())?.ldp?.advertise();
+    }
   }
 
   sessionClosed(peer: LdpIdentifier): void {

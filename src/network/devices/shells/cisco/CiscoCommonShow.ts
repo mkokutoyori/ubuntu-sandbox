@@ -1326,68 +1326,6 @@ export function showIpDnsStatistics(router?: DnsStatsDevice): string {
   ].join('\n');
 }
 
-/** `show vrf` / `show ip vrf` — enumerate configured VRF instances. */
-export function showVrf(router?: unknown): string {
-  const header = '  Name                             Default RD            Protocols   Interfaces';
-  if (!router) return header;
-  const r = router as { _vrfs?: Map<string, { name: string; rd?: string; interfaces: Set<string> }> };
-  const vrfs = r._vrfs;
-  if (!vrfs || vrfs.size === 0) return header;
-  const lines = [header];
-  for (const vrf of vrfs.values()) {
-    const rd = vrf.rd ?? '<not set>';
-    const ifaces = [...vrf.interfaces].join(', ') || '<none>';
-    lines.push(`  ${padToWidth(vrf.name, 33)}${padToWidth(rd, 22)}${padToWidth('ipv4', 12)}${ifaces}`);
-  }
-  return lines.join('\n');
-}
-
-interface VrfView {
-  _vrfs?: Map<string, { name: string; rd?: string; interfaces: Set<string> }>;
-}
-
-export function showVrfDetail(router?: unknown, name?: string): string {
-  const vrfs = (router as VrfView | undefined)?._vrfs;
-  if (!vrfs || vrfs.size === 0) {
-    return name ? `% VRF ${name} does not exist` : '';
-  }
-  const wanted = name ? [vrfs.get(name)].filter(Boolean) : [...vrfs.values()];
-  if (name && wanted.length === 0) return `% VRF ${name} does not exist`;
-  const lines: string[] = [];
-  for (const vrf of wanted as Array<{ name: string; rd?: string; interfaces: Set<string> }>) {
-    lines.push(`VRF ${vrf.name}; default RD ${vrf.rd ?? '<not set>'}; default VPNID <not set>`);
-    const ifaces = [...vrf.interfaces];
-    if (ifaces.length === 0) {
-      lines.push('  No interfaces');
-    } else {
-      lines.push('  Interfaces:');
-      for (const i of ifaces) lines.push(`    ${i}`);
-    }
-    lines.push('Address family ipv4 unicast (Table ID 0x0):');
-    lines.push('  No Export VPN route-target communities');
-    lines.push('  No Import VPN route-target communities');
-    lines.push('  No import route-map');
-    lines.push('  No export route-map');
-  }
-  return lines.join('\n');
-}
-
-export function showVrfInterfaces(router?: unknown): string {
-  const vrfs = (router as VrfView | undefined)?._vrfs;
-  const header = 'Interface              VRF                              Protocol Address';
-  if (!vrfs || vrfs.size === 0) return header;
-  const lines = [header];
-  const addr = (router as { getPort?: (n: string) => { getIPAddress?: () => unknown } | undefined })
-    .getPort?.bind(router);
-  for (const vrf of vrfs.values()) {
-    for (const iface of vrf.interfaces) {
-      const ip = addr?.(iface)?.getIPAddress?.();
-      lines.push(`${padToWidth(iface, 23)}${padToWidth(vrf.name, 33)}${padToWidth('up', 9)}${ip ? String(ip) : '<not set>'}`);
-    }
-  }
-  return lines.join('\n');
-}
-
 export interface AdjacencySource {
   _getArpTableInternal(): Map<string, { mac: { toString(): string }; iface: string }>;
 }

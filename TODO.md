@@ -3472,18 +3472,14 @@ memoire un format de sortie. A reprendre avec une capture reelle.
 (en-tete, checksum, champ de longueur) - la RFC 4884 qui la definit n'est pas
 dans `docs/rfc/mpls`.
 
-### [mpls] les vues `show mpls ...` reposent sur des lignes d'exemple, pas sur une capture complete
-`show mpls forwarding-table`, `show mpls interfaces`, `show mpls ldp neighbor`,
-`bindings` et `discovery` sont rendues d'apres les en-tetes et les lignes
-d'exemple de IOS-XE que `genie.libs.parser` (`iosxe/show_mpls.py`) cite dans les
-commentaires de ses expressions regulieres. L'indentation absolue des blocs
-(4/8/10 espaces de `ldp neighbor`), la largeur des cellules d'adresses et le
-champ `Up time` au-dela d'un jour ne sont pas lisibles dans ces commentaires.
-`show mpls ldp neighbor detail`, `bindings all detail`, `show mpls ldp
-parameters` et `show mpls forwarding-table detail` ne sont pas servis.
+### [mpls] les vues `show mpls ...` : contenu du livre Cisco, mise en page des transcriptions
+Le contenu et les arguments des vues suivent maintenant `official_docs/cisco/mp-cr-book.pdf`
+(voir `[cli-mpls]`). La mise en page absolue (indentation 4/8/10 espaces de `ldp neighbor`,
+largeur des cellules d'adresses, `Up time` au-dela d'un jour) reste celle des lignes d'exemple
+d'IOS-XE citees par `genie.libs.parser` : le texte du PDF perd l'indentation.
 **Pourquoi ce n'est pas ferme** : CLAUDE.md §8 - une capture integrale d'IOS est
-necessaire pour trancher ; les ntc-templates ne portent que
-`show mpls interfaces` pour IOS.
+necessaire pour trancher l'indentation ; le livre ne porte pas non plus la sortie de
+`traceroute` avec l'objet « MPLS Label Stack » de la RFC 4950.
 
 ### [ldp] le reste de la RFC 5036
 Mode Downstream on Demand : sert en controle independant et ordonne (requete,
@@ -3590,6 +3586,71 @@ le premier consommateur, pas avant : un contexte sans usage serait un critere
 stocke et jamais evalue. Les RFC 3034, 3035, 3037 (FR, ATM, applicabilite LDP) et
 5462 (renommage EXP en TC, deja suivi dans le vocabulaire) n'ajoutent aucun
 comportement a simuler.
+
+### [cli-mpls] le reste des vues MPLS du livre Cisco (mp-cr-book.pdf)
+Servies : `show mpls ldp neighbor|discovery|bindings|parameters|capabilities|backoff`,
+`show mpls label range`, `show mpls forwarding-table` (filtres, lignes VPN
+`[V]`, detail) et `show mpls interfaces [detail]`. Absentes : les variantes
+`vrf` / `all` (le LDP ici ne tourne pas par VRF), la plage `labels N - N`,
+les lignes `Password:` (pas de TCP MD5) et le graceful-restart, `show mpls ldp
+igp sync`, `show mpls ldp checkpoint`. Le texte du PDF perd l'indentation et la
+ligne des « Targeted Hellos » de l'exemple : la forme suit le tableau des
+champs du livre. `show mpls ldp capabilities` ne liste rien parce que ce LSR
+n'annonce aucun TLV de capacite.
+
+### [cli-mpls-config] les commandes de configuration MPLS du livre non evaluees
+Servies et evaluees : `mpls label range`, `mpls ldp loop-detection | maxhops |
+path-vector maxlength | holdtime | backoff | explicit-null` et les minuteries
+`discovery hello | targeted-hello`. Refusees faute de moteur : la forme `static`
+de `mpls label range` (aucune liaison statique `mpls static binding ipv4`), les
+formes `for` / `to` de `explicit-null` et toute commande `advertise-labels` /
+`neighbor labels accept` (pas de filtrage des annonces par ACL), `mpls ldp
+discovery transport-address`, `session protection`, `igp sync`, `graceful-restart`
+et les mots de passe MD5. Un `mpls label range` qui chevauche la plage utilisee
+est applique immediatement, comme le livre l'autorise pour les logiciels a MFI,
+y compris quand elle ne chevauche pas (le livre exige alors un rechargement).
+Le livre dit de `loop-detection` et `maxhops` qu'ils servent le mode Downstream on
+Demand des commutateurs ATM : ici ils pilotent aussi le mode non sollicite.
+
+### [cli-mpls-oam] le reste de `ping mpls` / `traceroute mpls` du livre
+Servis : la cible `ipv4 A/M` avec `repeat`, `size`, `timeout`, `ttl`, `exp`,
+`reply mode | dscp | pad-tlv`, `dsmap` et `verbose` pour le ping ; `timeout`,
+`ttl`, `exp` et `reply ...` pour le traceroute. Absents (refuses, jamais
+acceptes sans effet) : `pseudowire` (la FEC 128/129 de la RFC 8029 n'est pas
+validee), `traffic-eng` et `tp`, `source`, `interval`, `sweep`, `pad`,
+`force-explicit-null`, `output`, `revision`, `flags fec`, `hashkey`,
+`destination` (plages 127/8) et `traceroute mpls multipath`. Une seule clause
+`reply` par commande : le sac d'options ne propose un mot-cle qu'une fois,
+alors qu'IOS accepte `reply mode ... reply dscp ...`. Le mode interactif
+(`ping` puis `Protocol [ip]: mpls`) n'existe pas. Les temps aller-retour sont
+ceux de `PathClock` : quelques microsecondes, donc `0/0/0 ms` en LAN.
+Les lettres `L` et `B` du bloc Codes ne sont pas produites : `B` pour le code
+9, `L` jamais (le livre ne dit pas a quel code elle correspond).
+
+### [cli-mpls-l2vpn] le reste des commandes L2VPN du livre
+Servies : `pseudowire-class` (encapsulation mpls, control-word), `xconnect A N
+pw-class C` et `encapsulation mpls [pw-class C]`, `xconnect vfi V`, `l2 vfi V manual`
+avec `vpn id` et `neighbor A encapsulation mpls`, `show mpls l2transport vc
+[detail]`, `show xconnect all | peer | interface [detail]`, `show vfi [name V]`.
+Refusees faute de moteur : `neighbor ... no-split-horizon` (l'horizon partage est
+toujours actif), `encapsulation l2tpv3`, les pseudo-fils statiques `manual` et
+`mpls label`, `preferred-path`, `sequencing`, `interworking`, la decouverte
+automatique (`l2 vfi ... autodiscovery`), `bridge-domain` / `member`, `l2vpn xconnect
+context`, `show mpls l2transport binding | summary | checkpoint`, `show l2vpn atom`.
+L'attachement est un port routeur, pas un VLAN ni une instance de service : la
+colonne « Local circuit » affiche toujours Ethernet. Les statistiques VC comptent
+les trames Ethernet (octets sans FCS), pas des paquets MPLS. `Create time` et `last
+status change time` sont des durees depuis l'evenement, mesurees quand un evenement de
+signalisation ou une lecture observe le changement d'etat.
+
+### [cli-mpls-l3vpn] le reste des vues L3VPN du livre
+Servies : `show ip vrf [brief|detail|interfaces] [nom]`, `show vrf [brief|detail]`,
+`show ip bgp vpnv4 {all|rd|vrf} [labels|summary]` avec l'en-tete « Route Distinguisher
+... (default for vrf X) », le statut `*>i` et le numero de version de table. Pas
+servies : `show ip vrf id`, `show vrf select|lock|ipv6`, le detail d'une entree reseau
+(`show ip bgp vpnv4 ... A.B.C.D`), `neighbors`, `network`, `tags`, `regexp`, `inconsistent-as`.
+Dans le resume, `TblVer`, `InQ` et `OutQ` valent toujours 0 (pas de file de sortie ni de
+version par voisin exposee) ; `MsgRcvd`/`MsgSent` sont les compteurs reels de la session.
 
 ### [entropy-label] le reste de la RFC 6790
 Seule la signalisation LDP (TLV 0x0206) est servie : l'attribut BGP (type 28) et le

@@ -92,6 +92,7 @@ export class VpnV4Speaker {
   private readonly received = new Map<string, Map<string, VpnPath>>();
   private readonly advertised = new Map<string, Map<string, string>>();
   private syncing = false;
+  private version = 0;
 
   constructor(private readonly host: VpnV4Host) {}
 
@@ -104,7 +105,12 @@ export class VpnV4Speaker {
   peerDown(peerIp: string): void {
     this.received.delete(peerIp);
     this.advertised.delete(peerIp);
+    this.version++;
     this.sync();
+  }
+
+  tableVersion(): number {
+    return this.version;
   }
 
   receivedCount(peerIp: string): number {
@@ -118,6 +124,7 @@ export class VpnV4Speaker {
   onUpdate(peer: VpnPeer, update: BgpUpdateMessage): void {
     const table = this.received.get(peer.ip);
     if (!table) return;
+    this.version++;
     for (const withdrawal of update.mpUnreach?.safi === SAFI_MPLS_VPN ? update.mpUnreach.nlri : []) {
       table.delete(pathKey(withdrawal.rd, new IPAddress(withdrawal.network), withdrawal.prefixLength));
     }
@@ -166,12 +173,14 @@ export class VpnV4Speaker {
         });
       }
     }
+    const changed = fresh.size !== this.local.size || [...fresh.keys()].some(key => !this.local.has(key));
+    if (changed) this.version++;
     for (const [key, path] of this.local) if (!fresh.has(key)) this.host.releaseLabel(path.label);
     this.local.clear();
     for (const [key, path] of fresh) this.local.set(key, path);
   }
 
-  private bestPaths(): Map<string, VpnPath> {
+  bestPaths(): Map<string, VpnPath> {
     const best = new Map<string, VpnPath>();
     const consider = (path: VpnPath): void => {
       const held = best.get(path.key);

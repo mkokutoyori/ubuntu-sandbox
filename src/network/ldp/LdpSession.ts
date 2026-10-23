@@ -36,6 +36,10 @@ export class LdpSession {
   peer: LdpIdentifier | null;
   negotiated: LdpSessionParameters | null = null;
   readonly peerAddresses = new Map<string, IPAddress>();
+  uid = 0;
+  peerLoopDetection = false;
+  peerPathVectorLimit = 0;
+  peerIndex = 0;
   messagesSent = 0;
   messagesReceived = 0;
   operationalSinceMs: number | null = null;
@@ -240,6 +244,8 @@ export class LdpSession {
     if (proposal.advertisementMode !== local.advertisementMode && local.advertisementMode === 'on-demand') {
       return StatusCode.SessionRejectedAdvertisementMode;
     }
+    this.peerLoopDetection = proposal.loopDetection;
+    this.peerPathVectorLimit = proposal.pathVectorLimit;
     this.negotiated = {
       keepAliveTimeSeconds: Math.min(local.keepAliveTimeSeconds, proposal.keepAliveTimeSeconds),
       advertisementMode: local.advertisementMode === 'on-demand' && proposal.advertisementMode === 'on-demand' ? 'on-demand' : 'unsolicited',
