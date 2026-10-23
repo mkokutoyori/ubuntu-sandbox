@@ -3743,3 +3743,7 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 (RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` n'est pas porte (le texte ASCII est imprime
 sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
 (`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
+
+### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
+
+`%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
