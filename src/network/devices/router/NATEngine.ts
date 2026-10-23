@@ -24,6 +24,7 @@ import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
 import { Logger } from '../../core/Logger';
+import { DNS_PORT } from '../../dns/transport/DnsUdpTransport';
 import {
   NATSignalStore,
   makeReadonlyNATObservables,
@@ -141,6 +142,16 @@ export interface NatTimeouts {
   dns: number;
   /** TCP FIN/RST (session closing). Default 60 s. */
   finrst: number;
+  /** Host-level dynamic translation (non-overload pool). Default 86400 s. */
+  simple: number;
+}
+
+export interface NatHostBinding {
+  poolName: string;
+  localIP: string;
+  globalIP: string;
+  createdAt: number;
+  timestamp: number;
 }
 
 /** Result of a NAT translation lookup (for show ip nat translations) */
@@ -156,6 +167,7 @@ export interface NatTranslationEntry {
   timeoutMs?: number;
   /** Inside (possibly dot1q subinterface) this session was created on. */
   inputIface?: string;
+  dynamicBinding?: boolean;
 }
 
 // ─── NATEngine ───────────────────────────────────────────────────────────────
@@ -193,6 +205,7 @@ export class NATEngine {
     icmp:            60_000,   // 60 s  — common practice
     dns:             60_000,   // 60 s  — IOS default
     finrst:          60_000,   // 60 s  — IOS default
+    simple:          86_400_000,
   };
 
   // Hit/miss counters (RFC 2663 §4)
@@ -217,6 +230,18 @@ export class NATEngine {
   getMaxEntriesByHost(): ReadonlyMap<string, number> { return this.maxEntriesByHost; }
 
   getMaxEntriesAllHost(): number | null { return this.maxEntriesAllHost; }
+
+  private outboundRefused = false;
+  private readonly hostBindings = new Map<string, NatHostBinding>();
+
+  getHostBindings(): readonly NatHostBinding[] { return [...this.hostBindings.values()]; }
+
+
+  consumeOutboundRefusal(): boolean {
+    const refused = this.outboundRefused;
+    this.outboundRefused = false;
+    return refused;
+  }
 
   private mayCreateSession(srcIP: string): boolean {
     if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) return false;
@@ -565,6 +590,7 @@ export class NATEngine {
     pkt: IPv4Packet, outIface: string, inIface: string,
     opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
   ): IPv4Packet | null {
+    this.outboundRefused = false;
     const isHairpin = opts?.isHairpin ?? false;
     if (!this.outsideIfaces.has(outIface) && !isHairpin) return null;
     // Only translate traffic originating from inside
@@ -639,6 +665,7 @@ export class NATEngine {
     }
 
     // 2. Dynamic rules
+    let refused = false;
     for (const rule of this.dynamicRules) {
       if (!this.matchACL(rule.aclId, srcIP, opts?.aclMatchPkt ?? pkt, outIface)) continue;
 
@@ -655,9 +682,9 @@ export class NATEngine {
         let session = this.sessions.get(sessionKey);
 
         if (!session) {
-          if (!this.mayCreateSession(srcIP)) continue;
+          if (!this.mayCreateSession(srcIP)) { refused = true; continue; }
           const globalPort = this.allocatePort(proto, globalIP, srcPort);
-          if (globalPort === null) continue; // ephemeral range exhausted
+          if (globalPort === null) { refused = true; continue; }
           session = {
             protocol: proto,
             localIP: srcIP, localPort: srcPort,
@@ -722,7 +749,7 @@ export class NATEngine {
         const sessionKey = makeKey4(proto, srcIP, srcPort, dstIP, dstPort);
         let session = this.sessions.get(sessionKey);
         if (!session) {
-          if (!this.mayCreateSession(srcIP)) continue;
+          if (!this.mayCreateSession(srcIP)) { refused = true; continue; }
           const poolIP = rule.overload
             ? this.overloadPoolAddress(pool, proto)
             : this.allocatePoolAddress(pool, srcIP);
@@ -731,10 +758,11 @@ export class NATEngine {
             // Exhausted for this rule — try the next dynamic rule rather
             // than counting a Miss here; the final `missCount++` below
             // covers the case where no rule at all can translate the packet.
+            refused = true;
             continue;
           }
           const poolPort = rule.overload ? this.allocatePort(proto, poolIP, srcPort) : srcPort;
-          if (poolPort === null) continue;
+          if (poolPort === null) { refused = true; continue; }
           session = {
             protocol: proto,
             localIP: srcIP, localPort: srcPort,
@@ -743,6 +771,7 @@ export class NATEngine {
             outsideLocalIP, outsideLocalPort,
             timestamp: simulationNowMs(),
             createdAt: simulationNowMs(),
+            tcpState: proto === IP_PROTO_TCP ? 'syn-seen' : undefined,
             inIface,
           };
           this.sessions.set(sessionKey, session);
@@ -765,11 +794,16 @@ export class NATEngine {
           });
         } else {
           this.hitCount++;
+          session.timestamp = simulationNowMs();
+          if (proto === IP_PROTO_TCP) updateTcpState(session, pkt, 'out');
+          const binding = this.hostBindings.get(`${rule.poolName}|${srcIP}`);
+          if (binding) binding.timestamp = simulationNowMs();
         }
         return rewriteSrcIP(pkt, session.globalIP, session.globalPort);
       }
     }
 
+    this.outboundRefused = refused;
     this.missCount++;
     this.debugLog(`s=${srcIP}, d=${dstIP} [not translated]`, false);
     return null;
@@ -829,6 +863,20 @@ export class NATEngine {
       });
     }
 
+    for (const binding of this.hostBindings.values()) {
+      entries.push({
+        proto: '---',
+        insideLocal: binding.localIP,
+        insideGlobal: binding.globalIP,
+        outsideLocal: '---',
+        outsideGlobal: '---',
+        createdAtMs: binding.createdAt,
+        lastUsedMs: binding.timestamp,
+        timeoutMs: this.timeouts.simple,
+        dynamicBinding: true,
+      });
+    }
+
     return entries;
   }
 
@@ -840,7 +888,7 @@ export class NATEngine {
   getOutsideInterfaces(): Set<string> { return new Set(this.outsideIfaces); }
 
   getTranslationCount(): number {
-    return this.sessions.size + this.staticEntries.length;
+    return this.sessions.size + this.hostBindings.size + this.staticEntries.length;
   }
 
   /** Update the high-water mark after a translation is added. */
@@ -878,10 +926,12 @@ export class NATEngine {
 
   clearTranslations(): void {
     this.removeAllSessions('flush');
+    this.hostBindings.clear();
   }
 
   clearDynamicTranslations(): void {
     this.removeAllSessions('flush');
+    this.hostBindings.clear();
   }
 
 
@@ -974,6 +1024,13 @@ export class NATEngine {
     const poolStart = pool ? tryIpToUint32(pool.startIP) : null;
     const poolEnd = pool ? tryIpToUint32(pool.endIP) : null;
     let cleared = 0;
+    if (filter.outsideIP === undefined && filter.ifaces === undefined) {
+      for (const [key, binding] of this.hostBindings) {
+        if (filter.insideIP !== undefined && binding.localIP !== filter.insideIP) continue;
+        if (filter.poolName !== undefined && binding.poolName !== filter.poolName) continue;
+        this.hostBindings.delete(key);
+      }
+    }
     for (const [key, session] of this.sessions) {
       if (filter.insideIP !== undefined && session.localIP !== filter.insideIP) continue;
       if (filter.outsideIP !== undefined && session.outsideIP !== filter.outsideIP) continue;
@@ -1036,6 +1093,12 @@ export class NATEngine {
         sweeped++;
         this.announceRemoved(session, 'expired');
       }
+    }
+    for (const [key, binding] of this.hostBindings) {
+      if (now - binding.timestamp < this.timeouts.simple) continue;
+      const inUse = [...this.sessions.values()].some(
+        (session) => session.localIP === binding.localIP && session.globalIP === binding.globalIP);
+      if (!inUse) this.hostBindings.delete(key);
     }
     if (sweeped > 0) {
       this.getBus().publish({
@@ -1107,10 +1170,11 @@ export class NATEngine {
   private sessionTimeout(session: NatSession): number {
     if (session.protocol === IP_PROTO_TCP) {
       if (session.tcpState === 'syn-seen')   return this.timeouts.tcpHalfOpen;
-      if (session.tcpState === 'time-wait')  return 60_000; // 2 × MSL = 60 s (RFC 793)
+      if (session.tcpState === 'time-wait' || session.tcpState === 'fin-wait' || session.tcpState === 'closed') return this.timeouts.finrst;
       return this.timeouts.tcp;
     }
     if (session.protocol === IP_PROTO_ICMP) return this.timeouts.icmp;
+    if (session.outsidePort === DNS_PORT) return this.timeouts.dns;
     return this.timeouts.udp; // default for UDP and others
   }
 
@@ -1152,24 +1216,24 @@ export class NATEngine {
   }
 
   private allocatePoolAddress(pool: NatPool, insideIP: string): string | null {
-    for (const s of this.sessions.values()) {
-      if (s.localIP === insideIP) {
-        const sN = tryIpToUint32(s.globalIP);
-        const start = tryIpToUint32(pool.startIP);
-        const end = tryIpToUint32(pool.endIP);
-        if (sN != null && start != null && end != null && sN >= start && sN <= end) {
-          return s.globalIP;
-        }
-      }
+    const key = `${pool.name}|${insideIP}`;
+    const bound = this.hostBindings.get(key);
+    if (bound) {
+      bound.timestamp = simulationNowMs();
+      return bound.globalIP;
     }
     const startN = tryIpToUint32(pool.startIP);
     const endN = tryIpToUint32(pool.endIP);
     if (startN == null || endN == null) return null;
     const taken = new Set<string>();
     for (const s of this.sessions.values()) taken.add(s.globalIP);
+    for (const binding of this.hostBindings.values()) taken.add(binding.globalIP);
     for (let n = startN; n <= endN; n++) {
       const ip = uint32ToIp(n);
-      if (!taken.has(ip)) return ip;
+      if (taken.has(ip)) continue;
+      const now = simulationNowMs();
+      this.hostBindings.set(key, { poolName: pool.name, localIP: insideIP, globalIP: ip, createdAt: now, timestamp: now });
+      return ip;
     }
     return null;
   }

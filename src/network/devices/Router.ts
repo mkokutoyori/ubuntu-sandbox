@@ -3580,6 +3580,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
       fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
     }
+    else if (this.natEngine.consumeOutboundRefusal()) {
+      this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 1);
+      return;
+    }
 
     // `rate-limit output` police à la SORTIE, donc sur l'interface
     // choisie par le routage et non sur celle d'arrivée, et avant l'ACL

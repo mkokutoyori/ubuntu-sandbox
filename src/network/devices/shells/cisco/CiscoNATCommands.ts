@@ -467,7 +467,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const s = parseInt(args[0] ?? '', 10);
     const err = validateTimeout(s);
     if (err) return err;
-    ctx.r()._getNATEngine().setTimeouts({ tcp: s * 1000, udp: s * 1000, icmp: s * 1000 });
+    ctx.r()._getNATEngine().setTimeouts({ tcp: s * 1000, udp: s * 1000, icmp: s * 1000, simple: s * 1000 });
     return '';
   });
 
@@ -863,7 +863,7 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
   let entries = router._getNATEngine().getTranslations();
   if (filterIP) entries = entries.filter(e => e.insideLocal.includes(filterIP!) || e.insideGlobal.includes(filterIP!));
   const header = `Pro  Inside global          Inside local           Outside local          Outside global`;
-  if (entries.length === 0) return `${header}\nNo NAT entries.`;
+  if (entries.length === 0) return `${header}\nNo NAT translations.`;
 
   const lines: string[] = [];
   lines.push(header);
@@ -879,7 +879,7 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
       lines.push(`    create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --`);
     }
     if (e.inputIface) lines.push(`    input iface: ${e.inputIface}`);
-    lines.push(`    flags: ${e.proto === '---' ? 'static' : 'extended'}`);
+    lines.push(`    flags: ${e.dynamicBinding ? 'none' : e.proto === '---' ? 'static' : 'extended'}`);
     lines.push('');
   }
   return lines.join('\n').trimEnd();
@@ -888,8 +888,9 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
 export function showNATStatistics(router: Router): string {
   const engine = router._getNATEngine();
   const sessions = engine.getSessions();
-  const dynamicSessions = sessions.filter(s => s.viaStatic !== true).length;
-  const statics = engine.getStaticEntries().length + (sessions.length - dynamicSessions);
+  const dynamicFlows = sessions.filter(s => s.viaStatic !== true).length;
+  const dynamicSessions = dynamicFlows + engine.getHostBindings().length;
+  const statics = engine.getStaticEntries().length + (sessions.length - dynamicFlows);
   const dynamic = engine.getDynamicRules().length;
   const pools = engine.getPools().size;
   const total = engine.getTranslationCount();
@@ -923,7 +924,9 @@ export function showNATStatistics(router: Router): string {
     const start = addressNumber(pool.startIP);
     const end = addressNumber(pool.endIP);
     const inPool = sessions.filter(s => s.viaStatic !== true && addressNumber(s.globalIP) >= start && addressNumber(s.globalIP) <= end);
-    const allocated = new Set(inPool.map(s => s.globalIP)).size;
+    const allocated = rule.overload
+      ? new Set(inPool.map(s => s.globalIP)).size
+      : engine.getHostBindings().filter(b => b.poolName === pool.name).length;
     const total = end - start + 1;
     mappingLines.push(`${id} ${selector} pool ${pool.name}${rule.overload ? ' overload' : ''} refcount ${inPool.length}`);
     mappingLines.push(` pool ${pool.name}: netmask ${maskOf(pool)}`);
@@ -946,7 +949,7 @@ export function showNATStatistics(router: Router): string {
     ...(counters.expired > 0 ? [`Expired translations: ${counters.expired}`] : []),
     `Session timeouts (seconds): tcp ${timeouts.tcp / 1000}  udp ${timeouts.udp / 1000}  icmp ${timeouts.icmp / 1000}  syn ${timeouts.tcpHalfOpen / 1000}`,
     ...(hasOverload ? ['Overloaded mappings: yes'] : []),
-    ...(maxEntries != null ? [`max-entries ${maxEntries}`, ...(dynamicSessions >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
+    ...(maxEntries != null ? [`max-entries ${maxEntries}`, ...(sessions.length >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
     `Static mappings:`,
     ...(staticEntries.length === 0 ? ['-- No static NAT entries configured --'] :
       staticEntries.map(e => e.protocol

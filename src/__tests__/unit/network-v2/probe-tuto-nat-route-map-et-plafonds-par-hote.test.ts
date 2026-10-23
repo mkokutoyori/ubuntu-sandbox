@@ -33,6 +33,7 @@ beforeEach(() => { resetCounters(); resetDeviceCounters(); MACAddress.resetCount
 const LIST_PAT = 'ip nat inside source list 1 interface GigabitEthernet0/1 overload';
 const MAP_PAT = 'ip nat inside source route-map RM-ISP1 interface GigabitEthernet0/1 overload';
 const ping = (host: { executeCommand(c: string): Promise<string> }) => host.executeCommand('ping 198.51.100.10');
+const pingTo = (host: { executeCommand(c: string): Promise<string> }, ip: string) => host.executeCommand(`ping ${ip}`);
 const received = (out: string) => Number(/Received = (\d+)/.exec(out)?.[1] ?? '0');
 
 describe('ip nat inside source route-map', () => {
@@ -89,7 +90,8 @@ describe('ip nat inside source route-map', () => {
 describe('ip nat translation max-entries host / all-host', () => {
   it('caps the translations of one host and leaves the others alone', async () => {
     const { win, lin } = await tutoNatLab([LIST_PAT, 'ip nat translation max-entries host 192.168.10.21 1']);
-    expect(received(await ping(win))).toBe(1);
+    expect(received(await ping(win))).toBe(4);
+    expect(received(await pingTo(win, '203.0.113.9'))).toBe(0);
     expect(await lin.executeCommand('ping -c 3 198.51.100.10')).toContain('3 received');
   });
 
@@ -99,7 +101,9 @@ describe('ip nat translation max-entries host / all-host', () => {
       'ip nat inside source list 1 pool POOL-AKWA overload',
       'ip nat translation max-entries all-host 2',
     ]);
-    expect(received(await ping(win))).toBe(2);
+    expect(received(await ping(win))).toBe(4);
+    expect(received(await pingTo(win, '203.0.113.9'))).toBe(4);
+    expect(received(await pingTo(win, '203.0.113.1'))).toBe(0);
   });
 
   it('is rendered in the running-config, in the three forms', async () => {
