@@ -132,4 +132,15 @@ describe('dynamic NAT coherence', () => {
     await r.executeCommand('clear ip nat translation *');
     expect(sent(await isp.executeCommand('ping 203.0.113.4'))).toBe('0');
   });
+
+  it('carries a passive FTP transfer through the pool: control and data connections share the host address', async () => {
+    const { r, lin, ext } = await tutoNatLab(POOL_ONE);
+    await ext.executeCommand('apt install -y vsftpd');
+    await ext.executeCommand('echo HELLO_FTP > /srv/ftp/test.txt');
+    expect(await lin.executeCommand('curl -s -m 8 ftp://203.0.113.9/test.txt')).toContain('HELLO_FTP');
+    const tcp = rows(await r.executeCommand('show ip nat translations'), 'tcp');
+    expect(tcp).toHaveLength(2);
+    expect(tcp.every(l => l.includes('203.0.113.4:') && l.includes('192.168.10.22:'))).toBe(true);
+    expect(tcp.some(l => l.includes('203.0.113.9:21'))).toBe(true);
+  });
 });

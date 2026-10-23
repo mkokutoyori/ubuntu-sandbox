@@ -3743,3 +3743,7 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 (RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` n'est pas porte (le texte ASCII est imprime
 sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
 (`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
+
+### [nat-ftp-actif] le mode actif FTP ne peut pas etre mene de bout en bout a travers un NAT de pool (mesure : natlab)
+
+Le transfert passif `curl ftp://` traverse correctement un NAT de pool (controle et donnees portent l'adresse du pool). Le mode actif (`curl -P -`) n'est pas implemente dans le client curl du simulateur, donc l'ALG de la commande PORT n'est exercee que par des paquets construits a la main (`ftp-alg-nat.test.ts`). A la lecture, `Router.processIPv4` passe a `inspectAndRewriteFtpAlg` l'adresse de l'interface de sortie et non l'adresse source traduite : avec un pool, la commande PORT annoncerait l'adresse de l'interface au lieu de celle du pool. A fermer avec `curl -P` (moteur curl commun), puis la mesure de bout en bout.
