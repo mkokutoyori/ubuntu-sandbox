@@ -27,7 +27,7 @@ import { SenderResolver } from './SenderResolver';
 import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
 import { PercentileStatsRegistry } from './PercentileStats';
 import { Statistics } from './Statistics';
-import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type QueueSettings } from './Settings';
+import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type CompatMode, type QueueSettings } from './Settings';
 
 export interface ModuleCatalog {
   find(cnfName: string): EngineModule | undefined;
@@ -912,7 +912,17 @@ export class ConfigLoader implements ConfigSink {
   }
 
   cfsysline(line: string): void {
+    if (!this.permitCompatSyntax(this.config.settings.compatConfigFormat.legacy, '$-directive', line, 'compatibility.configformat.legacy')) return;
     this.runDirective(line.slice(1));
+  }
+
+  private permitCompatSyntax(mode: CompatMode, kind: string, text: string, option: string): boolean {
+    if (mode === 'warn') this.warnAt(`obsolete ${kind} syntax encountered: '${text}'`);
+    else if (mode === 'disable') {
+      this.reportAt(`obsolete ${kind} syntax disabled: '${text}'; use global(${option}="enable") to enable it`);
+      return false;
+    }
+    return true;
   }
 
   legacyRuleset(line: string): void {
@@ -1181,6 +1191,7 @@ export class ConfigLoader implements ConfigSink {
 
   newPriorityFilter(text: string, then: Stmt[], location: Location): Stmt {
     this.currentLocation = location;
+    if (!this.permitCompatSyntax(this.config.settings.compatConfigFormat.syslogd, 'classic syslogd filter', text, 'compatibility.configformat.syslogd')) return { k: 'nop' };
     const mask = decodePriorityFilter(text, (message) => this.log.error(message, RS_RET.ERR));
     if (mask === null) {
       this.config.hadErrors = true;
@@ -1191,6 +1202,7 @@ export class ConfigLoader implements ConfigSink {
 
   newPropertyFilter(text: string, then: Stmt[], location: Location): Stmt {
     this.currentLocation = location;
+    if (!this.permitCompatSyntax(this.config.settings.compatConfigFormat.property, 'classic property-based filter', text, 'compatibility.configformat.property')) return { k: 'nop' };
     const decoded = decodePropertyFilter(text, (message) => this.reportAt(message, location));
     if (decoded === null) return { k: 'nop' };
     return { k: 'propfilt', printable: text, prop: decoded.prop, operation: decoded.operation, negated: decoded.negated, value: decoded.value, then };

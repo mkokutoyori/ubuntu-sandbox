@@ -63,6 +63,7 @@ export interface GlobalSettings {
   abortOnIdResolutionFail: boolean;
   operatingStateFile: string | null;
   compatDefaultsSecure: 'backward-compatible' | 'strict' | 'warn';
+  compatConfigFormat: { legacy: CompatMode; syslogd: CompatMode; property: CompatMode };
   ipProtocol: 'unspecified' | 'ipv4-only' | 'ipv6-only';
   supportCompressionExtension: boolean;
   markIntervalSeconds: number;
@@ -112,6 +113,7 @@ export function defaultGlobalSettings(): GlobalSettings {
     abortOnIdResolutionFail: true,
     operatingStateFile: null,
     compatDefaultsSecure: 'backward-compatible',
+    compatConfigFormat: { legacy: 'enable', syslogd: 'enable', property: 'enable' },
     ipProtocol: 'unspecified',
     supportCompressionExtension: true,
     markIntervalSeconds: 20 * 60,
@@ -209,6 +211,8 @@ export function clampMaxLine(requested: number, report: (message: string) => voi
   return requested;
 }
 
+export type CompatMode = 'enable' | 'warn' | 'disable';
+
 export function applyGlobalParams(settings: GlobalSettings, values: ParamValues, report: (message: string) => void): void {
   const parser = settings.parser;
   for (const [name, value] of values) settings.extra.set(name, value);
@@ -257,6 +261,11 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   const ipProtocol = str(values, 'net.ipprotocol');
   if (ipProtocol === 'unspecified' || ipProtocol === 'ipv4-only' || ipProtocol === 'ipv6-only') settings.ipProtocol = ipProtocol;
   else if (ipProtocol !== undefined) report(`invalid net.ipprotocol parameter '${ipProtocol}' -- ignored`);
+  for (const kind of ['legacy', 'syslogd', 'property'] as const) {
+    const mode = str(values, `compatibility.configformat.${kind}`);
+    if (mode === 'enable' || mode === 'warn' || mode === 'disable') settings.compatConfigFormat[kind] = mode;
+    else if (mode !== undefined) report(`invalid value '${mode}' for global parameter compatibility.configformat.${kind}`);
+  }
   const secureMode = str(values, 'compatibility.defaults.secure');
   if (secureMode === 'strict' || secureMode === 'backward-compatible' || secureMode === 'warn') {
     settings.compatDefaultsSecure = secureMode;
