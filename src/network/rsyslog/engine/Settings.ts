@@ -70,6 +70,7 @@ export interface GlobalSettings {
   defaultNetstreamDriver: string | null;
   defaultOpensslEngine: string | null;
   permitCtlC: boolean;
+  developerOptions: number;
   shutdownQueueDoubleSize: boolean;
   defaultNetstreamDriverCaFile: string | null;
   defaultNetstreamDriverCertFile: string | null;
@@ -123,6 +124,7 @@ export function defaultGlobalSettings(): GlobalSettings {
     defaultNetstreamDriver: null,
     defaultOpensslEngine: null,
     permitCtlC: false,
+    developerOptions: 0,
     shutdownQueueDoubleSize: false,
     defaultNetstreamDriverCaFile: null,
     defaultNetstreamDriverCertFile: null,
@@ -254,6 +256,7 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
     target.timeoutEnqueue = count(values, `default.${kind}.queue.timeoutenqueue`) ?? target.timeoutEnqueue;
     target.workerTimeoutThreadShutdown = count(values, `default.${kind}.queue.timeoutworkerthreadshutdown`) ?? target.workerTimeoutThreadShutdown;
   }
+  settings.developerOptions = count(values, 'internal.developeronly.options') ?? settings.developerOptions;
   settings.permitCtlC = flag(values, 'shutdown.enable.ctlc') ?? settings.permitCtlC;
   settings.shutdownQueueDoubleSize = flag(values, 'shutdown.queue.doublesize') ?? settings.shutdownQueueDoubleSize;
   settings.defaultNetstreamDriverCertFile = str(values, 'defaultnetstreamdrivercertfile') ?? settings.defaultNetstreamDriverCertFile;

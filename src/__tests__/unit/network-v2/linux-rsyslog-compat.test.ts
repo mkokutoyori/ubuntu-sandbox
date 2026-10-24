@@ -2,16 +2,18 @@
  * compatibility.configformat.{legacy,syslogd,property} of the ported rsyslog engine, ported from
  * runtime/glbl.c (permitCompatSyntax) and grammar/rainerscript.c (cnfstmtNewPRIFILT / cnfstmtNewPROPFILT) and
  * runtime/rsconf.c (cnfDoCfsysline), then the parameters that depend on how the daemon was built or on its signals:
- * libcapng.*, stdlog.channelSpec, defaultOpensslEngine (runtime/net_ossl.c) and shutdown.enable.ctlc (tools/rsyslogd.c).
+ * libcapng.*, stdlog.channelSpec, defaultOpensslEngine (runtime/net_ossl.c), shutdown.enable.ctlc and the keep-running
+ * bit of internal.developerOnly.options (tools/rsyslogd.c).
  * Each case drives a LinuxServer through its shell and reads the effect back from the machine (config check output,
  * exit code, files written by the daemon, service state).
- * Measured against the commit before each change: 10 of the 16 cases fall - 6 of the 9 configformat cases (the
+ * Measured against the commit before each change: 11 of the 18 cases fall - 6 of the 9 configformat cases (the
  * policies were parsed as plain words and never consulted, so a disabled syntax still ran, "warn" said nothing and a bad
- * value was accepted) and 4 of the 7 others (the build-option parameters said nothing, SIGINT/SIGQUIT killed the
- * daemon whatever shutdown.enable.ctlc said, and a missing OpenSSL engine was never reported).
- * The six that pass either way are WITNESSES built in the same lab: the default policy keeps the legacy directive, the
+ * value was accepted) and 5 of the 9 others (the build-option parameters said nothing, SIGINT/SIGQUIT killed the
+ * daemon whatever shutdown.enable.ctlc said, a missing OpenSSL engine was never reported and the developer option was
+ * not read).
+ * The seven that pass either way are WITNESSES built in the same lab: the default policy keeps the legacy directive, the
  * classic selector and the property filter working, a clean configuration raises none of the build-option messages,
- * the built-in engine and an unset engine raise nothing, and SIGTERM stops the daemon whatever the switch.
+ * the built-in engine and an unset engine raise nothing, SIGTERM stops the daemon whatever the switch, and a configuration without actions is refused without the developer option.
  * Time is the simulated clock; none of these cases waits for real time.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -191,5 +193,29 @@ describe('build options and shutdown', () => {
       await host.executeCommand(`printf '*.* action(type="omfwd" target="10.0.0.9" port="6514" protocol="tcp" StreamDriver="ossl" StreamDriverMode="1" StreamDriverAuthMode="anon")\\n' > /etc/rsyslog.d/44-tls.conf`);
       expect(await check(host)).not.toContain('ENGINE_init');
     }
+  }, 60_000);
+
+  const INPUTS_ONLY = 'module(load="imudp")\ninput(type="imudp" port="514")\n';
+
+  async function inputsOnly(host: LinuxServer, header: string): Promise<void> {
+    await host.executeCommand(`printf '${header}${INPUTS_ONLY}' > /etc/rsyslog.conf`);
+  }
+
+  it('the developer-only keep-running bit lets a configuration without actions start, with the source note', async () => {
+    const host = lab();
+    await inputsOnly(host, 'global(internal.developerOnly.options="1")\\n');
+    expect(await check(host)).toContain('rsyslogd: NOTE: developer-only option set to keep rsyslog running where it should abort - this can lead to more problems later in the run.');
+    await host.executeCommand('systemctl restart rsyslog');
+    expect((await host.executeCommand('systemctl is-active rsyslog')).trim()).toBe('active');
+  }, 60_000);
+
+  it('witness: the same configuration without that option is refused', async () => {
+    const host = lab();
+    await inputsOnly(host, '');
+    const verdict = await check(host);
+    expect(verdict).toContain('there are no active actions configured');
+    expect(verdict).not.toContain('developer-only');
+    await host.executeCommand('systemctl restart rsyslog');
+    expect((await host.executeCommand('systemctl is-active rsyslog')).trim()).not.toBe('active');
   }, 60_000);
 });
