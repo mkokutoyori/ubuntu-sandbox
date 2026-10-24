@@ -50,7 +50,7 @@ describe('impstats', () => {
     expect(read(host)).toEqual([]);
     host.advance(1_000);
     expect(bodies(host)).toEqual([
-      'main Q: origin=core.queue size=0 enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ',
+      'main Q: origin=core.queue size=0 enqueued=0 size.enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ',
       'action-0-builtin:omfile: origin=core.action processed=0 batchesprocessed=0 failed=0 suspended=0 suspended.duration=0 resumed=0 ratelimit.allowed=0 ratelimit.dropped=0 ratelimit.paced=0 ratelimit.paced_usec=0 ',
       'resource-usage: origin=impstats utime=0 stime=0 maxrss=0 minflt=0 majflt=0 inblock=0 oublock=0 nvcsw=0 nivcsw=0 openfiles=0 ',
     ]);
@@ -60,7 +60,7 @@ describe('impstats', () => {
     const { host } = rig(`${TRADITIONAL}module(load="impstats" interval="60")\n*.* /var/log/x.log`);
     host.advance(120_000);
     const second = bodies(host).slice(3);
-    expect(second[0]).toBe('main Q: origin=core.queue size=0 enqueued=5 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
+    expect(second[0]).toBe('main Q: origin=core.queue size=0 enqueued=5 size.enqueued=492 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
     expect(second[1]).toBe('action-0-builtin:omfile: origin=core.action processed=5 batchesprocessed=5 failed=0 suspended=0 suspended.duration=0 resumed=0 ratelimit.allowed=0 ratelimit.dropped=0 ratelimit.paced=0 ratelimit.paced_usec=0 ');
   });
 
@@ -71,14 +71,14 @@ describe('impstats', () => {
     const reset = rig(`${TRADITIONAL}module(load="impstats" interval="60" resetcounters="on")\n*.* /var/log/x.log`);
     reset.host.advance(180_000);
     const third = bodies(reset.host).slice(6);
-    expect(third[0]).toBe('main Q: origin=core.queue size=0 enqueued=5 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
+    expect(third[0]).toBe('main Q: origin=core.queue size=0 enqueued=5 size.enqueued=494 full=0 discarded.full=0 discarded.nf=0 maxqsize=1 ');
     expect(third[1]).toContain('processed=5 ');
   });
 
   it('format="json" writes the libfastjson spelling, in counter order, one object per line', () => {
     const { host } = rig(`${TRADITIONAL}module(load="impstats" interval="60" format="json")\n*.* /var/log/x.log`);
     host.advance(60_000);
-    expect(bodies(host)[0]).toBe('{ "name": "main Q", "origin": "core.queue", "size": 0, "enqueued": 0, "full": 0, "discarded.full": 0, "discarded.nf": 0, "maxqsize": 0 }');
+    expect(bodies(host)[0]).toBe('{ "name": "main Q", "origin": "core.queue", "size": 0, "enqueued": 0, "size.enqueued": 0, "full": 0, "discarded.full": 0, "discarded.nf": 0, "maxqsize": 0 }');
   });
 
   it('format="cee" prefixes the cookie, and format="json-elasticsearch" replaces dots with bangs', () => {
@@ -115,7 +115,7 @@ describe('impstats', () => {
     expect(read(host)).toEqual([]);
     const written = read(host, '/var/log/stats.log');
     expect(written).toHaveLength(5);
-    expect(written[2]).toBe('Mon Oct 19 12:01:00 2026: main Q: origin=core.queue size=0 enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ');
+    expect(written[2]).toBe('Mon Oct 19 12:01:00 2026: main Q: origin=core.queue size=0 enqueued=0 size.enqueued=0 full=0 discarded.full=0 discarded.nf=0 maxqsize=0 ');
   });
 
   it('the ruleset parameter routes the report, and an unknown one falls back with a message', () => {
@@ -143,7 +143,7 @@ describe('impstats', () => {
   it('the legacy directives work before module(...) parameters and are refused after them', () => {
     const legacy = rig(`${TRADITIONAL}$ModLoad impstats\n$PStatsInterval 30\n$PStatJSON on\n*.* /var/log/x.log`);
     legacy.host.advance(30_000);
-    expect(bodies(legacy.host)[0]).toBe('{ "name": "main Q", "origin": "core.queue", "size": 0, "enqueued": 0, "full": 0, "discarded.full": 0, "discarded.nf": 0, "maxqsize": 0 }');
+    expect(bodies(legacy.host)[0]).toBe('{ "name": "main Q", "origin": "core.queue", "size": 0, "enqueued": 0, "size.enqueued": 0, "full": 0, "discarded.full": 0, "discarded.nf": 0, "maxqsize": 0 }');
     const cee = rig(`${TRADITIONAL}$ModLoad impstats\n$PStatsInterval 30\n$PStatCEE on\n*.* /var/log/x.log`);
     cee.host.advance(30_000);
     expect(bodies(cee.host)[0].startsWith('@cee: { "name": "main Q"')).toBe(true);

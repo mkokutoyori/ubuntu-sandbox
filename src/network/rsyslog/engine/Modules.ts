@@ -176,6 +176,7 @@ export interface InputSubmission {
   readonly mark?: boolean;
   readonly receivedAtMs?: number;
   readonly cee?: { readonly [key: string]: import('../Message').JsonValue };
+  readonly flowControl?: 'none' | 'light' | 'full';
 }
 
 export interface InputContext extends ModuleContext {

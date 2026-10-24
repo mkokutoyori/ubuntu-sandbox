@@ -306,7 +306,7 @@ class UnixSocketListener implements InputInstance {
     const submission = settings.useSpecialParser
       ? this.specialSubmission(raw, receivedAtMs, credentials ? message.pid : null)
       : { ...this.baseSubmission(raw, receivedAtMs), ignoreDate: settings.ignoreTimestamp, parseHostname: settings.parseHostname !== 0 };
-    this.context.submitter.submit({ ...submission, limiter, cee });
+    this.context.submitter.submit({ ...submission, limiter, cee, flowControl: settings.flowControl ? 'light' : 'none' });
     counters(this.context).submitted++;
   }
 

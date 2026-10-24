@@ -7,10 +7,12 @@ export interface QueueSettings {
   size: number;
   fileName: string | null;
   spoolDirectory: string | null;
-  highWatermark: number | null;
-  lowWatermark: number | null;
-  discardMark: number | null;
+  highWatermark: number;
+  lowWatermark: number;
+  discardMark: number;
   discardSeverity: number;
+  fullDelayMark: number;
+  lightDelayMark: number;
   checkpointInterval: number;
   syncQueueFiles: boolean;
   workerThreads: number;
@@ -19,13 +21,22 @@ export interface QueueSettings {
   timeoutEnqueue: number;
   workerTimeoutThreadShutdown: number;
   dequeueSlowdown: number;
-  workerThreadMinimumMessages: number | null;
+  workerThreadMinimumMessages: number;
   maxFileSize: number;
   dequeueBatchSize: number;
+  minDequeueBatchSize: number;
+  minDequeueBatchTimeout: number;
   maxDiskSpace: number;
   saveOnShutdown: boolean;
   dequeueTimeBegin: number;
   dequeueTimeEnd: number;
+  samplingInterval: number;
+  takeFlowCtlFromMsg: boolean;
+  mutexContentionStats: boolean;
+  onCorruption: 'safe' | 'ignore' | 'inMemory';
+  diskQueueType: 'auto' | 'disk' | 'segmentedDisk';
+  diskQueueAutoUpgrade: boolean;
+  diskQueueIdleTimeout: number;
 }
 
 export type QueueKind = 'main' | 'ruleset' | 'action';
@@ -44,12 +55,16 @@ export function defaultQueueTimeouts(kind: QueueKind): QueueTimeouts {
 }
 
 export function defaultQueueSettings(type: string, size: number, kind: QueueKind = 'action', timeouts: QueueTimeouts = defaultQueueTimeouts(kind)): QueueSettings {
+  const main = kind === 'main';
   return {
-    type, size, fileName: null, spoolDirectory: null, highWatermark: kind === 'main' ? 80000 : null, lowWatermark: kind === 'main' ? 20000 : null, discardMark: null, discardSeverity: 8,
-    checkpointInterval: 0, syncQueueFiles: false, workerThreads: kind === 'main' ? 2 : 1, ...timeouts,
-    dequeueSlowdown: 0, workerThreadMinimumMessages: kind === 'main' ? 40000 : null,
-    maxFileSize: kind === 'ruleset' ? 16 * 1024 * 1024 : 1024 * 1024, dequeueBatchSize: kind === 'main' ? 256 : kind === 'ruleset' ? 1024 : type === 'Direct' ? 1 : 128,
-    maxDiskSpace: 0, saveOnShutdown: true, dequeueTimeBegin: 0, dequeueTimeEnd: 25,
+    type, size, fileName: null, spoolDirectory: null, highWatermark: main ? 80000 : -1, lowWatermark: main ? 20000 : -1, discardMark: -1,
+    discardSeverity: 8, fullDelayMark: -1, lightDelayMark: -1, checkpointInterval: 0, syncQueueFiles: false, workerThreads: main ? 2 : 1, ...timeouts,
+    dequeueSlowdown: 0, workerThreadMinimumMessages: main ? 40000 : -1,
+    maxFileSize: kind === 'ruleset' ? 16 * 1024 * 1024 : 1024 * 1024,
+    dequeueBatchSize: main ? 256 : kind === 'ruleset' ? 1024 : 128,
+    minDequeueBatchSize: 0, minDequeueBatchTimeout: 1000, maxDiskSpace: 0, saveOnShutdown: true, dequeueTimeBegin: 0, dequeueTimeEnd: 25,
+    samplingInterval: 0, takeFlowCtlFromMsg: false, mutexContentionStats: false, onCorruption: 'safe', diskQueueType: 'auto',
+    diskQueueAutoUpgrade: false, diskQueueIdleTimeout: 60000,
   };
 }
 

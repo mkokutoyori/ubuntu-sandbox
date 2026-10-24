@@ -17,6 +17,7 @@ import { OperatingStateFile } from './OperatingState';
 import { RSYSLOG_VERSION } from './Log';
 import { DiskQueueStore } from './DiskQueueStore';
 import type { QueueSettings } from './Settings';
+import { correctQueueParameters } from './QueueParams';
 import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
@@ -67,6 +68,17 @@ export class RsyslogEngine implements InputSubmitter {
     this.internalLimiter = this.newLimiter(
       'rsyslogd[internal_messages]', config.settings.internalMessages.rateInterval, config.settings.internalMessages.rateBurst, 0,
     );
+    correctQueueParameters(config.settings.mainQueue, {
+      name: 'main Q',
+      usedFiles: new Set(),
+      workDirectory: config.settings.workDirectory,
+      diagnostics: {
+        parserError: (text) => this.internal(3, RS_RET.CONF_PARSE_ERROR, text),
+        parserWarning: (text) => this.internal(4, RS_RET.CONF_PARSE_WARNING, text),
+        warning: (text, code) => this.internal(4, code, text),
+        error: (text, code) => this.internal(3, code, text),
+      },
+    });
     this.mainQueue = this.newQueue('main Q', config.settings.mainQueue, (message) => this.processThroughRuleset(message));
     for (const [name, ruleset] of config.rulesets) {
       if (ruleset.queue !== null && ruleset.queue.type !== 'Direct') {
@@ -87,20 +99,22 @@ export class RsyslogEngine implements InputSubmitter {
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
     endBatch: () => Generator<Sleep, void> = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
+    const host: import('./Queue').QueueHost = {
+      schedule: (callback, delay) => this.host.schedule(callback, delay),
+      localHour: () => this.renderContext().now().hour,
+      nowMs: () => this.host.clock.wallMs(),
+      report: (text) => this.internal(4, -1, text),
+      endBatch,
+    };
     const disk = settings.type === 'Disk' && settings.fileName !== null ? this.newDiskStore(settings) : null;
-    const queue = new WorkerQueue<RsyslogMessage>(
-      name,
-      settings,
-      {
-        schedule: (callback, delay) => this.host.schedule(callback, delay),
-        localHour: () => this.renderContext().now().hour,
-        nowMs: () => this.host.clock.wallMs(),
-        report: (text) => this.internal(4, -1, text),
-        endBatch,
-      },
-      process,
-      disk,
-    );
+    const assisted = (settings.type === 'FixedArray' || settings.type === 'LinkedList') && settings.fileName !== null;
+    let assist: WorkerQueue<RsyslogMessage> | null = null;
+    if (assisted) {
+      const childSettings = { ...settings, type: 'Disk', size: 0, highWatermark: 0, discardMark: 0, fullDelayMark: -1, lightDelayMark: -1 };
+      assist = new WorkerQueue<RsyslogMessage>(`${name}[DA]`, childSettings, host, process, this.newDiskStore(childSettings));
+      this.registerQueueStatistics(assist);
+    }
+    const queue = new WorkerQueue<RsyslogMessage>(name, settings, host, process, disk, assist);
     if (settings.type !== 'Direct') this.registerQueueStatistics(queue);
     return queue;
   }
@@ -108,11 +122,16 @@ export class RsyslogEngine implements InputSubmitter {
   private registerQueueStatistics(queue: WorkerQueue<RsyslogMessage>): void {
     const counters = queue.statistics;
     const object = this.config.statistics.create(queue.name, { origin: 'core.queue' });
-    object.addCounter({ name: 'size', read: () => queue.length });
+    object.addCounter({ name: 'size', read: () => queue.physicalSize });
     object.addCounter({ name: 'enqueued', read: () => counters.enqueued, reset: () => { counters.enqueued = 0; } });
+    object.addCounter({ name: 'size.enqueued', read: () => counters.sizeEnqueued, reset: () => { counters.sizeEnqueued = 0; } });
     object.addCounter({ name: 'full', read: () => counters.full, reset: () => { counters.full = 0; } });
     object.addCounter({ name: 'discarded.full', read: () => counters.discardedFull, reset: () => { counters.discardedFull = 0; } });
     object.addCounter({ name: 'discarded.nf', read: () => counters.discardedNearlyFull, reset: () => { counters.discardedNearlyFull = 0; } });
+    if (queue.settings.mutexContentionStats) {
+      object.addCounter({ name: 'mutex.contention', read: () => 0, reset: () => undefined });
+      object.addCounter({ name: 'mutex.wait_ns', read: () => 0, reset: () => undefined });
+    }
     object.addCounter({ name: 'maxqsize', read: () => counters.maxSize });
   }
 
@@ -239,6 +258,7 @@ export class RsyslogEngine implements InputSubmitter {
     if (queue !== undefined) {
       const copy = this.copyMessage(message);
       copy.rulesetName = name;
+      copy.flowControl = 'none';
       queue.enqueue(copy);
       return 'continue';
     }
@@ -342,6 +362,7 @@ export class RsyslogEngine implements InputSubmitter {
       localHostName: this.localHostName(),
     });
     message.rulesetName = info.ruleset;
+    message.flowControl = info.flowControl ?? 'none';
     if (info.cee !== undefined) message.cee = jsonDeepCopy(info.cee) as typeof message.cee;
     if (info.preparsed !== undefined) {
       const fields = info.preparsed;
@@ -411,7 +432,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   private enqueue(message: RsyslogMessage): void {
     const queue = this.rulesetQueues.get(message.rulesetName ?? '') ?? this.mainQueue;
-    queue.enqueue(message);
+    queue.enqueue(message, message.flowControl);
   }
 
   internal(severity: number, code: number, text: string, mark = false, facility = LOG_SYSLOG): void {
@@ -638,7 +659,7 @@ export class RsyslogEngine implements InputSubmitter {
   }
 
   private drainQueues(): void {
-    const ordered = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+    const ordered = this.allQueues();
     if (this.config.settings.shutdownQueueDoubleSize) for (const queue of ordered) queue.doubleCapacity();
     for (const queue of ordered) {
       queue.runWorkerFor(queue.settings.timeoutShutdown, false);
@@ -670,44 +691,24 @@ export class RsyslogEngine implements InputSubmitter {
   }
 
   private allQueues(): WorkerQueue<RsyslogMessage>[] {
-    return [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
-  }
-
-  private spillsOnShutdown(queue: WorkerQueue<RsyslogMessage>): boolean {
-    const { type, fileName, saveOnShutdown } = queue.settings;
-    return queue.disk === null && type !== 'Direct' && fileName !== null && saveOnShutdown;
+    const parents = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+    return parents.flatMap((queue) => (queue.assist === null ? [queue] : [queue, queue.assist]));
   }
 
   private saveQueues(): void {
     for (const queue of this.allQueues()) {
-      if (queue.disk !== null) {
-        queue.closeStore();
-        continue;
-      }
-      const pending = queue.pending();
-      if (!this.spillsOnShutdown(queue) || pending.length === 0) continue;
-      const store = this.newDiskStore(queue.settings);
-      const failure = pending.map((message) => store.append(message)).find((result) => result !== null);
-      if (failure !== undefined) this.internal(3, -1, `queue '${queue.name}': could not save the queue state: ${failure}`);
-      store.persist(false, pending.length);
-      store.close(pending.length);
+      if (queue.assist !== null && queue.settings.saveOnShutdown) queue.moveAllToAssist();
+      queue.closeStore();
     }
   }
 
   private restoreQueues(): void {
     for (const queue of this.allQueues()) {
-      const resident = queue.disk !== null;
-      if (!resident && !this.spillsOnShutdown(queue)) continue;
-      const store = queue.disk ?? this.newDiskStore(queue.settings);
-      const backlog = store.load();
+      if (queue.disk === null) continue;
+      const backlog = queue.disk.load();
       if (backlog === null) continue;
       this.internal(6, RS_RET.NO_ERRCODE, `${queue.name}: queue files exist on disk, re-starting with ${backlog.messages.length} messages. This will keep the disk queue file open, details: https://rainer.gerhards.net/2013/07/rsyslog-why-disk-assisted-queues-keep-a-file-open.html`);
-      if (resident) {
-        queue.restore(backlog.messages);
-        continue;
-      }
-      store.drop();
-      for (const message of backlog.messages) queue.enqueue(message);
+      queue.restore(backlog.messages);
     }
   }
 

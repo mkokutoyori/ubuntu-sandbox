@@ -757,7 +757,7 @@ class ImfileMonitor {
       filename: act.sourceName ?? act.name, fileoffset: String(startOffset), line_number: String(lineNumber),
     };
     this.context.submitter.submit({
-      raw, inputName: MODULE_NAME, fromHost: null, fromHostIp: '127.0.0.1', fromHostPort: null, ruleset, localOrigin: true,
+      raw, inputName: MODULE_NAME, fromHost: null, fromHostIp: '127.0.0.1', fromHostPort: null, ruleset, localOrigin: true, flowControl: 'full',
       ...(settings.addMetadata ? { cee: { metadata } } : {}),
       ...(settings.needParse
         ? {}

@@ -58,6 +58,7 @@ interface TcpDefaults {
   authMode: string | null;
   notifyOnClose: boolean;
   notifyOnOpen: boolean;
+  flowControl: boolean;
   additionalDelimiter: number;
   maxFrameSize: number;
   disableLfDelimiter: boolean;
@@ -82,7 +83,7 @@ interface ImtcpLegacyState {
 function defaultDefaults(): TcpDefaults {
   return {
     maxSessions: DEFAULT_MAX_SESSIONS, maxListeners: DEFAULT_MAX_LISTENERS, supportOctetCounted: true, streamDriverMode: 0,
-    streamDriverModeSet: false, streamDriverName: null, authMode: null, notifyOnClose: false, notifyOnOpen: false,
+    streamDriverModeSet: false, streamDriverName: null, authMode: null, notifyOnClose: false, notifyOnOpen: false, flowControl: true,
     additionalDelimiter: NO_ADDITIONAL_DELIMITER, maxFrameSize: DEFAULT_MAX_FRAME_SIZE, disableLfDelimiter: false, discardTruncated: false,
     keepAlive: { enabled: false, probes: 0, interval: 0, time: 0 }, preserveCase: true, compressionMode: 'none', networkNamespace: null,
     allowedSenders: null, configuredViaModule: false, tls: emptyTlsExtras(),
@@ -328,6 +329,7 @@ class ImtcpListener implements InputInstance {
       ruleset: this.effectiveRuleset(),
       defaultTimeZone: this.settings.defaultTimeZone,
       limiter: this.limiterForSubmissions(),
+      flowControl: this.settings.flowControl ? 'light' : 'none',
     });
     this.submitted++;
   }
@@ -399,6 +401,7 @@ function applySharedParams(
   target.disableLfDelimiter = flag('disablelfdelimiter') ?? target.disableLfDelimiter;
   target.notifyOnClose = flag('notifyonconnectionclose') ?? target.notifyOnClose;
   target.notifyOnOpen = flag('notifyonconnectionopen') ?? target.notifyOnOpen;
+  target.flowControl = flag('flowcontrol') ?? target.flowControl;
   target.additionalDelimiter = numberParam(values, 'addtlframedelimiter') ?? target.additionalDelimiter;
   const frame = numberParam(values, 'maxframesize');
   if (frame !== undefined) {
@@ -522,7 +525,7 @@ function directives(): DirectiveRegistration[] {
     { name: 'inputtcpserverkeepalive_probes', type: 'int', apply: legacy((defaults, value) => { defaults.keepAlive.probes = Number(value); }) },
     { name: 'inputtcpserverkeepalive_intvl', type: 'int', apply: legacy((defaults, value) => { defaults.keepAlive.interval = Number(value); }) },
     { name: 'inputtcpserverkeepalive_time', type: 'int', apply: legacy((defaults, value) => { defaults.keepAlive.time = Number(value); }) },
-    { name: 'inputtcpflowcontrol', type: 'binary', apply: legacy(() => undefined) },
+    { name: 'inputtcpflowcontrol', type: 'binary', apply: legacy((defaults, value) => { defaults.flowControl = value === 1; }) },
     { name: 'inputtcpserverdisablelfdelimiter', type: 'binary', apply: legacy((defaults, value) => { defaults.disableLfDelimiter = value === 1; }) },
     { name: 'inputtcpserveraddtlframedelimiter', type: 'int', apply: legacy((defaults, value) => { defaults.additionalDelimiter = Number(value); }) },
     { name: 'inputtcpserversupportoctetcountedframing', type: 'binary', apply: legacy((defaults, value) => { defaults.supportOctetCounted = value === 1; }) },
