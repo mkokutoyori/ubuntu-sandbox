@@ -1,0 +1,5369 @@
+{
+ "bash": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+ "cases": [
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v}",
+   "stdout": "hello\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${#v}",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo ${u-default}",
+   "stdout": "default\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo ${u:-default}",
+   "stdout": "default\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=; echo ${u-default}",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=; echo ${u:-default}",
+   "stdout": "default\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo ${u=set}; echo $u",
+   "stdout": "set\nset\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=; echo ${u:=set}; echo $u",
+   "stdout": "set\nset\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=1; echo ${u:+alt}",
+   "stdout": "alt\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=; echo ${u:+alt}",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=1; echo ${u+alt}",
+   "stdout": "alt\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "u=; echo ${u+alt}",
+   "stdout": "alt\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v:1}",
+   "stdout": "ello\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v:1:3}",
+   "stdout": "ell\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v: -2}",
+   "stdout": "lo\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v: -3:2}",
+   "stdout": "ll\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v:0:-1}",
+   "stdout": "hell\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v:9}",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v#h}",
+   "stdout": "ello\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v#*l}",
+   "stdout": "lo\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v##*l}",
+   "stdout": "o\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v%o}",
+   "stdout": "hell\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v%l*}",
+   "stdout": "hel\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v%%l*}",
+   "stdout": "he\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v/l/L}",
+   "stdout": "heLlo\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v//l/L}",
+   "stdout": "heLLo\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v/#h/H}",
+   "stdout": "Hello\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v/%o/O}",
+   "stdout": "hellO\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v/l}",
+   "stdout": "helo\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v//[el]/_}",
+   "stdout": "h___o\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v^}",
+   "stdout": "Hello\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v^^}",
+   "stdout": "HELLO\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=HELLO; echo ${v,}",
+   "stdout": "hELLO\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=HELLO; echo ${v,,}",
+   "stdout": "hello\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo ${v^^[el]}",
+   "stdout": "hELLo\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=\"hello world\"; echo ${v^}",
+   "stdout": "Hello world\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=a.b.c; echo ${v//./-}",
+   "stdout": "a-b-c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=/usr/local/bin; echo ${v##*/}",
+   "stdout": "bin\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=/usr/local/bin; echo ${v%/*}",
+   "stdout": "/usr/local\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=file.tar.gz; echo ${v%%.*}",
+   "stdout": "file\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=file.tar.gz; echo ${v%.*}",
+   "stdout": "file.tar\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=file.tar.gz; echo ${v#*.}",
+   "stdout": "tar.gz\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=file.tar.gz; echo ${v##*.}",
+   "stdout": "gz\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=abc; echo ${v@Q}",
+   "stdout": "'abc'\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=abc; echo ${v@U}",
+   "stdout": "ABC\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=ABC; echo ${v@L}",
+   "stdout": "abc\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=abc; echo ${v@u}",
+   "stdout": "Abc\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=\"a b\"; echo ${v@Q}",
+   "stdout": "'a b'\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "x=1; y=x; echo ${!y}",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "a=1; b=2; echo ${!a*}",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; echo ${#}",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; echo ${@:2}",
+   "stdout": "b c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; echo ${*:2:1}",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; echo ${@: -1}",
+   "stdout": "c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; echo \"${@:1:2}\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo ${#u}",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo \"${u:-a b}\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=abc; echo ${v:1:1}${v:0:1}",
+   "stdout": "ba\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=; echo ${v:-}x",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo ${u:?}x; echo after",
+   "stdout": "",
+   "status": 127
+  },
+  {
+   "group": "parameter",
+   "command": "v=3; echo $((v*2))",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo \"${v}world\"",
+   "stdout": "helloworld\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=hello; echo \"$v\"world",
+   "stdout": "helloworld\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=a:b:c; IFS=:; set -- $v; echo $#",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo $((1+2))",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=\"  x  \"; echo \"[$v]\"",
+   "stdout": "[  x  ]\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=\"  x  \"; echo [$v]",
+   "stdout": "[ x ]\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=*; echo $v",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=*; echo \"$v\"",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo $HOME_UNSET$",
+   "stdout": "$\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo \\$v",
+   "stdout": "$v\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=1; echo \"\\$v\"",
+   "stdout": "$v\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "v=1; echo '$v'",
+   "stdout": "$v\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "echo ${#1}",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { echo ${#1}; }; f hello",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { echo ${1:-none}; }; f; f x",
+   "stdout": "none\nx\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { echo $#; }; f; f a b c",
+   "stdout": "0\n3\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { echo \"$@\"; }; f \"a b\" c",
+   "stdout": "a b c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { for x in \"$@\"; do echo \"[$x]\"; done; }; f \"a b\" c",
+   "stdout": "[a b]\n[c]\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { for x in $@; do echo \"[$x]\"; done; }; f \"a b\" c",
+   "stdout": "[a]\n[b]\n[c]\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "f() { for x in \"$*\"; do echo \"[$x]\"; done; }; f \"a b\" c",
+   "stdout": "[a b c]\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "IFS=,; set -- a b c; echo \"$*\"",
+   "stdout": "a,b,c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "IFS=,; set -- a b c; echo $*",
+   "stdout": "a b c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; shift; echo $@",
+   "stdout": "b c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; shift 2; echo $@",
+   "stdout": "c\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b c; shift 5; echo $? $#",
+   "stdout": "1 3\n",
+   "status": 0
+  },
+  {
+   "group": "parameter",
+   "command": "set -- a b; echo $1$2$3x",
+   "stdout": "abx\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${a[@]}",
+   "stdout": "1 2 3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${#a[@]}",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${a[1]}",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${a[-1]}",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${a[@]:1}",
+   "stdout": "2 3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${a[@]:1:1}",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); a+=(4); echo ${a[@]}",
+   "stdout": "1 2 3 4\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); a[5]=6; echo ${!a[@]}",
+   "stdout": "0 1 2 5\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); unset a[1]; echo ${a[@]} ${#a[@]}",
+   "stdout": "1 3 2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); unset a; echo ${#a[@]}",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(\"x y\" z); echo ${#a[@]}",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(\"x y\" z); for i in \"${a[@]}\"; do echo \"[$i]\"; done",
+   "stdout": "[x y]\n[z]\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(\"x y\" z); for i in ${a[@]}; do echo \"[$i]\"; done",
+   "stdout": "[x]\n[y]\n[z]\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(\"x y\" z); echo \"${a[*]}\"",
+   "stdout": "x y z\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo \"${a[@]/2/X}\"",
+   "stdout": "1 X 3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(ab cd); echo \"${a[@]^^}\"",
+   "stdout": "AB CD\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(ab cd); echo \"${a[@]#a}\"",
+   "stdout": "b cd\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); b=(\"${a[@]}\"); echo ${#b[@]}",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(); echo ${#a[@]}",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=([2]=x [5]=y); echo ${!a[@]}",
+   "stdout": "2 5\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo ${a}",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); a=9; echo ${a[@]}",
+   "stdout": "9 2 3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m; m[k]=v; echo ${m[k]}",
+   "stdout": "v\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m=([a]=1 [b]=2); echo ${#m[@]}",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m=([a]=1); m[b]=2; for k in a b; do echo $k=${m[$k]}; done",
+   "stdout": "a=1\nb=2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m=([a]=1 [b]=2); unset m[a]; echo ${!m[@]}",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m=([a]=1 [b]=2); echo ${m[zz]:-none}",
+   "stdout": "none\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m; m[\"x y\"]=1; echo ${m[\"x y\"]}",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m=([a]=1 [b]=2); [[ -v m[a] ]] && echo yes",
+   "stdout": "yes\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(3 1 2); IFS=$'\\n'; echo \"$(printf \"%s\\n\" \"${a[@]}\" | sort)\"",
+   "stdout": "1\n2\n3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(one two); echo \"${a[@]:0:1}-${a[@]:1:1}\"",
+   "stdout": "one-two\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); for i in \"${!a[@]}\"; do echo $i:${a[$i]}; done",
+   "stdout": "0:1\n1:2\n2:3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); echo $((a[0]+a[2]))",
+   "stdout": "4\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(1 2 3); ((a[1]++)); echo ${a[@]}",
+   "stdout": "1 3 3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(a b c); echo ${a[@]:(-2)}",
+   "stdout": "b c\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "mapfile -t a < <(printf \"x\\ny\\n\"); echo ${#a[@]} ${a[1]}",
+   "stdout": "2 y\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "read -ra a <<< \"p q r\"; echo ${#a[@]} ${a[2]}",
+   "stdout": "3 r\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(x y z); set -- \"${a[@]}\"; echo $#",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "a=(x y z); echo \"${a[@]@Q}\"",
+   "stdout": "'x' 'y' 'z'\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -a a=(1 2); declare -p a",
+   "stdout": "declare -a a=([0]=\"1\" [1]=\"2\")\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -A m=([k]=v); declare -p m",
+   "stdout": "declare -A m=([k]=\"v\" )\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "x=5; declare -i y=x+1; echo $y",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -i n=3; n+=2; echo $n",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -r c=1; c=2; echo $c",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "array",
+   "command": "declare -x e=1; env | grep -c \"^e=1\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -l l=ABC; echo $l",
+   "stdout": "abc\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -u u=abc; echo $u",
+   "stdout": "ABC\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "readonly r=1; r=2 2>/dev/null; echo $r",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "array",
+   "command": "local_test() { local x=1; echo $x; }; local_test; echo ${x:-unset}",
+   "stdout": "1\nunset\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "f() { local -a arr=(1 2); echo ${#arr[@]}; }; f",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -p undefined_var",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "array",
+   "command": "v=1; declare -p v",
+   "stdout": "declare -- v=\"1\"\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "v=\"a b\"; declare -p v",
+   "stdout": "declare -- v=\"a b\"\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -f nofunc; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "typeset -i z=7; echo $((z*2))",
+   "stdout": "14\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "declare -n ref=target; target=5; echo $ref",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "array",
+   "command": "target=5; declare -n ref=target; ref=6; echo $target",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1+2*3))",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $(((1+2)*3))",
+   "stdout": "9\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((10/3))",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((10%3))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((-10/3))",
+   "stdout": "-3\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((-10%3))",
+   "stdout": "-1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((2**10))",
+   "stdout": "1024\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1<<4))",
+   "stdout": "16\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((256>>2))",
+   "stdout": "64\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((5&3))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((5|3))",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((5^3))",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((~5))",
+   "stdout": "-6\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((!0))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((!5))",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((3>2))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((3<2))",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((3==3))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((3!=3))",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1&&0))",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1||0))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1?2:3))",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((0?2:3))",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; echo $((x++)); echo $x",
+   "stdout": "5\n6\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; echo $((++x)); echo $x",
+   "stdout": "6\n6\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; echo $((x--)); echo $x",
+   "stdout": "5\n4\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; ((x+=3)); echo $x",
+   "stdout": "8\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; ((x*=2)); echo $x",
+   "stdout": "10\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; ((x/=2)); echo $x",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; ((x%=3)); echo $x",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; ((x<<=2)); echo $x",
+   "stdout": "20\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=5; ((x|=2)); echo $x",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((0x1f))",
+   "stdout": "31\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((010))",
+   "stdout": "8\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((2#101))",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((16#ff))",
+   "stdout": "255\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((36#z))",
+   "stdout": "35\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((a=5, a*2))",
+   "stdout": "10\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "a=3; b=4; echo $((a*a+b*b))",
+   "stdout": "25\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $(( 1 + 2 ))",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=abc; echo $((x))",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=; echo $((x+1))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((u+1))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "((1)); echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "((0)); echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=3; ((x>2)) && echo big",
+   "stdout": "big\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=3; if ((x==3)); then echo three; fi",
+   "stdout": "three\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((9223372036854775807+1))",
+   "stdout": "-9223372036854775808\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((-9223372036854775807-2))",
+   "stdout": "9223372036854775807\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1/0)) 2>/dev/null; echo $?",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "arithmetic",
+   "command": "let x=2+3; echo $x",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "let \"x = 2 * 4\"; echo $x",
+   "stdout": "8\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "let x=5 y=6; echo $((x+y))",
+   "stdout": "11\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "let 0; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "let 1; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "for ((i=0;i<3;i++)); do echo $i; done",
+   "stdout": "0\n1\n2\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "for ((i=3;i>0;i--)); do echo -n $i; done; echo",
+   "stdout": "321\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "for ((;;)); do echo once; break; done",
+   "stdout": "once\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "i=0; while ((i<3)); do echo $i; ((i++)); done",
+   "stdout": "0\n1\n2\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((RANDOM>=0))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $(( $(echo 4) * 2 ))",
+   "stdout": "8\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "a=(1 2 3); echo $(( ${#a[@]} * 2 ))",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((07))",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((08)) 2>/dev/null; echo $?",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "arithmetic",
+   "command": "x=0x10; echo $((x))",
+   "stdout": "16\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1,2))",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((2**-1)) 2>/dev/null; echo $?",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((5 > 3 && 2 < 4))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((7 & ~2))",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1<<62))",
+   "stdout": "4611686018427387904\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1<<63))",
+   "stdout": "-9223372036854775808\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((1<<64))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "echo $((-1>>1))",
+   "stdout": "-1\n",
+   "status": 0
+  },
+  {
+   "group": "arithmetic",
+   "command": "n=5; f=1; while ((n>1)); do ((f*=n)); ((n--)); done; echo $f",
+   "stdout": "120\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ 1 -eq 1 ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ 1 -ne 1 ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ 2 -gt 1 ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ 2 -lt 1 ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ a = a ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ a == a ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ a != b ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -z \"\" ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -n \"\" ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -z \"x\" ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -n x ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ x ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ \"\" ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ ! -z x ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -e /etc ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -d /etc ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -f /etc ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -f /etc/passwd ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -r /etc/passwd ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -s /etc/passwd ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -L /etc ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -x /bin/sh ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -w /nonexistent ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ a \\< b ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ b \\> a ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ 1 -eq 1 -a 2 -eq 2 ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ 1 -eq 2 -o 2 -eq 2 ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ \\( 1 -eq 1 \\) ]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ -n \"$u\" ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ $u = x ] 2>/dev/null; echo $?",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[ \"$u\" = x ]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ -n $u ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ $u = x ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ a == a ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ a == b ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ abc == a* ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ abc == \"a*\" ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ abc != a* ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ abc =~ ^a.c$ ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ abc =~ ^b ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ abc =~ (b)(c) ]]; echo ${BASH_REMATCH[0]} ${BASH_REMATCH[1]} ${BASH_REMATCH[2]}",
+   "stdout": "bc b c\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ 2 -gt 10 ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ 2 > 10 ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ a < b ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ -z \"\" && -n x ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ -z x || -n x ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ ! -z x ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ ( 1 -eq 1 ) ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ 1 -eq 1 && 2 -eq 3 ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ -e /etc && -d /etc ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ \"a b\" == \"a b\" ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ a == [a-c] ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ ab == a? ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ 010 -eq 8 ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ x -eq 0 ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "[[ -v u ]]; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "u=1; [[ -v u ]]; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "test 1 -eq 1; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "test -d /etc; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "test a = a && echo y",
+   "stdout": "y\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "test; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "test -n; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "! true; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "! false; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "true && echo a || echo b",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "false && echo a || echo b",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "false || echo b && echo c",
+   "stdout": "b\nc\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "true; true && false; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "(exit 3); echo $?",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "{ exit 3; }; echo not",
+   "stdout": "",
+   "status": 3
+  },
+  {
+   "group": "test",
+   "command": "f() { return 4; }; f; echo $?",
+   "stdout": "4\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "f() { return; }; false; f; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "true | false; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "false | true; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "set -o pipefail; false | true; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "set -o pipefail; true | false | true; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "false | true; echo ${PIPESTATUS[@]}",
+   "stdout": "1 0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "true | false | true; echo ${PIPESTATUS[@]}",
+   "stdout": "0 1 0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "echo $?; true; echo $?",
+   "stdout": "0\n0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "false; echo $?; echo $?",
+   "stdout": "1\n0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if true; then echo a; fi",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if false; then echo a; else echo b; fi",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if false; then echo a; elif true; then echo b; fi",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if false; then echo a; fi; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if true; then false; fi; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if [ -d /etc ]; then echo d; fi",
+   "stdout": "d\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if ! false; then echo neg; fi",
+   "stdout": "neg\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if true && false; then echo a; else echo b; fi",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "if (exit 2); then echo a; else echo $?; fi",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "while false; do :; done; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "until true; do :; done; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "for i in; do :; done; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case x in x) echo m;; esac",
+   "stdout": "m\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case x in y) echo m;; esac; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case abc in a*) echo p;; *) echo q;; esac",
+   "stdout": "p\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case abc in x|abc) echo alt;; esac",
+   "stdout": "alt\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case abc in a?c) echo q;; esac",
+   "stdout": "q\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case \"a b\" in \"a b\") echo sp;; esac",
+   "stdout": "sp\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case x in x) echo 1;& y) echo 2;; z) echo 3;; esac",
+   "stdout": "1\n2\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case x in x) echo 1;;& *) echo 2;; esac",
+   "stdout": "1\n2\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case a in [abc]) echo cls;; esac",
+   "stdout": "cls\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case A in [[:upper:]]) echo up;; esac",
+   "stdout": "up\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "case \"\" in \"\") echo empty;; esac",
+   "stdout": "empty\n",
+   "status": 0
+  },
+  {
+   "group": "test",
+   "command": "x=b; case $x in a) echo A;; b) echo B;; *) echo O;; esac",
+   "stdout": "B\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2 3; do echo $i; done",
+   "stdout": "1\n2\n3\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in a b c; do echo -n $i; done; echo",
+   "stdout": "abc\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in {1..5}; do echo -n $i; done; echo",
+   "stdout": "12345\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in {5..1}; do echo -n $i; done; echo",
+   "stdout": "54321\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in {1..10..3}; do echo -n $i; done; echo",
+   "stdout": "14710\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in {a..e}; do echo -n $i; done; echo",
+   "stdout": "abcde\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in {01..03}; do echo -n $i,; done; echo",
+   "stdout": "01,02,03,\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2 3; do [ $i = 2 ] && continue; echo $i; done",
+   "stdout": "1\n3\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2 3; do [ $i = 2 ] && break; echo $i; done",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2; do for j in a b; do echo $i$j; done; done",
+   "stdout": "1a\n1b\n2a\n2b\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2; do for j in a b; do [ $j = a ] && continue 2; echo $i$j; done; done",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2; do for j in a b; do break 2; done; done; echo done",
+   "stdout": "done\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done",
+   "stdout": "0\n1\n2\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "i=3; until [ $i -eq 0 ]; do echo $i; i=$((i-1)); done",
+   "stdout": "3\n2\n1\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "while read l; do echo \"[$l]\"; done <<< $'a\\nb'",
+   "stdout": "[a]\n[b]\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "printf \"a\\nb\\n\" | while read l; do echo \"[$l]\"; done",
+   "stdout": "[a]\n[b]\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "printf \"a b\\n\" | while read x y; do echo \"$y $x\"; done",
+   "stdout": "b a\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "while read -r l; do echo \"$l\"; done <<< \"x\\y\"",
+   "stdout": "x\\y\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "while read l; do echo \"$l\"; done <<< \"x\\y\"",
+   "stdout": "xy\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "while IFS=: read a b; do echo $b $a; done <<< \"k:v\"",
+   "stdout": "v k\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "n=0; printf \"a\\nb\\n\" | while read l; do n=$((n+1)); done; echo $n",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "n=0; while read l; do n=$((n+1)); done < <(printf \"a\\nb\\n\"); echo $n",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for f in /etc/hostname /nonexistent; do [ -e $f ] && echo $f; done",
+   "stdout": "/etc/hostname\n",
+   "status": 1
+  },
+  {
+   "group": "loop",
+   "command": "for i in $(seq 1 3); do echo $i; done",
+   "stdout": "1\n2\n3\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in $(echo a b); do echo $i; done",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in \"$(echo a b)\"; do echo \"[$i]\"; done",
+   "stdout": "[a b]\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in *.nomatch; do echo $i; done",
+   "stdout": "*.nomatch\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in \"a b\" c; do echo \"[$i]\"; done",
+   "stdout": "[a b]\n[c]\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "i=0; while true; do i=$((i+1)); [ $i -ge 3 ] && break; done; echo $i",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "select x in a b; do echo $x; break; done <<< 1",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2 3; do echo $i; done | tail -1",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "for i in 1 2 3; do echo $i; done > o.txt; cat o.txt",
+   "stdout": "1\n2\n3\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "i=0; until ((i==2)); do ((i++)); done; echo $i",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "echo a; (echo b; echo c) | tail -1",
+   "stdout": "a\nc\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "x=1; (x=2; echo $x); echo $x",
+   "stdout": "2\n1\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "x=1; { x=2; }; echo $x",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "x=1; echo $x | { read y; echo $y; }",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "{ echo a; echo b; } | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "{ echo a; echo b; } > b.txt; wc -l < b.txt",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "cd /tmp; (cd /; pwd); pwd",
+   "stdout": "/\n/tmp\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "pwd; cd /etc && pwd",
+   "stdout": "/tmp/w\n/etc\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "cd /nonexistent 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "cd /tmp; cd -; echo done",
+   "stdout": "/tmp/w\ndone\n",
+   "status": 0
+  },
+  {
+   "group": "loop",
+   "command": "echo ${PWD}; cd /usr; echo ${PWD} ${OLDPWD}",
+   "stdout": "/tmp/w\n/usr /tmp/w\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo hi; }; f",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $1; }; f x",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "function f { echo hi; }; f",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "function f() { echo hi; }; f",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo a; }; f() { echo b; }; f",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { return 3; }; f; echo $?",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $?; }; false; f",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { local x=1; g; echo $x; }; g() { x=2; }; f",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { x=1; }; f; echo $x",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { local x; x=1; }; f; echo ${x:-u}",
+   "stdout": "u\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "x=0; f() { local x=1; echo $x; }; f; echo $x",
+   "stdout": "1\n0\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $FUNCNAME; }; f",
+   "stdout": "f\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { g; }; g() { echo ${FUNCNAME[0]} ${FUNCNAME[1]}; }; f",
+   "stdout": "g f\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $#; }; f 1 2 3",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { shift; echo $@; }; f 1 2 3",
+   "stdout": "2 3\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo \"$0\"; }; f",
+   "stdout": "bash\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { set -- x y; echo $1; }; f a; echo done",
+   "stdout": "x\ndone\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $@; }; set -- p q; f; f r",
+   "stdout": "\nr\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "fact() { local n=$1; [ $n -le 1 ] && { echo 1; return; }; echo $(( n * $(fact $((n-1))) )); }; fact 5",
+   "stdout": "120\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "fib() { [ $1 -lt 2 ] && echo $1 || echo $(( $(fib $(($1-1))) + $(fib $(($1-2))) )); }; fib 10",
+   "stdout": "55\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo in; return 1; echo no; }; f; echo $?",
+   "stdout": "in\n1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { for i in 1 2 3; do [ $i = 2 ] && return $i; done; }; f; echo $?",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo \"[$1][$2]\"; }; f \"a b\" c",
+   "stdout": "[a b][c]\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $1; }; f $(echo a b)",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo $1; }; f \"$(echo a b)\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { cat; }; echo hi | f",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { read x; echo \"got $x\"; }; echo v | f",
+   "stdout": "got v\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo out; echo err >&2; }; f 2>/dev/null",
+   "stdout": "out\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo out; echo err >&2; }; f 2>&1 | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo a; }; declare -F f",
+   "stdout": "f\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo a; }; unset -f f; f 2>/dev/null; echo $?",
+   "stdout": "127\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo a; }; type f | head -1",
+   "stdout": "f is a function\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo a; }; declare -f f",
+   "stdout": "f () \n{ \n    echo a\n}\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "alias ll=\"echo long\"; ll",
+   "stdout": "",
+   "status": 127
+  },
+  {
+   "group": "function",
+   "command": "shopt -s expand_aliases; alias ll=\"echo long\"; ll",
+   "stdout": "",
+   "status": 127
+  },
+  {
+   "group": "function",
+   "command": "f() { local IFS=,; set -- a b; echo \"$*\"; }; f",
+   "stdout": "a,b\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { local -r c=1; echo $c; }; f",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { eval \"$1=5\"; }; f v; echo $v",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { printf \"%s\\n\" \"$@\"; }; f a b",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "f() { echo ${1:?missing}; }; f 2>/dev/null; echo $?",
+   "stdout": "",
+   "status": 127
+  },
+  {
+   "group": "function",
+   "command": "f() { : \"${1:=def}\"; echo $1; }; f",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "function",
+   "command": "eval echo hi",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "eval \"x=5\"; echo $x",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "eval \"echo \\$HOME_X\" ",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "cmd=\"echo hi\"; $cmd",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "cmd=\"echo a b\"; \"$cmd\" 2>/dev/null; echo $?",
+   "stdout": "127\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "x=\"a b\"; eval \"echo $x\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "eval \"false\"; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "eval; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "source /nonexistent 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "echo \"echo sourced\" > s.sh; source s.sh",
+   "stdout": "sourced\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "echo \"echo \\$1\" > s.sh; . s.sh arg",
+   "stdout": "arg\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "echo \"return 3\" > s.sh; source s.sh; echo $?",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo bye\" EXIT; echo run",
+   "stdout": "run\nbye\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo err\" ERR; false; echo after",
+   "stdout": "err\nafter\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo int\" INT; kill -INT $$; echo after",
+   "stdout": "int\nafter\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap - EXIT; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo a\" EXIT; trap \"echo b\" EXIT; echo run",
+   "stdout": "run\nb\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo exit\" EXIT; exit 3",
+   "stdout": "exit\n",
+   "status": 3
+  },
+  {
+   "group": "function",
+   "command": "f() { trap \"echo in f\" RETURN; echo body; }; f",
+   "stdout": "body\nin f\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo x\" DEBUG; echo y",
+   "stdout": "x\ny\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "trap \"echo t\" EXIT; trap -p EXIT",
+   "stdout": "trap -- 'echo t' EXIT\nt\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "exit_code() { return $1; }; exit_code 7; echo $?",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "command -v echo",
+   "stdout": "echo\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "command -v nonexistent_cmd; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "type -t echo",
+   "stdout": "builtin\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "type -t ls",
+   "stdout": "file\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "type -t if",
+   "stdout": "keyword\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "type -t f; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "builtin echo hi",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "command echo hi",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "hash -r; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "function",
+   "command": "enable -n echo; echo hi 2>/dev/null; echo done",
+   "stdout": "hi\ndone\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo 'a b'",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a b\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a\\ b",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo 'it'\\''s'",
+   "stdout": "it's\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"it's\"",
+   "stdout": "it's\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a\\\"b\"",
+   "stdout": "a\"b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a\\\\b\"",
+   "stdout": "a\\b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a\\nb\"",
+   "stdout": "a\\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $'a\\nb'",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $'tab\\there'",
+   "stdout": "tab\there\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $'\\x41\\101'",
+   "stdout": "AA\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $'q\\'q'",
+   "stdout": "q'q\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $'\\u00e9'",
+   "stdout": "\\u00E9\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$'x'\"",
+   "stdout": "$'x'\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a  b",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a  b\"",
+   "stdout": "a  b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo   a",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a   ",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a\" \"b\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a\"b\"c",
+   "stdout": "abc\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"\"",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"\" \"\"",
+   "stdout": " \n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -n",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -n a b",
+   "stdout": "a b",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -e \"a\\tb\"",
+   "stdout": "a\tb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -e \"a\\\\nb\"",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -E \"a\\nb\"",
+   "stdout": "a\\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -ne \"a\\nb\"",
+   "stdout": "a\nb",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -en \"a\\nb\"",
+   "stdout": "a\nb",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -- a",
+   "stdout": "-- a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -x",
+   "stdout": "-x\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo -n -n a",
+   "stdout": "a",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo *",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"*\"",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \\*",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ~",
+   "stdout": "/home/user\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"~\"",
+   "stdout": "~\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ~root",
+   "stdout": "/root\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ~nouser",
+   "stdout": "~nouser\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a~",
+   "stdout": "a~\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ~/x",
+   "stdout": "/home/user/x\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a,b}",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a,b}c",
+   "stdout": "ac bc\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo c{a,b}",
+   "stdout": "ca cb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a,b}{1,2}",
+   "stdout": "a1 a2 b1 b2\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a,b,}",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a}",
+   "stdout": "{a}\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a,b",
+   "stdout": "{a,b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"{a,b}\"",
+   "stdout": "{a,b}\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {1..3}{a,b}",
+   "stdout": "1a 1b 2a 2b 3a 3b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo x{,y}",
+   "stdout": "x xy\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo {a..c}{1..2}",
+   "stdout": "a1 a2 b1 b2 c1 c2\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a;b",
+   "stdout": "a\n",
+   "status": 127
+  },
+  {
+   "group": "quoting",
+   "command": "echo a; echo b",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a && echo b",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a || echo b",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a & wait",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a # comment",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a#b",
+   "stdout": "a#b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a # b\"",
+   "stdout": "a # b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "# only comment",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a \\\n b",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$(echo a)\"",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo `echo a`",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"`echo a`\"",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $(echo $(echo n))",
+   "stdout": "n\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$(echo \"q\")\"",
+   "stdout": "q\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $(printf \"a\\n\\n\")x",
+   "stdout": "ax\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$(printf \"a\\n\\n\")x\"",
+   "stdout": "ax\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=$(printf \"a\\nb\\n\"); echo \"$x\"",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=$(printf \"a\\nb\\n\"); echo $x",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=$(false); echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=$(exit 3); echo $?",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $(true)x",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo `echo \\`echo n\\``",
+   "stdout": "n\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=`echo a b`; echo \"$x\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $((1+1))$((2+2))",
+   "stdout": "24\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$((1+1))\"",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $(( $(echo 1) + 1 ))",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "a=1 b=2; echo $a$b",
+   "stdout": "12\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "a=1; b=$a; echo $b",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "a=1 echo $a",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "a=1; a=2 env | grep -c \"^a=2\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=\"a=b\"; echo $x",
+   "stdout": "a=b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a=b",
+   "stdout": "a=b\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "a=b=c; echo $a",
+   "stdout": "b=c\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "a+=x; a+=y; echo $a",
+   "stdout": "xy\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "n=1; n+=2; echo $n",
+   "stdout": "12\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $$ | grep -c \"^[0-9]*$\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $0",
+   "stdout": "bash\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $-  | grep -c .",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $#",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$@\"",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo [$*]",
+   "stdout": "[]\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $_",
+   "stdout": "/tmp/w\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo a; echo $_",
+   "stdout": "a\na\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $LINENO",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $BASH_VERSINFO",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ${BASH_VERSION%%.*}",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $SECONDS | grep -c \"^[0-9]\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ${RANDOM:+r}",
+   "stdout": "r\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $UID | grep -c \"^[0-9]*$\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $IFS | od -c | head -1",
+   "stdout": "0000000  \\n\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"${IFS}\" | wc -c",
+   "stdout": "4\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "printf \"%s\" \"$IFS\" | wc -c",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $PS1 | wc -c",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ${PATH:+set}",
+   "stdout": "set\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo ${HOME:+set}",
+   "stdout": "set\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $HOSTNAME | grep -c .",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $OSTYPE",
+   "stdout": "linux-gnu\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $HOSTTYPE",
+   "stdout": "x86_64\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $MACHTYPE | grep -c linux",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=\"a\tb\"; echo \"$x\"",
+   "stdout": "a\tb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x='a\\tb'; echo \"$x\"",
+   "stdout": "a\\tb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "x=$'a\\tb'; echo \"$x\"",
+   "stdout": "a\tb\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $'\\e[0m' | od -c | head -1",
+   "stdout": "0000000 033   [   0   m  \\n\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"a$\"",
+   "stdout": "a$\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"$\"",
+   "stdout": "$\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo $ x",
+   "stdout": "$ x\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"\\$x\"",
+   "stdout": "$x\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \\\\",
+   "stdout": "\\\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \\a",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"\\a\"",
+   "stdout": "\\a\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo '\\'",
+   "stdout": "\\\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \"\\`\"",
+   "stdout": "`\n",
+   "status": 0
+  },
+  {
+   "group": "quoting",
+   "command": "echo \\`",
+   "stdout": "`\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo hi > f.txt; cat f.txt",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > f.txt; echo b >> f.txt; cat f.txt",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > f.txt; echo b > f.txt; cat f.txt",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat < /dev/null; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat /nonexistent 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat /nonexistent 2>&1 | wc -l",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a >&2 2>/dev/null; echo done",
+   "stdout": "done\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a 1>&2 2>/dev/null; echo done",
+   "stdout": "done\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "{ echo a; echo b >&2; } 2>/dev/null",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "{ echo a; echo b >&2; } 2>&1 | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "{ echo a; echo b >&2; } >/dev/null 2>&1; echo done",
+   "stdout": "done\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "{ echo a; echo b >&2; } 2>&1 >/dev/null | wc -l",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a &> f.txt; cat f.txt",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a &>> f.txt; echo b &>> f.txt; cat f.txt",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "ls /nonexistent &> /dev/null; echo $?",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > f.txt; < f.txt cat",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<< \"here\"",
+   "stdout": "here\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<< $x",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "x=\"a b\"; cat <<< \"$x\"",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "x=\"a b\"; cat <<< $x",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<EOF\nline1\nline2\nEOF",
+   "stdout": "line1\nline2\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "x=5; cat <<EOF\nv=$x\nEOF",
+   "stdout": "v=5\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "x=5; cat <<'EOF'\nv=$x\nEOF",
+   "stdout": "v=$x\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "x=5; cat <<\"EOF\"\nv=$x\nEOF",
+   "stdout": "v=$x\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<-EOF\n\tindented\n\tEOF",
+   "stdout": "indented\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<EOF\n$(echo sub)\nEOF",
+   "stdout": "sub\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<EOF\n$((1+2))\nEOF",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<EOF\n\\$esc\nEOF",
+   "stdout": "$esc\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<EOF | tr a-z A-Z\nabc\nEOF",
+   "stdout": "ABC\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<EOF > h.txt\nxyz\nEOF\ncat h.txt",
+   "stdout": "xyz\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "while read l; do echo \"[$l]\"; done <<EOF\na b\n  c\nEOF",
+   "stdout": "[a b]\n[c]\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <<A; cat <<B\na\nA\nb\nB",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "f() { cat <<EOF\nin $1\nEOF\n}; f arg",
+   "stdout": "in arg\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "exec 3>fd.txt; echo a >&3; echo b >&3; exec 3>&-; cat fd.txt",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "exec 3</etc/hostname; read -u 3 l; exec 3<&-; echo got",
+   "stdout": "got\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a | tee t1.txt | cat; cat t1.txt",
+   "stdout": "a\na\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a | tee -a t2.txt >/dev/null; echo b | tee -a t2.txt >/dev/null; cat t2.txt",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "diff <(echo a) <(echo a); echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <(echo p)",
+   "stdout": "p\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "cat <(echo a; echo b) | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "wc -l < <(echo a)",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > >(cat); sleep 0.1",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "paste <(echo 1) <(echo 2)",
+   "stdout": "1\t2\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo $(< /etc/hostname) | grep -c .",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo x > n.txt; echo $(<  n.txt)",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "x=$(< /nonexistent) 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > /dev/null; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > /nonexistent/f 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "set -C; echo a > nc.txt; echo b > nc.txt 2>/dev/null; echo $?; cat nc.txt",
+   "stdout": "1\na\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "set -C; echo a >| nc2.txt; echo b >| nc2.txt; cat nc2.txt",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo a > x1 > x2; cat x1 | wc -c; cat x2",
+   "stdout": "0\na\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "true > trunc; echo a > trunc; : > trunc; wc -c < trunc",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo hello | read x; echo \"[$x]\"",
+   "stdout": "[]\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "shopt -s lastpipe; echo hello | read x; echo \"[$x]\"",
+   "stdout": "[hello]\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read x <<< \"a b c\"; echo \"$x\"",
+   "stdout": "a b c\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read x y <<< \"a b c\"; echo \"$x|$y\"",
+   "stdout": "a|b c\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read -r x <<< \"a\\b\"; echo \"$x\"",
+   "stdout": "a\\b\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read x <<< \"a\\b\"; echo \"$x\"",
+   "stdout": "ab\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read -d, x <<< \"a,b\"; echo \"$x\"",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read -n2 x <<< \"abc\"; echo \"$x\"",
+   "stdout": "ab\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read -a arr <<< \"p q\"; echo ${arr[1]}",
+   "stdout": "q\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "IFS=: read a b <<< \"1:2\"; echo $b",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read <<< \"val\"; echo \"$REPLY\"",
+   "stdout": "val\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read -p \"prompt\" x <<< v; echo \"$x\"",
+   "stdout": "v\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "read x < /dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "printf \"a\\n\" | { read x; echo $x; }",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "printf \"a\" | { read x; echo $? $x; }",
+   "stdout": "1 a\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "printf \"a\\nb\\n\" | { read x; read y; echo $x$y; }",
+   "stdout": "ab\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo \"  lead\" | { read x; echo \"[$x]\"; }",
+   "stdout": "[lead]\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo \"  lead\" | { IFS= read x; echo \"[$x]\"; }",
+   "stdout": "[  lead]\n",
+   "status": 0
+  },
+  {
+   "group": "redirection",
+   "command": "echo \"a  b\" | { read x y; echo \"[$x][$y]\"; }",
+   "stdout": "[a][b]\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" hi",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s %s\\n\" a b",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" a b c",
+   "stdout": "a\nb\nc\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s %s\\n\" a b c",
+   "stdout": "a b\nc \n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" 42",
+   "stdout": "42\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" -5",
+   "stdout": "-5\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" 0x1f",
+   "stdout": "31\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" 010",
+   "stdout": "8\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" abc 2>/dev/null; echo $?",
+   "stdout": "0\n1\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%i\\n\" 7",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%u\\n\" 3",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%x\\n\" 255",
+   "stdout": "ff\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%X\\n\" 255",
+   "stdout": "FF\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%o\\n\" 8",
+   "stdout": "10\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%#x\\n\" 255",
+   "stdout": "0xff\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%#o\\n\" 8",
+   "stdout": "010\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%c\\n\" abc",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%5s|\\n\" ab",
+   "stdout": "   ab|\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%-5s|\\n\" ab",
+   "stdout": "ab   |\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%05d\\n\" 42",
+   "stdout": "00042\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%+d\\n\" 5",
+   "stdout": "+5\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"% d\\n\" 5",
+   "stdout": " 5\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%.2s\\n\" abcdef",
+   "stdout": "ab\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%5.2s|\\n\" abcdef",
+   "stdout": "   ab|\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%*d\\n\" 5 42",
+   "stdout": "   42\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%-*d|\\n\" 5 42",
+   "stdout": "42   |\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%.3f\\n\" 3.14159",
+   "stdout": "3.142\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%f\\n\" 1.5",
+   "stdout": "1.500000\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%e\\n\" 1234.5",
+   "stdout": "1.234500e+03\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%g\\n\" 0.0001",
+   "stdout": "0.0001\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%g\\n\" 1000000",
+   "stdout": "1e+06\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%10.3f|\\n\" 3.14159",
+   "stdout": "     3.142|\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%%\\n\"",
+   "stdout": "%\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%5%|\\n\"",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "printf",
+   "command": "printf \"a\\tb\\n\"",
+   "stdout": "a\tb\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"a\\\\b\\n\"",
+   "stdout": "a\b\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"\\x41\\n\"",
+   "stdout": "A\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"\\101\\n\"",
+   "stdout": "A\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"\\u00e9\\n\"",
+   "stdout": "\\u00E9\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"a\\nb\"",
+   "stdout": "a\nb",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"no newline\"",
+   "stdout": "no newline",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"\"",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\"",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\"",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\"",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"\\e[1mx\\e[0m\\n\" | od -c | head -1",
+   "stdout": "0000000 033   [   1   m   x 033   [   0   m  \\n\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf -v v \"%s-%s\" a b; echo $v",
+   "stdout": "a-b\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf -v v \"%05.1f\" 3.14159; echo $v",
+   "stdout": "003.1\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%q\\n\" \"a b\"",
+   "stdout": "a\\ b\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%q\\n\" \"it's\"",
+   "stdout": "it\\'s\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%q\\n\" \"\"",
+   "stdout": "''\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%q\\n\" plain",
+   "stdout": "plain\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%b\\n\" \"a\\tb\"",
+   "stdout": "a\tb\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" \"a\\tb\"",
+   "stdout": "a\\tb\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%(%Y)T\\n\" 0",
+   "stdout": "1970\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" \"$(printf \"%s\" x)\"",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s %s %s\\n\" 1 2",
+   "stdout": "1 2 \n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d %d\\n\" 1 2 3 4",
+   "stdout": "1 2\n3 4\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"[%s]\\n\" \"\" a",
+   "stdout": "[]\n[a]\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" \"a b\" c",
+   "stdout": "a b\nc\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%.0f\\n\" 2.5",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%.0f\\n\" 3.5",
+   "stdout": "4\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" 3.7 2>/dev/null; echo $?",
+   "stdout": "3\n1\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" \"'a\"",
+   "stdout": "97\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" \"\\\"b\"",
+   "stdout": "98\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" -- x",
+   "stdout": "--\nx\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf -- \"-n\\n\"",
+   "stdout": "-n\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" \"$@\"",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "set -- a b; printf \"%s\\n\" \"$@\"",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "set -- a b; printf \"<%s>\" \"$@\"; echo",
+   "stdout": "<a><b>\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%-10s%s\\n\" name value",
+   "stdout": "name      value\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%3d|%-3d|%03d\\n\" 5 5 5",
+   "stdout": "  5|5  |005\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" \"multi\\nline\"",
+   "stdout": "multi\\nline\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%b\" \"a\\n\"",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%b\" \"a\\c\" ; echo",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%.3d\\n\" 5",
+   "stdout": "005\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%ld\\n\" 5",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%lld\\n\" 5",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%hd\\n\" 5",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%5c|\\n\" x",
+   "stdout": "    x|\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%s\\n\" 9223372036854775807",
+   "stdout": "9223372036854775807\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" 9223372036854775808 2>/dev/null; echo $?",
+   "stdout": "9223372036854775807\n0\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%x\\n\" -1",
+   "stdout": "ffffffffffffffff\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%u\\n\" -1",
+   "stdout": "18446744073709551615\n",
+   "status": 0
+  },
+  {
+   "group": "printf",
+   "command": "printf \"%d\\n\" 1e3 2>/dev/null; echo $?",
+   "stdout": "1\n1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -e; false; echo not",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "special",
+   "command": "set -e; true; echo yes",
+   "stdout": "yes\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -e; false || echo rescued",
+   "stdout": "rescued\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -e; if false; then :; fi; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -e; f() { false; echo in; }; f; echo not",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "special",
+   "command": "set -e; (false); echo not",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "special",
+   "command": "set -e; false && true; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -e; ! false; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -u; echo $u 2>/dev/null; echo $?",
+   "stdout": "",
+   "status": 127
+  },
+  {
+   "group": "special",
+   "command": "set -u; echo ${u:-d}",
+   "stdout": "d\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -u; echo ${u-d}",
+   "stdout": "d\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -u; a=(); echo ${a[@]} 2>/dev/null; echo $?",
+   "stdout": "\n0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -x; echo hi 2>/dev/null",
+   "stdout": "hi\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set +e; false; echo cont",
+   "stdout": "cont\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -o noglob; echo *",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -f; echo *; set +f",
+   "stdout": "*\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -o | grep -c errexit",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -n; echo no",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -v; echo v 2>/dev/null",
+   "stdout": "v\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -a; v=1; env | grep -c \"^v=1\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -o nounset; echo ${u:-x}",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -o posix; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s nullglob; echo /nonexistent*; echo x",
+   "stdout": "\nx\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s failglob; echo /nonexistent* 2>/dev/null; echo $?",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "special",
+   "command": "shopt -s nocaseglob; echo done",
+   "stdout": "done\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -q nullglob; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s extglob; echo @(a|b)",
+   "stdout": "",
+   "status": 2
+  },
+  {
+   "group": "special",
+   "command": "shopt -s extglob; x=ab; [[ $x == @(ab|cd) ]] && echo m",
+   "stdout": "m\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s extglob; x=abc; echo ${x#+([a-b])}",
+   "stdout": "bc\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s globstar; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s dotglob; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s nocasematch; [[ A == a ]] && echo m",
+   "stdout": "m\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s nocasematch; case A in a) echo m;; esac",
+   "stdout": "m\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -s lastpipe; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -u expand_aliases; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt expand_aliases | cut -c1-14",
+   "stdout": "expand_aliases\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -p nullglob",
+   "stdout": "shopt -u nullglob\n",
+   "status": 1
+  },
+  {
+   "group": "special",
+   "command": "shopt -s nullglob; shopt -p nullglob",
+   "stdout": "shopt -s nullglob\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "shopt -o errexit | tr -s \" \\t\" \" \"",
+   "stdout": "errexit off\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir g; cd g; touch a.txt b.txt c.log; echo *.txt",
+   "stdout": "a.txt b.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo *",
+   "stdout": "a.txt b.txt c.log\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo ?.txt",
+   "stdout": "a.txt b.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo [ab].txt",
+   "stdout": "a.txt b.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo [!a].txt",
+   "stdout": "b.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo [^a].*",
+   "stdout": "b.txt c.log\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo *.{txt,log}",
+   "stdout": "a.txt b.txt c.log\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo \"*.txt\"",
+   "stdout": "*.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; ls *.txt | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; for f in *.txt; do echo ${f%.txt}; done",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo .*",
+   "stdout": ".*\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; touch .hid; echo *; echo .h*",
+   "stdout": "a.txt b.txt c.log\n.hid\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo [[:alpha:]].txt",
+   "stdout": "a.txt b.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo a.*",
+   "stdout": "a.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; x=*.txt; echo $x",
+   "stdout": "a.txt b.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; x=\"*.txt\"; echo \"$x\"",
+   "stdout": "*.txt\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo ./*.log",
+   "stdout": "./c.log\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; echo $PWD/*.log",
+   "stdout": "/tmp/w/g/c.log\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; mkdir -p d/e; touch d/e/f; echo */",
+   "stdout": "d/\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; mkdir -p d/e; touch d/e/f; echo d/*/*",
+   "stdout": "d/e/f\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mkdir -p g; cd g; touch a.txt b.txt c.log; mkdir d; echo ***",
+   "stdout": "a.txt b.txt c.log d\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo /nonexistent/*",
+   "stdout": "/nonexistent/*\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo [",
+   "stdout": "[\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo []",
+   "stdout": "[]\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo [a",
+   "stdout": "[a\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo ?",
+   "stdout": "?\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo a?",
+   "stdout": "a?\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo \"$(echo *)\" | wc -w",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "wait; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "sleep 0 & echo $!  | grep -c \"^[0-9]*$\"; wait",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "sleep 0 & wait $!; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "(sleep 0; exit 4) & wait $!; echo $?",
+   "stdout": "4\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "jobs; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "true & wait; echo done",
+   "stdout": "done\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo a & echo b & wait",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "kill -0 $$; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "kill -0 99999999 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "umask",
+   "stdout": "0022\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "umask 077; umask",
+   "stdout": "0077\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "umask -S",
+   "stdout": "u=rwx,g=rx,o=rx\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "ulimit -n | grep -c \"^[0-9]*\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "type cd",
+   "stdout": "cd is a shell builtin\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "help cd | head -1",
+   "stdout": "cd: cd [-L|[-P [-e]] [-@]] [dir]\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "let",
+   "stdout": "",
+   "status": 1
+  },
+  {
+   "group": "special",
+   "command": "times | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "caller; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "getopts a: o -a val; echo $o $OPTARG",
+   "stdout": "a val\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -- -a -b x; while getopts ab o; do echo opt=$o; done; echo $OPTIND",
+   "stdout": "opt=a\nopt=b\n3\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -- -a v -b; while getopts a:b o; do echo $o:$OPTARG; done",
+   "stdout": "a:v\nb:\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -- -z; getopts a o 2>/dev/null; echo $o",
+   "stdout": "?\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "OPTIND=1; set -- -ab; while getopts ab o; do echo $o; done",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -- foo; getopts a o; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "set -- -- -a; getopts a o; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "dirs",
+   "stdout": "/tmp/w\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "pushd /tmp >/dev/null; pwd; popd >/dev/null; pwd",
+   "stdout": "/tmp\n/tmp/w\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "pushd /tmp > /dev/null; dirs",
+   "stdout": "/tmp /tmp/w\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "cd /tmp; pushd /usr > /dev/null; popd; pwd",
+   "stdout": "/tmp\n/tmp\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "read -t 0 x < /dev/null; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "date +%Y | grep -c \"^20\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "printf \"%(%s)T\\n\" -1 | grep -c \"^[0-9]*$\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo $EPOCHSECONDS | grep -c \"^[0-9]*$\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mapfile -t l <<< $'a\\nb'; echo ${#l[@]}",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mapfile l <<< \"x\"; declare -p l",
+   "stdout": "declare -a l=([0]=$'x\\n')\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "mapfile -n1 -t l < <(printf \"a\\nb\\n\"); echo ${l[@]}",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "readarray -t l < <(echo p); echo ${l[0]}",
+   "stdout": "p\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "compgen -b | grep -c \"^echo$\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "compgen -A function; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "f() { :; }; compgen -A function",
+   "stdout": "f\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "ls /nonexistent 2>&1 | grep -c \"cannot access\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "false; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "true; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": ": ; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": ": a b c; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo $((RANDOM % 1))",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo ${BASH_SOURCE[0]:-none}",
+   "stdout": "none\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo ${#BASH_SOURCE[@]}",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo ${BASH_LINENO[0]}",
+   "stdout": "\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "bash -c \"echo sub\"",
+   "stdout": "sub\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "bash -c \"echo \\$0 \\$1\" name arg",
+   "stdout": "name arg\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "sh -c \"echo sh\"",
+   "stdout": "sh\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "bash -c \"exit 5\"; echo $?",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "bash -c \"echo \\$((1+1))\"",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo echo piped | bash",
+   "stdout": "piped\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo \"echo a; echo b\" | bash | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "x=1 bash -c \"echo \\$x\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "export x=2; bash -c \"echo \\$x\"",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "x=3; bash -c \"echo \\${x:-unset}\"",
+   "stdout": "unset\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "f() { echo fn; }; export -f f; bash -c f",
+   "stdout": "fn\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "env -i bash -c \"echo \\${HOME:-nohome}\"",
+   "stdout": "nohome\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "env x=1 bash -c \"echo \\$x\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "env | grep -c \"^PATH=\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "printenv HOME | grep -c .",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "unset HOME; echo ${HOME:-gone}",
+   "stdout": "gone\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "export -p | grep -c \"declare -x\"",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "export A=1 B=2; env | grep -c \"^[AB]=\"",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "A=1; export A; env | grep \"^A=\"",
+   "stdout": "A=1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "export A; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "readonly A=1; unset A 2>/dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "readonly -p | grep -c \"declare -r\"",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "xargs -n1 echo <<< \"a b\"",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo a b | xargs -n1",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo \"a b\" | xargs -I{} echo [{}]",
+   "stdout": "[a b]\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq 3 | xargs",
+   "stdout": "1 2 3\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq 3 | paste -sd+ | bc",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq 5 | sed -n 2,4p",
+   "stdout": "2\n3\n4\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq 3 | tac | head -1",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq 1 2 7",
+   "stdout": "1\n3\n5\n7\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq 3 1",
+   "stdout": "",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "seq -s, 3",
+   "stdout": "1,2,3\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "yes | head -2",
+   "stdout": "y\ny\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "yes a | head -1",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "true | yes | head -1",
+   "stdout": "y\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "basename /a/b.c .c",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "dirname /a/b/c",
+   "stdout": "/a/b\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "basename a/",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "dirname a",
+   "stdout": ".\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "dirname /",
+   "stdout": "/\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "realpath ../etc",
+   "stdout": "/tmp/etc\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "readlink -f .",
+   "stdout": "/tmp/w\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "expr 1 + 2",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "expr length abc",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "expr 5 \\* 3",
+   "stdout": "15\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "expr abc : \"a\\(.*\\)\"",
+   "stdout": "bc\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "test -t 0; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo $(( $(date +%s) > 0 ))",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "sleep 0.01; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "nonexistent_cmd 2>/dev/null; echo $?",
+   "stdout": "127\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "/nonexistent/cmd 2>/dev/null; echo $?",
+   "stdout": "127\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "/etc 2>/dev/null; echo $?",
+   "stdout": "126\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "./nonexistent 2>/dev/null; echo $?",
+   "stdout": "127\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "echo hi | nonexistent_cmd 2>/dev/null; echo $?",
+   "stdout": "127\n",
+   "status": 0
+  },
+  {
+   "group": "special",
+   "command": "nonexistent_cmd 2>&1 | grep -c \"not found\"",
+   "stdout": "1\n",
+   "status": 0
+  }
+ ]
+}
