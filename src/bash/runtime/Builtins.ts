@@ -20,6 +20,9 @@ import type { StdinReader } from './StdinSource';
 import { decodeBackslashEscapes } from './EscapeSequences';
 import { formatPrintf } from './Printf';
 import { runDeclaration } from './Declare';
+import { runSet, runShopt } from './OptionBuiltins';
+import { signalListing, signalName } from './Signals';
+import type { OptionResult } from './OptionBuiltins';
 import type { DeclarationCommand } from './Declare';
 
 /** Minimal IO interface for builtins that need filesystem access. */
@@ -43,7 +46,7 @@ const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
   'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
-  'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let',
+  'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let', 'shopt', 'builtin', 'hash',
   'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
 ]);
 
@@ -81,7 +84,8 @@ export function executeBuiltin(
     case 'shift': return builtinShift(args, env);
     case 'read': return builtinRead(args, env, stdin, readFd);
     case 'type': return builtinType(args, functions, aliases);
-    case 'set': return builtinSet(args, env);
+    case 'set': return args.length === 0 ? declaration('declare', [], env, functions) : optionResult(runSet(args, env), env);
+    case 'shopt': return optionResult(runShopt(args, env), env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
     case 'declare':
     case 'typeset':
@@ -184,6 +188,11 @@ function builtinEcho(args: string[]): BuiltinResult {
   }
 
   return { output: text + (newline ? '\n' : ''), exitCode: 0 };
+}
+
+function optionResult(result: OptionResult, env: Environment): BuiltinResult {
+  if (result.positional !== undefined) env.setPositionalArgs(result.positional);
+  return { output: result.output, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr }) };
 }
 
 function declaration(name: string, args: string[], env: Environment, functions: Map<string, Command>): BuiltinResult {
@@ -601,63 +610,6 @@ function builtinType(
 
 // ─── set ────────────────────────────────────────────────────────
 
-/** Map short flags to SHELLOPTS option names. */
-const SET_FLAG_MAP: Record<string, string> = {
-  e: 'errexit', u: 'nounset', x: 'xtrace', f: 'noglob',
-  n: 'noexec', v: 'verbose', C: 'noclobber', B: 'braceexpand',
-};
-
-function builtinSet(args: string[], env: Environment): BuiltinResult {
-  if (args.length === 0) {
-    // Display all variables
-    const all = env.getAll();
-    const lines: string[] = [];
-    for (const [k, v] of all) lines.push(`${k}='${v}'`);
-    return { output: lines.sort().join('\n') + '\n', exitCode: 0 };
-  }
-
-  // set -- args: reset positional
-  if (args[0] === '--') {
-    env.setPositionalArgs(args.slice(1));
-    return { output: '', exitCode: 0 };
-  }
-
-  // Parse shell options: -e, +e, -o name, +o name, etc.
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '-o' && i + 1 < args.length) {
-      setShellOpt(env, args[++i], true);
-    } else if (arg === '+o' && i + 1 < args.length) {
-      setShellOpt(env, args[++i], false);
-    } else if (arg.startsWith('-') && arg.length > 1 && arg !== '--') {
-      for (let j = 1; j < arg.length; j++) {
-        const optName = SET_FLAG_MAP[arg[j]];
-        if (optName) setShellOpt(env, optName, true);
-      }
-    } else if (arg.startsWith('+') && arg.length > 1) {
-      for (let j = 1; j < arg.length; j++) {
-        const optName = SET_FLAG_MAP[arg[j]];
-        if (optName) setShellOpt(env, optName, false);
-      }
-    }
-  }
-
-  return { output: '', exitCode: 0 };
-}
-
-/** Enable or disable a shell option in SHELLOPTS. */
-function setShellOpt(env: Environment, optName: string, enable: boolean): void {
-  const current = env.get('SHELLOPTS') ?? '';
-  const opts = new Set(current.split(':').filter(Boolean));
-  if (enable) {
-    opts.add(optName);
-  } else {
-    opts.delete(optName);
-  }
-  const value = [...opts].sort().join(':');
-  try { env.set('SHELLOPTS', value); } catch { /* readonly */ }
-}
-
 // ─── declare / readonly ─────────────────────────────────────────
 
 
@@ -797,40 +749,35 @@ function builtinGetopts(args: string[], env: Environment): BuiltinResult {
  * command list has finished (or been short-circuited by `exit`).
  */
 function builtinTrap(args: string[], env: Environment): BuiltinResult {
-  if (args.length === 0) {
-    const out: string[] = [];
-    for (const [sig, body] of env.listTraps()) {
-      out.push(`trap -- '${body.replace(/'/g, `'\\''`)}' ${sig}`);
+  const listing = (names?: readonly string[]): string => env.listTraps()
+    .filter(([signal]) => names === undefined || names.includes(signal))
+    .map(([signal, body]) => `trap -- '${body.replace(/'/g, `'\\''`)}' ${signal === 'EXIT' || ['ERR', 'DEBUG', 'RETURN'].includes(signal) ? signal : `SIG${signal}`}\n`)
+    .join('');
+  if (args.length === 0) return { output: listing(), exitCode: 0 };
+  if (args[0] === '-l' || args[0] === '-L') return { output: signalListing(), exitCode: 0 };
+  if (args[0] === '-p') {
+    const names = args.slice(1).map((spec) => signalName(spec) ?? spec);
+    return { output: listing(names.length > 0 ? names : undefined), exitCode: 0 };
+  }
+  const operands = args[0] === '--' ? args.slice(1) : args;
+  if (operands.length === 0) return { output: listing(), exitCode: 0 };
+  const clearing = operands[0] === '-' || (/^\d+$/.test(operands[0]) && operands.length === 1);
+  const action = clearing ? '' : operands[0];
+  const specs = clearing ? (operands[0] === '-' ? operands.slice(1) : operands) : operands.slice(1);
+  if (specs.length === 0) return fail('trap: usage: trap [-lp] [[arg] signal_spec ...]', 2);
+  let errors = '';
+  for (const spec of specs) {
+    const name = signalName(spec);
+    if (name === null) {
+      errors += `bash: trap: ${spec}: invalid signal specification\n`;
+      continue;
     }
-    return { output: out.join('\n') + (out.length ? '\n' : ''), exitCode: 0 };
+    if (clearing) env.clearTrap(name);
+    else env.setTrap(name, action);
   }
-  if (args[0] === '-l') {
-    return {
-      output: 'EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM\n',
-      exitCode: 0,
-    };
-  }
-  // Clear form: `trap - SIG …` removes the handlers.
-  if (args[0] === '-') {
-    for (const sig of args.slice(1)) env.clearTrap(normalizeSig(sig));
-    return { output: '', exitCode: 0 };
-  }
-  const action = args[0];
-  const signals = args.slice(1);
-  if (signals.length === 0) {
-    return fail(`trap: usage: trap [-lp] [[arg] signal_spec …]`, 2);
-  }
-  for (const sig of signals) {
-    env.setTrap(normalizeSig(sig), action);
-  }
-  return { output: '', exitCode: 0 };
+  return { output: '', exitCode: errors === '' ? 0 : 1, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
-function normalizeSig(sig: string): string {
-  const s = sig.toUpperCase();
-  if (s === '0') return 'EXIT';
-  return s.startsWith('SIG') ? s.slice(3) : s;
-}
 
 // ─── mapfile / readarray ────────────────────────────────────────
 

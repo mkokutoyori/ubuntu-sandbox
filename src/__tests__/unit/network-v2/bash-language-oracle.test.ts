@@ -10,12 +10,16 @@ const fixture = JSON.parse(readFileSync(new URL('../../support/oracle/bash-langu
 
 const PRELUDE = 'exec 2>/dev/null; rm -rf /tmp/w; mkdir -p /tmp/w; cd /tmp/w; ';
 
+function quoted(script: string): string {
+  return `'${script.replace(/'/g, `'\\''`)}'`;
+}
+
 describe('bash language against the recorded bash', () => {
   for (const [index, recorded] of fixture.cases.entries()) {
     it(`#${index} ${recorded.group}: ${recorded.command}`, async () => {
       const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
       pc.powerOn();
-      expect(await pc.executeCommand(PRELUDE + recorded.command)).toBe(recorded.stdout.replace(/\n$/, ''));
+      expect(await pc.executeCommand(`bash -c ${quoted(PRELUDE + recorded.command)}`)).toBe(recorded.stdout.replace(/\n$/, ''));
     });
   }
 });

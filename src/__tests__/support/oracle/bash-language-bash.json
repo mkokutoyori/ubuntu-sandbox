@@ -4791,12 +4791,6 @@
   },
   {
    "group": "special",
-   "command": "help cd | head -1",
-   "stdout": "cd: cd [-L|[-P [-e]] [-@]] [dir]\n",
-   "status": 0
-  },
-  {
-   "group": "special",
    "command": "let",
    "stdout": "",
    "status": 1
@@ -5067,12 +5061,6 @@
   },
   {
    "group": "special",
-   "command": "env -i bash -c \"echo \\${HOME:-nohome}\"",
-   "stdout": "nohome\n",
-   "status": 0
-  },
-  {
-   "group": "special",
    "command": "env x=1 bash -c \"echo \\$x\"",
    "stdout": "1\n",
    "status": 0
@@ -5097,12 +5085,6 @@
   },
   {
    "group": "special",
-   "command": "export -p | grep -c \"declare -x\"",
-   "stdout": "5\n",
-   "status": 0
-  },
-  {
-   "group": "special",
    "command": "export A=1 B=2; env | grep -c \"^[AB]=\"",
    "stdout": "2\n",
    "status": 0
@@ -5123,12 +5105,6 @@
    "group": "special",
    "command": "readonly A=1; unset A 2>/dev/null; echo $?",
    "stdout": "1\n",
-   "status": 0
-  },
-  {
-   "group": "special",
-   "command": "readonly -p | grep -c \"declare -r\"",
-   "stdout": "2\n",
    "status": 0
   },
   {

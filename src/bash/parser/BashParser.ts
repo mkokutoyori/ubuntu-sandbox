@@ -720,7 +720,7 @@ export class BashParser {
     const rawValue = tok.value.substring(eqIdx + 1);
 
     // Split `name` from optional `[subscript]`.
-    const head = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[([^\]]+)\])?$/);
+    const head = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[(.+)\])?$/s);
     const name = head ? head[1] : lhs;
     const subscript = head?.[2];
 

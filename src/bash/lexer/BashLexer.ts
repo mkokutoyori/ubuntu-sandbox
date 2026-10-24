@@ -16,6 +16,7 @@
  */
 
 import { TokenType, BASH_KEYWORDS, type Token, type SourcePosition } from './Token';
+import { decodeBackslashEscapes } from '@/bash/runtime/EscapeSequences';
 import { LexerError } from './LexerError';
 
 export class BashLexer {
@@ -248,6 +249,10 @@ export class BashLexer {
     this.advance(); // skip `
     let value = '';
     while (!this.isAtEnd() && this.peek() !== '`') {
+      if (this.peek() === '\\' && this.peekAt(1) !== undefined) {
+        value += this.peek();
+        this.advance();
+      }
       value += this.peek();
       this.advance();
     }
@@ -275,53 +280,18 @@ export class BashLexer {
     // (\n, \t, \r, \\, \', \", \xNN, \0NN, \uNNNN); $-expansion does
     // NOT happen inside, mirroring real bash.
     if (next === "'") {
-      this.advance(); // skip '
-      let value = '';
+      this.advance();
+      let raw = '';
       while (!this.isAtEnd() && this.peek() !== "'") {
-        const c = this.peek();
-        if (c === '\\' && !this.isAtEnd()) {
-          this.advance();
-          const esc = this.peek();
-          switch (esc) {
-            case 'n': value += '\n'; this.advance(); break;
-            case 't': value += '\t'; this.advance(); break;
-            case 'r': value += '\r'; this.advance(); break;
-            case 'a': value += '\x07'; this.advance(); break;
-            case 'b': value += '\b'; this.advance(); break;
-            case 'f': value += '\f'; this.advance(); break;
-            case 'v': value += '\v'; this.advance(); break;
-            case 'e': value += '\x1b'; this.advance(); break;
-            case '\\': value += '\\'; this.advance(); break;
-            case "'": value += "'"; this.advance(); break;
-            case '"': value += '"'; this.advance(); break;
-            case 'x': {
-              this.advance();
-              let hex = '';
-              for (let i = 0; i < 2 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
-                hex += this.peek(); this.advance();
-              }
-              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
-              break;
-            }
-            case 'u': {
-              this.advance();
-              let hex = '';
-              for (let i = 0; i < 4 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
-                hex += this.peek(); this.advance();
-              }
-              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
-              break;
-            }
-            default:
-              value += '\\' + esc; this.advance(); break;
-          }
-        } else {
-          value += c;
+        if (this.peek() === '\\' && this.peekAt(1) !== undefined) {
+          raw += this.peek();
           this.advance();
         }
+        raw += this.peek();
+        this.advance();
       }
-      if (!this.isAtEnd()) this.advance(); // skip closing '
-      return { type: TokenType.SINGLE_QUOTED, value, position: start };
+      if (!this.isAtEnd()) this.advance();
+      return { type: TokenType.SINGLE_QUOTED, value: decodeBackslashEscapes(raw, 'ansi-c').text, position: start };
     }
 
     // $(cmd) — command substitution
@@ -640,9 +610,37 @@ export class BashLexer {
 
   // ─── Word Scanner ─────────────────────────────────────────────
 
+  private subscriptedAssignmentHead(): string | null {
+    const name = /^[A-Za-z_][A-Za-z_0-9]*\[/.exec(this.input.slice(this.pos));
+    if (name === null) return null;
+    let depth = 0;
+    for (let index = this.pos + name[0].length - 1; index < this.input.length; index++) {
+      const character = this.input[index];
+      if (character === "'" || character === '"') {
+        const close = this.input.indexOf(character, index + 1);
+        if (close < 0) return null;
+        index = close;
+        continue;
+      }
+      if (character === '\\') { index++; continue; }
+      if (character === '[') depth++;
+      else if (character === ']' && --depth === 0) {
+        const after = this.input.slice(index + 1, index + 3);
+        const operator = after.startsWith('+=') ? '+=' : after.startsWith('=') ? '=' : null;
+        return operator === null ? null : this.input.slice(this.pos, index + 1) + operator;
+      } else if (this.isWhitespace(character)) return null;
+    }
+    return null;
+  }
+
   private scanWord(): Token {
     const start = this.position();
     let value = '';
+    const head = this.subscriptedAssignmentHead();
+    if (head !== null) {
+      for (let consumed = 0; consumed < head.length; consumed++) this.advance();
+      value = head;
+    }
 
     while (!this.isAtEnd()) {
       const ch = this.peek();
@@ -695,7 +693,7 @@ export class BashLexer {
     if (eqIdx > 0) {
       const nameEnd = value[eqIdx - 1] === '+' ? eqIdx - 1 : eqIdx;
       const lhs = value.substring(0, nameEnd);
-      const m = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[([^\]]+)\])?$/);
+      const m = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[(.+)\])?$/s);
       if (m) {
         return { type: TokenType.ASSIGNMENT_WORD, value, position: start };
       }

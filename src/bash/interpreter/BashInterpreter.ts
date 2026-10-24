@@ -26,7 +26,8 @@ import type {
   Word, Assignment, Redirection,
 } from '@/bash/parser/ASTNode';
 import { Environment } from '@/bash/runtime/Environment';
-import { isShellOptionEnabled } from '@/bash/runtime/ShellOptions';
+import { initializeShellOptions, isShellOptionEnabled, optionFlags } from '@/bash/runtime/ShellOptions';
+import { signalName, signalNumber, terminatesByDefault } from '@/bash/runtime/Signals';
 import { expandWord, expandWords, expandPattern, expandText, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
@@ -191,6 +192,8 @@ export interface InterpreterOptions {
    *  true`) run their body once, then park via {@link DaemonParkSignal}. */
   daemonMode?: boolean;
   stdin?: string;
+  /** True for a shell reading commands from a terminal (aliases expand). */
+  interactive?: boolean;
 }
 
 /**
@@ -251,6 +254,8 @@ export class BashInterpreter {
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
   private readonly daemonMode: boolean;
+  private readonly interactive: boolean;
+  private functionStack: string[] = [];
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
@@ -258,6 +263,7 @@ export class BashInterpreter {
     this.aliases = options.aliases ?? new AliasTable();
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
+    this.interactive = options.interactive ?? false;
     if (options.stdin !== undefined) this.stdin = new StdinSource(options.stdin);
     const now = (): number => this.io?.wallClock?.().nowMs() ?? Date.now();
     const startedAt = now();
@@ -268,6 +274,7 @@ export class BashInterpreter {
         EPOCHSECONDS: () => String(Math.floor(now() / 1000)),
         EPOCHREALTIME: () => (now() / 1000).toFixed(6),
         LINENO: () => String(this.currentLine),
+        '-': () => optionFlags(this.env, this.interactive),
       },
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -276,6 +283,7 @@ export class BashInterpreter {
       ppid: options.ppid,
       initialExitCode: options.initialExitCode,
     });
+    initializeShellOptions(this.env, this.interactive);
   }
 
   // ─── Public API ───────────────────────────────────────────────
@@ -861,6 +869,7 @@ export class BashInterpreter {
     const node = this.materializeProcSubs(rawNode);
     this.lastSubstitutionStatus = null;
     if (rawNode.position !== undefined) this.currentLine = rawNode.position.line;
+    if (!this.interactive && isShellOptionEnabled(this.env, 'noexec')) return;
 
     // Declaration commands (`local`, `declare`, `typeset`, `readonly`,
     // `export`) confine `name=value` arguments to the local scope. We
@@ -894,6 +903,9 @@ export class BashInterpreter {
     }
     const cmdName = args[0];
     this.env.set('_', args[args.length - 1]);
+    if (isShellOptionEnabled(this.env, 'xtrace')) {
+      this.log.write(2, `${this.env.get('PS4') ?? '+ '}${args.map(traceWord).join(' ')}\n`);
+    }
 
     // `exec >> file 2>> errfile` (no command, only redirections) rewires
     // the shell's own stdout/stderr for the rest of the script.
@@ -956,7 +968,13 @@ export class BashInterpreter {
     } else if (cmdName === 'exec') {
       if (args.length > 1) yield* this.runCommandWord(args.slice(1));
     } else if (fn) {
-      yield* this.callFunction(fn, args.slice(1));
+      yield* this.callFunction(fn, args.slice(1), cmdName);
+    } else if (cmdName === 'builtin') {
+      yield* this.runBuiltinWord(args.slice(1));
+    } else if (cmdName === 'hash') {
+      yield* this.runHash(args.slice(1));
+    } else if (cmdName === 'kill' && (yield* this.signalSelf(args.slice(1)))) {
+      return undefined;
     } else if (isBuiltin(cmdName)) {
       const result = executeBuiltin(
         cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined,
@@ -1034,7 +1052,7 @@ export class BashInterpreter {
    * terminates instead of looping forever.
    */
   private expandAliases(args: string[]): string[] {
-    if (args.length === 0 || this.aliases.size === 0) return args;
+    if (args.length === 0 || this.aliases.size === 0 || !isShellOptionEnabled(this.env, 'expand_aliases')) return args;
     let result = args;
     const seen = new Set<string>();
     while (result.length > 0) {
@@ -1095,6 +1113,7 @@ export class BashInterpreter {
     }
     if (assign.append) this.env.appendScalar(name, value);
     else this.env.set(name, value);
+    if (isShellOptionEnabled(this.env, 'allexport')) this.env.export(name);
   }
 
   /**
@@ -1282,7 +1301,7 @@ export class BashInterpreter {
       const fd = chunk.fd === 2 || (chunk.ambiguous && plan.sinks.has(1) !== plan.sinks.has(2)) ? 2 : 1;
       const sink = plan.sinks.get(fd) ?? this.fdOutputs.get(fd) ?? (fd === 1 ? { kind: 'out' as const } : { kind: 'err' as const });
       switch (sink.kind) {
-        case 'out': this.log.write(1, chunk.text, chunk.newline, chunk.ambiguous && chunk.fd === 1); break;
+        case 'out': this.log.write(1, fd === 2 && chunk.ambiguous ? ensureTrailingNewline(chunk.text) : chunk.text, fd === 2 && chunk.ambiguous ? 'never' : chunk.newline, chunk.ambiguous && chunk.fd === 1); break;
         case 'err': this.log.write(2, chunk.fd === 2 ? chunk.text : ensureTrailingNewline(chunk.text), 'never'); break;
         case 'file':
           try {
@@ -1470,9 +1489,11 @@ export class BashInterpreter {
     this.env.lastExitCode = 0;
   }
 
-  private *callFunction(body: Command, args: string[]): Effects<void> {
+  private *callFunction(body: Command, args: string[], name: string): Effects<void> {
     // Create a child environment for function scope (supports `local`)
     const savedEnv = this.env;
+    this.functionStack.unshift(name);
+    savedEnv.setArray('FUNCNAME', [...this.functionStack]);
     const childEnv = this.env.createChild();
     this.env = childEnv;
     this.env.setPositionalArgs(args);
@@ -1488,7 +1509,76 @@ export class BashInterpreter {
       yield* this.fireSignalTrap('RETURN');
       savedEnv.lastExitCode = this.env.lastExitCode;
       this.env = savedEnv;
+      this.functionStack.shift();
+      if (this.functionStack.length === 0) savedEnv.unset('FUNCNAME');
+      else savedEnv.setArray('FUNCNAME', [...this.functionStack]);
     }
+  }
+
+  private *runBuiltinWord(rest: string[]): Effects<void> {
+    const name = rest[0];
+    if (name === undefined) {
+      this.env.lastExitCode = 0;
+      return;
+    }
+    if (!isBuiltin(name) && name !== 'hash' && name !== 'builtin') {
+      this.emitError(`bash: builtin: ${name}: not a shell builtin`);
+      this.env.lastExitCode = 1;
+      return;
+    }
+    const result = executeBuiltin(
+      name, rest.slice(1), this.env, this.functions, this.io ?? undefined,
+      this.stdin ?? undefined, this.aliases, (fd) => this.fdInputs.get(fd),
+    );
+    this.emitResult({ ...result, lineOriented: false }, result.exitCode);
+    this.env.lastExitCode = result.exitCode;
+  }
+
+  private *runHash(rest: string[]): Effects<void> {
+    const names = rest.filter((word) => !word.startsWith('-'));
+    if (names.length === 0) {
+      if (!rest.includes('-r')) this.log.write(1, 'hash: hash table empty\n');
+      this.env.lastExitCode = 0;
+      return;
+    }
+    let status = 0;
+    for (const name of names) {
+      if (rest.includes('-p') || rest.includes('-d')) continue;
+      const found = yield* this.describeResolution(name, false);
+      if (found === null) {
+        this.emitError(`bash: hash: ${name}: not found`);
+        status = 1;
+      }
+    }
+    this.env.lastExitCode = status;
+  }
+
+  private *signalSelf(rest: string[]): Effects<boolean> {
+    let specification = 'TERM';
+    const operands: string[] = [];
+    for (let index = 0; index < rest.length; index++) {
+      const word = rest[index];
+      if (word === '-s' || word === '-n') { specification = rest[++index] ?? specification; continue; }
+      if (/^-(?!l|L)[A-Za-z0-9]+$/.test(word) && operands.length === 0) { specification = word.slice(1); continue; }
+      operands.push(word);
+    }
+    const own = String(this.env.get('$'));
+    if (operands.length === 0 || !operands.every((operand) => operand === own)) return false;
+    const name = specification === '0' ? 'EXIT' : signalName(specification);
+    if (name === null) {
+      this.emitError(`bash: kill: ${specification}: invalid signal specification`);
+      this.env.lastExitCode = 1;
+      return true;
+    }
+    this.env.lastExitCode = 0;
+    if (specification === '0') return true;
+    const handler = this.lookupTrapInherited(name);
+    if (handler !== undefined) {
+      if (handler !== '') yield* this.executeEvalG(handler);
+      return true;
+    }
+    if (terminatesByDefault(name)) throw new ExitSignal(128 + signalNumber(name));
+    return true;
   }
 
   // ─── Eval ─────────────────────────────────────────────────────
@@ -1745,4 +1835,8 @@ function literalHeadName(node: SimpleCommand): string {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
+}
+
+function traceWord(word: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
 }

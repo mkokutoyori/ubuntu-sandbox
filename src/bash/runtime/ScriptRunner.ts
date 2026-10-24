@@ -46,7 +46,7 @@ export function runScript(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean },
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -94,7 +94,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string; interactive?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
@@ -121,6 +121,7 @@ export function runScriptContent(
       aliases,
       functions,
       daemonMode: identity?.daemonMode,
+      interactive: identity?.interactive,
       stdin: identity?.stdin,
     });
 
@@ -161,7 +162,7 @@ export async function runScriptAsync(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean },
 ): Promise<ScriptResult> {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -207,7 +208,7 @@ export async function runScriptContentAsync(
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; interactive?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
@@ -233,6 +234,7 @@ export async function runScriptContentAsync(
       aliases,
       functions,
       daemonMode: identity?.daemonMode,
+      interactive: identity?.interactive,
     });
 
     const result = await interp.executeAsync(ast);

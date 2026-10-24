@@ -482,7 +482,7 @@ function addWord(word: Word, ctx: Context, fields: Fields, leading: boolean): vo
       fields.parameter(expandParameter(variableBody(word.name, word.modifier), hostFor(ctx)), false);
       return;
     case 'CommandSubstitution':
-      fields.splittable(commandOutput(word.command, ctx));
+      fields.splittable(commandOutput(word.backtick ? backtickCommand(word.command) : word.command, ctx));
       return;
     case 'ArithmeticSubstitution':
       fields.splittable(evaluateArithmetic(word.expression, ctx.env, ctx.execCmd));

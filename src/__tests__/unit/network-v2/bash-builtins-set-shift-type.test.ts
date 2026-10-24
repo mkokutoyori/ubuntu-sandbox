@@ -16,8 +16,8 @@ describe('set builtin', () => {
   describe('display variables', () => {
     it('should list all variables with no args', () => {
       const result = run('set', [], { FOO: 'bar', BAZ: 'qux' });
-      expect(result.output).toContain("FOO='bar'");
-      expect(result.output).toContain("BAZ='qux'");
+      expect(result.output).toContain('FOO=bar');
+      expect(result.output).toContain('BAZ=qux');
     });
 
     it('should sort output alphabetically', () => {

@@ -3951,7 +3951,7 @@ export class LinuxCommandExecutor {
         (argv, env, background, outputPiped, stdin) => this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin),
         initialVars,
         io,
-        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode },
+        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode, interactive: true },
         this.aliases,
         this.functions,
       );
@@ -4090,7 +4090,7 @@ export class LinuxCommandExecutor {
       (argv, env, background, outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin, outputPiped),
       initialVars,
       io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, interactive: true },
       this.aliases,
       this.functions,
     );
@@ -4698,19 +4698,6 @@ export class LinuxCommandExecutor {
       actualArgs.pop();
     } else if (interpreterStdin === '') {
       stdin = '';
-    } else if (actualArgs.length > 0) {
-      const lastArg = actualArgs[actualArgs.length - 1];
-      // Heuristic: if last arg contains newlines, it's likely pipe input
-      if (lastArg?.includes('\n')) {
-        stdin = lastArg;
-        actualArgs.pop();
-      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ') && actualArgs.length > 1) {
-        // For text processing commands, multi-word content without newlines is also stdin —
-        // but only when a separate program/option arg precedes it, so a single-arg program
-        // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
-        stdin = lastArg;
-        actualArgs.pop();
-      }
     }
 
     let result: { output: string; exitCode: number };
@@ -6119,6 +6106,13 @@ export class LinuxCommandExecutor {
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
             runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }));
+        }
+        if (stdin !== undefined && stdin !== '') {
+          return this.runScriptProcess(cmd, (identity, bridge) =>
+            runScriptContent(
+              stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
+              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+            ));
         }
         return { output: '', exitCode: 0 };
       }

@@ -27,11 +27,10 @@ function word(node: Word): string {
 }
 
 function redirection(node: Redirection): string {
-  const descriptor = node.fd === undefined ? '' : String(node.fd);
   const target = word(node.target);
-  if (node.op === '<<<' || node.op === '<<') return `${descriptor}${node.op} ${target}`;
-  if (node.op === '>&' || node.op === '<&') return `${descriptor}${node.op}${target}`;
-  return `${descriptor}${node.op} ${target}`;
+  if (node.op === '<<<' || node.op === '<<') return `${node.fd ?? ''}${node.op} ${target}`;
+  if (node.op === '>&' || node.op === '<&') return `${node.fd ?? (node.op === '>&' ? 1 : 0)}${node.op}${target}`;
+  return `${node.fd ?? ''}${node.op} ${target}`;
 }
 
 function assignment(node: Assignment): string {
@@ -70,8 +69,10 @@ function andOr(node: AndOrList, depth: number): string {
   return `${pipeline(node.first, depth)}${rest}${node.background ? ' &' : ''}`;
 }
 
-function list(node: CommandList, depth: number): string {
-  return node.commands.map((entry) => `${INDENT.repeat(depth)}${andOr(entry, depth)}`).join(';\n') + ';\n';
+function list(node: CommandList, depth: number, terminateLast: boolean): string {
+  const pad = INDENT.repeat(depth);
+  const entries = node.commands.map((entry) => `${pad}${andOr(entry, depth)}`);
+  return entries.map((entry, index) => `${entry}${index < entries.length - 1 || terminateLast ? ';' : ''}\n`).join('');
 }
 
 function block(node: Command, depth: number): string {
@@ -79,33 +80,33 @@ function block(node: Command, depth: number): string {
   switch (node.type) {
     case 'SimpleCommand': return simple(node);
     case 'IfClause': {
-      let out = `if ${listInline(node.condition)}; then\n${list(node.thenBody, depth + 1)}`;
-      for (const elif of node.elifClauses) out += `${pad}elif ${listInline(elif.condition)}; then\n${list(elif.body, depth + 1)}`;
-      if (node.elseBody !== null) out += `${pad}else\n${list(node.elseBody, depth + 1)}`;
+      let out = `if ${listInline(node.condition)}; then\n${list(node.thenBody, depth + 1, true)}`;
+      for (const elif of node.elifClauses) out += `${pad}elif ${listInline(elif.condition)}; then\n${list(elif.body, depth + 1, true)}`;
+      if (node.elseBody !== null) out += `${pad}else\n${list(node.elseBody, depth + 1, true)}`;
       return `${out}${pad}fi${trailing(node.redirections)}`;
     }
     case 'ForClause': {
       const words = node.words === null ? '' : ` in ${node.words.map(word).join(' ')}`;
-      return `for ${node.variable}${words};\n${pad}do\n${list(node.body, depth + 1)}${pad}done${trailing(node.redirections)}`;
+      return `for ${node.variable}${words};\n${pad}do\n${list(node.body, depth + 1, true)}${pad}done${trailing(node.redirections)}`;
     }
     case 'CStyleForClause':
-      return `for ((${node.init}; ${node.cond}; ${node.update}))\n${pad}do\n${list(node.body, depth + 1)}${pad}done`;
+      return `for ((${node.init}; ${node.cond}; ${node.update}))\n${pad}do\n${list(node.body, depth + 1, true)}${pad}done`;
     case 'WhileClause':
-      return `while ${listInline(node.condition)}; do\n${list(node.body, depth + 1)}${pad}done${trailing(node.redirections)}`;
+      return `while ${listInline(node.condition)}; do\n${list(node.body, depth + 1, true)}${pad}done${trailing(node.redirections)}`;
     case 'UntilClause':
-      return `until ${listInline(node.condition)}; do\n${list(node.body, depth + 1)}${pad}done${trailing(node.redirections)}`;
+      return `until ${listInline(node.condition)}; do\n${list(node.body, depth + 1, true)}${pad}done${trailing(node.redirections)}`;
     case 'CaseClause': {
-      let out = `case ${word(node.word)} in\n`;
+      let out = `case ${word(node.word)} in \n`;
       for (const item of node.items) {
         out += `${pad}${INDENT}${item.patterns.map(word).join(' | ')})\n`;
-        if (item.body !== null) out += list(item.body, depth + 2);
+        if (item.body !== null) out += list(item.body, depth + 2, false);
         out += `${pad}${INDENT}${item.terminator ?? ';;'}\n`;
       }
       return `${out}${pad}esac${trailing(node.redirections)}`;
     }
     case 'FunctionDef': return `${node.name} () \n${block(node.body, depth)}`;
-    case 'BraceGroup': return `{ \n${list(node.body, depth + 1)}${pad}}${trailing(node.redirections)}`;
-    case 'Subshell': return `( ${listInline(node.body)} )${trailing(node.redirections)}`;
+    case 'BraceGroup': return `{ \n${list(node.body, depth + 1, false)}${pad}}${trailing(node.redirections)}`;
+    case 'Subshell': return `( ${node.body.commands.map((entry) => andOr(entry, depth)).join(`;\n${pad}`)} )${trailing(node.redirections)}`;
     case 'DoubleBracket': return `[[ ${expression(node.expr)} ]]`;
     case 'ArithmeticCommand': return `((${node.expression}))`;
   }
