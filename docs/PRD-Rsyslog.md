@@ -263,3 +263,37 @@ source »). Ils passaient, donc rien ne signalait le problème : c'est la
 vérification contre la documentation de rsyslog — et non l'exécution de la
 suite — qui l'a trouvé. Un test vert ne prouve que la cohérence du code
 avec lui-même.
+
+## Moteur porté : démon Linux, paramètres globaux, omfile, imfile
+
+Le démon Linux n'est plus un lecteur de lignes : c'est le moteur de `src/network/rsyslog` (RainerScript,
+rulesets, machine à états des actions, files, limiteurs, réduction des messages répétés) piloté par
+`LinuxRsyslogHost`. Ce que ce lot a rendu réel, avec les sondes qui le prouvent :
+
+- **Fichiers tenus par inode** (`VirtualFileSystem.openAppend`) : un fichier renommé ou supprimé continue de
+  recevoir jusqu'au SIGHUP ; `logrotate` + `postrotate` rouvrent le bon fichier
+  (`linux-rsyslog-daemon.test.ts`). Les temporisations (MARK, reprise d'action, expiration de certificat) sont sur
+  l'horloge de la machine : `advanceTime()` les déclenche, chacune à son heure.
+- **TLS RFC 5425** par le sous-système `tls/` et `pki/` (modes anon, fingerprint, certvalid, name ; pairs permis
+  avec jokers) : `linux-rsyslog-tls.test.ts`, `rsyslog-peer-auth.test.ts`.
+- **Windows** : `Send-SyslogMessage` (RFC 3164, RFC 5424, cadrage TCP) partage les codecs de `src/network/syslog` :
+  `windows-syslog-emission.test.ts`.
+- **Paramètres globaux évalués** (`linux-rsyslog-globals.test.ts`) : `privdrop.*` (identité du processus visible
+  dans `ps`, droits d'écriture vérifiés pour l'acteur, `chown` refusé à un non-root, `failOnChownFailure`),
+  `maxOpenFiles` (RLIMIT_NOFILE du gestionnaire de processus, EMFILE), `umask`, `abortOnUncleanConfig`,
+  `inputStartupPolicy`, `oversizemsg.*` (modes truncate/split/accept, fichier d'erreurs JSON). Les messages
+  internes émis pendant l'activation sont mis en file puis rejoués une fois les entrées démarrées.
+- **omfile** (`linux-rsyslog-omfile.test.ts`) : `OmfileStream` porte le tampon d'E/S de `runtime/stream.c`
+  (`ioBufferSize`, `flushOnTXEnd`, `asyncWriting` + `flushInterval` sur l'horloge simulée), les flux gzip et zstd
+  (`zipLevel`, `veryRobustZip`, `compression.driver`), la limite de taille et sa commande de rotation,
+  `$outchannel` / `:omfile:$canal`, `followSymlinks`, et le refus honnête d'un fournisseur `cry.provider` non
+  installé. La file appelle `endBatch` en fin de lot : les actions ont enfin une phase de commit.
+- **imfile** (`linux-rsyslog-imfile.test.ts`) : arbre de surveillance à jokers, liens symboliques, rotation,
+  suppression retardée, modes inotify (évènements du VFS) et polling, lignes partielles retenues, fichiers d'état
+  `imfile-state:<inode>[:<siphash>]` dans le répertoire de travail, reprise après redémarrage, `freshStartTail`,
+  readMode 0/1/2, `startmsg.regex` / `endmsg.regex`, `readTimeout`, `reopenOnTruncate`, métadonnées, limites par
+  minute, `maxInotifyWatches` et son balayage de repli.
+
+Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
+n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
+simulée au lieu de bloquer le fil.
