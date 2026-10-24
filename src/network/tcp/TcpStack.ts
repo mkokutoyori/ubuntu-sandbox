@@ -276,6 +276,17 @@ export interface TcpMibSink {
   outReset(family: IpFamily): void;
 }
 
+export type TcpOrigination =
+  | { readonly outcome: 'refused' }
+  | { readonly outcome: 'lost'; readonly packet: IPv4Packet | IPv6Packet }
+  | { readonly outcome: 'looped'; readonly packet: IPv4Packet | IPv6Packet }
+  | { readonly outcome: 'routed'; readonly packet: IPv4Packet | IPv6Packet; readonly egress: string; readonly nextHopIp: string };
+
+export interface TcpEgress {
+  readonly name: string;
+  readonly nextHopIp?: string;
+}
+
 export interface TcpHost {
   readonly id: string;
   nowMs?(): number;
@@ -296,8 +307,7 @@ export interface TcpHost {
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
   adviseNegative?(nextHopIp: string): void;
   neighbourResolved?(nextHopIp: string): boolean;
-  filterLocalSegment?(packet: IPv4Packet | IPv6Packet, family: IpFamily): boolean;
-  filterOutgoing?(egressName: string, packet: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject';
+  originate?(packet: IPv4Packet | IPv6Packet, egress: TcpEgress | null): TcpOrigination;
   defaultTtl?(family: IpFamily): number | undefined;
   pathMtu?(remoteIp: string, linkMtu: number): number;
   ecnPolicy?(): TcpEcnPolicy;
@@ -3235,23 +3245,30 @@ export class TcpStack {
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl, shape?.tos)
       : this.buildIpv4Segment(srcIp, dstIp, seg, ttl, shape?.fragmentMtu, shape);
+    const origination: TcpOrigination = this.host.originate?.(l3Packet, local ? null : egress)
+      ?? (local
+        ? { outcome: 'looped', packet: l3Packet }
+        : { outcome: 'routed', packet: l3Packet, egress: egress.name, nextHopIp: egress.nextHopIp ?? dstIp });
+    if (origination.outcome === 'refused') return;
+    const emitted = origination.packet;
+    const carried = emitted.payload as TcpSegment;
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        sourceIp: srcIp, destinationIp: dstIp,
-        sourcePort: seg.sourcePort, destinationPort: seg.destinationPort,
+        sourceIp: emitted.sourceIP.toString(), destinationIp: emitted.destinationIP.toString(),
+        sourcePort: carried.sourcePort, destinationPort: carried.destinationPort,
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
         payloadSize: segmentPayloadSize(seg),
-        iface: local ? 'lo' : egress.name,
-        ...(local ? { packet: l3Packet } : {}),
+        iface: origination.outcome === 'routed' ? origination.egress : 'lo',
+        ...(origination.outcome === 'routed' ? {} : { packet: emitted }),
       },
     });
-    if (local) {
-      if (this.host.filterLocalSegment?.(l3Packet, family) === false) return;
-      const ipv4 = family === 'ipv6' ? undefined : l3Packet as IPv4Packet;
-      this.handleSegment(srcIp, dstIp, seg, {
+    if (origination.outcome === 'lost') return;
+    if (origination.outcome === 'looped') {
+      const ipv4 = emitted.type === 'ipv6' ? undefined : emitted;
+      this.handleSegment(emitted.sourceIP.toString(), emitted.destinationIP.toString(), carried, {
         ttl,
         ecn: EcnCodepoint.ofField(ipv4 === undefined ? shape?.tos ?? 0 : ipv4.tos),
         device: 'lo',
@@ -3259,24 +3276,20 @@ export class TcpStack {
       });
       return;
     }
-    if ((this.host.filterOutgoing?.(egress.name, l3Packet) ?? 'accept') !== 'accept') return;
-    const nextHopIp = egress.nextHopIp ?? dstIp;
-    if (family === 'ipv6') {
-      this.host.sendIpv6FrameNdpAware?.(
-        egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
+    if (emitted.type === 'ipv6') {
+      this.host.sendIpv6FrameNdpAware?.(origination.egress, emitted, new IPv6Address(origination.nextHopIp));
       return;
     }
-    const nextHop = new IPAddress(nextHopIp);
-    const packet = l3Packet as IPv4Packet;
+    const nextHop = new IPAddress(origination.nextHopIp);
     if (shape?.fragmentMtu === undefined) {
-      this.host.sendIpv4FrameArpAware(egress.name, packet, nextHop);
+      this.host.sendIpv4FrameArpAware(origination.egress, emitted, nextHop);
       return;
     }
     // `fragmentIPv4` compte la MTU du LIEN, en-tete compris ; `fragscan`
     // compte la charge seule.
-    const fragments = fragmentIPv4(packet, packet.ihl * 4 + shape.fragmentMtu);
+    const fragments = fragmentIPv4(emitted, emitted.ihl * 4 + shape.fragmentMtu);
     for (const fragment of fragments) {
-      this.host.sendIpv4FrameArpAware(egress.name, fragment, nextHop);
+      this.host.sendIpv4FrameArpAware(origination.egress, fragment, nextHop);
     }
   }
 

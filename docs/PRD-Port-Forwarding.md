@@ -1056,10 +1056,25 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   rien ne vidait — après `iptables -t nat -F` la source était encore
   réécrite —, et la réécriture paquet par paquet de `handleIPv4` et
   `forwardIPv4`.
-- **Reste** : la chaîne OUTPUT de la table `nat` pour le TCP et l'ICMP que
-  la machine ouvre elle-même (et les jambes de bouclage), la défragmentation
-  autour de la traduction, le renvoi par la même interface, NAT66, le
-  vidage des flux MASQUERADE quand l'interface tombe.
+- **Ce que la machine ouvre elle-même** : la chaîne OUTPUT de la table
+  `nat` s'applique au TCP et à l'UDP qu'elle émet, dans l'ordre du noyau —
+  suivi de connexions, chaîne `nat` OUTPUT (DNAT, REDIRECT vers 127.0.0.1,
+  DROP), nouvelle décision de routage si l'adresse a changé
+  (`ip_route_me_harder`), chaîne OUTPUT du filtre, puis POSTROUTING. Le
+  même point (`EndHost.originate`) sert la pile TCP (par le port étroit
+  `TcpHost.originate`, qui remplace `filterLocalSegment` et
+  `filterOutgoing`) et l'UDP ; le cas particulier de l'UDP, qui lisait la
+  table `nat` hors du suivi et inscrivait le tuple traduit comme tuple
+  d'origine, disparaît. Les jambes de bouclage traversent POSTROUTING et
+  INPUT avec leur entrée de suivi, si bien que la réponse d'un serveur
+  local derrière un REDIRECT repart sous le port que le client a composé.
+  L'événement `tcp.segment.sent` est publié après les crochets, avec le
+  paquet tel qu'il traverse l'interface : `tcpdump -i lo` montre le port
+  atteint, pas le port composé.
+- **Reste** : l'écho ICMP et les datagrammes IP bruts que la machine émet
+  (leur résolution du voisin précède encore la chaîne OUTPUT), la
+  défragmentation autour de la traduction, le renvoi par la même
+  interface, NAT66, le vidage des flux MASQUERADE quand l'interface tombe.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
   `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
@@ -1067,10 +1082,12 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   suivi seul : liaison unique, refus à l'insertion, échéance, reprise d'une
   traduction),
   `probe-iptables-chaque-crochet-de-la-table-nat-decide.test.ts` (19 cas)
-  et `port-address-toward.test.ts` (7 cas) ;
-  `linux-dnat-port-forward.test.ts` et
-  `linux-nat-redirect-output.test.ts` vont maintenant jusqu'à
-  l'établissement de la connexion.
+  et `port-address-toward.test.ts` (7 cas) pour la traduction dans les deux
+  sens ;
+  `probe-iptables-la-chaine-output-de-nat-traduit-ce-que-la-machine-ouvre.test.ts`
+  (41 cas) pour ce que la machine ouvre elle-même ;
+  `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
+  vont maintenant jusqu'à l'établissement de la connexion.
 
 ---
 

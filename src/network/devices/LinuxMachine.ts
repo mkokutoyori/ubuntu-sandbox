@@ -4829,7 +4829,16 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
-  protected override natLocalOut(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+  protected override natOutput(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (isIPv4Fragment(ipPkt)) return ipPkt;
+    const facts = (): PacketInfo => this.postRoutingFacts(undefined, outPort, ipPkt);
+    return this.traverseNat(
+      'OUTPUT', ipPkt, facts, { masqueradeAddress: null, redirectAddress: null },
+      (state) => this.executor.iptables.evaluateNat(facts(), 'OUTPUT', state),
+    );
+  }
+
+  protected override natLocalPostRouting(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     if (!this.executor.iptables.isTracked(ipPkt)) return ipPkt;
     const port = this.ports.get(outPort);
     if (port === undefined) return ipPkt;
@@ -4839,22 +4848,6 @@ export abstract class LinuxMachine extends EndHost
 
   protected override confirmForwarded(ipPkt: IPv4Packet): boolean {
     return this.executor.iptables.confirmForwarded(ipPkt);
-  }
-
-  protected override evaluateNatOutput(
-    srcIP: string, dstIP: IPAddress, dstPort: number, srcPort: number,
-    protocol: number, tentativeOutIface: string, ipPacketBytes: number,
-  ): { action: string; address?: string } | null {
-    const pkt: PacketInfo = {
-      direction: 'out',
-      protocol,
-      srcIP,
-      dstIP: dstIP.toString(),
-      srcPort, dstPort,
-      iface: tentativeOutIface,
-      ipPacketBytes,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'OUTPUT');
   }
 
   protected override evaluatePreRouting6(
