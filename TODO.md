@@ -3442,6 +3442,14 @@ sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage
 source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
 (`global(senders.keepTrack)`) restent a porter.
 
+### [rsyslog] phase de commit : ACT_STATE_DATAFAIL et boucle de reprise sur echec dur
+`engine/ActionRuntime.ts` porte `actionCommit` (voir `rsyslog-action-commit.test.ts`). Deux ecarts a la source y restent. Apres un echec dur
+(`RS_RET_DATAFAIL`), la source laisse l'action dans `ACT_STATE_DATAFAIL` jusqu'au prochain commit reussi, et `processMsgMain` renvoie alors
+`RS_RET_DATAFAIL` pour les messages suivants (la file ne les marque pas valides) ; le moteur remet l'action a `ready` aussitot, donc
+`execOnlyWhenPreviousIsSuspended` et le retour a la file different pour ces messages. Et la boucle de reprise de `actionCommit` ne sort pas de
+son `do ... while` sur un echec dur d'un message deja en reprise (l'etat n'est ni RDY, ni SUSP, ni DISABLED) : la source boucle, le moteur
+s'arrete. Aucun des deux n'a pu etre mesure : il faudrait un module qui passe d'un echec temporaire a un echec dur pendant la reprise.
+
 ### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
 Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
 Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
