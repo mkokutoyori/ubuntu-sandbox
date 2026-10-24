@@ -41,6 +41,48 @@ const BOOLEAN_FALSE = new Set(['0', 'no', 'n', 'false', 'f', 'off']);
 const COMMENTS = '#;';
 const BYTE_ORDER_MARK = '﻿';
 
+const C_ESCAPES: Readonly<Record<string, string>> = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', '"': '"', "'": "'", s: ' ' };
+
+function cUnescape(text: string, at: number): { value: string; next: number } {
+  const character = text[at + 1];
+  if (character === undefined) return { value: '\\', next: at + 1 };
+  if (character in C_ESCAPES) return { value: C_ESCAPES[character], next: at + 2 };
+  const hex = /^x([0-9a-fA-F]{2})/.exec(text.slice(at + 1));
+  if (hex !== null) return { value: String.fromCharCode(parseInt(hex[1], 16)), next: at + 4 };
+  const octal = /^([0-3][0-7]{2})/.exec(text.slice(at + 1));
+  if (octal !== null) return { value: String.fromCharCode(parseInt(octal[1], 8)), next: at + 4 };
+  return { value: `\\${character}`, next: at + 2 };
+}
+
+export function wordsOf(value: string, unquote: boolean, cunescape = false): string[] {
+  const words: string[] = [];
+  let current = '';
+  let quote: string | null = null;
+  let started = false;
+  for (let index = 0; index < value.length; index++) {
+    const character = value[index];
+    if (cunescape && character === '\\') {
+      const escaped = cUnescape(value, index);
+      current += escaped.value;
+      index = escaped.next - 1;
+      started = true;
+    } else if (unquote && quote === null && (character === '"' || character === "'")) {
+      quote = character;
+      started = true;
+    } else if (quote !== null && character === quote) quote = null;
+    else if (quote === null && /\s/.test(character)) {
+      if (started) words.push(current);
+      current = '';
+      started = false;
+    } else {
+      current += character;
+      started = true;
+    }
+  }
+  if (started) words.push(current);
+  return words;
+}
+
 export function parseBoolean(text: string): boolean | null {
   const lower = text.toLowerCase();
   if (BOOLEAN_TRUE.has(lower)) return true;

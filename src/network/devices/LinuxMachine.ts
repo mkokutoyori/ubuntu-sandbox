@@ -1101,7 +1101,17 @@ export abstract class LinuxMachine extends EndHost
    * service — pas par une commande, mais par un fichier d'unité
    * (`systemd.dnssd(5)`), au même format que les `.network` de networkd.
    */
-  loadDnssdServices(): void {
+  loadDnssdServices(report = false): void {
+    const vfs = this.executor.vfs;
+    const readout = discoverDnssdFiles({
+      readFile: (path) => vfs.readFile(path),
+      listDirectory: (path) => vfs.listDirectory(path),
+      hostName: () => this.getHostname(),
+    });
+    if (report) {
+      const pid = this.executor.serviceMgr.status('systemd-resolved')?.mainPid ?? 0;
+      for (const diagnostic of readout.diagnostics) this.executor.logMgr.logAt(diagnostic.priority <= 3 ? 'daemon.err' : 'daemon.warning', 'systemd-resolved', diagnostic.message, pid);
+    }
     const agent = this._mdnsAgent;
     if (!agent) return;
     const registry = agent.services();
@@ -1114,7 +1124,7 @@ export abstract class LinuxMachine extends EndHost
     const changed: ServiceRegistration[] = [];
     const seen = new Set<string>();
 
-    for (const file of discoverDnssdFiles(this.executor.vfs)) {
+    for (const file of readout.files) {
       const key = `${file.service.instance}|${file.service.type}`;
       seen.add(key);
       if (registry.publish(file.service)) changed.push(file.service);
@@ -2166,7 +2176,7 @@ export abstract class LinuxMachine extends EndHost
       // démon ne changeait rien, et le réglage global restait lettre morte.
       if (name === 'systemd-resolved') {
         this.loadResolvedConfig(event !== 'restart');
-        this.loadDnssdServices();
+        this.loadDnssdServices(event !== 'restart');
         if (event === 'start') this.bindResolvedStub();
         this.syncLinkLocalResponders();
       }

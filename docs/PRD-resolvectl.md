@@ -328,8 +328,25 @@ derrière un SRV — un seul aller-retour suffit à `resolvectl service`.
 **La publication passe par un fichier d'unité**, pas par une commande :
 `systemd-resolved` lit `/etc/systemd/dnssd/*.dnssd` (`systemd.dnssd(5)`),
 au même format que les `.network` de networkd, avec le même ordre
-`/etc` › `/run` › `/usr/lib`. Une unité sans `Name`, `Type` ou `Port`
-est ignorée plutôt que publiée à moitié.
+`/etc` › `/run` › `/usr/lib`. Une unité sans `Name` ou `Type` est ignorée
+plutôt que publiée à moitié (`<nom> doesn't define service instance name`
+ou `... service type`, dans le journal de `systemd-resolved`) ; `Port`
+vaut 0 par défaut et doit valoir 1 à 65535 quand il est écrit.
+
+Le lecteur (`net/DnssdFiles.ts`) suit `resolved-dnssd.c` et
+`resolved-conf.c` de systemd 255.4 sur le lexeur commun
+`systemd/ConfigFiles.ts` : clés et sections sensibles à la casse, drop-ins
+`<nom>.dnssd.d/*.conf` fusionnés, et « Unknown key name », « Unknown
+section », « Missing '=' » journalisés avec `fichier:ligne` au démarrage
+de `systemd-resolved`. `Name=` expanse les spécificateurs (`%H`, `%m`,
+`%b`, `%v`, `%a`, `%o`, `%w`, `%B`, `%W`, `%%`) et refuse un nom de plus
+de 63 octets ; `Type=` doit être `_service._tcp` ou `_service._udp`.
+`TxtText=` est une liste de mots `clé=valeur` séparés par des blancs
+(guillemets et échappements C), `TxtData=` porte des valeurs base64, une
+affectation vide remet à zéro, et **chaque affectation produit son propre
+enregistrement TXT** (`ServiceRegistration.moreTxt` porte les suivants).
+`SubType=` n'existe qu'à partir de systemd 256 : le simulateur le lit en
+sur-ensemble de 255.4, que la table de clés ne signale donc pas.
 
 ```ini
 [Service]

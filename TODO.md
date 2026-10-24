@@ -3449,11 +3449,6 @@ source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend d
 suppose une paire de cles FSS (`journalctl --setup-keys`, que le simulateur refuse a tort comme « compile sans support », alors que le binaire d'Ubuntu l'offre)
 et des objets Tag dont la somme HMAC porte sur les octets du fichier ; `JournalFile` compte les octets des objets mais n'est pas un fichier binaire.
 
-### [dnssd] les `.dnssd` ne signalent pas leurs erreurs et ne sont pas lus comme resolved les lit
-Les `.network` et `.netdev` journalisent maintenant clés et sections inconnues (`net/NetworkdKeys.ts`), mais `net/DnssdFiles.ts` lit encore un `[Service]` insensible a la casse
-(`name=` est accepte, resolved 255.4 le refuse), ignore `<nom>.dnssd.d/*.conf`, ne separe pas `TxtText=` en paires `cle=valeur`, ignore `TxtData=` (valeurs base64), le reset par
-affectation vide et les TXT multiples, n'expanse pas les specifiers de `Name=` (`%H`, `%m`, ...) et ne valide ni `Type=` ni `Port=`.
-
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
 de la RFC 4950 dans l'ICMP time-exceeded, et la sonde de `executeTraceroute` le

@@ -1,5 +1,5 @@
 import {
-  booleanHandler, parseBoolean, readSystemdConfig, secHandler,
+  booleanHandler, parseBoolean, readSystemdConfig, secHandler, wordsOf,
   type ConfigDiagnostic, type ConfigHandler, type ConfigSource, type ConfigSpec,
 } from '../systemd/ConfigFiles';
 import {
@@ -21,29 +21,6 @@ export function dnsNameIsValid(name: string): boolean {
   const trimmed = name.endsWith('.') ? name.slice(0, -1) : name;
   if (trimmed === '' || trimmed.length > HOST_NAME_MAX) return false;
   return trimmed.split('.').every((label) => label.length > 0 && label.length <= LABEL_MAX);
-}
-
-function wordsOf(value: string, unquote: boolean): string[] {
-  const words: string[] = [];
-  let current = '';
-  let quote: string | null = null;
-  let started = false;
-  for (const character of value) {
-    if (unquote && quote === null && (character === '"' || character === "'")) {
-      quote = character;
-      started = true;
-    } else if (quote !== null && character === quote) quote = null;
-    else if (quote === null && /\s/.test(character)) {
-      if (started) words.push(current);
-      current = '';
-      started = false;
-    } else {
-      current += character;
-      started = true;
-    }
-  }
-  if (started) words.push(current);
-  return words;
 }
 
 export function addDnsServers(list: string[], value: string, warn: (message: string) => void): void {
