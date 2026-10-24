@@ -3441,12 +3441,10 @@ sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage
 source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
 (`global(senders.keepTrack)`) restent a porter.
 
-### [journald] journald.conf : `Seal` lu sans effet
-`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `Compress`, `Audit`, `ReadKMsg`, `SplitMode`,
-`SyncIntervalSec`, `RateLimit*`, `System/Runtime` `MaxUse`/`KeepFree`/`MaxFileSize`/`MaxFiles`, `MaxRetentionSec`, `MaxFileSec`, `ForwardTo*` et leurs `MaxLevel*`
-(files, rotation, vacuum et debit mesures contre le vrai `systemd-journald` 255.4 par `journald-space-oracle.test.ts`). Reste lu sans effet : `Seal` - le scellement
-suppose une paire de cles FSS (`journalctl --setup-keys`, que le simulateur refuse a tort comme « compile sans support », alors que le binaire d'Ubuntu l'offre)
-et des objets Tag dont la somme HMAC porte sur les octets du fichier ; `JournalFile` compte les octets des objets mais n'est pas un fichier binaire.
+### [journald] `journalctl --verify` ne peut pas detecter une alteration du fichier
+Le scellement est complet (cles FSPRG, objets Tag, `--setup-keys`, `--verify-key` : `journald-seal.test.ts`), mais `JournalFile` compte les octets des objets sans
+etre un fichier binaire du systeme de fichiers : `--verify` rejoue la chaine de tags gardee en memoire, il ne relit aucun octet et ne peut donc pas rapporter
+« File corruption detected at … » apres une edition du fichier par `dd` ou `truncate`. A reprendre avec un journal ecrit en octets reels dans le VFS.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »

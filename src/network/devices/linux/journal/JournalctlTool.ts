@@ -2,6 +2,8 @@ import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGe
 import { parseSize } from '../systemd/ParseSize';
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
 import { fnmatch } from '../fs/Glob';
+import { setupKeys } from './seal/SetupKeys';
+import { DEFAULT_FSS_INTERVAL_USEC } from './seal/SealingKeyFile';
 import { type SystemdClock, formatTimespan, formatTimestamp, parseSec, parseTimestamp, systemdClock } from '../systemd/SystemdTime';
 import { safeAtoi } from '../systemd/SafeNumbers';
 import { isGlob, unitNameMangle } from '../systemd/UnitName';
@@ -67,7 +69,27 @@ export interface VacuumResult {
   freedBytes: number;
 }
 
+export type VerifyOutcome =
+  | { readonly kind: 'invalid-key' }
+  | { readonly kind: 'fail'; readonly errno: 'ENOKEY' | 'EBADMSG'; readonly lines: readonly string[]; readonly corruption: { readonly offset: number; readonly size: number } | null }
+  | { readonly kind: 'pass'; readonly sealed: boolean; readonly first: number; readonly validated: number; readonly last: number };
+
+export interface SealingHost {
+  persistentDirectory(): 'directory' | 'missing' | 'other';
+  machineId(): string;
+  bootId(): string;
+  hostname(): string;
+  keyPath(): string;
+  keyExists(): boolean;
+  removeKey(): string | null;
+  writeKey(content: string): string | null;
+  randomBytes(count: number): Uint8Array;
+  onTty(): boolean;
+}
+
 export interface JournalctlHost {
+  verify?(path: string, key: string | null, format: (usec: number) => string): VerifyOutcome;
+  sealing?: SealingHost;
   files(): JournalFileInfo[];
   varlink(method: string, namespace: string | null): VarlinkOutcome;
   vacuum(spec: VacuumSpec): VacuumResult[];
@@ -128,10 +150,13 @@ const OPTIONS: readonly LongOption[] = [
 ];
 
 type Action = 'show' | 'new-id128' | 'list-catalog' | 'dump-catalog' | 'update-catalog' | 'flush' | 'relinquish-var' | 'sync' | 'rotate' | 'print-header'
-| 'verify' | 'disk-usage' | 'list-boots' | 'vacuum' | 'rotate-and-vacuum' | 'list-fields' | 'list-field-names';
+| 'verify' | 'setup-keys' | 'disk-usage' | 'list-boots' | 'vacuum' | 'rotate-and-vacuum' | 'list-fields' | 'list-field-names';
 
 interface Args {
   action: Action;
+  force: boolean;
+  interval: number;
+  verifyKey: string | null;
   output: OutputMode;
   utc: boolean;
   follow: boolean;
@@ -186,7 +211,7 @@ const CURRENT_USER_TYPE = 2;
 
 function defaultArgs(): Args {
   return {
-    action: 'show', output: 'short', utc: false, follow: false, full: true, all: false, lines: ARG_LINES_DEFAULT, linesOldest: false, noTail: false, truncateNewline: false,
+    action: 'show', force: false, interval: DEFAULT_FSS_INTERVAL_USEC, verifyKey: null, output: 'short', utc: false, follow: false, full: true, all: false, lines: ARG_LINES_DEFAULT, linesOldest: false, noTail: false, truncateNewline: false,
     quiet: false, merge: false, boot: false, bootId: null, bootOffset: 0, dmesg: false, noHostname: false, cursor: null, cursorFile: null, afterCursor: null,
     showCursor: false, directory: null, files: [], fileStdin: false, priorities: 0xff, facilities: [], since: 0, until: 0, sinceSet: false, untilSet: false,
     syslogIdentifiers: [], systemUnits: [], userUnits: [], field: null, catalog: false, reverse: false, journalType: 0, root: null, image: null, machine: null,
@@ -606,7 +631,19 @@ function parseArgv(
         break;
       }
       case 0x10d: case 0x112: case 0x115: case 0x113:
-        return fail('Compiled without forward-secure sealing support.');
+        if (host.sealing === undefined) return fail('Compiled without forward-secure sealing support.');
+        if (c === 0x10d) args.force = true;
+        else if (c === 0x112) args.action = action = 'setup-keys';
+        else if (c === 0x115) {
+          args.verifyKey = optarg as string;
+          args.action = action = 'verify';
+          args.merge = false;
+        } else {
+          const parsed = parseSec(optarg as string);
+          if (!parsed.ok || parsed.usec <= 0) return fail(`Failed to parse sealing key change interval: ${optarg}`);
+          args.interval = parsed.usec;
+        }
+        break;
       case 0x70: {
         const value = optarg as string;
         const dots = value.indexOf('..');
@@ -729,6 +766,12 @@ function runAction(
     say(`As string:\n${id}\n\nAs UUID:\n${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}\n\nAs systemd-id128(1) macro:\n#define XYZ SD_ID128_MAKE(${id.match(/../g)!.join(',')})\n\nAs Python constant:\n>>> import uuid\n>>> XYZ = uuid.UUID('${id}')\n`);
     return;
   }
+  if (args.action === 'setup-keys') {
+    setupKeys(host.sealing as SealingHost, {
+      force: args.force, intervalUsec: args.interval, nowUsec: host.nowUsec(), formatInterval: (usec) => formatTimespan(usec, 0),
+    }, { info: notice, say, tty: (text) => { out.eprintf(text); }, fail });
+    return;
+  }
   if (args.action === 'flush' || args.action === 'relinquish-var' || args.action === 'sync' || args.action === 'rotate') {
     const table = {
       flush: ['--flush', 'io.systemd.Journal.FlushToVar'],
@@ -780,7 +823,32 @@ function runAction(
     return;
   }
   if (args.action === 'verify') {
-    for (const file of host.files()) notice(`PASS: ${file.path}`);
+    const stamp = (usec: number): string => formatTimestamp(usec, 'pretty', clock) ?? '(null)';
+    let status = 0;
+    for (const file of host.files()) {
+      const sealed = file.compatibleFlags.includes('SEALED');
+      if (args.verifyKey === null && sealed) notice(`Journal file ${file.path} has sealing enabled but verification key has not been passed using --verify-key=.`);
+      const outcome: VerifyOutcome = host.verify === undefined
+        ? { kind: 'pass', sealed: false, first: 0, validated: 0, last: 0 }
+        : host.verify(file.path, args.verifyKey, stamp);
+      if (outcome.kind === 'invalid-key') return fail('Failed to parse seed.', null);
+      if (outcome.kind === 'fail') {
+        for (const line of outcome.lines) notice(line);
+        if (outcome.corruption !== null) {
+          notice(`File corruption detected at ${file.path}:${outcome.corruption.offset} (of ${outcome.corruption.size} bytes, ${Math.floor(100 * outcome.corruption.offset / outcome.corruption.size)}%).`);
+        }
+        notice(`FAIL: ${file.path} (${outcome.errno === 'ENOKEY' ? 'Required key not available' : 'Bad message'})`);
+        status = 1;
+        continue;
+      }
+      if (!args.quiet) notice(`PASS: ${file.path}`);
+      if (args.quiet || args.verifyKey === null || !outcome.sealed) continue;
+      if (outcome.validated > 0) {
+        notice(`=> Validated from ${stamp(outcome.first)} to ${stamp(outcome.validated)}, final ${formatTimespan(outcome.last > outcome.validated ? outcome.last - outcome.validated : 0, 0)} entries not sealed.`);
+      } else if (outcome.last > 0) notice(`=> No sealing yet, ${formatTimespan(outcome.last - outcome.first, 0)} of entries not sealed.`);
+      else notice('=> No sealing yet, no entries in file.');
+    }
+    if (status !== 0) throw new ExitSignal(status);
     return;
   }
   if (args.action === 'vacuum' || args.action === 'rotate-and-vacuum') {

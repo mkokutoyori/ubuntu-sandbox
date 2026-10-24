@@ -21,6 +21,8 @@ import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { SYSLOG_FACILITY } from '@/network/syslog/types';
 import { SyslogForwardSocket } from './syslog/SyslogForwardSocket';
 import type { AppendCreation, AppendDescriptor, AppendFailure } from './VirtualFileSystem';
+import { decodeSealingKey, encodeSealingKey } from './journal/seal/SealingKeyFile';
+import type { SealKey } from './journal/seal/SealChain';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -196,6 +198,7 @@ export class LinuxLogManager {
       filesystem: () => ({ sizeBytes: this.vfs.getCapacityBytes(), availableBytes: this.vfs.freeBytes() }),
       trustedClock: () => !this.seeding,
       filesChanged: () => this.syncJournalFiles(),
+      sealingKey: () => this.loadSealingKey(),
       schedule: (delayMs, callback) => (this.journalTimers === null ? () => undefined : this.journalTimers.schedule(callback, delayMs)),
     });
     this.seedJournaldConfiguration();
@@ -208,6 +211,22 @@ export class LinuxLogManager {
   }
 
   private journaldStorage: JournaldStorage = 'auto';
+
+  private loadSealingKey(): SealKey | null {
+    const machineId = this.machineId();
+    const path = `/var/log/journal/${machineId}/fss`;
+    const text = this.vfs.readFile(path);
+    if (text === null) return null;
+    const decoded = decodeSealingKey(text, machineId);
+    if (typeof decoded === 'string') return null;
+    const key: SealKey = {
+      startUsec: decoded.startUsec,
+      intervalUsec: decoded.intervalUsec,
+      state: decoded.state,
+      persist: () => { this.vfs.writeFile(path, encodeSealingKey({ ...decoded, state: key.state }), 0, 0, 0o077); },
+    };
+    return key;
+  }
 
   private persistentJournal(): boolean {
     if (this.journaldStorage === 'persistent') return true;

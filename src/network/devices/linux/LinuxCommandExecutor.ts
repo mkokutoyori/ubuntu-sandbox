@@ -6197,7 +6197,7 @@ export class LinuxCommandExecutor {
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'journalctl': {
-        const result = runJournalctl(journalctlHost(this), args, cmd);
+        const result = runJournalctl(journalctlHost(this, !c.isPiped), args, cmd);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'dmesg': {

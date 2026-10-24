@@ -3,6 +3,11 @@ import { type JournalFileInfo } from './JournalctlTool';
 import { concat, utf8 } from './JournalText';
 import { bytesToBinaryString } from '@/crypto/encoding';
 import { compressedPayloadSize } from './PayloadCompression';
+import { sipHash24 } from '@/network/rsyslog/SipHash';
+import {
+  concatBytes, littleEndian, objectHeader, SealChain, TAG_OBJECT_SIZE, OBJECT_DATA, OBJECT_DATA_HASH_TABLE, OBJECT_ENTRY, OBJECT_ENTRY_ARRAY, OBJECT_FIELD,
+  OBJECT_FIELD_HASH_TABLE, type SealKey,
+} from './seal/SealChain';
 
 const ENTRY_ARRAY_MINIMUM = 4;
 const FIELD_HASH_TABLE_ITEMS = 333;
@@ -42,6 +47,10 @@ const FNV_PRIME = 0x100000001b3n;
 const MASK64 = (1n << 64n) - 1n;
 
 const key = (bytes: Uint8Array): string => bytesToBinaryString(bytes);
+
+function hexBytes(hex: string): Uint8Array {
+  return Uint8Array.from((hex.match(/../g) ?? []).map((pair) => parseInt(pair, 16)));
+}
 
 class EntryChain {
   count = 0;
@@ -117,6 +126,8 @@ export interface FileIdentity {
   limits?: FileLimits;
   createdUsec?: number;
   compress?: { enabled: boolean; thresholdBytes: number };
+  seal?: SealKey | null;
+  hasTemplate?: boolean;
 }
 
 export type FileState = 'ONLINE' | 'OFFLINE' | 'ARCHIVED';
@@ -141,13 +152,80 @@ export class JournalFile {
   private readonly compress: { enabled: boolean; thresholdBytes: number };
   private objectCount = 0;
   private dirty = true;
+  readonly seal: SealChain | null;
+  private readonly dataOffsets = new Map<string, number>();
+  private readonly dataHashes = new Map<string, Uint8Array>();
+  private readonly fileIdBytes: Uint8Array;
+  private readonly dataTableObjectOffset: number;
+  private readonly fieldTableObjectOffset: number;
 
   constructor(public identity: FileIdentity) {
     this.compress = identity.compress ?? DEFAULT_COMPRESS;
+    this.fileIdBytes = hexBytes(identity.fileId);
     const maxFileSize = this.limits.maxSize;
     this.dataTableItems = Math.max(Math.floor(Math.floor(Math.floor(maxFileSize * 4 / 768) / 3)), DATA_HASH_TABLE_FLOOR_ITEMS);
-    this.appendObject(OBJECT_HEADER_SIZE + this.dataTableItems * HASH_ITEM_SIZE);
-    this.appendObject(OBJECT_HEADER_SIZE + FIELD_HASH_TABLE_ITEMS * HASH_ITEM_SIZE);
+    const dataTableSize = OBJECT_HEADER_SIZE + this.dataTableItems * HASH_ITEM_SIZE;
+    const fieldTableSize = OBJECT_HEADER_SIZE + FIELD_HASH_TABLE_ITEMS * HASH_ITEM_SIZE;
+    const fieldTableOffset = this.appendObject(fieldTableSize);
+    const dataTableOffset = this.appendObject(dataTableSize);
+    this.dataTableObjectOffset = dataTableOffset;
+    this.fieldTableObjectOffset = fieldTableOffset;
+    this.seal = identity.seal === undefined || identity.seal === null ? null : new SealChain(identity.seal, () => this.appendObject(TAG_OBJECT_SIZE));
+    if (this.seal !== null) {
+      const creationSeqnumId = identity.hasTemplate === true ? hexBytes(identity.seqnumId) : this.fileIdBytes;
+      this.seal.putHeader(this.sealedHeader(dataTableOffset + OBJECT_HEADER_SIZE, fieldTableOffset + OBJECT_HEADER_SIZE, creationSeqnumId));
+      this.seal.put(objectHeader(OBJECT_FIELD_HASH_TABLE, fieldTableSize), objectHeader(OBJECT_DATA_HASH_TABLE, dataTableSize));
+      this.seal.appendTag();
+    }
+  }
+
+  currentSealedHeader(): Uint8Array {
+    return this.sealedHeader(this.dataTableObjectOffset + OBJECT_HEADER_SIZE, this.fieldTableObjectOffset + OBJECT_HEADER_SIZE, hexBytes(this.identity.seqnumId));
+  }
+
+  private sealedHeader(dataItemsOffset: number, fieldItemsOffset: number, seqnumId: Uint8Array): Uint8Array {
+    const incompatible = (this.compress.enabled ? 8 : 0) | 4 | 16;
+    return concatBytes([
+      new TextEncoder().encode('LPKSHHRH'), littleEndian(1 | 2 | 4, 4), littleEndian(incompatible, 4),
+      this.fileIdBytes, hexBytes(this.identity.machineId),
+      seqnumId, littleEndian(HEADER_SIZE, 8),
+      littleEndian(dataItemsOffset, 8), littleEndian(this.dataTableItems * HASH_ITEM_SIZE, 8),
+      littleEndian(fieldItemsOffset, 8), littleEndian(FIELD_HASH_TABLE_ITEMS * HASH_ITEM_SIZE, 8),
+    ]);
+  }
+
+  private keyedHash(bytes: Uint8Array): Uint8Array {
+    return sipHash24(bytes, this.fileIdBytes);
+  }
+
+  private sealData(payloadKey: string, bytes: Uint8Array, offset: number): void {
+    if (this.seal === null) return;
+    const hash = this.keyedHash(bytes);
+    this.dataOffsets.set(payloadKey, offset);
+    this.dataHashes.set(payloadKey, hash);
+    this.seal.put(objectHeader(OBJECT_DATA, COMPACT_DATA_OBJECT_SIZE + this.storedPayloadSize(bytes)), hash, bytes);
+  }
+
+  private sealField(name: string): void {
+    if (this.seal === null) return;
+    const bytes = new TextEncoder().encode(name);
+    this.seal.put(objectHeader(OBJECT_FIELD, FIELD_OBJECT_SIZE + name.length), this.keyedHash(bytes), bytes);
+  }
+
+  private sealEntry(entries: readonly PendingEntry[], realtimeUsec: number, monotonicUsec: number, seqnum: number, bootId: string): void {
+    if (this.seal === null) return;
+    const xor = new Uint8Array(8);
+    const items: Uint8Array[] = [];
+    for (const entry of entries) {
+      const hash = this.dataHashes.get(entry.key) as Uint8Array;
+      for (let index = 0; index < 8; index++) xor[index] ^= hash[index];
+      items.push(littleEndian(this.dataOffsets.get(entry.key) as number, 4));
+    }
+    this.seal.put(
+      objectHeader(OBJECT_ENTRY, ENTRY_OBJECT_SIZE + entries.length * COMPACT_ENTRY_ITEM_SIZE),
+      littleEndian(seqnum, 8), littleEndian(realtimeUsec, 8), littleEndian(monotonicUsec, 8), hexBytes(bootId), xor, ...items,
+    );
+    this.seal.noteEntry(realtimeUsec);
   }
 
   get path(): string {
@@ -203,24 +281,28 @@ export class JournalFile {
     this.allocated = grown;
   }
 
-  private appendObject(size: number): void {
+  private appendObject(size: number): number {
+    const offset = this.tail;
     this.allocate(this.tail, size);
     this.tail += alignObject(size);
     this.objectCount++;
+    return offset;
   }
 
   registerOrphans(items: readonly Uint8Array[]): void {
     for (const bytes of items) {
       const payloadKey = key(bytes);
       if (this.rank.has(payloadKey)) continue;
-      this.appendObject(COMPACT_DATA_OBJECT_SIZE + this.storedPayloadSize(bytes));
+      const dataOffset = this.appendObject(COMPACT_DATA_OBJECT_SIZE + this.storedPayloadSize(bytes));
       this.rank.set(payloadKey, this.rank.size);
       this.dataChains.set(payloadKey, new EntryChain());
+      this.sealData(payloadKey, bytes, dataOffset);
       const equals = bytes.indexOf(0x3d);
       const name = payloadKey.slice(0, equals < 0 ? bytes.length : equals);
       if (!this.fieldNames.has(name)) {
         this.appendObject(FIELD_OBJECT_SIZE + name.length);
         this.fieldNames.add(name);
+        this.sealField(name);
       }
     }
   }
@@ -232,19 +314,22 @@ export class JournalFile {
   append(items: readonly Uint8Array[], realtimeUsec: number, monotonicUsec: number, seqnum: number, bootId: string): JournalRecord {
     const entries: PendingEntry[] = [];
     const seen = new Set<string>();
+    this.seal?.maybeAppendTag(realtimeUsec);
     for (const bytes of items) {
       const payloadKey = key(bytes);
       let rank = this.rank.get(payloadKey);
       if (rank === undefined) {
-        this.appendObject(COMPACT_DATA_OBJECT_SIZE + this.storedPayloadSize(bytes));
+        const dataOffset = this.appendObject(COMPACT_DATA_OBJECT_SIZE + this.storedPayloadSize(bytes));
         rank = this.rank.size;
         this.rank.set(payloadKey, rank);
         this.dataChains.set(payloadKey, new EntryChain());
+        this.sealData(payloadKey, bytes, dataOffset);
         const equals = bytes.indexOf(0x3d);
         const name = payloadKey.slice(0, equals < 0 ? bytes.length : equals);
         if (!this.fieldNames.has(name)) {
           this.appendObject(FIELD_OBJECT_SIZE + name.length);
           this.fieldNames.add(name);
+          this.sealField(name);
         }
       }
       if (seen.has(payloadKey)) continue;
@@ -253,8 +338,11 @@ export class JournalFile {
     }
     entries.sort((a, b) => a.rank - b.rank);
     this.appendObject(ENTRY_OBJECT_SIZE + entries.length * COMPACT_ENTRY_ITEM_SIZE);
+    this.sealEntry(entries, realtimeUsec, monotonicUsec, seqnum, bootId);
     const allocateArray = (capacity: number): void => {
-      this.appendObject(ENTRY_ARRAY_OBJECT_SIZE + capacity * COMPACT_ENTRY_ARRAY_ITEM_SIZE);
+      const size = ENTRY_ARRAY_OBJECT_SIZE + capacity * COMPACT_ENTRY_ARRAY_ITEM_SIZE;
+      this.appendObject(size);
+      this.seal?.put(objectHeader(OBJECT_ENTRY_ARRAY, size));
       this.entryArrays++;
     };
     this.mainChain.link(allocateArray);
@@ -298,7 +386,7 @@ export class JournalFile {
       bootId: last?.bootId ?? '00000000000000000000000000000000',
       seqnumId: this.identity.seqnumId,
       state: this.state,
-      compatibleFlags: ['TAIL_ENTRY_BOOT_ID'],
+      compatibleFlags: [...(this.seal === null ? [] : ['SEALED', 'SEALED_CONTINUOUS']), 'TAIL_ENTRY_BOOT_ID'],
       incompatibleFlags: [...(this.compress.enabled ? ['COMPRESSED-ZSTD'] : []), 'KEYED-HASH', 'COMPACT'],
       headerSize: HEADER_SIZE,
       arenaSize: this.allocated - HEADER_SIZE,
@@ -314,7 +402,7 @@ export class JournalFile {
       entries: this.records.length,
       data,
       fields,
-      tags: 0,
+      tags: this.seal?.tagCount ?? 0,
       entryArrays: this.entryArrays,
       fieldHashChainDepth: fields > 0 ? 1 : 0,
       dataHashChainDepth: 0,
@@ -328,9 +416,9 @@ export class JournalFileSet {
   private readonly files: JournalFile[] = [];
   private readonly seqnum: SeqnumCounter;
 
-  constructor(private readonly newFile: (index: number) => FileIdentity, firstSeqnum: number | SeqnumCounter = 1) {
+  constructor(private readonly newFile: (index: number) => FileIdentity, firstSeqnum: number | SeqnumCounter = 1, firstHasTemplate = false) {
     this.seqnum = typeof firstSeqnum === 'number' ? { next: firstSeqnum } : firstSeqnum;
-    this.files.push(new JournalFile(newFile(0)));
+    this.files.push(new JournalFile({ ...newFile(0), hasTemplate: firstHasTemplate }));
   }
 
   get current(): JournalFile {
@@ -349,7 +437,7 @@ export class JournalFileSet {
 
   rotate(): JournalFile {
     this.current.archive();
-    const file = new JournalFile(this.newFile(this.files.length));
+    const file = new JournalFile({ ...this.newFile(this.files.length), hasTemplate: true });
     this.files.push(file);
     return file;
   }

@@ -147,7 +147,7 @@ describe('journalctl 255.4 against the real binary', () => {
       const files = new Map<string, string>();
       if (recorded.cursorFile) files.set('/cursor-file', recorded.cursorFile.before);
       const infos = recorded.args.includes('--header') ? parseHeaders(text(recorded.stdout)) : recorded.args.includes('--verify')
-        ? [...text(recorded.stderr).matchAll(/^PASS: (.*)$/gm)].map(match => ({ path: match[1] } as JournalFileInfo)) : [];
+        ? [...text(recorded.stderr).matchAll(/^PASS: (.*)$/gm)].map(match => ({ path: match[1], compatibleFlags: [] } as unknown as JournalFileInfo)) : [];
       const result = runJournalctl(hostFor(recorded.zone, files, infos), [`--directory=${DIRECTORY}`, '--no-pager', ...recorded.args.map(a => a.replace('@CF@', '/cursor-file'))]);
       if (recorded.cursorFile) expect(files.get('/cursor-file')).toBe(recorded.cursorFile.after);
       const mode = recorded.args.includes('-o') ? recorded.args[recorded.args.indexOf('-o') + 1] : recorded.args.find(a => a.startsWith('--output='))?.slice(9) ?? '';

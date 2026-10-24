@@ -1,4 +1,5 @@
 import { JournalFileSet, JournalFull, type FileIdentity, type JournalFile, type SeqnumCounter } from './JournalFileSet';
+import type { SealKey } from './seal/SealChain';
 import { resolveJournalMetrics, type ResolvedMetrics } from './JournalMetrics';
 import { planVacuum, type VacuumCandidate, type VacuumLimits } from './JournalVacuum';
 import { uidForSystemJournal, type JournaldSettings } from './JournaldServer';
@@ -19,6 +20,7 @@ export interface StorageHost {
   trustedClock(): boolean;
   filesystem(): { sizeBytes: number; availableBytes: number };
   fileIds(stem: string, serial: number): { fileId: string; seqnumId: string; machineId: string };
+  sealingKey?(): SealKey | null;
   filesChanged(): void;
   schedule?(delayMs: number, callback: () => void): () => void;
   announceSpace?(space: SpaceInfo): void;
@@ -100,6 +102,7 @@ export class JournalStorage {
     const compress = this.settings().compress;
     return {
       path: `${this.host.directory()}/${stem}.journal`, ...ids, limits: this.limits, createdUsec: this.host.nowUsec(),
+      seal: this.settings().seal ? this.host.sealingKey?.() ?? null : null,
       compress: { enabled: compress.enabled, thresholdBytes: compress.thresholdBytes === null ? DEFAULT_COMPRESS_THRESHOLD : Math.max(MIN_COMPRESS_THRESHOLD, compress.thresholdBytes) },
     };
   }
@@ -107,7 +110,7 @@ export class JournalStorage {
   private open(uid: number): Writer | null {
     const stem = uid === 0 ? 'system' : `user-${uid}`;
     try {
-      const set = new JournalFileSet(() => this.identity(stem), this.seqnum);
+      const set = new JournalFileSet(() => this.identity(stem), this.seqnum, uid !== 0 && this.writers.has(0));
       const writer = { stem, set };
       this.writers.set(uid, writer);
       return writer;
@@ -129,6 +132,10 @@ export class JournalStorage {
 
   private allSets(): JournalFileSet[] {
     return [...[...this.writers.keys()].sort((a, b) => a - b).map((uid) => (this.writers.get(uid) as Writer).set), ...this.retired];
+  }
+
+  fileByPath(path: string): JournalFile | null {
+    return this.allFiles().find((file) => file.path === path) ?? null;
   }
 
   private allFiles(): JournalFile[] {

@@ -1,9 +1,12 @@
 import { buildRecord, distinctPayloads } from './JournalFileSet';
 import { JournalStorage, type SpaceInfo } from './JournalStorage';
 import { defaultJournaldSettings, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream, type WriteTarget } from './JournaldServer';
-import { type JournalFileInfo, type VacuumResult, type VacuumSpec } from './JournalctlTool';
+import { type JournalFileInfo, type VacuumResult, type VacuumSpec, type VerifyOutcome } from './JournalctlTool';
+import { parseVerificationKey } from './seal/SealingKeyFile';
+import { verifySeal } from './seal/SealVerifier';
 import { type JournalRecord } from './JournalRecord';
 import { concat, formatBytes, utf8 } from './JournalText';
+import type { SealKey } from './seal/SealChain';
 
 export interface JournaldPlatform {
   nowUsec(): number;
@@ -16,6 +19,7 @@ export interface JournaldPlatform {
   filesystem(): { sizeBytes: number; availableBytes: number };
   trustedClock(): boolean;
   filesChanged?(): void;
+  sealingKey?(): SealKey | null;
   schedule?(delayMs: number, callback: () => void): () => void;
 }
 
@@ -76,9 +80,26 @@ export class LinuxJournald {
       filesystem: () => platform.filesystem(),
       fileIds: (stem, serial) => ({ fileId: hex128(`file:${this.bootId}:${stem}:${serial}`), seqnumId: hex128(`seqnum:${this.bootId}`), machineId: platform.machineId() }),
       filesChanged: () => platform.filesChanged?.(),
+      sealingKey: platform.sealingKey === undefined ? undefined : () => platform.sealingKey!(),
       schedule: platform.schedule === undefined ? undefined : (delayMs, callback) => platform.schedule!(delayMs, callback),
       announceSpace: (space) => this.spaceUsageMessage(space),
     }, () => this.server.settings, firstSeqnum);
+  }
+
+  verify(path: string, keyText: string | null, format: (usec: number) => string): VerifyOutcome {
+    const file = this.storage.fileByPath(path);
+    const sealed = file !== null && file.seal !== null;
+    const key = keyText === null ? null : parseVerificationKey(keyText);
+    if (keyText !== null && key === null) return { kind: 'invalid-key' };
+    const first = file?.records[0]?.realtimeUsec ?? 0;
+    const last = file?.records[file.records.length - 1]?.realtimeUsec ?? 0;
+    if (file === null || !sealed) return { kind: 'pass', sealed: false, first, validated: 0, last };
+    if (key === null) return { kind: 'fail', errno: 'ENOKEY', lines: [], corruption: null };
+    const outcome = verifySeal(file, key, format);
+    if (outcome.ok === false) {
+      return { kind: 'fail', errno: 'EBADMSG', lines: [`${outcome.offset.toString(16).padStart(6, '0')}: ${outcome.message}`], corruption: { offset: outcome.offset, size: file.fileSize } };
+    }
+    return { kind: 'pass', sealed: true, first, validated: outcome.validatedUsec, last };
   }
 
   reconfigure(): void {

@@ -339,6 +339,19 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
   volume unique, donc `/run` (journal volatil) partage la capacité de la racine.
 
+- **Scellement du journal, `Seal=` et `journalctl --setup-keys` / `--verify-key`** (`journald-seal.test.ts`) : `journal/seal/Fsprg.ts` porte
+  `fsprg.c` (générateur déterministe SHA-256, deux nombres premiers de 768 bits congrus à 3 modulo 4, évolution par élévation au carré,
+  `seek` direct), `SealingKeyFile.ts` le fichier `fss` (`KSHHRHLP`, 88 octets d'en-tête, 394 d'état : 482 octets) et la clé de vérification
+  `graine/époque-intervalle`, `SetupKeys.ts` la commande (trois lignes « Generating… », texte du terminal, refus sans `--force`, intervalle
+  invalide). `SealChain.ts` suit `journal-authenticate.c` : un objet Tag de 64 octets par intervalle de scellement franchi sur l'HORLOGE SIMULÉE,
+  HMAC-SHA256 sur l'en-tête, les tables de hachage et les objets écrits depuis le tag précédent, clé tirée de l'état de l'époque, puis
+  évolution et réécriture du fichier de clé. `JournalFile` porte les drapeaux `SEALED`/`SEALED_CONTINUOUS` et le compteur de tags de `--header` ;
+  `Seal=no` ou l'absence de fichier de clé laisse les fichiers neufs non scellés. `--verify` applique `journal_file_verify` : époque continue,
+  bornes des entrées, tag recalculé ; avec la bonne clé il rapporte « Validated from … to … », avec une autre « Tag failed verification »
+  (« Bad message »), sans clé « Required key not available ». La chaîne a été comparée au vrai `systemd-journald` et `journalctl` 255.4 sur un
+  fichier scellé ; le défaut amont selon lequel le premier fichier d'un démarrage échoue à la vérification de son premier tag (le seqnum_id de
+  l'en-tête change à la première entrée) est reproduit volontairement.
+
 - **Files de messages** (`rsyslog-queue-params.test.ts`, `rsyslog-disk-assisted.test.ts`, `rsyslog-disk-queue.test.ts`,
   `rsyslog-queue-shutdown.test.ts`, `rsyslog-queue-enqueue-timeout.test.ts`) : `Queue.ts` est un ensemble de workers comme `queue.c`.
   Chaque worker depile un lot entier, le traite, le valide (commit des actions) puis le supprime ; `workerThreads` et
