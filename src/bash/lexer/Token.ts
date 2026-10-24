@@ -27,6 +27,7 @@ export enum TokenType {
   CMD_SUB = 'CMD_SUB',                   // $(command)
   CMD_SUB_BACKTICK = 'CMD_SUB_BACKTICK', // `command`
   ARITH_SUB = 'ARITH_SUB',              // $((expression))
+  ARITH_CMD = 'ARITH_CMD',              // ((expression)) at command position
   PROC_SUB_IN = 'PROC_SUB_IN',           // <(command)
   PROC_SUB_OUT = 'PROC_SUB_OUT',         // >(command)
 

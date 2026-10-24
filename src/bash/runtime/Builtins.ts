@@ -994,26 +994,17 @@ function builtinLet(args: string[], env: Environment): BuiltinResult {
     return { output: 'bash: let: expression expected\n', exitCode: 1 };
   }
 
-  let result = 0;
+  let result = '0';
   for (const expr of args) {
     try {
-      // Handle assignment: var=expr
-      const eqIdx = expr.indexOf('=');
-      if (eqIdx >= 0 && /^[a-zA-Z_]/.test(expr)) {
-        const name = expr.substring(0, eqIdx);
-        const value = evaluateArithmetic(expr.substring(eqIdx + 1), env);
-        env.set(name, value);
-        result = parseInt(value);
-      } else {
-        result = parseInt(evaluateArithmetic(expr, env));
-      }
+      result = evaluateArithmetic(expr, env);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { output: `bash: let: ${msg}\n`, exitCode: 1 };
     }
   }
   // let returns 1 if last expression is 0, else 0
-  return { output: '', exitCode: result === 0 ? 1 : 0 };
+  return { output: '', exitCode: result === '0' ? 1 : 0 };
 }
 
 // ─── getopts ────────────────────────────────────────────────────

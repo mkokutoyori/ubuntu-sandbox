@@ -61,11 +61,60 @@ function readBracket(pattern: string, open: number): Bracket | null {
   return null;
 }
 
-function toRegexSource(pattern: string): string {
+const EXTGLOB_OPERATORS = new Set(['?', '*', '+', '@', '!']);
+
+function closingParenthesis(pattern: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < pattern.length; i++) {
+    if (pattern[i] === '\\') i++;
+    else if (pattern[i] === '(') depth++;
+    else if (pattern[i] === ')' && --depth === 0) return i;
+  }
+  return -1;
+}
+
+function alternatives(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i];
+    if (char === '\\' && i + 1 < body.length) {
+      current += char + body[++i];
+      continue;
+    }
+    if (char === '(') depth++;
+    else if (char === ')') depth--;
+    if (char === '|' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  parts.push(current);
+  return parts;
+}
+
+function toRegexSource(pattern: string, extglob = false): string {
   let out = '';
   let i = 0;
   while (i < pattern.length) {
     const char = pattern[i];
+    if (extglob && EXTGLOB_OPERATORS.has(char) && pattern[i + 1] === '(') {
+      const close = closingParenthesis(pattern, i + 1);
+      if (close > 0) {
+        const group = alternatives(pattern.slice(i + 2, close)).map((alternative) => toRegexSource(alternative, true)).join('|');
+        const rest = pattern.slice(close + 1);
+        if (char === '!') {
+          const tail = toRegexSource(rest, true);
+          return `${out}(?:(?!(?:${group})(?:${tail})$)[\\s\\S])*?${tail}`;
+        }
+        out += char === '?' ? `(?:${group})?` : char === '*' ? `(?:${group})*` : char === '+' ? `(?:${group})+` : `(?:${group})`;
+        i = close + 1;
+        continue;
+      }
+    }
     if (char === '*') {
       out += '.*';
       i++;
@@ -94,13 +143,19 @@ function toRegexSource(pattern: string): string {
 
 export interface FnmatchOptions {
   readonly period?: boolean;
+  readonly extglob?: boolean;
+  readonly nocase?: boolean;
+}
+
+export function globToRegexSource(pattern: string, extglob = false): string {
+  return toRegexSource(pattern, extglob);
 }
 
 export function fnmatch(pattern: string, text: string, options: FnmatchOptions = {}): boolean {
   if (options.period === true && text.startsWith('.') && !pattern.startsWith('.') && !pattern.startsWith('\\.')) {
     return false;
   }
-  return new RegExp(`^${toRegexSource(pattern)}$`, 's').test(text);
+  return new RegExp(`^${toRegexSource(pattern, options.extglob === true)}$`, options.nocase === true ? 'si' : 's').test(text);
 }
 
 export function hasMagic(pattern: string): boolean {

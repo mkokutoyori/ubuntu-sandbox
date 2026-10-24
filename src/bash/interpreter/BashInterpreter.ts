@@ -26,10 +26,11 @@ import type {
   Word, Assignment, Redirection,
 } from '@/bash/parser/ASTNode';
 import { Environment } from '@/bash/runtime/Environment';
+import { isShellOptionEnabled } from '@/bash/runtime/ShellOptions';
 import { expandWord, expandWords, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
-  ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
+  ArithmeticError, ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
 import { RedirectWriteError } from './RedirectWriteError';
@@ -366,7 +367,7 @@ export class BashInterpreter {
     } catch (e) {
       if (e instanceof ExitSignal) {
         this.env.lastExitCode = e.exitCode;
-      } else if (e instanceof BashRuntimeError) {
+      } else if (e instanceof BashRuntimeError || e instanceof ArithmeticError) {
         this.output.push(`bash: ${e.message}\n`);
         this.env.lastExitCode = 1;
       } else if (e instanceof DaemonParkSignal) {
@@ -517,15 +518,15 @@ export class BashInterpreter {
 
   /** True when `set -e` is active. */
   private isErrExit(): boolean {
-    return (this.env.get('SHELLOPTS') ?? '').split(':').includes('errexit');
+    return isShellOptionEnabled(this.env, 'errexit');
   }
   /** True when `set -o pipefail` is active. */
   private isPipefail(): boolean {
-    return (this.env.get('SHELLOPTS') ?? '').split(':').includes('pipefail');
+    return isShellOptionEnabled(this.env, 'pipefail');
   }
   /** True when `set -u` (nounset) is active — consulted by expansion. */
   isNounset(): boolean {
-    return (this.env.get('SHELLOPTS') ?? '').split(':').includes('nounset');
+    return isShellOptionEnabled(this.env, 'nounset');
   }
 
   private lastPipelineNegated = false;
