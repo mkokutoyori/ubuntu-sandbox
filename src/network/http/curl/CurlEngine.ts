@@ -1,8 +1,8 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { parseCurlArgs, remoteNameFor, CURL_USER_AGENT, type CurlOptions } from './CurlArgs';
-import { parseCurlUrl, performCurlRequest, type CurlOutcome, type CurlSuccess } from './CurlTransfer';
-import { applyWriteOut, type WriteOutFacts } from './CurlWriteOut';
+import { parseCurlUrl, performCurlRequest, isRedirect, resolveLocation, type CurlOutcome, type CurlSuccess } from './CurlTransfer';
+import { applyWriteOut, type WriteOutFacts, type WriteOutResult } from './CurlWriteOut';
 import type { CurlHost } from './CurlHost';
 
 export interface CurlRun {
@@ -61,61 +61,91 @@ function contentTypeOf(outcome: CurlSuccess): string {
   return outcome.headers.find((h) => h.name.toLowerCase() === 'content-type')?.value ?? '';
 }
 
+const MICROSECONDS_PER_MILLISECOND = 1000;
+const CURL_LIBRARY_VERSION = 'libcurl/8.5.0 OpenSSL/3.0.13 zlib/1.3 brotli/1.1.0 zstd/1.5.5 libidn2/2.3.7 libpsl/0.21.2 (+libidn2/2.3.7) libssh/0.10.6/openssl/zlib nghttp2/1.59.0 librtmp/2.3 OpenLDAP/2.6.10';
+
+function microsecondsSince(start: number, at: number | null): number {
+  return at === null ? 0 : Math.max(0, at - start) * MICROSECONDS_PER_MILLISECOND;
+}
+
 function writeOutFacts(
   outcome: CurlOutcome,
   opts: CurlOptions,
   requestedUrl: string,
+  urlNum: number,
   exitCode: number,
   errorMsg: string,
   elapsed: number,
+  filename: string | null,
 ): WriteOutFacts {
-  if (outcome.ok === true) {
-    return {
-      httpCode: outcome.statusCode,
-      urlEffective: outcome.url.effective,
-      remoteIp: outcome.remoteIp,
-      remotePort: outcome.url.port,
-      localIp: outcome.localIp,
-      localPort: outcome.localPort,
-      sizeDownload: outcome.body.length,
-      sizeUpload: opts.data.join('&').length,
-      contentType: contentTypeOf(outcome),
-      numRedirects: outcome.numRedirects,
-      timeTotal: elapsed,
-      method: outcome.method,
-      scheme: outcome.url.scheme.toUpperCase(),
-      httpVersion: outcome.httpVersion,
-      exitCode,
-      errorMsg,
-      numHeaders: outcome.headers.length,
-    };
-  }
+  const stats = outcome.stats;
+  const started = stats?.startedAt ?? 0;
+  const totalMicroseconds = Math.round(elapsed * 1_000_000);
+  const sizeDownload = outcome.ok === true ? outcome.body.length : 0;
+  const location = outcome.ok === true && isRedirect(outcome.statusCode)
+    ? outcome.headers.find((h) => h.name.toLowerCase() === 'location')?.value
+    : undefined;
+  const redirectTarget = location !== undefined && outcome.ok === true ? resolveLocation(outcome.url, location) : null;
+  const url = outcome.url;
   return {
-    httpCode: 0,
-    urlEffective: outcome.url?.effective ?? requestedUrl,
-    remoteIp: outcome.remoteIp,
-    remotePort: outcome.url?.port ?? 0,
-    localIp: '',
-    localPort: 0,
-    sizeDownload: 0,
-    sizeUpload: opts.data.join('&').length,
-    contentType: '',
+    httpCode: outcome.ok === true ? outcome.statusCode : 0,
+    httpConnect: 0,
+    urlEffective: url?.effective ?? requestedUrl,
+    inputUrl: requestedUrl,
+    urlNum,
+    remoteIp: outcome.ok === true && outcome.remoteIp !== '' ? outcome.remoteIp : null,
+    remotePort: outcome.ok === true ? outcome.url.port : 0,
+    localIp: outcome.ok === true ? outcome.localIp : null,
+    localPort: outcome.ok === true ? outcome.localPort : 0,
+    sizeDownload,
+    sizeUpload: stats?.uploadBytes ?? 0,
+    sizeHeader: stats?.headerBytes ?? 0,
+    sizeRequest: stats?.requestBytes ?? 0,
+    contentType: outcome.ok === true ? (contentTypeOf(outcome) || null) : null,
     numRedirects: outcome.numRedirects,
-    timeTotal: elapsed,
+    numConnects: stats?.connects ?? 0,
+    numHeaders: outcome.ok === true ? outcome.headers.length : 0,
     method: outcome.method,
-    scheme: (outcome.url?.scheme ?? 'http').toUpperCase(),
-    httpVersion: '',
+    scheme: outcome.ok === true ? outcome.url.scheme.toUpperCase() : null,
+    httpVersion: outcome.ok === true ? outcome.httpVersion : '',
     exitCode,
-    errorMsg,
-    numHeaders: 0,
+    errorMsg: exitCode === 0 ? null : errorMsg,
+    filenameEffective: filename,
+    redirectUrl: redirectTarget !== null && redirectTarget.ok === true ? redirectTarget.url.effective : null,
+    referer: opts.referer,
+    sslVerifyResult: 0,
+    proxySslVerifyResult: 0,
+    ftpEntryPath: null,
+    connId: urlNum,
+    xferId: urlNum,
+    timeNamelookup: microsecondsSince(started, stats?.namelookupAt ?? null),
+    timeConnect: microsecondsSince(started, stats?.connectAt ?? null),
+    timeAppconnect: microsecondsSince(started, stats?.appconnectAt ?? null),
+    timePretransfer: microsecondsSince(started, stats?.pretransferAt ?? null),
+    timeStarttransfer: microsecondsSince(started, stats?.starttransferAt ?? null),
+    timeRedirect: (stats?.redirectMs ?? 0) * MICROSECONDS_PER_MILLISECOND,
+    timeTotal: totalMicroseconds,
+    speedDownload: totalMicroseconds > 0 ? Math.floor(sizeDownload / (totalMicroseconds / 1_000_000)) : 0,
+    speedUpload: totalMicroseconds > 0 ? Math.floor((stats?.uploadBytes ?? 0) / (totalMicroseconds / 1_000_000)) : 0,
+    headers: outcome.ok === true ? outcome.headers : [],
+    curlVersion: CURL_LIBRARY_VERSION,
   };
+}
+
+function flushWriteOut(host: CurlHost, rendered: WriteOutResult, stdoutParts: string[], stderrLines: string[]): void {
+  stdoutParts.push(rendered.stdout);
+  if (rendered.stderr) stderrLines.push(rendered.stderr.replace(/\n$/, ''));
+  for (const file of rendered.files) {
+    const previous = file.append ? (host.readFile(file.path) ?? '') : '';
+    host.writeFile(file.path, previous + file.content);
+  }
 }
 
 function bareMessage(message: string): string {
   return message.replace(/^curl: \(\d+\) /, '');
 }
 
-async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promise<CurlRun> {
+async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string, urlNum: number): Promise<CurlRun> {
   const stderrLines: string[] = [];
   const stdoutParts: string[] = [];
 
@@ -132,11 +162,9 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
           ok: false, code: parsed.code, message: parsed.message, url: null,
           remoteIp: '', method: 'GET', numRedirects: 0, trace: [],
         },
-        opts, raw, parsed.code, bareMessage(parsed.message), 0,
+        opts, raw, urlNum, parsed.code, bareMessage(parsed.message), 0, opts.outputs[urlNum] ?? null,
       );
-      const rendered = applyWriteOut(opts.writeOut, facts);
-      stdoutParts.push(rendered.text);
-      stderrLines.push(...rendered.warnings);
+      flushWriteOut(host, applyWriteOut(opts.writeOut, facts), stdoutParts, stderrLines);
     }
     return { output: stdoutParts.join(''), exitCode: parsed.code, stderr: stderrLines.join('\n') };
   }
@@ -173,7 +201,7 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
     errorMsg = `The requested URL returned error: ${outcome.statusCode}`;
     pushError(`curl: (22) The requested URL returned error: ${outcome.statusCode}`);
   } else {
-    let target = opts.output;
+    let target = opts.outputs[urlNum] ?? null;
     if (!target && opts.remoteName) {
       const name = remoteNameFor(outcome.url.path);
       if (!name) {
@@ -203,10 +231,9 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
   }
 
   if (opts.writeOut) {
-    const facts = writeOutFacts(outcome, opts, raw, exitCode, errorMsg, elapsed);
-    const rendered = applyWriteOut(opts.writeOut, facts);
-    stdoutParts.push(rendered.text);
-    stderrLines.push(...rendered.warnings);
+    const effectiveName = (opts.outputs[urlNum] ?? null) ?? (opts.remoteName && outcome.ok === true ? remoteNameFor(outcome.url.path) : null);
+    const facts = writeOutFacts(outcome, opts, raw, urlNum, exitCode, errorMsg, elapsed, effectiveName);
+    flushWriteOut(host, applyWriteOut(opts.writeOut, facts), stdoutParts, stderrLines);
   }
 
   return { output: stdoutParts.join(''), exitCode, stderr: stderrLines.join('\n') };
@@ -243,8 +270,8 @@ export async function runCurl(host: CurlHost, args: readonly string[]): Promise<
   const stderr: string[] = [];
   let exitCode = 0;
 
-  for (const raw of opts.urls) {
-    const run = await runOneUrl(host, opts, raw);
+  for (const [urlNum, raw] of opts.urls.entries()) {
+    const run = await runOneUrl(host, opts, raw, urlNum);
     if (run.output) stdout.push(run.output);
     if (run.stderr) stderr.push(run.stderr);
     if (run.exitCode !== 0) exitCode = run.exitCode;

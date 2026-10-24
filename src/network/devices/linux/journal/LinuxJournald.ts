@@ -1,5 +1,5 @@
 import { type JournalFile, JournalFileSet, type FileIdentity } from './JournalFileSet';
-import { DEFAULT_JOURNALD_SETTINGS, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream } from './JournaldServer';
+import { defaultJournaldSettings, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream } from './JournaldServer';
 import { type JournalFileInfo, type VacuumResult, type VacuumSpec } from './JournalctlTool';
 import { type JournalRecord } from './JournalRecord';
 import { formatBytes, utf8 } from './JournalText';
@@ -20,6 +20,7 @@ export interface KernelMessage {
   message: string;
   monotonicUsec: number;
   realtimeUsec?: number;
+  serial?: number;
 }
 
 const JOURNAL_STARTED = 'f77379a8490b408bbe5f6940505a777b';
@@ -42,6 +43,7 @@ function hex128(seed: string): string {
 export class LinuxJournald {
   readonly bootId: string;
   private readonly files: JournalFileSet;
+  private readonly transient: JournalFileSet;
   private readonly server: JournaldServer;
   private readonly listeners = new Set<(record: JournalRecord) => void>();
   private stamp: { realtimeUsec: number } | null = null;
@@ -49,17 +51,18 @@ export class LinuxJournald {
   private flushed = false;
   private kmsgSequence = 0;
 
-  constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = DEFAULT_JOURNALD_SETTINGS) {
+  constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = defaultJournaldSettings()) {
     this.bootId = hex128(`boot:${platform.hostname()}:${platform.machineId()}:${platform.bootUsec()}`);
     this.files = new JournalFileSet(index => this.identityOf(index), 1);
+    this.transient = new JournalFileSet(index => this.identityOf(index), 1);
     const host: JournaldHost = {
       probe: pid => platform.probe(pid),
       identity: () => ({ bootId: this.bootId, machineId: platform.machineId(), hostname: platform.hostname() }),
       cgroupRoot: () => '/',
       newStreamId: () => hex128(`stream:${this.bootId}:${this.streamCounter++}`),
-      write: items => this.store(items),
+      write: (items, priority) => this.store(items, priority),
     };
-    this.server = new JournaldServer(host, settings);
+    this.server = new JournaldServer(host, structuredClone(settings));
     this.server.selfContext = null;
   }
 
@@ -68,10 +71,12 @@ export class LinuxJournald {
     return { path: `${this.directory}/system.journal`, fileId: hex128(`file:${this.bootId}:${index}`), seqnumId: hex128(`seqnum:${this.bootId}`), machineId };
   }
 
-  private store(items: Uint8Array[]): void {
+  private store(items: Uint8Array[], priority: number): void {
     const realtime = this.stamp !== null ? this.stamp.realtimeUsec : this.platform.nowUsec();
     const monotonic = Math.max(0, realtime - this.platform.bootUsec());
-    const record = this.files.append(items, realtime, monotonic, this.bootId);
+    const settings = this.server.settings;
+    const kept = settings.storage !== 'none' && (priority & 7) <= settings.maxLevelStore;
+    const record = (kept ? this.files : this.transient).append(items, realtime, monotonic, this.bootId);
     for (const listener of [...this.listeners]) listener(record);
   }
 
@@ -126,7 +131,7 @@ export class LinuxJournald {
 
   deliverKernel(message: KernelMessage): void {
     const escaped = Array.from(new TextEncoder().encode(message.message), byte => (byte >= 0x20 && byte < 0x7f && byte !== 0x5c ? String.fromCharCode(byte) : `\\x${byte.toString(16).padStart(2, '0')}`)).join('');
-    const record = utf8(`${message.priority & 0x3ff},${this.kmsgSequence++},${Math.floor(message.monotonicUsec)},-;${escaped}\n`);
+    const record = utf8(`${message.priority & 0x3ff},${message.serial ?? this.kmsgSequence++},${Math.floor(message.monotonicUsec)},-;${escaped}\n`);
     const run = (): void => this.server.processKmsg(record);
     if (message.realtimeUsec !== undefined) this.withStamp(message.realtimeUsec, run);
     else run();

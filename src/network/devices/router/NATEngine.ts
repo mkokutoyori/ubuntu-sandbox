@@ -24,6 +24,7 @@ import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
 import { Logger } from '../../core/Logger';
+import { inspectAndRewriteFtpAlg } from './nat/FtpAlg';
 import { DNS_PORT } from '../../dns/transport/DnsUdpTransport';
 import {
   NATSignalStore,
@@ -115,6 +116,8 @@ export interface NatSession {
   tcpState?: NatTcpState;
   /** Inside interface (possibly a dot1q subinterface) this session was created on. */
   inIface?: string;
+  pinhole?: boolean;
+  seqAdjust?: { pivot: number; delta: number }[];
   /** Extended entry of a static translation: listed, aged and journalled, never used to look a packet up. */
   viaStatic?: boolean;
 }
@@ -412,6 +415,7 @@ export class NATEngine {
   openAlgPinhole(opts: {
     protocol: number; insideIP: string; insidePort: number;
     globalIP: string; globalPort: number; outsideIP: string; outsidePort: number;
+    expectFromPeerOnly?: boolean;
   }): void {
     const session: NatSession = {
       protocol: opts.protocol,
@@ -421,6 +425,7 @@ export class NATEngine {
       timestamp: simulationNowMs(),
       createdAt: simulationNowMs(),
       tcpState: opts.protocol === IP_PROTO_TCP ? 'syn-seen' : undefined,
+      pinhole: opts.expectFromPeerOnly === true ? true : undefined,
     };
     const key = makeKey4(opts.protocol, opts.insideIP, opts.insidePort, opts.outsideIP, opts.outsidePort);
     this.sessions.set(key, session);
@@ -467,6 +472,15 @@ export class NATEngine {
    * Returns a modified packet (with translated dst) or null if no translation.
    */
   translateInbound(pkt: IPv4Packet, inIface: string): IPv4Packet | null {
+    const translated = this.translateInboundPacket(pkt, inIface);
+    if (!translated || translated.protocol !== IP_PROTO_TCP) return translated;
+    const tcp = pkt.payload as TCPPacket;
+    if (!tcp || tcp.type !== 'tcp') return translated;
+    const session = this.reverseSessions.get(makeKey(pkt.protocol, pkt.destinationIP.toString(), tcp.destinationPort));
+    return session?.seqAdjust ? this.shiftSequence(translated, 'inbound', session) : translated;
+  }
+
+  private translateInboundPacket(pkt: IPv4Packet, inIface: string): IPv4Packet | null {
     // Standard path: packet arrives on outside interface
     // Hairpin path (RFC 5382 §5): packet arrives on inside interface but targets
     // one of our global/public IPs — DNAT it back to the inside server.
@@ -522,7 +536,12 @@ export class NATEngine {
 
     // 1. Reverse PAT session lookup (reply to an inside-to-outside packet).
     const revSession = this.reverseSessions.get(makeKey(proto, dstIP, dstPort));
+    if (revSession?.pinhole && ipPkt.sourceIP.toString() !== revSession.outsideIP) {
+      this.missCount++;
+      return null;
+    }
     if (revSession && (isOutside || isHairpinReturn(revSession, ipPkt))) {
+      if (revSession.pinhole) this.completePinhole(revSession, ipPkt);
       revSession.timestamp = simulationNowMs();
       if (proto === IP_PROTO_TCP) updateTcpState(revSession, ipPkt, 'in');
       this.hitCount++;
@@ -597,6 +616,60 @@ export class NATEngine {
    * written against the address the client actually targeted.
    */
   translateOutbound(
+    pkt: IPv4Packet, outIface: string, inIface: string,
+    opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
+  ): IPv4Packet | null {
+    const translated = this.translateOutboundPacket(pkt, outIface, inIface, opts);
+    if (!translated || translated.protocol !== IP_PROTO_TCP) return translated;
+    const inspected = inspectAndRewriteFtpAlg(translated, this, translated.sourceIP.toString());
+    return this.shiftSequence(inspected, 'outbound');
+  }
+
+  noteAlgRewrite(translated: IPv4Packet, originalLength: number, newLength: number): void {
+    const delta = newLength - originalLength;
+    if (delta === 0) return;
+    const tcp = translated.payload as TcpWire;
+    const session = this.reverseSessions.get(makeKey(translated.protocol, translated.sourceIP.toString(), tcp.sourcePort));
+    if (!session) return;
+    const pivot = (sequenceOf(tcp) + originalLength) >>> 0;
+    const adjustments = session.seqAdjust ?? [];
+    const last = adjustments[adjustments.length - 1];
+    if (last && pivot <= last.pivot) return;
+    adjustments.push({ pivot, delta: (last?.delta ?? 0) + delta });
+    session.seqAdjust = adjustments;
+  }
+
+  insideLocalOf(translated: IPv4Packet): string | null {
+    const tcp = translated.payload as TCPPacket;
+    return this.reverseSessions.get(makeKey(translated.protocol, translated.sourceIP.toString(), tcp.sourcePort))?.localIP ?? null;
+  }
+
+  private shiftSequence(pkt: IPv4Packet, direction: 'outbound' | 'inbound', session?: NatSession): IPv4Packet {
+    const tcp = pkt.payload as TcpWire;
+    const owner = session ?? this.reverseSessions.get(makeKey(pkt.protocol, pkt.sourceIP.toString(), tcp.sourcePort));
+    const adjustments = owner?.seqAdjust;
+    if (!adjustments || adjustments.length === 0) return pkt;
+    const sequence = sequenceOf(tcp);
+    const acknowledgement = acknowledgementOf(tcp);
+    let shiftedSequence = sequence;
+    let shiftedAcknowledgement = acknowledgement;
+    if (direction === 'outbound') {
+      const applicable = [...adjustments].reverse().find((a) => ((sequence - a.pivot) | 0) >= 0);
+      if (applicable) shiftedSequence = (sequence + applicable.delta) >>> 0;
+    } else if (tcp.flags.ack) {
+      const applicable = [...adjustments].reverse().find((a) => ((acknowledgement - (a.pivot + a.delta)) | 0) >= 0);
+      if (applicable) shiftedAcknowledgement = (acknowledgement - applicable.delta) >>> 0;
+    }
+    if (shiftedSequence === sequence && shiftedAcknowledgement === acknowledgement) return pkt;
+    const result: IPv4Packet = {
+      ...pkt, payload: withSequence(tcp, shiftedSequence, shiftedAcknowledgement), headerChecksum: 0,
+    };
+    recomputeL4Checksum(result);
+    result.headerChecksum = computeIPv4Checksum(result);
+    return result;
+  }
+
+  private translateOutboundPacket(
     pkt: IPv4Packet, outIface: string, inIface: string,
     opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
   ): IPv4Packet | null {
@@ -988,6 +1061,14 @@ export class NATEngine {
     });
   }
 
+  private completePinhole(session: NatSession, pkt: IPv4Packet): void {
+    this.sessions.delete(makeKey4(session.protocol, session.localIP, session.localPort, session.outsideIP, session.outsidePort));
+    session.outsidePort = getPacketSrcPort(pkt);
+    session.outsideLocalPort = session.outsidePort;
+    session.pinhole = undefined;
+    this.sessions.set(makeKey4(session.protocol, session.localIP, session.localPort, session.outsideIP, session.outsidePort), session);
+  }
+
   private forgetReverse(session: NatSession): void {
     const revKey = makeKey(session.protocol, session.globalIP, session.globalPort);
     if (this.reverseSessions.get(revKey) === session) this.reverseSessions.delete(revKey);
@@ -1335,6 +1416,22 @@ function updateTcpState(session: NatSession, pkt: IPv4Packet, _dir: 'in' | 'out'
       if (flags.fin && flags.ack) { session.tcpState = 'time-wait'; break; }
       break;
   }
+}
+
+type TcpWire = TCPPacket | TcpSegment;
+
+function sequenceOf(tcp: TcpWire): number {
+  return 'sequence' in tcp ? tcp.sequence : tcp.sequenceNumber;
+}
+
+function acknowledgementOf(tcp: TcpWire): number {
+  return 'acknowledgement' in tcp ? tcp.acknowledgement : tcp.acknowledgementNumber;
+}
+
+function withSequence(tcp: TcpWire, sequence: number, acknowledgement: number): TcpWire {
+  return 'sequence' in tcp
+    ? { ...tcp, sequence, acknowledgement }
+    : { ...tcp, sequenceNumber: sequence, acknowledgementNumber: acknowledgement };
 }
 
 function protoToName(proto: number): string {

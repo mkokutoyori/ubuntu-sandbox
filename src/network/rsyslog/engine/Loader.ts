@@ -165,6 +165,7 @@ export class ConfigLoader implements ConfigSink {
       else this.log.info(text, code);
     },
     internal: () => undefined,
+    childExited: () => undefined,
   };
 
   constructor(private readonly options: LoaderOptions) {
@@ -194,6 +195,7 @@ export class ConfigLoader implements ConfigSink {
         info: (text, code) => this.runtimeSink.info(text, code),
         log: (severity, code, text, errno) => this.runtimeSink.log(severity, code, text, errno),
         internal: (severity, code, text, mark, facility) => this.runtimeSink.internal(severity, code, text, mark, facility),
+        childExited: (pid, exitCode) => this.runtimeSink.childExited(pid, exitCode),
       },
       settings,
       statistics: this.config.statistics,

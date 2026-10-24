@@ -1,6 +1,6 @@
 import type { Errno } from '@/network/core/Errno';
 import type {
-  Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions, ProcessDetails, OpenFileOptions, OpenFileResult, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions,
+  Datagram, DatagramOptions, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions, ProcessDetails, OpenFileOptions, OpenFileResult, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions,
   TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { ConfigLoader, type ModuleCatalog } from '@/network/rsyslog/engine/Loader';
@@ -106,6 +106,16 @@ export class LabHost implements RsyslogHost {
     exists: (path: string): boolean => this.fileSystem.has(path) || this.directories.has(path),
     isDirectory: (path: string): boolean => this.directories.has(path),
     isSymbolicLink: (): boolean => false,
+    lstat: (path: string): FileStat | null => this.statOf(path),
+    stat: (path: string): FileStat | null => this.statOf(path),
+    openRead: (path: string): OpenReadResult => {
+      const content = this.fileSystem.get(path);
+      if (content === undefined) return { error: 'No such file or directory', missing: true };
+      return { file: { inode: this.inodeOf(path), read: (offset, length) => (this.fileSystem.get(path) ?? '').slice(offset, offset + length), close: () => undefined } };
+    },
+    realpath: (path: string): string | null => (this.fileSystem.has(path) || this.directories.has(path) ? path : null),
+    remove: (path: string): boolean => this.fileSystem.delete(path),
+    observe: (): (() => void) => () => undefined,
     list: (directory: string): string[] => {
       const prefix = directory.replace(/\/$/, '') + '/';
       return [...this.fileSystem.keys()].filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/')).map((path) => path.slice(prefix.length)).sort();
@@ -254,6 +264,20 @@ export class LabHost implements RsyslogHost {
     if (/^\d+\.\d+\.\d+\.\d+$/.test(name) || name.includes(':')) return { addresses: [name] };
     const known = this.net.names.get(name);
     return known === undefined ? { error: 'Name or service not known' } : { addresses: [...known] };
+  }
+
+  private readonly inodes = new Map<string, number>();
+
+  private inodeOf(path: string): number {
+    if (!this.inodes.has(path)) this.inodes.set(path, this.inodes.size + 1);
+    return this.inodes.get(path) as number;
+  }
+
+  private statOf(path: string): FileStat | null {
+    const content = this.fileSystem.get(path);
+    if (content !== undefined) return { inode: this.inodeOf(path), size: content.length, mtimeMs: this.nowMs, ctimeMs: this.nowMs, kind: 'file' };
+    if (this.directories.has(path)) return { inode: this.inodeOf(path), size: 0, mtimeMs: this.nowMs, ctimeMs: this.nowMs, kind: 'directory' };
+    return null;
   }
 
   private openFile(path: string, options: OpenFileOptions): OpenFileResult {

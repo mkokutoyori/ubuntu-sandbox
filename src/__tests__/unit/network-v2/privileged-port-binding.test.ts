@@ -115,14 +115,14 @@ describe('ssh — forwards bind on whichever machine owns them, as its user', ()
     expect(await ssh(pc, '-L 80:10.0.0.2:22')).toBe(
       'bind [127.0.0.1]:80: Permission denied\n'
       + 'channel_setup_fwd_listener_tcpip: cannot listen to port: 80\n'
-      + 'Could not request local forwarding.\n');
+      + 'Could not request local forwarding.');
     expect(await ssh(pc, '-L 8022:10.0.0.2:22')).toBe('');
     expect(await pc.executeCommand('ss -tln')).toMatch(/127\.0\.0\.1:8022\s/);
   });
 
   it('-R 80 fails because alice is not root on the server; -R 8081 opens there', async () => {
     const { pc, srv } = await lab();
-    expect(await ssh(pc, '-R 80:10.0.0.1:22')).toBe('Warning: remote port forwarding failed for listen port 80\n');
+    expect(await ssh(pc, '-R 80:10.0.0.1:22')).toBe('Warning: remote port forwarding failed for listen port 80');
     expect(await srv.executeCommand('ss -tln')).not.toMatch(/127\.0\.0\.1:80\s/);
     expect(await ssh(pc, '-R 8081:10.0.0.1:22')).toBe('');
     expect(await srv.executeCommand('ss -tln')).toMatch(/127\.0\.0\.1:8081\s/);

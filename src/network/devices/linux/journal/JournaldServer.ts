@@ -59,8 +59,36 @@ export interface JournaldHost {
   newStreamId(): string;
 }
 
+export type JournaldStorage = 'volatile' | 'persistent' | 'auto' | 'none';
+export type JournaldSplitMode = 'login' | 'uid' | 'none';
+
+export interface JournalMetrics {
+  maxUse: number | null;
+  maxSize: number | null;
+  keepFree: number | null;
+  maxFiles: number | null;
+}
+
 export interface JournaldSettings {
+  storage: JournaldStorage;
+  compress: { enabled: boolean; thresholdBytes: number | null };
+  seal: boolean;
+  readKmsg: boolean;
+  setAudit: boolean | null;
+  syncIntervalUsec: number;
+  rateLimitIntervalUsec: number;
+  rateLimitBurst: number;
+  systemMetrics: JournalMetrics;
+  runtimeMetrics: JournalMetrics;
+  maxRetentionUsec: number;
+  maxFileUsec: number;
+  splitMode: JournaldSplitMode;
+  ttyPath: string | null;
   maxLevelStore: number;
+  maxLevelSyslog: number;
+  maxLevelKmsg: number;
+  maxLevelConsole: number;
+  maxLevelWall: number;
   lineMax: number;
   forwardToSyslog: boolean;
   forwardToKmsg: boolean;
@@ -68,11 +96,24 @@ export interface JournaldSettings {
   forwardToWall: boolean;
 }
 
-export const DEFAULT_JOURNALD_SETTINGS: JournaldSettings = {
-  maxLevelStore: 7, lineMax: 48 * 1024, forwardToSyslog: false, forwardToKmsg: false, forwardToConsole: false, forwardToWall: true,
-};
+const USEC_PER_SEC = 1_000_000;
+const AUTOMATIC_METRICS: JournalMetrics = { maxUse: null, maxSize: null, keepFree: null, maxFiles: null };
+
+export function defaultJournaldSettings(): JournaldSettings {
+  return {
+    storage: 'auto', compress: { enabled: true, thresholdBytes: null }, seal: true, readKmsg: true, setAudit: true,
+    syncIntervalUsec: 300 * USEC_PER_SEC, rateLimitIntervalUsec: 30 * USEC_PER_SEC, rateLimitBurst: 10000,
+    systemMetrics: { ...AUTOMATIC_METRICS }, runtimeMetrics: { ...AUTOMATIC_METRICS },
+    maxRetentionUsec: 0, maxFileUsec: 2_629_800 * USEC_PER_SEC, splitMode: 'uid', ttyPath: null,
+    maxLevelStore: 7, maxLevelSyslog: 7, maxLevelKmsg: 5, maxLevelConsole: 6, maxLevelWall: 0,
+    lineMax: 48 * 1024, forwardToSyslog: false, forwardToKmsg: false, forwardToConsole: false, forwardToWall: true,
+  };
+}
+
+export const DEFAULT_JOURNALD_SETTINGS: JournaldSettings = defaultJournaldSettings();
 
 const LOG_PRIMASK = 7;
+const admits = (maxLevel: number, priority: number): boolean => (priority & LOG_PRIMASK) <= maxLevel;
 const LOG_FACMASK = 0x3f8;
 const LOG_INFO = 6;
 const LOG_USER = 8;
@@ -343,10 +384,10 @@ export class StdoutStream {
     }
     if (message.length === 0) return;
     const server = this.server;
-    if (this.forwardSyslog || server.settings.forwardToSyslog) server.host.forwardSyslog?.(syslogFixupFacility(priority), this.identifier, message, this.ucred, null);
-    if (this.forwardKmsg || server.settings.forwardToKmsg) server.host.forwardKmsg?.(priority, this.identifier, message, this.ucred);
-    if (this.forwardConsole || server.settings.forwardToConsole) server.host.forwardConsole?.(priority, this.identifier, message, this.ucred);
-    if (server.settings.forwardToWall) server.host.forwardWall?.(priority, this.identifier, message, this.ucred);
+    if ((this.forwardSyslog || server.settings.forwardToSyslog) && admits(server.settings.maxLevelSyslog, priority)) server.host.forwardSyslog?.(syslogFixupFacility(priority), this.identifier, message, this.ucred, null);
+    if ((this.forwardKmsg || server.settings.forwardToKmsg) && admits(server.settings.maxLevelKmsg, priority)) server.host.forwardKmsg?.(priority, this.identifier, message, this.ucred);
+    if ((this.forwardConsole || server.settings.forwardToConsole) && admits(server.settings.maxLevelConsole, priority)) server.host.forwardConsole?.(priority, this.identifier, message, this.ucred);
+    if (server.settings.forwardToWall && admits(server.settings.maxLevelWall, priority)) server.host.forwardWall?.(priority, this.identifier, message, this.ucred);
     const items: Uint8Array[] = [utf8('_TRANSPORT=stdout'), utf8(`_STREAM_ID=${this.streamId}`), utf8(`PRIORITY=${priority & LOG_PRIMASK}`)];
     if (priority & LOG_FACMASK) items.push(utf8(`SYSLOG_FACILITY=${(priority & LOG_FACMASK) >> 3}`));
     if (this.identifier !== null) items.push(utf8(`SYSLOG_IDENTIFIER=${this.identifier}`));
@@ -406,7 +447,6 @@ export class JournaldServer {
   }
 
   dispatch(items: Uint8Array[], context: ClientContext | null, tvUsec: number | null, priority: number, objectPid: number): void {
-    if ((priority & LOG_PRIMASK) > this.settings.maxLevelStore) return;
     const out = items.slice();
     const add = (name: string, value: string | number | null): void => {
       if (value === null || value === '') return;
@@ -530,10 +570,10 @@ export class JournaldServer {
     items.push(utf8('_TRANSPORT=journal'));
     const text = message as Uint8Array | null;
     if (text !== null) {
-      if (this.settings.forwardToSyslog) this.host.forwardSyslog?.(syslogFixupFacility(priority), identifier, text, ucred, tvUsec);
-      if (this.settings.forwardToKmsg) this.host.forwardKmsg?.(priority, identifier, text, ucred);
-      if (this.settings.forwardToConsole) this.host.forwardConsole?.(priority, identifier, text, ucred);
-      if (this.settings.forwardToWall) this.host.forwardWall?.(priority, identifier, text, ucred);
+      if (this.settings.forwardToSyslog && admits(this.settings.maxLevelSyslog, priority)) this.host.forwardSyslog?.(syslogFixupFacility(priority), identifier, text, ucred, tvUsec);
+      if (this.settings.forwardToKmsg && admits(this.settings.maxLevelKmsg, priority)) this.host.forwardKmsg?.(priority, identifier, text, ucred);
+      if (this.settings.forwardToConsole && admits(this.settings.maxLevelConsole, priority)) this.host.forwardConsole?.(priority, identifier, text, ucred);
+      if (this.settings.forwardToWall && admits(this.settings.maxLevelWall, priority)) this.host.forwardWall?.(priority, identifier, text, ucred);
     }
     this.dispatch(items, context, tvUsec, priority, objectPid);
     return text === null ? 0 : 1;
@@ -575,10 +615,10 @@ export class JournaldServer {
       at = identified.at;
     }
     const body = message.subarray(at);
-    if (this.settings.forwardToSyslog) this.host.forwardRawSyslog?.(priority, buf, ucred);
-    if (this.settings.forwardToKmsg) this.host.forwardKmsg?.(priority, identifier, body, ucred);
-    if (this.settings.forwardToConsole) this.host.forwardConsole?.(priority, identifier, body, ucred);
-    if (this.settings.forwardToWall) this.host.forwardWall?.(priority, identifier, body, ucred);
+    if (this.settings.forwardToSyslog && admits(this.settings.maxLevelSyslog, priority)) this.host.forwardRawSyslog?.(priority, buf, ucred);
+    if (this.settings.forwardToKmsg && admits(this.settings.maxLevelKmsg, priority)) this.host.forwardKmsg?.(priority, identifier, body, ucred);
+    if (this.settings.forwardToConsole && admits(this.settings.maxLevelConsole, priority)) this.host.forwardConsole?.(priority, identifier, body, ucred);
+    if (this.settings.forwardToWall && admits(this.settings.maxLevelWall, priority)) this.host.forwardWall?.(priority, identifier, body, ucred);
     const items: Uint8Array[] = [utf8('_TRANSPORT=syslog'), utf8(`PRIORITY=${priority & LOG_PRIMASK}`)];
     if (priority & LOG_FACMASK) items.push(utf8(`SYSLOG_FACILITY=${(priority & LOG_FACMASK) >> 3}`));
     if (identifier !== null) items.push(field('SYSLOG_IDENTIFIER', identifier));

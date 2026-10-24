@@ -23,7 +23,7 @@ import { WorkerQueue, type ProcessOutcome } from './Queue';
 const LOG_SYSLOG = 5;
 const INTERNAL_INPUT = 'rsyslogd';
 
-export type StartOutcome = { readonly ok: true } | { readonly ok: false; readonly code: number };
+export type StartOutcome = { readonly ok: true } | { readonly ok: false; readonly code: number; readonly exitText?: string };
 
 export interface EngineEvents {
   onInternalMessage?(severity: number, code: number, text: string): void;
@@ -51,6 +51,11 @@ export class RsyslogEngine implements InputSubmitter {
       error: (text, code, errno) => runtimeLog.log(3, code ?? RS_RET.ERR, text, errno),
       warning: (text, code) => runtimeLog.log(4, code ?? RS_RET.NO_ERRCODE, text),
       info: (text, code) => runtimeLog.log(6, code ?? RS_RET.NO_ERRCODE, text),
+      childExited: (pid, exitCode) => {
+        const policy = config.settings.reportChildProcessExits;
+        if (policy === 'none' || (policy === 'errors' && exitCode === 0)) return;
+        runtimeLog.log(exitCode === 0 ? 6 : 4, RS_RET.NO_ERRCODE, `child process (pid ${pid}) exited with status ${exitCode}`);
+      },
       log: (severity, code, text, errno) => this.internal(severity, code, formatLogEntry(text, code, errno ?? null)),
       internal: (severity, code, text, mark, facility) => this.internal(severity, code, text, mark, facility),
     };
@@ -73,13 +78,13 @@ export class RsyslogEngine implements InputSubmitter {
       this.registerActionStatistics(runtime);
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
-      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; runtime.commit(); }));
+      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; return runtime.commit(); }));
     }
   }
 
   private newQueue(
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
-    endBatch: () => void = () => this.commitActions(),
+    endBatch: () => Generator<Sleep, void> = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
     const queue = new WorkerQueue<RsyslogMessage>(
       name,
@@ -123,8 +128,8 @@ export class RsyslogEngine implements InputSubmitter {
     object.addCounter({ name: 'ratelimit.paced_usec', read: () => counters.rateLimitPacedMicroseconds, reset: () => { counters.rateLimitPacedMicroseconds = 0; } });
   }
 
-  private commitActions(): void {
-    for (const runtime of this.actions.values()) runtime.commit();
+  private *commitActions(): Generator<Sleep, void> {
+    for (const runtime of this.actions.values()) yield* runtime.commit();
   }
 
   private newLimiter(name: string, interval: number, burst: number, threshold: number): RateLimiter {
@@ -219,6 +224,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   private *processAction(runtime: ActionRuntime, message: RsyslogMessage): Generator<Sleep, ProcessOutcome> {
     const result = yield* runtime.submit(message, new ScriptState());
+    if (result === 'requeued') return 'requeue';
     if (result !== 'deferred') return 'done';
     return { retryAfterMs: runtime.resumeDelayMs() || runtime.definition.options.resumeInterval * 1000 };
   }
@@ -507,10 +513,13 @@ export class RsyslogEngine implements InputSubmitter {
     if (dropped !== null) return this.abortStart(dropped, started);
     const failed = startRecords(late);
     if (failed !== null) return this.abortStart(failed, started);
+    const queueFailure = this.activateQueues();
+    if (queueFailure !== null) return this.abortStart(queueFailure.code, started, queueFailure.exitText);
     const backlog = this.internalBacklog ?? [];
     this.internalBacklog = null;
     for (const message of backlog) this.processInternal(message);
     this.restoreQueues();
+    for (const instance of started) instance.run?.();
     this.stopCallbacks.push(this.host.scheduleEvery(() => this.runJanitor(), Math.max(1, settings.janitorInterval) * 60_000));
     return { ok: true };
   }
@@ -530,11 +539,39 @@ export class RsyslogEngine implements InputSubmitter {
     });
   }
 
-  private abortStart(code: number, started: readonly InputInstance[] = []): StartOutcome {
+  private abortStart(code: number, started: readonly InputInstance[] = [], exitText?: string): StartOutcome {
     for (const instance of started) instance.stop();
     this.internalBacklog = null;
     this.started = false;
-    return { ok: false, code };
+    return exitText === undefined ? { ok: false, code } : { ok: false, code, exitText };
+  }
+
+  private queueCannotStart(queue: import('./Settings').QueueSettings): boolean {
+    return queue.type === 'Disk' && queue.fileName === null;
+  }
+
+  private activateQueues(): { readonly code: number; readonly exitText: string } | null {
+    const abort = this.config.settings.abortOnFailedQueueStartup;
+    const code = RS_RET.FILE_PREFIX_MISSING;
+    for (const definition of this.config.actions) {
+      if (!this.queueCannotStart(definition.options.queue)) continue;
+      if (abort) {
+        return { code, exitText: `rsyslogd: error ${code} starting up action queue, abortOnFailedQueueStartup is set, so we abort rsyslog now.` };
+      }
+      this.runtimeLog.log(3, code, 'error starting up action queue');
+      this.runtimeLog.log(3, code, 'file prefix (work directory?) is missing');
+      this.actions.get(definition.id)?.disable();
+    }
+    if (this.queueCannotStart(this.config.settings.mainQueue)) {
+      if (abort) {
+        return {
+          code,
+          exitText: 'rsyslogd: could not start (ruleset) main message queue, local queue safety or abortOnFailedQueueStartup requires aborting rsyslog now.',
+        };
+      }
+      this.runtimeLog.log(3, code, 'could not start (ruleset) main message queue');
+    }
+    return null;
   }
 
   private dropPrivileges(): number | null {

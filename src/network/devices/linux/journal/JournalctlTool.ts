@@ -1,4 +1,5 @@
 import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGetopt';
+import { parseSize } from '../systemd/ParseSize';
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
 import { fnmatch } from '../fs/Glob';
 import { type SystemdClock, formatTimespan, formatTimestamp, parseSec, parseTimestamp, systemdClock } from '../systemd/SystemdTime';
@@ -586,7 +587,7 @@ function parseArgv(
       case 0x114: args.action = action = 'verify'; break;
       case 0x116: args.action = action = 'disk-usage'; break;
       case 0x125: {
-        const size = parseSize(optarg as string);
+        const size = parseSize(optarg as string, 1024);
         if (size === null) return fail(`Failed to parse vacuum size: ${optarg}`);
         args.vacuumSize = size;
         args.action = action = action === 'rotate' ? 'rotate-and-vacuum' : 'vacuum';
@@ -717,13 +718,6 @@ function parseArgv(
     if (args.lines >= 0 && !args.linesOldest && !args.follow) args.reverse = true;
   }
   return 'continue';
-}
-
-function parseSize(input: string): number | null {
-  const match = /^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTPE]?)(?:i?B)?\s*$/i.exec(input);
-  if (match === null) return null;
-  const factors: Record<string, number> = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5, E: 1024 ** 6 };
-  return Math.floor(Number(match[1]) * factors[match[2].toUpperCase()]);
 }
 
 function runAction(

@@ -40,7 +40,7 @@ describe('Http1Wire — encode/decode round-trip (no network)', () => {
     const raw = encodeRequest(req);
     expect(raw).toContain('GET /index.html HTTP/1.1\r\n');
     expect(raw).toContain('Host: example.local\r\n');
-    expect(raw).toContain('Content-Length: 0');
+    expect(raw).not.toContain('Content-Length');
 
     const parsed = parseRequest(raw);
     expect(parsed.ok).toBe(true);

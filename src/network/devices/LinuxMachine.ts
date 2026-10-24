@@ -86,6 +86,8 @@ import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
   LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
+import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
+import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
@@ -251,6 +253,7 @@ import {
 import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
+import { MasqueradeFlowProjection } from './linux/MasqueradeFlowProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
@@ -313,6 +316,29 @@ export abstract class LinuxMachine extends EndHost
   private readonly ipv4Settings = new LinuxIpv4Settings();
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly ipv6Settings = new LinuxIpv6Settings();
+  private deviceConfStore: Ipv4DeviceConf | null = null;
+  private get deviceConf(): Ipv4DeviceConf {
+    this.deviceConfStore ??= new Ipv4DeviceConf([...this.ports.keys()]);
+    return this.deviceConfStore;
+  }
+  protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  private registerDeviceConfScope(scope: string): void {
+    this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
+    for (const knob of IPV4_DEVICE_CONF_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/conf/${scope}/${knob.name}`,
+        () => `${this.deviceConf.get(scope, knob.name)}\n`,
+        (text) => this.deviceConf.write(scope, knob.name, text));
+    }
+  }
+  protected override addPort(port: Port): void {
+    super.addPort(port);
+    if (this.deviceConfStore?.addInterface(port.getName())) this.registerDeviceConfScope(port.getName());
+  }
+  private setIpForwarding(enabled: boolean): void {
+    const changed = this.ipForwardEnabled !== enabled;
+    this.ipForwardEnabled = enabled;
+    if (changed) this.deviceConf.forwardingChanged(enabled);
+  }
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
   protected override get ipv6FragmentTimeoutMs(): number { return this.ipv6Settings.fragmentTimeoutMs; }
   protected override get ipv6FragmentHighThresholdBytes(): number {
@@ -439,9 +465,10 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_forward',
       () => `${this.ipForwardEnabled ? 1 : 0}\n`,
       (text) => {
-        this.ipForwardEnabled = text.trim() === '1';
+        this.setIpForwarding(text.trim() === '1');
         return true;
       });
+    for (const scope of this.deviceConf.scopes()) this.registerDeviceConfScope(scope);
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
@@ -527,7 +554,7 @@ export abstract class LinuxMachine extends EndHost
     // TIME-WAIT during a real handshake/close, and feed the per-device
     // packet log so `tcpdump` shows the SYN/SYN-ACK/ACK/FIN bytes the
     // simulated stack actually exchanges.
-    this.bindTcpProjections();
+    this.bindProjections();
     this.syncHostnameFiles(this.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
@@ -628,6 +655,7 @@ export abstract class LinuxMachine extends EndHost
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
+    this.executor.logMgr.attachTerminals({ sessions: () => this.loggedInTerminals().map((terminal) => terminal.tty), write: (tty, text) => this.writeTerminal(tty, text) });
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
 
@@ -1416,24 +1444,30 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
-  private runDaemonProgram(argv: readonly string[], uid: number, gid: number): number {
+  private runDaemonProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): { pid: number; exitCode: number } {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
-    um.currentUser = um.getUserByUid(uid)?.username ?? 'root';
+    const user = um.getUserByUid(uid)?.username ?? 'root';
+    um.currentUser = user;
     um.currentUid = uid;
     um.currentGid = gid;
     this.executor.setCwd('/');
+    const child = this.executor.processMgr.spawn({ command: argv.join(' '), user, uid, gid, ppid: parentPid });
+    let exitCode: number;
     try {
       const quoted = argv.map((argument) => `'${argument.replace(/'/g, `'\\''`)}'`).join(' ');
-      return this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status;
+      exitCode = this.executor.withProcessIdentity(child.pid, () => this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status);
     } catch {
-      return 1;
+      exitCode = 1;
     } finally {
       um.currentUser = prev.user;
       um.currentUid = prev.uid;
       um.currentGid = prev.gid;
       this.executor.setCwd(prev.cwd);
     }
+    this.executor.processMgr.exit(child.pid, exitCode);
+    this.executor.processMgr.reap(child.pid);
+    return { pid: child.pid, exitCode };
   }
 
   private deliverCronMail(recipient: string, body: string): void {
@@ -1453,17 +1487,20 @@ export abstract class LinuxMachine extends EndHost
     super.setEventBus(bus);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.dhcpd?.getEngine().setEventBus(this.getBus());
-    this.bindTcpProjections();
+    this.bindProjections();
   }
 
   private tcpSocketProjection: TcpSocketStateProjection | null = null;
   private tcpdumpProjection: TcpdumpCaptureProjection | null = null;
+  private masqueradeProjection: MasqueradeFlowProjection | null = null;
 
-  private bindTcpProjections(): void {
+  private bindProjections(): void {
     this.tcpSocketProjection?.dispose();
     this.tcpdumpProjection?.dispose();
+    this.masqueradeProjection?.dispose();
     this.tcpSocketProjection = new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
     this.tcpdumpProjection = new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
+    this.masqueradeProjection = new MasqueradeFlowProjection(this.getBus(), this.executor.iptables.connections, this.id);
   }
 
   override setHardware(profile: HardwareProfile): void {
@@ -1663,7 +1700,7 @@ export abstract class LinuxMachine extends EndHost
         executor.processMgr.setNofileLimit(uid, limit);
         return null;
       },
-      runProgram: (argv, uid, gid) => this.runDaemonProgram(argv, uid, gid),
+      runProgram: (argv, uid, gid, parentPid) => this.runDaemonProgram(argv, uid, gid, parentPid),
       restoreProcessLimits: () => {
         for (const [uid, saved] of savedNofile) {
           executor.processMgr.setNofileHardLimit(uid, saved.hard);
@@ -1683,17 +1720,8 @@ export abstract class LinuxMachine extends EndHost
       uidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getUser(name)?.uid ?? null),
       gidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getGroup(name)?.gid ?? null),
       userExists: (name) => executor.userMgr.getUser(name) !== undefined,
-      terminals: () => {
-        this.ensureLocalConsoleSession();
-        return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
-      },
-      writeTerminal: (tty, text) => {
-        const path = `/dev/${tty}`;
-        const node = vfs.resolveInode(path);
-        if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
-        if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
-        this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
-      },
+      terminals: () => this.loggedInTerminals(),
+      writeTerminal: (tty, text) => this.writeTerminal(tty, text),
       resolveAddresses: (name) => executor.resolveHostAddresses(name),
       reverseName: (address) => reverseNameOf(executor.nss, address),
       servicePort: (name, protocol) => executor.resolveServicePort(name, protocol),
@@ -1735,7 +1763,7 @@ export abstract class LinuxMachine extends EndHost
       if (daemon.isRunning) return;
       const outcome = daemon.start();
       if ('lines' in outcome) {
-        for (const line of [...outcome.lines, runFailedText(outcome.fatalCode)]) {
+        for (const line of outcome.runFailed ? [...outcome.lines, runFailedText(outcome.fatalCode)] : outcome.lines) {
           executor.logMgr.submitLibcSyslog(LOG_DAEMON_INFO, 'rsyslogd', mainPid(), line.replace(/^rsyslogd: /, ''), timers.now());
         }
         executor.serviceMgr.markFailed('rsyslog', 'exit-code');
@@ -2058,6 +2086,11 @@ export abstract class LinuxMachine extends EndHost
   private wireNetworkConfigLifecycle(): void {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
+      if (name === 'systemd-journald' && event !== 'restart') {
+        this.executor.logMgr.reloadJournaldConfig(this.executor.processMgr.pidof('systemd-journald')[0] ?? 0);
+        const audit = this.executor.logMgr.journald.settings.setAudit;
+        if (audit !== null) this.executor.auditRules.setEnabledFromJournald(audit);
+      }
       if (name === 'systemd-networkd') this.applyNetworkConfiguration();
       // `resolved.conf` n'était lu qu'à la toute première instanciation du
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
@@ -2826,6 +2859,20 @@ export abstract class LinuxMachine extends EndHost
     return entry ? { at: new Date(entry.when), from: entry.sourceHost } : null;
   }
 
+  private loggedInTerminals(): Array<{ user: string; tty: string }> {
+    this.ensureLocalConsoleSession();
+    return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
+  }
+
+  private writeTerminal(tty: string, text: string): void {
+    const vfs = this.executor.vfs;
+    const path = `/dev/${tty}`;
+    const node = vfs.resolveInode(path);
+    if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
+    if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
+    this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
+  }
+
   /** Ensure a tty=tty1 console session exists for the local user. */
   private ensureLocalConsoleSession(): void {
     const user = this.executor.userMgr.currentUser;
@@ -3586,6 +3633,13 @@ export abstract class LinuxMachine extends EndHost
     return '';
   }
 
+  private setAdminState(name: string, enabled: boolean): void {
+    const port = this.ports.get(name);
+    if (!port) return;
+    port.setUp(enabled);
+    this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
+  }
+
   private deleteVirtualInterface(name: string): string {
     if (!this.virtualInterfaces.has(name)) {
       return this.ports.has(name)
@@ -3593,7 +3647,9 @@ export abstract class LinuxMachine extends EndHost
         : `Cannot find device "${name}"`;
     }
     const vlan = this.getVlanSubInterface(name);
+    if (this.ports.get(name)?.getIsUp()) this.setAdminState(name, false);
     this.ports.delete(name);
+    if (this.deviceConf.removeInterface(name)) this.executor.vfs.rmrf(`/proc/sys/net/ipv4/conf/${name}`);
     this.virtualInterfaces.delete(name);
     this.unregisterVlanSubInterface(name);
     if (vlan) this.withdrawVlanFromMvrp(vlan.parent, vlan.vid);
@@ -4068,7 +4124,7 @@ export abstract class LinuxMachine extends EndHost
           : await start();
         this.executor.lastExitCode = result.exitCode;
         if (result.interleaved !== undefined) return result.interleaved;
-        return [result.output, result.stderr].filter((s) => s).join('\n');
+        return [result.output, result.stderr].filter((s) => s).join('\n').replace(/\n$/, '');
       };
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
@@ -4314,12 +4370,7 @@ export abstract class LinuxMachine extends EndHost
         port.removeSecondaryIP(ip);
         this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
-      setInterfaceAdmin: (name: string, enabled: boolean): void => {
-        const port = this.ports.get(name);
-        if (!port) return;
-        port.setUp(enabled);
-        this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
-      },
+      setInterfaceAdmin: (name: string, enabled: boolean): void => this.setAdminState(name, enabled),
       isDHCPConfigured: (name: string): boolean => {
         return this.isDHCPConfigured(name);
       },
@@ -4521,7 +4572,7 @@ export abstract class LinuxMachine extends EndHost
         return this.requestDhcpv6Information(iface, verbose);
       },
       setIpForward: (enabled: boolean): void => {
-        this.ipForwardEnabled = enabled;
+        this.setIpForwarding(enabled);
       },
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;
@@ -4795,18 +4846,22 @@ export abstract class LinuxMachine extends EndHost
     return translated;
   }
 
+  protected override defragmentsBeforeRouting(): boolean {
+    return this.executor.iptables.needsConnectionTracking();
+  }
+
   protected override natPreRouting(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     if (isIPv4Fragment(ipPkt)) return ipPkt;
     const redirectAddress = this.ports.get(inPort)?.getIPAddress()?.toString() ?? null;
     return this.traverseNat(
-      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress },
+      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress, outInterface: null },
       (state) => this.evaluatePreRouting(inPort, ipPkt, state),
     );
   }
 
   protected override natLocalIn(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     return this.traverseNat(
-      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null },
+      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null, outInterface: null },
       (state) => this.executor.iptables.evaluateNat(this.arrivalFacts(inPort, ipPkt), 'INPUT', state),
     );
   }
@@ -4818,12 +4873,21 @@ export abstract class LinuxMachine extends EndHost
     const outName = outPort.getName();
     const masqueradeAddress = outPort.addressToward(nextHop)?.toString() ?? null;
     return this.traverseNat(
-      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null },
+      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null, outInterface: outName },
       (state) => this.evaluateNat(outgoing, inPort, outName, state),
     );
   }
 
-  protected override natLocalOut(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+  protected override natOutput(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (isIPv4Fragment(ipPkt)) return ipPkt;
+    const facts = (): PacketInfo => this.postRoutingFacts(undefined, outPort, ipPkt);
+    return this.traverseNat(
+      'OUTPUT', ipPkt, facts, { masqueradeAddress: null, redirectAddress: null, outInterface: null },
+      (state) => this.executor.iptables.evaluateNat(facts(), 'OUTPUT', state),
+    );
+  }
+
+  protected override natLocalPostRouting(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     if (!this.executor.iptables.isTracked(ipPkt)) return ipPkt;
     const port = this.ports.get(outPort);
     if (port === undefined) return ipPkt;
@@ -4833,22 +4897,6 @@ export abstract class LinuxMachine extends EndHost
 
   protected override confirmForwarded(ipPkt: IPv4Packet): boolean {
     return this.executor.iptables.confirmForwarded(ipPkt);
-  }
-
-  protected override evaluateNatOutput(
-    srcIP: string, dstIP: IPAddress, dstPort: number, srcPort: number,
-    protocol: number, tentativeOutIface: string, ipPacketBytes: number,
-  ): { action: string; address?: string } | null {
-    const pkt: PacketInfo = {
-      direction: 'out',
-      protocol,
-      srcIP,
-      dstIP: dstIP.toString(),
-      srcPort, dstPort,
-      iface: tentativeOutIface,
-      ipPacketBytes,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'OUTPUT');
   }
 
   protected override evaluatePreRouting6(

@@ -59,7 +59,7 @@ import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
@@ -381,7 +381,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'basenc', 'xxd',
+  'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -389,10 +389,58 @@ const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
   'command', 'exec', 'eval', 'source', '.', 'watch', 'script', 'busybox', 'su', 'runuser', 'chroot',
 ]);
 
+const OPTIONS_WITH_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
+  xargs: new Set(['-n', '-I', '-L', '-P', '-d', '-E', '-s', '-a', '--max-args', '--replace', '--max-lines', '--max-procs', '--delimiter', '--arg-file']),
+  timeout: new Set(['-s', '-k', '--signal', '--kill-after']),
+  nice: new Set(['-n', '--adjustment']),
+  ionice: new Set(['-c', '-n', '-p']),
+  env: new Set(['-u', '-C', '-S', '--unset', '--chdir']),
+  stdbuf: new Set(['-i', '-o', '-e']),
+  time: new Set(['-f', '-o', '--format', '--output']),
+};
+
+const COMMAND_WRAPPERS: ReadonlySet<string> = new Set(['xargs', 'timeout', 'nohup', 'nice', 'ionice', 'env', 'time', 'stdbuf', 'command', 'exec']);
+
+function wrappedArgv(name: string, args: readonly string[]): readonly string[] {
+  const valued = OPTIONS_WITH_VALUE[name] ?? new Set<string>();
+  let i = 0;
+  while (i < args.length) {
+    const word = args[i];
+    if (word === '--') { i++; break; }
+    if (word.startsWith('-') && word !== '-') {
+      i += valued.has(word) ? 2 : 1;
+      continue;
+    }
+    if (name === 'env' && word.includes('=')) { i++; continue; }
+    break;
+  }
+  if (name === 'timeout') i++;
+  return args.slice(i);
+}
+
+const SSH_FAMILY_CLIENTS: ReadonlySet<string> = new Set(['ssh', 'scp', 'sftp']);
+const SSH_CLIENT_FAILURE_STATUS = 255;
+const WRAPPER_FAILURE_STATUS = 125;
+const SHELL_CANNOT_EXEC_STATUSES: ReadonlySet<number> = new Set([126, 127]);
+
+function reportsOwnFailure(argv: readonly string[], exitCode: number): boolean {
+  if (SHELL_CANNOT_EXEC_STATUSES.has(exitCode)) return true;
+  const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
+  const name = lead[0]?.split('/').pop();
+  if (name === undefined) return false;
+  if (exitCode === SSH_CLIENT_FAILURE_STATUS) return SSH_FAMILY_CLIENTS.has(name);
+  return exitCode === WRAPPER_FAILURE_STATUS && COMMAND_WRAPPERS.has(name);
+}
+
 function writesLines(argv: readonly string[]): boolean {
   const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
   const name = lead[0]?.split('/').pop();
-  return name !== undefined && !RAW_STDOUT_COMMANDS.has(name);
+  if (name === undefined) return false;
+  if (COMMAND_WRAPPERS.has(name)) {
+    const inner = wrappedArgv(name, lead.slice(1));
+    return inner.length === 0 ? name === 'xargs' : writesLines(inner);
+  }
+  return !RAW_STDOUT_COMMANDS.has(name);
 }
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
@@ -4073,8 +4121,8 @@ export class LinuxCommandExecutor {
     const outcome = this.dispatchNetworkAware(argv, env, background, stdin, outputPiped);
     const lineOriented = writesLines(argv);
     return outcome instanceof Promise
-      ? outcome.then((result) => ({ ...result, lineOriented }))
-      : { ...outcome, lineOriented };
+      ? outcome.then((result) => ({ ...result, lineOriented: lineOriented || reportsOwnFailure(argv, result.exitCode) }))
+      : { ...outcome, lineOriented: lineOriented || reportsOwnFailure(argv, outcome.exitCode) };
   }
 
   private dispatchNetworkAware(
@@ -4540,7 +4588,7 @@ export class LinuxCommandExecutor {
     interpreterStdin?: string,
   ): { output: string; exitCode: number; backgroundPid?: number; lineOriented?: boolean } {
     const result = this.dispatchResolved(argv, env, background, outputPiped, interpreterStdin);
-    return { ...result, lineOriented: writesLines(argv) };
+    return { ...result, lineOriented: writesLines(argv) || reportsOwnFailure(argv, result.exitCode) };
   }
 
   private dispatchResolved(
@@ -5556,7 +5604,7 @@ export class LinuxCommandExecutor {
         // no-op when one is already present).
         const fileArgs = args.filter(a => !a.startsWith('-'));
         if (fileArgs.length === 0 && stdin) {
-          return { output: stdin, exitCode: 0 };
+          return { output: renderCat([stdin], parseCatFlags(args)), exitCode: 0 };
         }
         for (const arg of fileArgs) {
           const p = this.path(arg);
@@ -6427,7 +6475,12 @@ export class LinuxCommandExecutor {
         const r = runSeq(args);
         return { output: r.output, exitCode: r.exitCode };
       }
-      case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
+      case 'rev': {
+        const input = stdin || '';
+        const body = input.endsWith('\n') ? input.slice(0, -1) : input;
+        const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
+        return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
+      }
       case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
 
       // Non-interactive fallbacks for commands the GUI normally routes to

@@ -28,15 +28,23 @@ export interface ActionArguments {
   readonly json: unknown[];
 }
 
-export interface ActionWorker {
-  doAction(args: ActionArguments, message: RsyslogMessage): ActionOutcome;
+interface ActionWorkerBase {
   tryResume?(): ActionOutcome;
-  beginTransaction?(): void;
-  endTransaction?(): ActionOutcome;
+  beginTransaction?(): ActionOutcome;
   pauseAfterAction?(): number;
   failureCode?(): number;
   close(): void;
 }
+
+export interface ImmediateActionWorker extends ActionWorkerBase {
+  doAction(args: ActionArguments, message: RsyslogMessage): ActionOutcome;
+}
+
+export interface TransactionalActionWorker extends ActionWorkerBase {
+  commitTransaction(batch: readonly ActionArguments[]): ActionOutcome;
+}
+
+export type ActionWorker = ImmediateActionWorker | TransactionalActionWorker;
 
 export interface ActionModuleInstance {
   readonly moduleName: string;
@@ -51,6 +59,7 @@ export interface RuntimeLog {
   error(text: string, code?: number, errno?: Errno): void;
   warning(text: string, code?: number): void;
   info(text: string, code?: number): void;
+  childExited(pid: number, exitCode: number): void;
   log(severity: number, code: number, text: string, errno?: Errno): void;
   internal(severity: number, code: number, text: string, mark?: boolean, facility?: number): void;
 }
@@ -121,6 +130,7 @@ export interface InputInstance {
   readonly bindsBeforePrivilegeDrop?: boolean;
   check?(): void;
   start(): boolean;
+  run?(): void;
   stop(): void;
   hup?(): void;
   readonly description: string;

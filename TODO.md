@@ -3442,21 +3442,11 @@ sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage
 source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
 (`global(senders.keepTrack)`) restent a porter.
 
-### [rsyslog] `action.errorfile` et `action.externalstate.file` : le moteur n'a pas la phase de commit de la source
-Les deux parametres sont evalues (`engine/ActionRuntime.ts`) : le fichier d'etat externe suspend l'action avant chaque message et la
-relance quand il ne dit plus `SUSPENDED` ; le fichier d'erreurs recoit une ligne JSON par message perdu et le compteur `failed`
-suit. Ce qui reste : le moteur execute `doAction()` message par message, la ou la source collecte les messages d'une transaction
-et les valide ensemble ; le fichier d'erreurs est donc alimente a la fin du lot et non par la phase de commit, qui rejoue chaque
-message d'un lot en echec isolement avant de l'ecrire (le module voit un essai de plus dans la source) ; le code de statut ecrit
-vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desactive, `-2125` sans commande de limite de taille,
-`-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
-source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
-
 ### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
 Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
-Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
-`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
-`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`abortOnFailedQueueStartup` et `reportChildProcessExits` sont evalues (voir `linux-rsyslog-queue-startup.test.ts` et
+`linux-rsyslog-child-exits.test.ts`) ; la file « disk » sans `queue.fileName` est le seul echec de demarrage de file que le moteur connaisse.
+Acceptes et jamais lus : `inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
 `allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
 `libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
 `abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
@@ -3467,19 +3457,17 @@ moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discard
 `dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
 « linkedlist » en memoire.
 
-### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
-Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
-`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
-(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
-Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
-System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
-TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
-(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
-`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
-8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
-hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
-`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
-le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
+### [journald] journald.conf : cles lues mais non evaluees, et chargeur commun non repris par resolved/networkd
+`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `MaxLevelStore`,
+`MaxLevelSyslog`, `ForwardToSyslog` (ce que rsyslog recoit) et `LineMax` ; toutes les cles du binaire 255.4 sont validees avec les mots de
+systemd. Reste lu sans effet : `Compress`, `Seal`, `SplitMode`, `SyncIntervalSec`, `ReadKMsg`, `Audit`, `TTYPath` ; `System/RuntimeMaxUse`, `KeepFree`,
+`MaxFileSize`, `MaxFiles`, `MaxRetentionSec` et `MaxFileSec`, parce que le modele de taille du journal (`LinuxJournald.ts` : 8 Mo par pas, plafond 4 Go) ne se mesure
+qu'en lancant le vrai `systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
+le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici ; `RateLimitIntervalSec` et `RateLimitBurst`,
+parce que la modulation du seuil par l'espace disque libre n'est lisible dans aucune documentation de la machine ; `ForwardToKMsg`, `ForwardToConsole`, `ForwardToWall` et les
+`MaxLevel` correspondants, faute d'une destination dans l'hote (journald n'a pas de crochet vers `/dev/console` ni vers les terminaux) et du texte que `wall` emet.
+Doublon connu : `resolved.conf` (`parseResolvedConf`) et les fichiers de `systemd-networkd` (`NetworkdFiles.ts`) ont leur propre lecteur, sans diagnostics ni
+fusion des drop-ins par nom ; ils doivent reprendre `readSystemdConfig`. `systemd-resolved` n'est pas installe dans ce conteneur : la liste de ses cles n'a pas pu etre relevee.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
@@ -3744,6 +3732,11 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
 (`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
 
-### [nat-ftp-actif] le mode actif FTP ne traverse pas un NAT (mesure : natlab, curl -P - contre vsftpd, pool et interface overload)
+### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 
-Mesure avec `curl -P -` depuis PC-LINUX vers le vsftpd d'EXT a travers R-AKWA, que l'ALG FTP soit regle par defaut. (1) `inspectAndRewriteFtpAlg` ne reconnait que `PORT` : un `EPRT |1|192.168.10.22|n|` traverse intact, vsftpd repond `500 Illegal EPRT command.` (l'adresse annoncee n'est pas celle du pair de controle). (2) Pour `PORT`, `Router.processIPv4` passe a l'ALG l'adresse de l'interface de sortie et non l'adresse source traduite : avec un pool, l'entree creee est `203.0.113.2:40000` alors que la connexion de controle porte `203.0.113.4`. (3) Apres la reecriture de la commande, la longueur du segment change sans ajustement des numeros de sequence et d'acquittement : la reponse du serveur n'arrive jamais et curl attend son delai. A fermer dans `nat/FtpAlg.ts` et dans la table de sessions de `NATEngine` (delta de sequence par session), avec EPRT, puis rejouer curl -P en probe.
+`%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
+
+### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
+
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+

@@ -6,11 +6,11 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
+  ChildExit, Datagram, DatagramOptions, FileChange, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
   OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
-import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure } from '../VirtualFileSystem';
+import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure, INode } from '../VirtualFileSystem';
 import type { SyslogForwardSocket } from './SyslogForwardSocket';
 import type { LocalDatagramSockets } from './LocalDatagramSockets';
 import type { ClockTimers } from './ClockTimers';
@@ -52,7 +52,7 @@ export interface LinuxRsyslogPlatform {
   supplementaryGidsOf(userName: string): number[];
   applyCredentials(uid: number, gid: number): void;
   restoreProcessLimits(): void;
-  runProgram(argv: readonly string[], uid: number, gid: number): number;
+  runProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): ChildExit;
   setOpenFilesLimit(uid: number, limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
   wallMs(): number;
   monotonicMs(): number;
@@ -230,8 +230,18 @@ export class LinuxRsyslogHost implements RsyslogHost {
     currentGid: () => this.credentials.gid,
     setUmask: (mask) => { this.credentials.umask = mask & 0o777; },
     setOpenFilesLimit: (limit) => this.platform.setOpenFilesLimit(this.credentials.uid, limit),
-    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid),
+    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid, this.platform.daemonPid()),
   };
+
+  private statOf(inode: INode | null): FileStat | null {
+    if (inode === null) return null;
+    const kind = inode.type === 'file' || inode.type === 'directory' || inode.type === 'symlink' ? inode.type : 'other';
+    return { inode: inode.id, size: inode.generator ? this.contentOf(inode).length : inode.size, mtimeMs: inode.mtime, ctimeMs: inode.ctime, kind };
+  }
+
+  private contentOf(inode: INode): string {
+    return inode.generator ? inode.generator() : inode.content;
+  }
 
   readonly files = {
     open: (path: string, options: OpenFileOptions): OpenFileResult => {
@@ -251,6 +261,19 @@ export class LinuxRsyslogHost implements RsyslogHost {
       if ('error' in held) return held;
       return { handle: new HeldHandle(path, held.handle, held.release), notices: held.handle.notices };
     },
+    lstat: (path: string): FileStat | null => this.statOf(this.platform.vfs.resolveInode(path, false)),
+    stat: (path: string): FileStat | null => this.statOf(this.platform.vfs.resolveInode(path)),
+    openRead: (path: string): OpenReadResult => {
+      const inode = this.platform.vfs.resolveInode(path);
+      if (inode === null) return { error: 'No such file or directory', missing: true };
+      const actor = this.credentials;
+      if (!this.platform.vfs.checkAccess(inode, 'r', actor.uid, actor.gid, actor.groups)) return { error: 'Permission denied', missing: false };
+      const content = (): string => (inode.type === 'directory' ? '' : this.contentOf(inode));
+      return { file: { inode: inode.id, read: (offset, length) => content().slice(offset, offset + length), close: () => undefined } };
+    },
+    realpath: (path: string): string | null => this.platform.vfs.realpath(path),
+    remove: (path: string): boolean => this.platform.vfs.deleteFile(path),
+    observe: (listener: (change: FileChange) => void): (() => void) => this.platform.vfs.onChange(listener),
     read: (path: string): string | null => this.platform.vfs.readFile(path),
     exists: (path: string): boolean => this.platform.vfs.exists(path),
     isDirectory: (path: string): boolean => this.platform.vfs.getType(path) === 'directory',

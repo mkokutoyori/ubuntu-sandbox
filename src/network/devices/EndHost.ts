@@ -26,8 +26,9 @@ import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
 import {
   classifyIpv4Destination, decrementForForwarding, invalidSourceFor, ipv4HeaderProblem,
-  connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
+  addressesOnLink, connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
+import { HOST_REDIRECT_POLICY, RedirectLimiter, redirectIsAcceptable, redirectIsDue, type RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import {
   newProtocolCounters, countIcmpIn, countIcmpOut, countIcmp6In, countIcmp6Out, tcpCounterName,
@@ -43,7 +44,7 @@ import type { IPv4AddressOrigin, IPv6AddressEntry } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import {
   TcpStack, TCP_SOMAXCONN, DUAL_STACK, IPV4_ONLY, ipFamilyOf, wildcardAddressOf,
-  type IpFamily, type TcpOptionPolicy, type TcpMibSink, type OwnerExit,
+  type IpFamily, type TcpOptionPolicy, type TcpMibSink, type OwnerExit, type TcpEgress, type TcpOrigination,
 } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
@@ -124,6 +125,8 @@ import {
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
+  ICMP_REDIRECT_CODES,
+  ICMP_REDIRECT_HOST,
   answersWithTcpReset,
   rejectTypeOf,
   udpSocketErrorFor,
@@ -133,7 +136,7 @@ import {
   type IcmpErrorQuote,
   RFC792_ICMP_ERROR_QUOTE,
 } from '../core/IcmpErrors';
-import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF, ipv4SendRefusal } from '../core/Ipv4Fragmentation';
+import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF, ipv4SendRefusal, isIPv4Fragment } from '../core/Ipv4Fragmentation';
 import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
 import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
@@ -169,7 +172,6 @@ import { MvrpAgent } from '../mvrp/MvrpAgent';
 import { MVRP_ETHERTYPE } from '../mvrp/MvrpPdu';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { LldpNeighbor } from '../lldp/LldpAgent';
-import { parseNatAddress } from '../nat/rewrite';
 import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
 import { DnsClass, RRType } from '../dns/wire/RRType';
 import { makeARecord } from '../dns/wire/ResourceRecord';
@@ -253,6 +255,22 @@ const LOOPBACK_ECHO_RTT_MS = 0.01;
 
 type LocalDelivery = 'delivered' | 'send-dropped' | 'send-rejected' | 'lost';
 
+interface LoopbackLeg<P extends IPv4Packet | IPv6Packet> {
+  readonly delivery: LocalDelivery;
+  readonly packet: P;
+}
+
+interface OriginRoute {
+  readonly iface: string;
+  readonly nextHopIP: IPAddress;
+}
+
+type Origination =
+  | { readonly outcome: 'refused'; readonly packet: IPv4Packet; readonly unanswered: boolean }
+  | { readonly outcome: 'lost'; readonly packet: IPv4Packet }
+  | { readonly outcome: 'looped'; readonly packet: IPv4Packet }
+  | { readonly outcome: 'routed'; readonly packet: IPv4Packet; readonly route: OriginRoute };
+
 type EchoOutcome =
   | { kind: 'reply'; r: HostIcmpEchoReplyPayload }
   | { kind: 'failed'; r: HostIcmpEchoFailedPayload };
@@ -292,7 +310,6 @@ interface StoredRouteException {
 const MIN_PMTU = 552;
 const PMTU_EXPIRES_MS = 600_000;
 const REDIRECT_EXPIRES_MS = 300_000;
-const REDIRECT_CODES = new Set([0, 1, 2, 3]);
 
 class IcmpErrorReply extends Error {
   constructor(message: string, readonly report?: Icmp6ErrorReport, readonly sendError?: Errno) {
@@ -588,7 +605,8 @@ export abstract class EndHost extends Equipment {
   /** Reassembles fragments of datagrams addressed to this host (RFC 791 §3.2). */
   private readonly ipv4Reassembler = new IPv4Reassembler(
     (firstFragment, ingressPort) => {
-      if (!firstFragment) return;
+      this.protocolCounters.ipReasmFails++;
+      if (!firstFragment || !this.isLocalAddress(firstFragment.destinationIP)) return;
       this.sendICMPError(ingressPort ?? '', firstFragment, 'time-exceeded',
         ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
     });
@@ -1242,8 +1260,7 @@ export abstract class EndHost extends Equipment {
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
       neighbourResolved: (nextHopIp: string) => this.arpTable.has(nextHopIp),
-      filterLocalSegment: (packet: IPv4Packet | IPv6Packet) => this.filterLocalDelivery(packet),
-      filterOutgoing: (egressName: string, packet: IPv4Packet | IPv6Packet) => this.filterOutgoingSegment(egressName, packet),
+      originate: (packet: IPv4Packet | IPv6Packet, egress: TcpEgress | null) => this.originateSegment(packet, egress),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {
         const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
@@ -2453,7 +2470,7 @@ export abstract class EndHost extends Equipment {
       const ipPkt = frame.payload as IPv4Packet;
       if (ipPkt && ipPkt.type === 'ipv4' && !this.forwardedDatagrams.has(ipPkt)) {
         this.countLocallyOriginated(ipPkt);
-        const leaving = this.natLocalOut(portName, ipPkt);
+        const leaving = this.natLocalPostRouting(portName, ipPkt);
         if (leaving === null) return false;
         if (leaving !== ipPkt) return this.transmitFrame(portName, { ...frame, payload: leaving });
       }
@@ -2726,26 +2743,16 @@ export abstract class EndHost extends Equipment {
     return outgoing;
   }
 
-  protected natLocalOut(_outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+  protected natOutput(_outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    return ipPkt;
+  }
+
+  protected natLocalPostRouting(_outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     return ipPkt;
   }
 
   protected confirmForwarded(_ipPkt: IPv4Packet): boolean {
     return true;
-  }
-
-  /**
-   * Evaluate nat OUTPUT-chain DNAT/REDIRECT rules against this host's own
-   * locally-generated traffic, before it picks an egress route — real on
-   * Linux exactly like PREROUTING is for network-arriving traffic.
-   * Subclasses override to implement iptables nat OUTPUT chain.
-   * Returns null (no NAT) by default.
-   */
-  protected evaluateNatOutput(
-    _srcIP: string, _dstIP: IPAddress, _dstPort: number, _srcPort: number,
-    _protocol: number, _tentativeOutIface: string, _ipPacketBytes: number,
-  ): { action: string; address?: string } | null {
-    return null;
   }
 
   /**
@@ -2844,6 +2851,17 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
+    if (ipPkt.largestFragmentBytes !== undefined) {
+      ipPkt = { ...ipPkt };
+      delete ipPkt.largestFragmentBytes;
+    }
+
+    if (isIPv4Fragment(ipPkt) && this.defragmentsBeforeRouting()) {
+      const whole = this.reassembleIpv4(portName, ipPkt);
+      if (whole === null) return;
+      ipPkt = whole;
+    }
+
     const arrived = this.natPreRouting(portName, ipPkt);
     if (arrived === null) return;
     ipPkt = arrived;
@@ -2873,7 +2891,7 @@ export abstract class EndHost extends Equipment {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
       // fragment carries no L4 header for the firewall or upper layer to
       // inspect, so hold it here until the full datagram is back together.
-      const reassembled = this.ipv4Reassembler.add(ipPkt, undefined, portName);
+      const reassembled = this.reassembleIpv4(portName, ipPkt);
       if (!reassembled) return;
       ipPkt = reassembled;
 
@@ -2893,28 +2911,7 @@ export abstract class EndHost extends Equipment {
       ipPkt = delivered;
 
       this.protocolCounters.ipInDelivers++;
-      // Deliver to upper layer
-      if (ipPkt.protocol === IP_PROTO_ICMP) {
-        this.handleICMP(portName, ipPkt);
-      } else if (ipPkt.protocol === IP_PROTO_TCP) {
-        this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
-      } else if (ipPkt.protocol === IP_PROTO_UDP) {
-        // Un multicast sans écouteur se jette en silence, comme un
-        // broadcast : répondre « port injoignable » à un groupe
-        // désignerait un coupable qui n'a rien demandé.
-        this.deliverUDP(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
-      } else if (ipPkt.protocol === IP_PROTO_UDPLITE && this.udpLite) {
-        this.udpLite.receive4(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
-      } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
-        const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
-        if (inner) this.handleIPv4(portName, inner, srcMac);
-      } else {
-        this.protocolCounters.ipInUnknownProtos++;
-        if (mayGenerateICMPError(ipPkt) && !isBroadcast && !isMulticast) {
-          this.sendICMPError(
-            portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PROTO);
-        }
-      }
+      this.dispatchUpward(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
       return;
     }
 
@@ -2923,6 +2920,42 @@ export abstract class EndHost extends Equipment {
       this.forwardIPv4(portName, ipPkt);
     }
     // Otherwise: End hosts don't forward — drop packets not addressed to them
+  }
+
+  protected defragmentsBeforeRouting(): boolean {
+    return false;
+  }
+
+  private reassembleIpv4(portName: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (!isIPv4Fragment(ipPkt)) return ipPkt;
+    this.protocolCounters.ipReasmReqds++;
+    const whole = this.ipv4Reassembler.add(ipPkt, undefined, portName);
+    if (whole !== null) this.protocolCounters.ipReasmOKs++;
+    return whole;
+  }
+
+  private dispatchUpward(portName: string, ipPkt: IPv4Packet, groupAddressed: boolean, srcMac?: string): void {
+    if (ipPkt.protocol === IP_PROTO_ICMP) {
+      this.handleICMP(portName, ipPkt);
+    } else if (ipPkt.protocol === IP_PROTO_TCP) {
+      this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
+    } else if (ipPkt.protocol === IP_PROTO_UDP) {
+      // Un multicast sans écouteur se jette en silence, comme un
+      // broadcast : répondre « port injoignable » à un groupe
+      // désignerait un coupable qui n'a rien demandé.
+      this.deliverUDP(portName, ipPkt, groupAddressed, srcMac);
+    } else if (ipPkt.protocol === IP_PROTO_UDPLITE && this.udpLite) {
+      this.udpLite.receive4(portName, ipPkt, groupAddressed, srcMac);
+    } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
+      const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
+      if (inner) this.handleIPv4(portName, inner, srcMac);
+    } else {
+      this.protocolCounters.ipInUnknownProtos++;
+      if (mayGenerateICMPError(ipPkt) && !groupAddressed) {
+        this.sendICMPError(
+          portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PROTO);
+      }
+    }
   }
 
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
@@ -2953,7 +2986,16 @@ export abstract class EndHost extends Equipment {
     }
 
     const outPortName = route.port.getName();
-    if (outPortName === inPort) return; // avoid looping back on same interface
+    const effectiveMtu = route.port.getMTU();
+    if (ipPkt.totalLength > effectiveMtu && (ipPkt.flags & IPV4_FLAG_DF) !== 0
+      && (ipPkt.largestFragmentBytes === undefined || ipPkt.largestFragmentBytes > effectiveMtu)) {
+      Logger.info(this.id, 'ipv4:mtu-exceeded',
+        `${this.name}: packet ${ipPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
+      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
+      return;
+    }
+
+    if (route.iface === inPort) this.redirectSenderIfDue(inPort, route.nextHopIP, decision.packet);
 
     // ── Firewall: filter forwarded packets (FORWARD chain) ──
     const verdict = this.firewallFilter(inPort, ipPkt, 'forward', outPortName);
@@ -2969,24 +3011,14 @@ export abstract class EndHost extends Equipment {
     const fwdPkt = this.natPostRouting(inPort, route.port, route.nextHopIP, ipPkt, decision.packet);
     if (fwdPkt === null || !this.confirmForwarded(ipPkt)) return;
 
-    // RFC 791 §3.2 / RFC 1191: this NAT-gateway forward can cross an MTU
-    // boundary just like a real router forward can. DF=1 gets an ICMP
-    // frag-needed instead of going out oversized; DF=0 gets fragmented.
-    const effectiveMtu = route.port.getMTU();
-    let outgoingFragments: IPv4Packet[] = [fwdPkt];
-    if (fwdPkt.totalLength > effectiveMtu) {
-      const dfSet = (fwdPkt.flags & IPV4_FLAG_DF) !== 0;
-      if (dfSet) {
-        Logger.info(this.id, 'ipv4:mtu-exceeded',
-          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
-        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
-        return;
-      }
-      outgoingFragments = fragmentIPv4(fwdPkt, effectiveMtu);
+    const outgoingFragments = fragmentIPv4(fwdPkt, Math.min(effectiveMtu, fwdPkt.largestFragmentBytes ?? effectiveMtu));
+    if (outgoingFragments.length > 1) {
+      this.protocolCounters.ipFragOKs++;
+      this.protocolCounters.ipFragCreates += outgoingFragments.length;
     }
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
-    this.protocolCounters.ipForwDatagrams += outgoingFragments.length;
+    this.protocolCounters.ipForwDatagrams++;
     for (const frag of outgoingFragments) this.forwardedDatagrams.add(frag);
     if (nextHopMAC) {
       for (const frag of outgoingFragments) {
@@ -3281,7 +3313,7 @@ export abstract class EndHost extends Equipment {
         reason,
       });
     } else if (icmp.icmpType === 'redirect' && icmp.gateway && icmp.originalPacket) {
-      this.acceptRedirect(ipPkt.sourceIP, icmp.gateway, icmp.originalPacket.destinationIP, icmp.code);
+      this.acceptRedirect(portName, ipPkt.sourceIP, icmp.gateway, icmp.originalPacket.destinationIP, icmp.code);
       const echo = icmp.originalPacket.payload as ICMPPacket | undefined;
       if (echo?.type === 'icmp' && echo.icmpType === 'echo-request') {
         this.getBus().publish({
@@ -3348,7 +3380,8 @@ export abstract class EndHost extends Equipment {
       const reply = buildEchoReply(
         requestIP, requestICMP, requestIP.destinationIP, this.defaultTTL, this.echoReplyFlags(requestIP), this.echoReplyTos(requestIP),
       );
-      if (this.loopLocal(reply) === 'delivered') this.handleICMP('lo', reply);
+      const leg = this.loopLocal(reply);
+      if (leg.delivery === 'delivered') this.handleICMP('lo', leg.packet);
       return;
     }
     const port = this.ports.get(portName);
@@ -3383,31 +3416,38 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
-  private loopLocal(packet: IPv4Packet | IPv6Packet): LocalDelivery {
+  private loopLocal(packet: IPv4Packet): LoopbackLeg<IPv4Packet>;
+  private loopLocal(packet: IPv6Packet): LoopbackLeg<IPv6Packet>;
+  private loopLocal(packet: IPv4Packet | IPv6Packet): LoopbackLeg<IPv4Packet | IPv6Packet>;
+  private loopLocal(packet: IPv4Packet | IPv6Packet): LoopbackLeg<IPv4Packet | IPv6Packet> {
     const filtered = this.filtersLoopbackTraffic();
-    const verdictAt = (direction: 'out' | 'in'): 'accept' | 'drop' | 'reject' => {
+    const verdictAt = (direction: 'out' | 'in', carried: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject' => {
       if (!filtered) return 'accept';
-      return packet.type === 'ipv6'
-        ? this.firewallFilter6('lo', packet, direction)
-        : this.firewallFilter('lo', packet, direction);
+      return carried.type === 'ipv6'
+        ? this.firewallFilter6('lo', carried, direction)
+        : this.firewallFilter('lo', carried, direction);
     };
-    const rejected = (): void => {
-      if (packet.type === 'ipv6') this.sendIpv6Reject('lo', packet);
-      else this.sendICMPReject('lo', packet);
+    const rejected = (offending: IPv4Packet | IPv6Packet): void => {
+      if (offending.type === 'ipv6') this.sendIpv6Reject('lo', offending);
+      else this.sendICMPReject('lo', offending);
     };
-    const leaving = verdictAt('out');
+    const leaving = verdictAt('out', packet);
     if (leaving !== 'accept') {
-      if (leaving === 'reject') rejected();
-      return leaving === 'drop' ? 'send-dropped' : 'send-rejected';
+      if (leaving === 'reject') rejected(packet);
+      return { delivery: leaving === 'drop' ? 'send-dropped' : 'send-rejected', packet };
     }
-    this.countLoopbackLeg(packet, 'sent');
-    const arriving = verdictAt('in');
+    const posted = packet.type === 'ipv6' ? packet : this.natLocalPostRouting('lo', packet);
+    if (posted === null) return { delivery: 'send-dropped', packet };
+    this.countLoopbackLeg(posted, 'sent');
+    const arriving = verdictAt('in', posted);
     if (arriving !== 'accept') {
-      if (arriving === 'reject') rejected();
-      return 'lost';
+      if (arriving === 'reject') rejected(posted);
+      return { delivery: 'lost', packet: posted };
     }
-    this.countLoopbackLeg(packet, 'delivered');
-    return 'delivered';
+    const received = posted.type === 'ipv6' ? posted : this.natLocalIn('lo', posted);
+    if (received === null) return { delivery: 'lost', packet: posted };
+    this.countLoopbackLeg(received, 'delivered');
+    return { delivery: 'delivered', packet: received };
   }
 
   /**
@@ -3419,10 +3459,6 @@ export abstract class EndHost extends Equipment {
    * mismatched combination (e.g. configured on a UDP rule) falls back to
    * the default ICMP error rather than silently doing nothing.
    */
-  private filterLocalDelivery(packet: IPv4Packet | IPv6Packet): boolean {
-    return this.loopLocal(packet) === 'delivered';
-  }
-
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;
@@ -3445,12 +3481,64 @@ export abstract class EndHost extends Equipment {
     return code ?? (family === 6 ? ICMPV6_UNREACH_PORT : ICMP_UNREACH_PORT);
   }
 
-  private filterOutgoingSegment(egressName: string, packet: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject' {
-    const verdict = packet.type === 'ipv6'
-      ? this.firewallFilter6(egressName, packet, 'out')
-      : this.firewallFilter(egressName, packet, 'out');
+  private originate(packet: IPv4Packet, route: OriginRoute | null): Origination {
+    const translated = this.natOutput(route?.iface ?? 'lo', packet);
+    if (translated === null) return { outcome: 'refused', packet, unanswered: false };
+    const moved = !translated.destinationIP.equals(packet.destinationIP);
+    if (moved ? this.isLocalAddress(translated.destinationIP) : route === null) {
+      const leg = this.loopLocal(translated);
+      if (leg.delivery === 'delivered') return { outcome: 'looped', packet: leg.packet };
+      return leg.delivery === 'lost'
+        ? { outcome: 'lost', packet: leg.packet }
+        : { outcome: 'refused', packet: leg.packet, unanswered: false };
+    }
+    const via = moved ? this.resolveRoute(translated.destinationIP) : route;
+    if (via === null) return { outcome: 'refused', packet: translated, unanswered: false };
+    const verdict = this.firewallFilter(via.iface, translated, 'out');
+    if (verdict !== 'accept') return { outcome: 'refused', packet: translated, unanswered: verdict === 'reject' };
+    return { outcome: 'routed', packet: translated, route: via };
+  }
+
+  private dispatchOrigination(origin: Origination): boolean {
+    switch (origin.outcome) {
+      case 'refused': return false;
+      case 'lost': return true;
+      case 'looped':
+        this.dispatchUpward('lo', origin.packet, false);
+        return true;
+      case 'routed':
+        this.sendIpv4FrameArpAware(origin.route.iface, origin.packet, origin.route.nextHopIP);
+        return true;
+    }
+  }
+
+  private originateSegment(packet: IPv4Packet | IPv6Packet, egress: TcpEgress | null): TcpOrigination {
+    if (packet.type === 'ipv6') return this.originateSegment6(packet, egress);
+    const route = egress === null ? null : {
+      iface: egress.name, nextHopIP: new IPAddress(egress.nextHopIp ?? packet.destinationIP.toString()),
+    };
+    const origin = this.originate(packet, route);
+    switch (origin.outcome) {
+      case 'refused':
+        if (origin.unanswered) this.rejectOutgoing(origin.packet);
+        return { outcome: 'refused' };
+      case 'lost': return { outcome: 'lost', packet: origin.packet };
+      case 'looped': return { outcome: 'looped', packet: origin.packet };
+      case 'routed':
+        return { outcome: 'routed', packet: origin.packet, egress: origin.route.iface, nextHopIp: origin.route.nextHopIP.toString() };
+    }
+  }
+
+  private originateSegment6(packet: IPv6Packet, egress: TcpEgress | null): TcpOrigination {
+    if (egress === null) {
+      const leg = this.loopLocal(packet);
+      if (leg.delivery === 'delivered') return { outcome: 'looped', packet: leg.packet };
+      return leg.delivery === 'lost' ? { outcome: 'lost', packet: leg.packet } : { outcome: 'refused' };
+    }
+    const verdict = this.firewallFilter6(egress.name, packet, 'out');
     if (verdict === 'reject') this.rejectOutgoing(packet);
-    return verdict;
+    if (verdict !== 'accept') return { outcome: 'refused' };
+    return { outcome: 'routed', packet, egress: egress.name, nextHopIp: egress.nextHopIp ?? packet.destinationIP.toString() };
   }
 
   private rejectOutgoing(packet: IPv4Packet | IPv6Packet): void {
@@ -3499,7 +3587,8 @@ export abstract class EndHost extends Equipment {
       const looped = buildICMPError(errorSource ?? offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
         nextHopMTU, quote: this.icmpErrorQuote(),
       });
-      if (this.loopLocal(looped) === 'delivered') this.handleICMP('lo', looped);
+      const leg = this.loopLocal(looped);
+      if (leg.delivery === 'delivered') this.handleICMP('lo', leg.packet);
       return;
     }
 
@@ -3513,11 +3602,41 @@ export abstract class EndHost extends Equipment {
       nextHopMTU, quote: this.icmpErrorQuote(),
     });
 
+    this.emitRoutedIcmpError(route, errorIP);
+  }
+
+  private emitRoutedIcmpError(route: { port: Port; nextHopIP: IPAddress }, errorIP: IPv4Packet): void {
     const outPortName = route.port.getName();
     const verdict = this.firewallFilter(outPortName, errorIP, 'out');
     if (verdict === 'drop' || verdict === 'reject') return;
 
     this.sendIpv4FrameArpAware(outPortName, errorIP, route.nextHopIP);
+  }
+
+  protected redirectPolicy(): RedirectPolicy {
+    return HOST_REDIRECT_POLICY;
+  }
+
+  private readonly redirectLimiter = new RedirectLimiter();
+
+  private redirectSenderIfDue(inPort: string, gateway: IPAddress, forwarded: IPv4Packet): void {
+    const arrival = this.ports.get(inPort);
+    if (arrival === undefined) return;
+    const towardSource = this.bestHostRoute(forwarded.sourceIP, inPort);
+    const configuredGateway = this.bestHostRoute(forwarded.destinationIP)?.nextHop ?? null;
+    const due = redirectIsDue(this.redirectPolicy(), {
+      iface: inPort,
+      sourceIsDirectlyConnected: towardSource !== null && towardSource.nextHop === null,
+      sourceOnLinkWithGateway: addressesOnLink(connectedPrefixesOfPort(arrival), forwarded.sourceIP, configuredGateway),
+    });
+    if (!due || !this.redirectLimiter.admit(forwarded.sourceIP, this.getScheduler().now())) return;
+    if (!mayGenerateICMPError(forwarded)) return;
+    const route = this.resolveRoute(forwarded.sourceIP);
+    const source = route?.port.addressToward(route.nextHopIP) ?? null;
+    if (route === null || source === null) return;
+    this.emitRoutedIcmpError(route, buildICMPError(source, forwarded, 'redirect', ICMP_REDIRECT_HOST, this.defaultTTL, {
+      gateway, quote: this.icmpErrorQuote(),
+    }));
   }
 
   // ─── TCP Transport (RFC 793) ───────────────────────────────────
@@ -3714,11 +3833,22 @@ export abstract class EndHost extends Equipment {
     });
   }
 
-  private acceptRedirect(oldGateway: IPAddress, newGateway: IPAddress, destination: IPAddress, code: number): void {
-    if (!REDIRECT_CODES.has(code & 7)) return;
+  private acceptRedirect(arrivedOn: string, oldGateway: IPAddress, newGateway: IPAddress, destination: IPAddress, code: number): void {
+    if (!ICMP_REDIRECT_CODES.has(code & 7)) return;
     const route = this.resolveRoute(destination);
     if (!route || route.nextHopIP.equals(destination) || !route.nextHopIP.equals(oldGateway)) return;
-    if (newGateway.equals(oldGateway) || !this.isUnicastGateway(newGateway)) return;
+    const arrival = this.ports.get(arrivedOn);
+    if (arrival === undefined) return;
+    const accepted = redirectIsAcceptable(this.redirectPolicy(), {
+      arrivedOn,
+      forwarding: this.ipForwardEnabled,
+      oldGateway,
+      newGateway,
+      newGatewayUsable: this.isUnicastGateway(newGateway) && this.resolveRoute(newGateway) !== null,
+      newGatewayOnLinkWithOld: addressesOnLink(connectedPrefixesOfPort(arrival), newGateway, oldGateway),
+      newGatewayListed: this.buildFullRoutingTable().some((entry) => entry.iface === arrivedOn && entry.nextHop?.equals(newGateway) === true),
+    });
+    if (!accepted) return;
 
     const neighbour = this.arpTable.get(newGateway.toString());
     if (!neighbour || neighbour.type === 'failed' || neighbour.iface !== route.iface) {
@@ -4035,34 +4165,6 @@ export abstract class EndHost extends Equipment {
     if (carried > UDP_MAX_PAYLOAD_OVER_IPV4) return false;
     const ipBytes = ipv4HeaderBytesFor(options.ipOptions) + 8 + carried;
 
-    // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
-    // outbound traffic before the loopback/local-delivery decision below,
-    // mirroring real Linux's early routing decision + LOCAL_OUT hook
-    // ordering. Skipped for multicast/broadcast/loopback — none is a
-    // realistic DNAT/REDIRECT target and no rule ever matches them.
-    if (!destinationIP.isLoopback()
-      && !isMulticastIpv4(destinationIP.toString())
-      && destinationIP.toString() !== '255.255.255.255') {
-      const tentativeRoute = this.resolveRoute(destinationIP);
-      const outputNat = this.evaluateNatOutput(
-        tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
-        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '', ipBytes,
-      );
-      if (outputNat?.action === 'DROP') return false;
-      if (outputNat?.action === 'REDIRECT') {
-        // No --to-destination to read: real Linux maps a locally-generated
-        // packet's destination to loopback (there is no "incoming
-        // interface" for traffic this host originates itself).
-        const portNum = outputNat.address ? parseInt(outputNat.address, 10) : NaN;
-        destinationIP = new IPAddress('127.0.0.1');
-        if (!Number.isNaN(portNum)) destinationPort = portNum;
-      } else if (outputNat?.action === 'DNAT' && outputNat.address) {
-        const { ip, port } = parseNatAddress(outputNat.address);
-        destinationIP = new IPAddress(ip);
-        if (port !== undefined) destinationPort = port;
-      }
-    }
-
     const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + carried, payload };
     const dontFragment = options.df ?? this.udpDefaultDontFragment(destinationIP, ipBytes, options.iface);
     const flags = dontFragment ? IPV4_FLAG_DF : 0;
@@ -4075,9 +4177,7 @@ export abstract class EndHost extends Equipment {
       const localPkt = createIPv4Packet(
         destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
       );
-      const delivery = this.loopLocal(localPkt);
-      if (delivery === 'delivered') this.deliverUDP('lo', localPkt, false);
-      return delivery !== 'send-dropped' && delivery !== 'send-rejected';
+      return this.dispatchOrigination(this.originate(localPkt, null));
     }
 
     // Multicast et broadcast limité n'ont ni route ni voisin à résoudre :
@@ -4122,14 +4222,7 @@ export abstract class EndHost extends Equipment {
     if (!resolved) return false;
     const source = route.source ?? resolved.port.getIPAddress();
     if (!source) return false;
-    const ipPkt = build(source);
-
-    const outPortName = resolved.port.getName();
-    const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
-    if (verdict === 'drop' || verdict === 'reject') return false;
-
-    this.sendIpv4FrameArpAware(outPortName, ipPkt, resolved.nextHopIP);
-    return true;
+    return this.dispatchOrigination(this.originate(build(source), resolved));
   }
 
   private udpDefaultDontFragment(destination: IPAddress, ipTotalLength: number, iface?: string): boolean {
@@ -4296,7 +4389,7 @@ export abstract class EndHost extends Equipment {
         stampUdpChecksum(udp, origin.toString(), destinationIP.toString()),
         udp.length,
       ));
-      const delivery = this.loopLocal(localPkt);
+      const { delivery } = this.loopLocal(localPkt);
       if (delivery === 'delivered') this.deliverUDP6('lo', localPkt);
       return delivery !== 'send-dropped' && delivery !== 'send-rejected';
     }
@@ -4461,7 +4554,7 @@ export abstract class EndHost extends Equipment {
         errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit,
         { type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra }, 48,
       );
-      if (this.loopLocal(looped) === 'delivered') this.handleICMPv6('lo', looped);
+      if (this.loopLocal(looped).delivery === 'delivered') this.handleICMPv6('lo', looped);
       return;
     }
     const port = this.ports.get(portName);
@@ -4841,9 +4934,10 @@ export abstract class EndHost extends Equipment {
     const refusal = ipv4SendRefusal(packet.totalLength, this.loopbackMtu(), (packet.flags & IPV4_FLAG_DF) !== 0);
     if (refusal !== null) throw new LocalSendError(refusal);
 
-    const delivery = this.loopLocal(packet);
+    const leg = this.loopLocal(packet);
+    const delivery = leg.delivery;
     if (delivery === 'send-dropped') throw new SendRefusedError('EPERM');
-    if (delivery === 'delivered') this.handleICMP('lo', packet);
+    if (delivery === 'delivered') this.handleICMP('lo', leg.packet);
 
     return this.settleEcho(outcome, {
       id: request.id, seq, target: targetText, sentAt, timeoutMs, bytes: request.icmpSize,
@@ -6220,7 +6314,7 @@ export abstract class EndHost extends Equipment {
   private handleICMPv6EchoRequest(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
     if (portName === 'lo') {
       const reply = this.echoReply6(ipv6, icmpv6, ipv6.destinationIP);
-      if (this.loopLocal(reply) === 'delivered') this.handleICMPv6('lo', reply);
+      if (this.loopLocal(reply).delivery === 'delivered') this.handleICMPv6('lo', reply);
       return;
     }
     const port = this.ports.get(portName);
@@ -6688,7 +6782,7 @@ export abstract class EndHost extends Equipment {
       fromIp: targetText, toIp: targetText, id: request.id, seq, ttl: packet.hopLimit, size: packet.payloadLength,
     });
 
-    const delivery = this.loopLocal(packet);
+    const { delivery } = this.loopLocal(packet);
     if (delivery === 'send-dropped') throw new SendRefusedError('EPERM');
     if (delivery === 'delivered') this.handleICMPv6('lo', packet);
 

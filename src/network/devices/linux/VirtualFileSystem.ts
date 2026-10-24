@@ -154,6 +154,11 @@ export interface VfsWriteEvent {
   readonly truncated: boolean;
 }
 
+export type VfsChange =
+  | { readonly kind: 'modified'; readonly path: string; readonly inode: number }
+  | { readonly kind: 'created' | 'deleted'; readonly path: string; readonly directory: boolean }
+  | { readonly kind: 'moved'; readonly from: string; readonly path: string; readonly directory: boolean };
+
 export class VirtualFileSystem {
   private nowMs: () => number = simulationNowMs;
 
@@ -164,6 +169,7 @@ export class VirtualFileSystem {
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
   private entryListeners: Map<string, Set<() => void>> = new Map();
+  private changeListeners = new Set<(change: VfsChange) => void>();
   private readOnlyResolver?: (path: string) => boolean;
   private remoteMountPort: RemoteMountPort | null = null;
   /**
@@ -701,6 +707,7 @@ export class VirtualFileSystem {
         existing.content = content;
         existing.size = content.length;
         existing.mtime = this.nowMs();
+        this.emitChange({ kind: 'modified', path: this.canonicalKey(path), inode: existing.id });
         return existing;
       }
       return null; // Can't overwrite non-file
@@ -714,6 +721,7 @@ export class VirtualFileSystem {
     inode.size = content.length;
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: false });
     return inode;
   }
 
@@ -917,7 +925,7 @@ export class VirtualFileSystem {
         current: inode.content,
         created: false,
         truncated: !append && previous.length > inode.content.length,
-      });
+      }, inode.id);
       return true;
     }
 
@@ -1061,7 +1069,7 @@ export class VirtualFileSystem {
         held.content += text;
         held.size = held.content.length;
         held.mtime = this.nowMs();
-        this.emitWrite({ path: canonical, previous, current: held.content, created: false, truncated: false });
+        this.emitWrite({ path: canonical, previous, current: held.content, created: false, truncated: false }, held.id);
         return null;
       },
     };
@@ -1141,13 +1149,26 @@ export class VirtualFileSystem {
     }
   }
 
+  onChange(listener: (change: VfsChange) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => { this.changeListeners.delete(listener); };
+  }
+
+  private emitChange(change: VfsChange): void {
+    for (const listener of [...this.changeListeners]) {
+      try { listener(change); }
+      catch { continue; }
+    }
+  }
+
   /** Fan out a write event to every subscriber registered against `path`. */
-  private emitWrite(event: VfsWriteEvent): void {
+  private emitWrite(event: VfsWriteEvent, inode?: number): void {
+    if (!event.created && inode !== undefined) this.emitChange({ kind: 'modified', path: event.path, inode });
     const set = this.writeListeners.get(event.path);
     if (!set || set.size === 0) return;
     for (const listener of set) {
       try { listener(event); }
-      catch { /* listeners must not corrupt the FS */ }
+      catch { continue; }
     }
   }
 
@@ -1179,6 +1200,7 @@ export class VirtualFileSystem {
     if (child.linkCount <= 0) {
       this.inodes.delete(childId);
     }
+    this.emitChange({ kind: 'deleted', path: this.canonicalKey(path), directory: false });
     return true;
   }
 
@@ -1203,6 +1225,7 @@ export class VirtualFileSystem {
     parentInode.children.set(basename, dirInode.id);
     parentInode.linkCount++;
     parentInode.mtime = this.nowMs();
+    this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: true });
     return true;
   }
 
@@ -1233,6 +1256,7 @@ export class VirtualFileSystem {
     parentInode.linkCount--;
     parentInode.mtime = this.nowMs();
     this.inodes.delete(inode.id);
+    this.emitChange({ kind: 'deleted', path: this.canonicalKey(path), directory: true });
     return true;
   }
 
@@ -1301,6 +1325,7 @@ export class VirtualFileSystem {
     inode.size = target.length;
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: false });
     return true;
   }
 
@@ -1500,6 +1525,7 @@ export class VirtualFileSystem {
     }
 
     this.emitEntryChange(finalDst);
+    this.emitChange({ kind: 'moved', from: this.canonicalKey(srcPath), path: this.canonicalKey(finalDst), directory: srcNode?.type === 'directory' });
     return true;
   }
 

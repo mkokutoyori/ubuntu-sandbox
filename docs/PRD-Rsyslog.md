@@ -263,3 +263,61 @@ source »). Ils passaient, donc rien ne signalait le problème : c'est la
 vérification contre la documentation de rsyslog — et non l'exécution de la
 suite — qui l'a trouvé. Un test vert ne prouve que la cohérence du code
 avec lui-même.
+
+## Moteur porté : démon Linux, paramètres globaux, omfile, imfile
+
+Le démon Linux n'est plus un lecteur de lignes : c'est le moteur de `src/network/rsyslog` (RainerScript,
+rulesets, machine à états des actions, files, limiteurs, réduction des messages répétés) piloté par
+`LinuxRsyslogHost`. Ce que ce lot a rendu réel, avec les sondes qui le prouvent :
+
+- **Fichiers tenus par inode** (`VirtualFileSystem.openAppend`) : un fichier renommé ou supprimé continue de
+  recevoir jusqu'au SIGHUP ; `logrotate` + `postrotate` rouvrent le bon fichier
+  (`linux-rsyslog-daemon.test.ts`). Les temporisations (MARK, reprise d'action, expiration de certificat) sont sur
+  l'horloge de la machine : `advanceTime()` les déclenche, chacune à son heure.
+- **TLS RFC 5425** par le sous-système `tls/` et `pki/` (modes anon, fingerprint, certvalid, name ; pairs permis
+  avec jokers) : `linux-rsyslog-tls.test.ts`, `rsyslog-peer-auth.test.ts`.
+- **Windows** : `Send-SyslogMessage` (RFC 3164, RFC 5424, cadrage TCP) partage les codecs de `src/network/syslog` :
+  `windows-syslog-emission.test.ts`.
+- **Paramètres globaux évalués** (`linux-rsyslog-globals.test.ts`) : `privdrop.*` (identité du processus visible
+  dans `ps`, droits d'écriture vérifiés pour l'acteur, `chown` refusé à un non-root, `failOnChownFailure`),
+  `maxOpenFiles` (RLIMIT_NOFILE du gestionnaire de processus, EMFILE), `umask`, `abortOnUncleanConfig`,
+  `inputStartupPolicy`, `oversizemsg.*` (modes truncate/split/accept, fichier d'erreurs JSON). Les messages
+  internes émis pendant l'activation sont mis en file puis rejoués une fois les entrées démarrées.
+- **omfile** (`linux-rsyslog-omfile.test.ts`) : `OmfileStream` porte le tampon d'E/S de `runtime/stream.c`
+  (`ioBufferSize`, `flushOnTXEnd`, `asyncWriting` + `flushInterval` sur l'horloge simulée), les flux gzip et zstd
+  (`zipLevel`, `veryRobustZip`, `compression.driver`), la limite de taille et sa commande de rotation,
+  `$outchannel` / `:omfile:$canal`, `followSymlinks`, et le refus honnête d'un fournisseur `cry.provider` non
+  installé. La file appelle `endBatch` en fin de lot : les actions ont enfin une phase de commit.
+- **imfile** (`linux-rsyslog-imfile.test.ts`) : arbre de surveillance à jokers, liens symboliques, rotation,
+  suppression retardée, modes inotify (évènements du VFS) et polling, lignes partielles retenues, fichiers d'état
+  `imfile-state:<inode>[:<siphash>]` dans le répertoire de travail, reprise après redémarrage, `freshStartTail`,
+  readMode 0/1/2, `startmsg.regex` / `endmsg.regex`, `readTimeout`, `reopenOnTruncate`, métadonnées, limites par
+  minute, `maxInotifyWatches` et son balayage de repli.
+
+- **Phase de commit des actions** (`rsyslog-action-commit.test.ts`) : omfile et omfwd sont transactionnels, comme dans
+  `action.c` — les messages d'un lot sont collectés puis confiés ensemble au module en fin de lot (`endBatch` de la file,
+  qui peut dormir sur l'horloge simulée pendant que le lot reste dans la file). Un lot qui échoue est rejoué message par
+  message (les lignes déjà écrites le sont une seconde fois), les messages qui échouent encore sont journalisés puis
+  écrits dans `action.errorfile` avec le statut de l'état de l'action (`RS_RET_DATAFAIL`, `RS_RET_SUSPENDED`, ou 0 pour
+  un lot arrivé pendant la suspension). Un message seul qui échoue n'est que journalisé. Après un échec dur l'action reste en
+  `ACT_STATE_DATAFAIL` jusqu'au prochain commit réussi : le message suivant revient en échec de `processMsgMain`, reste
+  READY dans `processBatchMain` et `DeleteProcessedBatch` le remet en fin de file (le vrai ouvrier reboucle sans pause, le
+  simulateur une fois par seconde pour que `advanceTime()` se termine). La boucle de reprise d'`actionCommit` ne sort pas
+  d'un échec dur sur un message déjà en reprise (l'état n'est ni RDY, ni SUSP, ni DISABLED) ; le simulateur s'arrête
+  plutôt que de reboucler sans fin. `tryResume` d'omfile répond
+  toujours OK : la garde des dix reprises suspend l'action.
+
+- **Sorties d'enfants et démarrage des files** : le programme de rotation d'omfile est un vrai processus fils de rsyslogd
+  (pid dans la table des processus) et `global(reportChildProcessExits)` (`none`, `errors`, `all`) décide de ce qui est
+  journalisé (`linux-rsyslog-child-exits.test.ts`). Une file « disk » sans `queue.fileName` ne démarre pas : l'action est
+  désactivée, ou le démon s'arrête sur la ligne de la source avec `abortOnFailedQueueStartup`
+  (`linux-rsyslog-queue-startup.test.ts`).
+
+- **journald.conf** (`linux-journald-config.test.ts`) : le démon lit `/etc/systemd/journald.conf` puis les drop-ins de
+  `journald.conf.d` (fusionnés par nom, `/etc` masque `/usr/lib`), au démarrage du service. Ubuntu livre le drop-in
+  `syslog.conf` (`ForwardToSyslog=yes`), qui est ce qui confie le journal à rsyslog : `ForwardToSyslog`, `MaxLevelSyslog`,
+  `MaxLevelStore`, `Storage` et `LineMax` sont évalués, et les erreurs de syntaxe sont journalisées avec le fichier et la ligne.
+
+Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
+n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
+simulée au lieu de bloquer le fil.
