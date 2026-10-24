@@ -6,6 +6,7 @@ export interface QueueSettings {
   type: string;
   size: number;
   fileName: string | null;
+  spoolDirectory: string | null;
   highWatermark: number | null;
   lowWatermark: number | null;
   discardMark: number | null;
@@ -44,7 +45,7 @@ export function defaultQueueTimeouts(kind: QueueKind): QueueTimeouts {
 
 export function defaultQueueSettings(type: string, size: number, kind: QueueKind = 'action', timeouts: QueueTimeouts = defaultQueueTimeouts(kind)): QueueSettings {
   return {
-    type, size, fileName: null, highWatermark: kind === 'main' ? 80000 : null, lowWatermark: kind === 'main' ? 20000 : null, discardMark: null, discardSeverity: 8,
+    type, size, fileName: null, spoolDirectory: null, highWatermark: kind === 'main' ? 80000 : null, lowWatermark: kind === 'main' ? 20000 : null, discardMark: null, discardSeverity: 8,
     checkpointInterval: 0, syncQueueFiles: false, workerThreads: kind === 'main' ? 2 : 1, ...timeouts,
     dequeueSlowdown: 0, workerThreadMinimumMessages: kind === 'main' ? 40000 : null,
     maxFileSize: kind === 'ruleset' ? 16 * 1024 * 1024 : 1024 * 1024, dequeueBatchSize: kind === 'main' ? 256 : kind === 'ruleset' ? 1024 : type === 'Direct' ? 1 : 128,

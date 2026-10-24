@@ -1,5 +1,6 @@
 import type { Sleep } from './Execution';
 import type { QueueSettings } from './Settings';
+import type { DiskQueueStore, QueuePosition } from './DiskQueueStore';
 
 export interface QueueHost {
   schedule(callback: () => void, delayMs: number): () => void;
@@ -30,6 +31,8 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
   private waiting: T[] = [];
+  private batchEnd: QueuePosition | null = null;
+  private updatesSincePersist = 0;
   private cancelWaitingDeadline: (() => void) | null = null;
   readonly statistics: QueueStatistics = { size: 0, enqueued: 0, full: 0, discardedFull: 0, discardedNearlyFull: 0, maxSize: 0 };
 
@@ -38,7 +41,12 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     readonly settings: QueueSettings,
     private readonly host: QueueHost,
     private readonly process: (item: T) => Generator<Sleep, ProcessOutcome>,
+    readonly disk: DiskQueueStore | null = null,
   ) {}
+
+  get physicalSize(): number {
+    return this.items.length + this.dequeued.length + this.requeued.length;
+  }
 
   get length(): number {
     return this.items.length;
@@ -60,7 +68,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       this.statistics.discardedNearlyFull++;
       return false;
     }
-    if (this.items.length >= settings.size || this.waiting.length > 0) {
+    if (this.items.length >= settings.size || this.waiting.length > 0 || this.disk?.exceedsDiskSpace() === true) {
       this.statistics.full++;
       if (settings.timeoutEnqueue === 0) return this.discardFull();
       this.waiting.push(item);
@@ -77,6 +85,43 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     this.statistics.enqueued++;
     this.statistics.size = this.items.length;
     this.statistics.maxSize = Math.max(this.statistics.maxSize, this.items.length);
+    this.store(item);
+  }
+
+  private store(item: T): void {
+    if (this.disk === null) return;
+    const failure = this.disk.append(item as never);
+    if (failure !== null) this.host.report(`queue '${this.name}': error writing the disk queue: ${failure}`);
+    if (this.disk.takePendingPersist()) this.persist(true);
+    this.countUpdates(1);
+  }
+
+  private countUpdates(count: number): void {
+    this.updatesSincePersist += count;
+    const interval = this.settings.checkpointInterval;
+    if (interval > 0 && this.updatesSincePersist >= interval) {
+      this.persist(true);
+      this.updatesSincePersist = 0;
+    }
+  }
+
+  private persist(checkpoint: boolean): void {
+    if (this.disk !== null && !this.disk.persist(checkpoint, this.physicalSize)) {
+      this.host.report(`queue '${this.name}': could not write the queue info file ${this.disk.infoFile}`);
+    }
+  }
+
+  restore(items: readonly T[]): void {
+    for (const item of items) this.items.push(item);
+    this.statistics.size = this.items.length;
+    this.statistics.maxSize = Math.max(this.statistics.maxSize, this.items.length);
+    this.drain();
+  }
+
+  closeStore(): void {
+    if (this.disk === null) return;
+    this.persist(false);
+    this.disk.close(this.physicalSize);
   }
 
   private discardFull(): false {
@@ -165,12 +210,22 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     return step.value;
   }
 
+  private commitBatch(): void {
+    if (this.disk === null || this.batchEnd === null) return;
+    const deleted = this.disk.commit(this.batchEnd);
+    this.batchEnd = null;
+    if (deleted > 0) this.persist(true);
+    this.countUpdates(this.dequeued.length + this.requeued.length);
+  }
+
   private releaseBatch(): Sleep | null {
+    this.commitBatch();
     this.dequeued = [];
     if (this.requeued.length === 0) return null;
     for (const item of this.requeued) {
       this.items.push(item);
       this.statistics.enqueued++;
+      this.store(item);
     }
     this.requeued = [];
     this.statistics.size = this.items.length;
@@ -222,7 +277,9 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       this.current = null;
       const outcome = step.value;
       if (outcome === 'done' || outcome === 'requeue') {
-        (outcome === 'done' ? this.dequeued : this.requeued).push(this.items.shift() as T);
+        const finished = this.items.shift() as T;
+        if (this.disk !== null) this.batchEnd = this.disk.positionOf(finished as never) ?? this.batchEnd;
+        (outcome === 'done' ? this.dequeued : this.requeued).push(finished);
         this.statistics.size = this.items.length;
         this.admitWaiting();
         batched++;

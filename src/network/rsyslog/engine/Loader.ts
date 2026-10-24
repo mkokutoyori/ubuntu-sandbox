@@ -1401,6 +1401,7 @@ export function applyQueueParams(queue: QueueSettings, values: ParamValues): voi
     return value?.kind === 'N' ? value.n !== 0 : undefined;
   };
   queue.fileName = text('queue.filename') ?? queue.fileName;
+  queue.spoolDirectory = text('queue.spooldirectory') ?? queue.spoolDirectory;
   queue.size = number('queue.size') ?? queue.size;
   queue.highWatermark = number('queue.highwatermark') ?? queue.highWatermark;
   queue.lowWatermark = number('queue.lowwatermark') ?? queue.lowWatermark;

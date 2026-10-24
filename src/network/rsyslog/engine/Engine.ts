@@ -15,7 +15,8 @@ import { zlibDecompress, ZlibError } from '../Zlib';
 import { RateLimiter } from './RateLimiter';
 import { OperatingStateFile } from './OperatingState';
 import { RSYSLOG_VERSION } from './Log';
-import { loadQueueState, queueStatePath, saveQueueState } from './QueueState';
+import { DiskQueueStore } from './DiskQueueStore';
+import type { QueueSettings } from './Settings';
 import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
@@ -86,6 +87,7 @@ export class RsyslogEngine implements InputSubmitter {
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
     endBatch: () => Generator<Sleep, void> = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
+    const disk = settings.type === 'Disk' && settings.fileName !== null ? this.newDiskStore(settings) : null;
     const queue = new WorkerQueue<RsyslogMessage>(
       name,
       settings,
@@ -97,6 +99,7 @@ export class RsyslogEngine implements InputSubmitter {
         endBatch,
       },
       process,
+      disk,
     );
     if (settings.type !== 'Direct') this.registerQueueStatistics(queue);
     return queue;
@@ -643,30 +646,68 @@ export class RsyslogEngine implements InputSubmitter {
     }
   }
 
-  private persistentQueues(): Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> {
-    const all = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
-    const found: Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> = [];
-    for (const queue of all) {
-      const path = queueStatePath(queue.settings, this.config.settings.workDirectory);
-      if (path !== null) found.push({ queue, path });
+  private newDiskStore(settings: QueueSettings): DiskQueueStore {
+    const global = this.config.settings;
+    const prefix = settings.fileName ?? '';
+    const maxFileSize = settings.maxFileSize;
+    let maxDiskSpace = settings.maxDiskSpace;
+    if (maxDiskSpace > 0 && maxFileSize > 0 && maxDiskSpace < maxFileSize) {
+      this.internal(3, RS_RET.CONF_PARAM_INVLD, `queue.maxDiskSpace (${maxDiskSpace}) must be larger than queue.maxFileSize (${maxFileSize}) - setting queue.maxDiskSpace to ${maxFileSize}`);
+      maxDiskSpace = maxFileSize;
     }
-    return found;
+    return new DiskQueueStore(
+      { directory: settings.spoolDirectory ?? global.workDirectory ?? '', prefix, maxFileSize, maxDiskSpace },
+      {
+        files: this.host.files,
+        codec: () => ({ localHostName: this.localHostName(), defaultTimeZone: null, compactJson: global.compactJson }),
+        report: (severity, text) => this.internal(severity, -1, text),
+      },
+      {
+        mode: 0o600, directoryMode: 0o700, uid: null, gid: null, directoryUid: null, directoryGid: null,
+        createDirectories: false, failOnChownFailure: false,
+      },
+    );
+  }
+
+  private allQueues(): WorkerQueue<RsyslogMessage>[] {
+    return [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+  }
+
+  private spillsOnShutdown(queue: WorkerQueue<RsyslogMessage>): boolean {
+    const { type, fileName, saveOnShutdown } = queue.settings;
+    return queue.disk === null && type !== 'Direct' && fileName !== null && saveOnShutdown;
   }
 
   private saveQueues(): void {
-    for (const { queue, path } of this.persistentQueues()) {
-      if (!saveQueueState(this.host.files, path, queue.name, queue.pending())) {
-        this.internal(3, -1, `queue '${queue.name}': could not save the queue state to ${path}`);
+    for (const queue of this.allQueues()) {
+      if (queue.disk !== null) {
+        queue.closeStore();
+        continue;
       }
+      const pending = queue.pending();
+      if (!this.spillsOnShutdown(queue) || pending.length === 0) continue;
+      const store = this.newDiskStore(queue.settings);
+      const failure = pending.map((message) => store.append(message)).find((result) => result !== null);
+      if (failure !== undefined) this.internal(3, -1, `queue '${queue.name}': could not save the queue state: ${failure}`);
+      store.persist(false, pending.length);
+      store.close(pending.length);
     }
   }
 
   private restoreQueues(): void {
-    for (const { queue, path } of this.persistentQueues()) {
-      const messages = loadQueueState(this.host.files, path);
-      if (messages.length === 0) continue;
-      this.host.files.write(path, '');
-      for (const message of messages) queue.enqueue(message);
+    for (const queue of this.allQueues()) {
+      const resident = queue.disk !== null;
+      if (!resident && !this.spillsOnShutdown(queue)) continue;
+      const store = queue.disk ?? this.newDiskStore(queue.settings);
+      const backlog = store.load();
+      if (backlog === null) continue;
+      this.internal(6, RS_RET.NO_ERRCODE, `${queue.name}: queue files exist on disk, re-starting with ${backlog.messages.length} messages. This will keep the disk queue file open, details: https://rainer.gerhards.net/2013/07/rsyslog-why-disk-assisted-queues-keep-a-file-open.html`);
+      if (resident) {
+        queue.restore(backlog.messages);
+        continue;
+      }
+      store.drop();
+      for (const message of backlog.messages) queue.enqueue(message);
     }
   }
 
