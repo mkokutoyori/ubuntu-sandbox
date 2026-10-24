@@ -2160,7 +2160,7 @@ export abstract class LinuxMachine extends EndHost
         const audit = this.executor.logMgr.journald.settings.setAudit;
         if (audit !== null) this.executor.auditRules.setEnabledFromJournald(audit);
       }
-      if (name === 'systemd-networkd') this.applyNetworkConfiguration();
+      if (name === 'systemd-networkd' && event !== 'restart') this.applyNetworkConfiguration();
       // `resolved.conf` n'était lu qu'à la toute première instanciation du
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
       // démon ne changeait rien, et le réglage global restait lettre morte.

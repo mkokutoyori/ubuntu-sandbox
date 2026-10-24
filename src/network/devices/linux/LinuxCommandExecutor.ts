@@ -896,7 +896,7 @@ export class LinuxCommandExecutor {
       ]),
     });
     this.sudoPam = new SudoPamSessions(this.pam, () => ({ uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() }));
-    this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
+    this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr, (name) => this.processMgr.pidof(name)[0] ?? 0);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditLog.setClock(this.wallNow);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);

@@ -28,6 +28,8 @@ export interface ConfigSpec {
   readonly mainFile: string;
   readonly dropInName: string;
   readonly sections: readonly string[];
+  readonly ignoredSections?: readonly string[];
+  readonly knownKeys?: ReadonlySet<string>;
   readonly handlers: ReadonlyMap<string, ConfigHandler>;
 }
 
@@ -122,7 +124,7 @@ class FileParser {
     }
     if (parsed.kind === 'section') {
       if (!this.spec.sections.includes(parsed.name)) {
-        if (!parsed.name.startsWith('X-')) this.diagnostic(line, LOG_WARNING, `Unknown section '${parsed.name}'. Ignoring.`);
+        if (!parsed.name.startsWith('X-') && this.spec.ignoredSections?.includes(parsed.name) !== true) this.diagnostic(line, LOG_WARNING, `Unknown section '${parsed.name}'. Ignoring.`);
         this.section = null;
         this.sectionIgnored = true;
       } else {
@@ -146,6 +148,7 @@ class FileParser {
     const { key, value } = parsed;
     const handler = this.spec.handlers.get(`${this.section}.${key}`);
     if (handler === undefined) {
+      if (this.spec.knownKeys?.has(`${this.section}.${key}`) === true) return;
       if (!key.startsWith('X-')) this.diagnostic(line, LOG_WARNING, `Unknown key name '${key}' in section '${this.section}', ignoring.`);
       return;
     }

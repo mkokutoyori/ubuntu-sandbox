@@ -11,7 +11,8 @@
  */
 
 import type { VirtualFileSystem } from '../VirtualFileSystem';
-import { addToUnitBag, discoverDropIns, parseUnitBag } from '../systemd/ConfigFiles';
+import { addToUnitBag, discoverDropIns, parseUnitBag, readSystemdConfig, type ConfigDiagnostic } from '../systemd/ConfigFiles';
+import { networkdSpec } from './NetworkdKeys';
 
 /**
  * Ordre de recherche de systemd : l'administrateur d'abord, le paquet en
@@ -96,6 +97,16 @@ export function discoverNetworkdFiles(vfs: VirtualFileSystem): NetworkdFile[] {
     }
   }
   return [...byBasename.values()].sort((a, b) => a.basename.localeCompare(b.basename));
+}
+
+export function networkdDiagnostics(vfs: VirtualFileSystem, files: readonly NetworkdFile[] = discoverNetworkdFiles(vfs)): ConfigDiagnostic[] {
+  const diagnostics: ConfigDiagnostic[] = [];
+  for (const file of files) {
+    if (file.kind === 'link') continue;
+    const kind = file.kind === 'netdev' && get(file, 'NetDev', 'Name') !== undefined ? get(file, 'NetDev', 'Kind')?.toLowerCase() ?? null : null;
+    for (const spec of networkdSpec(file.kind, file.path, file.basename, kind)) diagnostics.push(...readSystemdConfig(vfs, spec));
+  }
+  return diagnostics;
 }
 
 function globMatches(pattern: string | undefined, name: string): boolean {
