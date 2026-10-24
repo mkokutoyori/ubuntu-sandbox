@@ -140,6 +140,7 @@ export interface IOContext {
   globExpand?(pattern: string, cwd: string): string[] | null;
   /** Resolve the home directory of `user`; `null` means the user is unknown. */
   homeFor?(user: string): string | null;
+  wallClock?(): { nowMs(): number; format(pattern: string, epochMs: number): string };
   /**
    * A backgrounded command keeps writing to its stdout after the shell has
    * moved on (`nc -l > file &` receives data minutes later): the shell binds
@@ -237,6 +238,7 @@ export class BashInterpreter {
   private readonly fdOutputs = new Map<number, Sink>();
   private readonly fdInputs = new Map<number, StdinSource>();
   private lastSubstitutionStatus: number | null = null;
+  private currentLine = 1;
   private statusFromGuard = false;
   /**
    * True while running any stage of a pipeline *except the last* — see
@@ -255,7 +257,16 @@ export class BashInterpreter {
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
     if (options.stdin !== undefined) this.stdin = new StdinSource(options.stdin);
+    const now = (): number => this.io?.wallClock?.().nowMs() ?? Date.now();
+    const startedAt = now();
     this.env = new Environment({
+      dynamicVariables: {
+        RANDOM: () => String(Math.floor(Math.random() * 32768)),
+        SECONDS: () => String(Math.floor((now() - startedAt) / 1000)),
+        EPOCHSECONDS: () => String(Math.floor(now() / 1000)),
+        EPOCHREALTIME: () => (now() / 1000).toFixed(6),
+        LINENO: () => String(this.currentLine),
+      },
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
       positionalArgs: options.positionalArgs,
@@ -836,6 +847,7 @@ export class BashInterpreter {
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
     this.lastSubstitutionStatus = null;
+    if (rawNode.position !== undefined) this.currentLine = rawNode.position.line;
 
     // Declaration commands (`local`, `declare`, `typeset`, `readonly`,
     // `export`) confine `name=value` arguments to the local scope. We
@@ -872,6 +884,7 @@ export class BashInterpreter {
       return;
     }
     const cmdName = args[0];
+    this.env.set('_', args[args.length - 1]);
 
     // `exec >> file 2>> errfile` (no command, only redirections) rewires
     // the shell's own stdout/stderr for the rest of the script.

@@ -97,7 +97,7 @@ describe('shift builtin', () => {
     const env = new Environment({ positionalArgs: ['a'] });
     const result = executeBuiltin('shift', ['5'], env, new Map());
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('shift count');
+    expect(result.stderr).toContain('shift count');
   });
 
   it('should handle shift 0', () => {
@@ -124,14 +124,14 @@ describe('type builtin', () => {
   it('should report not found for unknown commands', () => {
     const result = run('type', ['nonexistent']);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('not found');
+    expect(result.stderr).toContain('not found');
   });
 
   it('should handle multiple arguments', () => {
     const result = run('type', ['echo', 'cd', 'nonexistent']);
     expect(result.output).toContain('echo is a shell builtin');
     expect(result.output).toContain('cd is a shell builtin');
-    expect(result.output).toContain('not found');
+    expect(result.stderr).toContain('not found');
     expect(result.exitCode).toBe(1);
   });
 });

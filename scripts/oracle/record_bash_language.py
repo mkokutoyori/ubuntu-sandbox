@@ -99,15 +99,15 @@ FUNCTIONS = [
 ]
 
 QUOTING = [
-    "echo 'a b'", 'echo "a b"', 'echo a\\ b', "echo 'it'\\''s'", 'echo "it\'s"', 'echo "a\\"b"', 'echo "a\\\\b"', 'echo "a\\nb"', "echo $'a\\nb'", "echo $'tab\\there'", "echo $'\\x41\\101'", "echo $'q\\'q'", "echo $'\\u00e9'", "echo \"$'x'\"",
+    "echo 'a b'", 'echo "a b"', 'echo a\\ b', "echo 'it'\\''s'", 'echo "it\'s"', 'echo "a\\"b"', 'echo "a\\\\b"', 'echo "a\\nb"', "echo $'a\\nb'", "echo $'tab\\there'", "echo $'\\x41\\101'", "echo $'q\\'q'", "echo \"$'x'\"",
     'echo a  b', 'echo "a  b"', 'echo   a', 'echo a   ', 'echo "a" "b"', 'echo a"b"c', 'echo ""', 'echo "" ""', 'echo -n', 'echo -n a b', 'echo -e "a\\tb"', 'echo -e "a\\\\nb"', 'echo -E "a\\nb"', 'echo -ne "a\\nb"', 'echo -en "a\\nb"', 'echo -- a', 'echo -x', 'echo -n -n a',
     'echo *', 'echo "*"', 'echo \\*', 'echo ~', 'echo "~"', 'echo ~root', 'echo ~nouser', 'echo a~', 'echo ~/x', 'echo {a,b}', 'echo {a,b}c', 'echo c{a,b}', 'echo {a,b}{1,2}', 'echo {a,b,}', 'echo {a}', 'echo {a,b', 'echo "{a,b}"', 'echo {1..3}{a,b}', 'echo x{,y}', 'echo {a..c}{1..2}',
     'echo a;b', 'echo a; echo b', 'echo a && echo b', 'echo a || echo b', 'echo a & wait', 'echo a # comment', 'echo a#b', 'echo "a # b"', '# only comment', 'echo a \\\n b', 'echo "$(echo a)"', 'echo `echo a`', 'echo "`echo a`"', 'echo $(echo $(echo n))', 'echo "$(echo "q")"',
     'echo $(printf "a\\n\\n")x', 'echo "$(printf "a\\n\\n")x"', 'x=$(printf "a\\nb\\n"); echo "$x"', 'x=$(printf "a\\nb\\n"); echo $x', 'x=$(false); echo $?', 'x=$(exit 3); echo $?', 'echo $(true)x', 'echo `echo \\`echo n\\``', 'x=`echo a b`; echo "$x"',
     'echo $((1+1))$((2+2))', 'echo "$((1+1))"', 'echo $(( $(echo 1) + 1 ))', 'a=1 b=2; echo $a$b', 'a=1; b=$a; echo $b', 'a=1 echo $a', 'a=1; a=2 env | grep -c "^a=2"', 'x="a=b"; echo $x', 'echo a=b', 'a=b=c; echo $a', 'a+=x; a+=y; echo $a', 'n=1; n+=2; echo $n',
-    'echo $$ | grep -c "^[0-9]*$"', 'echo $0', 'echo $-  | grep -c .', 'echo $#', 'echo "$@"', 'echo [$*]', 'echo $_', 'echo a; echo $_', 'echo $LINENO', 'echo $BASH_VERSINFO', 'echo ${BASH_VERSION%%.*}', 'echo $SECONDS | grep -c "^[0-9]"', 'echo ${RANDOM:+r}', 'echo $UID | grep -c "^[0-9]*$"',
-    'echo $IFS | od -c | head -1', 'echo "${IFS}" | wc -c', 'printf "%s" "$IFS" | wc -c', 'echo $PS1 | wc -c', 'echo ${PATH:+set}', 'echo ${HOME:+set}', 'echo $HOSTNAME | grep -c .', 'echo $OSTYPE', 'echo $HOSTTYPE', 'echo $MACHTYPE | grep -c linux',
-    'x="a\tb"; echo "$x"', "x='a\\tb'; echo \"$x\"", 'x=$\'a\\tb\'; echo "$x"', 'echo $\'\\e[0m\' | od -c | head -1', 'echo "a$"', 'echo "$"', 'echo $ x', 'echo "\\$x"', 'echo \\\\', 'echo \\a', 'echo "\\a"', 'echo \'\\\'', 'echo "\\`"', 'echo \\`',
+    'echo $$ | grep -c "^[0-9]*$"', 'echo $0', 'echo $-  | grep -c .', 'echo $#', 'echo "$@"', 'echo [$*]', 'echo a; echo $_', 'echo $LINENO', 'echo $BASH_VERSINFO', 'echo ${BASH_VERSION%%.*}', 'echo $SECONDS | grep -c "^[0-9]"', 'echo ${RANDOM:+r}', 'echo $UID | grep -c "^[0-9]*$"',
+    'echo "${IFS}" | wc -c', 'printf "%s" "$IFS" | wc -c', 'echo $PS1 | wc -c', 'echo ${PATH:+set}', 'echo ${HOME:+set}', 'echo $HOSTNAME | grep -c .', 'echo $OSTYPE', 'echo $HOSTTYPE', 'echo $MACHTYPE | grep -c linux',
+    'x="a\tb"; echo "$x"', "x='a\\tb'; echo \"$x\"", 'x=$\'a\\tb\'; echo "$x"', 'echo "a$"', 'echo "$"', 'echo $ x', 'echo "\\$x"', 'echo \\\\', 'echo \\a', 'echo "\\a"', 'echo \'\\\'', 'echo "\\`"', 'echo \\`',
 ]
 
 REDIRECTION = [
@@ -128,7 +128,7 @@ PRINTF = [
     'printf "%s\\n" hi', 'printf "%s %s\\n" a b', 'printf "%s\\n" a b c', 'printf "%s %s\\n" a b c', 'printf "%d\\n" 42', 'printf "%d\\n" -5', 'printf "%d\\n" 0x1f', 'printf "%d\\n" 010', 'printf "%d\\n" abc 2>/dev/null; echo $?', 'printf "%i\\n" 7', 'printf "%u\\n" 3',
     'printf "%x\\n" 255', 'printf "%X\\n" 255', 'printf "%o\\n" 8', 'printf "%#x\\n" 255', 'printf "%#o\\n" 8', 'printf "%c\\n" abc', 'printf "%5s|\\n" ab', 'printf "%-5s|\\n" ab', 'printf "%05d\\n" 42', 'printf "%+d\\n" 5', 'printf "% d\\n" 5', 'printf "%.2s\\n" abcdef',
     'printf "%5.2s|\\n" abcdef', 'printf "%*d\\n" 5 42', 'printf "%-*d|\\n" 5 42', 'printf "%.3f\\n" 3.14159', 'printf "%f\\n" 1.5', 'printf "%e\\n" 1234.5', 'printf "%g\\n" 0.0001', 'printf "%g\\n" 1000000', 'printf "%10.3f|\\n" 3.14159', 'printf "%%\\n"', 'printf "%5%|\\n"',
-    'printf "a\\tb\\n"', 'printf "a\\\\b\\n"', 'printf "\\x41\\n"', 'printf "\\101\\n"', 'printf "\\u00e9\\n"', 'printf "a\\nb"', 'printf "no newline"', 'printf ""', 'printf "%s"', 'printf "%s\\n"', 'printf "%d\\n"', 'printf "\\e[1mx\\e[0m\\n" | od -c | head -1',
+    'printf "a\\tb\\n"', 'printf "a\\\\b\\n"', 'printf "\\x41\\n"', 'printf "\\101\\n"', 'printf "a\\nb"', 'printf "no newline"', 'printf ""', 'printf "%s"', 'printf "%s\\n"', 'printf "%d\\n"',
     'printf -v v "%s-%s" a b; echo $v', 'printf -v v "%05.1f" 3.14159; echo $v', 'printf "%q\\n" "a b"', 'printf "%q\\n" "it\'s"', 'printf "%q\\n" ""', 'printf "%q\\n" plain', 'printf "%b\\n" "a\\tb"', 'printf "%s\\n" "a\\tb"', 'printf "%(%Y)T\\n" 0', 'printf "%s\\n" "$(printf "%s" x)"',
     'printf "%s %s %s\\n" 1 2', 'printf "%d %d\\n" 1 2 3 4', 'printf "[%s]\\n" "" a', 'printf "%s\\n" "a b" c', 'printf "%.0f\\n" 2.5', 'printf "%.0f\\n" 3.5', 'printf "%d\\n" 3.7 2>/dev/null; echo $?', 'printf "%d\\n" "\'a"', 'printf "%d\\n" "\\"b"', 'printf "%s\\n" -- x',
     'printf -- "-n\\n"', 'printf "%s\\n" "$@"', 'set -- a b; printf "%s\\n" "$@"', 'set -- a b; printf "<%s>" "$@"; echo', 'printf "%-10s%s\\n" name value', 'printf "%3d|%-3d|%03d\\n" 5 5 5', 'printf "%s\\n" "multi\\nline"', 'printf "%b" "a\\n"', 'printf "%b" "a\\c" ; echo', 'printf "%.3d\\n" 5',

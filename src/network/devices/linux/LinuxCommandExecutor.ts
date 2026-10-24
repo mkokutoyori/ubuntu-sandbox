@@ -5132,6 +5132,10 @@ export class LinuxCommandExecutor {
         const u = this.userMgr.getUser(user);
         return u ? u.home : null;
       },
+      wallClock: () => ({
+        nowMs: () => this.simulatedDate().getTime(),
+        format: (pattern: string, epochMs: number) => formatLocalTime(pattern, epochMs, this.identity.timezone),
+      }),
     };
   }
 

@@ -5,10 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import { executeBuiltin } from '@/bash/runtime/Builtins';
 import { Environment } from '@/bash/runtime/Environment';
+import { StdinSource } from '@/bash/runtime/StdinSource';
 
 function read(args: string[], stdin?: string, vars: Record<string, string> = {}) {
   const env = new Environment({ variables: vars });
-  const result = executeBuiltin('read', args, env, new Map(), undefined, stdin);
+  const result = executeBuiltin('read', args, env, new Map(), undefined, stdin === undefined ? undefined : new StdinSource(stdin));
   return { ...result, env };
 }
 
@@ -58,10 +59,16 @@ describe('read builtin', () => {
   });
 
   describe('-p flag (prompt)', () => {
-    it('should output prompt text', () => {
+    it('prints no prompt when the input is not a terminal', () => {
       const result = read(['-p', 'Enter name: ', 'name'], 'Alice\n');
-      expect(result.output).toBe('Enter name: ');
+      expect(result.output).toBe('');
       expect(result.env.get('name')).toBe('Alice');
+    });
+
+    it('prints the prompt when the input is the terminal', () => {
+      const result = read(['-p', 'Enter name: ', 'name']);
+      expect(result.output).toBe('Enter name: ');
+      expect(result.exitCode).toBe(1);
     });
   });
 

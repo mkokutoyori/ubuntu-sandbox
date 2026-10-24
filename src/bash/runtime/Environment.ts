@@ -34,7 +34,19 @@ export interface EnvironmentOptions {
   pid?: number;
   /** Parent PID ($PPID). */
   ppid?: number;
+  /** Variables computed at read time (`RANDOM`, `SECONDS`, `LINENO`, …). */
+  dynamicVariables?: Readonly<Record<string, () => string>>;
 }
+
+const DEFAULT_SHELL_VARIABLES: Readonly<Record<string, string>> = {
+  IFS: ' \t\n',
+  OSTYPE: 'linux-gnu',
+  HOSTTYPE: 'x86_64',
+  MACHTYPE: 'x86_64-pc-linux-gnu',
+  BASH_VERSION: '5.2.21(1)-release',
+};
+
+const BASH_VERSION_INFORMATION = ['5', '2', '21', '1', 'release', 'x86_64-pc-linux-gnu'];
 
 export class Environment {
   /** Variable storage: name → value. */
@@ -61,6 +73,7 @@ export class Environment {
   private parent: Environment | null = null;
   /** Last exit code ($?). */
   private _lastExitCode: number = 0;
+  private dynamic: Readonly<Record<string, () => string>> = {};
   /** Process ID ($$) — simulated. */
   private readonly pid: number;
   /** Parent process ID ($PPID) — simulated. */
@@ -79,6 +92,11 @@ export class Environment {
         if (!SHELL_LOCAL_VARIABLES.has(k)) this.exported.add(k);
       }
     }
+    for (const [name, value] of Object.entries(DEFAULT_SHELL_VARIABLES)) {
+      if (!this.vars.has(name)) this.vars.set(name, value);
+    }
+    if (!this.arrays.has('BASH_VERSINFO')) this.arrays.set('BASH_VERSINFO', [...BASH_VERSION_INFORMATION]);
+    this.dynamic = options.dynamicVariables ?? {};
     if (options.scriptName !== undefined) {
       this.vars.set('0', options.scriptName);
     }
@@ -115,6 +133,8 @@ export class Environment {
     // Special variables first
     const special = this.getSpecial(name);
     if (special !== undefined) return special;
+    const computed = this.dynamic[name];
+    if (computed !== undefined) return computed();
 
     name = this.resolveName(name);
     if (this.vars.has(name)) return this.vars.get(name);
@@ -413,7 +433,7 @@ export class Environment {
     // whatever $? was set to just before the call — a function body's
     // first statement (e.g. a trap handler checking `$?`) must observe
     // the caller's exit status, not a reset-to-0 default.
-    const child = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode });
+    const child = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode, dynamicVariables: this.dynamic });
     child.parent = this;
     // Inherit PID and script name
     child.vars.set('0', this.get('0') ?? '');
@@ -427,7 +447,7 @@ export class Environment {
    * `(…)` fork-semantics.
    */
   createSubshell(): Environment {
-    const sub = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode });
+    const sub = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode, dynamicVariables: this.dynamic });
     // Inline the visible variable set rather than chain to `this` so
     // writes against the snapshot never bubble up.
     for (const [k, v] of this.getAll()) sub.vars.set(k, v);

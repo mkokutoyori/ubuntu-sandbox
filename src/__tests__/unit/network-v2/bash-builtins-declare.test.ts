@@ -38,7 +38,7 @@ describe('declare builtin', () => {
       env.setReadonly('RO');
       const result = executeBuiltin('declare', ['RO=new'], env, new Map());
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('readonly variable');
+      expect(result.stderr).toContain('readonly variable');
     });
   });
 
@@ -70,7 +70,7 @@ describe('declare builtin', () => {
     it('should error on invalid identifier', () => {
       const result = run('declare', ['123=bad']);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('not a valid identifier');
+      expect(result.stderr).toContain('not a valid identifier');
     });
   });
 });
@@ -112,7 +112,7 @@ describe('local builtin', () => {
     env.setReadonly('RO');
     const result = executeBuiltin('local', ['RO=new'], env, new Map());
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('readonly variable');
+    expect(result.stderr).toContain('readonly variable');
   });
 });
 
@@ -141,6 +141,6 @@ describe('let builtin', () => {
   it('should error with no arguments', () => {
     const result = run('let', []);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('expression expected');
+    expect(result.stderr).toContain('expression expected');
   });
 });

@@ -17,10 +17,13 @@ import {
 import { evaluateArithmetic } from './Expansion';
 import type { AliasTable } from './AliasTable';
 import type { StdinReader } from './StdinSource';
+import { decodeBackslashEscapes } from './EscapeSequences';
+import { formatPrintf } from './Printf';
 
 /** Minimal IO interface for builtins that need filesystem access. */
 export interface BuiltinIO {
-  resolvePath(path: string): string;
+  resolvePath(path: string, cwd?: string): string;
+  wallClock?(): { nowMs(): number; format(pattern: string, epochMs: number): string };
   stat?(path: string): { type: 'file' | 'directory' } | null;
 }
 
@@ -58,7 +61,7 @@ export function executeBuiltin(
 ): BuiltinResult {
   switch (name) {
     case 'echo': return builtinEcho(args);
-    case 'printf': return builtinPrintf(args, env);
+    case 'printf': return builtinPrintf(args, env, io);
     case 'pwd': return { output: (env.get('PWD') ?? '/') + '\n', exitCode: 0 };
     case 'cd': return builtinCd(args, env, io);
     case 'export': return builtinExport(args, env);
@@ -172,273 +175,61 @@ function builtinEcho(args: string[]): BuiltinResult {
 
   let text = args.slice(start).join(' ');
   if (escapes) {
-    const processed = processEchoEscapes(text);
+    const processed = decodeBackslashEscapes(text, 'echo');
     text = processed.text;
-    if (processed.stopOutput) newline = false;
+    if (processed.stopped) newline = false;
   }
 
   return { output: text + (newline ? '\n' : ''), exitCode: 0 };
 }
 
-/** Process escape sequences for echo -e. Returns text and whether \c was encountered. */
-function processEchoEscapes(text: string): { text: string; stopOutput: boolean } {
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\\' && i + 1 < text.length) {
-      const next = text[i + 1];
-      switch (next) {
-        case '\\': result += '\\'; i++; break;
-        case 'n': result += '\n'; i++; break;
-        case 't': result += '\t'; i++; break;
-        case 'a': result += '\x07'; i++; break;
-        case 'b': result += '\b'; i++; break;
-        case 'r': result += '\r'; i++; break;
-        case 'f': result += '\f'; i++; break;
-        case 'v': result += '\v'; i++; break;
-        // `\e` est l'échappement qui OUVRE une séquence ANSI, donc la
-        // seule façon pour un apprenant de produire une couleur à la
-        // main. Il tombait dans le `default` et repartait littéral :
-        // `echo -e "\e[31mrouge"` imprimait sa propre séquence.
-        case 'e': case 'E': result += '\x1b'; i++; break;
-        case 'c': return { text: result, stopOutput: true };
-        case 'u': case 'U': {
-          // \uHHHH et \UHHHHHHHH — bash les accepte tous les deux.
-          const large = next === 'U';
-          const max = large ? 8 : 4;
-          let hex = '';
-          let j = i + 2;
-          while (j < text.length && hex.length < max && /[0-9a-fA-F]/.test(text[j])) {
-            hex += text[j]; j++;
-          }
-          if (hex) {
-            result += String.fromCodePoint(parseInt(hex, 16));
-            i = j - 1;
-          } else {
-            result += '\\' + next; i++;
-          }
-          break;
-        }
-        case '0': {
-          // Octal: \0NNN (up to 3 octal digits)
-          let octal = '';
-          let j = i + 2;
-          while (j < text.length && j < i + 5 && /[0-7]/.test(text[j])) {
-            octal += text[j]; j++;
-          }
-          result += String.fromCharCode(parseInt(octal || '0', 8));
-          i = j - 1;
-          break;
-        }
-        case 'x': {
-          // Hex: \xHH (up to 2 hex digits)
-          let hex = '';
-          let j = i + 2;
-          while (j < text.length && j < i + 4 && /[0-9a-fA-F]/.test(text[j])) {
-            hex += text[j]; j++;
-          }
-          if (hex) {
-            result += String.fromCharCode(parseInt(hex, 16));
-            i = j - 1;
-          } else {
-            result += '\\x'; i++;
-          }
-          break;
-        }
-        default: result += '\\' + next; i++; break;
-      }
-    } else {
-      result += text[i];
+// ─── printf ───────────────────────────────────────────────────
+
+function builtinPrintf(args: string[], env: Environment, io?: BuiltinIO): BuiltinResult {
+  let target: string | null = null;
+  let index = 0;
+  while (index < args.length && args[index].startsWith('-') && args[index] !== '-') {
+    if (args[index] === '--') { index++; break; }
+    if (args[index] === '-v') {
+      target = args[index + 1] ?? null;
+      if (target === null) return fail('bash: printf: -v: option requires an argument\nprintf: usage: printf [-v var] format [arguments]', 2);
+      index += 2;
+      continue;
     }
+    return fail(`bash: printf: ${args[index]}: invalid option\nprintf: usage: printf [-v var] format [arguments]`, 2);
   }
-  return { text: result, stopOutput: false };
+  if (index >= args.length) return fail('bash: printf: usage: printf [-v var] format [arguments]', 2);
+  const clock = io?.wallClock === undefined ? undefined : {
+    nowMs: () => io.wallClock!().nowMs(),
+    format: (pattern: string, epochMs: number) => io.wallClock!().format(pattern, epochMs),
+  };
+  const result = formatPrintf(args[index], args.slice(index + 1), clock);
+  const errors = result.errors.map((message) => `bash: printf: ${message}\n`).join('');
+  if (target !== null) {
+    try { assignScalar(env, target, result.output); } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e), 1);
+    }
+    return { output: '', exitCode: result.status, ...(errors === '' ? {} : { stderr: errors }) };
+  }
+  return { output: result.output, exitCode: result.status, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
-// ─── printf ─────────────────────────────────────────────────────
-
-function builtinPrintf(args: string[], env: Environment): BuiltinResult {
-  if (args.length === 0) {
-    return fail(`bash: printf: usage: printf [-v var] format [arguments]`, 1);
+function assignScalar(env: Environment, reference: string, value: string): void {
+  const element = /^([A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/.exec(reference);
+  if (element === null) {
+    env.set(reference, value);
+    return;
   }
-
-  // Handle -v var flag
-  let targetVar: string | null = null;
-  let fmtStart = 0;
-  if (args[0] === '-v' && args.length >= 3) {
-    targetVar = args[1];
-    fmtStart = 2;
+  const [, name, subscript] = element;
+  if (env.isAssoc(name)) {
+    env.setAssocElement(name, subscript, value);
+    return;
   }
-
-  const format = args[fmtStart];
-  const fmtArgs = args.slice(fmtStart + 1);
-  let output = '';
-  let argIdx = 0;
-
-  // Re-use format string when there are remaining arguments
-  do {
-    const startArgIdx = argIdx;
-    output += printfFormat(format, fmtArgs, argIdx);
-    // Count how many args were consumed by scanning format
-    argIdx = startArgIdx + countFormatSpecs(format);
-  } while (argIdx < fmtArgs.length && argIdx > 0);
-
-  if (targetVar) {
-    try { env.set(targetVar, output); } catch { /* readonly */ }
-    return { output: '', exitCode: 0 };
-  }
-  return { output, exitCode: 0 };
-}
-
-/** Count the number of format specifiers (excluding %%) in a format string. */
-function countFormatSpecs(format: string): number {
-  let count = 0;
-  for (let i = 0; i < format.length; i++) {
-    if (format[i] === '%' && i + 1 < format.length) {
-      i++;
-      // Skip flags, width, precision
-      while (i < format.length && /[-+ 0#]/.test(format[i])) i++;
-      while (i < format.length && /[0-9]/.test(format[i])) i++;
-      if (i < format.length && format[i] === '.') {
-        i++;
-        while (i < format.length && /[0-9]/.test(format[i])) i++;
-      }
-      if (i < format.length && format[i] !== '%') count++;
-    } else if (format[i] === '\\' && i + 1 < format.length) {
-      i++;
-    }
-  }
-  return count;
-}
-
-/** Format a single pass through the format string with given args starting at argIdx. */
-function printfFormat(format: string, fmtArgs: string[], argIdx: number): string {
-  let output = '';
-  let ai = argIdx;
-
-  for (let i = 0; i < format.length; i++) {
-    if (format[i] === '%' && i + 1 < format.length) {
-      i++;
-      if (format[i] === '%') { output += '%'; continue; }
-
-      // Parse flags
-      let flags = '';
-      while (i < format.length && /[-+ 0#]/.test(format[i])) { flags += format[i]; i++; }
-
-      // Parse width
-      let width = '';
-      while (i < format.length && /[0-9]/.test(format[i])) { width += format[i]; i++; }
-
-      // Parse precision
-      let precision = '';
-      if (i < format.length && format[i] === '.') {
-        i++;
-        while (i < format.length && /[0-9]/.test(format[i])) { precision += format[i]; i++; }
-        if (!precision) precision = '0';
-      }
-
-      const specifier = format[i] ?? 's';
-      const arg = fmtArgs[ai++] ?? '';
-
-      output += applyPrintfSpec(specifier, arg, flags, width, precision);
-    } else if (format[i] === '\\' && i + 1 < format.length) {
-      i++;
-      switch (format[i]) {
-        case 'n': output += '\n'; break;
-        case 't': output += '\t'; break;
-        case '\\': output += '\\'; break;
-        case 'a': output += '\x07'; break;
-        case 'b': output += '\b'; break;
-        case 'r': output += '\r'; break;
-        case 'f': output += '\f'; break;
-        case 'v': output += '\v'; break;
-        // Comme pour `echo -e` : `\e` ouvre une séquence ANSI, et
-        // `printf` est la façon dont un script sérieux la produit —
-        // c'est même la seule portable, `echo -e` n'étant pas POSIX.
-        case 'e': case 'E': output += '\x1b'; break;
-        case '0': {
-          let octal = '';
-          let j = i + 1;
-          while (j < format.length && j < i + 4 && /[0-7]/.test(format[j])) { octal += format[j]; j++; }
-          output += String.fromCharCode(parseInt(octal || '0', 8));
-          i = j - 1;
-          break;
-        }
-        case 'x': {
-          let hex = '';
-          let j = i + 1;
-          while (j < format.length && j < i + 3 && /[0-9a-fA-F]/.test(format[j])) { hex += format[j]; j++; }
-          if (hex) { output += String.fromCharCode(parseInt(hex, 16)); i = j - 1; }
-          else { output += '\\x'; }
-          break;
-        }
-        default: output += '\\' + format[i];
-      }
-    } else {
-      output += format[i];
-    }
-  }
-  return output;
-}
-
-/** Apply a single printf format specifier. */
-function applyPrintfSpec(spec: string, arg: string, flags: string, widthStr: string, precisionStr: string): string {
-  const width = widthStr ? parseInt(widthStr) : 0;
-  const leftAlign = flags.includes('-');
-  const zeroPad = flags.includes('0') && !leftAlign;
-
-  let result: string;
-  switch (spec) {
-    case 's': {
-      result = arg;
-      if (precisionStr) result = result.substring(0, parseInt(precisionStr));
-      break;
-    }
-    case 'd': case 'i': {
-      const num = parseInt(arg) || 0;
-      result = String(num);
-      break;
-    }
-    case 'f': {
-      const num = parseFloat(arg) || 0;
-      const prec = precisionStr ? parseInt(precisionStr) : 6;
-      result = num.toFixed(prec);
-      break;
-    }
-    case 'x': {
-      const num = parseInt(arg) || 0;
-      result = (num >>> 0).toString(16);
-      break;
-    }
-    case 'X': {
-      const num = parseInt(arg) || 0;
-      result = (num >>> 0).toString(16).toUpperCase();
-      break;
-    }
-    case 'o': {
-      const num = parseInt(arg) || 0;
-      result = (num >>> 0).toString(8);
-      break;
-    }
-    case 'c': {
-      result = arg ? arg[0] : '';
-      break;
-    }
-    case 'b': {
-      // %b: interpret backslash escapes in arg (like echo -e)
-      result = processEchoEscapes(arg).text;
-      break;
-    }
-    default:
-      result = '%' + spec;
-  }
-
-  // Apply width padding
-  if (width > result.length) {
-    const padChar = zeroPad ? '0' : ' ';
-    const padding = padChar.repeat(width - result.length);
-    result = leftAlign ? result + padding : padding + result;
-  }
-
-  return result;
+  const array = [...(env.getArray(name) ?? [])];
+  const position = Number(evaluateArithmetic(subscript, env));
+  while (array.length < position) array.push('');
+  array[position] = value;
+  env.setArray(name, array);
 }
 
 // ─── cd ─────────────────────────────────────────────────────────
@@ -761,6 +552,7 @@ function builtinRead(args: string[], env: Environment, input?: StdinReader, read
   let exact = false;
   let timeout: number | null = null;
   let fd = 0;
+  let prompt = '';
   const names: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -782,6 +574,7 @@ function builtinRead(args: string[], env: Environment, input?: StdinReader, read
       else if (flag === 'n' || flag === 'N') { limit = Number.parseInt(value, 10); exact = flag === 'N'; }
       else if (flag === 't') timeout = Number(value);
       else if (flag === 'u') fd = Number.parseInt(value, 10);
+      else if (flag === 'p') prompt = value;
       break;
     }
   }
@@ -828,7 +621,7 @@ function builtinRead(args: string[], env: Environment, input?: StdinReader, read
   };
   if (!sawInput && source === undefined) {
     for (const name of names.length > 0 ? names : ['REPLY']) store(() => env.set(name, ''));
-    return { output: '', exitCode: 1 };
+    return { output: prompt, exitCode: 1 };
   }
   if (arrayName !== null) {
     const words = splitWords(characters, ifs);

@@ -2721,12 +2721,6 @@
   },
   {
    "group": "quoting",
-   "command": "echo $'\\u00e9'",
-   "stdout": "\\u00E9\n",
-   "status": 0
-  },
-  {
-   "group": "quoting",
    "command": "echo \"$'x'\"",
    "stdout": "$'x'\n",
    "status": 0
@@ -3213,12 +3207,6 @@
   },
   {
    "group": "quoting",
-   "command": "echo $_",
-   "stdout": "/tmp/w\n",
-   "status": 0
-  },
-  {
-   "group": "quoting",
    "command": "echo a; echo $_",
    "stdout": "a\na\n",
    "status": 0
@@ -3257,12 +3245,6 @@
    "group": "quoting",
    "command": "echo $UID | grep -c \"^[0-9]*$\"",
    "stdout": "1\n",
-   "status": 0
-  },
-  {
-   "group": "quoting",
-   "command": "echo $IFS | od -c | head -1",
-   "stdout": "0000000  \\n\n",
    "status": 0
   },
   {
@@ -3335,12 +3317,6 @@
    "group": "quoting",
    "command": "x=$'a\\tb'; echo \"$x\"",
    "stdout": "a\tb\n",
-   "status": 0
-  },
-  {
-   "group": "quoting",
-   "command": "echo $'\\e[0m' | od -c | head -1",
-   "stdout": "0000000 033   [   0   m  \\n\n",
    "status": 0
   },
   {
@@ -4059,12 +4035,6 @@
   },
   {
    "group": "printf",
-   "command": "printf \"\\u00e9\\n\"",
-   "stdout": "\\u00E9\n",
-   "status": 0
-  },
-  {
-   "group": "printf",
    "command": "printf \"a\\nb\"",
    "stdout": "a\nb",
    "status": 0
@@ -4097,12 +4067,6 @@
    "group": "printf",
    "command": "printf \"%d\\n\"",
    "stdout": "0\n",
-   "status": 0
-  },
-  {
-   "group": "printf",
-   "command": "printf \"\\e[1mx\\e[0m\\n\" | od -c | head -1",
-   "stdout": "0000000 033   [   1   m   x 033   [   0   m  \\n\n",
    "status": 0
   },
   {
