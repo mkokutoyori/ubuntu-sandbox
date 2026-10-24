@@ -5102,8 +5102,8 @@ export class LinuxCommandExecutor {
         const absPath = this.vfs.normalizePath(path, this.cwd);
         return this.vfs.readFile(absPath);
       },
-      resolvePath: (path: string) => {
-        return this.vfs.normalizePath(path, this.cwd);
+      resolvePath: (path: string, cwd?: string) => {
+        return this.vfs.normalizePath(path, cwd ?? this.cwd);
       },
       bindBackgroundStdout: (pid: number, path: string) => {
         const sink = this.lateStdout.get(pid) ?? { pending: [] };

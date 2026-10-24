@@ -272,7 +272,7 @@ export interface Assignment extends ASTBase {
 
 // ─── Redirection ────────────────────────────────────────────────
 
-export type RedirectionOp = '>' | '>>' | '<' | '<<' | '<<<' | '<&' | '>&';
+export type RedirectionOp = '>' | '>>' | '>|' | '&>' | '&>>' | '<' | '<<' | '<<<' | '<&' | '>&';
 
 export interface Redirection extends ASTBase {
   type: 'Redirection';

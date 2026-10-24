@@ -772,7 +772,7 @@ export class BashParser {
       case TokenType.LESSAND: op = '<&'; break;
       case TokenType.GREATAND: {
         // GREATAND can be: >&, 2>&1, 1>&2, etc.
-        const gaMatch = tok.value.match(/^(\d+)>&(\d+)$/);
+        const gaMatch = tok.value.match(/^(\d+)>&(\d+|-)$/);
         if (gaMatch) {
           fd = parseInt(gaMatch[1]);
           op = '>&';
@@ -780,6 +780,14 @@ export class BashParser {
           return makeRedirection(op, target, fd, pos);
         }
         op = '>&';
+        break;
+      }
+      case TokenType.REDIR_OP: {
+        const operator = /^(\d*)(&>>|&>|>\||<&|<)(\d+|-)?$/.exec(tok.value);
+        if (operator === null) throw new ParserError(`Unsupported redirection '${tok.value}'`, pos);
+        fd = operator[1] === '' ? undefined : parseInt(operator[1]);
+        op = operator[2] as RedirectionOp;
+        if (operator[3] !== undefined) return makeRedirection(op, makeLiteralWord(operator[3], pos), fd, pos);
         break;
       }
       case TokenType.FD_GREAT: {
@@ -867,7 +875,8 @@ export class BashParser {
     const t = this.peek().type;
     return t === TokenType.GREAT || t === TokenType.DGREAT || t === TokenType.LESS
       || t === TokenType.HEREDOC || t === TokenType.HERESTRING || t === TokenType.LESSAND
-      || t === TokenType.GREATAND || t === TokenType.FD_GREAT || t === TokenType.FD_DGREAT;
+      || t === TokenType.GREATAND || t === TokenType.FD_GREAT || t === TokenType.FD_DGREAT
+      || t === TokenType.REDIR_OP;
   }
 
   /** Check if current token could be part of a word. */

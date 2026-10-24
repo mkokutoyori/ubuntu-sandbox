@@ -16,6 +16,7 @@ import {
 } from '@/bash/errors/BashError';
 import { evaluateArithmetic } from './Expansion';
 import type { AliasTable } from './AliasTable';
+import type { StdinReader } from './StdinSource';
 
 /** Minimal IO interface for builtins that need filesystem access. */
 export interface BuiltinIO {
@@ -26,6 +27,11 @@ export interface BuiltinIO {
 export interface BuiltinResult {
   output: string;
   exitCode: number;
+  stderr?: string;
+}
+
+function fail(message: string, exitCode = 1): BuiltinResult {
+  return { output: '', stderr: `${message}\n`, exitCode };
 }
 
 const BUILTIN_NAMES = new Set([
@@ -46,8 +52,9 @@ export function executeBuiltin(
   env: Environment,
   functions: Map<string, Command>,
   io?: BuiltinIO,
-  pipeInput?: string,
+  stdin?: StdinReader,
   aliases?: AliasTable,
+  readFd?: (fd: number) => StdinReader | undefined,
 ): BuiltinResult {
   switch (name) {
     case 'echo': return builtinEcho(args);
@@ -63,13 +70,13 @@ export function executeBuiltin(
     // already happened. Common in `case ... : ;;` no-op branches and
     // `while : ; do` infinite loops.
     case ':': return { output: '', exitCode: 0 };
-    case 'exit': return builtinExit(args);
-    case 'return': return builtinReturn(args);
+    case 'exit': return builtinExit(args, env);
+    case 'return': return builtinReturn(args, env);
     case 'break': return builtinBreak(args);
     case 'continue': return builtinContinue(args);
     case 'shift': return builtinShift(args, env);
     case 'local': return builtinLocal(args, env);
-    case 'read': return builtinRead(args, env, pipeInput);
+    case 'read': return builtinRead(args, env, stdin, readFd);
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return builtinSet(args, env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
@@ -79,7 +86,7 @@ export function executeBuiltin(
     case 'getopts': return builtinGetopts(args, env);
     case 'trap': return builtinTrap(args, env);
     case 'mapfile':
-    case 'readarray': return builtinMapfile(args, env, io, pipeInput);
+    case 'readarray': return builtinMapfile(args, env, stdin, readFd);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
     case 'alias': return builtinAlias(args, aliases);
     case 'unalias': return builtinUnalias(args, aliases);
@@ -100,6 +107,7 @@ function builtinAlias(args: string[], aliases?: AliasTable): BuiltinResult {
     };
   }
   let output = '';
+  let errors = '';
   let exitCode = 0;
   for (const arg of args) {
     if (arg === '-p') continue;
@@ -113,12 +121,12 @@ function builtinAlias(args: string[], aliases?: AliasTable): BuiltinResult {
       if (a) {
         output += a.format() + '\n';
       } else {
-        output += `bash: alias: ${arg}: not found\n`;
+        errors += `bash: alias: ${arg}: not found\n`;
         exitCode = 1;
       }
     }
   }
-  return { output, exitCode };
+  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 function builtinUnalias(args: string[], aliases?: AliasTable): BuiltinResult {
@@ -128,15 +136,16 @@ function builtinUnalias(args: string[], aliases?: AliasTable): BuiltinResult {
     return { output: '', exitCode: 0 };
   }
   let output = '';
+  let errors = '';
   let exitCode = 0;
   for (const name of args) {
     if (name.startsWith('-')) continue;
     if (!aliases.remove(name)) {
-      output += `bash: unalias: ${name}: not found\n`;
+      errors += `bash: unalias: ${name}: not found\n`;
       exitCode = 1;
     }
   }
-  return { output, exitCode };
+  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 // ─── echo ───────────────────────────────────────────────────────
@@ -248,7 +257,7 @@ function processEchoEscapes(text: string): { text: string; stopOutput: boolean }
 
 function builtinPrintf(args: string[], env: Environment): BuiltinResult {
   if (args.length === 0) {
-    return { output: 'bash: printf: usage: printf [-v var] format [arguments]\n', exitCode: 1 };
+    return fail(`bash: printf: usage: printf [-v var] format [arguments]`, 1);
   }
 
   // Handle -v var flag
@@ -437,20 +446,20 @@ function applyPrintfSpec(spec: string, arg: string, flags: string, widthStr: str
 function builtinCd(args: string[], env: Environment, io?: BuiltinIO): BuiltinResult {
   // cd accepts at most one argument
   if (args.length > 1) {
-    return { output: 'bash: cd: too many arguments\n', exitCode: 1 };
+    return fail(`bash: cd: too many arguments`, 1);
   }
 
   let target: string;
   if (args.length === 0) {
     const home = env.get('HOME');
     if (!home) {
-      return { output: 'bash: cd: HOME not set\n', exitCode: 1 };
+      return fail(`bash: cd: HOME not set`, 1);
     }
     target = home;
   } else if (args[0] === '-') {
     const oldpwd = env.get('OLDPWD');
     if (!oldpwd) {
-      return { output: 'bash: cd: OLDPWD not set\n', exitCode: 1 };
+      return fail(`bash: cd: OLDPWD not set`, 1);
     }
     target = oldpwd;
   } else {
@@ -485,10 +494,10 @@ function builtinCd(args: string[], env: Environment, io?: BuiltinIO): BuiltinRes
     const absPath = io.resolvePath(resolved);
     const info = io.stat(absPath);
     if (!info) {
-      return { output: `bash: cd: ${args[0] ?? resolved}: No such file or directory\n`, exitCode: 1 };
+      return fail(`bash: cd: ${args[0] ?? resolved}: No such file or directory`, 1);
     }
     if (info.type !== 'directory') {
-      return { output: `bash: cd: ${args[0] ?? resolved}: Not a directory\n`, exitCode: 1 };
+      return fail(`bash: cd: ${args[0] ?? resolved}: Not a directory`, 1);
     }
   }
 
@@ -521,6 +530,7 @@ function builtinExport(args: string[], env: Environment): BuiltinResult {
 
   let exitCode = 0;
   let output = '';
+  let errors = '';
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const eqIdx = arg.indexOf('=');
@@ -528,7 +538,7 @@ function builtinExport(args: string[], env: Environment): BuiltinResult {
 
     // Validate identifier
     if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
-      output += `bash: export: \`${arg}': not a valid identifier\n`;
+      errors += `bash: export: \`${arg}': not a valid identifier\n`;
       exitCode = 1;
       continue;
     }
@@ -540,11 +550,11 @@ function builtinExport(args: string[], env: Environment): BuiltinResult {
         env.export(name);
       }
     } catch (e) {
-      output += e instanceof Error ? e.message + '\n' : '';
+      errors += e instanceof Error ? e.message + '\n' : '';
       exitCode = 1;
     }
   }
-  return { output, exitCode };
+  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 // ─── unset ──────────────────────────────────────────────────────
@@ -552,6 +562,7 @@ function builtinExport(args: string[], env: Environment): BuiltinResult {
 function builtinUnset(args: string[], env: Environment): BuiltinResult {
   let exitCode = 0;
   let output = '';
+  let errors = '';
   for (const arg of args) {
     if (arg === '-v' || arg === '-f') continue; // flags: -v (var), -f (func)
     if (arg.startsWith('-')) continue;
@@ -573,29 +584,29 @@ function builtinUnset(args: string[], env: Environment): BuiltinResult {
       continue;
     }
     if (env.isReadonly(arg)) {
-      output += `bash: unset: ${arg}: cannot unset: readonly variable\n`;
+      errors += `bash: unset: ${arg}: cannot unset: readonly variable\n`;
       exitCode = 1;
       continue;
     }
     env.unset(arg);
   }
-  return { output, exitCode };
+  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 // ─── Flow Control ───────────────────────────────────────────────
 
-function builtinExit(args: string[]): BuiltinResult {
-  if (args.length === 0) throw new ExitSignal(0);
+function builtinExit(args: string[], env: Environment): BuiltinResult {
+  if (args.length === 0) throw new ExitSignal(env.lastExitCode);
   const parsed = parseInt(args[0]);
   if (isNaN(parsed)) {
     // Non-numeric: exit with code 2 (bash behavior)
     throw new ExitSignal(2);
   }
-  throw new ExitSignal(parsed);
+  throw new ExitSignal(((parsed % 256) + 256) % 256);
 }
 
-function builtinReturn(args: string[]): BuiltinResult {
-  if (args.length === 0) throw new ReturnSignal(0);
+function builtinReturn(args: string[], env: Environment): BuiltinResult {
+  if (args.length === 0) throw new ReturnSignal(env.lastExitCode);
   const parsed = parseInt(args[0]);
   if (isNaN(parsed)) {
     throw new ReturnSignal(2);
@@ -607,10 +618,10 @@ function builtinBreak(args: string[]): BuiltinResult {
   if (args.length === 0) throw new BreakSignal(1);
   const parsed = parseInt(args[0]);
   if (isNaN(parsed)) {
-    return { output: `bash: break: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+    return fail(`bash: break: ${args[0]}: numeric argument required`, 1);
   }
   if (parsed <= 0) {
-    return { output: `bash: break: ${args[0]}: loop count out of range\n`, exitCode: 1 };
+    return fail(`bash: break: ${args[0]}: loop count out of range`, 1);
   }
   throw new BreakSignal(parsed);
 }
@@ -619,10 +630,10 @@ function builtinContinue(args: string[]): BuiltinResult {
   if (args.length === 0) throw new ContinueSignal(1);
   const parsed = parseInt(args[0]);
   if (isNaN(parsed)) {
-    return { output: `bash: continue: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+    return fail(`bash: continue: ${args[0]}: numeric argument required`, 1);
   }
   if (parsed <= 0) {
-    return { output: `bash: continue: ${args[0]}: loop count out of range\n`, exitCode: 1 };
+    return fail(`bash: continue: ${args[0]}: loop count out of range`, 1);
   }
   throw new ContinueSignal(parsed);
 }
@@ -632,11 +643,11 @@ function builtinContinue(args: string[]): BuiltinResult {
 function builtinShift(args: string[], env: Environment): BuiltinResult {
   const n = args.length > 0 ? (parseInt(args[0]) ?? 1) : 1;
   if (isNaN(n) || n < 0) {
-    return { output: `bash: shift: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+    return fail(`bash: shift: ${args[0]}: numeric argument required`, 1);
   }
   const current = env.getPositionalArgs();
   if (n > current.length) {
-    return { output: `bash: shift: shift count out of range\n`, exitCode: 1 };
+    return fail(`bash: shift: shift count out of range`, 1);
   }
   if (n === 0) return { output: '', exitCode: 0 };
   env.setPositionalArgs(current.slice(n));
@@ -648,6 +659,7 @@ function builtinShift(args: string[], env: Environment): BuiltinResult {
 function builtinLocal(args: string[], env: Environment): BuiltinResult {
   let exitCode = 0;
   let output = '';
+  let errors = '';
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
@@ -665,7 +677,7 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
       try {
         env.set(name, value);
       } catch (e) {
-        output += `bash: local: ${name}: readonly variable\n`;
+        errors += `bash: local: ${name}: readonly variable\n`;
         exitCode = 1;
       }
     } else {
@@ -676,123 +688,159 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
     }
     i++;
   }
-  return { output, exitCode };
+  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 // ─── read ───────────────────────────────────────────────────────
 
-function builtinRead(args: string[], env: Environment, pipeInput?: string): BuiltinResult {
-  let prompt = '';
+interface ReadCharacter {
+  readonly character: string;
+  readonly escaped: boolean;
+}
+
+const IFS_WHITESPACE = ' \t\n';
+
+function splitRecord(characters: readonly ReadCharacter[], ifs: string, names: number): string[] {
+  const isDelimiter = (c: ReadCharacter): boolean => !c.escaped && ifs.includes(c.character);
+  const isWhitespace = (c: ReadCharacter): boolean => isDelimiter(c) && IFS_WHITESPACE.includes(c.character);
+  const text = (from: number, to: number): string => characters.slice(from, to).map((c) => c.character).join('');
+  const fields: string[] = [];
+  let position = 0;
+  while (position < characters.length && isWhitespace(characters[position])) position++;
+  for (let index = 0; index < names; index++) {
+    if (index === names - 1) {
+      let end = characters.length;
+      while (end > position && isWhitespace(characters[end - 1])) end--;
+      const delimiters = characters.slice(position, end).filter(isDelimiter).length;
+      if (delimiters === 1 && end > position && isDelimiter(characters[end - 1]) && !isWhitespace(characters[end - 1])) end--;
+      fields.push(text(position, end));
+      break;
+    }
+    const start = position;
+    while (position < characters.length && !isDelimiter(characters[position])) position++;
+    fields.push(text(start, position));
+    while (position < characters.length && isWhitespace(characters[position])) position++;
+    if (position < characters.length && isDelimiter(characters[position]) && !isWhitespace(characters[position])) {
+      position++;
+      while (position < characters.length && isWhitespace(characters[position])) position++;
+    }
+  }
+  return fields;
+}
+
+function splitWords(characters: readonly ReadCharacter[], ifs: string): string[] {
+  const words: string[] = [];
+  let current: string | null = null;
+  const isDelimiter = (c: ReadCharacter): boolean => !c.escaped && ifs.includes(c.character);
+  for (let index = 0; index < characters.length; index++) {
+    const c = characters[index];
+    if (!isDelimiter(c)) {
+      current = (current ?? '') + c.character;
+      continue;
+    }
+    if (current !== null) words.push(current);
+    current = null;
+    if (!IFS_WHITESPACE.includes(c.character)) {
+      let next = index + 1;
+      while (next < characters.length && isDelimiter(characters[next]) && IFS_WHITESPACE.includes(characters[next].character)) next++;
+      if (next >= characters.length) break;
+      words.push('');
+      current = null;
+      index = next - 1;
+    }
+  }
+  if (current !== null) words.push(current);
+  return words;
+}
+
+function builtinRead(args: string[], env: Environment, input?: StdinReader, readFd?: (fd: number) => StdinReader | undefined): BuiltinResult {
   let raw = false;
   let arrayName: string | null = null;
-  let delim = '\n';
-  const varNames: string[] = [];
-  let output = '';
-
-  // Parse flags, including the new -a (read into array) and -d DELIM
-  // (custom line terminator, "" means NUL / read to EOF).
+  let delimiter = '\n';
+  let limit: number | null = null;
+  let exact = false;
+  let timeout: number | null = null;
+  let fd = 0;
+  const names: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '-r') { raw = true; continue; }
-    if (arg === '-p' && i + 1 < args.length) { prompt = args[++i]; continue; }
-    if (arg === '-a' && i + 1 < args.length) { arrayName = args[++i]; continue; }
-    if (arg === '-d') { delim = args[++i] ?? '\n'; if (delim === '') delim = '\0'; continue; }
-    if (arg === '-s' || arg === '-n' || arg === '-t') {
-      if ((arg === '-n' || arg === '-t') && i + 1 < args.length) i++;
-      continue;
-    }
-    if (arg.startsWith('-') && arg.length > 1) {
-      // Clustered short flags like `-ra`, `-rd`, `-ra arr`.
-      let j = 1;
-      while (j < arg.length) {
-        const f = arg[j];
-        if (f === 'r') { raw = true; j++; continue; }
-        if (f === 'a') {
-          const next = arg.slice(j + 1);
-          if (next) { arrayName = next; }
-          else if (i + 1 < args.length) { arrayName = args[++i]; }
-          break;
-        }
-        if (f === 'd') {
-          const next = arg.slice(j + 1);
-          if (next) { delim = next === '' ? '\0' : next; }
-          else if (i + 1 < args.length) { delim = args[++i] || '\0'; }
-          break;
-        }
-        if (f === 'p') {
-          const next = arg.slice(j + 1);
-          if (next) { prompt = next; }
-          else if (i + 1 < args.length) { prompt = args[++i]; }
-          break;
-        }
-        j++;
+    if (!arg.startsWith('-') || arg === '-') { names.push(arg); continue; }
+    if (arg === '--') { names.push(...args.slice(i + 1)); break; }
+    for (let j = 1; j < arg.length; j++) {
+      const flag = arg[j];
+      const takesValue = 'adnNptu'.includes(flag);
+      if (!takesValue) {
+        if (flag === 'r') raw = true;
+        else if (!'sei'.includes(flag)) return fail(`bash: read: -${flag}: invalid option`, 2);
+        continue;
       }
-      continue;
+      const attached = arg.slice(j + 1);
+      const value = attached !== '' ? attached : args[++i];
+      if (value === undefined) return fail(`bash: read: -${flag}: option requires an argument`, 2);
+      if (flag === 'a') arrayName = value;
+      else if (flag === 'd') delimiter = value === '' ? '\0' : value[0];
+      else if (flag === 'n' || flag === 'N') { limit = Number.parseInt(value, 10); exact = flag === 'N'; }
+      else if (flag === 't') timeout = Number(value);
+      else if (flag === 'u') fd = Number.parseInt(value, 10);
+      break;
     }
-    varNames.push(arg);
   }
+  const source = fd === 0 ? input : readFd?.(fd);
+  if (fd !== 0 && source === undefined) return fail(`bash: read: ${fd}: invalid file descriptor: Bad file descriptor`, 1);
+  if (timeout === 0) return { output: '', exitCode: source === undefined ? 1 : 0 };
 
-  // Display prompt
-  if (prompt) output = prompt;
-
-  // In simulator context: read from pipe input or set empty
-  if (!pipeInput) {
-    // No stdin available: set variables to empty, return 1 (EOF)
-    if (varNames.length === 0) {
-      env.set('REPLY', '');
-    } else {
-      for (const name of varNames) {
-        try { env.set(name, ''); } catch { /* readonly */ }
+  const characters: ReadCharacter[] = [];
+  let terminated = false;
+  let sawInput = false;
+  if (source !== undefined && limit !== null) {
+    const chunk = source.readCharacters(limit);
+    if (chunk !== null) {
+      sawInput = true;
+      for (const character of chunk) {
+        if (!exact && character === delimiter) { terminated = true; break; }
+        characters.push({ character, escaped: false });
       }
+      terminated = terminated || (chunk.length === limit);
     }
-    return { output, exitCode: 1 };
+  } else if (source !== undefined) {
+    for (;;) {
+      const record = source.readRecord(delimiter);
+      if (record === null) break;
+      sawInput = true;
+      let continued = false;
+      for (let index = 0; index < record.text.length; index++) {
+        const character = record.text[index];
+        if (!raw && character === '\\') {
+          if (index + 1 < record.text.length) { characters.push({ character: record.text[++index], escaped: true }); continue; }
+          if (record.terminated && delimiter === '\n') { continued = true; continue; }
+        }
+        characters.push({ character, escaped: false });
+      }
+      terminated = record.terminated;
+      if (!continued) break;
+    }
   }
-
-  // Read the first record from the pipe input. `delim` defaults to
-  // newline but a `-d ""` form reads until NUL (effectively to EOF).
-  const lineEnd = pipeInput.indexOf(delim);
-  let line = lineEnd >= 0 ? pipeInput.substring(0, lineEnd) : pipeInput;
-  // Trim a trailing newline that came from a heredoc-style source so
-  // `read foo <<< value` doesn't capture an extra `\n` (matches bash).
-  if (delim === '\n' && pipeInput.endsWith('\n') && lineEnd < 0) {
-    line = pipeInput.slice(0, -1);
+  const status = terminated ? 0 : 1;
+  const ifs = env.get('IFS') ?? ' \t\n';
+  const failures: string[] = [];
+  const store = (action: () => void): void => {
+    try { action(); } catch (e) { failures.push(e instanceof Error ? e.message : String(e)); }
+  };
+  if (!sawInput && source === undefined) {
+    for (const name of names.length > 0 ? names : ['REPLY']) store(() => env.set(name, ''));
+    return { output: '', exitCode: 1 };
   }
-
-  // Process backslash escapes unless -r
-  if (!raw) {
-    line = line.replace(/\\(.)/g, '$1');
-  }
-
-  // `-a NAME` binds every IFS-split token to elements of NAME.
-  if (arrayName) {
-    const ifs = env.get('IFS') ?? ' \t\n';
-    const split = line.split(new RegExp(`[${ifs.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&')}]+`)).filter(Boolean);
-    try { env.setArray(arrayName, split); } catch { /* readonly */ }
-    return { output, exitCode: 0 };
-  }
-
-  if (varNames.length === 0) {
-    // No variable names → use REPLY
-    env.set('REPLY', line);
-  } else if (varNames.length === 1) {
-    try { env.set(varNames[0], line); } catch { /* readonly */ }
+  if (arrayName !== null) {
+    const words = splitWords(characters, ifs);
+    store(() => env.setArray(arrayName as string, words));
+  } else if (names.length === 0) {
+    store(() => env.set('REPLY', characters.map((c) => c.character).join('')));
   } else {
-    // Split input by IFS (default: space/tab/newline)
-    const ifs = env.get('IFS') ?? ' \t\n';
-    const parts = line.split(new RegExp(`[${ifs.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&')}]+`));
-    for (let i = 0; i < varNames.length; i++) {
-      let value: string;
-      if (i === varNames.length - 1) {
-        // Last variable gets remainder
-        value = parts.slice(i).join(' ');
-      } else {
-        value = parts[i] ?? '';
-      }
-      try { env.set(varNames[i], value); } catch { /* readonly */ }
-    }
+    const fields = splitRecord(characters, ifs, names.length);
+    names.forEach((name, index) => store(() => env.set(name, fields[index] ?? '')));
   }
-
-  return { output, exitCode: 0 };
+  const errors = failures.map((message) => `${message}\n`).join('');
+  return { output: '', exitCode: failures.length > 0 ? 1 : status, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 // ─── type ───────────────────────────────────────────────────────
@@ -806,6 +854,7 @@ function builtinType(
   const terse = args.includes('-t');
   const names = args.filter(a => !a.startsWith('-'));
   const outputs: string[] = [];
+  const errors: string[] = [];
   let exitCode = 0;
   for (const name of names) {
     const alias = aliases?.get(name);
@@ -816,11 +865,11 @@ function builtinType(
     } else if (functions.has(name)) {
       outputs.push(terse ? 'function\n' : `${name} is a function\n`);
     } else {
-      if (!terse) outputs.push(`bash: type: ${name}: not found\n`);
+      if (!terse) errors.push(`bash: type: ${name}: not found\n`);
       exitCode = 1;
     }
   }
-  return { output: outputs.join(''), exitCode };
+  return { output: outputs.join(''), exitCode, ...(errors.length === 0 ? {} : { stderr: errors.join('') }) };
 }
 
 // ─── set ────────────────────────────────────────────────────────
@@ -928,13 +977,14 @@ function builtinDeclare(args: string[], env: Environment, forceReadonly = false)
 
   let exitCode = 0;
   let output = '';
+  let errors = '';
   for (const arg of varArgs) {
     const eqIdx = arg.indexOf('=');
     const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
 
     // Validate identifier
     if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
-      output += `bash: ${cmdName}: \`${arg}': not a valid identifier\n`;
+      errors += `bash: ${cmdName}: \`${arg}': not a valid identifier\n`;
       exitCode = 1;
       continue;
     }
@@ -948,7 +998,7 @@ function builtinDeclare(args: string[], env: Environment, forceReadonly = false)
       try {
         env.set(name, value);
       } catch {
-        output += `bash: ${cmdName}: ${name}: readonly variable\n`;
+        errors += `bash: ${cmdName}: ${name}: readonly variable\n`;
         exitCode = 1;
         continue;
       }
@@ -956,7 +1006,7 @@ function builtinDeclare(args: string[], env: Environment, forceReadonly = false)
     if (isReadonly) env.setReadonly(name);
     if (isExport) env.export(name);
   }
-  return { output, exitCode };
+  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 /** Print variable declarations for declare -p / readonly -p. */
@@ -991,7 +1041,7 @@ function declarePrint(names: string[], env: Environment, cmdName: string, readon
 
 function builtinLet(args: string[], env: Environment): BuiltinResult {
   if (args.length === 0) {
-    return { output: 'bash: let: expression expected\n', exitCode: 1 };
+    return fail(`bash: let: expression expected`, 1);
   }
 
   let result = '0';
@@ -1000,7 +1050,7 @@ function builtinLet(args: string[], env: Environment): BuiltinResult {
       result = evaluateArithmetic(expr, env);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return { output: `bash: let: ${msg}\n`, exitCode: 1 };
+      return fail(`bash: let: ${msg}`, 1);
     }
   }
   // let returns 1 if last expression is 0, else 0
@@ -1027,7 +1077,7 @@ function builtinLet(args: string[], env: Environment): BuiltinResult {
  */
 function builtinGetopts(args: string[], env: Environment): BuiltinResult {
   if (args.length < 2) {
-    return { output: 'getopts: usage: getopts optstring name [args]\n', exitCode: 2 };
+    return fail(`getopts: usage: getopts optstring name [args]`, 2);
   }
   const optstring = args[0];
   const name = args[1];
@@ -1142,7 +1192,7 @@ function builtinTrap(args: string[], env: Environment): BuiltinResult {
   const action = args[0];
   const signals = args.slice(1);
   if (signals.length === 0) {
-    return { output: 'trap: usage: trap [-lp] [[arg] signal_spec …]\n', exitCode: 2 };
+    return fail(`trap: usage: trap [-lp] [[arg] signal_spec …]`, 2);
   }
   for (const sig of signals) {
     env.setTrap(normalizeSig(sig), action);
@@ -1175,34 +1225,42 @@ function normalizeSig(sig: string): string {
 function builtinMapfile(
   args: string[],
   env: Environment,
-  _io: BuiltinIO | undefined,
-  pipeInput?: string,
+  input?: StdinReader,
+  readFd?: (fd: number) => StdinReader | undefined,
 ): BuiltinResult {
   let trim = false;
   let count = Number.POSITIVE_INFINITY;
   let origin = 0;
   let skip = 0;
-  let delim = '\n';
+  let delimiter = '\n';
   let name = 'MAPFILE';
+  let fd = 0;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-t') { trim = true; continue; }
-    if (a === '-n') { count = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
+    if (a === '-n') { const n = Number.parseInt(args[++i] ?? '0', 10) || 0; count = n === 0 ? Number.POSITIVE_INFINITY : n; continue; }
     if (a === '-O') { origin = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
     if (a === '-s') { skip = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
-    if (a === '-d') { delim = args[++i] ?? '\n'; if (delim === '') delim = '\0'; continue; }
-    if (a === '-u' || a === '-c' || a === '-C') { i++; continue; } // accepted, ignored
+    if (a === '-d') { const value = args[++i] ?? '\n'; delimiter = value === '' ? '\0' : value[0]; continue; }
+    if (a === '-u') { fd = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
+    if (a === '-c' || a === '-C') { i++; continue; }
     if (a.startsWith('-')) continue;
     name = a;
   }
-  const source = pipeInput ?? '';
-  const lines = source.length === 0 ? [] : source.split(delim);
-  if (source.endsWith(delim)) lines.pop();
-  const sliced = lines.slice(skip, count === Number.POSITIVE_INFINITY ? undefined : skip + count);
-  const values = sliced.map(l => trim ? l : l + delim);
-  // Pad with empty slots when origin > 0 so the new elements land at
-  // the requested offset (matches bash semantics).
-  const final = new Array<string>(Math.max(0, origin)).fill('').concat(values);
-  env.setArray(name, final);
+  const source = fd === 0 ? input : readFd?.(fd);
+  const values: string[] = [];
+  let skipped = 0;
+  if (source !== undefined) {
+    for (;;) {
+      if (values.length >= count) break;
+      const record = source.readRecord(delimiter);
+      if (record === null) break;
+      if (skipped < skip) { skipped++; continue; }
+      values.push(trim || !record.terminated ? record.text : record.text + delimiter);
+    }
+  }
+  const existing = origin > 0 ? [...(env.getArray(name) ?? [])] : [];
+  while (existing.length < origin) existing.push('');
+  env.setArray(name, [...existing.slice(0, origin), ...values]);
   return { output: '', exitCode: 0 };
 }

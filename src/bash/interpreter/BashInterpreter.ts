@@ -27,16 +27,22 @@ import type {
 } from '@/bash/parser/ASTNode';
 import { Environment } from '@/bash/runtime/Environment';
 import { isShellOptionEnabled } from '@/bash/runtime/ShellOptions';
-import { expandWord, expandWords, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
+import { expandWord, expandWords, expandPattern, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
   ArithmeticError, ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
 import { RedirectWriteError } from './RedirectWriteError';
+import { OutputLog } from '@/bash/runtime/OutputLog';
+import type { Newline } from '@/bash/runtime/OutputLog';
+import { StdinSource } from '@/bash/runtime/StdinSource';
+import { fnmatch } from '@/network/devices/linux/fs/Glob';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
+import { LexerError } from '@/bash/lexer/LexerError';
+import { ParserError } from '@/bash/parser/ParserError';
 
 /** Result from executing an external command. */
 export interface ExternalCommandResult {
@@ -122,7 +128,7 @@ export interface IOContext {
   writeFile(path: string, content: string, append: boolean): void;
   readFile(path: string): string | null;
   /** Resolve a path relative to cwd. */
-  resolvePath(path: string): string;
+  resolvePath(path: string, cwd?: string): string;
   /** Check if a path exists and its type. Returns null if not found. */
   stat?(path: string): { type: 'file' | 'directory' } | null;
   /**
@@ -140,6 +146,19 @@ export interface IOContext {
    * the file to the job's pid once the redirection is applied.
    */
   bindBackgroundStdout?(pid: number, path: string): void;
+}
+
+type Sink =
+  | { readonly kind: 'out' }
+  | { readonly kind: 'err' }
+  | { readonly kind: 'closed' }
+  | { readonly kind: 'file'; readonly path: string };
+
+interface RedirectPlan {
+  stdin?: string;
+  readonly sinks: Map<number, Sink>;
+  failed: boolean;
+  stdoutRedirected: boolean;
 }
 
 export interface InterpreterOptions {
@@ -211,24 +230,17 @@ export class BashInterpreter {
   env: Environment;
   private executeCommand: ExternalCommandFn;
   private io: IOContext | null;
-  private output: string[] = [];
-  /**
-   * Pure stderr stream, mirrored from `output` whenever content is routed
-   * to fd 2 (e.g. `cmd >&2`). `output` stays the merged terminal view (so
-   * a bare `executeCommand` still returns everything a TTY would show);
-   * this lets a caller's `2>` redirection peel stderr off coherently.
-   */
-  private stderrParts: string[] = [];
-  private readonly stderrShownInOutput = new WeakMap<string[], Set<number>>();
-  /** Set by a bare `exec >> file 2>> errfile` — see visitSimpleCommandWithInput. */
+  private log = new OutputLog();
+  /** Set by a bare `exec >> file 2>> errfile` — see runProgram. */
   private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
-  /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
-  private pipelineDepth = 0;
+  private stdin: StdinSource | null = null;
+  private readonly fdOutputs = new Map<number, Sink>();
+  private readonly fdInputs = new Map<number, StdinSource>();
+  private lastSubstitutionStatus: number | null = null;
+  private statusFromGuard = false;
   /**
    * True while running any stage of a pipeline *except the last* — see
-   * `runPipelineStages`. Unlike `pipelineDepth`, this excludes the final
-   * stage: its stdout is the pipeline's own stdout (the terminal, unless
-   * the whole pipeline is itself redirected), not a pipe into anything.
+   * `runPipelineStages`: its stdout feeds a pipe, not the terminal.
    */
   private nonLastPipelineStage = false;
   private functions: Map<string, Command>;
@@ -242,11 +254,7 @@ export class BashInterpreter {
     this.aliases = options.aliases ?? new AliasTable();
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
-    if (options.stdin !== undefined) {
-      const lines = options.stdin.split('\n');
-      if (lines[lines.length - 1] === '') lines.pop();
-      this.loopStdin = lines;
-    }
+    if (options.stdin !== undefined) this.stdin = new StdinSource(options.stdin);
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -288,8 +296,8 @@ export class BashInterpreter {
    *  POSIX signal reaches a parked background job. Returns whether the
    *  handler called `exit` (only then should the caller terminate). */
   runInterrupt(signalHandlerBody: string): { output: string; exited: boolean; exitCode: number } {
-    const savedOutput = this.output;
-    this.output = [];
+    const savedLog = this.log;
+    this.log = new OutputLog();
     let exited = false;
     let exitCode = this.env.lastExitCode;
     try {
@@ -304,8 +312,8 @@ export class BashInterpreter {
         throw e;
       }
     }
-    const out = this.output.join('');
-    this.output = savedOutput;
+    const out = this.log.terminal();
+    this.log = savedLog;
     return { output: out, exited, exitCode };
   }
 
@@ -360,15 +368,14 @@ export class BashInterpreter {
   }
 
   private *runProgram(program: Program): Effects<{ output: string; exitCode: number; stderr: string }> {
-    this.output = [];
-    this.stderrParts = [];
+    this.log = new OutputLog();
     try {
       yield* this.visitCommandList(program.body);
     } catch (e) {
       if (e instanceof ExitSignal) {
         this.env.lastExitCode = e.exitCode;
       } else if (e instanceof BashRuntimeError || e instanceof ArithmeticError) {
-        this.output.push(`bash: ${e.message}\n`);
+        this.emitError(`bash: ${e.message}`);
         this.env.lastExitCode = 1;
       } else if (e instanceof DaemonParkSignal) {
         throw e; // parked, not exiting — no EXIT trap
@@ -378,23 +385,20 @@ export class BashInterpreter {
       }
     }
     yield* this.fireExitTrap();
-    const output = this.output.join('');
-    const stderr = this.stderrParts.join('');
+    const stderr = this.log.stream(2);
     if (this.execRedirect && this.io) {
-      // Lines explicitly routed to fd 2 (e.g. `echo x >&2`) also land in
-      // the merged `output` view — strip them out so they aren't
-      // duplicated into the stdout target too.
-      const stderrLines = new Set(stderr.split('\n').filter((l) => l.length > 0));
-      const stdoutOnly = output.split('\n').filter((l) => !stderrLines.has(l)).join('\n');
+      const excluded = new Set<1 | 2>();
       if (this.execRedirect.stdout) {
-        this.io.writeFile(this.execRedirect.stdout.path, stdoutOnly, this.execRedirect.stdout.append);
+        this.io.writeFile(this.execRedirect.stdout.path, this.log.stream(1), this.execRedirect.stdout.append);
+        excluded.add(1);
       }
       if (this.execRedirect.stderr) {
         this.io.writeFile(this.execRedirect.stderr.path, stderr, this.execRedirect.stderr.append);
+        excluded.add(2);
       }
-      return { output: '', exitCode: this.env.lastExitCode, stderr: '' };
+      return { output: this.log.terminal(excluded), exitCode: this.env.lastExitCode, stderr: excluded.has(2) ? '' : stderr };
     }
-    return { output, exitCode: this.env.lastExitCode, stderr };
+    return { output: this.log.terminal(), exitCode: this.env.lastExitCode, stderr };
   }
 
   // ─── Expansion bridge (replay with memoization) ───────────────
@@ -423,6 +427,12 @@ export class BashInterpreter {
     );
   }
 
+  private *expandPatternG(word: Word): Effects<string> {
+    return yield* this.withSubstitutions(
+      (cmdExec) => expandPattern(word, this.env, cmdExec, this.homeFor()),
+    );
+  }
+
   private *expandWordsG(words: Word[]): Effects<string[]> {
     return yield* this.withSubstitutions(
       (cmdExec) => expandWords(words, this.env, cmdExec, this.makeGlobFn(), this.homeFor()),
@@ -432,28 +442,57 @@ export class BashInterpreter {
   private *subcommandG(cmd: string): Effects<string> {
     const fileOnly = cmd.trim().match(/^<\s*(\S+)$/);
     if (fileOnly && this.io) {
-      const path = this.io.resolvePath(fileOnly[1]);
+      const path = this.absolutePath(fileOnly[1]);
       const content = this.io.readFile(path);
-      if (content !== null) return content;
-      this.env.lastExitCode = 1;
+      if (content !== null) {
+        this.lastSubstitutionStatus = 0;
+        return content;
+      }
+      this.emitError(`bash: ${fileOnly[1]}: No such file or directory`);
+      this.lastSubstitutionStatus = 1;
       return '';
     }
+    const outer = this.log;
+    const inner = new OutputLog();
+    const savedEnv = this.env;
+    let status = 0;
     try {
       const lexer = new BashLexer();
       const parser = new BashParser();
       const tokens = lexer.tokenize(cmd);
       const ast = parser.parse(tokens);
-      const savedOutput = this.output;
-      this.output = [];
+      this.log = inner;
+      this.env = savedEnv.createSubshell();
       try {
         yield* this.visitCommandList(ast.body);
-        return this.output.join('');
-      } finally {
-        this.output = savedOutput;
+        status = this.env.lastExitCode;
+      } catch (e) {
+        if (!(e instanceof ExitSignal)) throw e;
+        status = e.exitCode;
       }
-    } catch {
-      const result = normalizeResult(yield { argv: cmd.split(/\s+/) });
-      return result.output;
+    } catch (e) {
+      if (e instanceof BashRuntimeError || e instanceof ArithmeticError) {
+        inner.write(2, `bash: ${e.message}\n`);
+        status = 1;
+      } else if (e instanceof LexerError || e instanceof ParserError) {
+        const result = normalizeResult(yield { argv: cmd.split(/\s+/) });
+        inner.write(1, result.output);
+        status = result.exitCode;
+      } else {
+        throw e;
+      }
+    } finally {
+      this.env = savedEnv;
+      this.log = outer;
+    }
+    this.forward(inner, outer, false);
+    this.lastSubstitutionStatus = status;
+    return inner.stream(1);
+  }
+
+  private forward(from: OutputLog, to: OutputLog, includeStdout: boolean): void {
+    for (const chunk of from.entries()) {
+      if (chunk.fd === 2 || includeStdout) to.write(chunk.fd, chunk.text, chunk.newline, chunk.ambiguous);
     }
   }
 
@@ -533,9 +572,10 @@ export class BashInterpreter {
 
   private *visitCommandList(node: CommandList): Effects<void> {
     for (const andOr of node.commands) {
+      this.statusFromGuard = false;
       yield* this.visitAndOrList(andOr);
       if (this.errexitSuppress === 0 && this.isErrExit() && this.env.lastExitCode !== 0
-          && !this.lastPipelineNegated) {
+          && !this.lastPipelineNegated && !this.statusFromGuard) {
         throw new ExitSignal(this.env.lastExitCode);
       }
     }
@@ -561,6 +601,7 @@ export class BashInterpreter {
     // and-or chain (bash semantics: `cmd1 && cmd2` aborts on cmd2's
     // failure, never on cmd1's, because cmd1 is itself a guard).
     const hasRest = node.rest.length > 0;
+    let finalExecuted = !hasRest;
     if (hasRest) this.errexitSuppress++;
     try {
       yield* this.visitPipeline(node.first);
@@ -571,11 +612,12 @@ export class BashInterpreter {
         if (part.operator === '||' && this.env.lastExitCode === 0) continue;
         if (isLast) this.errexitSuppress--;
         yield* this.visitPipeline(part.pipeline);
-        if (isLast) this.errexitSuppress++;
+        if (isLast) { this.errexitSuppress++; finalExecuted = true; }
       }
     } finally {
       if (hasRest) this.errexitSuppress--;
     }
+    this.statusFromGuard = !finalExecuted;
   }
 
   private *visitPipeline(node: Pipeline): Effects<void> {
@@ -591,74 +633,55 @@ export class BashInterpreter {
   private *runPipelineStages(node: Pipeline): Effects<void> {
     if (node.commands.length === 1) {
       yield* this.visitCommand(node.commands[0]);
-      if (node.negated) this.env.lastExitCode = this.env.lastExitCode === 0 ? 1 : 0;
+      if (!node.negated) this.env.setArray('PIPESTATUS', [String(this.env.lastExitCode)]);
+      if (node.negated) {
+        this.env.setArray('PIPESTATUS', [String(this.env.lastExitCode)]);
+        this.env.lastExitCode = this.env.lastExitCode === 0 ? 1 : 0;
+      }
       return;
     }
 
-    // Multi-stage pipeline: chain stdout → stdin (simplified: pass output as arg)
     const stageCodes: number[] = [];
     let pipeInput = '';
-    const stderrMarker = this.stderrParts.length;
-    this.pipelineDepth++;
-    try {
-      for (let i = 0; i < node.commands.length; i++) {
-        const cmd = node.commands[i];
-        const savedOutput = this.output;
-        this.output = [];
+    const outer = this.log;
+    const outerStdin = this.stdin;
+    const deferredErrors = new OutputLog();
+    for (let i = 0; i < node.commands.length; i++) {
+      const cmd = node.commands[i];
+      const stage = new OutputLog();
+      this.log = stage;
+      if (i > 0) this.stdin = new StdinSource(pipeInput);
 
-        // Every stage except the last is itself a guard — its failure
-        // must NOT trigger errexit, only the final stage's (or, with
-        // pipefail, the aggregate) does.
-        const isLast = i === node.commands.length - 1;
-        if (!isLast) this.errexitSuppress++;
-        // A non-last stage's stdout always feeds this pipe (non-tty); the
-        // last stage inherits whatever the ambient context already was
-        // (e.g. still non-tty if this whole pipeline is itself a non-last
-        // stage of an outer pipeline, or redirected).
-        const savedNonLastStage = this.nonLastPipelineStage;
-        if (!isLast) this.nonLastPipelineStage = true;
-        try {
-          if (cmd.type === 'SimpleCommand' && i > 0) {
-            yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
-          } else if (pipeInput && (cmd.type === 'WhileClause' || cmd.type === 'UntilClause')) {
-            // `producer | while read line; do …; done` — feed the prior
-            // stage's stdout to the loop's `read` calls line-by-line, the
-            // same mechanism `visitWhile` already uses for `< file`.
-            const lines = pipeInput.split('\n');
-            if (lines[lines.length - 1] === '') lines.pop();
-            const savedLoopStdin = this.loopStdin;
-            this.loopStdin = lines;
-            try {
-              yield* this.visitCommand(cmd);
-            } finally {
-              this.loopStdin = savedLoopStdin;
-            }
-          } else {
-            yield* this.visitCommand(cmd);
-          }
-        } finally {
-          this.nonLastPipelineStage = savedNonLastStage;
-          if (!isLast) this.errexitSuppress--;
-        }
-        stageCodes.push(this.env.lastExitCode);
-
-        pipeInput = this.output.join('');
-        this.output = savedOutput;
+      // Every stage except the last is itself a guard — its failure
+      // must NOT trigger errexit, only the final stage's (or, with
+      // pipefail, the aggregate) does.
+      const isLast = i === node.commands.length - 1;
+      if (!isLast) this.errexitSuppress++;
+      const savedNonLastStage = this.nonLastPipelineStage;
+      if (!isLast) this.nonLastPipelineStage = true;
+      const shellEnv = this.env;
+      if (!(isLast && isShellOptionEnabled(shellEnv, 'lastpipe'))) this.env = shellEnv.createSubshell();
+      let stageStatus = 0;
+      try {
+        yield* this.visitCommand(cmd);
+        stageStatus = this.env.lastExitCode;
+      } catch (e) {
+        if (!(e instanceof ExitSignal || e instanceof ReturnSignal)) throw e;
+        stageStatus = e.exitCode;
+      } finally {
+        this.env = shellEnv;
+        this.nonLastPipelineStage = savedNonLastStage;
+        if (!isLast) this.errexitSuppress--;
+        this.log = outer;
+        this.stdin = outerStdin;
       }
-    } finally {
-      this.pipelineDepth--;
+      this.env.lastExitCode = stageStatus;
+      stageCodes.push(stageStatus);
+      this.forward(stage, isLast ? outer : deferredErrors, isLast);
+      pipeInput = stage.stream(1);
     }
-    // Final stage output goes to real output
-    if (pipeInput) this.output.push(pipeInput);
-    // Every stage's fd 2 bypasses the pipe and reaches the terminal
-    // directly, like real concurrent processes sharing the inherited fd 2.
-    const shownStderr = this.stderrShownInOutput.get(this.stderrParts);
-    const pipelineStderr = this.stderrParts
-      .slice(stderrMarker)
-      .filter((_, offset) => !shownStderr?.has(stderrMarker + offset))
-      .map(ensureTrailingNewline)
-      .join('');
-    if (pipelineStderr) this.output.push(pipelineStderr);
+    this.forward(deferredErrors, outer, false);
+    this.env.setArray('PIPESTATUS', stageCodes.map(String));
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
       this.env.lastExitCode = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
@@ -666,23 +689,17 @@ export class BashInterpreter {
     if (node.negated) this.env.lastExitCode = this.env.lastExitCode === 0 ? 1 : 0;
   }
 
-  private markStderrShown(index: number): void {
-    const shown = this.stderrShownInOutput.get(this.stderrParts) ?? new Set<number>();
-    shown.add(index);
-    this.stderrShownInOutput.set(this.stderrParts, shown);
-  }
-
   private *visitCommand(node: Command): Effects<void> {
     switch (node.type) {
       case 'SimpleCommand': yield* this.visitSimpleCommand(node); break;
-      case 'IfClause': yield* this.visitIf(node); break;
-      case 'ForClause': yield* this.visitFor(node); break;
-      case 'WhileClause': yield* this.visitWhile(node); break;
-      case 'UntilClause': yield* this.visitUntil(node); break;
-      case 'CaseClause': yield* this.visitCase(node); break;
+      case 'IfClause': yield* this.withRedirections(node.redirections, () => this.visitIf(node)); break;
+      case 'ForClause': yield* this.withRedirections(node.redirections, () => this.visitFor(node)); break;
+      case 'WhileClause': yield* this.withRedirections(node.redirections, () => this.visitWhile(node)); break;
+      case 'UntilClause': yield* this.withRedirections(node.redirections, () => this.visitUntil(node)); break;
+      case 'CaseClause': yield* this.withRedirections(node.redirections, () => this.visitCase(node)); break;
       case 'FunctionDef': this.visitFunctionDef(node); break;
-      case 'BraceGroup': yield* this.visitBraceGroup(node); break;
-      case 'Subshell': yield* this.visitSubshell(node); break;
+      case 'BraceGroup': yield* this.withRedirections(node.redirections, () => this.visitBraceGroup(node)); break;
+      case 'Subshell': yield* this.withRedirections(node.redirections, () => this.visitSubshell(node)); break;
       case 'DoubleBracket': yield* this.visitDoubleBracket(node); break;
       case 'ArithmeticCommand': this.visitArithmeticCommand(node); break;
       case 'CStyleForClause': yield* this.visitCStyleFor(node); break;
@@ -692,7 +709,12 @@ export class BashInterpreter {
   // ─── Simple Command ───────────────────────────────────────────
 
   private *visitSimpleCommand(node: SimpleCommand): Effects<void> {
-    yield* this.visitSimpleCommandWithInput(node, undefined);
+    const restorePrefixAssignments = this.capturePrefixAssignments(node);
+    try {
+      yield* this.runSimpleCommand(node);
+    } finally {
+      restorePrefixAssignments();
+    }
   }
 
   private procSubCounter = 63;
@@ -762,16 +784,7 @@ export class BashInterpreter {
     if (this.pendingOutSubs.length === 0) return;
     const pending = this.pendingOutSubs.splice(0);
     for (const sub of pending) {
-      this.executeSubcommand(`${sub.command} < ${sub.path}`);
-    }
-  }
-
-  private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
-    const restorePrefixAssignments = this.capturePrefixAssignments(rawNode);
-    try {
-      yield* this.runSimpleCommand(rawNode, pipeInput);
-    } finally {
-      restorePrefixAssignments();
+      this.log.write(1, this.executeSubcommand(`${sub.command} < ${sub.path}`));
     }
   }
 
@@ -790,51 +803,13 @@ export class BashInterpreter {
     };
   }
 
-  private *runSimpleCommand(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
-    yield* this.fireSignalTrap('DEBUG');
-    const node = this.materializeProcSubs(rawNode);
-
-    // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
-    if (pipeInput === undefined) {
-      for (const redir of node.redirections) {
-        if (redir.op === '<' && this.io) {
-          const target = yield* this.expandWordG(redir.target);
-          const path = this.io.resolvePath(target);
-          const content = this.io.readFile(path);
-          if (content !== null) pipeInput = content;
-        } else if (redir.op === '<<<') {
-          // Herestring: target word is the stdin content
-          pipeInput = (yield* this.expandWordG(redir.target)) + '\n';
-        } else if (redir.op === '<<') {
-          // Heredoc: target word is the body content (from preprocessing)
-          pipeInput = (yield* this.expandWordG(redir.target)) + '\n';
-        }
-      }
-    }
-
-    if (pipeInput === undefined && this.loopStdin) {
-      const head = node.words[0];
-      if (head && head.type === 'LiteralWord' && head.value === 'read') {
-        pipeInput = this.loopStdin.length > 0 ? this.loopStdin.shift()! + '\n' : '';
-      }
-    }
-
-    // Pre-pass: if this is a declaration command (`local`, `declare`,
-    // `typeset`, `readonly`, `export`) called inside a function scope,
-    // its trailing `name=value` arguments confine writes to the local
-    // scope — bash's `local` semantics. We compute the head word once
-    // (cheap literal check) and have `applyAssignment` skip the
-    // parent-walk by declaring each name local first.
-    const headName = literalHeadName(node);
-    const declScope = isDeclScopingCommand(headName);
-    const declarationFlags = declScope ? literalFlagLetters(node) : '';
-    const markReadonly = headName === 'readonly' || declarationFlags.includes('r');
-    const markExport = headName === 'export' || declarationFlags.includes('x');
-
-    const namerefDecl = declScope && node.words.some(
-      w => w.type === 'LiteralWord' && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w.value),
-    );
-    const absorbedDecl = node.assignments.length > 0 && (declScope || markReadonly || markExport);
+  private *applyCommandAssignments(
+    node: SimpleCommand,
+    declScope: boolean,
+    namerefDecl: boolean,
+    markReadonly: boolean,
+    markExport: boolean,
+  ): Effects<boolean> {
     for (const assign of node.assignments) {
       try {
         if (declScope) this.env.declareLocal(assign.name);
@@ -849,29 +824,53 @@ export class BashInterpreter {
         if (markReadonly) this.env.setReadonly(assign.name);
         if (markExport) this.env.export(assign.name);
       } catch (e) {
-        if (e instanceof Error) this.output.push(e.message + '\n');
+        if (e instanceof Error) this.emitError(e.message);
         this.env.lastExitCode = 1;
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private *runSimpleCommand(rawNode: SimpleCommand): Effects<void> {
+    yield* this.fireSignalTrap('DEBUG');
+    const node = this.materializeProcSubs(rawNode);
+    this.lastSubstitutionStatus = null;
+
+    // Declaration commands (`local`, `declare`, `typeset`, `readonly`,
+    // `export`) confine `name=value` arguments to the local scope. We
+    // compute the head word once (cheap literal check) and have
+    // `applyAssignment` skip the parent-walk by declaring each name
+    // local first.
+    const headName = literalHeadName(node);
+    const declScope = isDeclScopingCommand(headName);
+    const declarationFlags = declScope ? literalFlagLetters(node) : '';
+    const markReadonly = headName === 'readonly' || declarationFlags.includes('r');
+    const markExport = headName === 'export' || declarationFlags.includes('x');
+    const namerefDecl = declScope && node.words.some(
+      w => w.type === 'LiteralWord' && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w.value),
+    );
+    const absorbedDecl = node.assignments.length > 0 && (declScope || markReadonly || markExport);
+    const assignmentsFirst = node.words.length === 0 || absorbsAssignments(node);
+
+    if (assignmentsFirst) {
+      if (!(yield* this.applyCommandAssignments(node, declScope, namerefDecl, markReadonly, markExport))) return;
+      if (absorbedDecl && node.words.length === 1) {
+        this.env.lastExitCode = 0;
+        return;
+      }
+      if (node.words.length === 0) {
+        yield* this.runBareRedirections(node.redirections);
         return;
       }
     }
-    if (absorbedDecl && node.words.length === 1) {
-      this.env.lastExitCode = 0;
-      return;
-    }
 
-    // If only assignments, no command to run — but a bare `> file` (no
-    // command, only a redirection) is real bash idiom for truncating or
-    // creating a file, and must still take effect.
-    if (node.words.length === 0) {
-      if (node.redirections.length > 0 && this.io) {
-        yield* this.applyRedirections(node.redirections, '');
-      }
-      this.env.lastExitCode = 0;
-      return;
-    }
-
-    // Command-position alias expansion happens before any resolution.
     const args = this.expandAliases(yield* this.expandWordsG(node.words));
+    if (args.length === 0) {
+      if (!assignmentsFirst) yield* this.applyCommandAssignments(node, false, false, false, false);
+      yield* this.runBareRedirections(node.redirections);
+      return;
+    }
     const cmdName = args[0];
 
     // `exec >> file 2>> errfile` (no command, only redirections) rewires
@@ -882,109 +881,17 @@ export class BashInterpreter {
       return;
     }
 
-    // Handle eval: re-parse and execute the joined args
-    if (cmdName === 'eval') {
-      yield* this.executeEvalG(args.slice(1).join(' '));
+    const plan = yield* this.openRedirections(node.redirections);
+    if (plan.failed) {
+      this.env.lastExitCode = 1;
       return;
     }
-
-    // Handle source/.: read file and execute in current environment
-    if ((cmdName === 'source' || cmdName === '.') && args.length > 1) {
-      yield* this.executeSource(args[1]);
-      return;
+    if (!assignmentsFirst) {
+      if (!(yield* this.applyCommandAssignments(node, false, false, false, false))) return;
     }
 
-    // Capture output for possible redirection (stdout, stderr, or both)
-    const hasAnyRedirect = node.redirections.some(r =>
-      r.op === '>' || r.op === '>>' || r.op === '>&' || r.fd === 2);
-    const savedOutput = hasAnyRedirect ? this.output : null;
-    const savedStderr = hasAnyRedirect ? this.stderrParts : null;
-    if (hasAnyRedirect) { this.output = []; this.stderrParts = []; }
-
-    // Whether the command produced a genuinely separate stderr stream
-    // (only external commands that opt in via the `stderr` field do).
-    let explicitStderr: string | null = null;
-    let backgroundedPid: number | undefined;
-
-    // Check for function
-    const fn = this.functions.get(cmdName);
-    if (cmdName === 'command') {
-      // `command` runs its operand skipping function and alias lookup.
-      yield* this.runCommandWord(args.slice(1), pipeInput);
-    } else if (cmdName === 'exec') {
-      if (args.length > 1) yield* this.runCommandWord(args.slice(1), pipeInput);
-    } else if (fn) {
-      yield* this.callFunction(fn, args.slice(1));
-    } else if (isBuiltin(cmdName)) {
-      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined, pipeInput, this.aliases);
-      this.lastLineOriented = false;
-      if (result.output) this.output.push(result.output);
-      this.env.lastExitCode = result.exitCode;
-    } else {
-      const fullArgs = pipeInput ? [...args, pipeInput] : args;
-      const envSnapshot = this.childEnvironment(node.assignments.map(a => a.name));
-      const background = this.pendingBackground || undefined;
-      this.pendingBackground = false;
-      // Stdout specifically (not a `2>`-only redirect, which leaves fd 1
-      // attached to the terminal) is what real isatty(STDOUT_FILENO) sees.
-      const stdoutRedirected = node.redirections.some(r =>
-        (r.op === '>' || r.op === '>>' || r.op === '>&') && (r.fd === undefined || r.fd === 1));
-      const outputPiped = stdoutRedirected || this.nonLastPipelineStage;
-      const result = normalizeResult(yield {
-        argv: fullArgs, env: envSnapshot, background, outputPiped,
-        stdin: pipeInput,
-      });
-      this.lastLineOriented = result.lineOriented;
-      if (result.backgroundPid !== undefined) {
-        this.env.set('!', String(result.backgroundPid));
-        backgroundedPid = result.backgroundPid;
-      }
-      if (result.stderr !== undefined) {
-        // The command separates fd 1 / fd 2. Stdout flows normally;
-        // stderr is mirrored to the pure stderr stream (and, with no
-        // fd-2 redirection, also to the merged terminal view) — except
-        // inside a pipeline stage, where fd 2 bypasses the pipe entirely
-        // and must not leak into the next stage's stdin (see
-        // `runPipelineStages`).
-        explicitStderr = result.stderr;
-        const terminalView = !hasAnyRedirect && !this.nonLastPipelineStage ? result.interleaved : undefined;
-        if (terminalView !== undefined) {
-          if (terminalView) this.output.push(terminalText(terminalView, result.lineOriented));
-          if (result.stderr) {
-            this.stderrParts.push(result.stderr);
-            this.markStderrShown(this.stderrParts.length - 1);
-          }
-        } else {
-          if (result.output) {
-            this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : terminalText(result.output, result.lineOriented));
-          }
-          if (result.stderr) {
-            this.stderrParts.push(result.stderr);
-            if (!hasAnyRedirect && this.pipelineDepth === 0) {
-              this.output.push(ensureTrailingNewline(result.stderr));
-            }
-          }
-        }
-      } else if (result.output) {
-        // Verbatim on redirect (binary-safe); add trailing newline only when going to the terminal.
-        this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : terminalText(result.output, result.lineOriented));
-      }
-      this.env.lastExitCode = result.exitCode;
-    }
-
-    // Apply output redirections
-    if (hasAnyRedirect && savedOutput !== null) {
-      const capturedOutput = this.output.join('');
-      const capturedStderr = this.stderrParts.join('');
-      this.output = savedOutput;
-      this.stderrParts = savedStderr ?? [];
-      yield* this.applyRedirections(
-        node.redirections, capturedOutput,
-        explicitStderr !== null ? capturedStderr : undefined,
-        cmdName,
-      );
-      if (backgroundedPid !== undefined) yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
-    }
+    const backgroundedPid = yield* this.runWithPlan(plan, cmdName, () => this.dispatchCommand(args, node, plan));
+    if (backgroundedPid !== undefined) yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
 
     this.flushOutSubs();
 
@@ -992,6 +899,110 @@ export class BashInterpreter {
     if (this.errexitSuppress === 0 && this.env.lastExitCode !== 0) {
       yield* this.fireSignalTrap('ERR');
     }
+  }
+
+  private *runBareRedirections(redirections: Redirection[]): Effects<void> {
+    if (redirections.length > 0 && this.io) {
+      const plan = yield* this.openRedirections(redirections);
+      if (plan.failed) {
+        this.env.lastExitCode = 1;
+        return;
+      }
+    }
+    this.env.lastExitCode = this.lastSubstitutionStatus ?? 0;
+  }
+
+  private *dispatchCommand(args: string[], node: SimpleCommand, plan: RedirectPlan): Effects<number | undefined> {
+    const cmdName = args[0];
+
+    // Handle eval: re-parse and execute the joined args
+    if (cmdName === 'eval') {
+      yield* this.executeEvalG(args.slice(1).join(' '));
+      return undefined;
+    }
+
+    // Handle source/.: read file and execute in current environment
+    if ((cmdName === 'source' || cmdName === '.') && args.length > 1) {
+      yield* this.executeSource(args[1], args.slice(2));
+      return undefined;
+    }
+
+    const fn = this.functions.get(cmdName);
+    if (cmdName === 'command') {
+      // `command` runs its operand skipping function and alias lookup.
+      yield* this.runCommandWord(args.slice(1));
+    } else if (cmdName === 'exec') {
+      if (args.length > 1) yield* this.runCommandWord(args.slice(1));
+    } else if (fn) {
+      yield* this.callFunction(fn, args.slice(1));
+    } else if (isBuiltin(cmdName)) {
+      const result = executeBuiltin(
+        cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined,
+        this.stdin ?? undefined, this.aliases, (fd) => this.fdInputs.get(fd),
+      );
+      this.lastLineOriented = false;
+      this.emitResult({ ...result, lineOriented: false }, result.exitCode);
+      this.env.lastExitCode = result.exitCode;
+    } else {
+      const stdinText = this.stdin?.readRest();
+      const fullArgs = stdinText ? [...args, stdinText] : args;
+      const envSnapshot = this.childEnvironment(node.assignments.map(a => a.name));
+      const background = this.pendingBackground || undefined;
+      this.pendingBackground = false;
+      // Stdout specifically (not a `2>`-only redirect, which leaves fd 1
+      // attached to the terminal) is what real isatty(STDOUT_FILENO) sees.
+      const outputPiped = plan.stdoutRedirected || this.nonLastPipelineStage;
+      let result = normalizeResult(yield {
+        argv: fullArgs, env: envSnapshot, background, outputPiped,
+        stdin: stdinText,
+      });
+      this.lastLineOriented = result.lineOriented;
+      if (result.stderr === undefined && result.output !== '' && (result.exitCode === 126 || result.exitCode === 127)) {
+        result = { ...result, stderr: ensureTrailingNewline(result.output), interleaved: undefined, output: '' };
+      }
+      this.emitResult(result, result.exitCode);
+      this.env.lastExitCode = result.exitCode;
+      if (result.backgroundPid !== undefined) {
+        this.env.set('!', String(result.backgroundPid));
+        return result.backgroundPid;
+      }
+    }
+    return undefined;
+  }
+
+  private absolutePath(path: string): string {
+    return this.io!.resolvePath(path, this.env.get('PWD'));
+  }
+
+  private emitError(text: string): void {
+    this.log.write(2, ensureTrailingNewline(text), 'never');
+  }
+
+  private emitResult(
+    result: { output: string; stderr?: string; interleaved?: string; lineOriented?: boolean },
+    exitCode: number,
+  ): void {
+    const newline: Newline = result.lineOriented === true ? 'always' : result.lineOriented === false ? 'never' : 'terminal';
+    if (result.stderr === undefined) {
+      this.log.write(1, result.output, newline, exitCode !== 0);
+      return;
+    }
+    if (result.interleaved !== undefined && result.interleaved !== '') {
+      const remaining = result.stderr.split('\n').filter((line) => line !== '');
+      for (const line of result.interleaved.split(/(?<=\n)/)) {
+        const text = line.endsWith('\n') ? line.slice(0, -1) : line;
+        const index = remaining.indexOf(text);
+        if (index === 0 || (index > 0 && text !== '')) {
+          remaining.splice(index, 1);
+          this.log.write(2, ensureTrailingNewline(line), 'never');
+        } else {
+          this.log.write(1, line, newline);
+        }
+      }
+      return;
+    }
+    this.log.write(1, result.output, newline);
+    this.log.write(2, ensureTrailingNewline(result.stderr), 'never');
   }
 
   /**
@@ -1079,7 +1090,7 @@ export class BashInterpreter {
    * The `command` builtin: run an operand skipping function and alias
    * lookup, or — with `-v` / `-V` — describe how it would resolve.
    */
-  private *runCommandWord(rest: string[], pipeInput?: string): Effects<void> {
+  private *runCommandWord(rest: string[]): Effects<void> {
     let mode: 'run' | 'v' | 'V' = 'run';
     let i = 0;
     for (; i < rest.length; i++) {
@@ -1097,10 +1108,10 @@ export class BashInterpreter {
     if (mode !== 'run') {
       const desc = yield* this.describeResolution(name, mode === 'V');
       if (desc !== null) {
-        this.output.push(desc + '\n');
+        this.log.write(1, desc + '\n');
         this.env.lastExitCode = 0;
       } else {
-        if (mode === 'V') this.output.push(`bash: command: ${name}: not found\n`);
+        if (mode === 'V') this.emitError(`bash: command: ${name}: not found`);
         this.env.lastExitCode = 1;
       }
       return;
@@ -1110,18 +1121,19 @@ export class BashInterpreter {
     if (isBuiltin(name)) {
       const r = executeBuiltin(
         name, target.slice(1), this.env, this.functions,
-        this.io ?? undefined, pipeInput, this.aliases,
+        this.io ?? undefined, this.stdin ?? undefined, this.aliases, (fd) => this.fdInputs.get(fd),
       );
-      if (r.output) this.output.push(r.output);
+      this.emitResult({ ...r, lineOriented: false }, r.exitCode);
       this.env.lastExitCode = r.exitCode;
       return;
     }
-    const fullArgs = pipeInput ? [...target, pipeInput] : target;
+    const stdinText = this.stdin?.readRest();
+    const fullArgs = stdinText ? [...target, stdinText] : target;
     const envSnapshot = this.childEnvironment([]);
     const result = normalizeResult(yield {
-      argv: fullArgs, env: envSnapshot, stdin: pipeInput,
+      argv: fullArgs, env: envSnapshot, stdin: stdinText,
     });
-    if (result.output) this.output.push(result.output);
+    this.emitResult(result, result.exitCode);
     this.env.lastExitCode = result.exitCode;
   }
 
@@ -1150,101 +1162,127 @@ export class BashInterpreter {
     for (const redir of redirections) {
       if ((redir.op !== '>' && redir.op !== '>>') || (redir.fd !== undefined && redir.fd !== 1)) continue;
       const target = yield* this.expandWordG(redir.target);
-      this.io.bindBackgroundStdout(pid, this.io.resolvePath(target));
+      this.io.bindBackgroundStdout(pid, this.absolutePath(target));
     }
   }
 
-  private *applyRedirections(
-    redirections: Redirection[],
-    capturedOutput: string,
-    capturedStderr?: string,
-    command?: string,
-  ): Effects<void> {
-    if (!this.io) {
-      if (capturedOutput) this.output.push(capturedOutput);
-      if (capturedStderr) this.output.push(capturedStderr);
-      return;
-    }
+  // ─── Redirections ─────────────────────────────────────────────
 
-    // Explicit-stream mode: the command separated fd 1 / fd 2, so route
-    // each to its own redirection target (or the terminal) independently —
-    // no exit-code heuristic needed.
-    if (capturedStderr !== undefined) {
-      yield* this.applyRedirectionsExplicit(redirections, capturedOutput, capturedStderr, command);
-      return;
-    }
-
-    let stdoutHandled = false;
-    let stderrHandled = false;
-    // `cmd >&2` duplicates stdout onto fd 2 — the captured output is then
-    // stderr and must be mirrored to the pure stderr stream so a parent
-    // `2>` redirection can peel it off.
-    let dupToStderr = false;
-    const isError = this.env.lastExitCode !== 0;
-
+  private *openRedirections(redirections: Redirection[]): Effects<RedirectPlan> {
+    const plan: RedirectPlan = { sinks: new Map(), failed: false, stdoutRedirected: false };
+    if (redirections.length === 0) return plan;
+    const sinkOf = (fd: number): Sink | undefined =>
+      plan.sinks.get(fd) ?? this.fdOutputs.get(fd) ?? (fd === 1 ? { kind: 'out' } : fd === 2 ? { kind: 'err' } : undefined);
+    const fail = (message: string): RedirectPlan => {
+      this.emitError(message);
+      plan.failed = true;
+      return plan;
+    };
     for (const redir of redirections) {
-      const target = yield* this.expandWordG(redir.target);
-      const path = this.io.resolvePath(target);
-      const append = redir.op === '>>';
-
-      try {
-        if (redir.op === '>&') {
-          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge;
-          // only treat as a file-write if the target is not a digit.
-          if (/^\d+$/.test(target)) {
-            // `2>&1` shares fd 1's fate: if fd 1 was already redirected
-            // earlier in this command (`> file 2>&1`), stderr follows it
-            // there; otherwise leave it merged into the terminal output.
-            // `1>&2`/`>&2` marks stderrHandled so a parent `2>` can peel it off.
-            if (target === '2') { stderrHandled = true; dupToStderr = true; }
-            else if (target === '1' && redir.fd === 2 && stdoutHandled) { stderrHandled = true; }
-          } else {
-            this.io.writeFile(path, capturedOutput, false);
-            stdoutHandled = true;
-            stderrHandled = true;
-          }
-        } else if (redir.op === '>' || redir.op === '>>') {
-          const fd = redir.fd ?? 1;
-          if (fd === 1) {
-            if (isError) {
-              this.io.writeFile(path, '', append);
-            } else {
-              this.io.writeFile(path, capturedOutput, append);
-            }
-            stdoutHandled = true;
-          } else if (fd === 2) {
-            if (isError) {
-              this.io.writeFile(path, capturedOutput, append);
-            }
-            stderrHandled = true;
-          }
+      const target = yield* this.expandWordG(this.materializeWord(redir.target));
+      const op = redir.op;
+      if (op === '<<<' || op === '<<') {
+        plan.stdin = target + '\n';
+        continue;
+      }
+      if (this.io === null) continue;
+      if (op === '<') {
+        const descriptor = redir.fd ?? 0;
+        const content = this.io.readFile(this.absolutePath(target));
+        if (content === null) return fail(`bash: ${target}: No such file or directory`);
+        if (descriptor === 0) plan.stdin = content;
+        else this.fdInputs.set(descriptor, new StdinSource(content));
+        continue;
+      }
+      if (op === '<&') {
+        const descriptor = redir.fd ?? 0;
+        if (target === '-') {
+          if (descriptor !== 0) this.fdInputs.delete(descriptor);
+          continue;
         }
+        const source = this.fdInputs.get(Number(target));
+        if (descriptor === 0 && source !== undefined) plan.stdin = source.readRest();
+        continue;
+      }
+      if (op === '>&' && /^\d+$/.test(target) || (op === '>&' && target === '-')) {
+        const descriptor = redir.fd ?? 1;
+        if (target === '-') {
+          plan.sinks.set(descriptor, { kind: 'closed' });
+          continue;
+        }
+        const source = sinkOf(Number(target));
+        if (source === undefined) return fail(`bash: ${target}: Bad file descriptor`);
+        plan.sinks.set(descriptor, source);
+        continue;
+      }
+      const both = op === '&>' || op === '&>>' || op === '>&';
+      const append = op === '>>' || op === '&>>';
+      const descriptor = both ? 1 : (redir.fd ?? 1);
+      const path = this.absolutePath(target);
+      if (op === '>' && isShellOptionEnabled(this.env, 'noclobber') && this.io.stat?.(path)?.type === 'file') {
+        return fail(`bash: ${target}: cannot overwrite existing file`);
+      }
+      try {
+        this.io.writeFile(path, '', append);
       } catch (e) {
-        // Permission denied, Is a directory, etc.
-        if (e instanceof Error) this.output.push(this.redirectFailureText(e, command) + '\n');
-        this.env.lastExitCode = 1;
-        return;
+        return fail(e instanceof Error ? this.redirectFailureText(e, undefined) : `bash: ${target}: cannot redirect`);
+      }
+      const sink: Sink = { kind: 'file', path };
+      plan.sinks.set(descriptor, sink);
+      if (both) plan.sinks.set(2, sink);
+    }
+    plan.stdoutRedirected = plan.sinks.has(1) && plan.sinks.get(1)?.kind !== 'out';
+    return plan;
+  }
+
+  private *runWithPlan<T>(plan: RedirectPlan, command: string | undefined, body: () => Effects<T>): Effects<T> {
+    const savedStdin = this.stdin;
+    if (plan.stdin !== undefined) this.stdin = new StdinSource(plan.stdin);
+    const outer = this.log;
+    const capture = plan.sinks.size > 0;
+    const inner = capture ? new OutputLog() : null;
+    if (inner !== null) this.log = inner;
+    try {
+      return yield* body();
+    } finally {
+      this.stdin = savedStdin;
+      if (inner !== null) {
+        this.log = outer;
+        this.deliver(plan, inner, command);
       }
     }
+  }
 
-    // Output not captured by any redirect goes to stdout. These three
-    // branches all mean "this content is actually reaching the terminal
-    // or the next pipeline stage, not a file" — so, like the no-redirect
-    // path elsewhere, it gets a trailing newline if missing. Skipping this
-    // (as file writes above correctly do, for byte-exact output) broke the
-    // next pipeline stage's stdin-vs-argument heuristic for single-line,
-    // no-trailing-newline output (e.g. `pgrep -x sshd 2>/dev/null | head`).
-    if (!stdoutHandled && !stderrHandled && capturedOutput) {
-      this.output.push(terminalText(capturedOutput, this.lastLineOriented));
-    } else if (!stdoutHandled && stderrHandled && !isError && capturedOutput) {
-      // stdout wasn't redirected but stderr was — show stdout (unless this
-      // was a `>&2` dup, in which case the content IS stderr).
-      this.output.push(terminalText(capturedOutput, this.lastLineOriented));
-      if (dupToStderr) this.stderrParts.push(capturedOutput);
-    } else if (stdoutHandled && !stderrHandled && isError && capturedOutput) {
-      // stderr wasn't redirected but stdout was — show stderr
-      this.output.push(terminalText(capturedOutput, this.lastLineOriented));
-      this.stderrParts.push(capturedOutput);
+  private *withRedirections(redirections: Redirection[] | undefined, body: () => Effects<void>): Effects<void> {
+    if (redirections === undefined || redirections.length === 0 || !this.io) {
+      yield* body();
+      return;
+    }
+    const plan = yield* this.openRedirections(redirections);
+    if (plan.failed) {
+      this.env.lastExitCode = 1;
+      return;
+    }
+    yield* this.runWithPlan(plan, undefined, body);
+  }
+
+  private deliver(plan: RedirectPlan, captured: OutputLog, command: string | undefined): void {
+    for (const chunk of captured.entries()) {
+      const fd = chunk.fd === 2 || (chunk.ambiguous && plan.sinks.has(1) !== plan.sinks.has(2)) ? 2 : 1;
+      const sink = plan.sinks.get(fd) ?? this.fdOutputs.get(fd) ?? (fd === 1 ? { kind: 'out' as const } : { kind: 'err' as const });
+      switch (sink.kind) {
+        case 'out': this.log.write(1, chunk.text, chunk.newline, chunk.ambiguous && chunk.fd === 1); break;
+        case 'err': this.log.write(2, chunk.fd === 2 ? chunk.text : ensureTrailingNewline(chunk.text), 'never'); break;
+        case 'file':
+          try {
+            this.io!.writeFile(sink.path, chunk.newline === 'always' ? ensureTrailingNewline(chunk.text) : chunk.text, true);
+          } catch (e) {
+            if (e instanceof Error) this.emitError(this.redirectFailureText(e, command));
+            this.env.lastExitCode = 1;
+          }
+          break;
+        default: break;
+      }
     }
   }
 
@@ -1252,81 +1290,42 @@ export class BashInterpreter {
    * `exec >> file 2>> errfile` — resolve each redirection target and
    * remember it as the shell's own stdout/stderr for the remainder of
    * this script; `runProgram` flushes accumulated output there instead
-   * of returning it as terminal text once the script finishes.
+   * of returning it as terminal text once the script finishes. Higher
+   * descriptors (`exec 3>file`, `exec 3<file`, `exec 3>&-`) persist in
+   * the descriptor tables.
    */
   private *applyExecRedirections(redirections: Redirection[]): Effects<void> {
     for (const redir of redirections) {
-      if (redir.op !== '>' && redir.op !== '>>') continue;
       const target = yield* this.expandWordG(redir.target);
-      const path = this.io ? this.io.resolvePath(target) : target;
+      const fd = redir.fd ?? (redir.op === '<' || redir.op === '<&' ? 0 : 1);
+      if (redir.op === '<' && fd >= 3) {
+        const content = this.io?.readFile(this.absolutePath(target));
+        if (content == null) {
+          this.emitError(`bash: ${target}: No such file or directory`);
+          this.env.lastExitCode = 1;
+          return;
+        }
+        this.fdInputs.set(fd, new StdinSource(content));
+        continue;
+      }
+      if (target === '-') {
+        this.fdOutputs.delete(fd);
+        this.fdInputs.delete(fd);
+        continue;
+      }
+      if (redir.op !== '>' && redir.op !== '>>') continue;
+      const path = this.io ? this.absolutePath(target) : target;
       const append = redir.op === '>>';
-      const fd = redir.fd ?? 1;
+      if (fd >= 3) {
+        this.io?.writeFile(path, '', append);
+        this.fdOutputs.set(fd, { kind: 'file', path });
+        continue;
+      }
       this.execRedirect ??= {};
       if (fd === 2) this.execRedirect.stderr = { path, append };
       else this.execRedirect.stdout = { path, append };
     }
     this.env.lastExitCode = 0;
-  }
-
-  /**
-   * Route a command that produced genuinely separate stdout / stderr
-   * streams. Each fd goes to its own redirection target (`>`/`>>` → fd 1,
-   * `2>`/`2>>` → fd 2) or, when not redirected, to the merged terminal
-   * view — with stderr also mirrored to the pure stderr stream.
-   */
-  private *applyRedirectionsExplicit(
-    redirections: Redirection[],
-    stdout: string,
-    stderr: string,
-    command?: string,
-  ): Effects<void> {
-    if (!this.io) {
-      if (stdout) this.output.push(stdout);
-      if (stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
-      return;
-    }
-    type Sink = { kind: 'fd1' } | { kind: 'fd2' } | { kind: 'file'; path: string; append: boolean };
-    let fd1: Sink = { kind: 'fd1' };
-    let fd2: Sink = { kind: 'fd2' };
-    for (const redir of redirections) {
-      const target = yield* this.expandWordG(redir.target);
-      const fd = redir.fd ?? 1;
-      if (redir.op === '>&' && /^\d+$/.test(target)) {
-        const source = target === '1' ? fd1 : target === '2' ? fd2 : null;
-        if (source === null) continue;
-        if (fd === 1) fd1 = source;
-        else if (fd === 2) fd2 = source;
-      } else if (redir.op === '>&') {
-        fd1 = fd2 = { kind: 'file', path: this.io.resolvePath(target), append: false };
-      } else if (redir.op === '>' || redir.op === '>>') {
-        const sink: Sink = { kind: 'file', path: this.io.resolvePath(target), append: redir.op === '>>' };
-        if (fd === 1) fd1 = sink;
-        else if (fd === 2) fd2 = sink;
-      }
-    }
-    const opened = new Set<string>();
-    const deliver = (content: string, sink: Sink, isStderr = false): boolean => {
-      if (sink.kind === 'fd1') {
-        if (content) this.output.push(isStderr ? ensureTrailingNewline(content) : terminalText(content, this.lastLineOriented));
-        return true;
-      }
-      if (sink.kind === 'fd2') {
-        if (!content) return true;
-        this.stderrParts.push(content);
-        if (this.pipelineDepth === 0) this.output.push(ensureTrailingNewline(content));
-        return true;
-      }
-      try {
-        this.io!.writeFile(sink.path, content, sink.append || opened.has(sink.path));
-        opened.add(sink.path);
-        return true;
-      } catch (e) {
-        if (e instanceof Error) this.output.push(this.redirectFailureText(e, command) + '\n');
-        this.env.lastExitCode = 1;
-        return false;
-      }
-    };
-    if (deliver(stdout, fd1)) deliver(stderr, fd2, true);
   }
 
   private redirectFailureText(error: Error, command: string | undefined): string {
@@ -1362,147 +1361,95 @@ export class BashInterpreter {
     }
 
     // POSIX: "the exit status of if shall be ... zero if no condition
-    // tested true." Without this, a false condition's own nonzero status
-    // would linger as $? and — since the condition itself is exempt from
-    // errexit but this leftover status is checked by the *enclosing*
-    // command list right after visitIf returns — incorrectly abort a
-    // `set -e` script even though nothing actually failed.
+    // tested true."
     this.env.lastExitCode = 0;
   }
 
-  // ─── For ──────────────────────────────────────────────────────
+  // ─── Loops ────────────────────────────────────────────────────
+
+  private *runLoopBody(body: CommandList): Effects<'continue' | 'break'> {
+    try {
+      yield* this.visitCommandList(body);
+    } catch (e) {
+      if (e instanceof BreakSignal) {
+        if (e.levels > 1) throw new BreakSignal(e.levels - 1);
+        return 'break';
+      }
+      if (e instanceof ContinueSignal) {
+        if (e.levels > 1) throw new ContinueSignal(e.levels - 1);
+        return 'continue';
+      }
+      throw e;
+    }
+    return 'continue';
+  }
 
   private *visitFor(node: ForClause): Effects<void> {
     const items = node.words
       ? yield* this.expandWordsG(node.words)
       : this.env.getPositionalArgs();
 
+    let status = 0;
     for (const item of items) {
       this.env.set(node.variable, item);
-      try {
-        yield* this.visitCommandList(node.body);
-      } catch (e) {
-        if (e instanceof BreakSignal) {
-          if (e.levels > 1) throw new BreakSignal(e.levels - 1);
-          break;
-        }
-        if (e instanceof ContinueSignal) {
-          if (e.levels > 1) throw new ContinueSignal(e.levels - 1);
-          continue;
-        }
-        throw e;
-      }
+      const outcome = yield* this.runLoopBody(node.body);
+      status = this.env.lastExitCode;
+      if (outcome === 'break') break;
     }
-  }
-
-  // ─── While ────────────────────────────────────────────────────
-
-  private loopStdin: string[] | null = null;
-
-  private *compoundLoopInput(redirections: Redirection[]): Effects<string[] | null> {
-    if (!this.io) return null;
-    let content: string | null = null;
-    for (const redir of redirections) {
-      const target = this.materializeWord(redir.target);
-      if (redir.op === '<') {
-        const path = this.io.resolvePath(yield* this.expandWordG(target));
-        content = this.io.readFile(path);
-      } else if (redir.op === '<<<' || redir.op === '<<') {
-        content = (yield* this.expandWordG(target)) + '\n';
-      }
-    }
-    if (content === null) return null;
-    const lines = content.split('\n');
-    if (lines[lines.length - 1] === '') lines.pop();
-    return lines;
+    this.env.lastExitCode = status;
   }
 
   private *visitWhile(node: WhileClause): Effects<void> {
-    const loopInput = yield* this.compoundLoopInput(node.redirections);
-    const savedLoopStdin = this.loopStdin;
-    if (loopInput) this.loopStdin = loopInput;
-    try {
-      yield* this.runWhileLoop(node);
-    } finally {
-      if (loopInput) this.loopStdin = savedLoopStdin;
-    }
+    yield* this.runConditionLoop(node.condition, node.body, true);
   }
-
-  private *runWhileLoop(node: WhileClause): Effects<void> {
-    const MAX_ITERATIONS = 10000;
-    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, true);
-    let iterations = 0;
-    while (iterations++ < MAX_ITERATIONS) {
-      this.errexitSuppress++;
-      try { yield* this.visitCommandList(node.condition); }
-      finally { this.errexitSuppress--; }
-      if (this.env.lastExitCode !== 0) break;
-      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.output.join(''), this);
-      try {
-        yield* this.visitCommandList(node.body);
-      } catch (e) {
-        if (e instanceof BreakSignal) {
-          if (e.levels > 1) throw new BreakSignal(e.levels - 1);
-          break;
-        }
-        if (e instanceof ContinueSignal) {
-          if (e.levels > 1) throw new ContinueSignal(e.levels - 1);
-          continue;
-        }
-        throw e;
-      }
-    }
-  }
-
-  // ─── Until ────────────────────────────────────────────────────
 
   private *visitUntil(node: UntilClause): Effects<void> {
+    yield* this.runConditionLoop(node.condition, node.body, false);
+  }
+
+  private *runConditionLoop(condition: CommandList, body: CommandList, whileTrue: boolean): Effects<void> {
     const MAX_ITERATIONS = 10000;
-    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, false);
+    const parkAfterFirst = this.daemonMode && isUnconditional(condition, whileTrue);
     let iterations = 0;
+    let status = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
-      try { yield* this.visitCommandList(node.condition); }
+      try { yield* this.visitCommandList(condition); }
       finally { this.errexitSuppress--; }
-      if (this.env.lastExitCode === 0) break;
-      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.output.join(''), this);
-      try {
-        yield* this.visitCommandList(node.body);
-      } catch (e) {
-        if (e instanceof BreakSignal) {
-          if (e.levels > 1) throw new BreakSignal(e.levels - 1);
-          break;
-        }
-        if (e instanceof ContinueSignal) {
-          if (e.levels > 1) throw new ContinueSignal(e.levels - 1);
-          continue;
-        }
-        throw e;
-      }
+      if ((this.env.lastExitCode === 0) !== whileTrue) break;
+      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.log.terminal(), this);
+      const outcome = yield* this.runLoopBody(body);
+      status = this.env.lastExitCode;
+      if (outcome === 'break') break;
     }
+    this.env.lastExitCode = status;
   }
 
   // ─── Case ─────────────────────────────────────────────────────
 
   private *visitCase(node: CaseClause): Effects<void> {
     const value = yield* this.expandWordG(node.word);
+    const nocase = isShellOptionEnabled(this.env, 'nocasematch');
 
     let fallthrough = false;
+    let ran = false;
     for (const item of node.items) {
       let matched = fallthrough;
       if (!matched) {
         for (const pattern of item.patterns) {
-          const pat = yield* this.expandWordG(pattern);
-          if (matchGlob(pat, value)) { matched = true; break; }
+          const pat = yield* this.expandPatternG(pattern);
+          if (fnmatch(pat, value, { extglob: true, nocase })) { matched = true; break; }
         }
       }
       if (!matched) continue;
+      ran = true;
       if (item.body) yield* this.visitCommandList(item.body);
       const terminator = item.terminator ?? ';;';
       if (terminator === ';&') { fallthrough = true; continue; }
       if (terminator === ';;&') { fallthrough = false; continue; }
       return;
     }
+    if (!ran) this.env.lastExitCode = 0;
   }
 
   // ─── Function Definition ──────────────────────────────────────
@@ -1535,7 +1482,7 @@ export class BashInterpreter {
 
   // ─── Eval ─────────────────────────────────────────────────────
 
-  private *executeEvalG(code: string): Effects<void> {
+  private *executeEvalG(code: string, sourced = false): Effects<void> {
     try {
       const lexer = new BashLexer();
       const parser = new BashParser();
@@ -1543,8 +1490,13 @@ export class BashInterpreter {
       const ast = parser.parse(tokens);
       yield* this.visitCommandList(ast.body);
     } catch (e) {
+      if (sourced && e instanceof ReturnSignal) {
+        this.env.lastExitCode = e.exitCode;
+        return;
+      }
       if (e instanceof ExitSignal || e instanceof ReturnSignal ||
-          e instanceof BreakSignal || e instanceof ContinueSignal) {
+          e instanceof BreakSignal || e instanceof ContinueSignal ||
+          e instanceof BashRuntimeError || e instanceof ArithmeticError || e instanceof DaemonParkSignal) {
         throw e;
       }
       this.env.lastExitCode = 1;
@@ -1553,36 +1505,31 @@ export class BashInterpreter {
 
   // ─── Source ───────────────────────────────────────────────────
 
-  private *executeSource(filePath: string): Effects<void> {
+  private *executeSource(filePath: string, extraArgs: string[]): Effects<void> {
     if (!this.io) {
       this.env.lastExitCode = 1;
       return;
     }
-    const path = this.io.resolvePath(filePath);
+    const path = this.absolutePath(filePath);
     const content = this.io.readFile(path);
     if (content === null) {
-      this.output.push(`bash: source: ${filePath}: No such file or directory\n`);
+      this.emitError(`bash: ${filePath}: No such file or directory`);
       this.env.lastExitCode = 1;
       return;
     }
-    yield* this.executeEvalG(content);
+    const saved = extraArgs.length > 0 ? this.env.getPositionalArgs() : null;
+    if (saved !== null) this.env.setPositionalArgs(extraArgs);
+    try {
+      yield* this.executeEvalG(content, true);
+    } finally {
+      if (saved !== null) this.env.setPositionalArgs(saved);
+    }
   }
 
   // ─── Brace Group & Subshell ───────────────────────────────────
 
   private *visitBraceGroup(node: BraceGroup): Effects<void> {
-    const hasRedirect = node.redirections && node.redirections.some(r =>
-      r.op === '>' || r.op === '>>' || r.op === '>&');
-    if (hasRedirect && this.io) {
-      const savedOutput = this.output;
-      this.output = [];
-      yield* this.visitCommandList(node.body);
-      const captured = this.output.join('');
-      this.output = savedOutput;
-      yield* this.applyRedirections(node.redirections, captured);
-    } else {
-      yield* this.visitCommandList(node.body);
-    }
+    yield* this.visitCommandList(node.body);
   }
 
   private *visitSubshell(node: Subshell): Effects<void> {
@@ -1590,12 +1537,17 @@ export class BashInterpreter {
     const savedEnv = this.env;
     const childEnv = this.env.createSubshell();
     this.env = childEnv;
+    let status: number;
     try {
       yield* this.visitCommandList(node.body);
+      status = childEnv.lastExitCode;
+    } catch (e) {
+      if (!(e instanceof ExitSignal)) throw e;
+      status = e.exitCode;
     } finally {
       this.env = savedEnv;
-      savedEnv.lastExitCode = childEnv.lastExitCode;
     }
+    savedEnv.lastExitCode = status;
   }
 
   // ─── [[ … ]] Extended Test ────────────────────────────────────
@@ -1614,52 +1566,65 @@ export class BashInterpreter {
       case 'lit': return (yield* this.expandWordG(expr.word)) !== '';
       case 'unary': {
         const v = yield* this.expandWordG(expr.arg);
-        return this.dbUnary(expr.op, v);
+        return yield* this.dbUnary(expr.op, v);
       }
       case 'binary': {
         const lhs = yield* this.expandWordG(expr.lhs);
+        if (expr.op === '=' || expr.op === '==' || expr.op === '!=') {
+          const pattern = yield* this.expandPatternG(expr.rhs);
+          const matched = fnmatch(pattern, lhs, { extglob: true, nocase: isShellOptionEnabled(this.env, 'nocasematch') });
+          return expr.op === '!=' ? !matched : matched;
+        }
         const rhs = yield* this.expandWordG(expr.rhs);
-        return this.dbBinary(expr.op, lhs, rhs, expr.rhs);
+        return yield* this.dbBinary(expr.op, lhs, rhs, expr.rhs);
       }
     }
   }
 
-  private dbUnary(op: string, v: string): boolean {
+  private *dbUnary(op: string, v: string): Effects<boolean> {
     switch (op) {
       case '-n': return v.length > 0;
       case '-z': return v.length === 0;
-      case '-v': return this.env.isSet(v);
+      case '-v': return this.variableIsSet(v);
+      case '-o': return isShellOptionEnabled(this.env, v);
     }
-    // File tests — delegate to the IOContext stat hook.
-    const stat = this.io?.stat;
-    if (!stat) return false;
-    const abs = this.io?.resolvePath?.(v) ?? v;
-    const st = stat(abs);
-    switch (op) {
-      case '-e':
-      case '-a': return !!st;
-      case '-f': return st?.type === 'file';
-      case '-d': return st?.type === 'directory';
-      default:  return false;          // -b/-c/-p/-S/-r/-w/-x/-O/-G/-N/-t/-u/-g/-k → unsupported in plain IOContext
-    }
+    const result = normalizeResult(yield { argv: ['test', op, v], env: this.childEnvironment([]) });
+    return result.exitCode === 0;
   }
 
-  private dbBinary(op: string, lhs: string, rhs: string, rhsWord: Word): boolean {
+  private variableIsSet(reference: string): boolean {
+    const element = /^([A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/.exec(reference);
+    if (element === null) return this.env.isSet(reference);
+    const [, name, subscript] = element;
+    if (this.env.isAssoc(name)) return this.env.getAssocElement(name, subscript) !== undefined;
+    return this.env.getArrayElement(name, Number(evaluateArithmetic(subscript, this.env))) !== undefined;
+  }
+
+  private *dbBinary(op: string, lhs: string, rhs: string, rhsWord: Word): Effects<boolean> {
     switch (op) {
-      case '=':
-      case '==': return globMatch(rhs, lhs);
-      case '!=': return !globMatch(rhs, lhs);
       case '=~': return this.regexMatch(lhs, rhs, rhsWord);
       case '<':  return lhs < rhs;
       case '>':  return lhs > rhs;
-      case '-eq': return Number.parseInt(lhs, 10) === Number.parseInt(rhs, 10);
-      case '-ne': return Number.parseInt(lhs, 10) !== Number.parseInt(rhs, 10);
-      case '-lt': return Number.parseInt(lhs, 10) <   Number.parseInt(rhs, 10);
-      case '-le': return Number.parseInt(lhs, 10) <=  Number.parseInt(rhs, 10);
-      case '-gt': return Number.parseInt(lhs, 10) >   Number.parseInt(rhs, 10);
-      case '-ge': return Number.parseInt(lhs, 10) >=  Number.parseInt(rhs, 10);
+      case '-eq':
+      case '-ne':
+      case '-lt':
+      case '-le':
+      case '-gt':
+      case '-ge': {
+        const left = BigInt(evaluateArithmetic(lhs, this.env));
+        const right = BigInt(evaluateArithmetic(rhs, this.env));
+        switch (op) {
+          case '-eq': return left === right;
+          case '-ne': return left !== right;
+          case '-lt': return left < right;
+          case '-le': return left <= right;
+          case '-gt': return left > right;
+          default: return left >= right;
+        }
+      }
     }
-    return false;
+    const result = normalizeResult(yield { argv: ['test', lhs, op, rhs], env: this.childEnvironment([]) });
+    return result.exitCode === 0;
   }
 
   /**
@@ -1670,7 +1635,7 @@ export class BashInterpreter {
   private regexMatch(value: string, pattern: string, patternWord: Word): boolean {
     const source = this.buildRegexPattern(patternWord, pattern);
     try {
-      const re = new RegExp(source);
+      const re = new RegExp(source, isShellOptionEnabled(this.env, 'nocasematch') ? 'i' : '');
       const m = re.exec(value);
       if (!m) return false;
       this.env.setArray('BASH_REMATCH', m.map(g => g ?? ''));
@@ -1695,9 +1660,15 @@ export class BashInterpreter {
   // ─── (( arithmetic command )) ────────────────────────────────
 
   private visitArithmeticCommand(node: ArithmeticCommand): void {
-    const result = evaluateArithmetic(node.expression, this.env);
-    // Bash: exit 0 iff the arithmetic result is non-zero.
-    this.env.lastExitCode = Number.parseInt(result, 10) !== 0 ? 0 : 1;
+    try {
+      const result = evaluateArithmetic(node.expression, this.env);
+      // Bash: exit 0 iff the arithmetic result is non-zero.
+      this.env.lastExitCode = BigInt(result) !== 0n ? 0 : 1;
+    } catch (e) {
+      if (!(e instanceof ArithmeticError)) throw e;
+      this.emitError(`bash: ((: ${e.message}`);
+      this.env.lastExitCode = 1;
+    }
   }
 
   // ─── for ((init; cond; update)) ──────────────────────────────

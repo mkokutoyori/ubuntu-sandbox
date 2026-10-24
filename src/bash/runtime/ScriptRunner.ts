@@ -338,8 +338,8 @@ function buildIOContext(ctx: ShellContext): IOContext {
     readFile(path: string) {
       return ctx.vfs.readFile(path);
     },
-    resolvePath(path: string) {
-      return ctx.vfs.normalizePath(path, ctx.cwd);
+    resolvePath(path: string, cwd?: string) {
+      return ctx.vfs.normalizePath(path, cwd ?? ctx.cwd);
     },
     stat(path: string) {
       const absPath = ctx.vfs.normalizePath(path, ctx.cwd);

@@ -130,10 +130,8 @@ describe('Fix — Redirection execution', () => {
     });
     const result = interp.execute(ast);
     expect(result.output).toBe(''); // redirected, not on stdout
-    expect(written).toHaveLength(1);
-    expect(written[0].path).toBe('/tmp/out.txt');
-    expect(written[0].content).toBe('hello\n');
-    expect(written[0].append).toBe(false);
+    expect(written[0]).toEqual({ path: '/tmp/out.txt', content: '', append: false });
+    expect(written[written.length - 1]).toEqual({ path: '/tmp/out.txt', content: 'hello\n', append: true });
   });
 
   it('append redirection >> appends to file', () => {

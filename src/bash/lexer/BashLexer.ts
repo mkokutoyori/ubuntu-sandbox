@@ -452,7 +452,11 @@ export class BashLexer {
     }
     if (!this.isAtEnd() && this.peek() === '>') {
       this.advance();
-      return { type: TokenType.GREATAND, value: '>&', position: start };
+      if (!this.isAtEnd() && this.peek() === '>') {
+        this.advance();
+        return { type: TokenType.REDIR_OP, value: '&>>', position: start };
+      }
+      return { type: TokenType.REDIR_OP, value: '&>', position: start };
     }
     return { type: TokenType.AMP, value: '&', position: start };
   }
@@ -510,6 +514,10 @@ export class BashLexer {
     if (!this.isAtEnd() && this.peek() === '&') {
       this.advance();
       return { type: TokenType.GREATAND, value: '>&', position: start };
+    }
+    if (!this.isAtEnd() && this.peek() === '|') {
+      this.advance();
+      return { type: TokenType.REDIR_OP, value: '>|', position: start };
     }
     return { type: TokenType.GREAT, value: '>', position: start };
   }
@@ -581,11 +589,13 @@ export class BashLexer {
     return { type: TokenType.LESS, value: '<', position: start };
   }
 
-  /** Check if current position is a file-descriptor redirect (e.g. 2> or 2>>) */
+  /** Check if current position is a file-descriptor redirect (e.g. 2>, 2>>, 3<, 3<&0) */
   private isFdRedirect(): boolean {
     let look = this.pos;
     while (look < this.input.length && this.isDigit(this.input[look])) look++;
-    return look < this.input.length && this.input[look] === '>';
+    if (look === this.pos || look >= this.input.length) return false;
+    if (this.input[look] === '>') return true;
+    return this.input[look] === '<' && this.input[look + 1] !== '(' && this.input[look + 1] !== '<';
   }
 
   private scanFdRedirect(): Token {
@@ -595,23 +605,37 @@ export class BashLexer {
       fd += this.peek();
       this.advance();
     }
-    // Now at '>'
+    const direction = this.peek();
     this.advance();
+    if (direction === '<') {
+      if (!this.isAtEnd() && this.peek() === '&') {
+        this.advance();
+        return { type: TokenType.REDIR_OP, value: `${fd}<&${this.descriptorTarget()}`, position: start };
+      }
+      return { type: TokenType.REDIR_OP, value: `${fd}<`, position: start };
+    }
     if (!this.isAtEnd() && this.peek() === '>') {
       this.advance();
       return { type: TokenType.FD_DGREAT, value: `${fd}>>`, position: start };
     }
     if (!this.isAtEnd() && this.peek() === '&') {
       this.advance();
-      // e.g., 2>&1
-      let target = '';
-      while (!this.isAtEnd() && this.isDigit(this.peek())) {
-        target += this.peek();
-        this.advance();
-      }
-      return { type: TokenType.GREATAND, value: `${fd}>&${target}`, position: start };
+      return { type: TokenType.GREATAND, value: `${fd}>&${this.descriptorTarget()}`, position: start };
+    }
+    if (!this.isAtEnd() && this.peek() === '|') {
+      this.advance();
+      return { type: TokenType.REDIR_OP, value: `${fd}>|`, position: start };
     }
     return { type: TokenType.FD_GREAT, value: `${fd}>`, position: start };
+  }
+
+  private descriptorTarget(): string {
+    let target = '';
+    while (!this.isAtEnd() && (this.isDigit(this.peek()) || (target === '' && this.peek() === '-'))) {
+      target += this.peek();
+      this.advance();
+    }
+    return target;
   }
 
   // ─── Word Scanner ─────────────────────────────────────────────

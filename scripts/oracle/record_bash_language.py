@@ -4,7 +4,7 @@
 usage: record_bash_language.py out.json
 
 Each snippet runs under `bash -c` in a freshly emptied /tmp/w; stdout is kept byte for byte, followed by the exit status. Standard error is
-dropped: its wording carries the invoking shell's name and line number, which the simulator does not share. The simulator replays the same
+dropped by `exec 2>/dev/null` in the prelude: its wording carries the invoking shell's name and line number, which the simulator does not share. The simulator replays the same
 snippets in bash-language-oracle.test.ts.
 """
 import json, os, subprocess, sys
@@ -162,7 +162,7 @@ GROUPS = {
     'quoting': QUOTING, 'redirection': REDIRECTION, 'printf': PRINTF, 'special': SPECIAL,
 }
 
-PRELUDE = 'rm -rf /tmp/w; mkdir -p /tmp/w; cd /tmp/w; '
+PRELUDE = 'exec 2>/dev/null; rm -rf /tmp/w; mkdir -p /tmp/w; cd /tmp/w; '
 
 def selfContained(snippet):
     snippet = snippet.replace('mkdir -p /tmp/g; cd /tmp/g; ', 'mkdir g; cd g; ').replace('cd /tmp/g; ', 'mkdir -p g; cd g; touch a.txt b.txt c.log; ')

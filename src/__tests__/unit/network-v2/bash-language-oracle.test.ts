@@ -8,7 +8,7 @@ interface Fixture {
 
 const fixture = JSON.parse(readFileSync(new URL('../../support/oracle/bash-language-bash.json', import.meta.url), 'utf8')) as Fixture;
 
-const PRELUDE = 'rm -rf /tmp/w; mkdir -p /tmp/w; cd /tmp/w; ';
+const PRELUDE = 'exec 2>/dev/null; rm -rf /tmp/w; mkdir -p /tmp/w; cd /tmp/w; ';
 
 describe('bash language against the recorded bash', () => {
   for (const [index, recorded] of fixture.cases.entries()) {

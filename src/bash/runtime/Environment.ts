@@ -427,14 +427,35 @@ export class Environment {
    * `(…)` fork-semantics.
    */
   createSubshell(): Environment {
-    const sub = new Environment({ pid: this.pid, ppid: this.ppid });
+    const sub = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode });
     // Inline the visible variable set rather than chain to `this` so
     // writes against the snapshot never bubble up.
     for (const [k, v] of this.getAll()) sub.vars.set(k, v);
+    for (const [name, values] of this.allArrays()) sub.arrays.set(name, [...values]);
+    for (const [name, entries] of this.allAssociative()) sub.assocArrays.set(name, new Map(entries));
+    for (const [name, target] of this.allNamerefs()) sub.namerefs.set(name, target);
     for (const ex of Object.keys(this.getExported())) sub.exported.add(ex);
     for (const ro of this.readonlyVars) sub.readonlyVars.add(ro);
     sub.vars.set('0', this.get('0') ?? '');
     return sub;
+  }
+
+  private allArrays(): Map<string, string[]> {
+    const merged = this.parent?.allArrays() ?? new Map<string, string[]>();
+    for (const [name, values] of this.arrays) merged.set(name, values);
+    return merged;
+  }
+
+  private allAssociative(): Map<string, Map<string, string>> {
+    const merged = this.parent?.allAssociative() ?? new Map<string, Map<string, string>>();
+    for (const [name, entries] of this.assocArrays) merged.set(name, entries);
+    return merged;
+  }
+
+  private allNamerefs(): Map<string, string> {
+    const merged = this.parent?.allNamerefs() ?? new Map<string, string>();
+    for (const [name, target] of this.namerefs) merged.set(name, target);
+    return merged;
   }
 
   // ─── Exit Code ────────────────────────────────────────────────

@@ -413,6 +413,10 @@ class Fields {
   text(): string {
     return this.fields.map((field) => field.segments.map((segment) => segment.text).join('')).join('');
   }
+
+  pattern(): string {
+    return this.fields.map(globPattern).join('');
+  }
 }
 
 function variableBody(name: string, modifier: string | undefined): string {
@@ -500,6 +504,17 @@ export function expandWord(
   const fields = new Fields(env, false);
   addWord(word, { env, execCmd, homeFor }, fields, true);
   return fields.text();
+}
+
+export function expandPattern(
+  word: Word,
+  env: Environment,
+  execCmd?: CommandSubstitutionFn,
+  homeFor?: HomeForFn,
+): string {
+  const fields = new Fields(env, false);
+  addWord(word, { env, execCmd, homeFor }, fields, true);
+  return fields.pattern();
 }
 
 type Atom = { readonly kind: 'char'; readonly character: string } | { readonly kind: 'raw'; readonly text: string } | { readonly kind: 'part'; readonly word: Word };
