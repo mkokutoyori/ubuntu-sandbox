@@ -401,6 +401,7 @@ export type NatHook = 'PREROUTING' | 'OUTPUT' | 'INPUT' | 'POSTROUTING';
 export interface NatHookContext {
   readonly masqueradeAddress: string | null;
   readonly redirectAddress: string | null;
+  readonly outInterface: string | null;
 }
 
 export type NatHookOutcome =
@@ -607,6 +608,13 @@ export class LinuxIptablesManager {
       if (range === 'drop') return { kind: 'drop' };
       if (range === null) this.connections.bindUnchanged(entry, manipulation);
       else this.connections.bind(entry, range, manipulation);
+      if (result?.action === 'MASQUERADE' && range !== null && context.outInterface !== null) {
+        this.connections.masquerade(entry, context.outInterface);
+      }
+    } else if (hook === 'POSTROUTING' && context.outInterface !== null
+      && this.connections.leavesByAnotherInterface(entry, context.outInterface)) {
+      this.connections.kill(entry);
+      return { kind: 'drop' };
     }
     return { kind: 'accept', translation: this.connections.translation(entry, manipulation), error: null };
   }

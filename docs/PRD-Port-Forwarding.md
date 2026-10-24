@@ -1109,9 +1109,18 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   de la création (`inetdev_init`), et la perd quand elle disparaît
   (`inetdev_destroy`) ; une interface recréée sous le même nom repart de
   `default`. `all` et `default` ne se retirent jamais.
+- **Les flux MASQUERADE suivent leur interface** : le suivi retient
+  l'interface par laquelle un flux traduit par MASQUERADE est sorti
+  (`masq_index` de `nf_nat_masquerade_ipv4`). Fermer l'interface
+  (`ip link set … down`, ou la supprimer) oublie ces flux
+  (`masq_device_event`) ; retirer une adresse n'oublie que les flux de cette
+  interface traduits par elle (`masq_inet_event`, `inet_cmp`) ; un paquet du
+  sens d'origine qui sortirait par une autre interface que celle du flux
+  est jeté avec son flux (`nf_nat_oif_changed`, `nf_ct_kill_acct`). Une
+  perte de porteuse n'est pas une fermeture, et un flux SNAT n'a pas
+  d'interface à suivre.
 - **Reste** : l'écho ICMP et les datagrammes IP bruts que la machine émet
-  (leur résolution du voisin précède encore la chaîne OUTPUT), NAT66, le
-  vidage des flux MASQUERADE quand l'interface tombe.
+  (leur résolution du voisin précède encore la chaîne OUTPUT), NAT66.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
   `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
@@ -1132,6 +1141,9 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   `probe-une-interface-qui-apparait-recoit-sa-portee-de-conf-copiee-de-default.test.ts`
   (18 cas) et les six cas de `ipv4-device-conf.test.ts` sur le retrait pour
   les portées des interfaces ;
+  `probe-iptables-un-flux-masquerade-suit-l-interface-qui-l-a-vu-naitre.test.ts`
+  (16 cas), `connection-tracker-masquerade.test.ts` (10 cas) et
+  `masquerade-flow-projection.test.ts` (10 cas) pour les flux MASQUERADE ;
   `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
   vont maintenant jusqu'à l'établissement de la connexion.
 

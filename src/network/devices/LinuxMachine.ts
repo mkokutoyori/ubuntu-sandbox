@@ -253,6 +253,7 @@ import {
 import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
+import { MasqueradeFlowProjection } from './linux/MasqueradeFlowProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
@@ -553,7 +554,7 @@ export abstract class LinuxMachine extends EndHost
     // TIME-WAIT during a real handshake/close, and feed the per-device
     // packet log so `tcpdump` shows the SYN/SYN-ACK/ACK/FIN bytes the
     // simulated stack actually exchanges.
-    this.bindTcpProjections();
+    this.bindProjections();
     this.syncHostnameFiles(this.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
@@ -1485,17 +1486,20 @@ export abstract class LinuxMachine extends EndHost
     super.setEventBus(bus);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.dhcpd?.getEngine().setEventBus(this.getBus());
-    this.bindTcpProjections();
+    this.bindProjections();
   }
 
   private tcpSocketProjection: TcpSocketStateProjection | null = null;
   private tcpdumpProjection: TcpdumpCaptureProjection | null = null;
+  private masqueradeProjection: MasqueradeFlowProjection | null = null;
 
-  private bindTcpProjections(): void {
+  private bindProjections(): void {
     this.tcpSocketProjection?.dispose();
     this.tcpdumpProjection?.dispose();
+    this.masqueradeProjection?.dispose();
     this.tcpSocketProjection = new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
     this.tcpdumpProjection = new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
+    this.masqueradeProjection = new MasqueradeFlowProjection(this.getBus(), this.executor.iptables.connections, this.id);
   }
 
   override setHardware(profile: HardwareProfile): void {
@@ -3618,6 +3622,13 @@ export abstract class LinuxMachine extends EndHost
     return '';
   }
 
+  private setAdminState(name: string, enabled: boolean): void {
+    const port = this.ports.get(name);
+    if (!port) return;
+    port.setUp(enabled);
+    this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
+  }
+
   private deleteVirtualInterface(name: string): string {
     if (!this.virtualInterfaces.has(name)) {
       return this.ports.has(name)
@@ -3625,6 +3636,7 @@ export abstract class LinuxMachine extends EndHost
         : `Cannot find device "${name}"`;
     }
     const vlan = this.getVlanSubInterface(name);
+    if (this.ports.get(name)?.getIsUp()) this.setAdminState(name, false);
     this.ports.delete(name);
     if (this.deviceConf.removeInterface(name)) this.executor.vfs.rmrf(`/proc/sys/net/ipv4/conf/${name}`);
     this.virtualInterfaces.delete(name);
@@ -4347,12 +4359,7 @@ export abstract class LinuxMachine extends EndHost
         port.removeSecondaryIP(ip);
         this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
-      setInterfaceAdmin: (name: string, enabled: boolean): void => {
-        const port = this.ports.get(name);
-        if (!port) return;
-        port.setUp(enabled);
-        this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
-      },
+      setInterfaceAdmin: (name: string, enabled: boolean): void => this.setAdminState(name, enabled),
       isDHCPConfigured: (name: string): boolean => {
         return this.isDHCPConfigured(name);
       },
@@ -4836,14 +4843,14 @@ export abstract class LinuxMachine extends EndHost
     if (isIPv4Fragment(ipPkt)) return ipPkt;
     const redirectAddress = this.ports.get(inPort)?.getIPAddress()?.toString() ?? null;
     return this.traverseNat(
-      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress },
+      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress, outInterface: null },
       (state) => this.evaluatePreRouting(inPort, ipPkt, state),
     );
   }
 
   protected override natLocalIn(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     return this.traverseNat(
-      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null },
+      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null, outInterface: null },
       (state) => this.executor.iptables.evaluateNat(this.arrivalFacts(inPort, ipPkt), 'INPUT', state),
     );
   }
@@ -4855,7 +4862,7 @@ export abstract class LinuxMachine extends EndHost
     const outName = outPort.getName();
     const masqueradeAddress = outPort.addressToward(nextHop)?.toString() ?? null;
     return this.traverseNat(
-      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null },
+      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null, outInterface: outName },
       (state) => this.evaluateNat(outgoing, inPort, outName, state),
     );
   }
@@ -4864,7 +4871,7 @@ export abstract class LinuxMachine extends EndHost
     if (isIPv4Fragment(ipPkt)) return ipPkt;
     const facts = (): PacketInfo => this.postRoutingFacts(undefined, outPort, ipPkt);
     return this.traverseNat(
-      'OUTPUT', ipPkt, facts, { masqueradeAddress: null, redirectAddress: null },
+      'OUTPUT', ipPkt, facts, { masqueradeAddress: null, redirectAddress: null, outInterface: null },
       (state) => this.executor.iptables.evaluateNat(facts(), 'OUTPUT', state),
     );
   }

@@ -56,6 +56,7 @@ export interface FlowView {
   readonly mark: number;
   readonly natSource: boolean;
   readonly natDestination: boolean;
+  readonly masqueradeInterface: string | null;
 }
 
 type Direction = 'original' | 'reply';
@@ -76,6 +77,7 @@ interface Flow {
   assured: boolean;
   tcpState: TcpConntrackState | null;
   mark: number;
+  masqueradeInterface: string | null;
   simultaneousOpen: boolean;
   closeInitiated: boolean;
   lastIndex: TcpIndex | null;
@@ -189,6 +191,7 @@ function viewOf(flow: Flow, now: number): FlowView {
   return {
     original: flow.original, reply: flow.reply, remainingMs: flow.expiresAt - now, replied: flow.seenReply,
     assured: flow.assured, tcpState: flow.tcpState, mark: flow.mark, natSource: flow.snat, natDestination: flow.dnat,
+    masqueradeInterface: flow.masqueradeInterface,
   };
 }
 
@@ -272,6 +275,22 @@ export class ConnectionTracker {
       addresses: { min: new IPAddress(pinned), max: new IPAddress(pinned) },
       ports: null, random: false, randomFully: false, persistent: false,
     }, manipulation);
+  }
+
+  masquerade(tracked: TrackedEntry, iface: string): void {
+    const flow = this.flowOf(tracked);
+    if (flow !== null) flow.masqueradeInterface = iface;
+  }
+
+  leavesByAnotherInterface(tracked: TrackedEntry, iface: string): boolean {
+    const flow = this.flowOf(tracked);
+    return flow !== null && flow.masqueradeInterface !== null && flow.masqueradeInterface !== iface
+      && tracked.hit?.direction !== 'reply';
+  }
+
+  kill(tracked: TrackedEntry): void {
+    const flow = this.flowOf(tracked);
+    if (flow !== null) this.remove(flow);
   }
 
   translation(tracked: TrackedEntry, manipulation: NatManipulation): NatTranslation | null {
@@ -361,7 +380,7 @@ export class ConnectionTracker {
     const now = simulationNowMs();
     const flow: Flow = {
       original, reply, snat: false, dnat: false, natDone: { source: false, destination: false },
-      createdAt: now, expiresAt: now, seenReply: false, assured: false, tcpState: null, mark: 0,
+      createdAt: now, expiresAt: now, seenReply: false, assured: false, tcpState: null, mark: 0, masqueradeInterface: null,
       simultaneousOpen: false, closeInitiated: false, lastIndex: null, lastDirection: null,
     };
     if (tcp) {
