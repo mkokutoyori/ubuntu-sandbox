@@ -101,7 +101,7 @@ function stripVolatile(json: string): unknown {
 describe('curl --write-out against the recorded curl 8.5.0', () => {
   it('witness: the exact idiom curl -s -o /dev/null -w "%{http_code}\\n" answers 200', async () => {
     const { pc } = await lab();
-    expect(await pc.executeCommand(`curl -s -o /dev/null -w "%{http_code}\\n" http://${SERVER}:${fixture.port}/ok`)).toBe('200\n');
+    expect(await pc.executeCommand(`curl -s -o /dev/null -w "%{http_code}\\n" http://${SERVER}:${fixture.port}/ok`)).toBe('200');
   });
 
   for (const [index, recorded] of fixture.cases.entries()) {

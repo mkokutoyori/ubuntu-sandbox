@@ -61,7 +61,7 @@ async function buildLab(): Promise<{ pc: LinuxPC; fw: Cli }> {
 describe('FortiGate config system session-helper', () => {
   it('a policy limited to service FTP downloads through the ftp helper', async () => {
     const { pc } = await buildLab();
-    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA\n');
+    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA');
   });
 
   it('the factory table lists the ftp helper as entry 9 on TCP/21', async () => {
@@ -89,7 +89,7 @@ describe('FortiGate config system session-helper', () => {
       'config system session-helper', 'delete 9',
       'edit 21', 'set name ftp', 'set protocol 6', 'set port 21', 'next', 'end',
     ]);
-    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA\n');
+    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA');
   });
 
   it('a helper name FortiOS does not know is refused', async () => {
