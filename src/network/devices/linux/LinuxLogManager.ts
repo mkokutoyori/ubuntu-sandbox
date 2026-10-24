@@ -182,11 +182,11 @@ export class LinuxLogManager {
   }
 
   reloadJournaldConfig(journaldPid = 0): void {
-    const readout = readJournaldConfig(this.vfs);
+    const readout = readJournaldConfig(this.vfs, this.kernelCommandLine());
     Object.assign(this.journald.settings, readout.settings);
     this.journaldStorage = readout.settings.storage;
-    for (const line of readout.diagnostics) {
-      this.submitLibcSyslog(SYSLOG_FACILITY.daemon << 3 | 4, 'systemd-journald', journaldPid, line, this.nowMs());
+    for (const diagnostic of readout.diagnostics) {
+      this.submitLibcSyslog(SYSLOG_FACILITY.daemon << 3 | diagnostic.priority, 'systemd-journald', journaldPid, diagnostic.message, this.nowMs());
     }
   }
 

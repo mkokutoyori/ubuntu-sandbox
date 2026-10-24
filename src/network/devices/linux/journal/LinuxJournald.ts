@@ -1,5 +1,5 @@
 import { type JournalFile, JournalFileSet, type FileIdentity } from './JournalFileSet';
-import { DEFAULT_JOURNALD_SETTINGS, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream } from './JournaldServer';
+import { defaultJournaldSettings, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream } from './JournaldServer';
 import { type JournalFileInfo, type VacuumResult, type VacuumSpec } from './JournalctlTool';
 import { type JournalRecord } from './JournalRecord';
 import { formatBytes, utf8 } from './JournalText';
@@ -50,7 +50,7 @@ export class LinuxJournald {
   private flushed = false;
   private kmsgSequence = 0;
 
-  constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = DEFAULT_JOURNALD_SETTINGS) {
+  constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = defaultJournaldSettings()) {
     this.bootId = hex128(`boot:${platform.hostname()}:${platform.machineId()}:${platform.bootUsec()}`);
     this.files = new JournalFileSet(index => this.identityOf(index), 1);
     this.transient = new JournalFileSet(index => this.identityOf(index), 1);
@@ -61,7 +61,7 @@ export class LinuxJournald {
       newStreamId: () => hex128(`stream:${this.bootId}:${this.streamCounter++}`),
       write: (items, priority) => this.store(items, priority),
     };
-    this.server = new JournaldServer(host, { ...settings });
+    this.server = new JournaldServer(host, structuredClone(settings));
     this.server.selfContext = null;
   }
 

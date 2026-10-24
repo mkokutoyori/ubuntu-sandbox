@@ -6,12 +6,18 @@
  * `systemctl restart systemd-journald` applies them. What is evaluated here: ForwardToSyslog and MaxLevelSyslog (what
  * rsyslog receives), MaxLevelStore and Storage=none (what the journal keeps), LineMax and the diagnostics of the parser,
  * worded as in the binaries of the machine (libsystemd-shared 255 and systemd-journald).
- * Measured against the preceding commit (git stash of src/network): 7 of the 12 cases fall - the file was never read, so
- * ForwardToSyslog=no, MaxLevelSyslog, MaxLevelStore and Storage=none changed nothing, the Ubuntu files were not shipped and
- * no diagnostic was printed. The 5 that pass either way are WITNESSES: the default configuration forwards to rsyslog, the
- * two cases where the daemon must NOT have applied the setting (a drop-in that sorts before syslog.conf, a file written
- * but not yet read) which are only meaningful next to the case that shows the same setting applied by name order and by a
- * restart, and the two parser cases built on a fake file source, which need only the new parser.
+ * The parser is a port of config_parse and config_parse_config_file of systemd 255 (src/shared/conf-parser.c, journald-server.c),
+ * checked against their source: a comment starts the line, a backslash continues it, [X-...] and X-... are extensions, an
+ * empty value is not a reset (it is an error for an enumeration, a boolean, a size or a time; LineMax, Audit, Compress and
+ * TTYPath alone give it a meaning), sizes follow parse_size, the kernel command line is read after the files, and a rate
+ * limit with only one of interval and burst at zero is switched off entirely.
+ * Measured in two steps. Against the commit that introduced journald.conf (git stash of src/network): 7 of the first 12 cases fell
+ * - the file was never read, so ForwardToSyslog=no, MaxLevelSyslog, MaxLevelStore and Storage=none changed nothing, the Ubuntu files
+ * were not shipped and no diagnostic was printed; the 5 that passed either way were WITNESSES (the default configuration forwards
+ * to rsyslog, the two cases where the daemon must NOT have applied the setting - a drop-in that sorts before syslog.conf, a file
+ * written but not yet read - which only mean something next to the case that shows the same setting applied by name order and by
+ * a restart, and two parser cases on a fake source). Against the previous parser, which was written from memory, 8 of the 17 cases
+ * fall: the five parser cases and the defaults case added with the port, the message of a boolean, and the kernel command line.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -20,7 +26,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { readJournaldConfig } from '@/network/devices/linux/journal/JournaldConfig';
-import { DEFAULT_JOURNALD_SETTINGS } from '@/network/devices/linux/journal/JournaldServer';
+import { defaultJournaldSettings } from '@/network/devices/linux/journal/JournaldServer';
 
 beforeEach(() => {
   resetCounters();
@@ -144,23 +150,72 @@ describe('the parser', () => {
     const lines = await host.executeCommand('journalctl --no-pager -t systemd-journald 2>&1');
     expect(lines).toContain("/etc/systemd/journald.conf.d/zz-bad.conf:2: Unknown key name 'Bogus' in section 'Journal', ignoring.");
     expect(lines).toContain('/etc/systemd/journald.conf.d/zz-bad.conf:3: Failed to parse log level, ignoring: loud');
-    expect(lines).toContain('/etc/systemd/journald.conf.d/zz-bad.conf:4: Failed to parse boolean value for ForwardToWall=, ignoring: maybe');
+    expect(lines).toContain('/etc/systemd/journald.conf.d/zz-bad.conf:4: Failed to parse boolean value, ignoring: maybe');
     expect(lines).toContain("/etc/systemd/journald.conf.d/zz-bad.conf:5: Unknown section 'Elsewhere'. Ignoring.");
   }, 60_000);
 
-  it('witness: the defaults are the compile-time defaults of the manual when nothing is configured', () => {
-    expect(readJournaldConfig(source({})).settings).toEqual(DEFAULT_JOURNALD_SETTINGS);
+  it('the defaults are the compile-time defaults of the manual when nothing is configured', () => {
+    const readout = readJournaldConfig(source({}));
+    expect(readout.settings).toEqual(defaultJournaldSettings());
+    expect(readout.diagnostics).toEqual([]);
   });
 
-  it('witness: LineMax is rounded up to 79, a value that does not parse keeps the previous one, an empty value restores the default', () => {
-    const files = {
-      '/etc/systemd/journald.conf': '[Journal]\nLineMax=10\nMaxLevelStore=info\nMaxLevelSyslog=err\n',
-      '/etc/systemd/journald.conf.d/10-a.conf': '[Journal]\nMaxLevelStore=nonsense\nMaxLevelSyslog=\n',
-    };
-    const readout = readJournaldConfig(source(files));
+  const read = (files: Record<string, string>, cmdline = ''): ReturnType<typeof readJournaldConfig> =>
+    readJournaldConfig(source({ '/etc/systemd/journald.conf': '', ...files }), cmdline);
+  const messages = (readout: ReturnType<typeof readJournaldConfig>): string[] => readout.diagnostics.map((entry) => entry.message);
+
+  it('a line that continues with a backslash joins the next one, and a comment must start the line', () => {
+    const joined = read({ '/etc/systemd/journald.conf': '[Journal]\nMaxLevelStore=\\\nerr\n' });
+    expect(joined.settings.maxLevelStore).toBe(3);
+    const trailing = read({ '/etc/systemd/journald.conf': '[Journal]\nMaxLevelStore=err # not a comment\n' });
+    expect(trailing.settings.maxLevelStore).toBe(7);
+    expect(messages(trailing)).toEqual(['/etc/systemd/journald.conf:2: Failed to parse log level, ignoring: err # not a comment']);
+  });
+
+  it('X- keys and sections are extensions and stay silent, the other mistakes of the file are named', () => {
+    const readout = read({ '/etc/systemd/journald.conf': '[Journal\n[X-Mine]\nA=1\n[Journal]\nX-Key=1\n=1\nNoEquals\n[Other]\nB=1\n' });
+    expect(readout.diagnostics.map((entry) => [entry.priority, entry.message])).toEqual([
+      [3, "/etc/systemd/journald.conf:1: Invalid section header '[Journal'"],
+      [4, "/etc/systemd/journald.conf:6: Missing key name before '=', ignoring line."],
+      [4, "/etc/systemd/journald.conf:7: Missing '=', ignoring line."],
+      [4, "/etc/systemd/journald.conf:8: Unknown section 'Other'. Ignoring."],
+    ]);
+  });
+
+  it('sizes are read as parse_size does, in decreasing order of suffix, and an empty value is not a default', () => {
+    const readout = read({ '/etc/systemd/journald.conf': '[Journal]\nSystemMaxUse=1.5G\nRuntimeMaxUse=10M5K\nSystemKeepFree=5K10M\nLineMax=\nStorage=\n' });
+    expect(readout.settings.systemMetrics.maxUse).toBe(1610612736);
+    expect(readout.settings.runtimeMetrics.maxUse).toBe(10 * 1024 * 1024 + 5 * 1024);
+    expect(readout.settings.systemMetrics.keepFree).toBeNull();
+    expect(readout.settings.lineMax).toBe(48 * 1024);
+    expect(messages(readout)).toEqual([
+      '/etc/systemd/journald.conf:4: Failed to parse size value, ignoring: 5K10M',
+      '/etc/systemd/journald.conf:6: Failed to parse storage setting, ignoring: ',
+    ]);
+  });
+
+  it('LineMax below 79 is clamped with a warning, Compress takes a boolean or a size, Audit takes an empty value', () => {
+    const readout = read({ '/etc/systemd/journald.conf': '[Journal]\nLineMax=10\nCompress=512\nAudit=\n' });
     expect(readout.settings.lineMax).toBe(79);
-    expect(readout.settings.maxLevelStore).toBe(6);
-    expect(readout.settings.maxLevelSyslog).toBe(DEFAULT_JOURNALD_SETTINGS.maxLevelSyslog);
-    expect(readout.diagnostics).toEqual(['/etc/systemd/journald.conf.d/10-a.conf:2: Failed to parse log level, ignoring: nonsense']);
+    expect(readout.settings.compress).toEqual({ enabled: true, thresholdBytes: 512 });
+    expect(readout.settings.setAudit).toBeNull();
+    expect(messages(readout)).toEqual(['/etc/systemd/journald.conf:2: LineMax= too small, clamping to 79: 10']);
+    expect(read({ '/etc/systemd/journald.conf': '[Journal]\nCompress=0\n' }).settings.compress.enabled).toBe(false);
+  });
+
+  it('a rate limit with only one of interval and burst at zero is switched off entirely', () => {
+    const readout = read({ '/etc/systemd/journald.conf': '[Journal]\nRateLimitIntervalSec=0\n' });
+    expect([readout.settings.rateLimitIntervalUsec, readout.settings.rateLimitBurst]).toEqual([0, 0]);
+    expect(read({ '/etc/systemd/journald.conf': '[Journal]\nRateLimitIntervalSec=1min\n' }).settings.rateLimitIntervalUsec).toBe(60_000_000);
+  });
+
+  it('the kernel command line sets the forwarding switches and the levels, and complains in the words of journald', () => {
+    const readout = read({}, 'BOOT_IMAGE=/vmlinuz root=/dev/sda1 systemd.journald.forward_to_syslog=1 systemd.journald.max_level_console=err systemd.journald.max_level_wall=loud systemd.journald.bogus=1');
+    expect(readout.settings.forwardToSyslog).toBe(true);
+    expect(readout.settings.maxLevelConsole).toBe(3);
+    expect(messages(readout)).toEqual([
+      'Failed to parse max level wall value "loud". Ignoring.',
+      'Unknown journald kernel command line option "systemd.journald.bogus". Ignoring.',
+    ]);
   });
 });

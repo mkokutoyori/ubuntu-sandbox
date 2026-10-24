@@ -60,9 +60,30 @@ export interface JournaldHost {
 }
 
 export type JournaldStorage = 'volatile' | 'persistent' | 'auto' | 'none';
+export type JournaldSplitMode = 'login' | 'uid' | 'none';
+
+export interface JournalMetrics {
+  maxUse: number | null;
+  maxSize: number | null;
+  keepFree: number | null;
+  maxFiles: number | null;
+}
 
 export interface JournaldSettings {
   storage: JournaldStorage;
+  compress: { enabled: boolean; thresholdBytes: number | null };
+  seal: boolean;
+  readKmsg: boolean;
+  setAudit: boolean | null;
+  syncIntervalUsec: number;
+  rateLimitIntervalUsec: number;
+  rateLimitBurst: number;
+  systemMetrics: JournalMetrics;
+  runtimeMetrics: JournalMetrics;
+  maxRetentionUsec: number;
+  maxFileUsec: number;
+  splitMode: JournaldSplitMode;
+  ttyPath: string | null;
   maxLevelStore: number;
   maxLevelSyslog: number;
   maxLevelKmsg: number;
@@ -75,10 +96,21 @@ export interface JournaldSettings {
   forwardToWall: boolean;
 }
 
-export const DEFAULT_JOURNALD_SETTINGS: JournaldSettings = {
-  storage: 'auto', maxLevelStore: 7, maxLevelSyslog: 7, maxLevelKmsg: 5, maxLevelConsole: 6, maxLevelWall: 0,
-  lineMax: 48 * 1024, forwardToSyslog: false, forwardToKmsg: false, forwardToConsole: false, forwardToWall: true,
-};
+const USEC_PER_SEC = 1_000_000;
+const AUTOMATIC_METRICS: JournalMetrics = { maxUse: null, maxSize: null, keepFree: null, maxFiles: null };
+
+export function defaultJournaldSettings(): JournaldSettings {
+  return {
+    storage: 'auto', compress: { enabled: true, thresholdBytes: null }, seal: true, readKmsg: true, setAudit: true,
+    syncIntervalUsec: 300 * USEC_PER_SEC, rateLimitIntervalUsec: 30 * USEC_PER_SEC, rateLimitBurst: 10000,
+    systemMetrics: { ...AUTOMATIC_METRICS }, runtimeMetrics: { ...AUTOMATIC_METRICS },
+    maxRetentionUsec: 0, maxFileUsec: 2_629_800 * USEC_PER_SEC, splitMode: 'uid', ttyPath: null,
+    maxLevelStore: 7, maxLevelSyslog: 7, maxLevelKmsg: 5, maxLevelConsole: 6, maxLevelWall: 0,
+    lineMax: 48 * 1024, forwardToSyslog: false, forwardToKmsg: false, forwardToConsole: false, forwardToWall: true,
+  };
+}
+
+export const DEFAULT_JOURNALD_SETTINGS: JournaldSettings = defaultJournaldSettings();
 
 const LOG_PRIMASK = 7;
 const admits = (maxLevel: number, priority: number): boolean => (priority & LOG_PRIMASK) <= maxLevel;
