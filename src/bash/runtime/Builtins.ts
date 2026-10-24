@@ -496,7 +496,7 @@ function builtinReturn(args: string[], env: Environment): BuiltinResult {
   if (isNaN(parsed)) {
     throw new ReturnSignal(2);
   }
-  throw new ReturnSignal(parsed);
+  throw new ReturnSignal(((parsed % 256) + 256) % 256);
 }
 
 function builtinBreak(args: string[]): BuiltinResult {
@@ -581,26 +581,20 @@ function splitRecord(characters: readonly ReadCharacter[], ifs: string, names: n
 
 function splitWords(characters: readonly ReadCharacter[], ifs: string): string[] {
   const words: string[] = [];
-  let current: string | null = null;
   const isDelimiter = (c: ReadCharacter): boolean => !c.escaped && ifs.includes(c.character);
-  for (let index = 0; index < characters.length; index++) {
-    const c = characters[index];
-    if (!isDelimiter(c)) {
-      current = (current ?? '') + c.character;
-      continue;
-    }
-    if (current !== null) words.push(current);
-    current = null;
-    if (!IFS_WHITESPACE.includes(c.character)) {
-      let next = index + 1;
-      while (next < characters.length && isDelimiter(characters[next]) && IFS_WHITESPACE.includes(characters[next].character)) next++;
-      if (next >= characters.length) break;
-      words.push('');
-      current = null;
-      index = next - 1;
+  const isWhitespace = (c: ReadCharacter): boolean => isDelimiter(c) && IFS_WHITESPACE.includes(c.character);
+  let position = 0;
+  while (position < characters.length && isWhitespace(characters[position])) position++;
+  while (position < characters.length) {
+    let word = '';
+    while (position < characters.length && !isDelimiter(characters[position])) word += characters[position++].character;
+    words.push(word);
+    while (position < characters.length && isWhitespace(characters[position])) position++;
+    if (position < characters.length && isDelimiter(characters[position]) && !isWhitespace(characters[position])) {
+      position++;
+      while (position < characters.length && isWhitespace(characters[position])) position++;
     }
   }
-  if (current !== null) words.push(current);
   return words;
 }
 

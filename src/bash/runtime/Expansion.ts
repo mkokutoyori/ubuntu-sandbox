@@ -5,6 +5,7 @@ import { evaluateArithmeticExpression } from './Arithmetic';
 import { expandParameter, BashRuntimeError } from './ParameterExpansion';
 import type { ParameterHost, ParameterResult } from './ParameterExpansion';
 import { isShellOptionEnabled } from './ShellOptions';
+import { closingBacktick, closingBrace, closingParenthesis } from '@/bash/lexer/Spans';
 
 export { BashRuntimeError } from './ParameterExpansion';
 
@@ -79,51 +80,6 @@ interface Scanned {
   readonly end: number;
 }
 
-function closingBrace(text: string, open: number): number {
-  let depth = 0;
-  for (let index = open; index < text.length; index++) {
-    const character = text[index];
-    if (character === '\\') { index++; continue; }
-    if (character === "'" ) {
-      const close = text.indexOf("'", index + 1);
-      if (close < 0) return -1;
-      index = close;
-      continue;
-    }
-    if (character === '"') {
-      index++;
-      while (index < text.length && text[index] !== '"') index += text[index] === '\\' ? 2 : 1;
-      continue;
-    }
-    if (character === '$' && text[index + 1] === '(') {
-      const close = closingParenthesis(text, index + 1);
-      if (close < 0) return -1;
-      index = close;
-      continue;
-    }
-    if (character === '{') depth++;
-    else if (character === '}' && --depth === 0) return index;
-  }
-  return -1;
-}
-
-function closingParenthesis(text: string, open: number): number {
-  let depth = 0;
-  for (let index = open; index < text.length; index++) {
-    const character = text[index];
-    if (character === '\\') { index++; continue; }
-    if (character === "'" || character === '"') {
-      const quote = character;
-      index++;
-      while (index < text.length && text[index] !== quote) index += quote === '"' && text[index] === '\\' ? 2 : 1;
-      continue;
-    }
-    if (character === '(') depth++;
-    else if (character === ')' && --depth === 0) return index;
-  }
-  return -1;
-}
-
 function arithmeticEnd(text: string, open: number): number {
   let depth = 0;
   for (let index = open + 2; index < text.length; index++) {
@@ -167,11 +123,7 @@ function scanDollar(text: string, at: number, ctx: Context): Scanned | null {
 }
 
 function backtickEnd(text: string, open: number): number {
-  for (let index = open + 1; index < text.length; index++) {
-    if (text[index] === '\\') index++;
-    else if (text[index] === '`') return index;
-  }
-  return -1;
+  return closingBacktick(text, open);
 }
 
 function backtickCommand(raw: string): string {

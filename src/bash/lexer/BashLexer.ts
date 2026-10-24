@@ -18,6 +18,7 @@
 import { TokenType, BASH_KEYWORDS, type Token, type SourcePosition } from './Token';
 import { decodeBackslashEscapes } from '@/bash/runtime/EscapeSequences';
 import { LexerError } from './LexerError';
+import { closingBrace, closingParenthesis } from './Spans';
 
 export class BashLexer {
   private input: string = '';
@@ -174,6 +175,13 @@ export class BashLexer {
         // quoting context — a `"` inside it must not be mistaken for
         // the outer string's terminator (e.g. `"$(cmd "$x")"`).
         value += this.consumeBalancedParenSpan();
+      } else if (this.peek() === '$' && this.peekAt(1) === '{') {
+        const close = closingBrace(this.input, this.pos + 1);
+        const stop = close < 0 ? this.pos : close;
+        while (this.pos <= stop) {
+          value += this.peek();
+          this.advance();
+        }
       } else if (this.peek() === '`') {
         // Same for a backtick command substitution embedded inside.
         value += this.consumeBalancedBacktickSpan();
@@ -372,27 +380,24 @@ export class BashLexer {
   }
 
   private scanCmdSub(start: SourcePosition): Token {
+    const close = closingParenthesis(this.input, this.pos);
+    if (close < 0) throw new LexerError("Unterminated command substitution", start);
     this.advance(); // skip (
-    let depth = 1;
     let cmd = '';
-    while (!this.isAtEnd() && depth > 0) {
-      if (this.peek() === '(') depth++;
-      else if (this.peek() === ')') {
-        depth--;
-        if (depth === 0) break;
-      }
+    while (this.pos < close) {
       cmd += this.peek();
       this.advance();
     }
-    if (this.isAtEnd() && depth > 0) throw new LexerError("Unterminated command substitution", start);
     this.advance(); // skip )
     return { type: TokenType.CMD_SUB, value: cmd, position: start };
   }
 
   private scanVarBraced(start: SourcePosition): Token {
+    const close = closingBrace(this.input, this.pos);
+    if (close < 0) throw new LexerError("Unterminated variable expansion ${...}", start);
     this.advance(); // skip {
     let content = '';
-    while (!this.isAtEnd() && this.peek() !== '}') {
+    while (this.pos < close) {
       content += this.peek();
       this.advance();
     }

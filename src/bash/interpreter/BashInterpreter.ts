@@ -1713,11 +1713,15 @@ export class BashInterpreter {
     this.env = childEnv;
     let status: number;
     try {
-      yield* this.visitCommandList(node.body);
-      status = childEnv.lastExitCode;
-    } catch (e) {
-      if (!(e instanceof ExitSignal)) throw e;
-      status = e.exitCode;
+      try {
+        yield* this.visitCommandList(node.body);
+        status = childEnv.lastExitCode;
+      } catch (e) {
+        if (!(e instanceof ExitSignal)) throw e;
+        status = e.exitCode;
+      }
+      childEnv.lastExitCode = status;
+      yield* this.fireExitTrap();
     } finally {
       this.env = savedEnv;
     }

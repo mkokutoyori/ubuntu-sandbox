@@ -565,7 +565,27 @@ function versionCompare(a: string, b: string): number {
   return 0;
 }
 
-export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): string {
+function expandShortOptionClusters(args: readonly string[], withValue: string): string[] {
+  const expanded: string[] = [];
+  for (const arg of args) {
+    if (!/^-[A-Za-z]{2,}/.test(arg)) {
+      expanded.push(arg);
+      continue;
+    }
+    for (let index = 1; index < arg.length; index++) {
+      const letter = arg[index];
+      if (withValue.includes(letter)) {
+        expanded.push(`-${letter}${arg.slice(index + 1)}`);
+        break;
+      }
+      expanded.push(`-${letter}`);
+    }
+  }
+  return expanded;
+}
+
+export function cmdSort(ctx: ShellContext, rawArgs: string[], stdin?: string): string {
+  const args = expandShortOptionClusters(rawArgs, 'kto');
   let numeric = false, reverse = false, unique = false;
   let human = false, version = false, randomise = false;
   let monthSort = false, ignoreCase = false, ignoreLeading = false, stable = false;
