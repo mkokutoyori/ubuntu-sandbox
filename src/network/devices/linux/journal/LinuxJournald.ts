@@ -20,6 +20,7 @@ export interface KernelMessage {
   message: string;
   monotonicUsec: number;
   realtimeUsec?: number;
+  serial?: number;
 }
 
 const JOURNAL_STARTED = 'f77379a8490b408bbe5f6940505a777b';
@@ -130,7 +131,7 @@ export class LinuxJournald {
 
   deliverKernel(message: KernelMessage): void {
     const escaped = Array.from(new TextEncoder().encode(message.message), byte => (byte >= 0x20 && byte < 0x7f && byte !== 0x5c ? String.fromCharCode(byte) : `\\x${byte.toString(16).padStart(2, '0')}`)).join('');
-    const record = utf8(`${message.priority & 0x3ff},${this.kmsgSequence++},${Math.floor(message.monotonicUsec)},-;${escaped}\n`);
+    const record = utf8(`${message.priority & 0x3ff},${message.serial ?? this.kmsgSequence++},${Math.floor(message.monotonicUsec)},-;${escaped}\n`);
     const run = (): void => this.server.processKmsg(record);
     if (message.realtimeUsec !== undefined) this.withStamp(message.realtimeUsec, run);
     else run();

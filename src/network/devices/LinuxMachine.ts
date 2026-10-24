@@ -655,6 +655,7 @@ export abstract class LinuxMachine extends EndHost
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
+    this.executor.logMgr.attachTerminals({ sessions: () => this.loggedInTerminals().map((terminal) => terminal.tty), write: (tty, text) => this.writeTerminal(tty, text) });
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
 
@@ -1719,17 +1720,8 @@ export abstract class LinuxMachine extends EndHost
       uidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getUser(name)?.uid ?? null),
       gidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getGroup(name)?.gid ?? null),
       userExists: (name) => executor.userMgr.getUser(name) !== undefined,
-      terminals: () => {
-        this.ensureLocalConsoleSession();
-        return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
-      },
-      writeTerminal: (tty, text) => {
-        const path = `/dev/${tty}`;
-        const node = vfs.resolveInode(path);
-        if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
-        if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
-        this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
-      },
+      terminals: () => this.loggedInTerminals(),
+      writeTerminal: (tty, text) => this.writeTerminal(tty, text),
       resolveAddresses: (name) => executor.resolveHostAddresses(name),
       reverseName: (address) => reverseNameOf(executor.nss, address),
       servicePort: (name, protocol) => executor.resolveServicePort(name, protocol),
@@ -2094,7 +2086,11 @@ export abstract class LinuxMachine extends EndHost
   private wireNetworkConfigLifecycle(): void {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
-      if (name === 'systemd-journald' && event !== 'restart') this.executor.logMgr.reloadJournaldConfig(this.executor.processMgr.pidof('systemd-journald')[0] ?? 0);
+      if (name === 'systemd-journald' && event !== 'restart') {
+        this.executor.logMgr.reloadJournaldConfig(this.executor.processMgr.pidof('systemd-journald')[0] ?? 0);
+        const audit = this.executor.logMgr.journald.settings.setAudit;
+        if (audit !== null) this.executor.auditRules.setEnabledFromJournald(audit);
+      }
       if (name === 'systemd-networkd') this.applyNetworkConfiguration();
       // `resolved.conf` n'était lu qu'à la toute première instanciation du
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
@@ -2861,6 +2857,20 @@ export abstract class LinuxMachine extends EndHost
   getLastSshLoginFor(user: string): { at: Date; from: string } | null {
     const entry = this.executor.lastlog.getCurrent(user);
     return entry ? { at: new Date(entry.when), from: entry.sourceHost } : null;
+  }
+
+  private loggedInTerminals(): Array<{ user: string; tty: string }> {
+    this.ensureLocalConsoleSession();
+    return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
+  }
+
+  private writeTerminal(tty: string, text: string): void {
+    const vfs = this.executor.vfs;
+    const path = `/dev/${tty}`;
+    const node = vfs.resolveInode(path);
+    if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
+    if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
+    this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
   }
 
   /** Ensure a tty=tty1 console session exists for the local user. */
