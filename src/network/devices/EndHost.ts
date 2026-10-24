@@ -137,7 +137,7 @@ import {
   RFC792_ICMP_ERROR_QUOTE,
 } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF, ipv4SendRefusal, isIPv4Fragment } from '../core/Ipv4Fragmentation';
-import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
+import { isMulticastIpv4 } from '../core/ip';
 import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
@@ -265,8 +265,12 @@ interface OriginRoute {
   readonly nextHopIP: IPAddress;
 }
 
+type NeighbourResolver = (route: OriginRoute) => Promise<MACAddress | null>;
+
+type Refusal = 'dropped' | 'rejected' | 'unroutable';
+
 type Origination =
-  | { readonly outcome: 'refused'; readonly packet: IPv4Packet; readonly unanswered: boolean }
+  | { readonly outcome: 'refused'; readonly packet: IPv4Packet; readonly refusal: Refusal; readonly unanswered: boolean }
   | { readonly outcome: 'lost'; readonly packet: IPv4Packet }
   | { readonly outcome: 'looped'; readonly packet: IPv4Packet }
   | { readonly outcome: 'routed'; readonly packet: IPv4Packet; readonly route: OriginRoute };
@@ -320,6 +324,12 @@ class IcmpErrorReply extends Error {
 class SendRefusedError extends Error {
   constructor(readonly errno: Errno) {
     super(strerror(errno));
+  }
+}
+
+class NeighbourUnreachableError extends Error {
+  constructor(readonly source: IPAddress) {
+    super(`Destination unreachable from ${source} code 1`);
   }
 }
 
@@ -3081,7 +3091,7 @@ export abstract class EndHost extends Equipment {
     if (requiresNamedInterface(request.destination)) {
       return sendOnNamedInterface({
         getPort: (name) => this.getPort(name),
-        sendFrame: (name, frame) => this.sendFrame(name, frame),
+        sendFrame: (name, frame) => this.originateOnLink(name, frame.payload as IPv4Packet),
       }, request);
     }
 
@@ -3093,12 +3103,14 @@ export abstract class EndHost extends Equipment {
     const source = request.source ?? route.port.getIPAddress();
     if (!source) return false;
 
-    this.sendIpv4FrameArpAware(
-      route.iface,
+    return this.dispatchOrigination(this.originate(
       createIPv4Packet(source, request.destination, request.protocol, ttl,
         request.payload, request.payloadBytes, options),
-      route.nextHopIP);
-    return true;
+      route));
+  }
+
+  private originateOnLink(iface: string, packet: IPv4Packet): boolean {
+    return this.dispatchOrigination(this.originate(packet, { iface, nextHopIP: packet.destinationIP }));
   }
 
   private countLocallyOriginated(ipPkt: IPv4Packet): void {
@@ -3174,7 +3186,9 @@ export abstract class EndHost extends Equipment {
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.getPort(outPortName);
     if (!port) return;
-    const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
+    const leaving = this.natLocalPostRouting(outPortName, ipPkt);
+    if (leaving === null) return;
+    const packets = this.fragmentsForEgress(leaving, port.getMTU());
     if (!packets) return;
     for (const packet of packets) this.sendIpv4DatagramArpAware(outPortName, port, packet, nextHopIP);
   }
@@ -3483,19 +3497,26 @@ export abstract class EndHost extends Equipment {
 
   private originate(packet: IPv4Packet, route: OriginRoute | null): Origination {
     const translated = this.natOutput(route?.iface ?? 'lo', packet);
-    if (translated === null) return { outcome: 'refused', packet, unanswered: false };
+    if (translated === null) return { outcome: 'refused', packet, refusal: 'dropped', unanswered: false };
     const moved = !translated.destinationIP.equals(packet.destinationIP);
     if (moved ? this.isLocalAddress(translated.destinationIP) : route === null) {
       const leg = this.loopLocal(translated);
       if (leg.delivery === 'delivered') return { outcome: 'looped', packet: leg.packet };
-      return leg.delivery === 'lost'
-        ? { outcome: 'lost', packet: leg.packet }
-        : { outcome: 'refused', packet: leg.packet, unanswered: false };
+      if (leg.delivery === 'lost') return { outcome: 'lost', packet: leg.packet };
+      return {
+        outcome: 'refused', packet: leg.packet, unanswered: false,
+        refusal: leg.delivery === 'send-rejected' ? 'rejected' : 'dropped',
+      };
     }
     const via = moved ? this.resolveRoute(translated.destinationIP) : route;
-    if (via === null) return { outcome: 'refused', packet: translated, unanswered: false };
+    if (via === null) return { outcome: 'refused', packet: translated, refusal: 'unroutable', unanswered: false };
     const verdict = this.firewallFilter(via.iface, translated, 'out');
-    if (verdict !== 'accept') return { outcome: 'refused', packet: translated, unanswered: verdict === 'reject' };
+    if (verdict !== 'accept') {
+      return {
+        outcome: 'refused', packet: translated,
+        refusal: verdict === 'reject' ? 'rejected' : 'dropped', unanswered: verdict === 'reject',
+      };
+    }
     return { outcome: 'routed', packet: translated, route: via };
   }
 
@@ -4262,28 +4283,18 @@ export abstract class EndHost extends Equipment {
     dataSize: number,
     options: { sourceIp?: IPAddress; ttl?: number; id?: number; sequence?: number },
   ): boolean {
-    const route = this.resolveRoute(destinationIP);
-    if (!route) return false;
-    const srcIP = options.sourceIp ?? route.port.getIPAddress();
-    if (!srcIP) return false;
-
-    const icmp: ICMPPacket = {
-      type: 'icmp', icmpType, code: 0,
-      id: options.id ?? ((++this.pingIdCounter) & 0xffff), sequence: options.sequence ?? 0, dataSize,
-      ...(icmpType === 'timestamp-request'
-        ? { timestamps: { originate: this.millisecondsSinceMidnight(), receive: 0, transmit: 0 } }
-        : {}),
-    };
-    const ipPkt = createIPv4Packet(
-      srcIP, destinationIP, IP_PROTO_ICMP, options.ttl ?? this.defaultTTL, icmp, 8 + dataSize,
-    );
-
-    const outPortName = route.port.getName();
-    const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
-    if (verdict === 'drop' || verdict === 'reject') return false;
-
-    this.sendIpv4FrameArpAware(outPortName, ipPkt, route.nextHopIP);
-    return true;
+    return this.emitIpv4(destinationIP, (srcIP) => {
+      const icmp: ICMPPacket = {
+        type: 'icmp', icmpType, code: 0,
+        id: options.id ?? ((++this.pingIdCounter) & 0xffff), sequence: options.sequence ?? 0, dataSize,
+        ...(icmpType === 'timestamp-request'
+          ? { timestamps: { originate: this.millisecondsSinceMidnight(), receive: 0, transmit: 0 } }
+          : {}),
+      };
+      return createIPv4Packet(
+        srcIP, destinationIP, IP_PROTO_ICMP, options.ttl ?? this.defaultTTL, icmp, 8 + dataSize,
+      );
+    }, { source: options.sourceIp });
   }
 
   /**
@@ -4298,9 +4309,6 @@ export abstract class EndHost extends Equipment {
     iface?: string,
   ): boolean {
     const isLimitedBroadcast = group.toString() === '255.255.255.255';
-    const dstMAC = isLimitedBroadcast
-      ? MACAddress.broadcast()
-      : new MACAddress(ipv4MulticastToMac(group.toString()));
 
     let sent = false;
     for (const [name, port] of this.ports) {
@@ -4315,12 +4323,7 @@ export abstract class EndHost extends Equipment {
       // attendent.
       const ttl = isLimitedBroadcast || group.toString().startsWith('224.0.0.')
         ? 1 : this.defaultTTL;
-      const ipPkt = build(srcIP, ttl);
-      if (this.firewallFilter(name, ipPkt, 'out') !== 'accept') continue;
-      this.sendFrame(name, {
-        srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      });
-      sent = true;
+      if (this.originateOnLink(name, build(srcIP, ttl))) sent = true;
     }
     return sent;
   }
@@ -4807,15 +4810,15 @@ export abstract class EndHost extends Equipment {
    * Returns PingResult with real measured RTT.
    */
   protected async sendPing(
-    portName: string,
+    route: OriginRoute,
     targetIP: IPAddress,
-    targetMAC: MACAddress,
+    neighbour: NeighbourResolver,
     seq: number = 1,
     timeoutMs: number = 2000,
     ttl?: number,
     opts?: EchoOptions,
   ): Promise<PingResult> {
-    const port = this.ports.get(portName);
+    const port = this.ports.get(route.iface);
     if (!port) throw new Error('Port not found');
     const myIP = opts?.socket?.sourceIp ?? port.getIPAddress();
     if (!myIP) throw new Error('No IP configured');
@@ -4825,7 +4828,7 @@ export abstract class EndHost extends Equipment {
     // prints "From <src> icmp_seq=N Destination Host Unreachable" for every
     // probe, which is the visible failure a plain timeout never produces
     // (docs/PRD-Link-State.md §2.1 P3).
-    if (!this.isInterfaceOperationallyUp(portName, port)) {
+    if (!this.isInterfaceOperationallyUp(route.iface, port)) {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 
@@ -4842,23 +4845,55 @@ export abstract class EndHost extends Equipment {
       id: request.id, seq, ttl: ipPkt.ttl, size: request.icmpSize,
     });
 
-    const verdict = this.firewallFilter(portName, ipPkt, 'out');
-    if (verdict === 'drop') throw new SendRefusedError('EPERM');
-    if (verdict === 'reject') {
-      this.rejectOutgoing(ipPkt);
-    } else {
-      for (const packet of this.fragmentsForEgress(ipPkt, port.getMTU()) ?? []) {
-        this.sendFrame(portName, {
-          srcMAC: port.getMAC(), dstMAC: targetMAC,
-          etherType: ETHERTYPE_IPV4, payload: packet,
-        });
-      }
-    }
+    const origin = this.originate(ipPkt, route);
+    const sendError = await this.carryEcho(origin, neighbour, myIP);
 
     return this.settleEcho(outcome, {
       id: request.id, seq, target: targetIpStr, sentAt, timeoutMs, bytes: request.icmpSize,
-      sendError: verdict === 'reject' ? 'EPERM' : undefined,
+      sendError, ...this.loopbackRttFloor(origin),
     });
+  }
+
+  private loopbackRttFloor(origin: Origination): { minimumRttMs?: number } {
+    return origin.outcome === 'looped' ? { minimumRttMs: LOOPBACK_ECHO_RTT_MS } : {};
+  }
+
+  private async carryEcho(origin: Origination, neighbour: NeighbourResolver, source: IPAddress): Promise<Errno | undefined> {
+    switch (origin.outcome) {
+      case 'refused':
+        if (origin.refusal === 'dropped') throw new SendRefusedError('EPERM');
+        if (origin.refusal === 'unroutable') throw new SendRefusedError('ENETUNREACH');
+        if (origin.unanswered) this.rejectOutgoing(origin.packet);
+        return 'EPERM';
+      case 'lost':
+        return undefined;
+      case 'looped':
+        this.dispatchOrigination(origin);
+        return undefined;
+      case 'routed':
+        if (await neighbour(origin.route) === null) throw new NeighbourUnreachableError(source);
+        this.dispatchOrigination(origin);
+        return undefined;
+    }
+  }
+
+  private arpWhenNeeded(timeoutMs: number): NeighbourResolver {
+    const resolutions = new Map<string, Promise<MACAddress | null>>();
+    return (route) => {
+      const key = route.nextHopIP.toString();
+      let resolution = resolutions.get(key);
+      if (resolution === undefined) {
+        resolution = this.resolveNeighbour(route, timeoutMs);
+        resolutions.set(key, resolution);
+      }
+      return resolution;
+    };
+  }
+
+  private async resolveNeighbour(route: OriginRoute, timeoutMs: number): Promise<MACAddress | null> {
+    const onLink = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
+    if (onLink !== null) return onLink;
+    return this.resolveARP(route.iface, route.nextHopIP, timeoutMs).catch(() => null);
   }
 
   private loopbackMtu(): number {
@@ -4920,7 +4955,7 @@ export abstract class EndHost extends Equipment {
   }
 
   private async sendLocalPing(
-    target: IPAddress, seq: number, timeoutMs: number, ttl: number | undefined, opts?: EchoOptions,
+    target: IPAddress, neighbour: NeighbourResolver, seq: number, timeoutMs: number, ttl: number | undefined, opts?: EchoOptions,
   ): Promise<PingResult> {
     const source = opts?.socket?.sourceIp ?? target;
     const request = this.echoRequest(source, target, seq, ttl, opts);
@@ -4935,14 +4970,12 @@ export abstract class EndHost extends Equipment {
     const refusal = ipv4SendRefusal(packet.totalLength, this.loopbackMtu(), (packet.flags & IPV4_FLAG_DF) !== 0);
     if (refusal !== null) throw new LocalSendError(refusal);
 
-    const leg = this.loopLocal(packet);
-    const delivery = leg.delivery;
-    if (delivery === 'send-dropped') throw new SendRefusedError('EPERM');
-    if (delivery === 'delivered') this.handleICMP('lo', leg.packet);
+    const origin = this.originate(packet, null);
+    const sendError = await this.carryEcho(origin, neighbour, source);
 
     return this.settleEcho(outcome, {
       id: request.id, seq, target: targetText, sentAt, timeoutMs, bytes: request.icmpSize,
-      sendError: delivery === 'send-rejected' ? 'EPERM' : undefined, minimumRttMs: LOOPBACK_ECHO_RTT_MS,
+      sendError, ...this.loopbackRttFloor(origin),
     });
   }
 
@@ -5112,18 +5145,6 @@ export abstract class EndHost extends Equipment {
     return this.pingIdCounter;
   }
 
-  private unreachableResults(localIP: IPAddress | null, count: number, firstSeq = 1): PingResult[] {
-    const from = localIP ? localIP.toString() : '';
-    const results: PingResult[] = [];
-    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      results.push({
-        success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: from,
-        error: `Destination unreachable from ${from} code 1`,
-      });
-    }
-    return results;
-  }
-
   protected async executePingSequence(
     targetIP: IPAddress,
     count: number = 4,
@@ -5133,11 +5154,12 @@ export abstract class EndHost extends Equipment {
   ): Promise<PingResult[]> {
     const opts: EchoOptions = { ...callerOpts, ident: callerOpts?.ident ?? this.allocateEchoIdent() };
     const firstSeq = opts.firstSeq ?? 1;
+    const neighbour = this.arpWhenNeeded(timeoutMs);
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
     if (this.isLocalAddress(targetIP)) {
       return this.pingEach(
-        count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendLocalPing(targetIP, seq, timeoutMs, ttl, opts),
+        count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendLocalPing(targetIP, neighbour, seq, timeoutMs, ttl, opts),
         (seq) => this.collectEchoRedirects(targetIP, seq, opts?.ident),
       );
     }
@@ -5148,29 +5170,13 @@ export abstract class EndHost extends Equipment {
       return []; // Empty = unreachable, caller formats the error
     }
 
-    const portName = route.port.getName();
-
     const refusal = this.echoRefusal(route.port, targetIP, ttl, opts);
     if (refusal !== null) {
       return this.pingEach(count, firstSeq, opts?.pauseAfterErrorReplyMs, async () => { throw new LocalSendError(refusal); });
     }
 
-    // ARP resolution (for next-hop, not necessarily the final destination)
-    let nextHopMAC: MACAddress;
-    const surLien = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
-    if (surLien) {
-      nextHopMAC = surLien;
-    } else {
-      try {
-        nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
-      } catch {
-        return this.unreachableResults(opts?.socket?.sourceIp ?? route.port.getIPAddress(), count, firstSeq);
-      }
-    }
-
-    // Send pings
     return this.pingEach(
-      count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts),
+      count, firstSeq, opts?.pauseAfterErrorReplyMs, (seq) => this.sendPing(route, targetIP, neighbour, seq, timeoutMs, ttl, opts),
       (seq) => this.collectEchoRedirects(targetIP, seq, opts?.ident),
     );
   }
@@ -5284,16 +5290,8 @@ export abstract class EndHost extends Equipment {
     }
     const route = this.resolveRoute(targetIP);
     if (!route) return { success: false, rttMs: 0, ttl: 0 };
-    const port = route.port;
-    const portName = port.getName();
-    const myIP = port.getIPAddress();
+    const myIP = route.port.getIPAddress();
     if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
-
-    const nextHopIpStr = route.nextHopIP.toString();
-    const surLien = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
-    if (!surLien) this.resolveArpSync(targetIP);
-    const destinationMac = surLien ?? this.arpTable.get(nextHopIpStr)?.mac;
-    if (!destinationMac) return { success: false, rttMs: 0, ttl: 0 };
 
     this.pingIdCounter++;
     const id = this.pingIdCounter;
@@ -5326,16 +5324,13 @@ export abstract class EndHost extends Equipment {
       id, seq, ttl: useTtl, size: 64,
     });
 
-    const verdict = this.firewallFilter(portName, ipPkt, 'out');
-    if (verdict === 'drop' || verdict === 'reject') {
+    const origin = this.originate(ipPkt, route);
+    if (origin.outcome === 'refused') {
       unsubReply(); unsubFailed();
       return { success: false, rttMs: 0, ttl: 0 };
     }
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: destinationMac,
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    });
+    this.dispatchOrigination(origin);
 
     unsubReply(); unsubFailed();
     if (reply) return { success: true, rttMs: (reply as { rttMs: number }).rttMs, ttl: (reply as { ttl: number }).ttl };
@@ -5554,18 +5549,11 @@ export abstract class EndHost extends Equipment {
     const route = this.resolveRoute(targetIP);
     if (!route) return { resolved: false };
 
-    const portName = route.port.getName();
-    let nextHopMAC: MACAddress;
-    try {
-      nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
-    } catch {
-      return { resolved: false };
-    }
-
+    const neighbour = this.arpWhenNeeded(timeoutMs);
     for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
       let result: PingResult;
       try {
-        result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl);
+        result = await this.sendPing(route, targetIP, neighbour, seq, timeoutMs, ttl);
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         result = { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: errorMsg };
@@ -5774,9 +5762,8 @@ export abstract class EndHost extends Equipment {
     const myIP = socket.sourceIp ?? route.port.getIPAddress()!;
 
     // ARP resolve next hop
-    let nextHopMAC: MACAddress;
     try {
-      nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
+      await this.resolveARP(portName, route.nextHopIP, timeoutMs);
     } catch {
       const silent: TracerouteHopResult[] = [];
       for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
@@ -5849,12 +5836,7 @@ export abstract class EndHost extends Equipment {
           ...(method.tos === undefined ? {} : { tos: method.tos }),
         });
 
-        this.sendFrame(portName, {
-          srcMAC: route.port.getMAC(),
-          dstMAC: nextHopMAC,
-          etherType: ETHERTYPE_IPV4,
-          payload: ipPkt,
-        });
+        this.dispatchOrigination(this.originate(ipPkt, route));
 
         const replyOutcome = replyP.then((pl) => ({
           ip: pl.fromIp,
@@ -6805,7 +6787,7 @@ export abstract class EndHost extends Equipment {
       ttl: 0,
       seq,
       bytes: 0,
-      fromIP: report?.from ?? '',
+      fromIP: err instanceof NeighbourUnreachableError ? err.source.toString() : report?.from ?? '',
       error: typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err)),
       ...(report === undefined ? {} : { icmp6: report }),
       ...(localError === undefined ? {} : { localError }),

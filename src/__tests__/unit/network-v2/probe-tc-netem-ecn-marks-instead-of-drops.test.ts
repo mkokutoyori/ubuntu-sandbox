@@ -161,6 +161,7 @@ describe('tc netem acts on the egress of the interface it names, nowhere else', 
 
   it('the delay of both ends is added to the round trip a ping reports', async () => {
     const l = await lab();
+    await l.a.executeCommand('ping -c 1 192.168.1.2');
     await l.a.executeCommand('sudo tc qdisc add dev eth0 root netem delay 200ms');
     await l.b.executeCommand('sudo tc qdisc add dev eth0 root netem delay 100ms');
     const out = String(await l.a.executeCommand('ping -c 1 192.168.1.2'));
