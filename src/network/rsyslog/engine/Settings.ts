@@ -27,17 +27,33 @@ export interface QueueSettings {
   dequeueTimeEnd: number;
 }
 
-export function defaultQueueSettings(type: string, size: number): QueueSettings {
+export type QueueKind = 'main' | 'ruleset' | 'action';
+
+export interface QueueTimeouts {
+  timeoutShutdown: number;
+  timeoutActionCompletion: number;
+  timeoutEnqueue: number;
+  workerTimeoutThreadShutdown: number;
+}
+
+export function defaultQueueTimeouts(kind: QueueKind): QueueTimeouts {
   return {
-    type, size, fileName: null, highWatermark: null, lowWatermark: null, discardMark: null, discardSeverity: 8,
-    checkpointInterval: 0, syncQueueFiles: false, workerThreads: 1, timeoutShutdown: 1500, timeoutActionCompletion: 1000,
-    timeoutEnqueue: 2000, workerTimeoutThreadShutdown: 60000, dequeueSlowdown: 0, workerThreadMinimumMessages: null,
-    maxFileSize: 1024 * 1024, dequeueBatchSize: type === 'Direct' ? 1 : 128, maxDiskSpace: 0, saveOnShutdown: true,
-    dequeueTimeBegin: 0, dequeueTimeEnd: 25,
+    timeoutShutdown: kind === 'action' ? 10 : 1500, timeoutActionCompletion: 1000, timeoutEnqueue: 2000, workerTimeoutThreadShutdown: 60000,
+  };
+}
+
+export function defaultQueueSettings(type: string, size: number, kind: QueueKind = 'action', timeouts: QueueTimeouts = defaultQueueTimeouts(kind)): QueueSettings {
+  return {
+    type, size, fileName: null, highWatermark: kind === 'main' ? 80000 : null, lowWatermark: kind === 'main' ? 20000 : null, discardMark: null, discardSeverity: 8,
+    checkpointInterval: 0, syncQueueFiles: false, workerThreads: kind === 'main' ? 2 : 1, ...timeouts,
+    dequeueSlowdown: 0, workerThreadMinimumMessages: kind === 'main' ? 40000 : null,
+    maxFileSize: kind === 'ruleset' ? 16 * 1024 * 1024 : 1024 * 1024, dequeueBatchSize: kind === 'main' ? 256 : kind === 'ruleset' ? 1024 : type === 'Direct' ? 1 : 128,
+    maxDiskSpace: 0, saveOnShutdown: true, dequeueTimeBegin: 0, dequeueTimeEnd: 25,
   };
 }
 
 export interface GlobalSettings {
+  queueTimeouts: { action: QueueTimeouts; ruleset: QueueTimeouts };
   parser: ParserGlobals;
   parseHostnameAndTag: boolean;
   workDirectory: string | null;
@@ -52,6 +68,9 @@ export interface GlobalSettings {
   logStatusMessages: boolean;
   environment: Record<string, string>;
   defaultNetstreamDriver: string | null;
+  defaultOpensslEngine: string | null;
+  permitCtlC: boolean;
+  shutdownQueueDoubleSize: boolean;
   defaultNetstreamDriverCaFile: string | null;
   defaultNetstreamDriverCertFile: string | null;
   defaultNetstreamDriverKeyFile: string | null;
@@ -102,6 +121,9 @@ export function defaultGlobalSettings(): GlobalSettings {
     logStatusMessages: true,
     environment: {},
     defaultNetstreamDriver: null,
+    defaultOpensslEngine: null,
+    permitCtlC: false,
+    shutdownQueueDoubleSize: false,
     defaultNetstreamDriverCaFile: null,
     defaultNetstreamDriverCertFile: null,
     defaultNetstreamDriverKeyFile: null,
@@ -126,7 +148,8 @@ export function defaultGlobalSettings(): GlobalSettings {
     janitorInterval: 10,
     senders: { reportNew: false, reportGoneAway: false, timeoutAfter: 12 * 60 * 60, keepTrack: false },
     compactJson: false,
-    mainQueue: defaultQueueSettings('FixedArray', 100000),
+    queueTimeouts: { action: defaultQueueTimeouts('action'), ruleset: defaultQueueTimeouts('ruleset') },
+    mainQueue: defaultQueueSettings('FixedArray', 100000, 'main'),
     defaultRuleset: 'RSYSLOG_DefaultRuleset',
     maxOpenFiles: null,
     requireAllInputs: false,
@@ -223,6 +246,16 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.dropMessagesWithMaliciousDnsPtrRecords = flag(values, 'dropmsgswithmaliciousdnsptrrecords') ?? settings.dropMessagesWithMaliciousDnsPtrRecords;
   settings.defaultNetstreamDriver = str(values, 'defaultnetstreamdriver') ?? settings.defaultNetstreamDriver;
   settings.defaultNetstreamDriverCaFile = str(values, 'defaultnetstreamdrivercafile') ?? settings.defaultNetstreamDriverCaFile;
+  settings.defaultOpensslEngine = str(values, 'defaultopensslengine') ?? settings.defaultOpensslEngine;
+  for (const kind of ['action', 'ruleset'] as const) {
+    const target = settings.queueTimeouts[kind];
+    target.timeoutShutdown = count(values, `default.${kind}.queue.timeoutshutdown`) ?? target.timeoutShutdown;
+    target.timeoutActionCompletion = count(values, `default.${kind}.queue.timeoutactioncompletion`) ?? target.timeoutActionCompletion;
+    target.timeoutEnqueue = count(values, `default.${kind}.queue.timeoutenqueue`) ?? target.timeoutEnqueue;
+    target.workerTimeoutThreadShutdown = count(values, `default.${kind}.queue.timeoutworkerthreadshutdown`) ?? target.workerTimeoutThreadShutdown;
+  }
+  settings.permitCtlC = flag(values, 'shutdown.enable.ctlc') ?? settings.permitCtlC;
+  settings.shutdownQueueDoubleSize = flag(values, 'shutdown.queue.doublesize') ?? settings.shutdownQueueDoubleSize;
   settings.defaultNetstreamDriverCertFile = str(values, 'defaultnetstreamdrivercertfile') ?? settings.defaultNetstreamDriverCertFile;
   settings.defaultNetstreamDriverKeyFile = str(values, 'defaultnetstreamdriverkeyfile') ?? settings.defaultNetstreamDriverKeyFile;
   settings.defaultNetstreamDriverCrlFile = str(values, 'defaultnetstreamdrivercrlfile') ?? settings.defaultNetstreamDriverCrlFile;
@@ -265,6 +298,12 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
     const mode = str(values, `compatibility.configformat.${kind}`);
     if (mode === 'enable' || mode === 'warn' || mode === 'disable') settings.compatConfigFormat[kind] = mode;
     else if (mode !== undefined) report(`invalid value '${mode}' for global parameter compatibility.configformat.${kind}`);
+  }
+  for (const name of ['libcapng.default', 'libcapng.enable']) {
+    if (values.has(name)) report("rsyslog wasn't compiled with libcap-ng support.");
+  }
+  if (values.has('stdlog.channelspec')) {
+    report("rsyslog wasn't compiled with liblogging-stdlog support. The 'stdlog.channelspec' parameter is ignored. Note: the syslog API is used instead.");
   }
   const secureMode = str(values, 'compatibility.defaults.secure');
   if (secureMode === 'strict' || secureMode === 'backward-compatible' || secureMode === 'warn') {

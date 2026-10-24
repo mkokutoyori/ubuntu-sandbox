@@ -111,6 +111,10 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
     return { started: true };
   }
 
+  permitsCtlC(): boolean {
+    return this.engine?.config.settings.permitCtlC === true;
+  }
+
   hup(): void {
     const engine = this.engine;
     if (engine === null || !engine.isStarted) return;

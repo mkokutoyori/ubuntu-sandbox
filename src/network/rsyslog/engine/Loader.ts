@@ -27,7 +27,7 @@ import { SenderResolver } from './SenderResolver';
 import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
 import { PercentileStatsRegistry } from './PercentileStats';
 import { Statistics } from './Statistics';
-import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type CompatMode, type QueueSettings } from './Settings';
+import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type CompatMode, type QueueSettings, type QueueTimeouts } from './Settings';
 
 export interface ModuleCatalog {
   find(cnfName: string): EngineModule | undefined;
@@ -130,13 +130,14 @@ interface LegacyActionState {
   repeatedMessageContainsOriginalMessage: boolean;
   name: string | null;
   queue: QueueSettings;
+  explicitTimeouts: Set<keyof QueueTimeouts>;
 }
 
 function newLegacyActionState(): LegacyActionState {
   return {
     resumeInterval: 30, resumeRetryCount: 0, writeAllMarkMessages: true, execOnlyWhenPreviousIsSuspended: false,
     execOnlyOnceEveryInterval: 0, execOnlyEveryNthTime: 0, execOnlyEveryNthTimeTimeout: 0,
-    repeatedMessageContainsOriginalMessage: false, name: null, queue: defaultQueueSettings('Direct', 1000),
+    repeatedMessageContainsOriginalMessage: false, name: null, queue: defaultQueueSettings('Direct', 1000), explicitTimeouts: new Set(),
   };
 }
 
@@ -471,6 +472,7 @@ export class ConfigLoader implements ConfigSink {
     flag('escape8bitcharactersonreceive', (on) => { settings.parser.escape8BitCharactersOnReceive = on; });
     flag('escapecontrolcharactertab', (on) => { settings.parser.escapeControlCharacterTab = on; });
     word('defaultnetstreamdriver', (value) => { settings.defaultNetstreamDriver = value; });
+    word('defaultopensslengine', (value) => { settings.defaultOpensslEngine = value; });
     word('defaultnetstreamdrivercafile', (value) => { settings.defaultNetstreamDriverCaFile = value; });
     word('defaultnetstreamdrivercertfile', (value) => { settings.defaultNetstreamDriverCertFile = value; });
     word('defaultnetstreamdriverkeyfile', (value) => { settings.defaultNetstreamDriverKeyFile = value; });
@@ -502,7 +504,7 @@ export class ConfigLoader implements ConfigSink {
     word('moddir', () => undefined);
     this.registerDirective({ name: 'resetconfigvariables', type: 'custom', apply: () => undefined, custom: (rest) => { this.resetConfigVariables(); return rest; } });
     this.registerDirective({ name: 'rulesetparser', type: 'word', apply: (value) => this.addRulesetParser(String(value)) });
-    flag('rulesetcreatemainqueue', (on) => { if (on) this.currentRuleset.queue = defaultQueueSettings('LinkedList', 50000); });
+    flag('rulesetcreatemainqueue', (on) => { if (on) this.currentRuleset.queue = defaultQueueSettings('LinkedList', 50000, 'ruleset', { ...this.config.settings.queueTimeouts.ruleset }); });
 
     const legacy = (): LegacyActionState => this.legacy;
     word('actionname', (value) => { legacy().name = value; });
@@ -526,10 +528,10 @@ export class ConfigLoader implements ConfigSink {
     flag('actionqueuesyncqueuefiles', (on) => { queue().syncQueueFiles = on; });
     word('actionqueuetype', (value) => { queue().type = queueTypeName(value) ?? queue().type; });
     integer('actionqueueworkerthreads', (value) => { queue().workerThreads = value; }, 'positive');
-    integer('actionqueuetimeoutshutdown', (value) => { queue().timeoutShutdown = value; });
-    integer('actionqueuetimeoutactioncompletion', (value) => { queue().timeoutActionCompletion = value; });
-    integer('actionqueuetimeoutenqueue', (value) => { queue().timeoutEnqueue = value; });
-    integer('actionqueueworkertimeoutthreadshutdown', (value) => { queue().workerTimeoutThreadShutdown = value; });
+    integer('actionqueuetimeoutshutdown', (value) => { queue().timeoutShutdown = value; legacy().explicitTimeouts.add('timeoutShutdown'); });
+    integer('actionqueuetimeoutactioncompletion', (value) => { queue().timeoutActionCompletion = value; legacy().explicitTimeouts.add('timeoutActionCompletion'); });
+    integer('actionqueuetimeoutenqueue', (value) => { queue().timeoutEnqueue = value; legacy().explicitTimeouts.add('timeoutEnqueue'); });
+    integer('actionqueueworkertimeoutthreadshutdown', (value) => { queue().workerTimeoutThreadShutdown = value; legacy().explicitTimeouts.add('workerTimeoutThreadShutdown'); });
     integer('actionqueueworkerthreadminimummessages', (value) => { queue().workerThreadMinimumMessages = value; });
     this.registerDirective({ name: 'actionqueuemaxfilesize', type: 'size', apply: (value) => { queue().maxFileSize = Number(value); } });
     flag('actionqueuesaveonshutdown', (on) => { queue().saveOnShutdown = on; });
@@ -538,11 +540,21 @@ export class ConfigLoader implements ConfigSink {
     integer('actionqueuedequeuetimeend', (value) => { queue().dequeueTimeEnd = value; });
   }
 
+  private legacyQueueWithDefaults(): QueueSettings {
+    const queue = { ...this.legacy.queue };
+    const defaults = this.config.settings.queueTimeouts.action;
+    for (const field of ['timeoutShutdown', 'timeoutActionCompletion', 'timeoutEnqueue', 'workerTimeoutThreadShutdown'] as const) {
+      if (!this.legacy.explicitTimeouts.has(field)) queue[field] = defaults[field];
+    }
+    return queue;
+  }
+
   private resetConfigVariables(): void {
     this.legacy.execOnlyOnceEveryInterval = 0;
     this.legacy.execOnlyWhenPreviousIsSuspended = false;
     const settings = this.config.settings;
     settings.defaultNetstreamDriver = null;
+    settings.defaultOpensslEngine = null;
     settings.defaultNetstreamDriverCaFile = null;
     settings.defaultNetstreamDriverCertFile = null;
     settings.defaultNetstreamDriverKeyFile = null;
@@ -757,7 +769,7 @@ export class ConfigLoader implements ConfigSink {
     const parsers = arrayParam(values, 'parser');
     if (parsers !== undefined) ruleset.parserNames = [...parsers];
     if ([...values.keys()].some((key) => key.startsWith('queue.'))) {
-      const queue = defaultQueueSettings('LinkedList', 50000);
+      const queue = defaultQueueSettings('LinkedList', 50000, 'ruleset', { ...this.config.settings.queueTimeouts.ruleset });
       applyQueueParams(queue, values);
       ruleset.queue = queue;
     }
@@ -1062,7 +1074,7 @@ export class ConfigLoader implements ConfigSink {
       errorFileMaxSize: 0,
       externalStateFile: null,
       rateLimitName: null,
-      queue: values === null ? { ...legacy.queue } : defaultQueueSettings('Direct', 1000),
+      queue: values === null ? this.legacyQueueWithDefaults() : defaultQueueSettings('Direct', 1000, 'action', { ...this.config.settings.queueTimeouts.action }),
     };
     if (values === null) {
       legacy.execOnlyEveryNthTime = 0;
@@ -1070,6 +1082,7 @@ export class ConfigLoader implements ConfigSink {
       legacy.writeAllMarkMessages = true;
       legacy.name = null;
       legacy.queue = defaultQueueSettings('Direct', 1000);
+      legacy.explicitTimeouts = new Set();
       return options;
     }
     const flag = (key: string): boolean | undefined => {
@@ -1095,7 +1108,7 @@ export class ConfigLoader implements ConfigSink {
     options.copyMessage = flag('action.copymsg') ?? false;
     const queueValues = new Map([...values].filter(([key]) => key.startsWith('queue.')));
     if (queueValues.size > 0) {
-      options.queue = defaultQueueSettings('LinkedList', 1000);
+      options.queue = defaultQueueSettings('LinkedList', 1000, 'action', { ...this.config.settings.queueTimeouts.action });
       applyQueueParams(options.queue, queueValues);
     }
     return options;

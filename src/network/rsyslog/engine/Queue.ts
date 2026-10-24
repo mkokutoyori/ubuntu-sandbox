@@ -113,13 +113,38 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     return hoursUntil * 3_600_000;
   }
 
+  private wakeUp = (): void => {
+    this.cancelTimer = null;
+    this.wakeDelayMs = 0;
+    this.running = false;
+    this.drain();
+  };
+
+  private wakeDelayMs = 0;
+
   private wake(delayMs: number): void {
     this.cancelTimer?.();
-    this.cancelTimer = this.host.schedule(() => {
-      this.cancelTimer = null;
-      this.running = false;
-      this.drain();
-    }, delayMs);
+    this.wakeDelayMs = delayMs;
+    this.cancelTimer = this.host.schedule(this.wakeUp, delayMs);
+  }
+
+  get midMessage(): boolean {
+    return this.current !== null || this.committing !== null;
+  }
+
+  runWorkerFor(budgetMs: number, onlyMidMessage: boolean): number {
+    let remaining = budgetMs;
+    while (this.cancelTimer !== null && this.wakeDelayMs <= remaining && (!onlyMidMessage || this.midMessage)) {
+      remaining -= this.wakeDelayMs;
+      this.cancelTimer();
+      this.wakeUp();
+    }
+    return remaining;
+  }
+
+  doubleCapacity(): void {
+    this.settings.size *= 2;
+    if (this.settings.highWatermark !== null) this.settings.highWatermark *= 2;
   }
 
   private current: Generator<Sleep, ProcessOutcome> | null = null;

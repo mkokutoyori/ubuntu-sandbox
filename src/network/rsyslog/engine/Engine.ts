@@ -616,6 +616,7 @@ export class RsyslogEngine implements InputSubmitter {
   stop(): void {
     if (!this.started) return;
     for (const record of this.config.inputs) record.instance.stop();
+    this.drainQueues();
     this.saveQueues();
     this.mainQueue.stop();
     for (const queue of this.rulesetQueues.values()) queue.stop();
@@ -631,6 +632,15 @@ export class RsyslogEngine implements InputSubmitter {
     this.oversizeLog?.close();
     this.oversizeLog = null;
     this.started = false;
+  }
+
+  private drainQueues(): void {
+    const ordered = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+    if (this.config.settings.shutdownQueueDoubleSize) for (const queue of ordered) queue.doubleCapacity();
+    for (const queue of ordered) {
+      queue.runWorkerFor(queue.settings.timeoutShutdown, false);
+      if (queue.midMessage) queue.runWorkerFor(queue.settings.timeoutActionCompletion, true);
+    }
   }
 
   private persistentQueues(): Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> {

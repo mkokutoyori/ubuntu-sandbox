@@ -1,12 +1,17 @@
 /*
  * compatibility.configformat.{legacy,syslogd,property} of the ported rsyslog engine, ported from
  * runtime/glbl.c (permitCompatSyntax) and grammar/rainerscript.c (cnfstmtNewPRIFILT / cnfstmtNewPROPFILT) and
- * runtime/rsconf.c (cnfDoCfsysline). Each case drives a LinuxServer through its shell and reads the effect back from
- * the machine (config check output, exit code, files written by the daemon).
- * Measured against the previous commit: 6 of the 9 cases fall - the three policies were parsed as plain words and
- * never consulted, so a disabled syntax still ran, "warn" said nothing, and a bad value was accepted silently.
- * The three that pass either way are WITNESSES built in the same lab: the default policy keeps the legacy directive,
- * the classic selector and the property filter working, so the failures above are the policy and not the lab.
+ * runtime/rsconf.c (cnfDoCfsysline), then the parameters that depend on how the daemon was built or on its signals:
+ * libcapng.*, stdlog.channelSpec, defaultOpensslEngine (runtime/net_ossl.c) and shutdown.enable.ctlc (tools/rsyslogd.c).
+ * Each case drives a LinuxServer through its shell and reads the effect back from the machine (config check output,
+ * exit code, files written by the daemon, service state).
+ * Measured against the commit before each change: 10 of the 16 cases fall - 6 of the 9 configformat cases (the
+ * policies were parsed as plain words and never consulted, so a disabled syntax still ran, "warn" said nothing and a bad
+ * value was accepted) and 4 of the 7 others (the build-option parameters said nothing, SIGINT/SIGQUIT killed the
+ * daemon whatever shutdown.enable.ctlc said, and a missing OpenSSL engine was never reported).
+ * The six that pass either way are WITNESSES built in the same lab: the default policy keeps the legacy directive, the
+ * classic selector and the property filter working, a clean configuration raises none of the build-option messages,
+ * the built-in engine and an unset engine raise nothing, and SIGTERM stops the daemon whatever the switch.
  * Time is the simulated clock; none of these cases waits for real time.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -121,5 +126,70 @@ describe('classic property filters and bad values', () => {
     await host.executeCommand('systemctl restart rsyslog');
     await host.executeCommand('logger -t probe needle-in-haystack');
     expect(await host.executeCommand('cat /var/log/needle.log')).toContain('needle-in-haystack');
+  }, 60_000);
+});
+
+describe('build options and shutdown', () => {
+  it('libcapng.* and stdlog.channelSpec fail in the words of a build without that support', async () => {
+    const host = lab();
+    await prepend(host, 'global(libcapng.enable="on" libcapng.default="on" stdlog.channelSpec="syslog:")');
+    const verdict = await check(host);
+    expect(verdict.match(/rsyslog wasn't compiled with libcap-ng support\./g)).toHaveLength(2);
+    expect(verdict).toContain("rsyslog wasn't compiled with liblogging-stdlog support. The 'stdlog.channelspec' parameter is ignored. Note: the syslog API is used instead.");
+  }, 60_000);
+
+  it('witness: without those parameters the check is clean', async () => {
+    const host = lab();
+    const verdict = await check(host);
+    expect(verdict).not.toContain("wasn't compiled");
+    expect(verdict).toContain('exit=0');
+  }, 60_000);
+
+  it('SIGINT is ignored by default and stops the daemon with shutdown.enable.ctlc', async () => {
+    const [ignoring, listening] = [lab(), lab()];
+    await prepend(listening, 'global(shutdown.enable.ctlc="on")');
+    for (const host of [ignoring, listening]) {
+      await host.executeCommand('systemctl restart rsyslog');
+      await host.executeCommand('kill -INT $(pidof rsyslogd)');
+    }
+    expect((await ignoring.executeCommand('systemctl is-active rsyslog')).trim()).toBe('active');
+    expect((await listening.executeCommand('systemctl is-active rsyslog')).trim()).not.toBe('active');
+    expect(await listening.executeCommand('cat /var/log/syslog')).toContain('exiting on signal 2.');
+  }, 60_000);
+
+  it('SIGQUIT follows the same switch', async () => {
+    const [ignoring, listening] = [lab(), lab()];
+    await prepend(listening, 'global(shutdown.enable.ctlc="on")');
+    for (const host of [ignoring, listening]) {
+      await host.executeCommand('systemctl restart rsyslog');
+      await host.executeCommand('kill -QUIT $(pidof rsyslogd)');
+    }
+    expect((await ignoring.executeCommand('systemctl is-active rsyslog')).trim()).toBe('active');
+    expect((await listening.executeCommand('systemctl is-active rsyslog')).trim()).not.toBe('active');
+  }, 60_000);
+
+  it('witness: SIGTERM stops the daemon whatever the switch', async () => {
+    const host = lab();
+    await host.executeCommand('systemctl restart rsyslog');
+    await host.executeCommand('kill -TERM $(pidof rsyslogd)');
+    expect((await host.executeCommand('systemctl is-active rsyslog')).trim()).not.toBe('active');
+  }, 60_000);
+
+  it('an OpenSSL engine the machine does not have is reported when the ossl driver starts', async () => {
+    const host = lab();
+    await prepend(host, 'global(defaultOpensslEngine="nonesuch")');
+    await host.executeCommand('touch /usr/lib/x86_64-linux-gnu/rsyslog/lmnsd_ossl.so');
+    await host.executeCommand(`printf '*.* action(type="omfwd" target="10.0.0.9" port="6514" protocol="tcp" StreamDriver="ossl" StreamDriverMode="1" StreamDriverAuthMode="anon")\\n' > /etc/rsyslog.d/44-tls.conf`);
+    expect(await check(host)).toContain("error: ENGINE_init failed to load Engine 'nonesuch'ossl netstream driver");
+  }, 60_000);
+
+  it('witness: the built-in dynamic engine and an unset engine raise nothing', async () => {
+    const [dynamic, unset] = [lab(), lab()];
+    await prepend(dynamic, 'global(defaultOpensslEngine="dynamic")');
+    for (const host of [dynamic, unset]) {
+      await host.executeCommand('touch /usr/lib/x86_64-linux-gnu/rsyslog/lmnsd_ossl.so');
+      await host.executeCommand(`printf '*.* action(type="omfwd" target="10.0.0.9" port="6514" protocol="tcp" StreamDriver="ossl" StreamDriverMode="1" StreamDriverAuthMode="anon")\\n' > /etc/rsyslog.d/44-tls.conf`);
+      expect(await check(host)).not.toContain('ENGINE_init');
+    }
   }, 60_000);
 });

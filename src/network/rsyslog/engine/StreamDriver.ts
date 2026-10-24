@@ -5,6 +5,8 @@ import { parseAuthMode, parsePermitExpired, validatePermittedPeers, type Netstre
 
 export const RS_RET_INVALID_DRVR_MODE = -2081;
 
+const BUILT_IN_OPENSSL_ENGINES = new Set(['dynamic', 'rdrand']);
+
 export interface StreamTlsExtras {
   permitExpired: string | null;
   permittedPeers: string[];
@@ -116,6 +118,10 @@ export function resolveStreamTls(
     return false;
   }
   if (!validatePermittedPeers(extras.permittedPeers, context.runtime)) return false;
+  const engine = settings.defaultOpensslEngine;
+  if (driver === 'ossl' && engine !== null && !BUILT_IN_OPENSSL_ENGINES.has(engine)) {
+    context.runtime.error(`error: ENGINE_init failed to load Engine '${engine}'ossl netstream driver`, RS_RET.VALUE_NOT_SUPPORTED);
+  }
   return {
     driver, role, authMode, permitExpired, permittedPeers: [...extras.permittedPeers], checkExtendedKeyPurpose: extras.checkExtendedKeyPurpose,
     prioritizeSan: extras.prioritizeSan, verifyDepth: extras.verifyDepth, revocationCheck: extras.revocationCheck,

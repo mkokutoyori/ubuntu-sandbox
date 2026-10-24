@@ -1831,7 +1831,15 @@ export abstract class LinuxMachine extends EndHost
         return;
       }
       this.rsyslogSignalTrap?.();
-      this.rsyslogSignalTrap = executor.processMgr.trapSignal(mainPid(), 'SIGHUP', () => daemon.hup());
+      const releaseHup = executor.processMgr.trapSignal(mainPid(), 'SIGHUP', () => daemon.hup());
+      const interrupt = (signal: 'SIGINT' | 'SIGQUIT', number: number): (() => void) => executor.processMgr.trapSignal(mainPid(), signal, () => {
+        if (!daemon.permitsCtlC()) return;
+        daemon.stop(number);
+        executor.processMgr.exit(mainPid(), 0);
+      });
+      const releaseInterrupt = interrupt('SIGINT', 2);
+      const releaseQuit = interrupt('SIGQUIT', 3);
+      this.rsyslogSignalTrap = () => { releaseHup(); releaseInterrupt(); releaseQuit(); };
       this.publishRsyslogPorts();
     };
     const stopDaemon = (): void => {
