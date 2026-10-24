@@ -154,7 +154,7 @@ export class TestEvaluator {
   }
 
   private toInt(s: string): number {
-    if (!/^-?\d+$/.test(s.trim())) throw new TestSyntaxError(`integer expression expected: ${s}`);
+    if (!/^\s*[+-]?\d+\s*$/.test(s)) throw new TestSyntaxError(`${s}: integer expression expected`);
     return Number.parseInt(s, 10);
   }
 
@@ -171,89 +171,134 @@ export class TestEvaluator {
 
 class TestSyntaxError extends Error {}
 
-/**
- * Recursive descent parser. Grammar:
- *
- *   expr   := orE
- *   orE    := andE ( '-o' andE )*
- *   andE   := notE ( '-a' notE )*
- *   notE   := '!' notE | primary
- *   primary:= '(' expr ')'
- *           | UNARY arg
- *           | arg BINARY arg
- *           | arg                       (true ⇔ non-empty)
- */
 class TestParser {
   private pos = 0;
-  constructor(private readonly tokens: readonly string[], private readonly e: TestEvaluator) {}
+  private readonly argc: number;
+  constructor(private readonly argv: readonly string[], private readonly e: TestEvaluator) {
+    this.argc = argv.length;
+  }
 
   parse(): boolean {
-    const value = this.orE();
-    if (this.pos !== this.tokens.length) {
-      throw new TestSyntaxError(`unexpected argument: ${this.tokens[this.pos]}`);
+    const value = this.posixTest();
+    if (this.pos !== this.argc) throw new TestSyntaxError('too many arguments');
+    return value;
+  }
+
+  private posixTest(): boolean {
+    switch (this.argc - this.pos) {
+      case 0: throw new TestSyntaxError('argument expected');
+      case 1: return this.consumeAll(this.oneArgument(this.argv[this.pos]));
+      case 2: return this.consumeAll(this.twoArguments());
+      case 3: return this.threeArguments();
+      case 4: return this.fourArguments();
+      default: return this.expression();
+    }
+  }
+
+  private consumeAll(value: boolean): boolean {
+    this.pos = this.argc;
+    return value;
+  }
+
+  private oneArgument(argument: string): boolean {
+    return argument.length > 0;
+  }
+
+  private isUnary(argument: string): boolean {
+    return argument.length === 2 && argument[0] === '-' && UNARY_OPS.has(argument);
+  }
+
+  private twoArguments(): boolean {
+    const first = this.argv[this.pos];
+    if (first === '!') return this.argv[this.pos + 1].length === 0;
+    if (this.isUnary(first)) return this.e.unary(first, this.argv[this.pos + 1]);
+    throw new TestSyntaxError(`${first}: unary operator expected`);
+  }
+
+  private threeArguments(): boolean {
+    const [first, second, third] = this.argv.slice(this.pos, this.pos + 3);
+    if (BINARY_OPS.has(second)) return this.consumeAll(this.e.binary(first, second, third));
+    if (second === '-a') return this.consumeAll(this.oneArgument(first) && this.oneArgument(third));
+    if (second === '-o') return this.consumeAll(this.oneArgument(first) || this.oneArgument(third));
+    if (first === '!') {
+      this.pos++;
+      return this.consumeAll(!this.twoArguments());
+    }
+    if (first === '(' && third === ')') return this.consumeAll(this.oneArgument(second));
+    throw new TestSyntaxError(`${second}: binary operator expected`);
+  }
+
+  private fourArguments(): boolean {
+    const first = this.argv[this.pos];
+    if (first === '!') {
+      this.pos++;
+      return !this.threeArguments();
+    }
+    if (first === '(' && this.argv[this.pos + 3] === ')') {
+      this.pos++;
+      return this.consumeAll(this.twoArguments());
+    }
+    return this.expression();
+  }
+
+  private expression(): boolean {
+    if (this.pos >= this.argc) throw new TestSyntaxError('argument expected');
+    return this.orExpression();
+  }
+
+  private orExpression(): boolean {
+    const value = this.andExpression();
+    if (this.pos < this.argc && this.argv[this.pos] === '-o') {
+      this.pos++;
+      return this.orExpression() || value;
     }
     return value;
   }
 
-  private orE(): boolean {
-    let v = this.andE();
-    while (this.peek() === '-o') { this.pos++; v = this.andE() || v; }
-    return v;
-  }
-
-  private andE(): boolean {
-    let v = this.notE();
-    while (this.peek() === '-a') { this.pos++; v = this.notE() && v; }
-    return v;
-  }
-
-  private notE(): boolean {
-    if (this.peek() === '!') { this.pos++; return !this.notE(); }
-    return this.primary();
-  }
-
-  private primary(): boolean {
-    const remaining = this.tokens.length - this.pos;
-    if (remaining === 0) throw new TestSyntaxError('argument expected');
-
-    if (this.peek() === '(' && this.findMatchingParen() >= 0) {
+  private andExpression(): boolean {
+    const value = this.term();
+    if (this.pos < this.argc && this.argv[this.pos] === '-a') {
       this.pos++;
-      const v = this.orE();
-      if (this.peek() !== ')') throw new TestSyntaxError('missing `)\'');
-      this.pos++;
-      return v;
+      return this.andExpression() && value;
     }
+    return value;
+  }
 
-    // Lookahead for three-token "arg BIN arg" form before single-arg fallthrough.
-    if (remaining >= 3 && BINARY_OPS.has(this.tokens[this.pos + 1])) {
-      const a = this.tokens[this.pos];
-      const op = this.tokens[this.pos + 1];
-      const b = this.tokens[this.pos + 2];
+  private term(): boolean {
+    if (this.pos >= this.argc) throw new TestSyntaxError('argument expected');
+    const current = this.argv[this.pos];
+    if (current === '!') {
+      let negated = false;
+      while (this.pos < this.argc && this.argv[this.pos] === '!') {
+        this.pos++;
+        negated = !negated;
+      }
+      const value = this.term();
+      return negated ? !value : value;
+    }
+    if (current === '(') {
+      this.pos++;
+      if (this.pos >= this.argc) throw new TestSyntaxError('argument expected');
+      const value = this.orExpression();
+      if (this.pos >= this.argc) throw new TestSyntaxError("`)' expected");
+      if (this.argv[this.pos] !== ')') throw new TestSyntaxError(`\`)' expected, found ${this.argv[this.pos]}`);
+      this.pos++;
+      return value;
+    }
+    if (this.pos + 2 < this.argc && BINARY_OPS.has(this.argv[this.pos + 1])) {
+      const value = this.e.binary(current, this.argv[this.pos + 1], this.argv[this.pos + 2]);
       this.pos += 3;
-      return this.e.binary(a, op, b);
+      return value;
     }
-
-    if (remaining >= 2 && UNARY_OPS.has(this.tokens[this.pos])) {
-      const op = this.tokens[this.pos];
-      const arg = this.tokens[this.pos + 1];
+    if (current.length === 2 && current[0] === '-') {
+      if (!this.isUnary(current)) throw new TestSyntaxError(`${current}: unary operator expected`);
+      if (this.pos + 1 >= this.argc) throw new TestSyntaxError('argument expected');
+      const value = this.e.unary(current, this.argv[this.pos + 1]);
       this.pos += 2;
-      return this.e.unary(op, arg);
+      return value;
     }
-
-    const t = this.tokens[this.pos++];
-    return t.length > 0;
-  }
-
-  private peek(): string | undefined { return this.tokens[this.pos]; }
-
-  /** Scan for the matching `)` at the same nesting level. */
-  private findMatchingParen(): number {
-    let depth = 0;
-    for (let i = this.pos; i < this.tokens.length; i++) {
-      if (this.tokens[i] === '(') depth++;
-      else if (this.tokens[i] === ')') { depth--; if (depth === 0) return i; }
-    }
-    return -1;
+    this.pos++;
+    return this.oneArgument(current);
   }
 }
 

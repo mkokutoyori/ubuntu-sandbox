@@ -11,6 +11,7 @@
 
 import type { Command } from '@/bash/parser/ASTNode';
 import { Environment } from './Environment';
+import { isShellOptionEnabled } from './ShellOptions';
 import {
   ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
 } from '@/bash/errors/BashError';
@@ -87,7 +88,7 @@ export function executeBuiltin(
     case 'popd': return builtinPopd(args, env, io);
     case 'compgen': return builtinCompgen(args, env, functions, aliases);
     case 'times': return { output: '0m0.000s 0m0.000s\n0m0.000s 0m0.000s\n', exitCode: 0 };
-    case 'caller': return env.getArray('FUNCNAME') === undefined ? { output: '', exitCode: 1 } : { output: `${env.get('LINENO') ?? 0} ${(env.getArray('FUNCNAME') as string[])[1] ?? 'main'} ${env.get('0') ?? 'bash'}\n`, exitCode: 0 };
+    case 'caller': return builtinCaller(args, env);
     case 'read': return builtinRead(args, env, stdin, readFd);
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return args.length === 0 ? declaration('declare', [], env, functions) : optionResult(runSet(args, env), env);
@@ -208,6 +209,10 @@ const BASH_BUILTIN_NAMES = [
   'readarray', 'readonly', 'return', 'set', 'shift', 'shopt', 'source', 'suspend', 'test', 'times', 'trap', 'true', 'type',
   'typeset', 'ulimit', 'umask', 'unalias', 'unset', 'wait',
 ];
+
+export function isShellBuiltinName(name: string): boolean {
+  return BASH_BUILTIN_NAMES.includes(name);
+}
 
 const BASH_KEYWORD_NAMES = [
   '!', '[[', ']]', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select',
@@ -442,12 +447,13 @@ function builtinUnset(args: string[], env: Environment, functions: Map<string, C
   let exitCode = 0;
   let errors = '';
   let functionMode = false;
+  let explicitVariable = false;
   let parsing = true;
   for (const arg of args) {
     if (parsing && arg === '--') { parsing = false; continue; }
     if (parsing && /^-[fvn]+$/.test(arg)) {
       if (arg.includes('f')) functionMode = true;
-      if (arg.includes('v')) functionMode = false;
+      if (arg.includes('v')) { functionMode = false; explicitVariable = true; }
       continue;
     }
     if (functionMode) {
@@ -464,8 +470,10 @@ function builtinUnset(args: string[], env: Environment, functions: Map<string, C
         continue;
       }
       if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(arg)) {
-        errors += `bash: unset: \`${arg}': not a valid identifier\n`;
-        exitCode = 1;
+        if (explicitVariable) {
+          errors += `bash: unset: \`${arg}': not a valid identifier\n`;
+          exitCode = 1;
+        }
         continue;
       }
       if (env.describe(arg) === undefined && functions.has(arg)) functions.delete(arg);
@@ -479,6 +487,17 @@ function builtinUnset(args: string[], env: Environment, functions: Map<string, C
 }
 
 // ─── Flow Control ───────────────────────────────────────────────
+
+function builtinCaller(args: string[], env: Environment): BuiltinResult {
+  const functions = env.getArray('FUNCNAME');
+  const lines = env.getArray('BASH_LINENO') ?? [];
+  const sources = env.getArray('BASH_SOURCE') ?? [];
+  const frame = args[0] === undefined ? 0 : Number.parseInt(args[0], 10);
+  if (functions === undefined || Number.isNaN(frame) || frame < 0 || frame + 1 >= functions.length) return { output: '', exitCode: 1 };
+  const where = `${lines[frame] ?? 0}`;
+  const output = args[0] === undefined ? `${where} ${sources[frame + 1] ?? ''}` : `${where} ${functions[frame + 1]} ${sources[frame + 1] ?? ''}`;
+  return { output: `${output}\n`, exitCode: 0 };
+}
 
 function builtinExit(args: string[], env: Environment): BuiltinResult {
   if (args.length === 0) throw new ExitSignal(env.lastExitCode);
@@ -532,7 +551,7 @@ function builtinShift(args: string[], env: Environment): BuiltinResult {
   }
   const current = env.getPositionalArgs();
   if (n > current.length) {
-    return fail(`bash: shift: shift count out of range`, 1);
+    return isShellOptionEnabled(env, 'shift_verbose') ? fail(`bash: shift: ${args[0]}: shift count out of range`, 1) : { output: '', exitCode: 1 };
   }
   if (n === 0) return { output: '', exitCode: 0 };
   env.setPositionalArgs(current.slice(n));
@@ -617,7 +636,7 @@ function builtinRead(args: string[], env: Environment, input?: StdinReader, read
       const takesValue = 'adnNptu'.includes(flag);
       if (!takesValue) {
         if (flag === 'r') raw = true;
-        else if (!'sei'.includes(flag)) return fail(`bash: read: -${flag}: invalid option`, 2);
+        else if (!'sei'.includes(flag)) return fail(`bash: read: -${flag}: invalid option\nread: usage: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]`, 2);
         continue;
       }
       const attached = arg.slice(j + 1);

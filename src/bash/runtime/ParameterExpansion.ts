@@ -1,7 +1,11 @@
 import { globToRegexSource } from '@/network/devices/linux/fs/Glob';
 import type { Environment } from './Environment';
 
-export class BashRuntimeError extends Error {}
+export class BashRuntimeError extends Error {
+  constructor(message: string, readonly fatal = false) {
+    super(message);
+  }
+}
 
 export interface ParameterHost {
   readonly env: Environment;
@@ -100,6 +104,15 @@ function parseBody(body: string): Parsed {
 }
 
 export function expandParameter(body: string, host: ParameterHost): ParameterResult {
+  try {
+    return expandParsed(body, host);
+  } catch (e) {
+    if (e instanceof BashRuntimeError && e.message.endsWith(': bad substitution')) throw new BashRuntimeError(`\${${body}}: bad substitution`);
+    throw e;
+  }
+}
+
+function expandParsed(body: string, host: ParameterHost): ParameterResult {
   const parsed = parseBody(body);
   const { env } = host;
   switch (parsed.mode) {
@@ -177,7 +190,7 @@ function apply(reference: Reference, operation: string, host: ParameterHost): Pa
   const fetched = fetch(reference, host);
   if (operation === '') {
     if (!fetched.set && host.option('nounset') && !fetched.list && reference.name !== '?' && reference.name !== '$') {
-      throw new BashRuntimeError(`${display(reference)}: unbound variable`);
+      throw new BashRuntimeError(`${display(reference)}: unbound variable`, true);
     }
     return fetched.list ? list(fetched.items, fetched.star) : text(fetched.text);
   }
@@ -186,7 +199,7 @@ function apply(reference: Reference, operation: string, host: ParameterHost): Pa
   if ('-=?+'.includes(head ?? '') && head !== undefined && (!colon || operation.length > 1)) {
     return defaulting(reference, fetched, colon, head, operation.slice(colon ? 2 : 1), host);
   }
-  if (!fetched.set && host.option('nounset') && !fetched.list) throw new BashRuntimeError(`${display(reference)}: unbound variable`);
+  if (!fetched.set && host.option('nounset') && !fetched.list) throw new BashRuntimeError(`${display(reference)}: unbound variable`, true);
   if (colon) return substring(reference, fetched, operation.slice(1), host);
   return transform(fetched, operation, host);
 }
@@ -208,7 +221,7 @@ function defaulting(
     }
     default:
       if (!missing) return present;
-      throw new BashRuntimeError(`${display(reference)}: ${word === '' ? 'parameter null or not set' : host.operand(word)}`);
+      throw new BashRuntimeError(`${display(reference)}: ${word === '' ? 'parameter null or not set' : host.operand(word)}`, true);
   }
 }
 
@@ -403,6 +416,7 @@ function transformation(fetched: Fetched, code: string, host: ParameterHost): Pa
     case 'A':
       return eachItem(fetched, (value) => value);
     default:
+      if (!fetched.set) return text('');
       throw new BashRuntimeError(`\${@${code}}: bad substitution`);
   }
 }

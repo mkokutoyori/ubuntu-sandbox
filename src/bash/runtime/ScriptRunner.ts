@@ -12,8 +12,7 @@
 
 import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
 import type { INode } from '@/network/devices/linux/VirtualFileSystem';
-import { BashLexer } from '@/bash/lexer/BashLexer';
-import { BashParser } from '@/bash/parser/BashParser';
+import { parseScript } from '@/bash/parser/ParseScript';
 import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
 import { DaemonParkSignal } from '@/bash/errors/BashError';
 import type { AliasTable } from '@/bash/runtime/AliasTable';
@@ -103,11 +102,7 @@ export function runScriptContent(
 
   let interp: BashInterpreter | undefined;
   try {
-    const lexer = new BashLexer();
-    const parser = new BashParser();
-
-    const tokens = lexer.tokenize(source);
-    const ast = parser.parse(tokens);
+    const ast = parseScript(source);
 
     interp = new BashInterpreter({
       executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),
@@ -216,11 +211,7 @@ export async function runScriptContentAsync(
 
   let interp: BashInterpreter | undefined;
   try {
-    const lexer = new BashLexer();
-    const parser = new BashParser();
-
-    const tokens = lexer.tokenize(source);
-    const ast = parser.parse(tokens);
+    const ast = parseScript(source);
 
     interp = new BashInterpreter({
       executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),

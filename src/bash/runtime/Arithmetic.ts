@@ -40,6 +40,7 @@ export function evaluateArithmeticExpression(text: string, scope: ArithmeticScop
 class Evaluator {
   private position = 0;
   private suppressed = 0;
+  private lastOperatorStart = 0;
 
   constructor(
     private readonly text: string,
@@ -53,7 +54,7 @@ class Evaluator {
     const value = this.comma().value;
     this.skipSpace();
     if (this.position < this.text.length) {
-      throw this.syntaxError(this.text[this.position] === ')' ? 'unbalanced )' : 'syntax error: operand expected');
+      throw this.syntaxError(this.text[this.position] === ')' ? 'unbalanced )' : 'syntax error in expression');
     }
     return value;
   }
@@ -63,7 +64,7 @@ class Evaluator {
   }
 
   private syntaxError(message: string, tokenStart = this.position): ArithmeticError {
-    return new ArithmeticError(`${this.text.trim()}: ${message} (error token is "${this.text.slice(tokenStart)}")`);
+    return new ArithmeticError(`${this.text.trimStart()}: ${message} (error token is "${this.text.slice(tokenStart)}")`);
   }
 
   private startsWith(operator: string): boolean {
@@ -75,6 +76,7 @@ class Evaluator {
     if (!this.startsWith(operator)) return false;
     const next = this.text[this.position + operator.length];
     if (notFollowedBy !== undefined && next !== undefined && notFollowedBy.test(next)) return false;
+    this.lastOperatorStart = this.position;
     this.position += operator.length;
     return true;
   }
@@ -284,7 +286,7 @@ class Evaluator {
   private primary(): Operand {
     this.skipSpace();
     const start = this.position;
-    if (start >= this.text.length) throw this.syntaxError('syntax error: operand expected');
+    if (start >= this.text.length) throw this.syntaxError('syntax error: operand expected', this.lastOperatorStart);
     const character = this.text[start];
     if (character === '(') {
       this.position++;

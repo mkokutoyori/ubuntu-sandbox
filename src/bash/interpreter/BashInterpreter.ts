@@ -25,6 +25,8 @@ import type {
   DoubleBracket, DBExpr, ArithmeticCommand, CStyleForClause,
   Word, Assignment, Redirection,
 } from '@/bash/parser/ASTNode';
+import type { SyntaxFailure } from '@/bash/parser/SyntaxFailure';
+import { parseScript } from '@/bash/parser/ParseScript';
 import { Environment } from '@/bash/runtime/Environment';
 import { initializeShellOptions, isShellOptionEnabled, optionFlags } from '@/bash/runtime/ShellOptions';
 import { signalName, signalNumber, terminatesByDefault } from '@/bash/runtime/Signals';
@@ -33,7 +35,7 @@ import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
   ArithmeticError, ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
-import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
+import { isBuiltin, isShellBuiltinName, executeBuiltin } from '@/bash/runtime/Builtins';
 import { parseDeclarationFlags } from '@/bash/runtime/Declare';
 import type { DeclarationCommand } from '@/bash/runtime/Declare';
 import { RedirectWriteError } from './RedirectWriteError';
@@ -256,6 +258,7 @@ export class BashInterpreter {
   private readonly daemonMode: boolean;
   private readonly interactive: boolean;
   private functionStack: string[] = [];
+  private callerLines: number[] = [];
   private readonly jobs = new Map<string, number>();
   private jobCounter = 0;
 
@@ -286,6 +289,24 @@ export class BashInterpreter {
       initialExitCode: options.initialExitCode,
     });
     initializeShellOptions(this.env, this.interactive);
+    this.publishCallFrames(this.env);
+  }
+
+  private publishCallFrames(target: Environment): void {
+    const script = this.env.get('0') ?? 'bash';
+    const scriptMode = script !== 'bash';
+    const depth = this.functionStack.length;
+    if (depth === 0) {
+      target.unset('FUNCNAME');
+      if (scriptMode) {
+        target.setArray('BASH_SOURCE', [script]);
+        target.setArray('BASH_LINENO', ['0']);
+      }
+      return;
+    }
+    target.setArray('FUNCNAME', [...this.functionStack, ...(scriptMode ? ['main'] : [])]);
+    target.setArray('BASH_LINENO', [...this.callerLines.map(String), ...(scriptMode ? ['0'] : [])]);
+    target.setArray('BASH_SOURCE', scriptMode ? Array(depth + 1).fill(script) : Array(depth).fill('environment'));
   }
 
   // ─── Public API ───────────────────────────────────────────────
@@ -393,7 +414,8 @@ export class BashInterpreter {
   private *runProgram(program: Program): Effects<{ output: string; exitCode: number; stderr: string }> {
     this.log = new OutputLog();
     try {
-      yield* this.visitCommandList(program.body);
+      yield* this.visitTopLevel(program.body, program.warnings);
+      if (program.syntaxFailure !== undefined) this.reportSyntaxFailure(program.syntaxFailure, this.syntaxLabel());
     } catch (e) {
       if (e instanceof ExitSignal) {
         this.env.lastExitCode = e.exitCode;
@@ -488,7 +510,7 @@ export class BashInterpreter {
     try {
       const lexer = new BashLexer();
       const parser = new BashParser();
-      const tokens = lexer.tokenize(cmd);
+      const tokens = lexer.tokenize(cmd, true, this.currentLine);
       const ast = parser.parse(tokens);
       this.log = inner;
       this.env = savedEnv.createSubshell();
@@ -550,7 +572,7 @@ export class BashInterpreter {
     if (!handler) return;
     this.env.clearTrap('EXIT');                              // prevent re-entry
     const savedExit = this.env.lastExitCode;
-    try { yield* this.executeEvalG(handler); } catch { /* swallow — trap must not abort cleanup */ }
+    try { yield* this.executeEvalG(handler, false, this.currentLine); } catch { /* swallow — trap must not abort cleanup */ }
     this.env.lastExitCode = savedExit;
   }
 
@@ -563,7 +585,7 @@ export class BashInterpreter {
     if (!handler) return;
     const savedExit = this.env.lastExitCode;
     this.inTrap++;
-    try { yield* this.executeEvalG(handler); } catch { /* a broken trap must not crash the script */ }
+    try { yield* this.executeEvalG(handler, false, this.currentLine); } catch { /* a broken trap must not crash the script */ }
     finally { this.inTrap--; this.env.lastExitCode = savedExit; }
   }
 
@@ -599,6 +621,52 @@ export class BashInterpreter {
 
   private lastPipelineNegated = false;
 
+  private syntaxLabel(): string {
+    const name = this.env.get('0');
+    return name === 'bash' ? 'bash: -c' : name ?? 'bash';
+  }
+
+  private reportSyntaxFailure(failure: SyntaxFailure, label: string): void {
+    for (const diagnostic of failure.diagnostics) {
+      this.log.write(2, `${label}: line ${diagnostic.line}: ${diagnostic.text}\n`, 'never');
+    }
+    this.env.lastExitCode = 2;
+  }
+
+  private isolatedStatus(e: unknown): number {
+    if (e instanceof ExitSignal) return e.exitCode;
+    if (!this.isLineAbort(e)) throw e;
+    this.emitError(`bash: ${e.message.replace(/^bash: /, '')}`);
+    return 1;
+  }
+
+  private isLineAbort(e: unknown): e is Error {
+    if (e instanceof BashRuntimeError) return !e.fatal;
+    if (e instanceof ArithmeticError) return true;
+    return e instanceof Error && /^bash: .*: readonly variable$/.test(e.message);
+  }
+
+  private *visitTopLevel(node: CommandList, warnings: Program['warnings'] = []): Effects<void> {
+    let abortedLine = 0;
+    for (const [index, andOr] of node.commands.entries()) {
+      const nextStart = node.commands[index + 1]?.position?.line ?? Infinity;
+      for (const warning of warnings) {
+        if (warning.line >= (andOr.position?.line ?? 0) && warning.line < nextStart) {
+          this.log.write(2, `${this.syntaxLabel()}: line ${warning.reportedLine}: ${warning.text}\n`, 'never');
+        }
+      }
+      if ((andOr.position?.line ?? Infinity) <= abortedLine) continue;
+      try {
+        yield* this.visitCommandList({ ...node, commands: [andOr] });
+      } catch (e) {
+        if (!this.isLineAbort(e)) throw e;
+        this.emitError(`bash: ${e.message.replace(/^bash: /, '')}`);
+        this.env.lastExitCode = 1;
+        abortedLine = this.currentLine;
+      }
+    }
+  }
+
   private *visitCommandList(node: CommandList): Effects<void> {
     for (const andOr of node.commands) {
       this.statusFromGuard = false;
@@ -608,6 +676,23 @@ export class BashInterpreter {
         throw new ExitSignal(this.env.lastExitCode);
       }
     }
+  }
+
+  private readonly externalChildren = new Set<string>();
+  private loopDepth = 0;
+  private sourceDepth = 0;
+
+  private exitArgumentsValid(operands: string[]): boolean {
+    if (!/^[+-]?\d+$/.test(operands[0])) {
+      this.emitError(`bash: exit: ${operands[0]}: numeric argument required`);
+      throw new ExitSignal(2);
+    }
+    if (operands.length > 1) {
+      this.emitError('bash: exit: too many arguments');
+      this.env.lastExitCode = 1;
+      return false;
+    }
+    return true;
   }
 
   private lastLineOriented: boolean | undefined = undefined;
@@ -664,8 +749,7 @@ export class BashInterpreter {
       yield* this.visitAndOrList(node);
       status = this.env.lastExitCode;
     } catch (e) {
-      if (!(e instanceof ExitSignal)) throw e;
-      status = e.exitCode;
+      status = this.isolatedStatus(e);
     } finally {
       this.env = shellEnv;
     }
@@ -676,15 +760,26 @@ export class BashInterpreter {
 
   private waitForJobs(operands: string[]): boolean {
     if (operands.length === 0) {
-      if (this.jobs.size === 0) return false;
       this.jobs.clear();
       this.env.lastExitCode = 0;
       return true;
     }
-    if (!operands.every((operand) => this.jobs.has(operand))) return false;
-    const last = operands[operands.length - 1];
-    this.env.lastExitCode = this.jobs.get(last) as number;
-    for (const operand of operands) this.jobs.delete(operand);
+    if (operands.every((operand) => this.externalChildren.has(operand))) return false;
+    let status = 0;
+    for (const operand of operands) {
+      const known = this.jobs.get(operand);
+      if (known !== undefined) {
+        status = known;
+        this.jobs.delete(operand);
+      } else if (/^\d+$/.test(operand)) {
+        this.emitError(`bash: wait: pid ${operand} is not a child of this shell`);
+        status = 127;
+      } else {
+        this.emitError(`bash: wait: \`${operand}': not a pid or valid job spec`);
+        status = 127;
+      }
+    }
+    this.env.lastExitCode = status;
     return true;
   }
 
@@ -734,8 +829,7 @@ export class BashInterpreter {
         yield* this.visitCommand(cmd);
         stageStatus = this.env.lastExitCode;
       } catch (e) {
-        if (!(e instanceof ExitSignal || e instanceof ReturnSignal)) throw e;
-        stageStatus = e.exitCode;
+        stageStatus = e instanceof ReturnSignal ? e.exitCode : this.isolatedStatus(e);
       } finally {
         this.env = shellEnv;
         this.nonLastPipelineStage = savedNonLastStage;
@@ -897,6 +991,7 @@ export class BashInterpreter {
         yield* this.applyAssignment(assign);
         if (flags?.set.readonly) this.env.declare(assign.name, undefined, { readonly: true }, false);
       } catch (e) {
+        if (e instanceof BashRuntimeError || e instanceof ArithmeticError || this.isLineAbort(e)) throw e;
         if (e instanceof Error) this.emitError(e.message);
         this.env.lastExitCode = 1;
         return false;
@@ -906,10 +1001,10 @@ export class BashInterpreter {
   }
 
   private *runSimpleCommand(rawNode: SimpleCommand): Effects<void> {
+    if (rawNode.position !== undefined) this.currentLine = rawNode.position.line;
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
     this.lastSubstitutionStatus = null;
-    if (rawNode.position !== undefined) this.currentLine = rawNode.position.line;
     if (!this.interactive && isShellOptionEnabled(this.env, 'noexec')) return;
 
     // Declaration commands (`local`, `declare`, `typeset`, `readonly`,
@@ -992,7 +1087,8 @@ export class BashInterpreter {
 
     // Handle eval: re-parse and execute the joined args
     if (cmdName === 'eval') {
-      yield* this.executeEvalG(args.slice(1).join(' '));
+      const code = args.slice(1).join(' ');
+      yield* this.executeEvalG(`${code}\n`, false, this.currentLine + (code.match(/\n/g)?.length ?? 0), `${this.env.get('0')}: eval`);
       return undefined;
     }
 
@@ -1018,6 +1114,14 @@ export class BashInterpreter {
       yield* this.runHash(args.slice(1));
     } else if (cmdName === 'kill' && (yield* this.signalSelf(args.slice(1)))) {
       return undefined;
+    } else if ((cmdName === 'break' || cmdName === 'continue') && this.loopDepth === 0) {
+      this.emitError(`bash: ${cmdName}: only meaningful in a \`for', \`while', or \`until' loop`);
+      this.env.lastExitCode = 0;
+    } else if (cmdName === 'return' && this.functionStack.length === 0 && this.sourceDepth === 0) {
+      this.emitError("bash: return: can only `return' from a function or sourced script");
+      this.env.lastExitCode = 2;
+    } else if (cmdName === 'exit' && args.length > 1 && !this.exitArgumentsValid(args.slice(1))) {
+      return undefined;
     } else if (isBuiltin(cmdName)) {
       const result = executeBuiltin(
         cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined,
@@ -1041,12 +1145,13 @@ export class BashInterpreter {
       });
       this.lastLineOriented = result.lineOriented;
       if (result.stderr === undefined && result.output !== '' && (result.exitCode === 126 || result.exitCode === 127)) {
-        result = { ...result, stderr: ensureTrailingNewline(result.output), interleaved: undefined, output: '' };
+        result = { ...result, stderr: this.prefixDiagnostics(result.output.replace(/^(\/[^:]*): command not found/, '$1: No such file or directory'), true, undefined, cmdName === 'bash' || cmdName === 'sh'), interleaved: undefined, output: '' };
       }
-      this.emitResult(result, result.exitCode);
+      this.emitResult(result, result.exitCode, { builtin: isShellBuiltinName(cmdName) ? cmdName : undefined, childShell: cmdName === 'bash' || cmdName === 'sh' });
       this.env.lastExitCode = result.exitCode;
       if (result.backgroundPid !== undefined) {
         this.env.recordBackgroundPid(String(result.backgroundPid));
+        this.externalChildren.add(String(result.backgroundPid));
         return result.backgroundPid;
       }
     }
@@ -1057,13 +1162,29 @@ export class BashInterpreter {
     return this.io!.resolvePath(path, this.env.get('PWD'));
   }
 
+  private diagnosticPrefix(): string {
+    if (this.interactive) return 'bash: ';
+    return `${this.env.get('0')}: line ${this.currentLine}: `;
+  }
+
+  private prefixDiagnostics(text: string, bare = false, builtin?: string, childShell = false): string {
+    if (childShell) return ensureTrailingNewline(text);
+    const prefix = this.diagnosticPrefix();
+    return ensureTrailingNewline(text).split(/(?<=\n)/).map((raw) => {
+      const line = builtin !== undefined && raw.startsWith(`${builtin}: `) ? `bash: ${raw}` : raw.replace(/^bash: line \d+: /, 'bash: ');
+      if (line.startsWith('bash: ')) return prefix + line.slice(6);
+      return bare && /: (command not found|Permission denied|No such file or directory|Is a directory)\n$/.test(line) ? prefix + line : line;
+    }).join('');
+  }
+
   private emitError(text: string): void {
-    this.log.write(2, ensureTrailingNewline(text), 'never');
+    this.log.write(2, this.prefixDiagnostics(text), 'never');
   }
 
   private emitResult(
     result: { output: string; stderr?: string; interleaved?: string; lineOriented?: boolean },
     exitCode: number,
+    source: { builtin?: string; childShell?: boolean } = {},
   ): void {
     const newline: Newline = result.lineOriented === true ? 'always' : result.lineOriented === false ? 'never' : 'terminal';
     if (result.stderr === undefined) {
@@ -1077,7 +1198,7 @@ export class BashInterpreter {
         const index = remaining.indexOf(text);
         if (index === 0 || (index > 0 && text !== '')) {
           remaining.splice(index, 1);
-          this.log.write(2, ensureTrailingNewline(line), 'never');
+          this.log.write(2, this.prefixDiagnostics(line, false, source.builtin, source.childShell), 'never');
         } else {
           this.log.write(1, line, newline);
         }
@@ -1085,7 +1206,7 @@ export class BashInterpreter {
       return;
     }
     this.log.write(1, result.output, newline);
-    this.log.write(2, ensureTrailingNewline(result.stderr), 'never');
+    this.log.write(2, this.prefixDiagnostics(result.stderr, false, source.builtin, source.childShell), 'never');
   }
 
   /**
@@ -1441,6 +1562,7 @@ export class BashInterpreter {
   // ─── Loops ────────────────────────────────────────────────────
 
   private *runLoopBody(body: CommandList): Effects<'continue' | 'break'> {
+    this.loopDepth++;
     try {
       yield* this.visitCommandList(body);
     } catch (e) {
@@ -1453,6 +1575,8 @@ export class BashInterpreter {
         return 'continue';
       }
       throw e;
+    } finally {
+      this.loopDepth--;
     }
     return 'continue';
   }
@@ -1566,7 +1690,8 @@ export class BashInterpreter {
     // Create a child environment for function scope (supports `local`)
     const savedEnv = this.env;
     this.functionStack.unshift(name);
-    savedEnv.setArray('FUNCNAME', [...this.functionStack]);
+    this.callerLines.unshift(this.currentLine);
+    this.publishCallFrames(savedEnv);
     const childEnv = this.env.createChild();
     this.env = childEnv;
     this.env.setPositionalArgs(args);
@@ -1583,8 +1708,8 @@ export class BashInterpreter {
       savedEnv.lastExitCode = this.env.lastExitCode;
       this.env = savedEnv;
       this.functionStack.shift();
-      if (this.functionStack.length === 0) savedEnv.unset('FUNCNAME');
-      else savedEnv.setArray('FUNCNAME', [...this.functionStack]);
+      this.callerLines.shift();
+      this.publishCallFrames(savedEnv);
     }
   }
 
@@ -1647,7 +1772,7 @@ export class BashInterpreter {
     if (specification === '0') return true;
     const handler = this.lookupTrapInherited(name);
     if (handler !== undefined) {
-      if (handler !== '') yield* this.executeEvalG(handler);
+      if (handler !== '') yield* this.executeEvalG(handler, false, this.currentLine);
       return true;
     }
     if (terminatesByDefault(name)) throw new ExitSignal(128 + signalNumber(name));
@@ -1656,13 +1781,11 @@ export class BashInterpreter {
 
   // ─── Eval ─────────────────────────────────────────────────────
 
-  private *executeEvalG(code: string, sourced = false): Effects<void> {
+  private *executeEvalG(code: string, sourced = false, firstLine = 1, label?: string): Effects<void> {
     try {
-      const lexer = new BashLexer();
-      const parser = new BashParser();
-      const tokens = lexer.tokenize(code);
-      const ast = parser.parse(tokens);
+      const ast = parseScript(code, firstLine);
       yield* this.visitCommandList(ast.body);
+      if (ast.syntaxFailure !== undefined) this.reportSyntaxFailure(ast.syntaxFailure, label ?? this.syntaxLabel());
     } catch (e) {
       if (sourced && e instanceof ReturnSignal) {
         this.env.lastExitCode = e.exitCode;
@@ -1693,9 +1816,11 @@ export class BashInterpreter {
     }
     const saved = extraArgs.length > 0 ? this.env.getPositionalArgs() : null;
     if (saved !== null) this.env.setPositionalArgs(extraArgs);
+    this.sourceDepth++;
     try {
-      yield* this.executeEvalG(content, true);
+      yield* this.executeEvalG(content, true, 1, filePath);
     } finally {
+      this.sourceDepth--;
       if (saved !== null) this.env.setPositionalArgs(saved);
     }
   }
@@ -1717,8 +1842,7 @@ export class BashInterpreter {
         yield* this.visitCommandList(node.body);
         status = childEnv.lastExitCode;
       } catch (e) {
-        if (!(e instanceof ExitSignal)) throw e;
-        status = e.exitCode;
+        status = this.isolatedStatus(e);
       }
       childEnv.lastExitCode = status;
       yield* this.fireExitTrap();
@@ -1839,7 +1963,7 @@ export class BashInterpreter {
 
   private visitArithmeticCommand(node: ArithmeticCommand): void {
     try {
-      const result = evaluateArithmetic(node.expression, this.env);
+      const result = evaluateArithmetic(node.raw ?? node.expression, this.env);
       // Bash: exit 0 iff the arithmetic result is non-zero.
       this.env.lastExitCode = BigInt(result) !== 0n ? 0 : 1;
     } catch (e) {
@@ -1860,6 +1984,7 @@ export class BashInterpreter {
         const v = evaluateArithmetic(node.cond, this.env);
         if (Number.parseInt(v, 10) === 0) break;
       }
+      this.loopDepth++;
       try {
         yield* this.visitCommandList(node.body);
       } catch (e) {
@@ -1870,6 +1995,8 @@ export class BashInterpreter {
         if (e instanceof ContinueSignal) {
           if (e.levels > 1) throw new ContinueSignal(e.levels - 1);
         } else { throw e; }
+      } finally {
+        this.loopDepth--;
       }
       if (node.update) evaluateArithmetic(node.update, this.env);
     }

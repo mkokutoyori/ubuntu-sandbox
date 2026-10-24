@@ -146,7 +146,7 @@ describe('ScriptRunner — runScriptContent', () => {
   it('handles syntax errors gracefully', () => {
     const result = runScriptContent('if; then', 'inline', [], execCmd);
     expect(result.exitCode).toBe(2);
-    expect(result.output).toContain('bash:');
+    expect(result.output).toContain("inline: line 1: syntax error near unexpected token `;'");
   });
 
   it('passes variables to script', () => {

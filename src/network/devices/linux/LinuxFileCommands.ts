@@ -597,6 +597,7 @@ export function cmdCp(ctx: ShellContext, args: string[]): string {
   const actor = actorOf(ctx);
   const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
   const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
+  if (!srcPath.exists()) return `cp: cannot stat '${nonFlags[0]}': No such file or directory`;
   if (ctx.uid !== 0) {
     if (srcPath.exists() && !srcPath.canRead()) {
       return `cp: cannot open '${nonFlags[0]}' for reading: Permission denied`;
@@ -618,6 +619,7 @@ export function cmdMv(ctx: ShellContext, args: string[]): string {
   const actor = actorOf(ctx);
   const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
   const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
+  if (!srcPath.exists()) return `mv: cannot stat '${nonFlags[0]}': No such file or directory`;
   if (ctx.uid !== 0) {
     const srcParent = srcPath.parent();
     const sp = srcParent.inode();
@@ -719,6 +721,7 @@ export function cmdMkdir(ctx: ShellContext, args: string[]): string {
     const path = ctx.vfs.path(p, ctx.cwd, actor);
     const absPath = path.value;
     const perms = 0o777 & ~ctx.umask;
+    if (absPath.startsWith('/proc/') && !path.exists()) return `mkdir: cannot create directory '${p}': No such file or directory`;
     if (parents) {
       if (ctx.uid !== 0 && !path.exists()) {
         let anc = path.parent();

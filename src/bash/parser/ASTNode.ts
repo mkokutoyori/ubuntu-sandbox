@@ -10,6 +10,7 @@
  */
 
 import type { SourcePosition } from '@/bash/lexer/Token';
+import type { SyntaxFailure } from './SyntaxFailure';
 
 // ─── Base ────────────────────────────────────────────────────────
 
@@ -23,6 +24,8 @@ export interface ASTBase {
 export interface Program extends ASTBase {
   type: 'Program';
   body: CommandList;
+  syntaxFailure?: SyntaxFailure;
+  warnings?: ReadonlyArray<{ readonly line: number; readonly reportedLine: number; readonly text: string }>;
 }
 
 // ─── Command List (Sequence of And/Or lists) ─────────────────────
@@ -95,6 +98,7 @@ export interface DoubleBracket extends ASTBase {
 export interface ArithmeticCommand extends ASTBase {
   type: 'ArithmeticCommand';
   expression: string;
+  raw?: string;
 }
 
 /** `for ((init; cond; update)) do … done` C-style for-loop. */

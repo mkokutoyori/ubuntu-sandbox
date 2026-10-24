@@ -3713,7 +3713,7 @@ export class LinuxCommandExecutor {
     }
     const r = cmdKill(resolved, this.processCmdContext());
     if (r.exitCode === 0) droppedJobIds.forEach(id => this.jobTable.remove(id));
-    return r.output;
+    return r.output + (r.stderr ?? '').replace(/\n$/, '');
   }
 
   /**
@@ -5714,7 +5714,10 @@ export class LinuxCommandExecutor {
         return { output: r.preflight().output, exitCode: 0 };
       }
       case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
-      case 'sort': return { output: cmdSort(c, args, stdin), exitCode: 0 };
+      case 'sort': {
+        const sorted = cmdSort(c, args, stdin);
+        return sorted.startsWith('sort: cannot read: ') ? { output: '', stderr: `${sorted}\n`, exitCode: 2 } : { output: sorted, exitCode: 0 };
+      }
       case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
       case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
       case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
@@ -8054,7 +8057,7 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private handleType(args: string[]): { output: string; exitCode: number } {
+  private handleType(args: string[]): { output: string; exitCode: number; stderr?: string } {
     let typeOnly = false, pathOnly = false, all = false, forcePath = false;
     const names: string[] = [];
     for (let i = 0; i < args.length; i++) {
@@ -8075,13 +8078,14 @@ export class LinuxCommandExecutor {
 
     const resolver = new CommandResolver(this.shellIntrospection());
     const out: string[] = [];
+    const errors: string[] = [];
     let exitCode = 0;
     for (const name of names) {
       const resolutions = resolver.resolveAll(name, { forcePath });
       const found = resolutions[0].kind !== 'not-found';
       if (!found) {
         exitCode = 1;
-        if (!typeOnly && !pathOnly) out.push(`bash: type: ${name}: not found`);
+        if (!typeOnly && !pathOnly) errors.push(`bash: type: ${name}: not found`);
         continue;
       }
       if (typeOnly) {
@@ -8096,10 +8100,10 @@ export class LinuxCommandExecutor {
         out.push(...shown.map(r => r.describe()));
       }
     }
-    return { output: out.join('\n'), exitCode };
+    return { output: out.join('\n'), exitCode, ...(errors.length === 0 ? {} : { stderr: `${errors.join('\n')}\n` }) };
   }
 
-  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number } {
+  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number; stderr?: string } {
     const fs: TestFs = {
       exists: (p) => this.vfs.exists(p),
       resolveInode: (p) => this.vfs.resolveInode(p),
@@ -8115,7 +8119,7 @@ export class LinuxCommandExecutor {
         : false,
     };
     const r = runTest(fs, env, args, cmd === '[');
-    return { output: r.stderr, exitCode: r.exitCode };
+    return r.stderr === '' ? { output: '', exitCode: r.exitCode } : { output: '', stderr: `${r.stderr}\n`, exitCode: r.exitCode };
   }
 
   private handleExpr(args: string[]): { output: string; exitCode: number } {

@@ -3752,3 +3752,14 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
+
+### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
+
+Les trois bancs passent en entier ; restent mesures et non fermes :
+- `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
+- Les constructeurs de contexte d'E/S existent en double : `ScriptRunner.runScriptContent*` et le chemin `bash` de l'executeur.
+- Un alias defini et utilise sur la meme ligne est deja developpe (bash ne le voit qu'a la ligne suivante).
+- `extglob` est toujours accepte par le lexeur, que `shopt -s extglob` ait ete tape ou non.
+- Les erreurs de syntaxe a l'interieur de `$(...)`, de `<(...)` et d'un `eval` imbrique passent encore par `BashParser.parse` (exception) : aucune commande qui precede n'est executee, contrairement a bash.
+- Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
+- `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).

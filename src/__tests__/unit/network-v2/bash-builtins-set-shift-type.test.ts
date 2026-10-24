@@ -93,11 +93,19 @@ describe('shift builtin', () => {
     expect(env.getPositionalArgs()).toEqual(['c', 'd']);
   });
 
-  it('should error when shifting more than available', () => {
+  it('should fail silently when shifting more than available', () => {
     const env = new Environment({ positionalArgs: ['a'] });
     const result = executeBuiltin('shift', ['5'], env, new Map());
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('shift count');
+    expect(result.stderr).toBeUndefined();
+  });
+
+  it('should name the count when shift_verbose is on', () => {
+    const env = new Environment({ positionalArgs: ['a'] });
+    env.set('BASHOPTS', 'shift_verbose');
+    const result = executeBuiltin('shift', ['5'], env, new Map());
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('5: shift count out of range');
   });
 
   it('should handle shift 0', () => {

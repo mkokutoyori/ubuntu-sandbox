@@ -566,7 +566,7 @@ describe('BashParser — Error Handling', () => {
   });
 
   it('throws on missing then in if', () => {
-    expect(() => parse('if true; echo yes; fi')).toThrow(/Expected 'then'/);
+    expect(() => parse('if true; echo yes; fi')).toThrow(/Unexpected token 'fi'/);
   });
 
   it('throws on missing fi in if', () => {
@@ -574,7 +574,7 @@ describe('BashParser — Error Handling', () => {
   });
 
   it('throws on missing do in for', () => {
-    expect(() => parse('for x in a b; echo $x; done')).toThrow(/Expected 'do'/);
+    expect(() => parse('for x in a b; echo $x; done')).toThrow(/Unexpected token 'echo'/);
   });
 
   it('throws on missing done in for', () => {

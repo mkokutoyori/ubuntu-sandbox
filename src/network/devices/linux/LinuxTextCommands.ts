@@ -617,11 +617,14 @@ export function cmdSort(ctx: ShellContext, rawArgs: string[], stdin?: string): s
 
   // Concatenate every named file plus stdin (in that order, like real sort).
   let content = '';
+  const unreadable: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
     const raw = ctx.vfs.readFile(absPath);
-    if (raw !== null) content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
+    if (raw === null) unreadable.push(`sort: cannot read: ${f}: No such file or directory`);
+    else content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
   }
+  if (unreadable.length > 0) return unreadable.join('\n');
   if (files.length === 0 && stdin !== undefined) content = stdin;
   let lines = content.split('\n');
   // Drop the trailing empty line caused by a final newline, but keep

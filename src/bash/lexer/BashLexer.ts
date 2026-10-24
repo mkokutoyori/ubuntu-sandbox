@@ -18,6 +18,12 @@
 import { TokenType, BASH_KEYWORDS, type Token, type SourcePosition } from './Token';
 import { decodeBackslashEscapes } from '@/bash/runtime/EscapeSequences';
 import { LexerError } from './LexerError';
+
+export interface LexerWarning {
+  readonly line: number;
+  readonly reportedLine: number;
+  readonly text: string;
+}
 import { closingBrace, closingParenthesis } from './Spans';
 
 export class BashLexer {
@@ -42,50 +48,68 @@ export class BashLexer {
     delimiter: string;
     stripTabs: boolean;
     bodyToken: Token;
+    line: number;
   }> = [];
+
+  private warnings: LexerWarning[] = [];
 
   /**
    * Tokenize the full input string.
    * @param input   Bash source code.
    * @param strip   If true, filter out comments (default: true).
    */
-  tokenize(input: string, strip: boolean = true): Token[] {
+  tokenize(input: string, strip: boolean = true, firstLine = 1): Token[] {
+    return this.scan(input, strip, false, firstLine).tokens;
+  }
+
+  tokenizeRecovering(input: string, strip: boolean = true, firstLine = 1): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
+    return this.scan(input, strip, true, firstLine);
+  }
+
+  private scan(input: string, strip: boolean, recover: boolean, firstLine: number): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
     this.input = input;
     this.pos = 0;
-    this.line = 1;
+    this.line = firstLine;
     this.column = 1;
     this.queued = [];
     this.pendingHeredocs = [];
+    this.warnings = [];
 
     const tokens: Token[] = [];
+    let error: LexerError | null = null;
 
-    while (!this.isAtEnd() || this.queued.length > 0) {
-      if (this.queued.length > 0) {
-        tokens.push(this.queued.shift()!);
-        continue;
-      }
-      const posBeforeSkip = this.pos;
-      this.skipSpacesAndTabs();
-      if (this.isAtEnd()) break;
-      const noWhitespaceBefore = this.pos === posBeforeSkip;
+    try {
+      while (!this.isAtEnd() || this.queued.length > 0) {
+        if (this.queued.length > 0) {
+          tokens.push(this.queued.shift()!);
+          continue;
+        }
+        const posBeforeSkip = this.pos;
+        this.skipSpacesAndTabs();
+        if (this.isAtEnd()) break;
+        const noWhitespaceBefore = this.pos === posBeforeSkip;
 
-      const tok = this.scanToken();
-      if (tok) {
-        if (strip && tok.type === TokenType.WORD && tok.value.startsWith('#')) continue;
-        // Mark tokens that butt directly against the previous one so the
-        // parser can fuse `name='a b'` / `pre"$x"` into one word.
-        if (noWhitespaceBefore && tokens.length > 0) tok.adjacent = true;
-        tokens.push(tok);
+        const tok = this.scanToken();
+        if (tok) {
+          if (strip && tok.type === TokenType.WORD && tok.value.startsWith('#')) continue;
+          // Mark tokens that butt directly against the previous one so the
+          // parser can fuse `name='a b'` / `pre"$x"` into one word.
+          if (noWhitespaceBefore && tokens.length > 0) tok.adjacent = true;
+          tokens.push(tok);
+        }
       }
+
+      // A heredoc left open at EOF (no delimiter line, or no trailing
+      // newline at all) takes the rest of the input as its body — bash
+      // warns but accepts; keeping it lenient matches the interactive use.
+      if (this.pendingHeredocs.length > 0) this.collectHeredocBodies();
+    } catch (e) {
+      if (!recover || !(e instanceof LexerError)) throw e;
+      error = e;
     }
 
-    // A heredoc left open at EOF (no delimiter line, or no trailing
-    // newline at all) takes the rest of the input as its body — bash
-    // warns but accepts; keeping it lenient matches the interactive use.
-    if (this.pendingHeredocs.length > 0) this.collectHeredocBodies();
-
     tokens.push(this.makeToken(TokenType.EOF, ''));
-    return tokens;
+    return { tokens, error, warnings: this.warnings };
   }
 
   // ─── Main Scanner ──────────────────────────────────────────────
@@ -553,7 +577,7 @@ export class BashLexer {
           position: this.position(),
         };
         this.queued.push(bodyToken);
-        this.pendingHeredocs.push({ delimiter: delim.value, stripTabs, bodyToken });
+        this.pendingHeredocs.push({ delimiter: delim.value, stripTabs, bodyToken, line: start.line });
       }
       return { type: TokenType.HEREDOC, value: '<<', position: start };
     }
@@ -796,6 +820,7 @@ export class BashLexer {
     this.pendingHeredocs = [];
     for (const h of pending) {
       const bodyLines: string[] = [];
+      let closed = false;
       while (!this.isAtEnd()) {
         let lineEnd = this.input.indexOf('\n', this.pos);
         if (lineEnd === -1) lineEnd = this.input.length;
@@ -804,8 +829,12 @@ export class BashLexer {
         // Advance past the line (and its newline, if present).
         while (this.pos < lineEnd) this.advance();
         if (!this.isAtEnd()) this.advance();
-        if (line.trim() === h.delimiter) break;
+        if (line.trim() === h.delimiter) { closed = true; break; }
         bodyLines.push(line);
+      }
+      if (!closed) {
+        const reportedLine = this.line - (this.input.endsWith('\n') ? 1 : 0);
+        this.warnings.push({ line: h.line, reportedLine, text: `warning: here-document at line ${h.line} delimited by end-of-file (wanted \`${h.delimiter}')` });
       }
       h.bodyToken.value = bodyLines.join('\n');
     }

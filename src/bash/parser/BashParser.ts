@@ -57,6 +57,8 @@ import {
  */
 type ParseContext = 'if' | 'loop' | 'case';
 
+const STRAY_RESERVED_WORDS: ReadonlySet<string> = new Set(['then', 'elif', 'else', 'fi', 'do', 'done', 'esac']);
+
 export class BashParser {
   private tokens: Token[] = [];
   private pos: number = 0;
@@ -74,12 +76,52 @@ export class BashParser {
     const body = this.parseCommandList();
     this.skipNewlines();
 
-    if (!this.isAtEnd()) {
-      const tok = this.peek();
-      throw new ParserError(`Unexpected token '${tok.value}'`, tok.position);
-    }
+    if (!this.isAtEnd()) throw this.unexpected(this.peek());
 
     return makeProgram(body, tokens[0]?.position);
+  }
+
+  parseRecovering(tokens: Token[], limitLine = Infinity): { program: Program; error: ParserError | null } {
+    this.tokens = tokens;
+    this.pos = 0;
+    this.contextStack = [];
+    const commands: AndOrList[] = [];
+    const endLines: number[] = [];
+    let error: ParserError | null = null;
+    try {
+      this.skipNewlines();
+      while (!this.isAtEnd()) {
+        commands.push(this.parseAndOrList());
+        this.markBackgroundIfAmp(commands);
+        endLines.push(this.tokens[Math.max(0, this.pos - 1)].position.line);
+        if (!this.matchSeparator()) {
+          if (!this.isAtEnd()) throw this.unexpected(this.peek());
+          break;
+        }
+        if (this.check(TokenType.SEMI) || this.check(TokenType.AMP)) throw this.unexpected(this.peek());
+      }
+    } catch (e) {
+      if (!(e instanceof ParserError)) throw e;
+      error = e;
+    }
+    const parseFailedAt = error === null || error.detail.token?.type === TokenType.EOF ? Infinity : error.position.line;
+    const failedAt = Math.min(parseFailedAt, limitLine);
+    const complete = commands.filter((_, index) => endLines[index] < failedAt);
+    const position = tokens[0]?.position;
+    return { program: makeProgram(makeCommandList(complete, position), position), error };
+  }
+
+  private unexpected(token: Token): ParserError {
+    const index = this.tokens.indexOf(token);
+    const functionHeader = token.type === TokenType.LPAREN && index > 0 && this.tokens[index - 1].type === TokenType.WORD;
+    const reported = functionHeader ? this.tokens[index + 1] ?? token : token;
+    return new ParserError(`Unexpected token '${reported.value}'`, reported.position, { token: reported });
+  }
+
+  private parseCompoundList(): CommandList {
+    const list = this.parseCommandList();
+    if (list.commands.length === 0) throw this.unexpected(this.peek());
+    return list;
   }
 
   // ─── Command List (Grammar Rules 3-6, 63-66) ──────────────────
@@ -99,10 +141,7 @@ export class BashParser {
     while (this.matchSeparator()) {
       this.skipNewlines();
       if (this.isAtEnd() || this.isCompoundEnd()) break;
-      if (this.check(TokenType.SEMI) || this.check(TokenType.AMP)) {
-        const t = this.peek();
-        throw new Error(`bash: syntax error near unexpected token '${t.value}'`);
-      }
+      if (this.check(TokenType.SEMI) || this.check(TokenType.AMP)) throw this.unexpected(this.peek());
       commands.push(this.parseAndOrList());
       this.markBackgroundIfAmp(commands);
     }
@@ -183,7 +222,8 @@ export class BashParser {
     if (this.check(TokenType.ARITH_CMD)) return this.parseArithmeticCommand();
     if (this.check(TokenType.LPAREN)) return this.parseSubshell();
 
-    // Simple command
+    if (this.check(TokenType.WORD) && STRAY_RESERVED_WORDS.has(this.peek().value)) throw this.unexpected(this.peek());
+
     return this.parseSimpleCommand();
   }
 
@@ -217,7 +257,7 @@ export class BashParser {
     // ordinary words — match that by routing ASSIGNMENT_WORDs through
     // parseAssignment when the head word is one of those declaration
     // commands.
-    while (!this.isAtEnd() && this.isWordToken() && !this.isCompoundEnd()) {
+    while (!this.isAtEnd() && this.isWordToken() && !(words.length === 0 && this.isCompoundEnd())) {
       if (this.check(TokenType.ASSIGNMENT_WORD)
           && words.length > 0
           && isDeclarationCommand(words[0])) {
@@ -232,6 +272,8 @@ export class BashParser {
       redirections.push(this.parseRedirection());
     }
 
+    if (words.length === 0 && assignments.length === 0 && redirections.length === 0) throw this.unexpected(this.peek());
+
     return makeSimpleCommand(words, assignments, redirections, pos);
   }
 
@@ -242,23 +284,23 @@ export class BashParser {
     this.expectWord('if');
     this.skipNewlines();
     return this.withContext('if', () => {
-      const condition = this.parseCommandList();
+      const condition = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('then');
       this.skipNewlines();
 
-      const thenBody = this.parseCommandList();
+      const thenBody = this.parseCompoundList();
       this.skipNewlines();
 
       const elifClauses: ElifClause[] = [];
       while (this.checkWord('elif')) {
         this.advance();
         this.skipNewlines();
-        const elifCondition = this.parseCommandList();
+        const elifCondition = this.parseCompoundList();
         this.skipNewlines();
         this.expectWord('then');
         this.skipNewlines();
-        const elifBody = this.parseCommandList();
+        const elifBody = this.parseCompoundList();
         this.skipNewlines();
         elifClauses.push({ condition: elifCondition, body: elifBody });
       }
@@ -267,7 +309,7 @@ export class BashParser {
       if (this.checkWord('else')) {
         this.advance();
         this.skipNewlines();
-        elseBody = this.parseCommandList();
+        elseBody = this.parseCompoundList();
         this.skipNewlines();
       }
 
@@ -291,7 +333,7 @@ export class BashParser {
 
     const varTok = this.advance();
     if (varTok.type !== TokenType.WORD) {
-      throw new ParserError(`Expected variable name after 'for', got '${varTok.value}'`, varTok.position);
+      throw this.unexpected(varTok);
     }
     const variable = varTok.value;
     this.skipNewlines();
@@ -310,7 +352,7 @@ export class BashParser {
     return this.withContext('loop', () => {
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCommandList();
+      const body = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
@@ -325,11 +367,11 @@ export class BashParser {
     this.expectWord('while');
     this.skipNewlines();
     return this.withContext('loop', () => {
-      const condition = this.parseCommandList();
+      const condition = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCommandList();
+      const body = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
@@ -344,11 +386,11 @@ export class BashParser {
     this.expectWord('until');
     this.skipNewlines();
     return this.withContext('loop', () => {
-      const condition = this.parseCommandList();
+      const condition = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCommandList();
+      const body = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
@@ -445,7 +487,7 @@ export class BashParser {
     const pos = this.peek().position;
     this.expect(TokenType.LBRACE);
     this.skipNewlines();
-    const body = this.parseCommandList();
+    const body = this.parseCompoundList();
     this.skipNewlines();
     this.expect(TokenType.RBRACE);
     const redirections = this.parseTrailingRedirections();
@@ -456,7 +498,7 @@ export class BashParser {
     const pos = this.peek().position;
     this.expect(TokenType.LPAREN);
     this.skipNewlines();
-    const body = this.parseCommandList();
+    const body = this.parseCompoundList();
     this.skipNewlines();
     this.expect(TokenType.RPAREN);
     const redirections = this.parseTrailingRedirections();
@@ -526,14 +568,17 @@ export class BashParser {
     if (first.type === TokenType.WORD && /^-[a-zA-Z]$/.test(first.value)
         && DB_UNARY_OPS.has(first.value)) {
       this.advance();
+      if (this.check(TokenType.DRBRACKET)) throw new ParserError('missing operand', this.peek().position, { token: this.peek(), conditional: 'unary' });
       const arg = this.parseWord();
       return { kind: 'unary', op: first.value, arg };
     }
     // Binary form: peek ahead for an operator token.
+    if (this.check(TokenType.DRBRACKET)) throw this.unexpected(this.peek());
     const lhs = this.parseWord();
     const opTok = this.peek();
     if (opTok && DB_BINARY_OPS.has(opTok.value)) {
       this.advance();
+      if (this.check(TokenType.DRBRACKET)) throw new ParserError('missing operand', this.peek().position, { token: this.peek(), conditional: 'binary' });
       const rhs = opTok.value === '=~' ? this.parseRegexOperand() : this.parseWord();
       return { kind: 'binary', op: opTok.value, lhs, rhs };
     }
@@ -578,7 +623,7 @@ export class BashParser {
    */
   private parseArithmeticCommand(): ArithmeticCommand {
     const token = this.advance();
-    return { type: 'ArithmeticCommand', expression: token.value.trim(), position: token.position };
+    return { type: 'ArithmeticCommand', expression: token.value.trim(), raw: token.value, position: token.position };
   }
 
   // ─── for ((init; cond; update)) ──────────────────────────────
@@ -598,7 +643,7 @@ export class BashParser {
     return this.withContext('loop', () => {
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCommandList();
+      const body = this.parseCompoundList();
       this.skipNewlines();
       this.expectWord('done');
       return { type: 'CStyleForClause', init, cond, update, body, position: pos };
@@ -663,7 +708,7 @@ export class BashParser {
       case TokenType.DRBRACKET:
         return makeLiteralWord(tok.value, pos);
       default:
-        throw new ParserError(`Unexpected token type ${tok.type} ('${tok.value}')`, pos);
+        throw this.unexpected(tok);
     }
   }
 
@@ -737,6 +782,7 @@ export class BashParser {
         else this.advance();                                // skip stray whitespace / newlines
         this.skipNewlines();
       }
+      if (this.isAtEnd()) throw new ParserError('unterminated array literal', pos, { closer: ')' });
       this.expect(TokenType.RPAREN);
       return { type: 'Assignment', name, value: null, arrayElements: elements, append, subscript, position: pos };
     }
@@ -807,6 +853,7 @@ export class BashParser {
         throw new ParserError(`Expected redirection operator, got '${tok.value}'`, pos);
     }
 
+    if (!this.isWordToken()) throw this.unexpected(this.peek());
     const target = this.parseWord();
     return makeRedirection(op, target, fd, pos);
   }
@@ -840,7 +887,7 @@ export class BashParser {
   private expect(type: TokenType): Token {
     if (!this.check(type)) {
       const tok = this.peek();
-      throw new ParserError(`Expected ${type}, got '${tok.value}'`, tok.position);
+      throw this.unexpected(tok);
     }
     return this.advance();
   }
@@ -848,7 +895,7 @@ export class BashParser {
   private expectWord(word: string): Token {
     if (!this.checkWord(word)) {
       const tok = this.peek();
-      throw new ParserError(`Expected '${word}', got '${tok.value}'`, tok.position);
+      throw this.unexpected(tok);
     }
     return this.advance();
   }
