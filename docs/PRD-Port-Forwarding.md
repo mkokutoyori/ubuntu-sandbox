@@ -1103,6 +1103,12 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   transit. Une file qui expire pour un hôte derrière la passerelle ne
   répond rien (`ip_expire`). Sans règle qui ait besoin du suivi, le routeur
   transmet les fragments un par un.
+- **Les portées des interfaces** : une interface qui apparaît après la
+  construction de la machine (`ip link add … type dummy|veth|vlan|bond`) a
+  sa portée `/proc/sys/net/ipv4/conf/<nom>`, copiée de `default` au moment
+  de la création (`inetdev_init`), et la perd quand elle disparaît
+  (`inetdev_destroy`) ; une interface recréée sous le même nom repart de
+  `default`. `all` et `default` ne se retirent jamais.
 - **Reste** : l'écho ICMP et les datagrammes IP bruts que la machine émet
   (leur résolution du voisin précède encore la chaîne OUTPUT), NAT66, le
   vidage des flux MASQUERADE quand l'interface tombe.
@@ -1123,6 +1129,9 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   `probe-linux-reassemble-avant-les-crochets-et-recoupe-a-la-sortie.test.ts`
   (27 cas) et `ipv4-reassembly-bookkeeping.test.ts` (11 cas) pour les
   fragments ;
+  `probe-une-interface-qui-apparait-recoit-sa-portee-de-conf-copiee-de-default.test.ts`
+  (18 cas) et les six cas de `ipv4-device-conf.test.ts` sur le retrait pour
+  les portées des interfaces ;
   `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
   vont maintenant jusqu'à l'établissement de la connexion.
 

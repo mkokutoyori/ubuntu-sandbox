@@ -15,40 +15,48 @@ export const IPV4_DEVICE_CONF_KNOBS: readonly DeviceConfKnob[] = [
   { name: 'shared_media', initial: 1 },
 ];
 
+interface DeviceScope {
+  readonly values: Map<string, number>;
+  readonly written: Set<string>;
+}
+
 export class Ipv4DeviceConf implements RedirectPolicy {
-  private readonly values = new Map<string, Map<string, number>>();
-  private readonly written = new Map<string, Set<string>>();
+  private readonly everywhere = this.newScope();
+  private readonly defaults = this.newScope();
+  private readonly table = new Map<string, DeviceScope>([[ALL_SCOPE, this.everywhere], [DEFAULT_SCOPE, this.defaults]]);
 
   constructor(interfaces: readonly string[]) {
-    this.values.set(ALL_SCOPE, this.initialValues());
-    this.values.set(DEFAULT_SCOPE, this.initialValues());
     for (const name of interfaces) this.addInterface(name);
   }
 
   scopes(): string[] {
-    return [...this.values.keys()];
+    return [...this.table.keys()];
   }
 
-  addInterface(name: string): void {
-    if (this.values.has(name)) return;
-    this.values.set(name, new Map(this.values.get(DEFAULT_SCOPE)));
-    this.written.set(name, new Set());
+  addInterface(name: string): boolean {
+    if (this.table.has(name)) return false;
+    this.table.set(name, { values: new Map(this.defaults.values), written: new Set() });
+    return true;
+  }
+
+  removeInterface(name: string): boolean {
+    return name !== ALL_SCOPE && name !== DEFAULT_SCOPE && this.table.delete(name);
   }
 
   has(scope: string, knob: string): boolean {
-    return this.values.get(scope)?.has(knob) ?? false;
+    return this.table.get(scope)?.values.has(knob) ?? false;
   }
 
   get(scope: string, knob: string): number {
-    return this.values.get(scope)?.get(knob) ?? 0;
+    return this.table.get(scope)?.values.get(knob) ?? 0;
   }
 
   set(scope: string, knob: string, value: number): boolean {
-    const scoped = this.values.get(scope);
-    if (scoped === undefined || !scoped.has(knob)) return false;
-    scoped.set(knob, value);
+    const scoped = this.table.get(scope);
+    if (scoped === undefined || !scoped.values.has(knob)) return false;
+    scoped.values.set(knob, value);
     if (scope === DEFAULT_SCOPE) this.propagateDefault(knob, value);
-    else if (scope !== ALL_SCOPE) this.written.get(scope)?.add(knob);
+    else scoped.written.add(knob);
     return true;
   }
 
@@ -58,7 +66,7 @@ export class Ipv4DeviceConf implements RedirectPolicy {
   }
 
   forwardingChanged(enabled: boolean): void {
-    this.values.get(ALL_SCOPE)?.set('accept_redirects', enabled ? 0 : 1);
+    this.everywhere.values.set('accept_redirects', enabled ? 0 : 1);
   }
 
   sends(iface: string): boolean {
@@ -84,17 +92,17 @@ export class Ipv4DeviceConf implements RedirectPolicy {
   }
 
   private scoped(iface: string, knob: string): number {
-    return this.values.get(iface)?.get(knob) ?? this.get(DEFAULT_SCOPE, knob);
+    return this.table.get(iface)?.values.get(knob) ?? this.get(DEFAULT_SCOPE, knob);
   }
 
   private propagateDefault(knob: string, value: number): void {
-    for (const [scope, scoped] of this.values) {
+    for (const [scope, scoped] of this.table) {
       if (scope === ALL_SCOPE || scope === DEFAULT_SCOPE) continue;
-      if (!this.written.get(scope)?.has(knob)) scoped.set(knob, value);
+      if (!scoped.written.has(knob)) scoped.values.set(knob, value);
     }
   }
 
-  private initialValues(): Map<string, number> {
-    return new Map(IPV4_DEVICE_CONF_KNOBS.map((knob) => [knob.name, knob.initial]));
+  private newScope(): DeviceScope {
+    return { values: new Map(IPV4_DEVICE_CONF_KNOBS.map((knob) => [knob.name, knob.initial])), written: new Set() };
   }
 }

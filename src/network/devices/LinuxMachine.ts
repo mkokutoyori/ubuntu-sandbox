@@ -321,6 +321,18 @@ export abstract class LinuxMachine extends EndHost
     return this.deviceConfStore;
   }
   protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  private registerDeviceConfScope(scope: string): void {
+    this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
+    for (const knob of IPV4_DEVICE_CONF_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/conf/${scope}/${knob.name}`,
+        () => `${this.deviceConf.get(scope, knob.name)}\n`,
+        (text) => this.deviceConf.write(scope, knob.name, text));
+    }
+  }
+  protected override addPort(port: Port): void {
+    super.addPort(port);
+    if (this.deviceConfStore?.addInterface(port.getName())) this.registerDeviceConfScope(port.getName());
+  }
   private setIpForwarding(enabled: boolean): void {
     const changed = this.ipForwardEnabled !== enabled;
     this.ipForwardEnabled = enabled;
@@ -455,14 +467,7 @@ export abstract class LinuxMachine extends EndHost
         this.setIpForwarding(text.trim() === '1');
         return true;
       });
-    for (const scope of this.deviceConf.scopes()) {
-      this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
-      for (const knob of IPV4_DEVICE_CONF_KNOBS) {
-        this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/conf/${scope}/${knob.name}`,
-          () => `${this.deviceConf.get(scope, knob.name)}\n`,
-          (text) => this.deviceConf.write(scope, knob.name, text));
-      }
-    }
+    for (const scope of this.deviceConf.scopes()) this.registerDeviceConfScope(scope);
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
@@ -3621,6 +3626,7 @@ export abstract class LinuxMachine extends EndHost
     }
     const vlan = this.getVlanSubInterface(name);
     this.ports.delete(name);
+    if (this.deviceConf.removeInterface(name)) this.executor.vfs.rmrf(`/proc/sys/net/ipv4/conf/${name}`);
     this.virtualInterfaces.delete(name);
     this.unregisterVlanSubInterface(name);
     if (vlan) this.withdrawVlanFromMvrp(vlan.parent, vlan.vid);

@@ -46,6 +46,43 @@ describe('the per-device IPv4 configuration is the ipv4_devconf of the kernel', 
     expect(conf.get('eth0', 'send_redirects')).toBe(0);
   });
 
+  it('says whether the interface was new', () => {
+    const conf = new Ipv4DeviceConf(['eth0']);
+    expect(conf.addInterface('eth1')).toBe(true);
+    expect(conf.addInterface('eth1')).toBe(false);
+    expect(conf.addInterface('eth0')).toBe(false);
+  });
+
+  it('forgets an interface that goes away, and starts a new one of the same name from default', () => {
+    const conf = new Ipv4DeviceConf(['eth0']);
+    conf.set('eth0', 'send_redirects', 0);
+    expect(conf.removeInterface('eth0')).toBe(true);
+    expect(conf.scopes()).toEqual([ALL_SCOPE, DEFAULT_SCOPE]);
+    expect(conf.has('eth0', 'send_redirects')).toBe(false);
+    expect(conf.addInterface('eth0')).toBe(true);
+    expect(conf.get('eth0', 'send_redirects')).toBe(1);
+  });
+
+  it('has nothing to forget for an interface it never had', () => {
+    expect(new Ipv4DeviceConf(['eth0']).removeInterface('eth9')).toBe(false);
+  });
+
+  it.each([ALL_SCOPE, DEFAULT_SCOPE])('never forgets %s', (scope) => {
+    const conf = new Ipv4DeviceConf([]);
+    conf.set(scope, 'send_redirects', 0);
+    expect(conf.removeInterface(scope)).toBe(false);
+    expect(conf.scopes()).toContain(scope);
+    expect(conf.get(scope, 'send_redirects')).toBe(0);
+  });
+
+  it('stops carrying default to an interface that went away', () => {
+    const conf = new Ipv4DeviceConf(['eth0']);
+    conf.removeInterface('eth0');
+    conf.set(DEFAULT_SCOPE, 'send_redirects', 0);
+    expect(conf.has('eth0', 'send_redirects')).toBe(false);
+    expect(conf.scopes()).toEqual([ALL_SCOPE, DEFAULT_SCOPE]);
+  });
+
   it('does not reset an interface that already exists', () => {
     const conf = new Ipv4DeviceConf(['eth0']);
     conf.set('eth0', 'send_redirects', 0);
