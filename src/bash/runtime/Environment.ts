@@ -1,42 +1,12 @@
-/**
- * Environment — Variable scope management for bash interpreter.
- *
- * Supports:
- * - Scoped variables (local/global) via scope chain
- * - Special variables ($?, $$, $0, $1..., $@, $#, $!)
- * - Export tracking (for subshell inheritance)
- * - Positional parameters ($1, $2, ..., $@, $#)
- */
+import { evaluateArithmeticExpression } from './Arithmetic';
+import type { ArithmeticScope } from './Arithmetic';
 
-/**
- * Les variables que bash POSE pour lui-meme sans les exporter. Elles
- * sont visibles dans le shell (`echo $UID`) mais absentes de
- * l'environnement d'un processus enfant — releve sur une vraie
- * machine, ou `env | grep -c ^EUID=` rend zero.
- */
 const SHELL_LOCAL_VARIABLES = new Set([
-  'UID', 'EUID', 'PPID', 'HOSTNAME', 'BASH', 'BASH_VERSION', 'BASH_SUBSHELL',
+  'UID', 'EUID', 'PPID', 'HOSTNAME', 'BASH', 'BASH_VERSION', 'BASH_VERSINFO', 'BASH_SUBSHELL',
   'OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'IFS', 'PS1', 'PS2', 'PS4',
   'RANDOM', 'SECONDS', 'LINENO', 'BASHPID', 'GROUPS', 'HISTFILE', 'HISTSIZE',
   'COLUMNS', 'LINES',
 ]);
-
-export interface EnvironmentOptions {
-  /** Initial variables (e.g. PATH, HOME). */
-  variables?: Record<string, string>;
-  /** Script name ($0). */
-  scriptName?: string;
-  /** Positional arguments ($1, $2, ...). */
-  positionalArgs?: string[];
-  /** Initial value of `$?` carried over from the previous command. */
-  initialExitCode?: number;
-  /** Shell PID ($$). Defaults to a stable random value when omitted. */
-  pid?: number;
-  /** Parent PID ($PPID). */
-  ppid?: number;
-  /** Variables computed at read time (`RANDOM`, `SECONDS`, `LINENO`, …). */
-  dynamicVariables?: Readonly<Record<string, () => string>>;
-}
 
 const DEFAULT_SHELL_VARIABLES: Readonly<Record<string, string>> = {
   IFS: ' \t\n',
@@ -48,77 +18,128 @@ const DEFAULT_SHELL_VARIABLES: Readonly<Record<string, string>> = {
 
 const BASH_VERSION_INFORMATION = ['5', '2', '21', '1', 'release', 'x86_64-pc-linux-gnu'];
 
-export class Environment {
-  /** Variable storage: name → value. */
-  private vars: Map<string, string> = new Map();
-  /** Indexed-array storage: name → ordered element list. Lives in a
-   *  parallel map (rather than a tagged-union value) so the existing
-   *  string-only `vars` map and every consumer of `get()` keep working
-   *  unchanged. Array scalar-style access (`$arr` → first element)
-   *  reads this map; element/slice access goes through `getArrayElement`. */
-  private arrays: Map<string, string[]> = new Map();
-  /** Associative-array storage (`declare -A name`): name → key→value map.
-   *  Kept separate from `arrays` so the two array kinds never collide;
-   *  expansion code looks up either based on which slot owns the name. */
-  private assocArrays: Map<string, Map<string, string>> = new Map();
-  /** Exported variable names. */
-  private exported: Set<string> = new Set();
-  /** Readonly variable names. */
-  private readonlyVars: Set<string> = new Set();
-  /** Names explicitly declared `local` in this scope — confines writes here. */
-  private localNames: Set<string> = new Set();
-  /** Active `trap` handlers, keyed by normalised signal name (EXIT, INT, …). */
-  private traps: Map<string, string> = new Map();
-  /** Parent scope (for local variable lookups). */
+export interface EnvironmentOptions {
+  variables?: Record<string, string>;
+  scriptName?: string;
+  positionalArgs?: string[];
+  initialExitCode?: number;
+  pid?: number;
+  ppid?: number;
+  dynamicVariables?: Readonly<Record<string, () => string>>;
+}
+
+export interface VariableAttributes {
+  integer: boolean;
+  lowercase: boolean;
+  uppercase: boolean;
+  capitalize: boolean;
+  readonly: boolean;
+  exported: boolean;
+  trace: boolean;
+}
+
+export type VariableKind = 'scalar' | 'indexed' | 'associative';
+
+export interface VariableDescription {
+  readonly name: string;
+  readonly kind: VariableKind;
+  readonly attributes: Readonly<VariableAttributes>;
+  readonly nameref: string | undefined;
+  readonly value: string | undefined;
+  readonly indexed: ReadonlyArray<readonly [number, string]>;
+  readonly associative: ReadonlyArray<readonly [string, string]>;
+}
+
+interface Variable {
+  kind: VariableKind;
+  value: string | undefined;
+  indexed: Map<number, string>;
+  associative: Map<string, string>;
+  attributes: VariableAttributes;
+  nameref: string | undefined;
+}
+
+function freshAttributes(): VariableAttributes {
+  return { integer: false, lowercase: false, uppercase: false, capitalize: false, readonly: false, exported: false, trace: false };
+}
+
+function freshVariable(kind: VariableKind = 'scalar'): Variable {
+  return { kind, value: undefined, indexed: new Map(), associative: new Map(), attributes: freshAttributes(), nameref: undefined };
+}
+
+function cloneVariable(source: Variable): Variable {
+  return {
+    kind: source.kind,
+    value: source.value,
+    indexed: new Map(source.indexed),
+    associative: new Map(source.associative),
+    attributes: { ...source.attributes },
+    nameref: source.nameref,
+  };
+}
+
+const READONLY_MESSAGE = (name: string): string => `bash: ${name}: readonly variable`;
+
+export class Environment implements ArithmeticScope {
+  private readonly variables = new Map<string, Variable>();
+  private readonly traps = new Map<string, string>();
   private parent: Environment | null = null;
-  /** Last exit code ($?). */
-  private _lastExitCode: number = 0;
-  private dynamic: Readonly<Record<string, () => string>> = {};
-  /** Process ID ($$) — simulated. */
+  private _lastExitCode = 0;
   private readonly pid: number;
-  /** Parent process ID ($PPID) — simulated. */
   private readonly ppid: number | undefined;
+  private dynamic: Readonly<Record<string, () => string>> = {};
+  private positional: string[] | undefined;
+  private scriptName = 'bash';
+  private backgroundPid = '';
 
   constructor(options: EnvironmentOptions = {}) {
     this.pid = options.pid ?? Math.floor(Math.random() * 30000) + 1000;
     this.ppid = options.ppid;
-    if (options.initialExitCode !== undefined) {
-      this._lastExitCode = options.initialExitCode;
-    }
-
+    if (options.initialExitCode !== undefined) this._lastExitCode = options.initialExitCode;
+    this.dynamic = options.dynamicVariables ?? {};
+    for (const [name, value] of Object.entries(DEFAULT_SHELL_VARIABLES)) this.store(name, value, false);
+    BASH_VERSION_INFORMATION.forEach((value, index) => this.arrayEntry('BASH_VERSINFO').indexed.set(index, value));
     if (options.variables) {
-      for (const [k, v] of Object.entries(options.variables)) {
-        this.vars.set(k, v);
-        if (!SHELL_LOCAL_VARIABLES.has(k)) this.exported.add(k);
+      for (const [name, value] of Object.entries(options.variables)) {
+        this.store(name, value, !SHELL_LOCAL_VARIABLES.has(name));
       }
     }
-    for (const [name, value] of Object.entries(DEFAULT_SHELL_VARIABLES)) {
-      if (!this.vars.has(name)) this.vars.set(name, value);
-    }
-    if (!this.arrays.has('BASH_VERSINFO')) this.arrays.set('BASH_VERSINFO', [...BASH_VERSION_INFORMATION]);
-    this.dynamic = options.dynamicVariables ?? {};
-    if (options.scriptName !== undefined) {
-      this.vars.set('0', options.scriptName);
-    }
-    this.setPositionalArgs(options.positionalArgs ?? []);
+    if (options.scriptName !== undefined) this.scriptName = options.scriptName;
+    this.positional = options.positionalArgs ?? [];
   }
 
-  // ─── Variable Access ──────────────────────────────────────────
-
-  private readonly namerefs = new Map<string, string>();
-
-  declareNameref(name: string, target: string): void {
-    this.namerefs.set(name, target);
+  private store(name: string, value: string, exported: boolean): void {
+    const variable = this.variables.get(name) ?? freshVariable();
+    variable.value = value;
+    variable.attributes.exported = exported;
+    this.variables.set(name, variable);
   }
 
-  private namerefTarget(name: string): string | undefined {
+  private arrayEntry(name: string): Variable {
+    const variable = this.variables.get(name) ?? freshVariable('indexed');
+    variable.kind = 'indexed';
+    this.variables.set(name, variable);
+    return variable;
+  }
+
+  private find(name: string): { variable: Variable; scope: Environment } | undefined {
     let cursor: Environment | null = this;
     while (cursor) {
-      const target = cursor.namerefs.get(name);
-      if (target !== undefined) return target;
+      const variable = cursor.variables.get(name);
+      if (variable !== undefined) return { variable, scope: cursor };
       cursor = cursor.parent;
     }
     return undefined;
+  }
+
+  private root(): Environment {
+    let cursor: Environment = this;
+    while (cursor.parent !== null) cursor = cursor.parent;
+    return cursor;
+  }
+
+  private namerefTarget(name: string): string | undefined {
+    return this.find(name)?.variable.nameref;
   }
 
   resolveName(name: string, depth = 0): string {
@@ -128,386 +149,396 @@ export class Environment {
     return this.resolveName(target, depth + 1);
   }
 
-  /** Get a variable value, searching up the scope chain. */
+  declareNameref(name: string, target: string): void {
+    const found = this.find(name) ?? { variable: freshVariable(), scope: this.root() };
+    found.variable.nameref = target;
+    found.scope.variables.set(name, found.variable);
+  }
+
+  private positionalList(): string[] {
+    let cursor: Environment | null = this;
+    while (cursor) {
+      if (cursor.positional !== undefined) return cursor.positional;
+      cursor = cursor.parent;
+    }
+    return [];
+  }
+
+  private scriptNameValue(): string {
+    return this.scriptName;
+  }
+
   get(name: string): string | undefined {
-    // Special variables first
     const special = this.getSpecial(name);
     if (special !== undefined) return special;
     const computed = this.dynamic[name];
     if (computed !== undefined) return computed();
-
-    name = this.resolveName(name);
-    if (this.vars.has(name)) return this.vars.get(name);
-    return this.parent?.get(name);
+    const resolved = this.resolveName(name);
+    const found = this.find(resolved);
+    if (found === undefined) return undefined;
+    const { variable } = found;
+    if (variable.kind === 'indexed') return variable.indexed.get(0);
+    if (variable.kind === 'associative') return variable.associative.get('0');
+    return variable.value;
   }
 
-  /**
-   * Bash dynamic-scoping `set`:
-   *   - if `name` was declared `local` in this scope → write here;
-   *   - else walk up to the nearest scope that already owns `name`
-   *     (skipping scopes where it was declared local) → write there;
-   *   - else (truly new variable) write to the global/root scope.
-   * Throws when the chosen binding is readonly.
-   */
+  private convert(variable: Variable, value: string): string {
+    let result = value;
+    if (variable.attributes.integer) result = String(evaluateArithmeticExpression(result, this));
+    if (variable.attributes.lowercase) result = result.toLowerCase();
+    else if (variable.attributes.uppercase) result = result.toUpperCase();
+    else if (variable.attributes.capitalize) result = result.charAt(0).toUpperCase() + result.slice(1).toLowerCase();
+    return result;
+  }
+
+  private target(name: string): { variable: Variable; scope: Environment } {
+    const found = this.find(name);
+    if (found !== undefined) return found;
+    const root = this.root();
+    const variable = freshVariable();
+    root.variables.set(name, variable);
+    return { variable, scope: root };
+  }
+
+  private writable(name: string): { variable: Variable; scope: Environment } {
+    const found = this.target(name);
+    if (found.variable.attributes.readonly) throw new Error(READONLY_MESSAGE(name));
+    return found;
+  }
+
   set(name: string, value: string): void {
     name = this.resolveName(name);
-    const target = this.localNames.has(name) ? this : this.resolveSetTarget(name);
-    if (target.readonlyVars.has(name)) {
-      throw new Error(`bash: ${name}: readonly variable`);
-    }
-    target.vars.set(name, value);
+    const { variable } = this.writable(name);
+    const converted = this.convert(variable, value);
+    if (variable.kind === 'indexed') variable.indexed.set(0, converted);
+    else if (variable.kind === 'associative') variable.associative.set('0', converted);
+    else variable.value = converted;
   }
 
-  /** Find the scope that should receive a non-local assignment. */
-  private resolveSetTarget(name: string): Environment {
-    let cursor: Environment | null = this;
-    while (cursor) {
-      if (cursor.localNames.has(name)) return cursor;       // local binding owns it
-      if (cursor.vars.has(name)) return cursor;             // first non-local owner
-      if (cursor.parent === null) return cursor;            // fell off the chain → root
-      cursor = cursor.parent;
+  appendScalar(name: string, value: string): void {
+    name = this.resolveName(name);
+    const { variable } = this.writable(name);
+    if (variable.attributes.integer) {
+      const current = this.get(name) ?? '0';
+      this.set(name, `${current === '' ? '0' : current}+(${value})`);
+      return;
     }
-    return this;                                            // unreachable
+    this.set(name, (this.get(name) ?? '') + value);
   }
 
-  /** Declare `name` as local to this scope so future writes stay here. */
   declareLocal(name: string): void {
-    this.localNames.add(name);
+    if (!this.variables.has(name)) this.variables.set(name, freshVariable());
   }
 
-  /** Variable names beginning with `prefix`, across the scope chain, sorted. */
-  namesWithPrefix(prefix: string): string[] {
+  declare(name: string, kind: VariableKind | undefined, attributes: Partial<VariableAttributes>, local: boolean): void {
+    name = this.resolveName(name);
+    let scope: Environment;
+    if (local) {
+      scope = this;
+      if (!this.variables.has(name)) {
+        const inherited = this.find(name)?.variable;
+        if (inherited?.attributes.readonly) throw new Error(READONLY_MESSAGE(name));
+        const variable = freshVariable(kind ?? 'scalar');
+        if (inherited !== undefined && inherited.attributes.exported && attributes.exported === undefined) variable.attributes.exported = false;
+        this.variables.set(name, variable);
+      }
+    } else {
+      scope = this.find(name)?.scope ?? this.root();
+      if (!scope.variables.has(name)) scope.variables.set(name, freshVariable(kind ?? 'scalar'));
+    }
+    const variable = scope.variables.get(name) as Variable;
+    if (variable.attributes.readonly && attributes.readonly !== false && Object.keys(attributes).length > 0 && kind !== undefined) {
+      throw new Error(READONLY_MESSAGE(name));
+    }
+    if (kind !== undefined && variable.kind !== kind) {
+      if (variable.kind === 'scalar' && variable.value !== undefined) {
+        if (kind === 'indexed') variable.indexed.set(0, variable.value);
+        else variable.associative.set('0', variable.value);
+      }
+      variable.kind = kind;
+      variable.value = undefined;
+    }
+    for (const [attribute, on] of Object.entries(attributes) as Array<[keyof VariableAttributes, boolean]>) {
+      if (attribute === 'readonly' && !on && variable.attributes.readonly) continue;
+      if (attribute === 'lowercase' && on) variable.attributes.uppercase = false;
+      if (attribute === 'uppercase' && on) variable.attributes.lowercase = false;
+      variable.attributes[attribute] = on;
+    }
+  }
+
+  describe(name: string): VariableDescription | undefined {
+    const found = this.find(name);
+    if (found === undefined) return undefined;
+    const { variable } = found;
+    return {
+      name,
+      kind: variable.kind,
+      attributes: variable.attributes,
+      nameref: variable.nameref,
+      value: variable.value,
+      indexed: [...variable.indexed.entries()].sort((a, b) => a[0] - b[0]),
+      associative: [...variable.associative.entries()],
+    };
+  }
+
+  visibleNames(): string[] {
     const names = new Set<string>();
     let cursor: Environment | null = this;
     while (cursor) {
-      for (const key of cursor.vars.keys()) {
-        if (key.startsWith(prefix) && /^[A-Za-z_][A-Za-z_0-9]*$/.test(key)) names.add(key);
-      }
+      for (const name of cursor.variables.keys()) names.add(name);
       cursor = cursor.parent;
     }
     return [...names].sort();
   }
 
-  // ─── trap handlers ────────────────────────────────────────────
+  namesWithPrefix(prefix: string): string[] {
+    return this.visibleNames().filter((name) => name.startsWith(prefix) && /^[A-Za-z_][A-Za-z_0-9]*$/.test(name) && this.isSet(name));
+  }
 
   getParent(): Environment | null { return this.parent; }
-
-  /** Install (or replace) the handler for `signal`. */
   setTrap(signal: string, body: string): void { this.traps.set(signal, body); }
-  /** Drop the handler for `signal`. */
   clearTrap(signal: string): void { this.traps.delete(signal); }
-  /** Get the registered body for `signal`, or undefined. */
   getTrap(signal: string): string | undefined { return this.traps.get(signal); }
-  /** Snapshot every (signal, body) pair, for `trap` with no args. */
   listTraps(): Array<[string, string]> { return [...this.traps.entries()]; }
 
-  /** Mark a variable as readonly (optionally set its value). */
   setReadonly(name: string, value?: string): void {
-    if (value !== undefined) this.vars.set(name, value);
-    this.readonlyVars.add(name);
+    if (value !== undefined) this.set(name, value);
+    this.declare(name, undefined, { readonly: true }, false);
   }
 
-  /** Check if a variable is readonly. */
   isReadonly(name: string): boolean {
-    return this.readonlyVars.has(name);
+    return this.find(this.resolveName(name))?.variable.attributes.readonly === true;
   }
 
-  /** Unset a variable. */
   unset(name: string): void {
-    this.vars.delete(name);
-    this.arrays.delete(name);
-    this.assocArrays.delete(name);
-    this.exported.delete(name);
+    name = this.resolveName(name);
+    const found = this.find(name);
+    if (found === undefined) return;
+    if (found.variable.attributes.readonly) throw new Error(`bash: unset: ${name}: cannot unset: readonly variable`);
+    found.scope.variables.delete(name);
   }
 
   withdrawScalar(name: string): void {
     name = this.resolveName(name);
-    const owner = this.localNames.has(name) ? this : this.resolveSetTarget(name);
-    owner.vars.delete(name);
+    const found = this.find(name);
+    if (found === undefined) return;
+    if (found.variable.kind === 'scalar') found.scope.variables.delete(name);
   }
 
-  /** Check if a variable is set (including empty string). */
   isSet(name: string): boolean {
-    return this.get(name) !== undefined || this.lookupArray(name) !== undefined;
+    if (this.get(name) !== undefined) return true;
+    const found = this.find(this.resolveName(name));
+    return found !== undefined && (found.variable.indexed.size > 0 || found.variable.associative.size > 0);
   }
 
-  // ─── Indexed Arrays ───────────────────────────────────────────
+  // ─── Indexed arrays ───────────────────────────────────────────
 
-  /**
-   * Find the (parent-walked) scope owning `name`'s array, mirroring
-   * `get()` lookup semantics so child scopes see the parent's arrays.
-   */
-  private lookupArray(name: string): string[] | undefined {
-    if (this.arrays.has(name)) return this.arrays.get(name);
-    return this.parent?.lookupArray(name);
-  }
-
-  /**
-   * Replace `name`'s array with `values`. Dynamic-scoping rules match
-   * `set()`: writes go to the nearest owner, falling back to root.
-   */
-  setArray(name: string, values: string[]): void {
-    const target = this.localNames.has(name) ? this : this.resolveArrayTarget(name);
-    if (target.readonlyVars.has(name)) {
-      throw new Error(`bash: ${name}: readonly variable`);
-    }
-    target.arrays.set(name, [...values]);
-    // Keep the scalar slot in sync with element 0 so bare $name reads
-    // the first element (the convention real bash follows for indexed
-    // arrays); legacy consumers that only know about scalars still see
-    // a sensible value.
-    target.vars.set(name, values[0] ?? '');
-  }
-
-  /** Locate the scope to receive an array assignment. */
-  private resolveArrayTarget(name: string): Environment {
-    let cursor: Environment | null = this;
-    while (cursor) {
-      if (cursor.localNames.has(name)) return cursor;
-      if (cursor.arrays.has(name) || cursor.vars.has(name)) return cursor;
-      if (cursor.parent === null) return cursor;
-      cursor = cursor.parent;
-    }
-    return this;
-  }
-
-  /** Append `values` to `name`'s array (creating it if absent). */
-  appendArray(name: string, values: string[]): void {
-    const current = this.lookupArray(name) ?? (this.isSet(name) ? [this.get(name) ?? ''] : []);
-    this.setArray(name, [...current, ...values]);
-  }
-
-  /** Read the full element list (or `undefined` when `name` is not an array). */
   getArray(name: string): string[] | undefined {
-    return this.lookupArray(name);
+    const found = this.find(this.resolveName(name));
+    if (found === undefined || found.variable.kind !== 'indexed') return undefined;
+    return [...found.variable.indexed.entries()].sort((a, b) => a[0] - b[0]).map((entry) => entry[1]);
   }
 
-  /**
-   * `${arr[idx]}` — return the element at `idx`. Negative indices count
-   * from the end (Bash 4.3+). Returns `undefined` when out of range or
-   * when `name` is not an array.
-   */
+  getArrayIndices(name: string): number[] {
+    const found = this.find(this.resolveName(name));
+    if (found === undefined || found.variable.kind !== 'indexed') return [];
+    return [...found.variable.indexed.keys()].sort((a, b) => a - b);
+  }
+
+  setArray(name: string, values: string[]): void {
+    name = this.resolveName(name);
+    const { variable } = this.writable(name);
+    variable.kind = 'indexed';
+    variable.value = undefined;
+    variable.indexed = new Map(values.map((value, index) => [index, this.convert(variable, value)]));
+  }
+
+  appendArray(name: string, values: string[]): void {
+    name = this.resolveName(name);
+    const { variable } = this.writable(name);
+    if (variable.kind === 'scalar') {
+      if (variable.value !== undefined) variable.indexed.set(0, variable.value);
+      variable.kind = 'indexed';
+      variable.value = undefined;
+    }
+    const indices = [...variable.indexed.keys()];
+    let next = indices.length === 0 ? 0 : Math.max(...indices) + 1;
+    for (const value of values) variable.indexed.set(next++, this.convert(variable, value));
+  }
+
+  setArrayElement(name: string, index: number, value: string): void {
+    name = this.resolveName(name);
+    const { variable } = this.writable(name);
+    if (variable.kind === 'scalar') {
+      if (variable.value !== undefined) variable.indexed.set(0, variable.value);
+      variable.kind = 'indexed';
+      variable.value = undefined;
+    }
+    const position = index < 0 ? this.nextIndex(variable) + index : index;
+    if (position < 0) throw new Error(`bash: ${name}[${index}]: bad array subscript`);
+    variable.indexed.set(position, this.convert(variable, value));
+  }
+
+  private nextIndex(variable: Variable): number {
+    const indices = [...variable.indexed.keys()];
+    return indices.length === 0 ? 0 : Math.max(...indices) + 1;
+  }
+
+  unsetArrayElement(name: string, index: number): void {
+    const found = this.find(this.resolveName(name));
+    if (found === undefined) return;
+    if (found.variable.attributes.readonly) throw new Error(`bash: unset: ${name}: cannot unset: readonly variable`);
+    const position = index < 0 ? this.nextIndex(found.variable) + index : index;
+    found.variable.indexed.delete(position);
+  }
+
   getArrayElement(name: string, idx: number): string | undefined {
-    const arr = this.lookupArray(name);
-    if (!arr) return undefined;
-    const real = idx < 0 ? arr.length + idx : idx;
-    if (real < 0 || real >= arr.length) return undefined;
-    return arr[real];
+    const found = this.find(this.resolveName(name));
+    if (found === undefined || found.variable.kind !== 'indexed') return undefined;
+    const position = idx < 0 ? this.nextIndex(found.variable) + idx : idx;
+    return found.variable.indexed.get(position);
   }
 
-  /** `${#arr[@]}` — element count, or 0 when no such array. */
   getArrayLength(name: string): number {
-    return this.lookupArray(name)?.length ?? 0;
+    const found = this.find(this.resolveName(name));
+    return found !== undefined && found.variable.kind === 'indexed' ? found.variable.indexed.size : 0;
   }
 
-  // ─── Associative Arrays (declare -A) ──────────────────────────
+  // ─── Associative arrays ───────────────────────────────────────
 
-  /** Walk the parent chain looking for `name` in any assoc slot. */
-  private lookupAssoc(name: string): Map<string, string> | undefined {
-    if (this.assocArrays.has(name)) return this.assocArrays.get(name);
-    return this.parent?.lookupAssoc(name);
-  }
-
-  /** Pick the scope that should receive an assoc-array write. */
-  private resolveAssocTarget(name: string): Environment {
-    let cursor: Environment | null = this;
-    while (cursor) {
-      if (cursor.localNames.has(name)) return cursor;
-      if (cursor.assocArrays.has(name)) return cursor;
-      if (cursor.parent === null) return cursor;
-      cursor = cursor.parent;
-    }
-    return this;
-  }
-
-  /** Mark `name` as an associative array, creating an empty backing map. */
   declareAssoc(name: string): void {
-    const target = this.localNames.has(name) ? this : this.resolveAssocTarget(name);
-    if (!target.assocArrays.has(name)) {
-      target.assocArrays.set(name, new Map());
-    }
+    this.declare(name, 'associative', {}, false);
   }
 
-  /** True when `name` was declared `-A`. */
   isAssoc(name: string): boolean {
-    return this.lookupAssoc(name) !== undefined;
+    return this.find(this.resolveName(name))?.variable.kind === 'associative';
   }
 
-  /** Set `name[key]` = value (auto-declares the map when missing). */
   setAssocElement(name: string, key: string, value: string): void {
-    const existing = this.lookupAssoc(name);
-    const target = this.localNames.has(name) ? this : this.resolveAssocTarget(name);
-    let map = existing;
-    if (!map || (this.localNames.has(name) && !target.assocArrays.has(name))) {
-      map = new Map();
-      target.assocArrays.set(name, map);
+    name = this.resolveName(name);
+    const { variable } = this.writable(name);
+    if (variable.kind !== 'associative') {
+      if (variable.kind === 'scalar' && variable.value !== undefined) variable.associative.set('0', variable.value);
+      variable.kind = 'associative';
+      variable.value = undefined;
     }
-    map.set(key, value);
+    variable.associative.set(key, this.convert(variable, value));
   }
 
-  /** Read `name[key]`, or `undefined` when absent. */
   getAssocElement(name: string, key: string): string | undefined {
-    return this.lookupAssoc(name)?.get(key);
+    const found = this.find(this.resolveName(name));
+    return found?.variable.kind === 'associative' ? found.variable.associative.get(key) : undefined;
   }
 
-  /** Drop `name[key]`. */
   unsetAssocElement(name: string, key: string): void {
-    this.lookupAssoc(name)?.delete(key);
+    const found = this.find(this.resolveName(name));
+    if (found?.variable.kind === 'associative') found.variable.associative.delete(key);
   }
 
-  /** Ordered list of values; insertion order matches JS Map iteration. */
+  clearAssoc(name: string): void {
+    const found = this.find(this.resolveName(name));
+    if (found?.variable.kind === 'associative') found.variable.associative.clear();
+  }
+
   getAssocValues(name: string): string[] {
-    const m = this.lookupAssoc(name);
-    return m ? [...m.values()] : [];
+    const found = this.find(this.resolveName(name));
+    return found?.variable.kind === 'associative' ? [...found.variable.associative.values()] : [];
   }
 
-  /** Keys for `${!name[@]}`. */
   getAssocKeys(name: string): string[] {
-    const m = this.lookupAssoc(name);
-    return m ? [...m.keys()] : [];
+    const found = this.find(this.resolveName(name));
+    return found?.variable.kind === 'associative' ? [...found.variable.associative.keys()] : [];
   }
 
-  /** Size for `${#name[@]}`. */
   getAssocSize(name: string): number {
-    return this.lookupAssoc(name)?.size ?? 0;
+    const found = this.find(this.resolveName(name));
+    return found?.variable.kind === 'associative' ? found.variable.associative.size : 0;
   }
 
   // ─── Export ───────────────────────────────────────────────────
 
-  /** Mark a variable as exported. */
   export(name: string, value?: string): void {
     if (value !== undefined) this.set(name, value);
-    this.exported.add(name);
+    this.declare(name, undefined, { exported: true }, false);
   }
 
-  /** Remove export attribute from a variable (export -n). */
   unexport(name: string): void {
-    this.exported.delete(name);
+    const found = this.find(this.resolveName(name));
+    if (found !== undefined) found.variable.attributes.exported = false;
   }
 
-  /** Get all exported variables as a record. */
   getExported(): Record<string, string> {
     const result: Record<string, string> = {};
-    if (this.parent) {
-      Object.assign(result, this.parent.getExported());
-    }
-    for (const name of this.exported) {
-      const val = this.get(name);
-      if (val !== undefined) result[name] = val;
+    for (const name of this.visibleNames()) {
+      const found = this.find(name);
+      if (found === undefined || !found.variable.attributes.exported) continue;
+      const value = this.get(name);
+      if (value !== undefined) result[name] = value;
     }
     return result;
   }
 
-  // ─── Positional Parameters ────────────────────────────────────
+  // ─── Positional parameters ────────────────────────────────────
 
-  /** Set positional arguments ($1, $2, ..., $@, $#). */
   setPositionalArgs(args: string[]): void {
-    // Clear old positional
-    let i = 1;
-    while (this.vars.has(String(i))) {
-      this.vars.delete(String(i));
-      i++;
-    }
-    // Set new
-    args.forEach((arg, idx) => this.vars.set(String(idx + 1), arg));
-    this.vars.set('@', args.join(' '));
-    this.vars.set('#', args.length.toString());
-    this.vars.set('*', args.join(' '));
+    this.positional = [...args];
   }
 
-  /** Get positional arguments as an array. */
   getPositionalArgs(): string[] {
-    const count = parseInt(this.get('#') ?? '0');
-    const args: string[] = [];
-    for (let i = 1; i <= count; i++) {
-      args.push(this.get(String(i)) ?? '');
-    }
-    return args;
+    return [...this.positionalList()];
   }
 
-  // ─── Scope Management ─────────────────────────────────────────
+  // ─── Scope management ─────────────────────────────────────────
 
-  /** Create a child scope (for function calls). */
   createChild(): Environment {
-    // Functions / subshells keep the parent shell's $$ and $PPID, and see
-    // whatever $? was set to just before the call — a function body's
-    // first statement (e.g. a trap handler checking `$?`) must observe
-    // the caller's exit status, not a reset-to-0 default.
     const child = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode, dynamicVariables: this.dynamic });
+    child.variables.clear();
     child.parent = this;
-    // Inherit PID and script name
-    child.vars.set('0', this.get('0') ?? '');
+    child.positional = undefined;
+    child.scriptName = this.scriptName;
     return child;
   }
 
-  /**
-   * Subshell scope — a snapshot of every visible variable from this
-   * environment, with NO parent link. Writes inside the subshell stay
-   * confined; on disposal the parent shell is unchanged, matching real
-   * `(…)` fork-semantics.
-   */
   createSubshell(): Environment {
     const sub = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode, dynamicVariables: this.dynamic });
-    // Inline the visible variable set rather than chain to `this` so
-    // writes against the snapshot never bubble up.
-    for (const [k, v] of this.getAll()) sub.vars.set(k, v);
-    for (const [name, values] of this.allArrays()) sub.arrays.set(name, [...values]);
-    for (const [name, entries] of this.allAssociative()) sub.assocArrays.set(name, new Map(entries));
-    for (const [name, target] of this.allNamerefs()) sub.namerefs.set(name, target);
-    for (const ex of Object.keys(this.getExported())) sub.exported.add(ex);
-    for (const ro of this.readonlyVars) sub.readonlyVars.add(ro);
-    sub.vars.set('0', this.get('0') ?? '');
+    sub.variables.clear();
+    for (const name of this.visibleNames()) {
+      const found = this.find(name);
+      if (found !== undefined) sub.variables.set(name, cloneVariable(found.variable));
+    }
+    sub.positional = [...this.positionalList()];
+    sub.scriptName = this.scriptName;
     return sub;
   }
-
-  private allArrays(): Map<string, string[]> {
-    const merged = this.parent?.allArrays() ?? new Map<string, string[]>();
-    for (const [name, values] of this.arrays) merged.set(name, values);
-    return merged;
-  }
-
-  private allAssociative(): Map<string, Map<string, string>> {
-    const merged = this.parent?.allAssociative() ?? new Map<string, Map<string, string>>();
-    for (const [name, entries] of this.assocArrays) merged.set(name, entries);
-    return merged;
-  }
-
-  private allNamerefs(): Map<string, string> {
-    const merged = this.parent?.allNamerefs() ?? new Map<string, string>();
-    for (const [name, target] of this.namerefs) merged.set(name, target);
-    return merged;
-  }
-
-  // ─── Exit Code ────────────────────────────────────────────────
 
   get lastExitCode(): number { return this._lastExitCode; }
   set lastExitCode(code: number) { this._lastExitCode = code; }
 
-  // ─── Special Variables ────────────────────────────────────────
+  recordBackgroundPid(pid: string): void {
+    this.backgroundPid = pid;
+  }
 
   private getSpecial(name: string): string | undefined {
     switch (name) {
       case '?': return String(this._lastExitCode);
       case '$': return String(this.pid);
-      case '!': return this.vars.get('!') ?? '';
-      case 'PPID':
-        return this.ppid !== undefined ? String(this.ppid) : undefined;
-      default: return undefined;
+      case '!': return this.backgroundPid;
+      case '#': return String(this.positionalList().length);
+      case '0': return this.scriptNameValue();
+      case '@':
+      case '*': return this.positionalList().join(' ');
+      case 'PPID': return this.ppid !== undefined ? String(this.ppid) : undefined;
+      default:
+        if (/^[1-9][0-9]*$/.test(name)) return this.positionalList()[Number(name) - 1];
+        return undefined;
     }
   }
 
-  // ─── All Variables (for debugging) ────────────────────────────
-
-  /** Get all variable names in current scope. */
   getAll(): Map<string, string> {
     const result = new Map<string, string>();
-    if (this.parent) {
-      for (const [k, v] of this.parent.getAll()) {
-        result.set(k, v);
-      }
-    }
-    for (const [k, v] of this.vars) {
-      result.set(k, v);
+    for (const name of this.visibleNames()) {
+      const value = this.get(name);
+      if (value !== undefined) result.set(name, value);
     }
     return result;
   }

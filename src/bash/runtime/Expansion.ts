@@ -506,6 +506,15 @@ export function expandWord(
   return fields.text();
 }
 
+export function expandText(
+  text: string,
+  env: Environment,
+  execCmd?: CommandSubstitutionFn,
+  homeFor?: HomeForFn,
+): string {
+  return expandOperand(text, { env, execCmd, homeFor }, false);
+}
+
 export function expandPattern(
   word: Word,
   env: Environment,

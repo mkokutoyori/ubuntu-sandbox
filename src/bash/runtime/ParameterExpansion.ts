@@ -110,8 +110,7 @@ export function expandParameter(body: string, host: ParameterHost): ParameterRes
     case 'keys': {
       const { name } = parsed.reference;
       if (env.isAssoc(name)) return list(env.getAssocKeys(name), parsed.reference.subscript === '*');
-      const array = env.getArray(name) ?? [];
-      return list(array.map((_, index) => String(index)), parsed.reference.subscript === '*');
+      return list(env.getArrayIndices(name).map(String), parsed.reference.subscript === '*');
     }
     case 'length': {
       const fetched = fetch(parsed.reference, host);
@@ -167,9 +166,7 @@ function element$(reference: Reference, host: ParameterHost): string | undefined
   const subscript = reference.subscript as string;
   if (env.isAssoc(name)) return env.getAssocElement(name, host.operand(subscript));
   const index = Number(host.arithmetic(subscript));
-  const array = env.getArray(name);
-  if (array === undefined) return index === 0 ? env.get(name) : undefined;
-  return array[index < 0 ? array.length + index : index];
+  return env.getArrayElement(name, index) ?? (index === 0 ? env.get(name) : undefined);
 }
 
 function display(reference: Reference): string {
@@ -226,11 +223,7 @@ function assign(reference: Reference, value: string, host: ParameterHost): void 
     env.setAssocElement(name, host.operand(subscript), value);
     return;
   }
-  const index = Number(host.arithmetic(subscript));
-  const array = [...(env.getArray(name) ?? [])];
-  while (array.length < index) array.push('');
-  array[index] = value;
-  env.setArray(name, array);
+  env.setArrayElement(name, Number(host.arithmetic(subscript)), value);
 }
 
 function splitSliceSpec(spec: string): { offset: string; length?: string } {

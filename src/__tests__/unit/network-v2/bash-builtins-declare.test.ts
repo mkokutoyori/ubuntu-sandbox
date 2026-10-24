@@ -12,6 +12,12 @@ function run(name: string, args: string[], vars: Record<string, string> = {}) {
   return { ...result, env };
 }
 
+function runInFunction(name: string, args: string[], vars: Record<string, string> = {}) {
+  const env = new Environment({ variables: vars }).createChild();
+  const result = executeBuiltin(name, args, env, new Map());
+  return { ...result, env };
+}
+
 describe('declare builtin', () => {
   describe('basic variable declaration', () => {
     it('should declare a variable with value', () => {
@@ -62,7 +68,7 @@ describe('declare builtin', () => {
     it('should error when -p variable not found', () => {
       const result = run('declare', ['-p', 'NONEXISTENT']);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('not found');
+      expect(result.stderr).toContain('not found');
     });
   });
 
@@ -86,7 +92,7 @@ describe('readonly builtin', () => {
     const env = new Environment({ variables: { A: '1', B: '2' } });
     env.setReadonly('A');
     const result = executeBuiltin('readonly', ['-p'], env, new Map());
-    expect(result.output).toContain('declare -r A="1"');
+    expect(result.output).toContain('declare -rx A="1"');
     expect(result.output).not.toContain('B=');
   });
 
@@ -98,18 +104,26 @@ describe('readonly builtin', () => {
 
 describe('local builtin', () => {
   it('should set a local variable', () => {
-    const { env } = run('local', ['VAR=value']);
+    const { env } = runInFunction('local', ['VAR=value']);
     expect(env.get('VAR')).toBe('value');
   });
 
-  it('should initialize unset variable to empty', () => {
-    const { env } = run('local', ['NEWVAR']);
-    expect(env.get('NEWVAR')).toBe('');
+  it('declares an unset local variable without giving it a value', () => {
+    const { env } = runInFunction('local', ['NEWVAR']);
+    expect(env.get('NEWVAR')).toBeUndefined();
+    expect(env.describe('NEWVAR')).toBeDefined();
+  });
+
+  it('refuses to be used outside a function', () => {
+    const result = run('local', ['VAR=value']);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('can only be used in a function');
   });
 
   it('should error on readonly variable', () => {
-    const env = new Environment({ variables: { RO: 'val' } });
-    env.setReadonly('RO');
+    const parent = new Environment({ variables: { RO: 'val' } });
+    parent.setReadonly('RO');
+    const env = parent.createChild();
     const result = executeBuiltin('local', ['RO=new'], env, new Map());
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('readonly variable');

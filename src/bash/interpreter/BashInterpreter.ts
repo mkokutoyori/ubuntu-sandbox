@@ -27,12 +27,14 @@ import type {
 } from '@/bash/parser/ASTNode';
 import { Environment } from '@/bash/runtime/Environment';
 import { isShellOptionEnabled } from '@/bash/runtime/ShellOptions';
-import { expandWord, expandWords, expandPattern, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
+import { expandWord, expandWords, expandPattern, expandText, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
   ArithmeticError, ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
+import { parseDeclarationFlags } from '@/bash/runtime/Declare';
+import type { DeclarationCommand } from '@/bash/runtime/Declare';
 import { RedirectWriteError } from './RedirectWriteError';
 import { OutputLog } from '@/bash/runtime/OutputLog';
 import type { Newline } from '@/bash/runtime/OutputLog';
@@ -438,6 +440,12 @@ export class BashInterpreter {
     );
   }
 
+  private *expandTextG(text: string): Effects<string> {
+    return yield* this.withSubstitutions(
+      (cmdExec) => expandText(text, this.env, cmdExec, this.homeFor()),
+    );
+  }
+
   private *expandPatternG(word: Word): Effects<string> {
     return yield* this.withSubstitutions(
       (cmdExec) => expandPattern(word, this.env, cmdExec, this.homeFor()),
@@ -800,7 +808,7 @@ export class BashInterpreter {
   }
 
   private capturePrefixAssignments(node: SimpleCommand): () => void {
-    if (node.words.length === 0 || absorbsAssignments(node)) return () => {};
+    if (node.words.length === 0 || declarationCommand(literalHeadName(node)) !== null) return () => {};
     const previous = node.assignments
       .filter((assign) => assign.arrayElements === undefined && assign.subscript === undefined)
       .map((assign) => ({ name: assign.name, value: this.env.get(assign.name) }));
@@ -816,24 +824,29 @@ export class BashInterpreter {
 
   private *applyCommandAssignments(
     node: SimpleCommand,
-    declScope: boolean,
-    namerefDecl: boolean,
-    markReadonly: boolean,
-    markExport: boolean,
+    declaration: DeclarationCommand | null,
   ): Effects<boolean> {
+    const flags = declaration === null ? null : parseDeclarationFlags(node.words.slice(1).map(literalText), declaration);
     for (const assign of node.assignments) {
       try {
-        if (declScope) this.env.declareLocal(assign.name);
-        if (namerefDecl && assign.value) {
-          const refTarget = yield* this.expandWordG(assign.value);
-          if (refTarget) {
-            this.env.declareNameref(assign.name, refTarget);
-            continue;
+        if (declaration !== null && flags !== null) {
+          const inFunction = this.env.getParent() !== null;
+          const local = declaration === 'local' || ((declaration === 'declare' || declaration === 'typeset') && inFunction && !flags.global);
+          if (declaration === 'local' && !inFunction) throw new Error('bash: local: can only be used in a function');
+          const attributes = { ...flags.set, ...flags.clear };
+          delete attributes.readonly;
+          const kind = flags.kind ?? (assign.arrayElements !== undefined && assign.subscript !== undefined ? 'associative' : undefined);
+          this.env.declare(assign.name, kind, attributes, local);
+          if (flags.nameref && assign.value) {
+            const refTarget = yield* this.expandWordG(assign.value);
+            if (refTarget) {
+              this.env.declareNameref(assign.name, refTarget);
+              continue;
+            }
           }
         }
         yield* this.applyAssignment(assign);
-        if (markReadonly) this.env.setReadonly(assign.name);
-        if (markExport) this.env.export(assign.name);
+        if (flags?.set.readonly) this.env.declare(assign.name, undefined, { readonly: true }, false);
       } catch (e) {
         if (e instanceof Error) this.emitError(e.message);
         this.env.lastExitCode = 1;
@@ -854,20 +867,16 @@ export class BashInterpreter {
     // compute the head word once (cheap literal check) and have
     // `applyAssignment` skip the parent-walk by declaring each name
     // local first.
-    const headName = literalHeadName(node);
-    const declScope = isDeclScopingCommand(headName);
-    const declarationFlags = declScope ? literalFlagLetters(node) : '';
-    const markReadonly = headName === 'readonly' || declarationFlags.includes('r');
-    const markExport = headName === 'export' || declarationFlags.includes('x');
-    const namerefDecl = declScope && node.words.some(
-      w => w.type === 'LiteralWord' && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w.value),
-    );
-    const absorbedDecl = node.assignments.length > 0 && (declScope || markReadonly || markExport);
-    const assignmentsFirst = node.words.length === 0 || absorbsAssignments(node);
+    const declaration = declarationCommand(literalHeadName(node));
+    const absorbedDecl = node.assignments.length > 0 && declaration !== null;
+    const assignmentsFirst = node.words.length === 0 || declaration !== null;
 
     if (assignmentsFirst) {
-      if (!(yield* this.applyCommandAssignments(node, declScope, namerefDecl, markReadonly, markExport))) return;
-      if (absorbedDecl && node.words.length === 1) {
+      if (!(yield* this.applyCommandAssignments(node, declaration))) {
+        if (node.words.length === 0) throw new ExitSignal(1);
+        return;
+      }
+      if (absorbedDecl && declaration !== null && parseDeclarationFlags(node.words.slice(1).map(literalText), declaration).names.length === 0) {
         this.env.lastExitCode = 0;
         return;
       }
@@ -879,7 +888,7 @@ export class BashInterpreter {
 
     const args = this.expandAliases(yield* this.expandWordsG(node.words));
     if (args.length === 0) {
-      if (!assignmentsFirst) yield* this.applyCommandAssignments(node, false, false, false, false);
+      if (!assignmentsFirst) yield* this.applyCommandAssignments(node, null);
       yield* this.runBareRedirections(node.redirections);
       return;
     }
@@ -900,7 +909,7 @@ export class BashInterpreter {
       return;
     }
     if (!assignmentsFirst) {
-      if (!(yield* this.applyCommandAssignments(node, false, false, false, false))) return;
+      if (!(yield* this.applyCommandAssignments(node, null))) return;
     }
 
     const backgroundedPid = yield* this.runWithPlan(plan, cmdName, () => this.dispatchCommand(args, node, plan));
@@ -976,7 +985,7 @@ export class BashInterpreter {
       this.emitResult(result, result.exitCode);
       this.env.lastExitCode = result.exitCode;
       if (result.backgroundPid !== undefined) {
-        this.env.set('!', String(result.backgroundPid));
+        this.env.recordBackgroundPid(String(result.backgroundPid));
         return result.backgroundPid;
       }
     }
@@ -1047,56 +1056,45 @@ export class BashInterpreter {
    * arrays rather than replacing them.
    */
   private *applyAssignment(assign: Assignment): Effects<void> {
-    // Array literal — `name=(elem …)` or `name+=(elem …)`.
-    // When `subscript` is present the body is treated as an associative
-    // initializer (each elem must look like `[key]=value`).
+    const { name } = assign;
     if (assign.arrayElements !== undefined) {
-      const elems = yield* this.expandWordsG(assign.arrayElements);
-      const looksAssoc = elems.every(e => /^\[[^\]]+\]=/.test(e));
-      if (this.env.isAssoc(assign.name) || (looksAssoc && elems.length > 0)) {
-        if (!assign.append) {
-          // Replace the map by re-declaring (clears existing entries).
-          this.env.unset(assign.name);
-          this.env.declareAssoc(assign.name);
-        }
-        for (const e of elems) {
-          const m = e.match(/^\[([^\]]+)\]=(.*)$/);
-          if (m) this.env.setAssocElement(assign.name, m[1], m[2]);
-        }
+      const elements = yield* this.expandWordsG(assign.arrayElements);
+      const explicit = elements.map((element) => /^\[([^\]]*)\]=(.*)$/s.exec(element));
+      const associative = this.env.isAssoc(name) || (elements.length > 0 && explicit.every((match) => match !== null) && !this.env.getArray(name) && assign.subscript !== undefined);
+      if (this.env.isAssoc(name) || associative) {
+        if (!this.env.isAssoc(name)) this.env.declareAssoc(name);
+        if (!assign.append) this.env.clearAssoc(name);
+        for (const match of explicit) if (match !== null) this.env.setAssocElement(name, match[1], match[2]);
         return;
       }
-      if (assign.append) this.env.appendArray(assign.name, elems);
-      else this.env.setArray(assign.name, elems);
+      if (!assign.append) this.env.setArray(name, []);
+      let next = this.env.getArrayIndices(name).reduce((largest, index) => Math.max(largest, index + 1), 0);
+      elements.forEach((element, position) => {
+        const match = explicit[position];
+        if (match !== null) {
+          next = Number(evaluateArithmetic(match[1], this.env));
+          this.env.setArrayElement(name, next, match[2]);
+        } else {
+          this.env.setArrayElement(name, next, element);
+        }
+        next++;
+      });
       return;
     }
-    // Element assignment — `name[subscript]=value` (indexed or assoc).
-    if (assign.subscript !== undefined) {
-      const valueWord = assign.value ? yield* this.expandWordG(assign.value) : '';
-      // Substitute simple `$name` / `${name}` refs inside the subscript
-      // so `m[$k]=v` works without re-running the full expansion pipeline.
-      const key = assign.subscript.replace(/\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?/g,
-        (_, n) => this.env.get(n) ?? '');
-      if (this.env.isAssoc(assign.name)) {
-        const prev = assign.append ? (this.env.getAssocElement(assign.name, key) ?? '') : '';
-        this.env.setAssocElement(assign.name, key, prev + valueWord);
-        return;
-      }
-      const idx = Number.parseInt(key, 10);
-      const current = this.env.getArray(assign.name) ?? [];
-      const next = [...current];
-      while (next.length <= idx) next.push('');
-      next[idx] = assign.append ? (next[idx] ?? '') + valueWord : valueWord;
-      this.env.setArray(assign.name, next);
-      return;
-    }
-    // Scalar — `name=value` or `name+=value`
     const value = assign.value ? yield* this.expandWordG(assign.value) : '';
-    if (assign.append) {
-      const existing = this.env.get(assign.name) ?? '';
-      this.env.set(assign.name, existing + value);
-    } else {
-      this.env.set(assign.name, value);
+    if (assign.subscript !== undefined) {
+      const subscript = yield* this.expandTextG(assign.subscript);
+      if (this.env.isAssoc(name)) {
+        this.env.setAssocElement(name, subscript, assign.append ? (this.env.getAssocElement(name, subscript) ?? '') + value : value);
+        return;
+      }
+      const index = Number(evaluateArithmetic(subscript, this.env));
+      const previous = assign.append ? (this.env.getArrayElement(name, index) ?? '') : '';
+      this.env.setArrayElement(name, index, previous + value);
+      return;
     }
+    if (assign.append) this.env.appendScalar(name, value);
+    else this.env.set(name, value);
   }
 
   /**
@@ -1731,8 +1729,12 @@ function isUnconditional(condition: CommandList, expectTrue: boolean): boolean {
   return expectTrue ? (w.value === 'true' || w.value === ':') : w.value === 'false';
 }
 
-function isDeclScopingCommand(name: string): boolean {
-  return name === 'local' || name === 'declare' || name === 'typeset';
+function declarationCommand(name: string): DeclarationCommand | null {
+  return name === 'local' || name === 'declare' || name === 'typeset' || name === 'readonly' || name === 'export' ? name : null;
+}
+
+function literalText(word: Word): string {
+  return word.type === 'LiteralWord' ? word.value : '';
 }
 
 function literalHeadName(node: SimpleCommand): string {
@@ -1740,68 +1742,7 @@ function literalHeadName(node: SimpleCommand): string {
   return head && head.type === 'LiteralWord' ? head.value : '';
 }
 
-function literalFlagLetters(node: SimpleCommand): string {
-  let letters = '';
-  for (const word of node.words.slice(1)) {
-    if (word.type === 'LiteralWord' && /^-[A-Za-z]+$/.test(word.value)) letters += word.value.slice(1);
-  }
-  return letters;
-}
-
-function absorbsAssignments(node: SimpleCommand): boolean {
-  const head = literalHeadName(node);
-  return isDeclScopingCommand(head) || head === 'readonly' || head === 'export';
-}
-
-/** Glob-style match used by `[[ … ]]`'s `==` / `!=`. */
-function globMatch(pattern: string, value: string): boolean {
-  // Convert the glob to a regex anchored on both ends.
-  let src = '';
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === '\\' && i + 1 < pattern.length) { src += escapeRegex(pattern[++i]); continue; }
-    if (c === '*') { src += '.*'; continue; }
-    if (c === '?') { src += '.';  continue; }
-    if (c === '[') {
-      let cls = '[';
-      i++;
-      if (pattern[i] === '!' || pattern[i] === '^') { cls += '^'; i++; }
-      while (i < pattern.length && pattern[i] !== ']') { cls += pattern[i]; i++; }
-      cls += ']';
-      src += cls;
-      continue;
-    }
-    src += escapeRegex(c);
-  }
-  try { return new RegExp('^' + src + '$').test(value); }
-  catch { return pattern === value; }
-}
 
 function escapeRegex(s: string): string {
   return s.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
-}
-
-// ─── Glob Matching (for case patterns) ─────────────────────────
-
-/** Simple glob match: supports *, ?, and character classes [abc]. */
-export function matchGlob(pattern: string, text: string): boolean {
-  let pi = 0, ti = 0;
-  let starPi = -1, starTi = -1;
-
-  while (ti < text.length) {
-    if (pi < pattern.length && (pattern[pi] === text[ti] || pattern[pi] === '?')) {
-      pi++; ti++;
-    } else if (pi < pattern.length && pattern[pi] === '*') {
-      starPi = pi; starTi = ti;
-      pi++;
-    } else if (starPi >= 0) {
-      pi = starPi + 1;
-      starTi++;
-      ti = starTi;
-    } else {
-      return false;
-    }
-  }
-  while (pi < pattern.length && pattern[pi] === '*') pi++;
-  return pi === pattern.length;
 }

@@ -19,6 +19,8 @@ import type { AliasTable } from './AliasTable';
 import type { StdinReader } from './StdinSource';
 import { decodeBackslashEscapes } from './EscapeSequences';
 import { formatPrintf } from './Printf';
+import { runDeclaration } from './Declare';
+import type { DeclarationCommand } from './Declare';
 
 /** Minimal IO interface for builtins that need filesystem access. */
 export interface BuiltinIO {
@@ -41,7 +43,7 @@ const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
   'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
-  'shift', 'source', '.', 'declare', 'readonly', 'let',
+  'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let',
   'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
 ]);
 
@@ -64,8 +66,7 @@ export function executeBuiltin(
     case 'printf': return builtinPrintf(args, env, io);
     case 'pwd': return { output: (env.get('PWD') ?? '/') + '\n', exitCode: 0 };
     case 'cd': return builtinCd(args, env, io);
-    case 'export': return builtinExport(args, env);
-    case 'unset': return builtinUnset(args, env);
+    case 'unset': return builtinUnset(args, env, functions);
     case 'true': return { output: '', exitCode: 0 };
     case 'false': return { output: '', exitCode: 1 };
     // `:` (colon) — the classic no-op; args are already expanded by the
@@ -78,13 +79,15 @@ export function executeBuiltin(
     case 'break': return builtinBreak(args);
     case 'continue': return builtinContinue(args);
     case 'shift': return builtinShift(args, env);
-    case 'local': return builtinLocal(args, env);
     case 'read': return builtinRead(args, env, stdin, readFd);
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return builtinSet(args, env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
-    case 'declare': return builtinDeclare(args, env, false);
-    case 'readonly': return builtinDeclare(args, env, true);
+    case 'declare':
+    case 'typeset':
+    case 'local':
+    case 'export':
+    case 'readonly': return declaration(name, args, env, functions);
     case 'let': return builtinLet(args, env);
     case 'getopts': return builtinGetopts(args, env);
     case 'trap': return builtinTrap(args, env);
@@ -181,6 +184,11 @@ function builtinEcho(args: string[]): BuiltinResult {
   }
 
   return { output: text + (newline ? '\n' : ''), exitCode: 0 };
+}
+
+function declaration(name: string, args: string[], env: Environment, functions: Map<string, Command>): BuiltinResult {
+  const result = runDeclaration(name as DeclarationCommand, args, env, functions);
+  return { output: result.output, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr }) };
 }
 
 // ─── printf ───────────────────────────────────────────────────
@@ -301,87 +309,47 @@ function builtinCd(args: string[], env: Environment, io?: BuiltinIO): BuiltinRes
 
 // ─── export ─────────────────────────────────────────────────────
 
-function builtinExport(args: string[], env: Environment): BuiltinResult {
-  // export with no args or -p → list all exports
-  if (args.length === 0 || (args.length === 1 && args[0] === '-p')) {
-    const exported = env.getExported();
-    const lines = Object.entries(exported)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `declare -x ${k}="${v}"`);
-    return { output: lines.length ? lines.join('\n') + '\n' : '', exitCode: 0 };
-  }
-
-  // Handle -n flag (remove export attribute)
-  if (args[0] === '-n') {
-    for (const name of args.slice(1)) {
-      env.unexport(name);
-    }
-    return { output: '', exitCode: 0 };
-  }
-
-  let exitCode = 0;
-  let output = '';
-  let errors = '';
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue;
-    const eqIdx = arg.indexOf('=');
-    const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
-
-    // Validate identifier
-    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
-      errors += `bash: export: \`${arg}': not a valid identifier\n`;
-      exitCode = 1;
-      continue;
-    }
-
-    try {
-      if (eqIdx >= 0) {
-        env.export(name, arg.substring(eqIdx + 1));
-      } else {
-        env.export(name);
-      }
-    } catch (e) {
-      errors += e instanceof Error ? e.message + '\n' : '';
-      exitCode = 1;
-    }
-  }
-  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
-}
 
 // ─── unset ──────────────────────────────────────────────────────
 
-function builtinUnset(args: string[], env: Environment): BuiltinResult {
+function builtinUnset(args: string[], env: Environment, functions: Map<string, Command>): BuiltinResult {
   let exitCode = 0;
-  let output = '';
   let errors = '';
+  let functionMode = false;
+  let parsing = true;
   for (const arg of args) {
-    if (arg === '-v' || arg === '-f') continue; // flags: -v (var), -f (func)
-    if (arg.startsWith('-')) continue;
-    // `unset name[key]` — drop a single array / assoc element.
-    const sub = arg.match(/^([A-Za-z_][A-Za-z_0-9]*)\[([^\]]+)\]$/);
-    if (sub) {
-      const [, name, keyRaw] = sub;
-      const key = keyRaw.replace(/\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?/g, (_, n) => env.get(n) ?? '');
-      if (env.isAssoc(name)) { env.unsetAssocElement(name, key); continue; }
-      const arr = env.getArray(name);
-      if (arr) {
-        const idx = Number.parseInt(key, 10);
-        if (Number.isFinite(idx) && idx >= 0 && idx < arr.length) {
-          const next = [...arr];
-          next.splice(idx, 1);
-          env.setArray(name, next);
-        }
+    if (parsing && arg === '--') { parsing = false; continue; }
+    if (parsing && /^-[fvn]+$/.test(arg)) {
+      if (arg.includes('f')) functionMode = true;
+      if (arg.includes('v')) functionMode = false;
+      continue;
+    }
+    if (functionMode) {
+      functions.delete(arg);
+      continue;
+    }
+    const element = /^([A-Za-z_][A-Za-z_0-9]*)\[(.*)\]$/.exec(arg);
+    try {
+      if (element !== null) {
+        const [, name, subscript] = element;
+        if (subscript === '@' || subscript === '*') env.unset(name);
+        else if (env.isAssoc(name)) env.unsetAssocElement(name, subscript);
+        else env.unsetArrayElement(name, Number(evaluateArithmetic(subscript, env)));
+        continue;
       }
-      continue;
-    }
-    if (env.isReadonly(arg)) {
-      errors += `bash: unset: ${arg}: cannot unset: readonly variable\n`;
+      if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(arg)) {
+        errors += `bash: unset: \`${arg}': not a valid identifier\n`;
+        exitCode = 1;
+        continue;
+      }
+      if (env.describe(arg) === undefined && functions.has(arg)) functions.delete(arg);
+      else env.unset(arg);
+    } catch (e) {
+      errors += `${e instanceof Error ? e.message : String(e)}\n`;
       exitCode = 1;
-      continue;
     }
-    env.unset(arg);
   }
-  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
+  return { output: '', exitCode, ...(errors === '' ? {} : { stderr: errors }) };
 }
 
 // ─── Flow Control ───────────────────────────────────────────────
@@ -447,40 +415,6 @@ function builtinShift(args: string[], env: Environment): BuiltinResult {
 
 // ─── local ──────────────────────────────────────────────────────
 
-function builtinLocal(args: string[], env: Environment): BuiltinResult {
-  let exitCode = 0;
-  let output = '';
-  let errors = '';
-  let i = 0;
-  while (i < args.length) {
-    const arg = args[i];
-    if (arg.startsWith('-')) { i++; continue; } // skip flags like -r, -i
-    const eqIdx = arg.indexOf('=');
-    if (eqIdx >= 0) {
-      const name = arg.substring(0, eqIdx);
-      let value = arg.substring(eqIdx + 1);
-      // If value is empty and next arg exists (split assignment: VAR= value), use next arg
-      if (!value && i + 1 < args.length && !args[i + 1].includes('=')) {
-        value = args[i + 1];
-        i++;
-      }
-      env.declareLocal(name);
-      try {
-        env.set(name, value);
-      } catch (e) {
-        errors += `bash: local: ${name}: readonly variable\n`;
-        exitCode = 1;
-      }
-    } else {
-      env.declareLocal(arg);
-      if (!env.isSet(arg)) {
-        try { env.set(arg, ''); } catch { /* readonly */ }
-      }
-    }
-    i++;
-  }
-  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
-}
 
 // ─── read ───────────────────────────────────────────────────────
 
@@ -726,109 +660,8 @@ function setShellOpt(env: Environment, optName: string, enable: boolean): void {
 
 // ─── declare / readonly ─────────────────────────────────────────
 
-function builtinDeclare(args: string[], env: Environment, forceReadonly = false): BuiltinResult {
-  const cmdName = forceReadonly ? 'readonly' : 'declare';
-  let isReadonly = forceReadonly;
-  let isExport = false;
-  let isAssoc = false;
-  let isIndexed = false;
-  let printMode = false;
-  const varArgs: string[] = [];
-
-  // Parse flags
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '-r') { isReadonly = true; }
-    else if (arg === '-x') { isExport = true; }
-    else if (arg === '-A') { isAssoc = true; }
-    else if (arg === '-a') { isIndexed = true; }
-    else if (arg === '-i') { /* integer: accept but ignore */ }
-    else if (arg === '-p') { printMode = true; }
-    else if (arg.startsWith('-') && arg.length > 1) {
-      // Combined flags like -rx, -rA, -Ag, etc.
-      for (let j = 1; j < arg.length; j++) {
-        if (arg[j] === 'r') isReadonly = true;
-        else if (arg[j] === 'x') isExport = true;
-        else if (arg[j] === 'A') isAssoc = true;
-        else if (arg[j] === 'a') isIndexed = true;
-        else if (arg[j] === 'p') printMode = true;
-      }
-    } else {
-      varArgs.push(arg);
-    }
-  }
-
-  // Print mode: declare -p [name] or readonly -p
-  if (printMode || (forceReadonly && varArgs.length === 0 && args.includes('-p'))) {
-    return declarePrint(varArgs, env, cmdName, forceReadonly);
-  }
-
-  // List readonly variables when readonly with no args
-  if (forceReadonly && varArgs.length === 0 && args.length === 0) {
-    return declarePrint([], env, cmdName, true);
-  }
-
-  let exitCode = 0;
-  let output = '';
-  let errors = '';
-  for (const arg of varArgs) {
-    const eqIdx = arg.indexOf('=');
-    const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
-
-    // Validate identifier
-    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
-      errors += `bash: ${cmdName}: \`${arg}': not a valid identifier\n`;
-      exitCode = 1;
-      continue;
-    }
-
-    // `declare -A name` (or -A with no value) creates an empty assoc map.
-    if (isAssoc && eqIdx < 0) env.declareAssoc(name);
-    if (isIndexed && eqIdx < 0 && !env.getArray(name)) env.setArray(name, []);
-
-    if (eqIdx >= 0) {
-      const value = arg.substring(eqIdx + 1);
-      try {
-        env.set(name, value);
-      } catch {
-        errors += `bash: ${cmdName}: ${name}: readonly variable\n`;
-        exitCode = 1;
-        continue;
-      }
-    }
-    if (isReadonly) env.setReadonly(name);
-    if (isExport) env.export(name);
-  }
-  return { output, exitCode, ...(errors === '' ? {} : { stderr: errors }) };
-}
 
 /** Print variable declarations for declare -p / readonly -p. */
-function declarePrint(names: string[], env: Environment, cmdName: string, readonlyOnly: boolean): BuiltinResult {
-  if (names.length > 0) {
-    let output = '';
-    let exitCode = 0;
-    for (const name of names) {
-      const val = env.get(name);
-      if (val === undefined) {
-        output += `bash: ${cmdName}: ${name}: not found\n`;
-        exitCode = 1;
-      } else {
-        const flags = env.isReadonly(name) ? '-r' : '--';
-        output += `declare ${flags} ${name}="${val}"\n`;
-      }
-    }
-    return { output, exitCode };
-  }
-  // List all (or readonly only)
-  const all = env.getAll();
-  const lines: string[] = [];
-  for (const [k, v] of all) {
-    if (readonlyOnly && !env.isReadonly(k)) continue;
-    const flags = env.isReadonly(k) ? '-r' : '--';
-    lines.push(`declare ${flags} ${k}="${v}"`);
-  }
-  return { output: lines.sort().join('\n') + (lines.length ? '\n' : ''), exitCode: 0 };
-}
 
 // ─── let ────────────────────────────────────────────────────────
 

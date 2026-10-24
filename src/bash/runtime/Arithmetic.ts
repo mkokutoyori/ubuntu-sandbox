@@ -3,8 +3,8 @@ import { ArithmeticError } from '@/bash/errors/BashError';
 export interface ArithmeticScope {
   get(name: string): string | undefined;
   set(name: string, value: string): void;
-  getArray(name: string): string[] | undefined;
-  setArray(name: string, values: string[]): void;
+  getArrayElement(name: string, index: number): string | undefined;
+  setArrayElement(name: string, index: number, value: string): void;
   isAssoc(name: string): boolean;
   getAssocElement(name: string, key: string): string | undefined;
   setAssocElement(name: string, key: string, value: string): void;
@@ -362,21 +362,14 @@ class Evaluator {
 
   private rawValue(reference: Reference): string | undefined {
     const { name, subscript } = reference;
-    if (subscript === undefined) {
-      const array = this.scope.getArray(name);
-      return array !== undefined ? array[0] : this.scope.get(name);
-    }
+    if (subscript === undefined) return this.scope.get(name);
     if (this.scope.isAssoc(name)) return this.scope.getAssocElement(name, subscript);
-    const index = this.index(subscript, name);
-    const array = this.scope.getArray(name);
-    if (array === undefined) return index === 0 ? this.scope.get(name) : undefined;
-    return array[index < 0 ? array.length + index : index];
+    const index = this.index(subscript);
+    return this.scope.getArrayElement(name, index) ?? (index === 0 ? this.scope.get(name) : undefined);
   }
 
-  private index(subscript: string, name: string): number {
-    const value = this.child(subscript).evaluate();
-    if (value < 0n && this.scope.getArray(name) === undefined) throw this.syntaxError('bad array subscript');
-    return Number(value);
+  private index(subscript: string): number {
+    return Number(this.child(subscript).evaluate());
   }
 
   private child(text: string): Evaluator {
@@ -401,12 +394,6 @@ class Evaluator {
       this.scope.setAssocElement(name, subscript, text);
       return;
     }
-    const index = this.index(subscript, name);
-    const existing = this.scope.getArray(name) ?? (this.scope.get(name) === undefined ? [] : [this.scope.get(name) as string]);
-    const next = [...existing];
-    const target = index < 0 ? next.length + index : index;
-    while (next.length < target) next.push('');
-    next[target] = text;
-    this.scope.setArray(name, next);
+    this.scope.setArrayElement(name, this.index(subscript), text);
   }
 }
