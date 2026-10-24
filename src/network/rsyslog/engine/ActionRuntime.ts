@@ -10,7 +10,7 @@ import type { ScriptState } from '../config/Expressions';
 import type { RenderContext } from '../Properties';
 
 export type ActionState = 'ready' | 'retry' | 'suspended' | 'disabled';
-export type SubmitResult = 'delivered' | 'dropped' | 'deferred';
+export type SubmitResult = 'delivered' | 'dropped' | 'deferred' | 'requeued';
 
 type CommitCode = 'ok' | 'suspended' | 'failed' | 'datafail' | 'disabled';
 
@@ -58,6 +58,7 @@ export class ActionRuntime {
   private errorHandle: FileHandle | null = null;
   private errorFileSize = 0;
   private batch: BatchEntry[] = [];
+  private hardFailure = false;
   private transactionalWorker: boolean | null = null;
   counters = {
     processed: 0, batchesProcessed: 0, failed: 0, suspended: 0, suspendedDuration: 0, resumed: 0,
@@ -102,7 +103,7 @@ export class ActionRuntime {
 
   private stateCode(): CommitCode {
     switch (this.state) {
-      case 'ready': return 'ok';
+      case 'ready': return this.hardFailure ? 'datafail' : 'ok';
       case 'retry': return 'suspended';
       case 'suspended': return 'failed';
       case 'disabled': return 'disabled';
@@ -137,6 +138,7 @@ export class ActionRuntime {
     yield* this.prepare(permitSleep, report);
     if (this.state !== 'ready') return this.stateCode();
     const outcome = yield* this.transact(batch);
+    this.hardFailure = false;
     switch (outcome) {
       case 'suspended':
         this.enterRetry();
@@ -150,6 +152,7 @@ export class ActionRuntime {
           3, status,
           `action '${this.name}' (module '${this.moduleDisplayName}') message lost, could not be processed. Check for additional error messages before this one.`,
         );
+        this.hardFailure = true;
         return 'datafail';
       }
       default:
@@ -332,7 +335,7 @@ export class ActionRuntime {
       if (this.externalStateSuspends()) yield* this.externalStateRetryLoop();
       this.state = 'ready';
     }
-    if (this.state === 'ready' && this.ensureWorker().beginTransaction?.() === 'suspended') this.enterRetry();
+    if (this.state === 'ready' && !this.hardFailure && this.ensureWorker().beginTransaction?.() === 'suspended') this.enterRetry();
   }
 
   private externalStateSuspends(): boolean {
@@ -497,7 +500,7 @@ export class ActionRuntime {
       this.batch.push({ args, message });
       yield* this.prepare();
       const prepared = this.stateCode();
-      const collected = prepared === 'disabled' ? 'dropped' : prepared === 'ok' ? 'delivered' : 'deferred';
+      const collected = prepared === 'disabled' ? 'dropped' : prepared === 'ok' ? 'delivered' : prepared === 'datafail' ? 'requeued' : 'deferred';
       script.previousSuspended = collected === 'deferred';
       return collected;
     }

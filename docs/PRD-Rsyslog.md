@@ -299,7 +299,12 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   qui peut dormir sur l'horloge simulée pendant que le lot reste dans la file). Un lot qui échoue est rejoué message par
   message (les lignes déjà écrites le sont une seconde fois), les messages qui échouent encore sont journalisés puis
   écrits dans `action.errorfile` avec le statut de l'état de l'action (`RS_RET_DATAFAIL`, `RS_RET_SUSPENDED`, ou 0 pour
-  un lot arrivé pendant la suspension). Un message seul qui échoue n'est que journalisé. `tryResume` d'omfile répond
+  un lot arrivé pendant la suspension). Un message seul qui échoue n'est que journalisé. Après un échec dur l'action reste en
+  `ACT_STATE_DATAFAIL` jusqu'au prochain commit réussi : le message suivant revient en échec de `processMsgMain`, reste
+  READY dans `processBatchMain` et `DeleteProcessedBatch` le remet en fin de file (le vrai ouvrier reboucle sans pause, le
+  simulateur une fois par seconde pour que `advanceTime()` se termine). La boucle de reprise d'`actionCommit` ne sort pas
+  d'un échec dur sur un message déjà en reprise (l'état n'est ni RDY, ni SUSP, ni DISABLED) ; le simulateur s'arrête
+  plutôt que de reboucler sans fin. `tryResume` d'omfile répond
   toujours OK : la garde des dix reprises suspend l'action.
 
 - **Sorties d'enfants et démarrage des files** : le programme de rotation d'omfile est un vrai processus fils de rsyslogd

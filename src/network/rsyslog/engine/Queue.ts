@@ -9,7 +9,9 @@ export interface QueueHost {
   endBatch?(): Generator<Sleep, void> | undefined;
 }
 
-export type ProcessOutcome = 'done' | { readonly retryAfterMs: number };
+const REQUEUE_PACE_MS = 1000;
+
+export type ProcessOutcome = 'done' | 'requeue' | { readonly retryAfterMs: number };
 
 export interface QueueStatistics {
   size: number;
@@ -23,6 +25,7 @@ export interface QueueStatistics {
 export class WorkerQueue<T extends { readonly severity: number }> {
   private items: T[] = [];
   private dequeued: T[] = [];
+  private requeued: T[] = [];
   private running = false;
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
@@ -44,7 +47,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   }
 
   pending(): readonly T[] {
-    return [...this.dequeued, ...this.items];
+    return [...this.dequeued, ...this.requeued, ...this.items];
   }
 
   enqueue(item: T): boolean {
@@ -95,19 +98,27 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   private endBatch(): Sleep | null {
     if (this.committing === null) {
       const started = this.host.endBatch?.();
-      if (started === undefined) {
-        this.dequeued = [];
-        return null;
-      }
+      if (started === undefined) return this.releaseBatch();
       this.committing = started;
     }
     const step = this.committing.next();
     if (step.done === true) {
       this.committing = null;
-      this.dequeued = [];
-      return null;
+      return this.releaseBatch();
     }
     return step.value;
+  }
+
+  private releaseBatch(): Sleep | null {
+    this.dequeued = [];
+    if (this.requeued.length === 0) return null;
+    for (const item of this.requeued) {
+      this.items.push(item);
+      this.statistics.enqueued++;
+    }
+    this.requeued = [];
+    this.statistics.size = this.items.length;
+    return { sleepMs: REQUEUE_PACE_MS };
   }
 
   private pauseFor(sleep: Sleep): void {
@@ -154,8 +165,8 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       }
       this.current = null;
       const outcome = step.value;
-      if (outcome === 'done') {
-        this.dequeued.push(this.items.shift() as T);
+      if (outcome === 'done' || outcome === 'requeue') {
+        (outcome === 'done' ? this.dequeued : this.requeued).push(this.items.shift() as T);
         this.statistics.size = this.items.length;
         batched++;
         const batchEnded = this.items.length === 0 || batched >= this.settings.dequeueBatchSize;
@@ -195,6 +206,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   discardAll(): void {
     this.items = [];
     this.dequeued = [];
+    this.requeued = [];
     this.current = null;
     this.statistics.size = 0;
   }

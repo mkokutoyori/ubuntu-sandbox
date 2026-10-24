@@ -224,6 +224,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   private *processAction(runtime: ActionRuntime, message: RsyslogMessage): Generator<Sleep, ProcessOutcome> {
     const result = yield* runtime.submit(message, new ScriptState());
+    if (result === 'requeued') return 'requeue';
     if (result !== 'deferred') return 'done';
     return { retryAfterMs: runtime.resumeDelayMs() || runtime.definition.options.resumeInterval * 1000 };
   }

@@ -9,13 +9,16 @@
  * (RS_RET_DATAFAIL), not the code the module logged. A lone failing message is logged only. The retry loop of the commit
  * waits on the simulated clock while the messages stay on the queue.
  *
- * Measured against the preceding commit (git stash of src/network): 7 of the 10 cases fall - the transaction was never
+ * Measured against the preceding commit (git stash of src/network): 8 of the 11 cases fall - the transaction was never
  * replayed (no duplicate lines, one "message lost" per failing message, the error file carried the module code -2125 and
  * "failed" was one short), omfile's tryResume was not the always-OK of the source (the first message went to the error
- * file with status 0 instead of -2007 after ten resumptions), and omfwd had no beginTransaction. The 3 that pass in both
+ * file with status 0 instead of -2007 after ten resumptions), the action did not stay failed after a hard failure, and omfwd had no beginTransaction. The 3 that pass in both
  * states are WITNESSES from the same lab: a healthy action with the same batches writes every message once (the lab
  * itself is sound), a lone failing message is logged and not written to the error file, and a commit that waits for a
  * blocked file delivers the message once after the file appears (the queue keeps the batch while the commit sleeps).
+ * After RS_RET_DATAFAIL the action stays in ACT_STATE_DATAFAIL until a commit succeeds, so the next message comes back from
+ * processMsgMain as a failure, is left READY by processBatchMain and is put back at the end of the queue by
+ * DeleteProcessedBatch; the real worker retries in a tight loop, the simulator once a second so that advanceTime() ends.
  */
 import { describe, expect, it } from 'vitest';
 import { LabHost, LabNetwork, lines, startRsyslog, submitLocal, type LabEngine } from './_helpers/rsyslogLab';
@@ -26,13 +29,15 @@ const STATS = 'module(load="impstats" interval="60" log.syslog="off" log.file="/
 const BATCHES = 'queue.type="LinkedList" queue.dequeueBatchSize="8" queue.dequeueSlowdown="1000000"';
 const ERRORS = 'action.errorfile="/var/log/err.json"';
 
-function run(action: string, files: Record<string, string> = {}): { host: LabHost; lab: LabEngine } {
+function run(action: string, secondWave = true, firstWave = 5): { host: LabHost; lab: LabEngine } {
   const host = new LabHost('10.0.0.1', new LabNetwork());
-  const lab = startRsyslog(host, `${TEMPLATE}${STATS}${action}\n`, { files });
-  for (let index = 0; index < 5; index++) submitLocal(lab, MSG(`m${index}`));
+  const lab = startRsyslog(host, `${TEMPLATE}${STATS}${action}\n`);
+  for (let index = 0; index < firstWave; index++) submitLocal(lab, MSG(`m${index}`));
   host.advance(5_000);
-  for (let index = 5; index < 9; index++) submitLocal(lab, MSG(`m${index}`));
-  host.advance(70_000);
+  if (secondWave) {
+    for (let index = 5; index < 9; index++) submitLocal(lab, MSG(`m${index}`));
+    host.advance(70_000);
+  }
   return { host, lab };
 }
 
@@ -53,32 +58,40 @@ describe('a transaction that fails is committed again message by message', () =>
   });
 
   it('the messages the module had written before the failure are written again by the replay', () => {
-    const { host } = run(failing);
-    expect(written(host)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm6', 'm7', 'm8']);
+    const { host } = run(failing, false);
+    expect(written(host)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm1', 'm2', 'm3', 'm4']);
   });
 
   it('each message that still fails is written to the error file with the status of the action state, not the code of the module', () => {
-    const { host } = run(failing);
-    expect(entries(host).map((entry) => entry.template0.trim())).toEqual(['m1', 'm2', 'm3', 'm4', 'm6', 'm7', 'm8']);
+    const { host } = run(failing, false);
+    expect(entries(host).map((entry) => entry.template0.trim())).toEqual(['m1', 'm2', 'm3', 'm4']);
     expect(new Set(entries(host).map((entry) => entry.status))).toEqual(new Set([-2218]));
   });
 
   it('"message lost" is logged once for the transaction and once for every replayed message that fails', () => {
-    const { lab } = run(failing);
+    const { lab } = run(failing, false);
     const lost = internal(lab).filter((text) => text.includes('message lost, could not be processed'));
-    expect(lost).toHaveLength(1 + 4 + 1 + 1 + 3);
+    expect(lost).toHaveLength(1 + 4);
     expect(lost.every((text) => text.includes('https://www.rsyslog.com/e/2125'))).toBe(true);
   });
 
   it('witness: a message that fails alone in its transaction is logged and neither replayed nor written to the error file', () => {
-    const { host } = run(failing);
-    expect(entries(host).map((entry) => entry.template0.trim())).not.toContain('m5');
-    expect(written(host).filter((line) => line === 'm5')).toHaveLength(1);
+    const { host, lab } = run(`action(type="omfile" name="out" file="/var/log/x.log" template="probe" rotation.sizeLimit="2" ioBufferSize="4" ${ERRORS})`, false, 1);
+    expect(internal(lab).filter((text) => text.includes('message lost, could not be processed'))).toHaveLength(1);
+    expect(host.fileSystem.has('/var/log/err.json')).toBe(false);
+    expect(written(host).filter((line) => line === 'm0')).toHaveLength(1);
   });
 
   it('"failed" counts one per replayed message that still fails', () => {
-    const { host } = run(failing);
-    expect(statLine(host)).toContain(' failed=7 ');
+    const { host } = run(failing, false);
+    host.advance(60_000);
+    expect(statLine(host)).toContain(' failed=4 ');
+  });
+
+  it('after a hard failure the action stays failed until a commit succeeds: the next message goes back to the end of the queue, once a second', () => {
+    const { lab } = run(failing, true);
+    const lost = internal(lab).filter((text) => text.includes('message lost, could not be processed'));
+    expect(lost.length).toBeGreaterThan(1 + 4 + 60);
   });
 });
 
