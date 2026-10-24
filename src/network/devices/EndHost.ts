@@ -1269,7 +1269,7 @@ export abstract class EndHost extends Equipment {
       sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
-      neighbourResolved: (nextHopIp: string) => this.arpTable.has(nextHopIp),
+      neighbourResolved: (nextHopIp: string) => this.resolvedNeighbour(nextHopIp) !== undefined,
       originate: (packet: IPv4Packet | IPv6Packet, egress: TcpEgress | null) => this.originateSegment(packet, egress),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {
@@ -2428,6 +2428,11 @@ export abstract class EndHost extends Equipment {
     return new Map(this.arpTable);
   }
 
+  private resolvedNeighbour(nextHop: string): ARPEntry | undefined {
+    const entry = this.arpTable.get(nextHop);
+    return entry === undefined || entry.type === 'failed' ? undefined : entry;
+  }
+
   /** Return ARP table with full entry details (type, iface, mac, timestamp). */
   getARPTableFull(): Map<string, ARPEntry> {
     return new Map(this.arpTable);
@@ -3027,7 +3032,7 @@ export abstract class EndHost extends Equipment {
       this.protocolCounters.ipFragCreates += outgoingFragments.length;
     }
 
-    const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
+    const nextHopMAC = this.resolvedNeighbour(route.nextHopIP.toString());
     this.protocolCounters.ipForwDatagrams++;
     for (const frag of outgoingFragments) this.forwardedDatagrams.add(frag);
     if (nextHopMAC) {
@@ -3202,7 +3207,7 @@ export abstract class EndHost extends Equipment {
       });
       return;
     }
-    const cached = this.arpTable.get(nextHopIP.toString());
+    const cached = this.resolvedNeighbour(nextHopIP.toString());
     if (cached) {
       this.sendFrame(outPortName, {
         srcMAC: port.getMAC(), dstMAC: cached.mac,
@@ -3755,8 +3760,8 @@ export abstract class EndHost extends Equipment {
     return addressAnswersOnLink({
       sendOnLink: (request) => this.getLinkLayer().send(request),
       arpRequestSent: (iface, target) => this.emitArpRequestSent(iface, target),
-      hasNeighbour: (ip) => this.arpTable.has(ip),
-      neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
+      hasNeighbour: (ip) => this.resolvedNeighbour(ip) !== undefined,
+      neighbourMac: (ip) => this.resolvedNeighbour(ip)?.mac,
       answersEcho: (from, send) => {
         let vu = false;
         const stop = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
@@ -3871,8 +3876,8 @@ export abstract class EndHost extends Equipment {
     });
     if (!accepted) return;
 
-    const neighbour = this.arpTable.get(newGateway.toString());
-    if (!neighbour || neighbour.type === 'failed' || neighbour.iface !== route.iface) {
+    const neighbour = this.resolvedNeighbour(newGateway.toString());
+    if (!neighbour || neighbour.iface !== route.iface) {
       this.sendArpRequest(route.port, newGateway);
       return;
     }
@@ -4054,7 +4059,7 @@ export abstract class EndHost extends Equipment {
     }
     if (target.isLoopback() || this.isLocalAddress(target)) return false;
     const route = this.resolveRoute(target);
-    return route !== null && !this.arpTable.has(route.nextHopIP.toString());
+    return route !== null && this.resolvedNeighbour(route.nextHopIP.toString()) === undefined;
   }
 
   /**
@@ -4719,8 +4724,8 @@ export abstract class EndHost extends Equipment {
    * Returns cached result if available, otherwise sends ARP request and waits.
    */
   protected async resolveARP(portName: string, targetIP: IPAddress, timeoutMs: number = 2000): Promise<MACAddress> {
-    const cached = this.arpTable.get(targetIP.toString());
-    if (cached && cached.type !== 'failed') return cached.mac;
+    const cached = this.resolvedNeighbour(targetIP.toString());
+    if (cached) return cached.mac;
 
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
@@ -5415,7 +5420,7 @@ export abstract class EndHost extends Equipment {
   private resolveArpSync(targetIP: IPAddress): void {
     const route = this.resolveRoute(targetIP);
     if (!route) return;
-    if (this.arpTable.get(route.nextHopIP.toString())) return;
+    if (this.resolvedNeighbour(route.nextHopIP.toString())) return;
     this.sendArpRequest(route.port, route.nextHopIP);
   }
 

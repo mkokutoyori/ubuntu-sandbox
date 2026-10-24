@@ -1134,6 +1134,17 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   aller-retour (iputils date la sonde avant `sendmsg`). Pour un écho, un
   échec de la route refaite après la réécriture rend `ENETUNREACH`
   (`NF_DROP_ERR`), là où un DROP rend `EPERM`.
+- **Un voisin dont la résolution a échoué n'est pas un voisin** : l'entrée
+  `FAILED` que laisse un ARP sans réponse (`ip neigh` la montre) n'a pas
+  d'adresse de couche lien, et la pile y avait mis celle de la diffusion :
+  un datagramme, un SYN ou un paquet transmis partait pour
+  `ff:ff:ff:ff:ff:ff`. Une entrée `FAILED` qu'un paquet réveille repasse à
+  `INCOMPLETE`, émet un nouvel ARP et met le paquet en file
+  (`__neigh_event_send`), et `neigh_output` n'envoie jamais pour l'adresse de
+  diffusion d'un voisin muet. Un seul accesseur (`resolvedNeighbour`) écarte
+  l'entrée pour tous les lecteurs : la transmission, l'envoi local, le garde
+  de TCP (`neighbourResolved`), la sonde d'adresse de `dhcpd`, la redirection,
+  `neighbourUnresolved`, `resolveARP` et `resolveArpSync`.
 - **Reste** : NAT66 au-delà du DNAT de PREROUTING.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
@@ -1161,6 +1172,8 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   `probe-iptables-l-echo-et-le-paquet-brut-que-la-machine-emet-traversent-la-table-nat.test.ts`
   (70 cas) pour l'écho, le datagramme brut et le datagramme de groupe que la
   machine émet ;
+  `probe-un-voisin-dont-la-resolution-a-echoue-n-est-pas-un-voisin.test.ts`
+  (15 cas) pour les voisins dont la résolution a échoué ;
   `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
   vont maintenant jusqu'à l'établissement de la connexion.
 
