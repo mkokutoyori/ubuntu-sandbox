@@ -4822,6 +4822,10 @@ export abstract class LinuxMachine extends EndHost
     return translated;
   }
 
+  protected override defragmentsBeforeRouting(): boolean {
+    return this.executor.iptables.needsConnectionTracking();
+  }
+
   protected override natPreRouting(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     if (isIPv4Fragment(ipPkt)) return ipPkt;
     const redirectAddress = this.ports.get(inPort)?.getIPAddress()?.toString() ?? null;

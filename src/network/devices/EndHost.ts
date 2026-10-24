@@ -136,7 +136,7 @@ import {
   type IcmpErrorQuote,
   RFC792_ICMP_ERROR_QUOTE,
 } from '../core/IcmpErrors';
-import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF, ipv4SendRefusal } from '../core/Ipv4Fragmentation';
+import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF, ipv4SendRefusal, isIPv4Fragment } from '../core/Ipv4Fragmentation';
 import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
 import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
@@ -605,7 +605,8 @@ export abstract class EndHost extends Equipment {
   /** Reassembles fragments of datagrams addressed to this host (RFC 791 §3.2). */
   private readonly ipv4Reassembler = new IPv4Reassembler(
     (firstFragment, ingressPort) => {
-      if (!firstFragment) return;
+      this.protocolCounters.ipReasmFails++;
+      if (!firstFragment || !this.isLocalAddress(firstFragment.destinationIP)) return;
       this.sendICMPError(ingressPort ?? '', firstFragment, 'time-exceeded',
         ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
     });
@@ -2850,6 +2851,17 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
+    if (ipPkt.largestFragmentBytes !== undefined) {
+      ipPkt = { ...ipPkt };
+      delete ipPkt.largestFragmentBytes;
+    }
+
+    if (isIPv4Fragment(ipPkt) && this.defragmentsBeforeRouting()) {
+      const whole = this.reassembleIpv4(portName, ipPkt);
+      if (whole === null) return;
+      ipPkt = whole;
+    }
+
     const arrived = this.natPreRouting(portName, ipPkt);
     if (arrived === null) return;
     ipPkt = arrived;
@@ -2879,7 +2891,7 @@ export abstract class EndHost extends Equipment {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
       // fragment carries no L4 header for the firewall or upper layer to
       // inspect, so hold it here until the full datagram is back together.
-      const reassembled = this.ipv4Reassembler.add(ipPkt, undefined, portName);
+      const reassembled = this.reassembleIpv4(portName, ipPkt);
       if (!reassembled) return;
       ipPkt = reassembled;
 
@@ -2908,6 +2920,18 @@ export abstract class EndHost extends Equipment {
       this.forwardIPv4(portName, ipPkt);
     }
     // Otherwise: End hosts don't forward — drop packets not addressed to them
+  }
+
+  protected defragmentsBeforeRouting(): boolean {
+    return false;
+  }
+
+  private reassembleIpv4(portName: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (!isIPv4Fragment(ipPkt)) return ipPkt;
+    this.protocolCounters.ipReasmReqds++;
+    const whole = this.ipv4Reassembler.add(ipPkt, undefined, portName);
+    if (whole !== null) this.protocolCounters.ipReasmOKs++;
+    return whole;
   }
 
   private dispatchUpward(portName: string, ipPkt: IPv4Packet, groupAddressed: boolean, srcMac?: string): void {
@@ -2963,7 +2987,8 @@ export abstract class EndHost extends Equipment {
 
     const outPortName = route.port.getName();
     const effectiveMtu = route.port.getMTU();
-    if (ipPkt.totalLength > effectiveMtu && (ipPkt.flags & IPV4_FLAG_DF) !== 0) {
+    if (ipPkt.totalLength > effectiveMtu && (ipPkt.flags & IPV4_FLAG_DF) !== 0
+      && (ipPkt.largestFragmentBytes === undefined || ipPkt.largestFragmentBytes > effectiveMtu)) {
       Logger.info(this.id, 'ipv4:mtu-exceeded',
         `${this.name}: packet ${ipPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
       this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
@@ -2986,10 +3011,14 @@ export abstract class EndHost extends Equipment {
     const fwdPkt = this.natPostRouting(inPort, route.port, route.nextHopIP, ipPkt, decision.packet);
     if (fwdPkt === null || !this.confirmForwarded(ipPkt)) return;
 
-    const outgoingFragments = fwdPkt.totalLength > effectiveMtu ? fragmentIPv4(fwdPkt, effectiveMtu) : [fwdPkt];
+    const outgoingFragments = fragmentIPv4(fwdPkt, Math.min(effectiveMtu, fwdPkt.largestFragmentBytes ?? effectiveMtu));
+    if (outgoingFragments.length > 1) {
+      this.protocolCounters.ipFragOKs++;
+      this.protocolCounters.ipFragCreates += outgoingFragments.length;
+    }
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
-    this.protocolCounters.ipForwDatagrams += outgoingFragments.length;
+    this.protocolCounters.ipForwDatagrams++;
     for (const frag of outgoingFragments) this.forwardedDatagrams.add(frag);
     if (nextHopMAC) {
       for (const frag of outgoingFragments) {

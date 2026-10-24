@@ -1088,10 +1088,24 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   fait d'une redirection reçue. La construction du paquet de redirection
   est celle des autres erreurs ICMP (`buildICMPError`), pour la
   `Router` Cisco comme pour Linux.
+- **Les fragments** : dès qu'une règle a besoin du suivi de connexions (cible
+  NAT, `-m state`, `-m conntrack`, `-m connmark` —
+  `LinuxIptablesManager.needsConnectionTracking`), la passerelle remonte les
+  fragments avant les crochets (`nf_defrag_ipv4`, PREROUTING, priorité
+  -400), si bien que la table nat et le suivi voient le datagramme entier ;
+  elle le recoupe à la sortie sans dépasser ni la MTU ni le plus grand
+  fragment reçu (`frag_max_size`, porté par `largestFragmentBytes`, effacé à
+  chaque réception comme `skb->cb`). DF n'est conservé que si un fragment
+  de la plus grande taille le portait (`ip_frag_reasm`). Un datagramme
+  transmis compte pour un (`ForwDatagrams`) et le recoupage compte
+  `FragOKs` et `FragCreates` ; les `ReasmReqds`, `ReasmOKs` et `ReasmFails`
+  sont tenus par la même fonction pour la remise locale et pour le
+  transit. Une file qui expire pour un hôte derrière la passerelle ne
+  répond rien (`ip_expire`). Sans règle qui ait besoin du suivi, le routeur
+  transmet les fragments un par un.
 - **Reste** : l'écho ICMP et les datagrammes IP bruts que la machine émet
-  (leur résolution du voisin précède encore la chaîne OUTPUT), la
-  défragmentation autour de la traduction, NAT66, le vidage des flux
-  MASQUERADE quand l'interface tombe.
+  (leur résolution du voisin précède encore la chaîne OUTPUT), NAT66, le
+  vidage des flux MASQUERADE quand l'interface tombe.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
   `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
@@ -1106,6 +1120,9 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   `probe-linux-renvoie-par-l-interface-d-arrivee-et-envoie-la-redirection.test.ts`
   (55 cas), `icmp-redirect-rules.test.ts` et `ipv4-device-conf.test.ts`
   pour le renvoi par la même interface ;
+  `probe-linux-reassemble-avant-les-crochets-et-recoupe-a-la-sortie.test.ts`
+  (27 cas) et `ipv4-reassembly-bookkeeping.test.ts` (11 cas) pour les
+  fragments ;
   `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
   vont maintenant jusqu'à l'établissement de la connexion.
 

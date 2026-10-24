@@ -62,6 +62,7 @@ const IPTABLES_MATCH_MODULES = new Set([
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
+const CONNECTION_TRACKING_MODULES: ReadonlySet<string> = new Set(['state', 'conntrack', 'connmark']);
 
 type ModuleOptionFlags = '' | 'I' | 'M' | 'F' | 'IM' | 'IF';
 
@@ -584,6 +585,12 @@ export class LinuxIptablesManager {
 
   isTracked(subject: object): boolean {
     return this.attached.has(subject);
+  }
+
+  needsConnectionTracking(): boolean {
+    return [...this.tables.values()].some((table) => [...table.chains.values()].some((chain) =>
+      chain.rules.some((rule) => NAT_TARGETS.has(rule.target)
+        || rule.matches.some((match) => CONNECTION_TRACKING_MODULES.has(match.module)))));
   }
 
   natHook(
