@@ -93,6 +93,9 @@ import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
+import { readResolvedConfig } from './linux/net/ResolvedConfig';
+import { parseDnsServerWord } from './linux/net/DnsServerWord';
+import { RESOLVED_CONF_DEFAULT_TEXT } from './linux/net/ResolvedDefaults';
 import { Port } from '../hardware/Port';
 import { Cable } from '../hardware/Cable';
 import type { TaggedEthernetFrame } from './Switch';
@@ -187,7 +190,6 @@ import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAutho
 import { parseResolvConf } from './linux/nss/ResolvConf';
 import {
   ResolvedService,
-  parseResolvedConf,
   RESOLVED_CONF_PATH,
   RUN_STUB_RESOLV,
   RUN_UPSTREAM_RESOLV,
@@ -1161,16 +1163,28 @@ export abstract class LinuxMachine extends EndHost
         // le transport sur le 853 chiffré (RFC 7858) ; le service décide,
         // celui-ci exécute.
         queryUpstream: async (server, name, qtype, dnssecOk, encrypted) => {
+          const word = parseDnsServerWord(server);
+          if (word === null) return null;
           let serverIP: IPAddress;
-          try { serverIP = new IPAddress(server); } catch { return null; }
+          try { serverIP = new IPAddress(word.address); } catch { return null; }
           const reply = await this.queryDnsServer(
-            serverIP, name, qtype, 2000, { dnssecOk, tls: encrypted });
+            serverIP, name, qtype, 2000, {
+              dnssecOk, tls: encrypted,
+              ...(word.port !== 0 ? { port: word.port } : {}),
+              ...(word.serverName !== null ? { serverName: word.serverName } : {}),
+            });
           return readUpstreamAnswer(reply, qtype);
         },
         queryUpstreamSync: (server, name, qtype) => {
+          const word = parseDnsServerWord(server);
+          if (word === null) return null;
           let serverIP: IPAddress;
-          try { serverIP = new IPAddress(server); } catch { return null; }
+          try { serverIP = new IPAddress(word.address); } catch { return null; }
           return readUpstreamAnswer(this.queryDnsServerSync(serverIP, name, qtype), qtype);
+        },
+        hostsLookup: (name, qtype) => {
+          const matching = HostsFile.parse(this.executor.vfs.readFile('/etc/hosts')).entries.filter((entry) => entry.hasName(name));
+          return { known: matching.length > 0, addresses: matching.filter((entry) => entry.isIPv6 === (qtype === 'AAAA')).map((entry) => entry.ip) };
         },
         validate: (records) => this.validateDnssec(records),
         hasTrustAnchors: () => this.dnssecAnchors.length > 0,
@@ -1203,17 +1217,19 @@ export abstract class LinuxMachine extends EndHost
           const svc = this.getResolvedService();
           const { server, link } = svc.selectServer(qname);
           if (!server) return { status: 'SERVFAIL', records: [] };
+          const word = parseDnsServerWord(server);
           let serverIP: IPAddress;
-          try { serverIP = new IPAddress(server); } catch { return { status: 'SERVFAIL', records: [] }; }
+          try { serverIP = new IPAddress(word?.address ?? server); } catch { return { status: 'SERVFAIL', records: [] }; }
+          const wire = { ...(word !== null && word.port !== 0 ? { port: word.port } : {}), ...(word?.serverName ? { serverName: word.serverName } : {}) };
           // La remontée de chaîne emprunte le même transport que la
           // requête qu'elle valide : sur un lien en DoT strict, le 53 en
           // clair n'a aucune raison de répondre.
           const tls = svc.dnsOverTlsModeFor(link) !== 'no';
           let reply = await this.queryDnsServer(
-            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, tls });
+            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, tls, ...wire });
           if (!reply && tls && svc.dnsOverTlsModeFor(link) === 'opportunistic') {
             reply = await this.queryDnsServer(
-              serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
+              serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, ...wire });
           }
           if (!reply) return { status: 'SERVFAIL', records: [] };
           return { status: 'NOERROR', records: reply.answers, authorities: reply.authorities };
@@ -1237,10 +1253,17 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Relit `resolved.conf` et réécrit les fichiers de `/run`. */
-  loadResolvedConfig(): void {
+  loadResolvedConfig(report = false): void {
     const svc = this._resolvedService;
     if (!svc) return;
-    svc.setGlobal(parseResolvedConf(this.executor.vfs.readFile(RESOLVED_CONF_PATH)));
+    const vfs = this.executor.vfs;
+    if (!vfs.exists(RESOLVED_CONF_PATH)) vfs.writeFile(RESOLVED_CONF_PATH, RESOLVED_CONF_DEFAULT_TEXT, 0, 0, 0o022);
+    const readout = readResolvedConfig(vfs, this.executor.logMgr.kernelCommandLine());
+    svc.setGlobal(readout.config);
+    if (report) {
+      const pid = this.executor.serviceMgr.status('systemd-resolved')?.mainPid ?? 0;
+      for (const diagnostic of readout.diagnostics) this.executor.logMgr.logAt(diagnostic.priority <= 3 ? 'daemon.err' : 'daemon.warning', 'systemd-resolved', diagnostic.message, pid);
+    }
     this.publishResolvedState();
   }
 
@@ -1262,27 +1285,62 @@ export abstract class LinuxMachine extends EndHost
   /** Le stub du resolver écoute-t-il pour de bon ? */
   private resolvedStubBound = false;
 
+  private resolvedStubEndpoints: Array<{ address: string; port: number; udp: boolean; tcp: boolean }> = [];
+
+  private closeResolvedStubEndpoints(): void {
+    for (const endpoint of this.resolvedStubEndpoints) {
+      if (endpoint.udp) this.udpCloseAddress(endpoint.address, endpoint.port);
+      if (endpoint.tcp) {
+        try { this.getTcpStack().closeListener(endpoint.port, endpoint.address); } catch { /* déjà fermé */ }
+      }
+    }
+    this.resolvedStubEndpoints = [];
+  }
+
   private bindResolvedStub(): void {
-    try {
-      // L'unité systemd-resolved pose une entrée sans gestionnaire dans la
-      // table des sockets (SERVICE_LISTENERS) : c'est elle que `ss`
-      // montrait. On la reprend pour mettre un vrai service derrière.
-      this.socketTable.unbind('udp', STUB_ADDRESS, DNS_PORT);
-      bindDnsUdpServer(this, (query) => {
-        const immediate = this.answerResolvedQuerySync(query);
-        return immediate ?? this.answerResolvedQuery(query);
-      }, DNS_PORT, 'systemd-resolved', STUB_ADDRESS, STUB_DEVICE);
-      // Le stub répond aussi en TCP sur une vraie machine — c'est par là
-      // que passe une réponse trop grande pour un datagramme (RFC 7766).
-      // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
-      // rien n'écoutait derrière
-      // (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
-      bindDnsTcpServer(this, (query) => {
-        const immediate = this.answerResolvedQuerySync(query);
-        return immediate ?? this.answerResolvedQuery(query);
-      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved', boundDevice: STUB_DEVICE });
-      this.resolvedStubBound = true;
-    } catch { /* déjà lié */ }
+    this.closeResolvedStubEndpoints();
+    const global = this.getResolvedService().getGlobal();
+    const handler = (query: DnsMessage): DnsMessage | null | Promise<DnsMessage | null> => {
+      const immediate = this.answerResolvedQuerySync(query);
+      return immediate ?? this.answerResolvedQuery(query);
+    };
+    const wanted: Array<{ address: string; port: number; udp: boolean; tcp: boolean; device?: string }> = [
+      { address: STUB_ADDRESS, port: DNS_PORT, udp: global.dnsStubListener === 'yes' || global.dnsStubListener === 'udp', tcp: global.dnsStubListener === 'yes' || global.dnsStubListener === 'tcp', device: STUB_DEVICE },
+      ...global.dnsStubListenerExtra.map((extra) => ({ address: extra.address, port: extra.port, udp: extra.mode === 'yes' || extra.mode === 'udp', tcp: extra.mode === 'yes' || extra.mode === 'tcp' })),
+    ];
+    this.executor.serviceMgr.registerServiceListener('systemd-resolved', {
+      processName: 'systemd-resolved',
+      sockets: wanted.flatMap((target) => [
+        ...(target.udp ? [{ port: target.port, protocol: 'udp' as const, address: target.address }] : []),
+        ...(target.tcp ? [{ port: target.port, protocol: 'tcp' as const, address: target.address }] : []),
+      ]),
+    });
+    this.executor.resyncServicePorts('systemd-resolved');
+    this.resolvedStubBound = false;
+    for (const target of wanted) {
+      const bound = { address: target.address, port: target.port, udp: false, tcp: false };
+      try {
+        // L'unité systemd-resolved pose une entrée sans gestionnaire dans la
+        // table des sockets (SERVICE_LISTENERS) : c'est elle que `ss`
+        // montrait. On la reprend pour mettre un vrai service derrière.
+        this.socketTable.unbind('udp', target.address, target.port);
+        this.socketTable.unbind('tcp', target.address, target.port);
+        if (target.udp) {
+          bindDnsUdpServer(this, handler, target.port, 'systemd-resolved', target.address, target.device);
+          bound.udp = true;
+        }
+        // Le stub répond aussi en TCP sur une vraie machine — c'est par là
+        // que passe une réponse trop grande pour un datagramme (RFC 7766).
+        if (target.tcp) {
+          bindDnsTcpServer(this, handler, target.port, { address: target.address, processName: 'systemd-resolved', ...(target.device === undefined ? {} : { boundDevice: target.device }) });
+          bound.tcp = true;
+        }
+        if (target.address === STUB_ADDRESS && (bound.udp || bound.tcp)) this.resolvedStubBound = true;
+      } catch {
+        this.executor.logMgr.logAt('daemon.warning', 'systemd-resolved', `Failed to listen on ${target.address}:${target.port}`, this.executor.serviceMgr.status('systemd-resolved')?.mainPid ?? 0);
+      }
+      this.resolvedStubEndpoints.push(bound);
+    }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son
     // écoute est RÉELLE (`udpBindAddress` ci-dessus), elle est seulement
     // posée hors de la projection. Il déclare donc son serveur — APRÈS
@@ -2099,7 +2157,7 @@ export abstract class LinuxMachine extends EndHost
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
       // démon ne changeait rien, et le réglage global restait lettre morte.
       if (name === 'systemd-resolved') {
-        this.loadResolvedConfig();
+        this.loadResolvedConfig(event !== 'restart');
         this.loadDnssdServices();
         if (event === 'start') this.bindResolvedStub();
         this.syncLinkLocalResponders();

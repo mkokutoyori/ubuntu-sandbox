@@ -4606,6 +4606,7 @@ export abstract class EndHost extends Equipment {
       if (!(serverIP instanceof IPAddress)) return null;
       return queryDnsOverTls(this, serverIP, query, {
         port: options.port ?? DOT_PORT, timeoutMs,
+        ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
       });
     }
     if (options.tcp) {

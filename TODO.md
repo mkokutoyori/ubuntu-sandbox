@@ -3457,14 +3457,18 @@ moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discard
 `dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
 « linkedlist » en memoire.
 
-### [journald] journald.conf : `Seal` lu sans effet, et chargeur commun non repris par resolved/networkd
+### [journald] journald.conf : `Seal` lu sans effet
 `journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `Compress`, `Audit`, `ReadKMsg`, `SplitMode`,
 `SyncIntervalSec`, `RateLimit*`, `System/Runtime` `MaxUse`/`KeepFree`/`MaxFileSize`/`MaxFiles`, `MaxRetentionSec`, `MaxFileSec`, `ForwardTo*` et leurs `MaxLevel*`
 (files, rotation, vacuum et debit mesures contre le vrai `systemd-journald` 255.4 par `journald-space-oracle.test.ts`). Reste lu sans effet : `Seal` - le scellement
 suppose une paire de cles FSS (`journalctl --setup-keys`, que le simulateur refuse a tort comme « compile sans support », alors que le binaire d'Ubuntu l'offre)
 et des objets Tag dont la somme HMAC porte sur les octets du fichier ; `JournalFile` compte les octets des objets mais n'est pas un fichier binaire.
-Doublon connu : `resolved.conf` (`parseResolvedConf`) et les fichiers de `systemd-networkd` (`NetworkdFiles.ts`) ont leur propre lecteur, sans diagnostics ni
-fusion des drop-ins par nom ; ils doivent reprendre `readSystemdConfig`. `systemd-resolved` n'est pas installe dans ce conteneur : la liste de ses cles n'a pas pu etre relevee.
+
+### [networkd] cles inconnues et erreurs de syntaxe des `.network`, `.link`, `.netdev`, `.dnssd` non journalisees
+Les fichiers de `systemd-networkd` et les `.dnssd` passent par le lexeur commun de `systemd/ConfigFiles.ts` (continuations, commentaires, drop-ins `<fichier>.d/*.conf`
+fusionnes par nom), mais leurs lecteurs sont des sacs section/cle sans table de cles : une cle inconnue, une section inconnue ou une ligne sans `=` ne sont pas
+signalees dans le journal comme le fait networkd (`addToUnitBag` sait produire ces diagnostics, personne ne les emet). La table des cles de `.network` (network-gperf.gperf)
+n'a pas ete relevee.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »

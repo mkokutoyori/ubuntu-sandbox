@@ -45,6 +45,8 @@ export interface DnsQueryOptions {
   readonly udpPayloadSize?: number;
   /** Destination port override (`dig -p <port>`). Defaults to 53. */
   readonly port?: number;
+  /** Name the server certificate must carry (DNS-over-TLS, `systemd-resolved` `ADDRESS#NAME`). */
+  readonly serverName?: string;
   /** Query class override (`dig -c CH`/bare `chaos` keyword), e.g. `DnsClass.CH`. Defaults to IN. */
   readonly qclass?: number;
 }

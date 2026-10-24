@@ -19,6 +19,7 @@
  */
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { ServiceRegistration } from '@/network/dnssd/types';
+import { parseUnitBag } from '../systemd/ConfigFiles';
 
 /** Même ordre de recherche que networkd : l'administrateur d'abord. */
 export const DNSSD_DIRS = [
@@ -33,38 +34,11 @@ export interface DnssdFile {
   service: ServiceRegistration;
 }
 
-function parseSections(text: string): Map<string, Map<string, string[]>> {
-  const sections = new Map<string, Map<string, string[]>>();
-  let current: Map<string, string[]> | null = null;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
-    const header = /^\[(.+)]$/.exec(line);
-    if (header) {
-      const key = header[1].trim().toLowerCase();
-      current = sections.get(key) ?? new Map<string, string[]>();
-      sections.set(key, current);
-      continue;
-    }
-    if (!current) continue;
-    const eq = line.indexOf('=');
-    if (eq < 0) continue;
-    const key = line.slice(0, eq).trim().toLowerCase();
-    const value = line.slice(eq + 1).trim();
-    const bucket = current.get(key) ?? [];
-    // Une clé répétée s'accumule — c'est ainsi qu'un service porte
-    // plusieurs segments TXT.
-    bucket.push(value);
-    current.set(key, bucket);
-  }
-  return sections;
-}
-
 /** Rend null pour un fichier sans `[Service]` exploitable. */
 export function parseDnssdFile(path: string, text: string): DnssdFile | null {
   const basename = path.slice(path.lastIndexOf('/') + 1);
   if (!basename.endsWith('.dnssd')) return null;
-  const service = parseSections(text).get('service');
+  const service = parseUnitBag(path, text, { lowerCaseSections: true, lowerCaseKeys: true }).get('service');
   if (!service) return null;
 
   const name = service.get('name')?.[0];

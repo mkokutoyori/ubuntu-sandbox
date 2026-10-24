@@ -11,6 +11,7 @@
  */
 
 import type { VirtualFileSystem } from '../VirtualFileSystem';
+import { addToUnitBag, discoverDropIns, parseUnitBag } from '../systemd/ConfigFiles';
 
 /**
  * Ordre de recherche de systemd : l'administrateur d'abord, le paquet en
@@ -40,50 +41,29 @@ export interface NetworkdFile {
   text: string;
 }
 
-function parseSections(text: string): Map<string, Map<string, string[]>> {
-  const sections = new Map<string, Map<string, string[]>>();
-  let current: Map<string, string[]> | null = null;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
-    const header = /^\[(.+)]$/.exec(line);
-    if (header) {
-      const name = header[1].trim();
-      current = sections.get(name) ?? new Map<string, string[]>();
-      sections.set(name, current);
-      continue;
-    }
-    if (!current) continue;
-    const eq = line.indexOf('=');
-    if (eq < 0) continue;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim();
-    // systemd accumule les occurrences d'une même clé (DNS=, Address=)
-    // au lieu de garder la dernière.
-    const bucket = current.get(key) ?? [];
-    bucket.push(value);
-    current.set(key, bucket);
-  }
-  return sections;
-}
-
 export function get(file: NetworkdFile, section: string, key: string): string | undefined {
-  return file.sections.get(section)?.get(key)?.[0];
+  const values = file.sections.get(section)?.get(key);
+  return values === undefined ? undefined : values[values.length - 1];
 }
 
 export function getAll(file: NetworkdFile, section: string, key: string): string[] {
   return file.sections.get(section)?.get(key) ?? [];
 }
 
-function parseFile(path: string, text: string): NetworkdFile | null {
+function parseFile(vfs: VirtualFileSystem, path: string, text: string): NetworkdFile | null {
   const dot = path.lastIndexOf('.');
   const ext = dot < 0 ? '' : path.slice(dot + 1);
   if (ext !== 'network' && ext !== 'link' && ext !== 'netdev') return null;
-  const sections = parseSections(text);
+  const basename = path.slice(path.lastIndexOf('/') + 1);
+  const sections = parseUnitBag(path, text);
+  for (const dropIn of discoverDropIns(vfs, NETWORKD_DIRS.map((dir) => `${dir}/${basename}.d`))) {
+    const dropInText = vfs.readFile(dropIn.path);
+    if (dropInText !== null) addToUnitBag(sections, dropIn.path, dropInText);
+  }
   const match = sections.get('Match');
   return {
     path,
-    basename: path.slice(path.lastIndexOf('/') + 1),
+    basename,
     kind: ext,
     match: {
       name: match?.get('Name')?.[0],
@@ -111,7 +91,7 @@ export function discoverNetworkdFiles(vfs: VirtualFileSystem): NetworkdFile[] {
       const path = `${dir}/${entry.name}`;
       const text = vfs.readFile(path);
       if (text === null) continue;
-      const parsed = parseFile(path, text);
+      const parsed = parseFile(vfs, path, text);
       if (parsed) byBasename.set(entry.name, parsed);
     }
   }

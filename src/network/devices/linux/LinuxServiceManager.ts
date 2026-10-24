@@ -24,6 +24,7 @@ import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
 import { parseTimeSpan } from './systemd/TimeSpan';
 import { EXIT_EXEC } from './systemd/ExitStatus';
 import { parseSec } from './systemd/SystemdTime';
+import { assignmentsOf } from './systemd/ConfigFiles';
 import { canonicalBinPath } from './service/CriticalFiles';
 import {
   runtimeArtifactsFor, runtimeDirectoryFor, UNIT_PIDFILE_DIRECTIVE, UNIT_RUNTIME_DIRECTORY,
@@ -1803,20 +1804,7 @@ interface ParsedUnit {
 /** Minimal ini-style parser for systemd unit files. */
 export function parseUnitFile(content: string): ParsedUnit {
   const out: ParsedUnit = {};
-  const sections = ['Unit', 'Service', 'Install', 'Socket', 'Timer'] as const;
-  let section: typeof sections[number] | null = null;
-  for (const rawLine of content.split('\n')) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
-    if (line.startsWith('[') && line.endsWith(']')) {
-      const name = line.slice(1, -1);
-      section = (sections as readonly string[]).includes(name) ? name as typeof sections[number] : null;
-      continue;
-    }
-    const eq = line.indexOf('=');
-    if (eq < 0) continue;
-    const key = line.slice(0, eq).trim();
-    const val = line.slice(eq + 1).trim();
+  for (const { section, key, value: val } of assignmentsOf(content)) {
     if (section === 'Unit') {
       if (key === 'Description') out.description = val;
       else if (key === 'After') out.after = val.split(/\s+/);

@@ -20,7 +20,9 @@ export interface ConfigPosition {
   readonly key: string;
 }
 
-export type ConfigHandler = (value: string, at: ConfigPosition, warn: (text: string, priority?: number) => void) => void;
+export type ConfigWarn = (text: string, priority?: number, located?: boolean) => void;
+
+export type ConfigHandler = (value: string, at: ConfigPosition, warn: ConfigWarn) => void;
 
 export interface ConfigSpec {
   readonly mainFile: string;
@@ -44,60 +46,87 @@ export function parseBoolean(text: string): boolean | null {
   return null;
 }
 
+interface LogicalLine {
+  readonly line: number;
+  readonly text: string;
+}
+
+export function logicalLines(text: string): LogicalLine[] {
+  const physical = text.split('\n');
+  if (physical[physical.length - 1] === '') physical.pop();
+  const out: LogicalLine[] = [];
+  let bomSeen = false;
+  let continuation: string | null = null;
+  let lastLine = 0;
+  physical.forEach((buffer, index) => {
+    lastLine = index + 1;
+    const trimmed = buffer.replace(/^[ \t\n\r]+/, '');
+    if (trimmed !== '' && COMMENTS.includes(trimmed[0])) return;
+    let current = buffer;
+    if (!bomSeen && current.startsWith(BYTE_ORDER_MARK)) {
+      current = current.slice(1);
+      bomSeen = true;
+    }
+    const joined = continuation === null ? current : continuation + current;
+    let escaped = false;
+    for (const character of joined) escaped = escaped ? false : character === '\\';
+    if (escaped) {
+      continuation = `${joined.slice(0, -1)} `;
+      return;
+    }
+    continuation = null;
+    out.push({ line: index + 1, text: joined });
+  });
+  if (continuation !== null) out.push({ line: lastLine, text: continuation });
+  return out;
+}
+
+type LineKind =
+  | { kind: 'empty' }
+  | { kind: 'section'; name: string }
+  | { kind: 'invalid-section'; text: string }
+  | { kind: 'assignment'; key: string; value: string }
+  | { kind: 'missing-equals' }
+  | { kind: 'missing-key' };
+
+function classifyLine(raw: string): LineKind {
+  const text = raw.trim();
+  if (text === '') return { kind: 'empty' };
+  if (text.startsWith('[')) return text.endsWith(']') ? { kind: 'section', name: text.slice(1, -1) } : { kind: 'invalid-section', text };
+  const equals = text.indexOf('=');
+  if (equals < 0) return { kind: 'missing-equals' };
+  if (equals === 0) return { kind: 'missing-key' };
+  return { kind: 'assignment', key: text.slice(0, equals).trim(), value: text.slice(equals + 1).trim() };
+}
+
 class FileParser {
   private section: string | null = null;
   private sectionIgnored = false;
-  private continuation: string | null = null;
 
   constructor(private readonly file: string, private readonly spec: ConfigSpec, private readonly out: ConfigDiagnostic[]) {}
 
-  private diagnostic(line: number, priority: number, message: string): void {
-    this.out.push({ priority, file: this.file, line, message: `${this.file}:${line}: ${message}` });
+  private diagnostic(line: number, priority: number, message: string, located = true): void {
+    this.out.push({ priority, file: this.file, line, message: located ? `${this.file}:${line}: ${message}` : message });
   }
 
   parse(text: string): void {
-    const physical = text.split('\n');
-    if (physical[physical.length - 1] === '') physical.pop();
-    let bomSeen = false;
-    let lastLine = 0;
-    physical.forEach((buffer, index) => {
-      lastLine = index + 1;
-      const line = index + 1;
-      const trimmed = buffer.replace(/^[ \t\n\r]+/, '');
-      if (trimmed !== '' && COMMENTS.includes(trimmed[0])) return;
-      let current = buffer;
-      if (!bomSeen && current.startsWith(BYTE_ORDER_MARK)) {
-        current = current.slice(1);
-        bomSeen = true;
-      }
-      const joined = this.continuation === null ? current : this.continuation + current;
-      let escaped = false;
-      for (const character of joined) escaped = escaped ? false : character === '\\';
-      if (escaped) {
-        this.continuation = `${joined.slice(0, -1)} `;
-        return;
-      }
-      this.continuation = null;
-      this.parseLine(line, joined);
-    });
-    if (this.continuation !== null) this.parseLine(lastLine, this.continuation);
+    for (const { line, text: content } of logicalLines(text)) this.parseLine(line, content);
   }
 
   private parseLine(line: number, raw: string): void {
-    const text = raw.trim();
-    if (text === '') return;
-    if (text.startsWith('[')) {
-      if (!text.endsWith(']')) {
-        this.diagnostic(line, LOG_ERR, `Invalid section header '${text}'`);
-        return;
-      }
-      const name = text.slice(1, -1);
-      if (!this.spec.sections.includes(name)) {
-        if (!name.startsWith('X-')) this.diagnostic(line, LOG_WARNING, `Unknown section '${name}'. Ignoring.`);
+    const parsed = classifyLine(raw);
+    if (parsed.kind === 'empty') return;
+    if (parsed.kind === 'invalid-section') {
+      this.diagnostic(line, LOG_ERR, `Invalid section header '${parsed.text}'`);
+      return;
+    }
+    if (parsed.kind === 'section') {
+      if (!this.spec.sections.includes(parsed.name)) {
+        if (!parsed.name.startsWith('X-')) this.diagnostic(line, LOG_WARNING, `Unknown section '${parsed.name}'. Ignoring.`);
         this.section = null;
         this.sectionIgnored = true;
       } else {
-        this.section = name;
+        this.section = parsed.name;
         this.sectionIgnored = false;
       }
       return;
@@ -106,40 +135,108 @@ class FileParser {
       if (!this.sectionIgnored) this.diagnostic(line, LOG_WARNING, 'Assignment outside of section. Ignoring.');
       return;
     }
-    const equals = text.indexOf('=');
-    if (equals < 0) {
+    if (parsed.kind === 'missing-equals') {
       this.diagnostic(line, LOG_WARNING, "Missing '=', ignoring line.");
       return;
     }
-    if (equals === 0) {
+    if (parsed.kind === 'missing-key') {
       this.diagnostic(line, LOG_WARNING, "Missing key name before '=', ignoring line.");
       return;
     }
-    const key = text.slice(0, equals).trim();
-    const value = text.slice(equals + 1).trim();
+    const { key, value } = parsed;
     const handler = this.spec.handlers.get(`${this.section}.${key}`);
     if (handler === undefined) {
       if (!key.startsWith('X-')) this.diagnostic(line, LOG_WARNING, `Unknown key name '${key}' in section '${this.section}', ignoring.`);
       return;
     }
-    handler(value, { file: this.file, line, section: this.section, key }, (message, priority = LOG_WARNING) => this.diagnostic(line, priority, message));
+    handler(value, { file: this.file, line, section: this.section, key }, (message, priority = LOG_WARNING, located = true) => this.diagnostic(line, priority, message, located));
   }
+}
+
+export interface Assignment {
+  readonly section: string;
+  readonly key: string;
+  readonly value: string;
+  readonly line: number;
+}
+
+export function assignmentsOf(text: string): Assignment[] {
+  const out: Assignment[] = [];
+  let section: string | null = null;
+  for (const { line, text: content } of logicalLines(text)) {
+    const parsed = classifyLine(content);
+    if (parsed.kind === 'section') section = parsed.name;
+    else if (parsed.kind === 'assignment' && section !== null) out.push({ section, key: parsed.key, value: parsed.value, line });
+  }
+  return out;
+}
+
+export type UnitBag = Map<string, Map<string, string[]>>;
+
+export interface UnitBagOptions {
+  readonly lowerCaseSections?: boolean;
+  readonly lowerCaseKeys?: boolean;
+}
+
+export function addToUnitBag(bag: UnitBag, file: string, text: string, options: UnitBagOptions = {}, diagnostics: ConfigDiagnostic[] = []): void {
+  let current: Map<string, string[]> | null = null;
+  const note = (line: number, priority: number, message: string): void => {
+    diagnostics.push({ priority, file, line, message: `${file}:${line}: ${message}` });
+  };
+  for (const { line, text: content } of logicalLines(text)) {
+    const parsed = classifyLine(content);
+    if (parsed.kind === 'empty') continue;
+    if (parsed.kind === 'invalid-section') {
+      note(line, LOG_ERR, `Invalid section header '${parsed.text}'`);
+      continue;
+    }
+    if (parsed.kind === 'section') {
+      const name = options.lowerCaseSections === true ? parsed.name.trim().toLowerCase() : parsed.name.trim();
+      current = bag.get(name) ?? new Map<string, string[]>();
+      bag.set(name, current);
+      continue;
+    }
+    if (current === null) {
+      note(line, LOG_WARNING, 'Assignment outside of section. Ignoring.');
+      continue;
+    }
+    if (parsed.kind === 'missing-equals') {
+      note(line, LOG_WARNING, "Missing '=', ignoring line.");
+      continue;
+    }
+    if (parsed.kind === 'missing-key') {
+      note(line, LOG_WARNING, "Missing key name before '=', ignoring line.");
+      continue;
+    }
+    const key = options.lowerCaseKeys === true ? parsed.key.toLowerCase() : parsed.key;
+    const bucket = current.get(key) ?? [];
+    bucket.push(parsed.value);
+    current.set(key, bucket);
+  }
+}
+
+export function parseUnitBag(file: string, text: string, options: UnitBagOptions = {}, diagnostics: ConfigDiagnostic[] = []): UnitBag {
+  const bag: UnitBag = new Map();
+  addToUnitBag(bag, file, text, options, diagnostics);
+  return bag;
+}
+
+export function discoverDropIns(source: ConfigSource, directories: readonly string[]): Array<{ name: string; path: string }> {
+  const chosen = new Map<string, string>();
+  for (const directory of directories) {
+    for (const entry of source.listDirectory(directory) ?? []) {
+      if (!entry.name.endsWith('.conf') || chosen.has(entry.name)) continue;
+      chosen.set(entry.name, `${directory}/${entry.name}`);
+    }
+  }
+  return [...chosen.keys()].sort().map((name) => ({ name, path: chosen.get(name) as string }));
 }
 
 export function readSystemdConfig(source: ConfigSource, spec: ConfigSpec): ConfigDiagnostic[] {
   const diagnostics: ConfigDiagnostic[] = [];
   const main = source.readFile(spec.mainFile);
   if (main !== null) new FileParser(spec.mainFile, spec, diagnostics).parse(main);
-  const chosen = new Map<string, string>();
-  for (const root of DROP_IN_ROOTS) {
-    const directory = `${root}/${spec.dropInName}`;
-    for (const entry of source.listDirectory(directory) ?? []) {
-      if (!entry.name.endsWith('.conf') || chosen.has(entry.name)) continue;
-      chosen.set(entry.name, `${directory}/${entry.name}`);
-    }
-  }
-  for (const name of [...chosen.keys()].sort()) {
-    const path = chosen.get(name) as string;
+  for (const { path } of discoverDropIns(source, DROP_IN_ROOTS.map((root) => `${root}/${spec.dropInName}`))) {
     const text = source.readFile(path);
     if (text !== null) new FileParser(path, spec, diagnostics).parse(text);
   }

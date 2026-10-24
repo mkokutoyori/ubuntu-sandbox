@@ -174,7 +174,7 @@ async function renderQuery(
       `-- Data is authenticated: ${r.dnssec === 'secure' ? 'yes' : 'no'}; `
       + `Data was acquired via local or encrypted transport: ${r.encrypted ? 'yes' : 'no'}`,
     );
-    out.push(`-- Data from: ${r.origin === 'cache' ? 'cache' : 'network'}`);
+    out.push(`-- Data from: ${r.origin === 'cache' ? 'cache' : r.origin === 'hosts' ? 'synthetic' : 'network'}`);
   }
   return { output: out.join('\n'), exitCode };
 }

@@ -521,6 +521,30 @@ présente comme réussie est pire qu'un refus.
 
 ---
 
+## 7bis. `resolved.conf` : un seul lecteur, toutes les clés
+
+`/etc/systemd/resolved.conf` et ses drop-ins (`resolved.conf.d`, fusionnés par nom, `/etc` masquant `/usr/lib`) passent par le lecteur
+commun des fichiers systemd (`systemd/ConfigFiles.ts`, que partage `journald.conf`), avec la grammaire de `resolved-conf.c` et de
+`resolve-util.c` (systemd 255, lue sur l'étiquette `v255`, `systemd-resolved` n'étant pas installé dans le conteneur d'enregistrement) :
+`DNS=` et `FallbackDNS=` accumulent, une valeur vide efface, `0.0.0.0` et les adresses du stub sont écartées, un doublon passe en fin de
+liste, le mot est `ADRESSE[:PORT][%INTERFACE][#NOM]` (ports 53 et 853 par défaut, le nom sert de SNI et est vérifié par le client DoT) ;
+`Domains=` accepte `~domaine` (routage seul), `*` et la racine ; `LLMNR`, `MulticastDNS`, `DNSSEC`, `DNSOverTLS`, `Cache` et
+`DNSStubListener` prennent leur table de chaînes ou un booléen. Une valeur fausse est journalisée par `systemd-resolved` avec le fichier
+et la ligne ; `nameserver=` et `domain=` de la ligne de commande du noyau s'ajoutent. Les clés sont évaluées :
+
+- `ReadEtcHosts=` (oui par défaut) : un nom de `/etc/hosts` est répondu avant le cache et le réseau, en données « synthetic », et
+  `NODATA` pour l'autre famille d'adresses (`resolved-etc-hosts.c`, `dns_query_try_etc_hosts`) ;
+- `DNSStubListener=` et `DNSStubListenerExtra=` décident des sockets UDP et TCP ouverts (`ss` les montre), le stub n'écoutant plus
+  quand le mode est `no` ;
+- `ResolveUnicastSingleLabel=` (non par défaut) : un nom d'un seul label n'est pas envoyé aux serveurs unicast, seul LLMNR le
+  résout (`dns_scope_good_key`) ;
+- `CacheFromLocalhost=` (non par défaut) : la réponse d'un serveur de boucle locale n'est pas gardée ;
+- `StaleRetentionSec=` : une réponse expirée est servie tant que le serveur ne répond pas, dans la fenêtre indiquée ;
+- `Cache=no-negative` : le cache de résolution ne garde pas de réponse négative, ce qu'il ne faisait déjà pas.
+
+Le même lexeur sert maintenant les fichiers de networkd (avec leurs drop-ins, la dernière affectation l'emportant pour une clé scalaire),
+les `.dnssd` et l'analyseur des fichiers d'unité (continuations de ligne). `linux-resolved-config.test.ts`.
+
 ## 8. Hors périmètre
 
 - **D-Bus** (`org.freedesktop.resolve1`) : accès direct en mémoire.
