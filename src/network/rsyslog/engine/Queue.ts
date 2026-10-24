@@ -29,6 +29,8 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   private running = false;
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
+  private waiting: T[] = [];
+  private cancelWaitingDeadline: (() => void) | null = null;
   readonly statistics: QueueStatistics = { size: 0, enqueued: 0, full: 0, discardedFull: 0, discardedNearlyFull: 0, maxSize: 0 };
 
   constructor(
@@ -58,18 +60,47 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       this.statistics.discardedNearlyFull++;
       return false;
     }
-    if (this.items.length >= settings.size) {
+    if (this.items.length >= settings.size || this.waiting.length > 0) {
       this.statistics.full++;
-      this.statistics.discardedFull++;
-      this.host.report(`queue '${this.name}': queue full - ${this.items.length} messages in queue, message discarded`);
-      return false;
+      if (settings.timeoutEnqueue === 0) return this.discardFull();
+      this.waiting.push(item);
+      if (this.waiting.length === 1) this.armWaitingDeadline();
+      return true;
     }
+    this.admit(item);
+    this.drain();
+    return true;
+  }
+
+  private admit(item: T): void {
     this.items.push(item);
     this.statistics.enqueued++;
     this.statistics.size = this.items.length;
     this.statistics.maxSize = Math.max(this.statistics.maxSize, this.items.length);
-    this.drain();
-    return true;
+  }
+
+  private discardFull(): false {
+    this.statistics.discardedFull++;
+    this.host.report(`queue '${this.name}': queue full - ${this.items.length} messages in queue, message discarded`);
+    return false;
+  }
+
+  private armWaitingDeadline(): void {
+    this.cancelWaitingDeadline = this.host.schedule(() => {
+      this.cancelWaitingDeadline = null;
+      this.waiting.shift();
+      this.discardFull();
+      if (this.waiting.length > 0) this.armWaitingDeadline();
+    }, this.settings.timeoutEnqueue);
+  }
+
+  private admitWaiting(): void {
+    while (this.waiting.length > 0 && this.items.length < this.settings.size) {
+      this.cancelWaitingDeadline?.();
+      this.cancelWaitingDeadline = null;
+      this.admit(this.waiting.shift() as T);
+      if (this.waiting.length > 0) this.armWaitingDeadline();
+    }
   }
 
   private withinDequeueWindow(): number {
@@ -168,6 +199,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       if (outcome === 'done' || outcome === 'requeue') {
         (outcome === 'done' ? this.dequeued : this.requeued).push(this.items.shift() as T);
         this.statistics.size = this.items.length;
+        this.admitWaiting();
         batched++;
         const batchEnded = this.items.length === 0 || batched >= this.settings.dequeueBatchSize;
         if (batchEnded) {
@@ -201,6 +233,13 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     this.stopped = true;
     this.cancelTimer?.();
     this.cancelTimer = null;
+    this.dropWaiting();
+  }
+
+  private dropWaiting(): void {
+    this.cancelWaitingDeadline?.();
+    this.cancelWaitingDeadline = null;
+    this.waiting = [];
   }
 
   discardAll(): void {
@@ -208,6 +247,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
     this.dequeued = [];
     this.requeued = [];
     this.current = null;
+    this.dropWaiting();
     this.statistics.size = 0;
   }
 }
