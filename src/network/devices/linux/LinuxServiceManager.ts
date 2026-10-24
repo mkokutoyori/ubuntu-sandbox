@@ -23,6 +23,7 @@ import { SystemdJobEngine } from './systemd/SystemdJobEngine';
 import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
 import { parseTimeSpan } from './systemd/TimeSpan';
 import { EXIT_EXEC } from './systemd/ExitStatus';
+import { parseSec } from './systemd/SystemdTime';
 import { canonicalBinPath } from './service/CriticalFiles';
 import {
   runtimeArtifactsFor, runtimeDirectoryFor, UNIT_PIDFILE_DIRECTIVE, UNIT_RUNTIME_DIRECTORY,
@@ -71,6 +72,8 @@ export interface ServiceUnit {
   restartSec?: number;
   startLimitBurst?: number;
   startLimitIntervalSec?: number;
+  logRateLimitIntervalUsec?: number;
+  logRateLimitBurst?: number;
   listenStream?: number;
   onActiveSec?: number;
   onBootSec?: number;
@@ -1305,6 +1308,8 @@ export class LinuxServiceManager {
         restart: parsed.restart ?? 'no',
         restartSec: parsed.restartSec,
         startLimitBurst: parsed.startLimitBurst,
+        logRateLimitIntervalUsec: parsed.logRateLimitIntervalUsec,
+        logRateLimitBurst: parsed.logRateLimitBurst,
         startLimitIntervalSec: parsed.startLimitIntervalSec,
         listenStream: parsed.listenStream,
         onActiveSec: parsed.onActiveSec,
@@ -1785,6 +1790,8 @@ interface ParsedUnit {
   restartSec?: number;
   startLimitBurst?: number;
   startLimitIntervalSec?: number;
+  logRateLimitIntervalUsec?: number;
+  logRateLimitBurst?: number;
   listenStream?: number;
   onActiveSec?: number;
   onBootSec?: number;
@@ -1834,6 +1841,11 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'RestartSec') out.restartSec = parseFloat(val);
       else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
       else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
+      else if (key === 'LogRateLimitIntervalSec') {
+        const interval = parseSec(val);
+        if (interval.ok) out.logRateLimitIntervalUsec = interval.usec;
+      }
+      else if (key === 'LogRateLimitBurst' && /^\d+$/.test(val)) out.logRateLimitBurst = Number(val);
     } else if (section === 'Socket') {
       if (key === 'ListenStream' && /^\d+$/.test(val)) out.listenStream = parseInt(val, 10);
       else if (key === 'Service') out.activates = val;

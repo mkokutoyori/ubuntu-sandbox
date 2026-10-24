@@ -868,6 +868,7 @@ export class LinuxCommandExecutor {
         uid: process.uid, gid: process.gid, comm: process.comm, exe: process.exe ?? null, cmdline: process.command ?? null, capeff: null, label: null,
         auditId: attrs.sessionid === none ? null : attrs.sessionid, loginUid: attrs.loginuid === none ? null : attrs.loginuid,
         cgroup: this.cgroupPathFor(pid), invocationId: null,
+        ...this.logRateLimitOf(process.serviceName),
       };
     });
     this.logMgr.setZone(() => this.identity.timezone);
@@ -1409,6 +1410,11 @@ export class LinuxCommandExecutor {
       hops++;
     }
     return { loginuid: NONE, sessionid: NONE };
+  }
+
+  private logRateLimitOf(serviceName: string | undefined): { logRateLimitIntervalUsec?: number; logRateLimitBurst?: number } {
+    const unit = serviceName === undefined ? undefined : this.serviceMgr.status(serviceName) ?? undefined;
+    return unit === undefined ? {} : { logRateLimitIntervalUsec: unit.logRateLimitIntervalUsec, logRateLimitBurst: unit.logRateLimitBurst };
   }
 
   cgroupPathFor(pid: number): string {

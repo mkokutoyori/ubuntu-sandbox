@@ -1,8 +1,9 @@
-import { type JournalFile, JournalFileSet, type FileIdentity } from './JournalFileSet';
-import { defaultJournaldSettings, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream } from './JournaldServer';
+import { buildRecord, distinctPayloads } from './JournalFileSet';
+import { JournalStorage, type SpaceInfo } from './JournalStorage';
+import { defaultJournaldSettings, JournaldServer, type JournaldHost, type JournaldSettings, type ProcessFacts, type Ucred, type StdoutStream, type WriteTarget } from './JournaldServer';
 import { type JournalFileInfo, type VacuumResult, type VacuumSpec } from './JournalctlTool';
 import { type JournalRecord } from './JournalRecord';
-import { formatBytes, utf8 } from './JournalText';
+import { concat, formatBytes, utf8 } from './JournalText';
 
 export interface JournaldPlatform {
   nowUsec(): number;
@@ -12,7 +13,10 @@ export interface JournaldPlatform {
   probe(pid: number): ProcessFacts | null;
   journaldPid(): number | null;
   persistentStorage(): boolean;
-  diskFreeBytes(): number;
+  filesystem(): { sizeBytes: number; availableBytes: number };
+  trustedClock(): boolean;
+  filesChanged?(): void;
+  schedule?(delayMs: number, callback: () => void): () => void;
 }
 
 export interface KernelMessage {
@@ -24,9 +28,8 @@ export interface KernelMessage {
 }
 
 const JOURNAL_STARTED = 'f77379a8490b408bbe5f6940505a777b';
+const JOURNAL_STOPPED = 'd93fb3c9c24d451a97cea615ce59c00b';
 const SPACE_USAGE = 'ec387f577b844b8fa948f33cad9a75e6';
-const MAX_USE = 4 * 1024 ** 3;
-const KEEP_FREE = 4 * 1024 ** 3;
 
 function hex128(seed: string): string {
   let a = 0xcbf29ce484222325n;
@@ -42,41 +45,51 @@ function hex128(seed: string): string {
 
 export class LinuxJournald {
   readonly bootId: string;
-  private readonly files: JournalFileSet;
-  private readonly transient: JournalFileSet;
+  private readonly storage: JournalStorage;
   private readonly server: JournaldServer;
   private readonly listeners = new Set<(record: JournalRecord) => void>();
   private stamp: { realtimeUsec: number } | null = null;
   private streamCounter = 0;
   private flushed = false;
   private kmsgSequence = 0;
+  private unstoredSequence = 1;
 
-  constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = defaultJournaldSettings()) {
+  constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = defaultJournaldSettings(), firstSeqnum = 1) {
     this.bootId = hex128(`boot:${platform.hostname()}:${platform.machineId()}:${platform.bootUsec()}`);
-    this.files = new JournalFileSet(index => this.identityOf(index), 1);
-    this.transient = new JournalFileSet(index => this.identityOf(index), 1);
     const host: JournaldHost = {
       probe: pid => platform.probe(pid),
       identity: () => ({ bootId: this.bootId, machineId: platform.machineId(), hostname: platform.hostname() }),
       cgroupRoot: () => '/',
       newStreamId: () => hex128(`stream:${this.bootId}:${this.streamCounter++}`),
-      write: (items, priority) => this.store(items, priority),
+      write: (items, priority, target) => this.store(items, priority, target),
+      monotonicUsec: () => Math.max(1, platform.nowUsec() - platform.bootUsec()),
+      availableBytes: () => this.storage.availableBytes(),
     };
     this.server = new JournaldServer(host, structuredClone(settings));
     this.server.selfContext = null;
+    this.storage = new JournalStorage({
+      nowUsec: () => platform.nowUsec(),
+      monotonicUsec: () => host.monotonicUsec(),
+      directory: () => this.directory,
+      persistent: () => platform.persistentStorage(),
+      trustedClock: () => platform.trustedClock(),
+      filesystem: () => platform.filesystem(),
+      fileIds: (stem, serial) => ({ fileId: hex128(`file:${this.bootId}:${stem}:${serial}`), seqnumId: hex128(`seqnum:${this.bootId}`), machineId: platform.machineId() }),
+      filesChanged: () => platform.filesChanged?.(),
+      schedule: platform.schedule === undefined ? undefined : (delayMs, callback) => platform.schedule!(delayMs, callback),
+      announceSpace: (space) => this.spaceUsageMessage(space),
+    }, () => this.server.settings, firstSeqnum);
   }
 
-  private identityOf(index: number): FileIdentity {
-    const machineId = this.platform.machineId();
-    return { path: `${this.directory}/system.journal`, fileId: hex128(`file:${this.bootId}:${index}`), seqnumId: hex128(`seqnum:${this.bootId}`), machineId };
+  reconfigure(): void {
+    this.storage.reconfigure();
   }
 
-  private store(items: Uint8Array[], priority: number): void {
+  private store(items: Uint8Array[], priority: number, target: WriteTarget): void {
     const realtime = this.stamp !== null ? this.stamp.realtimeUsec : this.platform.nowUsec();
     const monotonic = Math.max(0, realtime - this.platform.bootUsec());
-    const settings = this.server.settings;
-    const kept = settings.storage !== 'none' && (priority & 7) <= settings.maxLevelStore;
-    const record = (kept ? this.files : this.transient).append(items, realtime, monotonic, this.bootId);
+    const stored = target.stored ? this.storage.write(items, priority, target.uid, realtime, monotonic, this.bootId) : null;
+    const record = stored ?? buildRecord(distinctPayloads(items), realtime, monotonic, this.unstoredSequence++, this.storage.seqnumId, this.bootId);
     for (const listener of [...this.listeners]) listener(record);
   }
 
@@ -89,10 +102,26 @@ export class LinuxJournald {
     }
   }
 
-  start(): void {
+  bind(): void {
     this.selfContextRefresh();
+    this.storage.vacuum(false);
+    this.storage.patchMinUse();
+  }
+
+  start(): void {
+    this.bind();
     this.server.driverMessage(JOURNAL_STARTED, 'Journal started');
-    this.spaceUsageMessage();
+    this.spaceUsageMessage(this.storage.spaceInfo());
+  }
+
+  copyEntry(fields: ReadonlyArray<readonly [string, Uint8Array]>, realtimeUsec: number, monotonicUsec: number, bootId: string): JournalRecord | null {
+    const items = fields.map(([name, value]) => concat(utf8(`${name}=`), value));
+    return this.storage.write(items, 6, 0, realtimeUsec, monotonicUsec, bootId);
+  }
+
+  stop(): void {
+    this.server.driverMessage(JOURNAL_STOPPED, 'Journal stopped');
+    this.storage.sync();
   }
 
   private selfContextRefresh(): void {
@@ -100,20 +129,13 @@ export class LinuxJournald {
     this.server.selfContext = pid === null ? null : this.server.acquireContext({ pid, uid: 0, gid: 0 }, null, null);
   }
 
-  private spaceUsageMessage(): void {
-    const persistent = this.platform.persistentStorage();
-    const machineId = this.platform.machineId();
-    const name = persistent ? 'System Journal' : 'Runtime Journal';
-    const path = persistent ? `/var/log/journal/${machineId}` : `/run/log/journal/${machineId}`;
-    const current = this.files.all.reduce((sum, file) => sum + (file.records.length > 0 ? 8 * 1024 * 1024 : 0), 0) || 8 * 1024 * 1024;
-    const free = this.platform.diskFreeBytes();
-    const available = Math.max(0, Math.min(MAX_USE, free - KEEP_FREE) - current);
-    const limit = MAX_USE;
+  private spaceUsageMessage(space: SpaceInfo): void {
     const pretty = (n: number): string => formatBytes(n);
-    this.server.driverMessage(SPACE_USAGE, `${name} (${path}) is ${pretty(current)}, max ${pretty(limit)}, ${pretty(available)} free.`, [
-      ['JOURNAL_NAME', name], ['JOURNAL_PATH', path], ['CURRENT_USE', String(current)], ['CURRENT_USE_PRETTY', pretty(current)], ['MAX_USE', String(MAX_USE)],
-      ['MAX_USE_PRETTY', pretty(MAX_USE)], ['DISK_KEEP_FREE', String(KEEP_FREE)], ['DISK_KEEP_FREE_PRETTY', pretty(KEEP_FREE)], ['DISK_AVAILABLE', String(free)],
-      ['DISK_AVAILABLE_PRETTY', pretty(free)], ['LIMIT', String(limit)], ['LIMIT_PRETTY', pretty(limit)], ['AVAILABLE', String(available)], ['AVAILABLE_PRETTY', pretty(available)],
+    this.server.driverMessage(SPACE_USAGE, `${space.name} (${space.path}) is ${pretty(space.vfsUsed)}, max ${pretty(space.limit)}, ${pretty(space.available)} free.`, [
+      ['JOURNAL_NAME', space.name], ['JOURNAL_PATH', space.path], ['CURRENT_USE', String(space.vfsUsed)], ['CURRENT_USE_PRETTY', pretty(space.vfsUsed)],
+      ['MAX_USE', String(space.metrics.maxUse)], ['MAX_USE_PRETTY', pretty(space.metrics.maxUse)], ['DISK_KEEP_FREE', String(space.metrics.keepFree)],
+      ['DISK_KEEP_FREE_PRETTY', pretty(space.metrics.keepFree)], ['DISK_AVAILABLE', String(space.vfsAvailable)], ['DISK_AVAILABLE_PRETTY', pretty(space.vfsAvailable)],
+      ['LIMIT', String(space.limit)], ['LIMIT_PRETTY', pretty(space.limit)], ['AVAILABLE', String(space.available)], ['AVAILABLE_PRETTY', pretty(space.available)],
     ]);
   }
 
@@ -143,37 +165,19 @@ export class LinuxJournald {
   }
 
   records(): readonly JournalRecord[] {
-    return this.files.records();
+    return this.storage.records();
   }
 
   fileInfos(): JournalFileInfo[] {
-    return this.files.all.map(file => file.info());
+    return this.storage.fileInfos();
   }
 
   rotate(): void {
-    this.files.rotate();
+    this.storage.fullRotate();
   }
 
   vacuum(spec: VacuumSpec): VacuumResult[] {
-    const directory = this.directory;
-    const archived = this.files.all.filter(file => file.state === 'ARCHIVED');
-    const now = this.platform.nowUsec();
-    const sizeOf = 8 * 1024 * 1024;
-    const doomed = new Set<JournalFile>();
-    if (spec.time > 0) for (const file of archived) if ((file.records[file.records.length - 1]?.realtimeUsec ?? 0) < now - spec.time) doomed.add(file);
-    const newestFirst = [...archived].reverse().filter(file => !doomed.has(file));
-    if (spec.files > 0) newestFirst.slice(spec.files).forEach(file => doomed.add(file));
-    if (spec.size > 0) {
-      let used = sizeOf;
-      for (const file of newestFirst) {
-        if (doomed.has(file)) continue;
-        used += sizeOf;
-        if (used > spec.size) doomed.add(file);
-      }
-    }
-    const deleted = archived.filter(file => doomed.has(file)).map(file => ({ name: file.path.slice(file.path.lastIndexOf('/') + 1), bytes: sizeOf }));
-    this.files.remove(file => doomed.has(file));
-    return [{ directory, deleted, freedBytes: deleted.length * sizeOf }];
+    return this.storage.vacuumDirectory(spec);
   }
 
   markFlushed(): void {
@@ -185,7 +189,7 @@ export class LinuxJournald {
   }
 
   usageBytes(): number {
-    return this.files.all.length * 8 * 1024 * 1024;
+    return this.storage.usageBytes();
   }
 
   get directory(): string {

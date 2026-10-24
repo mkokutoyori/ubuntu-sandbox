@@ -655,6 +655,9 @@ export abstract class LinuxMachine extends EndHost
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
+    const journalTimers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
+    this.executor.onClockAdvanced(() => journalTimers.pump());
+    this.executor.logMgr.attachJournalTimers(journalTimers);
     this.executor.logMgr.attachTerminals({ sessions: () => this.loggedInTerminals().map((terminal) => terminal.tty), write: (tty, text) => this.writeTerminal(tty, text) });
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));

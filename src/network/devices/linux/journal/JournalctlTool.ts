@@ -63,7 +63,7 @@ export interface VacuumSpec {
 
 export interface VacuumResult {
   directory: string;
-  deleted: Array<{ name: string; bytes: number }>;
+  deleted: Array<{ name: string; bytes: number; empty?: boolean }>;
   freedBytes: number;
 }
 
@@ -786,7 +786,7 @@ function runAction(
   if (args.action === 'vacuum' || args.action === 'rotate-and-vacuum') {
     if (args.action === 'rotate-and-vacuum') varlinkCall(host, args, '--rotate', 'io.systemd.Journal.Rotate', fail);
     for (const result of host.vacuum({ size: args.vacuumSize, files: args.vacuumFiles, time: args.vacuumTime })) {
-      for (const entry of result.deleted) notice(`Deleted archived journal ${result.directory}/${entry.name} (${formatBytes(entry.bytes)}).`);
+      for (const entry of result.deleted) notice(`Deleted ${entry.empty === true ? 'empty ' : ''}archived journal ${result.directory}/${entry.name} (${formatBytes(entry.bytes)}).`);
       notice(`Vacuuming done, freed ${formatBytes(result.freedBytes)} of archived journals from ${result.directory}.`);
     }
     return;

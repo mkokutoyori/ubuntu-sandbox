@@ -3457,15 +3457,11 @@ moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discard
 `dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
 « linkedlist » en memoire.
 
-### [journald] journald.conf : cles lues mais non evaluees, et chargeur commun non repris par resolved/networkd
-`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `MaxLevelStore`,
-`MaxLevelSyslog`, `ForwardToSyslog` (ce que rsyslog recoit) et `LineMax` ; toutes les cles du binaire 255.4 sont validees avec les mots de
-systemd. Reste lu sans effet : `Compress`, `Seal`, `SplitMode`, `SyncIntervalSec`, `ReadKMsg`, `Audit`, `TTYPath` ; `System/RuntimeMaxUse`, `KeepFree`,
-`MaxFileSize`, `MaxFiles`, `MaxRetentionSec` et `MaxFileSec`, parce que le modele de taille du journal (`LinuxJournald.ts` : 8 Mo par pas, plafond 4 Go) ne se mesure
-qu'en lancant le vrai `systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
-le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici ; `RateLimitIntervalSec` et `RateLimitBurst`,
-parce que la modulation du seuil par l'espace disque libre n'est lisible dans aucune documentation de la machine ; `ForwardToKMsg`, `ForwardToConsole`, `ForwardToWall` et les
-`MaxLevel` correspondants, faute d'une destination dans l'hote (journald n'a pas de crochet vers `/dev/console` ni vers les terminaux) et du texte que `wall` emet.
+### [journald] journald.conf : `Compress` et `Seal` lus sans effet, et chargeur commun non repris par resolved/networkd
+`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `Audit`, `ReadKMsg`, `SplitMode`,
+`SyncIntervalSec`, `RateLimit*`, `System/Runtime` `MaxUse`/`KeepFree`/`MaxFileSize`/`MaxFiles`, `MaxRetentionSec`, `MaxFileSec`, `ForwardTo*` et leurs `MaxLevel*`
+(files, rotation, vacuum et debit mesures contre le vrai `systemd-journald` 255.4 par `journald-space-oracle.test.ts`). Reste lu sans effet : `Compress` (le drapeau
+`COMPRESSED-ZSTD` de l'en-tete et la taille des objets de plus de `Compress=` octets) et `Seal`.
 Doublon connu : `resolved.conf` (`parseResolvedConf`) et les fichiers de `systemd-networkd` (`NetworkdFiles.ts`) ont leur propre lecteur, sans diagnostics ni
 fusion des drop-ins par nom ; ils doivent reprendre `readSystemdConfig`. `systemd-resolved` n'est pas installe dans ce conteneur : la liste de ses cles n'a pas pu etre relevee.
 

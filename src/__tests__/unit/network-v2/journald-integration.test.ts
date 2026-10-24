@@ -110,7 +110,7 @@ describe('journald and logger integrated in the host', () => {
     exec.execute('journalctl --rotate');
     expect(journalFiles(exec)).toHaveLength(3);
     expect(exec.execute('journalctl --vacuum-files=1')).toContain('Deleted archived journal');
-    expect(journalFiles(exec)).toHaveLength(2);
+    expect(journalFiles(exec)).toEqual(['system.journal']);
   });
 
   it('every record belongs to the current boot and --list-boots names it', () => {

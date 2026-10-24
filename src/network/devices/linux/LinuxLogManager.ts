@@ -62,6 +62,10 @@ export function fmtHumanDate(d: Date, zone?: string): string {
   return formatLocalTime('%a %b %e %H:%M:%S %Y', d.getTime(), zone);
 }
 
+export interface JournalTimers {
+  schedule(callback: () => void, delayMs: number): () => void;
+}
+
 export interface JournalTerminals {
   sessions(): string[];
   write(tty: string, text: string): void;
@@ -120,13 +124,21 @@ export class LinuxLogManager {
   syncJournalFiles(): void {
     const directory = this.journald.directory;
     this.vfs.mkdirp(directory, 0o2755, 0, 4);
-    const wanted = new Set(this.journald.fileInfos().map((info) => info.path));
+    const infos = this.journald.fileInfos();
+    const wanted = new Set(infos.map((info) => info.path));
     for (const entry of this.vfs.listDirectory(directory) ?? []) {
       const path = `${directory}/${entry.name}`;
       if (entry.name.endsWith('.journal') && !wanted.has(path)) this.vfs.deleteFile(path);
     }
-    for (const path of wanted) if (!this.vfs.exists(path)) this.vfs.writeFile(path, '', 0, 4, 0o027, false, 8 * 1024 * 1024);
+    for (const info of infos) {
+      if (this.vfs.lstat(info.path)?.size === info.diskUsageBytes) continue;
+      this.vfs.writeFile(info.path, '', 0, 4, 0o027, false, info.diskUsageBytes);
+    }
   }
+
+  private journalTimers: JournalTimers | null = null;
+
+  attachJournalTimers(timers: JournalTimers): void { this.journalTimers = timers; }
 
   private pendingCgroup: string | null = null;
 
@@ -181,7 +193,10 @@ export class LinuxLogManager {
       probe: (pid) => this.probeFacts(pid),
       journaldPid: () => null,
       persistentStorage: () => this.persistentJournal(),
-      diskFreeBytes: () => 20 * 1024 ** 3,
+      filesystem: () => ({ sizeBytes: this.vfs.getCapacityBytes(), availableBytes: this.vfs.freeBytes() }),
+      trustedClock: () => !this.seeding,
+      filesChanged: () => this.syncJournalFiles(),
+      schedule: (delayMs, callback) => (this.journalTimers === null ? () => undefined : this.journalTimers.schedule(callback, delayMs)),
     });
     this.seedJournaldConfiguration();
     this.reloadJournaldConfig();
@@ -212,6 +227,7 @@ export class LinuxLogManager {
     const readout = readJournaldConfig(this.vfs, this.kernelCommandLine());
     Object.assign(this.journald.settings, readout.settings);
     this.journaldStorage = readout.settings.storage;
+    this.journald.reconfigure();
     for (const diagnostic of readout.diagnostics) {
       this.submitLibcSyslog(SYSLOG_FACILITY.daemon << 3 | diagnostic.priority, 'systemd-journald', journaldPid, diagnostic.message, this.nowMs());
     }

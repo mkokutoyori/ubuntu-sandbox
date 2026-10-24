@@ -318,6 +318,25 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   `syslog.conf` (`ForwardToSyslog=yes`), qui est ce qui confie le journal à rsyslog : `ForwardToSyslog`, `MaxLevelSyslog`,
   `MaxLevelStore`, `Storage` et `LineMax` sont évalués, et les erreurs de syntaxe sont journalisées avec le fichier et la ligne.
 
+- **Transmission de journald** (`linux-journald-forward.test.ts`) : `ForwardToWall` (diffusion avec l'en-tête de `wall(3)`, `MaxLevelWall`
+  `emerg` par défaut), `ForwardToConsole` (`[ s.us] identifiant[pid]: message` sur `TTYPath`), `ForwardToKMsg` (tampon noyau, que journald
+  ne relit pas), `ReadKMsg` et `Audit` (indicateur `enabled` du noyau d'audit, `yes` par défaut) sont évalués à l'ingestion, avant le
+  stockage et la limitation de débit, comme dans `journald-server.c`.
+
+- **Espace, rotation, vacuum, débit et fichiers par utilisateur** (`journald-space-oracle.test.ts`, `linux-journald-space.test.ts`) :
+  le modèle d'octets du fichier journal (objets data, field, entry, entry array et tables de hachage, allocation par pas de 8 Mio plafonnée
+  à `MaxFileSize`) est celui du format ; une rotation a lieu quand la table de hachage des données dépasse 75 % de remplissage, quand
+  l'allocation dépasse `MaxFileSize` (E2BIG), quand l'entrée la plus ancienne dépasse `MaxFileSec`, quand l'horloge recule, ou à la
+  demande ; `journal_directory_vacuum` (partagé avec `journalctl --vacuum-*`) applique `MaxUse` (plafonné par `KeepFree` et
+  l'espace libre du système de fichiers), `MaxFiles` et `MaxRetentionSec`, ce dernier par la minuterie de `journald.c` sur l'horloge
+  simulée. Les fichiers occupent des octets du système de fichiers de la machine (`df`, `ls`, `du`, `journalctl --disk-usage` concordent).
+  `RateLimitIntervalSec`/`RateLimitBurst` (et `LogRateLimit*` du fichier d'unité) limitent par unité et par groupe de priorités, avec la
+  modulation du seuil par l'espace disponible de `journald-rate-limit.c`, et le message « Suppressed N messages from unit ». `SplitMode`
+  répartit les messages en `user-<uid>.journal`. `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
+  Les cinq cas de l'oracle (fichiers restants, message d'usage du disque, messages de suppression, `--vacuum-*`) sont mesurés contre
+  le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
+  volume unique, donc `/run` (journal volatil) partage la capacité de la racine.
+
 Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
 n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
 simulée au lieu de bloquer le fil.

@@ -3,6 +3,7 @@ import { fieldNameIsValid } from './JournalRecord';
 import { safeAtoi } from '../systemd/SafeNumbers';
 import { concat, utf8 } from './JournalText';
 import { unitNameIsValid } from '../systemd/UnitName';
+import { JournalRateLimit } from './JournalRateLimit';
 import { bytesToBinaryString } from '@/crypto/encoding';
 
 export interface Ucred {
@@ -23,6 +24,8 @@ export interface ProcessFacts {
   loginUid: number | null;
   cgroup: string | null;
   invocationId: string | null;
+  logRateLimitIntervalUsec?: number | null;
+  logRateLimitBurst?: number | null;
 }
 
 export interface ClientContext {
@@ -44,13 +47,22 @@ export interface ClientContext {
   slice: string | null;
   userSlice: string | null;
   invocationId: string | null;
+  logRateLimitIntervalUsec: number | null;
+  logRateLimitBurst: number | null;
+}
+
+export interface WriteTarget {
+  readonly stored: boolean;
+  readonly uid: number;
 }
 
 export interface JournaldHost {
   probe(pid: number): ProcessFacts | null;
   identity(): { bootId: string; machineId: string; hostname: string };
   cgroupRoot(): string;
-  write(items: Uint8Array[], priority: number): void;
+  write(items: Uint8Array[], priority: number, target: WriteTarget): void;
+  monotonicUsec?(): number;
+  availableBytes?(): number;
   forwardSyslog?(priority: number, identifier: string | Uint8Array | null, message: Uint8Array, ucred: Ucred | null, tvUsec: number | null): void;
   forwardRawSyslog?(priority: number, raw: Uint8Array, ucred: Ucred | null): void;
   forwardKmsg?(priority: number, identifier: string | Uint8Array | null, message: Uint8Array, ucred: Ucred | null): void;
@@ -399,8 +411,24 @@ export class StdoutStream {
 
 type LineBreak = 'newline' | 'nul' | 'line-max' | 'eof' | 'pid-change';
 
+const SD_MESSAGE_JOURNAL_DROPPED = 'a596d6fe7bfa4994828e72309e95d61e';
+const SPLIT_UID_SYSTEM_MAX = 999;
+const DYNAMIC_UID_MIN = 61184;
+const DYNAMIC_UID_MAX = 65519;
+const UID_NOBODY = 65534;
+const CONTAINER_UID_BASE_MIN = 524288;
+const CONTAINER_UID_BASE_MAX = 1878982656;
+
+export function uidForSystemJournal(uid: number): boolean {
+  return uid <= SPLIT_UID_SYSTEM_MAX || (uid >= DYNAMIC_UID_MIN && uid <= DYNAMIC_UID_MAX) || uid === UID_NOBODY || (uid >= CONTAINER_UID_BASE_MIN && uid <= CONTAINER_UID_BASE_MAX);
+}
+
 export class JournaldServer {
-  constructor(readonly host: JournaldHost, readonly settings: JournaldSettings = DEFAULT_JOURNALD_SETTINGS) {}
+  private readonly rateLimit: JournalRateLimit;
+
+  constructor(readonly host: JournaldHost, readonly settings: JournaldSettings = DEFAULT_JOURNALD_SETTINGS) {
+    this.rateLimit = new JournalRateLimit(() => host.monotonicUsec?.() ?? 0);
+  }
 
   acquireContext(ucred: Ucred | null, label: Uint8Array | null, unitId: string | null): ClientContext | null {
     if (ucred === null || ucred.pid <= 0) return null;
@@ -428,6 +456,8 @@ export class JournaldServer {
       slice: null,
       userSlice: null,
       invocationId: null,
+      logRateLimitIntervalUsec: facts?.logRateLimitIntervalUsec ?? null,
+      logRateLimitBurst: facts?.logRateLimitBurst ?? null,
     };
     const raw = facts?.cgroup ?? null;
     const shifted = raw === null ? null : cgroupShiftPath(raw, this.host.cgroupRoot());
@@ -447,6 +477,33 @@ export class JournaldServer {
   }
 
   dispatch(items: Uint8Array[], context: ClientContext | null, tvUsec: number | null, priority: number, objectPid: number): void {
+    if (!admits(this.settings.maxLevelStore, priority) || this.settings.storage === 'none') {
+      this.dispatchReal(items, context, tvUsec, priority, objectPid, false);
+      return;
+    }
+    if (context !== null && context.unit !== null) {
+      const interval = context.logRateLimitIntervalUsec ?? this.settings.rateLimitIntervalUsec;
+      const burst = context.logRateLimitBurst ?? this.settings.rateLimitBurst;
+      const verdict = this.rateLimit.test(context.unit, interval, burst, priority & LOG_PRIMASK, this.host.availableBytes?.() ?? Number.MAX_SAFE_INTEGER);
+      if (verdict === 0) {
+        this.dispatchReal(items, context, tvUsec, priority, objectPid, false);
+        return;
+      }
+      if (verdict > 1) {
+        this.driverMessage(SD_MESSAGE_JOURNAL_DROPPED, `Suppressed ${verdict - 1} messages from ${context.unit}`, [['N_DROPPED', String(verdict - 1)]], context.pid);
+      }
+    }
+    this.dispatchReal(items, context, tvUsec, priority, objectPid, true);
+  }
+
+  private journalUid(context: ClientContext | null): number {
+    const mode = this.settings.splitMode;
+    if (mode === 'uid' && context !== null && context.uid !== null) return context.uid;
+    if (mode === 'login' && context !== null && context.uid !== null && context.uid > 0 && context.ownerUid !== null) return context.ownerUid;
+    return 0;
+  }
+
+  private dispatchReal(items: Uint8Array[], context: ClientContext | null, tvUsec: number | null, priority: number, objectPid: number, stored: boolean): void {
     const out = items.slice();
     const add = (name: string, value: string | number | null): void => {
       if (value === null || value === '') return;
@@ -498,7 +555,7 @@ export class JournaldServer {
     if (tvUsec !== null) out.push(utf8(`_SOURCE_REALTIME_TIMESTAMP=${tvUsec}`));
     const identity = this.host.identity();
     out.push(utf8(`_BOOT_ID=${identity.bootId}`), utf8(`_MACHINE_ID=${identity.machineId}`), utf8(`_HOSTNAME=${identity.hostname}`), utf8('_RUNTIME_SCOPE=system'));
-    this.host.write(out, priority);
+    this.host.write(out, priority, { stored, uid: this.journalUid(context) });
   }
 
   processNative(buffer: Uint8Array, ucred: Ucred | null, tvUsec: number | null, label: Uint8Array | null): void {
@@ -685,12 +742,12 @@ export class JournaldServer {
     return new StdoutStream(this, ucred, label, this.host.newStreamId());
   }
 
-  driverMessage(messageId: string | null, message: string, extra: Array<[string, string]> = []): void {
+  driverMessage(messageId: string | null, message: string, extra: Array<[string, string]> = [], objectPid = 0): void {
     const items: Uint8Array[] = [utf8('SYSLOG_FACILITY=3'), utf8('SYSLOG_IDENTIFIER=systemd-journald'), utf8('_TRANSPORT=driver'), utf8('PRIORITY=6')];
     if (messageId !== null) items.push(utf8(`MESSAGE_ID=${messageId}`));
     items.push(utf8(`MESSAGE=${message}`));
     for (const [name, value] of extra) items.push(utf8(`${name}=${value}`));
-    this.dispatch(items, this.selfContext, null, LOG_INFO, 0);
+    this.dispatchReal(items, this.selfContext, null, LOG_INFO, objectPid, this.settings.storage !== 'none');
   }
 
   selfContext: ClientContext | null = null;
