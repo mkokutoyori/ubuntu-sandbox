@@ -113,7 +113,7 @@ export class BashLexer {
     if (ch === '|') return this.scanPipe();
     if (ch === '&') return this.scanAmpersand();
     if (ch === ';') return this.scanSemicolon();
-    if (ch === '(') return this.advance1(TokenType.LPAREN);
+    if (ch === '(') return this.scanOpenParen();
     if (ch === ')') return this.advance1(TokenType.RPAREN);
     // { is only a brace group delimiter when followed by whitespace/newline/EOF
     // Otherwise it's part of a word (e.g., {1..3}, {echo)
@@ -354,33 +354,51 @@ export class BashLexer {
     return { type: TokenType.WORD, value: '$', position: start };
   }
 
-  private scanArithSub(start: SourcePosition): Token {
-    this.advance(); // skip first (
-    this.advance(); // skip second (
-    let depth = 1;
-    let expr = '';
-    while (!this.isAtEnd() && depth > 0) {
-      if (this.peek() === '(' && this.peekAt(1) === '(') {
-        depth++;
-        expr += '((';
-        this.advance();
-        this.advance();
-      } else if (this.peek() === ')' && this.peekAt(1) === ')') {
-        depth--;
-        if (depth > 0) {
-          expr += '))';
-          this.advance();
-          this.advance();
-        }
-      } else {
-        expr += this.peek();
-        this.advance();
+  private scanOpenParen(): Token {
+    if (this.peekAt(1) === '(') {
+      const expression = this.arithmeticCommandBody();
+      if (expression !== null) {
+        const start = this.position();
+        for (let consumed = 0; consumed < expression.length + 4; consumed++) this.advance();
+        return { type: TokenType.ARITH_CMD, value: expression, position: start };
       }
     }
-    if (depth > 0) throw new LexerError("Unterminated arithmetic substitution", start);
-    this.advance(); // skip first )
-    this.advance(); // skip second )
-    return { type: TokenType.ARITH_SUB, value: expr, position: start };
+    return this.advance1(TokenType.LPAREN);
+  }
+
+  private arithmeticCommandBody(): string | null {
+    let depth = 0;
+    for (let index = this.pos + 2; index < this.input.length; index++) {
+      const character = this.input[index];
+      if (character === '(') depth++;
+      else if (character === ')') {
+        if (depth > 0) depth--;
+        else return this.input[index + 1] === ')' ? this.input.slice(this.pos + 2, index) : null;
+      }
+    }
+    return null;
+  }
+
+  private scanArithSub(start: SourcePosition): Token {
+    this.advance();
+    this.advance();
+    let parentheses = 0;
+    let expr = '';
+    while (!this.isAtEnd()) {
+      const character = this.peek();
+      if (character === '(') parentheses++;
+      else if (character === ')') {
+        if (parentheses === 0 && this.peekAt(1) === ')') {
+          this.advance();
+          this.advance();
+          return { type: TokenType.ARITH_SUB, value: expr, position: start };
+        }
+        parentheses--;
+      }
+      expr += character;
+      this.advance();
+    }
+    throw new LexerError("Unterminated arithmetic substitution", start);
   }
 
   private scanCmdSub(start: SourcePosition): Token {

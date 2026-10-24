@@ -180,10 +180,7 @@ export class BashParser {
     if (this.checkWord('function')) return this.parseFunctionDef();
     if (this.check(TokenType.LBRACE)) return this.parseBraceGroup();
     if (this.check(TokenType.DLBRACKET)) return this.parseDoubleBracket();
-    if (this.check(TokenType.LPAREN) && this.peekAt(1)?.type === TokenType.LPAREN
-        && this.peek().adjacent !== false) {
-      return this.parseArithmeticCommand();
-    }
+    if (this.check(TokenType.ARITH_CMD)) return this.parseArithmeticCommand();
     if (this.check(TokenType.LPAREN)) return this.parseSubshell();
 
     // Simple command
@@ -289,10 +286,7 @@ export class BashParser {
     this.skipNewlines();
 
     // `for ((init; cond; update))` C-style form.
-    if (this.check(TokenType.LPAREN) && this.peekAt(1)?.type === TokenType.LPAREN
-        && this.peek().adjacent !== false) {
-      return this.parseCStyleForClause(pos);
-    }
+    if (this.check(TokenType.ARITH_CMD)) return this.parseCStyleForClause(pos);
 
     const varTok = this.advance();
     if (varTok.type !== TokenType.WORD) {
@@ -582,63 +576,22 @@ export class BashParser {
    * that the existing arithmetic evaluator can evaluate at run time.
    */
   private parseArithmeticCommand(): ArithmeticCommand {
-    const pos = this.peek().position;
-    this.expect(TokenType.LPAREN);
-    this.expect(TokenType.LPAREN);
-    const expression = this.collectUntilDoubleRParen();
-    return { type: 'ArithmeticCommand', expression, position: pos };
-  }
-
-  /** Used by both `((expr))` and `for ((init; cond; update))`. */
-  private collectUntilDoubleRParen(): string {
-    const parts: string[] = [];
-    let depth = 1;
-    while (!this.isAtEnd()) {
-      const tok = this.peek();
-      if (tok.type === TokenType.RPAREN && this.peekAt(1)?.type === TokenType.RPAREN && depth === 1) {
-        this.advance(); this.advance();
-        return parts.join('').trim();
-      }
-      if (tok.type === TokenType.LPAREN) depth++;
-      if (tok.type === TokenType.RPAREN) depth--;
-      // Preserve whitespace adjacency cues by inserting a space when
-      // the token did not abut the previous one.
-      if (parts.length > 0 && !tok.adjacent) parts.push(' ');
-      parts.push(tok.value);
-      this.advance();
-    }
-    throw new ParserError("Unterminated arithmetic expression — expected '))'", this.peek().position);
+    const token = this.advance();
+    return { type: 'ArithmeticCommand', expression: token.value.trim(), position: token.position };
   }
 
   // ─── for ((init; cond; update)) ──────────────────────────────
 
   private parseCStyleForClause(pos: SourcePosition | undefined): CStyleForClause {
-    this.expect(TokenType.LPAREN);
-    this.expect(TokenType.LPAREN);
-    // Collect everything to `))`, then split on the two top-level `;`
-    // boundaries. The lexer treats `;` as a SEMI operator token, so
-    // capture verbatim and parse by position.
-    const segments: string[] = ['', '', ''];
-    let idx = 0;
-    let depth = 1;
-    while (!this.isAtEnd()) {
-      const tok = this.peek();
-      if (tok.type === TokenType.RPAREN && this.peekAt(1)?.type === TokenType.RPAREN && depth === 1) {
-        this.advance(); this.advance();
-        break;
-      }
-      if (tok.type === TokenType.LPAREN) depth++;
-      if (tok.type === TokenType.RPAREN) depth--;
-      if (tok.type === TokenType.SEMI && depth === 1 && idx < 2) {
-        idx++;
-        this.advance();
-        continue;
-      }
-      if (segments[idx].length > 0 && !tok.adjacent) segments[idx] += ' ';
-      segments[idx] += tok.value;
-      this.advance();
+    const segments: string[] = [''];
+    let depth = 0;
+    for (const character of this.advance().value) {
+      if (character === '(') depth++;
+      else if (character === ')') depth--;
+      if (character === ';' && depth === 0 && segments.length < 3) segments.push('');
+      else segments[segments.length - 1] += character;
     }
-    const [init, cond, update] = segments.map(s => s.trim());
+    const [init, cond, update] = [...segments, '', ''].slice(0, 3).map(s => s.trim());
     this.matchSeparator();
     this.skipNewlines();
     return this.withContext('loop', () => {
