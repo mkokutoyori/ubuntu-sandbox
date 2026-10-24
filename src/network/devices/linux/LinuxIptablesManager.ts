@@ -1408,8 +1408,8 @@ export class LinuxIptablesManager {
     const cn = args[0];
     const ch = table.chains.get(cn);
     if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
-    const r = this.parseRule(args.slice(1));
-    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const r = this.parseRuleFor(cn, args.slice(1));
+    if ('exitCode' in r) return r;
     // Validate target exists if it's a chain jump
     if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
@@ -1499,8 +1499,8 @@ export class LinuxIptablesManager {
     }
 
     // Delete by specification
-    const spec = this.parseRule(args.slice(1));
-    if (typeof spec === 'string') return { output: spec, exitCode: 1 };
+    const spec = this.parseRuleFor(cn, args.slice(1));
+    if ('exitCode' in spec) return spec;
     const idx = ch.rules.findIndex(r => this.rulesEqual(r, spec));
     if (idx === -1) return { output: 'iptables: Bad rule (does a matching rule exist in that chain?).', exitCode: 1 };
     ch.rules.splice(idx, 1);
@@ -1524,8 +1524,8 @@ export class LinuxIptablesManager {
       ruleArgs = args.slice(1);
     }
 
-    const r = this.parseRule(ruleArgs);
-    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const r = this.parseRuleFor(cn, ruleArgs);
+    if ('exitCode' in r) return r;
     const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT')
       ?? this.structureError(r, cn, 'RULE_INSERT');
     if (natErrI) return { output: natErrI, exitCode: 4 };
@@ -1542,8 +1542,8 @@ export class LinuxIptablesManager {
     if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     const num = parseInt(args[1]);
     if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
-    const r = this.parseRule(args.slice(2));
-    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const r = this.parseRuleFor(cn, args.slice(2));
+    if ('exitCode' in r) return r;
     const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE')
       ?? this.structureError(r, cn, 'RULE_REPLACE');
     if (natErrR) return { output: natErrR, exitCode: 4 };
@@ -1558,8 +1558,8 @@ export class LinuxIptablesManager {
     const cn = args[0];
     const ch = table.chains.get(cn);
     if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
-    const spec = this.parseRule(args.slice(1));
-    if (typeof spec === 'string') return { output: spec, exitCode: 1 };
+    const spec = this.parseRuleFor(cn, args.slice(1));
+    if ('exitCode' in spec) return spec;
     if (!ch.rules.some(r => this.rulesEqual(r, spec))) {
       return { output: 'iptables: Bad rule (does a matching rule exist in that chain?).', exitCode: 1 };
     }
@@ -1801,6 +1801,23 @@ export class LinuxIptablesManager {
 
   private parameterProblem(message: string): string {
     return `${this.banner}: ${message}\nTry \`${this.tool} -h' or '${this.tool} --help' for more information.`;
+  }
+
+  private parseRuleFor(chain: string, args: string[]): IptablesRule | { output: string; exitCode: number } {
+    const rule = this.parseRule(args);
+    if (typeof rule === 'string') return { output: rule, exitCode: 2 };
+    const misplaced = this.interfaceOptionProblem(chain, rule);
+    return misplaced === null ? rule : { output: misplaced, exitCode: 2 };
+  }
+
+  private interfaceOptionProblem(chain: string, rule: IptablesRule): string | null {
+    if ((chain === 'PREROUTING' || chain === 'INPUT') && rule.outInterface !== '') {
+      return this.parameterProblem(`Can't use -o with ${chain}\n`);
+    }
+    if ((chain === 'POSTROUTING' || chain === 'OUTPUT') && rule.inInterface !== '') {
+      return this.parameterProblem(`Can't use -i with ${chain}\n`);
+    }
+    return null;
   }
 
   private multiportProtocolProblem(rule: IptablesRule): string | null {
