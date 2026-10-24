@@ -3442,21 +3442,6 @@ sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage
 source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
 (`global(senders.keepTrack)`) restent a porter.
 
-### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
-Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
-`abortOnFailedQueueStartup` et `reportChildProcessExits` sont evalues (voir `linux-rsyslog-queue-startup.test.ts` et
-`linux-rsyslog-child-exits.test.ts`) ; la file « disk » sans `queue.fileName` est le seul echec de demarrage de file que le moteur connaisse.
-Acceptes et jamais lus : `inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
-`allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
-`libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
-`abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
-Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
-`lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
-(et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
-moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
-`dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
-« linkedlist » en memoire.
-
 ### [journald] journald.conf : `Seal` lu sans effet
 `journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `Compress`, `Audit`, `ReadKMsg`, `SplitMode`,
 `SyncIntervalSec`, `RateLimit*`, `System/Runtime` `MaxUse`/`KeepFree`/`MaxFileSize`/`MaxFiles`, `MaxRetentionSec`, `MaxFileSec`, `ForwardTo*` et leurs `MaxLevel*`

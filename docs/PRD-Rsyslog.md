@@ -339,6 +339,41 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
   volume unique, donc `/run` (journal volatil) partage la capacité de la racine.
 
+- **Files de messages** (`rsyslog-queue-params.test.ts`, `rsyslog-disk-assisted.test.ts`, `rsyslog-disk-queue.test.ts`,
+  `rsyslog-queue-shutdown.test.ts`, `rsyslog-queue-enqueue-timeout.test.ts`) : `Queue.ts` est un ensemble de workers comme `queue.c`.
+  Chaque worker depile un lot entier, le traite, le valide (commit des actions) puis le supprime ; `workerThreads` et
+  `workerThreadMinimumMessages` decident du nombre de workers actifs ; `dequeueSlowdown`, la fenetre horaire, `minDequeueBatchSize`
+  (et son delai), `samplingInterval`, `discardMark`/`discardSeverity` et les marques `fullDelayMark` / `lightDelayMark` (qui retiennent
+  le producteur d'une entree retardable : imfile plein, imtcp/imuxsock/imklog leger, sans jamais perdre le message) sont evalues. Quand
+  la file est pleine, un message attend `timeoutEnqueue` ms qu'une place se libere avant d'etre rejete ; le simulateur n'ayant pas de fil
+  producteur a suspendre, le message attend dans l'ordre d'arrivee et le delai de chacun part quand il arrive en tete.
+  `qqueueApplyCnfParam` et `qqueueCorrectParams` sont portes avec leurs phrases (`QueueParams.ts`) : file trop petite ou trop grande,
+  marques incoherentes (corrigees), mode direct avec parametres (ignores, une file d'action est directe sauf `queue.type`), disque sans
+  `queue.fileName` (devient linkedList pour les parametres `queue.*`, echoue au demarrage pour les directives `$...Queue*`), prefixe de
+  fichier deja pris, `queue.spoolDirectory`. A l'arret, chaque worker tourne encore `timeoutShutdown` ms (1500 pour la file principale et les rulesets,
+  10 pour une action) puis `timeoutActionCompletion` ms pour le message en cours : le simulateur n'ayant pas de fil a annuler, ce delai est
+  depense en declenchant les reveils du worker ; `shutdown.queue.doubleSize` double la capacite de toutes les files avant ce vidage.
+  `default.action.queue.timeout*` et `default.ruleset.queue.timeout*` alimentent les files creees apres le `global()`.
+- **File disque classique** : une file `Disk`, ou la file fille « `<nom>[DA]` » d'une file assistee (`queue.fileName` sur FixedArray/LinkedList),
+  ecrit chaque message en enregistrements du flux d'objets de la source (`obj.c`, `msg.c` : `<Obj:1:msg:1:`, `+nom:type:longueur:donnee:`, `>End`)
+  dans `<fileName>.NNNNNNNN` du repertoire de travail, tourne a `maxFileSize`, supprime un fichier quand le pointeur de suppression l'a quitte,
+  ecrit `<fileName>.qi` (deux enregistrements `strm`) au changement de fichier, a chaque `checkpointInterval`, apres une suppression et a l'arret,
+  refuse au-dela de `maxDiskSpace` et reprend son arriere-plan apres un redemarrage. Une file assistee remplit sa fille quand le nombre de messages
+  en attente atteint `highWatermark`, jusqu'a `lowWatermark` ; a l'arret la partie memoire passe dans la fille (`saveOnShutdown`).
+- **Options de compilation et signaux** (`linux-rsyslog-compat.test.ts`) : `compatibility.configFormat.{legacy,syslogd,property}` (`enable`/`warn`/`disable`
+  avec les phrases de `glbl.c`), `libcapng.*` et `stdlog.channelSpec` (la configuration par defaut du source n'active ni libcap-ng ni
+  liblogging-stdlog : le parametre echoue avec le message de `glbl.c`), `defaultOpensslEngine` (moteur absent signale au demarrage du pilote
+  ossl, premiere ligne seulement : la pile d'erreurs d'OpenSSL qui suit n'est pas reproductible ici), `shutdown.enable.ctlc` (SIGINT/SIGQUIT
+  ignores par defaut, arret avec « exiting on signal N. » sinon) et le bit « continuer malgre une erreur dure » de `internal.developerOnly.options`.
+
+Parametres acceptes sans effet observable, par decision et non par oubli : `systemd.notifyReadyDelay` (le service passe actif sans delai mesurable
+dans le simulateur), `inputs.timeout.shutdown` (les entrees s'arretent de facon synchrone), `allMessagesToStderr` et
+`errorMessagesToStderr.maxNumber` (la sortie d'erreur du demon part vers `/dev/null` sous l'unite livree - `StandardOutput=null` - et le simulateur
+n'a pas de lancement au premier plan), la famille `debug.*` (pas de mode debug), le bit 2 de `internal.developerOnly.options` (marque
+« temporary for bughunt » dans le source), `queue.syncQueueFiles` (un `fsync` n'est pas observable dans un systeme de fichiers virtuel),
+`queue.timeoutWorkerThreadShutdown` (arret d'un worker inactif, sans trace visible), `queue.scope` et `queue.local.*` (graphe de files local
+experimental).
+
 Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
 n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
 simulée au lieu de bloquer le fil.
