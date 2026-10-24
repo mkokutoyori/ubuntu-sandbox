@@ -308,6 +308,11 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   désactivée, ou le démon s'arrête sur la ligne de la source avec `abortOnFailedQueueStartup`
   (`linux-rsyslog-queue-startup.test.ts`).
 
+- **journald.conf** (`linux-journald-config.test.ts`) : le démon lit `/etc/systemd/journald.conf` puis les drop-ins de
+  `journald.conf.d` (fusionnés par nom, `/etc` masque `/usr/lib`), au démarrage du service. Ubuntu livre le drop-in
+  `syslog.conf` (`ForwardToSyslog=yes`), qui est ce qui confie le journal à rsyslog : `ForwardToSyslog`, `MaxLevelSyslog`,
+  `MaxLevelStore`, `Storage` et `LineMax` sont évalués, et les erreurs de syntaxe sont journalisées avec le fichier et la ligne.
+
 Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
 n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
 simulée au lieu de bloquer le fil.

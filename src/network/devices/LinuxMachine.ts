@@ -2094,6 +2094,7 @@ export abstract class LinuxMachine extends EndHost
   private wireNetworkConfigLifecycle(): void {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
+      if (name === 'systemd-journald' && event !== 'restart') this.executor.logMgr.reloadJournaldConfig(this.executor.processMgr.pidof('systemd-journald')[0] ?? 0);
       if (name === 'systemd-networkd') this.applyNetworkConfiguration();
       // `resolved.conf` n'était lu qu'à la toute première instanciation du
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le

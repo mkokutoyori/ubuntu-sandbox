@@ -3465,19 +3465,17 @@ moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discard
 `dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
 « linkedlist » en memoire.
 
-### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
-Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
-`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
-(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
-Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
-System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
-TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
-(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
-`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
-8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
-hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
-`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
-le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
+### [journald] journald.conf : cles lues mais non evaluees, et chargeur commun non repris par resolved/networkd
+`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `MaxLevelStore`,
+`MaxLevelSyslog`, `ForwardToSyslog` (ce que rsyslog recoit) et `LineMax` ; toutes les cles du binaire 255.4 sont validees avec les mots de
+systemd. Reste lu sans effet : `Compress`, `Seal`, `SplitMode`, `SyncIntervalSec`, `ReadKMsg`, `Audit`, `TTYPath` ; `System/RuntimeMaxUse`, `KeepFree`,
+`MaxFileSize`, `MaxFiles`, `MaxRetentionSec` et `MaxFileSec`, parce que le modele de taille du journal (`LinuxJournald.ts` : 8 Mo par pas, plafond 4 Go) ne se mesure
+qu'en lancant le vrai `systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
+le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici ; `RateLimitIntervalSec` et `RateLimitBurst`,
+parce que la modulation du seuil par l'espace disque libre n'est lisible dans aucune documentation de la machine ; `ForwardToKMsg`, `ForwardToConsole`, `ForwardToWall` et les
+`MaxLevel` correspondants, faute d'une destination dans l'hote (journald n'a pas de crochet vers `/dev/console` ni vers les terminaux) et du texte que `wall` emet.
+Doublon connu : `resolved.conf` (`parseResolvedConf`) et les fichiers de `systemd-networkd` (`NetworkdFiles.ts`) ont leur propre lecteur, sans diagnostics ni
+fusion des drop-ins par nom ; ils doivent reprendre `readSystemdConfig`. `systemd-resolved` n'est pas installe dans ce conteneur : la liste de ses cles n'a pas pu etre relevee.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »

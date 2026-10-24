@@ -9,7 +9,9 @@ import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import { LinuxJournald } from './journal/LinuxJournald';
-import type { ProcessFacts } from './journal/JournaldServer';
+import type { JournaldStorage, ProcessFacts } from './journal/JournaldServer';
+import { readJournaldConfig } from './journal/JournaldConfig';
+import { JOURNALD_CONF_PATH, JOURNALD_CONF_TEXT, UBUNTU_SYSLOG_DROP_IN_PATH, UBUNTU_SYSLOG_DROP_IN_TEXT } from './journal/JournaldDefaults';
 import type { JournalRecord } from './journal/JournalRecord';
 import { fieldValues } from './journal/JournalRecord';
 import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
@@ -151,14 +153,41 @@ export class LinuxLogManager {
       hostname: () => this.currentHostname(),
       probe: (pid) => this.probeFacts(pid),
       journaldPid: () => null,
-      persistentStorage: () => this.vfs.resolveInode('/var/log/journal') !== null,
+      persistentStorage: () => this.persistentJournal(),
       diskFreeBytes: () => 20 * 1024 ** 3,
     });
+    this.seedJournaldConfiguration();
+    this.reloadJournaldConfig();
     this.journald.onRecord((record) => this.onJournalRecord(record));
     this.populateBootMessages();
     this.seeding = false;
     this.syncJournalFiles();
     this.vfs.registerWritableGeneratedFile('/dev/kmsg', () => this.kernelRingRecords(), (content) => this.writeKernelRing(content), 0o644, 0, 0);
+  }
+
+  private journaldStorage: JournaldStorage = 'auto';
+
+  private persistentJournal(): boolean {
+    if (this.journaldStorage === 'persistent') return true;
+    if (this.journaldStorage === 'volatile') return false;
+    return this.vfs.resolveInode('/var/log/journal') !== null;
+  }
+
+  private seedJournaldConfiguration(): void {
+    if (!this.vfs.exists(JOURNALD_CONF_PATH)) this.vfs.writeFile(JOURNALD_CONF_PATH, JOURNALD_CONF_TEXT, 0, 0, 0o022);
+    if (!this.vfs.exists(UBUNTU_SYSLOG_DROP_IN_PATH)) {
+      this.vfs.mkdirp('/usr/lib/systemd/journald.conf.d', 0o755, 0, 0);
+      this.vfs.writeFile(UBUNTU_SYSLOG_DROP_IN_PATH, UBUNTU_SYSLOG_DROP_IN_TEXT, 0, 0, 0o022);
+    }
+  }
+
+  reloadJournaldConfig(journaldPid = 0): void {
+    const readout = readJournaldConfig(this.vfs);
+    Object.assign(this.journald.settings, readout.settings);
+    this.journaldStorage = readout.settings.storage;
+    for (const line of readout.diagnostics) {
+      this.submitLibcSyslog(SYSLOG_FACILITY.daemon << 3 | 4, 'systemd-journald', journaldPid, line, this.nowMs());
+    }
   }
 
   /** La ligne de commande du noyau, celle que `/proc/cmdline` rend. */
@@ -484,7 +513,8 @@ export class LinuxLogManager {
   private onJournalRecord(record: JournalRecord): void {
     const entry = this.entryOf(record);
     const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
-    this.syslogSocket.deliver({
+    const settings = this.journald.settings;
+    if (settings.forwardToSyslog && entry.priority <= settings.maxLevelSyslog) this.syslogSocket.deliver({
       text: `<${(entry.facility << 3) | entry.priority}>${fmtSyslogTimestamp(entry.timestamp, this.zoneName())} ${entry.tag}${pidPart}: ${entry.message}`,
       pid: entry.senderPid,
       uid: entry.senderUid,

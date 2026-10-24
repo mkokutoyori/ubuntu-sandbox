@@ -42,6 +42,7 @@ function hex128(seed: string): string {
 export class LinuxJournald {
   readonly bootId: string;
   private readonly files: JournalFileSet;
+  private readonly transient: JournalFileSet;
   private readonly server: JournaldServer;
   private readonly listeners = new Set<(record: JournalRecord) => void>();
   private stamp: { realtimeUsec: number } | null = null;
@@ -52,14 +53,15 @@ export class LinuxJournald {
   constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = DEFAULT_JOURNALD_SETTINGS) {
     this.bootId = hex128(`boot:${platform.hostname()}:${platform.machineId()}:${platform.bootUsec()}`);
     this.files = new JournalFileSet(index => this.identityOf(index), 1);
+    this.transient = new JournalFileSet(index => this.identityOf(index), 1);
     const host: JournaldHost = {
       probe: pid => platform.probe(pid),
       identity: () => ({ bootId: this.bootId, machineId: platform.machineId(), hostname: platform.hostname() }),
       cgroupRoot: () => '/',
       newStreamId: () => hex128(`stream:${this.bootId}:${this.streamCounter++}`),
-      write: items => this.store(items),
+      write: (items, priority) => this.store(items, priority),
     };
-    this.server = new JournaldServer(host, settings);
+    this.server = new JournaldServer(host, { ...settings });
     this.server.selfContext = null;
   }
 
@@ -68,10 +70,12 @@ export class LinuxJournald {
     return { path: `${this.directory}/system.journal`, fileId: hex128(`file:${this.bootId}:${index}`), seqnumId: hex128(`seqnum:${this.bootId}`), machineId };
   }
 
-  private store(items: Uint8Array[]): void {
+  private store(items: Uint8Array[], priority: number): void {
     const realtime = this.stamp !== null ? this.stamp.realtimeUsec : this.platform.nowUsec();
     const monotonic = Math.max(0, realtime - this.platform.bootUsec());
-    const record = this.files.append(items, realtime, monotonic, this.bootId);
+    const settings = this.server.settings;
+    const kept = settings.storage !== 'none' && (priority & 7) <= settings.maxLevelStore;
+    const record = (kept ? this.files : this.transient).append(items, realtime, monotonic, this.bootId);
     for (const listener of [...this.listeners]) listener(record);
   }
 
