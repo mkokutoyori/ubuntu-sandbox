@@ -148,8 +148,16 @@ export class DynStatsBucket {
     const path = this.stateFilePath();
     const members = this.table.values().map((counter) => `${plainJson(counter.metric)}:${counter.value}`);
     const runtime = this.services.runtime();
-    if (this.services.files.write(path, `{"name":${plainJson(this.options.name)},"values":{${members.join(',')}}}`)) return;
-    runtime.error(`dynstats: cannot open state file '${path}.tmp' for persisting file state - some data will probably be duplicated on next startup`, RS_RET.IO_ERROR);
+    const files = this.services.files;
+    const temporary = `${path}.tmp`;
+    if (!files.write(temporary, `{"name":${plainJson(this.options.name)},"values":{${members.join(',')}}}`)) {
+      runtime.error(`dynstats: cannot open state file '${temporary}' for persisting file state - some data will probably be duplicated on next startup`, RS_RET.IO_ERROR);
+      if (synchronous) runtime.error(`dynstats: could not persist state file ${path} - data may be repeated on next startup. Is WorkDirectory set?`, RS_RET.IO_ERROR);
+      return;
+    }
+    if (files.rename(temporary, path)) return;
+    runtime.error(`dynstats: rename failed from '${temporary}' to '${path}'`, RS_RET.IO_ERROR);
+    files.remove(temporary);
     if (synchronous) runtime.error(`dynstats: could not persist state file ${path} - data may be repeated on next startup. Is WorkDirectory set?`, RS_RET.IO_ERROR);
   }
 
