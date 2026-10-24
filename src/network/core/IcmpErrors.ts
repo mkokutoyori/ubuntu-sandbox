@@ -34,6 +34,9 @@ export const ICMP_UNREACH_NET_PROHIBITED = 9;
 export const ICMP_UNREACH_HOST_PROHIBITED = 10;
 export const ICMP_UNREACH_ADMIN_PROHIBITED = 13;
 
+export const ICMP_REDIRECT_HOST = 1;
+export const ICMP_REDIRECT_CODES: ReadonlySet<number> = new Set([0, 1, 2, 3]);
+
 export type UnreachableCodeName =
   | 'net-unreachable' | 'host-unreachable' | 'protocol-unreachable'
   | 'port-unreachable' | 'frag-needed' | 'admin-prohibited' | 'other';
@@ -216,7 +219,7 @@ export const ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED = 1;
  */
 export const ICMP_ERROR_PAYLOAD_SIZE = 8 + 20 + 8;
 
-export type ICMPErrorType = 'time-exceeded' | 'destination-unreachable';
+export type ICMPErrorType = 'time-exceeded' | 'destination-unreachable' | 'redirect';
 
 // ─── RFC 1122 §3.2.2 generation guards ──────────────────────────────
 
@@ -317,6 +320,7 @@ export function mayGenerateICMPv6Error(
 export interface ICMPErrorOptions {
   /** RFC 1191 §4: Next-Hop MTU for Fragmentation Needed (Type 3, Code 4). */
   nextHopMTU?: number;
+  gateway?: IPAddress;
   quote?: IcmpErrorQuote;
   extensions?: readonly IcmpExtensionObject[];
 }
@@ -369,6 +373,7 @@ export function buildICMPError(
     mtu: (icmpType === 'destination-unreachable' && code === ICMP_UNREACH_FRAG_NEEDED)
       ? options.nextHopMTU
       : undefined,
+    gateway: icmpType === 'redirect' ? options.gateway : undefined,
     // Simulator-level reference to the offending packet: receivers correlate
     // echo failures (ping/traceroute) and IPsec PMTU discovery through it.
     originalPacket: offendingPkt,

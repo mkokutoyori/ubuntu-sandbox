@@ -39,22 +39,25 @@ export function canLendClock(device: unknown): boolean {
 export async function pingOnSimulatedClock(
   host: SchedulableHost,
   command: string,
+  alsoLent: readonly Pick<SchedulableHost, 'setScheduler'>[] = [],
 ): Promise<string> {
-  return (await timedOnSimulatedClock(host, command)).output;
+  return (await timedOnSimulatedClock(host, command, alsoLent)).output;
 }
 
 export async function timedOnSimulatedClock(
   host: SchedulableHost,
   command: string,
+  alsoLent: readonly Pick<SchedulableHost, 'setScheduler'>[] = [],
 ): Promise<{ output: string; elapsedMs: number }> {
   const clock = new VirtualTimeScheduler();
-  host.setScheduler(clock);
+  const lent = [host, ...alsoLent];
+  for (const borrower of lent) borrower.setScheduler(clock);
   try {
     const output = String(await clock.advanceUntilSettled(
       Promise.resolve(host.executeCommand(command)),
     ));
     return { output, elapsedMs: clock.now() };
   } finally {
-    host.setScheduler(null);
+    for (const borrower of lent) borrower.setScheduler(null);
   }
 }

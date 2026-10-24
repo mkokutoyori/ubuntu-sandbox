@@ -86,6 +86,8 @@ import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
   LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
+import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
+import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
@@ -313,6 +315,17 @@ export abstract class LinuxMachine extends EndHost
   private readonly ipv4Settings = new LinuxIpv4Settings();
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly ipv6Settings = new LinuxIpv6Settings();
+  private deviceConfStore: Ipv4DeviceConf | null = null;
+  private get deviceConf(): Ipv4DeviceConf {
+    this.deviceConfStore ??= new Ipv4DeviceConf([...this.ports.keys()]);
+    return this.deviceConfStore;
+  }
+  protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  private setIpForwarding(enabled: boolean): void {
+    const changed = this.ipForwardEnabled !== enabled;
+    this.ipForwardEnabled = enabled;
+    if (changed) this.deviceConf.forwardingChanged(enabled);
+  }
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
   protected override get ipv6FragmentTimeoutMs(): number { return this.ipv6Settings.fragmentTimeoutMs; }
   protected override get ipv6FragmentHighThresholdBytes(): number {
@@ -439,9 +452,17 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_forward',
       () => `${this.ipForwardEnabled ? 1 : 0}\n`,
       (text) => {
-        this.ipForwardEnabled = text.trim() === '1';
+        this.setIpForwarding(text.trim() === '1');
         return true;
       });
+    for (const scope of this.deviceConf.scopes()) {
+      this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
+      for (const knob of IPV4_DEVICE_CONF_KNOBS) {
+        this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/conf/${scope}/${knob.name}`,
+          () => `${this.deviceConf.get(scope, knob.name)}\n`,
+          (text) => this.deviceConf.write(scope, knob.name, text));
+      }
+    }
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
@@ -4527,7 +4548,7 @@ export abstract class LinuxMachine extends EndHost
         return this.requestDhcpv6Information(iface, verbose);
       },
       setIpForward: (enabled: boolean): void => {
-        this.ipForwardEnabled = enabled;
+        this.setIpForwarding(enabled);
       },
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;

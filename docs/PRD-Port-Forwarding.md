@@ -1071,10 +1071,27 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   L'événement `tcp.segment.sent` est publié après les crochets, avec le
   paquet tel qu'il traverse l'interface : `tcpdump -i lo` montre le port
   atteint, pas le port composé.
+- **Le renvoi par la même interface** (hairpin NAT, routeur sur un bâton) :
+  `EndHost.forwardIPv4` ne jette plus un paquet qui ressort par son
+  interface d'arrivée. L'ordre est celui d'`ip_forward` : TTL, MTU avec DF
+  (`Frag needed` part avant la chaîne FORWARD), redirection ICMP, chaîne
+  FORWARD. La redirection est celle d'`ip_rt_send_redirect` : source
+  directement connectée sur l'interface, `send_redirects`, `shared_media`
+  (ou une passerelle sur le lien de la source), au plus neuf redirections
+  par source avec une attente qui double, puis le silence. Les paramètres
+  `/proc/sys/net/ipv4/conf/{all,default,<if>}/{send_redirects,
+  accept_redirects,secure_redirects,shared_media}` sont de vrais
+  paramètres (`Ipv4DeviceConf` : OU de `all` et de l'interface, ET pour
+  `accept_redirects` d'un routeur, une écriture sur `default` atteint les
+  interfaces où personne n'a écrit, `ip_forward` bascule
+  `all/accept_redirects`) et `accept_redirects` décide de ce que l'hôte
+  fait d'une redirection reçue. La construction du paquet de redirection
+  est celle des autres erreurs ICMP (`buildICMPError`), pour la
+  `Router` Cisco comme pour Linux.
 - **Reste** : l'écho ICMP et les datagrammes IP bruts que la machine émet
   (leur résolution du voisin précède encore la chaîne OUTPUT), la
-  défragmentation autour de la traduction, le renvoi par la même
-  interface, NAT66, le vidage des flux MASQUERADE quand l'interface tombe.
+  défragmentation autour de la traduction, NAT66, le vidage des flux
+  MASQUERADE quand l'interface tombe.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
   `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
@@ -1086,6 +1103,9 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   sens ;
   `probe-iptables-la-chaine-output-de-nat-traduit-ce-que-la-machine-ouvre.test.ts`
   (41 cas) pour ce que la machine ouvre elle-même ;
+  `probe-linux-renvoie-par-l-interface-d-arrivee-et-envoie-la-redirection.test.ts`
+  (55 cas), `icmp-redirect-rules.test.ts` et `ipv4-device-conf.test.ts`
+  pour le renvoi par la même interface ;
   `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
   vont maintenant jusqu'à l'établissement de la connexion.
 

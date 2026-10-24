@@ -26,8 +26,9 @@ import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
 import {
   classifyIpv4Destination, decrementForForwarding, invalidSourceFor, ipv4HeaderProblem,
-  connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
+  addressesOnLink, connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
+import { HOST_REDIRECT_POLICY, RedirectLimiter, redirectIsAcceptable, redirectIsDue, type RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import {
   newProtocolCounters, countIcmpIn, countIcmpOut, countIcmp6In, countIcmp6Out, tcpCounterName,
@@ -124,6 +125,8 @@ import {
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
+  ICMP_REDIRECT_CODES,
+  ICMP_REDIRECT_HOST,
   answersWithTcpReset,
   rejectTypeOf,
   udpSocketErrorFor,
@@ -307,7 +310,6 @@ interface StoredRouteException {
 const MIN_PMTU = 552;
 const PMTU_EXPIRES_MS = 600_000;
 const REDIRECT_EXPIRES_MS = 300_000;
-const REDIRECT_CODES = new Set([0, 1, 2, 3]);
 
 class IcmpErrorReply extends Error {
   constructor(message: string, readonly report?: Icmp6ErrorReport, readonly sendError?: Errno) {
@@ -2960,7 +2962,15 @@ export abstract class EndHost extends Equipment {
     }
 
     const outPortName = route.port.getName();
-    if (outPortName === inPort) return; // avoid looping back on same interface
+    const effectiveMtu = route.port.getMTU();
+    if (ipPkt.totalLength > effectiveMtu && (ipPkt.flags & IPV4_FLAG_DF) !== 0) {
+      Logger.info(this.id, 'ipv4:mtu-exceeded',
+        `${this.name}: packet ${ipPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
+      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
+      return;
+    }
+
+    if (route.iface === inPort) this.redirectSenderIfDue(inPort, route.nextHopIP, decision.packet);
 
     // ── Firewall: filter forwarded packets (FORWARD chain) ──
     const verdict = this.firewallFilter(inPort, ipPkt, 'forward', outPortName);
@@ -2976,21 +2986,7 @@ export abstract class EndHost extends Equipment {
     const fwdPkt = this.natPostRouting(inPort, route.port, route.nextHopIP, ipPkt, decision.packet);
     if (fwdPkt === null || !this.confirmForwarded(ipPkt)) return;
 
-    // RFC 791 §3.2 / RFC 1191: this NAT-gateway forward can cross an MTU
-    // boundary just like a real router forward can. DF=1 gets an ICMP
-    // frag-needed instead of going out oversized; DF=0 gets fragmented.
-    const effectiveMtu = route.port.getMTU();
-    let outgoingFragments: IPv4Packet[] = [fwdPkt];
-    if (fwdPkt.totalLength > effectiveMtu) {
-      const dfSet = (fwdPkt.flags & IPV4_FLAG_DF) !== 0;
-      if (dfSet) {
-        Logger.info(this.id, 'ipv4:mtu-exceeded',
-          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
-        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
-        return;
-      }
-      outgoingFragments = fragmentIPv4(fwdPkt, effectiveMtu);
-    }
+    const outgoingFragments = fwdPkt.totalLength > effectiveMtu ? fragmentIPv4(fwdPkt, effectiveMtu) : [fwdPkt];
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
     this.protocolCounters.ipForwDatagrams += outgoingFragments.length;
@@ -3288,7 +3284,7 @@ export abstract class EndHost extends Equipment {
         reason,
       });
     } else if (icmp.icmpType === 'redirect' && icmp.gateway && icmp.originalPacket) {
-      this.acceptRedirect(ipPkt.sourceIP, icmp.gateway, icmp.originalPacket.destinationIP, icmp.code);
+      this.acceptRedirect(portName, ipPkt.sourceIP, icmp.gateway, icmp.originalPacket.destinationIP, icmp.code);
       const echo = icmp.originalPacket.payload as ICMPPacket | undefined;
       if (echo?.type === 'icmp' && echo.icmpType === 'echo-request') {
         this.getBus().publish({
@@ -3577,11 +3573,41 @@ export abstract class EndHost extends Equipment {
       nextHopMTU, quote: this.icmpErrorQuote(),
     });
 
+    this.emitRoutedIcmpError(route, errorIP);
+  }
+
+  private emitRoutedIcmpError(route: { port: Port; nextHopIP: IPAddress }, errorIP: IPv4Packet): void {
     const outPortName = route.port.getName();
     const verdict = this.firewallFilter(outPortName, errorIP, 'out');
     if (verdict === 'drop' || verdict === 'reject') return;
 
     this.sendIpv4FrameArpAware(outPortName, errorIP, route.nextHopIP);
+  }
+
+  protected redirectPolicy(): RedirectPolicy {
+    return HOST_REDIRECT_POLICY;
+  }
+
+  private readonly redirectLimiter = new RedirectLimiter();
+
+  private redirectSenderIfDue(inPort: string, gateway: IPAddress, forwarded: IPv4Packet): void {
+    const arrival = this.ports.get(inPort);
+    if (arrival === undefined) return;
+    const towardSource = this.bestHostRoute(forwarded.sourceIP, inPort);
+    const configuredGateway = this.bestHostRoute(forwarded.destinationIP)?.nextHop ?? null;
+    const due = redirectIsDue(this.redirectPolicy(), {
+      iface: inPort,
+      sourceIsDirectlyConnected: towardSource !== null && towardSource.nextHop === null,
+      sourceOnLinkWithGateway: addressesOnLink(connectedPrefixesOfPort(arrival), forwarded.sourceIP, configuredGateway),
+    });
+    if (!due || !this.redirectLimiter.admit(forwarded.sourceIP, this.getScheduler().now())) return;
+    if (!mayGenerateICMPError(forwarded)) return;
+    const route = this.resolveRoute(forwarded.sourceIP);
+    const source = route?.port.addressToward(route.nextHopIP) ?? null;
+    if (route === null || source === null) return;
+    this.emitRoutedIcmpError(route, buildICMPError(source, forwarded, 'redirect', ICMP_REDIRECT_HOST, this.defaultTTL, {
+      gateway, quote: this.icmpErrorQuote(),
+    }));
   }
 
   // ─── TCP Transport (RFC 793) ───────────────────────────────────
@@ -3778,11 +3804,22 @@ export abstract class EndHost extends Equipment {
     });
   }
 
-  private acceptRedirect(oldGateway: IPAddress, newGateway: IPAddress, destination: IPAddress, code: number): void {
-    if (!REDIRECT_CODES.has(code & 7)) return;
+  private acceptRedirect(arrivedOn: string, oldGateway: IPAddress, newGateway: IPAddress, destination: IPAddress, code: number): void {
+    if (!ICMP_REDIRECT_CODES.has(code & 7)) return;
     const route = this.resolveRoute(destination);
     if (!route || route.nextHopIP.equals(destination) || !route.nextHopIP.equals(oldGateway)) return;
-    if (newGateway.equals(oldGateway) || !this.isUnicastGateway(newGateway)) return;
+    const arrival = this.ports.get(arrivedOn);
+    if (arrival === undefined) return;
+    const accepted = redirectIsAcceptable(this.redirectPolicy(), {
+      arrivedOn,
+      forwarding: this.ipForwardEnabled,
+      oldGateway,
+      newGateway,
+      newGatewayUsable: this.isUnicastGateway(newGateway) && this.resolveRoute(newGateway) !== null,
+      newGatewayOnLinkWithOld: addressesOnLink(connectedPrefixesOfPort(arrival), newGateway, oldGateway),
+      newGatewayListed: this.buildFullRoutingTable().some((entry) => entry.iface === arrivedOn && entry.nextHop?.equals(newGateway) === true),
+    });
+    if (!accepted) return;
 
     const neighbour = this.arpTable.get(newGateway.toString());
     if (!neighbour || neighbour.type === 'failed' || neighbour.iface !== route.iface) {
