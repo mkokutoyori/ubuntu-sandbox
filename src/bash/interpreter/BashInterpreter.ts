@@ -140,7 +140,7 @@ export interface IOContext {
    * resolve the pattern (the interpreter then falls back to the literal,
    * matching bash's `nullglob`-off default).
    */
-  globExpand?(pattern: string, cwd: string): string[] | null;
+  globExpand?(pattern: string, cwd: string, options?: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean }): string[] | null;
   /** Resolve the home directory of `user`; `null` means the user is unknown. */
   homeFor?(user: string): string | null;
   wallClock?(): { nowMs(): number; format(pattern: string, epochMs: number): string };
@@ -256,6 +256,8 @@ export class BashInterpreter {
   private readonly daemonMode: boolean;
   private readonly interactive: boolean;
   private functionStack: string[] = [];
+  private readonly jobs = new Map<string, number>();
+  private jobCounter = 0;
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
@@ -526,9 +528,9 @@ export class BashInterpreter {
   private makeGlobFn(): GlobFn | undefined {
     if (!this.io?.globExpand) return undefined;
     const expand = this.io.globExpand.bind(this.io);
-    return (pattern: string) => {
+    return (pattern: string, options) => {
       const cwd = this.env.get('PWD') ?? '/';
-      try { return expand(pattern, cwd); }
+      try { return expand(pattern, cwd, options); }
       catch { return null; }
     };
   }
@@ -624,6 +626,10 @@ export class BashInterpreter {
       this.env.lastExitCode = 0;
       return;
     }
+    if (node.background) {
+      yield* this.runAsJob({ ...node, background: false });
+      return;
+    }
     // `set -e` is suppressed for every stage EXCEPT the last in an
     // and-or chain (bash semantics: `cmd1 && cmd2` aborts on cmd2's
     // failure, never on cmd1's, because cmd1 is itself a guard).
@@ -645,6 +651,41 @@ export class BashInterpreter {
       if (hasRest) this.errexitSuppress--;
     }
     this.statusFromGuard = !finalExecuted;
+  }
+
+  private *runAsJob(node: AndOrList): Effects<void> {
+    this.jobCounter++;
+    const pid = String(Number(this.env.get('$')) + this.jobCounter);
+    const jobEnv = this.env.createSubshell();
+    const shellEnv = this.env;
+    this.env = jobEnv;
+    let status = 0;
+    try {
+      yield* this.visitAndOrList(node);
+      status = this.env.lastExitCode;
+    } catch (e) {
+      if (!(e instanceof ExitSignal)) throw e;
+      status = e.exitCode;
+    } finally {
+      this.env = shellEnv;
+    }
+    this.jobs.set(pid, status);
+    this.env.recordBackgroundPid(pid);
+    this.env.lastExitCode = 0;
+  }
+
+  private waitForJobs(operands: string[]): boolean {
+    if (operands.length === 0) {
+      if (this.jobs.size === 0) return false;
+      this.jobs.clear();
+      this.env.lastExitCode = 0;
+      return true;
+    }
+    if (!operands.every((operand) => this.jobs.has(operand))) return false;
+    const last = operands[operands.length - 1];
+    this.env.lastExitCode = this.jobs.get(last) as number;
+    for (const operand of operands) this.jobs.delete(operand);
+    return true;
   }
 
   private *visitPipeline(node: Pipeline): Effects<void> {
@@ -969,6 +1010,8 @@ export class BashInterpreter {
       if (args.length > 1) yield* this.runCommandWord(args.slice(1));
     } else if (fn) {
       yield* this.callFunction(fn, args.slice(1), cmdName);
+    } else if (cmdName === 'wait' && this.waitForJobs(args.slice(1))) {
+      return undefined;
     } else if (cmdName === 'builtin') {
       yield* this.runBuiltinWord(args.slice(1));
     } else if (cmdName === 'hash') {
@@ -1419,9 +1462,39 @@ export class BashInterpreter {
       ? yield* this.expandWordsG(node.words)
       : this.env.getPositionalArgs();
 
+    if (node.select === true) {
+      yield* this.runSelect(node, items);
+      return;
+    }
     let status = 0;
     for (const item of items) {
       this.env.set(node.variable, item);
+      const outcome = yield* this.runLoopBody(node.body);
+      status = this.env.lastExitCode;
+      if (outcome === 'break') break;
+    }
+    this.env.lastExitCode = status;
+  }
+
+  private *runSelect(node: ForClause, items: string[]): Effects<void> {
+    let status = 0;
+    let showMenu = true;
+    for (;;) {
+      if (showMenu) this.log.write(2, items.map((item, index) => `${index + 1}) ${item}\n`).join(''));
+      this.log.write(2, this.env.get('PS3') ?? '#? ');
+      const record = this.stdin?.readRecord('\n') ?? null;
+      if (record === null) {
+        this.log.write(2, '\n');
+        break;
+      }
+      this.env.set('REPLY', record.text);
+      if (record.text === '') {
+        showMenu = true;
+        continue;
+      }
+      showMenu = false;
+      const choice = Number(record.text);
+      this.env.set(node.variable, Number.isInteger(choice) && choice >= 1 && choice <= items.length ? items[choice - 1] : '');
       const outcome = yield* this.runLoopBody(node.body);
       status = this.env.lastExitCode;
       if (outcome === 'break') break;

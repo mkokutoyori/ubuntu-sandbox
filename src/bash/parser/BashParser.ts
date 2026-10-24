@@ -173,7 +173,7 @@ export class BashParser {
     if (this.isFunctionDef()) return this.parseFunctionDef();
     // Compound commands
     if (this.checkWord('if')) return this.parseIfClause();
-    if (this.checkWord('for')) return this.parseForClause();
+    if (this.checkWord('for') || this.checkWord('select')) return this.parseForClause();
     if (this.checkWord('while')) return this.parseWhileClause();
     if (this.checkWord('until')) return this.parseUntilClause();
     if (this.checkWord('case')) return this.parseCaseClause();
@@ -282,7 +282,8 @@ export class BashParser {
 
   private parseForClause(): ForClause | CStyleForClause {
     const pos = this.peek().position;
-    this.expectWord('for');
+    const select = this.checkWord('select');
+    this.expectWord(select ? 'select' : 'for');
     this.skipNewlines();
 
     // `for ((init; cond; update))` C-style form.
@@ -313,7 +314,7 @@ export class BashParser {
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
-      return { type: 'ForClause', variable, words, body, redirections, position: pos };
+      return { type: 'ForClause', variable, words, body, redirections, select: select || undefined, position: pos };
     });
   }
 

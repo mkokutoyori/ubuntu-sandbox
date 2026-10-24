@@ -1641,16 +1641,16 @@ export class VirtualFileSystem {
     return fnmatch(pattern, text);
   }
 
-  globExpand(pattern: string, cwd: string): string[] {
-    const absolute = this.normalizePath(pattern, cwd);
+  globExpand(pattern: string, cwd: string, options: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean } = {}): string[] {
+    const resolve = (path: string): string => this.normalizePath(path === '' ? '.' : path, cwd);
     return globPaths({
       listNames: (directory) => {
-        const node = this.resolveInode(directory);
+        const node = this.resolveInode(resolve(directory));
         return node?.type === 'directory' ? [...node.children.keys()].filter((name) => name !== '.' && name !== '..') : null;
       },
-      existsNoFollow: (path) => this.existsNoFollow(path) || this.exists(path),
-      isDirectory: (path) => this.getType(path) === 'directory',
-    }, absolute);
+      existsNoFollow: (path) => this.existsNoFollow(resolve(path)) || this.exists(resolve(path)),
+      isDirectory: (path) => this.getType(resolve(path)) === 'directory',
+    }, pattern, options);
   }
 
   // ─── Utility ──────────────────────────────────────────────────────

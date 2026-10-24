@@ -53,6 +53,14 @@ export function parseSeqArgs(argv: readonly string[]): ParsedArgs {
     if (a === '-t' || a === '--terminator')  { out.terminator = take('terminator', a); i++; continue; }
     if (a === '-f' || a === '--format')      { out.format     = take('format', a);     i++; continue; }
     if (a === '-w' || a === '--equal-width') { out.equalWidth = true;                  i++; continue; }
+    if (/^-[stf]./.test(a) && !/^-\d/.test(a)) {
+      const value = a.slice(2);
+      if (a[1] === 's') out.separator = value;
+      else if (a[1] === 't') out.terminator = value;
+      else out.format = value;
+      i++;
+      continue;
+    }
     if (a.startsWith('--separator='))        { out.separator  = a.slice('--separator='.length);  i++; continue; }
     if (a.startsWith('--terminator='))       { out.terminator = a.slice('--terminator='.length); i++; continue; }
     if (a.startsWith('--format='))           { out.format     = a.slice('--format='.length);     i++; continue; }

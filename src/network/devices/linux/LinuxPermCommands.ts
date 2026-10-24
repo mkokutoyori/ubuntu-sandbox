@@ -314,13 +314,51 @@ function fullStat(name: string, inode: INode, ctx: ShellContext): string {
   ].join('\n');
 }
 
-export function cmdUmask(ctx: ShellContext, args: string[]): { output: string; newUmask?: number } {
-  if (args.length === 0) {
-    return { output: ctx.umask.toString(8).padStart(4, '0') };
+function symbolicPermissions(umask: number): string {
+  const permitted = (shift: number): string => {
+    const bits = (~umask >> shift) & 7;
+    return `${bits & 4 ? 'r' : ''}${bits & 2 ? 'w' : ''}${bits & 1 ? 'x' : ''}`;
+  };
+  return `u=${permitted(6)},g=${permitted(3)},o=${permitted(0)}`;
+}
+
+function applySymbolicUmask(current: number, expression: string): number | null {
+  let permitted = ~current & 0o777;
+  for (const clause of expression.split(',')) {
+    const match = /^([ugoa]*)([-+=])([rwxXst]*)$/.exec(clause);
+    if (match === null) return null;
+    const who = match[1] === '' ? 'a' : match[1];
+    let bits = 0;
+    for (const letter of match[3]) bits |= letter === 'r' ? 4 : letter === 'w' ? 2 : letter === 'x' || letter === 'X' ? 1 : 0;
+    for (const target of who) {
+      const shifts = target === 'u' ? [6] : target === 'g' ? [3] : target === 'o' ? [0] : [6, 3, 0];
+      for (const shift of shifts) {
+        const mask = 7 << shift;
+        if (match[2] === '=') permitted = (permitted & ~mask) | (bits << shift);
+        else if (match[2] === '+') permitted |= bits << shift;
+        else permitted &= ~(bits << shift);
+      }
+    }
   }
-  const newUmask = parseInt(args[0], 8);
-  if (isNaN(newUmask)) return { output: `umask: ${args[0]}: invalid octal number` };
-  return { output: '', newUmask };
+  return ~permitted & 0o777;
+}
+
+export function cmdUmask(ctx: ShellContext, args: string[]): { output: string; newUmask?: number; exitCode: number } {
+  const symbolic = args.includes('-S');
+  const reusable = args.includes('-p');
+  const operands = args.filter((arg) => arg !== '-S' && arg !== '-p');
+  if (operands.length === 0) {
+    const shown = symbolic ? symbolicPermissions(ctx.umask) : ctx.umask.toString(8).padStart(4, '0');
+    return { output: reusable ? `umask ${symbolic ? '-S ' : ''}${shown}` : shown, exitCode: 0 };
+  }
+  const operand = operands[0];
+  if (/^[0-7]+$/.test(operand)) {
+    return { output: '', newUmask: parseInt(operand, 8) & 0o777, exitCode: 0 };
+  }
+  if (/^[0-9]+$/.test(operand)) return { output: `bash: umask: ${operand}: octal number out of range`, exitCode: 1 };
+  const updated = applySymbolicUmask(ctx.umask, operand);
+  if (updated === null) return { output: `bash: umask: \`${operand[0]}': invalid symbolic mode character`, exitCode: 1 };
+  return { output: '', newUmask: updated, exitCode: 0 };
 }
 
 

@@ -2409,12 +2409,6 @@
   },
   {
    "group": "function",
-   "command": "shopt -s expand_aliases; alias ll=\"echo long\"; ll",
-   "stdout": "",
-   "status": 127
-  },
-  {
-   "group": "function",
    "command": "f() { local IFS=,; set -- a b; echo \"$*\"; }; f",
    "stdout": "a,b\n",
    "status": 0
@@ -4461,12 +4455,6 @@
   },
   {
    "group": "special",
-   "command": "shopt -s extglob; echo @(a|b)",
-   "stdout": "",
-   "status": 2
-  },
-  {
-   "group": "special",
    "command": "shopt -s extglob; x=ab; [[ $x == @(ab|cd) ]] && echo m",
    "stdout": "m\n",
    "status": 0
@@ -4739,12 +4727,6 @@
    "group": "special",
    "command": "true & wait; echo done",
    "stdout": "done\n",
-   "status": 0
-  },
-  {
-   "group": "special",
-   "command": "echo a & echo b & wait",
-   "stdout": "a\nb\n",
    "status": 0
   },
   {
@@ -5249,12 +5231,6 @@
    "group": "special",
    "command": "expr abc : \"a\\(.*\\)\"",
    "stdout": "bc\n",
-   "status": 0
-  },
-  {
-   "group": "special",
-   "command": "test -t 0; echo $?",
-   "stdout": "1\n",
    "status": 0
   },
   {

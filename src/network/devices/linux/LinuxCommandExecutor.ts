@@ -5105,16 +5105,7 @@ export class LinuxCommandExecutor {
         if (!inode) return null;
         return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
       },
-      globExpand: (pattern: string, cwd: string) => {
-        const hits = this.vfs.globExpand(pattern, cwd);
-        if (hits.length === 0) return null;
-        // Mirror bash conventions: relative patterns yield relative results.
-        if (!pattern.startsWith('/')) {
-          const prefix = cwd === '/' ? '/' : cwd + '/';
-          return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
-        }
-        return hits;
-      },
+      globExpand: (pattern: string, cwd: string, options) => this.vfs.globExpand(pattern, cwd, options),
       homeFor: (user: string) => {
         const u = this.userMgr.getUser(user);
         return u ? u.home : null;
@@ -5766,7 +5757,7 @@ export class LinuxCommandExecutor {
       case 'umask': {
         const result = cmdUmask(c, args);
         if (result.newUmask !== undefined) this.umask = result.newUmask;
-        return { output: result.output, exitCode: 0 };
+        return { output: result.output, exitCode: result.exitCode };
       }
       case 'ulimit': {
         const flag = args[0] ?? '-f';
@@ -6479,7 +6470,27 @@ export class LinuxCommandExecutor {
         const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
         return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
       }
-      case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+      case 'basename': {
+        const names: string[] = [];
+        let suffix = '';
+        let multiple = false;
+        for (let i = 0; i < args.length; i++) {
+          const word = args[i];
+          if (word === '-a' || word === '--multiple') multiple = true;
+          else if (word === '-s' || word === '--suffix') { suffix = args[++i] ?? ''; multiple = true; }
+          else if (word.startsWith('--suffix=')) { suffix = word.slice('--suffix='.length); multiple = true; }
+          else names.push(word);
+        }
+        if (names.length === 0) return { output: "basename: missing operand\nTry 'basename --help' for more information.", exitCode: 1 };
+        if (!multiple && names.length > 1) { suffix = names[1]; names.length = 1; }
+        const base = (name: string): string => {
+          const trimmed = name.replace(/\/+$/, '');
+          if (trimmed === '') return name === '' ? '' : '/';
+          const leaf = trimmed.slice(trimmed.lastIndexOf('/') + 1);
+          return suffix !== '' && leaf !== suffix && leaf.endsWith(suffix) ? leaf.slice(0, leaf.length - suffix.length) : leaf;
+        };
+        return { output: names.map(base).join('\n'), exitCode: 0 };
+      }
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
@@ -6611,7 +6622,14 @@ export class LinuxCommandExecutor {
         const lines: string[] = [];
         let exit = 0;
         for (const t of targets) {
-          const r = this.path(t).realpath(!noExist);
+          const parentOnly = !noExist && !args.includes('-e');
+          let r = this.path(t).realpath(!noExist && !parentOnly);
+          if (!r && parentOnly) {
+            const absolute = this.vfs.normalizePath(t, this.cwd);
+            const slash = absolute.lastIndexOf('/');
+            const parent = this.vfs.exists(absolute.slice(0, slash) || '/') ? this.path(absolute.slice(0, slash) || '/').realpath(true) : null;
+            if (parent) r = { value: `${parent.value === '/' ? '' : parent.value}/${absolute.slice(slash + 1)}` } as typeof r;
+          }
           if (!r) {
             exit = 1;
             if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);

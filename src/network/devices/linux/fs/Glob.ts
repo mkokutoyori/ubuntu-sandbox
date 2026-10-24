@@ -181,10 +181,13 @@ export interface GlobFileSystem {
 export interface GlobOptions {
   readonly noCheck?: boolean;
   readonly home?: string;
+  readonly dotglob?: boolean;
+  readonly nocaseglob?: boolean;
+  readonly globstar?: boolean;
 }
 
 function expandComponents(
-  fs: GlobFileSystem, base: string, components: readonly string[], index: number, out: string[],
+  fs: GlobFileSystem, base: string, components: readonly string[], index: number, out: string[], options: GlobOptions,
 ): void {
   if (index >= components.length) {
     out.push(base);
@@ -193,19 +196,29 @@ function expandComponents(
   const component = components[index];
   const join = (name: string): string => (base === '' || base.endsWith('/') ? `${base}${name}` : `${base}/${name}`);
   const last = index === components.length - 1;
+  if (component === '**' && options.globstar === true) {
+    expandComponents(fs, base, components, index + 1, out, options);
+    const children = fs.listNames(base === '' ? '.' : base);
+    for (const name of [...(children ?? [])].sort()) {
+      if (name.startsWith('.') && options.dotglob !== true) continue;
+      const path = join(name);
+      if (fs.isDirectory(path)) expandComponents(fs, path, components, index, out, options);
+    }
+    return;
+  }
   if (!hasMagic(component)) {
     const path = join(unescape(component));
     if (fs.existsNoFollow(path) && (last || fs.isDirectory(path))) {
-      expandComponents(fs, path, components, index + 1, out);
+      expandComponents(fs, path, components, index + 1, out, options);
     }
     return;
   }
   const names = fs.listNames(base === '' ? '.' : base);
   if (names === null) return;
   for (const name of [...names].sort()) {
-    if (!fnmatch(component, name, { period: true })) continue;
+    if (!fnmatch(component, name, { period: options.dotglob !== true, nocase: options.nocaseglob === true })) continue;
     const path = join(name);
-    if (last || fs.isDirectory(path)) expandComponents(fs, path, components, index + 1, out);
+    if (last || fs.isDirectory(path)) expandComponents(fs, path, components, index + 1, out, options);
   }
 }
 
@@ -217,7 +230,7 @@ export function globPaths(fs: GlobFileSystem, pattern: string, options: GlobOpti
   const absolute = effective.startsWith('/');
   const components = effective.split('/').filter((part) => part !== '');
   const found: string[] = [];
-  expandComponents(fs, absolute ? '/' : '', components, 0, found);
+  expandComponents(fs, absolute ? '/' : '', components, 0, found, options);
   const trailing = effective.endsWith('/') && effective.length > 1;
   const sorted = [...found].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const matches = trailing ? sorted.filter((path) => fs.isDirectory(path)).map((path) => `${path}/`) : sorted;

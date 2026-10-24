@@ -137,6 +137,8 @@ export interface ForClause extends ASTBase {
   words: Word[] | null;  // null → iterate over "$@"
   body: CommandList;
   redirections: Redirection[];
+  /** True for `select NAME in …; do …; done`. */
+  select?: boolean;
 }
 
 export interface WhileClause extends ASTBase {

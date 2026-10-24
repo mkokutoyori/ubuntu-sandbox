@@ -87,7 +87,7 @@ function block(node: Command, depth: number): string {
     }
     case 'ForClause': {
       const words = node.words === null ? '' : ` in ${node.words.map(word).join(' ')}`;
-      return `for ${node.variable}${words};\n${pad}do\n${list(node.body, depth + 1, true)}${pad}done${trailing(node.redirections)}`;
+      return `${node.select ? 'select' : 'for'} ${node.variable}${words};\n${pad}do\n${list(node.body, depth + 1, true)}${pad}done${trailing(node.redirections)}`;
     }
     case 'CStyleForClause':
       return `for ((${node.init}; ${node.cond}; ${node.update}))\n${pad}do\n${list(node.body, depth + 1, true)}${pad}done`;

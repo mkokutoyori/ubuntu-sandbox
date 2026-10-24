@@ -610,6 +610,18 @@ export class BashLexer {
 
   // ─── Word Scanner ─────────────────────────────────────────────
 
+  private extendedPatternEnd(): number {
+    let depth = 0;
+    for (let index = this.pos; index < this.input.length; index++) {
+      const character = this.input[index];
+      if (character === '\\') { index++; continue; }
+      if (this.isWhitespace(character) && depth === 0) return -1;
+      if (character === '(') depth++;
+      else if (character === ')' && --depth === 0) return index;
+    }
+    return -1;
+  }
+
   private subscriptedAssignmentHead(): string | null {
     const name = /^[A-Za-z_][A-Za-z_0-9]*\[/.exec(this.input.slice(this.pos));
     if (name === null) return null;
@@ -647,6 +659,16 @@ export class BashLexer {
 
       // Stop at whitespace, operators, and special chars
       if (this.isWhitespace(ch)) break;
+      if (ch === '(' && value !== '' && '@?*+!'.includes(value[value.length - 1])) {
+        const close = this.extendedPatternEnd();
+        if (close >= 0) {
+          while (this.pos <= close) {
+            value += this.peek();
+            this.advance();
+          }
+          continue;
+        }
+      }
       // Stop at ( ) but allow it inside word if preceded by alphanumeric (for func())
       if (ch === '(' || ch === ')') break;
       // } at start of word is a brace group ender

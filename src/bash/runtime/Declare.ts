@@ -158,6 +158,7 @@ export function runDeclaration(
   if (command === 'local' && env.getParent() === null) {
     return { output: '', stderr: `${prefix}: can only be used in a function\n`, exitCode: 1 };
   }
+  if (flags.functions && command === 'export') return { output: '', stderr: '', exitCode: flags.names.every((name) => functions.has(name)) ? 0 : 1 };
   if (flags.functions) return functionListing(functions, flags, flags.names);
   const printing = flags.print || (flags.names.length === 0 && (command === 'readonly' || command === 'export'));
   if (flags.names.length === 0) {

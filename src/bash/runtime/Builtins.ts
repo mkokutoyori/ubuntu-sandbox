@@ -46,7 +46,7 @@ const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
   'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
-  'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let', 'shopt', 'builtin', 'hash',
+  'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let', 'shopt', 'builtin', 'hash', 'dirs', 'pushd', 'popd', 'compgen', 'times', 'caller',
   'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
 ]);
 
@@ -82,6 +82,12 @@ export function executeBuiltin(
     case 'break': return builtinBreak(args);
     case 'continue': return builtinContinue(args);
     case 'shift': return builtinShift(args, env);
+    case 'dirs': return builtinDirs(args, env);
+    case 'pushd': return builtinPushd(args, env, io);
+    case 'popd': return builtinPopd(args, env, io);
+    case 'compgen': return builtinCompgen(args, env, functions, aliases);
+    case 'times': return { output: '0m0.000s 0m0.000s\n0m0.000s 0m0.000s\n', exitCode: 0 };
+    case 'caller': return env.getArray('FUNCNAME') === undefined ? { output: '', exitCode: 1 } : { output: `${env.get('LINENO') ?? 0} ${(env.getArray('FUNCNAME') as string[])[1] ?? 'main'} ${env.get('0') ?? 'bash'}\n`, exitCode: 0 };
     case 'read': return builtinRead(args, env, stdin, readFd);
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return args.length === 0 ? declaration('declare', [], env, functions) : optionResult(runSet(args, env), env);
@@ -193,6 +199,117 @@ function builtinEcho(args: string[]): BuiltinResult {
 function optionResult(result: OptionResult, env: Environment): BuiltinResult {
   if (result.positional !== undefined) env.setPositionalArgs(result.positional);
   return { output: result.output, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr }) };
+}
+
+const BASH_BUILTIN_NAMES = [
+  '.', ':', '[', 'alias', 'bg', 'bind', 'break', 'builtin', 'caller', 'cd', 'command', 'compgen', 'complete', 'compopt',
+  'continue', 'declare', 'dirs', 'disown', 'echo', 'enable', 'eval', 'exec', 'exit', 'export', 'false', 'fc', 'fg', 'getopts',
+  'hash', 'help', 'history', 'jobs', 'kill', 'let', 'local', 'logout', 'mapfile', 'popd', 'printf', 'pushd', 'pwd', 'read',
+  'readarray', 'readonly', 'return', 'set', 'shift', 'shopt', 'source', 'suspend', 'test', 'times', 'trap', 'true', 'type',
+  'typeset', 'ulimit', 'umask', 'unalias', 'unset', 'wait',
+];
+
+const BASH_KEYWORD_NAMES = [
+  '!', '[[', ']]', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select',
+  'then', 'time', 'until', 'while', '{', '}',
+];
+
+function abbreviateHome(path: string, env: Environment): string {
+  const home = env.get('HOME');
+  if (home !== undefined && home !== '/' && (path === home || path.startsWith(`${home}/`))) return `~${path.slice(home.length)}`;
+  return path;
+}
+
+function directoryListing(env: Environment, mode: string): string {
+  const entries = [env.get('PWD') ?? '/', ...(env.getArray('DIRSTACK') ?? [])].map((entry) => (mode.includes('l') ? entry : abbreviateHome(entry, env)));
+  if (mode.includes('v')) return entries.map((entry, index) => `${String(index).padStart(2)}  ${entry}\n`).join('');
+  if (mode.includes('p')) return entries.map((entry) => `${entry}\n`).join('');
+  return `${entries.join(' ')}\n`;
+}
+
+function builtinDirs(args: string[], env: Environment): BuiltinResult {
+  const flags = args.filter((arg) => arg.startsWith('-')).join('');
+  if (flags.includes('c')) {
+    env.setArray('DIRSTACK', []);
+    return { output: '', exitCode: 0 };
+  }
+  return { output: directoryListing(env, flags), exitCode: 0 };
+}
+
+function builtinPushd(args: string[], env: Environment, io?: BuiltinIO): BuiltinResult {
+  const operands = args.filter((arg) => !(arg.startsWith('-') && arg.length > 1 && !/^-\d+$/.test(arg)));
+  const stack = [...(env.getArray('DIRSTACK') ?? [])];
+  const current = env.get('PWD') ?? '/';
+  if (operands.length === 0) {
+    if (stack.length === 0) return fail('bash: pushd: no other directory', 1);
+    const next = stack[0];
+    const moved = builtinCd([next], env, io);
+    if (moved.exitCode !== 0) return moved;
+    stack[0] = current;
+    env.setArray('DIRSTACK', stack);
+    return { output: directoryListing(env, ''), exitCode: 0 };
+  }
+  const moved = builtinCd([operands[0]], env, io);
+  if (moved.exitCode !== 0) return moved;
+  env.setArray('DIRSTACK', [current, ...stack]);
+  return { output: directoryListing(env, ''), exitCode: 0 };
+}
+
+function builtinPopd(args: string[], env: Environment, io?: BuiltinIO): BuiltinResult {
+  const stack = [...(env.getArray('DIRSTACK') ?? [])];
+  if (stack.length === 0) return fail('bash: popd: directory stack empty', 1);
+  if (args.includes('-n')) {
+    stack.shift();
+    env.setArray('DIRSTACK', stack);
+    return { output: directoryListing(env, ''), exitCode: 0 };
+  }
+  const target = stack.shift() as string;
+  const moved = builtinCd([target], env, io);
+  if (moved.exitCode !== 0) return moved;
+  env.setArray('DIRSTACK', stack);
+  return { output: directoryListing(env, ''), exitCode: 0 };
+}
+
+function builtinCompgen(args: string[], env: Environment, functions: Map<string, Command>, aliases?: AliasTable): BuiltinResult {
+  const sources: string[] = [];
+  let prefix = '';
+  let suffix = '';
+  let word = '';
+  let words: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith('-') || arg === '-') { word = arg; continue; }
+    for (let j = 1; j < arg.length; j++) {
+      const flag = arg[j];
+      if ('AWPSXFCGo'.includes(flag)) {
+        const attached = arg.slice(j + 1);
+        const value = attached !== '' ? attached : (args[++i] ?? '');
+        if (flag === 'A') sources.push(value);
+        else if (flag === 'W') words = value;
+        else if (flag === 'P') prefix = value;
+        else if (flag === 'S') suffix = value;
+        break;
+      }
+      const named: Record<string, string> = { a: 'alias', b: 'builtin', c: 'command', d: 'directory', e: 'export', f: 'file', k: 'keyword', u: 'user', v: 'variable' };
+      if (flag in named) sources.push(named[flag]);
+    }
+  }
+  const candidates: string[] = [];
+  for (const source of sources) {
+    switch (source) {
+      case 'builtin': candidates.push(...BASH_BUILTIN_NAMES); break;
+      case 'keyword': candidates.push(...BASH_KEYWORD_NAMES); break;
+      case 'function': candidates.push(...[...functions.keys()].sort()); break;
+      case 'alias': candidates.push(...(aliases?.list().map((alias) => alias.name) ?? [])); break;
+      case 'variable': candidates.push(...env.visibleNames()); break;
+      case 'export': candidates.push(...Object.keys(env.getExported()).sort()); break;
+      case 'command': candidates.push(...BASH_BUILTIN_NAMES, ...BASH_KEYWORD_NAMES, ...functions.keys()); break;
+      default: break;
+    }
+  }
+  if (words !== null) candidates.push(...words.split(/\s+/).filter(Boolean));
+  const matches = [...new Set(candidates)].filter((candidate) => candidate.startsWith(word));
+  return { output: matches.map((match) => `${prefix}${match}${suffix}\n`).join(''), exitCode: matches.length > 0 ? 0 : 1 };
 }
 
 function declaration(name: string, args: string[], env: Environment, functions: Map<string, Command>): BuiltinResult {
@@ -695,7 +812,7 @@ function builtinGetopts(args: string[], env: Environment): BuiltinResult {
     else env.set('OPTARG', '');
     if (sub + 1 < cur.length) env.set('__OPTSUB', String(sub + 1));
     else { env.set('OPTIND', String(optind + 1)); env.unset('__OPTSUB'); }
-    return { output: silent ? '' : `bash: illegal option -- ${flag}\n`, exitCode: 0 };
+    return { output: '', exitCode: 0, ...(silent ? {} : { stderr: `bash: illegal option -- ${flag}\n` }) };
   }
   const needsArg = spec[specPos + 1] === ':';
   if (!needsArg) {
@@ -719,7 +836,7 @@ function builtinGetopts(args: string[], env: Environment): BuiltinResult {
       env.set('OPTARG', silent ? flag : '');
       env.set('OPTIND', String(optind + 1));
       env.unset('__OPTSUB');
-      return { output: silent ? '' : `bash: option requires an argument -- ${flag}\n`, exitCode: 0 };
+      return { output: '', exitCode: 0, ...(silent ? {} : { stderr: `bash: option requires an argument -- ${flag}\n` }) };
     }
     env.set('OPTIND', String(optind + 2));
     env.unset('__OPTSUB');
@@ -810,15 +927,20 @@ function builtinMapfile(
   let fd = 0;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '-t') { trim = true; continue; }
-    if (a === '-n') { const n = Number.parseInt(args[++i] ?? '0', 10) || 0; count = n === 0 ? Number.POSITIVE_INFINITY : n; continue; }
-    if (a === '-O') { origin = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
-    if (a === '-s') { skip = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
-    if (a === '-d') { const value = args[++i] ?? '\n'; delimiter = value === '' ? '\0' : value[0]; continue; }
-    if (a === '-u') { fd = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
-    if (a === '-c' || a === '-C') { i++; continue; }
-    if (a.startsWith('-')) continue;
-    name = a;
+    if (!a.startsWith('-') || a === '-') { name = a; continue; }
+    for (let j = 1; j < a.length; j++) {
+      const flag = a[j];
+      if (flag === 't') { trim = true; continue; }
+      if (!'nOsduc C'.includes(flag)) continue;
+      const attached = a.slice(j + 1);
+      const value = attached !== '' ? attached : (args[++i] ?? '');
+      if (flag === 'n') { const n = Number.parseInt(value, 10) || 0; count = n === 0 ? Number.POSITIVE_INFINITY : n; }
+      else if (flag === 'O') origin = Number.parseInt(value, 10) || 0;
+      else if (flag === 's') skip = Number.parseInt(value, 10) || 0;
+      else if (flag === 'd') delimiter = value === '' ? '\0' : value[0];
+      else if (flag === 'u') fd = Number.parseInt(value, 10) || 0;
+      break;
+    }
   }
   const source = fd === 0 ? input : readFd?.(fd);
   const values: string[] = [];
