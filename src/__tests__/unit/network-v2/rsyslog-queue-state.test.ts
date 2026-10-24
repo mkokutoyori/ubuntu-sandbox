@@ -37,29 +37,29 @@ describe('queue state across a restart', () => {
   });
 
   it('saves what the queue holds at stop and delivers it after the next start', () => {
-    const host = stopWithBacklog('queue.filename="outq" queue.saveOnShutdown="on"');
+    const host = stopWithBacklog('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="on"');
     expect(host.fileSystem.get('/var/spool/rsyslog/outq.qi')).toContain('<OPB:1:qqueue:1:\n+iQueueSize:2:1:3:\n');
     expect(host.fileSystem.get('/var/spool/rsyslog/outq.00000001')).toContain('<Obj:1:msg:1:\n');
     expect(host.fileSystem.get('/var/spool/rsyslog/outq.00000001')).toContain('+pszRawMsg:1:');
-    startRsyslog(host, healthy('queue.filename="outq" queue.saveOnShutdown="on"'));
+    startRsyslog(host, healthy('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="on"'));
     host.advance(5_000);
     expect(written(host)).toEqual(['one', 'two', 'three']);
   });
 
   it('saveOnShutdown off drops the backlog', () => {
-    const host = stopWithBacklog('queue.filename="outq" queue.saveOnShutdown="off"');
+    const host = stopWithBacklog('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="off"');
     expect(host.fileSystem.has('/var/spool/rsyslog/outq.qi')).toBe(false);
-    startRsyslog(host, healthy('queue.filename="outq" queue.saveOnShutdown="off"'));
+    startRsyslog(host, healthy('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="off"'));
     host.advance(5_000);
     expect(written(host)).toEqual([]);
   });
 
   it('does not deliver the same backlog twice after a second restart', () => {
-    const host = stopWithBacklog('queue.filename="outq" queue.saveOnShutdown="on"');
-    const second = startRsyslog(host, healthy('queue.filename="outq" queue.saveOnShutdown="on"'));
+    const host = stopWithBacklog('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="on"');
+    const second = startRsyslog(host, healthy('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="on"'));
     host.advance(5_000);
     second.engine.stop();
-    startRsyslog(host, healthy('queue.filename="outq" queue.saveOnShutdown="on"'));
+    startRsyslog(host, healthy('queue.filename="outq" queue.diskQueueType="disk" queue.saveOnShutdown="on"'));
     host.advance(5_000);
     expect(written(host)).toEqual(['one', 'two', 'three']);
   });

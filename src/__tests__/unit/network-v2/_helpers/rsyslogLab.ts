@@ -118,7 +118,7 @@ export class LabHost implements RsyslogHost {
     observe: (): (() => void) => () => undefined,
     list: (directory: string): string[] => {
       const prefix = directory.replace(/\/$/, '') + '/';
-      return [...this.fileSystem.keys()].filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/')).map((path) => path.slice(prefix.length)).sort();
+      return [...this.fileSystem.keys(), ...this.directories].filter((path) => path.startsWith(prefix) && path.length > prefix.length && !path.slice(prefix.length).includes('/')).map((path) => path.slice(prefix.length)).sort();
     },
     glob: (pattern: string): string[] => {
       const regex = new RegExp(`^${pattern.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`);
@@ -131,6 +131,26 @@ export class LabHost implements RsyslogHost {
     },
     write: (path: string, text: string): boolean => {
       this.fileSystem.set(path, text);
+      return true;
+    },
+    mkdir: (path: string): boolean => {
+      if (this.directories.has(path) || this.fileSystem.has(path)) return false;
+      const slash = path.lastIndexOf('/');
+      if (slash > 0 && !this.directories.has(path.slice(0, slash))) return false;
+      this.directories.add(path);
+      return true;
+    },
+    rmdir: (path: string): boolean => {
+      const prefix = `${path}/`;
+      if (!this.directories.has(path)) return false;
+      if ([...this.fileSystem.keys(), ...this.directories].some((entry) => entry.startsWith(prefix))) return false;
+      return this.directories.delete(path);
+    },
+    rename: (from: string, to: string): boolean => {
+      const content = this.fileSystem.get(from);
+      if (content === undefined) return false;
+      this.fileSystem.delete(from);
+      this.fileSystem.set(to, content);
       return true;
     },
     watch: (path: string, onEvent: () => void): (() => void) | null => {

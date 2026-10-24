@@ -16,6 +16,9 @@ import { RateLimiter } from './RateLimiter';
 import { OperatingStateFile } from './OperatingState';
 import { RSYSLOG_VERSION } from './Log';
 import { DiskQueueStore } from './DiskQueueStore';
+import type { QueueStore } from './QueueStore';
+import { SegmentedDiskStore } from './segdisk/SegmentedDiskStore';
+import { DiskEngineConflict, resolveDiskEngine, writeEngineMarker, type DiskEngineSelection } from './segdisk/DiskEngine';
 import type { QueueSettings } from './Settings';
 import { correctQueueParameters } from './QueueParams';
 import { renderTemplate } from '../Template';
@@ -44,6 +47,7 @@ export class RsyslogEngine implements InputSubmitter {
   private started = false;
   private oversizeLog: FileHandle | null = null;
   private internalBacklog: RsyslogMessage[] | null = null;
+  private readonly failedStores = new Set<QueueSettings>();
   private stopCallbacks: Array<() => void> = [];
   private operatingState: OperatingStateFile | null = null;
   private readonly runtimeLog: RuntimeLog;
@@ -106,17 +110,137 @@ export class RsyslogEngine implements InputSubmitter {
       report: (text) => this.internal(4, -1, text),
       endBatch,
     };
-    const disk = settings.type === 'Disk' && settings.fileName !== null ? this.newDiskStore(settings) : null;
+    let disk: QueueStore | null = null;
+    if (settings.fileName !== null && settings.type === 'Disk') disk = this.newDiskStore(settings);
+    if (settings.fileName !== null && settings.type === 'SegmentedDisk') disk = this.openSegmentedStore(settings, name, false, null);
     const assisted = (settings.type === 'FixedArray' || settings.type === 'LinkedList') && settings.fileName !== null;
     let assist: WorkerQueue<RsyslogMessage> | null = null;
+    let segmentedChild = false;
     if (assisted) {
-      const childSettings = { ...settings, type: 'Disk', size: 0, highWatermark: 0, discardMark: 0, fullDelayMark: -1, lightDelayMark: -1 };
-      assist = new WorkerQueue<RsyslogMessage>(`${name}[DA]`, childSettings, host, process, this.newDiskStore(childSettings));
-      this.registerQueueStatistics(assist);
+      const selection = this.selectDiskEngine(name, settings);
+      if (selection !== null) {
+        const childSettings = { ...settings, type: selection.effective === 'segmentedDisk' ? 'SegmentedDisk' : 'Disk', size: 0, highWatermark: 0, discardMark: 0, fullDelayMark: -1, lightDelayMark: -1 };
+        segmentedChild = selection.effective === 'segmentedDisk';
+        const childName = `${name}[DA]`;
+        const store = segmentedChild
+          ? this.openSegmentedStore(childSettings, childName, !selection.segmentedData, this.markerWriter(settings, selection))
+          : this.newDiskStore(childSettings);
+        assist = new WorkerQueue<RsyslogMessage>(childName, childSettings, host, process, store);
+        this.registerQueueStatistics(assist);
+      }
     }
     const queue = new WorkerQueue<RsyslogMessage>(name, settings, host, process, disk, assist);
+    if (segmentedChild && assist !== null) this.wireIdleDematerialization(queue, assist);
     if (settings.type !== 'Direct') this.registerQueueStatistics(queue);
     return queue;
+  }
+
+  private directoryOf(settings: QueueSettings): string {
+    return settings.spoolDirectory ?? this.config.settings.workDirectory ?? '';
+  }
+
+  private selectDiskEngine(name: string, settings: QueueSettings): DiskEngineSelection | null {
+    const directory = this.directoryOf(settings);
+    const prefix = settings.fileName ?? '';
+    let selection: DiskEngineSelection;
+    try {
+      selection = resolveDiskEngine(this.host.files, {
+        directory, prefix, requested: settings.diskQueueType, autoUpgrade: settings.diskQueueAutoUpgrade,
+        requiresClassicFeatures: settings.cryProvider !== null || settings.onCorruption !== 'safe',
+      });
+    } catch (failure) {
+      if (!(failure instanceof DiskEngineConflict)) throw failure;
+      this.internal(3, RS_RET.INVALID_VALUE, `${name}: cannot select disk-assisted queue engine for prefix '${prefix}'; classic and segmented data, an explicit engine conflict, a malformed engine marker, or unsupported segmented options require operator intervention`);
+      return null;
+    }
+    if (settings.diskQueueType === 'auto' && selection.effective === 'disk') {
+      this.internal(4, RS_RET.OK_WARN, selection.reason === 'classicFeature'
+        ? `${name}: disk-assisted queue automatically selected the classic disk engine for prefix '${prefix}' because classic-only queue options are configured`
+        : `${name}: disk-assisted queue automatically selected the classic disk engine for prefix '${prefix}' because classic queue state is present or retained; set queue.diskQueueAutoUpgrade="on" to use segmentedDisk after the classic backlog drains`);
+    }
+    const mismatch = selection.markerPresent && selection.markerEngine !== selection.effective;
+    if (selection.classicData || selection.segmentedData || mismatch) {
+      if (!writeEngineMarker(this.host.files, directory, prefix, selection.effective, this.host.sockets.ownPid())) {
+        this.internal(3, RS_RET.IO_ERROR, `${name}: cannot select disk-assisted queue engine for prefix '${prefix}'; classic and segmented data, an explicit engine conflict, a malformed engine marker, or unsupported segmented options require operator intervention`);
+        return null;
+      }
+    }
+    return selection;
+  }
+
+  private markerWriter(settings: QueueSettings, selection: DiskEngineSelection): (() => boolean) | null {
+    if (selection.markerPresent || selection.classicData || selection.segmentedData) return null;
+    const directory = this.directoryOf(settings);
+    const prefix = settings.fileName ?? '';
+    let pending = true;
+    return () => {
+      if (!pending) return true;
+      pending = !writeEngineMarker(this.host.files, directory, prefix, 'segmentedDisk', this.host.sockets.ownPid());
+      return !pending;
+    };
+  }
+
+  private openSegmentedStore(settings: QueueSettings, name: string, lazy: boolean, beforeMaterialize: (() => boolean) | null): SegmentedDiskStore {
+    let maxDiskSpace = settings.maxDiskSpace;
+    if (maxDiskSpace > 0 && settings.maxFileSize > 0 && maxDiskSpace < settings.maxFileSize) {
+      this.internal(3, RS_RET.CONF_PARAM_INVLD, `queue.maxDiskSpace (${maxDiskSpace}) must be larger than queue.maxFileSize (${settings.maxFileSize}) - setting queue.maxDiskSpace to ${settings.maxFileSize}`);
+      maxDiskSpace = settings.maxFileSize;
+    }
+    const global = this.config.settings;
+    const store = new SegmentedDiskStore(
+      {
+        directory: this.directoryOf(settings), prefix: settings.fileName ?? '', queueName: name, maxFileSize: settings.maxFileSize, maxDiskSpace,
+        checkpointInterval: settings.checkpointInterval, lazyCreate: lazy,
+      },
+      {
+        files: this.host.files,
+        codec: () => ({ localHostName: this.localHostName(), defaultTimeZone: null, compactJson: global.compactJson }),
+        random: () => this.host.random(),
+        report: (severity, code, text) => this.internal(severity, code, text),
+        beforeMaterialize: beforeMaterialize ?? undefined,
+      },
+    );
+    if (settings.type === 'SegmentedDisk' && this.directoryOf(settings) === '') {
+      this.internal(3, RS_RET.CONF_PARAM_INVLD, `error on queue '${name}': segmentedDisk requires queue.spoolDirectory or a global workDirectory`);
+      this.failedStores.add(settings);
+      return store;
+    }
+    const opened = store.open();
+    if (opened.status !== 'ok') {
+      this.internal(3, RS_RET.IO_ERROR, `${name}: segmentedDisk store initialization failed`);
+      this.failedStores.add(settings);
+    }
+    return store;
+  }
+
+  private wireIdleDematerialization(parent: WorkerQueue<RsyslogMessage>, child: WorkerQueue<RsyslogMessage>): void {
+    const store = child.disk as SegmentedDiskStore;
+    const settings = parent.settings;
+    let generation = 0;
+    let observed = 0;
+    parent.hooks.activity = () => { generation++; };
+    child.hooks.activity = () => { generation++; };
+    child.hooks.batchCompleted = () => {
+      if (store.canDematerialize) observed = generation;
+    };
+    if (settings.diskQueueIdleTimeout === -1) return;
+    child.hooks.idle = {
+      timeoutMs: settings.diskQueueIdleTimeout,
+      check: () => {
+        if (child.length !== 0 || child.physicalSize !== 0 || !store.canDematerialize) return false;
+        if (parent.physicalSize !== 0) return false;
+        if (observed !== generation) {
+          observed = generation;
+          return false;
+        }
+        const status = store.dematerialize();
+        if (status !== 'ok') {
+          this.internal(3, RS_RET.IO_ERROR, `${child.name}: segmented disk-assisted idle store cleanup failed; will retry`);
+          return false;
+        }
+        return true;
+      },
+    };
   }
 
   private registerQueueStatistics(queue: WorkerQueue<RsyslogMessage>): void {
@@ -133,6 +257,33 @@ export class RsyslogEngine implements InputSubmitter {
       object.addCounter({ name: 'mutex.wait_ns', read: () => 0, reset: () => undefined });
     }
     object.addCounter({ name: 'maxqsize', read: () => counters.maxSize });
+    if (queue.disk instanceof SegmentedDiskStore) this.registerSegmentedStatistics(object, queue, queue.disk);
+  }
+
+  private registerSegmentedStatistics(object: { addCounter(counter: { name: string; read: () => number; reset?: () => void }): void }, queue: WorkerQueue<RsyslogMessage>, store: SegmentedDiskStore): void {
+    const gauge = (name: string, read: () => number): void => object.addCounter({ name, read: () => Math.min(0x7fffffff, Math.max(0, read())) });
+    const stats = store.statistics;
+    gauge('disk.usage', () => stats.bytes);
+    gauge('segments', () => stats.segments);
+    gauge('checkpoints', () => stats.checkpoints);
+    gauge('replayed', () => stats.replayed);
+    gauge('corruption.events', () => stats.corruptionEvents);
+    gauge('corruption.bytes', () => stats.corruptionBytes);
+    gauge('corruption.records', () => stats.corruptionRecords);
+    gauge('corruption.segments', () => stats.corruptionSegments);
+    gauge('retry.overage.bytes', () => stats.retryOverageBytes);
+    gauge('retry.overage.maxbytes', () => stats.retryOverageMaxBytes);
+    gauge('state.writes', () => stats.stateWrites);
+    gauge('state.forcedWrites', () => stats.forcedStateWrites);
+    gauge('recovery.pending', () => stats.recoveryPending);
+    gauge('recovery.bytes', () => stats.recoveryBytes);
+    gauge('recovery.records', () => stats.recoveryRecords);
+    gauge('startup.payloadBytesRead', () => stats.startupPayloadBytesRead);
+    gauge('startup.segmentFilesProbed', () => stats.startupSegmentFilesProbed);
+    gauge('store.materializations', () => stats.materializations);
+    gauge('store.idleDematerializations', () => stats.dematerializations);
+    gauge('store.idleCleanupFailures', () => stats.idleCleanupFailures);
+    gauge('workers.current', () => queue.workerCount);
   }
 
   private registerActionStatistics(runtime: ActionRuntime): void {
@@ -571,7 +722,7 @@ export class RsyslogEngine implements InputSubmitter {
   }
 
   private queueCannotStart(queue: import('./Settings').QueueSettings): boolean {
-    return queue.type === 'Disk' && queue.fileName === null;
+    return (queue.type === 'Disk' && queue.fileName === null) || this.failedStores.has(queue);
   }
 
   private activateQueues(): { readonly code: number; readonly exitText: string } | null {
@@ -707,7 +858,9 @@ export class RsyslogEngine implements InputSubmitter {
       if (queue.disk === null) continue;
       const backlog = queue.disk.load();
       if (backlog === null) continue;
-      this.internal(6, RS_RET.NO_ERRCODE, `${queue.name}: queue files exist on disk, re-starting with ${backlog.messages.length} messages. This will keep the disk queue file open, details: https://rainer.gerhards.net/2013/07/rsyslog-why-disk-assisted-queues-keep-a-file-open.html`);
+      if (!(queue.disk instanceof SegmentedDiskStore)) {
+        this.internal(6, RS_RET.NO_ERRCODE, `${queue.name}: queue files exist on disk, re-starting with ${backlog.messages.length} messages. This will keep the disk queue file open, details: https://rainer.gerhards.net/2013/07/rsyslog-why-disk-assisted-queues-keep-a-file-open.html`);
+      }
       queue.restore(backlog.messages);
     }
   }

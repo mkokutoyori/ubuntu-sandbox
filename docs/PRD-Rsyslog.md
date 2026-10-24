@@ -360,6 +360,25 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   ecrit `<fileName>.qi` (deux enregistrements `strm`) au changement de fichier, a chaque `checkpointInterval`, apres une suppression et a l'arret,
   refuse au-dela de `maxDiskSpace` et reprend son arriere-plan apres un redemarrage. Une file assistee remplit sa fille quand le nombre de messages
   en attente atteint `highWatermark`, jusqu'a `lowWatermark` ; a l'arret la partie memoire passe dans la fille (`saveOnShutdown`).
+- **File disque segmentee** (`rsyslog-segmented-disk.test.ts`, `rsyslog-segmented-disk-formats.test.ts`) : en 8.2610 le moteur par defaut de la
+  fille d'une file assistee neuve est `segmentedDisk` (`queue_da.c`), choisi au demarrage d'apres le contenu du repertoire de travail (`.qi` ou fichiers
+  numerotes = classique ; `<prefixe>.segq` = segmente ; `<prefixe>.da-engine` = marqueur de choix, `RSYSLOG-DA-ENGINE-V1 disk|segmentedDisk`) :
+  donnees des deux moteurs, marqueur contraire aux donnees ou mal forme = « cannot select disk-assisted queue engine », la file reste en memoire ;
+  `queue.diskQueueType` (`auto`, `disk`, `segmentedDisk`), `queue.diskQueueAutoUpgrade` (un marqueur `disk` avec file vidangee passe a `segmentedDisk`
+  au redemarrage) et les options reservees au moteur classique (`queue.cry.provider`, `queue.onCorruption` autre que `safe`) sont evalues. Le magasin
+  (`segdisk/SegmentedDiskStore.ts`, port de `segdisk_store.c`) est un repertoire `<prefixe>.segq` : un fichier `state` de 512 octets a deux
+  emplacements (`RSSEGST2`, generation, CRC32C) et des fichiers `segment-NNNNNNNNNNNNNNNNNNNN.open|recover|seg` faits d'un en-tete (`RSSEGH02`), d'enregistrements
+  TLV cadres (`RSRECD02`, CRC32C de l'en-tete et de la charge) et, une fois le segment clos a `maxFileSize`, d'un pied (`RSSEAL02`). Il est cree a la premiere
+  mise de cote (le marqueur d'abord), un segment ouvert au demarrage precedent devient `.recover`, les segments valides sont supprimes par plage prealablement
+  publiee dans l'etat, et il est retire (`state`, segments, repertoire ; le marqueur reste) quand la file est vide depuis `queue.diskQueueIdleTimeout` ms
+  (60 000 par defaut, `-1` pour jamais) sans activite de la file parente. Un enregistrement dont la somme echoue est ignore et compte
+  (`corruption.records`, message « segmentedDisk salvage skipped N corrupt records »), des octets qui ne forment pas d'en-tete sont survoles un a un
+  (`corruption.bytes`) ; un etat absent alors que des fichiers existent, un `.qi` herite ou un etat v1 sont refuses. `queue.type="segmentedDisk"` donne une
+  file pure creee des le demarrage. Les compteurs `disk.usage`, `segments`, `checkpoints`, `replayed`, `corruption.*`, `retry.overage.*`, `state.*`,
+  `recovery.*`, `startup.*`, `store.*` et `workers.current` sont publies sur l'objet de statistiques de la file. Ecarts assumes : l'arriere-plan est lu
+  en entier au demarrage au lieu d'etre decouvert par les workers au fil des lots (les compteurs `recovery.*` prennent donc leur valeur finale tout de
+  suite) ; les points d'injection de panne de `ENABLE_IMDIAG` et le crash (`kill -9`) entre deux etapes n'existent pas, la reprise d'un segment `.open`
+  laisse par un arret propre est en revanche portee ; `queue.cry.provider` absent de la machine echoue avec « could not load crypto provider ».
 - **Options de compilation et signaux** (`linux-rsyslog-compat.test.ts`) : `compatibility.configFormat.{legacy,syslogd,property}` (`enable`/`warn`/`disable`
   avec les phrases de `glbl.c`), `libcapng.*` et `stdlog.channelSpec` (la configuration par defaut du source n'active ni libcap-ng ni
   liblogging-stdlog : le parametre echoue avec le message de `glbl.c`), `defaultOpensslEngine` (moteur absent signale au demarrage du pilote

@@ -37,6 +37,7 @@ export interface QueueSettings {
   diskQueueType: 'auto' | 'disk' | 'segmentedDisk';
   diskQueueAutoUpgrade: boolean;
   diskQueueIdleTimeout: number;
+  cryProvider: string | null;
 }
 
 export type QueueKind = 'main' | 'ruleset' | 'action';
@@ -64,7 +65,7 @@ export function defaultQueueSettings(type: string, size: number, kind: QueueKind
     dequeueBatchSize: main ? 256 : kind === 'ruleset' ? 1024 : 128,
     minDequeueBatchSize: 0, minDequeueBatchTimeout: 1000, maxDiskSpace: 0, saveOnShutdown: true, dequeueTimeBegin: 0, dequeueTimeEnd: 25,
     samplingInterval: 0, takeFlowCtlFromMsg: false, mutexContentionStats: false, onCorruption: 'safe', diskQueueType: 'auto',
-    diskQueueAutoUpgrade: false, diskQueueIdleTimeout: 60000,
+    diskQueueAutoUpgrade: false, diskQueueIdleTimeout: 60000, cryProvider: null,
   };
 }
 

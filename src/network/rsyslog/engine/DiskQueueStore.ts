@@ -2,6 +2,7 @@ import type { FileHandle, RsyslogFiles } from './Host';
 import { ObjectStreamError, ObjectWriter, readRecord, readRecords, type ObjectRecord, type PropertyValue } from './ObjectStream';
 import { deserializeMessage, serializeMessage, type MessageCodecContext } from './MessageCodec';
 import type { RsyslogMessage } from '../Message';
+import type { LoadedBacklog, QueuePosition, QueueStore } from './QueueStore';
 
 export const MAX_DISK_QUEUE_FILES = 10_000_000;
 const FILE_NUMBER_DIGITS = 8;
@@ -11,11 +12,6 @@ const STREAM_TYPE_FILE_CIRCULAR = 1;
 const STREAM_MODE_READ = 1;
 const STREAM_MODE_WRITE = 2;
 const OPEN_MODE = 0o600;
-
-export interface QueuePosition {
-  readonly file: number;
-  readonly offset: number;
-}
 
 export interface DiskQueueSettings {
   readonly directory: string;
@@ -28,11 +24,6 @@ export interface DiskQueueEnvironment {
   readonly files: RsyslogFiles;
   readonly codec: () => MessageCodecContext;
   readonly report: (severity: number, text: string) => void;
-}
-
-export interface LoadedBacklog {
-  readonly messages: RsyslogMessage[];
-  readonly positions: QueuePosition[];
 }
 
 export function queueFileName(directory: string, prefix: string, number: number): string {
@@ -49,7 +40,8 @@ function propertiesOf(record: ObjectRecord): Map<string, PropertyValue> {
   return new Map(record.properties.map((property) => [property.name, property.value]));
 }
 
-export class DiskQueueStore {
+export class DiskQueueStore implements QueueStore {
+  readonly managesCheckpoints = false;
   sizeOnDisk = 0;
   private writeFile = 1;
   private writeOffset = 0;
@@ -82,6 +74,8 @@ export class DiskQueueStore {
   positionOf(item: object): QueuePosition | undefined {
     return this.positions.get(item);
   }
+
+  markDequeued(): void {}
 
   exceedsDiskSpace(): boolean {
     return this.settings.maxDiskSpace !== 0 && this.sizeOnDisk > this.settings.maxDiskSpace;

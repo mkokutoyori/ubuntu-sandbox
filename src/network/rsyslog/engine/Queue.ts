@@ -1,6 +1,6 @@
 import type { Sleep } from './Execution';
 import type { QueueSettings } from './Settings';
-import type { DiskQueueStore, QueuePosition } from './DiskQueueStore';
+import type { QueuePosition, QueueStore } from './QueueStore';
 
 export interface QueueHost {
   schedule(callback: () => void, delayMs: number): () => void;
@@ -67,6 +67,12 @@ function newWorker<T>(): Worker<T> {
   };
 }
 
+export interface QueueHooks {
+  activity?: () => void;
+  batchCompleted?: () => void;
+  idle?: { readonly timeoutMs: number; check(): boolean };
+}
+
 export class WorkerQueue<T extends QueueItem> {
   private items: T[] = [];
   private readonly workers: Worker<T>[] = [];
@@ -79,6 +85,8 @@ export class WorkerQueue<T extends QueueItem> {
   private cancelWaitingDeadline: (() => void) | null = null;
   private spilling = false;
   private enqueueOnly = false;
+  private cancelIdle: (() => void) | null = null;
+  hooks: QueueHooks = {};
   readonly statistics: QueueStatistics = { size: 0, enqueued: 0, sizeEnqueued: 0, full: 0, discardedFull: 0, discardedNearlyFull: 0, maxSize: 0 };
 
   constructor(
@@ -86,7 +94,7 @@ export class WorkerQueue<T extends QueueItem> {
     readonly settings: QueueSettings,
     private readonly host: QueueHost,
     private readonly process: (item: T) => Generator<Sleep, ProcessOutcome>,
-    readonly disk: DiskQueueStore | null = null,
+    readonly disk: QueueStore | null = null,
     readonly assist: WorkerQueue<T> | null = null,
   ) {}
 
@@ -152,7 +160,9 @@ export class WorkerQueue<T extends QueueItem> {
     }
     this.items.push(item);
     this.noteSize();
-    this.store(item);
+    this.store(item, false);
+    this.hooks.activity?.();
+    this.disarmIdle();
     this.adviseWorkers();
   }
 
@@ -162,15 +172,16 @@ export class WorkerQueue<T extends QueueItem> {
     this.statistics.maxSize = Math.max(this.statistics.maxSize, size);
   }
 
-  private store(item: T): void {
+  private store(item: T, internal: boolean): void {
     if (this.disk === null) return;
-    const failure = this.disk.append(item as never);
+    const failure = this.disk.append(item as never, internal);
     if (failure !== null) this.host.report(`queue '${this.name}': error writing the disk queue: ${failure}`);
     if (this.disk.takePendingPersist()) this.persist(true);
     this.countUpdates(1);
   }
 
   private countUpdates(count: number): void {
+    if (this.disk?.managesCheckpoints === true) return;
     this.updatesSincePersist += count;
     const interval = this.settings.checkpointInterval;
     if (interval > 0 && this.updatesSincePersist >= interval) {
@@ -397,7 +408,8 @@ export class WorkerQueue<T extends QueueItem> {
     }
     if (pointer === null) return;
     const deleted = this.disk.commit(pointer);
-    if (deleted > 0) this.persist(true);
+    if (deleted > 0 && !this.disk.managesCheckpoints) this.persist(true);
+    if (finished) this.hooks.batchCompleted?.();
   }
 
   private releaseBatch(worker: Worker<T>): Sleep | null {
@@ -414,7 +426,7 @@ export class WorkerQueue<T extends QueueItem> {
     for (const item of requeued) {
       this.items.push(item);
       this.statistics.enqueued++;
-      this.store(item);
+      this.store(item, true);
     }
     this.noteSize();
     return { sleepMs: REQUEUE_PACE_MS };
@@ -435,6 +447,14 @@ export class WorkerQueue<T extends QueueItem> {
     worker.batch = kept;
     worker.index = 0;
     worker.progress = null;
+    if (this.disk !== null) {
+      for (let at = taken.length - 1; at >= 0; at--) {
+        const position = this.disk.positionOf(taken[at]);
+        if (position === undefined) continue;
+        this.disk.markDequeued(position);
+        break;
+      }
+    }
     if (this.disk !== null && kept.length > 0) {
       worker.ledger = { progress: null, finished: false };
       this.ledger.push(worker.ledger);
@@ -474,7 +494,10 @@ export class WorkerQueue<T extends QueueItem> {
             }
             continue;
           }
-          if (this.items.length === 0) break;
+          if (this.items.length === 0) {
+            this.armIdle();
+            break;
+          }
           const waitForWindow = this.withinDequeueWindow();
           if (waitForWindow > 0) {
             worker.running = false;
@@ -524,7 +547,34 @@ export class WorkerQueue<T extends QueueItem> {
     worker.running = false;
   }
 
+  private armIdle(): void {
+    const idle = this.hooks.idle;
+    if (idle === undefined || this.cancelIdle !== null || this.stopped) return;
+    this.cancelIdle = this.host.schedule(() => this.idleFired(), idle.timeoutMs);
+  }
+
+  private disarmIdle(): void {
+    this.cancelIdle?.();
+    this.cancelIdle = null;
+  }
+
+  private idleFired(): void {
+    this.cancelIdle = null;
+    const idle = this.hooks.idle;
+    if (idle === undefined || this.stopped) return;
+    if (idle.check()) {
+      if (this.workers.every((worker) => !worker.running && worker.timer === null && worker.batch.length === 0)) this.workers.length = 0;
+      return;
+    }
+    this.armIdle();
+  }
+
+  get workerCount(): number {
+    return this.workers.length;
+  }
+
   stop(): void {
+    this.disarmIdle();
     this.stopped = true;
     for (const worker of this.workers) {
       worker.timer?.();

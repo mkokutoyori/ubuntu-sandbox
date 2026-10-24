@@ -59,7 +59,7 @@ export const QUEUE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'queue.mindequeuebatchsize.timeout', type: 'int' }, { name: 'queue.fulldelaymark', type: 'int' },
   { name: 'queue.lightdelaymark', type: 'int' }, { name: 'queue.diskqueuetype', type: 'string' },
   { name: 'queue.diskqueueautoupgrade', type: 'binary' }, { name: 'queue.diskqueueidletimeout', type: 'int' },
-  { name: 'queue.mutexcontentionstats', type: 'binary' }, { name: 'queue.oncorruption', type: 'string' },
+  { name: 'queue.mutexcontentionstats', type: 'binary' }, { name: 'queue.oncorruption', type: 'string' }, { name: 'queue.cry.provider', type: 'string' },
 ];
 
 const ACTION_PARAMS: readonly ParamDescriptor[] = [
@@ -557,6 +557,7 @@ export class ConfigLoader implements ConfigSink {
       name,
       usedFiles: this.queueFiles,
       workDirectory: this.config.settings.workDirectory,
+      moduleFileAvailable: (fileName) => this.options.catalog.fileExists(fileName),
       diagnostics: {
         parserError: (text) => this.reportAt(text),
         parserWarning: (text) => this.warnAt(text),

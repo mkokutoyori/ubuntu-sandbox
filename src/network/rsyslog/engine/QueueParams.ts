@@ -5,6 +5,8 @@ import type { QueueSettings } from './Settings';
 const MAX_QUEUE_SIZE = 0x7fffffff;
 const OVERSIZE_QUEUE_WATERMARK = 500000;
 const RS_RET_QUEUE_DISK_NO_FN = -2328;
+const RS_RET_QUEUE_CRY_DISK_ONLY = -2351;
+const RS_RET_LOAD_ERROR = -1006;
 const RS_RET_ERR_QUEUE_FN_DUP = -2451;
 const RS_RET_CONF_WRN_FULLDLY_BELOW_HIGHWTR = -2358;
 
@@ -20,6 +22,7 @@ export interface QueueContext {
   readonly diagnostics: QueueDiagnostics;
   readonly usedFiles: Set<string>;
   readonly workDirectory: string | null;
+  readonly moduleFileAvailable?: (fileName: string) => boolean;
 }
 
 function flagOf(values: ParamValues, key: string): boolean | undefined {
@@ -79,6 +82,7 @@ export function applyQueueParameters(queue: QueueSettings, values: ParamValues, 
   queue.checkpointInterval = number('queue.checkpointinterval') ?? queue.checkpointInterval;
   queue.syncQueueFiles = flagOf(values, 'queue.syncqueuefiles') ?? queue.syncQueueFiles;
   queue.type = text('queue.type') ?? queue.type;
+  queue.cryProvider = text('queue.cry.provider') ?? queue.cryProvider;
   const diskType = text('queue.diskqueuetype');
   if (diskType !== undefined) {
     const lowered = diskType.toLowerCase();
@@ -165,7 +169,21 @@ function finalizeQueueType(queue: QueueSettings, context: QueueContext, applied:
       diagnostics.error(`error on queue '${name}', segmentedDisk mode selected, but no queue file name given`, RS_RET_QUEUE_DISK_NO_FN);
     } else if (queue.onCorruption !== 'safe') {
       diagnostics.error(`error on queue '${name}': segmentedDisk currently supports only queue.onCorruption="safe"`, RS_RET.CONF_PARAM_INVLD);
+    } else if (queue.cryProvider !== null) {
+      diagnostics.error(`error on queue '${name}': queue.cry.provider is not yet supported by segmentedDisk`, RS_RET.CONF_PARAM_INVLD);
     }
+  }
+  if (queue.cryProvider === null) return;
+  if (queue.fileName === null) {
+    diagnostics.error(`error on queue '${name}', crypto provider can only be set for disk or disk assisted queue - ignored`, RS_RET_QUEUE_CRY_DISK_ONLY);
+    queue.cryProvider = null;
+    return;
+  }
+  if (queue.type === 'SegmentedDisk') return;
+  const library = `lmcry_${queue.cryProvider}`;
+  if (context.moduleFileAvailable !== undefined && !context.moduleFileAvailable(`${library}.so`)) {
+    diagnostics.error(`queue: could not load crypto provider '${library}' - encryption disabled`, RS_RET_LOAD_ERROR);
+    queue.cryProvider = null;
   }
 }
 

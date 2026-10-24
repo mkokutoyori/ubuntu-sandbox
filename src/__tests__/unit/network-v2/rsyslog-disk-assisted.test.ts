@@ -21,7 +21,7 @@ const stuck = (queue: string): string =>
   `${HEAD}action(type="omfile" name="out" file="/no/such/x.log" createDirs="off" template="probe" action.resumeRetryCount="-1" action.resumeInterval="30" queue.type="LinkedList" ${queue})\n`;
 const healthy = (queue: string): string =>
   `${HEAD}action(type="omfile" name="out" file="/var/log/x.log" template="probe" action.resumeRetryCount="-1" queue.type="LinkedList" ${queue})\n`;
-const MARKS = 'queue.size="100" queue.highWatermark="10" queue.lowWatermark="4"';
+const MARKS = 'queue.size="100" queue.highWatermark="10" queue.lowWatermark="4" queue.diskQueueType="disk"';
 
 function lab(config: string, host = new LabHost('10.0.0.1', new LabNetwork())): { host: LabHost; engine: LabEngine } {
   host.directories.add(SPOOL);
