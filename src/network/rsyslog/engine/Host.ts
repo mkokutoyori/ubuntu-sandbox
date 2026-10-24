@@ -199,6 +199,11 @@ export interface RsyslogKernelLog {
   restoreConsoleLogLevel(): void;
 }
 
+export interface ChildExit {
+  readonly pid: number;
+  readonly exitCode: number;
+}
+
 export interface RsyslogProcess {
   setSupplementaryGroups(gids: readonly number[]): Errno | null;
   initSupplementaryGroups(userName: string, gid: number): Errno | null;
@@ -207,7 +212,7 @@ export interface RsyslogProcess {
   userNameOf(uid: number): string | null;
   currentGid(): number;
   setUmask(mask: number): void;
-  run?(argv: readonly string[]): number;
+  run?(argv: readonly string[]): ChildExit;
   setOpenFilesLimit(limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
 }
 

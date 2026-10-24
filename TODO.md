@@ -3452,9 +3452,9 @@ s'arrete. Aucun des deux n'a pu etre mesure : il faudrait un module qui passe d'
 
 ### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
 Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
-Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
-`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
-`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`abortOnFailedQueueStartup` et `reportChildProcessExits` sont evalues (voir `linux-rsyslog-queue-startup.test.ts` et
+`linux-rsyslog-child-exits.test.ts`) ; la file « disk » sans `queue.fileName` est le seul echec de demarrage de file que le moteur connaisse.
+Acceptes et jamais lus : `inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
 `allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
 `libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
 `abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.

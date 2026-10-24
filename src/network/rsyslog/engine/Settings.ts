@@ -59,6 +59,7 @@ export interface GlobalSettings {
   netstreamDriverCaExtraFiles: string | null;
   dropMessagesWithMaliciousDnsPtrRecords: boolean;
   abortOnUncleanConfig: boolean;
+  abortOnFailedQueueStartup: boolean;
   abortOnIdResolutionFail: boolean;
   operatingStateFile: string | null;
   compatDefaultsSecure: 'backward-compatible' | 'strict' | 'warn';
@@ -78,6 +79,7 @@ export interface GlobalSettings {
   defaultRuleset: string;
   maxOpenFiles: number | null;
   requireAllInputs: boolean;
+  reportChildProcessExits: 'none' | 'errors' | 'all';
   oversize: { errorFile: string | null; report: boolean; mode: 'truncate' | 'split' | 'accept' };
   privDrop: { uid: number; gid: number; keepSupplemental: boolean };
   extra: Map<string, ParamValue>;
@@ -106,6 +108,7 @@ export function defaultGlobalSettings(): GlobalSettings {
     netstreamDriverCaExtraFiles: null,
     dropMessagesWithMaliciousDnsPtrRecords: false,
     abortOnUncleanConfig: false,
+    abortOnFailedQueueStartup: false,
     abortOnIdResolutionFail: true,
     operatingStateFile: null,
     compatDefaultsSecure: 'backward-compatible',
@@ -125,6 +128,7 @@ export function defaultGlobalSettings(): GlobalSettings {
     defaultRuleset: 'RSYSLOG_DefaultRuleset',
     maxOpenFiles: null,
     requireAllInputs: false,
+    reportChildProcessExits: 'errors',
     oversize: { errorFile: null, report: true, mode: 'truncate' },
     privDrop: { uid: 0, gid: 0, keepSupplemental: false },
     extra: new Map(),
@@ -236,6 +240,7 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.processInternalMessages = flag(values, 'processinternalmessages') ?? settings.processInternalMessages;
   settings.variablesCaseSensitive = flag(values, 'variables.casesensitive') ?? settings.variablesCaseSensitive;
   settings.abortOnUncleanConfig = flag(values, 'abortonuncleanconfig') ?? settings.abortOnUncleanConfig;
+  settings.abortOnFailedQueueStartup = flag(values, 'abortonfailedqueuestartup') ?? settings.abortOnFailedQueueStartup;
   settings.operatingStateFile = str(values, 'operatingstatefile') ?? settings.operatingStateFile;
   settings.abortOnIdResolutionFail = flag(values, 'security.abortonidresolutionfail') ?? settings.abortOnIdResolutionFail;
   settings.aclAddHostnameOnFail = flag(values, 'net.acladdhostnameonfail') ?? settings.aclAddHostnameOnFail;
@@ -268,6 +273,9 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.oversize.report = flag(values, 'oversizemsg.report') ?? settings.oversize.report;
   const oversizeMode = str(values, 'oversizemsg.input.mode');
   if (oversizeMode !== undefined) settings.oversize.mode = oversizeMode === 'split' || oversizeMode === 'accept' ? oversizeMode : 'truncate';
+  const childExits = str(values, 'reportchildprocessexits');
+  if (childExits === 'none' || childExits === 'errors' || childExits === 'all') settings.reportChildProcessExits = childExits;
+  else if (childExits !== undefined) report(`invalid value '${childExits}' for global parameter reportChildProcessExits -- ignored`);
   settings.privDrop.keepSupplemental = flag(values, 'privdrop.group.keepsupplemental') ?? settings.privDrop.keepSupplemental;
   settings.privDrop.gid = count(values, 'privdrop.group.id') ?? count(values, 'privdrop.group.name') ?? settings.privDrop.gid;
   settings.privDrop.uid = count(values, 'privdrop.user.id') ?? count(values, 'privdrop.user.name') ?? settings.privDrop.uid;

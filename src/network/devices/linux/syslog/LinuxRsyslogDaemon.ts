@@ -35,7 +35,9 @@ export function runFailedText(code: number): string {
   return `rsyslogd: run failed with error ${code} (see rsyslog.h or try https://www.rsyslog.com/e/${-code} to learn what that number means)`;
 }
 
-export type DaemonStartOutcome = { readonly started: true } | { readonly started: false; readonly lines: readonly string[]; readonly fatalCode: number };
+export type DaemonStartOutcome =
+  | { readonly started: true }
+  | { readonly started: false; readonly lines: readonly string[]; readonly fatalCode: number; readonly runFailed: boolean };
 
 export class LinuxRsyslogDaemon implements ServiceSocketServer {
   private engine: RsyslogEngine | null = null;
@@ -82,7 +84,7 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
     const lines = loader.log.lines();
     this.lastDiagnostics = lines;
     const fatal = loader.log.entries.find((entry) => entry.severity === 'error' && FATAL_CODES.has(entry.code));
-    if (fatal !== undefined) return { started: false, lines, fatalCode: fatal.code };
+    if (fatal !== undefined) return { started: false, lines, fatalCode: fatal.code, runFailed: true };
     const activation: string[] = [];
     let capturing = false;
     const engine = new RsyslogEngine(config, this.host, {
@@ -102,7 +104,8 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
       this.holder.engine = null;
       this.host.dispose();
       this.bound.clear();
-      return { started: false, lines: [...lines, ...activation], fatalCode: outcome.code };
+      const exitLines = outcome.exitText === undefined ? [] : [outcome.exitText];
+      return { started: false, lines: [...lines, ...activation, ...exitLines], fatalCode: outcome.code, runFailed: outcome.exitText === undefined };
     }
     engine.internal(LOG_INFO, RS_RET.NO_ERRCODE, this.statusText('start'), false, LOG_SYSLOG_FACILITY);
     return { started: true };

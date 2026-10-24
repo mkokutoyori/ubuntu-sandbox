@@ -302,6 +302,12 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   un lot arrivé pendant la suspension). Un message seul qui échoue n'est que journalisé. `tryResume` d'omfile répond
   toujours OK : la garde des dix reprises suspend l'action.
 
+- **Sorties d'enfants et démarrage des files** : le programme de rotation d'omfile est un vrai processus fils de rsyslogd
+  (pid dans la table des processus) et `global(reportChildProcessExits)` (`none`, `errors`, `all`) décide de ce qui est
+  journalisé (`linux-rsyslog-child-exits.test.ts`). Une file « disk » sans `queue.fileName` ne démarre pas : l'action est
+  désactivée, ou le démon s'arrête sur la ligne de la source avec `abortOnFailedQueueStartup`
+  (`linux-rsyslog-queue-startup.test.ts`).
+
 Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
 n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
 simulée au lieu de bloquer le fil.

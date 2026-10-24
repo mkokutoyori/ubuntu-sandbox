@@ -1416,24 +1416,30 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
-  private runDaemonProgram(argv: readonly string[], uid: number, gid: number): number {
+  private runDaemonProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): { pid: number; exitCode: number } {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
-    um.currentUser = um.getUserByUid(uid)?.username ?? 'root';
+    const user = um.getUserByUid(uid)?.username ?? 'root';
+    um.currentUser = user;
     um.currentUid = uid;
     um.currentGid = gid;
     this.executor.setCwd('/');
+    const child = this.executor.processMgr.spawn({ command: argv.join(' '), user, uid, gid, ppid: parentPid });
+    let exitCode: number;
     try {
       const quoted = argv.map((argument) => `'${argument.replace(/'/g, `'\\''`)}'`).join(' ');
-      return this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status;
+      exitCode = this.executor.withProcessIdentity(child.pid, () => this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status);
     } catch {
-      return 1;
+      exitCode = 1;
     } finally {
       um.currentUser = prev.user;
       um.currentUid = prev.uid;
       um.currentGid = prev.gid;
       this.executor.setCwd(prev.cwd);
     }
+    this.executor.processMgr.exit(child.pid, exitCode);
+    this.executor.processMgr.reap(child.pid);
+    return { pid: child.pid, exitCode };
   }
 
   private deliverCronMail(recipient: string, body: string): void {
@@ -1663,7 +1669,7 @@ export abstract class LinuxMachine extends EndHost
         executor.processMgr.setNofileLimit(uid, limit);
         return null;
       },
-      runProgram: (argv, uid, gid) => this.runDaemonProgram(argv, uid, gid),
+      runProgram: (argv, uid, gid, parentPid) => this.runDaemonProgram(argv, uid, gid, parentPid),
       restoreProcessLimits: () => {
         for (const [uid, saved] of savedNofile) {
           executor.processMgr.setNofileHardLimit(uid, saved.hard);
@@ -1735,7 +1741,7 @@ export abstract class LinuxMachine extends EndHost
       if (daemon.isRunning) return;
       const outcome = daemon.start();
       if ('lines' in outcome) {
-        for (const line of [...outcome.lines, runFailedText(outcome.fatalCode)]) {
+        for (const line of outcome.runFailed ? [...outcome.lines, runFailedText(outcome.fatalCode)] : outcome.lines) {
           executor.logMgr.submitLibcSyslog(LOG_DAEMON_INFO, 'rsyslogd', mainPid(), line.replace(/^rsyslogd: /, ''), timers.now());
         }
         executor.serviceMgr.markFailed('rsyslog', 'exit-code');

@@ -59,6 +59,7 @@ export interface RuntimeLog {
   error(text: string, code?: number, errno?: Errno): void;
   warning(text: string, code?: number): void;
   info(text: string, code?: number): void;
+  childExited(pid: number, exitCode: number): void;
   log(severity: number, code: number, text: string, errno?: Errno): void;
   internal(severity: number, code: number, text: string, mark?: boolean, facility?: number): void;
 }

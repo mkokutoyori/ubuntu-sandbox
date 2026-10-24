@@ -91,6 +91,10 @@ export class ActionRuntime {
     this.definition.instance.teardown?.();
   }
 
+  disable(): void {
+    this.state = 'disabled';
+  }
+
   private get transactional(): boolean {
     if (this.transactionalWorker === null) this.transactionalWorker = 'commitTransaction' in this.ensureWorker();
     return this.transactionalWorker;

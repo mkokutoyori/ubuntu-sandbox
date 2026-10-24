@@ -6,7 +6,7 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  Datagram, DatagramOptions, FileChange, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
+  ChildExit, Datagram, DatagramOptions, FileChange, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
   OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
@@ -52,7 +52,7 @@ export interface LinuxRsyslogPlatform {
   supplementaryGidsOf(userName: string): number[];
   applyCredentials(uid: number, gid: number): void;
   restoreProcessLimits(): void;
-  runProgram(argv: readonly string[], uid: number, gid: number): number;
+  runProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): ChildExit;
   setOpenFilesLimit(uid: number, limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
   wallMs(): number;
   monotonicMs(): number;
@@ -230,7 +230,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
     currentGid: () => this.credentials.gid,
     setUmask: (mask) => { this.credentials.umask = mask & 0o777; },
     setOpenFilesLimit: (limit) => this.platform.setOpenFilesLimit(this.credentials.uid, limit),
-    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid),
+    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid, this.platform.daemonPid()),
   };
 
   private statOf(inode: INode | null): FileStat | null {

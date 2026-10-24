@@ -266,7 +266,10 @@ class OmfileInstance implements ActionModuleInstance {
       open: () => this.openRaw(path),
       size: (target) => this.context.host.files.statSize(target),
       schedule: (callback, delayMs) => this.context.host.schedule(callback, delayMs),
-      run: (argv) => { this.context.host.process?.run?.(argv); },
+      run: (argv) => {
+        const child = this.context.host.process?.run?.(argv);
+        if (child !== undefined) this.context.runtime.childExited(child.pid, child.exitCode);
+      },
       report: (text, code) => this.context.runtime.error(text, code),
     });
   }
