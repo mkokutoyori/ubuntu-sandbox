@@ -7,7 +7,6 @@ import type {
   ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, DirectiveRegistration, ModuleContext, OutputModule, SelectorParse,
   TemplateRequest,
 } from '../engine/Modules';
-import type { RsyslogMessage } from '../Message';
 import { OmfileStream, type StreamSettings } from './OmfileStream';
 import { parseSelectorTemplate } from './SelectorTemplate';
 
@@ -378,9 +377,17 @@ class OmfileInstance implements ActionModuleInstance {
     return 'ok';
   }
 
-  commit(): ActionOutcome {
+  commitTransaction(batch: readonly ActionArguments[]): ActionOutcome {
+    let outcome: ActionOutcome = 'ok';
+    this.transactionFailureCode = null;
+    for (const entry of batch) {
+      const result = this.write(entry.strings[0] ?? '', entry.strings[1] ?? '');
+      if (result === 'ok' || result === 'discard' || result === 'defer' || outcome !== 'ok') continue;
+      outcome = result;
+      if (result === 'fail') this.transactionFailureCode = this.failureCode();
+    }
     if (this.settings.flushOnTxEnd) this.current?.flush();
-    return 'ok';
+    return outcome;
   }
 
   private closeHandle(handle: OmfileStream): void {
@@ -394,6 +401,8 @@ class OmfileInstance implements ActionModuleInstance {
     handle.close();
   }
 
+  private transactionFailureCode: number | null = null;
+
   private failureCode(): number {
     switch (this.current?.lastFailure) {
       case 'disabled': return RS_RET.STREAM_DISABLED;
@@ -404,9 +413,8 @@ class OmfileInstance implements ActionModuleInstance {
 
   createWorker(): ActionWorker {
     return {
-      doAction: (args: ActionArguments, _message: RsyslogMessage) => this.write(args.strings[0] ?? '', args.strings[1] ?? ''),
-      endTransaction: () => this.commit(),
-      failureCode: () => this.failureCode(),
+      commitTransaction: (batch: readonly ActionArguments[]) => this.commitTransaction(batch),
+      failureCode: () => this.transactionFailureCode ?? RS_RET.DATAFAIL,
       close: () => undefined,
     };
   }

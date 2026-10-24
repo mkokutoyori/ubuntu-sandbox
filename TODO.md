@@ -3442,16 +3442,6 @@ sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage
 source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
 (`global(senders.keepTrack)`) restent a porter.
 
-### [rsyslog] `action.errorfile` et `action.externalstate.file` : le moteur n'a pas la phase de commit de la source
-Les deux parametres sont evalues (`engine/ActionRuntime.ts`) : le fichier d'etat externe suspend l'action avant chaque message et la
-relance quand il ne dit plus `SUSPENDED` ; le fichier d'erreurs recoit une ligne JSON par message perdu et le compteur `failed`
-suit. Ce qui reste : le moteur execute `doAction()` message par message, la ou la source collecte les messages d'une transaction
-et les valide ensemble ; le fichier d'erreurs est donc alimente a la fin du lot et non par la phase de commit, qui rejoue chaque
-message d'un lot en echec isolement avant de l'ecrire (le module voit un essai de plus dans la source) ; le code de statut ecrit
-vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desactive, `-2125` sans commande de limite de taille,
-`-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
-source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
-
 ### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
 Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
 Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),

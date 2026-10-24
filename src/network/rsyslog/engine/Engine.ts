@@ -73,13 +73,13 @@ export class RsyslogEngine implements InputSubmitter {
       this.registerActionStatistics(runtime);
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
-      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; runtime.commit(); }));
+      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; return runtime.commit(); }));
     }
   }
 
   private newQueue(
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
-    endBatch: () => void = () => this.commitActions(),
+    endBatch: () => Generator<Sleep, void> = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
     const queue = new WorkerQueue<RsyslogMessage>(
       name,
@@ -123,8 +123,8 @@ export class RsyslogEngine implements InputSubmitter {
     object.addCounter({ name: 'ratelimit.paced_usec', read: () => counters.rateLimitPacedMicroseconds, reset: () => { counters.rateLimitPacedMicroseconds = 0; } });
   }
 
-  private commitActions(): void {
-    for (const runtime of this.actions.values()) runtime.commit();
+  private *commitActions(): Generator<Sleep, void> {
+    for (const runtime of this.actions.values()) yield* runtime.commit();
   }
 
   private newLimiter(name: string, interval: number, burst: number, threshold: number): RateLimiter {

@@ -28,15 +28,23 @@ export interface ActionArguments {
   readonly json: unknown[];
 }
 
-export interface ActionWorker {
-  doAction(args: ActionArguments, message: RsyslogMessage): ActionOutcome;
+interface ActionWorkerBase {
   tryResume?(): ActionOutcome;
-  beginTransaction?(): void;
-  endTransaction?(): ActionOutcome;
+  beginTransaction?(): ActionOutcome;
   pauseAfterAction?(): number;
   failureCode?(): number;
   close(): void;
 }
+
+export interface ImmediateActionWorker extends ActionWorkerBase {
+  doAction(args: ActionArguments, message: RsyslogMessage): ActionOutcome;
+}
+
+export interface TransactionalActionWorker extends ActionWorkerBase {
+  commitTransaction(batch: readonly ActionArguments[]): ActionOutcome;
+}
+
+export type ActionWorker = ImmediateActionWorker | TransactionalActionWorker;
 
 export interface ActionModuleInstance {
   readonly moduleName: string;

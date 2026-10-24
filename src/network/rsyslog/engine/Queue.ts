@@ -6,7 +6,7 @@ export interface QueueHost {
   localHour(): number;
   nowMs(): number;
   report(text: string): void;
-  endBatch?(): void;
+  endBatch?(): Generator<Sleep, void> | undefined;
 }
 
 export type ProcessOutcome = 'done' | { readonly retryAfterMs: number };
@@ -22,6 +22,7 @@ export interface QueueStatistics {
 
 export class WorkerQueue<T extends { readonly severity: number }> {
   private items: T[] = [];
+  private dequeued: T[] = [];
   private running = false;
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
@@ -43,7 +44,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   }
 
   pending(): readonly T[] {
-    return this.items;
+    return [...this.dequeued, ...this.items];
   }
 
   enqueue(item: T): boolean {
@@ -88,12 +89,50 @@ export class WorkerQueue<T extends { readonly severity: number }> {
   }
 
   private current: Generator<Sleep, ProcessOutcome> | null = null;
+  private committing: Generator<Sleep, void> | null = null;
+  private deferredSleep: Sleep | null = null;
+
+  private endBatch(): Sleep | null {
+    if (this.committing === null) {
+      const started = this.host.endBatch?.();
+      if (started === undefined) {
+        this.dequeued = [];
+        return null;
+      }
+      this.committing = started;
+    }
+    const step = this.committing.next();
+    if (step.done === true) {
+      this.committing = null;
+      this.dequeued = [];
+      return null;
+    }
+    return step.value;
+  }
+
+  private pauseFor(sleep: Sleep): void {
+    this.running = false;
+    this.wake(sleep.sleepMs);
+  }
 
   drain(): void {
     if (this.running || this.cancelTimer !== null || this.stopped) return;
     this.running = true;
     let batched = 0;
     for (;;) {
+      if (this.committing !== null) {
+        const pause = this.endBatch();
+        if (pause !== null) {
+          this.pauseFor(pause);
+          return;
+        }
+      }
+      if (this.deferredSleep !== null) {
+        const sleep = this.deferredSleep;
+        this.deferredSleep = null;
+        this.pauseFor(sleep);
+        return;
+      }
       if (this.current === null) {
         if (this.items.length === 0) break;
         const waitForWindow = this.withinDequeueWindow();
@@ -107,27 +146,38 @@ export class WorkerQueue<T extends { readonly severity: number }> {
       const step = this.current.next();
       if (step.done !== true) {
         const sleep = step.value;
-        this.host.endBatch?.();
-        this.running = false;
-        this.wake(sleep.sleepMs);
+        this.deferredSleep = sleep;
+        const pause = this.endBatch();
+        if (pause === null) this.deferredSleep = null;
+        this.pauseFor(pause ?? sleep);
         return;
       }
       this.current = null;
       const outcome = step.value;
       if (outcome === 'done') {
-        this.items.shift();
+        this.dequeued.push(this.items.shift() as T);
         this.statistics.size = this.items.length;
         batched++;
         const batchEnded = this.items.length === 0 || batched >= this.settings.dequeueBatchSize;
-        if (batchEnded) this.host.endBatch?.();
+        if (batchEnded) {
+          batched = 0;
+          const pause = this.endBatch();
+          if (pause !== null) {
+            this.pauseFor(pause);
+            return;
+          }
+        }
         if (this.settings.dequeueSlowdown > 0 && batchEnded) {
           this.running = false;
           this.wake(Math.max(1, Math.ceil(this.settings.dequeueSlowdown / 1000)));
           return;
         }
-        if (batchEnded) batched = 0;
       } else {
-        this.host.endBatch?.();
+        const pause = this.endBatch();
+        if (pause !== null) {
+          this.pauseFor(pause);
+          return;
+        }
         this.running = false;
         this.wake(Math.max(1, outcome.retryAfterMs));
         return;
@@ -144,6 +194,7 @@ export class WorkerQueue<T extends { readonly severity: number }> {
 
   discardAll(): void {
     this.items = [];
+    this.dequeued = [];
     this.current = null;
     this.statistics.size = 0;
   }

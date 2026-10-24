@@ -294,6 +294,14 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   readMode 0/1/2, `startmsg.regex` / `endmsg.regex`, `readTimeout`, `reopenOnTruncate`, métadonnées, limites par
   minute, `maxInotifyWatches` et son balayage de repli.
 
+- **Phase de commit des actions** (`rsyslog-action-commit.test.ts`) : omfile et omfwd sont transactionnels, comme dans
+  `action.c` — les messages d'un lot sont collectés puis confiés ensemble au module en fin de lot (`endBatch` de la file,
+  qui peut dormir sur l'horloge simulée pendant que le lot reste dans la file). Un lot qui échoue est rejoué message par
+  message (les lignes déjà écrites le sont une seconde fois), les messages qui échouent encore sont journalisés puis
+  écrits dans `action.errorfile` avec le statut de l'état de l'action (`RS_RET_DATAFAIL`, `RS_RET_SUSPENDED`, ou 0 pour
+  un lot arrivé pendant la suspension). Un message seul qui échoue n'est que journalisé. `tryResume` d'omfile répond
+  toujours OK : la garde des dix reprises suspend l'action.
+
 Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
 n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
 simulée au lieu de bloquer le fil.
