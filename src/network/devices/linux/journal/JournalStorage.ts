@@ -5,6 +5,8 @@ import { uidForSystemJournal, type JournaldSettings } from './JournaldServer';
 import { type JournalFileInfo, type VacuumResult, type VacuumSpec } from './JournalctlTool';
 import { type JournalRecord } from './JournalRecord';
 
+const DEFAULT_COMPRESS_THRESHOLD = 512;
+const MIN_COMPRESS_THRESHOLD = 8;
 const RECHECK_SPACE_USEC = 30_000_000;
 const LOG_CRIT = 2;
 const RETENTION_PASSES_MAX = 8;
@@ -95,7 +97,11 @@ export class JournalStorage {
 
   private identity(stem: string): FileIdentity {
     const ids = this.host.fileIds(stem, this.serial++);
-    return { path: `${this.host.directory()}/${stem}.journal`, ...ids, limits: this.limits, createdUsec: this.host.nowUsec() };
+    const compress = this.settings().compress;
+    return {
+      path: `${this.host.directory()}/${stem}.journal`, ...ids, limits: this.limits, createdUsec: this.host.nowUsec(),
+      compress: { enabled: compress.enabled, thresholdBytes: compress.thresholdBytes === null ? DEFAULT_COMPRESS_THRESHOLD : Math.max(MIN_COMPRESS_THRESHOLD, compress.thresholdBytes) },
+    };
   }
 
   private open(uid: number): Writer | null {

@@ -2,6 +2,7 @@ import { type JournalRecord } from './JournalRecord';
 import { type JournalFileInfo } from './JournalctlTool';
 import { concat, utf8 } from './JournalText';
 import { bytesToBinaryString } from '@/crypto/encoding';
+import { compressedPayloadSize } from './PayloadCompression';
 
 const ENTRY_ARRAY_MINIMUM = 4;
 const FIELD_HASH_TABLE_ITEMS = 333;
@@ -19,6 +20,7 @@ const ENTRY_OBJECT_SIZE = 64;
 const COMPACT_ENTRY_ITEM_SIZE = 4;
 const ENTRY_ARRAY_OBJECT_SIZE = 24;
 const COMPACT_ENTRY_ARRAY_ITEM_SIZE = 4;
+const DEFAULT_COMPRESS = { enabled: true, thresholdBytes: 512 };
 const FILL_NUMERATOR = 3;
 const FILL_DENOMINATOR = 4;
 
@@ -73,6 +75,12 @@ function fnv(items: readonly Uint8Array[]): bigint {
   return hash;
 }
 
+export function storedPayloadSize(bytes: Uint8Array, compress: { enabled: boolean; thresholdBytes: number }): number {
+  if (!compress.enabled || bytes.length < compress.thresholdBytes) return bytes.length;
+  const compressed = compressedPayloadSize(bytes);
+  return compressed <= bytes.length - 1 ? compressed : bytes.length;
+}
+
 export function buildRecord(payloads: readonly Uint8Array[], realtimeUsec: number, monotonicUsec: number, seqnum: number, seqnumId: string, bootId: string): JournalRecord {
   const fields = payloads.map((bytes): readonly [string, Uint8Array] => {
     const equals = bytes.indexOf(0x3d);
@@ -108,8 +116,7 @@ export interface FileIdentity {
   maxFileSize?: number;
   limits?: FileLimits;
   createdUsec?: number;
-  payloadSize?: (payload: Uint8Array) => number;
-  compressed?: () => boolean;
+  compress?: { enabled: boolean; thresholdBytes: number };
 }
 
 export type FileState = 'ONLINE' | 'OFFLINE' | 'ARCHIVED';
@@ -131,10 +138,12 @@ export class JournalFile {
   private tail = HEADER_SIZE;
   private allocated = HEADER_SIZE;
   private readonly dataTableItems: number;
+  private readonly compress: { enabled: boolean; thresholdBytes: number };
   private objectCount = 0;
   private dirty = true;
 
   constructor(public identity: FileIdentity) {
+    this.compress = identity.compress ?? DEFAULT_COMPRESS;
     const maxFileSize = this.limits.maxSize;
     this.dataTableItems = Math.max(Math.floor(Math.floor(Math.floor(maxFileSize * 4 / 768) / 3)), DATA_HASH_TABLE_FLOOR_ITEMS);
     this.appendObject(OBJECT_HEADER_SIZE + this.dataTableItems * HASH_ITEM_SIZE);
@@ -217,7 +226,7 @@ export class JournalFile {
   }
 
   private storedPayloadSize(bytes: Uint8Array): number {
-    return this.identity.payloadSize === undefined ? bytes.length : this.identity.payloadSize(bytes);
+    return storedPayloadSize(bytes, this.compress);
   }
 
   append(items: readonly Uint8Array[], realtimeUsec: number, monotonicUsec: number, seqnum: number, bootId: string): JournalRecord {
@@ -290,7 +299,7 @@ export class JournalFile {
       seqnumId: this.identity.seqnumId,
       state: this.state,
       compatibleFlags: ['TAIL_ENTRY_BOOT_ID'],
-      incompatibleFlags: [...(this.identity.compressed?.() === false ? [] : ['COMPRESSED-ZSTD']), 'KEYED-HASH', 'COMPACT'],
+      incompatibleFlags: [...(this.compress.enabled ? ['COMPRESSED-ZSTD'] : []), 'KEYED-HASH', 'COMPACT'],
       headerSize: HEADER_SIZE,
       arenaSize: this.allocated - HEADER_SIZE,
       dataHashTableSize: this.dataTableItems,

@@ -108,6 +108,28 @@ describe('SplitMode=', () => {
   });
 });
 
+describe('Compress=', () => {
+  const flags = (exec: LinuxCommandExecutor): string => [...exec.execute('journalctl --header').matchAll(/Incompatible flags: (.*)/g)].pop()?.[1] ?? '';
+
+  it('a file created under Compress=no does not carry the compression flag', async () => {
+    const l = lab();
+    expect(flags(l.exec)).toContain('COMPRESSED-ZSTD');
+    await configure(l, 'Compress=no');
+    expect(flags(l.exec)).toBe('KEYED-HASH COMPACT');
+  });
+
+  it('big compressible payloads fill files more slowly when they are compressed', async () => {
+    const rotations = async (compress: string): Promise<number> => {
+      const l = lab();
+      await configure(l, `SystemMaxFileSize=512K\nSystemMaxUse=100M\nSystemKeepFree=0\nCompress=${compress}`);
+      const journald = l.exec.logMgr.journald;
+      for (let i = 0; i < 400; i++) journald.deliverNative(Uint8Array.from(Buffer.from(`MESSAGE=${`line ${i} `.repeat(150)}\nPRIORITY=6\n`)), null);
+      return journald.fileInfos().filter((info) => info.state === 'ARCHIVED').length;
+    };
+    expect(await rotations('yes')).toBeLessThan(await rotations('no'));
+  });
+});
+
 describe('time on the simulated clock', () => {
   it('MaxRetentionSec= deletes an archived file once the clock has passed it', async () => {
     const l = lab();

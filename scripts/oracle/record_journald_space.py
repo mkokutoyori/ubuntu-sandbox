@@ -54,6 +54,7 @@ class Run:
         self.name, self.conf, self.unit = name, conf, unit
         self.sends = []
         self.extra = []
+        self.texts = []
         self.generator = None
 
     def start(self):
@@ -133,13 +134,13 @@ class Run:
         last = max(row["seqnum"] for row in self.startEntries)
         drivers = [row for row in entries if row["seqnum"] > last and any(name == "_TRANSPORT" and base64.b64decode(value) == b"driver" for name, value in row["fields"])]
         os.unlink(CONF)
-        notable = ("Fixed ", "Vacuuming", "Deleted", "rotat", "Rotat", "limit", "Reserving", "effective settings", "Suppress")
+        notable = ("Compressed", "Fixed ", "Vacuuming", "Deleted", "rotat", "Rotat", "limit", "Reserving", "effective settings", "Suppress")
         log = [line for line in open(self.log, errors="replace").read().splitlines() if any(word in line for word in notable)]
         return {
             "log": log,
             "name": self.name, "conf": self.conf, "unit": self.unit, "credentials": self.credentials,
             "statvfs": {"bsize": self.statvfs.f_bsize, "frsize": self.statvfs.f_frsize, "blocks": self.statvfs.f_blocks, "bfree": self.statvfs.f_bfree, "bavail": self.statvfs.f_bavail},
-            "endedAt": self.endedAt, "startEntries": self.startEntries, "drivers": drivers, "sends": self.sends if self.generator is None else [{"at": send["at"]} for send in self.sends], "generator": self.generator, "extraSenders": self.extra, "files": files, "vacuums": vacuums(copy) if self.name == "fill" else [],
+            "endedAt": self.endedAt, "startEntries": self.startEntries, "drivers": drivers, "sends": self.sends if self.generator is None else [{"at": send["at"]} for send in self.sends], "generator": self.generator, "extraSenders": self.extra, "texts": self.texts, "files": files, "vacuums": vacuums(copy) if self.name == "fill" else [],
         }
 
 
@@ -169,6 +170,22 @@ def as_user(run, uid, cgroup, count, label):
     os.close(writer)
     os.waitpid(pid, 0)
     run.extra.append(json.loads(os.read(reader, 1 << 20).decode()))
+
+
+def compressible(run):
+    import random
+    random.seed(7)
+    words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa".split()
+    texts = []
+    for n in (600, 800, 1500, 3000, 9000):
+        texts.append(" ".join(random.choice(words) for _ in range(n // 7))[:n])
+    for n in (600, 1500, 5000):
+        texts.append("".join(random.choice("0123456789abcdef") for _ in range(n)))
+    texts += ["x" * 700, "ab" * 600, json.dumps({"k%d" % i: {"id": i, "name": "user%d" % i, "tags": ["a", "b", "c"]} for i in range(60)})[:2500]]
+    texts.append("ERROR " + "stack frame at com.example.Service.handle(Service.java:42) " * 14)
+    run.texts = texts
+    for text in texts:
+        run.send([("MESSAGE", text), ("PRIORITY", "6"), ("SYSLOG_IDENTIFIER", "comp")])
 
 
 def vacuums(copy):
@@ -242,6 +259,9 @@ def scenarios():
         flood(run, 2, 3)
         as_user(run, 1001, "user.slice/user-1001.slice/session-4.scope", 2, "bob")
         out.append(run.stop())
+    for name, conf in (("compress-yes", "Compress=yes\n"), ("compress-no", "Compress=no\n"), ("compress-2000", "Compress=2000\n")):
+        run = Run(name, conf + "SystemKeepFree=0\n")
+        run.start(); compressible(run); out.append(run.stop())
     run = Run("keepfree-low", "SystemMaxUse=100M\nSystemKeepFree=100G\n")
     run.start(); fat(run, 200); out.append(run.stop(rotate=True))
     return out

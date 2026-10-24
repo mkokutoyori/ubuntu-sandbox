@@ -332,7 +332,9 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   simulée. Les fichiers occupent des octets du système de fichiers de la machine (`df`, `ls`, `du`, `journalctl --disk-usage` concordent).
   `RateLimitIntervalSec`/`RateLimitBurst` (et `LogRateLimit*` du fichier d'unité) limitent par unité et par groupe de priorités, avec la
   modulation du seuil par l'espace disponible de `journald-rate-limit.c`, et le message « Suppressed N messages from unit ». `SplitMode`
-  répartit les messages en `user-<uid>.journal`. `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
+  répartit les messages en `user-<uid>.journal`. `Compress=` fixe le drapeau `COMPRESSED-ZSTD` des fichiers créés et le seuil
+  au-delà duquel un objet est compressé ; la taille compressée est une estimation (LZ77 et entropie, `PayloadCompression.ts`, à 35 % de zstd
+  sur les douze charges mesurées), zstd lui-même n'étant pas porté. `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
   Les cinq cas de l'oracle (fichiers restants, message d'usage du disque, messages de suppression, `--vacuum-*`) sont mesurés contre
   le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
   volume unique, donc `/run` (journal volatil) partage la capacité de la racine.

@@ -3457,11 +3457,12 @@ moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discard
 `dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
 « linkedlist » en memoire.
 
-### [journald] journald.conf : `Compress` et `Seal` lus sans effet, et chargeur commun non repris par resolved/networkd
-`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `Audit`, `ReadKMsg`, `SplitMode`,
+### [journald] journald.conf : `Seal` lu sans effet, et chargeur commun non repris par resolved/networkd
+`journald.conf` et ses drop-ins sont lus (`systemd/ConfigFiles.ts`, `journal/JournaldConfig.ts`) et gouvernent `Storage`, `Compress`, `Audit`, `ReadKMsg`, `SplitMode`,
 `SyncIntervalSec`, `RateLimit*`, `System/Runtime` `MaxUse`/`KeepFree`/`MaxFileSize`/`MaxFiles`, `MaxRetentionSec`, `MaxFileSec`, `ForwardTo*` et leurs `MaxLevel*`
-(files, rotation, vacuum et debit mesures contre le vrai `systemd-journald` 255.4 par `journald-space-oracle.test.ts`). Reste lu sans effet : `Compress` (le drapeau
-`COMPRESSED-ZSTD` de l'en-tete et la taille des objets de plus de `Compress=` octets) et `Seal`.
+(files, rotation, vacuum et debit mesures contre le vrai `systemd-journald` 255.4 par `journald-space-oracle.test.ts`). Reste lu sans effet : `Seal` - le scellement
+suppose une paire de cles FSS (`journalctl --setup-keys`, que le simulateur refuse a tort comme « compile sans support », alors que le binaire d'Ubuntu l'offre)
+et des objets Tag dont la somme HMAC porte sur les octets du fichier ; `JournalFile` compte les octets des objets mais n'est pas un fichier binaire.
 Doublon connu : `resolved.conf` (`parseResolvedConf`) et les fichiers de `systemd-networkd` (`NetworkdFiles.ts`) ont leur propre lecteur, sans diagnostics ni
 fusion des drop-ins par nom ; ils doivent reprendre `readSystemdConfig`. `systemd-resolved` n'est pas installe dans ce conteneur : la liste de ses cles n'a pas pu etre relevee.
 

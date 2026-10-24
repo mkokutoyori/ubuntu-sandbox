@@ -10,6 +10,9 @@
  * sequence range, which pins the byte size of every object, the 75% hash table fill rule, E2BIG at MaxFileSize, MaxFileSec,
  * MaxRetentionSec (the timer of journald.c), MaxUse and MaxFiles.  The rate-limit scenario compares what survives and the
  * "Suppressed N messages" driver messages.  The vacuum cases compare the files kept by journal_directory_vacuum.
+ * Compress= is measured too: the header flag of a file created under Compress=no, which payloads the real daemon compressed (its debug
+ * log names each one) under the default threshold of 512 and under Compress=2000, and how far the stand-in for zstd lands from the real
+ * sizes - zstd itself is not ported, the stand-in is an LZ77 and entropy estimate calibrated on twelve payloads (PayloadCompression.ts).
  * Inputs taken from the recording because the daemon fixes them itself: the process facts of the sender and of journald, the
  * statvfs of the journal directory and the SELinux label.
  * Measured before the port (git stash push -- src/network): every file comparison falls - sizes were a constant 8 MiB, there was
@@ -21,16 +24,17 @@ import { LinuxJournald, type JournaldPlatform } from '@/network/devices/linux/jo
 import { JOURNALD_CONFIG_FILE, readJournaldConfig } from '@/network/devices/linux/journal/JournaldConfig';
 import { type ProcessFacts } from '@/network/devices/linux/journal/JournaldServer';
 import { type JournalRecord } from '@/network/devices/linux/journal/JournalRecord';
+import { storedPayloadSize } from '@/network/devices/linux/journal/JournalFileSet';
 
 interface Credentials { pid: number; uid: number; gid: number; comm: string; exe: string; cmdline: string; capeff: string; cgroup: string; loginuid: string; sessionid: string }
 interface RecordedEntry { realtime: number; monotonic: number; seqnum: number; bootId: string; fields: Array<[string, string]> }
 interface RecordedFile {
-  name: string; size: number; state: string; headSeqnum: number; tailSeqnum: number; objects: number; entries: number; data: number; fields: number; entryArrays: number;
+  incompatible: string; name: string; size: number; state: string; headSeqnum: number; tailSeqnum: number; objects: number; entries: number; data: number; fields: number; entryArrays: number;
 }
 interface Scenario {
   name: string; conf: string; unit: string | null; credentials: Credentials; endedAt: number;
   statvfs: { bsize: number; frsize: number; blocks: number; bavail: number };
-  startEntries: RecordedEntry[]; drivers: RecordedEntry[];
+  startEntries: RecordedEntry[]; drivers: RecordedEntry[]; texts: string[]; log: string[];
   extraSenders: Array<{ credentials: Credentials; sends: Array<{ at: number; payload: string }> }>;
   sends: Array<{ at: number; payload?: string }>; generator: { kind: 'flood' | 'fat'; count: number } | null;
   files: RecordedFile[];
@@ -154,13 +158,13 @@ function replay(scenario: Scenario): { journald: LinuxJournald; driverRecords: J
   journald.stop();
   const files = journald.fileInfos().map((info): RecordedFile => ({
     name: info.path.slice(info.path.lastIndexOf('/') + 1), size: info.diskUsageBytes, state: info.state, headSeqnum: info.headSeqnum, tailSeqnum: info.tailSeqnum, objects: info.objects,
-    entries: info.entries, data: info.data, fields: info.fields, entryArrays: info.entryArrays,
+    entries: info.entries, data: info.data, fields: info.fields, entryArrays: info.entryArrays, incompatible: info.incompatibleFlags.join(' '),
   }));
   return { journald, driverRecords, files, spaceMessages };
 }
 
 const stemOf = (name: string): string => name.replace(/\.journal$/, '').replace(/@.*/, '');
-const shape = (file: RecordedFile): string => `${stemOf(file.name)} ${file.name.includes('@') ? 'archived' : 'active'} size=${file.size} entries=${file.entries} data=${file.data} fields=${file.fields} arrays=${file.entryArrays} objects=${file.objects} seq=${file.headSeqnum}-${file.tailSeqnum}`;
+const shape = (file: RecordedFile): string => `${stemOf(file.name)} ${file.name.includes('@') ? 'archived' : 'active'} flags=${file.incompatible} size=${file.size} entries=${file.entries} data=${file.data} fields=${file.fields} arrays=${file.entryArrays} objects=${file.objects} seq=${file.headSeqnum}-${file.tailSeqnum}`;
 const ordered = (files: RecordedFile[]): RecordedFile[] => [...files].sort((a, b) => a.headSeqnum - b.headSeqnum || (a.name.startsWith('system@') ? -1 : 1));
 
 const driverFields = (record: JournalRecord | RecordedEntry, names: string[]): Record<string, string> => {
@@ -225,4 +229,33 @@ describe('journalctl --vacuum against the real binary', () => {
       expect(kept).toEqual(recorded.after.map(headOf).sort());
     });
   }
+});
+
+describe('Compress= against the real daemon', () => {
+  const real = fixture.scenarios.find((s) => s.name === 'compress-yes') as Scenario;
+  const objects = real.log.filter((line) => line.startsWith('Compressed data object')).map((line) => /(\d+) -> (\d+)/.exec(line) as RegExpExecArray).map((m) => [Number(m[1]), Number(m[2])]);
+
+  it('the objects the real daemon compressed are the ones at or above the threshold that shrink', () => {
+    const payloads = real.texts.map((text) => Uint8Array.from(Buffer.from(`MESSAGE=${text}`)));
+    const compressed = payloads.filter((bytes) => storedPayloadSize(bytes, { enabled: true, thresholdBytes: 512 }) < bytes.length).map((bytes) => bytes.length);
+    expect(compressed).toEqual(objects.map(([raw]) => raw));
+  });
+
+  it('a payload that the real zstd shrank is shrunk by the stand-in, to within 35% and 24 bytes (zstd itself is not ported: the stand-in is an LZ77 and entropy estimate, calibrated on these twelve payloads)', () => {
+    const payloads = real.texts.map((text) => Uint8Array.from(Buffer.from(`MESSAGE=${text}`)));
+    objects.forEach(([raw, zstd]) => {
+      const bytes = payloads.find((candidate) => candidate.length === raw) as Uint8Array;
+      const stood = storedPayloadSize(bytes, { enabled: true, thresholdBytes: 512 });
+      expect(stood).toBeLessThan(raw);
+      expect(Math.abs(stood - zstd)).toBeLessThanOrEqual(Math.max(24, zstd * 0.35));
+    });
+  });
+
+  it('Compress=2000 compresses only what reaches 2000 bytes, as the real daemon did', () => {
+    const scenario = fixture.scenarios.find((s) => s.name === 'compress-2000') as Scenario;
+    const reached = scenario.log.filter((line) => line.startsWith('Compressed data object')).map((line) => Number((/object (\d+)/.exec(line) as RegExpExecArray)[1]));
+    const payloads = real.texts.map((text) => Uint8Array.from(Buffer.from(`MESSAGE=${text}`)));
+    const simulated = payloads.filter((bytes) => storedPayloadSize(bytes, { enabled: true, thresholdBytes: 2000 }) < bytes.length).map((bytes) => bytes.length);
+    expect(simulated).toEqual(reached);
+  });
 });
