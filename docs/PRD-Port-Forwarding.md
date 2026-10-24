@@ -1119,8 +1119,22 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   est jeté avec son flux (`nf_nat_oif_changed`, `nf_ct_kill_acct`). Une
   perte de porteuse n'est pas une fermeture, et un flux SNAT n'a pas
   d'interface à suivre.
-- **Reste** : l'écho ICMP et les datagrammes IP bruts que la machine émet
-  (leur résolution du voisin précède encore la chaîne OUTPUT), NAT66.
+- **Ce que la machine émet sans socket TCP ni UDP** : l'écho de `ping`
+  (et celui de `hping3 -1`, de `traceroute -I`), le datagramme brut de
+  `hping3 --rawip` et de `traceroute -P`, le datagramme adressé à un
+  groupe, le rapport IGMP et le datagramme externe d'un tunnel GRE passent
+  par le même `EndHost.originate` : chaîne `nat` OUTPUT, route refaite,
+  chaîne OUTPUT du filtre. POSTROUTING lit ensuite le datagramme ENTIER
+  (`ip_output` avant `ip_fragment`), de sorte que les trois fragments d'un
+  `ping -s 3000` sortent tous sous l'adresse traduite, et le voisin est
+  résolu en dernier (`ip_finish_output2`), pour le saut suivant de
+  l'adresse traduite : un paquet que OUTPUT jette ne provoque aucun ARP,
+  `ip neigh` ne garde pas d'entrée FAILED pour l'adresse composée, et le
+  premier écho vers un voisin inconnu paie l'échange ARP dans son temps
+  aller-retour (iputils date la sonde avant `sendmsg`). Pour un écho, un
+  échec de la route refaite après la réécriture rend `ENETUNREACH`
+  (`NF_DROP_ERR`), là où un DROP rend `EPERM`.
+- **Reste** : NAT66 au-delà du DNAT de PREROUTING.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
   `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
@@ -1144,6 +1158,9 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   `probe-iptables-un-flux-masquerade-suit-l-interface-qui-l-a-vu-naitre.test.ts`
   (16 cas), `connection-tracker-masquerade.test.ts` (10 cas) et
   `masquerade-flow-projection.test.ts` (10 cas) pour les flux MASQUERADE ;
+  `probe-iptables-l-echo-et-le-paquet-brut-que-la-machine-emet-traversent-la-table-nat.test.ts`
+  (70 cas) pour l'écho, le datagramme brut et le datagramme de groupe que la
+  machine émet ;
   `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
   vont maintenant jusqu'à l'établissement de la connexion.
 
