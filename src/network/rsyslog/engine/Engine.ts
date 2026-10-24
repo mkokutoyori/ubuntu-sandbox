@@ -511,6 +511,7 @@ export class RsyslogEngine implements InputSubmitter {
     this.internalBacklog = null;
     for (const message of backlog) this.processInternal(message);
     this.restoreQueues();
+    for (const instance of started) instance.run?.();
     this.stopCallbacks.push(this.host.scheduleEvery(() => this.runJanitor(), Math.max(1, settings.janitorInterval) * 60_000));
     return { ok: true };
   }

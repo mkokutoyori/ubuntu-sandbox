@@ -35,7 +35,34 @@ export type OpenFileResult =
   | { readonly handle: FileHandle; readonly notices?: readonly OpenNotice[] }
   | { readonly error: string; readonly notices?: readonly OpenNotice[]; readonly step?: 'parents' | 'chown' };
 
+export interface FileStat {
+  readonly inode: number;
+  readonly size: number;
+  readonly mtimeMs: number;
+  readonly ctimeMs: number;
+  readonly kind: 'file' | 'directory' | 'symlink' | 'other';
+}
+
+export interface ReadableFile {
+  readonly inode: number;
+  read(offset: number, length: number): string;
+  close(): void;
+}
+
+export type OpenReadResult = { readonly file: ReadableFile } | { readonly error: string; readonly missing: boolean };
+
+export type FileChange =
+  | { readonly kind: 'modified'; readonly path: string; readonly inode: number }
+  | { readonly kind: 'created' | 'deleted'; readonly path: string; readonly directory: boolean }
+  | { readonly kind: 'moved'; readonly from: string; readonly path: string; readonly directory: boolean };
+
 export interface RsyslogFiles {
+  lstat(path: string): FileStat | null;
+  stat(path: string): FileStat | null;
+  openRead(path: string): OpenReadResult;
+  realpath(path: string): string | null;
+  remove(path: string): boolean;
+  observe(listener: (change: FileChange) => void): () => void;
   open(path: string, options: OpenFileOptions): OpenFileResult;
   read(path: string): string | null;
   exists(path: string): boolean;

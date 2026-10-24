@@ -121,6 +121,7 @@ export interface InputInstance {
   readonly bindsBeforePrivilegeDrop?: boolean;
   check?(): void;
   start(): boolean;
+  run?(): void;
   stop(): void;
   hup?(): void;
   readonly description: string;
