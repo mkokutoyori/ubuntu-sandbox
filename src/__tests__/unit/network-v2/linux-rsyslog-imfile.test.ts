@@ -5,7 +5,7 @@
  * restart, freshStartTail, multi-line modes (readMode 1/2, startmsg.regex, endmsg.regex, readTimeout) and the
  * truncation check of reopenOnTruncate. Every case drives a LinuxServer through its shell; time is the simulated clock.
  * Measured against the previous commit (95f1e55b9, where `module(load="imfile")` fails with "could not load module"):
- * 17 of the 18 cases fall (the module does not exist, and the previous run's stash leaves only the pure SipHash module).
+ * 18 of the 19 cases fall (the module does not exist, and the previous run's stash leaves only the pure SipHash module).
  * The one that passes either way is the SipHash vectors: a pure function with no lab. The silent-file case is not a
  * witness of its own - it is paired in the same case with the read that follows the first write.
  */
@@ -200,6 +200,16 @@ describe('discovery', () => {
     await host.executeCommand("printf 'real\\n' > /var/log/target.log && ln -s /var/log/target.log /var/log/link.log");
     await configure(host, 'input(type="imfile" file="/var/log/link.log" tag="app:")');
     expect(await output(host)).toContain('app:real|/var/log/link.log|0|1');
+  }, 60_000);
+  it('past maxInotifyWatches the unwatched file is only scanned every inotifyFallbackInterval', async () => {
+    const host = machine();
+    await host.executeCommand('touch /var/log/app.log');
+    await configure(host, 'input(type="imfile" file="/var/log/app.log" tag="app:")', 'module(load="imfile" maxInotifyWatches="3" inotifyFallbackInterval="10")');
+    expect(await host.executeCommand('cat /var/log/syslog')).toContain('imfile: reached module limit for inotify watches (3); falling back to periodic scans');
+    await append(host, '/var/log/app.log', 'unwatched\\n');
+    expect(await output(host)).toContain('No such file');
+    host.advanceTime(11_000);
+    expect(await output(host)).toContain('app:unwatched|');
   }, 60_000);
 });
 

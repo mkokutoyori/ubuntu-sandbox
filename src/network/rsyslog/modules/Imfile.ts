@@ -183,6 +183,7 @@ interface ActiveObject {
   linesProcessed: number;
   statistics: StatsObject | null;
   pending: Array<() => void>;
+  watched: boolean;
 }
 
 class RateLimited extends Error {}
@@ -196,6 +197,9 @@ class ImfileMonitor {
   private hadData = false;
   private pendingDeletes = false;
   private dispatching = false;
+  private watchCount = 0;
+  private watchLimitHit = false;
+  private fallbackNeeded = false;
   private queuedChanges: FileChange[] = [];
 
   constructor(private readonly context: InputContext, private readonly module: ModuleSettings) {}
@@ -272,6 +276,7 @@ class ImfileMonitor {
     const hasTimeouts = this.instances.some((instance) => instance.settings.readTimeout !== 0);
     if (hasTimeouts) this.cancelers.push(this.host.scheduleEvery(() => this.walk(this.tree, (edge) => this.pollTimeouts(edge)), this.module.timeoutGranularityMs));
     this.cancelers.push(this.host.scheduleEvery(() => this.recheckDeletes(), (FILE_DELETE_DELAY + 1) * 1000));
+    if (this.module.inotifyFallbackInterval > 0) this.cancelers.push(this.host.scheduleEvery(() => this.fallbackScan(), this.module.inotifyFallbackInterval * 1000));
   }
 
   private initialPoll(): void {
@@ -332,13 +337,13 @@ class ImfileMonitor {
     const actives = this.allActive();
     if (change.kind === 'modified') {
       for (const act of actives) {
-        if (act.edge.isFile && !act.isSymlink && act.inode === change.inode) this.pollFile(act);
+        if (act.watched && act.edge.isFile && !act.isSymlink && act.inode === change.inode) this.pollFile(act);
       }
       return;
     }
     const names = change.kind === 'moved' ? [change.from, change.path] : [change.path];
     for (const act of actives) {
-      if (!act.edge.isFile || act.isSymlink) continue;
+      if (!act.watched || !act.edge.isFile || act.isSymlink) continue;
       if (change.kind === 'moved' && act.name === change.from) {
         this.flagMove(act.edge, basenameOf(change.from));
         this.pollFile(act);
@@ -348,7 +353,7 @@ class ImfileMonitor {
     }
     const touched = new Set(names.map((name) => dirnameOf(name)));
     for (const act of actives) {
-      if (!act.edge.isFile && touched.has(act.name)) this.walk(act.edge.node, (edge) => this.pollTree(edge));
+      if (act.watched && !act.edge.isFile && touched.has(act.name)) this.walk(act.edge.node, (edge) => this.pollTree(edge));
     }
   }
 
@@ -388,7 +393,7 @@ class ImfileMonitor {
       }
       this.addActive(edge, file, isFile, info.inode, isSymlink, null);
     }
-    if (this.module.mode === 'polling' && edge.isFile) {
+    if ((this.module.mode === 'polling' || this.fallbackActive()) && edge.isFile) {
       for (const act of [...edge.active]) this.pollFile(act);
     }
   }
@@ -435,7 +440,7 @@ class ImfileMonitor {
     const act: ActiveObject = {
       edge, name, basename: basenameOf(name), sourceName: source, isSymlink, inode, handle: opened.file, stream: null, nRecords: 0,
       lineNum: 0, timeToDelete: 0, fileId: '', fileIdPrevious: '', inMove: false, bytesProcessed: 0, linesProcessed: 0, statistics: null,
-      pending: [],
+      pending: [], watched: this.acquireWatch(),
     };
     if (isFile && !isSymlink) {
       act.statistics = this.context.statistics.create(name, { origin: MODULE_NAME });
@@ -467,6 +472,41 @@ class ImfileMonitor {
     }
   }
 
+  private acquireWatch(): boolean {
+    if (this.module.mode !== 'inotify') return false;
+    const limit = this.module.maxInotifyWatches;
+    if (limit > 0 && this.watchCount >= limit) {
+      if (!this.watchLimitHit) {
+        this.context.runtime.error(`imfile: reached module limit for inotify watches (${limit}); falling back to periodic scans`, RS_RET.ERR);
+      }
+      this.watchLimitHit = true;
+      this.fallbackNeeded = true;
+      return false;
+    }
+    this.watchCount++;
+    return true;
+  }
+
+  private retryMissingWatches(edge: FsEdge): void {
+    for (const act of edge.active) {
+      if (act.watched) continue;
+      act.watched = this.acquireWatch();
+      if (!act.watched) this.fallbackNeeded = true;
+    }
+  }
+
+  private fallbackActive(): boolean {
+    return this.module.mode === 'inotify' && this.watchLimitHit && this.module.inotifyFallbackInterval > 0;
+  }
+
+  private fallbackScan(): void {
+    if (!this.fallbackActive()) return;
+    this.fallbackNeeded = false;
+    this.walk(this.tree, (edge) => this.pollTree(edge));
+    this.walk(this.tree, (edge) => this.retryMissingWatches(edge));
+    if (!this.fallbackNeeded) this.watchLimitHit = false;
+  }
+
   private unlinkActive(act: ActiveObject): void {
     act.edge.active = act.edge.active.filter((candidate) => candidate !== act);
   }
@@ -490,6 +530,7 @@ class ImfileMonitor {
       }
     }
     act.handle?.close();
+    if (act.watched) this.watchCount--;
   }
 
   private refreshFileId(act: ActiveObject): void {
