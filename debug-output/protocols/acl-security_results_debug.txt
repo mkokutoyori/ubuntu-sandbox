@@ -130,12 +130,12 @@ Total steps: 400
 
 [18/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.006 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.009 ms
   64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.005 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.005/0.005/0.006/0.000 ms
+  rtt min/avg/max/mdev = 0.005/0.007/0.009/0.002 ms
 
 [19/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
@@ -157,12 +157,12 @@ Total steps: 400
 
 [21/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.041 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.043 ms
   64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.041 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.041/0.041/0.041/0.000 ms
+  rtt min/avg/max/mdev = 0.041/0.042/0.043/0.001 ms
 
 
 --- [22] § ACL Cisco — standard (bloque un hôte source) ---
@@ -297,7 +297,6 @@ Total steps: 400
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [54/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
@@ -403,7 +402,6 @@ Total steps: 400
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 0 received, +1 errors, 100% packet loss, time 1000ms
-  
 
 [77/400] rdc R-DC# show ip access-lists DC-FILTER
   Extended IP access list DC-FILTER
@@ -512,7 +510,6 @@ Total steps: 400
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1000ms
-  
 
 [103/400] rbr <R-BR> display acl 2000
   Basic ACL 2000, 2 rule(s)
@@ -598,7 +595,6 @@ Total steps: 400
   
   --- 10.2.2.11 ping statistics ---
   2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1000ms
-  
 
 [124/400] rbr <R-BR> display acl 3000
   Advanced ACL 3000, 4 rule(s)
@@ -626,13 +622,13 @@ Total steps: 400
 
 --- [130] § pare-feu Linux — iptables filter (serveur DC) ---
 [130/400] srvdc srvdc$ iptables -L -n -v
-  Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain INPUT (policy ACCEPT 5 packets, 420 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
-  Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain OUTPUT (policy ACCEPT 5 packets, 420 bytes)
    pkts bytes target     prot opt in     out     source               destination
 
 [131/400] srvdc srvdc$ iptables -P INPUT ACCEPT
@@ -648,9 +644,9 @@ Total steps: 400
 <empty>
 
 [135/400] srvdc srvdc$ iptables -L INPUT -n -v --line-numbers
-  Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain INPUT (policy ACCEPT 5 packets, 420 bytes)
   num    pkts bytes target     prot opt in     out     source               destination
-  1         0     0 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0
+  1         0     0 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0 icmptype 8
   2         0     0 REJECT     tcp  --  *      *      10.1.1.0/24          0.0.0.0/0 tcp dpt:22
   3         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:80
 
@@ -659,27 +655,26 @@ Total steps: 400
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [137/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.004 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.006 ms
   64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.004 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
+  rtt min/avg/max/mdev = 0.004/0.005/0.006/0.001 ms
 
 [138/400] srvdc srvdc$ iptables -L INPUT -n -v
-  Chain INPUT (policy ACCEPT 2 packets, 128 bytes)
+  Chain INPUT (policy ACCEPT 7 packets, 588 bytes)
    pkts bytes target     prot opt in     out     source               destination
-      2   128 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0
+      2   168 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0 icmptype 8
       0     0 REJECT     tcp  --  *      *      10.1.1.0/24          0.0.0.0/0 tcp dpt:22
       0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:80
 
 [139/400] srvdc srvdc$ iptables -S
   -P INPUT ACCEPT
-  -A INPUT -s 10.1.1.0/24 -p icmp -j DROP
+  -A INPUT -s 10.1.1.0/24 -p icmp --icmp-type 8 -j DROP
   -A INPUT -s 10.1.1.0/24 -p tcp --dport 22 -j REJECT
   -A INPUT -p tcp --dport 80 -j ACCEPT
   -P FORWARD ACCEPT
@@ -725,17 +720,17 @@ Total steps: 400
 <empty>
 
 [148/400] srvdc srvdc$ iptables -L -n -v
-  Chain INPUT (policy DROP 2 packets, 128 bytes)
+  Chain INPUT (policy DROP 9 packets, 756 bytes)
    pkts bytes target     prot opt in     out     source               destination
       0     0 ACCEPT     all  --  lo     *      0.0.0.0/0            0.0.0.0/0
       0     0 ACCEPT     all  --  *      *      0.0.0.0/0            0.0.0.0/0 state ESTABLISHED,RELATED
       0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22
-      0     0 ACCEPT     icmp --  *      *      0.0.0.0/0            0.0.0.0/0
+      0     0 ACCEPT     icmp --  *      *      0.0.0.0/0            0.0.0.0/0 icmptype 8
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
-  Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain OUTPUT (policy ACCEPT 9 packets, 756 bytes)
    pkts bytes target     prot opt in     out     source               destination
 
 [149/400] ldc ldc$ ping -c 2 10.3.3.10
@@ -750,13 +745,13 @@ Total steps: 400
 [150/400] srvdc srvdc$ iptables-save
   # Generated by iptables-save
   *filter
-  :INPUT DROP [4:256]
+  :INPUT DROP [9:756]
   :FORWARD ACCEPT [0:0]
-  :OUTPUT ACCEPT [0:0]
+  :OUTPUT ACCEPT [11:924]
   -A INPUT -i lo -j ACCEPT
   -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
   -A INPUT -p tcp --dport 22 -j ACCEPT
-  -A INPUT -p icmp -j ACCEPT
+  -A INPUT -p icmp --icmp-type 8 -j ACCEPT
   COMMIT
 
 [151/400] srvdc srvdc$ iptables -P INPUT ACCEPT
@@ -810,13 +805,15 @@ Total steps: 400
   target     prot opt source               destination
 
 [157/400] srvdc srvdc$ conntrack -L
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 6 flow entries have been shown.
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=6 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=6 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=10 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=10 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=2 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=2 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=12 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=12 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=3 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=40167 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=40167 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50726 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50726 mark=0 use=1
+  conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
 
 [158/400] srvdc srvdc$ cat /proc/net/nf_conntrack
   cat: /proc/net/nf_conntrack: No such file or directory
@@ -900,8 +897,8 @@ Total steps: 400
 [179/400] swhq SW-HQ# show port-security address
             Secure Mac Address Table
   ------------------------------------------------------------------------
-  Vlan    Mac Address       Type                          Ports   Remaining Age
-  ----    -----------       ----                          -----   -------------
+  Vlan    Mac Address    Type    Ports    Remaining Age
+  ----    -----------    ----    -----    -------------
   
   Total Addresses: 0
 
@@ -1358,7 +1355,7 @@ Total steps: 400
 <empty>
 
 [271/400] srvdc srvdc$ iptables -L INPUT -n -v --line-numbers
-  Chain INPUT (policy ACCEPT 4 packets, 256 bytes)
+  Chain INPUT (policy ACCEPT 9 packets, 756 bytes)
   num    pkts bytes target     prot opt in     out     source               destination
   1         0     0 DROP       tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:23
   2         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22 state NEW
@@ -1384,10 +1381,10 @@ Total steps: 400
   sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
 
 [277/400] lhq lhq$ sysctl net.ipv4.conf.all.accept_redirects
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 1
 
 [278/400] lhq lhq$ sysctl -w net.ipv4.conf.all.accept_redirects=0
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 0
 
 [279/400] lhq lhq$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
   net.ipv4.icmp_echo_ignore_broadcasts = 1
@@ -1396,10 +1393,10 @@ Total steps: 400
   sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
 
 [281/400] lbr lbr$ sysctl net.ipv4.conf.all.accept_redirects
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 1
 
 [282/400] lbr lbr$ sysctl -w net.ipv4.conf.all.accept_redirects=0
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 0
 
 [283/400] lbr lbr$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
   net.ipv4.icmp_echo_ignore_broadcasts = 1
@@ -1408,10 +1405,10 @@ Total steps: 400
   sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
 
 [285/400] ldc ldc$ sysctl net.ipv4.conf.all.accept_redirects
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 1
 
 [286/400] ldc ldc$ sysctl -w net.ipv4.conf.all.accept_redirects=0
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 0
 
 [287/400] ldc ldc$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
   net.ipv4.icmp_echo_ignore_broadcasts = 1
@@ -1420,10 +1417,10 @@ Total steps: 400
   sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
 
 [289/400] srvdc srvdc$ sysctl net.ipv4.conf.all.accept_redirects
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 1
 
 [290/400] srvdc srvdc$ sysctl -w net.ipv4.conf.all.accept_redirects=0
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/accept_redirects: No such file or directory
+  net.ipv4.conf.all.accept_redirects = 0
 
 [291/400] srvdc srvdc$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
   net.ipv4.icmp_echo_ignore_broadcasts = 1
@@ -1544,36 +1541,36 @@ Total steps: 400
   iptables: Permission denied
 
 [309/400] lhq lhq$ conntrack -L
-  icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.2.2.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.2.2.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=52814 src=10.1.1.11 dst=224.0.0.251 sport=52814 dport=5353 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.10 dst=172.16.13.2 sport=0 dport=0 src=172.16.13.2 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=5353 src=10.1.1.11 dst=224.0.0.251 sport=5353 dport=5353 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.1.1.10 sport=5355 dport=52285 src=10.1.1.10 dst=224.0.0.252 sport=52285 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.1.1.11 sport=5355 dport=49589 src=10.1.1.11 dst=224.0.0.252 sport=49589 dport=5355 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 26 flow entries have been shown.
+  icmp     1 29 src=10.1.1.10 dst=10.2.2.1 type=8 code=0 id=1 src=10.2.2.1 dst=10.1.1.10 type=0 code=0 id=1 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.1 type=8 code=0 id=2 src=10.3.3.1 dst=10.1.1.10 type=0 code=0 id=2 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.2.2.10 type=8 code=0 id=4 src=10.2.2.10 dst=10.1.1.10 type=0 code=0 id=4 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=5 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=5 mark=0 use=1
+  udp      17 29 src=10.1.1.11 dst=224.0.0.251 sport=56288 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=56288 mark=0 use=1
+  icmp     1 29 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=1 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=1 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=6 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=6 mark=0 use=1
+  icmp     1 29 src=10.3.3.11 dst=10.1.1.10 type=8 code=0 id=1 src=10.1.1.10 dst=10.3.3.11 type=0 code=0 id=1 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=7 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=7 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=8 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=8 mark=0 use=1
+  icmp     1 30 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=3 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=3 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=9 [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=9 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=10 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=10 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=11 [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=11 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=12 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=12 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.1.1.1 type=8 code=0 id=13 src=10.1.1.1 dst=10.1.1.10 type=0 code=0 id=13 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=14 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=14 mark=0 use=1
+  udp      17 30 src=10.1.1.11 dst=224.0.0.251 sport=5353 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=5353 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=15 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=15 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.1.1.1 type=8 code=0 id=16 src=10.1.1.1 dst=10.1.1.10 type=0 code=0 id=16 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.2.2.1 type=8 code=0 id=17 src=10.2.2.1 dst=10.1.1.10 type=0 code=0 id=17 mark=0 use=1
+  icmp     1 30 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=4 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=4 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:47 dst=ff02::1:3 sport=32954 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:47 sport=5355 dport=32954 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:4b dst=ff02::1:3 sport=64249 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4b sport=5355 dport=64249 mark=0 use=1
+  conntrack v1.4.7 (conntrack-tools): 25 flow entries have been shown.
 
 [310/400] lhq lhq$ conntrack -S
-  cpu=0   found=0 invalid=0 insert=26 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
+  cpu=0   	found=40 invalid=0 insert=25 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
+  cpu=1   	found=0 invalid=0 insert=0 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
 
 [311/400] lbr lbr$ iptables -t filter -L -n -v
   iptables: Permission denied
@@ -1588,22 +1585,22 @@ Total steps: 400
   iptables: Permission denied
 
 [315/400] lbr lbr$ conntrack -L
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=61372 src=10.2.2.10 dst=224.0.0.251 sport=61372 dport=5353 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.2.2.11 dst=10.2.2.1 sport=0 dport=0 src=10.2.2.1 dst=10.2.2.11 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=5353 src=10.2.2.10 dst=224.0.0.251 sport=5353 dport=5353 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.2.2.10 sport=5355 dport=61287 src=10.2.2.10 dst=224.0.0.252 sport=61287 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.2.2.11 sport=5355 dport=40292 src=10.2.2.11 dst=224.0.0.252 sport=40292 dport=5355 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 12 flow entries have been shown.
+  udp      17 29 src=10.2.2.10 dst=224.0.0.251 sport=54881 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=54881 mark=0 use=1
+  icmp     1 29 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=1 src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=1 mark=0 use=1
+  icmp     1 30 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=2 [UNREPLIED] src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=2 mark=0 use=1
+  icmp     1 30 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=3 src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=3 mark=0 use=1
+  udp      17 30 src=10.2.2.10 dst=224.0.0.251 sport=5353 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=5353 mark=0 use=1
+  icmp     1 30 src=10.2.2.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.2.2.11 type=0 code=0 id=4 mark=0 use=1
+  icmp     1 30 src=10.2.2.11 dst=10.1.1.1 type=8 code=0 id=5 src=10.1.1.1 dst=10.2.2.11 type=0 code=0 id=5 mark=0 use=1
+  icmp     1 30 src=10.2.2.11 dst=10.2.2.1 type=8 code=0 id=6 src=10.2.2.1 dst=10.2.2.11 type=0 code=0 id=6 mark=0 use=1
+  icmp     1 30 src=198.51.100.10 dst=10.2.2.11 type=8 code=0 id=2 src=10.2.2.11 dst=198.51.100.10 type=0 code=0 id=2 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:4f dst=ff02::1:3 sport=60425 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4f sport=5355 dport=60425 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:53 dst=ff02::1:3 sport=49495 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:53 sport=5355 dport=49495 mark=0 use=1
+  conntrack v1.4.7 (conntrack-tools): 11 flow entries have been shown.
 
 [316/400] lbr lbr$ conntrack -S
-  cpu=0   found=0 invalid=0 insert=12 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
+  cpu=0   	found=13 invalid=0 insert=11 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
+  cpu=1   	found=0 invalid=0 insert=0 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
 
 [317/400] ldc ldc$ iptables -t filter -L -n -v
   iptables: Permission denied
@@ -1618,27 +1615,28 @@ Total steps: 400
   iptables: Permission denied
 
 [321/400] ldc ldc$ conntrack -L
-  icmp     1  300    ESTABLISHED src=10.1.1.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=50964 src=10.3.3.10 dst=224.0.0.252 sport=50964 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=39433 src=10.3.3.11 dst=224.0.0.252 sport=39433 dport=5355 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
+  icmp     1 29 src=10.3.3.11 dst=10.1.1.10 type=8 code=0 id=1 src=10.1.1.10 dst=10.3.3.11 type=0 code=0 id=1 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=2 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=2 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=3 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=4 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.1.1.1 type=8 code=0 id=5 src=10.1.1.1 dst=10.3.3.11 type=0 code=0 id=5 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.2.2.1 type=8 code=0 id=6 src=10.2.2.1 dst=10.3.3.11 type=0 code=0 id=6 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=40167 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=40167 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50726 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50726 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
 
 [322/400] ldc ldc$ conntrack -S
-  cpu=0   found=0 invalid=0 insert=8 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
+  cpu=0   	found=12 invalid=0 insert=8 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
+  cpu=1   	found=0 invalid=0 insert=0 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
 
 [323/400] srvdc srvdc$ iptables -t filter -L -n -v
-  Chain INPUT (policy ACCEPT 4 packets, 256 bytes)
+  Chain INPUT (policy ACCEPT 12 packets, 1008 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
-  Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain OUTPUT (policy ACCEPT 14 packets, 1176 bytes)
    pkts bytes target     prot opt in     out     source               destination
 
 [324/400] srvdc srvdc$ iptables -t nat -L -n
@@ -1678,32 +1676,33 @@ Total steps: 400
   target     prot opt source               destination
 
 [327/400] srvdc srvdc$ conntrack -L
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=50964 src=10.3.3.10 dst=224.0.0.252 sport=50964 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=39433 src=10.3.3.11 dst=224.0.0.252 sport=39433 dport=5355 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
+  icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=6 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=6 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=10 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=10 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=2 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=2 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=12 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=12 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=3 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=15 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=15 mark=0 use=1
+  icmp     1 30 src=10.2.2.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.2.2.11 type=0 code=0 id=4 mark=0 use=1
+  icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=4 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=40167 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=40167 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50726 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50726 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 11 flow entries have been shown.
 
 [328/400] srvdc srvdc$ conntrack -S
-  cpu=0   found=1 invalid=0 insert=11 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0
+  cpu=0   	found=19 invalid=0 insert=11 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
+  cpu=1   	found=0 invalid=0 insert=0 insert_failed=0 drop=0 early_drop=0 error=0 search_restart=0 clash_resolve=0 chaintoolong=0 
 
 
 --- [329] § SEC — politiques de chaîne & compteurs ---
 [329/400] srvdc srvdc$ iptables -L -n -v
-  Chain INPUT (policy ACCEPT 4 packets, 256 bytes)
+  Chain INPUT (policy ACCEPT 12 packets, 1008 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
-  Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain OUTPUT (policy ACCEPT 14 packets, 1176 bytes)
    pkts bytes target     prot opt in     out     source               destination
 
 [330/400] lhq lhq$ iptables -Z
@@ -1771,8 +1770,8 @@ Total steps: 400
 [347/400] swhq SW-HQ# show port-security address
             Secure Mac Address Table
   ------------------------------------------------------------------------
-  Vlan    Mac Address       Type                          Ports   Remaining Age
-  ----    -----------       ----                          -----   -------------
+  Vlan    Mac Address    Type    Ports    Remaining Age
+  ----    -----------    ----    -----    -------------
   
   Total Addresses: 0
 
@@ -1780,11 +1779,11 @@ Total steps: 400
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/2
+     1    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 3
 
@@ -1906,7 +1905,8 @@ Total steps: 400
 <empty>
 
 [373/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport
-  iptables: option "--dport" requires an argument
+  iptables v1.8.7 (nf_tables): option "--dport" requires an argument
+  Try `iptables -h' or 'iptables --help' for more information.
 
 [374/400] srvdc srvdc$ iptables -Z bidon
   iptables: No chain/target/match by that name.

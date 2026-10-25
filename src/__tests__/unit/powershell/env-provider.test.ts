@@ -61,7 +61,7 @@ describe('Env: drive — Get-ChildItem / Get-Item', () => {
   it('Get-Item Env:<missing> emits a clean error', async () => {
     const { subShell } = await setup();
     const out = await ps(subShell, 'Get-Item Env:NOPE_DOES_NOT_EXIST');
-    expect(out).toMatch(/Cannot find path 'Env:NOPE_DOES_NOT_EXIST'/i);
+    expect(out).toMatch(/Cannot find path 'Env:\\NOPE_DOES_NOT_EXIST'/i);
   });
 });
 

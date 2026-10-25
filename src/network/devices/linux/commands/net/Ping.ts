@@ -337,7 +337,7 @@ export function createPing(
     if (finished || plan === null || parsed === null) return finished ? 0 : 2;
     finished = true;
     const elapsed = sendTimes.length === 0 ? 0 : sendTimes[sendTimes.length - 1] - sendTimes[0];
-    const stats = formatPingStats(plan.label, results.length, results, elapsed, {
+    const stats = formatPingStats(plan.label, sendTimes.length, results, elapsed, {
       timing: parsed.size >= PING_TIMING_MIN_SIZE,
       flood: parsed.flood,
       dots,
@@ -505,26 +505,41 @@ export function createPing(
     const current = plan!;
     const startedAt = host.now();
     const deadlineHit = () => args.deadlineMs !== undefined && host.now() - startedAt >= args.deadlineMs;
-    for (let seq = 1; ; seq++) {
-      if (shouldStop() || finished) break;
-      if (args.outstanding && seq > 1 && !results[results.length - 1].success && !args.quiet && !args.flood) {
-        emit(`${timestampPrefix(args.timestamp)}no answer yet for icmp_seq=${seq - 1}`);
-      }
-      sendTimes.push(host.now());
-      const r = { ...(await current.echo(seq)), seq };
-      if (finished) break;
+    const inflight: Promise<void>[] = [];
+    let sending = true;
+    let failure: unknown = null;
+    const settle = (r: PingResult): void => {
+      if (finished) return;
       results.push(r);
       report(r, args, current);
       const received = results.filter((x) => x.success).length;
       const errors = pingErrorCount(results);
-      if (args.count > 0 && received + errors >= args.count) break;
-      if (args.deadlineMs === undefined && args.count > 0 && results.length >= args.count) break;
-      if (args.deadlineMs !== undefined && errors > 0) break;
-      if (deadlineHit() || shouldStop()) break;
-      const untilNextSend = args.intervalMs - (host.now() - sendTimes[sendTimes.length - 1]);
-      if (untilNextSend > 0) await host.sleep(untilNextSend);
+      if (args.count > 0 && received + errors >= args.count) sending = false;
+      if (args.deadlineMs === undefined && args.count > 0 && results.length >= args.count) sending = false;
+      if (args.deadlineMs !== undefined && errors > 0) sending = false;
+    };
+    for (let seq = 1; sending; seq++) {
+      if (failure !== null) throw failure;
+      if (shouldStop() || finished) break;
+      if (args.outstanding && seq > 1 && !results.some((x) => x.seq === seq - 1 && x.success) && !args.quiet && !args.flood) {
+        emit(`${timestampPrefix(args.timestamp)}no answer yet for icmp_seq=${seq - 1}`);
+      }
+      sendTimes.push(host.now());
+      const pace = host.sleep(args.intervalMs);
+      const settled = current.echo(seq).then((r) => settle({ ...r, seq }), (error: unknown) => { failure = error; });
+      inflight.push(settled);
+      const winner = await Promise.race([settled.then(() => 0), pace.then(() => 1)]);
+      if (!sending || finished) break;
+      if (args.deadlineMs === undefined && args.count > 0 && seq >= args.count) break;
+      if (winner === 0) {
+        if (deadlineHit() || shouldStop()) break;
+        await pace;
+      }
       if (deadlineHit()) break;
     }
+    if (failure !== null) throw failure;
+    if (!finished && !deadlineHit() && !shouldStop()) await Promise.all(inflight);
+    if (failure !== null) throw failure;
     if (finished) return results.some((r) => r.success) ? 0 : 1;
     return summary();
   };

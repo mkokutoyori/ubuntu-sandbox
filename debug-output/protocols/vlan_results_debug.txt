@@ -257,9 +257,25 @@ Total steps: 401
 
 --- [72] § VLAN — création base VLAN (Huawei vlan batch) ---
 [72/401] swbr <SW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
+  The total number of VLANs is: 1
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(U)
+                  GE0/0/4(U)      GE0/0/5(U)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
 
 [73/401] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -298,13 +314,33 @@ Total steps: 401
 <empty>
 
 [85/401] swbr <SW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   
-  20       VLAN0020                      active   
-  30       VLAN0030                      active   
-  99       VLAN0099                      active   
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(U)
+                  GE0/0/4(U)      GE0/0/5(U)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common
+  20   common
+  30   common
+  99   common
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [86/401] dswbr <DSW-BR> system-view
   Enter system view, return user view with return command.
@@ -343,13 +379,33 @@ Total steps: 401
 <empty>
 
 [98/401] dswbr <DSW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   
-  20       VLAN0020                      active   
-  30       VLAN0030                      active   
-  99       VLAN0099                      active   
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(D)
+                  GE0/0/4(D)      GE0/0/5(D)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common
+  20   common
+  30   common
+  99   common
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 
 --- [99] § VLAN — switch generic (best-effort) ---
@@ -446,17 +502,48 @@ Total steps: 401
   99   NATIVE                           active    
 
 [109/401] swbr <SW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   
-  20       VLAN0020                      active   
-  30       VLAN0030                      active   
-  99       VLAN0099                      active   
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(U)
+                  GE0/0/4(U)      GE0/0/5(U)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common
+  20   common
+  30   common
+  99   common
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [110/401] swbr <SW-BR> display vlan 10
-  VLAN ID  Name                          Status   Ports
-  10       VLAN0010                      active   
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  10   common
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  10   enable  default       enable  disable    DATA
 
 [111/401] swbr <SW-BR> display vlan summary
   The total number of vlans is : 5
@@ -466,13 +553,33 @@ Total steps: 401
   1 10 20 30 99
 
 [112/401] dswbr <DSW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   
-  20       VLAN0020                      active   
-  30       VLAN0030                      active   
-  99       VLAN0099                      active   
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(D)
+                  GE0/0/4(D)      GE0/0/5(D)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common
+  20   common
+  30   common
+  99   common
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 
 --- [113] § VLAN — trunks 802.1Q inter-switch (Cisco SW-HQ↔DSW) ---
@@ -808,8 +915,20 @@ Total steps: 401
 <empty>
 
 [187/401] swbr <SW-BR> display vlan 10
-  VLAN ID  Name                          Status   Ports
-  10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  10   common  UT:GE0/0/2(U)      GE0/0/3(U)
+               TG:GE0/0/4(U)      GE0/0/5(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  10   enable  default       enable  disable    DATA
 
 [188/401] swbr <SW-BR> display port vlan active
   Port                    Link Type    PVID  Trunk VLAN List
@@ -841,22 +960,22 @@ Total steps: 401
 [189/401] wbr wbr$ ping -n 2 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
-  Reply from 10.2.2.11: bytes=32 time=2ms TTL=64
-  Reply from 10.2.2.11: bytes=32 time=1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.944 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.643 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.004 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.004 ms
   
   --- 10.2.2.10 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.643/0.793/0.944/0.151 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -1017,43 +1136,43 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.029 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.736 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.059 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.036 ms
   
   --- 10.1.1.1 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.736/0.882/1.029/0.147 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.036/0.047/0.059/0.011 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.579 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.451 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.036 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.036 ms
   
   --- 10.1.20.1 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.451/0.515/0.579/0.064 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.036/0.036/0.036/0.000 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=2.673 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=1.056 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.104 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.095 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.072 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.072 ms
   
   --- 10.1.20.11 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.056/1.611/2.673/0.751 ms
+  3 packets transmitted, 3 received, 0% packet loss, time 2000ms
+  rtt min/avg/max/mdev = 0.072/0.079/0.095/0.010 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=1ms TTL=63
-  Reply from 10.1.1.10: bytes=32 time=1ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1064,16 +1183,16 @@ Total steps: 401
   Ping statistics for 10.1.20.1:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.000 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.203 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.041 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.041 ms
   
   --- 10.3.3.10 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.203/1.602/2.000/0.399 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.041/0.041/0.041/0.000 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -1381,13 +1500,13 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0047    DYNAMIC    Fa0/2
+    20    0200.0000.0001    DYNAMIC    Fa0/1
+    20    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 5
 
@@ -1395,10 +1514,10 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+    10    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0047    DYNAMIC    Fa0/2
   
   Total Mac Addresses for this criterion: 2
 
@@ -1406,10 +1525,10 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+    20    0200.0000.0001    DYNAMIC    Fa0/1
+    20    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 2
 
@@ -1417,13 +1536,13 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0047    DYNAMIC    Fa0/2
+    20    0200.0000.0001    DYNAMIC    Fa0/1
+    20    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 5
 
@@ -1456,8 +1575,8 @@ Total steps: 401
   0200-0000-004f 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
   0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 5
 
@@ -1479,10 +1598,10 @@ Total steps: 401
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Desg FWD 19        128.1    P2p
-  Fa0/2               Desg FWD 19        128.2    P2p Edge
-  Fa0/4               Desg FWD 19        128.4    P2p
-  Fa0/5               Desg FWD 19        128.5    P2p
+  Fa0/1               Disa DIS 19        128.1    P2p
+  Fa0/2               Disa DIS 19        128.2    P2p Edge
+  Fa0/4               Disa DIS 19        128.4    P2p
+  Fa0/5               Disa DIS 19        128.5    P2p
 
 [296/401] swhq SW-HQ# show spanning-tree vlan 20
   VLAN0020
@@ -1500,10 +1619,10 @@ Total steps: 401
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Desg FWD 19        128.1    P2p
-  Fa0/3               Desg FWD 19        128.3    P2p
-  Fa0/4               Desg FWD 19        128.4    P2p
-  Fa0/5               Desg FWD 19        128.5    P2p
+  Fa0/1               Disa DIS 19        128.1    P2p
+  Fa0/3               Disa DIS 19        128.3    P2p
+  Fa0/4               Disa DIS 19        128.4    P2p
+  Fa0/5               Disa DIS 19        128.5    P2p
 
 [297/401] swhq SW-HQ# show spanning-tree vlan 10 brief
             ^
@@ -1513,9 +1632,9 @@ Total steps: 401
   VLAN0010
     Spanning tree enabled protocol ieee
     Root ID    Priority    32778
-               Address     0200.0000.000d
-               Cost        19
-               Port        1 (FastEthernet0/1)
+               Address     0200.0000.005f
+               Cost        0
+               This bridge is the root
                Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
     Bridge ID  Priority    32778  (priority 32768 sys-id-ext 10)
@@ -1525,8 +1644,8 @@ Total steps: 401
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Root FWD 19        128.1    P2p
-  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/1               Disa DIS 19        128.1    P2p
+  Fa0/2               Disa DIS 19        128.2    P2p
 
 [299/401] swbr <SW-BR> display stp instance 0
    MSTID  Port                        Role  STP State     Protection
@@ -1675,10 +1794,10 @@ Total steps: 401
   Fa0/2       1,10,20,30,99
 
 [306/401] swbr <SW-BR> display current-configuration | include vlan
+  vlan batch 10 20 30 99
   vlan 10
   vlan 20
   vlan 30
-  vlan 99
    port default vlan 10
    port default vlan 10
    port trunk pvid vlan 99
@@ -1823,13 +1942,13 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0047    DYNAMIC    Fa0/2
+    20    0200.0000.0001    DYNAMIC    Fa0/1
+    20    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 5
 
@@ -1902,15 +2021,15 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/1
+     1    0200.0000.004b    DYNAMIC    Fa0/1
+    10    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0047    DYNAMIC    Fa0/1
+    20    0200.0000.0001    DYNAMIC    Fa0/1
+    20    0200.0000.004b    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 7
 
@@ -1983,45 +2102,112 @@ Total steps: 401
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/1
+     1    0200.0000.004b    DYNAMIC    Fa0/1
+    10    0200.0000.0001    DYNAMIC    Fa0/1
+    10    0200.0000.0047    DYNAMIC    Fa0/1
+    20    0200.0000.0001    DYNAMIC    Fa0/1
+    20    0200.0000.004b    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 7
 
 
 --- [328] § VLAN — détail par switch (Huawei) ---
 [328/401] swbr <SW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  20       VLAN0020                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  30       VLAN0030                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  99       VLAN0099                      active   GigabitEthernet0/0/5
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/5(U)      GE0/0/6(D)
+                  GE0/0/7(D)      GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)
+                  GE0/0/11(D)     GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)
+                  GE0/0/15(D)     GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)
+                  GE0/0/19(D)     GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)
+                  GE0/0/23(D)
+               TG:GE0/0/4(U)
+  10   common  UT:GE0/0/2(U)      GE0/0/3(U)
+               TG:GE0/0/4(U)      GE0/0/5(U)
+  20   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  30   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  99   common  TG:GE0/0/5(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [329/401] swbr <SW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  20       VLAN0020                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  30       VLAN0030                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  99       VLAN0099                      active   GigabitEthernet0/0/5
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/5(U)      GE0/0/6(D)
+                  GE0/0/7(D)      GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)
+                  GE0/0/11(D)     GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)
+                  GE0/0/15(D)     GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)
+                  GE0/0/19(D)     GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)
+                  GE0/0/23(D)
+               TG:GE0/0/4(U)
+  10   common  UT:GE0/0/2(U)      GE0/0/3(U)
+               TG:GE0/0/4(U)      GE0/0/5(U)
+  20   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  30   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  99   common  TG:GE0/0/5(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [330/401] swbr <SW-BR> display vlan 10
-  VLAN ID  Name                          Status   Ports
-  10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  10   common  UT:GE0/0/2(U)      GE0/0/3(U)
+               TG:GE0/0/4(U)      GE0/0/5(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  10   enable  default       enable  disable    DATA
 
 [331/401] swbr <SW-BR> display vlan 20
-  VLAN ID  Name                          Status   Ports
-  20       VLAN0020                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  20   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  20   enable  default       enable  disable    VOICE
 
 [332/401] swbr <SW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
@@ -2062,21 +2248,63 @@ Total steps: 401
   Total items displayed = 3
 
 [334/401] dswbr <DSW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  20       VLAN0020                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  30       VLAN0030                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  99       VLAN0099                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(D)
+                  GE0/0/4(D)      GE0/0/5(D)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  20   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  30   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  99   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [335/401] dswbr <DSW-BR> display vlan 10
-  VLAN ID  Name                          Status   Ports
-  10       VLAN0010                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  10   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  10   enable  default       enable  disable    DATA
 
 [336/401] dswbr <DSW-BR> display vlan 20
-  VLAN ID  Name                          Status   Ports
-  20       VLAN0020                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  20   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  20   enable  default       enable  disable    VOICE
 
 [337/401] dswbr <DSW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
@@ -2113,8 +2341,8 @@ Total steps: 401
   0200-0000-004f 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
   0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 5
 
@@ -2128,33 +2356,33 @@ Total steps: 401
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.695 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.004 ms
   
   --- 10.2.2.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.695/0.695/0.695/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.492 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.072 ms
   
   --- 10.1.20.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.492/1.492/1.492/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.072/0.072/0.072/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=1ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [343/401] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -2337,13 +2565,35 @@ Total steps: 401
   Fa0/2       1,10,20,30,99
 
 [361/401] swbr <SW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  20       VLAN0020                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  30       VLAN0030                      active   GigabitEthernet0/0/4, GigabitEthernet0/0/5
-  99       VLAN0099                      active   GigabitEthernet0/0/5
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/5(U)      GE0/0/6(D)
+                  GE0/0/7(D)      GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)
+                  GE0/0/11(D)     GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)
+                  GE0/0/15(D)     GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)
+                  GE0/0/19(D)     GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)
+                  GE0/0/23(D)
+               TG:GE0/0/4(U)
+  10   common  UT:GE0/0/2(U)      GE0/0/3(U)
+               TG:GE0/0/4(U)      GE0/0/5(U)
+  20   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  30   common  TG:GE0/0/4(U)      GE0/0/5(U)
+  99   common  TG:GE0/0/5(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [362/401] swbr <SW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
@@ -2373,13 +2623,33 @@ Total steps: 401
   GigabitEthernet0/0/23   access       1     -
 
 [363/401] dswbr <DSW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  20       VLAN0020                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  30       VLAN0030                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  99       VLAN0099                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(D)
+                  GE0/0/4(D)      GE0/0/5(D)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  20   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  30   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  99   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [364/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
@@ -2567,19 +2837,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.607 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.072 ms
   
   --- 10.1.20.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.607/1.607/1.607/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.072/0.072/0.072/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.472 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.041 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.472/1.472/1.472/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.041/0.041/0.041/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2589,7 +2859,7 @@ Total steps: 401
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [387/401] swhq SW-HQ# show mac address-table count
   Mac Address Table
@@ -2652,13 +2922,33 @@ Total steps: 401
   1 10 20 30 99
 
 [393/401] dswbr <DSW-BR> display vlan
-  VLAN ID  Name                          Status   Ports
-  -------  ----------------------------  -------  ----------------------------
-  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/2, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
-  10       VLAN0010                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  20       VLAN0020                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  30       VLAN0030                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
-  99       VLAN0099                      active   GigabitEthernet0/0/1, GigabitEthernet0/0/2
+  The total number of VLANs is: 5
+  --------------------------------------------------------------------------------
+  U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+  MP: Vlan-mapping;               ST: Vlan-stacking;
+  #: ProtocolTransparent-vlan;    *: Management-vlan;
+  --------------------------------------------------------------------------------
+  
+  VID  Type    Ports
+  --------------------------------------------------------------------------------
+  1    common  UT:GE0/0/0(D)      GE0/0/1(U)      GE0/0/2(U)      GE0/0/3(D)
+                  GE0/0/4(D)      GE0/0/5(D)      GE0/0/6(D)      GE0/0/7(D)
+                  GE0/0/8(D)      GE0/0/9(D)      GE0/0/10(D)     GE0/0/11(D)
+                  GE0/0/12(D)     GE0/0/13(D)     GE0/0/14(D)     GE0/0/15(D)
+                  GE0/0/16(D)     GE0/0/17(D)     GE0/0/18(D)     GE0/0/19(D)
+                  GE0/0/20(D)     GE0/0/21(D)     GE0/0/22(D)     GE0/0/23(D)
+  10   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  20   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  30   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  99   common  TG:GE0/0/1(U)      GE0/0/2(U)
+  
+  VID  Status  Property      MAC-LRN Statistics Description
+  --------------------------------------------------------------------------------
+  1    enable  default       enable  disable    VLAN 0001
+  10   enable  default       enable  disable    DATA
+  20   enable  default       enable  disable    VOICE
+  30   enable  default       enable  disable    MGMT
+  99   enable  default       enable  disable    VLAN 0099
 
 [394/401] rhq R-HQ# show ip route connected
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -2715,11 +3005,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.895 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.036 ms
   
   --- 10.1.20.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.895/0.895/0.895/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.036/0.036/0.036/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
@@ -2729,7 +3019,7 @@ Total steps: 401
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [399/401] swhq SW-HQ# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan

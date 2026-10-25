@@ -25,6 +25,7 @@ import { parseCommentHelp, scriptHeadHelp } from '@/powershell/help/CommentHelp'
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { helpObject, matchesFilter, resolveHelp } from '@/powershell/help/FunctionHelp';
 import { newErrorRecord } from '@/powershell/runtime/semantics/PSStreams';
+import { functionRow } from './CommandRows';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -401,11 +402,7 @@ export class GetCommandCmdlet implements ICmdlet {
         });
       }
     }
-    for (const fn of ctx.runtime.listFunctions()) {
-      const block = ctx.runtime.getFunctionBlock(fn);
-      const definition = block !== null && typeof block === 'object' ? (block as { sourceText?: string }).sourceText ?? '' : '';
-      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '', Definition: definition, ScriptBlock: block });
-    }
+    for (const fn of ctx.runtime.listFunctions()) rows.push(functionRow(ctx, fn));
 
     // -Name (positional or named): wildcard / exact, matched against the
     // display name. -Verb / -Noun split on the first dash.

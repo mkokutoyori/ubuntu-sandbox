@@ -31,6 +31,7 @@ export interface PsContext {
   tty: string;
   /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
   shellPid?: number;
+  currentPid?: number;
   zone?: string;
 }
 
@@ -292,7 +293,7 @@ export function transientSelfProcess(ctx: PsContext, comm: string): ProcessInfo 
   const now = simulationDate();
   return {
     pid: maxPid + 1,
-    ppid: ctx.shellPid ?? 1,
+    ppid: ctx.currentPid ?? ctx.shellPid ?? 1,
     pgid: ctx.shellPid ?? 1,
     sid: ctx.shellPid ?? 1,
     uid: ctx.currentUid,

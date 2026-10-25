@@ -350,6 +350,7 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
   } as Record<string, PSValue>,
 } as Record<string, Record<string, PSValue>>;
 const INPUT_CURSOR = '__inputCursor__';
+const DEFAULT_PROMPT = 'PS>';
 
 const SPLIT_SIMPLE_MATCH = 1;
 const SPLIT_REGEX_MATCH = 2;
@@ -1099,6 +1100,25 @@ export class PSRuntime {
     return this.locationVariable(name) ?? this.global.get(name);
   }
   setVariable(name: string, value: PSValue): void { this.global.set(name, value); }
+
+  hasUserPrompt(): boolean {
+    return this.functions.has('prompt');
+  }
+
+  userPrompt(): string {
+    const pending = this.outputLines;
+    const status = this.global.get('?');
+    try {
+      this.execute('prompt');
+      const text = this.outputLines.join('');
+      return text === '' || this.global.get('?') === false ? DEFAULT_PROMPT : text;
+    } catch {
+      return DEFAULT_PROMPT;
+    } finally {
+      this.outputLines = pending;
+      this.global.set('?', status);
+    }
+  }
 
   // ── Program / StatementList ────────────────────────────────────────────────
 
@@ -4351,6 +4371,7 @@ export class PSRuntime {
       removeAlias: (name) => self.userAliases.delete(name.toLowerCase()),
       getCommandParameters: (name) => self.getCommandParameters(name),
       psCast: (val, typeName) => self.psCast(val, typeName),
+      scriptBlockFromText: (code) => self.scriptBlockFromText(code),
     };
 
     return {
@@ -4856,7 +4877,7 @@ export class PSRuntime {
         }
       }
 
-      const key = Object.keys(rec).find(k => k.toLowerCase() === member) ?? member;
+      const key = Object.getOwnPropertyNames(rec).find(k => k.toLowerCase() === member) ?? member;
       const val = rec[key];
       if (val !== undefined) return val;
     }
