@@ -37,6 +37,7 @@ export interface DirEntry {
   isDirectory: boolean;
   size: number;
   mtime: Date;
+  ctime?: Date;
   attributes?: Set<string>;
   owner?: string;
 }
@@ -1225,6 +1226,7 @@ export interface IFileSystemProvider {
   /** Update current working directory. */
   setCwd(path: string): void;
   driveLocation?(letter: string): string;
+  attachDriveAliases?(roots: () => ReadonlyMap<string, string>): void;
   /** Check if path is a directory. */
   isDirectory(path: string): boolean;
   /** Get ACL info for a path. */
