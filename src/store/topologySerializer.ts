@@ -529,6 +529,7 @@ function captureWindowsFiles(device: WindowsPC, twin: WindowsPC): TopologyFileEx
       if (e.entry.type !== 'file') continue;
       const path = dir.path.endsWith('\\') ? dir.path + e.name : `${dir.path}\\${e.name}`;
       if (!isCapturableWindowsPath(path)) continue;
+      if (isContentDeferred(e.entry)) continue;
       const read = fs.readFile(path);
       if (!read.ok || read.content === undefined) continue;
       const base = pristine.readFile(path);
