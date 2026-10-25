@@ -27,6 +27,11 @@ import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShell
 
 let installed = false;
 
+function windowsSessionsOf(request: unknown): { forkFrom: WindowsShellSession | null } {
+  const extras = (request as { extras?: { forkFrom?: WindowsShellSession | null } }).extras;
+  return { forkFrom: extras?.forkFrom ?? null };
+}
+
 export function installDefaultShells(): void {
   if (installed) return;
   installed = true;
@@ -47,33 +52,21 @@ export function installDefaultShells(): void {
       sshClient: extras?.sshClient,
     });
   });
-  ShellFactory.register('cmd', (a) => {
-    const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
-      .extras?.windowsSession ?? null;
-    return new WindowsCmdShell({
-      device: a.device, user: a.user, context: a.context,
-      parent: a.parent ?? null, windowsSession,
-    });
-  });
+  ShellFactory.register('cmd', (a) => new WindowsCmdShell({
+    device: a.device, user: a.user, context: a.context,
+    parent: a.parent ?? null, ...windowsSessionsOf(a),
+  }));
   // PowerShell honours the per-terminal `WindowsShellSession` when the
   // caller (the cmd terminal session) hands one through `extras`. SSH
   // push and tests omit it; the shell falls back to the device-wide cwd.
-  ShellFactory.register('powershell', (a) => {
-    const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
-      .extras?.windowsSession ?? null;
-    return new WindowsPowerShellShell({
-      device: a.device, user: a.user, context: a.context,
-      parent: a.parent ?? null, windowsSession,
-    });
-  });
-  ShellFactory.register('pwsh', (a) => {
-    const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
-      .extras?.windowsSession ?? null;
-    return new WindowsPowerShellShell({
-      device: a.device, user: a.user, context: a.context,
-      parent: a.parent ?? null, windowsSession, language: 'core',
-    });
-  });
+  ShellFactory.register('powershell', (a) => new WindowsPowerShellShell({
+    device: a.device, user: a.user, context: a.context,
+    parent: a.parent ?? null, ...windowsSessionsOf(a),
+  }));
+  ShellFactory.register('pwsh', (a) => new WindowsPowerShellShell({
+    device: a.device, user: a.user, context: a.context,
+    parent: a.parent ?? null, ...windowsSessionsOf(a), language: 'core',
+  }));
   // Interpreters reachable from a POSIX login shell. The `launcher`
   // pattern is what makes `sqlplus` open a real REPL both at the local
   // console and over the SSH wire — a future `python3`, `psql` or

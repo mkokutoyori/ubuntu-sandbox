@@ -211,8 +211,8 @@ export class WindowsTerminalSession extends TerminalSession {
     // Per-session cwd is authoritative when allocated (terminal_gap.md §6);
     // falls back to the device-wide cwd for non-Windows devices or when
     // the shell session has been disposed.
-    const cwd = this.shell?.cwd ?? (this.device as any).getCwd();
-    return `${cwd}>`;
+    if (this.device instanceof WindowsPC) return this.device.commandPrompt(this.shell);
+    return `${(this.device as any).getCwd()}>`;
   }
 
   /**
@@ -727,6 +727,13 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    const nestedCmd = /^cmd(?:\.exe)?(?:\s+\/k\s+(.+))?$/i.exec(trimmed);
+    if (nestedCmd) {
+      this.enterNestedCmd();
+      if (nestedCmd[1] !== undefined) await this.runInActiveSubShell(nestedCmd[1]);
+      return;
+    }
+
     // `powershell <command>` / `powershell -Command <command>` — real
     // powershell.exe treats an unswitched trailing argument as -Command,
     // runs it non-interactively in a fresh process, prints the result and
@@ -841,7 +848,7 @@ export class WindowsTerminalSession extends TerminalSession {
     const user = destination.user ?? device.getUserManager().currentUser;
     let opened: Awaited<ReturnType<WindowsPC['openSftpClientSession']>>;
     try {
-      opened = await device.openSftpClientSession(args, '', this.createSshTerminalIO());
+      opened = await device.openSftpClientSession(args, '', this.createSshTerminalIO(), this.shell?.cwd);
     } finally {
       this.pendingSshIO = null;
       if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
@@ -1194,7 +1201,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
-      extras: { windowsSession: this.shell },
+      extras: { forkFrom: this.shell },
     });
     shell.setInputHost?.(this.getInputHost());
     shell.activate();
@@ -1222,7 +1229,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
-      extras: { windowsSession: this.shell },
+      extras: { forkFrom: this.shell },
     });
     shell.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(shell);
@@ -1240,6 +1247,18 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  private async runInActiveSubShell(line: string): Promise<void> {
+    const result = await this.activeSubShell?.processLine(line);
+    if (!result) return;
+    if (result.styledOutput && result.styledOutput.length > 0) {
+      for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+    } else if (result.output.length > 0) {
+      this.emitWindowsOutput(result.output.join('\n'));
+    }
+    if (result.exit) this.exitSubShell();
+    this.notify();
+  }
+
   private enterNestedCmd(): void {
     // Same migration shape as enterPowerShell — the cmd sub-shell comes
     // through the factory now, so the rest of the system never imports
@@ -1249,7 +1268,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
-      extras: { windowsSession: this.shell },
+      extras: { forkFrom: this.shell },
     });
     shell.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(shell);

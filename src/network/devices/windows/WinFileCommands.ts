@@ -14,6 +14,11 @@ import {
   filterFind, filterFindstr, parseFindArguments, parseFindstrArguments, textLines,
 } from './FindText';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { driveLetterOf } from './windowsPath';
+import { hasWildcard } from './WinPathSpec';
+import {
+  ERROR_DIRECTORY, ERROR_INVALID_DRIVE, ERROR_INVALID_NAME, ERROR_PATH_NOT_FOUND,
+} from './win32ErrorText';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -23,6 +28,8 @@ export interface WinFileCommandContext {
   env: Map<string, string>;
   setEnv(name: string, value: string): void;
   setCwd(path: string): void;
+  driveDirectory(letter: string): string;
+  setDriveDirectory(letter: string, path: string): void;
   setExitCode(code: number): void;
   readonly inScript: boolean;
   readonly timezone: string;
@@ -31,26 +38,83 @@ export interface WinFileCommandContext {
 
 // ─── cd / chdir ────────────────────────────────────────────────────
 
+export type DirectoryTarget = { readonly path: string } | { readonly error: string };
+
+export function locateDirectory(ctx: WinFileCommandContext, text: string): DirectoryTarget {
+  if (hasWildcard(text)) return { error: ERROR_INVALID_NAME };
+  const absolute = ctx.fs.normalizePath(text, ctx.cwd);
+  if (!ctx.fs.hasDrive(absolute[0])) return { error: ERROR_INVALID_DRIVE };
+  const entry = ctx.fs.resolve(absolute);
+  if (entry === null) return { error: ERROR_PATH_NOT_FOUND };
+  if (entry.type !== 'directory') return { error: ERROR_DIRECTORY };
+  return { path: ctx.fs.canonicalPath(absolute) };
+}
+
+export function refuse(ctx: WinFileCommandContext, message: string): string {
+  ctx.setExitCode(1);
+  return message;
+}
+
+export function enterDirectory(ctx: WinFileCommandContext, text: string): string | null {
+  const located = locateDirectory(ctx, text);
+  if ('error' in located) return refuse(ctx, located.error);
+  ctx.setCwd(located.path);
+  return null;
+}
+
 export function cmdCd(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) {
-    return ctx.cwd;
+  if (args.includes('/?')) return CD_HELP;
+  const switchesDrive = args[0]?.toLowerCase() === '/d';
+  const text = (switchesDrive ? args.slice(1) : args).join(' ');
+  if (text === '') return ctx.cwd;
+
+  const bareDrive = /^([A-Za-z]):$/.exec(text);
+  if (bareDrive && !switchesDrive) {
+    const letter = bareDrive[1].toUpperCase();
+    return ctx.fs.hasDrive(letter) ? ctx.driveDirectory(letter) : refuse(ctx, ERROR_INVALID_DRIVE);
   }
 
-  // Handle /d flag (change drive)
-  let path: string;
-  if (args[0].toLowerCase() === '/d' && args.length > 1) {
-    path = args.slice(1).join(' ');
-  } else {
-    path = args.join(' ');
-  }
-
-  const absPath = ctx.fs.normalizePath(path, ctx.cwd);
-  if (!ctx.fs.isDirectory(absPath)) {
-    return 'The system cannot find the path specified.';
-  }
-  ctx.setCwd(absPath);
+  const located = locateDirectory(ctx, text);
+  if ('error' in located) return refuse(ctx, located.error);
+  if (switchesDrive || driveLetterOf(located.path) === driveLetterOf(ctx.cwd)) ctx.setCwd(located.path);
+  else ctx.setDriveDirectory(located.path[0], located.path);
   return '';
 }
+
+const CD_HELP = [
+  'Displays the name of or changes the current directory.',
+  '',
+  'CHDIR [/D] [drive:][path]',
+  'CHDIR [..]',
+  'CD [/D] [drive:][path]',
+  'CD [..]',
+  '',
+  '  ..   Specifies that you want to change to the parent directory.',
+  '',
+  'Type CD drive: to display the current directory in the specified drive.',
+  'Type CD without parameters to display the current drive and directory.',
+  '',
+  'Use the /D switch to change current drive in addition to changing current',
+  'directory for a drive.',
+  '',
+  'If Command Extensions are enabled CHDIR changes as follows:',
+  '',
+  'The current directory string is converted to use the same case as',
+  'the on disk names.  So CD C:\\TEMP would actually set the current',
+  'directory to C:\\Temp if that is the case on disk.',
+  '',
+  'CHDIR command does not treat spaces as delimiters, so it is possible to',
+  'CD into a subdirectory name that contains a space without surrounding',
+  'the name with quotes.  For example:',
+  '',
+  '    cd \\winnt\\profiles\\username\\programs\\start menu',
+  '',
+  'is the same as:',
+  '',
+  '    cd "\\winnt\\profiles\\username\\programs\\start menu"',
+  '',
+  'which is what you would have to type if extensions were disabled.',
+].join('\n');
 
 // ─── mkdir / md ────────────────────────────────────────────────────
 
@@ -89,13 +153,11 @@ export function cmdRmdir(ctx: WinFileCommandContext, args: string[]): string {
 
   if (recursive) {
     const result = ctx.fs.rmdirRecursive(absPath);
-    if (!result.ok) return result.error!;
-    return '';
+    return result.ok ? '' : refuse(ctx, result.error!);
   }
 
   const result = ctx.fs.rmdir(absPath);
-  if (!result.ok) return result.error!;
-  return '';
+  return result.ok ? '' : refuse(ctx, result.error!);
 }
 
 // ─── type ──────────────────────────────────────────────────────────
@@ -116,8 +178,7 @@ export function cmdRen(ctx: WinFileCommandContext, args: string[]): string {
   const absPath = ctx.fs.normalizePath(args[0], ctx.cwd);
   const newName = args[1];
   const result = ctx.fs.renameEntry(absPath, newName);
-  if (!result.ok) return result.error!;
-  return '';
+  return result.ok ? '' : refuse(ctx, result.error!);
 }
 
 // ─── del / erase ───────────────────────────────────────────────────

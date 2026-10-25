@@ -14,6 +14,9 @@ import { simulationNowMs } from '../../core/SystemClock';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { normalizeWindowsPath } from './windowsPath';
 import { WINDOWS_PROGRAMS } from './WinPrograms';
+import {
+  ERROR_DIR_NOT_EMPTY, ERROR_DIRECTORY, ERROR_PATH_NOT_FOUND, ERROR_SHARING_VIOLATION,
+} from './win32ErrorText';
 import { HostsFile } from '../HostsFile';
 
 /**
@@ -72,9 +75,18 @@ export interface WinDirEntry {
   entry: WinFSEntry;
 }
 
+export interface WindowsProcessDirectories {
+  driveDirectory(letter: string): string;
+  directoriesInUse(): readonly string[];
+}
+
+const directoryKey = (path: string): string => path.toLowerCase().replace(/\\+$/, '');
+
 export class WindowsFileSystem {
   /** Root of each drive: key = uppercase drive letter with colon, e.g. 'C:' */
   private drives: Map<string, WinFSEntry> = new Map();
+
+  private processes: WindowsProcessDirectories | null = null;
 
   /**
    * Last timestamp handed out by now(). The displayed clock still tracks
@@ -438,7 +450,74 @@ export class WindowsFileSystem {
    * - If relative, resolve against cwd
    */
   normalizePath(path: string, cwd: string): string {
-    return normalizeWindowsPath(path, cwd);
+    const processes = this.processes;
+    return normalizeWindowsPath(path, cwd, processes ? letter => processes.driveDirectory(letter) : undefined);
+  }
+
+  attachProcesses(processes: WindowsProcessDirectories): void {
+    this.processes = processes;
+  }
+
+  hasDrive(letter: string): boolean {
+    return this.drives.has(`${letter.toUpperCase()}:`);
+  }
+
+  canonicalPath(absPath: string): string {
+    const root = this.drives.get(absPath.substring(0, 2).toUpperCase());
+    const letter = `${absPath.substring(0, 1).toUpperCase()}:`;
+    if (!root) return absPath;
+    const names: string[] = [];
+    let current: WinFSEntry | undefined = root;
+    for (const part of absPath.substring(3).split('\\').filter(Boolean)) {
+      current = current?.children.get(part.toLowerCase());
+      names.push(current?.name ?? part);
+    }
+    return names.length === 0 ? `${letter}\\` : `${letter}\\${names.join('\\')}`;
+  }
+
+  canonicalLeaf(absPath: string): string {
+    const separator = absPath.lastIndexOf('\\');
+    if (separator <= 2) return absPath;
+    const leaf = this.resolve(absPath)?.name;
+    return leaf === undefined ? absPath : `${absPath.slice(0, separator + 1)}${leaf}`;
+  }
+
+  isDirectoryInUse(absPath: string): boolean {
+    return this.directoriesHeldWithin(absPath).length > 0;
+  }
+
+  private directoriesHeldWithin(absPath: string): string[] {
+    const root = directoryKey(absPath);
+    return (this.processes?.directoriesInUse() ?? []).filter(directory => {
+      const key = directoryKey(directory);
+      return key === root || key.startsWith(`${root}\\`);
+    });
+  }
+
+  private holdsDirectory(absPath: string): boolean {
+    const key = directoryKey(absPath);
+    return (this.processes?.directoriesInUse() ?? []).some(directory => directoryKey(directory) === key);
+  }
+
+  private refusalToRemove(entry: WinFSEntry, absPath: string): string | null {
+    if (entry.children.size > 0) return ERROR_DIR_NOT_EMPTY;
+    return this.holdsDirectory(absPath) ? ERROR_SHARING_VIOLATION : null;
+  }
+
+  private emptyDirectory(entry: WinFSEntry, absPath: string): string[] {
+    const errors: string[] = [];
+    for (const [key, child] of [...entry.children]) {
+      if (child.type === 'file') {
+        entry.children.delete(key);
+        continue;
+      }
+      const childPath = absPath.endsWith('\\') ? absPath + child.name : `${absPath}\\${child.name}`;
+      errors.push(...this.emptyDirectory(child, childPath));
+      const refusal = this.refusalToRemove(child, childPath);
+      if (refusal === null) entry.children.delete(key);
+      else errors.push(refusal);
+    }
+    return errors;
   }
   // ─── Resolution ──────────────────────────────────────────────────
 
@@ -545,9 +624,10 @@ export class WindowsFileSystem {
 
   rmdir(absPath: string): { ok: boolean; error?: string } {
     const entry = this.resolve(absPath);
-    if (!entry) return { ok: false, error: 'The system cannot find the path specified.' };
-    if (entry.type !== 'directory') return { ok: false, error: 'The directory name is invalid.' };
-    if (entry.children.size > 0) return { ok: false, error: 'The directory is not empty.' };
+    if (!entry) return { ok: false, error: ERROR_PATH_NOT_FOUND };
+    if (entry.type !== 'directory') return { ok: false, error: ERROR_DIRECTORY };
+    const refusal = this.refusalToRemove(entry, absPath);
+    if (refusal !== null) return { ok: false, error: refusal };
 
     const pair = this.resolveParent(absPath);
     if (!pair) return { ok: false, error: 'Cannot remove root.' };
@@ -559,10 +639,15 @@ export class WindowsFileSystem {
 
   rmdirRecursive(absPath: string): { ok: boolean; error?: string } {
     const entry = this.resolve(absPath);
-    if (!entry) return { ok: false, error: 'The system cannot find the path specified.' };
+    if (!entry) return { ok: false, error: ERROR_PATH_NOT_FOUND };
+    if (entry.type !== 'directory') return { ok: false, error: ERROR_DIRECTORY };
 
     const pair = this.resolveParent(absPath);
     if (!pair) return { ok: false, error: 'Cannot remove root.' };
+    const errors = this.emptyDirectory(entry, absPath);
+    const refusal = this.refusalToRemove(entry, absPath);
+    if (refusal !== null) errors.push(refusal);
+    if (errors.length > 0) return { ok: false, error: errors.join('\n') };
     const [parent, childName] = pair;
     parent.children.delete(childName.toLowerCase());
     parent.mtime = this.now();
@@ -712,6 +797,9 @@ export class WindowsFileSystem {
     if (srcEntry.type === 'directory' && (destPath.toLowerCase() + '\\').startsWith(srcPath.toLowerCase().replace(/\\$/, '') + '\\')) {
       return { ok: false, error: 'Access is denied.' };
     }
+    if (srcEntry.type === 'directory' && this.isDirectoryInUse(srcPath)) {
+      return { ok: false, error: ERROR_SHARING_VIOLATION };
+    }
 
     const pair = this.resolveParent(destPath);
     if (!pair) return { ok: false, error: 'The system cannot find the path specified.' };
@@ -744,6 +832,9 @@ export class WindowsFileSystem {
     const newKey = newName.toLowerCase();
     if (newKey !== oldKey && parent.children.has(newKey)) {
       return { ok: false, error: 'A duplicate file name exists, or the file cannot be found.' };
+    }
+    if (entry.type === 'directory' && this.isDirectoryInUse(absPath)) {
+      return { ok: false, error: ERROR_SHARING_VIOLATION };
     }
 
     parent.children.delete(oldKey);

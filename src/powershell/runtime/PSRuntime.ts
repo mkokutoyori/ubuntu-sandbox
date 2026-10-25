@@ -35,6 +35,7 @@ import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
+import { PSLocationState } from './PSLocationState';
 import { stringMember } from './semantics/DotNetString';
 import { formatString } from './semantics/CompositeFormat';
 import { EnumType, PSEnumValue, builtinEnums, enumMember } from './semantics/PSEnum';
@@ -451,10 +452,13 @@ for (const t of STACK_TYPES) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const DRIVE_NAME = /^[A-Za-z]:$/;
+
 export class PSRuntime {
   private readonly lexer: PSLexer;
   private readonly parser: PSParser;
   readonly edition: 'desktop' | 'core';
+  readonly locations = new PSLocationState();
   private readonly conversion: ConversionOptions;
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
@@ -1813,15 +1817,16 @@ export class PSRuntime {
     table['BuildVersion'] = `${currentVersion}.${build}.1`;
   }
 
+  currentLocationPath(): string {
+    return this.locations.foreign ?? this.providers.filesystem?.getCwd() ?? '';
+  }
+
   private locationVariable(name: string): PSValue | undefined {
     const fs = this.providers.filesystem;
     if (!fs) return undefined;
     const lower = name.toLowerCase();
     if (lower !== 'pwd' && lower !== 'executioncontext') return undefined;
-    const foreign = this.global.get('__psLocation__');
-    const cwd = foreign !== undefined && foreign !== null && psValueToString(foreign) !== ''
-      ? psValueToString(foreign)
-      : fs.getCwd();
+    const cwd = this.currentLocationPath();
     const location = { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
     if (lower === 'pwd') return location;
     return { SessionState: { Path: { CurrentLocation: location } } } as unknown as PSValue;
@@ -3917,6 +3922,9 @@ export class PSRuntime {
     };
 
     const programStem = this.providers.network?.programStem(name) ?? null;
+    if (programStem === null && DRIVE_NAME.test(name) && positional.length === 0) {
+      return this.dispatchResolved('set-location', [name], named, cmdletNamed, common, pipeInput, env, produced);
+    }
     const resolved = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
     const cmdlet = resolved && resolved.coreOnly === true && this.edition === 'desktop' ? undefined : resolved;
     if (cmdlet) {
@@ -4277,6 +4285,8 @@ export class PSRuntime {
     if (!PASS_THROUGH_CMDLETS.has(cmdletDisplayName.toLowerCase())) pipeInput = unboxDeep(pipeInput);
 
     const runtimeRef: IRuntimeRef = {
+      edition:            self.edition,
+      locations:          self.locations,
       execute:            (code) => self.execute(code),
       executeInteractive: (code) => self.executeInteractive(code),
       acceptNativeResult: (result) => self.acceptNativeResult(result),

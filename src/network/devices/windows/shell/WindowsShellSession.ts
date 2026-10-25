@@ -46,6 +46,7 @@ export class WindowsShellSession {
    * future enhancements can wire it without reshaping the data model.
    */
   driveCwd: Map<string, string> = new Map();
+  directoryStack: string[] = [];
   /** DOSKEY-style history (bounded). */
   history: string[] = [];
   lastExitCode: number = 0;

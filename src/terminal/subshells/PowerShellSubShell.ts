@@ -123,8 +123,9 @@ export class PowerShellSubShell implements ISubShell {
 
   getPrompt(): string {
     if (this.pendingLines.length > 0) return CONTINUATION_PROMPT;
-    const cwd = this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
-    return `${this.promptPrefix}PS ${cwd}> `;
+    const location = this.interp.foreignLocation()
+      ?? this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
+    return `${this.promptPrefix}PS ${location}> `;
   }
 
   private deviceEnvVar(name: string): string | null {
