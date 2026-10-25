@@ -3,21 +3,10 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { hasWildcard } from '@/powershell/runtime/PSWildcard';
-import { pathInfo } from '@/powershell/runtime/PSPathInfo';
-import { isRegistryPath, registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
-import { expandPathSpec } from './PathCmdlets';
-
-const FOREIGN_DRIVES: Readonly<Record<string, readonly string[]>> = {
-  alias: ['Alias'],
-  registry: ['HKLM', 'HKCU'],
-  environment: ['Env'],
-  variable: ['Variable'],
-  function: ['Function'],
-};
-
-const PROVIDER_NAMES: Readonly<Record<string, string>> = {
-  alias: 'Alias', registry: 'Registry', environment: 'Environment', variable: 'Variable', function: 'Function',
-};
+import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
+import { PROVIDER_QUALIFIER, joinProviderPath, providerSegments } from '@/powershell/runtime/PSLocationState';
+import { expandPathSpec, pathItemOf } from './PathCmdlets';
+import { FOREIGN_DRIVES, declaredDrive, foreignDrive, mappedPath, pathInfoOf, qualifierOf, type Declared } from './ProviderPaths';
 
 const driveNotFound = (name: string): string => `Cannot find drive. A drive with the name '${name}' does not exist.`;
 const pathNotFound = (typed: string): string => `Cannot find path '${typed}' because it does not exist.`;
@@ -32,75 +21,9 @@ type Located =
   | { readonly kind: 'file'; readonly path: string }
   | { readonly kind: 'provider'; readonly drive: string; readonly provider: string; readonly path: string; readonly real?: string };
 
-interface Declared {
-  readonly Name: string;
-  readonly Root: string;
-}
-
-const qualifierOf = (path: string): string | null => /^([A-Za-z][A-Za-z0-9_]*):(?!:)/.exec(path)?.[1] ?? null;
-
-function foreignDrive(name: string): { provider: string; drive: string } | null {
-  for (const [provider, drives] of Object.entries(FOREIGN_DRIVES)) {
-    const drive = drives.find(candidate => candidate.toLowerCase() === name.toLowerCase());
-    if (drive !== undefined) return { provider, drive };
-  }
-  return null;
-}
-
-function declaredDrive(ctx: CmdletContext, name: string): Declared | null {
-  const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
-  const found = declared[name.toLowerCase()] as Record<string, PSValue> | undefined;
-  if (found === undefined) return null;
-  const drive = { Name: psValueToString(found['Name']), Root: psValueToString(found['Root']) };
-  return drive.Root === '' || drive.Root.toLowerCase() === `${drive.Name.toLowerCase()}:\\` ? null : drive;
-}
-
-function mappedPath(declared: Declared, path: string): string {
-  const relative = path.slice(declared.Name.length + 2);
-  return relative === '' ? declared.Root : `${declared.Root.replace(/\\+$/, '')}\\${relative}`;
-}
-
-function providerOfLocation(path: string): string {
-  const qualifier = qualifierOf(path);
-  if (qualifier === null || qualifier.length === 1) return 'FileSystem';
-  const found = foreignDrive(qualifier);
-  return found === null ? 'FileSystem' : PROVIDER_NAMES[found.provider];
-}
-
-function providerPathOf(ctx: CmdletContext, path: string): string {
-  const qualifier = qualifierOf(path);
-  const declared = qualifier === null ? null : declaredDrive(ctx, qualifier);
-  if (declared !== null && foreignDrive(qualifier!) === null) {
-    const mapped = mappedPath(declared, path);
-    return isRegistryPath(mapped) ? registryProviderPath(mapped) : mapped;
-  }
-  return isRegistryPath(path) ? registryProviderPath(path) : path;
-}
-
-function pathInfoOf(ctx: CmdletContext, path: string): Record<string, PSValue> {
-  return pathInfo({
-    path,
-    providerPath: providerPathOf(ctx, path),
-    provider: providerOfLocation(path),
-    drive: (qualifierOf(path) ?? 'C').toUpperCase(),
-  });
-}
-
 function currentLocation(ctx: CmdletContext): string {
   return ctx.runtime.locations.foreign ?? ctx.providers.filesystem?.getCwd() ?? 'C:\\';
 }
-
-function joinForeign(drive: string, segments: readonly string[]): string {
-  const kept: string[] = [];
-  for (const segment of segments) {
-    if (segment === '' || segment === '.') continue;
-    if (segment === '..') kept.pop();
-    else kept.push(segment);
-  }
-  return kept.length === 0 ? `${drive}:\\` : `${drive}:\\${kept.join('\\')}`;
-}
-
-const segmentsOf = (path: string): string[] => path.split(/[\\/]/);
 
 function foreignContainer(ctx: CmdletContext, drive: string, provider: string, path: string, typed: string): Located {
   const root = `${drive}:\\`;
@@ -132,21 +55,20 @@ function locate(ctx: CmdletContext, typed: string, literal: boolean): Located {
     if (found !== null || declared !== null) {
       const name = found?.drive ?? declared!.Name;
       const rest = typed.slice(qualifier.length + 1);
-      const path = rest === '' ? state.remembered(name) ?? `${name}:\\` : joinForeign(name, segmentsOf(rest));
+      const path = rest === '' ? state.remembered(name) ?? `${name}:\\` : joinProviderPath(name, providerSegments(rest));
       return found !== null
         ? foreignContainer(ctx, found.drive, found.provider, path, typed)
         : declaredContainer(ctx, declared!, path, typed);
     }
   }
 
-  if (qualifier === null && state.foreign !== null) {
+  if (qualifier === null && state.foreign !== null && !typed.startsWith('~')) {
     const current = qualifierOf(state.foreign) ?? '';
     const found = foreignDrive(current);
     const declared = found === null ? declaredDrive(ctx, current) : null;
     if (found !== null || declared !== null) {
       const name = found?.drive ?? declared!.Name;
-      const base = /^[\\/]/.test(typed) ? [] : segmentsOf(state.foreign.slice(current.length + 1));
-      const path = joinForeign(name, [...base, ...segmentsOf(typed)]);
+      const path = state.resolve(typed) ?? `${name}:\\`;
       return found !== null
         ? foreignContainer(ctx, found.drive, found.provider, path, typed)
         : declaredContainer(ctx, declared!, path, typed);
@@ -213,7 +135,10 @@ const stackNameOf = (ctx: CmdletContext): string =>
   ctx.named['stackname'] !== undefined ? psValueToString(ctx.named['stackname']) : ctx.runtime.locations.defaultStack;
 
 function pathArgument(ctx: CmdletContext): string {
-  return psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+  const explicit = ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0];
+  const piped = Array.isArray(ctx.pipeInput) ? ctx.pipeInput[0] : ctx.pipeInput;
+  const typed = explicit !== undefined ? psValueToString(explicit) : pathItemOf(piped ?? null);
+  return typed.replace(PROVIDER_QUALIFIER, '');
 }
 
 export class SetLocationCmdlet implements ICmdlet {

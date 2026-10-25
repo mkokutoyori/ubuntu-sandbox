@@ -70,6 +70,7 @@ export class PowerShellSubShell implements ISubShell {
   private session: WindowsShellSession | null = null;
   /** Set for a sub-shell pushed by `Enter-PSSession` — prefixes every prompt with `[computername]: `. */
   private promptPrefix = '';
+  private userPromptText: string | null = null;
 
   private readonly language: 'desktop' | 'core';
 
@@ -123,9 +124,17 @@ export class PowerShellSubShell implements ISubShell {
 
   getPrompt(): string {
     if (this.pendingLines.length > 0) return CONTINUATION_PROMPT;
+    if (this.userPromptText !== null) return `${this.promptPrefix}${this.userPromptText}`;
     const location = this.interp.foreignLocation()
       ?? this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
     return `${this.promptPrefix}PS ${location}> `;
+  }
+
+  private promptFunctionText(): string {
+    const { session, device } = this;
+    return session !== null && !session.disposed && device instanceof WindowsPC
+      ? device.runInSessionSync(session, () => this.interp.userPrompt())
+      : this.interp.userPrompt();
   }
 
   private deviceEnvVar(name: string): string | null {
@@ -175,6 +184,13 @@ export class PowerShellSubShell implements ISubShell {
   private _broker: import('@/shell/input').InputBroker | null = null;
 
   async processLine(line: string): Promise<SubShellResult> {
+    const result = await this.runLine(line);
+    if (result.exit || this.pendingLines.length > 0) return result;
+    this.userPromptText = this.interp.hasUserPrompt() ? this.promptFunctionText() : null;
+    return result.prompt === '' ? result : { ...result, prompt: this.getPrompt() };
+  }
+
+  private async runLine(line: string): Promise<SubShellResult> {
     const command = this.collectLine(line);
     if (command === null) return { output: [], exit: false, prompt: this.getPrompt() };
     const trimmed = command.trim();

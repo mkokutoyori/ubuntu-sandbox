@@ -270,7 +270,7 @@ import type { RunasHost } from './windows/WinRunas';
 import { executeNslookup } from './linux/LinuxDnsService';
 import type { DnsQueryFn } from '../dns/compat/DnsWireCompat';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
-import { SessionSwapWindow } from './host/session/SessionSwapWindow';
+import { SessionSwapWindow, type SwapWindowOptions } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { formatLocalTime } from './linux/system/SystemInfo';
 import { windowsZoneNameAt, windowsZoneOf } from '../core/time/WindowsTimeZones';
@@ -6798,14 +6798,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
   }
 
+  runInSessionSync<T>(session: WindowsShellSession, fn: () => T, options: SwapWindowOptions = {}): T {
+    return this.sessionSwap.withinSync(session, fn, options);
+  }
+
   /** Tab completion against a specific shell session's cwd/env. */
   getCompletionsForSession(partial: string, session: WindowsShellSession): string[] {
     if (session.disposed || !this.isPoweredOn) return [];
-    return this.sessionSwap.withinSync(
-      session,
-      () => this.getCompletions(partial),
-      { capture: false },
-    );
+    return this.runInSessionSync(session, () => this.getCompletions(partial), { capture: false });
   }
 
   /**

@@ -1,8 +1,31 @@
 const HISTORY_CAPACITY = 20;
+export const DRIVE_QUALIFIER = /^([A-Za-z][A-Za-z0-9_]*):(?!:)/;
+export const PROVIDER_QUALIFIER = /^[^:\\/]+(?:\\[^:\\/]+)*::/;
+
+export const providerSegments = (path: string): string[] => path.split(/[\\/]/);
+
+export function joinProviderPath(drive: string, segments: readonly string[]): string {
+  const kept: string[] = [];
+  for (const segment of segments) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') kept.pop();
+    else kept.push(segment);
+  }
+  return kept.length === 0 ? `${drive}:\\` : `${drive}:\\${kept.join('\\')}`;
+}
 
 export class PSLocationState {
   foreign: string | null = null;
   defaultStack = '';
+
+  resolve(typed: string): string | null {
+    const here = this.foreign;
+    if (here === null || DRIVE_QUALIFIER.test(typed) || PROVIDER_QUALIFIER.test(typed) || typed.startsWith('~')) return null;
+    const drive = DRIVE_QUALIFIER.exec(here)?.[1];
+    if (drive === undefined) return null;
+    const base = /^[\\/]/.test(typed) ? [] : providerSegments(here.replace(DRIVE_QUALIFIER, ''));
+    return joinProviderPath(drive, [...base, ...providerSegments(typed)]);
+  }
 
   private readonly lastByDrive = new Map<string, string>();
   private readonly lastByProvider = new Map<string, string>();

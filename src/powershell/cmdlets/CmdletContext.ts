@@ -92,6 +92,7 @@ export interface IRuntimeRef {
   /** A cmdlet's declared parameter names — the same list `-<Tab>` offers. */
   getCommandParameters(name: string): string[];
   psCast(val: PSValue, typeName: string): PSValue;
+  scriptBlockFromText(code: string): PSValue;
 }
 
 export interface CmdletContext {
