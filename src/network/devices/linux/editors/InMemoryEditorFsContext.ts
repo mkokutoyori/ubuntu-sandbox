@@ -24,6 +24,9 @@ const DEVICE_PATHS: ReadonlySet<string> = new Set(['/dev/null', '/dev/zero', '/d
 export class InMemoryEditorFsContext implements EditorFsContext {
   private files = new Map<string, string>();
   private modes = new Map<string, number>();
+  private directories = new Set<string>();
+  private environment = new Map<string, string>();
+  private home: string | null = '/root';
   private strictDirectories = false;
   private shellLog: string[] = [];
   private shellHandler: (cmd: string) => string;
@@ -63,6 +66,7 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   writeFile(path: string, content: string): boolean {
     const target = this.resolvePath(path);
     if (this.strictDirectories && this.kindOf(target.slice(0, target.lastIndexOf('/')) || '/') !== 'directory') return false;
+    if (this.directories.has(target)) return false;
     this.files.set(target, content);
     return true;
   }
@@ -77,10 +81,11 @@ export class InMemoryEditorFsContext implements EditorFsContext {
 
   kindOf(path: string): EditorPathKind {
     const resolved = this.resolvePath(path);
+    const prefix = `${resolved}/`;
     if (this.files.has(resolved)) return 'file';
     if (DEVICE_PATHS.has(resolved)) return 'device';
     if (resolved === '/' || resolved === '/tmp' || resolved === this.workingDirectory || this.workingDirectory.startsWith(`${resolved}/`)) return 'directory';
-    const prefix = `${resolved}/`;
+    if (this.directories.has(resolved) || resolved === this.home || [...this.directories].some((directory) => directory.startsWith(prefix))) return 'directory';
     return [...this.files.keys()].some((name) => name.startsWith(prefix)) ? 'directory' : 'missing';
   }
 
@@ -89,10 +94,67 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     if (this.kindOf(resolved) !== 'directory') return null;
     const prefix = resolved === '/' ? '/' : `${resolved}/`;
     const names = new Set<string>();
-    for (const file of this.files.keys()) {
+    for (const file of [...this.files.keys(), ...this.directories]) {
       if (file.startsWith(prefix)) names.add(file.slice(prefix.length).split('/')[0]);
     }
     return [...names];
+  }
+
+  homeDirectory(): string | null {
+    return this.home;
+  }
+
+  useHomeDirectory(path: string | null): void {
+    this.home = path;
+  }
+
+  environmentVariable(name: string): string | null {
+    return this.environment.get(name) ?? null;
+  }
+
+  useEnvironmentVariable(name: string, value: string): void {
+    this.environment.set(name, value);
+  }
+
+  makeDirectory(path: string, mode: number): string | null {
+    const target = this.resolvePath(path);
+    if (this.kindOf(target) !== 'missing') return 'File exists';
+    const parent = target.slice(0, target.lastIndexOf('/')) || '/';
+    const parentKind = this.kindOf(parent);
+    if (parentKind === 'missing') return this.nearestExistingKind(parent) === 'directory' ? 'No such file or directory' : 'Not a directory';
+    if (parentKind !== 'directory') return 'Not a directory';
+    this.directories.add(target);
+    this.setMode(target, mode);
+    return null;
+  }
+
+  private nearestExistingKind(path: string): EditorPathKind {
+    let current = path;
+    while (current !== '/' && this.kindOf(current) === 'missing') current = current.slice(0, current.lastIndexOf('/')) || '/';
+    return this.kindOf(current);
+  }
+
+  readError(): string | null {
+    return null;
+  }
+
+  changeMode(path: string, mode: number): boolean {
+    const target = this.resolvePath(path);
+    if (this.kindOf(target) === 'missing') return false;
+    this.setMode(target, mode);
+    return true;
+  }
+
+  modeOf(path: string): number | null {
+    return this.modes.get(this.resolvePath(path)) ?? null;
+  }
+
+  directoryPaths(): string[] {
+    const implied = new Set<string>(this.directories);
+    for (const file of this.files.keys()) {
+      for (let slash = file.lastIndexOf('/'); slash > 0; slash = file.lastIndexOf('/', slash - 1)) implied.add(file.slice(0, slash));
+    }
+    return [...implied];
   }
 
   setMode(path: string, mode: number): void {

@@ -951,7 +951,7 @@ export abstract class LinuxMachine extends EndHost
     um.currentGid = 0;
     try {
       const run = () => this.executor.executeAsync(command);
-      return await (pid !== undefined ? this.executor.withProcessIdentity(pid, run) : run());
+      return await (pid !== undefined ? this.executor.withProcessIdentityAsync(pid, run) : run());
     } catch {
       return '';
     } finally {
@@ -3914,6 +3914,8 @@ export abstract class LinuxMachine extends EndHost
     return LinuxMachine.SCRIPT_FILE_HEAD_RE.test(input);
   }
 
+  private static readonly LOOP_RE = /(^|[;&|({\s])(for|while|until)\s/;
+
   /**
    * `sshpass -p <pw> scp|sftp ...`: the only way scp/sftp can offer a
    * real credential (audit 03, MAJEUR §4) — routed through the async
@@ -3996,7 +3998,7 @@ export abstract class LinuxMachine extends EndHost
       if (sessionView !== null) return sessionView;
     }
 
-    if (!this.containsNetworkCommand(trimmed)) {
+    if (!this.containsNetworkCommand(trimmed) && !LinuxMachine.LOOP_RE.test(trimmed)) {
       return this.executor.execute(trimmed);
     }
 
@@ -5033,6 +5035,50 @@ export abstract class LinuxMachine extends EndHost
     if (inode === null || inode.type !== 'directory') return null;
     if (session !== undefined && !session.disposed && !vfs.checkAccess(inode, 'r', session.uid, session.gid)) return null;
     return (vfs.listDirectory(absolute) ?? []).map((entry) => entry.name);
+  }
+
+  editorHomeDirectory(session?: LinuxShellSession): string | null {
+    const uid = session !== undefined && !session.disposed ? session.uid : this.executor.userMgr.currentUid;
+    return this.executor.userHomeDirectory(uid);
+  }
+
+  editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
+    if (session !== undefined && !session.disposed) return session.env.get(name) ?? null;
+    return this.executor.commandEnvironment()[name] ?? null;
+  }
+
+  editorMakeDirectory(path: string, mode: number, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const absolute = vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd());
+    if (vfs.getType(absolute) !== null) return 'File exists';
+    const parent = absolute.slice(0, absolute.lastIndexOf('/')) || '/';
+    const parentType = vfs.getType(parent);
+    if (parentType === null) return this.firstExistingAncestorIsDirectory(parent) ? 'No such file or directory' : 'Not a directory';
+    if (parentType !== 'directory') return 'Not a directory';
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
+    const parentInode = vfs.resolveInode(parent);
+    if (uid !== 0 && (parentInode === null || !vfs.checkAccess(parentInode, 'w', uid, gid) || !vfs.checkAccess(parentInode, 'x', uid, gid))) return 'Permission denied';
+    return vfs.mkdir(absolute, mode & ~(live?.umask ?? this.executor.getUmask()), uid, gid) ? null : 'Permission denied';
+  }
+
+  editorReadError(path: string, session?: LinuxShellSession): string | null {
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
+    return this.executor.readRefusal(this.executor.vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()), uid, gid);
+  }
+
+  editorChangeMode(path: string, mode: number, session?: LinuxShellSession): boolean {
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    return this.executor.vfs.chmod(this.executor.vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()), mode);
+  }
+
+  private firstExistingAncestorIsDirectory(path: string): boolean {
+    let current = path;
+    while (current !== '/' && this.executor.vfs.getType(current) === null) current = current.slice(0, current.lastIndexOf('/')) || '/';
+    return this.executor.vfs.getType(current) === 'directory';
   }
 
   editorPathIsReadOnly(path: string): boolean {

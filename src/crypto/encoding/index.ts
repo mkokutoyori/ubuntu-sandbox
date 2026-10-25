@@ -74,10 +74,14 @@ export function fileTextToBytes(text: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
+const BINARY_STRING_CHUNK = 0x2000;
+
 export function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
+  const parts: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += BINARY_STRING_CHUNK) {
+    parts.push(String.fromCharCode(...bytes.subarray(offset, offset + BINARY_STRING_CHUNK)));
+  }
+  return parts.join('');
 }
 
 export function binaryStringToBytes(text: string): Uint8Array {

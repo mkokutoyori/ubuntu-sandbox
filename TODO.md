@@ -838,14 +838,45 @@ sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
 nano ferait apres un `^L`.
 
+### [nano] fichiers nanorc : commandes acceptees mais pas encore evaluees
+`parse_rcfile` de nano 7.2 est porte pour `set` / `unset` (toutes les options de
+`rcopts`), les emplacements (`/etc/nanorc`, `~/.nanorc`, `$XDG_CONFIG_HOME/nano/nanorc`,
+`~/.config/nano/nanorc`, `-f`, `-I`), les textes d'erreur et la fusion avec la ligne
+de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machine
+ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
+est l'etat intermediaire d'une campagne en cours et non un livrable :
+- `bind`, `unbind` (raccourcis reconfigures), `include`, `syntax`, `header`, `magic`,
+  `color`, `icolor`, `comment`, `tabgives`, `linter`, `formatter`, `extendsyntax` :
+  ignorees, y compris les erreurs qu'elles produiraient (« A 'color' command requires
+  a preceding 'syntax' command », « Error reading F: ... » sur un `include` sans
+  fichier). Syntaxes et couleurs : 28b ; raccourcis : 28d.
+- `titlecolor`, `numbercolor`, `stripecolor`, `scrollercolor`, `selectedcolor`,
+  `spotlightcolor`, `minicolor`, `promptcolor`, `statuscolor`, `errorcolor`, `keycolor`,
+  `functioncolor` : arguments non analyses (28b).
+- `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
+  parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
+  encore dans le moteur (28e) ; `magic` n'a d'effet qu'avec les syntaxes (28b) ;
+  `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+- `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
+  echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
+  `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
+  n'est pas portee : le moteur ecrase la sauvegarde.
+- `/etc/nanorc` n'existe pas dans le systeme de fichiers des machines ; la version
+  d'Ubuntu 24.04 (`set historylog`, `set locking`, `set stateflags`, `include
+  "/usr/share/nano/*.nanorc"`) n'y sera posee qu'avec les 44 fichiers de syntaxe (28c),
+  faute de quoi l'`include` ferait afficher « Mistakes in '/etc/nanorc' » a chaque lancement.
+
 ### [nano] `~` dans les invites de fichier
 Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
-developpe `~/x` avec le HOME du processus (`expand_leading_tilde`) et complete `~util` avec
-`/etc/passwd` (`username_completion`). `EditorFsContext` ne porte ni le HOME
-ni la liste des comptes : le moteur traite `~` comme un nom ordinaire (aucune
-completion, aucun developpement, y compris a l'ouverture d'un fichier).
-**Report** : il faut une couture `EditorFsContext.homeDirectory()` et un acces
-a la table des comptes de la machine, branches sur `LinuxUserManager`.
+developpe `~/x` avec le HOME du processus (`real_dir_from_tilde`, que
+`get_full_path` appelle aussi : c'est la cle de `filepos_history`) et complete
+`~util` avec `/etc/passwd` (`username_completion`). `EditorFsContext` porte
+maintenant le HOME (`environmentVariable('HOME')`, et `homeDirectory()` pour
+l'entree de passwd ; `nanoHomeDirectory` choisit entre les deux comme
+`get_homedir`) mais le moteur traite encore `~` comme un nom ordinaire : aucune
+completion, aucun developpement, y compris a l'ouverture d'un fichier.
+**Report** : brancher `nanoHomeDirectory` sur `fullPathOf` et sur les invites,
+et ajouter a `EditorFsContext` l'acces a la table des comptes pour `~util`.
 
 ---
 
@@ -3716,14 +3747,12 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
+### [charge-grande-topologie] cout par machine et par rafale mesure dans Chromium, non ferme (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-### [ping-rafale] ping attend chaque sonde sans reponse l'une apres l'autre, meme avec un intervalle minuscule
+Apres les correctifs de memoire (un LinuxPC passe de 11 Mo a 1,9 Mo de tas), 400 postes Linux sur 20 switchs montent a 2,8 Go de tas dans Chromium sans plantage, mais
+la configuration (`ip addr add` par poste) coute 330 ms par poste a 400 postes contre 120 ms a 100 : le cout par poste augmente avec le nombre de postes, cause non isolee
+(piste : l'ARP gratuit de chaque `ip addr add` traverse tous les switchs jusqu'a tous les postes). Une rafale de 5000 curl en parallele prend 279 s (56 ms par curl contre
+13 ms dans Node) : le rendu de quatre terminaux ouverts s'ajoute a la simulation, et la table des processus tient 15 inodes /proc par curl simultane. Le journal de journald
+garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
 
-Mesure dans Chromium sur nat-lab (e2e/nat-lab-stress.spec.ts) : `ping -c 500 -i 0.002` vers un hote silencieux prend 254 s,
-car la simulation attend le delai d'expiration de chaque sonde avant d'emettre la suivante ; un vrai ping emet au rythme de
-`-i` et recoit les reponses en parallele. Non ferme : demande de rendre l'emission de ping independante de l'attente des reponses.
-
-### [service-mainpid] le $$ d'un script ExecStart differe du MainPID de l'unite d'un pid
-
-`script-process-coherence.test.ts` « a service ExecStart script sees the unit MainPID as $$ » : `systemctl show -p MainPID` rend
-`MainPID=40` alors que le script ecrit `39`. Echoue aussi sur main (602de93d5), donc sans lien avec le rendu cooperatif de bash.
+Export d'une topologie, apres le correctif des cles d'hote : un pare-feu FortiGate coute encore 340 ms par equipement (le jumeau d'usine regenere son certificat) et un routeur Huawei 104 ms ; les autres types sont sous 60 ms.

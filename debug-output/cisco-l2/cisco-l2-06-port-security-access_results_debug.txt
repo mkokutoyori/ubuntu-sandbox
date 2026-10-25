@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-10-14T19:56:31.827Z
+Generated: 2026-10-25T18:01:53.318Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -19,8 +19,8 @@ Total steps: 421
 [3/421] sw1 SW1# show port-security address
             Secure Mac Address Table
   ------------------------------------------------------------------------
-  Vlan    Mac Address       Type                          Ports   Remaining Age
-  ----    -----------       ----                          -----   -------------
+  Vlan    Mac Address    Type    Ports    Remaining Age
+  ----    -----------    ----    -----    -------------
   
   Total Addresses: 0
 
@@ -673,10 +673,10 @@ Total steps: 421
 [201/421] sw1 SW1# show port-security address
             Secure Mac Address Table
   ------------------------------------------------------------------------
-  Vlan    Mac Address       Type                          Ports   Remaining Age
-  ----    -----------       ----                          -----   -------------
-  1       0000.1111.2222    SecureConfigured              Fa0/2   5m
-  1       0000.1111.3333    SecureConfigured              Fa0/2   5m
+  Vlan    Mac Address       Type                Ports    Remaining Age
+  ----    --------------    ----------------    -----    -------------
+     1    0000.1111.2222    SecureConfigured    Fa0/2    5m
+     1    0000.1111.3333    SecureConfigured    Fa0/2    5m
   
   Total Addresses: 2
 
@@ -743,12 +743,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.035 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.058 ms
   64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.035 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -767,28 +767,27 @@ Total steps: 421
 [213/421] sw1 SW1# show port-security address
             Secure Mac Address Table
   ------------------------------------------------------------------------
-  Vlan    Mac Address       Type                          Ports   Remaining Age
-  ----    -----------       ----                          -----   -------------
-  1       0200.0000.004f    SecureSticky                  Fa0/1   5m
-  1       0000.1111.2222    SecureConfigured              Fa0/2   5m
-  1       0000.1111.3333    SecureConfigured              Fa0/2   5m
-  1       0200.0000.0053    SecureSticky                  Fa0/2   5m
-  1       0200.0000.0057    SecureSticky                  Fa0/3   5m
+  Vlan    Mac Address       Type                Ports    Remaining Age
+  ----    --------------    ----------------    -----    -------------
+     1    0200.0000.004f    SecureSticky        Fa0/1    5m
+     1    0000.1111.2222    SecureConfigured    Fa0/2    5m
+     1    0000.1111.3333    SecureConfigured    Fa0/2    5m
+     1    0200.0000.0057    SecureSticky        Fa0/3    5m
   
-  Total Addresses: 5
+  Total Addresses: 4
 
 [214/421] sw1 SW1# show mac address-table secure
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -1525,10 +1524,10 @@ Total steps: 421
   Aging Type                 : Inactivity
   SecureStatic Address Aging : Disabled
   Maximum MAC Addresses      : 3
-  Total MAC Addresses        : 3
+  Total MAC Addresses        : 2
   Configured MAC Addresses   : 2
-  Sticky MAC Addresses       : 1
-  Last Source Address:Vlan   : 0200.0000.0053:1
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.1111.3333:1
   Security Violation Count   : 0
 
 [388/421] sw1 SW1# show port-security interface FastEthernet0/3
@@ -1790,7 +1789,6 @@ Total steps: 421
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [407/421] srv1 srv1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface

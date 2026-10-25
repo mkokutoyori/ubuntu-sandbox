@@ -63,7 +63,7 @@ import { NestedSshLogin, type NestedSshLaunch } from '@/shell/NestedSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
-import { editorLaunchFailure, launchedFilePath, parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { editorLaunchFailure, launchedFilePath, parseEditorLaunch, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
 import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklogs';
@@ -702,9 +702,10 @@ export class LinuxSshServerContext implements ISshServerContext {
         },
         openEditor: (commandLine: string) => {
           installDefaultEditors();
-          const launch = parseEditorLaunch(commandLine);
-          if (!launch) return null;
+          const parsed = parseEditorLaunch(commandLine);
+          if (!parsed) return null;
           const fs = new LinuxEditorFsContext(device, session);
+          const launch = withRcfiles(fs, parsed);
           if (editorLaunchFailure(fs, launch) !== null) return null;
           const filePath = launchedFilePath(fs, launch);
           const content = filePath === '' ? null : fs.readFile(filePath);

@@ -1,5 +1,6 @@
 import { simulationDate } from '@/network/core/SystemClock';
 
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import type { DiscoveryProbe, NmapOptions, ScanType } from './NmapOptions';
 import { PathClock } from '@/network/core/time/PathClock';
 import { OS_CLASS_BY_NAME, initialTtlOf, type OsClassRecord } from './NmapProbes';
@@ -541,6 +542,7 @@ async function scanHost(
     all.push(probed.result);
     if (probed.rttMs !== undefined) times = adjustTimeouts(times, probed.rttMs);
     if (isSilentRawProbe(options, probes, probed)) silent.push(index);
+    await yieldWhenSliceIsSpent();
   }
   if (silent.length > 0) {
     await probes.pause?.(times.timeout / 1_000_000);
@@ -548,6 +550,7 @@ async function scanHost(
       const again = probe(scanned[index]);
       all[index] = again.result;
       if (again.rttMs !== undefined) times = adjustTimeouts(times, again.rttMs);
+      await yieldWhenSliceIsSpent();
     }
   }
   const { ports, notShown } = partition(options, all);

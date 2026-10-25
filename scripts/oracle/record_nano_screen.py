@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
 (the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
@@ -16,7 +16,7 @@ record per step: every row of the pane (title bar, edit window, status bar and t
 rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
 corpus) also records the files left in the directory after each step.
 """
-import argparse, contextlib, itertools, json, os, random, re, shlex, shutil, subprocess, tempfile, time, unicodedata
+import argparse, contextlib, glob, itertools, json, os, random, re, shlex, shutil, subprocess, tempfile, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 SESSION_NUMBERS = itertools.count()
@@ -985,7 +985,264 @@ def gen_tab(seed, count):
         cases.append({"id": "tab%d-%d" % (seed, i), "text": ["alpha", "beta"], "files": files, "rows": rows, "cols": cols, "args": ["t.txt"], "steps": steps})
     return cases
 
+
+def snapshot_tree(root, mount_point):
+    entries = {}
+    for here, dirs, names in os.walk(root):
+        relative_here = os.path.relpath(here, root)
+        for entry in sorted(dirs):
+            relative = entry if relative_here == "." else os.path.join(relative_here, entry)
+            entries[mount_point + "/" + relative + "/"] = {"mode": os.stat(os.path.join(here, entry)).st_mode & 0o777}
+        for entry in sorted(names):
+            relative = entry if relative_here == "." else os.path.join(relative_here, entry)
+            path = os.path.join(here, entry)
+            entries[mount_point + "/" + relative] = {"mode": os.stat(path).st_mode & 0o777, "content": open(path, "rb").read().decode("utf-8", "replace")}
+    return entries
+
+def nano_running(name):
+    pid = tmux("display", "-p", "-t", name, "#{pane_pid}").strip()
+    return pid != "" and subprocess.run(["pgrep", "-P", pid, "-x", "nano"], capture_output=True).returncode == 0
+
+def run_state_case(case, workdir):
+    lab = os.path.join(workdir, case["id"])
+    casedir = os.path.join(lab, "work")
+    home = os.path.join(lab, "home")
+    xdg = os.path.join(lab, "xdg")
+    for directory in (casedir, home):
+        os.makedirs(directory, exist_ok=True)
+    tokens = lambda text: text.replace("@WORK@", casedir).replace("@LAB@", lab)
+    open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
+    for extra_name, extra_lines in case.get("files", {}).items():
+        os.makedirs(os.path.dirname(os.path.join(casedir, extra_name)), exist_ok=True)
+        open(os.path.join(casedir, extra_name), "w", encoding="utf-8").write("\n".join(extra_lines) + "\n")
+    for tree_name, tree_root in (("home", home), ("xdg", xdg)):
+        for relative, content in case.get(tree_name, {}).items():
+            target = os.path.join(tree_root, relative)
+            if relative.endswith("/"):
+                os.makedirs(target, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                open(target, "w", encoding="utf-8").write(tokens(content))
+    environment = {key: tokens(value) for key, value in case.get("env", {}).items()}
+    etc_binding = ""
+    if case.get("rc"):
+        etc_file = os.path.join(lab, "etc-nanorc")
+        open(etc_file, "w", encoding="utf-8").write(tokens(case.get("etc_nanorc", "")))
+        etc_binding = "mount --bind %s /etc/nanorc && " % shlex.quote(etc_file)
+    ignore = "" if case.get("rc") else "-I"
+    runs = []
+    for run in case["runs"]:
+        name = "nt%d_%06d" % (os.getpid(), next(SESSION_NUMBERS))
+        tmux("kill-session", "-t", name)
+        words = " ".join("%s=%s" % (key, shlex.quote(value)) for key, value in environment.items())
+        arguments = " ".join(shlex.quote(tokens(a)) for a in run["args"])
+        inner = "%smount --bind %s /root && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color %s nano %s %s; sleep 20" % (etc_binding, shlex.quote(home), words, ignore, arguments)
+        tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name, "cd %s && unshare -m sh -c %s" % (shlex.quote(casedir), shlex.quote(inner)))
+        opened = record_screen(name, None, True, False)
+        record = {"args": run["args"], "steps": [], "opened": opened, "after": []}
+        for step in run["steps"] + STATE_FINISH:
+            if not nano_running(name):
+                break
+            send(name, step)
+            snap = record_screen(name, None, True, False)
+            if snap is None:
+                break
+            if not nano_running(name):
+                record["exit_step"] = step
+                record["exit_rows"] = snap["rows"]
+                record["exit_disk"] = record_disk(casedir, True)
+                break
+            record["steps"].append(step)
+            record["after"].append(snap)
+        time.sleep(0.3)
+        record["home"] = snapshot_tree(home, "/root")
+        if os.path.isdir(xdg):
+            record["xdg"] = snapshot_tree(xdg, xdg)
+        tmux("kill-session", "-t", name)
+        for leftover in glob.glob(os.path.join(casedir, "*.save")):
+            os.remove(leftover)
+        runs.append(record)
+    return dict(case, casedir=casedir, lab=lab, runs=runs)
+
+STATE_FINISH = ["C-c", "C-x", "n"]
+STATE_FLAGS = [["-H"], ["-P"], ["-H", "-P"], ["-HP"], ["-H", "-P", "-R"], ["--historylog"], ["--positionlog"], ["-H", "-P", "-l"], ["-H", "-P", "-S"], ["-H", "-P", "-w"], ["-P", "-x"], []]
+STATE_MOVES = ["Down", "Down", "Up", "Right", "Right", "Left", "End", "Home", "PageDown", "PageUp", "M-/", "M-\\", "C-Right", "C-Left", "x", "yz", "BSpace", "Enter", "Tab", "DC"]
+STATE_SEARCH_WORDS = ["foo", "bar", "baz", "alpha", "é", "中文", "tab", "x", "a b", "[1", "end."]
+STATE_EXEC = ["echo hi", "seq 1 3", "true", "ls", "cat t.txt", "echo a b"]
+
+def state_history_file(r):
+    def entries(words, high):
+        return [r.choice(words) + (str(r.randint(0, 9)) if r.random() < 0.3 else "") for _ in range(r.randint(0, high))]
+    lists = [entries(STATE_SEARCH_WORDS, 6), entries(["Z", "XY", "new", "é", "a b"], 3), entries(STATE_EXEC, 3)]
+    return "".join("".join(entry + "\n" for entry in lst) + "\n" for lst in lists)
+
+def state_position_file(r, casedir_token, names):
+    lines = []
+    for _ in range(r.randint(0, 5)):
+        lines.append("%s/%s %d %d\n" % (casedir_token, r.choice(names + ["other.txt", "gone.txt"]), r.randint(0, 80), r.randint(0, 60)))
+    return "".join(lines)
+
+def gen_state_run(r, text, target, flags, allow_edit=True):
+    steps = []
+    for _ in range(r.randint(0, 3)):
+        kind = r.random()
+        if kind < 0.35:
+            steps.extend(r.choice(STATE_MOVES) for _ in range(r.randint(1, 6)))
+        elif kind < 0.65:
+            steps.extend(search_flow(r))
+        elif kind < 0.8:
+            steps.extend(["C-w", r.choice(STATE_SEARCH_WORDS), "Enter"])
+        elif kind < 0.85:
+            steps.extend(["C-t", r.choice(STATE_EXEC), "Enter"])
+        elif kind < 0.9:
+            steps.extend(["C-g", "C-w", r.choice(STATE_SEARCH_WORDS), "Enter", "C-x"])
+        elif allow_edit:
+            steps.extend(r.choice(["x", "yz", "Enter", "BSpace"]) for _ in range(r.randint(1, 3)))
+    steps = without_stray_exec_keys(steps)
+    ending = r.choice([["C-x", "n"], ["C-x", "n"], ["C-x", "y", "Enter"], ["C-x", "y", "Enter"], ["C-x"]])
+    return steps + ending
+
+def gen_state(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([3, 6, 12, 30, 60]))]
+        text[r.randrange(len(text))] += " foo bar baz alpha tab end."
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        files = {"u.txt": [edit_line(r) for _ in range(r.randint(2, 25))]} if r.random() < 0.4 else {}
+        flags = r.choice(STATE_FLAGS)
+        scenario = r.choices(["fresh", "history", "positions", "both", "legacy", "xdg", "xdg-missing", "local-file", "state-file"], [6, 3, 3, 3, 1, 2, 1, 1, 1])[0]
+        home, xdg, env = {}, {}, {}
+        names = ["t.txt"] + (["u.txt"] if files else [])
+        if scenario in ("history", "both"):
+            home[".local/share/nano/search_history"] = state_history_file(r)
+        if scenario in ("positions", "both"):
+            home[".local/share/nano/filepos_history"] = state_position_file(r, "@WORK@", names)
+        if scenario == "legacy":
+            home[".nano/search_history"] = state_history_file(r)
+            home[".nano/filepos_history"] = state_position_file(r, "@WORK@", names)
+        if scenario == "xdg":
+            env["XDG_DATA_HOME"] = "@LAB@/xdg"
+            xdg["nano/search_history"] = state_history_file(r)
+            xdg["nano/filepos_history"] = state_position_file(r, "@WORK@", names)
+        if scenario == "xdg-missing":
+            env["XDG_DATA_HOME"] = "@LAB@/xdg"
+        if scenario == "local-file":
+            home[".local"] = "x"
+        if scenario == "state-file":
+            home[".local/share/nano"] = "x"
+        runs = []
+        for _ in range(r.choice([1, 2, 2, 3])):
+            target = r.choice(names + ["./t.txt", "t.txt"])
+            args = list(flags)
+            if r.random() < 0.12:
+                args.append("+%d%s" % (r.randint(1, len(text) + 3), r.choice(["", ",3", ",1"])))
+            args.append(target)
+            runs.append({"args": args, "steps": gen_state_run(r, text, target, flags)})
+        case = {"id": "sta%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": xdg, "env": env, "runs": runs}
+        cases.append(case)
+    return cases
+
+
+RC_FLAGS = ["linenumbers", "tabstospaces", "autoindent", "softwrap", "nohelp", "constantshow", "smarthome", "zero", "minibar", "indicator",
+            "boldtext", "quickblank", "stateflags", "cutfromcursor", "atblanks", "jumpyscrolling", "emptyline", "nonewlines", "showcursor",
+            "trimblanks", "wordbounds", "zap", "preserve", "rebinddelete", "locking", "casesensitive", "regexp", "breaklonglines", "nowrap",
+            "afterends", "bookstyle", "noconvert", "unix", "backup", "historylog", "positionlog", "mouse", "allow_insecure_backup"]
+RC_VALUED = [("tabsize", ["1", "2", "3", "4", "6", "8", "12"]), ("fill", ["10", "20", "30", "-4", "-12", "0", "60"]), ("guidestripe", ["5", "10", "20", "40"]),
+             ("quotestr", ['"^> "', '"^[ \\t]*#"', '">"', "^>"]), ("punct", ['".,;"', '"!?"']), ("brackets", ['")]}"', '"\\"\')>]}"']), ("wordchars", ['"_-"', '"."']),
+             ("matchbrackets", ['"(){}"', '"<>"']), ("whitespace", ['"»·"', '">."'])]
+RC_ERRORS = ["set foo", "set tabsiz 4", "set", "unset", "unset tabsize", "set tabsize", "set tabsize 0", "set tabsize -3", "set tabsize abc", "set fill x", "set guidestripe 0",
+             "set guidestripe x", "frob", "frob a b", "set quotestr", 'set quotestr "abc', 'set punct "a b"', 'set brackets "x y"', 'set matchbrackets "abc"', 'set matchbrackets "a b"',
+             'set whitespace "abc"', 'set whitespace "a"', "unset speller", "set linenumbers extra words", "SET linenumbers", "set  linenumbers", "unset fill"]
+
+def rc_line(r):
+    kind = r.random()
+    if kind < 0.45:
+        return "%s %s" % (r.choice(["set", "set", "set", "unset"]), r.choice(RC_FLAGS))
+    if kind < 0.75:
+        name, values = r.choice(RC_VALUED)
+        return "set %s %s" % (name, r.choice(values))
+    if kind < 0.85:
+        return r.choice(RC_ERRORS)
+    if kind < 0.9:
+        return r.choice(["# comment", "", "   ", "\t# indented comment", "#set linenumbers"])
+    return r.choice(["\tset linenumbers", "  set tabsize 4", "set\tsoftwrap", "set tabsize\t4"])
+
+def rc_text(r):
+    lines = [rc_line(r) for _ in range(r.randint(1, 7))]
+    text = "\n".join(lines) + ("\n" if r.random() < 0.9 else "")
+    if r.random() < 0.1:
+        text = text.replace("\n", "\r\n")
+    return text
+
+RC_TYPING = ["hello world", "x", "a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l", "\tindented"]
+
+def gen_rc_steps(r, view):
+    steps = []
+    for _ in range(r.randint(1, 4)):
+        kind = r.random()
+        if kind < 0.3:
+            steps.extend(r.choice(STATE_MOVES[:14]) for _ in range(r.randint(1, 5)))
+        elif kind < 0.5 and not view:
+            steps.append(r.choice(RC_TYPING))
+        elif kind < 0.6 and not view:
+            steps.extend(["Enter", r.choice(["x", "yz"])])
+        elif kind < 0.7 and not view:
+            steps.append(r.choice(["C-j", "M-j", "C-k", "C-u", "Tab"]))
+        elif kind < 0.9:
+            steps.extend(search_flow(r, view))
+        else:
+            steps.extend(r.choice([["C-c"], ["M-n"], ["M-s"], ["M-x"], ["M-z"], ["C-g", "C-x"]]))
+    steps = without_stray_exec_keys(steps)
+    return steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x", "y", "Enter"], ["C-x"]])
+
+def gen_rc(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([3, 6, 12, 30]))]
+        text[r.randrange(len(text))] += " foo bar baz alpha tab end."
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        files = {"sub/keep": ["k"]}
+        home, xdg, env = {}, {}, {}
+        where = r.choices(["home", "config", "xdg", "none", "dir"], [8, 2, 2, 1, 1])[0]
+        if where == "home":
+            home[".nanorc"] = rc_text(r)
+        elif where == "config":
+            home[".config/nano/nanorc"] = rc_text(r)
+        elif where == "xdg":
+            env["XDG_CONFIG_HOME"] = "@LAB@/xdg"
+            xdg["nano/nanorc"] = rc_text(r)
+            if r.random() < 0.3:
+                home[".config/nano/nanorc"] = rc_text(r)
+        elif where == "dir":
+            home[".nanorc/"] = ""
+            home[".config/nano/nanorc"] = rc_text(r)
+        etc = rc_text(r) if r.random() < 0.4 else ""
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-i", "-E", "-w", "-b", "-x", "-c", "-A", "-e", "-j", "-k", "-a", "-q", "-L", "-%", "-_", "-0", "-O", "-y", "-W", "-Z", "-M", "-v"], r.choice([0, 0, 1, 2]))
+            if r.random() < 0.2:
+                args += [r.choice(["-T", "-r", "-J"]), r.choice(["2", "4", "10", "30"])]
+            if r.random() < 0.15:
+                args += ["-Q", r.choice(["^>", "^#"])]
+            if r.random() < 0.1:
+                args += ["-I"]
+            if r.random() < 0.15:
+                files["custom.rc"] = rc_text(r).split("\n")
+                args += ["-f", r.choice(["custom.rc", "custom.rc", "@WORK@/custom.rc", "missing.rc"])]
+            if r.random() < 0.08:
+                args += ["+%d" % r.randint(1, len(text))]
+            args.append("t.txt")
+            runs.append({"args": args, "steps": gen_rc_steps(r, "-v" in args)})
+        cases.append({"id": "rcf%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": xdg, "env": env, "rc": True, "etc_nanorc": etc, "runs": runs})
+    return cases
+
 def gen(seed, count, corpus):
+    if corpus == "state":
+        return gen_state(seed, count)
+    if corpus == "rc":
+        return gen_rc(seed, count)
     if corpus == "tab":
         return gen_tab(seed, count)
     if corpus == "mouse":
@@ -1061,7 +1318,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_state_case if a.corpus in ("state", "rc") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

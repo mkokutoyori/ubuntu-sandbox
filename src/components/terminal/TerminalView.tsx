@@ -264,7 +264,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // (docs/PRD-SSH-Unification.md §4bis B3).
   if (session.currentInputMode.type === 'remote-editor') {
     const remote = session.currentInputMode;
-    const done = () => session.editorExit(remote.controller.savedOnExit);
+    const done = (_saved?: boolean, notice?: string) => session.editorExit(remote.controller.savedOnExit, notice);
     return (
       <div className="h-full w-full flex flex-col">
         {remote.editorType === 'nano' ? (
@@ -305,7 +305,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             launch={editorMode.nano}
             displayName={editorMode.displayName}
             fsContext={fsContext}
-            onExit={(saved: boolean) => session.editorExit(saved)}
+            onExit={(saved: boolean, notice?: string) => session.editorExit(saved, notice)}
           />
         </div>
       );

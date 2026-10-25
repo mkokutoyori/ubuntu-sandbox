@@ -22,7 +22,7 @@ function aliasEntry(name: string, definition: string, description = ''): AliasEn
   return { Name: name, Definition: definition, Description: description, Options: 'None', CommandType: 'Alias' };
 }
 
-function allAliases(ctx: CmdletContext): AliasEntry[] {
+export function allAliases(ctx: CmdletContext): AliasEntry[] {
   const table = new Map<string, AliasEntry>();
   for (const cmdlet of ctx.runtime.listCmdlets()) {
     for (const alias of cmdlet.aliases) table.set(alias.toLowerCase(), aliasEntry(alias, cmdlet.displayName ?? cmdlet.name));

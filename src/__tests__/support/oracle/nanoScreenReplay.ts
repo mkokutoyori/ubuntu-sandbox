@@ -76,9 +76,9 @@ export function workingDirectoryOf(c: NanoScreenCase): string {
   return c.casedir ?? '/tmp';
 }
 
-export function seededFileSystem(c: NanoScreenCase): InMemoryEditorFsContext {
+export function seededFileSystem(c: NanoScreenCase, extra: Record<string, string> = {}): InMemoryEditorFsContext {
   const directory = workingDirectoryOf(c);
-  const initial: Record<string, string> = { [`${directory}/t.txt`]: c.text.join('\n') + '\n' };
+  const initial: Record<string, string> = { [`${directory}/t.txt`]: c.text.join('\n') + '\n', ...extra };
   for (const [extra, extraLines] of Object.entries(c.files ?? {})) initial[`${directory}/${extra}`] = extraLines.join('\n') + '\n';
   for (const [rawName, hex] of Object.entries(c.raw ?? {})) initial[`${directory}/${rawName}`] = Buffer.from(hex, 'hex').toString('utf8');
   for (const [lockName, lock] of Object.entries(c.locks ?? {})) initial[`${directory}/${lockName}`] = buildNanoLock(lock);
@@ -112,7 +112,7 @@ function compareLock(name: string, want: NanoLockData, content: string | null): 
   return same ? null : `\n  disk ${name} want ${JSON.stringify(want)} got ${JSON.stringify(got)}`;
 }
 
-function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: boolean, directory: string): string | null {
+export function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: boolean, directory: string, ignoredPrefixes: readonly string[] = []): string | null {
   const failures: string[] = [];
   for (const [name, expected] of Object.entries(want)) {
     const content = fs.readFile(`${directory}/${name}`);
@@ -123,7 +123,7 @@ function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: bo
       if (failure !== null) failures.push(failure);
     }
   }
-  const present = fs.fileNames().map((path) => (path.startsWith(`${directory}/`) ? path.slice(directory.length + 1) : path)).filter((file) => hidden || !file.split('/').some((part) => part.startsWith('.')));
+  const present = fs.fileNames().filter((path) => !ignoredPrefixes.some((prefix) => path.startsWith(prefix))).map((path) => (path.startsWith(`${directory}/`) ? path.slice(directory.length + 1) : path)).filter((file) => hidden || !file.split('/').some((part) => part.startsWith('.')));
   const unexpected = present.filter((file) => !(file in want));
   if (unexpected.length > 0) failures.push(`\n  disk has unexpected files ${JSON.stringify(unexpected)}`);
   return failures.length === 0 ? null : failures.join('');
@@ -151,13 +151,13 @@ function visibleLetters(letters: string, text: string): string {
   return [...letters].map((letter, index) => (index >= cell || blank.has(index) ? BLANK_LETTERS[letter] ?? letter : letter)).join('');
 }
 
-export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false, directory = '/tmp'): string | null {
+export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false, directory = '/tmp', ignoredPrefixes: readonly string[] = []): string | null {
   const screen = engine.screen;
   const got = screen.rows.map((row) => plainRowText(row).replace(/\s+$/, ''));
   const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows);
   const cursor = screen.cursor;
   const cursorOk = cursor !== null && cursor.row === want.y && cursor.col === want.x;
-  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk, hidden, directory);
+  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk, hidden, directory, ignoredPrefixes);
   const gotAttrs = screen.rows.map((row, index) => visibleLetters(attributeLetters(row, want.width), got[index]));
   const wantAttrs = want.attrs?.map((letters, index) => visibleLetters(letters, want.rows[index] ?? ''));
   const attrsOk = wantAttrs === undefined || JSON.stringify(gotAttrs) === JSON.stringify(wantAttrs);

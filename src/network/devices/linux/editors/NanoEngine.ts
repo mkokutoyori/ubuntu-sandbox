@@ -3,7 +3,11 @@ import { editorKey, type EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type DecodedFile, type NanoFileFormat } from './nano/NanoFormat';
-import { directoryNameOf, fullPathOf, openingFor } from './nano/NanoOpening';
+import { directoryNameOf, fullPathOf, openingFor, writeFailureReason } from './nano/NanoOpening';
+import { appendToHistory, parseHistoryLists, serializeHistoryLists } from './nano/NanoHistoryLists';
+import { findPosition, parsePositionHistory, serializePositionHistory, withPositionRecorded } from './nano/NanoPositionHistory';
+import type { NanoRcNotices } from './editorLaunch';
+import { POSITION_HISTORY_FILE, resolveStateDirectory, SEARCH_HISTORY_FILE, STARTUP_PROBLEM } from './nano/NanoStateDirectory';
 import { NanoUndoStack, type UndoKind, type UndoRestore } from './nano/NanoUndo';
 import {
   expandReplacement, PosixRegexError, SearchCircuit, SearchPattern,
@@ -16,7 +20,7 @@ import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen, promptCursorAtColumn } from './nano/NanoScreen';
 import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import {
-  DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
+  DEFAULT_BRACKETS, DEFAULT_PUNCTUATION, DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
   paragraphEnd, paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
 } from './nano/NanoJustify';
 import { nextBlockLine, nextWordSpot, previousBlockLine, previousWordSpot } from './nano/NanoMotion';
@@ -68,6 +72,11 @@ export interface Confirmation {
   readonly cancel: () => void;
 }
 
+export interface MenuFlags {
+  readonly preserve: boolean;
+  readonly saveonexit: boolean;
+}
+
 export interface NanoLaunchOptions {
   readonly identity?: EditorIdentity;
   readonly settings?: NanoSettings;
@@ -75,6 +84,8 @@ export interface NanoLaunchOptions {
   readonly displayName?: string;
   readonly helpTitle?: string;
   readonly staleFooter?: ScreenRow;
+  readonly rc?: NanoRcNotices | null;
+  readonly menuFlags?: MenuFlags;
 }
 
 export interface PendingReplaceMatch {
@@ -209,6 +220,10 @@ export class NanoEngine {
   private listedIn: NanoMode | null = null;
   private tabFragmentLength: number | null = null;
   private tabPressedThisKey = false;
+  private stateDirectory: string | null = null;
+  private historyChanged = false;
+  private startupProblem: string | null = null;
+  private readonly exitNotices: string[] = [];
   private historyStash: string | null = null;
   private useRegex = false;
   private replaceWithBuffer = '';
@@ -232,6 +247,7 @@ export class NanoEngine {
 
   private readonly fs: EditorFsContext;
   private readonly operating: OperatingDirectory | null;
+  private readonly menuFlags: MenuFlags;
 
   constructor(
     fsContext: EditorFsContext,
@@ -247,6 +263,7 @@ export class NanoEngine {
     this.staleFooter = launch.staleFooter ?? null;
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
     this.launchIdentity = launch.identity;
+    this.menuFlags = launch.menuFlags ?? { preserve: this.settings.preserve, saveonexit: this.settings.saveonexit };
     const operatingRoot = this.settings.operatingdir === null ? null : operatingDirectoryRoot(fsContext, this.settings.operatingdir);
     this.fs = operatingRoot === null ? fsContext : new WorkingDirectoryFs(fsContext, operatingRoot.replace(/\/$/, '') || '/');
     this.operating = operatingRoot === null ? null : new OperatingDirectory(operatingRoot, this.fs);
@@ -256,7 +273,11 @@ export class NanoEngine {
     const content = confined ? '' : initialContent;
     const named = opening.path !== '';
     this.live = { ...this.settings, view: this.settings.view && named };
-    if (this.live.restricted) this.live.backup = false;
+    if (this.live.restricted) {
+      this.live.backup = false;
+      this.live.historylog = false;
+      this.live.positionlog = false;
+    }
     this._readOnly = this.live.view;
     this.titleName = named ? typedName : '';
     this.bufferPath = opening.path;
@@ -291,7 +312,21 @@ export class NanoEngine {
     this.saveFileNameBuffer = this.titleName;
     if (this.live.locking && !this._readOnly && named && opening.lockable) this.beginLocking();
     const start = launch.start ?? (initialCursor ? { line: initialCursor.line, column: initialCursor.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] } : null);
-    if (start !== null) this.applyStart(start);
+    if (launch.rc) {
+      this.exitNotices.push(...launch.rc.errors);
+      this.startupProblem = launch.rc.startupProblem;
+    }
+    this.caseSensitive = this.live.casesensitive;
+    this.useRegex = this.live.regexp;
+    this.openStateFiles();
+    const positioned = start !== null && this.applyStart(start);
+    if (!positioned && named) this.restoreLoggedPosition(typedName);
+    if (this.startupProblem !== null) this.announceStartupProblem(this.startupProblem);
+  }
+
+  private announceStartupProblem(problem: string): void {
+    if (messageLevel(this._statusMessage) === MESSAGE_LEVEL.alert) this.statusMore = true;
+    else this._statusMessage = `[ ${problem} ]`;
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -592,7 +627,7 @@ export class NanoEngine {
   }
 
   private discardEnabled(): boolean {
-    return this.live.saveonexit && !this.live.preserve;
+    return this.menuFlags.saveonexit && !this.menuFlags.preserve;
   }
 
   private writeNameFrozen(): boolean {
@@ -688,7 +723,7 @@ export class NanoEngine {
   }
 
   private menuOptions(): MenuOptions {
-    return { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.live.preserve };
+    return { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.menuFlags.preserve };
   }
 
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
@@ -2295,19 +2330,23 @@ export class NanoEngine {
     if (parsed.line !== null) this.manner = 'recentering';
   }
 
-  private applyStart(start: NanoStart): void {
+  private applyStart(start: NanoStart): boolean {
     if (start.caseSensitive !== null) this.caseSensitive = start.caseSensitive;
     if (start.regex !== null) this.useRegex = start.regex;
+    let positioned = false;
     if (start.line !== 0 || start.column !== 0) {
       this.gotoLineNumbers(start.line, start.column);
       this.startPlacement = 'hugfloor';
+      positioned = true;
     } else if (start.search !== null) {
       this.searchAtStartup(start.search);
       this.startPlacement = 'centering';
+      positioned = true;
     }
-    if (start.alerts.length === 0) return;
+    if (start.alerts.length === 0) return positioned;
     this._statusMessage = `[ ${start.alerts[0]} ]`;
     this.statusMore = start.alerts.length + (this.openingAlerted ? 1 : 0) > 1;
+    return positioned;
   }
 
   private searchAtStartup(request: NanoSearchRequest): void {
@@ -2355,7 +2394,7 @@ export class NanoEngine {
     const cols = this.window.cols;
     const page = helpPage(
       menu,
-      { restricted: this.live.restricted, preserve: this.live.preserve, saveonexit: this.live.saveonexit, view: this._readOnly },
+      { restricted: this.live.restricted, preserve: this.menuFlags.preserve, saveonexit: this.menuFlags.saveonexit, view: this._readOnly },
       { columns: cols, rows, leadingBlank: (this.live.minibar || !this.live.emptyline) && rows > 6, sidebar: this.window.sidebar },
     );
     const settings = defaultNanoSettings({
@@ -2378,6 +2417,7 @@ export class NanoEngine {
     const viewer = new NanoEngine(this.fs, '', page.lines.join('\n'), false, false, undefined, false, {
       identity: this.launchIdentity,
       settings,
+      menuFlags: this.menuFlags,
       helpTitle: page.title,
       staleFooter: tiny ? this.paintScreen(false).rows[this.window.layout.statusRow] : undefined,
     });
@@ -2404,6 +2444,7 @@ export class NanoEngine {
     if (!viewer.exited) return;
     const footer = viewer.screen.rows[this.window.layout.statusRow];
     this.lastSearchTerm = viewer.lastSearchTerm;
+    if (viewer.historyChanged) this.historyChanged = true;
     this.helpViewer = null;
     this.wipeStatus();
     if (this.footerKeepsStaleText()) this.staleFooter = footer;
@@ -2416,7 +2457,7 @@ export class NanoEngine {
       this.applyEditKey(cursorMotion);
       return;
     }
-    const action = helpAction(k, this.live.preserve);
+    const action = helpAction(k, this.menuFlags.preserve);
     switch (action) {
       case 'scroll-up':
         this.scrollLines(false, 1);
@@ -2623,12 +2664,7 @@ export class NanoEngine {
   }
 
   private writeFailureReason(name: string, target: string): string {
-    const parentKind = this.pathKind(directoryNameOf(target));
-    if (parentKind === 'missing') return 'No such file or directory';
-    if (parentKind !== 'directory') return 'Not a directory';
-    const kind = this.pathKind(target);
-    if (name.endsWith('/')) return kind === 'file' ? 'Not a directory' : 'Is a directory';
-    return kind === 'directory' ? 'Is a directory' : 'Permission denied';
+    return writeFailureReason(this.fs, name, target);
   }
 
   private pathKind(path: string): EditorPathKind {
@@ -2685,6 +2721,8 @@ export class NanoEngine {
       trimblanks: this.live.trimblanks,
       wrapAt: this.wrapAt,
       tabsize: this.live.tabsize,
+      punctuation: this.live.punct ?? DEFAULT_PUNCTUATION,
+      brackets: this.live.brackets ?? DEFAULT_BRACKETS,
     };
   }
 
@@ -2748,7 +2786,7 @@ export class NanoEngine {
       const trimmed = first.slice(leadLength(first, quote));
       piece[0] = primaryLead + trimmed;
       concatenateParagraph(piece, 0, count, quote);
-      piece[0] = squeeze(piece[0], primaryLead.length);
+      piece[0] = squeeze(piece[0], primaryLead.length, context.punctuation, context.brackets);
       rewrapParagraph(piece, 0, secondaryLead, context);
       if (start.col > 0) piece.unshift('');
       if (end.col > 0 && beforeEol) piece.push(primaryLead);
@@ -2883,9 +2921,8 @@ export class NanoEngine {
   }
 
   private rememberInHistory(history: string[], text: string): void {
-    const at = history.indexOf(text);
-    if (at >= 0) history.splice(at, 1);
-    history.push(text);
+    appendToHistory(history, text, true);
+    this.historyChanged = true;
     this.tabPointers.delete(history);
   }
 
@@ -3117,5 +3154,82 @@ export class NanoEngine {
     this._exited = true;
     this._savedOnExit = saved;
     this.dropLock();
+    if (this.helpTitle !== null) return;
+    this.recordLoggedPosition();
+    this.saveHistoryLists();
+  }
+
+  get exitNotice(): string {
+    return this.exitNotices.map((notice) => `${notice}\n`).join('');
+  }
+
+  private openStateFiles(): void {
+    if (this.helpTitle !== null || !(this.live.historylog || this.live.positionlog)) return;
+    const state = resolveStateDirectory(this.fs);
+    this.exitNotices.push(...state.errors);
+    if (state.errors.length > 0) this.startupProblem ??= STARTUP_PROBLEM;
+    if (state.path === null) {
+      this.live.historylog = false;
+      this.live.positionlog = false;
+      return;
+    }
+    this.stateDirectory = state.path;
+    if (this.live.historylog) this.loadHistoryLists(`${state.path}${SEARCH_HISTORY_FILE}`);
+    if (this.live.positionlog) this.refuseUnreadable(this.positionFile(), () => { this.live.positionlog = false; });
+  }
+
+  private loadHistoryLists(file: string): void {
+    if (!this.refuseUnreadable(file, () => { this.live.historylog = false; })) return;
+    const lists = parseHistoryLists(this.fs.readFile(file) ?? '');
+    this.searchHistory = lists.search;
+    this.replaceHistory = lists.replace;
+    this.executeHistory = lists.execute;
+  }
+
+  private refuseUnreadable(file: string, giveUp: () => void): boolean {
+    const failure = this.fs.readError?.(file) ?? null;
+    if (failure === null) return true;
+    this.exitNotices.push(`Error reading ${file}: ${failure}`);
+    this.startupProblem ??= STARTUP_PROBLEM;
+    giveUp();
+    return false;
+  }
+
+  private positionFile(): string {
+    return `${this.stateDirectory}${POSITION_HISTORY_FILE}`;
+  }
+
+  private restoreLoggedPosition(typedName: string): void {
+    if (!this.live.positionlog || this.stateDirectory === null) return;
+    const fullPath = fullPathOf(typedName, this.fs);
+    if (fullPath === null) return;
+    const entry = findPosition(parsePositionHistory(this.fs.readFile(this.positionFile()) ?? ''), fullPath);
+    if (entry === null) return;
+    this.gotoLineNumbers(entry.line, entry.column);
+    this.startPlacement = 'hugfloor';
+  }
+
+  private recordLoggedPosition(): void {
+    if (!this.live.positionlog || this.stateDirectory === null || this.titleName === '') return;
+    const fullPath = fullPathOf(this.titleName, this.fs);
+    if (fullPath === null) return;
+    const file = this.positionFile();
+    const entries = parsePositionHistory(this.fs.readFile(file) ?? '');
+    const atDefault = this._cursorLine === 0 && this._cursorCol === 0;
+    const column = this.window.columnOf(this._cursorLine, this._cursorCol) + 1;
+    const updated = withPositionRecorded(entries, fullPath, this._cursorLine + 1, column, atDefault);
+    if (updated !== null) this.writeStateFile(file, serializePositionHistory(updated));
+  }
+
+  private saveHistoryLists(): void {
+    if (!this.live.historylog || !this.historyChanged || this.stateDirectory === null) return;
+    this.writeStateFile(`${this.stateDirectory}${SEARCH_HISTORY_FILE}`, serializeHistoryLists({
+      search: this.searchHistory, replace: this.replaceHistory, execute: this.executeHistory,
+    }));
+  }
+
+  private writeStateFile(path: string, content: string): void {
+    if (this.fs.writeFile(path, content)) this.fs.changeMode?.(path, 0o600);
+    else this.exitNotices.push(`Error writing ${path}: ${this.writeFailureReason(path, path)}`);
   }
 }

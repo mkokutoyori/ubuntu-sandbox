@@ -1,9 +1,7 @@
-import { fileTextToBytes } from '@/crypto/encoding';
+import { bytesToBinaryString, fileTextToBytes } from '@/crypto/encoding';
 
 export function latin1Text(bytes: Uint8Array): string {
-  let text = '';
-  for (let index = 0; index < bytes.length; index += 8192) text += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  return text;
+  return bytesToBinaryString(bytes);
 }
 
 export function latin1Bytes(text: string): Uint8Array {

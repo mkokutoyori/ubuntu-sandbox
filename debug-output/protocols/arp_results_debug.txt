@@ -178,11 +178,8 @@ Total steps: 339
 
 --- [21] § ARP — capture & sysctl ARP (Linux/Windows) ---
 [21/339] lhq lhq$ tcpdump -c 2 -i eth0 arp
-  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
-  0 packets captured
-  0 packets received by filter
-  0 packets dropped by kernel
+  tcpdump: eth0: You don't have permission to capture on that device
+  (socket: Operation not permitted)
 
 [22/339] lhq lhq$ sysctl net.ipv4.conf.all.arp_ignore
   net.ipv4.conf.all.arp_ignore = 0
@@ -432,21 +429,21 @@ Total steps: 339
 --- [51] § ARP — tables initiales (Huawei) ---
 [51/339] rbr <R-BR> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
-  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
-  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
+  10.2.2.11       0200-0000-0053  20         D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  20         D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  20         D         GigabitEthernet0/0/1
 
 [52/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
-  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
-  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
+  10.2.2.11       0200-0000-0053  20         D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  20         D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  20         D         GigabitEthernet0/0/1
 
 [53/339] rbr <R-BR> display arp dynamic
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
-  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
-  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
+  10.2.2.11       0200-0000-0053  20         D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  20         D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  20         D         GigabitEthernet0/0/1
 
 [54/339] rbr <R-BR> display arp static
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -466,11 +463,11 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/2
+     1    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 3
 
@@ -478,11 +475,11 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/2
+     1    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 3
 
@@ -526,11 +523,11 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:09 DYNAMIC     eth0
-  1       02:00:00:00:00:57 DYNAMIC     eth1
-  1       02:00:00:00:00:5b DYNAMIC     eth2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0009    DYNAMIC    eth0
+     1    0200.0000.0057    DYNAMIC    eth1
+     1    0200.0000.005b    DYNAMIC    eth2
   
   Total Mac Addresses for this criterion: 3
 
@@ -539,79 +536,58 @@ Total steps: 339
 [64/339] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
   10.1.1.1                 ether   02:00:00:00:00:01   C     *               eth0
-  10.1.1.11                ether   02:00:00:00:00:4b   C     *               eth0
 
 [65/339] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
   10.1.1.1                 ether   02:00:00:00:00:01   C     *               eth0
-  10.1.1.11                ether   02:00:00:00:00:4b   C     *               eth0
 
 [66/339] lhq lhq$ arp -a
   ? (10.1.1.1) at 02:00:00:00:00:01 [ether] on eth0
-  ? (10.1.1.11) at 02:00:00:00:00:4b [ether] on eth0
 
 [67/339] lhq lhq$ ip neigh show
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
-  10.1.1.11 dev eth0 lladdr 02:00:00:00:00:4b REACHABLE
 
 [68/339] lhq lhq$ cat /proc/net/arp
   IP address       HW type     Flags       HW address            Mask     Device
   10.1.1.1         0x1         0x2         02:00:00:00:00:01     *        eth0
-  10.1.1.11        0x1         0x2         02:00:00:00:00:4b     *        eth0
 
 [69/339] lbr lbr$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
-  10.2.2.1                 ether   02:00:00:00:00:05   C     *               eth0
-  10.2.2.10                ether   02:00:00:00:00:4f   C     *               eth0
 
 [70/339] lbr lbr$ arp -a
-  ? (10.2.2.1) at 02:00:00:00:00:05 [ether] on eth0
-  ? (10.2.2.10) at 02:00:00:00:00:4f [ether] on eth0
+<empty>
 
 [71/339] lbr lbr$ ip neigh show
-  10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
-  10.2.2.10 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
+<empty>
 
 [72/339] lbr lbr$ cat /proc/net/arp
   IP address       HW type     Flags       HW address            Mask     Device
-  10.2.2.1         0x1         0x2         02:00:00:00:00:05     *        eth0
-  10.2.2.10        0x1         0x2         02:00:00:00:00:4f     *        eth0
 
 [73/339] ldc ldc$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
-  10.3.3.1                 ether   02:00:00:00:00:09   C     *               eth0
-  10.3.3.10                ether   02:00:00:00:00:57   C     *               eth0
 
 [74/339] ldc ldc$ arp -a
-  ? (10.3.3.1) at 02:00:00:00:00:09 [ether] on eth0
-  ? (10.3.3.10) at 02:00:00:00:00:57 [ether] on eth0
+<empty>
 
 [75/339] ldc ldc$ ip neigh show
-  10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
-  10.3.3.10 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
+<empty>
 
 [76/339] ldc ldc$ cat /proc/net/arp
   IP address       HW type     Flags       HW address            Mask     Device
-  10.3.3.1         0x1         0x2         02:00:00:00:00:09     *        eth0
-  10.3.3.10        0x1         0x2         02:00:00:00:00:57     *        eth0
 
 [77/339] srvdc srvdc$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
   10.3.3.1                 ether   02:00:00:00:00:09   C     *               eth0
-  10.3.3.11                ether   02:00:00:00:00:5b   C     *               eth0
 
 [78/339] srvdc srvdc$ arp -a
   ? (10.3.3.1) at 02:00:00:00:00:09 [ether] on eth0
-  ? (10.3.3.11) at 02:00:00:00:00:5b [ether] on eth0
 
 [79/339] srvdc srvdc$ ip neigh show
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
-  10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
 
 [80/339] srvdc srvdc$ cat /proc/net/arp
   IP address       HW type     Flags       HW address            Mask     Device
   10.3.3.1         0x1         0x2         02:00:00:00:00:09     *        eth0
-  10.3.3.11        0x1         0x2         02:00:00:00:00:5b     *        eth0
 
 [81/339] whq whq$ arp -a
   
@@ -670,11 +646,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.866 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.058 ms
   
   --- 10.1.1.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.866/0.866/0.866/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.058/0.058/0.058/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -694,11 +670,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.936 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.006 ms
   
   --- 10.2.2.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.936/0.936/0.936/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -718,11 +694,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.779 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.006 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.779/0.779/0.779/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -742,11 +718,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.839 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.006 ms
   
   --- 10.3.3.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.839/0.839/0.839/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -764,12 +740,12 @@ Total steps: 339
 [113/339] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=3ms TTL=64
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 3ms, Maximum = 3ms, Average = 3ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [114/339] whq whq$ arp -a
   
@@ -788,7 +764,7 @@ Total steps: 339
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [117/339] wbr wbr$ arp -a
   
@@ -806,11 +782,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.663 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.058 ms
   
   --- 10.1.1.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.663/0.663/0.663/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.058/0.058/0.058/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -824,11 +800,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.789 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.006 ms
   
   --- 10.2.2.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.789/0.789/0.789/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -842,11 +818,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.909 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.006 ms
   
   --- 10.3.3.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.909/0.909/0.909/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -860,11 +836,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.452 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.006 ms
   
   --- 10.3.3.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.452/0.452/0.452/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -897,9 +873,9 @@ Total steps: 339
 
 [137/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
-  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
-  172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
+  10.2.2.11       0200-0000-0053  20         D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  20         D         GigabitEthernet0/0/0
+  172.16.12.1     0200-0000-0002  20         D         GigabitEthernet0/0/1
 
 [138/339] rhq R-HQ# show ip arp 10.1.1.10
   Protocol  Address              Age(min)       Hardware Addr     Type      Interface
@@ -910,8 +886,8 @@ Total steps: 339
   Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [140/339] rbr <R-BR> display arp | include 10.2.2
-  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
-  10.2.2.10       0200-0000-004f  0          D         GigabitEthernet0/0/0
+  10.2.2.11       0200-0000-0053  20         D         GigabitEthernet0/0/0
+  10.2.2.10       0200-0000-004f  20         D         GigabitEthernet0/0/0
 
 
 --- [141] § ARP statique — Linux (set → show → del) ---
@@ -989,7 +965,6 @@ Total steps: 339
 [161/339] ldc ldc$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
   10.3.3.1                 ether   02:00:00:00:00:09   C     *               eth0
-  10.3.3.10                ether   02:00:00:00:00:57   C     *               eth0
   10.255.255.1             ether   02:00:00:de:ad:01   CM    *               eth0
 
 [162/339] ldc ldc$ ip neigh add 10.255.255.2 lladdr 02:00:00:de:ad:01 dev eth0 nud permanent
@@ -997,7 +972,6 @@ Total steps: 339
 
 [163/339] ldc ldc$ ip neigh show nud permanent
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
-  10.3.3.10 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
   10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
   10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
 
@@ -1015,7 +989,6 @@ Total steps: 339
 
 [168/339] ldc ldc$ ip neigh show
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
-  10.3.3.10 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
 
 [169/339] srvdc srvdc$ arp -s 10.255.255.1 02:00:00:de:ad:01
 <empty>
@@ -1142,10 +1115,10 @@ Total steps: 339
 
 [204/339] rbr <R-BR> display arp static
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.9.9.9        00e0-fc12-3456  0          static
+  10.9.9.9        00e0-fc12-3456             static
 
 [205/339] rbr <R-BR> display arp | include 10.9.9.9
-  10.9.9.9        00e0-fc12-3456  0          static
+  10.9.9.9        00e0-fc12-3456             static
 
 [206/339] rbr <R-BR> system-view
   Enter system view, return user view with return command.
@@ -1294,14 +1267,14 @@ Total steps: 339
 
 [232/339] lhq lhq$ arping -c 1 -D -I eth0 10.1.1.11
   ARPING 10.1.1.11 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  4.703ms
+  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  1.134ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [233/339] lhq lhq$ arping -c 2 -I eth0 10.1.1.1
   ARPING 10.1.1.1 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.687ms
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.697ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.792ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.617ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1315,14 +1288,14 @@ Total steps: 339
 
 [236/339] lbr lbr$ arping -c 1 -D -I eth0 10.2.2.10
   ARPING 10.2.2.10 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.757ms
+  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.784ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [237/339] lbr lbr$ arping -c 2 -I eth0 10.2.2.1
   ARPING 10.2.2.1 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.593ms
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.394ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.658ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.518ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1336,14 +1309,14 @@ Total steps: 339
 
 [240/339] ldc ldc$ arping -c 1 -D -I eth0 10.3.3.10
   ARPING 10.3.3.10 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.556ms
+  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.802ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [241/339] ldc ldc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.536ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.496ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.684ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.573ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1357,14 +1330,14 @@ Total steps: 339
 
 [244/339] srvdc srvdc$ arping -c 1 -D -I eth0 10.3.3.11
   ARPING 10.3.3.11 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.466ms
+  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.647ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [245/339] srvdc srvdc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.607ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.361ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.629ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.523ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1455,12 +1428,12 @@ Total steps: 339
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.769 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=1.123 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.004 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.004 ms
   
   --- 10.3.3.10 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.769/0.946/1.123/0.177 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
   net.ipv4.conf.all.arp_ignore = 0
@@ -1473,12 +1446,12 @@ Total steps: 339
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.745 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.464 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.004 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.004 ms
   
   --- 10.3.3.10 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.464/0.604/0.745/0.141 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1486,11 +1459,11 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/2
+     1    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 3
 
@@ -1498,9 +1471,9 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0047    DYNAMIC    Fa0/2
   
   Total Mac Addresses for this criterion: 1
 
@@ -1508,9 +1481,9 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 1
 
@@ -1539,11 +1512,11 @@ Total steps: 339
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:09 DYNAMIC     eth0
-  1       02:00:00:00:00:57 DYNAMIC     eth1
-  1       02:00:00:00:00:5b DYNAMIC     eth2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0009    DYNAMIC    eth0
+     1    0200.0000.0057    DYNAMIC    eth1
+     1    0200.0000.005b    DYNAMIC    eth2
   
   Total Mac Addresses for this criterion: 3
 
@@ -1630,27 +1603,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.600 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.058 ms
   
   --- 10.1.1.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.600/0.600/0.600/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.058/0.058/0.058/0.000 ms
 
 [299/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.533 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.035 ms
   
   --- 10.1.1.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.533/0.533/0.533/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
 
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.726 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.058 ms
   
   --- 10.1.1.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.726/0.726/0.726/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.058/0.058/0.058/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1659,19 +1632,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.569 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.006 ms
   
   --- 10.2.2.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.569/0.569/0.569/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.477 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.006 ms
   
   --- 10.2.2.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.477/0.477/0.477/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1679,19 +1652,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.354 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.006 ms
   
   --- 10.3.3.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.354/0.354/0.354/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.319 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.006 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.319/0.319/0.319/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1699,19 +1672,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.448 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.006 ms
   
   --- 10.3.3.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.448/0.448/0.448/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.400 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.004 ms
   
   --- 10.3.3.11 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.400/0.400/0.400/0.000 ms
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
+  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
@@ -1814,17 +1787,17 @@ Total steps: 339
 
 [325/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
-  10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
+  10.2.2.11       0200-0000-0053  20         D         GigabitEthernet0/0/0
 
 [326/339] swhq SW-HQ# show mac address-table
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/1
+     1    0200.0000.0047    DYNAMIC    Fa0/2
+     1    0200.0000.004b    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 3
 

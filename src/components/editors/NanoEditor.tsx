@@ -15,7 +15,7 @@ import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
  * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
  */
 export type NanoEditorDriver = Pick<NanoEngine,
-  | 'applyKey' | 'applyPaste' | 'screen' | 'resize' | 'scrollView' | 'clickAt' | 'exited' | 'savedOnExit'>;
+  | 'applyKey' | 'applyPaste' | 'screen' | 'resize' | 'scrollView' | 'clickAt' | 'exited' | 'savedOnExit' | 'exitNotice'>;
 
 interface NanoEditorProps {
   filePath: string;
@@ -24,7 +24,7 @@ interface NanoEditorProps {
   fsContext?: EditorFsContext;
   /** Drive an already-open buffer instead of constructing a local one. */
   driver?: NanoEditorDriver;
-  onExit: (saved: boolean) => void;
+  onExit: (saved: boolean, notice?: string) => void;
   launch?: NanoLaunch;
   displayName?: string;
 }
@@ -50,7 +50,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 }) => {
   const engineRef = useRef<NanoEditorDriver>();
   if (!engineRef.current) {
-    const options: NanoLaunchOptions = { settings: launch?.settings, start: launch?.start, displayName };
+    const options: NanoLaunchOptions = { settings: launch?.settings, start: launch?.start, displayName, rc: launch?.rc, menuFlags: launch?.menuFlags };
     engineRef.current = driver ?? new NanoEngine(fsContext!, filePath, initialContent, isNewFile, false, undefined, false, options);
   }
   const engine = engineRef.current;
@@ -75,7 +75,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     advance();
     engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
     if (engine.exited) {
-      onExit(engine.savedOnExit);
+      onExit(engine.savedOnExit, engine.exitNotice);
       return;
     }
     bump();

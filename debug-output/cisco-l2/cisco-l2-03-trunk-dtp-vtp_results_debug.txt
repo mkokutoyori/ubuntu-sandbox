@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-10-14T19:59:53.512Z
+Generated: 2026-10-25T18:01:54.986Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 357
@@ -1270,13 +1270,13 @@ Total steps: 357
 
 [185/357] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
   64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss, time 2000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.047/0.064/0.011 ms
 
 [186/357] l2 l2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
@@ -1290,7 +1290,7 @@ Total steps: 357
   VTP Pruning Mode                : Enabled
   VTP Traps Generation            : Disabled
   Device ID                       : 0200.0000.0035
-  Configuration last modified by 0.0.0.0 at 10-14-26 19:59:53
+  Configuration last modified by 0.0.0.0 at 10-25-26 18:01:55
   Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
@@ -1343,16 +1343,16 @@ Total steps: 357
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
-  10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Gi0/2
+     1    0200.0000.005f    DYNAMIC    Gi0/2
+     1    0200.0000.0063    DYNAMIC    Gi0/2
+    10    0200.0000.004f    DYNAMIC    Gi0/1
+    10    0200.0000.005b    DYNAMIC    Gi0/2
   
   Total Mac Addresses for this criterion: 8
 
@@ -1363,7 +1363,7 @@ Total steps: 357
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
   Device ID                       : 0200.0000.0001
-  Configuration last modified by 0.0.0.0 at 10-14-26 19:59:53
+  Configuration last modified by 0.0.0.0 at 10-25-26 18:01:55
   Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
@@ -1448,19 +1448,17 @@ Total steps: 357
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  99      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  99      02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
+    10    0200.0000.004f    DYNAMIC    Fa0/1
+    10    0200.0000.005b    DYNAMIC    Gi0/1
   
-  Total Mac Addresses for this criterion: 9
+  Total Mac Addresses for this criterion: 7
 
 [198/357] sw2 SW2# show vtp status
   VTP Version capable             : 1 to 2
@@ -1513,15 +1511,15 @@ Total steps: 357
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
-  10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Fa0/2
+     1    0200.0000.0063    DYNAMIC    Fa0/3
+    10    0200.0000.004f    DYNAMIC    Gi0/1
+    10    0200.0000.005b    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 7
 
@@ -2376,11 +2374,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 746 bytes, 0 no buffer
-       Received 2 broadcasts (4 multicasts)
+       7 packets input, 594 bytes, 0 no buffer
+       Received 2 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       26 packets output, 1992 bytes, 0 underruns
+       24 packets output, 1840 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2397,11 +2395,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 664 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       19 packets output, 1396 bytes, 0 underruns
+       17 packets output, 1240 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2418,11 +2416,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       20 packets output, 1540 bytes, 0 underruns
+       16 packets output, 1192 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2863,11 +2861,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 746 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       7 packets input, 594 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       27 packets output, 2056 bytes, 0 underruns
+       25 packets output, 1904 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2884,11 +2882,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 664 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       26 packets output, 1964 bytes, 0 underruns
+       18 packets output, 1304 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2905,11 +2903,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       27 packets output, 2108 bytes, 0 underruns
+       17 packets output, 1256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

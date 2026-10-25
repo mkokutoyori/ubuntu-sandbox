@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-09-25T18:28:59.673Z
+Generated: 2026-10-25T17:50:51.643Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -490,63 +490,59 @@ $ [52/302]> ifconfig interface_inexistante_xyz
 
 --- [53] § routage — ip route (set/show) ---
 $ [53/302]> ip route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [54/302]> ip route show
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [55/302]> ip -4 route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [56/302]> ip route list
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [57/302]> ip route show table main
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [58/302]> ip route add default via 192.168.10.1
-<empty>
+  Error: Nexthop has invalid gateway.
 
 $ [59/302]> ip route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
-  default via 192.168.10.1 dev  proto static
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [60/302]> ip route add 172.16.0.0/16 via 192.168.10.254
   RTNETLINK answers: Network is unreachable
 
 $ [61/302]> ip route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
-  default via 192.168.10.1 dev  proto static
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [62/302]> ip route add 10.10.10.0/24 dev eth0
 <empty>
 
 $ [63/302]> ip route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
-  10.10.10.0/24 dev eth0 proto static scope link metric 0 linkdown
-  default via 192.168.10.1 dev  proto static
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
+  10.10.10.0/24 dev eth0 proto static scope link linkdown
 
 $ [64/302]> ip route get 8.8.8.8
-  8.8.8.8 via 192.168.10.1 dev 
+  RTNETLINK answers: Network is unreachable
 
 $ [65/302]> ip route get 192.168.10.50
-  192.168.10.50 via 192.168.10.1 dev 
+  RTNETLINK answers: Network is unreachable
 
 $ [66/302]> ip route del 10.10.10.0/24
 <empty>
 
 $ [67/302]> ip route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
-  default via 192.168.10.1 dev  proto static
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [68/302]> ip route del default
-<empty>
+  RTNETLINK answers: No such process
 
 $ [69/302]> ip route
-  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0 linkdown
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 linkdown
 
 $ [70/302]> ip route add default via 192.168.10.1
-<empty>
+  Error: Nexthop has invalid gateway.
 
 $ [71/302]> ip route add 1.2.3.0/24 via 99.99.99.99
   RTNETLINK answers: Network is unreachable
@@ -559,26 +555,23 @@ $ [72/302]> ip route add reseau_invalide via x
 $ [73/302]> route
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
-  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
-  default         192.168.10.1    0.0.0.0         UG    0      0      0 
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0        0 eth0
 
 $ [74/302]> route -n
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
-  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0        0 eth0
 
 $ [75/302]> route -e
   Usage: route [-n] | route add/del ...
 
 $ [76/302]> route add default gw 192.168.10.1
-<empty>
+  SIOCADDRT: Network is unreachable
 
 $ [77/302]> route -n
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
-  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0        0 eth0
 
 $ [78/302]> route add -net 172.20.0.0 netmask 255.255.0.0 gw 192.168.10.254
   SIOCADDRT: Network is unreachable
@@ -586,8 +579,7 @@ $ [78/302]> route add -net 172.20.0.0 netmask 255.255.0.0 gw 192.168.10.254
 $ [79/302]> route -n
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
-  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0        0 eth0
 
 $ [80/302]> route del -net 172.20.0.0 netmask 255.255.0.0
   SIOCDELRT: No such process
@@ -595,14 +587,12 @@ $ [80/302]> route del -net 172.20.0.0 netmask 255.255.0.0
 $ [81/302]> route -n
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
-  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0        0 eth0
 
 $ [82/302]> netstat -rn
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface
   192.168.20.0    0.0.0.0         255.255.255.0   U       0 0          0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG      0 0          0 
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 
@@ -668,7 +658,7 @@ $ [101/302]> ping -c 1 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [102/302]> ping -c 2 127.0.0.1
@@ -677,7 +667,7 @@ $ [102/302]> ping -c 2 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [103/302]> ping -c 1 192.168.10.2
@@ -690,7 +680,7 @@ $ [104/302]> ping -c 3 -i 1 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss
+  3 packets transmitted, 3 received, 0% packet loss, time 2001ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [105/302]> ping -c 1 -W 1 192.168.10.99
@@ -701,7 +691,7 @@ $ [106/302]> ping -c 1 -s 100 127.0.0.1
   108 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [107/302]> ping -c 1 -t 64 127.0.0.1
@@ -709,7 +699,7 @@ $ [107/302]> ping -c 1 -t 64 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [108/302]> ping -c 1 -n 127.0.0.1
@@ -717,14 +707,14 @@ $ [108/302]> ping -c 1 -n 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [109/302]> ping -c 1 -q 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [110/302]> ping -c 1 10.255.255.254
@@ -738,70 +728,47 @@ $ [112/302]> ping6 -c 1 ::1
   64 bytes from ::1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- ::1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [113/302]> ping -c abc 127.0.0.1
   ping: invalid argument: 'abc'
 
 $ [114/302]> ping
-  Usage: ping [-c count] [-t ttl] [-s size] <destination>
-  
-  Usage: ping [-aAbBdDfhLnOqrRUvV64] [-c count] [-i interval] [-I interface]
-              [-M pmtudisc_opt] [-p pattern] [-s packetsize] [-S sndbuf]
-              [-t ttl] [-w deadline] [-W timeout] destination
-  
-  Options:
-    -c count         Stop after sending count ECHO_REQUEST packets.
-    -s packetsize    Specifies the number of data bytes to be sent.
-    -t ttl           Set the IP Time to Live.
-    -w deadline      Time to wait before exiting, regardless of packet count.
-    -W timeout       Time to wait for a response, in seconds.
-    -i interval      Wait interval seconds between sending each packet.
-    -I interface     Set source address to specified interface address.
-    -p pattern       Fill ECHO_REQUEST packet with given hex pattern.
-    -q               Quiet output (only summary at end).
-    -v               Verbose output.
-    -n               Numeric output only.
-    -D               Print timestamp (unix time) before each line.
-    -b               Allow pinging a broadcast address.
-    -M pmtudisc_opt  Select Path MTU Discovery strategy: do, want, dont.
-    -f               Flood ping. Root privilege required.
-    -L               Suppress loopback of multicast packets. (deprecated)
-    -V               Print version and exit.
-    -4               Use IPv4 only.
-    -6               Use IPv6 only.
+  ping: usage error: Destination address required
 
 
 --- [115] § traçage de chemin — traceroute/mtr ---
 $ [115/302]> traceroute 127.0.0.1
   traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets
-   1  localhost (127.0.0.1)  0.000 ms  0.000 ms  0.000 ms
+   1  localhost (127.0.0.1)  0.020 ms  0.020 ms  0.020 ms
 
 $ [116/302]> traceroute -n 127.0.0.1
-   1  127.0.0.1  0.000  0.000  0.000
+  traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets
+   1  127.0.0.1  0.020 ms  0.020 ms  0.020 ms
 
 $ [117/302]> traceroute -m 5 192.168.10.1
   traceroute to 192.168.10.1 (192.168.10.1), 5 hops max, 60 byte packets
-   1  192.168.10.1 (192.168.10.1)  1.000 ms  1.000 ms  1.000 ms
-   2  * * *
-   3  * * *
+  connect: Network is unreachable
 
 $ [118/302]> traceroute -w 1 192.168.10.99
   traceroute to 192.168.10.99 (192.168.10.99), 30 hops max, 60 byte packets
-   1  192.168.10.1 (192.168.10.1)  1.000 ms  1.000 ms  1.000 ms
-   2  * * *
-   3  * * *
+  connect: Network is unreachable
 
 $ [119/302]> traceroute hote_inexistant_xyz
-  traceroute: unknown host hote_inexistant_xyz (failed to resolve)
+  hote_inexistant_xyz: Name or service not known
+  Cannot handle "host" cmdline arg `hote_inexistant_xyz' on position 1 (argc 1)
 
 $ [120/302]> tracepath 127.0.0.1
-   1?: [LOCALHOST]                        pmtu 1500
-       Resume: pmtu 1500 hops 0 back 0
+   1:  localhost                                             0.000ms reached
+       Resume: pmtu 65535 hops 1 back 1 
 
 $ [121/302]> mtr -r -c 1 127.0.0.1
-  mtr: no hops discovered
+  Start: 2026-10-25T17:50:54.733Z
+  L-PC-NET-DBG (127.0.0.1)
+                                         Packets               Pings
+   Host                                Loss%   Snt   Last   Avg  Best  Wrst StDev
+    1. 127.0.0.1                      0.0%     1    0.0   0.0   0.0   0.0   0.0
 
 $ [122/302]> mtr --report 192.168.10.1
   mtr: no hops discovered
@@ -874,7 +841,7 @@ $ [140/302]> cat /etc/resolv.conf
 
 $ [141/302]> cat /etc/hosts
   127.0.0.1	localhost
-  127.0.1.1	linux-pc
+  127.0.1.1	L-PC-NET-DBG
   
   # The following lines are desirable for IPv6 capable hosts
   ::1	localhost ip6-localhost ip6-loopback
@@ -886,109 +853,123 @@ $ [142/302]> dig domaine_inexistant_xyz.invalid
 
 --- [143] § sockets — ss / netstat ---
 $ [143/302]> ss
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  Netid  State  Recv-Q  Send-Q   Local Address:Port   Peer Address:Port  Process  
 
 $ [144/302]> ss -t
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  State   Recv-Q   Send-Q     Local Address:Port     Peer Address:Port  Process   
 
 $ [145/302]> ss -u
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  Recv-Q    Send-Q       Local Address:Port       Peer Address:Port    Process    
 
 $ [146/302]> ss -l
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  UNCONN     0       0        0.0.0.0:ntp            0.0.0.0:*         
-  LISTEN     0       0        0.0.0.0:ssh            0.0.0.0:*         
-  LISTEN     0       0        [::]:ssh               [::]:*            
-  UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
-  UNCONN     0       0        0.0.0.0:5355           0.0.0.0:*         
+  Netid State   Recv-Q  Send-Q   Local Address:Port     Peer Address:Port Process 
+  udp   UNCONN  0       0              0.0.0.0:ntp           0.0.0.0:*            
+  udp   UNCONN  0       0            127.0.0.1:323           0.0.0.0:*            
+  udp   UNCONN  0       0        127.0.0.53%lo:domain        0.0.0.0:*            
+  udp   UNCONN  0       0              0.0.0.0:5355          0.0.0.0:*            
+  udp   UNCONN  0       0                 [::]:5355             [::]:*            
+  tcp   LISTEN  0       128            0.0.0.0:ssh           0.0.0.0:*            
+  tcp   LISTEN  0       4096     127.0.0.53%lo:domain        0.0.0.0:*            
+  tcp   LISTEN  0       128               [::]:ssh              [::]:*            
 
 $ [147/302]> ss -tln
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        [::]:22                [::]:*            
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  State    Recv-Q   Send-Q     Local Address:Port     Peer Address:Port  Process  
+  LISTEN   0        128              0.0.0.0:22            0.0.0.0:*              
+  LISTEN   0        4096       127.0.0.53%lo:53            0.0.0.0:*              
+  LISTEN   0        128                 [::]:22               [::]:*              
 
 $ [148/302]> ss -uln
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  UNCONN     0       0        0.0.0.0:123            0.0.0.0:*         
-  UNCONN     0       0        127.0.0.53:53          0.0.0.0:*         
-  UNCONN     0       0        0.0.0.0:5355           0.0.0.0:*         
+  State    Recv-Q   Send-Q     Local Address:Port     Peer Address:Port  Process  
+  UNCONN   0        0                0.0.0.0:123           0.0.0.0:*              
+  UNCONN   0        0              127.0.0.1:323           0.0.0.0:*              
+  UNCONN   0        0          127.0.0.53%lo:53            0.0.0.0:*              
+  UNCONN   0        0                0.0.0.0:5355          0.0.0.0:*              
+  UNCONN   0        0                   [::]:5355             [::]:*              
 
 $ [149/302]> ss -tlnp
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=22,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=22,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
+  State    Recv-Q   Send-Q     Local Address:Port     Peer Address:Port  Process  
+  LISTEN   0        128              0.0.0.0:22            0.0.0.0:*              
+  LISTEN   0        4096       127.0.0.53%lo:53            0.0.0.0:*              
+  LISTEN   0        128                 [::]:22               [::]:*              
 
 $ [150/302]> ss -a
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  UNCONN     0       0        0.0.0.0:ntp            0.0.0.0:*         
-  LISTEN     0       0        0.0.0.0:ssh            0.0.0.0:*         
-  LISTEN     0       0        [::]:ssh               [::]:*            
-  UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
-  UNCONN     0       0        0.0.0.0:5355           0.0.0.0:*         
+  Netid State   Recv-Q  Send-Q   Local Address:Port     Peer Address:Port Process 
+  udp   UNCONN  0       0              0.0.0.0:ntp           0.0.0.0:*            
+  udp   UNCONN  0       0            127.0.0.1:323           0.0.0.0:*            
+  udp   UNCONN  0       0        127.0.0.53%lo:domain        0.0.0.0:*            
+  udp   UNCONN  0       0              0.0.0.0:5355          0.0.0.0:*            
+  udp   UNCONN  0       0                 [::]:5355             [::]:*            
+  tcp   LISTEN  0       128            0.0.0.0:ssh           0.0.0.0:*            
+  tcp   LISTEN  0       4096     127.0.0.53%lo:domain        0.0.0.0:*            
+  tcp   LISTEN  0       128               [::]:ssh              [::]:*            
 
 $ [151/302]> ss -s
-  Total: 6
+  Total: 8
   TCP:   3 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
-  RAW       0         0         0
-  UDP       3         3         0
-  TCP       3         3         0
-  INET      6         6         0
-  FRAG      0         0         0
+  RAW	  0         0         0        
+  UDP	  5         4         1        
+  TCP	  3         2         1        
+  INET	  8         6         2        
+  FRAG	  0         0         0        
+  
 
 $ [152/302]> ss -tn state established
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  Recv-Q    Send-Q       Local Address:Port       Peer Address:Port    Process    
 
 $ [153/302]> netstat
   Active Internet connections (w/o servers)
-  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State      
+  Active UNIX domain sockets (w/o servers)
+  Proto RefCnt Flags       Type       State         I-Node   Path
 
 $ [154/302]> netstat -tln
   Active Internet connections (only servers)
-  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
-  tcp6            0      0 :::22                   :::*                    LISTEN
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State      
+  tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN     
+  tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN     
+  tcp6       0      0 :::22                   :::*                    LISTEN     
 
 $ [155/302]> netstat -uln
   Active Internet connections (only servers)
-  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-  udp             0      0 0.0.0.0:123             0.0.0.0:*
-  udp             0      0 127.0.0.53:53           0.0.0.0:*
-  udp             0      0 0.0.0.0:5355            0.0.0.0:*
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State      
+  udp        0      0 0.0.0.0:123             0.0.0.0:*                          
+  udp        0      0 127.0.0.1:323           0.0.0.0:*                          
+  udp        0      0 127.0.0.53:53           0.0.0.0:*                          
+  udp        0      0 0.0.0.0:5355            0.0.0.0:*                          
+  udp6       0      0 :::5355                 :::*                               
 
 $ [156/302]> netstat -tlnp
+  (No info could be read for "-p": geteuid()=1000 but you should be root.)
   Active Internet connections (only servers)
-  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      22/sshd
-  tcp6            0      0 :::22                   :::*                    LISTEN      22/sshd
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      29/systemd-resolved
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+  tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      -                   
+  tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      -                   
+  tcp6       0      0 :::22                   :::*                    LISTEN      -                   
 
 $ [157/302]> netstat -an | head
   Active Internet connections (servers and established)
-  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-  udp             0      0 0.0.0.0:123             0.0.0.0:*
-  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
-  tcp6            0      0 :::22                   :::*                    LISTEN
-  udp             0      0 127.0.0.53:53           0.0.0.0:*
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
-  udp             0      0 0.0.0.0:5355            0.0.0.0:*
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State      
+  tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN     
+  tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN     
+  tcp6       0      0 :::22                   :::*                    LISTEN     
+  udp        0      0 0.0.0.0:123             0.0.0.0:*                          
+  udp        0      0 127.0.0.1:323           0.0.0.0:*                          
+  udp        0      0 127.0.0.53:53           0.0.0.0:*                          
+  udp        0      0 0.0.0.0:5355            0.0.0.0:*                          
+  udp6       0      0 :::5355                 :::*                               
 
 $ [158/302]> netstat -s | head
   Ip:
       Forwarding: 2
-      0 total packets received
+      22 total packets received
       0 forwarded
       0 incoming packets discarded
-      0 incoming packets delivered
-      0 requests sent out
+      22 incoming packets delivered
+      22 requests sent out
   Icmp:
-      0 ICMP messages received
+      21 ICMP messages received
       0 input ICMP message failed
 
 $ [159/302]> netstat -i
@@ -998,29 +979,28 @@ $ [159/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
-  lo           65536        0      0      0 0                0      0      0      0 LRU
+  lo           65536       24      0      0 0               24      0      0      0 LRU
 
 $ [160/302]> netstat -rn
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface
   192.168.20.0    0.0.0.0         255.255.255.0   U       0 0          0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG      0 0          0 
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 $ [161/302]> lsof -i :22
   COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
-  sshd          22  root     5u  IPv4 10000      0t0  TCP *:22 (LISTEN)
-  sshd          22  root     6u  IPv6 10001      0t0  TCP *:22 (LISTEN)
+  sshd          22  root     3u  IPv4     3      0t0  TCP *:22 (LISTEN)
+  sshd          22  root     4u  IPv6     4      0t0  TCP *:22 (LISTEN)
 
 $ [162/302]> ss -tln sport = :22
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        [::]:22                [::]:*            
+  State    Recv-Q   Send-Q     Local Address:Port     Peer Address:Port  Process  
+  LISTEN   0        128              0.0.0.0:22            0.0.0.0:*              
+  LISTEN   0        128                 [::]:22               [::]:*              
 
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 2 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [164/302]> curl -I http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
@@ -1030,10 +1010,10 @@ $ [165/302]> curl -s http://192.168.10.1
 
 $ [166/302]> curl -v http://192.168.10.1
   *   Trying 192.168.10.1:80...
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 3 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [168/302]> curl -L http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
@@ -1045,18 +1025,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-09-25 18:29:02--  http://192.168.10.1
+  --2026-10-25 17:50:54--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-09-25 18:29:02--  http://192.168.10.1
+  --2026-10-25 17:50:54--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-09-25 18:29:02--  http://192.168.10.99
+  --2026-10-25 17:50:54--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1174,33 +1154,24 @@ $ [210/302]> iptables -A INPUT -j TRUC
 
 --- [211] § capture & ARP — tcpdump / arping ---
 $ [211/302]> tcpdump -c 1
-  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
-  0 packets captured
-  0 packets received by filter
-  0 packets dropped by kernel
+  tcpdump: eth0: You don't have permission to capture on that device
+  (socket: Operation not permitted)
 
 $ [212/302]> tcpdump -i eth0 -c 1
-  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
-  0 packets captured
-  0 packets received by filter
-  0 packets dropped by kernel
+  tcpdump: eth0: You don't have permission to capture on that device
+  (socket: Operation not permitted)
 
 $ [213/302]> tcpdump -i eth0 -n -c 1
-  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
-  0 packets captured
-  0 packets received by filter
-  0 packets dropped by kernel
+  tcpdump: eth0: You don't have permission to capture on that device
+  (socket: Operation not permitted)
 
 $ [214/302]> tcpdump -D
-  1.lo [Up, Running]
-  2.eth0 [Up, Running]
-  3.eth1 [Up, Running]
-  4.eth2 [Up, Running]
-  5.eth3 [Up, Running]
-  6.lo [Up, Running]
+  1.any (Pseudo-device that captures on all interfaces) [Up, Running]
+  2.lo [Up, Running, Loopback]
+  3.eth0 [Up, Disconnected]
+  4.eth1 [Up, Disconnected]
+  5.eth2 [Up, Disconnected]
+  6.eth3 [Up, Disconnected]
 
 $ [215/302]> arping -c 1 192.168.10.1
   arping: no suitable device found: invalid argument
@@ -1220,77 +1191,60 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:SeT16o6i57+6IKf9/vqmq4iFCWFy0laaog3TtMX9xq0 user@linux-pc (RSA)
+  SHA256:lVSf3WmP2r4y+LcBUoXwW0IlsE9ovYFrC+9IAGf61ZU user@L-PC-NET-DBG
   The key's randomart image is:
   +---[RSA 2048]----+
-  |  ..o.  . .      |
-  | + *. .o . .     |
-  |B.O    oo.  .    |
-  |+X     .+...     |
-  |o .    .S..      |
-  |.o      E.       |
-  |o o o     .      |
-  | o * .o .o       |
-  |. o +BX%*..      |
+  |          +++oo  |
+  |         . O.= oo|
+  |    . o   B E +oo|
+  |     =   + * *...|
+  |    . . S = = . .|
+  |     . o + o +   |
+  |      . . o.. o  |
+  |       . o. o... |
+  |        . ...++o |
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 630 Sep 25 18:29 /tmp/id_rsa
-  -rw-r--r-- 1 user user 395 Sep 25 18:29 /tmp/id_rsa.pub
+  -rw------- 1 user user 1823 Oct 25 17:50 /tmp/id_rsa
+  -rw-r--r-- 1 user user 399 Oct 25 17:50 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABANohI3etFJkxyg7loBhlsbvTGT1jhbf8WT//mGt/ehf5a0zzpQLFDV8u1aNlYpIZfb8BqrwjIGLHj6FEy6iINbjfxX2ZeW/5vujKwStky/cRC9acF5rPBitM09G9Ynz8QURFccru951wDIMPHQs+S8FeREzgK62oZApugsEcb10FyxLxPpZKybewq10HtdRl2uKfa+4T/DwRgBAmESuXT7Dg48wdUm+mJrirrqDwagABbUuSkmtvmQdY+oqz6nW72M0vz4oDUyi6rRbSzNjTjdoenHjenGVzRAVTgBPmXYXzUrq8BIhfkWyQCOFpS0/KHiB6bQhSr/l58fVOVZIzgiQ= user@linux-pc
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDg29UtklAXMjtEHnaJfh2lH1bCGHHZQfD/sOub0KACUzWZKWkIBvf/nSvb1Xt57KIMVX+hnxOR2ptKhrcoU1PS4BHy0An+xRXJ6SI0pYbaGpB96zah0l9VvmSD3IcacmgSxokfnVRayfRyby8AiXcVCdWL+TSJ5LogA7gl+k7caUw8HGokH5OgJyw0QbR7KgFvUcPPp4lwiQJizSflGXfliNEuLLrQLtUQnVWQyhOHTxqAaNBLb9b2HGpg5203FiGQwJL7oyw8YjKA6mXAo+hxjjjGVLIMgVBSVzR3VGevfUpW6A603ITTx3WDW/I5xMea2P1YFnUkS/82JbcPhwAR user@L-PC-NET-DBG
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:pIy6oC+v0pbgkmT4O1FeSHpLeBY/eFBPCOeMFXxySjQ user@linux-pc (ED25519)
+  SHA256:bbSRGRwjHTFXARFGY2iaCi5oIGgcksI43SpVtE/uejs user@L-PC-NET-DBG
   The key's randomart image is:
   +--[ED25519 256]--+
-  |    .=Eo.        |
-  |    +*=+o        |
-  |   +.Bo=o        |
-  |  o Oo*o         |
-  |.  B.+o.S        |
-  |oo..o            |
-  |==.o             |
-  |*o*.             |
-  |=*=o             |
+  |oo +o   .oB*X=o. |
+  |*oo ..   .=X .   |
+  |=o... .  +=      |
+  |=o. .+  oo o     |
+  |+o . .o.S +      |
+  |... ...  .       |
+  |.  .  .          |
+  |     .E          |
+  |    ...o         |
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
-  Generating public/private ed25519 key pair.
-  Your identification has been saved in /home/user/.ssh/id_ed25519
-  Your public key has been saved in /home/user/.ssh/id_ed25519.pub
-  The key fingerprint is:
-  SHA256:KfUPsNE4OVEcuRufl2wk0qMyO5C8PCzyHfjXIYKKBJM user@linux-pc (ED25519)
-  The key's randomart image is:
-  +--[ED25519 256]--+
-  |        .ooo     |
-  |         =o      |
-  | .      O .o     |
-  |E      . O+ + .  |
-  |..   o..S o* * . |
-  | .  ..=.+ +oo =  |
-  |.. ..o.+ * ..o   |
-  |. o .o=.+ .      |
-  |   o..oo .       |
-  +----[SHA256]-----+
+  2048 SHA256:lVSf3WmP2r4y+LcBUoXwW0IlsE9ovYFrC+9IAGf61ZU user@L-PC-NET-DBG (RSA)
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABANohI3etFJkxyg7loBhlsbvTGT1jhbf8WT//mGt/ehf5a0zzpQLFDV8u1aNlYpIZfb8BqrwjIGLHj6FEy6iINbjfxX2ZeW/5vujKwStky/cRC9acF5rPBitM09G9Ynz8QURFccru951wDIMPHQs+S8FeREzgK62oZApugsEcb10FyxLxPpZKybewq10HtdRl2uKfa+4T/DwRgBAmESuXT7Dg48wdUm+mJrirrqDwagABbUuSkmtvmQdY+oqz6nW72M0vz4oDUyi6rRbSzNjTjdoenHjenGVzRAVTgBPmXYXzUrq8BIhfkWyQCOFpS0/KHiB6bQhSr/l58fVOVZIzgiQ= user@linux-pc
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDg29UtklAXMjtEHnaJfh2lH1bCGHHZQfD/sOub0KACUzWZKWkIBvf/nSvb1Xt57KIMVX+hnxOR2ptKhrcoU1PS4BHy0An+xRXJ6SI0pYbaGpB96zah0l9VvmSD3IcacmgSxokfnVRayfRyby8AiXcVCdWL+TSJ5LogA7gl+k7caUw8HGokH5OgJyw0QbR7KgFvUcPPp4lwiQJizSflGXfliNEuLLrQLtUQnVWQyhOHTxqAaNBLb9b2HGpg5203FiGQwJL7oyw8YjKA6mXAo+hxjjjGVLIMgVBSVzR3VGevfUpW6A603ITTx3WDW/I5xMea2P1YFnUkS/82JbcPhwAR user@L-PC-NET-DBG
 
 $ [224/302]> ssh -V
-  usage: ssh [-options] destination [command]
+  OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022
 
 $ [225/302]> ssh root@192.168.10.99
-  ssh: connect to host 192.168.10.99 port 22: Network is unreachable
-  
+  ssh: connect to host 192.168.10.99 port 22: Connection timed out
 
 $ [226/302]> ssh-keyscan 192.168.10.1
-  # 192.168.10.1 unknown host
+<empty>
 
 
 --- [227] § DHCP client ---
@@ -1299,10 +1253,19 @@ $ [227/302]> dhclient eth0
 
 $ [228/302]> dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
+  Copyright 2004-2018 Internet Systems Consortium.
+  All rights reserved.
+  For info, please visit https://www.isc.org/software/dhcp/
+  
   Listening on LPF/eth0/02:00:00:aa:bb:cc
   Sending on   LPF/eth0/02:00:00:aa:bb:cc
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
+  Sending on   Socket/fallback
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xc7a6db64)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xc7a6db64)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xc7a6db64)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xc7a6db64)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xc7a6db64)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xc7a6db64)
   No DHCPOFFERS received.
   No working leases in persistent database - sleeping.
 
@@ -1332,7 +1295,7 @@ $ [234/302]> ip addr add 192.168.50.10/24 dev eth0
 <empty>
 
 $ [235/302]> ip route add default via 192.168.50.1
-  RTNETLINK answers: File exists
+<empty>
 
 $ [236/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
@@ -1343,15 +1306,15 @@ $ [236/302]> ip addr show eth0
          valid_lft forever preferred_lft forever
 
 $ [237/302]> ip route
-  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0 linkdown
-  default via 192.168.10.1 dev  proto static
+  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 linkdown
+  default via 192.168.50.1 dev eth0 proto static linkdown
 
 $ [238/302]> ping -c 1 192.168.50.10
   PING 192.168.50.10 (192.168.50.10) 56(84) bytes of data.
   64 bytes from 192.168.50.10: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 192.168.50.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [239/302]> ip neigh
@@ -1365,14 +1328,15 @@ $ [240/302]> ip -br addr
   eth3             DOWN           
 
 $ [241/302]> ip route get 192.168.50.1
-  192.168.50.1 dev eth0 src 192.168.50.10
+  192.168.50.1 dev eth0 src 192.168.50.10 uid 1000 
+      cache 
 
 $ [242/302]> ip route flush table main
-  Command "flush" is unknown, try "ip route help".
+  ip route flush table main: this simulator cannot flush routes by selector
 
 $ [243/302]> ip route
-  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0 linkdown
-  default via 192.168.10.1 dev  proto static
+  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 linkdown
+  default via 192.168.50.1 dev eth0 proto static linkdown
 
 
 --- [244] § inventaire réseau consolidé ---
@@ -1403,7 +1367,7 @@ $ [248/302]> cat /proc/net/dev | head
     eth1:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth2:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth3:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
-      lo:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+      lo:    68255      26    0    0    0     0          0         0    68255      26    0    0    0     0       0          0
 
 $ [249/302]> cat /proc/net/route | head
   cat: /proc/net/route: No such file or directory
@@ -1412,7 +1376,7 @@ $ [250/302]> hostname -I
   127.0.1.1
 
 $ [251/302]> hostname
-  linux-pc
+  L-PC-NET-DBG
 
 $ [252/302]> ip addr show | grep inet
       inet 127.0.0.1/8 scope host lo
@@ -1478,7 +1442,7 @@ $ [261/302]> ping6 -c 1 ::1
   64 bytes from ::1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- ::1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [262/302]> ping -6 -c 1 2001:db8::10
@@ -1486,18 +1450,16 @@ $ [262/302]> ping -6 -c 1 2001:db8::10
   64 bytes from 2001:db8::10: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 2001:db8::10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
+  1 packets transmitted, 1 received, 0% packet loss, time 0ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [263/302]> ip addr del 2001:db8::10/64 dev eth0
-  RTNETLINK answers: Cannot assign requested address
+<empty>
 
 $ [264/302]> ip -6 addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
       inet6 fe80::ff:fe00:1/64 scope link
-         valid_lft forever preferred_lft forever
-      inet6 2001:db8::10/64 scope global
          valid_lft forever preferred_lft forever
 
 $ [265/302]> ip -6 route flush
@@ -1526,7 +1488,7 @@ $ [269/302]> cat /proc/net/dev
     eth1:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth2:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth3:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
-      lo:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+      lo:    68671      30    0    0    0     0          0         0    68671      30    0    0    0     0       0          0
 
 $ [270/302]> ifconfig eth0 | grep -E "RX|TX"
           RX packets 0  bytes 0 (0.0 KiB)
@@ -1541,33 +1503,39 @@ $ [271/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
-  lo           65536        0      0      0 0                0      0      0      0 LRU
+  lo           65536       30      0      0 0               30      0      0      0 LRU
 
 $ [272/302]> ss -s
-  Total: 6
+  Total: 8
   TCP:   3 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
-  RAW       0         0         0
-  UDP       3         3         0
-  TCP       3         3         0
-  INET      6         6         0
-  FRAG      0         0         0
+  RAW	  0         0         0        
+  UDP	  5         4         1        
+  TCP	  3         2         1        
+  INET	  8         6         2        
+  FRAG	  0         0         0        
+  
 
 $ [273/302]> cat /proc/net/snmp | head
   Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates
-  Ip: 1 64 0 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0
+  Ip: 2 64 24 0 0 0 0 0 24 36 0 0 0 0 0 0 0 0 0
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
-  Icmp: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-  IcmpMsg: InType8 OutType0
-  IcmpMsg: 0 0
+  Icmp: 23 0 0 1 0 0 0 0 11 11 0 0 0 0 23 0 1 0 0 0 0 11 11 0 0 0 0
+  IcmpMsg: InType0 InType3 InType8 OutType0 OutType3 OutType8
+  IcmpMsg: 11 1 11 11 1 11
   Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
   Tcp: 1 200 120000 -1 0 0 0 0 0 0 0 0 0 0 0
-  Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti
-  Udp: 0 48 0 2 0 0 0 0
+  Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti MemErrors
+  Udp: 0 1 0 13 0 0 0 0 0
 
 $ [274/302]> cat /proc/net/sockstat
-  cat: /proc/net/sockstat: No such file or directory
+  sockets: used 8
+  TCP: inuse 2 orphan 0 tw 0 alloc 3 mem 0
+  UDP: inuse 4 mem 0
+  UDPLITE: inuse 0
+  RAW: inuse 0
+  FRAG: inuse 0 memory 0
 
 $ [275/302]> ip -s -s link show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
@@ -1580,10 +1548,10 @@ $ [275/302]> ip -s -s link show eth0
 
 --- [276] § résolution & hostname ---
 $ [276/302]> hostname
-  linux-pc
+  L-PC-NET-DBG
 
 $ [277/302]> hostname -f
-  linux-pc
+  L-PC-NET-DBG
 
 $ [278/302]> hostname -i
   127.0.1.1
@@ -1592,7 +1560,7 @@ $ [279/302]> hostname -I
   127.0.1.1
 
 $ [280/302]> hostname -s
-  linux-pc
+  L-PC-NET-DBG
 
 $ [281/302]> hostname -d
 <empty>
@@ -1687,7 +1655,7 @@ $ [288/302]> ethtool -S eth0
        rx_errors: 0
        tx_errors: 0
        rx_dropped: 0
-       tx_dropped: 6
+       tx_dropped: 16
        rx_crc_errors: 0
        collisions: 0
 
@@ -1734,15 +1702,57 @@ $ [297/302]> ip route add
   Error: need a valid prefix or "default".
 
 $ [298/302]> ping --truc 127.0.0.1
-  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
-  64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
-  64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
-  64 bytes from 127.0.0.1: icmp_seq=4 ttl=64 time=0.010 ms
+  ping: invalid option -- '-'
   
-  --- 127.0.0.1 ping statistics ---
-  4 packets transmitted, 4 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
+  Usage
+    ping [options] <destination>
+  
+  Options:
+    <destination>      dns name or ip address
+    -a                 use audible ping
+    -A                 use adaptive ping
+    -B                 sticky source address
+    -c <count>         stop after <count> replies
+    -C                 call connect() syscall on socket creation
+    -D                 print timestamps
+    -d                 use SO_DEBUG socket option
+    -e <identifier>    define identifier for ping session, default is random for
+                       SOCK_RAW and kernel defined for SOCK_DGRAM
+                       Imply using SOCK_RAW (for IPv4 only for identifier 0)
+    -f                 flood ping
+    -h                 print help and exit
+    -I <interface>     either interface name or address
+    -i <interval>      seconds between sending each packet
+    -L                 suppress loopback of multicast packets
+    -l <preload>       send <preload> number of packages while waiting replies
+    -m <mark>          tag the packets going out
+    -M <pmtud opt>     define mtu discovery, can be one of <do|dont|want>
+    -n                 no dns name resolution
+    -O                 report outstanding replies
+    -p <pattern>       contents of padding byte
+    -q                 quiet output
+    -Q <tclass>        use quality of service <tclass> bits
+    -s <size>          use <size> as number of data bytes to be sent
+    -S <size>          use <size> as SO_SNDBUF socket option value
+    -t <ttl>           define time to live
+    -U                 print user-to-user latency
+    -v                 verbose output
+    -V                 print version and exit
+    -w <deadline>      reply wait <deadline> in seconds
+    -W <timeout>       time to wait for response
+  
+  IPv4 options:
+    -4                 use IPv4
+    -b                 allow pinging broadcast
+    -R                 record route
+    -T <timestamp>     define timestamp, can be one of <tsonly|tsandaddr|tsprespec>
+  
+  IPv6 options:
+    -6                 use IPv6
+    -F <flowlabel>     define flow label, default is random
+    -N <nodeinfo opt>  use icmp6 node info query, try <help> as argument
+  
+  For more details see ping(8).
 
 $ [299/302]> iptabless -L
   iptabless: command not found
@@ -1751,7 +1761,62 @@ $ [300/302]> netstatt
   netstatt: command not found
 
 $ [301/302]> ss --zorglub
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  ss: unrecognized option '--zorglub'
+  Usage: ss [ OPTIONS ]
+         ss [ OPTIONS ] [ FILTER ]
+     -h, --help          this message
+     -V, --version       output version information
+     -n, --numeric       don't resolve service names
+     -r, --resolve       resolve host names
+     -a, --all           display all sockets
+     -l, --listening     display listening sockets
+     -o, --options       show timer information
+     -e, --extended      show detailed socket information
+     -m, --memory        show socket memory usage
+     -p, --processes     show process using socket
+     -i, --info          show internal TCP information
+         --tipcinfo      show internal tipc socket information
+     -s, --summary       show socket usage summary
+         --tos           show tos and priority information
+         --cgroup        show cgroup information
+     -b, --bpf           show bpf filter socket information
+     -E, --events        continually display sockets as they are destroyed
+     -Z, --context       display process SELinux security contexts
+     -z, --contexts      display process and socket SELinux security contexts
+     -N, --net           switch to the specified network namespace name
+  
+     -4, --ipv4          display only IP version 4 sockets
+     -6, --ipv6          display only IP version 6 sockets
+     -0, --packet        display PACKET sockets
+     -t, --tcp           display only TCP sockets
+     -M, --mptcp         display only MPTCP sockets
+     -S, --sctp          display only SCTP sockets
+     -u, --udp           display only UDP sockets
+     -d, --dccp          display only DCCP sockets
+     -w, --raw           display only RAW sockets
+     -x, --unix          display only Unix domain sockets
+         --tipc          display only TIPC sockets
+         --vsock         display only vsock sockets
+     -f, --family=FAMILY display sockets of type FAMILY
+         FAMILY := {inet|inet6|link|unix|netlink|vsock|tipc|xdp|help}
+  
+     -K, --kill          forcibly close sockets, display what was closed
+     -H, --no-header     Suppress header line
+     -O, --oneline       socket's data printed on a single line
+         --inet-sockopt  show various inet socket options
+  
+     -A, --query=QUERY, --socket=QUERY
+         QUERY := {all|inet|tcp|mptcp|udp|raw|unix|unix_dgram|unix_stream|unix_seqpacket|packet|netlink|vsock_stream|vsock_dgram|tipc}[,QUERY]
+  
+     -D, --diag=FILE     Dump raw information about TCP sockets to FILE
+     -F, --filter=FILE   read filter information from FILE
+         FILTER := [ state STATE-FILTER ] [ EXPRESSION ]
+         STATE-FILTER := {all|connected|synchronized|bucket|big|TCP-STATES}
+           TCP-STATES := {established|syn-sent|syn-recv|fin-wait-{1,2}|time-wait|closed|close-wait|last-ack|listening|closing}
+            connected := {established|syn-sent|syn-recv|fin-wait-{1,2}|time-wait|close-wait|last-ack|closing}
+         synchronized := {established|syn-recv|fin-wait-{1,2}|time-wait|close-wait|last-ack|closing}
+               bucket := {syn-recv|time-wait}
+                  big := {established|syn-sent|fin-wait-{1,2}|closed|close-wait|last-ack|listening|closing}
 
 $ [302/302]> echo "fin du transcript networking"
   fin du transcript networking
