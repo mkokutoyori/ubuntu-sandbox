@@ -150,9 +150,18 @@ export interface MasterKey {
   readonly q: bigint;
 }
 
+const MASTER_KEY_MEMORY = 16;
+const masterKeys = new Map<string, MasterKey>();
+
 export function generateMasterKey(seed: Uint8Array, secpar = RECOMMENDED_SECPAR): MasterKey {
   validate(secpar);
-  return { secpar, p: generatePrime(secpar / 2, seed, GENERATE_P), q: generatePrime(secpar / 2, seed, GENERATE_Q) };
+  const memoKey = `${secpar}:${Array.from(seed, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  const known = masterKeys.get(memoKey);
+  if (known !== undefined) return known;
+  const master = { secpar, p: generatePrime(secpar / 2, seed, GENERATE_P), q: generatePrime(secpar / 2, seed, GENERATE_Q) };
+  if (masterKeys.size >= MASTER_KEY_MEMORY) masterKeys.delete(masterKeys.keys().next().value as string);
+  masterKeys.set(memoKey, master);
+  return master;
 }
 
 export function masterPublicKey(master: MasterKey): Uint8Array {

@@ -2,7 +2,10 @@ import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGe
 import { parseSize } from '../systemd/ParseSize';
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
 import { fnmatch } from '../fs/Glob';
+import { errnoText } from '@/network/core/Errno';
+import { fileTextToBytes } from '@/crypto/encoding';
 import { setupKeys } from './seal/SetupKeys';
+import { renderVerification } from './format/JournalVerifyRun';
 import { DEFAULT_FSS_INTERVAL_USEC } from './seal/SealingKeyFile';
 import { type SystemdClock, formatTimespan, formatTimestamp, parseSec, parseTimestamp, systemdClock } from '../systemd/SystemdTime';
 import { safeAtoi } from '../systemd/SafeNumbers';
@@ -69,11 +72,6 @@ export interface VacuumResult {
   freedBytes: number;
 }
 
-export type VerifyOutcome =
-  | { readonly kind: 'invalid-key' }
-  | { readonly kind: 'fail'; readonly errno: 'ENOKEY' | 'EBADMSG'; readonly lines: readonly string[]; readonly corruption: { readonly offset: number; readonly size: number } | null }
-  | { readonly kind: 'pass'; readonly sealed: boolean; readonly first: number; readonly validated: number; readonly last: number };
-
 export interface SealingHost {
   persistentDirectory(): 'directory' | 'missing' | 'other';
   machineId(): string;
@@ -88,7 +86,6 @@ export interface SealingHost {
 }
 
 export interface JournalctlHost {
-  verify?(path: string, key: string | null, format: (usec: number) => string): VerifyOutcome;
   sealing?: SealingHost;
   files(): JournalFileInfo[];
   varlink(method: string, namespace: string | null): VarlinkOutcome;
@@ -113,11 +110,6 @@ export interface JournalctlHost {
   updateCatalog(): string | null;
   diskUsageBytes(): number;
 }
-
-const ERRNO_TEXT: Record<string, string> = {
-  EINVAL: 'Invalid argument', ENOENT: 'No such file or directory', ENODATA: 'No data available', EACCES: 'Permission denied', ERANGE: 'Numerical result out of range',
-  ENOTDIR: 'Not a directory', EPERM: 'Operation not permitted',
-};
 
 const LOG_LEVELS = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'];
 const FACILITY_NAMES = ['kern', 'user', 'mail', 'daemon', 'auth', 'syslog', 'lpr', 'news', 'uucp', 'cron', 'authpriv', 'ftp', '12', '13', '14', '15', 'local0', 'local1', 'local2', 'local3', 'local4', 'local5', 'local6', 'local7'];
@@ -456,7 +448,7 @@ export function runJournalctl(host: JournalctlHost, argv: string[], program = 'j
   const sink = { write: (bytes: Uint8Array): void => { stdout.push(bytes); out.printf(text(bytes)); } };
   const say = (line: string): void => sink.write(utf8(line));
   const fail = (message: string, errno: string | null = null, code = 1): never => {
-    out.eprintf(`${message}${errno === null ? '' : `: ${ERRNO_TEXT[errno] ?? errno}`}\n`);
+    out.eprintf(`${message}${errno === null ? '' : `: ${errnoText(errno)}`}\n`);
     throw new ExitSignal(code);
   };
   const notice = (message: string): void => out.eprintf(`${message}\n`);
@@ -786,7 +778,7 @@ function runAction(
   }
   const all = host.records();
   if (args.directory !== null && args.directory !== host.journalDirectory() && !host.journalDirectory().startsWith(`${args.directory.replace(/\/+$/, '')}/`)) return fail(`Failed to open ${args.directory}`, 'ENOENT');
-  if (args.root !== null || args.image !== null || args.files.length > 0 || args.fileStdin || args.machine !== null) {
+  if (args.root !== null || args.image !== null || (args.files.length > 0 && args.action !== 'verify') || args.fileStdin || args.machine !== null) {
     const target = args.root ?? args.image ?? args.files[0] ?? args.machine ?? 'files';
     return fail(`Failed to open ${args.files.length > 0 ? 'files' : target}`, 'ENOENT');
   }
@@ -824,31 +816,19 @@ function runAction(
   }
   if (args.action === 'verify') {
     const stamp = (usec: number): string => formatTimestamp(usec, 'pretty', clock) ?? '(null)';
-    let status = 0;
-    for (const file of host.files()) {
-      const sealed = file.compatibleFlags.includes('SEALED');
-      if (args.verifyKey === null && sealed) notice(`Journal file ${file.path} has sealing enabled but verification key has not been passed using --verify-key=.`);
-      const outcome: VerifyOutcome = host.verify === undefined
-        ? { kind: 'pass', sealed: false, first: 0, validated: 0, last: 0 }
-        : host.verify(file.path, args.verifyKey, stamp);
-      if (outcome.kind === 'invalid-key') return fail('Failed to parse seed.', null);
-      if (outcome.kind === 'fail') {
-        for (const line of outcome.lines) notice(line);
-        if (outcome.corruption !== null) {
-          notice(`File corruption detected at ${file.path}:${outcome.corruption.offset} (of ${outcome.corruption.size} bytes, ${Math.floor(100 * outcome.corruption.offset / outcome.corruption.size)}%).`);
-        }
-        notice(`FAIL: ${file.path} (${outcome.errno === 'ENOKEY' ? 'Required key not available' : 'Bad message'})`);
-        status = 1;
-        continue;
-      }
-      if (!args.quiet) notice(`PASS: ${file.path}`);
-      if (args.quiet || args.verifyKey === null || !outcome.sealed) continue;
-      if (outcome.validated > 0) {
-        notice(`=> Validated from ${stamp(outcome.first)} to ${stamp(outcome.validated)}, final ${formatTimespan(outcome.last > outcome.validated ? outcome.last - outcome.validated : 0, 0)} entries not sealed.`);
-      } else if (outcome.last > 0) notice(`=> No sealing yet, ${formatTimespan(outcome.last - outcome.first, 0)} of entries not sealed.`);
-      else notice('=> No sealing yet, no entries in file.');
+    const explicit = args.files.length > 0;
+    const paths = explicit ? args.files : host.files().map(file => file.path);
+    const files = paths.map(path => ({ path, content: host.readFile(path) }));
+    if (explicit && files.some(file => file.content === null)) return fail('Failed to open files', 'ENOENT');
+    const report = renderVerification(
+      files.flatMap(file => (file.content === null ? [] : [{ path: file.path, bytes: fileTextToBytes(file.content) }])), args.verifyKey, args.quiet, explicit, stamp,
+    );
+    for (const line of report.notices) notice(line);
+    if (report.fatal !== null) {
+      notice(report.fatal);
+      throw new ExitSignal(1);
     }
-    if (status !== 0) throw new ExitSignal(status);
+    if (report.status !== 0) throw new ExitSignal(report.status);
     return;
   }
   if (args.action === 'vacuum' || args.action === 'rotate-and-vacuum') {
@@ -941,13 +921,13 @@ function runCatalogAction(
   for (const item of items) {
     const id = parseId128(item);
     if (id === null) {
-      notice(`Failed to parse id128 '${item}': ${ERRNO_TEXT.EINVAL}`);
+      notice(`Failed to parse id128 '${item}': ${errnoText('EINVAL')}`);
       failure = failure ?? 'EINVAL';
       continue;
     }
     const body = findCatalogText(database, id, locale.messages);
     if (body === null) {
-      notice(`Failed to retrieve catalog entry for '${item}': ${ERRNO_TEXT.ENOENT}`);
+      notice(`Failed to retrieve catalog entry for '${item}': ${errnoText('ENOENT')}`);
       failure = failure ?? 'ENOENT';
       continue;
     }

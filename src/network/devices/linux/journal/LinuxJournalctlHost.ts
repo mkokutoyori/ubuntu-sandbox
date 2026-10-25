@@ -19,7 +19,6 @@ export function journalctlHost(executor: LinuxCommandExecutor, onTty = false): J
   const machineId = (): string => executor.identity.machineId;
   const keyPath = (): string => `/var/log/journal/${machineId()}/fss`;
   return {
-    verify: (path, key, format) => journald.verify(path, key, format),
     sealing: {
       persistentDirectory: () => {
         const inode = vfs.resolveInode('/var/log/journal');

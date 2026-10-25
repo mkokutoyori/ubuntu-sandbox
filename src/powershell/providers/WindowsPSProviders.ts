@@ -127,6 +127,7 @@ import type {
   FirewallProfileName, NetFirewallProfileRow,
 } from '@/network/devices/windows/netFirewallProfile';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { expandHomePath } from './homePath';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -248,13 +249,16 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     if (!r.ok) throw new Error(r.error ?? `Cannot move`);
   }
   normalizePath(path: string, cwd: string): string {
-    return this.fs().normalizePath(path, cwd);
+    return this.fs().normalizePath(expandHomePath(path, this.pc.getEnvVars().get('USERPROFILE') ?? 'C:\\Users\\User'), cwd);
   }
   getCwd(): string {
     return this.pc.getCwd();
   }
   setCwd(path: string): void {
-    this.pc.setCwd(this.abs(path));
+    this.pc.setCwd(this.fs().canonicalLeaf(this.abs(path)));
+  }
+  driveLocation(letter: string): string {
+    return this.pc.driveDirectory(letter);
   }
   isDirectory(path: string): boolean {
     return this.fs().isDirectory(this.abs(path));
@@ -315,7 +319,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   }
 
   private abs(p: string): string {
-    return this.fs().normalizePath(p, this.pc.getCwd());
+    return this.normalizePath(p, this.pc.getCwd());
   }
 }
 

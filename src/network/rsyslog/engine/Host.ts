@@ -241,6 +241,28 @@ export interface RsyslogProcess {
   setOpenFilesLimit(limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
 }
 
+export interface HttpPostTls {
+  readonly caFile: string | null;
+  readonly certFile: string | null;
+  readonly keyFile: string | null;
+  readonly insecure: boolean;
+}
+
+export interface HttpPostRequest {
+  readonly url: string;
+  readonly headers: readonly string[];
+  readonly userAgent: string;
+  readonly body: Uint8Array;
+  readonly timeoutMs: number;
+  readonly tls: HttpPostTls;
+}
+
+export type HttpPostOutcome = { readonly status: number } | { readonly curlCode: number };
+
+export interface RsyslogHttp {
+  post(request: HttpPostRequest): Promise<HttpPostOutcome>;
+}
+
 export interface ResourceUsage {
   readonly userMicroseconds?: number;
   readonly systemMicroseconds?: number;
@@ -261,6 +283,7 @@ export interface RsyslogHost {
   readonly files: RsyslogFiles;
   readonly users: RsyslogUsers;
   readonly network: RsyslogNetwork;
+  readonly http?: RsyslogHttp;
   readonly sockets: RsyslogLocalSockets;
   readonly kernelLog?: RsyslogKernelLog;
   hostname(): string;

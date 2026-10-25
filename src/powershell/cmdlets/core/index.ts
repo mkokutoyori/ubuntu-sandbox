@@ -55,11 +55,11 @@ import {
   ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
-  SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
   GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
+import { SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet } from './LocationCmdlets';
 import { AddMemberCmdlet } from './AddMemberCmdlet';
 import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,

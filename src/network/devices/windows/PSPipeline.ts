@@ -828,7 +828,7 @@ function filesystemDirectoryBanner(objects: PSObject[]): string {
   for (const o of objects) {
     const full = String((o as Record<string, unknown>)[fullKey] ?? '');
     const sep = Math.max(full.lastIndexOf('\\'), full.lastIndexOf('/'));
-    if (sep > 1) parents.add(full.slice(0, sep));
+    if (sep > 1) parents.add(sep === 2 ? full.slice(0, 3) : full.slice(0, sep));
   }
   if (parents.size !== 1) return '';
   const dir = parents.values().next().value;

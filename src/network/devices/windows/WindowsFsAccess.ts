@@ -1,4 +1,5 @@
 import type { WinACE, WindowsFileSystem } from './WindowsFileSystem';
+import { parentPathOf } from './windowsPath';
 
 export interface FsPrincipal {
   readonly name: string;
@@ -15,8 +16,7 @@ function lastSegment(principal: string): string {
 }
 
 function parentOf(path: string): string {
-  const cut = path.lastIndexOf('\\');
-  return cut <= 2 ? path.slice(0, 3) : path.slice(0, cut);
+  return parentPathOf(path) || path;
 }
 
 function inheritedAcl(fs: WindowsFileSystem, path: string): readonly WinACE[] {

@@ -467,8 +467,17 @@ export class PSParser {
           && v !== 'finally' && v !== 'default' && v !== 'end' && v !== 'process' && v !== 'begin');
   }
 
+  private standsAlone(): boolean {
+    const token = this.peek();
+    const next = this.peekAt(1);
+    return next === undefined || next.type === PSTokenType.EOF || next.type === PSTokenType.NEWLINE
+      || next.type === PSTokenType.SEMICOLON || next.type === PSTokenType.PIPE
+      || next.position.offset > token.position.offset + token.value.length;
+  }
+
   private startsCommandArgument(): boolean {
     const t = this.peek().type;
+    if ((t === PSTokenType.MINUS || t === PSTokenType.PLUS) && this.standsAlone()) return true;
     if (this.canStartExpression()) return true;
     if (t === PSTokenType.PLUS) {
       const suite = this.peekAt(1);
@@ -728,6 +737,9 @@ export class PSParser {
    */
   private parseCommandArgumentAtom(): PSExpression {
     const tok = this.peek();
+    if ((tok.type === PSTokenType.MINUS || tok.type === PSTokenType.PLUS) && this.standsAlone()) {
+      return this.parseBareword(false);
+    }
     // A command-argument value beginning with unary `-`/`+` (`-Age -5`,
     // `-Minimum -10`, `-n -$x`) — parse the full unary expression;
     // parsePostfixExpression alone can't consume the prefix sign.

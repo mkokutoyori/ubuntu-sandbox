@@ -1,6 +1,6 @@
 import type { Errno } from '@/network/core/Errno';
 import type {
-  Datagram, DatagramOptions, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions, LocalStreamBinding, LocalStreamOptions, LocalStreamStage, ProcessDetails, OpenFileOptions, OpenFileResult, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions,
+  Datagram, DatagramOptions, FileHandle, FileStat, HttpPostOutcome, HttpPostRequest, OpenReadResult, ListenOptions, ListenOutcome, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions, LocalStreamBinding, LocalStreamOptions, LocalStreamStage, ProcessDetails, OpenFileOptions, OpenFileResult, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions,
   TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { ConfigLoader, type ModuleCatalog } from '@/network/rsyslog/engine/Loader';
@@ -251,6 +251,14 @@ export class LabHost implements RsyslogHost {
   domain: string | null = null;
   zone: string | undefined = 'UTC';
   readonly tcpAccepted: LabConnection[] = [];
+  readonly httpRequests: HttpPostRequest[] = [];
+  httpOutcome: (request: HttpPostRequest) => HttpPostOutcome | Promise<HttpPostOutcome> = () => ({ status: 204 });
+  readonly http = {
+    post: async (request: HttpPostRequest): Promise<HttpPostOutcome> => {
+      this.httpRequests.push(request);
+      return this.httpOutcome(request);
+    },
+  };
 
   constructor(readonly address: string, readonly net: LabNetwork, startMs = EPOCH_2026_10_19_NOON) {
     this.nowMs = startMs;

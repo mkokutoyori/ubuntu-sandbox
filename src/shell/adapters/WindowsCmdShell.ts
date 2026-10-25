@@ -14,10 +14,10 @@ import { ShellFactory } from '../ShellFactory';
 import { NestedSshLogin } from '../NestedSshLogin';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { leaseWindowsSession, returnWindowsSession } from './WindowsShellSessionLease';
 
 export interface WindowsCmdShellOptions extends AbstractShellOptions {
-  /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
-  readonly windowsSession?: WindowsShellSession | null;
+  readonly forkFrom?: WindowsShellSession | null;
 }
 
 interface WindowsDevice {
@@ -27,6 +27,12 @@ interface WindowsDevice {
 }
 
 const CMD_EXIT_WITH_CODE = /^exit(?:\s+\/b)?\s+(-?\d+)$/i;
+
+const CHILD_LAUNCHERS: Readonly<Record<string, 'cmd' | 'powershell' | 'pwsh'>> = {
+  cmd: 'cmd', 'cmd.exe': 'cmd',
+  powershell: 'powershell', 'powershell.exe': 'powershell',
+  pwsh: 'pwsh', 'pwsh.exe': 'pwsh',
+};
 
 /** Canonical cmd.exe activation banner — matches the real CLI banner. */
 const CMD_BANNER: readonly string[] = [
@@ -46,48 +52,21 @@ export class WindowsCmdShell extends AbstractShell {
 
   protected override eofEndsSession = false;
 
-  /** When true, the shell allocated its own WindowsShellSession and
-   *  must close it on dispose; when false, the session was supplied by
-   *  the caller (local cmd terminal) which owns its lifecycle. */
-  private readonly ownsSession: boolean;
-
   constructor(opts: WindowsCmdShellOptions) {
     super(opts);
-    if (opts.windowsSession) {
-      this.windowsSession = opts.windowsSession;
-      this.ownsSession = false;
-    } else if (opts.device instanceof WindowsPC) {
-      // No session passed (typical of an SSH-pushed cmd) — allocate one
-      // pointing at the SSH user's home so `cd` / `dir` / `mkdir`
-      // operate on the user's actual directory tree, not the device
-      // global cwd that would silently leak \C:\\Users\\User\\… into
-      // every SSH session.
-      this.windowsSession = opts.device.openShellSession({
-        user: opts.user,
-        cwd: opts.context.cwd && opts.context.cwd.length > 0
-          ? opts.context.cwd
-          : `C:\\Users\\${opts.user}`,
-      });
-      this.ownsSession = true;
-    } else {
-      this.windowsSession = null;
-      this.ownsSession = false;
-    }
+    this.windowsSession = leaseWindowsSession({
+      device: opts.device, user: opts.user, directory: opts.context.cwd, forkFrom: opts.forkFrom,
+    });
   }
 
   protected override onDispose(): void {
-    if (this.windowsSession && this.ownsSession
-        && this.device instanceof WindowsPC) {
-      this.device.closeShellSession(this.windowsSession);
-    }
+    returnWindowsSession(this.device, this.windowsSession);
   }
 
   getPrompt(): string {
-    // Prefer the per-terminal Windows session's cwd when one is bound —
-    // that's what makes `cd D:\foo` in this terminal NOT leak into a
-    // sibling terminal. Falls back to the IShell context cwd (set at
-    // factory time from the SSH user's home), and finally to the
-    // `C:\Users\<user>` default.
+    if (this.windowsSession && this.device instanceof WindowsPC) {
+      return this.device.commandPrompt(this.windowsSession);
+    }
     const cwd = this.windowsSession?.cwd
       ?? (this.context.cwd && this.context.cwd.length > 0 ? this.context.cwd : null)
       ?? `C:\\Users\\${this.user}`;
@@ -115,17 +94,14 @@ export class WindowsCmdShell extends AbstractShell {
     const lower = line.trim().toLowerCase();
     const exitWithCode = CMD_EXIT_WITH_CODE.exec(line.trim());
     if (exitWithCode) return { output: [], exit: true, exitCode: Number.parseInt(exitWithCode[1], 10) & 0xff };
-    // cmd.exe's `powershell` / `pwsh` launchers — hand off to the PS
-    // child shell pointed at THIS device (local OR remote). The current
-    // `windowsSession` travels with the child so cwd stays in sync.
-    if (lower === 'powershell' || lower === 'powershell.exe'
-        || lower === 'pwsh' || lower === 'pwsh.exe') {
-      const child = ShellFactory.tryCreateChild(lower.startsWith('pwsh') ? 'pwsh' : 'powershell', {
+    const launched = CHILD_LAUNCHERS[lower];
+    if (launched) {
+      const child = ShellFactory.tryCreateChild(launched, {
         device: this.device,
         user: this.user,
         parent: this,
         cwd: this.windowsSession?.cwd,
-        extras: { windowsSession: this.windowsSession },
+        extras: { forkFrom: this.windowsSession },
       });
       if (child) return { output: [], childShell: child };
     }

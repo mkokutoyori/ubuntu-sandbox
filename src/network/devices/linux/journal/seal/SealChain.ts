@@ -24,11 +24,6 @@ export interface TagRecord {
   readonly seqnum: number;
   readonly epoch: number;
   readonly tag: Uint8Array;
-  readonly stream: readonly Uint8Array[];
-  readonly headerIndex: number | null;
-  readonly lastEntryRealtime: number | null;
-  readonly maxEntryRealtime: number;
-  readonly minEntryRealtime: number;
 }
 
 export function littleEndian(value: number | bigint, length: number): Uint8Array {
@@ -74,12 +69,8 @@ export function epochFor(realtimeUsec: number, key: Pick<SealKey, 'startUsec' | 
 export class SealChain {
   readonly tags: TagRecord[] = [];
   private pending: Uint8Array[] = [];
-  private pendingHeaderIndex: number | null = null;
-  private lastEntryRealtime: number | null = null;
-  private maxEntryRealtime = 0;
-  private minEntryRealtime = Number.POSITIVE_INFINITY;
 
-  constructor(readonly key: SealKey, private readonly allocateTag: () => number) {}
+  constructor(readonly key: SealKey, private readonly allocateTag: () => number, private readonly writeTag: (offset: number, seqnum: number, epoch: number, tag: Uint8Array) => void = () => undefined) {}
 
   get tagCount(): number {
     return this.tags.length;
@@ -93,31 +84,16 @@ export class SealChain {
     for (const chunk of chunks) this.pending.push(chunk);
   }
 
-  putHeader(chunk: Uint8Array): void {
-    this.pendingHeaderIndex = this.pending.length;
-    this.pending.push(chunk);
-  }
-
-  noteEntry(realtimeUsec: number): void {
-    this.lastEntryRealtime = realtimeUsec;
-    this.maxEntryRealtime = Math.max(this.maxEntryRealtime, realtimeUsec);
-    this.minEntryRealtime = Math.min(this.minEntryRealtime, realtimeUsec);
-  }
-
   appendTag(): void {
     const offset = this.allocateTag();
     const seqnum = this.tags.length + 1;
     const epoch = this.currentEpoch;
     this.put(objectHeader(OBJECT_TAG, TAG_OBJECT_SIZE), littleEndian(seqnum, 8), littleEndian(epoch, 8));
     const stream = this.pending;
-    const headerIndex = this.pendingHeaderIndex;
     this.pending = [];
-    this.pendingHeaderIndex = null;
-    this.tags.push({
-      offset, seqnum, epoch, tag: tagValue(tagKey(this.key.state), stream), stream, headerIndex,
-      lastEntryRealtime: this.lastEntryRealtime, maxEntryRealtime: this.maxEntryRealtime, minEntryRealtime: this.minEntryRealtime,
-    });
-    this.minEntryRealtime = Number.POSITIVE_INFINITY;
+    const value = tagValue(tagKey(this.key.state), stream);
+    this.writeTag(offset, seqnum, epoch, value);
+    this.tags.push({ offset, seqnum, epoch, tag: value });
   }
 
   maybeAppendTag(realtimeUsec: number): void {

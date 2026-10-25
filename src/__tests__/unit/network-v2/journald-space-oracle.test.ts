@@ -11,8 +11,8 @@
  * MaxRetentionSec (the timer of journald.c), MaxUse and MaxFiles.  The rate-limit scenario compares what survives and the
  * "Suppressed N messages" driver messages.  The vacuum cases compare the files kept by journal_directory_vacuum.
  * Compress= is measured too: the header flag of a file created under Compress=no, which payloads the real daemon compressed (its debug
- * log names each one) under the default threshold of 512 and under Compress=2000, and how far the stand-in for zstd lands from the real
- * sizes - zstd itself is not ported, the stand-in is an LZ77 and entropy estimate calibrated on twelve payloads (PayloadCompression.ts).
+ * log names each one) under the default threshold of 512 and under Compress=2000, and how far the zstd encoder of the simulator lands from the real
+ * sizes (src/network/compression/zstd, which writes the bytes of the compressed data objects).
  * Inputs taken from the recording because the daemon fixes them itself: the process facts of the sender and of journald, the
  * statvfs of the journal directory and the SELinux label.
  * Measured before the port (git stash push -- src/network): every file comparison falls - sizes were a constant 8 MiB, there was
@@ -241,7 +241,7 @@ describe('Compress= against the real daemon', () => {
     expect(compressed).toEqual(objects.map(([raw]) => raw));
   });
 
-  it('a payload that the real zstd shrank is shrunk by the stand-in, to within 35% and 24 bytes (zstd itself is not ported: the stand-in is an LZ77 and entropy estimate, calibrated on these twelve payloads)', () => {
+  it('a payload that the real zstd shrank is shrunk by the simulated encoder, to within 35% and 24 bytes of the real size', () => {
     const payloads = real.texts.map((text) => Uint8Array.from(Buffer.from(`MESSAGE=${text}`)));
     objects.forEach(([raw, zstd]) => {
       const bytes = payloads.find((candidate) => candidate.length === raw) as Uint8Array;

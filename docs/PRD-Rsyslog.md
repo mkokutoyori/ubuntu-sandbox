@@ -333,8 +333,8 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   `RateLimitIntervalSec`/`RateLimitBurst` (et `LogRateLimit*` du fichier d'unité) limitent par unité et par groupe de priorités, avec la
   modulation du seuil par l'espace disponible de `journald-rate-limit.c`, et le message « Suppressed N messages from unit ». `SplitMode`
   répartit les messages en `user-<uid>.journal`. `Compress=` fixe le drapeau `COMPRESSED-ZSTD` des fichiers créés et le seuil
-  au-delà duquel un objet est compressé ; la taille compressée est une estimation (LZ77 et entropie, `PayloadCompression.ts`, à 35 % de zstd
-  sur les douze charges mesurées), zstd lui-même n'étant pas porté. `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
+  au-delà duquel un objet est compressé, en zstd réel (`compression/zstd/`, RFC 8878, décodeur et encodeur validés contre le zstd de Node ; le
+  journal ne garde la forme compressée que si elle est plus courte). `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
   Les cinq cas de l'oracle (fichiers restants, message d'usage du disque, messages de suppression, `--vacuum-*`) sont mesurés contre
   le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
   volume unique, donc `/run` (journal volatil) partage la capacité de la racine.
@@ -346,11 +346,26 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   invalide). `SealChain.ts` suit `journal-authenticate.c` : un objet Tag de 64 octets par intervalle de scellement franchi sur l'HORLOGE SIMULÉE,
   HMAC-SHA256 sur l'en-tête, les tables de hachage et les objets écrits depuis le tag précédent, clé tirée de l'état de l'époque, puis
   évolution et réécriture du fichier de clé. `JournalFile` porte les drapeaux `SEALED`/`SEALED_CONTINUOUS` et le compteur de tags de `--header` ;
-  `Seal=no` ou l'absence de fichier de clé laisse les fichiers neufs non scellés. `--verify` applique `journal_file_verify` : époque continue,
+  `Seal=no` ou l'absence de fichier de clé laisse les fichiers neufs non scellés. `--verify` relit les octets du fichier (voir « Fichiers journal en octets réels » plus bas) : époque continue,
   bornes des entrées, tag recalculé ; avec la bonne clé il rapporte « Validated from … to … », avec une autre « Tag failed verification »
   (« Bad message »), sans clé « Required key not available ». La chaîne a été comparée au vrai `systemd-journald` et `journalctl` 255.4 sur un
   fichier scellé ; le défaut amont selon lequel le premier fichier d'un démarrage échoue à la vérification de son premier tag (le seqnum_id de
   l'en-tête change à la première entrée) est reproduit volontairement.
+
+- **Fichiers journal en octets réels et `journalctl --verify`** (`journal-image-oracle.test.ts`, `journal-verify-oracle.test.ts`, `journal-files-vfs.test.ts`) :
+  `journal/format/JournalImage.ts` écrit le format de fichier de systemd 255 (`journal-file.c`, COMPACT + KEYED-HASH : siphash24 clé = `file_id`, lookup3 pour le
+  `xor_hash` des entrées, tables de hachage, chaînes de données et de champs, tableaux d'entrées avec leur cache de queue, objets Tag, profondeurs de chaîne) et les
+  fichiers du VFS (`/var/log/journal/<machine-id>/*.journal`) SONT ces octets : `dd`, `cp`, `cat`, `truncate` et une écriture dans le VFS les lisent et les modifient,
+  et une édition est relue par le démon (`JournalFile.loadBytes`). Cinq fichiers réels écrits par le `systemd-journald` 255.4 installé (simple, riche en champs,
+  compressé zstd, premier fichier scellé, fichier scellé créé depuis un modèle après rotation) sont rejoués par l'écrivain et doivent être retrouvés octet pour
+  octet. `journal/format/JournalVerifier.ts` porte `journal_file_verify` (deux passes : parcours des objets avec `journal_file_object_verify`, drapeaux de compression,
+  séquences, tags recalculés depuis les octets du fichier avec FSPRG ; puis `verify_entry_array` et `verify_data_hash_table` avec la bissection
+  `generic_array_bisect` et son cache de chaîne) et `JournalView.ts` `journal_file_open`/`journal_file_verify_header`/`journal_file_move_to_object` ; le texte,
+  le décalage « File corruption detected at … (of N bytes, P%) » et le statut sont comparés à 13 000 altérations rejouées contre le vrai `journalctl --file=… --verify`
+  (`scripts/oracle/record_journal_verify.py` : chaque octet de l'en-tête, chaque champ d'un échantillon d'objets de chaque type, entrées des tables de hachage,
+  drapeaux de compression, semis aléatoire, troncatures, extensions, plages mises à zéro). Le bogue amont de 255 selon lequel le premier fichier scellé d'un démarrage
+  échoue à son premier tag est reproduit parce que l'en-tête haché change (`seqnum_id`) ; un fichier créé après une rotation (modèle) passe. LZ4 est décodé (`compression/lz4/`), XZ
+  non (TODO.md). `journalctl --file=PATH --verify` vérifie n'importe quel fichier du VFS.
 
 - **Files de messages** (`rsyslog-queue-params.test.ts`, `rsyslog-disk-assisted.test.ts`, `rsyslog-disk-queue.test.ts`,
   `rsyslog-queue-shutdown.test.ts`, `rsyslog-queue-enqueue-timeout.test.ts`) : `Queue.ts` est un ensemble de workers comme `queue.c`.
@@ -429,6 +444,18 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   creation d'un nom (fichier, repertoire, lien symbolique, lien dur, tube) et changement d'attributs (`chmod`, `chown`, `chgrp`, `touch`, `setfacl`, `chattr`) sont signales sous le nom
   auquel le chemin se resout ; un lien symbolique place au chemin de la politique n'emet donc rien dans son repertoire quand on ecrit la cible, comme inotify. Le
   suivi des expediteurs de `global(senders.keepTrack)` etait deja porte (`Statistics.ts`) ; seule la source `imptcp` y manque encore.
+- **`push.*` d'impstats** (`rsyslog-impstats-push.test.ts`, `linux-rsyslog-impstats-push.test.ts`, `prometheus-remote-write.test.ts`, `snappy-libsnappy-oracle.test.ts`,
+  `curl-strerror-oracle.test.ts`) : port de `impstats_push.c` et `prometheus_remote_write.c` (`modules/ImpstatsPush.ts`, `PrometheusRemoteWrite.ts`, `Snappy.ts`).
+  A chaque intervalle les compteurs de tous les objets de statistiques sont lus sans remise a zero, chacun devient une serie `origine_objet_compteur_total`
+  (nom encode comme `EncodePrometheusMetricName`), etiquetee (`push.labels`, puis `instance`, `job`, `origin`, `name` selon `push.label.*`, une cle deja
+  presente n'etant pas remplacee), les etiquettes sont triees, la requete est serialisee en protobuf proto3 (un scalaire nul et une chaine vide ne sont pas
+  ecrits), compressee en Snappy puis envoyee en POST avec `Content-Type: application/x-protobuf`, `Content-Encoding: snappy` et
+  `X-Prometheus-Remote-Write-Version: 0.1.0`. `push.batch.maxSeries` et `push.batch.maxBytes` decoupent la requete (la seconde par l'estimation du source) et le
+  premier lot refuse arrete les suivants. Le compresseur Snappy est compare octet pour octet a libsnappy 1.1.10 sur 564 entrees et le decompresseur
+  a 1912 flux alteres ou forges (`scripts/oracle/record_snappy.py`). Le client HTTP est le moteur `curl` de la machine, atteint par le port etroit `RsyslogHttp` :
+  l'ancre de confiance, `--cacert`, `--cert`/`--key` et `-k` valent donc ce qu'ils valent en ligne de commande, les fichiers sont lus avec les identifiants que le
+  demon a apres avoir abandonne ses privileges, et les erreurs reprennent le texte de `curl_easy_strerror` (table verifiee contre libcurl 8.5.0). Les envois
+  sont sequentiels et asynchrones : le demon ne bloque pas pendant la requete, mais deux intervalles ne se chevauchent jamais.
 - **`resource-usage`** (`linux-rsyslog-resource-usage.test.ts`, `io-page-cache.test.ts`) : l'objet d'`impstats` rapporte un `getrusage(RUSAGE_SELF)` calcule a partir
   d'evenements que le demon cause reellement (`process/ProcessUsage.ts`, `process/IoPageCache.ts`). `oublock` compte les secteurs de 512 octets des pages de 4 Kio
   salies (8 secteurs la premiere fois, de nouveau une fois la page ecrite par le noyau apres `dirty_expire_centisecs` = 30 s) ; `inblock` les secteurs lus sur un

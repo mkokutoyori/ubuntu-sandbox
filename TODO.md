@@ -3420,18 +3420,20 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
-les parametres `push.*` d'`impstats` n'existent que sous l'option de
-compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ;
 `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
 omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
-### [journald] `journalctl --verify` ne peut pas detecter une alteration du fichier
-Le scellement est complet (cles FSPRG, objets Tag, `--setup-keys`, `--verify-key` : `journald-seal.test.ts`), mais `JournalFile` compte les octets des objets sans
-etre un fichier binaire du systeme de fichiers : `--verify` rejoue la chaine de tags gardee en memoire, il ne relit aucun octet et ne peut donc pas rapporter
-« File corruption detected at … » apres une edition du fichier par `dd` ou `truncate`. A reprendre avec un journal ecrit en octets reels dans le VFS.
+### [journald] `journalctl --file=` ne sert que `--verify`, et les objets XZ ne se decompressent pas
+`--verify` relit les octets du fichier dans le VFS et porte `journal-verify.c` (`format/JournalVerifier.ts`, compare a 13000 alterations rejouees contre le vrai
+`journalctl` 255.4 : `journal-verify-oracle.test.ts`). `--file=PATH` n'est accepte que pour `--verify` ; les autres actions (`-o`, `--header`, `-n`…) continuent a
+refuser `--file` (« Failed to open files »), la lecture des entrees d'un fichier arbitraire demandant que `JournalctlHost.records()` soit calcule par fichier.
+Un objet DATA marque XZ (flag 1) echoue avec « Cannot allocate memory », qui est ce que le binaire repond a une charge utile qui n'est pas du XZ, mais un vrai
+flux XZ (journal ecrit par un journald compile avec `Compress=xz`) serait refuse a tort faute de decodeur LZMA2 ; le simulateur n'ecrit que du zstd (journald 255
+n'offre pas de choix d'algorithme dans `journald.conf`). Les fichiers journal sont lisibles par tous dans le VFS quel que soit l'utilisateur : le mode `0640 root:systemd-journal`
+est pose mais `journalctl --file=` ne le consulte pas.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
