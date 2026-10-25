@@ -16,9 +16,10 @@ export function operatingDirectoryRoot(host: OperatingDirectoryHost, typed: stri
 export class OperatingDirectory {
   constructor(readonly root: string, private readonly host: OperatingDirectoryHost) {}
 
-  outside(typed: string): boolean {
+  outside(typed: string, tabbing = false): boolean {
     const full = fullPathOf(typed, this.host);
-    return full !== null && !full.startsWith(this.root);
+    if (full === null) return tabbing;
+    return !full.startsWith(this.root) && !(tabbing && this.root.startsWith(full));
   }
 
   readRefusal(): string {

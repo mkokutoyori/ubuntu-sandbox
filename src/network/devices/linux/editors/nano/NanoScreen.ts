@@ -1,6 +1,7 @@
 import type { EditorScreen, ScreenBand, ScreenRow, ScreenSpan } from '../screen/EditorScreen';
 import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
+import { layoutCompletions } from './NanoCompletion';
 import { menuLayout, shownEntryCount, type MenuOptions, type NanoMenuName } from './NanoMenus';
 import type { NanoWindow, Position } from './NanoWindow';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -46,6 +47,7 @@ export interface NanoScreenInput {
   readonly menuOptions: MenuOptions;
   readonly pause: string | null;
   readonly pauseKeepsMenu?: boolean;
+  readonly completions?: { readonly names: readonly string[]; readonly hiddenRows: number } | null;
 }
 
 class Canvas {
@@ -261,6 +263,21 @@ function scrollbarLit(input: NanoScreenInput): readonly boolean[] | null {
   return Array.from({ length: rows }, (_, row) => row >= lowest && row <= highest);
 }
 
+function completionRows(input: NanoScreenInput, completions: { readonly names: readonly string[]; readonly hiddenRows: number }): ScreenRow[] {
+  const window = input.window;
+  const tabsize = input.tabsize;
+  const layout = layoutCompletions(completions.names, window.cols, window.editRows, completions.hiddenRows, tabsize);
+  const rows: ScreenRow[] = new Array(window.editRows).fill(SPACE_ROW);
+  layout.rows.forEach((entries, offset) => {
+    const canvas = new Canvas(window.cols);
+    entries.forEach((entry, column) => {
+      canvas.put(column * layout.columnWidth, clipped(entry, layout.columnWidth - 2, tabsize));
+    });
+    if (layout.firstRow + offset < rows.length) rows[layout.firstRow + offset] = canvas.row();
+  });
+  return rows;
+}
+
 function editRows(input: NanoScreenInput): ScreenRow[] {
   const window = input.window;
   const rows: ScreenRow[] = [];
@@ -443,7 +460,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
 
   if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? titleRow(cols, input.title.heading, '', '', tabsize, null, input.emphasis, true) : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags, input.emphasis);
 
-  const body = editRows(input);
+  const body = input.completions ? completionRows(input, input.completions) : editRows(input);
   const bodyTop = layout.editFrom;
   body.forEach((row, index) => { if (bodyTop + index < rows.length) rows[bodyTop + index] = row; });
 

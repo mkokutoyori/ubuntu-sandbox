@@ -838,6 +838,15 @@ sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
 nano ferait apres un `^L`.
 
+### [nano] `~` dans les invites de fichier
+Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
+developpe `~/x` avec le HOME du processus (`expand_leading_tilde`) et complete `~util` avec
+`/etc/passwd` (`username_completion`). `EditorFsContext` ne porte ni le HOME
+ni la liste des comptes : le moteur traite `~` comme un nom ordinaire (aucune
+completion, aucun developpement, y compris a l'ouverture d'un fichier).
+**Report** : il faut une couture `EditorFsContext.homeDirectory()` et un acces
+a la table des comptes de la machine, branches sur `LinuxUserManager`.
+
 ---
 
 ### [terminal] Ctrl-C ne libere le terminal que pour les clients declares `foregroundClient`

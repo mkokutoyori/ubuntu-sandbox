@@ -84,6 +84,17 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     return [...this.files.keys()].some((name) => name.startsWith(prefix)) ? 'directory' : 'missing';
   }
 
+  listDirectory(path: string): string[] | null {
+    const resolved = this.resolvePath(path);
+    if (this.kindOf(resolved) !== 'directory') return null;
+    const prefix = resolved === '/' ? '/' : `${resolved}/`;
+    const names = new Set<string>();
+    for (const file of this.files.keys()) {
+      if (file.startsWith(prefix)) names.add(file.slice(prefix.length).split('/')[0]);
+    }
+    return [...names];
+  }
+
   setMode(path: string, mode: number): void {
     this.modes.set(this.resolvePath(path), mode);
   }

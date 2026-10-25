@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
 (the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
@@ -949,7 +949,45 @@ def gen_mouse(seed, count):
         cases.append({"id": "mou%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": r.choice(MOUSE_FLAG_SETS) + ["t.txt"], "steps": steps})
     return cases
 
+TAB_NAMES = ["foo.txt", "foobar.txt", "foo", "bar.cfg", "baz", "sub/a.txt", "sub/b.txt", "sub/deep/x.txt", "sub2/y.txt", ".hidden", ".conf/z", "Zed.txt", "alpha", "alpine/1", "zzz.log", "\u00e9.txt", "\u4e2d\u6587.txt", "foo-1", "foo_2.bak", "a b.txt"]
+TAB_FRAGMENTS = ["f", "fo", "foo", "foo.", "foob", "b", "ba", "s", "su", "sub", "sub/", "sub/d", "sub2", ".", ".h", ".c", "Z", "z", "a", "al", "alp", "\u00e9", "\u4e2d", "x", "item", "item1", "t", "t.", ""]
+TAB_OPENERS = ["C-r", "C-r", "C-o", "C-o", "C-w", "C-\\", "C-t"]
+
+def gen_tab(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        names = r.sample(TAB_NAMES, r.randint(3, 9))
+        if r.random() < 0.15:
+            names += ["item%02d" % n for n in range(1, r.randint(12, 40))]
+        files = {name: ["x"] for name in names}
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (8, 30), (6, 40), (14, 50), (12, 100)])
+        steps = []
+        for _ in range(r.randint(0, 3)):
+            steps += [r.choice(["C-w", "C-w", "C-\\"]), r.choice(["foo", "foobar", "fab", "fx", "bar", "a"]), "Enter"]
+            if steps[-3] == "C-\\":
+                steps += [r.choice(["bar", "baz", "b"]), "Enter", "C-c"]
+        for _ in range(r.randint(1, 3)):
+            opener = r.choice(TAB_OPENERS)
+            steps.append(opener)
+            if opener == "C-o":
+                steps.append("C-k")
+            fragment = r.choice(TAB_FRAGMENTS)
+            if fragment:
+                steps.append(fragment)
+            for _ in range(r.randint(1, 4)):
+                steps.append("Tab")
+                if r.random() < 0.25:
+                    steps.append(r.choice(["x", "a", "BSpace", "Left", "Home", "End"]))
+            steps.append(r.choice(["C-c", "C-c", "Enter"] if opener in ("C-w", "C-t") else ["C-c", "C-c", "Left", "Enter"]))
+            if steps[-1] == "Left":
+                steps[-1] = "C-c"
+        cases.append({"id": "tab%d-%d" % (seed, i), "text": ["alpha", "beta"], "files": files, "rows": rows, "cols": cols, "args": ["t.txt"], "steps": steps})
+    return cases
+
 def gen(seed, count, corpus):
+    if corpus == "tab":
+        return gen_tab(seed, count)
     if corpus == "mouse":
         return gen_mouse(seed, count)
     if corpus == "exec":
@@ -1023,7 +1061,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "mouse", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

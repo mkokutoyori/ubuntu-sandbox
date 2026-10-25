@@ -28,6 +28,7 @@ import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
+import { completeFileName, nextHistoryCompletion } from './nano/NanoCompletion';
 import { clickedShortcut, clickedYesNo, keyOfShortcutLabel, WHEEL_STEP } from './nano/NanoMouse';
 import { WorkingDirectoryFs } from './WorkingDirectoryFs';
 
@@ -202,6 +203,12 @@ export class NanoEngine {
   private searchHistory: string[] = [];
   private replaceHistory: string[] = [];
   private historyPosition: number | null = null;
+  private tabPointers = new Map<string[], number>();
+  private historyInUse: string[] | null = null;
+  private listedCompletions: readonly string[] | null = null;
+  private listedIn: NanoMode | null = null;
+  private tabFragmentLength: number | null = null;
+  private tabPressedThisKey = false;
   private historyStash: string | null = null;
   private useRegex = false;
   private replaceWithBuffer = '';
@@ -397,7 +404,10 @@ export class NanoEngine {
     if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     const cursorBefore = { line: this._cursorLine, col: this._cursorCol };
+    this.tabPressedThisKey = false;
     act();
+    if (k !== null && !this.tabPressedThisKey) this.tabFragmentLength = null;
+    if (this.listedCompletions !== null && this._mode !== this.listedIn) this.listedCompletions = null;
     if (this.searchSpotlight === null && this.isPrompting()) this.searchSpotlight = carriedSpotlight;
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
@@ -622,6 +632,56 @@ export class NanoEngine {
     return `${base}${format}${this.live.backup ? ' [Backup]' : ''}`;
   }
 
+  private promptAnswer(): { get: () => string; set: (value: string) => void; history: string[] | null; files: boolean } | null {
+    switch (this._mode) {
+      case 'save-prompt': return { get: () => this.saveFileNameBuffer, set: (v) => { this.saveFileNameBuffer = v; }, history: null, files: true };
+      case 'read-file-prompt': return { get: () => this.readFileBuffer, set: (v) => { this.readFileBuffer = v; }, history: null, files: true };
+      case 'search':
+      case 'replace-search': return { get: () => this.searchAnswer, set: (v) => { this.searchAnswer = v; }, history: this.searchHistory, files: false };
+      case 'replace-with': return { get: () => this.replaceWithBuffer, set: (v) => { this.replaceWithBuffer = v; }, history: this.replaceHistory, files: false };
+      case 'execute-prompt': return { get: () => this.executeCmdBuffer, set: (v) => { this.executeCmdBuffer = v; }, history: this.executeHistory, files: false };
+      default: return null;
+    }
+  }
+
+  private completeWithTab(): boolean {
+    const field = this.promptAnswer();
+    if (field === null) return false;
+    this.tabPressedThisKey = true;
+    if (field.history !== null) {
+      this.completeFromHistory(field.history, field.get, field.set);
+      return true;
+    }
+    if (this.live.restricted) return true;
+    const answer = field.get();
+    if (this._promptCursor < answer.length) return true;
+    const completion = completeFileName(this.fs, answer, (fullName) => this.operating === null || !this.operating.outside(fullName, true));
+    if (this.listedCompletions !== null && (completion === null || completion.list === null)) this.listedCompletions = null;
+    if (completion === null) return true;
+    if (completion.answer !== answer) {
+      field.set(completion.answer);
+      this._promptCursor = completion.answer.length;
+    }
+    if (completion.list !== null) {
+      this.listedCompletions = completion.list;
+      this.listedIn = this._mode;
+    }
+    return true;
+  }
+
+  private completeFromHistory(history: string[], get: () => string, set: (value: string) => void): void {
+    if (this.tabFragmentLength === null) this.tabFragmentLength = get().length;
+    if (this.tabFragmentLength > 0) {
+      const next = nextHistoryCompletion(history, this.historyPosition ?? this.tabPointers.get(history) ?? history.length, get(), this.tabFragmentLength);
+      if (next !== null) {
+        this.historyPosition = next.position;
+        this.tabPointers.set(history, next.position);
+        set(next.text);
+      }
+    }
+    this._promptCursor = get().length;
+  }
+
   private activeMenu(prompt: { menu: NanoMenuName } | null = this.promptView()): NanoMenuName {
     if (this.helpTitle !== null) return prompt === null ? 'help' : 'search-in-help';
     return prompt === null ? 'main' : prompt.menu;
@@ -694,6 +754,7 @@ export class NanoEngine {
         ? { question: 'Save modified buffer? ', withAll: false }
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
+      completions: this.listedCompletions === null ? null : { names: this.listedCompletions, hiddenRows: this.live.zero && this.window.rows > 1 ? 1 : 0 },
       menu: this.activeMenu(prompt),
       menuOptions: this.menuOptions(),
       pause: messageExpired ? null : this.pauseNote,
@@ -872,6 +933,7 @@ export class NanoEngine {
   }
 
   private dispatchKey(k: EditorKeyInput): void {
+    if (k.key === 'Tab' && !k.ctrl && !k.alt && !k.shift && this.completeWithTab()) return;
     switch (this._mode) {
       case 'edit': return this.helpTitle === null ? this.applyEditKey(k) : this.applyHelpViewerKey(k);
       case 'save-prompt': return this.applySavePromptKey(k);
@@ -2322,6 +2384,7 @@ export class NanoEngine {
     viewer.lastSearchTerm = this.lastSearchTerm;
     viewer.searchHistory = this.searchHistory;
     viewer.replaceHistory = this.replaceHistory;
+    viewer.tabPointers = this.tabPointers;
     viewer.resize(rows, cols);
     this.helpViewer = viewer;
     this.wipeStatus();
@@ -2784,8 +2847,10 @@ export class NanoEngine {
   }
 
   private resetHistoryRecall(): void {
+    if (this.historyStash !== null && this.historyInUse !== null) this.tabPointers.delete(this.historyInUse);
     this.historyPosition = null;
     this.historyStash = null;
+    this.historyInUse = null;
   }
 
   private recallHistory(k: EditorKeyInput, history: string[], get: () => string, set: (value: string) => void): boolean {
@@ -2801,6 +2866,7 @@ export class NanoEngine {
     if (older) {
       if (this.historyStash === null) this.historyPosition = history.length;
       if (this.historyPosition === history.length) this.historyStash = get();
+      this.historyInUse = history;
       if (this.historyPosition !== null && this.historyPosition > 0) {
         this.historyPosition--;
         replace(history[this.historyPosition]);
@@ -2820,6 +2886,7 @@ export class NanoEngine {
     const at = history.indexOf(text);
     if (at >= 0) history.splice(at, 1);
     history.push(text);
+    this.tabPointers.delete(history);
   }
 
   private searchStyle(): SearchStyle {
