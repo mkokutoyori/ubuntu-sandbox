@@ -78,6 +78,7 @@ export interface ErrorRecordSpec {
   readonly exceptionType: string;
   readonly fullyQualifiedErrorId: string;
   readonly category?: string;
+  readonly activity?: string;
   readonly targetObject?: PSValue;
 }
 
@@ -85,7 +86,7 @@ export function newErrorRecord(spec: ErrorRecordSpec): Record<string, PSValue> {
   return typed({
     Message: spec.message,
     Exception: makeExceptionObject(spec.exceptionType, spec.message) as unknown as PSValue,
-    CategoryInfo: { Category: spec.category ?? 'NotSpecified' } as Record<string, PSValue>,
+    CategoryInfo: { Category: spec.category ?? 'NotSpecified', Activity: spec.activity ?? null } as Record<string, PSValue>,
     TargetObject: spec.targetObject ?? null,
     FullyQualifiedErrorId: spec.fullyQualifiedErrorId,
   } as Record<string, PSValue>, 'System.Management.Automation.ErrorRecord');

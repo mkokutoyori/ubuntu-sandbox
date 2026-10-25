@@ -73,7 +73,7 @@ describe('une chaine entre guillemets traverse le relais PowerShell', () => {
   });
 
   it('un parametre nomme recoit la chaine entiere', async () => {
-    expect(await ps('Get-Item -Path "a - b"')).toContain("'a - b'");
+    expect(await ps('Get-Item -Path "a - b"')).toContain("\\a - b' because it does not exist.");
   });
 
   it('`-Command` replie l\'echappement `\"\"` de cmd.exe', async () => {
