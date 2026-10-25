@@ -6,9 +6,14 @@
  * Les bancs Node ne le reproduisaient pas (la rafale se termine en 3 s) ; ce spec mesure dans Chromium : plantage de l'onglet, gel de la page
  * (retard d'un battement de 100 ms), erreurs de console, durée jusqu'au marqueur de fin.
  *
- * Mesuré : avec trois terminaux tuilés (R-AKWA en `debug ip nat`, SRV-WEB en `tcpdump`, l'hôte qui lance la rafale), l'ancien `notify()` réveillait
- * TerminalView une fois par ligne (~7 000 rendus d'un défilement de 5 000 lignes) : la page ne répond plus, `press('Enter')` expire après 10 s.
- * Avec `notify()` limité à un réveil par intervalle de 16 ms, la rafale se termine en 4 s et la page reste réactive (retard de battement < 100 ms).
+ * Topologie complétée selon le signalement : 170.20.0.0/24 est branché sur Gi0/1 de l'ISP par un switch Cisco, et le serveur Linux qui y répond (170.20.0.2) a
+ * pris son adresse par DHCP (le bail ne porte pas de passerelle). Modes : `dhcp` (défaut : l'hôte du LAN curl 170.20.0.2 à travers le PAT, tcpdump dans ce
+ * serveur), `static` (hôte extérieur vers l'adresse du NAT statique), `pat` (hôte du LAN vers l'hôte EXT).
+ *
+ * Mesuré (mode dhcp, quatre terminaux tuilés : R-AKWA en `debug ip nat`, le serveur en `tcpdump`, SRV-WEB et l'hôte qui lance la rafale) :
+ *   - ancien `notify()` : tâches longues de 13,3 s au total (la plus longue 4,2 s), tas JS 703 Mo, 8 579 noeuds DOM, la page ne répond plus (retard de battement 4,2 s) ;
+ *   - `notify()` limité à un réveil par 16 ms : 2,0 s au total (la plus longue 1,3 s, le travail synchrone de la simulation), tas 435 Mo, 4 567 noeuds.
+ * Le spec échoue sur l'ancien code (retard de battement > 1,5 s ou `press` expiré) et passe sur le nouveau.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
@@ -21,13 +26,13 @@ writeFileSync(journal, '');
 const note = (line: string): void => { appendFileSync(journal, `${new Date().toISOString()} ${line}\n`); console.log(line); };
 
 const COUNT = Number(process.env.NAT_LAB_COUNT ?? 200);
-const MODE = process.env.NAT_LAB_MODE ?? 'static';
+const MODE = process.env.NAT_LAB_MODE ?? 'dhcp';
 
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 30_000 });
 }
 
-interface Ids { r: string; isp: string; win: string; lin: string; srv: string; ext: string }
+interface Ids { r: string; isp: string; win: string; lin: string; srv: string; ext: string; web2: string }
 
 async function buildLab(page: Page): Promise<Ids> {
   return page.evaluate(async () => {
@@ -54,6 +59,8 @@ async function buildLab(page: Page): Promise<Ids> {
     const lin = add('linux-pc', 200, 300);
     const srv = add('linux-server', 200, 500);
     const ext = add('linux-server', 1100, 500);
+    const sw2 = add('switch-cisco', 1100, 700);
+    const web2 = add('linux-server', 900, 700);
     const link = (a: { id: string; device: Device }, ai: string, b: { id: string; device: Device }, bi: string): void => {
       store.getState().addConnection(a.id, ai, b.id, bi, 'ethernet');
     };
@@ -65,6 +72,8 @@ async function buildLab(page: Page): Promise<Ids> {
     link(r, 'GigabitEthernet0/1', ispSw, sw(ispSw.device, 0));
     link(isp, 'GigabitEthernet0/0', ispSw, sw(ispSw.device, 1));
     link(ext, ports(ext.device)[0], ispSw, sw(ispSw.device, 2));
+    link(isp, 'GigabitEthernet0/1', sw2, sw(sw2.device, 0));
+    link(web2, ports(web2.device)[0], sw2, sw(sw2.device, 1));
     const eth = (d: Device): string => ports(d)[0];
     await run(lin.device, [`sudo ip addr add 192.168.10.22/24 dev ${eth(lin.device)}`, `sudo ip route add default via 192.168.10.1`]);
     await run(srv.device, [`sudo ip addr add 192.168.10.10/24 dev ${eth(srv.device)}`, `sudo ip route add default via 192.168.10.1`, 'systemctl start nginx']);
@@ -79,9 +88,12 @@ async function buildLab(page: Page): Promise<Ids> {
       'ip nat inside source list 1 interface GigabitEthernet0/1 overload', 'ip nat inside source static 192.168.10.10 203.0.113.3', 'end',
     ]);
     await run(isp.device, [
-      'enable', 'configure terminal', 'interface GigabitEthernet0/0', 'ip address 203.0.113.1 255.255.255.240', 'no shutdown', 'exit', 'end',
+      'enable', 'configure terminal', 'interface GigabitEthernet0/0', 'ip address 203.0.113.1 255.255.255.240', 'no shutdown', 'exit',
+      'interface GigabitEthernet0/1', 'ip address 170.20.0.1 255.255.255.0', 'no shutdown', 'exit',
+      'ip dhcp excluded-address 170.20.0.1', 'ip dhcp pool WEB', 'network 170.20.0.0 255.255.255.0', 'exit', 'end',
     ]);
-    return { r: r.id, isp: isp.id, win: win.id, lin: lin.id, srv: srv.id, ext: ext.id };
+    await run(web2.device, ['sudo dhclient eth0', 'systemctl start nginx']);
+    return { r: r.id, isp: isp.id, win: win.id, lin: lin.id, srv: srv.id, ext: ext.id, web2: web2.id };
   });
 }
 
@@ -117,10 +129,25 @@ test('200 curl en arrière-plan, tcpdump et debug ip nat actifs', async ({ page 
   await openTerminal(page, ids.srv);
   await typeIn(page, ids.srv, 'sudo tcpdump -i eth0 -n');
   const clientId = MODE === 'static' ? ids.ext : ids.lin;
-  const target = MODE === 'static' ? '203.0.113.3' : '203.0.113.9';
+  const leased = await page.evaluate(async (id) => {
+    const store = (window as Record<string, unknown>).__networkStore as { getState(): { deviceInstances: Map<string, Record<string, unknown>> } };
+    const device = store.getState().deviceInstances.get(id) as Record<string, unknown>;
+    return String(await (device.executeCommand as (c: string) => Promise<string>).call(device, 'ip -4 addr show eth0; ip route'));
+  }, ids.web2);
+  note(`web2 lease: ${leased.replace(/\n/g, ' | ')}`);
+  const target = MODE === 'static' ? '203.0.113.3' : MODE === 'dhcp' ? '170.20.0.2' : '203.0.113.9';
+  if (MODE === 'dhcp') { await openTerminal(page, ids.web2); await typeIn(page, ids.web2, 'sudo tcpdump -i eth0 -n'); }
   await openTerminal(page, clientId);
   await page.waitForTimeout(1500);
   note(`modals open: ${await page.locator('[data-testid="terminal-modal"]').count()}`);
+  await page.evaluate(() => {
+    const w = window as Record<string, unknown>;
+    w.__long = { count: 0, total: 0, max: 0 };
+    new PerformanceObserver((list) => {
+      const stats = w.__long as { count: number; total: number; max: number };
+      for (const entry of list.getEntries()) { stats.count++; stats.total += entry.duration; stats.max = Math.max(stats.max, entry.duration); }
+    }).observe({ entryTypes: ['longtask'] });
+  });
   await page.evaluate(() => { (window as Record<string, unknown>).__beat = Date.now(); setInterval(() => { (window as Record<string, unknown>).__beat = Date.now(); }, 100); });
   const started = Date.now();
   await typeIn(page, clientId, `for i in $(seq 1 ${COUNT}); do curl -s -o /dev/null --max-time 5 http://${target}/ & done; wait; echo FINISHED`);
@@ -138,6 +165,12 @@ test('200 curl en arrière-plan, tcpdump et debug ip nat actifs', async ({ page 
     maxLag = Math.max(maxLag, lag);
     if (done > 0) { finished = true; break; }
   }
+  const stats = await page.evaluate(() => ({
+    long: (window as Record<string, unknown>).__long,
+    heapMB: Math.round(((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0) / 1e6),
+    nodes: document.getElementsByTagName('*').length,
+  })).catch(() => null);
+  note(`stats ${JSON.stringify(stats)}`);
   await page.screenshot({ path: join(OUT, 'end.png') }).catch(() => undefined);
   expect(crashed).toBe(false);
   expect(finished).toBe(true);
