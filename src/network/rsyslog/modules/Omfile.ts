@@ -8,7 +8,7 @@ import type {
   TemplateRequest,
 } from '../engine/Modules';
 import { configureCryptoProvider, cryptoParameterDescriptors, isCryptoProviderName } from '../crypto/CryptoEnvironment';
-import type { CryptoProvider } from '../crypto/CryptoProvider';
+import type { CryptoFile, CryptoProvider } from '../crypto/CryptoProvider';
 import { OmfileStream, type StreamSettings } from './OmfileStream';
 import { parseSelectorTemplate } from './SelectorTemplate';
 
@@ -265,10 +265,14 @@ class OmfileInstance implements ActionModuleInstance {
   private open(path: string): OmfileStream | { error: string; reported: boolean } {
     const first = this.openRaw(path);
     if ('error' in first) return first;
-    const encrypted = this.settings.crypto === null ? null : this.settings.crypto.openFile(path, 'w');
-    if (encrypted !== null && 'error' in encrypted) {
-      first.close();
-      return { error: encrypted.error, reported: true };
+    let encrypted: CryptoFile | null = null;
+    if (this.settings.crypto !== null) {
+      const file = this.settings.crypto.openFile(path, 'w');
+      if ('error' in file) {
+        first.close();
+        return { error: file.error, reported: true };
+      }
+      encrypted = file;
     }
     return new OmfileStream(path, first, this.streamSettings(), {
       open: () => this.openRaw(path),

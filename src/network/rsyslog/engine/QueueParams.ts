@@ -1,4 +1,6 @@
 import { numberParam, stringParam, type ParamValues } from '../config/Params';
+import { isCryptoProviderName } from '../crypto/CryptoEnvironment';
+import type { CryptoParameters, CryptoProvider } from '../crypto/CryptoProvider';
 import { RS_RET } from './Log';
 import type { QueueSettings } from './Settings';
 
@@ -23,6 +25,7 @@ export interface QueueContext {
   readonly usedFiles: Set<string>;
   readonly workDirectory: string | null;
   readonly moduleFileAvailable?: (fileName: string) => boolean;
+  readonly configureCrypto?: (provider: 'gcry' | 'ossl', parameters: CryptoParameters) => CryptoProvider | null;
 }
 
 function flagOf(values: ParamValues, key: string): boolean | undefined {
@@ -48,13 +51,14 @@ export function applyQueueParameters(queue: QueueSettings, values: ParamValues, 
   const { diagnostics } = context;
   const number = (key: string): number | undefined => numberParam(values, key);
   const text = (key: string): string | undefined => stringParam(values, key);
+  const cryptoParameters: CryptoParameters = { get: (parameter) => text(`queue.cry.${parameter}`) };
   let applied = 0;
   for (const key of values.keys()) if (key.startsWith('queue.')) applied++;
   if (text('queue.type')?.toLowerCase() === 'direct') applied--;
   queue.fileName = text('queue.filename') ?? queue.fileName;
   queue.spoolDirectory = text('queue.spooldirectory') ?? queue.spoolDirectory;
   if (!normalizedSpoolDirectory(queue, context)) {
-    finalizeQueueType(queue, context, applied);
+    finalizeQueueType(queue, context, applied, cryptoParameters);
     return;
   }
   const size = number('queue.size');
@@ -127,7 +131,7 @@ export function applyQueueParameters(queue: QueueSettings, values: ParamValues, 
     }
   }
   validateDiskAssist(queue, values, context);
-  finalizeQueueType(queue, context, applied);
+  finalizeQueueType(queue, context, applied, cryptoParameters);
 }
 
 function validateDiskAssist(queue: QueueSettings, values: ParamValues, context: QueueContext): void {
@@ -152,7 +156,7 @@ function validateDiskAssist(queue: QueueSettings, values: ParamValues, context: 
   }
 }
 
-function finalizeQueueType(queue: QueueSettings, context: QueueContext, applied: number): void {
+function finalizeQueueType(queue: QueueSettings, context: QueueContext, applied: number, cryptoParameters: CryptoParameters): void {
   const { diagnostics, name } = context;
   checkUniqueDiskFile(queue, context);
   if (queue.type === 'Direct') {
@@ -181,10 +185,16 @@ function finalizeQueueType(queue: QueueSettings, context: QueueContext, applied:
   }
   if (queue.type === 'SegmentedDisk') return;
   const library = `lmcry_${queue.cryProvider}`;
-  if (context.moduleFileAvailable !== undefined && !context.moduleFileAvailable(`${library}.so`)) {
+  if (!isCryptoProviderName(queue.cryProvider) || (context.moduleFileAvailable !== undefined && !context.moduleFileAvailable(`${library}.so`))) {
     diagnostics.error(`queue: could not load crypto provider '${library}' - encryption disabled`, RS_RET_LOAD_ERROR);
     queue.cryProvider = null;
+    return;
   }
+  if (context.configureCrypto === undefined) return;
+  if (queue.cryProvider === 'ossl' && cryptoParameters.get('keyprogram') !== undefined) {
+    diagnostics.parserError("parameter 'queue.cry.keyprogram' not known -- typo in config file?");
+  }
+  queue.crypto = context.configureCrypto(queue.cryProvider, cryptoParameters);
 }
 
 function checkUniqueDiskFile(queue: QueueSettings, context: QueueContext): void {

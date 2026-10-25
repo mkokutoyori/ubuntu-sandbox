@@ -373,6 +373,19 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   ecrit `<fileName>.qi` (deux enregistrements `strm`) au changement de fichier, a chaque `checkpointInterval`, apres une suppression et a l'arret,
   refuse au-dela de `maxDiskSpace` et reprend son arriere-plan apres un redemarrage. Une file assistee remplit sa fille quand le nombre de messages
   en attente atteint `highWatermark`, jusqu'a `lowWatermark` ; a l'arret la partie memoire passe dans la fille (`saveOnShutdown`).
+- **Chiffrement des journaux et des files** (`rsyslog-crypto-omfile.test.ts`, `rsyslog-crypto-queue.test.ts`, `linux-rsyslog-crypto.test.ts`,
+  `rsyslog-crypto-oracle.test.ts`) : `crypto/CryptoProvider.ts` porte `lmcry_gcry` et `lmcry_ossl` (`cry.provider` d'omfile, `queue.cry.provider` d'une file
+  disque ou assistee). Chaque tampon vide est complete par des NUL jusqu'au bloc du chiffre puis chiffre sur place par UN contexte qui vit autant que le
+  fichier ; `<fichier>.encinfo` (0600) porte `FILETYPE:`, `IV:<hex>` a l'ouverture et `END:<decalage>` a la fermeture, un fichier rouvert en ajout recevant un
+  second bloc. `cry.key`, `cry.keyfile` (64 Kio au plus), `cry.keyprogram` (gcry, protocole `RSYSLOG-KEY-PROVIDER:0`), `cry.algo` et `cry.mode` sont lus avec les
+  messages de la source ; la cle d'une file est relue au demarrage et le `.qi` reste en clair, ses decalages etant ceux du fichier chiffre (blocs entiers,
+  chaque message etant vide seul). Les 18 algorithmes de libgcrypt x 7 modes sont mesures contre la vraie bibliotheque (`scripts/oracle/record_rsyslog_crypto.py` :
+  appariements refuses a l'ouverture, cles DES faibles, mode CTR dont le compteur ignore le `setiv` de rsyslog, echec d'AESWRAP) ; cote ossl les suites sont
+  celles d'`openssl enc` (`src/crypto/cipher/blockModes.ts` et `blockCiphers.ts`, partages avec elle), les modes CTR/CFB/OFB (taille de bloc EVP egale a 1, IV
+  d'un octet) n'ayant pas de comportement defini dans la source - l'IV est complete par des zeros - et les chiffres AEAD n'etant pas offerts. La commande
+  `rscryutil` (`-d`, `-k`, `-K`, `-p`, `-a`, `-m`, `-l`, `-r`, `-W`, `-f`) dechiffre bloc par bloc d'apres l'encinfo, retire le remplissage pour gcry seulement
+  (comme l'outil), ecrit ses fichiers de cle en 0400 et reproduit « error 1 processing file » pour un bloc sans `END`.
+
 - **File disque segmentee** (`rsyslog-segmented-disk.test.ts`, `rsyslog-segmented-disk-formats.test.ts`) : en 8.2610 le moteur par defaut de la
   fille d'une file assistee neuve est `segmentedDisk` (`queue_da.c`), choisi au demarrage d'apres le contenu du repertoire de travail (`.qi` ou fichiers
   numerotes = classique ; `<prefixe>.segq` = segmente ; `<prefixe>.da-engine` = marqueur de choix, `RSYSLOG-DA-ENGINE-V1 disk|segmentedDisk`) :

@@ -27,6 +27,7 @@ import { SenderResolver } from './SenderResolver';
 import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
 import { PercentileStatsRegistry } from './PercentileStats';
 import { Statistics } from './Statistics';
+import { configureCryptoProvider } from '../crypto/CryptoEnvironment';
 import { applyQueueParameters, correctQueueParameters, type QueueContext } from './QueueParams';
 import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type CompatMode, type QueueSettings, type QueueTimeouts } from './Settings';
 
@@ -60,6 +61,8 @@ export const QUEUE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'queue.lightdelaymark', type: 'int' }, { name: 'queue.diskqueuetype', type: 'string' },
   { name: 'queue.diskqueueautoupgrade', type: 'binary' }, { name: 'queue.diskqueueidletimeout', type: 'int' },
   { name: 'queue.mutexcontentionstats', type: 'binary' }, { name: 'queue.oncorruption', type: 'string' }, { name: 'queue.cry.provider', type: 'string' },
+  { name: 'queue.cry.key', type: 'word' }, { name: 'queue.cry.keyfile', type: 'word' }, { name: 'queue.cry.keyprogram', type: 'word' },
+  { name: 'queue.cry.mode', type: 'word' }, { name: 'queue.cry.algo', type: 'word' },
 ];
 
 const ACTION_PARAMS: readonly ParamDescriptor[] = [
@@ -558,6 +561,7 @@ export class ConfigLoader implements ConfigSink {
       usedFiles: this.queueFiles,
       workDirectory: this.config.settings.workDirectory,
       moduleFileAvailable: (fileName) => this.options.catalog.fileExists(fileName),
+      configureCrypto: (provider, parameters) => configureCryptoProvider(provider, parameters, this.options.host, (text, code) => this.log.error(text, code)),
       diagnostics: {
         parserError: (text) => this.reportAt(text),
         parserWarning: (text) => this.warnAt(text),

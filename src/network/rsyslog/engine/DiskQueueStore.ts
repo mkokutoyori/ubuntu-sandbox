@@ -1,4 +1,6 @@
+import type { CryptoFile, CryptoProvider } from '../crypto/CryptoProvider';
 import type { FileHandle, RsyslogFiles } from './Host';
+import { latin1Bytes, latin1Text } from './Latin1';
 import { ObjectStreamError, ObjectWriter, readRecord, readRecords, type ObjectRecord, type PropertyValue } from './ObjectStream';
 import { deserializeMessage, serializeMessage, type MessageCodecContext } from './MessageCodec';
 import type { RsyslogMessage } from '../Message';
@@ -13,6 +15,15 @@ const STREAM_MODE_READ = 1;
 const STREAM_MODE_WRITE = 2;
 const OPEN_MODE = 0o600;
 
+const CRYPTO_READ_BUFFER = 4096;
+
+interface PlainFile {
+  readonly content: string;
+  readonly padded: boolean;
+  physicalOffset(index: number): number;
+  charAt(offset: number): number;
+}
+
 export interface DiskQueueSettings {
   readonly directory: string;
   readonly prefix: string;
@@ -24,6 +35,7 @@ export interface DiskQueueEnvironment {
   readonly files: RsyslogFiles;
   readonly codec: () => MessageCodecContext;
   readonly report: (severity: number, text: string) => void;
+  readonly crypto?: CryptoProvider | null;
 }
 
 export function queueFileName(directory: string, prefix: string, number: number): string {
@@ -48,6 +60,7 @@ export class DiskQueueStore implements QueueStore {
   private deleteFile = 1;
   private deleteOffset = 0;
   private handle: FileHandle | null = null;
+  private encrypted: CryptoFile | null = null;
   private forcePersist = 0;
   private needDeleteInfoFile = false;
   private deleteOnClose = true;
@@ -84,31 +97,45 @@ export class DiskQueueStore implements QueueStore {
   append(message: RsyslogMessage): string | null {
     const text = serializeMessage(message, this.environment.codec());
     const oldFile = this.writeFile;
-    const failure = this.writeText(text);
-    if (failure !== null) return failure;
-    this.sizeOnDisk += text.length;
+    const written = this.writeText(text);
+    if (typeof written === 'string') return written;
+    this.sizeOnDisk += written;
     this.positions.set(message, { file: oldFile, offset: this.writeOffset });
     if (this.writeOffset >= this.settings.maxFileSize) this.closeWriteFile();
     if (this.writeFile !== oldFile) this.forcePersist = 2;
     return null;
   }
 
-  private writeText(text: string): string | null {
+  private writeText(text: string): string | number {
+    const path = queueFileName(this.settings.directory, this.settings.prefix, this.writeFile);
     if (this.handle === null) {
-      const opened = this.environment.files.open(queueFileName(this.settings.directory, this.settings.prefix, this.writeFile), this.openOptions);
+      const opened = this.environment.files.open(path, this.openOptions);
       if ('error' in opened) return opened.error;
       this.handle = opened.handle;
+      const crypto = this.environment.crypto ?? null;
+      if (crypto !== null) {
+        const file = crypto.openFile(path, 'w');
+        if ('error' in file) {
+          this.handle.close();
+          this.handle = null;
+          return file.error;
+        }
+        this.encrypted = file;
+      }
     }
-    const failure = this.handle.write(text);
+    const payload = this.encrypted === null ? text : latin1Text(this.encrypted.encrypt(new TextEncoder().encode(text)));
+    const failure = this.handle.write(payload);
     if (failure !== null) return failure;
     this.handle.flush();
-    this.writeOffset += text.length;
-    return null;
+    this.writeOffset += payload.length;
+    return payload.length;
   }
 
   private closeWriteFile(): void {
     this.handle?.close();
     this.handle = null;
+    this.encrypted?.close(this.writeOffset);
+    this.encrypted = null;
     this.writeFile = (this.writeFile + 1) % MAX_DISK_QUEUE_FILES;
     this.writeOffset = 0;
   }
@@ -124,12 +151,17 @@ export class DiskQueueStore implements QueueStore {
     for (let file = this.deleteFile; file < position.file; file++) {
       const path = queueFileName(this.settings.directory, this.settings.prefix, file);
       deleted += this.environment.files.statSize(path) ?? 0;
-      this.environment.files.remove(path);
+      this.removeQueueFile(path);
     }
     this.deleteFile = Math.max(this.deleteFile, position.file);
     this.deleteOffset = position.offset;
     this.sizeOnDisk = Math.max(0, this.sizeOnDisk - deleted);
     return deleted;
+  }
+
+  private removeQueueFile(path: string): void {
+    this.environment.files.remove(path);
+    this.environment.crypto?.deleteStateFiles(path);
   }
 
   persist(checkpoint: boolean, queueSize: number): boolean {
@@ -183,8 +215,10 @@ export class DiskQueueStore implements QueueStore {
     const files = this.environment.files;
     this.handle?.close();
     this.handle = null;
+    this.encrypted?.close(this.writeOffset);
+    this.encrypted = null;
     for (let file = this.deleteFile; file <= this.writeFile; file++) {
-      files.remove(queueFileName(this.settings.directory, this.settings.prefix, file));
+      this.removeQueueFile(queueFileName(this.settings.directory, this.settings.prefix, file));
     }
     files.remove(this.infoFile);
     this.sizeOnDisk = 0;
@@ -194,12 +228,64 @@ export class DiskQueueStore implements QueueStore {
   close(queueSize: number): void {
     this.handle?.close();
     this.handle = null;
+    this.encrypted?.close(this.writeOffset);
+    this.encrypted = null;
     if (queueSize === 0) {
-      this.environment.files.remove(queueFileName(this.settings.directory, this.settings.prefix, this.writeFile));
+      this.removeQueueFile(queueFileName(this.settings.directory, this.settings.prefix, this.writeFile));
     }
     if (this.deleteOnClose) {
-      this.environment.files.remove(queueFileName(this.settings.directory, this.settings.prefix, this.deleteFile));
+      this.removeQueueFile(queueFileName(this.settings.directory, this.settings.prefix, this.deleteFile));
     }
+  }
+
+  private readPlain(path: string): PlainFile | null {
+    const text = this.environment.files.read(path);
+    if (text === null) return null;
+    const crypto = this.environment.crypto ?? null;
+    if (crypto === null) return { content: text, padded: false, physicalOffset: (index) => index, charAt: (offset) => offset };
+    const bytes = latin1Bytes(text);
+    const file = crypto.openFile(path, 'r');
+    if ('error' in file) throw new ObjectStreamError(file.error);
+    const pieces: Uint8Array[] = [];
+    let physical = 0;
+    while (physical < bytes.length) {
+      const left = file.bytesLeftInBlock();
+      if (typeof left === 'object') throw new ObjectStreamError('cannot read the encryption info file');
+      let toRead = left === -1 || left > CRYPTO_READ_BUFFER ? CRYPTO_READ_BUFFER : left;
+      toRead = Math.min(toRead, bytes.length - physical);
+      if (toRead <= 0) break;
+      pieces.push(file.decryptPadded(bytes.subarray(physical, physical + toRead)));
+      physical += toRead;
+    }
+    file.close(0);
+    const plain = new Uint8Array(physical);
+    let at = 0;
+    for (const piece of pieces) {
+      plain.set(piece, at);
+      at += piece.length;
+    }
+    const content = new TextDecoder('utf-8').decode(plain);
+    const bytesBefore = new Uint32Array(content.length + 1);
+    for (let index = 0; index < content.length; index++) {
+      const code = content.charCodeAt(index);
+      const width = code < 0x80 ? 1 : code < 0x800 ? 2 : code >= 0xd800 && code <= 0xdbff ? 4 : code >= 0xdc00 && code <= 0xdfff ? 0 : 3;
+      bytesBefore[index + 1] = bytesBefore[index] + width;
+    }
+    return {
+      content,
+      padded: true,
+      physicalOffset: (index) => bytesBefore[Math.min(index, content.length)],
+      charAt: (offset) => {
+        let low = 0;
+        let high = content.length;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if (bytesBefore[middle] < offset) low = middle + 1;
+          else high = middle;
+        }
+        return low;
+      },
+    };
   }
 
   load(): LoadedBacklog | null {
@@ -223,15 +309,22 @@ export class DiskQueueStore implements QueueStore {
     const messages: RsyslogMessage[] = [];
     const positions: QueuePosition[] = [];
     for (let file = this.deleteFile; file <= this.writeFile; file++) {
-      const content = files.read(queueFileName(this.settings.directory, this.settings.prefix, file));
-      if (content === null) continue;
-      const limit = file === this.writeFile ? this.writeOffset : content.length;
-      let at = file === this.deleteFile ? this.deleteOffset : 0;
-      while (at < limit) {
+      const path = queueFileName(this.settings.directory, this.settings.prefix, file);
+      const plain = this.readPlain(path);
+      if (plain === null) continue;
+      const { content, physicalOffset } = plain;
+      const limitChar = file === this.writeFile ? plain.charAt(this.writeOffset) : content.length;
+      let at = file === this.deleteFile ? plain.charAt(this.deleteOffset) : 0;
+      while (at < limitChar) {
+        if (plain.padded && content.charCodeAt(at) === 0) {
+          at++;
+          continue;
+        }
         const record = readRecord(content, at);
         const message = deserializeMessage(record, this.environment.codec());
         at = record.end;
-        const position = { file, offset: at };
+        while (at < content.length && content.charCodeAt(at) === 0 && plain.padded) at++;
+        const position = { file, offset: physicalOffset(at) };
         this.positions.set(message, position);
         messages.push(message);
         positions.push(position);

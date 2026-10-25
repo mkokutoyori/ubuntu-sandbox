@@ -1,4 +1,5 @@
 import { AllowedSenderList } from './AllowedSenders';
+import type { CryptoProvider } from '../crypto/CryptoProvider';
 import { DEFAULT_PARSER_GLOBALS, type ParserGlobals } from '../MessageParser';
 import type { ParamDescriptor, ParamValue, ParamValues } from '../config/Params';
 
@@ -38,6 +39,7 @@ export interface QueueSettings {
   diskQueueAutoUpgrade: boolean;
   diskQueueIdleTimeout: number;
   cryProvider: string | null;
+  crypto: CryptoProvider | null;
 }
 
 export type QueueKind = 'main' | 'ruleset' | 'action';
@@ -65,7 +67,7 @@ export function defaultQueueSettings(type: string, size: number, kind: QueueKind
     dequeueBatchSize: main ? 256 : kind === 'ruleset' ? 1024 : 128,
     minDequeueBatchSize: 0, minDequeueBatchTimeout: 1000, maxDiskSpace: 0, saveOnShutdown: true, dequeueTimeBegin: 0, dequeueTimeEnd: 25,
     samplingInterval: 0, takeFlowCtlFromMsg: false, mutexContentionStats: false, onCorruption: 'safe', diskQueueType: 'auto',
-    diskQueueAutoUpgrade: false, diskQueueIdleTimeout: 60000, cryProvider: null,
+    diskQueueAutoUpgrade: false, diskQueueIdleTimeout: 60000, cryProvider: null, crypto: null,
   };
 }
 

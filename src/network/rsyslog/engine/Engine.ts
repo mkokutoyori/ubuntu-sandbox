@@ -833,6 +833,7 @@ export class RsyslogEngine implements InputSubmitter {
         files: this.host.files,
         codec: () => ({ localHostName: this.localHostName(), defaultTimeZone: null, compactJson: global.compactJson }),
         report: (severity, text) => this.internal(severity, -1, text),
+        crypto: settings.crypto,
       },
       {
         mode: 0o600, directoryMode: 0o700, uid: null, gid: null, directoryUid: null, directoryGid: null,

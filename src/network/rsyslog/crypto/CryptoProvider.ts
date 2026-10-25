@@ -296,11 +296,16 @@ export class CryptoFile {
     return this.bytesToBlockEnd;
   }
 
-  decrypt(data: Uint8Array): Uint8Array {
+  decryptPadded(data: Uint8Array): Uint8Array {
     if (this.bytesToBlockEnd !== -1) this.bytesToBlockEnd -= data.length;
     if (this.session === null) return data;
     const result = this.session.transform(data);
-    return result.failed ? data : removeProviderPadding(result.data);
+    return result.failed ? data : result.data;
+  }
+
+  decrypt(data: Uint8Array): Uint8Array {
+    const plain = this.decryptPadded(data);
+    return plain === data ? data : removeProviderPadding(plain);
   }
 
   private destroy(offset: number): void {
