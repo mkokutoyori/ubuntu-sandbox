@@ -128,7 +128,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         onKeyDown={dispatch}
         onPaste={paste}
         onWheel={wheel}
-        onMouseDown={click}
+        onMouseUp={click}
         className="absolute inset-0 outline-none"
       >
         {title !== undefined && (

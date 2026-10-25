@@ -77,7 +77,7 @@ test.describe('Scénario (e2e) — coller et cliquer dans nano', () => {
   });
 
   test('cliquer dans le texte repositionne le curseur : la frappe suivante s\'insère au point cliqué', async ({ page }) => {
-    await typeCmd(page, 'nano /tmp/click-test.txt');
+    await typeCmd(page, 'nano -m /tmp/click-test.txt');
     await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('helloworld');
