@@ -24,6 +24,7 @@ export type PSValue =
 
 export class PSEnvironment {
   private readonly vars = new Map<string, PSValue>();
+  private readonly spelled = new Map<string, string>();
   private readonly parent: PSEnvironment | null;
   private readonly constraints = new Map<string, string[]>();
 
@@ -84,7 +85,9 @@ export class PSEnvironment {
    * local copy and never mutate parent scopes.
    */
   set(name: string, value: PSValue): void {
-    this.vars.set(name.toLowerCase(), value);
+    const key = name.toLowerCase();
+    this.vars.set(key, value);
+    if (!this.spelled.has(key)) this.spelled.set(key, name);
   }
 
   /** Writes to the global (root) scope. */
@@ -110,7 +113,7 @@ export class PSEnvironment {
       scope = scope.parent;
     }
     // Not found anywhere — create in current scope
-    this.vars.set(key, value);
+    this.set(name, value);
   }
 
   constrain(name: string, typeNames: string[]): void {
@@ -127,7 +130,9 @@ export class PSEnvironment {
 
   /** Removes a variable from the current scope (mimics Remove-Variable). */
   delete(name: string): void {
-    this.vars.delete(name.toLowerCase());
+    const key = name.toLowerCase();
+    this.vars.delete(key);
+    this.spelled.delete(key);
   }
 
   /** Removes a variable from whichever scope owns it. */
@@ -136,7 +141,7 @@ export class PSEnvironment {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     let scope: PSEnvironment | null = this;
     while (scope !== null) {
-      if (scope.vars.has(key)) { scope.vars.delete(key); return; }
+      if (scope.vars.has(key)) { scope.vars.delete(key); scope.spelled.delete(key); return; }
       scope = scope.parent;
     }
   }
@@ -148,6 +153,16 @@ export class PSEnvironment {
     if (this.vars.has(key)) return true;
     if (this.parent !== null) return this.parent.has(key);
     return false;
+  }
+
+  private spellings(): Map<string, string> {
+    const seen = this.parent?.spellings() ?? new Map<string, string>();
+    for (const key of this.vars.keys()) seen.set(key, this.spelled.get(key) ?? key);
+    return seen;
+  }
+
+  names(): string[] {
+    return [...this.spellings().values()];
   }
 
   // ─── Snapshot (for debugging / testing) ─────────────────────────────────
