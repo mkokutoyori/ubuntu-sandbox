@@ -3914,6 +3914,8 @@ export abstract class LinuxMachine extends EndHost
     return LinuxMachine.SCRIPT_FILE_HEAD_RE.test(input);
   }
 
+  private static readonly LOOP_RE = /(^|[;&|({\s])(for|while|until)\s/;
+
   /**
    * `sshpass -p <pw> scp|sftp ...`: the only way scp/sftp can offer a
    * real credential (audit 03, MAJEUR §4) — routed through the async
@@ -3996,7 +3998,7 @@ export abstract class LinuxMachine extends EndHost
       if (sessionView !== null) return sessionView;
     }
 
-    if (!this.containsNetworkCommand(trimmed)) {
+    if (!this.containsNetworkCommand(trimmed) && !LinuxMachine.LOOP_RE.test(trimmed)) {
       return this.executor.execute(trimmed);
     }
 

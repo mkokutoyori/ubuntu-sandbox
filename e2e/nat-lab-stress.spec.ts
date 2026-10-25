@@ -35,6 +35,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'seq-500000', client: 'lin', commands: () => [`seq 1 500000; echo FINISHED`] },
   { name: 'yes-head-200000', client: 'lin', commands: () => [`yes spam | head -200000; echo FINISHED`] },
   { name: 'nat-table-flood', client: 'lin', commands: (t) => [`for i in $(seq 1 3000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
+  { name: 'logger-100000', client: 'lin', commands: () => [`for i in $(seq 1 100000); do logger -t stress "message number $i with a bit of text to be realistic"; done; echo FINISHED`] },
   { name: 'ping-flood-500', client: 'lin', commands: (t) => [`ping -c 500 -i 0.002 ${t}; echo FINISHED`] },
   { name: 'nmap-1024', client: 'lin', commands: (t) => [`nmap -p 1-1024 ${t}; echo FINISHED`] },
   { name: 'nc-zv-300', client: 'lin', commands: (t) => [`for i in $(seq 1 300); do nc -zv -w 1 ${t} 80 & done; wait; echo FINISHED`] },
