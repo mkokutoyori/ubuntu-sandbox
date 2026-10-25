@@ -3754,3 +3754,5 @@ la configuration (`ip addr add` par poste) coute 330 ms par poste a 400 postes c
 (piste : l'ARP gratuit de chaque `ip addr add` traverse tous les switchs jusqu'a tous les postes). Une rafale de 5000 curl en parallele prend 279 s (56 ms par curl contre
 13 ms dans Node) : le rendu de quatre terminaux ouverts s'ajoute a la simulation, et la table des processus tient 15 inodes /proc par curl simultane. Le journal de journald
 garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
+
+Export d'une topologie, apres le correctif des cles d'hote : un pare-feu FortiGate coute encore 340 ms par equipement (le jumeau d'usine regenere son certificat) et un routeur Huawei 104 ms ; les autres types sont sous 60 ms.
