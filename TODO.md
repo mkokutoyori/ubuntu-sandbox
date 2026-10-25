@@ -838,6 +838,34 @@ sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
 nano ferait apres un `^L`.
 
+### [nano] fichiers nanorc : commandes acceptees mais pas encore evaluees
+`parse_rcfile` de nano 7.2 est porte pour `set` / `unset` (toutes les options de
+`rcopts`), les emplacements (`/etc/nanorc`, `~/.nanorc`, `$XDG_CONFIG_HOME/nano/nanorc`,
+`~/.config/nano/nanorc`, `-f`, `-I`), les textes d'erreur et la fusion avec la ligne
+de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machine
+ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
+est l'etat intermediaire d'une campagne en cours et non un livrable :
+- `bind`, `unbind` (raccourcis reconfigures), `include`, `syntax`, `header`, `magic`,
+  `color`, `icolor`, `comment`, `tabgives`, `linter`, `formatter`, `extendsyntax` :
+  ignorees, y compris les erreurs qu'elles produiraient (« A 'color' command requires
+  a preceding 'syntax' command », « Error reading F: ... » sur un `include` sans
+  fichier). Syntaxes et couleurs : 28b ; raccourcis : 28d.
+- `titlecolor`, `numbercolor`, `stripecolor`, `scrollercolor`, `selectedcolor`,
+  `spotlightcolor`, `minicolor`, `promptcolor`, `statuscolor`, `errorcolor`, `keycolor`,
+  `functioncolor` : arguments non analyses (28b).
+- `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
+  parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
+  encore dans le moteur (28e) ; `magic` n'a d'effet qu'avec les syntaxes (28b) ;
+  `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+- `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
+  echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
+  `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
+  n'est pas portee : le moteur ecrase la sauvegarde.
+- `/etc/nanorc` n'existe pas dans le systeme de fichiers des machines ; la version
+  d'Ubuntu 24.04 (`set historylog`, `set locking`, `set stateflags`, `include
+  "/usr/share/nano/*.nanorc"`) n'y sera posee qu'avec les 44 fichiers de syntaxe (28c),
+  faute de quoi l'`include` ferait afficher « Mistakes in '/etc/nanorc' » a chaque lancement.
+
 ### [nano] `~` dans les invites de fichier
 Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
 developpe `~/x` avec le HOME du processus (`real_dir_from_tilde`, que

@@ -5037,7 +5037,7 @@ export abstract class LinuxMachine extends EndHost
 
   editorHomeDirectory(session?: LinuxShellSession): string | null {
     const uid = session !== undefined && !session.disposed ? session.uid : this.executor.userMgr.currentUid;
-    return this.executor.userMgr.getUserByUid(uid)?.home ?? null;
+    return this.executor.userHomeDirectory(uid);
   }
 
   editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
@@ -5062,13 +5062,10 @@ export abstract class LinuxMachine extends EndHost
   }
 
   editorReadError(path: string, session?: LinuxShellSession): string | null {
-    const vfs = this.executor.vfs;
     const live = session !== undefined && !session.disposed ? session : undefined;
-    const inode = vfs.resolveInode(vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()));
-    if (inode === null || inode.type === 'directory') return null;
     const uid = live?.uid ?? this.executor.getCurrentUid();
     const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
-    return uid !== 0 && !vfs.checkAccess(inode, 'r', uid, gid) ? 'Permission denied' : null;
+    return this.executor.readRefusal(this.executor.vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()), uid, gid);
   }
 
   editorChangeMode(path: string, mode: number, session?: LinuxShellSession): boolean {

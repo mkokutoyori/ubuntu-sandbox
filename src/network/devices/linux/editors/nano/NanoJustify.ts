@@ -13,6 +13,8 @@ export interface JustifyContext {
   readonly trimblanks: boolean;
   readonly wrapAt: number;
   readonly tabsize: number;
+  readonly punctuation: string;
+  readonly brackets: string;
 }
 
 export function indentLength(text: string): number {
@@ -152,19 +154,63 @@ function isLowSurrogateAt(text: string, index: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
 
+interface BytesView {
+  readonly bytes: Uint8Array;
+  readonly measured: string;
+  readonly tail: string;
+  readonly tailStarts: readonly number[];
+}
+
+function viewAtLead(line: string, leadBytes: number): BytesView {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(line);
+  let measured = '';
+  let headBytes = 0;
+  for (const char of line) {
+    if (headBytes >= leadBytes) break;
+    measured += char;
+    headBytes += encoder.encode(char).length;
+  }
+  let tail = '';
+  const tailStarts: number[] = [];
+  const decoder = new TextDecoder();
+  let offset = leadBytes;
+  while (offset < bytes.length) {
+    const size = sequenceLength(bytes, offset);
+    tailStarts[tail.length] = offset;
+    const piece = decoder.decode(bytes.slice(offset, offset + size));
+    for (let unit = 1; unit < piece.length; unit++) tailStarts[tail.length + unit] = offset;
+    tail += piece;
+    offset += size;
+  }
+  tailStarts[tail.length] = bytes.length;
+  return { bytes, measured, tail, tailStarts };
+}
+
+function sequenceLength(bytes: Uint8Array, at: number): number {
+  const first = bytes[at];
+  if (first < 0xc2 || first > 0xf4) return 1;
+  const expected = first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+  if (at + expected > bytes.length) return 1;
+  for (let k = 1; k < expected; k++) if ((bytes[at + k] & 0xc0) !== 0x80) return 1;
+  return expected;
+}
+
 export function rewrapParagraph(lines: string[], start: number, leadString: string, context: JustifyContext): number {
   let index = start;
-  const leadLen = leadString.length;
+  const leadBytes = new TextEncoder().encode(leadString).length;
   while (breadth(lines[index], context.tabsize) > context.wrapAt) {
     const line = lines[index];
-    let breakPos = breakLine(line.slice(leadLen), context.wrapAt - wideness(line, leadLen, context.tabsize), context.tabsize);
-    if (breakPos < 0 || leadLen + breakPos === line.length) break;
-    breakPos += leadLen + 1;
-    lines.splice(index + 1, 0, leadString + line.slice(breakPos));
+    const view = viewAtLead(line, leadBytes);
+    const found = breakLine(view.tail, context.wrapAt - wideness(view.measured, view.measured.length, context.tabsize), context.tabsize);
+    if (found < 0 || view.tailStarts[found] === view.bytes.length) break;
+    let cut = view.tailStarts[found] + 1;
+    const decoder = new TextDecoder();
+    lines.splice(index + 1, 0, leadString + decoder.decode(view.bytes.slice(cut)));
     if (context.trimblanks) {
-      while (breakPos > 0 && line[breakPos - 1] === ' ') breakPos--;
+      while (cut > 0 && view.bytes[cut - 1] === 0x20) cut--;
     }
-    lines[index] = line.slice(0, breakPos);
+    lines[index] = decoder.decode(view.bytes.slice(0, cut));
     index++;
   }
   return index < lines.length - 1 ? index + 1 : index;
@@ -177,6 +223,6 @@ export function justifyParagraph(lines: string[], start: number, count: number, 
   const leadString = sample.slice(0, leadLen);
   concatenateParagraph(lines, start, count, context.quote);
   const first = lines[start];
-  lines[start] = squeeze(first, quoted + indentLength(first.slice(quoted)));
+  lines[start] = squeeze(first, quoted + indentLength(first.slice(quoted)), context.punctuation, context.brackets);
   return rewrapParagraph(lines, start, leadString, context);
 }

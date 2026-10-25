@@ -50,7 +50,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 }) => {
   const engineRef = useRef<NanoEditorDriver>();
   if (!engineRef.current) {
-    const options: NanoLaunchOptions = { settings: launch?.settings, start: launch?.start, displayName };
+    const options: NanoLaunchOptions = { settings: launch?.settings, start: launch?.start, displayName, rc: launch?.rc, menuFlags: launch?.menuFlags };
     engineRef.current = driver ?? new NanoEngine(fsContext!, filePath, initialContent, isNewFile, false, undefined, false, options);
   }
   const engine = engineRef.current;

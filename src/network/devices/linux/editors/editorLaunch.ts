@@ -8,7 +8,9 @@
  * a new engine needs to be reachable from both.
  */
 
-import { parseNanoCommandLine, type NanoStart } from './nano/NanoCommandLine';
+import { parseNanoCommandLine, type CommandLineMemory, type NanoStart } from './nano/NanoCommandLine';
+import { applyRcfiles, type RcHost } from './nano/NanoRc';
+import type { MenuFlags } from './NanoEngine';
 import type { NanoSettings } from './nano/NanoSettings';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './nano/NanoOperatingDirectory';
 
@@ -19,9 +21,18 @@ const EDITOR_NAMES: readonly EditorName[] = ['nano', 'vi', 'vim'];
 /** Flags that make the binary print and exit instead of opening a buffer. */
 const NON_OPENING_FLAGS = new Set(['--version', '-V', '--help', '-h']);
 
+export interface NanoRcNotices {
+  readonly errors: readonly string[];
+  readonly startupProblem: string | null;
+  readonly failure: string | null;
+}
+
 export interface NanoLaunch {
   readonly settings: NanoSettings;
   readonly start: NanoStart | null;
+  readonly memory?: CommandLineMemory;
+  readonly rc?: NanoRcNotices | null;
+  readonly menuFlags?: MenuFlags;
 }
 
 export interface EditorLaunch {
@@ -57,7 +68,7 @@ export function parseEditorArgs(editor: EditorName, args: readonly string[]): Ed
     const invocation = parseNanoCommandLine(args);
     if (invocation.kind !== 'open') return null;
     const first = invocation.files[0];
-    return { editor, filePath: first?.path ?? '', nano: { settings: invocation.settings, start: first?.start ?? null } };
+    return { editor, filePath: first?.path ?? '', nano: { settings: invocation.settings, start: first?.start ?? null, memory: invocation.memory, rc: null } };
   }
   if (args.some((a) => NON_OPENING_FLAGS.has(a))) return null;
 
@@ -79,7 +90,17 @@ export function parseEditorArgs(editor: EditorName, args: readonly string[]): Ed
   return { editor, filePath, nano: null, initialCursorLine, initialCursorCol };
 }
 
+export function withRcfiles(host: RcHost, launch: EditorLaunch): EditorLaunch {
+  const nano = launch.nano;
+  if (nano === null || nano.memory === undefined || (nano.rc ?? null) !== null) return launch;
+  const outcome = applyRcfiles(host, { settings: nano.settings, memory: nano.memory });
+  const rc: NanoRcNotices = { errors: outcome.errors, startupProblem: outcome.startupProblem, failure: outcome.failure };
+  const menuFlags: MenuFlags = { preserve: nano.settings.preserve, saveonexit: nano.settings.saveonexit };
+  return { ...launch, nano: { ...nano, settings: outcome.settings, rc, menuFlags } };
+}
+
 export function editorLaunchFailure(host: OperatingDirectoryHost, launch: EditorLaunch): string | null {
+  if (launch.nano?.rc?.failure) return launch.nano.rc.failure;
   const operating = launch.nano?.settings.operatingdir ?? null;
   return operating !== null && operatingDirectoryRoot(host, operating) === null ? invalidOperatingDirectoryMessage(operating) : null;
 }

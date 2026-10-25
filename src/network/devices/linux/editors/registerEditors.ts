@@ -74,7 +74,7 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
 function nanoSession(seed: EditorSessionSeed): EditorSession {
   const engine = new NanoEngine(
     seed.fs, seed.filePath, seed.content, seed.isNewFile, false, undefined, false,
-    { settings: seed.nano?.settings, start: seed.nano?.start, displayName: seed.displayName },
+    { settings: seed.nano?.settings, start: seed.nano?.start, displayName: seed.displayName, rc: seed.nano?.rc, menuFlags: seed.nano?.menuFlags },
   );
   const view = (): NanoEditorView => ({
     kind: 'nano',

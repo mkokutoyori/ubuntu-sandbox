@@ -275,6 +275,7 @@ import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
+import { applyRcfiles, type RcHost } from './editors/nano/NanoRc';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -6516,8 +6517,11 @@ export class LinuxCommandExecutor {
           const invocation = parseNanoCommandLine(args, cmd);
           if (invocation.kind === 'print') return { output: invocation.stdout, exitCode: 0 };
           if (invocation.kind === 'fail') return { output: [invocation.stderr, invocation.stdout].filter((part) => part !== '').join('\n'), exitCode: 1 };
-          const operating = invocation.settings.operatingdir;
-          if (operating !== null && operatingDirectoryRoot(this.operatingDirectoryHost(), operating) === null) return { output: invalidOperatingDirectoryMessage(operating), exitCode: 1 };
+          const host = this.editorHost();
+          const rc = applyRcfiles(host, invocation);
+          if (rc.failure !== null) return { output: rc.failure, exitCode: 1 };
+          const operating = rc.settings.operatingdir;
+          if (operating !== null && operatingDirectoryRoot(host, operating) === null) return { output: invalidOperatingDirectoryMessage(operating), exitCode: 1 };
           target = invocation.files[0]?.path;
         } else {
           target = args.find((a) => !a.startsWith('-'));
@@ -8275,13 +8279,30 @@ export class LinuxCommandExecutor {
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
 
-  private operatingDirectoryHost(): OperatingDirectoryHost {
+  userHomeDirectory(uid: number): string | null {
+    return this.userMgr.getUserByUid(uid)?.home ?? null;
+  }
+
+  readRefusal(absolutePath: string, uid: number, gid: number): string | null {
+    const inode = this.vfs.resolveInode(absolutePath);
+    if (inode === null || inode.type === 'directory') return null;
+    return uid !== 0 && !this.vfs.checkAccess(inode, 'r', uid, gid) ? 'Permission denied' : null;
+  }
+
+  private editorHost(): OperatingDirectoryHost & RcHost {
     const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
+    const uid = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
     return {
+      identity: () => ({ user: this.userMgr.uidToName(uid), host: kernelHostname(this.vfs), pid: 0 }),
       resolvePath: absolute,
       exists: (path) => this.vfs.exists(absolute(path)),
       kindOf: (path) => this.editorPathKind(path),
       canonicalPath: (path) => this.vfs.realpath(absolute(path), this.cwd, true),
+      readFile: (path) => this.vfs.readFile(absolute(path)),
+      readError: (path) => this.readRefusal(absolute(path), uid, gid),
+      homeDirectory: () => this.userHomeDirectory(uid),
+      environmentVariable: (name) => this.commandEnvironment()[name] ?? null,
     };
   }
 
