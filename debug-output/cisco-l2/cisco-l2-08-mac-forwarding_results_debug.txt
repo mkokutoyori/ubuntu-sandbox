@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-10-14T19:58:18.218Z
+Generated: 2026-10-25T16:57:35.012Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -15,14 +15,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -39,14 +39,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -66,14 +66,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -81,48 +81,48 @@ Total steps: 346
 --- [8] § full connectivity matrix (VLAN 1, all pairs) ---
 [9/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.035 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.058 ms
   64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.035 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [10/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.035 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.058 ms
   64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.035 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [11/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [12/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.039 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.064 ms
   64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.039 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [13/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.039 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [14/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -199,30 +199,30 @@ Total steps: 346
 
 [21/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [22/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.039 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.064 ms
   64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.039 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [23/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.039 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [24/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
@@ -253,21 +253,21 @@ Total steps: 346
 
 [27/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.035 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.058 ms
   64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.035 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [28/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.035 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.058 ms
   64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.035 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [29/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -375,14 +375,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -399,14 +399,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Fa0/1
+     1    0200.0000.005f    DYNAMIC    Fa0/2
+     1    0200.0000.0063    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 6
 
@@ -417,14 +417,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Gi0/2
+     1    0200.0000.005f    DYNAMIC    Gi0/2
+     1    0200.0000.0063    DYNAMIC    Gi0/2
   
   Total Mac Addresses for this criterion: 6
 
@@ -531,18 +531,18 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       0000.dead.0004    STATIC      FastEthernet0/4
-  1       0000.dead.0005    STATIC      FastEthernet0/5
-  1       0000.dead.0006    STATIC      FastEthernet0/6
-  1       0000.dead.0007    STATIC      FastEthernet0/7
-  1       0000.dead.0008    STATIC      FastEthernet0/8
-  1       0000.dead.0009    STATIC      FastEthernet0/9
-  1       0000.dead.0010    STATIC      FastEthernet0/10
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    ------
+     1    0000.dead.0001    STATIC    Fa0/1
+     1    0000.dead.0002    STATIC    Fa0/2
+     1    0000.dead.0003    STATIC    Fa0/3
+     1    0000.dead.0004    STATIC    Fa0/4
+     1    0000.dead.0005    STATIC    Fa0/5
+     1    0000.dead.0006    STATIC    Fa0/6
+     1    0000.dead.0007    STATIC    Fa0/7
+     1    0000.dead.0008    STATIC    Fa0/8
+     1    0000.dead.0009    STATIC    Fa0/9
+     1    0000.dead.0010    STATIC    Fa0/10
   
   Total Mac Addresses for this criterion: 10
 
@@ -559,14 +559,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -591,14 +591,12 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0057    DYNAMIC    Fa0/3
   
-  Total Mac Addresses for this criterion: 4
+  Total Mac Addresses for this criterion: 2
 
 [72/346] sw1 SW1# clear mac address-table dynamic vlan 1
 <empty>
@@ -633,18 +631,18 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       0000.dead.0004    STATIC      FastEthernet0/4
-  1       0000.dead.0005    STATIC      FastEthernet0/5
-  1       0000.dead.0006    STATIC      FastEthernet0/6
-  1       0000.dead.0007    STATIC      FastEthernet0/7
-  1       0000.dead.0008    STATIC      FastEthernet0/8
-  1       0000.dead.0009    STATIC      FastEthernet0/9
-  1       0000.dead.0010    STATIC      FastEthernet0/10
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    ------
+     1    0000.dead.0001    STATIC    Fa0/1
+     1    0000.dead.0002    STATIC    Fa0/2
+     1    0000.dead.0003    STATIC    Fa0/3
+     1    0000.dead.0004    STATIC    Fa0/4
+     1    0000.dead.0005    STATIC    Fa0/5
+     1    0000.dead.0006    STATIC    Fa0/6
+     1    0000.dead.0007    STATIC    Fa0/7
+     1    0000.dead.0008    STATIC    Fa0/8
+     1    0000.dead.0009    STATIC    Fa0/9
+     1    0000.dead.0010    STATIC    Fa0/10
   
   Total Mac Addresses for this criterion: 10
 
@@ -667,20 +665,20 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       0000.dead.0004    STATIC      FastEthernet0/4
-  1       0000.dead.0005    STATIC      FastEthernet0/5
-  1       0000.dead.0006    STATIC      FastEthernet0/6
-  1       0000.dead.0007    STATIC      FastEthernet0/7
-  1       0000.dead.0008    STATIC      FastEthernet0/8
-  1       0000.dead.0009    STATIC      FastEthernet0/9
-  1       0000.dead.0010    STATIC      FastEthernet0/10
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    ------
+     1    0000.dead.0001    STATIC     Fa0/1
+     1    0000.dead.0002    STATIC     Fa0/2
+     1    0000.dead.0003    STATIC     Fa0/3
+     1    0000.dead.0004    STATIC     Fa0/4
+     1    0000.dead.0005    STATIC     Fa0/5
+     1    0000.dead.0006    STATIC     Fa0/6
+     1    0000.dead.0007    STATIC     Fa0/7
+     1    0000.dead.0008    STATIC     Fa0/8
+     1    0000.dead.0009    STATIC     Fa0/9
+     1    0000.dead.0010    STATIC     Fa0/10
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0057    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 12
 
@@ -982,24 +980,24 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       0000.dead.0004    STATIC      FastEthernet0/4
-  1       0000.dead.0005    STATIC      FastEthernet0/5
-  1       0000.dead.0006    STATIC      FastEthernet0/6
-  1       0000.dead.0007    STATIC      FastEthernet0/7
-  1       0000.dead.0008    STATIC      FastEthernet0/8
-  1       0000.dead.0009    STATIC      FastEthernet0/9
-  1       0000.dead.0010    STATIC      FastEthernet0/10
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    ------
+     1    0000.dead.0001    STATIC     Fa0/1
+     1    0000.dead.0002    STATIC     Fa0/2
+     1    0000.dead.0003    STATIC     Fa0/3
+     1    0000.dead.0004    STATIC     Fa0/4
+     1    0000.dead.0005    STATIC     Fa0/5
+     1    0000.dead.0006    STATIC     Fa0/6
+     1    0000.dead.0007    STATIC     Fa0/7
+     1    0000.dead.0008    STATIC     Fa0/8
+     1    0000.dead.0009    STATIC     Fa0/9
+     1    0000.dead.0010    STATIC     Fa0/10
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 16
 
@@ -1034,11 +1032,11 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0010    STATIC      FastEthernet0/10
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    ------
+     1    0000.dead.0001    STATIC     Fa0/1
+     1    0000.dead.0010    STATIC     Fa0/10
+     1    0200.0000.004f    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 3
 
@@ -1046,10 +1044,10 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0000.dead.0002    STATIC     Fa0/2
+     1    0200.0000.0053    DYNAMIC    Fa0/2
   
   Total Mac Addresses for this criterion: 2
 
@@ -1057,10 +1055,10 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0000.dead.0003    STATIC     Fa0/3
+     1    0200.0000.0057    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 2
 
@@ -1068,9 +1066,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0004    STATIC      FastEthernet0/4
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    -----
+     1    0000.dead.0004    STATIC    Fa0/4
   
   Total Mac Addresses for this criterion: 1
 
@@ -1078,9 +1076,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0005    STATIC      FastEthernet0/5
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    -----
+     1    0000.dead.0005    STATIC    Fa0/5
   
   Total Mac Addresses for this criterion: 1
 
@@ -1088,9 +1086,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0006    STATIC      FastEthernet0/6
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    -----
+     1    0000.dead.0006    STATIC    Fa0/6
   
   Total Mac Addresses for this criterion: 1
 
@@ -1098,9 +1096,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0007    STATIC      FastEthernet0/7
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    -----
+     1    0000.dead.0007    STATIC    Fa0/7
   
   Total Mac Addresses for this criterion: 1
 
@@ -1108,9 +1106,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0008    STATIC      FastEthernet0/8
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    -----
+     1    0000.dead.0008    STATIC    Fa0/8
   
   Total Mac Addresses for this criterion: 1
 
@@ -1118,9 +1116,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0009    STATIC      FastEthernet0/9
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    -----
+     1    0000.dead.0009    STATIC    Fa0/9
   
   Total Mac Addresses for this criterion: 1
 
@@ -1128,9 +1126,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0010    STATIC      FastEthernet0/10
+  Vlan    Mac Address       Type      Ports
+  ----    --------------    ------    ------
+     1    0000.dead.0010    STATIC    Fa0/10
   
   Total Mac Addresses for this criterion: 1
 
@@ -1208,30 +1206,29 @@ Total steps: 346
   
   --- 192.168.1.99 ping statistics ---
   2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1000ms
-  
 
 [148/346] sw1 SW1# show mac address-table
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       0000.dead.0004    STATIC      FastEthernet0/4
-  1       0000.dead.0005    STATIC      FastEthernet0/5
-  1       0000.dead.0006    STATIC      FastEthernet0/6
-  1       0000.dead.0007    STATIC      FastEthernet0/7
-  1       0000.dead.0008    STATIC      FastEthernet0/8
-  1       0000.dead.0009    STATIC      FastEthernet0/9
-  1       0000.dead.0010    STATIC      FastEthernet0/10
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    ------
+     1    0000.dead.0001    STATIC     Fa0/1
+     1    0000.dead.0002    STATIC     Fa0/2
+     1    0000.dead.0003    STATIC     Fa0/3
+     1    0000.dead.0004    STATIC     Fa0/4
+     1    0000.dead.0005    STATIC     Fa0/5
+     1    0000.dead.0006    STATIC     Fa0/6
+     1    0000.dead.0007    STATIC     Fa0/7
+     1    0000.dead.0008    STATIC     Fa0/8
+     1    0000.dead.0009    STATIC     Fa0/9
+     1    0000.dead.0010    STATIC     Fa0/10
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 16
 
@@ -1247,10 +1244,10 @@ Total steps: 346
 --- [150] § interface counters after traffic ---
 [151/346] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
-  Fa0/1                   5120             44              4              8
+  Fa0/1                   4968             44              2              8
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/1                   7776             49             28             14
+  Fa0/1                   6864             49             18             14
 
 [152/346] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -1265,20 +1262,20 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       56 packets input, 5120 bytes, 0 no buffer
-       Received 8 broadcasts (4 multicasts)
+       54 packets input, 4968 bytes, 0 no buffer
+       Received 8 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       91 packets output, 7776 bytes, 0 underruns
+       81 packets output, 6864 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [153/346] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
-  Fa0/2                   4608             44              9              1
+  Fa0/2                   4076             44              3              1
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/2                   7012             45             21             21
+  Fa0/2                   6480             45             15             21
 
 [154/346] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
@@ -1293,11 +1290,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       54 packets input, 4608 bytes, 0 no buffer
-       Received 1 broadcasts (9 multicasts)
+       48 packets input, 4076 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       87 packets output, 7012 bytes, 0 underruns
+       81 packets output, 6480 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1306,7 +1303,7 @@ Total steps: 346
   Fa0/3                   4916             45              3              5
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/3                   8176             52             26             17
+  Fa0/3                   7112             52             14             17
 
 [156/346] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
@@ -1325,7 +1322,7 @@ Total steps: 346
        Received 5 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       95 packets output, 8176 bytes, 0 underruns
+       83 packets output, 7112 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1380,24 +1377,24 @@ Total steps: 346
 --- [164] § interface counters loop (SW1 Fa0/1..0/23) ---
 [165/346] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
-  Fa0/1                   5120             44              4              8
+  Fa0/1                   4968             44              2              8
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/1                   7776             49             28             14
+  Fa0/1                   6864             49             18             14
 
 [166/346] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
-  Fa0/2                   4608             44              9              1
+  Fa0/2                   4076             44              3              1
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/2                   7012             45             21             21
+  Fa0/2                   6480             45             15             21
 
 [167/346] sw1 SW1# show interfaces FastEthernet0/3 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
   Fa0/3                   4916             45              3              5
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/3                   8176             52             26             17
+  Fa0/3                   7112             52             14             17
 
 [168/346] sw1 SW1# show interfaces FastEthernet0/4 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
@@ -1545,9 +1542,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.005b    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 1
 
@@ -1555,9 +1552,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.005f    DYNAMIC    Fa0/2
   
   Total Mac Addresses for this criterion: 1
 
@@ -1565,9 +1562,9 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0063    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 1
 
@@ -2070,24 +2067,24 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       0000.dead.0001    STATIC      FastEthernet0/1
-  1       0000.dead.0002    STATIC      FastEthernet0/2
-  1       0000.dead.0003    STATIC      FastEthernet0/3
-  1       0000.dead.0004    STATIC      FastEthernet0/4
-  1       0000.dead.0005    STATIC      FastEthernet0/5
-  1       0000.dead.0006    STATIC      FastEthernet0/6
-  1       0000.dead.0007    STATIC      FastEthernet0/7
-  1       0000.dead.0008    STATIC      FastEthernet0/8
-  1       0000.dead.0009    STATIC      FastEthernet0/9
-  1       0000.dead.0010    STATIC      FastEthernet0/10
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    ------
+     1    0000.dead.0001    STATIC     Fa0/1
+     1    0000.dead.0002    STATIC     Fa0/2
+     1    0000.dead.0003    STATIC     Fa0/3
+     1    0000.dead.0004    STATIC     Fa0/4
+     1    0000.dead.0005    STATIC     Fa0/5
+     1    0000.dead.0006    STATIC     Fa0/6
+     1    0000.dead.0007    STATIC     Fa0/7
+     1    0000.dead.0008    STATIC     Fa0/8
+     1    0000.dead.0009    STATIC     Fa0/9
+     1    0000.dead.0010    STATIC     Fa0/10
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 16
 
@@ -2104,14 +2101,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Fa0/1
+     1    0200.0000.005f    DYNAMIC    Fa0/2
+     1    0200.0000.0063    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 6
 
@@ -2119,14 +2116,14 @@ Total steps: 346
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Gi0/2
+     1    0200.0000.005f    DYNAMIC    Gi0/2
+     1    0200.0000.0063    DYNAMIC    Gi0/2
   
   Total Mac Addresses for this criterion: 6
 
@@ -2233,11 +2230,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       56 packets input, 5120 bytes, 0 no buffer
-       Received 8 broadcasts (4 multicasts)
+       54 packets input, 4968 bytes, 0 no buffer
+       Received 8 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       91 packets output, 7776 bytes, 0 underruns
+       81 packets output, 6864 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2254,11 +2251,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       54 packets input, 4608 bytes, 0 no buffer
-       Received 1 broadcasts (9 multicasts)
+       48 packets input, 4076 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       87 packets output, 7012 bytes, 0 underruns
+       81 packets output, 6480 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2279,7 +2276,7 @@ Total steps: 346
        Received 5 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       95 packets output, 8176 bytes, 0 underruns
+       83 packets output, 7112 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2724,7 +2721,7 @@ Total steps: 346
        Received 4 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       91 packets output, 7648 bytes, 0 underruns
+       79 packets output, 6584 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2741,11 +2738,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       52 packets input, 4456 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       48 packets input, 4076 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       84 packets output, 6654 bytes, 0 underruns
+       76 packets output, 5970 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2766,7 +2763,7 @@ Total steps: 346
        Received 3 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       87 packets output, 7370 bytes, 0 underruns
+       75 packets output, 6306 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

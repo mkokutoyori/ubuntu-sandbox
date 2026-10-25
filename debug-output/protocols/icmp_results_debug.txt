@@ -186,21 +186,21 @@ Total steps: 301
 
 [30/301] lbr lbr$ ping -c 2 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.004 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.006 ms
   64 bytes from 10.2.2.1: icmp_seq=2 ttl=255 time=0.004 ms
   
   --- 10.2.2.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
+  rtt min/avg/max/mdev = 0.004/0.005/0.006/0.001 ms
 
 [31/301] ldc ldc$ ping -c 2 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.004 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.006 ms
   64 bytes from 10.3.3.1: icmp_seq=2 ttl=255 time=0.004 ms
   
   --- 10.3.3.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
+  rtt min/avg/max/mdev = 0.004/0.005/0.006/0.001 ms
 
 [32/301] srvdc srvdc$ ping -c 2 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
@@ -528,11 +528,11 @@ Total steps: 301
 
 [68/301] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.035 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.058 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss, time 0ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.058/0.058/0.058/0.000 ms
 
 [69/301] lhq lhq$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
@@ -584,11 +584,11 @@ Total steps: 301
 
 [75/301] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.004 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.006 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss, time 0ms
-  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [76/301] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -640,11 +640,11 @@ Total steps: 301
 
 [82/301] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.004 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.006 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss, time 0ms
-  rtt min/avg/max/mdev = 0.004/0.004/0.004/0.000 ms
+  rtt min/avg/max/mdev = 0.006/0.006/0.006/0.000 ms
 
 [83/301] srvdc srvdc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
@@ -1308,7 +1308,6 @@ Total steps: 301
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [163/301] lhq lhq$ ping -c 1 -t 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1316,7 +1315,6 @@ Total steps: 301
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [164/301] whq whq$ ping -n 1 -i 1 10.3.3.10
   
@@ -1428,7 +1426,6 @@ Total steps: 301
   
   --- 10.1.1.200 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [178/301] lhq lhq$ ping -c 1 198.51.100.7
   PING 198.51.100.7 (198.51.100.7) 56(84) bytes of data.
@@ -1436,7 +1433,6 @@ Total steps: 301
   
   --- 198.51.100.7 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [179/301] lbr lbr$ ping -c 1 198.51.100.7
   PING 198.51.100.7 (198.51.100.7) 56(84) bytes of data.
@@ -1444,7 +1440,6 @@ Total steps: 301
   
   --- 198.51.100.7 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [180/301] ldc ldc$ ping -c 1 198.51.100.7
   PING 198.51.100.7 (198.51.100.7) 56(84) bytes of data.
@@ -1452,14 +1447,12 @@ Total steps: 301
   
   --- 198.51.100.7 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [181/301] srvdc srvdc$ ping -c 1 198.51.100.7
   PING 198.51.100.7 (198.51.100.7) 56(84) bytes of data.
   
   --- 198.51.100.7 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss, time 0ms
-  
 
 [182/301] whq whq$ ping -n 1 198.51.100.7
   
@@ -1482,7 +1475,6 @@ Total steps: 301
   
   --- 10.3.3.250 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss, time 0ms
-  
 
 [185/301] rhq R-HQ# ping 203.0.113.9
   Type escape sequence to abort.
@@ -1512,7 +1504,6 @@ Total steps: 301
   
   --- 10.2.2.222 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss, time 0ms
-  
 
 
 --- [189] § sécurité — politique pare-feu hôte (iptables) bloque ICMP ---
@@ -1530,23 +1521,21 @@ Total steps: 301
 <empty>
 
 [191/301] srvdc srvdc$ iptables -L INPUT -n -v
-  Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+  Chain INPUT (policy ACCEPT 54 packets, 10476 bytes)
    pkts bytes target     prot opt in     out     source               destination
-      0     0 DROP       icmp --  *      *      0.0.0.0/0            0.0.0.0/0
+      0     0 DROP       icmp --  *      *      0.0.0.0/0            0.0.0.0/0 icmptype 8
 
 [192/301] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [193/301] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [194/301] srvdc srvdc$ iptables -A INPUT -p icmp -j ACCEPT
 <empty>
@@ -1612,14 +1601,12 @@ Total steps: 301
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [209/301] lhq lhq$ ping -c 2 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
   
   --- 10.3.3.1 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [210/301] rdc R-DC# show ip access-lists WAN-IN
   Extended IP access list WAN-IN
@@ -1686,7 +1673,6 @@ Total steps: 301
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1000ms
-  
 
 [227/301] rbr [R-BR] display acl 3001
   Advanced ACL 3001, 2 rule(s)
@@ -1827,7 +1813,7 @@ Total steps: 301
 --- [254] § ICMP — compteurs & statistiques ---
 [254/301] rhq R-HQ# show ip traffic
   IP statistics:
-    Rcvd:  349 total, 349 local destination
+    Rcvd:  345 total, 345 local destination
            0 format errors, 0 checksum errors, 0 bad hop count
            0 unknown protocol, 0 not a gateway, 0 security failures
            0 bad options, 0 with options, 0 dropped
@@ -1838,7 +1824,7 @@ Total steps: 301
 
 [255/301] rdc R-DC# show ip traffic
   IP statistics:
-    Rcvd:  260 total, 260 local destination
+    Rcvd:  256 total, 256 local destination
            0 format errors, 0 checksum errors, 0 bad hop count
            0 unknown protocol, 0 not a gateway, 0 security failures
            0 bad options, 0 with options, 0 dropped
@@ -1867,162 +1853,162 @@ Total steps: 301
     Forwarded: 122
   
   IP Received packets statistics:
-    Bytes in: 25318
+    Bytes in: 25212
     Bytes out: 22036
     Header errors: 0
     Address errors: 2
 
 [258/301] lhq lhq$ cat /proc/net/snmp | grep -A1 Icmp
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
-  Icmp: 83 0 0 9 14 0 0 0 21 39 0 0 0 0 75 0 3 0 0 0 0 51 21 0 0 0 0
+  Icmp: 91 0 0 9 14 0 0 0 25 43 0 0 0 0 83 0 3 0 0 0 0 55 25 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 InType11 OutType0 OutType3 OutType8
-  IcmpMsg: 39 9 21 14 21 3 51
+  IcmpMsg: 43 9 25 14 25 3 55
 
 [259/301] lhq lhq$ netstat -s | head -30
   Ip:
       Forwarding: 2
-      91 total packets received
+      98 total packets received
       0 forwarded
       0 incoming packets discarded
-      89 incoming packets delivered
-      96 requests sent out
+      96 incoming packets delivered
+      103 requests sent out
+      4 reassemblies required
+      2 packets reassembled ok
       2 fragments received ok
       4 fragments created
   Icmp:
-      83 ICMP messages received
+      91 ICMP messages received
       0 input ICMP message failed
       ICMP input histogram:
           destination unreachable: 9
           timeout in transit: 14
-          echo requests: 21
-          echo replies: 39
-      75 ICMP messages sent
+          echo requests: 25
+          echo replies: 43
+      83 ICMP messages sent
       0 ICMP messages failed
       ICMP output histogram:
           destination unreachable: 3
-          echo requests: 51
-          echo replies: 21
+          echo requests: 55
+          echo replies: 25
   IcmpMsg:
-          InType0: 39
+          InType0: 43
           InType3: 9
-          InType8: 21
+          InType8: 25
           InType11: 14
-          OutType0: 21
-          OutType3: 3
 
 [260/301] lbr lbr$ cat /proc/net/snmp | grep -A1 Icmp
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
-  Icmp: 31 0 0 4 6 0 0 0 5 16 0 0 0 0 25 0 3 0 0 0 0 17 5 0 0 0 0
+  Icmp: 35 0 0 4 6 0 0 0 7 18 0 0 0 0 29 0 3 0 0 0 0 19 7 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 InType11 OutType0 OutType3 OutType8
-  IcmpMsg: 16 4 5 6 5 3 17
+  IcmpMsg: 18 4 7 6 7 3 19
 
 [261/301] lbr lbr$ netstat -s | head -30
   Ip:
       Forwarding: 2
-      37 total packets received
+      40 total packets received
       0 forwarded
       0 incoming packets discarded
-      37 incoming packets delivered
-      35 requests sent out
+      40 incoming packets delivered
+      38 requests sent out
   Icmp:
-      31 ICMP messages received
+      35 ICMP messages received
       0 input ICMP message failed
       ICMP input histogram:
           destination unreachable: 4
           timeout in transit: 6
-          echo requests: 5
-          echo replies: 16
-      25 ICMP messages sent
+          echo requests: 7
+          echo replies: 18
+      29 ICMP messages sent
       0 ICMP messages failed
       ICMP output histogram:
           destination unreachable: 3
-          echo requests: 17
-          echo replies: 5
+          echo requests: 19
+          echo replies: 7
   IcmpMsg:
-          InType0: 16
+          InType0: 18
           InType3: 4
-          InType8: 5
+          InType8: 7
           InType11: 6
-          OutType0: 5
+          OutType0: 7
           OutType3: 3
-          OutType8: 17
+          OutType8: 19
   Tcp:
 
 [262/301] ldc ldc$ cat /proc/net/snmp | grep -A1 Icmp
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
-  Icmp: 40 0 0 4 6 0 0 0 8 22 0 0 0 0 37 0 3 0 0 0 0 26 8 0 0 0 0
+  Icmp: 44 0 0 4 6 0 0 0 10 24 0 0 0 0 41 0 3 0 0 0 0 28 10 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 InType11 OutType0 OutType3 OutType8
-  IcmpMsg: 22 4 8 6 8 3 26
+  IcmpMsg: 24 4 10 6 10 3 28
 
 [263/301] ldc ldc$ netstat -s | head -30
   Ip:
       Forwarding: 2
-      44 total packets received
+      47 total packets received
       0 forwarded
       0 incoming packets discarded
-      44 incoming packets delivered
-      47 requests sent out
+      47 incoming packets delivered
+      50 requests sent out
   Icmp:
-      40 ICMP messages received
+      44 ICMP messages received
       0 input ICMP message failed
       ICMP input histogram:
           destination unreachable: 4
           timeout in transit: 6
-          echo requests: 8
-          echo replies: 22
-      37 ICMP messages sent
+          echo requests: 10
+          echo replies: 24
+      41 ICMP messages sent
       0 ICMP messages failed
       ICMP output histogram:
           destination unreachable: 3
-          echo requests: 26
-          echo replies: 8
+          echo requests: 28
+          echo replies: 10
   IcmpMsg:
-          InType0: 22
+          InType0: 24
           InType3: 4
-          InType8: 8
+          InType8: 10
           InType11: 6
-          OutType0: 8
+          OutType0: 10
           OutType3: 3
-          OutType8: 26
+          OutType8: 28
   Tcp:
 
 [264/301] srvdc srvdc$ cat /proc/net/snmp | grep -A1 Icmp
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
-  Icmp: 57 0 0 0 0 0 0 0 40 17 0 0 0 0 61 0 3 0 0 0 0 18 40 0 0 0 0
+  Icmp: 61 0 0 0 0 0 0 0 42 19 0 0 0 0 65 0 3 0 0 0 0 20 42 0 0 0 0
   IcmpMsg: InType0 InType8 OutType0 OutType3 OutType8
-  IcmpMsg: 17 40 40 3 18
+  IcmpMsg: 19 42 42 3 20
 
 [265/301] srvdc srvdc$ netstat -s | head -30
   Ip:
       Forwarding: 2
-      67 total packets received
+      70 total packets received
       0 forwarded
       0 incoming packets discarded
-      61 incoming packets delivered
-      64 requests sent out
+      64 incoming packets delivered
+      67 requests sent out
+      4 reassemblies required
+      2 packets reassembled ok
       2 fragments received ok
       4 fragments created
   Icmp:
-      57 ICMP messages received
+      61 ICMP messages received
       0 input ICMP message failed
       ICMP input histogram:
-          echo requests: 40
-          echo replies: 17
-      61 ICMP messages sent
+          echo requests: 42
+          echo replies: 19
+      65 ICMP messages sent
       0 ICMP messages failed
       ICMP output histogram:
           destination unreachable: 3
-          echo requests: 18
-          echo replies: 40
+          echo requests: 20
+          echo replies: 42
   IcmpMsg:
-          InType0: 17
-          InType8: 40
-          OutType0: 40
+          InType0: 19
+          InType8: 42
+          OutType0: 42
           OutType3: 3
-          OutType8: 18
+          OutType8: 20
   Tcp:
-      0 active connection openings
-      0 passive connection openings
 
 [266/301] whq whq$ netsh interface ipv4 show icmpstats
   The subcommand "icmpstats" was not found in this context.
@@ -2309,14 +2295,14 @@ Total steps: 301
   *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.3.3.10
   *Jun  6 08:00:00.000: ICMP: echo received, src 10.1.1.11, dst 10.1.1.1
   *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.1.1.11
-  *Jun  6 08:00:00.001: ICMP: echo received, src 10.2.2.10, dst 10.1.1.1
-  *Jun  6 08:00:00.001: ICMP: echo reply sent, src 10.1.1.1, dst 10.2.2.10
+  *Jun  6 08:00:00.000: ICMP: echo received, src 10.2.2.10, dst 10.1.1.1
+  *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.2.2.10
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
-  *Jun  6 08:00:00.002: ICMP: echo received, src 10.1.1.10, dst 172.16.13.1
-  *Jun  6 08:00:00.002: ICMP: echo reply sent, src 172.16.13.1, dst 10.1.1.10
+  *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.13.1
+  *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.13.1, dst 10.1.1.10
   *Jun  6 08:00:00.002: ICMP: echo received, src 10.2.2.11, dst 172.16.12.1
   *Jun  6 08:00:00.002: ICMP: echo reply sent, src 172.16.12.1, dst 10.2.2.11
   *Jun  6 08:00:00.002: ICMP: echo received, src 10.2.2.11, dst 172.16.13.1

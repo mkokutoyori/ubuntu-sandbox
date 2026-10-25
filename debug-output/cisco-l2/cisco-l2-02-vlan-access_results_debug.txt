@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-10-14T19:58:09.227Z
+Generated: 2026-10-25T16:57:53.436Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -793,13 +793,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
   64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss, time 2000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.047/0.064/0.011 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
@@ -818,10 +818,10 @@ Total steps: 360
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+    10    0200.0000.004f    DYNAMIC    Fa0/1
+    10    0200.0000.005b    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 2
 
@@ -829,10 +829,10 @@ Total steps: 360
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+    10    0200.0000.004f    DYNAMIC    Gi0/1
+    10    0200.0000.005b    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 2
 
@@ -840,21 +840,18 @@ Total steps: 360
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
-  10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
-  20      02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  20      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/2
-  40      02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Gi0/2
+     1    0200.0000.005f    DYNAMIC    Gi0/2
+     1    0200.0000.0063    DYNAMIC    Gi0/2
+    10    0200.0000.004f    DYNAMIC    Gi0/1
+    10    0200.0000.005b    DYNAMIC    Gi0/2
   
-  Total Mac Addresses for this criterion: 11
+  Total Mac Addresses for this criterion: 8
 
 
 --- [219] § connectivity: different VLAN, same switch (must fail) ---
@@ -864,7 +861,6 @@ Total steps: 360
   
   --- 192.168.1.12 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [220/360] w1 w1$ ping -n 1 192.168.1.11
   
@@ -882,7 +878,6 @@ Total steps: 360
   
   --- 192.168.1.22 ping statistics ---
   1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-  
 
 [222/360] w2 w2$ ping -n 1 192.168.1.11
   
@@ -1388,19 +1383,18 @@ Total steps: 360
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  20      02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  20      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  40      02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
+    10    0200.0000.004f    DYNAMIC    Fa0/1
+    10    0200.0000.005b    DYNAMIC    Gi0/1
+    10    0200.0000.005f    DYNAMIC    Gi0/1
+    20    0200.0000.0053    DYNAMIC    Fa0/2
+    20    0200.0000.005f    DYNAMIC    Gi0/1
   
-  Total Mac Addresses for this criterion: 9
+  Total Mac Addresses for this criterion: 8
 
 [287/360] sw1 SW1# show running-config
   Building configuration...
@@ -1601,11 +1595,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       18 packets input, 1526 bytes, 0 no buffer
-       Received 6 broadcasts (4 multicasts)
+       16 packets input, 1374 bytes, 0 no buffer
+       Received 5 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       34 packets output, 2708 bytes, 0 underruns
+       31 packets output, 2492 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1622,11 +1616,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 742 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       5 packets input, 394 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 1730 bytes, 0 underruns
+       18 packets output, 1318 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1643,11 +1637,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1256 bytes, 0 underruns
+       16 packets output, 1192 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2088,11 +2082,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       12 packets input, 1052 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       10 packets input, 900 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       37 packets output, 2824 bytes, 0 underruns
+       31 packets output, 2402 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2109,11 +2103,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       13 packets input, 1088 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       9 packets input, 740 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       30 packets output, 2268 bytes, 0 underruns
+       23 packets output, 1728 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2130,11 +2124,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       20 packets output, 1448 bytes, 0 underruns
+       17 packets output, 1256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

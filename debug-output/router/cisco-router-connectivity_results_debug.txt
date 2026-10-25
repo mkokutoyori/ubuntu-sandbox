@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-connectivity
-Generated: 2026-10-14T19:49:00.324Z
+Generated: 2026-10-25T16:55:56.507Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
 Total steps: 313
@@ -269,13 +269,13 @@ Total steps: 313
 
 [42/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.002 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.003 ms
   64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.002 ms
   64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.002 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss, time 2000ms
-  rtt min/avg/max/mdev = 0.002/0.002/0.002/0.000 ms
+  rtt min/avg/max/mdev = 0.002/0.002/0.003/0.000 ms
 
 [43/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
@@ -574,7 +574,7 @@ Total steps: 313
 
 [88/313] r1 R1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
-  2.2.2.2         1     FULL/  -        00:00:39    10.0.0.2        GigabitEthernet0/1
+  2.2.2.2           1   FULL/BDR        00:00:39    10.0.0.2        GigabitEthernet0/1
 
 [89/313] r1 R1# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
@@ -598,7 +598,7 @@ Total steps: 313
 
 [91/313] r2 R2# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
-  1.1.1.1         1     FULL/  -        00:00:39    10.0.0.1        GigabitEthernet0/1
+  1.1.1.1           1   FULL/DR         00:00:39    10.0.0.1        GigabitEthernet0/1
 
 
 --- [92] § verify (ospf) ---
@@ -906,14 +906,12 @@ Total steps: 313
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 0 received, +1 errors, 100% packet loss, time 2000ms
-  
 
 [134/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss, time 2000ms
-  
 
 [135/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
@@ -1038,14 +1036,13 @@ Total steps: 313
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss, time 2000ms
-  
 
 [153/313] r1 R1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 15 2026 07:49 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Oct 26 2026 04:56 PM    Automatic
 
 [154/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1099,18 +1096,15 @@ Total steps: 313
 
 [165/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  From 192.168.1.1 icmp_seq=1 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, +1 errors, 100% packet loss, time 2000ms
-  
+  3 packets transmitted, 0 received, 100% packet loss, time 2000ms
 
 [166/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss, time 2000ms
-  
 
 [167/313] r1 R1# show ip nat translations
   Pro  Inside global          Inside local           Outside local          Outside global
@@ -1131,7 +1125,8 @@ Total steps: 313
   Static mappings:
   -- No static NAT entries configured --
   Dynamic mappings:
-   -- Inside Source [acl 1] overload
+  -- Inside Source
+  [Id: 1] access-list 1 interface GigabitEthernet0/1 refcount 0
   Total doors: 0
   Appl doors: 0
   Normal doors: 0
@@ -1163,7 +1158,6 @@ Total steps: 313
   
   --- 192.168.2.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [175/313] r1 R1# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -1206,7 +1200,6 @@ Total steps: 313
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss, time 2000ms
-  
 
 
 --- [182] § scenario 8: wrong mask ---
@@ -1233,7 +1226,6 @@ Total steps: 313
   
   --- 192.168.2.10 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss, time 1000ms
-  
 
 [188/313] r2 R2# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1252,7 +1244,6 @@ Total steps: 313
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, 100% packet loss, time 2000ms
-  
 
 
 --- [193] § final state ---
@@ -1261,7 +1252,7 @@ Total steps: 313
   
   Current configuration : 1010 bytes
   !
-  ! Last configuration change at 19:49:09 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 16:56:04 UTC Sun Oct 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1311,7 +1302,7 @@ Total steps: 313
   
   Current configuration : 712 bytes
   !
-  ! Last configuration change at 19:49:09 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 16:56:04 UTC Sun Oct 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1388,7 +1379,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:03
     Distance: (default is 120)
 
 [198/313] r1 R1# show ip interface brief
@@ -1493,7 +1484,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX2116BGBM
+  Processor board ID FTX8972PCGV
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1505,7 +1496,7 @@ Total steps: 313
   
   Current configuration : 1010 bytes
   !
-  ! Last configuration change at 19:49:09 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 16:56:04 UTC Sun Oct 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1578,7 +1569,7 @@ Total steps: 313
        Received 5 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       221 packets output, 21176 bytes, 0 underruns
+       220 packets output, 21102 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -1691,7 +1682,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:03
     Distance: (default is 120)
 
 [213/313] r1 R1# show ip arp
@@ -1755,7 +1746,8 @@ Total steps: 313
   Static mappings:
   -- No static NAT entries configured --
   Dynamic mappings:
-   -- Inside Source [acl 1] overload
+  -- Inside Source
+  [Id: 1] access-list 1 interface GigabitEthernet0/1 refcount 0
   Total doors: 0
   Appl doors: 0
   Normal doors: 0
@@ -1766,7 +1758,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 15 2026 07:49 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Oct 26 2026 04:56 PM    Automatic
 
 [227/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1848,23 +1840,23 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:49:00.319: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:49:00.319: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:49:00.321: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:00.321: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:00.522: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:00.871: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:01.104: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:01.199: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Oct 14 19:49:01.440: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.219: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.375: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.422: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 14 19:49:09.422: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 14 19:49:09.425: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.464: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:09.464: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:09.465: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.499: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 16:55:56.499: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 16:55:56.503: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:55:56.503: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:55:56.552: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.634: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.689: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.700: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Oct 25 16:55:56.746: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.280: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.306: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.312: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Oct 25 16:56:04.312: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Oct 25 16:56:04.314: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.323: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:56:04.323: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:56:04.324: %SYS-5-CONFIG_I: Configured from console by console
 
 [240/313] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1875,8 +1867,8 @@ Total steps: 313
 [241/313] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 900 (1/100 of seconds), resolution is 4001
-  reference time is EE7A5B35.F9999999 (19:49:09.975 UTC Wed Oct 14 2026)
+  ntp uptime is 800 (1/100 of seconds), resolution is 4001
+  reference time is EE88B324.6DD2F1A9 (16:56:04.429 UTC Sun Oct 25 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1887,7 +1879,7 @@ Total steps: 313
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [243/313] r1 R1# show clock
-  *19:49:09.000 UTC Wed Oct 14 2026
+  *16:56:04.000 UTC Sun Oct 25 2026
 
 [244/313] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1983,7 +1975,7 @@ Total steps: 313
        Received 5 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       221 packets output, 21176 bytes, 0 underruns
+       220 packets output, 21102 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2069,7 +2061,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX2116BGBM
+  Processor board ID FTX8972PCGV
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2081,7 +2073,7 @@ Total steps: 313
   
   Current configuration : 1010 bytes
   !
-  ! Last configuration change at 19:49:09 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 16:56:04 UTC Sun Oct 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2171,7 +2163,7 @@ Total steps: 313
        Received 5 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       221 packets output, 21176 bytes, 0 underruns
+       220 packets output, 21102 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -2251,7 +2243,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:04
     Distance: (default is 120)
   
   ------------------ show processes cpu ------------------
@@ -2285,7 +2277,8 @@ Total steps: 313
   Static mappings:
   -- No static NAT entries configured --
   Dynamic mappings:
-   -- Inside Source [acl 1] overload
+  -- Inside Source
+  [Id: 1] access-list 1 interface GigabitEthernet0/1 refcount 0
   Total doors: 0
   Appl doors: 0
   Normal doors: 0
@@ -2299,7 +2292,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 15 2026 07:49 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Oct 26 2026 04:56 PM    Automatic
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2324,27 +2317,27 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:49:00.319: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:49:00.319: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:49:00.321: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:00.321: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:00.522: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:00.871: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:01.104: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:01.199: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Oct 14 19:49:01.440: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.219: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.375: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.422: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 14 19:49:09.422: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 14 19:49:09.425: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:49:09.464: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:09.464: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:49:09.465: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.499: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 16:55:56.499: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 16:55:56.503: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:55:56.503: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:55:56.552: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.634: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.689: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:55:56.700: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Oct 25 16:55:56.746: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.280: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.306: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.312: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Oct 25 16:56:04.312: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Oct 25 16:56:04.314: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 16:56:04.323: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:56:04.323: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 16:56:04.324: %SYS-5-CONFIG_I: Configured from console by console
 
 [257/313] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX2116BGBM
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX8972PCGV
 
 [258/313] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2356,10 +2349,10 @@ Total steps: 313
   % Invalid input detected at '^' marker.
 
 [260/313] r1 R1# show ip vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [261/313] r1 R1# show vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [262/313] r1 R1# show hosts
   Default domain is not set
@@ -2596,7 +2589,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:07
+      10.0.0.2        120           00:00:04
     Distance: (default is 120)
 
 [301/313] r1 R1(config-router)# exit
@@ -2647,7 +2640,8 @@ Total steps: 313
     host               Add a host to the host table
     http               Enable HTTP server
     icmp               ICMP options
-    local              Apply local PBR
+    inspect            Limit the established sessions of an inspection rule
+    local              IP local address pool
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
     nat                Wipe NAT configuration
@@ -2661,6 +2655,7 @@ Total steps: 313
     source-route       Accept source-routed packets
     ssh                SSH protocol version to accept
     subnet-zero        Enable use of subnet zero
+    tcp                Enable TCP intercept for the connections an access list matches
     vrf                Define a VRF instance
 
 [308/313] r1 R1(config)# router ?
@@ -2670,58 +2665,66 @@ Total steps: 313
     rip    Enter RIP routing protocol configuration
 
 [309/313] r1 R1(config)# crypto ?
+    ca           Get the CA certificate and authenticate it
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
+    identity     Identity of the peers allowed to use a crypto map
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Enable ISAKMP
+    isakmp       Enable the default IKE policies
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
-    map          Define a crypto map entry
-    pki          Declare a PKI trustpoint
+    map          Remove a crypto map or one of its entries
+    pki          Get the CA certificate and authenticate it
 
 [310/313] r1 R1(config)# no ?
-    aaa            Enable NEW access control commands and functions
-    access-list    Remove an access list
-    alias          Remove a command alias
-    arp            Add static ARP entry
-    banner         Remove a banner
-    boot           Specify system image to load
-    cdp            Enable CDP globally
-    class-map      Remove a class map
-    clock          Remove hardware calendar is a valid time source
-    crypto         Restore the default DF bit handling
-    enable         Set enable secret
-    event          Register an EEM applet
-    hostname       Set system hostname
-    interface      Remove a virtual interface
-    ip             Disable IP routing
-    ipv6           Remove the IPv6 prefix pool
-    key            Define a key chain
-    line           Enter line configuration
-    lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
-    ntp            Authenticate time sources
-    object-group   Remove a network object group
-    parser         Remove a CLI view
-    policy-map     Remove a policy map
-    priority-list  Remove build a priority list
-    privilege      Remove a command privilege rule
-    queue-list     Remove build a custom queue list
-    radius         Remove a named RADIUS server
-    radius-server  Specify a RADIUS server
-    route-map      Remove a route-map
-    router         Enter RIP routing protocol configuration
-    service        Disable a network based service
-    snmp-server    Set community string and access privs
-    sntp           SNTP server (alias for ntp server)
-    tacacs         Remove a named TACACS+ server
-    tacacs-server  Specify a TACACS+ server
-    time-range     Remove a time range
-    track          Remove a tracked object
-    username       Remove a local user
-    vrf            Remove configure a vrf
+    aaa               Disable accounting update records
+    access-list       Remove an access list
+    alias             Remove a command alias
+    arp               Add static ARP entry
+    banner            Remove a banner
+    boot              Specify system image to load
+    cdp               Enable CDP globally
+    class-map         Remove a class map
+    clock             Remove hardware calendar is a valid time source
+    crypto            Remove every configured peer public key
+    enable            Remove the privileged level secret
+    event             Register an EEM applet
+    hostname          Set system hostname
+    interface         Remove a virtual interface
+    ip                Disable IP routing
+    ipv6              Remove the IPv6 prefix pool
+    kerberos          Remove the Kerberos realm of this router
+    key               Define a key chain
+    l2                Remove the Layer 2 virtual forwarding instance
+    line              Enter line configuration
+    lldp              Enable LLDP globally
+    logging           Count every log message and timestamp last occurrence
+    login             Set the login blocking period
+    mpls              Disable dynamic MPLS forwarding on the whole router
+    ntp               Authenticate time sources
+    object-group      Remove a network object group
+    parser            Remove a CLI view
+    policy-map        Remove a policy map
+    priority-list     Remove build a priority list
+    privilege         Remove a command privilege rule
+    pseudowire-class  Remove the pseudowire class
+    queue-list        Remove build a custom queue list
+    radius            Remove a named RADIUS server
+    radius-server     Specify a RADIUS server
+    route-map         Remove a route-map
+    router            Enter RIP routing protocol configuration
+    service           Disable a network based service
+    snmp-server       Set community string and access privs
+    sntp              SNTP server (alias for ntp server)
+    tacacs            Remove a named TACACS+ server
+    tacacs-server     Specify a TACACS+ server
+    time-range        Remove a time range
+    track             Remove a tracked object
+    username          Remove a local user
+    vrf               Remove configure a vrf
+    zone              Define security zone
+    zone-pair         Define zone-pair
 
 [311/313] r1 R1(config)# end
 <empty>

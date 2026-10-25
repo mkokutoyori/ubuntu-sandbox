@@ -11,71 +11,71 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 [1/124] PC1 PC1$ ping -n 4 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=9ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=4ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 9ms, Average = 4ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [2/124] PC1 PC1$ tracert 192.168.40.11
   
-  Tracing route to 192.168.40.11 over a maximum of 30 hops:
+  Tracing route to 192.168.40.11 over a maximum of 30 hops
   
-     1    2 ms     1 ms     1 ms     192.168.10.1
-     2    1 ms     1 ms     1 ms     10.0.10.2
-     3    2 ms     2 ms     2 ms     10.0.20.2
-     4    2 ms     2 ms     2 ms     10.0.30.2
-     5    2 ms     2 ms     10 ms    192.168.40.11
+    1    <1 ms    <1 ms    <1 ms  192.168.10.1
+    2    <1 ms    <1 ms    <1 ms  10.0.10.2
+    3    <1 ms    <1 ms    <1 ms  10.0.20.2
+    4    <1 ms    <1 ms    <1 ms  10.0.30.2
+    5    <1 ms    <1 ms    <1 ms  192.168.40.11
   
   Trace complete.
 
 [3/124] Server1 Server1$ ping -c 4 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=2.535 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=2.471 ms
-  64 bytes from 192.168.10.2: icmp_seq=3 ttl=124 time=1.933 ms
-  64 bytes from 192.168.10.2: icmp_seq=4 ttl=124 time=1.974 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=0.076 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=0.076 ms
+  64 bytes from 192.168.10.2: icmp_seq=3 ttl=124 time=0.076 ms
+  64 bytes from 192.168.10.2: icmp_seq=4 ttl=124 time=0.076 ms
   
   --- 192.168.10.2 ping statistics ---
-  4 packets transmitted, 4 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.933/2.228/2.535/0.276 ms
+  4 packets transmitted, 4 received, 0% packet loss, time 3000ms
+  rtt min/avg/max/mdev = 0.076/0.076/0.076/0.000 ms
 
 [4/124] Server1 Server1$ traceroute 192.168.10.2
   traceroute to 192.168.10.2 (192.168.10.2), 30 hops max, 60 byte packets
-   1  192.168.40.1 (192.168.40.1)  0.846 ms  0.582 ms  0.583 ms
-   2  10.0.30.1 (10.0.30.1)  0.809 ms  0.896 ms  0.859 ms
-   3  10.0.20.1 (10.0.20.1)  1.297 ms  1.111 ms  1.002 ms
-   4  10.0.10.1 (10.0.10.1)  1.166 ms  1.262 ms  1.562 ms
-   5  192.168.10.2 (192.168.10.2)  2.116 ms  1.621 ms  1.542 ms
+   1  192.168.40.1 (192.168.40.1)  0.027 ms  0.027 ms  0.027 ms
+   2  10.0.30.1 (10.0.30.1)  0.028 ms  0.028 ms  0.028 ms
+   3  10.0.20.1 (10.0.20.1)  0.030 ms  0.030 ms  0.030 ms
+   4  10.0.10.1 (10.0.10.1)  0.031 ms  0.031 ms  0.031 ms
+   5  192.168.10.2 (192.168.10.2)  0.058 ms  0.058 ms  0.058 ms
 
 [5/124] PC1 PC1$ ping -n 1 -l 1472 192.168.40.11
   
   Pinging 192.168.40.11 with 1472 bytes of data:
-  Reply from 192.168.40.11: bytes=1472 time=5ms TTL=60
+  Reply from 192.168.40.11: bytes=1472 time=1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 5ms, Maximum = 5ms, Average = 5ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [6/124] PC1 PC1$ ping -n 1 -l 2000 192.168.40.11
   
   Pinging 192.168.40.11 with 2000 bytes of data:
-  Reply from 192.168.40.11: bytes=2000 time=5ms TTL=60
+  Reply from 192.168.40.11: bytes=2000 time=1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 5ms, Maximum = 5ms, Average = 5ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [7/124] PC1 PC1$ ping -n 1 -f -l 1500 192.168.40.11
   
   Pinging 192.168.40.11 with 1500 bytes of data:
-  Reply from 192.168.10.1: Packet needs to be fragmented but DF set.
+  Packet needs to be fragmented but DF set.
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
@@ -93,10 +93,10 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:05 DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.0001    DYNAMIC    Fa0/2
+     1    0200.0000.0005    DYNAMIC    Fa0/1
   
   Total Mac Addresses for this criterion: 2
 
@@ -104,10 +104,10 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:2c DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:49 DYNAMIC     FastEthernet0/2
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.002c    DYNAMIC    Fa0/1
+     1    0200.0000.0049    DYNAMIC    Fa0/2
   
   Total Mac Addresses for this criterion: 2
 
@@ -120,65 +120,144 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 <vide>
 
 [14/124] Router1 Router1# show ip route ospf
-  O 10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
-  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
-  O 10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
-  O IA 10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
-  O IA 192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O        10.0.20.0/30 [110/2] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O IA     10.0.30.0/30 [110/3] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O        10.0.50.0/30 [110/2] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
+  O        10.0.60.0/30 [110/3] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+        192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+  O IA  192.168.40.0/24 [110/4] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
 
 [15/124] Router2 Router2# enable
 <vide>
 
 [16/124] Router2 Router2# show ip route ospf
-  O 192.168.10.0/24 [110/2] via 10.0.10.1, GigabitEthernet0/0
-  O 10.0.40.0/30 [110/2] via 10.0.10.1, GigabitEthernet0/0
-  O 10.0.60.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
-  O 10.0.50.0/30 [110/3] via 10.0.10.1, GigabitEthernet0/0
-  O IA 10.0.30.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
-  O IA 192.168.40.0/24 [110/3] via 10.0.20.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O IA     10.0.30.0/30 [110/2] via 10.0.20.2, 00:00:00, GigabitEthernet0/1
+  O        10.0.40.0/30 [110/2] via 10.0.10.1, 00:00:00, GigabitEthernet0/0
+  O        10.0.50.0/30 [110/3] via 10.0.10.1, 00:00:00, GigabitEthernet0/0
+  O        10.0.60.0/30 [110/2] via 10.0.20.2, 00:00:00, GigabitEthernet0/1
+  O     192.168.10.0/24 [110/2] via 10.0.10.1, 00:00:00, GigabitEthernet0/0
+  O IA  192.168.40.0/24 [110/3] via 10.0.20.2, 00:00:00, GigabitEthernet0/1
 
 [17/124] Router3 Router3# enable
 <vide>
 
 [18/124] Router3 Router3# show ip route ospf
-  O 10.0.10.0/30 [110/2] via 10.0.20.1, GigabitEthernet0/0
-  O 10.0.50.0/30 [110/2] via 10.0.60.1, GigabitEthernet0/2
-  O 192.168.10.0/24 [110/3] via 10.0.20.1, GigabitEthernet0/0
-  O 10.0.40.0/30 [110/3] via 10.0.20.1, GigabitEthernet0/0
-  O 192.168.40.0/24 [110/2] via 10.0.30.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 9 subnets, 2 masks
+  O        10.0.10.0/30 [110/2] via 10.0.20.1, 00:00:00, GigabitEthernet0/0
+  O        10.0.40.0/30 [110/3] via 10.0.20.1, 00:00:00, GigabitEthernet0/0
+  O        10.0.50.0/30 [110/2] via 10.0.60.1, 00:00:00, GigabitEthernet0/2
+  O     192.168.10.0/24 [110/3] via 10.0.20.1, 00:00:00, GigabitEthernet0/0
+  O     192.168.40.0/24 [110/2] via 10.0.30.2, 00:00:00, GigabitEthernet0/1
 
 [19/124] Router4 Router4# enable
 <vide>
 
 [20/124] Router4 Router4# show ip route ospf
-  O IA 10.0.20.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.10.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
-  O IA 192.168.10.0/24 [110/4] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.40.0/30 [110/4] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.50.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.60.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
+  O IA     10.0.10.0/30 [110/3] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.20.0/30 [110/2] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.40.0/30 [110/4] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.50.0/30 [110/5] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.60.0/30 [110/2] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA  192.168.10.0/24 [110/4] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
 
 [21/124] Router5 Router5# enable
 <vide>
 
 [22/124] Router5 Router5# show ip route ospf
-  O 192.168.10.0/24 [110/2] via 10.0.40.2, GigabitEthernet0/0
-  O 10.0.10.0/30 [110/2] via 10.0.40.2, GigabitEthernet0/0
-  O 10.0.60.0/30 [110/2] via 10.0.50.2, GigabitEthernet0/1
-  O 10.0.20.0/30 [110/3] via 10.0.40.2, GigabitEthernet0/0
-  O IA 10.0.30.0/30 [110/3] via 10.0.50.2, GigabitEthernet0/1
-  O IA 192.168.40.0/24 [110/4] via 10.0.50.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O        10.0.10.0/30 [110/2] via 10.0.40.2, 00:00:00, GigabitEthernet0/0
+  O        10.0.20.0/30 [110/3] via 10.0.40.2, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.30.0/30 [110/3] via 10.0.50.2, 00:00:00, GigabitEthernet0/1
+  O        10.0.60.0/30 [110/2] via 10.0.50.2, 00:00:00, GigabitEthernet0/1
+  O     192.168.10.0/24 [110/2] via 10.0.40.2, 00:00:00, GigabitEthernet0/0
+  O IA  192.168.40.0/24 [110/4] via 10.0.50.2, 00:00:00, GigabitEthernet0/1
 
 [23/124] Router6 Router6# enable
 <vide>
 
 [24/124] Router6 Router6# show ip route ospf
-  O 10.0.20.0/30 [110/2] via 10.0.60.2, GigabitEthernet0/0
-  O 10.0.40.0/30 [110/2] via 10.0.50.1, GigabitEthernet0/1
-  O 192.168.10.0/24 [110/3] via 10.0.50.1, GigabitEthernet0/1
-  O 10.0.10.0/30 [110/3] via 10.0.60.2, GigabitEthernet0/0
-  O IA 10.0.30.0/30 [110/2] via 10.0.60.2, GigabitEthernet0/0
-  O IA 192.168.40.0/24 [110/3] via 10.0.60.2, GigabitEthernet0/0
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O        10.0.10.0/30 [110/3] via 10.0.60.2, 00:00:00, GigabitEthernet0/0
+  O        10.0.20.0/30 [110/2] via 10.0.60.2, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.30.0/30 [110/2] via 10.0.60.2, 00:00:00, GigabitEthernet0/0
+  O        10.0.40.0/30 [110/2] via 10.0.50.1, 00:00:00, GigabitEthernet0/1
+  O     192.168.10.0/24 [110/3] via 10.0.50.1, 00:00:00, GigabitEthernet0/1
+  O IA  192.168.40.0/24 [110/3] via 10.0.60.2, 00:00:00, GigabitEthernet0/0
 
 [25/124] Router1 Router1# show ip ospf border-routers
               OSPF Router with ID (192.168.10.1) (Process ID 1)
@@ -194,8 +273,8 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
                   Summary Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.30.0       10.0.30.1       0           0x800000ac        0x9dba
-  192.168.40.0    10.0.30.1       0           0x800000ad        0xcfc
+  10.0.30.0       10.0.30.1       0           0x80000001        0xf103
+  192.168.40.0    10.0.30.1       0           0x80000001        0x5f38
   
 
 [27/124] Router1 Router1# show ip ospf database router
@@ -204,11 +283,11 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  192.168.10.1    192.168.10.1    0           0x8000003f        0xfa96      3
-  10.0.20.1       10.0.20.1       0           0x8000002a        0x8d63      2
-  10.0.30.1       10.0.30.1       0           0x800000ba        0x9967      2
-  10.0.50.1       10.0.50.1       0           0x8000001b        0x3376      2
-  10.0.60.1       10.0.60.1       0           0x8000000f        0x6434      2
+  192.168.10.1    192.168.10.1    0           0x80000005        0xc05a      3
+  10.0.20.1       10.0.20.1       0           0x80000004        0x6778      2
+  10.0.30.1       10.0.30.1       0           0x80000007        0xe53d      2
+  10.0.50.1       10.0.50.1       0           0x80000004        0x1c7c      2
+  10.0.60.1       10.0.60.1       0           0x80000003        0x58a6      2
   
 
 [28/124] Router3 Router3# show ip ospf
@@ -235,31 +314,31 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  10.0.30.1       10.0.30.1       0           0x800000c6        0xa5f4      2
-  10.0.20.1       10.0.20.1       0           0x8000002c        0x8fa5      2
-  192.168.10.1    192.168.10.1    0           0x80000042        0xfd1e      3
-  10.0.50.1       10.0.50.1       0           0x8000001d        0x35b8      2
-  10.0.60.1       10.0.60.1       0           0x80000010        0x6555      2
+  10.0.30.1       10.0.30.1       0           0x80000007        0xe53d      2
+  10.0.20.1       10.0.20.1       0           0x80000004        0x6778      2
+  192.168.10.1    192.168.10.1    0           0x80000005        0xc05a      3
+  10.0.50.1       10.0.50.1       0           0x80000004        0x1c7c      2
+  10.0.60.1       10.0.60.1       0           0x80000003        0x58a6      2
   
                   Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.20.1       10.0.20.1       0           0x8000002d        0x5536
-  10.0.10.1       192.168.10.1    0           0x80000043        0x216
-  10.0.40.2       192.168.10.1    0           0x80000044        0x408b
-  10.0.60.2       10.0.30.1       0           0x800000c9        0x4d1f
-  10.0.50.1       10.0.50.1       0           0x8000001e        0xbecc
+  10.0.20.1       10.0.20.1       0           0x80000001        0x2947
+  10.0.10.1       192.168.10.1    0           0x80000001        0xbfaf
+  10.0.40.2       192.168.10.1    0           0x80000001        0xfc14
+  10.0.60.2       10.0.30.1       0           0x80000001        0x84c9
+  10.0.50.1       10.0.50.1       0           0x80000001        0xa1dd
   
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  10.0.30.1       10.0.30.1       0           0x800000c7        0x1941      1
-  192.168.40.1    192.168.40.1    0           0x80000013        0xd992      2
+  10.0.30.1       10.0.30.1       0           0x80000006        0x575c      1
+  192.168.40.1    192.168.40.1    0           0x80000003        0xc980      2
   
                   Net Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.30.1       10.0.30.1       0           0x800000c8        0x7892
+  10.0.30.1       10.0.30.1       0           0x80000001        0xb04e
   
 
 [30/124] Router3 Router3# show ip ospf interface brief
@@ -274,13 +353,13 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  192.168.40.1    192.168.40.1    0           0x80000015        0xdbd4      2
-  10.0.30.1       10.0.30.1       0           0x800000df        0x313b      1
+  192.168.40.1    192.168.40.1    0           0x80000003        0xc980      2
+  10.0.30.1       10.0.30.1       0           0x80000006        0x575c      1
   
                   Net Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.30.1       10.0.30.1       0           0x800000e0        0x902c
+  10.0.30.1       10.0.30.1       0           0x80000001        0xb04e
   
 
 [32/124] Router4 Router4# show ip ospf border-routers
@@ -327,15 +406,30 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
    network 10.0.20.0 0.0.0.3 area 0
    network 10.0.30.0 0.0.0.3 area 1
    network 10.0.60.0 0.0.0.3 area 0
+   log-adjacency-changes
    area 1 range 192.168.40.0 255.255.255.0
   !
 
 [40/124] Router1 Router1# show ip route ospf
-  O 10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
-  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
-  O 10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
-  O IA 10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
-  O IA 192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O        10.0.20.0/30 [110/2] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O IA     10.0.30.0/30 [110/3] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O        10.0.50.0/30 [110/2] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
+  O        10.0.60.0/30 [110/3] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+        192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+  O IA  192.168.40.0/24 [110/4] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
 
 [41/124] Router1 Router1# show ip ospf database summary
               OSPF Router with ID (192.168.10.1) (Process ID 1)
@@ -343,8 +437,8 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
                   Summary Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.30.0       10.0.30.1       0           0x80000118        0xa3d
-  192.168.40.0    10.0.30.1       0           0x80000119        0x787f
+  10.0.30.0       10.0.30.1       0           0x80000001        0xf103
+  192.168.40.0    10.0.30.1       0           0x80000001        0x5f38
   
 
 
@@ -386,24 +480,37 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   
 
 [51/124] Router4 Router4# show ip route ospf
-  O IA 10.0.20.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.10.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
-  O IA 192.168.10.0/24 [110/4] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.40.0/30 [110/4] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.50.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
-  O IA 10.0.60.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
-  O*IA 0.0.0.0/0 [110/2] via 10.0.30.1, GigabitEthernet0/0
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is 10.0.30.1 to network 0.0.0.0
+  
+  O*IA  0.0.0.0/0 [110/2] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
+  O IA     10.0.10.0/30 [110/3] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.20.0/30 [110/2] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.40.0/30 [110/4] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.50.0/30 [110/5] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA     10.0.60.0/30 [110/2] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
+  O IA  192.168.10.0/24 [110/4] via 10.0.30.1, 00:00:00, GigabitEthernet0/0
 
 [52/124] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [53/124] Router3 Router3# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -435,12 +542,25 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 
 --- [62] § E. Convergence sur panne du lien R2-R3 ---
 [62/124] Router2 Router2# show ip route ospf
-  O 192.168.10.0/24 [110/2] via 10.0.10.1, GigabitEthernet0/0
-  O 10.0.40.0/30 [110/2] via 10.0.10.1, GigabitEthernet0/0
-  O 10.0.60.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
-  O 10.0.50.0/30 [110/3] via 10.0.10.1, GigabitEthernet0/0
-  O IA 10.0.30.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
-  O IA 192.168.40.0/24 [110/3] via 10.0.20.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O IA     10.0.30.0/30 [110/2] via 10.0.20.2, 00:00:00, GigabitEthernet0/1
+  O        10.0.40.0/30 [110/2] via 10.0.10.1, 00:00:00, GigabitEthernet0/0
+  O        10.0.50.0/30 [110/3] via 10.0.10.1, 00:00:00, GigabitEthernet0/0
+  O        10.0.60.0/30 [110/2] via 10.0.20.2, 00:00:00, GigabitEthernet0/1
+  O     192.168.10.0/24 [110/2] via 10.0.10.1, 00:00:00, GigabitEthernet0/0
+  O IA  192.168.40.0/24 [110/3] via 10.0.20.2, 00:00:00, GigabitEthernet0/1
 
 [63/124] Router1 Router1# show ip route 192.168.40.0
   Routing entry for 192.168.40.0/24
@@ -464,13 +584,13 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 
 [68/124] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
-  10.0.20.1       1     FULL/  -        00:00:40    10.0.10.2       GigabitEthernet0/1
-  10.0.50.1       1     FULL/  -        00:00:40    10.0.40.1       GigabitEthernet0/2
+  10.0.20.1         1   FULL/BDR        00:00:39    10.0.10.2       GigabitEthernet0/1
+  10.0.50.1         1   FULL/BDR        00:00:39    10.0.40.1       GigabitEthernet0/2
 
 [69/124] Router3 Router3# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
-  192.168.40.1    1     FULL/  -        00:00:40    10.0.30.2       GigabitEthernet0/1
-  10.0.60.1       1     FULL/  -        00:00:40    10.0.60.1       GigabitEthernet0/2
+  192.168.40.1      1   FULL/BDR        00:00:39    10.0.30.2       GigabitEthernet0/1
+  10.0.60.1         1   FULL/BDR        00:00:39    10.0.60.1       GigabitEthernet0/2
 
 [70/124] Router1 Router1# show ip route 192.168.40.0
   Routing entry for 192.168.40.0/24
@@ -481,32 +601,46 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
         Route metric is 5, traffic share count is 1
 
 [71/124] Router1 Router1# show ip route ospf
-  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
-  O 10.0.60.0/30 [110/3] via 10.0.40.1, GigabitEthernet0/2
-  O IA 10.0.30.0/30 [110/4] via 10.0.40.1, GigabitEthernet0/2
-  O IA 192.168.40.0/24 [110/5] via 10.0.40.1, GigabitEthernet0/2
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
+  O IA     10.0.30.0/30 [110/4] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
+  O        10.0.50.0/30 [110/2] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
+  O        10.0.60.0/30 [110/3] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
+        192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+  O IA  192.168.40.0/24 [110/5] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
 
 [72/124] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=3ms TTL=59
-  Reply from 192.168.40.11: bytes=32 time=6ms TTL=59
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=59
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=59
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 3ms, Maximum = 6ms, Average = 5ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [73/124] PC1 PC1$ tracert 192.168.40.11
   
-  Tracing route to 192.168.40.11 over a maximum of 30 hops:
+  Tracing route to 192.168.40.11 over a maximum of 30 hops
   
-     1    1 ms     <1 ms    <1 ms    192.168.10.1
-     2    1 ms     1 ms     1 ms     10.0.40.1
-     3    1 ms     1 ms     1 ms     10.0.50.2
-     4    1 ms     1 ms     1 ms     10.0.60.2
-     5    1 ms     1 ms     1 ms     10.0.30.2
-     6    2 ms     2 ms     2 ms     192.168.40.11
+    1    <1 ms    <1 ms    <1 ms  192.168.10.1
+    2    <1 ms    <1 ms    <1 ms  10.0.40.1
+    3    <1 ms    <1 ms    <1 ms  10.0.50.2
+    4    <1 ms    <1 ms    <1 ms  10.0.60.2
+    5    <1 ms    <1 ms    <1 ms  10.0.30.2
+    6    <1 ms    <1 ms    <1 ms  192.168.40.11
   
   Trace complete.
 
@@ -525,13 +659,13 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 [78/124] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=3ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 3ms, Average = 3ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 
 --- [79] § F. DHCP ---
@@ -540,7 +674,7 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.10.2        0102.0000.0000.05       23 Aug 2026 19:00:00    automatic
+  192.168.10.2        0102.0000.0000.05       Aug 23 2026 07:00 PM    Automatic
 
 [80/124] Router1 Router1# show ip dhcp pool
   Pool LAB1 :
@@ -565,7 +699,7 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.40.11       0102.0000.0000.49       22 Aug 2026 19:00:00    automatic
+  192.168.40.11       0102.0000.0000.49       Aug 22 2026 07:00 PM    Automatic
 
 [82/124] Router4 Router4# show ip dhcp pool
   Pool LAB2 :
@@ -610,22 +744,14 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 [85/124] PC1 PC1$ ipconfig /release
   Windows IP Configuration
   
-  All adapters have been successfully released.
+  No operation can be performed on Ethernet 1 while it has its media disconnected.
+  No operation can be performed on Ethernet 2 while it has its media disconnected.
+  No operation can be performed on Ethernet 3 while it has its media disconnected.
   
   Ethernet adapter Ethernet 0:
-     Connection-specific DNS Suffix  . :
   
-  Ethernet adapter Ethernet 1:
      Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
+     Default Gateway . . . . . . . . . :
   
 
 [86/124] PC1 PC1$ ipconfig
@@ -655,12 +781,6 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 
 [87/124] PC1 PC1$ ipconfig /renew
   Windows IP Configuration
-  
-  Ethernet adapter Ethernet 0:
-  
-     DHCP Offer received from 192.168.10.1
-     DHCP Request - Broadcast
-     DHCP ACK received
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
@@ -725,7 +845,7 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   
 
 [89/124] Server1 Server1$ dhclient -r eth0
-  released 192.168.40.11
+<vide>
 
 [90/124] Server1 Server1$ dhclient eth0
 <vide>
@@ -783,12 +903,6 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-  
-     DHCP Offer received from 192.168.60.1
-     DHCP Request - Broadcast
-     DHCP ACK received
-  
-  Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
      Link-local IPv6 Address. . . . . . : fe80::ff:fe00:8d%2
      IPv4 Address. . . . . . . . . . . : 192.168.60.11
@@ -825,12 +939,6 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 
 [107/124] WinServer1 WinServer1$ ipconfig /renew
   Windows IP Configuration
-  
-  Ethernet adapter Ethernet 0:
-  
-     DHCP Offer received from 192.168.60.1
-     DHCP Request - Broadcast
-     DHCP ACK received
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
@@ -872,55 +980,67 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.60.11       0102.0000.0000.8d       19 Aug 2026 19:00:00    automatic
-  192.168.60.12       0102.0000.0000.89       19 Aug 2026 19:00:00    automatic
+  192.168.60.11       0102.0000.0000.8d       Aug 19 2026 07:00 PM    Automatic
+  192.168.60.12       0102.0000.0000.89       Aug 19 2026 07:00 PM    Automatic
 
 [110/124] PC2 PC2$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=3ms TTL=61
-  Reply from 192.168.40.11: bytes=32 time=1ms TTL=61
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=61
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=61
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 3ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [111/124] PC2 PC2$ ping -n 2 192.168.10.2
   
   Pinging 192.168.10.2 with 32 bytes of data:
-  Reply from 192.168.10.2: bytes=32 time=1ms TTL=125
-  Reply from 192.168.10.2: bytes=32 time=1ms TTL=125
+  Reply from 192.168.10.2: bytes=32 time=<1ms TTL=125
+  Reply from 192.168.10.2: bytes=32 time=<1ms TTL=125
   
   Ping statistics for 192.168.10.2:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [112/124] Router1 Router1# show ip route ospf
-  O 10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
-  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
-  O 192.168.60.0/24 [110/3] via 10.0.40.1, GigabitEthernet0/2
-  O 10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
-  O IA 10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
-  O IA 192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+  O        10.0.20.0/30 [110/2] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O IA     10.0.30.0/30 [110/3] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O        10.0.50.0/30 [110/2] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
+  O        10.0.60.0/30 [110/3] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+        192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+  O IA  192.168.40.0/24 [110/4] via 10.0.10.2, 00:00:00, GigabitEthernet0/1
+  O     192.168.60.0/24 [110/3] via 10.0.40.1, 00:00:00, GigabitEthernet0/2
 
 
 --- [113] § H. Services de bout en bout ---
 [113/124] PC1 PC1$ ssh alice@192.168.40.11
-  Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-130-generic x86_64)
-  
-  
-  Connection to 192.168.40.11 closed.
+  alice@192.168.40.11: Permission denied (publickey,password).
+  Warning: Permanently added '192.168.40.11' (ED25519) to the list of known hosts.
 
 [114/124] Server1 Server1$ ss -tlnp
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=22,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=22,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
-  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
+  State     Recv-Q    Send-Q       Local Address:Port        Peer Address:Port    Process                                                                         
+  LISTEN    0         4096               0.0.0.0:1521             0.0.0.0:*                                                                                       
+  LISTEN    0         128                0.0.0.0:22               0.0.0.0:*        users:(("sshd",pid=22,fd=3))                                                   
+  LISTEN    0         4096         127.0.0.53%lo:53               0.0.0.0:*        users:(("systemd-resolve",pid=29,fd=4))                                        
+  LISTEN    0         4096               0.0.0.0:1812             0.0.0.0:*        users:(("freeradius",pid=40,fd=3))                                             
+  LISTEN    0         4096                  [::]:1521                [::]:*                                                                                       
+  LISTEN    0         128                   [::]:22                  [::]:*        users:(("sshd",pid=22,fd=4))                                                   
 
 [115/124] Server1 Server1$ systemctl start nginx
 <vide>
@@ -928,13 +1048,13 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 [116/124] Server1 Server1$ systemctl status nginx
   [0;1;32m●[0m nginx.service - A high performance web server and a reverse proxy server
        Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; vendor preset: enabled)
-       Active: [0;1;32mactive (running)[0m since Tue, 18 Aug 2026 19:00:00 GMT
-     Main PID: 46 (nginx)
+       Active: [0;1;32mactive (running)[0m since Tue, 18 Aug 2026 19:00:03 GMT
+     Main PID: 45 (nginx)
         Tasks: 1
-       Memory: 2.6M
-          CPU: 56ms
+       Memory: 2.5M
+          CPU: 55ms
        CGroup: /system.slice/nginx.service
-               └─46 /usr/sbin/nginx -g "daemon on; master_process on;"
+               └─45 /usr/sbin/nginx -g "daemon on; master_process on;"
 
 [117/124] PC1 PC1$ curl http://192.168.40.11/
   <!DOCTYPE html>
@@ -991,9 +1111,9 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   OSPF statistics:
     Rcvd: 0 total, 0 errors
     LSA: 22 total
-    SPF: 45 runs, last run recently
+    SPF: 22 runs, last run recently
     Neighbors: 3, Adjacent: 3
-    Neighbor state changes: 21
+    Neighbor state changes: 20
   
     Area statistics:
       Area 0: 5 router LSA(s), 5 network LSA(s), 2 summary LSA(s)
@@ -1001,12 +1121,12 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
 
 [121/124] Router1 Router1# show ip ospf traffic
   OSPF statistics:
-    Rcvd: 1377 total, 0 checksum errors
-           257 hello, 4 database desc, 2 link state req
-           608 link state updates, 506 link state acks
-    Sent: 1511 total
-           297 hello, 4 database desc, 0 link state req
-           845 link state updates, 365 link state acks
+    Rcvd: 360 total, 0 checksum errors
+           119 hello, 4 database desc, 2 link state req
+           99 link state updates, 136 link state acks
+    Sent: 406 total
+           165 hello, 4 database desc, 2 link state req
+           136 link state updates, 99 link state acks
 
 [122/124] Router1 Router1# show ip cef
   Prefix               Next Hop             Interface
@@ -1051,8 +1171,8 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
   *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.20.1 on GigabitEthernet0/1 from Exchange to Full, ExchangeDone
-  *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.50.1 on GigabitEthernet0/2 from Exchange to Full, ExchangeDone
+  *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.20.1 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Aug 18 19:00:00.001: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.50.1 on GigabitEthernet0/2 from Loading to Full, LoadingDone
 
 [124/124] Router4 Router4# show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -1082,6 +1202,6 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
   *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
   *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.30.1 on GigabitEthernet0/0 from Loading to Full, LoadingDone
-  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:00:00.006: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:00:00.007: %SYS-5-CONFIG_I: Configured from console by console

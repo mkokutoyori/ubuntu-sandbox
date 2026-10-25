@@ -3715,10 +3715,3 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 ### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
-
-
-### [ping-rafale] ping attend chaque sonde sans reponse l'une apres l'autre, meme avec un intervalle minuscule
-
-Mesure dans Chromium sur nat-lab (e2e/nat-lab-stress.spec.ts) : `ping -c 500 -i 0.002` vers un hote silencieux prend 254 s,
-car la simulation attend le delai d'expiration de chaque sonde avant d'emettre la suivante ; un vrai ping emet au rythme de
-`-i` et recoit les reponses en parallele. Non ferme : demande de rendre l'emission de ping independante de l'attente des reponses.
