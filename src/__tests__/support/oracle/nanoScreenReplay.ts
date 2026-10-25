@@ -54,6 +54,20 @@ export function nanoKeysOf(step: string): EditorKeyInput[] {
   return [...step].map((ch) => (ch === '\t' ? editorKey('Tab') : editorKey(ch)));
 }
 
+const MOUSE_STEP = /^(click|wheel-up|wheel-down)@(\d+),(\d+)$/;
+
+export function applyNanoStep(engine: NanoEngine, step: string): void {
+  const mouse = MOUSE_STEP.exec(step);
+  if (mouse === null) {
+    for (const k of nanoKeysOf(step)) engine.applyKey(k);
+    return;
+  }
+  const row = Number(mouse[2]);
+  const col = Number(mouse[3]);
+  if (mouse[1] === 'click') engine.clickAt(row, col);
+  else engine.wheelAt(row, col, mouse[1] === 'wheel-down');
+}
+
 export function recordedArguments(c: NanoScreenCase): string[] {
   return c.args ?? [...(c.flags ?? []), 't.txt'];
 }
@@ -165,13 +179,13 @@ export function replayNanoScreenCase(c: NanoScreenCase): string | null {
       const [rows, cols] = step.slice(1).split('x').map(Number);
       engine.resize(rows, cols);
     } else {
-      for (const k of nanoKeysOf(step)) engine.applyKey(k);
+      applyNanoStep(engine, step);
     }
     const failure = compareNanoScreen(engine, fs, c.after[s], c.hidden === true, workingDirectoryOf(c));
     if (failure) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}${failure}`;
   }
   if (c.exit_step === undefined) return null;
-  for (const k of nanoKeysOf(c.exit_step)) engine.applyKey(k);
+  applyNanoStep(engine, c.exit_step);
   if (!engine.exited) return `${c.id} ${JSON.stringify(args)} ${JSON.stringify(c.exit_step)} should have made nano exit`;
   const final = c.final_disk === undefined ? null : compareDisk(fs, c.final_disk, c.hidden === true, workingDirectoryOf(c));
   return final === null ? null : `${c.id} ${JSON.stringify(args)} after exit${final}`;

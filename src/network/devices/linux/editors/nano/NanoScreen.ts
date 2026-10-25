@@ -1,7 +1,7 @@
 import type { EditorScreen, ScreenBand, ScreenRow, ScreenSpan } from '../screen/EditorScreen';
 import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
-import { menuLayout, type MenuOptions, type NanoMenuName } from './NanoMenus';
+import { menuLayout, shownEntryCount, type MenuOptions, type NanoMenuName } from './NanoMenus';
 import type { NanoWindow, Position } from './NanoWindow';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -388,6 +388,13 @@ function promptRow(cols: number, label: string, answer: string, answerCursor: nu
   return { row: canvas.fullRow(), cursorColumn: column - page };
 }
 
+export function promptCursorAtColumn(cols: number, label: string, answer: string, answerCursor: number, tabsize: number, clickColumn: number): number {
+  const base = breadth(clipped(label, cols < 5 ? 0 : cols - 5, tabsize), tabsize) + 2;
+  if (clickColumn < base) return answerCursor;
+  const page = promptPageStart(base, base + wideness(answer, answerCursor, tabsize), cols);
+  return actualX(answer, page + clickColumn - base, tabsize);
+}
+
 function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width: number, tabsize: number, emphasis: Emphasis): void {
   const keyText = clipped(key, width, tabsize);
   canvas.put(at, keyText);
@@ -401,8 +408,7 @@ function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width:
 
 function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number, options: MenuOptions, emphasis: Emphasis): [ScreenRow, ScreenRow] {
   const { entries, slots } = menuLayout(menu, options);
-  const maximum = Math.floor((cols + 40) / 20) * 2;
-  const number = Math.min(slots, maximum);
+  const number = shownEntryCount(cols, slots);
   const itemwidth = Math.floor(cols / Math.floor((number + 1) / 2));
   const canvases = [new Canvas(cols), new Canvas(cols)];
   if (itemwidth === 0) return [SPACE_ROW, SPACE_ROW];

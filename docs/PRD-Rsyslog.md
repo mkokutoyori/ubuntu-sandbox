@@ -364,8 +364,8 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   le décalage « File corruption detected at … (of N bytes, P%) » et le statut sont comparés à 13 000 altérations rejouées contre le vrai `journalctl --file=… --verify`
   (`scripts/oracle/record_journal_verify.py` : chaque octet de l'en-tête, chaque champ d'un échantillon d'objets de chaque type, entrées des tables de hachage,
   drapeaux de compression, semis aléatoire, troncatures, extensions, plages mises à zéro). Le bogue amont de 255 selon lequel le premier fichier scellé d'un démarrage
-  échoue à son premier tag est reproduit parce que l'en-tête haché change (`seqnum_id`) ; un fichier créé après une rotation (modèle) passe. LZ4 est décodé (`compression/lz4/`), XZ
-  non (TODO.md). `journalctl --file=PATH --verify` vérifie n'importe quel fichier du VFS.
+  échoue à son premier tag est reproduit parce que l'en-tête haché change (`seqnum_id`) ; un fichier créé après une rotation (modèle) passe. LZ4 (`compression/lz4/`) et XZ (`compression/xz/` : conteneur, LZMA2, décodeur LZMA, contrôles CRC32/CRC64/SHA-256, validé contre liblzma par `xz-liblzma-oracle.test.ts`)
+  sont décodés pour les journaux étrangers. `journalctl --file=PATH --verify` vérifie n'importe quel fichier du VFS.
 
 - **Files de messages** (`rsyslog-queue-params.test.ts`, `rsyslog-disk-assisted.test.ts`, `rsyslog-disk-queue.test.ts`,
   `rsyslog-queue-shutdown.test.ts`, `rsyslog-queue-enqueue-timeout.test.ts`) : `Queue.ts` est un ensemble de workers comme `queue.c`.

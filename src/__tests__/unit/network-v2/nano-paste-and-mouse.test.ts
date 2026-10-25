@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
+import { defaultNanoSettings } from '@/network/devices/linux/editors/nano/NanoSettings';
 import { editorKey } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 
@@ -125,11 +126,29 @@ describe('Scénario — coller dans les prompts (recherche, remplacement, nom de
 });
 
 describe('Scénario — clic souris repositionne le curseur (cellule de l\'écran → (ligne, colonne) réelle)', () => {
-  function sized(content: string, file = '/tmp/x.txt'): NanoEngine {
-    const nano = new NanoEngine(new InMemoryEditorFsContext({ [file]: content }), file, content, false);
+  function sized(content: string, file = '/tmp/x.txt', mouse = true): NanoEngine {
+    const nano = new NanoEngine(new InMemoryEditorFsContext({ [file]: content }), file, content, false, false, undefined, false, {
+      settings: defaultNanoSettings({ mouse }),
+    });
     nano.resize(24, 80);
     return nano;
   }
+
+  it('sans -m nano ne demande pas la souris au terminal : un clic ne bouge rien', () => {
+    const nano = sized('hello\nworld\n', '/tmp/x.txt', false);
+    nano.clickAt(2, 2);
+    expect(nano.cursorLine).toBe(0);
+    expect(nano.cursorCol).toBe(0);
+  });
+
+  it('M-M allume la souris en cours de route', () => {
+    const nano = sized('hello\nworld\n', '/tmp/x.txt', false);
+    alt(nano, 'm');
+    expect(nano.statusMessage).toBe('[ Mouse support enabled ]');
+    nano.clickAt(2, 2);
+    expect(nano.cursorLine).toBe(1);
+    expect(nano.cursorCol).toBe(2);
+  });
 
   it('cliquer sur une cellule simple (aucun caractère de contrôle) déplace le curseur exactement', () => {
     const nano = sized('hello\nworld\n');

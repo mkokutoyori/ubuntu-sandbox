@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
 (the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
-key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
+key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a mouse event (`click@ROW,COL`, `wheel-up@ROW,COL`,
+`wheel-down@ROW,COL`, sent as xterm SGR reports), a run of literal text (`-l`) or `@ROWSxCOLS`,
 which resizes the pane (a run of literal text is sent one character at a time, 40 ms apart, because nano
 wraps a burst of typed characters once at its end).  The real nano runs inside a pane of the given size (started with `-I`, so
 no rc file is read); the first record is the screen right after nano opened the file, then one
@@ -25,7 +26,20 @@ KEYS = {"Left", "Right", "Up", "Down", "Home", "End", "PageUp", "PageDown", "Ent
 def tmux(*args):
     return subprocess.run(["tmux", *args], capture_output=True, text=True).stdout
 
+MOUSE = re.compile(r"^(click|wheel-up|wheel-down)@(\d+),(\d+)$")
+
+def mouse_bytes(kind, row, col):
+    x, y = col + 1, row + 1
+    if kind == "click":
+        return "\x1b[<0;%d;%dM\x1b[<0;%d;%dm" % (x, y, x, y)
+    return "\x1b[<%d;%d;%dM" % (64 if kind == "wheel-up" else 65, x, y)
+
 def send(name, token):
+    mouse = MOUSE.match(token)
+    if mouse:
+        tmux("send-keys", "-t", name, "-l", mouse_bytes(mouse.group(1), int(mouse.group(2)), int(mouse.group(3))))
+        time.sleep(0.15)
+        return
     if token in KEYS or re.match(r"^(C|M)-.+$", token) or token in ("C-Left", "C-Right"):
         tmux("send-keys", "-t", name, token)
     else:
@@ -283,7 +297,12 @@ def run_cli_case(case, workdir):
              "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s" % (casedir, " ".join(shlex.quote(a) for a in case["args"])))
         record["opened"] = record_screen(name, disk_dir, hidden, case.get("attrs", False))
         record["after"] = []
+        steps_done = []
+        cursor = (record["opened"]["y"], record["opened"]["x"]) if record["opened"] else (0, 0)
         for step in case.get("steps", []):
+            if step == "click@cursor":
+                step = "click@%d,%d" % cursor
+            steps_done.append(step)
             if step.startswith("@"):
                 rows_, cols_ = step[1:].split("x")
                 tmux("resize-window", "-t", name, "-x", cols_, "-y", rows_)
@@ -298,7 +317,8 @@ def run_cli_case(case, workdir):
                     record["final_disk"] = record_disk(casedir, hidden)
                 break
             record["after"].append(snap)
-        record["steps"] = case.get("steps", [])[:len(record["after"])]
+            cursor = (snap["y"], snap["x"])
+        record["steps"] = steps_done[:len(record["after"])]
         tmux("kill-session", "-t", name)
     else:
         record["opens"] = False
@@ -893,7 +913,45 @@ def gen_exec(seed, count):
         cases.append({"id": "exe%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": without_stray_exec_keys(steps), "disk": True, "hidden": True})
     return cases
 
+MOUSE_FLAG_SETS = [["-m"], ["-m"], ["-m", "-l"], ["-m", "-S"], ["-m", "-q"], ["-m", "-x"], ["-m", "-_"], ["-m", "-0"], ["-m", "-e"], ["-m", "-v"], ["-m", "-l", "-S"], ["-m", "-c"], ["-m", "-q", "-l"], ["-m", "-%"]]
+MOUSE_KEYS = ["Down", "Down", "Up", "Right", "Left", "End", "Home", "PageDown", "PageUp", "x", "yz", "BSpace", "Enter", "C-k", "C-u", "M-a", "M-6", "C-w", "C-o", "C-r", "C-\\", "C-g", "C-x", "C-c", "M-u", "C-_", "foo", "Enter", "C-b", "C-f"]
+MOUSE_SIZES = [(5, 40), (6, 40), (8, 30), (10, 40), (10, 50), (12, 40), (12, 60), (14, 60), (24, 80), (9, 20)]
+
+def mouse_step(r, rows, cols):
+    kind = r.random()
+    if kind < 0.35:
+        return "click@cursor"
+    place = r.random()
+    if place < 0.55:
+        row, col = r.randint(1, max(1, rows - 4)), r.randint(0, cols - 1)
+    elif place < 0.8:
+        row, col = r.randint(max(0, rows - 3), rows - 1), r.randint(0, cols - 1)
+    elif place < 0.9:
+        row, col = 0, r.randint(0, cols - 1)
+    else:
+        row, col = r.randint(0, rows - 1), r.choice([0, 1, 2, 3, cols - 1])
+    if kind < 0.85:
+        return "click@%d,%d" % (row, col)
+    return "%s@%d,%d" % (r.choice(["wheel-up", "wheel-down"]), row, col)
+
+def gen_mouse(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = rand_buffer(r, r.choice([2, 4, 8, 14, 30]))
+        rows, cols = r.choice(MOUSE_SIZES)
+        steps = []
+        for _ in range(r.randint(4, 14)):
+            if r.random() < 0.6:
+                steps.append(mouse_step(r, rows, cols))
+            else:
+                steps.append(r.choice(MOUSE_KEYS))
+        cases.append({"id": "mou%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": r.choice(MOUSE_FLAG_SETS) + ["t.txt"], "steps": steps})
+    return cases
+
 def gen(seed, count, corpus):
+    if corpus == "mouse":
+        return gen_mouse(seed, count)
     if corpus == "exec":
         return gen_exec(seed, count)
     if corpus == "blocks":
@@ -965,7 +1023,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "mouse", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)
