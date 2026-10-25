@@ -1,7 +1,7 @@
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { parseNanoCommandLine } from '@/network/devices/linux/editors/nano/NanoCommandLine';
-import { launchedFilePath, type EditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { editorLaunchFailure, launchedFilePath, withRcfiles, type EditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import { applyNanoStep, compareDisk, compareNanoScreen, seededFileSystem, type NanoRecorded, type NanoScreenCase, type RecordedDisk } from './nanoScreenReplay';
 
 export interface RecordedEntry { mode: number; content?: string }
@@ -29,6 +29,8 @@ export interface NanoStateCase {
   home: Record<string, string>;
   xdg: Record<string, string>;
   env: Record<string, string>;
+  rc?: boolean;
+  etc_nanorc?: string;
   runs: NanoStateRun[];
 }
 
@@ -41,7 +43,7 @@ function withTokens(text: string, c: NanoStateCase): string {
 }
 
 function seededState(c: NanoStateCase): InMemoryEditorFsContext {
-  const extra: Record<string, string> = {};
+  const extra: Record<string, string> = c.rc ? { '/etc/nanorc': withTokens(c.etc_nanorc ?? '', c) } : {};
   const directories: string[] = [];
   for (const [tree, root] of [[c.home, HOME], [c.xdg, `${c.lab}/xdg`]] as const) {
     for (const [relative, content] of Object.entries(tree)) {
@@ -83,11 +85,16 @@ function compareTree(label: string, want: Record<string, RecordedEntry>, got: Re
   return failures.join('');
 }
 
-function noticeRows(notice: string, width: number): string[] {
+function withRealPaths(disk: RecordedDisk, casedir: string): RecordedDisk {
+  const spelled = casedir.replaceAll('/', '!');
+  return Object.fromEntries(Object.entries(disk).map(([name, entry]) => [name.replace('!tmp', spelled), entry]));
+}
+
+function noticeRows(notice: string, width: number, height: number): string[] {
   const lines = notice === '' ? [] : notice.replace(/\n$/, '').split('\n');
-  const rows = lines.flatMap((line) => (line.length <= width ? [line] : (line.match(new RegExp(`.{1,${width}}`, 'g')) ?? [line])));
+  const rows = lines.flatMap((line) => (line.length <= width ? [line] : (line.match(new RegExp(`.{1,${width}}`, 'g')) ?? [line]))).map((row) => row.trimEnd());
   while (rows.length > 0 && rows[rows.length - 1].trim() === '') rows.pop();
-  return rows;
+  return rows.length > height - 1 ? rows.slice(rows.length - (height - 1)) : rows;
 }
 
 function wantedNoticeRows(rows: string[] | undefined): string[] {
@@ -98,19 +105,26 @@ function wantedNoticeRows(rows: string[] | undefined): string[] {
 
 export function replayNanoStateCase(c: NanoStateCase): string | null {
   const fs = seededState(c);
-  const ignored = [`${HOME}/`, `${c.lab}/xdg/`];
+  const ignored = [`${HOME}/`, `${c.lab}/xdg/`, '/etc/nanorc'];
   for (let index = 0; index < c.runs.length; index++) {
     const run = c.runs[index];
     const label = `${c.id} run ${index} ${c.rows}x${c.cols} ${JSON.stringify(run.args)}`;
-    const invocation = parseNanoCommandLine(run.args);
+    const invocation = parseNanoCommandLine(run.args.map((argument) => withTokens(argument, c)));
     if (invocation.kind !== 'open') return `${label} did not open an editor: ${JSON.stringify(invocation)}`;
     const first = invocation.files[0];
     const name = first?.path ?? '';
-    const launch: EditorLaunch = { editor: 'nano', filePath: name, nano: { settings: invocation.settings, start: first?.start ?? null } };
+    const parsed: EditorLaunch = { editor: 'nano', filePath: name, nano: { settings: invocation.settings, start: first?.start ?? null, memory: invocation.memory, rc: null } };
+    const launch = c.rc ? withRcfiles(fs, parsed) : parsed;
+    const failure = editorLaunchFailure(fs, launch);
+    if (failure !== null) {
+      const shown = run.opened.rows.filter((row) => row.trim() !== '').join('');
+      if (shown !== failure) return `${label} refused to open\n  want ${JSON.stringify(shown)}\n  got  ${JSON.stringify(failure)}`;
+      continue;
+    }
     const absolute = launchedFilePath(fs, launch);
     const content = absolute === '' ? null : fs.readFile(absolute);
     const engine = new NanoEngine(fs, absolute, content ?? '', content === null, false, undefined, false, {
-      settings: invocation.settings, start: first?.start ?? null, displayName: name,
+      settings: launch.nano!.settings, start: first?.start ?? null, displayName: name, rc: launch.nano!.rc, menuFlags: launch.nano!.menuFlags,
     });
     engine.resize(c.rows, c.cols);
     const opened = compareNanoScreen(engine, fs, run.opened, true, c.casedir, ignored);
@@ -124,9 +138,9 @@ export function replayNanoStateCase(c: NanoStateCase): string | null {
       applyNanoStep(engine, run.exit_step);
       if (!engine.exited) return `${label} ${JSON.stringify(run.exit_step)} should have made nano exit`;
       const wantRows = wantedNoticeRows(run.exit_rows);
-      const gotRows = noticeRows(engine.exitNotice, c.cols);
+      const gotRows = noticeRows(engine.exitNotice, c.cols, c.rows);
       if (JSON.stringify(wantRows) !== JSON.stringify(gotRows)) return `${label} exit notice\n  want ${JSON.stringify(wantRows)}\n  got  ${JSON.stringify(gotRows)}`;
-      const disk = run.exit_disk === undefined ? null : compareDisk(fs, run.exit_disk, true, c.casedir, ignored);
+      const disk = run.exit_disk === undefined ? null : compareDisk(fs, withRealPaths(run.exit_disk, c.casedir), true, c.casedir, ignored);
       if (disk !== null) return `${label} after exit${disk}`;
     } else if (engine.exited) return `${label} exited although nano kept running after ${JSON.stringify(run.steps)}`;
     const homeFailure = compareTree('home', run.home, treeOf(fs, HOME, HOME));

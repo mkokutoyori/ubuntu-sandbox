@@ -91,7 +91,7 @@ import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubSh
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
-import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
 import { LinuxEditorFsContext } from './LinuxEditorFsContext';
 import {
   createRemoteEditorController,
@@ -1472,11 +1472,12 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): boolean {
-    const launch = parseEditorArgs(editorCmd, args);
-    if (launch === null) return false;
-    const { filePath, nano, initialCursorLine, initialCursorCol } = launch;
+    const parsed = parseEditorArgs(editorCmd, args);
+    if (parsed === null) return false;
     const dev = this.device;
     const launchFs = this.shell && dev instanceof LinuxMachine ? new LinuxEditorFsContext(dev, this.shell) : null;
+    const launch = launchFs === null ? parsed : withRcfiles(launchFs, parsed);
+    const { filePath, nano, initialCursorLine, initialCursorCol } = launch;
     if (launchFs !== null && editorLaunchFailure(launchFs, launch) !== null) return false;
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against

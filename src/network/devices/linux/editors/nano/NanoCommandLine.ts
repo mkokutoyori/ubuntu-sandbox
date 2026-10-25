@@ -15,13 +15,20 @@ export interface NanoStart {
   readonly alerts: readonly string[];
 }
 
+export type GivenOption = 'tabsize' | 'fill' | 'guidestripe' | 'quotestr' | 'wordchars' | 'backupdir' | 'operatingdir' | 'speller';
+
+export interface CommandLineMemory {
+  readonly given: ReadonlySet<GivenOption>;
+  readonly hardwrap: boolean | null;
+}
+
 export interface NanoFileRequest {
   readonly path: string;
   readonly start: NanoStart | null;
 }
 
 export type NanoInvocation =
-  | { readonly kind: 'open'; readonly settings: NanoSettings; readonly files: readonly NanoFileRequest[] }
+  | { readonly kind: 'open'; readonly settings: NanoSettings; readonly files: readonly NanoFileRequest[]; readonly memory: CommandLineMemory }
   | { readonly kind: 'print'; readonly stdout: string }
   | { readonly kind: 'fail'; readonly stdout: string; readonly stderr: string };
 
@@ -114,7 +121,7 @@ const HINT_ONLY_SHORT = '!';
 
 const INT64_LIMIT = 2n ** 63n;
 
-function parseNanoNumber(text: string): number | null {
+export function parseNanoNumber(text: string): number | null {
   if (!/^[ \t\n\v\f\r]*[+-]?\d+$/.test(text)) return null;
   const value = BigInt(text.trim());
   if (value >= INT64_LIMIT || value < -INT64_LIMIT) return null;
@@ -129,7 +136,14 @@ function failure(programName: string, stderr: string): NanoInvocation {
   return { kind: 'fail', stdout: hint(programName), stderr };
 }
 
-function applyEffect(draft: Draft, spec: OptionSpec, value: string): NanoInvocation | null {
+interface Memory {
+  readonly given: Set<GivenOption>;
+  hardwrap: boolean | null;
+}
+
+const GIVEN_OPTIONS: readonly string[] = ['tabsize', 'fill', 'guidestripe', 'quotestr', 'wordchars', 'backupdir', 'operatingdir', 'speller'];
+
+function applyEffect(draft: Draft, memory: Memory, spec: OptionSpec, value: string): NanoInvocation | null {
   const effect = spec.effect;
   switch (effect.kind) {
     case 'flag':
@@ -137,9 +151,11 @@ function applyEffect(draft: Draft, spec: OptionSpec, value: string): NanoInvocat
       return null;
     case 'breaklonglines':
       draft.breaklonglines = effect.value;
+      memory.hardwrap = effect.value;
       return null;
     case 'text':
       draft[effect.field] = value;
+      if (GIVEN_OPTIONS.includes(effect.field)) memory.given.add(effect.field as GivenOption);
       return null;
     case 'number': {
       const parsed = parseNanoNumber(value);
@@ -147,6 +163,7 @@ function applyEffect(draft: Draft, spec: OptionSpec, value: string): NanoInvocat
         return { kind: 'fail', stdout: '', stderr: `${effect.rejects} "${value}" is invalid` };
       }
       draft[effect.field] = parsed;
+      memory.given.add(effect.field);
       return null;
     }
     case 'help':
@@ -232,6 +249,7 @@ function parseStart(argument: string): NanoStart {
 
 export function parseNanoCommandLine(args: readonly string[], programName = 'nano'): NanoInvocation {
   const draft: Draft = { ...defaultNanoSettings() };
+  const memory: Memory = { given: new Set(), hardwrap: null };
   const operands: string[] = [];
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
@@ -243,7 +261,7 @@ export function parseNanoCommandLine(args: readonly string[], programName = 'nan
       const scanned = scanLongOption(programName, argument, args[index + 1]);
       if ('kind' in scanned) return scanned;
       if (scanned.consumedFollowing) index++;
-      const outcome = applyEffect(draft, scanned.spec, scanned.value);
+      const outcome = applyEffect(draft, memory, scanned.spec, scanned.value);
       if (outcome !== null) return outcome;
       continue;
     }
@@ -261,7 +279,7 @@ export function parseNanoCommandLine(args: readonly string[], programName = 'nan
           else if (index + 1 < args.length) value = args[++index];
           else return failure(programName, `${programName}: option requires an argument -- '${letter}'`);
         }
-        const outcome = applyEffect(draft, spec, value);
+        const outcome = applyEffect(draft, memory, spec, value);
         if (outcome !== null) return outcome;
         if (spec.takesArgument) break;
       }
@@ -276,5 +294,5 @@ export function parseNanoCommandLine(args: readonly string[], programName = 'nan
     files.push({ path: operands[index++], start });
   }
   if (draft.zero) draft.nohelp = true;
-  return { kind: 'open', settings: draft, files };
+  return { kind: 'open', settings: draft, files, memory };
 }
