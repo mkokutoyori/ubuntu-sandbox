@@ -7,11 +7,11 @@
  * and the base64 armour only with `-a`.
  */
 
+import { chacha20Xor } from '@/crypto/cipher';
+import { createModeTransform, pkcs7Pad, pkcs7Unpad, type BlockMode } from '@/crypto/cipher/blockModes';
 import {
-  aesCbcEncrypt, aesCbcDecrypt, aesEncryptBlock, aesDecryptBlock, tripleDesCbcEncrypt, tripleDesCbcDecrypt,
-  tripleDesEncryptBlock, tripleDesDecryptBlock, chacha20Xor,
-  camelliaEncryptBlock, camelliaDecryptBlock, ariaEncryptBlock, ariaDecryptBlock, sm4EncryptBlock, sm4DecryptBlock,
-} from '@/crypto/cipher';
+  AES_FAMILY, ARIA_FAMILY, CAMELLIA_FAMILY, SM4_FAMILY, TRIPLE_DES_FAMILY, type BlockCipherFamily,
+} from '@/crypto/cipher/blockCiphers';
 import { pbkdf2, evpBytesToKey } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import {
@@ -27,99 +27,24 @@ interface Algo {
   open(key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array;
 }
 
-function pkcs7Pad(data: Uint8Array, block: number): Uint8Array {
-  const pad = block - (data.length % block);
-  const out = new Uint8Array(data.length + pad);
-  out.set(data, 0);
-  out.fill(pad, data.length);
-  return out;
+export interface EncSuite {
+  readonly family: BlockCipherFamily;
+  readonly keyLength: number;
+  readonly mode: BlockMode;
 }
 
-function pkcs7Unpad(data: Uint8Array, block: number): Uint8Array {
-  const pad = data[data.length - 1];
-  if (data.length === 0 || data.length % block !== 0 || pad === 0 || pad > block) throw new Error('bad padding');
-  for (let i = data.length - pad; i < data.length; i++) if (data[i] !== pad) throw new Error('bad padding');
-  return data.subarray(0, data.length - pad);
-}
-
-type BlockFn = (key: Uint8Array, block: Uint8Array) => Uint8Array;
-
-function ecbAlgo(keyLen: number, block: number, encrypt: BlockFn, decrypt: BlockFn): Algo {
+function suiteAlgo(suite: EncSuite): Algo {
+  const size = suite.family.blockSize;
+  const padded = suite.mode === 'ecb' || suite.mode === 'cbc';
   return {
-    keyLen, ivLen: 0,
-    seal: (key, _iv, data) => {
-      const padded = pkcs7Pad(data, block);
-      const out = new Uint8Array(padded.length);
-      for (let i = 0; i < padded.length; i += block) out.set(encrypt(key, padded.subarray(i, i + block)), i);
-      return out;
-    },
-    open: (key, _iv, data) => {
-      if (data.length === 0 || data.length % block !== 0) throw new Error('bad length');
-      const out = new Uint8Array(data.length);
-      for (let i = 0; i < data.length; i += block) out.set(decrypt(key, data.subarray(i, i + block)), i);
-      return pkcs7Unpad(out, block);
-    },
-  };
-}
-
-function desCbcAlgo(keyLen: number): Algo {
-  return {
-    keyLen, ivLen: 8,
-    seal: (key, iv, data) => tripleDesCbcEncrypt(key, iv, pkcs7Pad(data, 8)),
-    open: (key, iv, data) => pkcs7Unpad(tripleDesCbcDecrypt(key, iv, data), 8),
-  };
-}
-
-function blockCbcAlgo(keyLen: number, encrypt: BlockFn, decrypt: BlockFn): Algo {
-  return {
-    keyLen, ivLen: 16,
-    seal: (key, iv, data) => {
-      const padded = pkcs7Pad(data, 16);
-      const out = new Uint8Array(padded.length);
-      let previous = iv;
-      for (let i = 0; i < padded.length; i += 16) {
-        const block = padded.slice(i, i + 16).map((byte, j) => byte ^ previous[j]);
-        previous = encrypt(key, block);
-        out.set(previous, i);
-      }
-      return out;
-    },
+    keyLen: suite.keyLength,
+    ivLen: suite.mode === 'ecb' ? 0 : size,
+    seal: (key, iv, data) => createModeTransform(suite.mode, suite.family.create(key), 'encrypt', iv).update(padded ? pkcs7Pad(data, size) : data),
     open: (key, iv, data) => {
-      if (data.length === 0 || data.length % 16 !== 0) throw new Error('bad length');
-      const out = new Uint8Array(data.length);
-      let previous = iv;
-      for (let i = 0; i < data.length; i += 16) {
-        const block = data.slice(i, i + 16);
-        out.set(decrypt(key, block).map((byte, j) => byte ^ previous[j]), i);
-        previous = block;
-      }
-      return pkcs7Unpad(out, 16);
+      const plain = createModeTransform(suite.mode, suite.family.create(key), 'decrypt', iv).update(data);
+      return padded ? pkcs7Unpad(plain, size) : plain;
     },
   };
-}
-
-function blockStreamAlgo(keyLen: number, mode: 'ctr' | 'cfb' | 'ofb', encryptBlock: BlockFn): Algo {
-  const run = (key: Uint8Array, iv: Uint8Array, data: Uint8Array, decrypting: boolean): Uint8Array => {
-    const out = new Uint8Array(data.length);
-    const feedback = new Uint8Array(iv);
-    for (let offset = 0; offset < data.length; offset += 16) {
-      const stream = encryptBlock(key, feedback);
-      const chunk = Math.min(16, data.length - offset);
-      for (let i = 0; i < chunk; i++) out[offset + i] = data[offset + i] ^ stream[i];
-      if (mode === 'ctr') {
-        for (let i = 15; i >= 0; i--) { feedback[i] = (feedback[i] + 1) & 0xff; if (feedback[i] !== 0) break; }
-      } else if (mode === 'ofb') {
-        feedback.set(stream);
-      } else {
-        const ciphertext = decrypting ? data.subarray(offset, offset + chunk) : out.subarray(offset, offset + chunk);
-        feedback.fill(0);
-        feedback.set(ciphertext);
-        if (chunk < 16) feedback.set(stream.subarray(chunk), chunk);
-      }
-    }
-    return out;
-  };
-  return { keyLen, ivLen: 16, seal: (key, iv, data) => run(key, iv, data, false), open: (key, iv, data) => run(key, iv, data, true) };
 }
 
 function chacha20Algo(): Algo {
@@ -130,51 +55,33 @@ function chacha20Algo(): Algo {
   return { keyLen: 32, ivLen: 16, seal: (key, iv, data) => run(key, iv, data), open: (key, iv, data) => run(key, iv, data) };
 }
 
-const aesCbcAlgo = (keyLen: number): Algo => ({ keyLen, ivLen: 16, seal: aesCbcEncrypt, open: aesCbcDecrypt });
+const ENC_MODES: readonly BlockMode[] = ['cbc', 'ecb', 'ctr', 'cfb', 'ofb'];
+const KEY_SIZES: readonly (readonly [string, number])[] = [['128', 16], ['192', 24], ['256', 32]];
+
+function buildSuites(): Record<string, EncSuite> {
+  const suites: Record<string, EncSuite> = {};
+  for (const [name, family] of [['aes', AES_FAMILY], ['camellia', CAMELLIA_FAMILY], ['aria', ARIA_FAMILY]] as const) {
+    for (const [bits, keyLength] of KEY_SIZES) {
+      for (const mode of ENC_MODES) suites[`${name}-${bits}-${mode}`] = { family, keyLength, mode };
+    }
+  }
+  for (const mode of ENC_MODES) {
+    suites[`des-ede3-${mode}`] = { family: TRIPLE_DES_FAMILY, keyLength: 24, mode };
+    suites[`des-ede-${mode}`] = { family: TRIPLE_DES_FAMILY, keyLength: 16, mode };
+    suites[`sm4-${mode}`] = { family: SM4_FAMILY, keyLength: 16, mode };
+  }
+  suites['des3'] = suites['des-ede3-cbc'];
+  suites['des-ede3'] = suites['des-ede3-ecb'];
+  suites['des-ede'] = suites['des-ede-ecb'];
+  suites['sm4'] = suites['sm4-cbc'];
+  return suites;
+}
+
+export const ENC_SUITES: Readonly<Record<string, EncSuite>> = buildSuites();
 
 export const ENC_ALGOS: Readonly<Record<string, Algo>> = {
-  'aes-128-cbc': aesCbcAlgo(16),
-  'aes-192-cbc': aesCbcAlgo(24),
-  'aes-256-cbc': aesCbcAlgo(32),
-  'aes-128-ecb': ecbAlgo(16, 16, aesEncryptBlock, aesDecryptBlock),
-  'aes-192-ecb': ecbAlgo(24, 16, aesEncryptBlock, aesDecryptBlock),
-  'aes-256-ecb': ecbAlgo(32, 16, aesEncryptBlock, aesDecryptBlock),
-  'aes-128-ctr': blockStreamAlgo(16, 'ctr', aesEncryptBlock),
-  'aes-192-ctr': blockStreamAlgo(24, 'ctr', aesEncryptBlock),
-  'aes-256-ctr': blockStreamAlgo(32, 'ctr', aesEncryptBlock),
-  'aes-128-cfb': blockStreamAlgo(16, 'cfb', aesEncryptBlock),
-  'aes-192-cfb': blockStreamAlgo(24, 'cfb', aesEncryptBlock),
-  'aes-256-cfb': blockStreamAlgo(32, 'cfb', aesEncryptBlock),
-  'aes-128-ofb': blockStreamAlgo(16, 'ofb', aesEncryptBlock),
-  'aes-192-ofb': blockStreamAlgo(24, 'ofb', aesEncryptBlock),
-  'aes-256-ofb': blockStreamAlgo(32, 'ofb', aesEncryptBlock),
-  'des-ede3-cbc': desCbcAlgo(24),
-  'des3': desCbcAlgo(24),
-  'des-ede-cbc': desCbcAlgo(16),
-  'des-ede3': ecbAlgo(24, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
-  'des-ede3-ecb': ecbAlgo(24, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
-  'des-ede': ecbAlgo(16, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
-  'des-ede-ecb': ecbAlgo(16, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
-  'camellia-128-cbc': blockCbcAlgo(16, camelliaEncryptBlock, camelliaDecryptBlock),
-  'camellia-192-cbc': blockCbcAlgo(24, camelliaEncryptBlock, camelliaDecryptBlock),
-  'camellia-256-cbc': blockCbcAlgo(32, camelliaEncryptBlock, camelliaDecryptBlock),
-  'camellia-128-ecb': ecbAlgo(16, 16, camelliaEncryptBlock, camelliaDecryptBlock),
-  'camellia-192-ecb': ecbAlgo(24, 16, camelliaEncryptBlock, camelliaDecryptBlock),
-  'camellia-256-ecb': ecbAlgo(32, 16, camelliaEncryptBlock, camelliaDecryptBlock),
-  'camellia-128-ctr': blockStreamAlgo(16, 'ctr', camelliaEncryptBlock),
-  'camellia-256-ctr': blockStreamAlgo(32, 'ctr', camelliaEncryptBlock),
-  'aria-128-cbc': blockCbcAlgo(16, ariaEncryptBlock, ariaDecryptBlock),
-  'aria-192-cbc': blockCbcAlgo(24, ariaEncryptBlock, ariaDecryptBlock),
-  'aria-256-cbc': blockCbcAlgo(32, ariaEncryptBlock, ariaDecryptBlock),
-  'aria-128-ecb': ecbAlgo(16, 16, ariaEncryptBlock, ariaDecryptBlock),
-  'aria-256-ecb': ecbAlgo(32, 16, ariaEncryptBlock, ariaDecryptBlock),
-  'aria-128-ctr': blockStreamAlgo(16, 'ctr', ariaEncryptBlock),
-  'aria-256-ctr': blockStreamAlgo(32, 'ctr', ariaEncryptBlock),
-  'sm4-cbc': blockCbcAlgo(16, sm4EncryptBlock, sm4DecryptBlock),
-  'sm4': blockCbcAlgo(16, sm4EncryptBlock, sm4DecryptBlock),
-  'sm4-ecb': ecbAlgo(16, 16, sm4EncryptBlock, sm4DecryptBlock),
-  'sm4-ctr': blockStreamAlgo(16, 'ctr', sm4EncryptBlock),
-  'chacha20': chacha20Algo(),
+  ...Object.fromEntries(Object.entries(ENC_SUITES).map(([name, suite]) => [name, suiteAlgo(suite)])),
+  chacha20: chacha20Algo(),
 };
 
 const ENC_ALIASES: Readonly<Record<string, string>> = {

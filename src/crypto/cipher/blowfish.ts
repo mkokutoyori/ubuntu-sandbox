@@ -83,6 +83,17 @@ export class Blowfish {
     block[at + 1] = left;
   }
 
+  decipher(block: Uint32Array, at = 0): void {
+    let right = (block[at] ^ this.p[17]) >>> 0;
+    let left = block[at + 1];
+    for (let i = 15; i >= 1; i -= 2) {
+      left = (left ^ this.f(right) ^ this.p[i + 1]) >>> 0;
+      right = (right ^ this.f(left) ^ this.p[i]) >>> 0;
+    }
+    block[at] = (left ^ this.p[0]) >>> 0;
+    block[at + 1] = right;
+  }
+
   private scheduleKey(key: Uint8Array): void {
     const cursor = { at: 0 };
     for (let i = 0; i < P_WORDS; i++) this.p[i] = (this.p[i] ^ Blowfish.streamWord(key, cursor)) >>> 0;
