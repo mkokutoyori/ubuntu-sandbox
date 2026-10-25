@@ -32,7 +32,10 @@ export interface BatchHost {
   readonly env: BatchEnvironment;
   readonly fs: BatchFileSystem;
   cwd(): string;
-  setCwd(absolutePath: string): void;
+  enterDirectory(target: string): string | null;
+  directoryStack(): string[];
+  captureLocation(): () => void;
+  prompt(): string;
   formattedDate(): string;
   formattedTime(): string;
   random(): number;

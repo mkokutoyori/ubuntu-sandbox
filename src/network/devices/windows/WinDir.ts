@@ -2,7 +2,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 
-import type { WinFileCommandContext } from './WinFileCommands';
+import { refuse, type WinFileCommandContext } from './WinFileCommands';
 import { hasWildcard, joinPath, nameMatcher, splitFileSpec } from './WinPathSpec';
 import {
   isDefaultVisible, parseDirAttributeSpec, selectionAccepts,
@@ -59,6 +59,7 @@ const DEFAULT_ORDER: SortTerm[] = [
   { key: 'group', descending: false },
   { key: 'name', descending: false },
 ];
+const NOTHING_FOUND = 'File Not Found';
 const DIRECTORY_MARKER = '    <DIR>          ';
 const SIZE_FIELD_WIDTH = 18;
 const WIDE_COLUMNS = 4;
@@ -304,14 +305,22 @@ function renderBare(blocks: readonly Block[], options: DirOptions): string {
   return lines.join('\n');
 }
 
-function renderFull(ctx: WinFileCommandContext, blocks: readonly Block[], start: string, options: DirOptions): string {
-  const drive = start[0];
-  const free = ctx.fs.getFreeDiskSpace(drive);
-  const lines: string[] = [
+function volumeHeader(ctx: WinFileCommandContext, drive: string): string[] {
+  return [
     volumeHeading(ctx, drive),
     ` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(drive)}`,
     '',
   ];
+}
+
+function renderNothingFound(ctx: WinFileCommandContext, directory: string): string {
+  return [...volumeHeader(ctx, directory[0]), ` Directory of ${directory}`, '', NOTHING_FOUND].join('\n');
+}
+
+function renderFull(ctx: WinFileCommandContext, blocks: readonly Block[], start: string, options: DirOptions): string {
+  const drive = start[0];
+  const free = ctx.fs.getFreeDiskSpace(drive);
+  const lines: string[] = volumeHeader(ctx, drive);
   let totalFiles = 0;
   let totalBytes = 0;
   let totalDirectories = 0;
@@ -344,16 +353,17 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
   options.zone = ctx.timezone;
 
   const target = resolveTarget(ctx, positionals);
-  if (target === null) return 'File Not Found';
+  if (target === null) return refuse(ctx, NOTHING_FOUND);
 
   const blocks = collect(ctx, target, options);
   if (blocks.length === 0) {
     const emptyRoot = target.pattern === null && !options.recursive && isVolumeRoot(target.directory)
       && options.selection === null;
-    if (!emptyRoot) return 'File Not Found';
+    if (!emptyRoot) return refuse(ctx, options.bare ? NOTHING_FOUND : renderNothingFound(ctx, target.directory));
     blocks.push({ path: target.directory, rows: [] });
   }
 
+  ctx.setExitCode(0);
   return options.bare
     ? renderBare(blocks, options)
     : renderFull(ctx, blocks, target.directory, options);

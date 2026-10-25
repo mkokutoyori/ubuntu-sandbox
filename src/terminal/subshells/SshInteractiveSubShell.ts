@@ -199,8 +199,12 @@ export class SshInteractiveSubShell implements ISubShell {
     }));
   }
 
+  private get ownsPosixInput(): boolean {
+    return !this.serverNested && this.channel.isPosixShell();
+  }
+
   getPromptParts(): BashPromptParts | null {
-    if (this.serverNested || !(this.channel.isPosixShell?.() ?? true)) return null;
+    if (!this.ownsPosixInput) return null;
     return parseBashPrompt(this.getPrompt());
   }
 
@@ -224,7 +228,7 @@ export class SshInteractiveSubShell implements ISubShell {
   }
 
   completionStyle(): 'readline' | 'cycling' {
-    return !this.serverNested && (this.channel.isPosixShell?.() ?? true) ? 'readline' : 'cycling';
+    return this.ownsPosixInput ? 'readline' : 'cycling';
   }
 
   /**
@@ -340,7 +344,7 @@ export class SshInteractiveSubShell implements ISubShell {
     // cd: tracked client-side purely so the prompt shows the right cwd —
     // the server's persistent shell session is the real cwd authority and
     // needs no prefixing trick (unlike RemoteShellSubShell's exec channels).
-    if (/^cd(\s|$)/.test(trimmed)) {
+    if (/^cd(\s|$)/.test(trimmed) && this.ownsPosixInput) {
       return this.handleCd(trimmed);
     }
 

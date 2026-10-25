@@ -45,7 +45,6 @@ const flatten = (text: string): string => text.replace(/\s*\n\s*/g, ' ').trim();
 const success = (lines: string[] = []): Produced => ({ lines, exitCode: 0 });
 const failure = (message: string): Produced => ({ lines: [message], exitCode: 1 });
 const NO_REDIRECTIONS: Redirections = extractRedirections('');
-const PATH_NOT_FOUND = 'The system cannot find the path specified.';
 const FILE_NOT_FOUND = 'The system cannot find the file specified.';
 
 function parseArguments(text: string): string[] {
@@ -102,7 +101,6 @@ export class BatchInterpreter {
   private echoOn = true;
   private delayedExpansion = false;
   private readonly locals: LocalState[] = [];
-  private readonly directoryStack: string[] = [];
 
   constructor(private readonly host: BatchHost) {}
 
@@ -224,7 +222,7 @@ export class BatchInterpreter {
   }
 
   private echoCommand(text: string, run: Run): void {
-    run.output.push('', `${this.host.cwd()}>${flatten(text)}`);
+    run.output.push('', `${this.host.prompt()}${flatten(text)}`);
   }
 
   private async executeStatement(link: Link, frame: Frame, run: Run, echo: boolean): Promise<boolean> {
@@ -575,18 +573,20 @@ export class BatchInterpreter {
 
   private pushdBuiltin(rest: string): Produced {
     const target = rest.trim().replace(/^"(.*)"$/, '$1');
-    if (target === '') return success([...this.directoryStack].reverse());
-    const absolute = this.host.fs.normalize(target, this.host.cwd());
-    if (!this.host.fs.isDirectory(absolute)) return failure(PATH_NOT_FOUND);
-    this.directoryStack.push(this.host.cwd());
-    this.host.setCwd(absolute);
+    const stack = this.host.directoryStack();
+    if (target === '') return success([...stack].reverse());
+    const previous = this.host.cwd();
+    const refusal = this.host.enterDirectory(target);
+    if (refusal !== null) return failure(refusal);
+    stack.push(previous);
     return success();
   }
 
   private popdBuiltin(): Produced {
-    const previous = this.directoryStack.pop();
-    if (previous !== undefined) this.host.setCwd(previous);
-    return success();
+    const previous = this.host.directoryStack().pop();
+    if (previous === undefined) return success();
+    const refusal = this.host.enterDirectory(previous);
+    return refusal === null ? success() : failure(refusal);
   }
 
   private pathBuiltin(rest: string): Produced {
@@ -653,10 +653,9 @@ export class BatchInterpreter {
     if (line.length >= 2 && line.startsWith('"') && line.endsWith('"') && !line.slice(1, -1).includes('"')) line = line.slice(1, -1);
     const environment = new Map<string, string>();
     for (const name of this.host.env.names()) environment.set(name, this.host.env.get(name) ?? '');
-    const directory = this.host.cwd();
+    const restoreLocation = this.host.captureLocation();
     const savedEcho = this.echoOn;
     const savedDelayed = this.delayedExpansion;
-    const savedDirectories = [...this.directoryStack];
     this.delayedExpansion = /\/v:on/i.test(match[1]);
     const child = this.buildFrame([line], null, [], false);
     let output = '';
@@ -670,10 +669,9 @@ export class BatchInterpreter {
       for (const [name, value] of environment) {
         if (this.host.env.get(name) !== value) this.host.env.set(name, value);
       }
-      this.host.setCwd(directory);
+      restoreLocation();
       this.echoOn = savedEcho;
       this.delayedExpansion = savedDelayed;
-      this.directoryStack.splice(0, this.directoryStack.length, ...savedDirectories);
     }
     return { lines: linesOf(output), exitCode: this.errorLevel };
   }

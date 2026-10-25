@@ -6,7 +6,10 @@ import { commandExitCode } from './cmdExitCode';
 export interface WindowsBatchDevice {
   fileSystem(): WindowsFileSystem;
   currentDirectory(): string;
-  changeDirectory(path: string): void;
+  enterDirectory(target: string): string | null;
+  directoryStack(): string[];
+  captureLocation(): () => void;
+  prompt(): string;
   environment(): Map<string, string>;
   setVariable(name: string, value: string): void;
   removeVariable(name: string): void;
@@ -54,7 +57,10 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
       })),
     },
     cwd: () => device.currentDirectory(),
-    setCwd: absolute => device.changeDirectory(absolute),
+    enterDirectory: target => device.enterDirectory(target),
+    directoryStack: () => device.directoryStack(),
+    captureLocation: () => device.captureLocation(),
+    prompt: () => device.prompt(),
     formattedDate: () => cmdDate([], device.timeZone(), device.nowMs()),
     formattedTime: () => clockTimeWithCentiseconds(device.timeZone(), device.nowMs()),
     random: () => Math.floor(Math.random() * 32768),

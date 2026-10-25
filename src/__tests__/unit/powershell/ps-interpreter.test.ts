@@ -1489,6 +1489,7 @@ describe('37. Providers & Drives', () => {
 
   it('Set-Location changes current location', () => {
     const interp = new PSInterpreter();
+    interp.execute('New-PSDrive -Name "TestDrive" -PSProvider FileSystem -Root "C:\\Fake"');
     interp.execute('Set-Location -Path TestDrive:\\');
     const loc = interp.getVariable('PWD') as any;
     expect(loc.Path).toContain('TestDrive');

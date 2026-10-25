@@ -31,6 +31,7 @@ export interface PsCmdShimContext {
    * -Command lines persist.
    */
   runFullPs?(code: string): string | Promise<string>;
+  isPowerShellCommand?(word: string): boolean;
 }
 
 export interface PsShimState {
@@ -173,7 +174,7 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
   if (assign) {
     const name = assign[1];
     const rhs = assign[2].trim();
-    if (ctx.runFullPs && looksLikeCmdlet(headWordOf(rhs))) {
+    if (ctx.runFullPs && belongsToPowerShell(ctx, headWordOf(rhs))) {
       await ctx.runFullPs(withShimVars(state, stmt));
       runtimeVars(state).add(name);
       state.vars.delete(name);
@@ -213,7 +214,7 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
     return evalStatement(state, `${target}${rest ? ' ' + rest : ''}`, ctx);
   }
 
-  if (ctx.runFullPs && looksLikeCmdlet(headWord)) {
+  if (ctx.runFullPs && (startsLikeExpression(stmt) || belongsToPowerShell(ctx, headWord))) {
     return String(await ctx.runFullPs(withShimVars(state, stmt))).replace(/\s+$/, '');
   }
 
@@ -223,6 +224,14 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
 
 function looksLikeCmdlet(word: string): boolean {
   return /^[A-Za-z]+-[A-Za-z][\w-]*$/.test(word);
+}
+
+function startsLikeExpression(statement: string): boolean {
+  return /^[$([@'"&]/.test(statement);
+}
+
+function belongsToPowerShell(ctx: PsCmdShimContext, word: string): boolean {
+  return ctx.isPowerShellCommand?.(word) === true || looksLikeCmdlet(word);
 }
 
 /** Premier mot d'une expression, parenthèse et `&` d'invocation retirés. */
@@ -285,7 +294,7 @@ async function evalExpression(state: State, expr: string, ctx: PsCmdShimContext)
     return evalExpression(state, `${target}${rest ? ' ' + rest : ''}`, ctx);
   }
 
-  if (ctx.runFullPs && looksLikeCmdlet(headWordOf(expr))) {
+  if (ctx.runFullPs && (startsLikeExpression(expr) || belongsToPowerShell(ctx, headWordOf(expr)))) {
     return String(await ctx.runFullPs(withShimVars(state, expr))).replace(/\s+$/, '');
   }
 
