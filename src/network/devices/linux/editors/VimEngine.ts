@@ -3300,7 +3300,7 @@ export class VimEngine {
   }
 
   private environmentVariable(name: string): string {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? this.fs.runShellCommand(`printenv ${name}`) : '';
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? (this.fs.environmentVariable?.(name) ?? '') : '';
   }
 
   private printedLine(line: number, numbered: boolean, listed: boolean): string {

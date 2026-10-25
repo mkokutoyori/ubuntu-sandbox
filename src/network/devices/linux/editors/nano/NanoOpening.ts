@@ -27,13 +27,25 @@ function isDirectory(absolute: string, fs: PathHost): boolean {
 }
 
 export function fullPathOf(typed: string, fs: PathHost): string | null {
-  const real = canonicalOf(fs.resolvePath(typed), fs);
-  if (real !== null) return isDirectory(real, fs) && real !== '/' ? `${real}/` : real;
+  if (typed === '') return null;
+  let target = canonicalOf(fs.resolvePath(typed), fs);
   const slash = typed.lastIndexOf('/');
-  const parent = slash < 0 ? '.' : typed.slice(0, slash) || '/';
-  const base = canonicalOf(fs.resolvePath(parent), fs);
-  if (base === null || !isDirectory(base, fs)) return null;
-  return `${base === '/' ? '' : base}/${slash < 0 ? typed : typed.slice(slash + 1)}`;
+  if (target === null && slash >= 0 && slash < typed.length - 1) {
+    const directory = slash === 0 ? null : canonicalOf(fs.resolvePath(typed.slice(0, slash)), fs);
+    if (directory !== null) target = `${directory}${typed.slice(slash + 1)}`;
+  }
+  if (target !== null && target.length > 1 && isDirectory(target, fs)) return `${target}/`;
+  return target;
+}
+
+export function writeFailureReason(fs: Pick<EditorFsContext, 'resolvePath' | 'exists' | 'kindOf'>, name: string, target: string): string {
+  const kindOf = (path: string) => fs.kindOf?.(path) ?? (fs.exists(path) ? 'file' : 'missing');
+  const parentKind = kindOf(directoryNameOf(target));
+  if (parentKind === 'missing') return 'No such file or directory';
+  if (parentKind !== 'directory') return 'Not a directory';
+  const kind = kindOf(target);
+  if (name.endsWith('/')) return kind === 'file' ? 'Not a directory' : 'Is a directory';
+  return kind === 'directory' ? 'Is a directory' : 'Permission denied';
 }
 
 const REFUSED_KINDS = { directory: 'a directory', device: 'a device file', fifo: 'a FIFO' } as const;

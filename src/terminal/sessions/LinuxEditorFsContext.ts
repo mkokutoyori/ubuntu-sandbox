@@ -57,6 +57,26 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorListDirectory(this.resolvePath(path), this.session);
   }
 
+  homeDirectory(): string | null {
+    return this.dev.editorHomeDirectory(this.session);
+  }
+
+  environmentVariable(name: string): string | null {
+    return this.dev.editorEnvironmentVariable(name, this.session);
+  }
+
+  makeDirectory(path: string, mode: number): string | null {
+    return this.dev.editorMakeDirectory(this.resolvePath(path), mode, this.session);
+  }
+
+  readError(path: string): string | null {
+    return this.dev.editorReadError(this.resolvePath(path), this.session);
+  }
+
+  changeMode(path: string, mode: number): boolean {
+    return this.dev.editorChangeMode(this.resolvePath(path), mode, this.session);
+  }
+
   deleteFile(path: string): boolean {
     const abs = this.resolvePath(path);
     return this.session

@@ -553,7 +553,7 @@ export abstract class TerminalSession {
 
   editorSave(_content: string, _filePath: string): void {}
 
-  editorExit(_saved: boolean = true): void {}
+  editorExit(_saved: boolean = true, _notice: string = ''): void {}
 
   protected firstLocalIp(): string | null {
     const ports = (this.device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> }).getPorts?.();
@@ -610,6 +610,8 @@ export abstract class TerminalSession {
     if (mode.type !== 'remote-editor') { this.notify(); return; }
     if (mode.controller.exited) {
       this.inputMode = { type: 'normal' };
+      const notice = 'exitNotice' in mode.controller ? mode.controller.exitNotice : '';
+      if (notice !== '') this.addLines(notice.replace(/\n$/, '').split('\n'));
       this.addLine(this.getPrompt());
     }
     this.notify();

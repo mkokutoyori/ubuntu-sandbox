@@ -5035,6 +5035,53 @@ export abstract class LinuxMachine extends EndHost
     return (vfs.listDirectory(absolute) ?? []).map((entry) => entry.name);
   }
 
+  editorHomeDirectory(session?: LinuxShellSession): string | null {
+    const uid = session !== undefined && !session.disposed ? session.uid : this.executor.userMgr.currentUid;
+    return this.executor.userMgr.getUserByUid(uid)?.home ?? null;
+  }
+
+  editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
+    if (session !== undefined && !session.disposed) return session.env.get(name) ?? null;
+    return this.executor.commandEnvironment()[name] ?? null;
+  }
+
+  editorMakeDirectory(path: string, mode: number, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const absolute = vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd());
+    if (vfs.getType(absolute) !== null) return 'File exists';
+    const parent = absolute.slice(0, absolute.lastIndexOf('/')) || '/';
+    const parentType = vfs.getType(parent);
+    if (parentType === null) return this.firstExistingAncestorIsDirectory(parent) ? 'No such file or directory' : 'Not a directory';
+    if (parentType !== 'directory') return 'Not a directory';
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
+    const parentInode = vfs.resolveInode(parent);
+    if (uid !== 0 && (parentInode === null || !vfs.checkAccess(parentInode, 'w', uid, gid) || !vfs.checkAccess(parentInode, 'x', uid, gid))) return 'Permission denied';
+    return vfs.mkdir(absolute, mode & ~(live?.umask ?? this.executor.getUmask()), uid, gid) ? null : 'Permission denied';
+  }
+
+  editorReadError(path: string, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const inode = vfs.resolveInode(vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()));
+    if (inode === null || inode.type === 'directory') return null;
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
+    return uid !== 0 && !vfs.checkAccess(inode, 'r', uid, gid) ? 'Permission denied' : null;
+  }
+
+  editorChangeMode(path: string, mode: number, session?: LinuxShellSession): boolean {
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    return this.executor.vfs.chmod(this.executor.vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()), mode);
+  }
+
+  private firstExistingAncestorIsDirectory(path: string): boolean {
+    let current = path;
+    while (current !== '/' && this.executor.vfs.getType(current) === null) current = current.slice(0, current.lastIndexOf('/')) || '/';
+    return this.executor.vfs.getType(current) === 'directory';
+  }
+
   editorPathIsReadOnly(path: string): boolean {
     const inode = this.executor.vfs.resolveInode(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
     return inode !== null && (inode.permissions & 0o222) === 0;
