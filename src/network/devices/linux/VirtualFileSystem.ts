@@ -154,6 +154,9 @@ export interface VfsWriteEvent {
   readonly truncated: boolean;
 }
 
+export type VfsDirectoryEventKind = 'close-write' | 'moved-to' | 'create' | 'attrib';
+export type VfsDirectoryListener = (name: string, kind: VfsDirectoryEventKind) => void;
+
 export type VfsChange =
   | { readonly kind: 'modified'; readonly path: string; readonly inode: number }
   | { readonly kind: 'created' | 'deleted'; readonly path: string; readonly directory: boolean }
@@ -168,7 +171,7 @@ export class VirtualFileSystem {
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
-  private entryListeners: Map<string, Set<() => void>> = new Map();
+  private directoryListeners: Map<number, Set<VfsDirectoryListener>> = new Map();
   private changeListeners = new Set<(change: VfsChange) => void>();
   private readOnlyResolver?: (path: string) => boolean;
   private remoteMountPort: RemoteMountPort | null = null;
@@ -722,6 +725,7 @@ export class VirtualFileSystem {
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
     this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: false });
+    this.emitDirectoryEvent(path, 'create', false);
     return inode;
   }
 
@@ -778,6 +782,7 @@ export class VirtualFileSystem {
     if (times.atime !== undefined) inode.atime = times.atime;
     if (times.mtime !== undefined) inode.mtime = times.mtime;
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -786,6 +791,7 @@ export class VirtualFileSystem {
     if (existing) {
       existing.mtime = this.nowMs();
       existing.atime = this.nowMs();
+      this.emitDirectoryEvent(path, 'attrib');
       return true;
     }
     if (this.isVirtualTree(path)) return false;
@@ -1132,20 +1138,34 @@ export class VirtualFileSystem {
     };
   }
 
-  onEntryChange(path: string, listener: () => void): () => void {
-    const key = this.canonicalKey(path);
-    const set = this.entryListeners.get(key) ?? new Set<() => void>();
+  onDirectoryEvent(directory: string, listener: VfsDirectoryListener): (() => void) | null {
+    const inode = this.resolveInode(directory);
+    if (inode === null || inode.type !== 'directory') return null;
+    const set = this.directoryListeners.get(inode.id) ?? new Set<VfsDirectoryListener>();
     set.add(listener);
-    this.entryListeners.set(key, set);
+    this.directoryListeners.set(inode.id, set);
     return () => {
       set.delete(listener);
-      if (set.size === 0) this.entryListeners.delete(key);
+      if (set.size === 0 && this.directoryListeners.get(inode.id) === set) this.directoryListeners.delete(inode.id);
     };
   }
 
-  private emitEntryChange(path: string): void {
-    for (const listener of [...(this.entryListeners.get(this.canonicalKey(path)) ?? [])]) {
-      try { listener(); } catch { /* a subscriber must not corrupt the filesystem */ }
+  private entryOf(path: string, followFinalLink: boolean, depth = 20): [INode, string] | null {
+    const parent = this.resolveParent(path);
+    if (parent === null || !followFinalLink || depth <= 0) return parent;
+    const childId = parent[0].children.get(parent[1]);
+    const child = childId === undefined ? undefined : this.inodes.get(childId);
+    if (child?.type !== 'symlink') return parent;
+    const directory = '/' + path.split('/').filter(Boolean).slice(0, -1).join('/');
+    return this.entryOf(this.normalizePath(this.resolutionTarget(child), directory), true, depth - 1);
+  }
+
+  private emitDirectoryEvent(path: string, kind: VfsDirectoryEventKind, followFinalLink = true): void {
+    if (this.directoryListeners.size === 0) return;
+    const entry = this.entryOf(path, followFinalLink);
+    if (entry === null) return;
+    for (const listener of [...(this.directoryListeners.get(entry[0].id) ?? [])]) {
+      try { listener(entry[1], kind); } catch { continue; }
     }
   }
 
@@ -1164,6 +1184,7 @@ export class VirtualFileSystem {
   /** Fan out a write event to every subscriber registered against `path`. */
   private emitWrite(event: VfsWriteEvent, inode?: number): void {
     if (!event.created && inode !== undefined) this.emitChange({ kind: 'modified', path: event.path, inode });
+    this.emitDirectoryEvent(event.path, 'close-write');
     const set = this.writeListeners.get(event.path);
     if (!set || set.size === 0) return;
     for (const listener of set) {
@@ -1226,6 +1247,7 @@ export class VirtualFileSystem {
     parentInode.linkCount++;
     parentInode.mtime = this.nowMs();
     this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: true });
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1326,6 +1348,7 @@ export class VirtualFileSystem {
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
     this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: false });
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1342,6 +1365,7 @@ export class VirtualFileSystem {
     parentInode.children.set(basename, targetInode.id);
     targetInode.linkCount++;
     parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1352,7 +1376,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     inode.permissions = mode;
     inode.ctime = this.nowMs();
-    this.emitEntryChange(path);
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1363,6 +1387,7 @@ export class VirtualFileSystem {
     if (!inode.aclUsers) inode.aclUsers = new Map();
     inode.aclUsers.set(user, perms & 0o7);
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1373,6 +1398,7 @@ export class VirtualFileSystem {
     if (!inode.aclGroups) inode.aclGroups = new Map();
     inode.aclGroups.set(group, perms & 0o7);
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1381,7 +1407,10 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclUsers) return false;
     const had = inode.aclUsers.delete(user);
-    if (had) inode.ctime = this.nowMs();
+    if (had) {
+      inode.ctime = this.nowMs();
+      this.emitDirectoryEvent(path, 'attrib');
+    }
     return had;
   }
 
@@ -1390,7 +1419,10 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclGroups) return false;
     const had = inode.aclGroups.delete(group);
-    if (had) inode.ctime = this.nowMs();
+    if (had) {
+      inode.ctime = this.nowMs();
+      this.emitDirectoryEvent(path, 'attrib');
+    }
     return had;
   }
 
@@ -1433,6 +1465,16 @@ export class VirtualFileSystem {
     inode.uid = uid;
     if (gid !== undefined) inode.gid = gid;
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
+    return true;
+  }
+
+  setImmutable(path: string, immutable: boolean): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode) return false;
+    inode.immutable = immutable;
+    inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1441,6 +1483,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     inode.gid = gid;
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1524,7 +1567,7 @@ export class VirtualFileSystem {
       srcNode.children.set('..', dstParentInode.id);
     }
 
-    this.emitEntryChange(finalDst);
+    this.emitDirectoryEvent(finalDst, 'moved-to', false);
     this.emitChange({ kind: 'moved', from: this.canonicalKey(srcPath), path: this.canonicalKey(finalDst), directory: srcNode?.type === 'directory' });
     return true;
   }
@@ -1541,6 +1584,7 @@ export class VirtualFileSystem {
     const inode = this.allocInode('fifo', permissions, uid, gid);
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1552,6 +1596,7 @@ export class VirtualFileSystem {
     const inode = this.allocInode('socket', permissions, uid, gid);
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 

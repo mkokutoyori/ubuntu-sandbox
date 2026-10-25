@@ -3431,16 +3431,6 @@ omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
-### [rsyslog] ratelimit() : limites du lecteur YAML, de policyWatch et de la creation des limiteurs
-`ratelimit()` est porte de rsyslog 8.2608.0 (`engine/SharedRateLimit.ts`, `PerSourceRateLimit.ts`, `RateLimitPolicy.ts`, `YamlEvents.ts`) :
-fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
-`YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
-etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
-sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage vers le chemin et de `chmod` du VFS (`onWrite`, `onEntryChange`) ;
-`chown`, `touch` sans ecriture et la creation d'un lien n'en emettent pas ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
-source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
-(`global(senders.keepTrack)`) restent a porter.
-
 ### [journald] `journalctl --verify` ne peut pas detecter une alteration du fichier
 Le scellement est complet (cles FSPRG, objets Tag, `--setup-keys`, `--verify-key` : `journald-seal.test.ts`), mais `JournalFile` compte les octets des objets sans
 etre un fichier binaire du systeme de fichiers : `--verify` rejoue la chaine de tags gardee en memoire, il ne relit aucun octet et ne peut donc pas rapporter

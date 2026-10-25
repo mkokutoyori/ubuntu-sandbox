@@ -1,6 +1,6 @@
 /**
  * Probe — three limits closed after the ratelimit() work: the VFS now signals a file moved into place and a mode change
- * to onEntryChange() (the IN_MOVED_TO / IN_ATTRIB of rswatch.c, which policyWatch needs for an editor's rename-over-save);
+ * to onDirectoryEvent() (the IN_MOVED_TO / IN_ATTRIB of rswatch.c, which policyWatch needs for an editor's rename-over-save);
  * and imtcp, imuxsock and imklog build their named rate limiter when they start, as activateCnf does in the source, so an
  * unknown ratelimit.name refuses the input instead of showing up at the first message.
  *
@@ -29,23 +29,27 @@ describe('VFS entry events', () => {
   it('signals a file renamed over the watched path, and only that path', () => {
     const vfs = fresh();
     vfs.writeFile('/etc/new.yaml', 'n', 0, 0, 0o022);
-    let count = 0;
-    vfs.onEntryChange('/etc/policy.yaml', () => { count++; });
+    const seen: string[] = [];
+    vfs.onDirectoryEvent('/etc', (name, kind) => { if (kind === 'moved-to') seen.push(name); });
     vfs.rename('/etc/new.yaml', '/etc/other.yaml');
-    expect(count).toBe(0);
+    expect(seen).toEqual(['other.yaml']);
     vfs.writeFile('/etc/new2.yaml', 'n', 0, 0, 0o022);
     vfs.rename('/etc/new2.yaml', '/etc/policy.yaml');
-    expect(count).toBe(1);
+    expect(seen).toEqual(['other.yaml', 'policy.yaml']);
   });
 
   it('signals a mode change and stops after the subscription is cancelled', () => {
     const vfs = fresh();
-    let count = 0;
-    const stop = vfs.onEntryChange('/etc/policy.yaml', () => { count++; });
+    const seen: string[] = [];
+    const stop = vfs.onDirectoryEvent('/etc', (name, kind) => { if (kind === 'attrib') seen.push(name); }) as () => void;
     vfs.chmod('/etc/policy.yaml', 0o600);
     stop();
     vfs.chmod('/etc/policy.yaml', 0o644);
-    expect(count).toBe(1);
+    expect(seen).toEqual(['policy.yaml']);
+  });
+
+  it('refuses a directory that does not exist, as inotify_add_watch does', () => {
+    expect(fresh().onDirectoryEvent('/no/such/dir', () => undefined)).toBeNull();
   });
 });
 

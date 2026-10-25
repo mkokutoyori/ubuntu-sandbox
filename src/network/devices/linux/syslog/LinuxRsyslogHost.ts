@@ -291,12 +291,12 @@ export class LinuxRsyslogHost implements RsyslogHost {
     rmdir: (path: string): boolean => this.platform.vfs.rmdir(path),
     rename: (from: string, to: string): boolean => this.platform.vfs.rename(from, to),
     watch: (path: string, onEvent: () => void): (() => void) | null => {
-      const stopWrites = this.platform.vfs.onWrite(path, () => onEvent());
-      const stopEntries = this.platform.vfs.onEntryChange(path, onEvent);
-      return () => {
-        stopWrites();
-        stopEntries();
-      };
+      const slash = path.lastIndexOf('/');
+      const directory = slash < 0 ? '/' : slash === 0 ? '/' : path.slice(0, slash);
+      const name = path.slice(slash + 1);
+      return this.platform.vfs.onDirectoryEvent(directory, (changed) => {
+        if (changed === name) onEvent();
+      });
     },
   };
 

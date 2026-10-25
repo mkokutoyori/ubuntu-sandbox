@@ -414,6 +414,21 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   en entier au demarrage au lieu d'etre decouvert par les workers au fil des lots (les compteurs `recovery.*` prennent donc leur valeur finale tout de
   suite) ; les points d'injection de panne de `ENABLE_IMDIAG` et le crash (`kill -9`) entre deux etapes n'existent pas, la reprise d'un segment `.open`
   laisse par un arret propre est en revanche portee ; `queue.cry.provider` absent de la machine echoue avec « could not load crypto provider ».
+- **Fichiers de politique de `ratelimit()` et `policyWatch`** (`rsyslog-ratelimit-yaml.test.ts`, `yaml-libyaml-oracle.test.ts`, `linux-rsyslog-policy-watch.test.ts`) :
+  le YAML des politiques est lu par `src/network/yaml/`, port de `reader.c`, `scanner.c` et `parser.c` de libyaml 0.2.5 (la bibliotheque que rsyslog lie pour
+  `ratelimit.c`) : flux d'evenements avec ancres, alias, etiquettes (`%TAG`, `!!`, `!<uri>`, echappements `%XX`), scalaires en bloc (`|`, `>`, indicateurs de
+  chomping et d'indentation), scalaires multi-lignes pliees, echappements des chaines entre guillemets, documents multiples et directives, avec les marques
+  (index, ligne, colonne) et les messages d'erreur du lecteur, du scanner et du parseur. Le port est compare a la vraie bibliotheque par
+  `scripts/oracle/record_yaml_events.py` (le harnais C `yaml_events_harness.c` lit les documents avec `yaml_parser_set_input_file`, comme rsyslog) sur 1 270 documents :
+  un corpus ecrit a la main qui couvre chaque production et chaque erreur, un fuzz a graine fixe (concatenations de fragments, mutations d'un caractere de documents
+  valides) et des documents qui enjambent le tampon brut de 16 Kio de libyaml, dont la limite de 1 024 caracteres d'une cle simple ; evenements, marques et erreurs sont
+  identiques. Le consommateur (`RateLimitPolicy.ts`) lit les evenements dans l'ordre comme `ratelimit.c` : un alias est ignore, une valeur scalaire est une chaine C
+  (coupee au premier NUL), une erreur de l'analyseur est journalisee apres les evenements qui l'ont precedee. `policyWatch` suit `rswatch.c` : la surveillance est posee sur le
+  REPERTOIRE du fichier avec le masque `IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB | IN_CREATE`, les evenements dont le nom est celui du fichier arment le delai de
+  coalescence. Le systeme de fichiers virtuel offre cette meme vue (`onDirectoryEvent`, qui remplace l'ancien `onEntryChange`) : ecriture, renommage vers le nom,
+  creation d'un nom (fichier, repertoire, lien symbolique, lien dur, tube) et changement d'attributs (`chmod`, `chown`, `chgrp`, `touch`, `setfacl`, `chattr`) sont signales sous le nom
+  auquel le chemin se resout ; un lien symbolique place au chemin de la politique n'emet donc rien dans son repertoire quand on ecrit la cible, comme inotify. Le
+  suivi des expediteurs de `global(senders.keepTrack)` etait deja porte (`Statistics.ts`) ; seule la source `imptcp` y manque encore.
 - **Options de compilation et signaux** (`linux-rsyslog-compat.test.ts`) : `compatibility.configFormat.{legacy,syslogd,property}` (`enable`/`warn`/`disable`
   avec les phrases de `glbl.c`), `libcapng.*` et `stdlog.channelSpec` (la configuration par defaut du source n'active ni libcap-ng ni
   liblogging-stdlog : le parametre echoue avec le message de `glbl.c`), `defaultOpensslEngine` (moteur absent signale au demarrage du pilote
