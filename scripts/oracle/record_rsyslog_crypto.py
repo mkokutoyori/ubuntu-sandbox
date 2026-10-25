@@ -69,6 +69,39 @@ def gcrypt_case(algo, mode, key, iv, chunks, label):
     return case
 
 
+def padded(data, block):
+    return data + bytes((block - len(data) % block) % block) if block > 1 else data
+
+
+def transcript(algo, mode, lines):
+    number = ALGOS[algo]
+    block = lib.gcry_cipher_get_algo_blklen(number)
+    key = pattern(lib.gcry_cipher_get_algo_keylen(number), 77)
+    random_number = int(0.25 * 0x7FFFFFFF)
+    iv = bytes((random_number >> ((index % 4) * 8)) & 0xFF for index in range(max(block, 1)))
+    handle = ctypes.c_void_p()
+    lib.gcry_cipher_open(ctypes.byref(handle), number, MODES[mode], 0)
+    lib.gcry_cipher_setkey(handle, key, len(key))
+    lib.gcry_cipher_setiv(handle, iv, len(iv))
+    body = b""
+    for line in lines:
+        error, out = call(handle, lib.gcry_cipher_encrypt, padded(line.encode() + b"\n", block))
+        body += out
+    lib.gcry_cipher_close(handle)
+    info = "FILETYPE:rsyslog-enrcyption-info\nIV:" + iv.hex() + "\nEND:" + str(len(body)) + "\n"
+    return {"algo": algo, "mode": mode, "key": key.hex(), "lines": lines, "file": body.hex(), "encinfo": info}
+
+
+LINES = ["<13>Oct 19 12:00:01 ubuntu alice: first message", "<13>Oct 19 12:00:02 ubuntu alice: second", "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"]
+
+
+def transcripts():
+    lines = LINES
+    return [transcript(algo, mode, lines) for algo, mode in (
+        ("AES128", "CBC"), ("AES256", "CBC"), ("AES128", "CTR"), ("AES128", "CFB"), ("3DES", "CBC"), ("BLOWFISH", "OFB"), ("ARCFOUR", "STREAM"),
+        ("TWOFISH", "CBC"), ("SERPENT256", "CBC"), ("CAMELLIA192", "ECB"), ("CAST5", "CBC"), ("SEED", "CBC"), ("RFC2268_40", "CBC"), ("AES192", "OFB"))]
+
+
 def gcrypt_cases():
     cases = []
     for algo, number in ALGOS.items():
@@ -114,7 +147,7 @@ def gcrypt_cases():
             lib.gcry_cipher_open(ctypes.byref(handle), ALGOS["3DES"], MODES["CBC"], 0)
             triple.append({"key": key.hex(), "setkey": lib.gcry_cipher_setkey(handle, key, 24)})
             lib.gcry_cipher_close(handle)
-    return {"library": "libgcrypt " + VERSION, "desWeakKeys": weak_results, "tripleDesWeakKeys": triple, "algorithms": {name: {"block": lib.gcry_cipher_get_algo_blklen(n), "key": lib.gcry_cipher_get_algo_keylen(n)} for name, n in ALGOS.items()}, "cases": cases}
+    return {"library": "libgcrypt " + VERSION, "transcripts": transcripts(), "desWeakKeys": weak_results, "tripleDesWeakKeys": triple, "algorithms": {name: {"block": lib.gcry_cipher_get_algo_blklen(n), "key": lib.gcry_cipher_get_algo_keylen(n)} for name, n in ALGOS.items()}, "cases": cases}
 
 
 OPENSSL_NAMES = []
@@ -151,6 +184,20 @@ def openssl_case(name, sizes, seed):
     return result
 
 
+def openssl_transcript(name):
+    probe = subprocess.run(["openssl", "enc", f"-{name}", "-P", "-k", "x", "-md", "sha256", "-nosalt"], capture_output=True, text=True).stdout
+    values = {line.split("=", 1)[0].strip(): line.split("=", 1)[1].strip() for line in probe.splitlines() if "=" in line}
+    key = pattern(len(values["key"]) // 2, 77)
+    block = 8 if name.startswith("des") else 16
+    random_number = int(0.25 * 0x7FFFFFFF)
+    iv = bytes((random_number >> ((index % 4) * 8)) & 0xFF for index in range(block))
+    data = b"".join(padded(line.encode() + b"\n", block) for line in LINES)
+    args = ["openssl", "enc", f"-{name}", "-nopad", "-K", key.hex()] + (["-iv", iv.hex()] if "iv" in values else [])
+    body = subprocess.run(args, input=data, capture_output=True).stdout
+    info = "FILETYPE:rsyslog-enrcyption-info\nIV:" + iv.hex() + "\nEND:" + str(len(body)) + "\n"
+    return {"name": name, "key": key.hex(), "lines": LINES, "file": body.hex(), "encinfo": info}
+
+
 def openssl_cases():
     available = openssl_list()
     cases = []
@@ -162,7 +209,7 @@ def openssl_cases():
         if name.endswith(("ctr", "cfb", "ofb")):
             cases.append(openssl_case(name, [5, 19, 3], 21))
     version = subprocess.run(["openssl", "version"], capture_output=True, text=True).stdout.strip()
-    return {"library": version, "cases": cases}
+    return {"library": version, "cases": cases, "transcripts": [openssl_transcript(name) for name in ("aes-128-cbc", "aes-256-cbc", "aes-192-ecb", "des-ede3-cbc", "camellia-128-cbc", "aria-256-cbc", "sm4-cbc")]}
 
 
 if __name__ == "__main__":

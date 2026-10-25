@@ -1515,7 +1515,7 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
-  private runDaemonProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): { pid: number; exitCode: number } {
+  private runDaemonProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): { pid: number; exitCode: number; output: string } {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
     const user = um.getUserByUid(uid)?.username ?? 'root';
@@ -1525,9 +1525,12 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setCwd('/');
     const child = this.executor.processMgr.spawn({ command: argv.join(' '), user, uid, gid, ppid: parentPid });
     let exitCode: number;
+    let output = '';
     try {
       const quoted = argv.map((argument) => `'${argument.replace(/'/g, `'\\''`)}'`).join(' ');
-      exitCode = this.executor.withProcessIdentity(child.pid, () => this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status);
+      const result = this.executor.withProcessIdentity(child.pid, () => this.executor.runNonInteractive(() => this.executor.executeChild(quoted)));
+      exitCode = result.status;
+      output = result.output;
     } catch {
       exitCode = 1;
     } finally {
@@ -1538,7 +1541,7 @@ export abstract class LinuxMachine extends EndHost
     }
     this.executor.processMgr.exit(child.pid, exitCode);
     this.executor.processMgr.reap(child.pid);
-    return { pid: child.pid, exitCode };
+    return { pid: child.pid, exitCode, output };
   }
 
   private deliverCronMail(recipient: string, body: string): void {

@@ -248,6 +248,8 @@ import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
 import { LocalDatagramSockets, type UnixStreamConnectOutcome, type UnixStreamHandlers } from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
+import { rscryutilHost } from './syslog/LinuxRscryutilHost';
+import { runRscryutil } from './syslog/RscryutilTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
 import { renderLoginctl, type LoginctlSessionAction } from './network/loginctlFormatter';
@@ -319,7 +321,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
-  'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
+  'systemctl', 'service', 'journalctl', 'rscryutil', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
   'conntrack',
@@ -6194,6 +6196,10 @@ export class LinuxCommandExecutor {
       // Logging commands
       case 'logger': {
         const result = runLogger(loggerHost(this, stdin, args), args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
+      case 'rscryutil': {
+        const result = runRscryutil(rscryutilHost(this), args, cmd);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'journalctl': {

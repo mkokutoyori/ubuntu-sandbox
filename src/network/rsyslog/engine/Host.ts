@@ -205,6 +205,7 @@ export interface RsyslogKernelLog {
 export interface ChildExit {
   readonly pid: number;
   readonly exitCode: number;
+  readonly output?: string;
 }
 
 export interface RsyslogProcess {

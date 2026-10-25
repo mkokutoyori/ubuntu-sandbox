@@ -10,6 +10,7 @@ import type {
   OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
+import { latin1Text } from '@/network/rsyslog/engine/Latin1';
 import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure, INode } from '../VirtualFileSystem';
 import type { SyslogForwardSocket } from './SyslogForwardSocket';
 import type { LocalDatagramSockets } from './LocalDatagramSockets';
@@ -81,12 +82,6 @@ export interface LinuxRsyslogPlatform {
   restoreConsoleLogLevel(): void;
 }
 
-function latin1Of(bytes: Uint8Array): string {
-  let text = '';
-  for (let index = 0; index < bytes.length; index += 8192) text += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  return text;
-}
-
 function bytesOfLatin1(text: string): Uint8Array {
   const bytes = new Uint8Array(text.length);
   for (let index = 0; index < text.length; index++) bytes[index] = text.charCodeAt(index) & 0xff;
@@ -146,7 +141,7 @@ class SocketConnection implements StreamConnection {
 
   write(bytes: Uint8Array): Errno | null {
     if (this.finished || this.socket.closed) return 'EPIPE';
-    return this.socket.write(latin1Of(bytes)) === 'ok' ? null : 'EPIPE';
+    return this.socket.write(latin1Text(bytes)) === 'ok' ? null : 'EPIPE';
   }
 
   close(): void {

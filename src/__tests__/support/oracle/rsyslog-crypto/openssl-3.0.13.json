@@ -1937,5 +1937,84 @@
     }
    ]
   }
+ ],
+ "transcripts": [
+  {
+   "name": "aes-128-cbc",
+   "key": "4d7297bce1062b5080a5caef14395e83",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "a700ae6f45f9b87b50222f91b201bbd1147e908ff6d354832bddf490292d36056db0ab75159adedb8e6ee0f1e2ec50bf1c24cce5e52fb503dee69b57132aa18b9bbce0c7fccb56d766c008cdfbae4df275b8e97752dc3a0db36d8d331d4209ff7d7d38396a711f33b55dfa85292e145b6a336e29756bc79517b1d8072633b557ac2b362b8449694d991b43c1b7ba15be0806ac50a341384c841bcd015c82b5d705caf8b276fc1ebb95d40d758a4903617400278c751fae08e5f4fda97e0ff7d9e070eed45d8207f9df7220510f8f85d4",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1fffffff1fffffff1f\nEND:208\n"
+  },
+  {
+   "name": "aes-256-cbc",
+   "key": "4d7297bce1062b5080a5caef14395e83b3d8fd22476c91b6e60b30557a9fc4e9",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "aa873c626363a6faaafb0a4b42378866846282e03697d59555257aedf6d0e410a356890dbee28b65c18b30fd025f10a43c441c1c3ed7b08c87c77720e856d6d58a843f7f875e3b908fdc30d791fb5c8da4d7fdad11407cddf9734230f209738742423ef123294fe3fb49ec8c38a3bc8c8f40c7c72098e2457ab357932e15b9382de9fee7bb7d44f5d9870a4681271db2765c7ea0138caca65492a4760f965854fb13f59c38d3d9ef6f83b18ab9046284a43d731323069dbf7935f35330db36dd7cf63e66eb139a2777a38f6b7c06bf30",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1fffffff1fffffff1f\nEND:208\n"
+  },
+  {
+   "name": "aes-192-ecb",
+   "key": "4d7297bce1062b5080a5caef14395e83b3d8fd22476c91b6",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "9552b1eddc15a6a185816d3f32eb58c857b369b46633e9442bbe38879d56a5bc4f240e07540a64720643a479126d1a1f9552b1eddc15a6a185816d3f32eb58c839857d9265d5a106b773c05391da4bc825142bdb9b73a361847911718d4bf9b79552b1eddc15a6a185816d3f32eb58c8b4913b84a495eb496b35c38c40cfcfba3ad35d3c8957daf9402007763126977efbcdd40827f77a85c03a17cd20b36377877cb4d1c26f030cbb95d4057332bb27dba2666f129c2ff544d26567ba1408af5b2b16eb53d8a3440af411c6ccf18207",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1fffffff1fffffff1f\nEND:208\n"
+  },
+  {
+   "name": "des-ede3-cbc",
+   "key": "4d7297bce1062b5080a5caef14395e83b3d8fd22476c91b6",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "be0de7c16ada125d9d07aa4dd21fd3c38dc6f4dd07fa0ee927345880dc1f641dd0a95e845310a08379851d97932048aed4c662e39674778c8b2631d8df0967821ae18c914b9092d366a30d02e5da7ddd0a18a61000c708a9f5254cd6ac4207a8d6d4a003522e3f7e5c6dddc4aaa89d340c67f679bf873937eafa57368772eda1dac18bbc5dec7853deb8eedc7208e83a22f2b717755d8cee226b6167185819cd51bb6d3bf691b0955f730a927b912f1fae004c3b36a0d6454419b1b68ecd7344f57ed860f9474649",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1f\nEND:200\n"
+  },
+  {
+   "name": "camellia-128-cbc",
+   "key": "4d7297bce1062b5080a5caef14395e83",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "281a86e7ed10fdf05ef5bd99b912c8e0ee36b5242bf9245e2ad73d1cdd3fff8653889a436c023a54af2464b4faabd797270180935d5541c36f8e6583d831fd36caa23185224df3e1182c3b03526d7e5c0472f5cf7b9dfc4da9efcc505717f1d085992f329840a4b0a6438cb909aa5fcb9d8f54c091343eb358012c9f1c397133540aee7b3e98710739fe2711887d9c0afabbe27573de18da0219cc391a05987eec46bca3fb57878bc6cdf99786ae735958e91c381aa08b714e856363580dae850403edb45dfbb2e0c14b78baa16f320e",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1fffffff1fffffff1f\nEND:208\n"
+  },
+  {
+   "name": "aria-256-cbc",
+   "key": "4d7297bce1062b5080a5caef14395e83b3d8fd22476c91b6e60b30557a9fc4e9",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "a706477bf5d6a8a9ecfc2ae0f3c6b48cbdff902b4e380f30180a577baa98ab6434e875503d6594066a92e52e23c4ba64fe28095fef3dc64b0d9ea492e0a29fb4cb431a86094ece80a8b47b1078ebc7c583eb37ede21b13bd63800f41ac732adb512d6e9833dd4ba95e2689ef126d34c55bfc96679e954cbd94ae7c8ea2b9fe7989885c057e96eb9cb4fc084afa0f1b097ae9143dd4b3a324b45eb3194ab67c2a5ec5b04b21b264238fd50bd47dea353d06ec22bc4ec046aa2f58daca1c4f0d85df5e2609dc40fb9d1a27ac0484ffdfc4",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1fffffff1fffffff1f\nEND:208\n"
+  },
+  {
+   "name": "sm4-cbc",
+   "key": "4d7297bce1062b5080a5caef14395e83",
+   "lines": [
+    "<13>Oct 19 12:00:01 ubuntu alice: first message",
+    "<13>Oct 19 12:00:02 ubuntu alice: second",
+    "<13>Oct 19 12:00:03 ubuntu alice: a longer third message carrying more than one cipher block of text"
+   ],
+   "file": "74f636e5d66c06db4fddd210d0078dbab7b15626879057338653be57c16dbacec785ccbe290a86469c18b82f966ab2dc6b18fe3564283ee4f264f4a2745aea189264f62a2dc22d37a4cd27dca4e70762646ff316efde9c1c91de5b4951dc20e530e5f8ebbe631ed73b00fa778dacd9096f2bc2f4e9660845cb267f853abe4d5d61321a19d655f0b0e5de80ce3bf9439614dfd7de565f2c8aa7e48c3075b48cd39a485864aeaa5e55a9138af3a9666ca9c3488a82ee0e9178a96f637eb900b5494ac33494fac7f9f480e2e9ff9af91be8",
+   "encinfo": "FILETYPE:rsyslog-enrcyption-info\nIV:ffffff1fffffff1fffffff1fffffff1f\nEND:208\n"
+  }
  ]
 }
