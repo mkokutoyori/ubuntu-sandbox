@@ -751,6 +751,32 @@ export class VirtualFileSystem {
     if (inode) inode.generator = generator;
   }
 
+  /**
+   * A regular file whose bytes live in a model that is not a string: reads ask the
+   * model, writes hand it the new text, and the size is the one the owner declares.
+   * Capacity accounting, `ls`, `du`, rename and unlink see an ordinary inode.
+   */
+  registerBackedFile(
+    path: string,
+    backing: { read(): string; write(text: string): void },
+    size: number,
+    permissions = 0o640,
+    uid = 0,
+    gid = 0,
+  ): INode | null {
+    const existing = this.resolveInode(path, false);
+    const inode = existing && existing.type === 'file' ? existing : this.createFileAt(path, '', permissions, uid, gid);
+    if (!inode) return null;
+    Object.defineProperty(inode, 'content', {
+      configurable: true,
+      enumerable: true,
+      get: () => backing.read(),
+      set: (text: string) => backing.write(text),
+    });
+    inode.size = size;
+    return inode;
+  }
+
   registerWritableGeneratedFile(
     path: string,
     generator: () => string,

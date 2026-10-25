@@ -333,8 +333,8 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   `RateLimitIntervalSec`/`RateLimitBurst` (et `LogRateLimit*` du fichier d'unité) limitent par unité et par groupe de priorités, avec la
   modulation du seuil par l'espace disponible de `journald-rate-limit.c`, et le message « Suppressed N messages from unit ». `SplitMode`
   répartit les messages en `user-<uid>.journal`. `Compress=` fixe le drapeau `COMPRESSED-ZSTD` des fichiers créés et le seuil
-  au-delà duquel un objet est compressé ; la taille compressée est une estimation (LZ77 et entropie, `PayloadCompression.ts`, à 35 % de zstd
-  sur les douze charges mesurées), zstd lui-même n'étant pas porté. `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
+  au-delà duquel un objet est compressé, en zstd réel (`compression/zstd/`, RFC 8878, décodeur et encodeur validés contre le zstd de Node ; le
+  journal ne garde la forme compressée que si elle est plus courte). `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
   Les cinq cas de l'oracle (fichiers restants, message d'usage du disque, messages de suppression, `--vacuum-*`) sont mesurés contre
   le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
   volume unique, donc `/run` (journal volatil) partage la capacité de la racine.
@@ -346,11 +346,26 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   invalide). `SealChain.ts` suit `journal-authenticate.c` : un objet Tag de 64 octets par intervalle de scellement franchi sur l'HORLOGE SIMULÉE,
   HMAC-SHA256 sur l'en-tête, les tables de hachage et les objets écrits depuis le tag précédent, clé tirée de l'état de l'époque, puis
   évolution et réécriture du fichier de clé. `JournalFile` porte les drapeaux `SEALED`/`SEALED_CONTINUOUS` et le compteur de tags de `--header` ;
-  `Seal=no` ou l'absence de fichier de clé laisse les fichiers neufs non scellés. `--verify` applique `journal_file_verify` : époque continue,
+  `Seal=no` ou l'absence de fichier de clé laisse les fichiers neufs non scellés. `--verify` relit les octets du fichier (voir « Fichiers journal en octets réels » plus bas) : époque continue,
   bornes des entrées, tag recalculé ; avec la bonne clé il rapporte « Validated from … to … », avec une autre « Tag failed verification »
   (« Bad message »), sans clé « Required key not available ». La chaîne a été comparée au vrai `systemd-journald` et `journalctl` 255.4 sur un
   fichier scellé ; le défaut amont selon lequel le premier fichier d'un démarrage échoue à la vérification de son premier tag (le seqnum_id de
   l'en-tête change à la première entrée) est reproduit volontairement.
+
+- **Fichiers journal en octets réels et `journalctl --verify`** (`journal-image-oracle.test.ts`, `journal-verify-oracle.test.ts`, `journal-files-vfs.test.ts`) :
+  `journal/format/JournalImage.ts` écrit le format de fichier de systemd 255 (`journal-file.c`, COMPACT + KEYED-HASH : siphash24 clé = `file_id`, lookup3 pour le
+  `xor_hash` des entrées, tables de hachage, chaînes de données et de champs, tableaux d'entrées avec leur cache de queue, objets Tag, profondeurs de chaîne) et les
+  fichiers du VFS (`/var/log/journal/<machine-id>/*.journal`) SONT ces octets : `dd`, `cp`, `cat`, `truncate` et une écriture dans le VFS les lisent et les modifient,
+  et une édition est relue par le démon (`JournalFile.loadBytes`). Cinq fichiers réels écrits par le `systemd-journald` 255.4 installé (simple, riche en champs,
+  compressé zstd, premier fichier scellé, fichier scellé créé depuis un modèle après rotation) sont rejoués par l'écrivain et doivent être retrouvés octet pour
+  octet. `journal/format/JournalVerifier.ts` porte `journal_file_verify` (deux passes : parcours des objets avec `journal_file_object_verify`, drapeaux de compression,
+  séquences, tags recalculés depuis les octets du fichier avec FSPRG ; puis `verify_entry_array` et `verify_data_hash_table` avec la bissection
+  `generic_array_bisect` et son cache de chaîne) et `JournalView.ts` `journal_file_open`/`journal_file_verify_header`/`journal_file_move_to_object` ; le texte,
+  le décalage « File corruption detected at … (of N bytes, P%) » et le statut sont comparés à 13 000 altérations rejouées contre le vrai `journalctl --file=… --verify`
+  (`scripts/oracle/record_journal_verify.py` : chaque octet de l'en-tête, chaque champ d'un échantillon d'objets de chaque type, entrées des tables de hachage,
+  drapeaux de compression, semis aléatoire, troncatures, extensions, plages mises à zéro). Le bogue amont de 255 selon lequel le premier fichier scellé d'un démarrage
+  échoue à son premier tag est reproduit parce que l'en-tête haché change (`seqnum_id`) ; un fichier créé après une rotation (modèle) passe. LZ4 est décodé (`compression/lz4/`), XZ
+  non (TODO.md). `journalctl --file=PATH --verify` vérifie n'importe quel fichier du VFS.
 
 - **Files de messages** (`rsyslog-queue-params.test.ts`, `rsyslog-disk-assisted.test.ts`, `rsyslog-disk-queue.test.ts`,
   `rsyslog-queue-shutdown.test.ts`, `rsyslog-queue-enqueue-timeout.test.ts`) : `Queue.ts` est un ensemble de workers comme `queue.c`.

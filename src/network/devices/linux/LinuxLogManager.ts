@@ -23,6 +23,8 @@ import { SyslogForwardSocket } from './syslog/SyslogForwardSocket';
 import type { AppendCreation, AppendDescriptor, AppendFailure } from './VirtualFileSystem';
 import { decodeSealingKey, encodeSealingKey } from './journal/seal/SealingKeyFile';
 import type { SealKey } from './journal/seal/SealChain';
+import type { JournalFile } from './journal/JournalFileSet';
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -123,19 +125,40 @@ export class LinuxLogManager {
 
   attachTerminals(terminals: JournalTerminals): void { this.terminals = terminals; }
 
+  private readonly journalPaths = new WeakMap<JournalFile, string>();
+  private readonly journalContent = new WeakMap<JournalFile, { version: number; allocated: number; text: string }>();
+
   syncJournalFiles(): void {
     const directory = this.journald.directory;
     this.vfs.mkdirp(directory, 0o2755, 0, 4);
-    const infos = this.journald.fileInfos();
-    const wanted = new Set(infos.map((info) => info.path));
+    const files = this.journald.files();
+    const wanted = new Set(files.map((file) => file.path));
+    for (const file of files) {
+      const previous = this.journalPaths.get(file);
+      if (previous !== undefined && previous !== file.path && this.vfs.lstat(previous) !== null && this.vfs.lstat(file.path) === null) this.vfs.rename(previous, file.path);
+    }
     for (const entry of this.vfs.listDirectory(directory) ?? []) {
       const path = `${directory}/${entry.name}`;
       if (entry.name.endsWith('.journal') && !wanted.has(path)) this.vfs.deleteFile(path);
     }
-    for (const info of infos) {
-      if (this.vfs.lstat(info.path)?.size === info.diskUsageBytes) continue;
-      this.vfs.writeFile(info.path, '', 0, 4, 0o027, false, info.diskUsageBytes);
+    for (const file of files) {
+      this.journalPaths.set(file, file.path);
+      this.vfs.registerBackedFile(file.path, this.journalBacking(file), file.fileSize, 0o640, 0, 4);
     }
+  }
+
+  private journalBacking(file: JournalFile): { read(): string; write(text: string): void } {
+    return {
+      read: () => {
+        const cached = this.journalContent.get(file);
+        if (cached !== undefined && cached.version === file.version && cached.allocated === file.fileSize) return cached.text;
+        const used = file.usedBytes();
+        const text = bytesToFileText(used) + '\0'.repeat(Math.max(0, file.fileSize - used.length));
+        this.journalContent.set(file, { version: file.version, allocated: file.fileSize, text });
+        return text;
+      },
+      write: (text) => file.loadBytes(fileTextToBytes(text)),
+    };
   }
 
   private journalTimers: JournalTimers | null = null;

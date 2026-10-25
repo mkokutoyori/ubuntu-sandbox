@@ -193,7 +193,7 @@ export class JournalStorage {
   rotate(): void {
     for (const [uid, writer] of [...this.writers]) {
       try {
-        writer.set.rotate();
+        writer.set.rotate(this.host.nowUsec());
       } catch (error) {
         if (!(error instanceof JournalFull)) throw error;
         this.writers.delete(uid);
@@ -321,6 +321,10 @@ export class JournalStorage {
     this.cancelSync?.();
     this.cancelSync = null;
     this.syncScheduled = false;
+  }
+
+  files(): readonly JournalFile[] {
+    return this.allFiles();
   }
 
   fileInfos(): JournalFileInfo[] {

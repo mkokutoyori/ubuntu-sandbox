@@ -6,6 +6,7 @@ import {
   MAX_OF_SYMBOL, ML_BASELINE, ML_DEFAULT, ML_DEFAULT_ACCURACY, ML_EXTRA_BITS, OF_DEFAULT, OF_DEFAULT_ACCURACY,
 } from './ZstdTables';
 import { xxh64 } from './Xxh64';
+import { initialRepeatHistory, resolveOffset, type RepeatHistory } from './RepeatOffsets';
 
 export type ZstdResult = { readonly ok: true; readonly bytes: Uint8Array } | { readonly ok: false; readonly reason: string };
 
@@ -23,7 +24,7 @@ interface FrameState {
   literalLengths: FseTable | null;
   offsets: FseTable | null;
   matchLengths: FseTable | null;
-  repeated: [number, number, number];
+  repeated: RepeatHistory;
 }
 
 class Output {
@@ -240,23 +241,8 @@ function decodeBlock(input: Uint8Array, start: number, end: number, output: Outp
       ofState = of.table.baseline[ofState] + reader.read(of.table.nbBits[ofState]);
     }
     if (reader.overrun) fail('sequence bitstream overrun');
-    let offset: number;
-    if (offsetValue > 3) {
-      offset = offsetValue - 3;
-      repeated[2] = repeated[1];
-      repeated[1] = repeated[0];
-      repeated[0] = offset;
-    } else {
-      const slot = offsetValue - 1 + (literalLength === 0 ? 1 : 0);
-      if (slot === 0) offset = repeated[0];
-      else {
-        offset = slot === 3 ? repeated[0] - 1 : repeated[slot];
-        if (offset === 0) fail('zero repeat offset');
-        if (slot !== 1) repeated[2] = repeated[1];
-        repeated[1] = repeated[0];
-        repeated[0] = offset;
-      }
-    }
+    const offset = resolveOffset(offsetValue, literalLength, repeated);
+    if (offset === 0) fail('zero repeat offset');
     if (literalPosition + literalLength > literals.bytes.length) fail('literal length exceeds the literals');
     output.append(literals.bytes.subarray(literalPosition, literalPosition + literalLength));
     literalPosition += literalLength;
@@ -294,7 +280,7 @@ function decodeFrame(input: Uint8Array, start: number, output: Output): number {
   at += sizeBytes;
   if (singleSegment) windowSize = contentSize ?? 0;
   const frameStart = output.length;
-  const state: FrameState = { huffman: null, literalLengths: null, offsets: null, matchLengths: null, repeated: [1, 4, 8] };
+  const state: FrameState = { huffman: null, literalLengths: null, offsets: null, matchLengths: null, repeated: initialRepeatHistory() };
   const blockMaximum = Math.min(windowSize, BLOCK_MAX);
   for (;;) {
     if (at + 3 > input.length) fail('truncated block header');

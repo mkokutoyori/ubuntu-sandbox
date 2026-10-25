@@ -1,6 +1,7 @@
 import { ReverseBitWriter } from './BitStreams';
 import { buildFseEncoder, entropyBits, fseEncode, fseInitialState, normalizeCounts, writeFseDescription, type FseEncoderTable } from './Fse';
 import { buildCode, describeTree, encodeStream } from './Huffman';
+import { initialRepeatHistory, offsetValueFor, resolveOffset, type RepeatHistory } from './RepeatOffsets';
 import {
   BLOCK_MAX, LL_BASELINE, LL_DEFAULT, LL_DEFAULT_ACCURACY, LL_EXTRA_BITS, MAGIC, MAX_LL_ACCURACY, MAX_ML_ACCURACY, MAX_OF_ACCURACY, ML_BASELINE, ML_DEFAULT,
   ML_DEFAULT_ACCURACY, ML_EXTRA_BITS, OF_DEFAULT, OF_DEFAULT_ACCURACY,
@@ -15,7 +16,7 @@ const LONG_OFFSET_FLOOR = 4096;
 interface Sequence {
   readonly literalLength: number;
   readonly matchLength: number;
-  readonly offset: number;
+  readonly offsetValue: number;
 }
 
 let encoders: { readonly ll: FseEncoderTable; readonly of: FseEncoderTable; readonly ml: FseEncoderTable } | null = null;
@@ -73,13 +74,28 @@ class MatchFinder {
   }
 }
 
-function findSequences(finder: MatchFinder, bytes: Uint8Array, start: number, end: number): { sequences: Sequence[]; literals: Uint8Array } {
+function findSequences(finder: MatchFinder, bytes: Uint8Array, start: number, end: number, history: RepeatHistory): { sequences: Sequence[]; literals: Uint8Array } {
   const sequences: Sequence[] = [];
   const literalParts: Uint8Array[] = [];
   let anchor = start;
   let at = start;
+  const repeatMatch = (position: number): { readonly length: number; readonly offset: number } => {
+    let best = { length: 0, offset: 0 };
+    for (const offset of history) {
+      if (offset > position) continue;
+      let length = 0;
+      while (position + length < end && bytes[position + length - offset] === bytes[position + length]) length++;
+      if (length > best.length) best = { length, offset };
+    }
+    return best.length >= MIN_MATCH ? best : { length: 0, offset: 0 };
+  };
+  const candidate = (position: number): { readonly length: number; readonly offset: number } => {
+    const repeated = repeatMatch(position);
+    const found = finder.best(position, end);
+    return repeated.length > 0 && repeated.length + 1 >= found.length ? repeated : found;
+  };
   while (at < end) {
-    let match = finder.best(at, end);
+    let match = candidate(at);
     if (match.length === 0) {
       finder.insert(at);
       at++;
@@ -87,14 +103,17 @@ function findSequences(finder: MatchFinder, bytes: Uint8Array, start: number, en
     }
     if (at + 1 < end) {
       finder.insert(at);
-      const next = finder.best(at + 1, end);
+      const next = candidate(at + 1);
       if (next.length > match.length + 1) {
         at++;
         match = next;
       }
     }
+    const literalLength = at - anchor;
     literalParts.push(bytes.subarray(anchor, at));
-    sequences.push({ literalLength: at - anchor, matchLength: match.length, offset: match.offset });
+    const offsetValue = offsetValueFor(match.offset, literalLength, history);
+    resolveOffset(offsetValue, literalLength, history);
+    sequences.push({ literalLength, matchLength: match.length, offsetValue });
     for (let index = 0; index < match.length; index++) finder.insert(at + index);
     at += match.length;
     anchor = at;
@@ -209,7 +228,7 @@ function sequencesSection(sequences: readonly Sequence[]): Uint8Array {
   else header.push(255, (count - 0x7f00) & 255, (count - 0x7f00) >> 8);
   if (count === 0) return Uint8Array.from(header);
   const codes = sequences.map((sequence) => {
-    const offsetValue = sequence.offset + 3;
+    const offsetValue = sequence.offsetValue;
     const offsetCode = 31 - Math.clz32(offsetValue);
     const matchCode = codeOf(sequence.matchLength, ML_BASELINE);
     const literalCode = codeOf(sequence.literalLength, LL_BASELINE);
@@ -257,13 +276,19 @@ function blockHeader(last: boolean, type: number, size: number): number[] {
   return [value & 255, (value >> 8) & 255, (value >> 16) & 255];
 }
 
-function encodeBlock(bytes: Uint8Array, finder: MatchFinder, start: number, end: number, last: boolean): Uint8Array {
+function encodeBlock(bytes: Uint8Array, finder: MatchFinder, start: number, end: number, last: boolean, history: RepeatHistory): Uint8Array {
   const size = end - start;
   const raw = Uint8Array.from([...blockHeader(last, 0, size), ...bytes.subarray(start, end)]);
   if (size > 1 && bytes.subarray(start, end).every((byte) => byte === bytes[start])) return Uint8Array.from([...blockHeader(last, 1, size), bytes[start]]);
-  const { sequences, literals } = findSequences(finder, bytes, start, end);
+  const saved: RepeatHistory = [history[0], history[1], history[2]];
+  const { sequences, literals } = findSequences(finder, bytes, start, end, history);
   const body = Uint8Array.from([...literalsSection(literals), ...sequencesSection(sequences)]);
-  if (body.length + 3 >= raw.length || body.length >= BLOCK_MAX) return raw;
+  if (body.length + 3 >= raw.length || body.length >= BLOCK_MAX) {
+    history[0] = saved[0];
+    history[1] = saved[1];
+    history[2] = saved[2];
+    return raw;
+  }
   return Uint8Array.from([...blockHeader(last, 2, body.length), ...body]);
 }
 
@@ -280,9 +305,10 @@ export function zstdCompress(input: Uint8Array): Uint8Array {
     parts.push(Uint8Array.from(blockHeader(true, 0, 0)));
   } else {
     const finder = new MatchFinder(input);
+    const history = initialRepeatHistory();
     for (let start = 0; start < input.length; start += BLOCK_MAX) {
       const end = Math.min(input.length, start + BLOCK_MAX);
-      parts.push(encodeBlock(input, finder, start, end, end === input.length));
+      parts.push(encodeBlock(input, finder, start, end, end === input.length, history));
     }
   }
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
