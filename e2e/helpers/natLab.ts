@@ -87,3 +87,7 @@ export async function typeIn(page: Page, deviceId: string, command: string): Pro
 export async function lineCount(page: Page, deviceId: string, text: string): Promise<number> {
   return page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).getByText(text, { exact: true }).count().catch(() => 0);
 }
+
+export async function lineCountContaining(page: Page, deviceId: string, text: string): Promise<number> {
+  return page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).getByText(text).count().catch(() => 0);
+}

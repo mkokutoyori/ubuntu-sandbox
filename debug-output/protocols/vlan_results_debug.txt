@@ -1575,8 +1575,8 @@ Total steps: 401
   0200-0000-004f 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 5
 
@@ -2341,8 +2341,8 @@ Total steps: 401
   0200-0000-004f 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 5
 
