@@ -3426,14 +3426,12 @@ omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
-### [journald] `journalctl --file=` ne sert que `--verify`, et les objets XZ ne se decompressent pas
+### [journald] `journalctl --file=` ne sert que `--verify`
 `--verify` relit les octets du fichier dans le VFS et porte `journal-verify.c` (`format/JournalVerifier.ts`, compare a 13000 alterations rejouees contre le vrai
 `journalctl` 255.4 : `journal-verify-oracle.test.ts`). `--file=PATH` n'est accepte que pour `--verify` ; les autres actions (`-o`, `--header`, `-n`…) continuent a
 refuser `--file` (« Failed to open files »), la lecture des entrees d'un fichier arbitraire demandant que `JournalctlHost.records()` soit calcule par fichier.
-Un objet DATA marque XZ (flag 1) echoue avec « Cannot allocate memory », qui est ce que le binaire repond a une charge utile qui n'est pas du XZ, mais un vrai
-flux XZ (journal ecrit par un journald compile avec `Compress=xz`) serait refuse a tort faute de decodeur LZMA2 ; le simulateur n'ecrit que du zstd (journald 255
-n'offre pas de choix d'algorithme dans `journald.conf`). Les fichiers journal sont lisibles par tous dans le VFS quel que soit l'utilisateur : le mode `0640 root:systemd-journal`
-est pose mais `journalctl --file=` ne le consulte pas.
+Les fichiers journal sont lisibles par tous dans le VFS quel que soit l'utilisateur : le mode `0640 root:systemd-journal` est pose mais `journalctl --file=` ne le
+consulte pas.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »

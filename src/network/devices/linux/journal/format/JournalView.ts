@@ -1,6 +1,7 @@
 import { sipHash24 } from '@/network/rsyslog/SipHash';
 import type { Errno } from '@/network/core/Errno';
 import { lz4DecompressBlock } from '@/network/compression/lz4/Lz4Block';
+import { xzDecompress } from '@/network/compression/xz/XzDecoder';
 import { zstdDecompress } from '@/network/compression/zstd/ZstdDecoder';
 import { jenkinsHash64 } from './JenkinsHash';
 import {
@@ -171,7 +172,8 @@ export class JournalView {
       return result.ok ? { ok: true, bytes: result.bytes } : { ok: false, errno: 'EBADMSG' };
     }
     if (compression === OBJECT_COMPRESSED_LZ4) return this.decompressLz4(stored);
-    return { ok: false, errno: 'ENOMEM' };
+    const result = xzDecompress(stored);
+    return result.ok ? { ok: true, bytes: result.bytes } : { ok: false, errno: 'ENOMEM' };
   }
 
   private decompressLz4(stored: Uint8Array): { readonly ok: true; readonly bytes: Uint8Array; readonly errno?: undefined } | { readonly ok: false; readonly errno: Errno; readonly bytes?: undefined } {
