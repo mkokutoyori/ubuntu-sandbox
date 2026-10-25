@@ -3746,3 +3746,11 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 ### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+
+### [charge-grande-topologie] cout par machine et par rafale mesure dans Chromium, non ferme (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
+
+Apres les correctifs de memoire (un LinuxPC passe de 11 Mo a 1,9 Mo de tas), 400 postes Linux sur 20 switchs montent a 2,8 Go de tas dans Chromium sans plantage, mais
+la configuration (`ip addr add` par poste) coute 330 ms par poste a 400 postes contre 120 ms a 100 : le cout par poste augmente avec le nombre de postes, cause non isolee
+(piste : l'ARP gratuit de chaque `ip addr add` traverse tous les switchs jusqu'a tous les postes). Une rafale de 5000 curl en parallele prend 279 s (56 ms par curl contre
+13 ms dans Node) : le rendu de quatre terminaux ouverts s'ajoute a la simulation, et la table des processus tient 15 inodes /proc par curl simultane. Le journal de journald
+garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.

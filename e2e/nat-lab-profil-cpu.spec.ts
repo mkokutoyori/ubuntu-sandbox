@@ -7,9 +7,10 @@ import { writeFileSync } from 'node:fs';
 import { buildLab, lineCount, openTerminal, typeIn, waitForStore } from './helpers/natLab';
 
 const SCENARIO = process.env.PROFILE ?? 'curl-ext-500';
-const COMMANDS: Record<string, { client: 'lin' | 'ext'; target: string; command: (t: string) => string; tcpdump: boolean }> = {
+const COMMANDS: Record<string, { client: 'lin' | 'ext' | 'srv'; target: string; command: (t: string) => string; tcpdump: boolean }> = {
   'curl-ext-500': { client: 'lin', target: '203.0.113.9', command: (t) => `for i in $(seq 1 500); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`, tcpdump: false },
   'curl-2000': { client: 'lin', target: '170.20.0.2', command: (t) => `for i in $(seq 1 2000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`, tcpdump: true },
+  'srv-ping-f-router': { client: 'srv', target: '192.168.10.1', command: (t) => `ping -f -c 1000 ${t}; echo FINISHED`, tcpdump: true },
   'curl-500': { client: 'lin', target: '170.20.0.2', command: (t) => `for i in $(seq 1 500); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`, tcpdump: true },
 };
 
