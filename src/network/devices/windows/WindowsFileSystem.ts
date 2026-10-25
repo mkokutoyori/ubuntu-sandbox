@@ -893,36 +893,6 @@ export class WindowsFileSystem {
     }
   }
 
-  // ─── Tree Display ────────────────────────────────────────────────
-
-  tree(absPath: string, showFiles = false): string {
-    const entry = this.resolve(absPath);
-    if (!entry || entry.type !== 'directory') return 'Invalid path - ' + absPath;
-
-    const lines: string[] = [absPath];
-    this._tree(entry, '', lines, showFiles);
-    return lines.join('\n');
-  }
-
-  private _tree(entry: WinFSEntry, prefix: string, lines: string[], showFiles: boolean): void {
-    let children = Array.from(entry.children.values())
-      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-
-    if (!showFiles) {
-      children = children.filter(c => c.type === 'directory');
-    }
-
-    for (let i = 0; i < children.length; i++) {
-      const isLast = i === children.length - 1;
-      const connector = isLast ? '└───' : '├───';
-      const extension = isLast ? '    ' : '│   ';
-      lines.push(prefix + connector + children[i].name);
-      if (children[i].type === 'directory') {
-        this._tree(children[i], prefix + extension, lines, showFiles);
-      }
-    }
-  }
-
   // ─── Tab Completion ──────────────────────────────────────────────
 
   getCompletions(absDir: string, partial: string): string[] {
@@ -1029,18 +999,28 @@ export class WindowsFileSystem {
   }
 
   /**
-   * Volume serial — single source of truth for both `dir` and `vol`.
+   * Volume serial — single source of truth for `dir`, `vol` and `tree`.
    * Deterministic per (hostname, drive): realistic (unique per machine)
    * yet stable across runs, and identical no matter which command asks.
    */
   getVolumeSerialNumber(drive: string = 'C'): string {
+    const hex = this.volumeSerialWord(drive, '').toString(16).toUpperCase().padStart(8, '0');
+    return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+  }
+
+  getNtfsVolumeSerialNumber(drive: string = 'C'): string {
+    const high = (this.volumeSerialWord(drive, '#high') & 0xfff).toString(16).toUpperCase().padStart(8, '0');
+    const low = this.getVolumeSerialNumber(drive).replace('-', '');
+    return `${high} ${low.slice(0, 4)}:${low.slice(4)}`;
+  }
+
+  private volumeSerialWord(drive: string, salt: string): number {
     const letter = (drive || 'C').toUpperCase().replace(/[:\\]+$/, '').charAt(0) || 'C';
     let h = 0;
-    for (const ch of `${this.hostname}:${letter}`) {
+    for (const ch of `${this.hostname}:${letter}${salt}`) {
       h = ((h * 31) + ch.charCodeAt(0)) & 0xffffffff;
     }
-    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
-    return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    return Math.abs(h) >>> 0;
   }
 
   // ─── ACL Operations ─────────────────────────────────────────────

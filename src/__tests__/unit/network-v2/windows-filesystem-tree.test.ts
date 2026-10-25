@@ -127,13 +127,12 @@ describe('Group 2: tree command /F flag', () => {
     expect(output).toContain('services');
   });
 
-  it('FS-13: tree /F shows files in correct tree structure', () => {
-    const fs = new WindowsFileSystem('PC1');
-    const output = fs.tree('C:\\Windows\\System32\\drivers', true);
+  it('FS-13: tree /F shows files in correct tree structure', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
+    const output = await pc.executeCommand('tree /F C:\\Windows\\System32\\drivers');
 
-    expect(output).toContain('C:\\Windows\\System32\\drivers');
-    expect(output).toContain('├───');
-    expect(output).toContain('etc');
+    expect(output).toContain('C:\\WINDOWS\\SYSTEM32\\DRIVERS');
+    expect(output).toContain('└───etc');
     // Files under etc should be indented
     expect(output).toContain('hosts');
     expect(output).toContain('networks');
@@ -167,46 +166,47 @@ describe('Group 2: tree command /F flag', () => {
 
 describe('Group 3: tree output structure is correct', () => {
 
-  it('FS-16: tree uses correct connector characters', () => {
-    const fs = new WindowsFileSystem('PC1');
-    const output = fs.tree('C:\\Users\\User');
+  it('FS-16: tree uses correct connector characters', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
+    const output = await pc.executeCommand('tree C:\\Users\\User');
 
     // Should use tree connectors
     expect(output).toMatch(/[├└]───/);
     expect(output).toMatch(/│\s{3}/);
   });
 
-  it('FS-17: last child uses └─── connector', () => {
-    const fs = new WindowsFileSystem('PC1');
+  it('FS-17: last child uses └─── connector', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     // Create a simple structure
+    const fs = pc.getFileSystem();
     fs.mkdirp('C:\\Test');
     fs.mkdirp('C:\\Test\\Alpha');
     fs.mkdirp('C:\\Test\\Beta');
 
-    const output = fs.tree('C:\\Test');
+    const output = await pc.executeCommand('tree C:\\Test');
 
     const lines = output.split('\n');
     // First dir uses ├───
-    expect(lines[1]).toContain('├───');
+    expect(lines[3]).toContain('├───');
     // Last dir uses └───
-    expect(lines[2]).toContain('└───');
+    expect(lines[4]).toContain('└───');
   });
 
-  it('FS-18: tree /F sorts entries alphabetically', () => {
-    const fs = new WindowsFileSystem('PC1');
+  it('FS-18: tree /F lists the files of a folder alphabetically before its subfolders', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
+    const fs = pc.getFileSystem();
     fs.mkdirp('C:\\SortTest');
     fs.createFile('C:\\SortTest\\zebra.txt', 'z');
     fs.createFile('C:\\SortTest\\alpha.txt', 'a');
     fs.mkdirp('C:\\SortTest\\middle');
 
-    const output = fs.tree('C:\\SortTest', true);
+    const output = await pc.executeCommand('tree /F C:\\SortTest');
     const lines = output.split('\n');
 
-    // Should be alphabetically sorted
-    const items = lines.slice(1).map(l => l.replace(/[├└│─\s]/g, ''));
+    const items = lines.slice(3).map(l => l.replace(/[├└│─\s]/g, '')).filter(Boolean);
     expect(items[0]).toBe('alpha.txt');
-    expect(items[1]).toBe('middle');
-    expect(items[2]).toBe('zebra.txt');
+    expect(items[1]).toBe('zebra.txt');
+    expect(items[2]).toBe('middle');
   });
 
   it('FS-19: type command reads hosts file correctly', async () => {

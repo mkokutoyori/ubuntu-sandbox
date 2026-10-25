@@ -16,6 +16,7 @@ import {
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { driveLetterOf } from './windowsPath';
 import { hasWildcard } from './WinPathSpec';
+import { TREE_HELP, treeBody, treeHeading } from './WinTree';
 import {
   ERROR_DIRECTORY, ERROR_INVALID_DRIVE, ERROR_INVALID_NAME, ERROR_PATH_NOT_FOUND,
 } from './win32ErrorText';
@@ -211,22 +212,32 @@ export function cmdDel(ctx: WinFileCommandContext, args: string[]): string {
 // ─── tree ──────────────────────────────────────────────────────────
 
 export function cmdTree(ctx: WinFileCommandContext, args: string[]): string {
-  let showFiles = false;
+  let files = false;
+  let ascii = false;
   const pathArgs: string[] = [];
 
   for (const arg of args) {
-    if (arg.toLowerCase() === '/f') {
-      showFiles = true;
-    } else if (arg.toLowerCase() === '/a') {
-      // ASCII mode - already default in our implementation
-    } else {
-      pathArgs.push(arg);
-    }
+    const lower = arg.toLowerCase();
+    if (lower === '/?') return TREE_HELP;
+    if (lower === '/f') files = true;
+    else if (lower === '/a') ascii = true;
+    else pathArgs.push(arg);
   }
 
   const target = pathArgs.length > 0 ? pathArgs[0] : '.';
   const absPath = ctx.fs.normalizePath(target, ctx.cwd);
-  return ctx.fs.tree(absPath, showFiles);
+  const root = ctx.fs.resolve(absPath);
+  if (!root || root.type !== 'directory') return 'Invalid path - ' + absPath;
+
+  const drive = absPath[0];
+  const label = ctx.fs.getVolumeLabel(drive);
+  const shownPath = pathArgs.length > 0 ? ctx.fs.canonicalPath(absPath).toUpperCase() : `${drive}:.`;
+  return [
+    treeHeading(label),
+    `Volume serial number is ${ctx.fs.getNtfsVolumeSerialNumber(drive)}`,
+    shownPath,
+    ...treeBody(root, { files, ascii }),
+  ].join('\n');
 }
 
 // ─── set ───────────────────────────────────────────────────────────
