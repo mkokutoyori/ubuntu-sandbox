@@ -128,13 +128,21 @@ export interface StreamOptions {
   readonly device?: string;
   readonly networkNamespace?: string;
   readonly userTimeoutMs?: number;
-  readonly keepAlive?: { readonly probes: number; readonly timeSeconds: number; readonly intervalSeconds: number };
+  readonly keepAlive?: KeepAliveOptions;
 }
 
 export type AddressFamilyPolicy = 'unspecified' | 'ipv4-only' | 'ipv6-only';
 
+export interface KeepAliveOptions {
+  readonly probes: number;
+  readonly timeSeconds: number;
+  readonly intervalSeconds: number;
+}
+
 export interface ListenOptions {
   readonly tls?: StreamTlsOptions;
+  readonly keepAlive?: KeepAliveOptions;
+  readonly backlog?: number;
   readonly family: AddressFamilyPolicy;
   readonly receiveBufferBytes?: number;
   readonly device?: string;
@@ -163,6 +171,7 @@ export interface RsyslogNetwork {
   connectStream(address: string, port: number, options?: StreamOptions): StreamConnection | { readonly errno: Errno };
   listenDatagram(port: number, address: string | null, options: ListenOptions, onDatagram: (datagram: Datagram) => void): ListenOutcome;
   listenStream(port: number, address: string | null, options: ListenOptions, onAccept: (connection: StreamConnection) => void): ListenOutcome;
+  streamListenerOwner?(port: number): { readonly pid: number; readonly comm: string | null } | null;
 }
 
 export interface LocalSocketOptions {
@@ -185,10 +194,22 @@ export interface ProcessDetails {
   readonly cmdline: string;
 }
 
+export interface LocalStreamOptions {
+  readonly unlink: boolean;
+  readonly mode: number;
+  readonly uid: number | null;
+  readonly gid: number | null;
+}
+
+export type LocalStreamStage = 'bind' | 'chown' | 'chmod';
+
+export type LocalStreamBinding = { readonly close: () => void } | { readonly errno: Errno; readonly stage: LocalStreamStage };
+
 export type LocalSocketBinding = { readonly close: () => void; readonly acquiredFromSupervisor: boolean } | { readonly errno: Errno };
 
 export interface RsyslogLocalSockets {
   listen(path: string, options: LocalSocketOptions, onMessage: (message: LocalSocketMessage) => void): LocalSocketBinding;
+  listenStream(path: string, options: LocalStreamOptions, onAccept: (connection: StreamConnection) => void): LocalStreamBinding;
   isSocket(path: string): boolean;
   systemdBooted(): boolean;
   processDetails(pid: number): ProcessDetails | null;

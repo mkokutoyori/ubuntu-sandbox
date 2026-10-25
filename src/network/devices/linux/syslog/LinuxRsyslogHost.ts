@@ -6,14 +6,14 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  ChildExit, Datagram, DatagramOptions, FileChange, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
-  OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
+  ChildExit, Datagram, DatagramOptions, FileChange, FileHandle, FileStat, KeepAliveOptions, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
+  LocalStreamBinding, LocalStreamOptions, OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
 import { latin1Text } from '@/network/rsyslog/engine/Latin1';
 import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure, INode } from '../VirtualFileSystem';
 import type { SyslogForwardSocket } from './SyslogForwardSocket';
-import type { LocalDatagramSockets } from './LocalDatagramSockets';
+import type { LocalDatagramSockets, UnixStreamEnd } from './LocalDatagramSockets';
 import type { ClockTimers } from './ClockTimers';
 
 export const JOURNAL_SYSLOG_SOCKET = '/run/systemd/journal/syslog';
@@ -161,6 +161,58 @@ class SocketConnection implements StreamConnection {
   private notifyClose(): void {
     this.close_?.();
   }
+}
+
+class UnixConnection implements StreamConnection {
+  private data: ((bytes: Uint8Array) => void) | null = null;
+  private closeHandler: (() => void) | null = null;
+  private readonly buffered: Uint8Array[] = [];
+  private finished = false;
+  closedByPeer = false;
+  readonly remoteIp = '';
+  readonly remotePort = 0;
+
+  constructor(private readonly end: UnixStreamEnd) {
+    end.setHandlers({
+      onData: (text) => {
+        const bytes = bytesOfLatin1(text);
+        if (this.data === null) this.buffered.push(bytes);
+        else this.data(bytes);
+      },
+      onClose: () => {
+        this.closedByPeer = true;
+        this.finished = true;
+        this.closeHandler?.();
+      },
+    });
+  }
+
+  write(bytes: Uint8Array): Errno | null {
+    return this.end.write(latin1Text(bytes)) ? null : 'EPIPE';
+  }
+
+  close(): void {
+    this.end.close();
+  }
+
+  onData(handler: (bytes: Uint8Array) => void): void {
+    this.data = handler;
+    for (const chunk of this.buffered.splice(0)) handler(chunk);
+  }
+
+  onClose(handler: () => void): void {
+    this.closeHandler = handler;
+    if (this.finished) handler();
+  }
+}
+
+const KERNEL_KEEPALIVE = { probes: 9, timeSeconds: 7200, intervalSeconds: 75 } as const;
+
+function enableKeepAlive(socket: TcpSocket, options: KeepAliveOptions): void {
+  const probes = options.probes > 0 ? options.probes : KERNEL_KEEPALIVE.probes;
+  const time = options.timeSeconds > 0 ? options.timeSeconds : KERNEL_KEEPALIVE.timeSeconds;
+  const interval = options.intervalSeconds > 0 ? options.intervalSeconds : KERNEL_KEEPALIVE.intervalSeconds;
+  socket.enableKeepAlive(time * 1000, interval * 1000, probes);
 }
 
 class HeldHandle implements FileHandle {
@@ -341,6 +393,14 @@ export class LinuxRsyslogHost implements RsyslogHost {
       this.listenDatagram(port, address, options, onDatagram),
     listenStream: (port: number, address: string | null, options: ListenOptions, onAccept: (connection: StreamConnection) => void): ListenOutcome =>
       this.listenStream(port, address, options, onAccept),
+    streamListenerOwner: (port: number): { readonly pid: number; readonly comm: string | null } | null => {
+      const owners = this.platform.tcp().listListeners()
+        .filter((listener) => listener.localPort === port && listener.identity.pid !== undefined)
+        .map((listener) => listener.identity.pid as number)
+        .sort((first, second) => first - second);
+      if (owners.length === 0) return null;
+      return { pid: owners[0], comm: this.platform.processDetails(owners[0])?.comm ?? null };
+    },
   };
 
   readonly sockets = {
@@ -356,6 +416,15 @@ export class LinuxRsyslogHost implements RsyslogHost {
       }));
       if ('errno' in outcome) return { errno: outcome.errno };
       return { close: outcome.close, acquiredFromSupervisor: false };
+    },
+    listenStream: (path: string, options: LocalStreamOptions, onAccept: (connection: StreamConnection) => void): LocalStreamBinding => {
+      const owner = options.uid ?? this.credentials.uid;
+      const group = options.gid ?? this.credentials.gid;
+      if (this.credentials.uid !== 0 && (owner !== this.credentials.uid || group !== this.credentials.gid)) return { errno: 'EPERM', stage: 'chown' };
+      const outcome = this.platform.localSockets.listenStream(
+        path, { mode: options.mode, uid: owner, gid: group, unlink: options.unlink }, (end) => onAccept(new UnixConnection(end)),
+      );
+      return 'errno' in outcome ? { errno: outcome.errno, stage: 'bind' } : { close: outcome.close };
     },
     isSocket: (path: string): boolean => path === JOURNAL_SYSLOG_SOCKET || this.platform.localSockets.isBound(path),
     systemdBooted: (): boolean => true,
@@ -480,9 +549,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
       return { errno: refused ? 'ECONNREFUSED' : 'ETIMEDOUT' };
     }
     if (options?.userTimeoutMs !== undefined && options.userTimeoutMs > 0) socket.setUserTimeout(options.userTimeoutMs);
-    if (options?.keepAlive !== undefined) {
-      socket.enableKeepAlive(options.keepAlive.timeSeconds * 1000, options.keepAlive.intervalSeconds * 1000, options.keepAlive.probes);
-    }
+    if (options?.keepAlive !== undefined) enableKeepAlive(socket, options.keepAlive);
     if (options?.tls !== undefined) return openTlsClient(socket, options.tls, this.platform.vfsReader, { nowMs: () => this.clock.wallMs() });
     return new SocketConnection(socket);
   }
@@ -567,7 +634,9 @@ export class LinuxRsyslogHost implements RsyslogHost {
           identity: { pid, processName: 'rsyslogd' },
           ...(options.device === undefined ? {} : { boundDevice: options.device }),
           ...(options.receiveBufferBytes === undefined ? {} : { receiveWindow: Math.min(options.receiveBufferBytes, 65535) }),
+          ...(options.backlog === undefined ? {} : { backlog: options.backlog }),
           onAccept: (socket) => {
+            if (options.keepAlive !== undefined) enableKeepAlive(socket, options.keepAlive);
             if (options.tls === undefined) onAccept(new SocketConnection(socket));
             else acceptTlsServer(socket, options.tls, this.platform.vfsReader, { nowMs: () => this.clock.wallMs() }, onAccept);
           },

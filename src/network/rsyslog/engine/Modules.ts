@@ -83,6 +83,7 @@ export interface ModuleContext {
   readonly statistics: Statistics;
   readonly janitor: Janitor;
   recordSender(sender: string, messages: number, seconds: number): void;
+  localHostName(): string;
   template(name: string): Template | undefined;
   report(message: string): void;
   warn(message: string): void;
@@ -137,7 +138,7 @@ export interface InputInstance {
 }
 
 export interface InputSubmitter {
-  submit(info: InputSubmission): void;
+  submit(info: InputSubmission): boolean;
 }
 
 export interface PreparsedFields {
@@ -177,6 +178,7 @@ export interface InputSubmission {
   readonly receivedAtMs?: number;
   readonly cee?: { readonly [key: string]: import('../Message').JsonValue };
   readonly flowControl?: 'none' | 'light' | 'full';
+  readonly frameOversize?: boolean;
 }
 
 export interface InputContext extends ModuleContext {

@@ -223,7 +223,7 @@ describe('impstats', () => {
 
   it('a dynamic file reports its cache: requests, level0 hits, misses, evictions and the high-water mark', () => {
     const { host, lab } = rig(`${TRADITIONAL}module(load="impstats" interval="60" log.syslog="off" log.file="/var/log/stats.log")\ntemplate(name="dyn" type="string" string="/var/log/d-%programname%.log")\n*.* action(type="omfile" dynaFile="dyn" dynaFileCacheSize="2")`);
-    const send = (program: string): void => lab.engine.submit({
+    const send = (program: string): boolean => lab.engine.submit({
       raw: `<13>Oct 19 12:00:00 ubuntu ${program}: m`, inputName: 'test', fromHost: null, fromHostIp: null, fromHostPort: null, ruleset: null, localOrigin: true,
     });
     for (const program of ['a', 'a', 'b', 'a', 'c']) send(program);

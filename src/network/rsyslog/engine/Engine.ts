@@ -12,6 +12,7 @@ import { executeStatements, type ExecResult, type ExecutionServices, type Sleep 
 import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
+import { localHostNameOf } from './LocalHostName';
 import { RateLimiter } from './RateLimiter';
 import { OperatingStateFile } from './OperatingState';
 import { RSYSLOG_VERSION } from './Log';
@@ -342,13 +343,7 @@ export class RsyslogEngine implements InputSubmitter {
   }
 
   localHostName(): string {
-    const settings = this.config.settings;
-    if (settings.localHostNameOverride !== null) return settings.localHostNameOverride;
-    const full = this.host.hostname();
-    const domain = this.host.domainName();
-    if (settings.preserveFqdn) return full.includes('.') || domain === null ? full : `${full}.${domain}`;
-    const dot = full.indexOf('.');
-    return dot < 0 ? full : full.slice(0, dot);
+    return localHostNameOf(this.config.settings, this.host);
   }
 
   private environment(): EvaluationEnvironment {
@@ -466,13 +461,13 @@ export class RsyslogEngine implements InputSubmitter {
     return new TextDecoder().decode(bytes);
   }
 
-  submit(info: InputSubmission): void {
-    if (!this.started) return;
+  submit(info: InputSubmission): boolean {
+    if (!this.started) return false;
     const now = info.receivedAtMs ?? this.host.clock.wallMs();
     let raw = info.raw;
     if (info.bytes !== undefined) {
       const decoded = this.decodeReceived(info.bytes, info.noLegacyZDecompress === true);
-      if (decoded === null) return;
+      if (decoded === null) return false;
       raw = decoded;
     }
     let { fromHost, fromHostIp, fromHostPort } = info;
@@ -482,16 +477,19 @@ export class RsyslogEngine implements InputSubmitter {
       fromHost = info.preserveCase === true ? resolved.fqdn : resolved.fqdnLowerCase;
       fromHostIp = resolved.ip;
       fromHostPort = String(info.sender.port);
-      if (info.pendingAcl !== undefined && info.pendingAcl.verdict(info.sender.ip, resolved.fqdn, true) !== 'allowed') return;
+      if (info.pendingAcl !== undefined && info.pendingAcl.verdict(info.sender.ip, resolved.fqdn, true) !== 'allowed') return false;
     }
     const build = (text: string): RsyslogMessage | null =>
       this.buildMessage(info, text, now, fromHost, fromHostIp, fromHostPort);
     const message = build(raw);
-    if (message === null) return;
+    if (message === null) return false;
+    if (info.frameOversize === true) this.writeOversizeLog(message);
     const limiter = info.limiter ?? this.defaultLimiter;
     const decision = limiter.decide(message);
     if (decision.repeated !== null) this.enqueue(decision.repeated);
-    if (decision.deliver !== null) this.admit(decision.deliver, build);
+    if (decision.deliver === null) return false;
+    this.admit(decision.deliver, build);
+    return true;
   }
 
   private buildMessage(

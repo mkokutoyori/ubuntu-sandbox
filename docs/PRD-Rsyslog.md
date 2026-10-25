@@ -429,6 +429,26 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   creation d'un nom (fichier, repertoire, lien symbolique, lien dur, tube) et changement d'attributs (`chmod`, `chown`, `chgrp`, `touch`, `setfacl`, `chattr`) sont signales sous le nom
   auquel le chemin se resout ; un lien symbolique place au chemin de la politique n'emet donc rien dans son repertoire quand on ecrit la cible, comme inotify. Le
   suivi des expediteurs de `global(senders.keepTrack)` etait deja porte (`Statistics.ts`) ; seule la source `imptcp` y manque encore.
+- **`imptcp`** (`rsyslog-imptcp.test.ts`, `linux-rsyslog-imptcp.test.ts`, `rsyslog-zlib-stream.test.ts`, `rsyslog-imtcp-wiring.test.ts`) : port de
+  `plugins/imptcp/imptcp.c` (`modules/Imptcp.ts`, `PtcpFramer.ts`). Les parametres de `module()` (`threads`, `maxsessions`, `processOnPoller`), ceux de `input()` et les
+  directives `$InputPTCPServer*` sont lus ; les ecoutes TCP sont posees avant l'abandon des privileges (une famille a la fois, IPv4 puis IPv6, le port 0 dynamique
+  reutilise pour la seconde et ecrit dans `listenPortFileName`), un echec de `bind` est dit avec le proprietaire visible du port (`one visible listener is PID n (comm)`
+  ou `listener owner unavailable`, comme `log_bind_failure`), et une socket UNIX en flux (`path`, `unlink`, `fileCreateMode`, `fileOwner`/`fileGroup`) est creee dans le VFS et
+  atteignable par `nc -U`. Le cadrage est la machine a etats octet par octet de `processDataRcvd` : un compte d'octets refuse (zero, trop grand) retombe en octet-stuffing en
+  gardant (trop grand) ou en perdant (zero) ses chiffres, `multiLine` decide a la fin du tampon de reception, le cadrage par expression reguliere reutilise le tampon doublé
+  du source (y compris son contenu perime apres un vidage), une ligne trop longue est coupee et signalee, `discardTruncatedMsg` jette la suite, et le journal des messages trop
+  longs (`oversizemsg.errorfile`) recoit la trame. La compression de flux (`stream:always`, `stream:auto` avec l'echantillon de 2 a 4 096 octets) s'appuie sur un
+  decompresseur zlib reprenable (`Inflater`, `ZlibInflateStream` dans `Zlib.ts`, qui remplace le decodeur monolithique : `zlibDecompress` et `gzipDecompressTolerant` le servent
+  aussi) controle contre le zlib de node sur 30 000 flux corrompus d'un bit (memes refus, memes codes Z_DATA_ERROR / Z_NEED_DICT, memes tables de Huffman refusees) ; les
+  echecs sont formules comme `logCompressedStreamFailure` (« zlib state Z_DATA_ERROR (-3) »), y compris le flux tronque detecte a la fermeture. Chaque listener publie son objet de
+  statistiques `<nom>(<ip|*>/<port>/<IPv4|IPv6>)` (tronque a 63 caracteres comme le tampon du source) avec `submitted`, `sessions.opened`, `sessions.openfailed`,
+  `sessions.closed`, `bytes.received`, `bytes.decompressed`, et le module l'objet `io-work-q` (`enqueued`, `maxqsize`, qui ne bougent que si `processOnPoller` est coupe).
+  `sessions.openfailed` suit le source a la lettre : la boucle d'acceptation compte un echec de plus quand `accept()` revient sur EAGAIN, donc une connexion acceptee en
+  coute un (et la livraison etant synchrone, chaque connexion est un reveil a elle seule). Le parametre `failOnChownFailure` est accepte et ignore, parce que le source
+  l'attend sous un autre nom (`failonpermsfailure`) et ne le lit donc jamais ; `threads` est enregistre (le pool d'ouvriers n'a pas d'effet observable avec une livraison
+  synchrone). Trois parametres que `imtcp` lisait sans les employer le sont maintenant, pour les deux modules : `keepAlive*` (SO_KEEPALIVE, TCP_KEEPCNT, TCP_KEEPIDLE,
+  TCP_KEEPINTVL sur chaque socket acceptee, les zeros valant les defauts du noyau 9 / 7 200 s / 75 s), `socketBacklog` (la file d'attente de `listen`) et l'ecriture dans
+  `oversizemsg.errorfile` ; le compteur `submitted` ne compte plus les messages que le limiteur a rejetes (`InputSubmitter.submit` rend un booleen).
 - **Options de compilation et signaux** (`linux-rsyslog-compat.test.ts`) : `compatibility.configFormat.{legacy,syslogd,property}` (`enable`/`warn`/`disable`
   avec les phrases de `glbl.c`), `libcapng.*` et `stdlog.channelSpec` (la configuration par defaut du source n'active ni libcap-ng ni
   liblogging-stdlog : le parametre echoue avec le message de `glbl.c`), `defaultOpensslEngine` (moteur absent signale au demarrage du pilote

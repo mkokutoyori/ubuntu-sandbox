@@ -14,6 +14,7 @@ import type { ActionDefinition, ActionOptions, ActionRateLimit, LoadedConfig, Ru
 import { applyDirective } from './Directives';
 import type { RsyslogHost } from './Host';
 import { DiagnosticLog, RS_RET } from './Log';
+import { localHostNameOf } from './LocalHostName';
 import type {
   ActionModuleInstance, DirectiveRegistration, EngineModule, InputContext, InputModule, InputSubmitter, ModuleContext, ModuleRateLimiter,
   ModuleRateLimitSpec, OutputModule, RuntimeLog,
@@ -210,6 +211,7 @@ export class ConfigLoader implements ConfigSink {
       statistics: this.config.statistics,
       janitor: this.config.janitor,
       recordSender: (sender, messages, seconds) => this.recordSender(sender, messages, seconds),
+      localHostName: () => localHostNameOf(settings, options.host),
       template: (name) => this.config.templates.get(name),
       report: (message) => this.reportAt(message),
       warn: (message) => this.warnAt(message),

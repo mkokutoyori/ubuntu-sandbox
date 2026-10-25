@@ -205,7 +205,11 @@ class ImtcpListener implements InputInstance {
     const requested = Number(port);
     const outcome = this.context.host.network.listenStream(
       requested, settings.address === '*' ? null : settings.address,
-      { family: this.context.settings.ipProtocol, freeBind: 0, ...(settings.resolvedTls === null ? {} : { tls: settings.resolvedTls }) },
+      {
+        family: this.context.settings.ipProtocol, freeBind: 0, ...(settings.resolvedTls === null ? {} : { tls: settings.resolvedTls }),
+        ...(settings.socketBacklog === null ? {} : { backlog: settings.socketBacklog }),
+        ...(settings.keepAlive.enabled ? { keepAlive: { probes: settings.keepAlive.probes, timeSeconds: settings.keepAlive.time, intervalSeconds: settings.keepAlive.interval } } : {}),
+      },
       (connection) => this.accept(connection),
     );
     if (outcome.listeners.length === 0) {
@@ -319,7 +323,7 @@ class ImtcpListener implements InputInstance {
   }
 
   private submit(session: TcpSession, bytes: Uint8Array): void {
-    this.context.submitter.submit({
+    const accepted = this.context.submitter.submit({
       raw: '',
       bytes,
       inputName: this.displayInputName,
@@ -330,8 +334,9 @@ class ImtcpListener implements InputInstance {
       defaultTimeZone: this.settings.defaultTimeZone,
       limiter: this.limiterForSubmissions(),
       flowControl: this.settings.flowControl ? 'light' : 'none',
+      frameOversize: session.framer.oversizeFrame,
     });
-    this.submitted++;
+    if (accepted) this.submitted++;
   }
 }
 
