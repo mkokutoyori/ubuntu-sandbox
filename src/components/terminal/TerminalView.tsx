@@ -381,20 +381,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         onClick={handleClick}
         onScroll={handleTerminalScroll}
       >
-        {session.lines.map((line) => (
-          // content-visibility: auto skips layout/paint for scrollback that
-          // isn't near the viewport — scrollback is configurable up to
-          // 50,000 lines (rapport 09 audit), and without this every past
-          // line stays a live DOM/layout node forever. contain-intrinsic-size
-          // is a single-row estimate (most lines are); a wrapped long line
-          // gets its real height once it scrolls into view, same trade-off
-          // MDN documents for long chat/log lists.
-          <div
-            key={line.id}
-            style={{ contentVisibility: 'auto', containIntrinsicSize: `0 ${sessionType === 'windows' ? '1.25em' : '1.35em'}` }}
-          >
-            <LineRenderer line={line} theme={theme} sessionType={sessionType} />
-          </div>
+        {groupLinesByBucket(session.lines).map((block) => (
+          <TerminalLineBlock key={block.key} lines={block.lines} theme={theme} sessionType={sessionType} />
         ))}
 
         {/* Tab suggestions (linux, windows) */}
@@ -817,6 +805,57 @@ export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; se
 LineRenderer.displayName = 'LineRenderer';
 
 /** Linux line renderer with ANSI color + colored prompt detection */
+const LINE_BLOCK_SPAN = 64;
+
+interface LineBlock {
+  readonly key: number;
+  readonly lines: readonly OutputLine[];
+}
+
+export function groupLinesByBucket(lines: readonly OutputLine[]): LineBlock[] {
+  const blocks: LineBlock[] = [];
+  let current: { key: number; lines: OutputLine[] } | null = null;
+  for (const line of lines) {
+    const key = Math.floor(line.id / LINE_BLOCK_SPAN);
+    if (current === null || current.key !== key) {
+      current = { key, lines: [] };
+      blocks.push(current);
+    }
+    current.lines.push(line);
+  }
+  return blocks;
+}
+
+function sameLines(left: readonly OutputLine[], right: readonly OutputLine[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false;
+  return true;
+}
+
+const TerminalLineBlock = React.memo(
+  ({ lines, theme, sessionType }: { lines: readonly OutputLine[]; theme: TerminalTheme; sessionType: string }) => (
+    <>
+      {lines.map((line) => (
+        // content-visibility: auto skips layout/paint for scrollback that
+        // isn't near the viewport — scrollback is configurable up to
+        // 50,000 lines (rapport 09 audit), and without this every past
+        // line stays a live DOM/layout node forever. contain-intrinsic-size
+        // is a single-row estimate (most lines are); a wrapped long line
+        // gets its real height once it scrolls into view, same trade-off
+        // MDN documents for long chat/log lists.
+        <div
+          key={line.id}
+          style={{ contentVisibility: 'auto', containIntrinsicSize: `0 ${sessionType === 'windows' ? '1.25em' : '1.35em'}` }}
+        >
+          <LineRenderer line={line} theme={theme} sessionType={sessionType} />
+        </div>
+      ))}
+    </>
+  ),
+  (previous, next) => previous.theme === next.theme && previous.sessionType === next.sessionType && sameLines(previous.lines, next.lines),
+);
+
 const LinuxLineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme }> = React.memo(({ line, theme }) => {
   const text = line.text;
   // eslint-disable-next-line no-control-regex
