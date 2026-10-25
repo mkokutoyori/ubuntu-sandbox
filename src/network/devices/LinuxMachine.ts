@@ -51,6 +51,8 @@ import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
+import { IoPageCache } from './linux/process/IoPageCache';
+import { ProcessUsage } from './linux/process/ProcessUsage';
 import { LinuxRsyslogDaemon, RSYSLOG_BINARY_MODULES, RSYSLOG_MODULE_DIRECTORY, UNCLEAN_CONFIG_ABORT_TEXT, runFailedText } from './linux/syslog/LinuxRsyslogDaemon';
 import { LinuxRsyslogHost, type RsyslogUdpEndpoint } from './linux/syslog/LinuxRsyslogHost';
 import { ClockTimers } from './linux/syslog/ClockTimers';
@@ -1733,6 +1735,13 @@ export abstract class LinuxMachine extends EndHost
     const rememberNofile = (uid: number): void => {
       if (!savedNofile.has(uid)) savedNofile.set(uid, { soft: executor.processMgr.nofileLimit(uid), hard: executor.processMgr.nofileHardLimit(uid) });
     };
+    const pageCache = new IoPageCache();
+    const processUsage = new ProcessUsage(pageCache, () => timers.now());
+    vfs.onChange((change) => {
+      if (change.kind !== 'modified' && change.kind !== 'created') return;
+      const inode = vfs.resolveInode(change.path);
+      if (inode !== null && inode.type === 'file') pageCache.warm(inode.id, inode.size);
+    });
     const host = new LinuxRsyslogHost({
       vfs,
       vfsReader: { read: (path) => vfs.readFile(path) },
@@ -1742,11 +1751,12 @@ export abstract class LinuxMachine extends EndHost
       udp: this as unknown as RsyslogUdpEndpoint,
       tcp: () => this.getTcpStack(),
       holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
+      usage: processUsage,
       resourceUsage: () => {
         const pid = mainPid();
         const record = executor.processMgr.get(pid);
         if (record === undefined) return {};
-        return { userMicroseconds: record.cpuTime * 1000, maxResidentKilobytes: record.rss, openFiles: executor.descriptorCountOf(pid) };
+        return processUsage.snapshot(record.rss, record.cpuTime * 1000, executor.descriptorCountOf(pid));
       },
       descriptorLimitReached: () => {
         const pid = mainPid();
@@ -1835,6 +1845,7 @@ export abstract class LinuxMachine extends EndHost
 
     const startDaemon = (): void => {
       if (daemon.isRunning) return;
+      processUsage.reset();
       const outcome = daemon.start();
       if ('lines' in outcome) {
         for (const line of outcome.runFailed ? [...outcome.lines, runFailedText(outcome.fatalCode)] : outcome.lines) {

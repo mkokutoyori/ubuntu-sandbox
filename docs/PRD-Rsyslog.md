@@ -429,6 +429,12 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   creation d'un nom (fichier, repertoire, lien symbolique, lien dur, tube) et changement d'attributs (`chmod`, `chown`, `chgrp`, `touch`, `setfacl`, `chattr`) sont signales sous le nom
   auquel le chemin se resout ; un lien symbolique place au chemin de la politique n'emet donc rien dans son repertoire quand on ecrit la cible, comme inotify. Le
   suivi des expediteurs de `global(senders.keepTrack)` etait deja porte (`Statistics.ts`) ; seule la source `imptcp` y manque encore.
+- **`resource-usage`** (`linux-rsyslog-resource-usage.test.ts`, `io-page-cache.test.ts`) : l'objet d'`impstats` rapporte un `getrusage(RUSAGE_SELF)` calcule a partir
+  d'evenements que le demon cause reellement (`process/ProcessUsage.ts`, `process/IoPageCache.ts`). `oublock` compte les secteurs de 512 octets des pages de 4 Kio
+  salies (8 secteurs la premiere fois, de nouveau une fois la page ecrite par le noyau apres `dirty_expire_centisecs` = 30 s) ; `inblock` les secteurs lus sur un
+  disque froid avec la fenetre de lecture anticipee de 128 Kio, puis servis par le cache (un fichier qu'un autre processus vient d'ecrire y est deja) ; `nvcsw` les
+  reveils du demon (datagramme, segment ou connexion TCP, minuterie, lecture qui attend le disque) ; `maxrss` le pic de la taille residente et `minflt` ses pages.
+  `stime`, `majflt` et `nivcsw` valent 0 par construction : le simulateur n'a ni mode noyau, ni pagination a la demande, ni contention de processeur.
 - **`imptcp`** (`rsyslog-imptcp.test.ts`, `linux-rsyslog-imptcp.test.ts`, `rsyslog-zlib-stream.test.ts`, `rsyslog-imtcp-wiring.test.ts`) : port de
   `plugins/imptcp/imptcp.c` (`modules/Imptcp.ts`, `PtcpFramer.ts`). Les parametres de `module()` (`threads`, `maxsessions`, `processOnPoller`), ceux de `input()` et les
   directives `$InputPTCPServer*` sont lus ; les ecoutes TCP sont posees avant l'abandon des privileges (une famille a la fois, IPv4 puis IPv6, le port 0 dynamique
