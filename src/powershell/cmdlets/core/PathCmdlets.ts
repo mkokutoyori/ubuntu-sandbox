@@ -17,6 +17,7 @@ import { parseAttributeNames, isDefaultVisible } from '@/network/devices/windows
 import { joinPath } from '@/network/devices/windows/WinPathSpec';
 import { parentPathOf } from '@/network/devices/windows/windowsPath';
 import { namedRecord } from '@/powershell/runtime/PSPathInfo';
+import { newErrorRecord } from '@/powershell/runtime/semantics/PSStreams';
 import {
   CLEAR_CONTENT_REFUSAL, COPY_ACROSS_PROVIDERS, copyNamespaceItem, listNamespace, namespaceExists, namespaceTarget, newNamespaceItem,
   readNamespaceContent, removeNamespaceItems, renameNamespaceItem, resolveNamespacePaths, seekRefusal, setNamespaceItem, writeNamespaceContent,
@@ -670,6 +671,45 @@ export class AddContentCmdlet implements ICmdlet {
 
 // ─── New-Item ─────────────────────────────────────────────────────────────
 
+type FileSystemItemType = 'directory' | 'file' | 'symboliclink' | 'junction' | 'hardlink';
+
+const ITEM_TYPE_WORDS: ReadonlyArray<readonly [string, FileSystemItemType]> = [
+  ['directory', 'directory'],
+  ['container', 'directory'],
+  ['file', 'file'],
+  ['symboliclink', 'symboliclink'],
+  ['junction', 'junction'],
+  ['hardlink', 'hardlink'],
+];
+
+const UNKNOWN_ITEM_TYPE = 'The type is not a known type for the file system. Only "file","directory" or "symboliclink" can be specified.';
+
+function fileSystemItemType(typed: string): FileSystemItemType | null {
+  if (typed === '') return 'file';
+  return ITEM_TYPE_WORDS.find(([word]) => wildcardMatches(`${typed}*`, word))?.[1] ?? null;
+}
+
+function childPath(ctx: CmdletContext, container: string, name: string): string {
+  const parent = locatedPath(ctx, container === '' ? '.' : container);
+  return `${parent.replace(/[\\/]+$/, '')}\\${name}`;
+}
+
+function newItemFailure(
+  ctx: CmdletContext,
+  failure: { message: string; exceptionType: string; errorId: string; category: string; target: string | null },
+): null {
+  ctx.emitErrorRecord(newErrorRecord({
+    message: failure.message,
+    exceptionType: failure.exceptionType,
+    category: failure.category,
+    targetObject: failure.target,
+    fullyQualifiedErrorId: `${failure.errorId},Microsoft.PowerShell.Commands.NewItemCommand`,
+  }) as unknown as PSValue);
+  return null;
+}
+
+const IO_FAILURE = { exceptionType: 'System.IO.IOException', category: 'WriteError', errorId: 'NewItemIOError' } as const;
+
 export class NewItemCmdlet implements ICmdlet {
   readonly name = 'new-item';
   readonly parameters = ['Path', 'Name', 'ItemType', 'Value', 'Force'] as const;
@@ -677,47 +717,76 @@ export class NewItemCmdlet implements ICmdlet {
   readonly aliases = ['ni'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path     = pathArgOf(ctx);
-    const itemType = psValueToString(ctx.named['itemtype'] ?? ctx.named['type'] ?? 'File').toLowerCase();
-    if (itemType === 'symboliclink' || itemType === 'hardlink' || itemType === 'junction') {
-      ctx.emitError(`New-Item : -ItemType ${itemType} is not supported in this simulator: `
-        + 'the file system has no links.');
+    const containers = pathInputs(ctx);
+    const name = ctx.named['name'] === undefined ? '' : psValueToString(ctx.named['name']);
+    if (containers.length === 0 && ctx.named['name'] === undefined) {
+      ctx.emitError('New-Item : Cannot process command because of one or more missing mandatory parameters: Path.');
       return null;
     }
-    const value    = ctx.named['value'] !== undefined ? psValueToString(ctx.named['value']) : null;
+    const created = (containers.length === 0 ? [''] : containers)
+      .map(container => this.create(ctx, name === '' ? locatedPath(ctx, container) : childPath(ctx, container, name)))
+      .filter(item => item !== null);
+    return created.length === 0 ? null : created.length === 1 ? created[0] : created;
+  }
 
+  private create(ctx: CmdletContext, path: string): PSValue {
+    const force = ctx.named['force'] === true;
     const namespace = namespaceTarget(path);
-    if (namespace !== null) return newNamespaceItem(ctx, namespace, ctx.named['value'], ctx.named['force'] === true);
+    if (namespace !== null) return newNamespaceItem(ctx, namespace, ctx.named['value'], force);
 
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
-      const force = ctx.named['force'] === true;
-      return ctx.providers.registry.newItem(path, force);
+      const created = ctx.providers.registry.newItem(path, force);
+      const value = ctx.named['value'];
+      if (value !== undefined && !created.startsWith('New-Item :')) {
+        const failure = ctx.providers.registry.setItemProperty(path, '(default)', psValueToString(value));
+        if (failure !== '') ctx.emitError(failure);
+      }
+      return created;
     }
 
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    const force = ctx.named['force'] === true;
-    if (itemType === 'directory' || itemType === 'dir') {
-      if (fs.exists(path) && !force) {
-        ctx.emitError(`New-Item : An item with the specified name '${path}' already exists.`);
-        return null;
-      }
-      fs.createDir(path);
-    } else {
-      if (fs.exists(path) && !force) {
-        ctx.emitError(`New-Item : The file '${path}' already exists.`);
-        return null;
-      }
-      // -Force creates any missing parent directories (matches real PS).
-      if (force) {
-        const parent = path.replace(/[\\/][^\\/]*$/, '');
-        if (parent && parent !== path && !fs.exists(parent)) fs.createDir(parent);
-      }
-      fs.createFile(path);
-      if (value !== null) fs.writeFile(path, value);
+    const kind = fileSystemItemType(psValueToString(ctx.named['itemtype'] ?? ctx.named['type'] ?? ''));
+    if (kind === null) {
+      return newItemFailure(ctx, {
+        message: `${UNKNOWN_ITEM_TYPE}\nParameter name: type`,
+        exceptionType: 'System.Management.Automation.ParentContainsErrorRecordException',
+        errorId: 'Argument',
+        category: 'InvalidArgument',
+        target: null,
+      });
     }
-    return itemObject(fs, path);
+    if (kind === 'symboliclink' || kind === 'hardlink' || kind === 'junction') {
+      ctx.emitError(`New-Item : -ItemType ${kind} is not supported in this simulator: `
+        + 'the file system has no links.');
+      return null;
+    }
+    const absolute = fs.normalizePath(path, fs.getCwd());
+    if (kind === 'directory') {
+      if (!force && fs.exists(absolute)) {
+        return newItemFailure(ctx, {
+          message: `An item with the specified name ${absolute} already exists.`,
+          exceptionType: 'System.IO.IOException',
+          errorId: 'DirectoryExist',
+          category: 'ResourceExists',
+          target: absolute,
+        });
+      }
+      fs.createDir(absolute);
+      return itemObject(fs, absolute);
+    }
+    if (!force && fs.exists(absolute)) {
+      return newItemFailure(ctx, { ...IO_FAILURE, message: `The file '${absolute}' already exists.`, target: absolute });
+    }
+    if (force) fs.createDir(parentPathOf(absolute));
+    try {
+      fs.createFile(absolute);
+      if (ctx.named['value'] !== undefined) fs.writeFile(absolute, psValueToString(ctx.named['value']));
+    } catch (error) {
+      return newItemFailure(ctx, { ...IO_FAILURE, message: error instanceof Error ? error.message : String(error), target: absolute });
+    }
+    return itemObject(fs, absolute);
   }
 }
 
