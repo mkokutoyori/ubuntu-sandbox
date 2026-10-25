@@ -101,6 +101,7 @@ function nanoSession(seed: EditorSessionSeed): EditorSession {
     replaceSearchQuery: engine.replaceSearchQuery,
     replaceWithText: engine.replaceWithText,
     pendingReplaceMatch: engine.pendingReplaceMatch,
+    exitNotice: engine.exitNotice,
     screen: engine.screen,
   });
   return {

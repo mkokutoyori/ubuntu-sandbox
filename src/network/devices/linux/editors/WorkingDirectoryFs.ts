@@ -6,6 +6,11 @@ export class WorkingDirectoryFs implements EditorFsContext {
   readonly isReadOnly?: (path: string) => boolean;
   readonly canonicalPath?: (path: string) => string | null;
   readonly listDirectory?: (path: string) => string[] | null;
+  readonly homeDirectory?: () => string | null;
+  readonly environmentVariable?: (name: string) => string | null;
+  readonly makeDirectory?: (path: string, mode: number) => string | null;
+  readonly changeMode?: (path: string, mode: number) => boolean;
+  readonly readError?: (path: string) => string | null;
   readonly runChildShell?: (cmd: string, stdin?: string) => ChildShellRun;
 
   constructor(private readonly inner: EditorFsContext, readonly directory: string) {
@@ -14,6 +19,11 @@ export class WorkingDirectoryFs implements EditorFsContext {
     if (inner.isReadOnly) this.isReadOnly = (path) => inner.isReadOnly!(this.resolvePath(path));
     if (inner.canonicalPath) this.canonicalPath = (path) => inner.canonicalPath!(this.resolvePath(path));
     if (inner.listDirectory) this.listDirectory = (path) => inner.listDirectory!(this.resolvePath(path));
+    if (inner.homeDirectory) this.homeDirectory = () => inner.homeDirectory!();
+    if (inner.environmentVariable) this.environmentVariable = (name) => inner.environmentVariable!(name);
+    if (inner.makeDirectory) this.makeDirectory = (path, mode) => inner.makeDirectory!(this.resolvePath(path), mode);
+    if (inner.changeMode) this.changeMode = (path, mode) => inner.changeMode!(this.resolvePath(path), mode);
+    if (inner.readError) this.readError = (path) => inner.readError!(this.resolvePath(path));
     if (inner.runChildShell) this.runChildShell = (cmd, stdin) => inner.runChildShell!(cmd, stdin, directory);
   }
 

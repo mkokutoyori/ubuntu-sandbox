@@ -7,7 +7,7 @@
  * remplacement qui ne commence pas par `\=` - qui prouvent que le lab tape bien des commandes et que `\=` ne
  * capture pas un remplacement ordinaire.
  *
- *   - `$NOM` lit l'environnement de la MACHINE par `printenv`, jamais celui du poste qui execute le moteur ;
+ *   - `$NOM` lit l'environnement de la MACHINE par `EditorFsContext.environmentVariable` (le meme que lit nano pour XDG_DATA_HOME), jamais celui du poste qui execute le moteur ;
  *   - le numero de lambda (`function('<lambda>1')`) continue de compter d'une commande a l'autre ;
  *   - la premiere erreur d'une evaluation reste le message de la commande, meme si le compte des
  *     substitutions la suit ;
@@ -49,12 +49,13 @@ describe('le remplacement par expression est evalue', () => {
     expect(e.lines).toEqual(['f3o']);
   });
 
-  it('lit l\'environnement de la machine par printenv', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/t.txt': 'foo\n' }, (cmd) => (cmd === 'printenv LAB_NAME' ? 'srv-01' : ''));
+  it('lit l\'environnement de la machine par le contexte de fichiers', () => {
+    const fs = new InMemoryEditorFsContext({ '/tmp/t.txt': 'foo\n' });
+    fs.useEnvironmentVariable('LAB_NAME', 'srv-01');
     const e = engine('foo\n', 'vim', fs);
     ex(e, 's/o/\\=$LAB_NAME/');
     expect(e.lines).toEqual(['fsrv-01o']);
-    expect(fs.shellCommandsRun).toContain('printenv LAB_NAME');
+    expect(fs.shellCommandsRun).toEqual([]);
   });
 
   it('une variable d\'environnement absente vaut la chaine vide', () => {

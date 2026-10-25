@@ -1547,10 +1547,11 @@ export class LinuxTerminalSession extends TerminalSession {
    * making the editor "succeed" for chain semantics; `saved=false`
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
-  override editorExit(saved: boolean = true): void {
+  override editorExit(saved: boolean = true, notice: string = ''): void {
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
+    if (notice !== '') this.addLines(notice.replace(/\n$/, '').split('\n'));
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;
     this.notify();

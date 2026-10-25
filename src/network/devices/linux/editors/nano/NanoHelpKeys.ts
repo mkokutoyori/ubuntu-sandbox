@@ -66,6 +66,7 @@ export function unboundKeyMessage(input: EditorKeyInput): string {
   if (named !== undefined) return `Unbound key: ^${String.fromCharCode(named + 0x40)}`;
   if (key.length !== 1) return 'Unbound key';
   const code = key.charCodeAt(0);
+  if (code > 0x7F) return 'Unbound key';
   if (input.alt) return code < 0x20 ? `Unbindable key: M-^${String.fromCharCode(code + 0x40)}` : `Unbound key: M-${key.toUpperCase()}`;
   if (input.ctrl) return `Unbound key: ^${key === ' ' ? '@' : key.toUpperCase()}`;
   return `Unbound key: ${key}`;

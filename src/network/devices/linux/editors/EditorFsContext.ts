@@ -31,6 +31,11 @@ export interface EditorFsContext {
   isReadOnly?(path: string): boolean;
   canonicalPath?(path: string): string | null;
   listDirectory?(path: string): string[] | null;
+  homeDirectory?(): string | null;
+  environmentVariable?(name: string): string | null;
+  makeDirectory?(path: string, mode: number): string | null;
+  changeMode?(path: string, mode: number): boolean;
+  readError?(path: string): string | null;
   /** Whether a file exists at this (already-resolved) path. */
   exists(path: string): boolean;
   /** Delete a file. Returns whether a file was actually removed. */
