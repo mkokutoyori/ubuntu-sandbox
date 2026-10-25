@@ -4362,6 +4362,15 @@ export class LinuxCommandExecutor {
     }
   }
 
+  async withProcessIdentityAsync<T>(pid: number, fn: () => Promise<T>): Promise<T> {
+    this.bashPids.push(pid);
+    try {
+      return await fn();
+    } finally {
+      this.bashPids.splice(this.bashPids.lastIndexOf(pid), 1);
+    }
+  }
+
   private runScriptProcess(
     command: string,
     run: (

@@ -951,7 +951,7 @@ export abstract class LinuxMachine extends EndHost
     um.currentGid = 0;
     try {
       const run = () => this.executor.executeAsync(command);
-      return await (pid !== undefined ? this.executor.withProcessIdentity(pid, run) : run());
+      return await (pid !== undefined ? this.executor.withProcessIdentityAsync(pid, run) : run());
     } catch {
       return '';
     } finally {
