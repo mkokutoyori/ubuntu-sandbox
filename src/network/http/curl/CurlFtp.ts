@@ -1,3 +1,4 @@
+import { IPAddress } from '@/network/core/types';
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import type { FtpReply } from '@/network/ftp/types';
 import type { CurlOptions } from './CurlArgs';
@@ -28,6 +29,34 @@ function pathSegments(path: string): { dirs: string[]; file: string } {
   return { dirs: parts.filter((p) => p.length > 0), file };
 }
 
+interface FtpPortSpec {
+  readonly address: string;
+  readonly portMin: number;
+  readonly portMax: number;
+}
+
+const MAX_PORT = 65535;
+
+function unsignedPrefix(text: string): number {
+  const digits = /^\d+/.exec(text)?.[0];
+  return digits === undefined ? 0 : Math.min(Number(digits), MAX_PORT);
+}
+
+function parseFtpPort(spec: string): FtpPortSpec {
+  if (spec.length <= 1) return { address: '', portMin: 0, portMax: 0 };
+  const colon = spec.indexOf(':');
+  const address = colon < 0 ? spec : spec.slice(0, colon);
+  let portMin = 0;
+  let portMax = 0;
+  if (colon >= 0) {
+    const ports = spec.slice(colon + 1);
+    portMin = unsignedPrefix(ports);
+    const dash = ports.indexOf('-');
+    portMax = dash >= 0 ? unsignedPrefix(ports.slice(dash + 1)) : portMin;
+  }
+  return portMin > portMax ? { address, portMin: 0, portMax: 0 } : { address, portMin, portMax };
+}
+
 function baseName(localPath: string): string {
   const parts = localPath.split('/');
   return parts[parts.length - 1] ?? '';
@@ -56,11 +85,11 @@ export async function performCurlFtp(
   const client = new FtpClientSession(host.tcpStack(), address, '', url.port);
   const code = (r: FtpReply | null): number => r?.code ?? 0;
   const finish = (outcome: CurlOutcome): CurlOutcome => {
-    client.sendCommand({ verb: 'QUIT' });
     client.close();
     return outcome;
   };
 
+  if (opts.verbose) client.observeExchange((line) => trace.push(line));
   const greeting = client.adopt(porte.socket);
   if (code(greeting) !== 220) {
     return finish(failure(8, `Got a ${String(code(greeting)).padStart(3, '0')} ftp-server response when 220 was expected`, address));
@@ -82,9 +111,52 @@ export async function performCurlFtp(
     }
   }
 
+  const bindActiveListener = (spec: FtpPortSpec, bindAddress: string, nonLocalAllowed: boolean): { port: number; bindAddress: string } | CurlFailure => {
+    let currentBind = bindAddress;
+    let mayBeNonLocal = nonLocalAllowed;
+    for (let port = spec.portMin; port <= spec.portMax;) {
+      if (mayBeNonLocal && !host.ownsAddress(currentBind)) {
+        currentBind = porte.socket.localIp;
+        mayBeNonLocal = false;
+        port = spec.portMin;
+        continue;
+      }
+      try {
+        return { port: client.openActiveListener(port, currentBind).localPort, bindAddress: currentBind };
+      } catch (error) {
+        if (!String(error).includes('EADDRINUSE') && !String(error).includes('EACCES')) {
+          return failure(30, `bind(port=${port}) failed: Cannot assign requested address`, address);
+        }
+      }
+      port++;
+    }
+    return failure(30, 'bind() failed, we ran out of ports', address);
+  };
+
+  const active = async (): Promise<CurlFailure | null> => {
+    const spec = parseFtpPort(opts.ftpPort ?? '');
+    const named = spec.address === '' ? null : (host.interfaceAddress(spec.address) ?? spec.address);
+    const advertised = named === null ? porte.socket.localIp : (IPAddress.tryParse(named) ? named : await host.resolveHostname(named));
+    if (advertised === null) return failure(30, `Could not resolve host: ${named}`, address);
+    let command: 'EPRT' | 'PORT' = opts.disableEprt ? 'PORT' : 'EPRT';
+    for (;;) {
+      const bound = bindActiveListener(spec, advertised, named !== null);
+      if ('ok' in bound) return bound;
+      const answer = client.announceActiveEndpoint(command, advertised, bound.port);
+      if (Math.floor(code(answer) / 100) === 2) {
+        trace.push('* Connect data stream actively');
+        return null;
+      }
+      if (command === 'PORT') return failure(30, 'Failed to do PORT', address);
+      trace.push('* disabling EPRT usage');
+      command = 'PORT';
+    }
+  };
+
   const passive = async (): Promise<CurlFailure | null> => {
-    const extended = client.requestPassiveEndpoint(true);
-    const endpoint = code(extended.reply) === 229 ? extended : client.requestPassiveEndpoint(false);
+    if (opts.ftpPort !== null) return active();
+    const extended = opts.disableEpsv ? null : client.requestPassiveEndpoint(true);
+    const endpoint = extended !== null && code(extended.reply) === 229 ? extended : client.requestPassiveEndpoint(false);
     if (endpoint.address === null || endpoint.port === null) return failure(13, 'Weird PASV reply', address);
     const data = await dial(host, endpoint.address, endpoint.port, budget);
     if (data.kind !== 'open') return connectFailure(data, url, endpoint.port, address, method, 0, trace);
@@ -115,7 +187,7 @@ export async function performCurlFtp(
     const listChannel = await passive();
     if (listChannel) return finish(listChannel);
     client.sendCommand({ verb: 'TYPE', argument: 'A' });
-    const listing = client.list(undefined, 'LIST');
+    const listing = client.list(undefined, opts.listOnly ? 'NLST' : 'LIST');
     if (code(listing.reply) >= 400) {
       return finish(failure(19, `RETR response: ${String(code(listing.reply)).padStart(3, '0')}`, address));
     }

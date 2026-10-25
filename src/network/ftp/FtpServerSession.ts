@@ -16,9 +16,11 @@ import type { TlsServerConfig, TlsServerSession } from '@/network/tls/TlsServerS
 import type { IEventBus } from '@/events/EventBus';
 import type { FtpCommand, FtpReply, FtpTransferType, FtpFileStructure, FtpTransferMode } from './types';
 import { reply } from './replies';
+import { PRIVILEGED_PORT_CEILING } from '@/network/core/ports/PortNumber';
 import {
   type FtpDataChannel, PassiveDataChannel, decodePortArgument, encodePortArgument, openDataConnection,
-  allocatePassivePort, decodeEprtArgument, encodeEpsvReplyArgument,
+  allocatePassivePort, parseEprtArgument, encodeEpsvReplyArgument, openPassiveChannelInRange,
+  type PassivePortRange,
 } from './DataChannel';
 import { encodeCompressedMode, decodeCompressedMode } from './compressedMode';
 import { startServerHandshake, encryptText, decryptText } from './ftps';
@@ -56,12 +58,33 @@ export interface FtpServerConfig {
   readonly permitsWrite?: (username: string, verb: FtpWriteVerb) => boolean;
   readonly rejectUser?: (username: string) => string | null;
   readonly listLine?: (entry: SftpDirEntry) => string;
+  readonly commandEnabled?: (verb: string) => boolean;
+  readonly dataPolicy?: FtpDataPolicy;
 }
 
 export interface FtpServerMessages {
   readonly greeting?: string;
   readonly passwordRequired?: string;
   readonly loggedIn?: string;
+  readonly portOk?: string;
+  readonly eprtOk?: string;
+  readonly currentDirectory?: (path: string) => string;
+  readonly typeSet?: (type: 'A' | 'I') => string;
+  readonly opening?: (type: 'A' | 'I', name: string, size: number) => string;
+  readonly storeOk?: string;
+  readonly sizeFailed?: string;
+  readonly openFailed?: string;
+  readonly noDataChannel?: string;
+  readonly dataConnectFailed?: string;
+}
+
+export interface FtpDataPolicy {
+  readonly activeSourcePort: number | null;
+  readonly passiveRange: PassivePortRange | null;
+  readonly passiveAddress: string | null;
+  readonly activeAnyPeer: boolean;
+  readonly passiveAnyPeer: boolean;
+  readonly random: () => number;
 }
 
 export interface FtpUserSession {
@@ -112,6 +135,7 @@ export class FtpServerSession {
   private state: SessionState = 'awaiting-user';
   private dataChannel: FtpDataChannel | null = null;
   private renameFrom: string | null = null;
+  private illegalPortRequested = false;
   private fs: ISftpFileSystem;
   /** Set by `REST`; consumed by the immediately following `RETR`/`STOR`-family command, whether it succeeds or not (RFC 3659 §5). */
   private restOffset: number | null = null;
@@ -135,6 +159,7 @@ export class FtpServerSession {
      * `greeting()`'s banner is unprompted.
      */
     private readonly onUnsolicitedReply: (r: FtpReply) => void = () => {},
+    private readonly peerIp: string = '',
   ) {
     this.fs = config.fs;
     this.cwd = config.rootPath ?? '/';
@@ -163,6 +188,9 @@ export class FtpServerSession {
     });
     if (this.authenticated && WRITE_VERBS.has(cmd.verb) && this.config.permitsWrite
       && !this.config.permitsWrite(this.username!, cmd.verb as FtpWriteVerb)) {
+      return [reply(550, 'Permission denied.')];
+    }
+    if (this.authenticated && this.config.commandEnabled && !this.config.commandEnabled(cmd.verb)) {
       return [reply(550, 'Permission denied.')];
     }
     switch (cmd.verb) {
@@ -287,7 +315,7 @@ export class FtpServerSession {
     const code = (cmd.argument ?? '').trim().split(/\s+/)[0]?.toUpperCase();
     if (code === 'A' || code === 'I') {
       this.transferType = code;
-      return reply(200, `Type set to ${code}.`);
+      return reply(200, this.config.messages?.typeSet?.(code) ?? `Type set to ${code}.`);
     }
     return reply(504, `Type not implemented for parameter '${cmd.argument ?? ''}'.`);
   }
@@ -345,42 +373,78 @@ export class FtpServerSession {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
     const parsed = decodePortArgument(cmd.argument ?? '');
-    if (!parsed) return reply(501, 'Syntax error in parameters.');
+    if (!parsed) return this.config.dataPolicy ? reply(500, 'Illegal PORT command.') : reply(501, 'Syntax error in parameters.');
     this.closeDataChannel();
-    this.dataChannel = { mode: 'active', address: parsed.address, port: parsed.port };
+    if (this.activeEndpointRefused(parsed)) return reply(500, 'Illegal PORT command.');
+    this.openActiveChannel(parsed);
+    return reply(200, this.config.messages?.portOk ?? 'PORT command successful.');
+  }
+
+  private activeEndpointRefused(endpoint: { address: string; port: number }): boolean {
+    const policy = this.config.dataPolicy;
+    if (!policy || policy.activeAnyPeer) return false;
+    return endpoint.address !== this.peerIp || endpoint.port < PRIVILEGED_PORT_CEILING;
+  }
+
+  private openActiveChannel(endpoint: { address: string; port: number }): void {
+    const sourcePort = this.config.dataPolicy?.activeSourcePort ?? undefined;
+    this.dataChannel = { mode: 'active', address: endpoint.address, port: endpoint.port, sourcePort };
     this.emitDataOpened('active');
-    return reply(200, 'PORT command successful.');
+  }
+
+  private openPassiveChannel(): PassiveDataChannel | null {
+    const onAccept = (socket: TcpSocket): void => {
+      const policy = this.config.dataPolicy;
+      if (policy && !policy.passiveAnyPeer && socket.remoteIp !== this.peerIp) {
+        socket.close();
+        return;
+      }
+      this.startDataTlsIfProtected(socket);
+    };
+    const range = this.config.dataPolicy?.passiveRange ?? null;
+    return range
+      ? openPassiveChannelInRange(range, this.tcpStack, this.config.dataPolicy!.random, onAccept)
+      : new PassiveDataChannel(allocatePassivePort(), this.tcpStack, onAccept);
   }
 
   private handlePasv(): FtpReply {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
     this.closeDataChannel();
-    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack, (socket) => this.startDataTlsIfProtected(socket));
+    const channel = this.openPassiveChannel();
+    if (!channel) return reply(425, "Can't open data connection.");
     this.dataChannel = channel;
     this.emitDataOpened('passive');
-    return reply(227, `Entering Passive Mode (${encodePortArgument(this.localIp, channel.port)}).`);
+    const address = this.config.dataPolicy?.passiveAddress ?? this.localIp;
+    return reply(227, `Entering Passive Mode (${encodePortArgument(address, channel.port)}).`);
   }
 
   private handleEprt(cmd: FtpCommand): FtpReply {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
-    const parsed = decodeEprtArgument(cmd.argument ?? '');
-    if (!parsed) return reply(501, 'Syntax error in parameters.');
+    const strict = this.config.dataPolicy !== undefined;
+    const parsed = strict ? parseEprtArgument(cmd.argument ?? '', '|') : parseEprtArgument(cmd.argument ?? '');
+    if (parsed.kind === 'bad-protocol' || (strict && parsed.kind === 'ok' && parsed.protocol === 2)) {
+      return strict ? reply(500, 'Bad EPRT protocol.') : reply(501, 'Syntax error in parameters.');
+    }
+    if (parsed.kind !== 'ok' || (!strict && parsed.port === 0)) {
+      return strict ? reply(500, 'Bad EPRT command.') : reply(501, 'Syntax error in parameters.');
+    }
     this.closeDataChannel();
-    this.dataChannel = { mode: 'active', address: parsed.address, port: parsed.port };
-    this.emitDataOpened('active');
-    return reply(200, 'EPRT command successful.');
+    if (this.activeEndpointRefused(parsed)) return reply(500, 'Illegal EPRT command.');
+    this.openActiveChannel(parsed);
+    return reply(200, this.config.messages?.eprtOk ?? 'EPRT command successful.');
   }
 
   private handleEpsv(): FtpReply {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
     this.closeDataChannel();
-    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack, (socket) => this.startDataTlsIfProtected(socket));
+    const channel = this.openPassiveChannel();
+    if (!channel) return reply(425, "Can't open data connection.");
     this.dataChannel = channel;
     this.emitDataOpened('passive');
-    return reply(229, `Entering Extended Passive Mode ${encodeEpsvReplyArgument(channel.port)}.`);
+    return reply(229, `Entering Extended Passive Mode ${encodeEpsvReplyArgument(channel.port)}`);
   }
 
   private emitDataOpened(mode: 'active' | 'passive'): void {
@@ -397,14 +461,16 @@ export class FtpServerSession {
     if (authFailure) return [authFailure];
     const offset = this.consumeRestOffset();
     if (!cmd.argument) return [reply(501, 'Syntax error in parameters.')];
+    const missingChannel = this.channelRequired();
+    if (missingChannel) return missingChannel;
     const path = this.resolvePath(cmd.argument);
     const file = this.fs.readFile(path);
-    if (!file.ok) return [reply(550, `${cmd.argument}: No such file or directory.`)];
+    if (!file.ok) return [reply(550, this.config.messages?.openFailed ?? `${cmd.argument}: No such file or directory.`)];
 
-    const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
+    const socket = this.openData();
     if (!socket) {
       this.emitTransferFailed('RETR', path, "Can't open data connection.");
-      return [reply(425, "Can't open data connection.")];
+      return [this.dataRefusal()];
     }
     this.emitTransferStarted('RETR', path);
     const dataTls = this.dataTls;
@@ -413,7 +479,9 @@ export class FtpServerSession {
     socket.close();
     this.closeDataChannel();
     this.emitTransferCompleted('RETR', path, outgoing.length);
-    return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection for ${cmd.argument}.`), reply(226, 'Transfer complete.')];
+    const opening = this.config.messages?.opening?.(this.transferType, cmd.argument, file.value.length)
+      ?? `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection for ${cmd.argument}.`;
+    return [reply(150, opening), reply(226, 'Transfer complete.')];
   }
 
   private handleStor(cmd: FtpCommand, opts: { unique: boolean; append: boolean }): readonly FtpReply[] {
@@ -421,6 +489,8 @@ export class FtpServerSession {
     if (authFailure) return [authFailure];
     const offset = this.consumeRestOffset();
     if (!opts.unique && !cmd.argument) return [reply(501, 'Syntax error in parameters.')];
+    const missingChannel = this.channelRequired();
+    if (missingChannel) return missingChannel;
 
     let path = this.resolvePath(cmd.argument);
     if (opts.unique) {
@@ -430,10 +500,10 @@ export class FtpServerSession {
       while (this.fs.exists(path)) { path = `${base}.${n}`; n++; }
     }
 
-    const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
+    const socket = this.openData();
     if (!socket) {
       this.emitTransferFailed('STOR', path, "Can't open data connection.");
-      return [reply(425, "Can't open data connection.")];
+      return [this.dataRefusal()];
     }
     this.emitTransferStarted('STOR', path);
     const dataTls = this.dataTls;
@@ -471,7 +541,32 @@ export class FtpServerSession {
       this.onUnsolicitedReply(reply(226, opts.unique ? `FILE: ${path}` : 'Transfer complete.'));
     });
 
-    return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection.`)];
+    return [reply(150, this.config.messages?.storeOk ?? `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection.`)];
+  }
+
+  private openData(): TcpSocket | null {
+    const channel = this.dataChannel;
+    if (!channel) return null;
+    if (channel.mode === 'active' && this.config.dataPolicy && channel.port < PRIVILEGED_PORT_CEILING) {
+      this.illegalPortRequested = true;
+      return null;
+    }
+    return openDataConnection(channel, this.tcpStack);
+  }
+
+  private channelRequired(): readonly FtpReply[] | null {
+    return this.dataChannel === null && this.config.messages?.noDataChannel !== undefined ? [this.dataRefusal()] : null;
+  }
+
+  private dataRefusal(): FtpReply {
+    if (this.illegalPortRequested) {
+      this.closeDataChannel();
+      this.state = 'closed';
+      this.result = 'closed';
+      return reply(500, 'OOPS: Illegal port request');
+    }
+    const messages = this.config.messages;
+    return reply(425, (this.dataChannel === null ? messages?.noDataChannel : messages?.dataConnectFailed) ?? "Can't open data connection.");
   }
 
   private emitTransferStarted(verb: string, path: string): void {
@@ -489,12 +584,14 @@ export class FtpServerSession {
   private handleList(cmd: FtpCommand, format: 'long' | 'names'): readonly FtpReply[] {
     const authFailure = this.requireAuth();
     if (authFailure) return [authFailure];
+    const missingChannel = this.channelRequired();
+    if (missingChannel) return missingChannel;
     const path = this.resolvePath(cmd.argument);
     const listing = this.fs.listDirectory(path);
     if (!listing.ok) return [reply(450, `${cmd.argument ?? path}: No such file or directory.`)];
 
-    const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
-    if (!socket) return [reply(425, "Can't open data connection.")];
+    const socket = this.openData();
+    if (!socket) return [this.dataRefusal()];
     const dataTls = this.dataTls;
 
     const entries = listing.value.filter((e) => e.name !== '.' && e.name !== '..');
@@ -508,7 +605,7 @@ export class FtpServerSession {
   private handlePwd(): FtpReply {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
-    return reply(257, `"${this.cwd}" is the current directory.`);
+    return reply(257, this.config.messages?.currentDirectory?.(this.cwd) ?? `"${this.cwd}" is the current directory.`);
   }
 
   private handleCwd(cmd: FtpCommand): FtpReply {
@@ -575,7 +672,9 @@ export class FtpServerSession {
   }
 
   private handleFeat(): FtpReply {
-    return reply(211, 'Extensions supported:', 'SIZE', 'MDTM', 'REST STREAM', 'MLST type*;size*;modify*;', 'EPRT', 'EPSV', 'END');
+    const enabled = (verb: string): boolean => this.config.commandEnabled?.(verb) ?? true;
+    return reply(211, 'Extensions supported:', 'SIZE', 'MDTM', 'REST STREAM', 'MLST type*;size*;modify*;',
+      ...(enabled('EPRT') ? ['EPRT'] : []), ...(enabled('EPSV') ? ['EPSV'] : []), 'END');
   }
 
   private handleSize(cmd: FtpCommand): FtpReply {
@@ -584,7 +683,7 @@ export class FtpServerSession {
     if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
     const path = this.resolvePath(cmd.argument);
     const stat = this.fs.stat(path);
-    if (!stat.ok || stat.value.type !== 'file') return reply(550, `${cmd.argument}: No such file or directory.`);
+    if (!stat.ok || stat.value.type !== 'file') return reply(550, this.config.messages?.sizeFailed ?? `${cmd.argument}: No such file or directory.`);
     return reply(213, String(stat.value.size));
   }
 
@@ -625,12 +724,14 @@ export class FtpServerSession {
   private handleMlsd(cmd: FtpCommand): readonly FtpReply[] {
     const authFailure = this.requireAuth();
     if (authFailure) return [authFailure];
+    const missingChannel = this.channelRequired();
+    if (missingChannel) return missingChannel;
     const path = this.resolvePath(cmd.argument);
     const listing = this.fs.listDirectory(path);
     if (!listing.ok) return [reply(450, `${cmd.argument ?? path}: No such file or directory.`)];
 
-    const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
-    if (!socket) return [reply(425, "Can't open data connection.")];
+    const socket = this.openData();
+    if (!socket) return [this.dataRefusal()];
     const dataTls = this.dataTls;
 
     const entries = listing.value.filter((e) => e.name !== '.' && e.name !== '..');

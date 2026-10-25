@@ -31,12 +31,16 @@ function normalizeSubtype(s: string): string {
   return s.toLowerCase().startsWith('_') ? s.toLowerCase() : `_${s.toLowerCase()}`;
 }
 
+function txtGroups(reg: ServiceRegistration): readonly (readonly string[])[] {
+  return [reg.txt, ...(reg.moreTxt ?? [])];
+}
+
 /** Deux déclarations décrivent-elles le même service, champ pour champ ? */
 function sameRegistration(a: ServiceRegistration, b: ServiceRegistration): boolean {
   return a.port === b.port
     && (a.priority ?? 0) === (b.priority ?? 0)
     && (a.weight ?? 0) === (b.weight ?? 0)
-    && a.txt.join('\u0000') === b.txt.join('\u0000')
+    && txtGroups(a).map((group) => group.join('\u0000')).join('\u0001') === txtGroups(b).map((group) => group.join('\u0000')).join('\u0001')
     && [...(a.subtypes ?? [])].sort().join(',') === [...(b.subtypes ?? [])].sort().join(',');
 }
 
@@ -58,7 +62,7 @@ export class DnsSdRegistry {
     const key = this.key(reg);
     const before = this.services.get(key);
     const stored: ServiceRegistration = {
-      ...reg, txt: [...reg.txt], subtypes: [...(reg.subtypes ?? [])],
+      ...reg, txt: [...reg.txt], moreTxt: (reg.moreTxt ?? []).map((group) => [...group]), subtypes: [...(reg.subtypes ?? [])],
     };
     this.services.set(key, stored);
     return before === undefined || !sameRegistration(before, stored);
@@ -136,7 +140,7 @@ export class DnsSdRegistry {
       const fqdn = instanceName(reg.instance, reg.type).toLowerCase();
       if (fqdn !== name) continue;
       if (wants(RRType.SRV)) answers.push(this.srvFor(reg));
-      if (wants(RRType.TXT)) answers.push(this.txtFor(reg));
+      if (wants(RRType.TXT)) answers.push(...this.txtFor(reg));
       if (answers.length > 0) additionals.push(...this.hostRecords());
     }
     return { answers, additionals };
@@ -165,7 +169,7 @@ export class DnsSdRegistry {
     const records: ResourceRecord<ResourceRecordData>[] = [
       makePtrRecord(serviceTypeName(reg.type), ttl, fqdn),
       this.srvFor(reg, ttl),
-      this.txtFor(reg, ttl),
+      ...this.txtFor(reg, ttl),
     ];
     for (const s of reg.subtypes ?? []) {
       records.push(makePtrRecord(subtypeName(s, reg.type), ttl, fqdn));
@@ -175,15 +179,15 @@ export class DnsSdRegistry {
 
   private txtFor(
     reg: ServiceRegistration, ttl: number = DNSSD_RECORD_TTL,
-  ): ResourceRecord<ResourceRecordData> {
+  ): ResourceRecord<ResourceRecordData>[] {
     // §6.1 : un TXT vide s'écrit avec un unique segment nul, jamais avec
     // zéro segment — un enregistrement sans donnée serait mal formé.
-    const segments = reg.txt.length > 0 ? reg.txt : [''];
-    return makeTxtRecord(instanceName(reg.instance, reg.type), ttl, segments);
+    return txtGroups(reg).map((group) => makeTxtRecord(
+      instanceName(reg.instance, reg.type), ttl, group.length > 0 ? group : ['']));
   }
 
   private instanceRecords(reg: ServiceRegistration): ResourceRecord<ResourceRecordData>[] {
-    return [this.srvFor(reg), this.txtFor(reg), ...this.hostRecords()];
+    return [this.srvFor(reg), ...this.txtFor(reg), ...this.hostRecords()];
   }
 
   private hostRecords(): ResourceRecord<ResourceRecordData>[] {

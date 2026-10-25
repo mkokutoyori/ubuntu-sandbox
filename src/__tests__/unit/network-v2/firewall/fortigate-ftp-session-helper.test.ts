@@ -60,12 +60,12 @@ async function buildLab(service: string): Promise<{ pc: LinuxPC; srv: LinuxServe
 describe('FortiGate ftp session helper', () => {
   it('service ALL downloads through the firewall', async () => {
     const { pc } = await buildLab('ALL');
-    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA\n');
+    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA');
   });
 
   it('service FTP alone carries the announced passive data connection', async () => {
     const { pc } = await buildLab('FTP');
-    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA\n');
+    expect(await pc.executeCommand('curl -sS ftp://203.0.113.9/test.txt')).toBe('FTP_DATA');
   });
 
   it('an unannounced high port stays closed under service FTP', async () => {

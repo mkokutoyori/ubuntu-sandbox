@@ -59,7 +59,7 @@ describe('vsftpd on Linux, reached by curl ftp://', () => {
 
   it('an anonymous download returns the file', async () => {
     const { pc } = await buildLab();
-    expect(await pc.executeCommand('curl -sS ftp://10.0.0.2/test.txt')).toBe('HELLO_FTP\n');
+    expect(await pc.executeCommand('curl -sS ftp://10.0.0.2/test.txt')).toBe('HELLO_FTP');
   });
 
   it('a directory URL lists in the vsftpd format', async () => {

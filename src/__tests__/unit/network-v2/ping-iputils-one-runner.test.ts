@@ -126,7 +126,7 @@ describe('what a run prints', () => {
     const { pc } = await lab();
     expect(await pc.executeCommand('ping -c 1 -s 8 10.0.0.2')).toBe(
       'PING 10.0.0.2 (10.0.0.2) 8(36) bytes of data.\n16 bytes from 10.0.0.2: icmp_seq=1 ttl=64\n\n'
-      + '--- 10.0.0.2 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms\n');
+      + '--- 10.0.0.2 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms');
   });
 
   it('one identifier for the run, and the sequence climbs on the wire', async () => {

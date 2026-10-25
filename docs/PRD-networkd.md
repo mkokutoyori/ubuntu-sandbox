@@ -247,6 +247,16 @@ serait de la fidélité de façade payée d'une régression réelle.
 
 ---
 
+## 8bis. Diagnostics des fichiers de configuration
+
+`systemd-networkd` journalise ce qu'il ne reconnaît pas (`shared/conf-parser.c`, systemd 255.4) : `Unknown key name 'K' in section 'S', ignoring.`, `Unknown section 'S'. Ignoring.`, `Missing '=', ignoring line.`, `Assignment outside of section. Ignoring.`, chacun préfixé de `fichier:ligne`, sous l'étiquette `systemd-networkd`, au démarrage du démon et à `networkctl reload`. Les tables de clés (`net/NetworkdKeys.ts`) sont relevées sur `networkd-network-gperf.gperf` et `netdev-gperf.gperf` ; la liste des sections d'un `.network` est celle de `networkd-network.c`.
+
+- Un `.netdev` est analysé deux fois comme chez systemd : la première passe ignore silencieusement les sections de tous les `Kind=` (préfixe `-`) et rapporte une clé inconnue de `[NetDev]` ; la seconde garde les sections du `Kind=` du fichier, si `Name=` et `Kind=` sont posés. Une clé fautive de `[NetDev]` est donc rapportée deux fois, une section `[Bridge]` dans un `Kind=vlan` une seule.
+- Les drop-ins `<fichier>.d/*.conf` sont lus dans les cinq répertoires de systemd et chaque message nomme le fichier fautif.
+- Les `.link` ne sont pas lus par networkd mais par udev : leurs diagnostics ne sont pas émis sous `systemd-networkd`.
+- Une clé reconnue par la table mais sans effet dans le simulateur (par exemple `[Network] LLMNR=`) n'est pas signalée, parce que le démon réel ne la signale pas non plus : elle est acceptée et sans effet observable ici, et ce paragraphe en tient le registre.
+- `systemctl restart` émet `start` puis `restart` ; la configuration n'est plus appliquée deux fois (les lignes `applied from configuration file` étaient doublées).
+
 ## 9. Hors périmètre
 
 - **D-Bus** (`org.freedesktop.network1`) : l'accès reste direct, en

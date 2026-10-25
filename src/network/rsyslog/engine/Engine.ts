@@ -12,10 +12,17 @@ import { executeStatements, type ExecResult, type ExecutionServices, type Sleep 
 import type { FileHandle, RsyslogHost } from './Host';
 import { formatLogEntry, RS_RET } from './Log';
 import { zlibDecompress, ZlibError } from '../Zlib';
+import { localHostNameOf } from './LocalHostName';
 import { RateLimiter } from './RateLimiter';
 import { OperatingStateFile } from './OperatingState';
 import { RSYSLOG_VERSION } from './Log';
-import { loadQueueState, queueStatePath, saveQueueState } from './QueueState';
+import { DiskQueueStore } from './DiskQueueStore';
+import { loadDiskQueue } from './DiskQueueRecovery';
+import type { LoadedBacklog, QueueStore } from './QueueStore';
+import { SegmentedDiskStore } from './segdisk/SegmentedDiskStore';
+import { DiskEngineConflict, resolveDiskEngine, writeEngineMarker, type DiskEngineSelection } from './segdisk/DiskEngine';
+import type { QueueSettings } from './Settings';
+import { correctQueueParameters } from './QueueParams';
 import { renderTemplate } from '../Template';
 import type { InputInstance, InputSubmission, InputSubmitter, RuntimeLog } from './Modules';
 import { WorkerQueue, type ProcessOutcome } from './Queue';
@@ -23,7 +30,7 @@ import { WorkerQueue, type ProcessOutcome } from './Queue';
 const LOG_SYSLOG = 5;
 const INTERNAL_INPUT = 'rsyslogd';
 
-export type StartOutcome = { readonly ok: true } | { readonly ok: false; readonly code: number };
+export type StartOutcome = { readonly ok: true } | { readonly ok: false; readonly code: number; readonly exitText?: string };
 
 export interface EngineEvents {
   onInternalMessage?(severity: number, code: number, text: string): void;
@@ -42,6 +49,7 @@ export class RsyslogEngine implements InputSubmitter {
   private started = false;
   private oversizeLog: FileHandle | null = null;
   private internalBacklog: RsyslogMessage[] | null = null;
+  private readonly failedStores = new Set<QueueSettings>();
   private stopCallbacks: Array<() => void> = [];
   private operatingState: OperatingStateFile | null = null;
   private readonly runtimeLog: RuntimeLog;
@@ -51,6 +59,11 @@ export class RsyslogEngine implements InputSubmitter {
       error: (text, code, errno) => runtimeLog.log(3, code ?? RS_RET.ERR, text, errno),
       warning: (text, code) => runtimeLog.log(4, code ?? RS_RET.NO_ERRCODE, text),
       info: (text, code) => runtimeLog.log(6, code ?? RS_RET.NO_ERRCODE, text),
+      childExited: (pid, exitCode) => {
+        const policy = config.settings.reportChildProcessExits;
+        if (policy === 'none' || (policy === 'errors' && exitCode === 0)) return;
+        runtimeLog.log(exitCode === 0 ? 6 : 4, RS_RET.NO_ERRCODE, `child process (pid ${pid}) exited with status ${exitCode}`);
+      },
       log: (severity, code, text, errno) => this.internal(severity, code, formatLogEntry(text, code, errno ?? null)),
       internal: (severity, code, text, mark, facility) => this.internal(severity, code, text, mark, facility),
     };
@@ -61,6 +74,17 @@ export class RsyslogEngine implements InputSubmitter {
     this.internalLimiter = this.newLimiter(
       'rsyslogd[internal_messages]', config.settings.internalMessages.rateInterval, config.settings.internalMessages.rateBurst, 0,
     );
+    correctQueueParameters(config.settings.mainQueue, {
+      name: 'main Q',
+      usedFiles: new Set(),
+      workDirectory: config.settings.workDirectory,
+      diagnostics: {
+        parserError: (text) => this.internal(3, RS_RET.CONF_PARSE_ERROR, text),
+        parserWarning: (text) => this.internal(4, RS_RET.CONF_PARSE_WARNING, text),
+        warning: (text, code) => this.internal(4, code, text),
+        error: (text, code) => this.internal(3, code, text),
+      },
+    });
     this.mainQueue = this.newQueue('main Q', config.settings.mainQueue, (message) => this.processThroughRuleset(message));
     for (const [name, ruleset] of config.rulesets) {
       if (ruleset.queue !== null && ruleset.queue.type !== 'Direct') {
@@ -73,39 +97,195 @@ export class RsyslogEngine implements InputSubmitter {
       this.registerActionStatistics(runtime);
       const queue = definition.options.queue;
       if (queue.type === 'Direct') continue;
-      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; runtime.commit(); }));
+      this.actionQueues.set(definition.id, this.newQueue(`${runtime.name} queue`, queue, (message) => this.processAction(runtime, message), () => { runtime.counters.batchesProcessed++; return runtime.commit(); }));
     }
   }
 
   private newQueue(
     name: string, settings: import('./Settings').QueueSettings, process: (message: RsyslogMessage) => Generator<Sleep, ProcessOutcome>,
-    endBatch: () => void = () => this.commitActions(),
+    endBatch: () => Generator<Sleep, void> = () => this.commitActions(),
   ): WorkerQueue<RsyslogMessage> {
-    const queue = new WorkerQueue<RsyslogMessage>(
-      name,
-      settings,
-      {
-        schedule: (callback, delay) => this.host.schedule(callback, delay),
-        localHour: () => this.renderContext().now().hour,
-        nowMs: () => this.host.clock.wallMs(),
-        report: (text) => this.internal(4, -1, text),
-        endBatch,
-      },
-      process,
-    );
+    const host: import('./Queue').QueueHost = {
+      schedule: (callback, delay) => this.host.schedule(callback, delay),
+      localHour: () => this.renderContext().now().hour,
+      nowMs: () => this.host.clock.wallMs(),
+      report: (text) => this.internal(4, -1, text),
+      endBatch,
+    };
+    let disk: QueueStore | null = null;
+    if (settings.fileName !== null && settings.type === 'Disk') disk = this.newDiskStore(settings, name);
+    if (settings.fileName !== null && settings.type === 'SegmentedDisk') disk = this.openSegmentedStore(settings, name, false, null);
+    const assisted = (settings.type === 'FixedArray' || settings.type === 'LinkedList') && settings.fileName !== null;
+    let assist: WorkerQueue<RsyslogMessage> | null = null;
+    let segmentedChild = false;
+    if (assisted) {
+      const selection = this.selectDiskEngine(name, settings);
+      if (selection !== null) {
+        const childSettings = { ...settings, type: selection.effective === 'segmentedDisk' ? 'SegmentedDisk' : 'Disk', size: 0, highWatermark: 0, discardMark: 0, fullDelayMark: -1, lightDelayMark: -1 };
+        segmentedChild = selection.effective === 'segmentedDisk';
+        const childName = `${name}[DA]`;
+        const store = segmentedChild
+          ? this.openSegmentedStore(childSettings, childName, !selection.segmentedData, this.markerWriter(settings, selection))
+          : this.newDiskStore(childSettings, childName);
+        assist = new WorkerQueue<RsyslogMessage>(childName, childSettings, host, process, store);
+        this.registerQueueStatistics(assist);
+      }
+    }
+    const queue = new WorkerQueue<RsyslogMessage>(name, settings, host, process, disk, assist);
+    if (segmentedChild && assist !== null) this.wireIdleDematerialization(queue, assist);
     if (settings.type !== 'Direct') this.registerQueueStatistics(queue);
     return queue;
+  }
+
+  private directoryOf(settings: QueueSettings): string {
+    return settings.spoolDirectory ?? this.config.settings.workDirectory ?? '';
+  }
+
+  private selectDiskEngine(name: string, settings: QueueSettings): DiskEngineSelection | null {
+    const directory = this.directoryOf(settings);
+    const prefix = settings.fileName ?? '';
+    let selection: DiskEngineSelection;
+    try {
+      selection = resolveDiskEngine(this.host.files, {
+        directory, prefix, requested: settings.diskQueueType, autoUpgrade: settings.diskQueueAutoUpgrade,
+        requiresClassicFeatures: settings.cryProvider !== null || settings.onCorruption !== 'safe',
+      });
+    } catch (failure) {
+      if (!(failure instanceof DiskEngineConflict)) throw failure;
+      this.internal(3, RS_RET.INVALID_VALUE, `${name}: cannot select disk-assisted queue engine for prefix '${prefix}'; classic and segmented data, an explicit engine conflict, a malformed engine marker, or unsupported segmented options require operator intervention`);
+      return null;
+    }
+    if (settings.diskQueueType === 'auto' && selection.effective === 'disk') {
+      this.internal(4, RS_RET.OK_WARN, selection.reason === 'classicFeature'
+        ? `${name}: disk-assisted queue automatically selected the classic disk engine for prefix '${prefix}' because classic-only queue options are configured`
+        : `${name}: disk-assisted queue automatically selected the classic disk engine for prefix '${prefix}' because classic queue state is present or retained; set queue.diskQueueAutoUpgrade="on" to use segmentedDisk after the classic backlog drains`);
+    }
+    const mismatch = selection.markerPresent && selection.markerEngine !== selection.effective;
+    if (selection.classicData || selection.segmentedData || mismatch) {
+      if (!writeEngineMarker(this.host.files, directory, prefix, selection.effective, this.host.sockets.ownPid())) {
+        this.internal(3, RS_RET.IO_ERROR, `${name}: cannot select disk-assisted queue engine for prefix '${prefix}'; classic and segmented data, an explicit engine conflict, a malformed engine marker, or unsupported segmented options require operator intervention`);
+        return null;
+      }
+    }
+    return selection;
+  }
+
+  private markerWriter(settings: QueueSettings, selection: DiskEngineSelection): (() => boolean) | null {
+    if (selection.markerPresent || selection.classicData || selection.segmentedData) return null;
+    const directory = this.directoryOf(settings);
+    const prefix = settings.fileName ?? '';
+    let pending = true;
+    return () => {
+      if (!pending) return true;
+      pending = !writeEngineMarker(this.host.files, directory, prefix, 'segmentedDisk', this.host.sockets.ownPid());
+      return !pending;
+    };
+  }
+
+  private openSegmentedStore(settings: QueueSettings, name: string, lazy: boolean, beforeMaterialize: (() => boolean) | null): SegmentedDiskStore {
+    let maxDiskSpace = settings.maxDiskSpace;
+    if (maxDiskSpace > 0 && settings.maxFileSize > 0 && maxDiskSpace < settings.maxFileSize) {
+      this.internal(3, RS_RET.CONF_PARAM_INVLD, `queue.maxDiskSpace (${maxDiskSpace}) must be larger than queue.maxFileSize (${settings.maxFileSize}) - setting queue.maxDiskSpace to ${settings.maxFileSize}`);
+      maxDiskSpace = settings.maxFileSize;
+    }
+    const global = this.config.settings;
+    const store = new SegmentedDiskStore(
+      {
+        directory: this.directoryOf(settings), prefix: settings.fileName ?? '', queueName: name, maxFileSize: settings.maxFileSize, maxDiskSpace,
+        checkpointInterval: settings.checkpointInterval, lazyCreate: lazy,
+      },
+      {
+        files: this.host.files,
+        codec: () => ({ localHostName: this.localHostName(), defaultTimeZone: null, compactJson: global.compactJson }),
+        random: () => this.host.random(),
+        report: (severity, code, text) => this.internal(severity, code, text),
+        beforeMaterialize: beforeMaterialize ?? undefined,
+      },
+    );
+    if (settings.type === 'SegmentedDisk' && this.directoryOf(settings) === '') {
+      this.internal(3, RS_RET.CONF_PARAM_INVLD, `error on queue '${name}': segmentedDisk requires queue.spoolDirectory or a global workDirectory`);
+      this.failedStores.add(settings);
+      return store;
+    }
+    const opened = store.open();
+    if (opened.status !== 'ok') {
+      this.internal(3, RS_RET.IO_ERROR, `${name}: segmentedDisk store initialization failed`);
+      this.failedStores.add(settings);
+    }
+    return store;
+  }
+
+  private wireIdleDematerialization(parent: WorkerQueue<RsyslogMessage>, child: WorkerQueue<RsyslogMessage>): void {
+    const store = child.disk as SegmentedDiskStore;
+    const settings = parent.settings;
+    let generation = 0;
+    let observed = 0;
+    parent.hooks.activity = () => { generation++; };
+    child.hooks.activity = () => { generation++; };
+    child.hooks.batchCompleted = () => {
+      if (store.canDematerialize) observed = generation;
+    };
+    if (settings.diskQueueIdleTimeout === -1) return;
+    child.hooks.idle = {
+      timeoutMs: settings.diskQueueIdleTimeout,
+      check: () => {
+        if (child.length !== 0 || child.physicalSize !== 0 || !store.canDematerialize) return false;
+        if (parent.physicalSize !== 0) return false;
+        if (observed !== generation) {
+          observed = generation;
+          return false;
+        }
+        const status = store.dematerialize();
+        if (status !== 'ok') {
+          this.internal(3, RS_RET.IO_ERROR, `${child.name}: segmented disk-assisted idle store cleanup failed; will retry`);
+          return false;
+        }
+        return true;
+      },
+    };
   }
 
   private registerQueueStatistics(queue: WorkerQueue<RsyslogMessage>): void {
     const counters = queue.statistics;
     const object = this.config.statistics.create(queue.name, { origin: 'core.queue' });
-    object.addCounter({ name: 'size', read: () => queue.length });
+    object.addCounter({ name: 'size', read: () => queue.physicalSize });
     object.addCounter({ name: 'enqueued', read: () => counters.enqueued, reset: () => { counters.enqueued = 0; } });
+    object.addCounter({ name: 'size.enqueued', read: () => counters.sizeEnqueued, reset: () => { counters.sizeEnqueued = 0; } });
     object.addCounter({ name: 'full', read: () => counters.full, reset: () => { counters.full = 0; } });
     object.addCounter({ name: 'discarded.full', read: () => counters.discardedFull, reset: () => { counters.discardedFull = 0; } });
     object.addCounter({ name: 'discarded.nf', read: () => counters.discardedNearlyFull, reset: () => { counters.discardedNearlyFull = 0; } });
+    if (queue.settings.mutexContentionStats) {
+      object.addCounter({ name: 'mutex.contention', read: () => 0, reset: () => undefined });
+      object.addCounter({ name: 'mutex.wait_ns', read: () => 0, reset: () => undefined });
+    }
     object.addCounter({ name: 'maxqsize', read: () => counters.maxSize });
+    if (queue.disk instanceof SegmentedDiskStore) this.registerSegmentedStatistics(object, queue, queue.disk);
+  }
+
+  private registerSegmentedStatistics(object: { addCounter(counter: { name: string; read: () => number; reset?: () => void }): void }, queue: WorkerQueue<RsyslogMessage>, store: SegmentedDiskStore): void {
+    const gauge = (name: string, read: () => number): void => object.addCounter({ name, read: () => Math.min(0x7fffffff, Math.max(0, read())) });
+    const stats = store.statistics;
+    gauge('disk.usage', () => stats.bytes);
+    gauge('segments', () => stats.segments);
+    gauge('checkpoints', () => stats.checkpoints);
+    gauge('replayed', () => stats.replayed);
+    gauge('corruption.events', () => stats.corruptionEvents);
+    gauge('corruption.bytes', () => stats.corruptionBytes);
+    gauge('corruption.records', () => stats.corruptionRecords);
+    gauge('corruption.segments', () => stats.corruptionSegments);
+    gauge('retry.overage.bytes', () => stats.retryOverageBytes);
+    gauge('retry.overage.maxbytes', () => stats.retryOverageMaxBytes);
+    gauge('state.writes', () => stats.stateWrites);
+    gauge('state.forcedWrites', () => stats.forcedStateWrites);
+    gauge('recovery.pending', () => stats.recoveryPending);
+    gauge('recovery.bytes', () => stats.recoveryBytes);
+    gauge('recovery.records', () => stats.recoveryRecords);
+    gauge('startup.payloadBytesRead', () => stats.startupPayloadBytesRead);
+    gauge('startup.segmentFilesProbed', () => stats.startupSegmentFilesProbed);
+    gauge('store.materializations', () => stats.materializations);
+    gauge('store.idleDematerializations', () => stats.dematerializations);
+    gauge('store.idleCleanupFailures', () => stats.idleCleanupFailures);
+    gauge('workers.current', () => queue.workerCount);
   }
 
   private registerActionStatistics(runtime: ActionRuntime): void {
@@ -123,8 +303,8 @@ export class RsyslogEngine implements InputSubmitter {
     object.addCounter({ name: 'ratelimit.paced_usec', read: () => counters.rateLimitPacedMicroseconds, reset: () => { counters.rateLimitPacedMicroseconds = 0; } });
   }
 
-  private commitActions(): void {
-    for (const runtime of this.actions.values()) runtime.commit();
+  private *commitActions(): Generator<Sleep, void> {
+    for (const runtime of this.actions.values()) yield* runtime.commit();
   }
 
   private newLimiter(name: string, interval: number, burst: number, threshold: number): RateLimiter {
@@ -163,13 +343,7 @@ export class RsyslogEngine implements InputSubmitter {
   }
 
   localHostName(): string {
-    const settings = this.config.settings;
-    if (settings.localHostNameOverride !== null) return settings.localHostNameOverride;
-    const full = this.host.hostname();
-    const domain = this.host.domainName();
-    if (settings.preserveFqdn) return full.includes('.') || domain === null ? full : `${full}.${domain}`;
-    const dot = full.indexOf('.');
-    return dot < 0 ? full : full.slice(0, dot);
+    return localHostNameOf(this.config.settings, this.host);
   }
 
   private environment(): EvaluationEnvironment {
@@ -219,6 +393,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   private *processAction(runtime: ActionRuntime, message: RsyslogMessage): Generator<Sleep, ProcessOutcome> {
     const result = yield* runtime.submit(message, new ScriptState());
+    if (result === 'requeued') return 'requeue';
     if (result !== 'deferred') return 'done';
     return { retryAfterMs: runtime.resumeDelayMs() || runtime.definition.options.resumeInterval * 1000 };
   }
@@ -230,6 +405,7 @@ export class RsyslogEngine implements InputSubmitter {
     if (queue !== undefined) {
       const copy = this.copyMessage(message);
       copy.rulesetName = name;
+      copy.flowControl = 'none';
       queue.enqueue(copy);
       return 'continue';
     }
@@ -285,13 +461,13 @@ export class RsyslogEngine implements InputSubmitter {
     return new TextDecoder().decode(bytes);
   }
 
-  submit(info: InputSubmission): void {
-    if (!this.started) return;
+  submit(info: InputSubmission): boolean {
+    if (!this.started) return false;
     const now = info.receivedAtMs ?? this.host.clock.wallMs();
     let raw = info.raw;
     if (info.bytes !== undefined) {
       const decoded = this.decodeReceived(info.bytes, info.noLegacyZDecompress === true);
-      if (decoded === null) return;
+      if (decoded === null) return false;
       raw = decoded;
     }
     let { fromHost, fromHostIp, fromHostPort } = info;
@@ -301,16 +477,19 @@ export class RsyslogEngine implements InputSubmitter {
       fromHost = info.preserveCase === true ? resolved.fqdn : resolved.fqdnLowerCase;
       fromHostIp = resolved.ip;
       fromHostPort = String(info.sender.port);
-      if (info.pendingAcl !== undefined && info.pendingAcl.verdict(info.sender.ip, resolved.fqdn, true) !== 'allowed') return;
+      if (info.pendingAcl !== undefined && info.pendingAcl.verdict(info.sender.ip, resolved.fqdn, true) !== 'allowed') return false;
     }
     const build = (text: string): RsyslogMessage | null =>
       this.buildMessage(info, text, now, fromHost, fromHostIp, fromHostPort);
     const message = build(raw);
-    if (message === null) return;
+    if (message === null) return false;
+    if (info.frameOversize === true) this.writeOversizeLog(message);
     const limiter = info.limiter ?? this.defaultLimiter;
     const decision = limiter.decide(message);
     if (decision.repeated !== null) this.enqueue(decision.repeated);
-    if (decision.deliver !== null) this.admit(decision.deliver, build);
+    if (decision.deliver === null) return false;
+    this.admit(decision.deliver, build);
+    return true;
   }
 
   private buildMessage(
@@ -333,6 +512,7 @@ export class RsyslogEngine implements InputSubmitter {
       localHostName: this.localHostName(),
     });
     message.rulesetName = info.ruleset;
+    message.flowControl = info.flowControl ?? 'none';
     if (info.cee !== undefined) message.cee = jsonDeepCopy(info.cee) as typeof message.cee;
     if (info.preparsed !== undefined) {
       const fields = info.preparsed;
@@ -402,7 +582,7 @@ export class RsyslogEngine implements InputSubmitter {
 
   private enqueue(message: RsyslogMessage): void {
     const queue = this.rulesetQueues.get(message.rulesetName ?? '') ?? this.mainQueue;
-    queue.enqueue(message);
+    queue.enqueue(message, message.flowControl);
   }
 
   internal(severity: number, code: number, text: string, mark = false, facility = LOG_SYSLOG): void {
@@ -507,10 +687,13 @@ export class RsyslogEngine implements InputSubmitter {
     if (dropped !== null) return this.abortStart(dropped, started);
     const failed = startRecords(late);
     if (failed !== null) return this.abortStart(failed, started);
+    const queueFailure = this.activateQueues();
+    if (queueFailure !== null) return this.abortStart(queueFailure.code, started, queueFailure.exitText);
     const backlog = this.internalBacklog ?? [];
     this.internalBacklog = null;
     for (const message of backlog) this.processInternal(message);
     this.restoreQueues();
+    for (const instance of started) instance.run?.();
     this.stopCallbacks.push(this.host.scheduleEvery(() => this.runJanitor(), Math.max(1, settings.janitorInterval) * 60_000));
     return { ok: true };
   }
@@ -530,11 +713,39 @@ export class RsyslogEngine implements InputSubmitter {
     });
   }
 
-  private abortStart(code: number, started: readonly InputInstance[] = []): StartOutcome {
+  private abortStart(code: number, started: readonly InputInstance[] = [], exitText?: string): StartOutcome {
     for (const instance of started) instance.stop();
     this.internalBacklog = null;
     this.started = false;
-    return { ok: false, code };
+    return exitText === undefined ? { ok: false, code } : { ok: false, code, exitText };
+  }
+
+  private queueCannotStart(queue: import('./Settings').QueueSettings): boolean {
+    return (queue.type === 'Disk' && queue.fileName === null) || this.failedStores.has(queue);
+  }
+
+  private activateQueues(): { readonly code: number; readonly exitText: string } | null {
+    const abort = this.config.settings.abortOnFailedQueueStartup;
+    const code = RS_RET.FILE_PREFIX_MISSING;
+    for (const definition of this.config.actions) {
+      if (!this.queueCannotStart(definition.options.queue)) continue;
+      if (abort) {
+        return { code, exitText: `rsyslogd: error ${code} starting up action queue, abortOnFailedQueueStartup is set, so we abort rsyslog now.` };
+      }
+      this.runtimeLog.log(3, code, 'error starting up action queue');
+      this.runtimeLog.log(3, code, 'file prefix (work directory?) is missing');
+      this.actions.get(definition.id)?.disable();
+    }
+    if (this.queueCannotStart(this.config.settings.mainQueue)) {
+      if (abort) {
+        return {
+          code,
+          exitText: 'rsyslogd: could not start (ruleset) main message queue, local queue safety or abortOnFailedQueueStartup requires aborting rsyslog now.',
+        };
+      }
+      this.runtimeLog.log(3, code, 'could not start (ruleset) main message queue');
+    }
+    return null;
   }
 
   private dropPrivileges(): number | null {
@@ -579,6 +790,7 @@ export class RsyslogEngine implements InputSubmitter {
   stop(): void {
     if (!this.started) return;
     for (const record of this.config.inputs) record.instance.stop();
+    this.drainQueues();
     this.saveQueues();
     this.mainQueue.stop();
     for (const queue of this.rulesetQueues.values()) queue.stop();
@@ -596,30 +808,76 @@ export class RsyslogEngine implements InputSubmitter {
     this.started = false;
   }
 
-  private persistentQueues(): Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> {
-    const all = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
-    const found: Array<{ queue: WorkerQueue<RsyslogMessage>; path: string }> = [];
-    for (const queue of all) {
-      const path = queueStatePath(queue.settings, this.config.settings.workDirectory);
-      if (path !== null) found.push({ queue, path });
+  private drainQueues(): void {
+    const ordered = this.allQueues();
+    if (this.config.settings.shutdownQueueDoubleSize) for (const queue of ordered) queue.doubleCapacity();
+    for (const queue of ordered) {
+      queue.runWorkerFor(queue.settings.timeoutShutdown, false);
+      if (queue.midMessage) queue.runWorkerFor(queue.settings.timeoutActionCompletion, true);
     }
-    return found;
+  }
+
+  private newDiskStore(settings: QueueSettings, name: string): DiskQueueStore {
+    const global = this.config.settings;
+    const prefix = settings.fileName ?? '';
+    const maxFileSize = settings.maxFileSize;
+    let maxDiskSpace = settings.maxDiskSpace;
+    if (maxDiskSpace > 0 && maxFileSize > 0 && maxDiskSpace < maxFileSize) {
+      this.internal(3, RS_RET.CONF_PARAM_INVLD, `queue.maxDiskSpace (${maxDiskSpace}) must be larger than queue.maxFileSize (${maxFileSize}) - setting queue.maxDiskSpace to ${maxFileSize}`);
+      maxDiskSpace = maxFileSize;
+    }
+    return new DiskQueueStore(
+      { directory: settings.spoolDirectory ?? global.workDirectory ?? '', prefix, maxFileSize, maxDiskSpace },
+      {
+        files: this.host.files,
+        codec: () => ({ localHostName: this.localHostName(), defaultTimeZone: null, compactJson: global.compactJson }),
+        report: (severity, text) => this.internal(severity, -1, text),
+        crypto: settings.crypto,
+        name,
+      },
+      {
+        mode: 0o600, directoryMode: 0o700, uid: null, gid: null, directoryUid: null, directoryGid: null,
+        createDirectories: false, failOnChownFailure: false,
+      },
+    );
+  }
+
+  private allQueues(): WorkerQueue<RsyslogMessage>[] {
+    const parents = [this.mainQueue, ...this.rulesetQueues.values(), ...this.actionQueues.values()];
+    return parents.flatMap((queue) => (queue.assist === null ? [queue] : [queue, queue.assist]));
   }
 
   private saveQueues(): void {
-    for (const { queue, path } of this.persistentQueues()) {
-      if (!saveQueueState(this.host.files, path, queue.name, queue.pending())) {
-        this.internal(3, -1, `queue '${queue.name}': could not save the queue state to ${path}`);
-      }
+    for (const queue of this.allQueues()) {
+      if (queue.assist !== null && queue.settings.saveOnShutdown) queue.moveAllToAssist();
+      queue.closeStore();
     }
   }
 
   private restoreQueues(): void {
-    for (const { queue, path } of this.persistentQueues()) {
-      const messages = loadQueueState(this.host.files, path);
-      if (messages.length === 0) continue;
-      this.host.files.write(path, '');
-      for (const message of messages) queue.enqueue(message);
+    for (const queue of this.allQueues()) {
+      if (queue.disk === null) continue;
+      let backlog: LoadedBacklog | null;
+      if (queue.disk instanceof DiskQueueStore) {
+        const outcome = loadDiskQueue(queue.disk, {
+          name: queue.name,
+          mode: queue.settings.onCorruption,
+          files: this.host.files,
+          now: () => this.config.localClock.now(),
+          pid: this.host.sockets.ownPid(),
+          report: (severity, code, text) => this.internal(severity, code, text),
+        });
+        if (outcome.kind === 'emergency') {
+          queue.switchToMemoryOnly();
+          continue;
+        }
+        backlog = outcome.kind === 'backlog' ? outcome.backlog : null;
+      } else backlog = queue.disk.load();
+      if (backlog === null) continue;
+      if (!(queue.disk instanceof SegmentedDiskStore)) {
+        this.internal(6, RS_RET.NO_ERRCODE, `${queue.name}: queue files exist on disk, re-starting with ${backlog.messages.length} messages. This will keep the disk queue file open, details: https://rainer.gerhards.net/2013/07/rsyslog-why-disk-assisted-queues-keep-a-file-open.html`);
+      }
+      queue.restore(backlog.messages);
     }
   }
 

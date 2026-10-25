@@ -30,6 +30,7 @@ import { performCurlFtp } from './CurlFtp';
 import { judgeCertStatus } from './CurlCertStatus';
 import { loadCurlClientCredential } from './CurlClientCertificate';
 import { parseGroupList } from '@/network/tls/legacy/sslConf';
+import { encodeRequest } from '../http1/Http1Wire';
 import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 
@@ -80,6 +81,27 @@ export interface CurlUrl {
 
 export interface CurlHeaderPair { readonly name: string; readonly value: string }
 
+export interface TransferStats {
+  startedAt: number;
+  requestBytes: number;
+  uploadBytes: number;
+  headerBytes: number;
+  connects: number;
+  namelookupAt: number | null;
+  connectAt: number | null;
+  appconnectAt: number | null;
+  pretransferAt: number | null;
+  starttransferAt: number | null;
+  redirectMs: number;
+}
+
+export function newTransferStats(): TransferStats {
+  return {
+    startedAt: simulationNowMs(), requestBytes: 0, uploadBytes: 0, headerBytes: 0, connects: 0, namelookupAt: null,
+    connectAt: null, appconnectAt: null, pretransferAt: null, starttransferAt: null, redirectMs: 0,
+  };
+}
+
 export interface CurlSuccess {
   readonly ok: true;
   readonly url: CurlUrl;
@@ -94,6 +116,7 @@ export interface CurlSuccess {
   readonly method: string;
   readonly numRedirects: number;
   readonly trace: readonly string[];
+  stats?: TransferStats;
 }
 
 export interface CurlFailure {
@@ -105,6 +128,7 @@ export interface CurlFailure {
   readonly method: string;
   readonly numRedirects: number;
   readonly trace: readonly string[];
+  stats?: TransferStats;
 }
 
 export type CurlOutcome = CurlSuccess | CurlFailure;
@@ -155,21 +179,6 @@ export function resolvedOverride(opts: CurlOptions, url: CurlUrl): string | null
   return entry ? entry.address : null;
 }
 
-function applyCustomHeaders(request: HttpMessage, specs: readonly string[]): void {
-  for (const spec of specs) {
-    const colon = spec.indexOf(':');
-    if (colon === -1) {
-      if (spec.endsWith(';')) request.headers.set(spec.slice(0, -1).trim(), '');
-      continue;
-    }
-    const name = spec.slice(0, colon).trim();
-    const value = spec.slice(colon + 1).trim();
-    if (!name) continue;
-    if (value === '') request.headers.delete(name);
-    else request.headers.set(name, value);
-  }
-}
-
 function bodyFor(opts: CurlOptions, host: CurlHost): string | null {
   if (opts.uploadFile !== null) return host.readFile(opts.uploadFile);
   if (opts.data.length === 0) return null;
@@ -187,46 +196,63 @@ function methodFor(opts: CurlOptions): string {
   return 'GET';
 }
 
+interface CustomHeader {
+  readonly name: string;
+  readonly value: string | null;
+}
+
+function parseCustomHeaders(specs: readonly string[]): CustomHeader[] {
+  const parsed: CustomHeader[] = [];
+  for (const spec of specs) {
+    const colon = spec.indexOf(':');
+    if (colon === -1) {
+      if (spec.endsWith(';')) parsed.push({ name: spec.slice(0, -1).trim(), value: '' });
+      continue;
+    }
+    const name = spec.slice(0, colon).trim();
+    if (name) parsed.push({ name, value: spec.slice(colon + 1).trim() === '' ? null : spec.slice(colon + 1).trim() });
+  }
+  return parsed;
+}
+
 function buildRequest(
   url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
   jar?: CookieJar, formContentType?: string,
 ): HttpMessage {
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
   const request = createRequest(verb, url.path);
+  const custom = parseCustomHeaders(opts.headers);
+  const overridden = (name: string): boolean => custom.some((h) => h.name.toLowerCase() === name.toLowerCase());
   const authority = (url.scheme === 'https' && url.port === 443) || (url.scheme === 'http' && url.port === 80)
     ? hostInAuthority(url.host)
     : `${hostInAuthority(url.host)}:${url.port}`;
-  request.headers.set('Host', authority);
-  request.headers.set('User-Agent', opts.userAgent);
-  request.headers.set('Accept', '*/*');
-  if (opts.referer !== null) request.headers.set('Referer', opts.referer);
-  if (opts.user) {
+  if (!overridden('Host')) request.headers.set('Host', authority);
+  if (opts.user && !overridden('Authorization')) {
     const colon = opts.user.indexOf(':');
     const name = colon === -1 ? opts.user : opts.user.slice(0, colon);
     const secret = colon === -1 ? '' : opts.user.slice(colon + 1);
     request.headers.set('Authorization', encodeBasicCredentials(name, secret));
   }
+  if (!overridden('User-Agent')) request.headers.set('User-Agent', opts.userAgent);
+  for (const header of custom) {
+    if (header.value !== null) request.headers.append(header.name, header.value);
+  }
+  if (!overridden('Accept')) request.headers.set('Accept', '*/*');
+  if (opts.referer !== null && !overridden('Referer')) request.headers.set('Referer', opts.referer);
+  if (jar) {
+    const envoyes = jar.cookiesFor(url.host, url.path.split('?')[0], {
+      secure: url.scheme === 'https',
+    });
+    if (envoyes.length > 0 && !overridden('Cookie')) request.headers.set('Cookie', serializeCookieHeader(envoyes));
+  }
   if (body !== null) {
-    // Un téléversement n'est pas un formulaire : curl n'impose alors
-    // aucun type et laisse le serveur décider. Un `-F`, lui, porte sa
-    // frontière dans le type, sans quoi le serveur ne saurait pas où
-    // coupent les parties.
+    request.headers.set('Content-Length', String(body.length));
     if (formContentType) request.headers.set('Content-Type', formContentType);
-    else if (opts.uploadFile === null) {
+    else if (opts.uploadFile === null && !overridden('Content-Type')) {
       request.headers.set('Content-Type', 'application/x-www-form-urlencoded');
     }
     request.body = binaryStringToBytes(body);
   }
-  if (jar) {
-    // Le bocal décide seul de ce qui part : domaine, chemin, `Secure`.
-    // C'est ce filtrage qui rend l'option utile — envoyer tout le bocal
-    // à tout le monde serait une chaîne d'en-tête, pas un témoin.
-    const envoyes = jar.cookiesFor(url.host, url.path.split('?')[0], {
-      secure: url.scheme === 'https',
-    });
-    if (envoyes.length > 0) request.headers.set('Cookie', serializeCookieHeader(envoyes));
-  }
-  applyCustomHeaders(request, opts.headers);
   return request;
 }
 
@@ -242,7 +268,7 @@ function traceResponse(trace: string[], response: HttpMessage): void {
   trace.push('< ');
 }
 
-function isRedirect(status: number): boolean {
+export function isRedirect(status: number): boolean {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
@@ -252,7 +278,7 @@ function redirectMethod(status: number, method: string): string {
   return 'GET';
 }
 
-function resolveLocation(base: CurlUrl, location: string): UrlParse {
+export function resolveLocation(base: CurlUrl, location: string): UrlParse {
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(location)) return parseCurlUrl(location);
   if (location.startsWith('/')) {
     const authority = (base.scheme === 'https' && base.port === 443) || (base.scheme === 'http' && base.port === 80)
@@ -385,6 +411,22 @@ export async function performCurlRequest(
   first: CurlUrl,
   opts: CurlOptions,
 ): Promise<CurlOutcome> {
+  const stats = newTransferStats();
+  const outcome = await performHttpRequest(host, first, opts, stats);
+  return { ...outcome, stats };
+}
+
+function headBytesOf(response: HttpMessage): number {
+  const status = `HTTP/${response.httpVersion} ${response.statusCode} ${response.reasonPhrase ?? ''}`.trimEnd();
+  return [status, ...response.headers.entries().map(([name, value]) => `${name}: ${value}`)].join('\r\n').length + 4;
+}
+
+async function performHttpRequest(
+  host: CurlHost,
+  first: CurlUrl,
+  opts: CurlOptions,
+  stats: TransferStats,
+): Promise<CurlOutcome> {
   const trace: string[] = [];
   const body = bodyFor(opts, host);
   // `-T` sur un fichier absent est une erreur AVANT toute connexion :
@@ -458,11 +500,17 @@ export async function performCurlRequest(
       }
       address = resolved;
     }
+    const hopStartedAt = simulationNowMs();
+    stats.namelookupAt ??= hopStartedAt;
     remoteIp = address;
     trace.push(`*   Trying ${address}:${url.port}...`);
 
     const request = buildRequest(
       url, method, opts, sendBody ? (corpsForm ?? body) : null, jar, formContentType);
+    const sentBytes = (): void => {
+      stats.requestBytes += encodeRequest(request).length;
+      stats.uploadBytes += request.body?.length ?? 0;
+    };
 
     let response: HttpMessage | null = null;
     let failure: CurlFailure | null = null;
@@ -477,6 +525,9 @@ export async function performCurlRequest(
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
       local = { ip: porte.socket.localIp, port: porte.socket.localPort };
+      stats.connects++;
+      stats.connectAt = simulationNowMs();
+      sentBytes();
 
       let session: HttpsClientSession | null = null;
       try {
@@ -500,7 +551,9 @@ export async function performCurlRequest(
           ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
         });
         session.adopt(porte.socket);
+        stats.pretransferAt = simulationNowMs();
         const result = await session.sendAsync(request);
+        stats.appconnectAt = stats.connectAt;
         const handshake = session.handshake;
         const peerAlert = handshake?.peerAlert ?? null;
         const localReason = handshake?.result === 'failure' ? handshake.peerVerificationReason : null;
@@ -573,6 +626,10 @@ export async function performCurlRequest(
       }
       session.adopt(porte.socket);
       local = { ip: porte.socket.localIp, port: porte.socket.localPort };
+      stats.connects++;
+      stats.connectAt = simulationNowMs();
+      stats.pretransferAt = stats.connectAt;
+      sentBytes();
       // `sendAsync` et non `send` : un serveur qui doit authentifier par
       // AAA répond après un aller-retour, et le contrat synchrone rendait
       // sa réponse invisible. Un serveur synchrone répond au premier tour,
@@ -601,6 +658,8 @@ export async function performCurlRequest(
       };
     }
 
+    stats.starttransferAt = simulationNowMs();
+    stats.headerBytes += headBytesOf(response);
     traceRequest(trace, request, url);
     traceResponse(trace, response);
 
@@ -630,6 +689,7 @@ export async function performCurlRequest(
           url, remoteIp, method, numRedirects: redirects, trace,
         };
       }
+      stats.redirectMs += simulationNowMs() - hopStartedAt;
       trace.push(`* Issue another request to this URL: '${next.url.effective}'`);
       const redirected = redirectMethod(status, method);
       if (redirected !== method) sendBody = false;

@@ -1,0 +1,1049 @@
+{
+ "bash": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+ "cases": [
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -2; echo END",
+   "stdout": "b 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -2 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -n 1; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -n 1 2>/dev/null; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -n -1; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -n -1 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -c 3; echo END",
+   "stdout": "b 2END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -c 3 2>/dev/null; echo END",
+   "stdout": "b 2END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -2; echo END",
+   "stdout": "b 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -2 2>/dev/null; echo END",
+   "stdout": "b 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -n 1; echo END",
+   "stdout": "cEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -n 1 2>/dev/null; echo END",
+   "stdout": "cEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -n +2; echo END",
+   "stdout": "a 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -n +2 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -c 3; echo END",
+   "stdout": "2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tail -c 3 2>/dev/null; echo END",
+   "stdout": "2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort -r; echo END",
+   "stdout": "c\nb 2\nb 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort -r 2>/dev/null; echo END",
+   "stdout": "c\nb 2\nb 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort -n; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort -n 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort -u; echo END",
+   "stdout": "a 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort -u 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | uniq; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | uniq 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tr a-z A-Z; echo END",
+   "stdout": "B 2\nA 1\nB 2\nCEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tr a-z A-Z 2>/dev/null; echo END",
+   "stdout": "B 2\nA 1\nB 2\nCEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tr -d b; echo END",
+   "stdout": " 2\na 1\n 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tr -d b 2>/dev/null; echo END",
+   "stdout": " 2\na 1\n 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tr -s b; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tr -s b 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed s/b/X/; echo END",
+   "stdout": "X 2\na 1\nX 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed s/b/X/ 2>/dev/null; echo END",
+   "stdout": "X 2\na 1\nX 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n 2p; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n 2p 2>/dev/null; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n '$p'; echo END",
+   "stdout": "cEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n '$p' 2>/dev/null; echo END",
+   "stdout": "cEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed 2d; echo END",
+   "stdout": "b 2\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed 2d 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n 'p;p'; echo END",
+   "stdout": "b 2\nb 2\na 1\na 1\nb 2\nb 2\nc\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n 'p;p' 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\na 1\na 1\nb 2\nb 2\nc\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed '$d'; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed '$d' 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed 1q; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed 1q 2>/dev/null; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n '/b/p'; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n '/b/p' 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed 's/b/X/;s/X/Y/'; echo END",
+   "stdout": "Y 2\na 1\nY 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed 's/b/X/;s/X/Y/' 2>/dev/null; echo END",
+   "stdout": "Y 2\na 1\nY 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed =; echo END",
+   "stdout": "1\nb 2\n2\na 1\n3\nb 2\n4\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed = 2>/dev/null; echo END",
+   "stdout": "1\nb 2\n2\na 1\n3\nb 2\n4\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk '{print $1}'; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk '{print $1}' 2>/dev/null; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk 'NR==2'; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk 'NR==2' 2>/dev/null; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk 'END{print NR}'; echo END",
+   "stdout": "4\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk 'END{print NR}' 2>/dev/null; echo END",
+   "stdout": "4\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk '{print}'; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | awk '{print}' 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | wc -l; echo END",
+   "stdout": "3\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | wc -l 2>/dev/null; echo END",
+   "stdout": "3\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | wc -c; echo END",
+   "stdout": "13\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | wc -c 2>/dev/null; echo END",
+   "stdout": "13\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | wc; echo END",
+   "stdout": "      3       7      13\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | wc 2>/dev/null; echo END",
+   "stdout": "      3       7      13\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cut -d' ' -f1; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cut -d' ' -f1 2>/dev/null; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cut -c1-2; echo END",
+   "stdout": "b \na \nb \nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cut -c1-2 2>/dev/null; echo END",
+   "stdout": "b \na \nb \nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | rev; echo END",
+   "stdout": "2 b\n1 a\n2 b\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | rev 2>/dev/null; echo END",
+   "stdout": "2 b\n1 a\n2 b\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tac; echo END",
+   "stdout": "cb 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tac 2>/dev/null; echo END",
+   "stdout": "cb 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | nl; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | nl 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | nl -ba; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | nl -ba 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep b; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep b 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep -c b; echo END",
+   "stdout": "2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep -c b 2>/dev/null; echo END",
+   "stdout": "2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep -v b; echo END",
+   "stdout": "a 1\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep -v b 2>/dev/null; echo END",
+   "stdout": "a 1\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep -n b; echo END",
+   "stdout": "1:b 2\n3:b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | grep -n b 2>/dev/null; echo END",
+   "stdout": "1:b 2\n3:b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | base64; echo END",
+   "stdout": "YiAyCmEgMQpiIDIKYw==\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | base64 2>/dev/null; echo END",
+   "stdout": "YiAyCmEgMQpiIDIKYw==\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | xargs echo; echo END",
+   "stdout": "b 2 a 1 b 2 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | xargs echo 2>/dev/null; echo END",
+   "stdout": "b 2 a 1 b 2 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort | uniq -c; echo END",
+   "stdout": "      1 a 1\n      2 b 2\n      1 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sort | uniq -c 2>/dev/null; echo END",
+   "stdout": "      1 a 1\n      2 b 2\n      1 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | uniq -d; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | uniq -d 2>/dev/null; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | paste -sd,; echo END",
+   "stdout": "b 2,a 1,b 2,c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | paste -sd, 2>/dev/null; echo END",
+   "stdout": "b 2,a 1,b 2,c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tee /tmp/t.txt; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | tee /tmp/t.txt 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -n; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tcEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -n 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tcEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -A; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -A 2>/dev/null; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -b; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tcEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -b 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tcEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -E; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -E 2>/dev/null; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -s; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | cat -s 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -n 0; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | head -n 0 2>/dev/null; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n 2p; echo mid; echo END",
+   "stdout": "a 1\nmid\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' | sed -n 2p; echo mid 2>/dev/null; echo END",
+   "stdout": "a 1\nmid\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; cat /tmp/d.txt; echo END",
+   "stdout": "b 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; head -2 /tmp/d.txt; echo END",
+   "stdout": "b 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; tail -1 /tmp/d.txt; echo END",
+   "stdout": "cEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; grep b /tmp/d.txt; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; wc -l /tmp/d.txt; echo END",
+   "stdout": "3 /tmp/d.txt\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; sort /tmp/d.txt; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; sed -n 2p /tmp/d.txt; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc' > /tmp/d.txt; cat /tmp/d.txt /tmp/d.txt; echo END",
+   "stdout": "b 2\na 1\nb 2\ncb 2\na 1\nb 2\ncEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -2; echo END",
+   "stdout": "b 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -2 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -n 1; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -n 1 2>/dev/null; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -n -1; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -n -1 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -c 3; echo END",
+   "stdout": "b 2END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -c 3 2>/dev/null; echo END",
+   "stdout": "b 2END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -2; echo END",
+   "stdout": "b 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -2 2>/dev/null; echo END",
+   "stdout": "b 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -n 1; echo END",
+   "stdout": "c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -n 1 2>/dev/null; echo END",
+   "stdout": "c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -n +2; echo END",
+   "stdout": "a 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -n +2 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -c 3; echo END",
+   "stdout": "\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tail -c 3 2>/dev/null; echo END",
+   "stdout": "\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort -r; echo END",
+   "stdout": "c\nb 2\nb 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort -r 2>/dev/null; echo END",
+   "stdout": "c\nb 2\nb 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort -n; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort -n 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort -u; echo END",
+   "stdout": "a 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort -u 2>/dev/null; echo END",
+   "stdout": "a 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | uniq; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | uniq 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tr a-z A-Z; echo END",
+   "stdout": "B 2\nA 1\nB 2\nC\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tr a-z A-Z 2>/dev/null; echo END",
+   "stdout": "B 2\nA 1\nB 2\nC\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tr -d b; echo END",
+   "stdout": " 2\na 1\n 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tr -d b 2>/dev/null; echo END",
+   "stdout": " 2\na 1\n 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tr -s b; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tr -s b 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed s/b/X/; echo END",
+   "stdout": "X 2\na 1\nX 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed s/b/X/ 2>/dev/null; echo END",
+   "stdout": "X 2\na 1\nX 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n 2p; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n 2p 2>/dev/null; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n '$p'; echo END",
+   "stdout": "c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n '$p' 2>/dev/null; echo END",
+   "stdout": "c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed 2d; echo END",
+   "stdout": "b 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed 2d 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n 'p;p'; echo END",
+   "stdout": "b 2\nb 2\na 1\na 1\nb 2\nb 2\nc\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n 'p;p' 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\na 1\na 1\nb 2\nb 2\nc\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed '$d'; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed '$d' 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed 1q; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed 1q 2>/dev/null; echo END",
+   "stdout": "b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n '/b/p'; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n '/b/p' 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed 's/b/X/;s/X/Y/'; echo END",
+   "stdout": "Y 2\na 1\nY 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed 's/b/X/;s/X/Y/' 2>/dev/null; echo END",
+   "stdout": "Y 2\na 1\nY 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed =; echo END",
+   "stdout": "1\nb 2\n2\na 1\n3\nb 2\n4\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed = 2>/dev/null; echo END",
+   "stdout": "1\nb 2\n2\na 1\n3\nb 2\n4\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk '{print $1}'; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk '{print $1}' 2>/dev/null; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk 'NR==2'; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk 'NR==2' 2>/dev/null; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk 'END{print NR}'; echo END",
+   "stdout": "4\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk 'END{print NR}' 2>/dev/null; echo END",
+   "stdout": "4\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk '{print}'; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | awk '{print}' 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | wc -l; echo END",
+   "stdout": "4\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | wc -l 2>/dev/null; echo END",
+   "stdout": "4\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | wc -c; echo END",
+   "stdout": "14\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | wc -c 2>/dev/null; echo END",
+   "stdout": "14\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | wc; echo END",
+   "stdout": "      4       7      14\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | wc 2>/dev/null; echo END",
+   "stdout": "      4       7      14\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cut -d' ' -f1; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cut -d' ' -f1 2>/dev/null; echo END",
+   "stdout": "b\na\nb\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cut -c1-2; echo END",
+   "stdout": "b \na \nb \nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cut -c1-2 2>/dev/null; echo END",
+   "stdout": "b \na \nb \nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | rev; echo END",
+   "stdout": "2 b\n1 a\n2 b\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | rev 2>/dev/null; echo END",
+   "stdout": "2 b\n1 a\n2 b\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tac; echo END",
+   "stdout": "c\nb 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tac 2>/dev/null; echo END",
+   "stdout": "c\nb 2\na 1\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | nl; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | nl 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | nl -ba; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | nl -ba 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep b; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep b 2>/dev/null; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep -c b; echo END",
+   "stdout": "2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep -c b 2>/dev/null; echo END",
+   "stdout": "2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep -v b; echo END",
+   "stdout": "a 1\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep -v b 2>/dev/null; echo END",
+   "stdout": "a 1\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep -n b; echo END",
+   "stdout": "1:b 2\n3:b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | grep -n b 2>/dev/null; echo END",
+   "stdout": "1:b 2\n3:b 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | base64; echo END",
+   "stdout": "YiAyCmEgMQpiIDIKYwo=\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | base64 2>/dev/null; echo END",
+   "stdout": "YiAyCmEgMQpiIDIKYwo=\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | xargs echo; echo END",
+   "stdout": "b 2 a 1 b 2 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | xargs echo 2>/dev/null; echo END",
+   "stdout": "b 2 a 1 b 2 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort | uniq -c; echo END",
+   "stdout": "      1 a 1\n      2 b 2\n      1 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sort | uniq -c 2>/dev/null; echo END",
+   "stdout": "      1 a 1\n      2 b 2\n      1 c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | uniq -d; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | uniq -d 2>/dev/null; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | paste -sd,; echo END",
+   "stdout": "b 2,a 1,b 2,c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | paste -sd, 2>/dev/null; echo END",
+   "stdout": "b 2,a 1,b 2,c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tee /tmp/t.txt; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | tee /tmp/t.txt 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -n; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -n 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -A; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\nc$\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -A 2>/dev/null; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\nc$\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -b; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -b 2>/dev/null; echo END",
+   "stdout": "     1\tb 2\n     2\ta 1\n     3\tb 2\n     4\tc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -E; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\nc$\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -E 2>/dev/null; echo END",
+   "stdout": "b 2$\na 1$\nb 2$\nc$\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -s; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | cat -s 2>/dev/null; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -n 0; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | head -n 0 2>/dev/null; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n 2p; echo mid; echo END",
+   "stdout": "a 1\nmid\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' | sed -n 2p; echo mid 2>/dev/null; echo END",
+   "stdout": "a 1\nmid\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; cat /tmp/d.txt; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; head -2 /tmp/d.txt; echo END",
+   "stdout": "b 2\na 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; tail -1 /tmp/d.txt; echo END",
+   "stdout": "c\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; grep b /tmp/d.txt; echo END",
+   "stdout": "b 2\nb 2\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; wc -l /tmp/d.txt; echo END",
+   "stdout": "4 /tmp/d.txt\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; sort /tmp/d.txt; echo END",
+   "stdout": "a 1\nb 2\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; sed -n 2p /tmp/d.txt; echo END",
+   "stdout": "a 1\nEND\n"
+  },
+  {
+   "command": "printf 'b 2\\na 1\\nb 2\\nc\\n' > /tmp/d.txt; cat /tmp/d.txt /tmp/d.txt; echo END",
+   "stdout": "b 2\na 1\nb 2\nc\nb 2\na 1\nb 2\nc\nEND\n"
+  },
+  {
+   "command": "echo hi; echo END",
+   "stdout": "hi\nEND\n"
+  },
+  {
+   "command": "echo -n hi; echo END",
+   "stdout": "hiEND\n"
+  },
+  {
+   "command": "echo -n hi 2>/dev/null; echo END",
+   "stdout": "hiEND\n"
+  },
+  {
+   "command": "printf 'x'; printf 'y'; echo",
+   "stdout": "xy\n"
+  },
+  {
+   "command": "printf abc 2>/dev/null; echo END",
+   "stdout": "abcEND\n"
+  },
+  {
+   "command": "echo a; echo b 2>/dev/null; echo END",
+   "stdout": "a\nb\nEND\n"
+  },
+  {
+   "command": "true; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf 'a\\n' 2>&1; echo END",
+   "stdout": "a\nEND\n"
+  },
+  {
+   "command": "printf abc 2>&1; echo END",
+   "stdout": "abcEND\n"
+  },
+  {
+   "command": "echo \"$(printf abc)-\"; echo END",
+   "stdout": "abc-\nEND\n"
+  },
+  {
+   "command": "printf abc | cat; echo END",
+   "stdout": "abcEND\n"
+  },
+  {
+   "command": "printf abc | cat | cat; echo END",
+   "stdout": "abcEND\n"
+  },
+  {
+   "command": "printf a; printf b; printf c; echo; echo END",
+   "stdout": "abc\nEND\n"
+  },
+  {
+   "command": "printf 'a\\nb' | wc -l; echo END",
+   "stdout": "1\nEND\n"
+  },
+  {
+   "command": "printf '' | cat; echo END",
+   "stdout": "END\n"
+  },
+  {
+   "command": "printf '\\n' | cat; echo END",
+   "stdout": "\nEND\n"
+  },
+  {
+   "command": "printf 'a\\n\\n\\nb\\n' | cat -s; echo END",
+   "stdout": "a\n\nb\nEND\n"
+  }
+ ]
+}

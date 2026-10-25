@@ -56,6 +56,13 @@ export function connectedPrefixesOfPort(port: ConnectedIpv4Port): ConnectedIpv4P
   ];
 }
 
+export function addressesOnLink(
+  connected: readonly ConnectedIpv4Prefix[], first: IPAddress, second: IPAddress | null,
+): boolean {
+  return connected.some(({ address, mask }) => first.isInSameSubnet(address, mask)
+    && (second === null || second.isInSameSubnet(address, mask)));
+}
+
 export function isUnicastDestination(
   destination: IPAddress, connected: readonly ConnectedIpv4Prefix[],
 ): boolean {

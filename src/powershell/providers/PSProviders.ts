@@ -1224,6 +1224,7 @@ export interface IFileSystemProvider {
   getCwd(): string;
   /** Update current working directory. */
   setCwd(path: string): void;
+  driveLocation?(letter: string): string;
   /** Check if path is a directory. */
   isDirectory(path: string): boolean;
   /** Get ACL info for a path. */

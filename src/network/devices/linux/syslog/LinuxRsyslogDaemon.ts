@@ -10,12 +10,14 @@ import type { LinuxRsyslogHost } from './LinuxRsyslogHost';
 
 export const RSYSLOG_CONFIG_PATH = '/etc/rsyslog.conf';
 export const RSYSLOG_MODULE_DIRECTORY = '/usr/lib/x86_64-linux-gnu/rsyslog';
-export const RSYSLOG_BINARY_MODULES = ['imudp', 'imtcp', 'imuxsock', 'imklog', 'immark', 'impstats'] as const;
+export const RSYSLOG_BINARY_MODULES = ['imudp', 'imtcp', 'imptcp', 'imuxsock', 'imklog', 'immark', 'impstats', 'imfile'] as const;
 
 const LOG_SYSLOG_FACILITY = 5;
 const LOG_INFO = 6;
 const SIGTERM = 15;
 const FATAL_CODES: ReadonlySet<number> = new Set([RS_RET.CONF_FILE_NOT_FOUND, RS_RET.NO_ACTIONS]);
+const DEV_OPTION_KEEP_RUNNING_ON_HARD_CONF_ERROR = 1;
+const KEEP_RUNNING_NOTE = 'rsyslogd: NOTE: developer-only option set to keep rsyslog running where it should abort - this can lead to more problems later in the run.';
 
 export interface ConfigVerification {
   readonly lines: readonly string[];
@@ -35,7 +37,9 @@ export function runFailedText(code: number): string {
   return `rsyslogd: run failed with error ${code} (see rsyslog.h or try https://www.rsyslog.com/e/${-code} to learn what that number means)`;
 }
 
-export type DaemonStartOutcome = { readonly started: true } | { readonly started: false; readonly lines: readonly string[]; readonly fatalCode: number };
+export type DaemonStartOutcome =
+  | { readonly started: true }
+  | { readonly started: false; readonly lines: readonly string[]; readonly fatalCode: number; readonly runFailed: boolean };
 
 export class LinuxRsyslogDaemon implements ServiceSocketServer {
   private engine: RsyslogEngine | null = null;
@@ -58,14 +62,21 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
 
   verify(path: string = RSYSLOG_CONFIG_PATH): ConfigVerification {
     const { loader, config } = this.load(path);
-    const fatal = loader.log.entries.find((entry) => entry.severity === 'error' && FATAL_CODES.has(entry.code));
+    const hard = this.hardError(loader, config.settings.developerOptions);
     const strictInputs = config.settings.requireAllInputs && config.inputDeclarationFailed;
     return {
-      lines: loader.log.lines(),
+      lines: hard.kept ? [...loader.log.lines(), KEEP_RUNNING_NOTE] : loader.log.lines(),
       hadErrors: loader.log.hadErrors(),
-      fatalCode: fatal?.code ?? (strictInputs ? RS_RET.CONFIG_ERROR : null),
+      fatalCode: hard.code ?? (strictInputs ? RS_RET.CONFIG_ERROR : null),
       abortOnUncleanConfig: config.settings.abortOnUncleanConfig,
     };
+  }
+
+  private hardError(loader: ConfigLoader, developerOptions: number): { code: number | null; kept: boolean } {
+    const fatal = loader.log.entries.find((entry) => entry.severity === 'error' && FATAL_CODES.has(entry.code));
+    if (fatal === undefined) return { code: null, kept: false };
+    if ((developerOptions & DEV_OPTION_KEEP_RUNNING_ON_HARD_CONF_ERROR) === 1) return { code: null, kept: true };
+    return { code: fatal.code, kept: false };
   }
 
   get isRunning(): boolean {
@@ -79,10 +90,10 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
   start(): DaemonStartOutcome {
     if (this.isRunning) return { started: true };
     const { loader, config } = this.load();
-    const lines = loader.log.lines();
+    const hard = this.hardError(loader, config.settings.developerOptions);
+    const lines = hard.kept ? [...loader.log.lines(), KEEP_RUNNING_NOTE] : loader.log.lines();
     this.lastDiagnostics = lines;
-    const fatal = loader.log.entries.find((entry) => entry.severity === 'error' && FATAL_CODES.has(entry.code));
-    if (fatal !== undefined) return { started: false, lines, fatalCode: fatal.code };
+    if (hard.code !== null) return { started: false, lines, fatalCode: hard.code, runFailed: true };
     const activation: string[] = [];
     let capturing = false;
     const engine = new RsyslogEngine(config, this.host, {
@@ -102,10 +113,15 @@ export class LinuxRsyslogDaemon implements ServiceSocketServer {
       this.holder.engine = null;
       this.host.dispose();
       this.bound.clear();
-      return { started: false, lines: [...lines, ...activation], fatalCode: outcome.code };
+      const exitLines = outcome.exitText === undefined ? [] : [outcome.exitText];
+      return { started: false, lines: [...lines, ...activation, ...exitLines], fatalCode: outcome.code, runFailed: outcome.exitText === undefined };
     }
     engine.internal(LOG_INFO, RS_RET.NO_ERRCODE, this.statusText('start'), false, LOG_SYSLOG_FACILITY);
     return { started: true };
+  }
+
+  permitsCtlC(): boolean {
+    return this.engine?.config.settings.permitCtlC === true;
   }
 
   hup(): void {

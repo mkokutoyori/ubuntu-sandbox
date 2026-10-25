@@ -481,8 +481,67 @@ function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: str
   return line;
 }
 
+export interface CatFlags {
+  readonly numberAll: boolean;
+  readonly numberNonBlank: boolean;
+  readonly showEnds: boolean;
+  readonly showTabs: boolean;
+  readonly showNonPrinting: boolean;
+  readonly squeezeBlank: boolean;
+}
+
+export function parseCatFlags(args: readonly string[]): CatFlags {
+  const letters = args.filter((a) => a.startsWith('-') && !a.startsWith('--') && a.length > 1).join('').replace(/-/g, '');
+  const longs = new Set(args.filter((a) => a.startsWith('--')));
+  const has = (letter: string, long: string): boolean => letters.includes(letter) || longs.has(long);
+  const showAll = has('A', '--show-all');
+  return {
+    numberAll: has('n', '--number'),
+    numberNonBlank: has('b', '--number-nonblank'),
+    showEnds: showAll || has('E', '--show-ends') || letters.includes('e'),
+    showTabs: showAll || has('T', '--show-tabs') || letters.includes('t'),
+    showNonPrinting: showAll || has('v', '--show-nonprinting') || letters.includes('e') || letters.includes('t'),
+    squeezeBlank: has('s', '--squeeze-blank'),
+  };
+}
+
+function visible(line: string, flags: CatFlags): string {
+  let out = '';
+  for (const ch of line) {
+    const code = ch.charCodeAt(0);
+    if (ch === '\t') out += flags.showTabs ? '^I' : ch;
+    else if (flags.showNonPrinting && code < 32) out += `^${String.fromCharCode(code + 64)}`;
+    else if (flags.showNonPrinting && code === 127) out += '^?';
+    else out += ch;
+  }
+  return out;
+}
+
+export function renderCat(contents: readonly string[], flags: CatFlags): string {
+  if (!flags.numberAll && !flags.numberNonBlank && !flags.showEnds && !flags.showTabs && !flags.showNonPrinting && !flags.squeezeBlank) {
+    return contents.join('');
+  }
+  let number = 0;
+  let previousBlank = false;
+  let out = '';
+  for (const content of contents) {
+    const records = content.split(/(?<=\n)/).filter((r) => r !== '');
+    for (const record of records) {
+      const terminated = record.endsWith('\n');
+      const body = terminated ? record.slice(0, -1) : record;
+      const blank = body === '';
+      if (flags.squeezeBlank && blank && previousBlank) continue;
+      previousBlank = blank;
+      const numbered = flags.numberNonBlank ? !blank : flags.numberAll;
+      if (numbered) out += `${String(++number).padStart(6, ' ')}\t`;
+      out += visible(body, flags) + (flags.showEnds && terminated ? '$' : '') + (terminated ? '\n' : '');
+    }
+  }
+  return out;
+}
+
 export function cmdCat(ctx: ShellContext, args: string[]): string {
-  const outputs: string[] = [];
+  const contents: string[] = [];
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
@@ -494,9 +553,9 @@ export function cmdCat(ctx: ShellContext, args: string[]): string {
     if (content === null) {
       return `cat: ${arg}: No such file or directory`;
     }
-    outputs.push(content);
+    contents.push(content);
   }
-  return outputs.join('');
+  return renderCat(contents, parseCatFlags(args));
 }
 
 function canReadInode(

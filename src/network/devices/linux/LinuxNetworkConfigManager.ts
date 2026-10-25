@@ -12,6 +12,7 @@ import {
 } from './net/NetworkConfigFiles';
 import {
   discoverNetworkdFiles,
+  networkdDiagnostics,
   matchLinkFile,
   matchNetworkFile,
   DEFAULT_LINK_FILE_PATH,
@@ -39,6 +40,7 @@ export class LinuxNetworkConfigManager {
   constructor(
     private readonly vfs: VirtualFileSystem,
     private readonly logMgr: LinuxLogManager,
+    private readonly daemonPid: (name: string) => number = () => 0,
   ) {}
 
   seedDefaults(ifaceNames: readonly string[]): void {
@@ -117,6 +119,8 @@ export class LinuxNetworkConfigManager {
   applyNetworkd(net: LinuxNetKernel): { applied: string[]; governed: Set<string> } {
     const plans = resolveNetworkdPlans(this.vfs, [...net.getPorts().keys()]);
     const applied: string[] = [];
+    const pid = this.daemonPid('systemd-networkd');
+    for (const diagnostic of networkdDiagnostics(this.vfs)) this.logMgr.logAt(diagnostic.priority <= 3 ? 'daemon.err' : 'daemon.warning', 'systemd-networkd', diagnostic.message, pid);
     for (const plan of plans.values()) {
       applied.push(...this.applyLinkPlan(net, plan));
     }

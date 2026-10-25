@@ -13,6 +13,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { isLoopbackServer, parseDnsServerWord } from './DnsServerWord';
 
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
@@ -21,6 +22,14 @@ import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/Reso
 export type TriState = 'yes' | 'no' | 'resolve';
 export type DnssecMode = 'yes' | 'no' | 'allow-downgrade';
 export type DnsOverTlsMode = 'yes' | 'no' | 'opportunistic';
+export type CacheMode = 'yes' | 'no' | 'no-negative';
+export type DnsStubListenerMode = 'yes' | 'no' | 'udp' | 'tcp';
+
+export interface StubListenerExtra {
+  readonly mode: DnsStubListenerMode;
+  readonly address: string;
+  readonly port: number;
+}
 
 /**
  * Réglages d'un lien. `null` veut dire « non posé sur ce lien » : c'est
@@ -54,7 +63,13 @@ export interface ResolvedGlobalConfig {
   mdns: TriState;
   dnssec: DnssecMode;
   dnsOverTls: DnsOverTlsMode;
-  cache: boolean;
+  cacheMode: CacheMode;
+  dnsStubListener: DnsStubListenerMode;
+  dnsStubListenerExtra: StubListenerExtra[];
+  readEtcHosts: boolean;
+  resolveUnicastSingleLabel: boolean;
+  cacheFromLocalhost: boolean;
+  staleRetentionUsec: number;
 }
 
 export interface ResolvedStatistics {
@@ -90,7 +105,13 @@ export function defaultGlobalConfig(): ResolvedGlobalConfig {
     mdns: 'no',
     dnssec: 'allow-downgrade',
     dnsOverTls: 'no',
-    cache: true,
+    cacheMode: 'yes',
+    dnsStubListener: 'yes',
+    dnsStubListenerExtra: [],
+    readEtcHosts: true,
+    resolveUnicastSingleLabel: false,
+    cacheFromLocalhost: false,
+    staleRetentionUsec: 0,
   };
 }
 
@@ -100,50 +121,13 @@ export const RESOLVED_CONF_PATH = '/etc/systemd/resolved.conf';
 export const RUN_STUB_RESOLV = '/run/systemd/resolve/stub-resolv.conf';
 export const RUN_UPSTREAM_RESOLV = '/run/systemd/resolve/resolv.conf';
 
-function parseTri(v: string | undefined, fallback: TriState): TriState {
-  const s = (v ?? '').trim().toLowerCase();
-  return s === 'yes' || s === 'no' || s === 'resolve' ? s : fallback;
-}
-
-/**
- * `resolved.conf` est un fichier d'unités systemd : sections entre
- * crochets, `clé=valeur`, `#` et `;` en commentaire.
- */
-export function parseResolvedConf(text: string | null): ResolvedGlobalConfig {
-  const cfg = defaultGlobalConfig();
-  if (!text) return cfg;
-  const values = new Map<string, string>();
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';') || line.startsWith('[')) continue;
-    const eq = line.indexOf('=');
-    if (eq < 0) continue;
-    values.set(line.slice(0, eq).trim().toLowerCase(), line.slice(eq + 1).trim());
-  }
-  const list = (key: string): string[] =>
-    (values.get(key) ?? '').split(/[\s,]+/).filter(Boolean);
-
-  cfg.dnsServers = list('dns');
-  cfg.fallbackDns = list('fallbackdns');
-  cfg.domains = list('domains');
-  cfg.llmnr = parseTri(values.get('llmnr'), cfg.llmnr);
-  cfg.mdns = parseTri(values.get('multicastdns'), cfg.mdns);
-  const dnssec = (values.get('dnssec') ?? '').trim().toLowerCase();
-  if (dnssec === 'yes' || dnssec === 'no' || dnssec === 'allow-downgrade') cfg.dnssec = dnssec;
-  const dot = (values.get('dnsovertls') ?? '').trim().toLowerCase();
-  if (dot === 'yes' || dot === 'no' || dot === 'opportunistic') cfg.dnsOverTls = dot;
-  const cache = (values.get('cache') ?? '').trim().toLowerCase();
-  if (cache) cfg.cache = !/^(no|false|0)$/.test(cache);
-  return cfg;
-}
-
 /** Les types que le stub sait résoudre. */
 export type ResolvedQtype = 'A' | 'AAAA';
 
 export interface ResolvedQueryOutcome {
   addresses: string[];
   /** D'où vient la réponse — `resolvectl query` le dit à l'opérateur. */
-  origin: 'cache' | 'network' | 'none';
+  origin: 'cache' | 'network' | 'hosts' | 'none';
   link: string | null;
   server: string | null;
   /**
@@ -205,6 +189,8 @@ export interface ResolvedDeps {
   /** Interroge le lien en mDNS (RFC 6762) — noms `.local`. */
   resolveMdns?(name: string): Promise<string[]>;
   now?(): number;
+  /** Cherche un nom dans `/etc/hosts` : `known` dit qu'il y figure, `addresses` ce qui répond au type demandé. */
+  hostsLookup?(name: string, qtype: ResolvedQtype): { known: boolean; addresses: string[] };
 }
 
 /** True pour un nom du domaine `.local`, terrain exclusif de mDNS. */
@@ -219,6 +205,13 @@ export function isLlmnrName(name: string): boolean {
   return n !== '' && !n.includes('.');
 }
 
+interface CachedAnswer {
+  addresses: string[]; expiresAtMs: number;
+  dnssec: DnssecStatus | 'unset'; encrypted: boolean;
+  verdict: ResolvedQueryOutcome['verdict'];
+  protocol: ResolvedQueryOutcome['protocol'];
+}
+
 export class ResolvedService {
   private global = defaultGlobalConfig();
   private readonly links = new Map<string, ResolvedLinkConfig>();
@@ -228,12 +221,7 @@ export class ResolvedService {
     currentCacheSize: 0, failedTransactions: 0, secureTransactions: 0,
   };
   /** Réponses mises en cache par le stub, avec leur échéance. */
-  private readonly answers = new Map<string, {
-    addresses: string[]; expiresAtMs: number;
-    dnssec: DnssecStatus | 'unset'; encrypted: boolean;
-    verdict: ResolvedQueryOutcome['verdict'];
-    protocol: ResolvedQueryOutcome['protocol'];
-  }>();
+  private readonly answers = new Map<string, CachedAnswer>();
 
   constructor(private readonly deps: ResolvedDeps) {
     this.cache = new DnsCache(deps.now ?? (() => simulationNowMs()));
@@ -356,6 +344,45 @@ export class ResolvedService {
     });
   }
 
+  private cacheEnabled(): boolean { return this.global.cacheMode !== 'no'; }
+
+  private lookupCache(ck: string, now: number): { fresh?: CachedAnswer; stale?: CachedAnswer } {
+    const cached = this.answers.get(ck);
+    if (cached === undefined) return {};
+    if (cached.expiresAtMs > now) return { fresh: cached };
+    if (this.global.staleRetentionUsec > 0 && now < cached.expiresAtMs + this.global.staleRetentionUsec / 1000) return { stale: cached };
+    this.answers.delete(ck);
+    return {};
+  }
+
+  private remember(ck: string, entry: CachedAnswer, server: string | null): void {
+    if (!this.cacheEnabled()) return;
+    if (server !== null && isLoopbackServer(server) && !this.global.cacheFromLocalhost) return;
+    this.answers.set(ck, entry);
+    this.stats.currentCacheSize = this.answers.size;
+  }
+
+  private fromCache(entry: CachedAnswer): ResolvedQueryOutcome {
+    return {
+      addresses: [...entry.addresses], origin: 'cache', link: null, server: null, dnssec: entry.dnssec, encrypted: entry.encrypted,
+      verdict: entry.verdict, protocol: entry.protocol,
+    };
+  }
+
+  private fromHosts(key: string, qtype: ResolvedQtype): ResolvedQueryOutcome | null {
+    if (!this.global.readEtcHosts || this.deps.hostsLookup === undefined) return null;
+    const found = this.deps.hostsLookup(key, qtype);
+    if (!found.known) return null;
+    return {
+      addresses: found.addresses, origin: 'hosts', link: null, server: null, dnssec: 'secure', encrypted: true,
+      verdict: found.addresses.length > 0 ? 'answer' : 'nodata', protocol: 'dns',
+    };
+  }
+
+  private refusesUnicast(key: string): boolean {
+    return isLlmnrName(key) && !this.global.resolveUnicastSingleLabel;
+  }
+
   /**
    * Chemin synchrone : même cache, même sélection de serveur, sans
    * validation. Rend null quand la validation s'impose — l'appelant doit
@@ -370,30 +397,29 @@ export class ResolvedService {
     name: string, qtype: ResolvedQtype = 'A', ttlSeconds = 60,
   ): ResolvedQueryOutcome | null {
     const key = name.toLowerCase().replace(/\.$/, '');
+    const hosts = this.fromHosts(key, qtype);
+    if (hosts !== null) return hosts;
     const ck = this.cacheKey(key, qtype);
     const now = (this.deps.now ?? (() => simulationNowMs()))();
 
-    if (this.global.cache) {
-      const cached = this.answers.get(ck);
-      if (cached && cached.expiresAtMs > now) {
+    let stale: CachedAnswer | undefined;
+    if (this.cacheEnabled()) {
+      const cached = this.lookupCache(ck, now);
+      if (cached.fresh !== undefined) {
         this.stats.transactions++;
         this.stats.cacheHits++;
-        return {
-          addresses: [...cached.addresses], origin: 'cache',
-          link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
-          verdict: cached.verdict, protocol: cached.protocol,
-        };
+        return this.fromCache(cached.fresh);
       }
+      stale = cached.stale;
     }
-    // LLMNR et mDNS partent sur un groupe et attendent une réponse : ils
-    // ne peuvent pas tenir dans la pile d'appel, comme DNSSEC et DoT.
-    if (this.usesLinkLocal(key, null)) return null;
+    if (this.usesLinkLocal(key, null) || this.refusesUnicast(key)) return null;
     const { server, link } = this.selectServer(key);
     if (this.requiresAsync(link, key) || !this.deps.queryUpstreamSync) return null;
+    if (server !== null && (parseDnsServerWord(server)?.port ?? 0) !== 0) return null;
 
     this.stats.transactions++;
-    if (this.global.cache) {
-      this.answers.delete(ck);
+    if (this.cacheEnabled()) {
+      if (stale === undefined) this.answers.delete(ck);
       this.stats.cacheMisses++;
     }
     if (!server) {
@@ -404,6 +430,7 @@ export class ResolvedService {
       };
     }
     const answer = this.deps.queryUpstreamSync(server, key, qtype);
+    if (answer === null && stale !== undefined) return this.fromCache(stale);
     if (!answer || answer.addresses.length === 0) {
       this.stats.failedTransactions++;
       return {
@@ -411,13 +438,10 @@ export class ResolvedService {
         verdict: this.emptyVerdict(answer), protocol: 'dns',
       };
     }
-    if (this.global.cache) {
-      this.answers.set(ck, {
-        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
-      });
-      this.stats.currentCacheSize = this.answers.size;
-    }
+    this.remember(ck, {
+      addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
+      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
+    }, server);
     return {
       addresses: answer.addresses, origin: 'network', link, server,
       dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
@@ -485,22 +509,21 @@ export class ResolvedService {
   async resolve(
     name: string, qtype: ResolvedQtype = 'A', ttlSeconds = 60,
   ): Promise<ResolvedQueryOutcome> {
-    this.stats.transactions++;
     const key = name.toLowerCase().replace(/\.$/, '');
+    const hosts = this.fromHosts(key, qtype);
+    if (hosts !== null) return hosts;
+    this.stats.transactions++;
     const ck = this.cacheKey(key, qtype);
     const now = (this.deps.now ?? (() => simulationNowMs()))();
 
-    if (this.global.cache) {
-      const cached = this.answers.get(ck);
-      if (cached && cached.expiresAtMs > now) {
+    let stale: CachedAnswer | undefined;
+    if (this.cacheEnabled()) {
+      const cached = this.lookupCache(ck, now);
+      if (cached.fresh !== undefined) {
         this.stats.cacheHits++;
-        return {
-          addresses: [...cached.addresses], origin: 'cache',
-          link: null, server: null, dnssec: cached.dnssec, encrypted: cached.encrypted,
-          verdict: cached.verdict, protocol: cached.protocol,
-        };
+        return this.fromCache(cached.fresh);
       }
-      if (cached) this.answers.delete(ck);
+      stale = cached.stale;
       this.stats.cacheMisses++;
     }
 
@@ -515,10 +538,17 @@ export class ResolvedService {
         'mdns', ck, link, qtype, now, ttlSeconds,
         await this.deps.resolveMdns!(key));
     }
-    if (linkLocal === 'llmnr' && !server) {
+    if (linkLocal === 'llmnr' && (!server || this.refusesUnicast(key))) {
       return this.finishLinkLocal(
         'llmnr', ck, link, qtype, now, ttlSeconds,
         await this.deps.resolveLlmnr!(key));
+    }
+    if (this.refusesUnicast(key)) {
+      this.stats.failedTransactions++;
+      return {
+        addresses: [], origin: 'none', link: null, server: null,
+        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
+      };
     }
 
     if (!server) {
@@ -552,6 +582,7 @@ export class ResolvedService {
     }
     if (!answer) answer = await this.deps.queryUpstream(server, key, qtype, wantDnssec, false);
 
+    if (answer === null && stale !== undefined) return this.fromCache(stale);
     if (!answer || answer.addresses.length === 0) {
       // Le DNS n'a rien : c'est là que LLMNR prend le relais pour un nom
       // mono-label, exactement comme systemd — le lien répond de ce que
@@ -593,13 +624,10 @@ export class ResolvedService {
       }
     }
 
-    if (this.global.cache) {
-      this.answers.set(ck, {
-        addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec, encrypted, verdict: 'answer', protocol: 'dns',
-      });
-      this.stats.currentCacheSize = this.answers.size;
-    }
+    this.remember(ck, {
+      addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
+      dnssec, encrypted, verdict: 'answer', protocol: 'dns',
+    }, server);
     return {
       addresses: answer.addresses, origin: 'network', link, server,
       dnssec, encrypted, verdict: 'answer', protocol: 'dns',
@@ -633,13 +661,10 @@ export class ResolvedService {
         verdict: qtype === 'A' ? 'nxdomain' : 'nodata', protocol,
       };
     }
-    if (this.global.cache) {
-      this.answers.set(ck, {
-        addresses: [...usable], expiresAtMs: now + ttlSeconds * 1000,
-        dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
-      });
-      this.stats.currentCacheSize = this.answers.size;
-    }
+    this.remember(ck, {
+      addresses: [...usable], expiresAtMs: now + ttlSeconds * 1000,
+      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
+    }, null);
     return {
       addresses: usable, origin: 'network', link, server: null,
       dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
@@ -695,7 +720,7 @@ export class ResolvedService {
       '# Do not edit.',
       '',
     ];
-    for (const s of servers) lines.push(`nameserver ${s}`);
+    for (const s of servers) lines.push(`nameserver ${parseDnsServerWord(s)?.address ?? s}`);
     if (search.length) lines.push(`search ${search.join(' ')}`);
     return `${lines.join('\n')}\n`;
   }

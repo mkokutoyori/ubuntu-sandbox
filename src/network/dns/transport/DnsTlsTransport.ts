@@ -44,6 +44,7 @@ export interface DotOptions {
   readonly port?: number;
   readonly alpn?: string;
   readonly sni?: string;
+  readonly serverName?: string;
   readonly timeoutMs?: number;
 }
 
@@ -126,7 +127,7 @@ export async function queryDnsOverTls(
   const timeoutMs = options.timeoutMs ?? 2000;
   const ca = getOrCreateCA(DOT_TRUST_ANCHOR_KEY);
   const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => simulationNowMs() });
-  const client = new TlsClientSession({ verifier, alpn: [alpn] });
+  const client = new TlsClientSession({ verifier, alpn: [alpn], ...(options.serverName !== undefined ? { serverName: options.serverName } : {}) });
 
   return new Promise<DnsMessage | null>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | null = null;

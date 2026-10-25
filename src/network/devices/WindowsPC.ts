@@ -307,8 +307,10 @@ import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType,
   cmdRen, cmdDel, cmdTree, cmdTasklist,
   cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
-  cmdSort,
+  cmdSort, enterDirectory,
 } from './windows/WinFileCommands';
+import { directoryOfDrive, driveLetterOf } from './windows/windowsPath';
+import { DEFAULT_PROMPT, PROMPT_HELP, renderPrompt } from './windows/WinPrompt';
 import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
 import { netstatStatistics } from './windows/WinNetstatStatistics';
 import { showRoutePrint } from './windows/WinRoute';
@@ -365,6 +367,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private fs: WindowsFileSystem;
   /** Current working directory */
   private cwd: string = 'C:\\Users\\User';
+  private readonly deviceDriveDirectories = new Map<string, string>();
+  private readonly deviceDirectoryStack: string[] = [];
   /** Environment variables */
   private env: Map<string, string> = new Map();
   /** Exposes the env map so subshells (PS / cmd) share the same source.
@@ -482,6 +486,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
+  private powerShellKnows(word: string, language: 'desktop' | 'core' = 'desktop'): boolean {
+    const lower = word.toLowerCase();
+    return this.getPowerShellInterpreter(language).listCommandNames().some(name => name.toLowerCase() === lower);
+  }
+
   getPowerShellInterpreter(language: 'desktop' | 'core' = 'desktop'): PSInterpreter {
     if (language === 'core') {
       if (!this.psCoreInterpreter) {
@@ -590,6 +599,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     this.fs.setClock(() => this.getSystemClockMs());
+    this.fs.attachProcesses({
+      driveDirectory: letter => this.driveDirectory(letter),
+      directoriesInUse: () => this.directoriesInUse(),
+    });
     this.seedVolumesFromHardware();
     seedWindowsOpenSshFiles(this.fs);
     // Materialise the event logs as .evtx files under winevt\Logs.
@@ -3012,8 +3025,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return result.output;
   }
 
-  async openSftpClientSession(args: string[], password: string, io: ITerminalIO | null = null): ReturnType<typeof SftpClientSession.open> {
-    const host: SftpCommandHost = { ...this.sftpCommandHost(), interactive: true, stderrIsTerminal: true };
+  async openSftpClientSession(args: string[], password: string, io: ITerminalIO | null = null, localDirectory?: string): ReturnType<typeof SftpClientSession.open> {
+    const host: SftpCommandHost = { ...this.sftpCommandHost(localDirectory), interactive: true, stderrIsTerminal: true };
     this._scenarioStdin = password === '' ? undefined : password;
     try {
       return await SftpClientSession.open(args, host, password === '' ? undefined : password, io);
@@ -3022,12 +3035,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  private sftpCommandHost(): SftpCommandHost {
+  private sftpCommandHost(localDirectory: string = this.cwd): SftpCommandHost {
     const user = this.userMgr.currentUser;
     const home = `C:\\Users\\${user}`;
+    const localPort = new SftpLocalPort(
+      new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000), localDirectory, 0, true, home);
     return {
-      local: new SftpLocalPort(
-        new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000), home, 0, true, home),
+      local: localPort,
       usage: OPENSSH_WINDOWS_8_6.sftpUsage,
       sshPrograms: ['ssh', 'ssh.exe', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'],
       interactive: false,
@@ -3035,8 +3049,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       timeZoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
       listCommand: (rest) => (rest === '' ? 'dir' : `dir ${rest}`),
       runShell: async (command) => {
-        const output = await this.executeCmdCommand(command ?? '');
-        return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+        const restoreLocation = this.captureLocation();
+        this.changeCurrentDirectory(localPort.cwd);
+        try {
+          const output = await this.executeCmdCommand(command ?? '');
+          return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+        } finally {
+          restoreLocation();
+        }
       },
       attachServer: (program) => this.attachLocalSftpServer(program),
       readBatch: (path) => {
@@ -3227,6 +3247,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       ['PROGRAMDATA', 'C:\\ProgramData'],
       ['PROGRAMFILES', 'C:\\Program Files'],
       ['PROGRAMFILES(X86)', 'C:\\Program Files (x86)'],
+      ['PROMPT', DEFAULT_PROMPT],
       ['PSMODULEPATH', `C:\\Users\\${u}\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules`],
       ['PUBLIC', 'C:\\Users\\Public'],
       ['SESSIONNAME', 'Console'],
@@ -3639,7 +3660,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       this.batch = new BatchInterpreter(createWindowsBatchHost({
         fileSystem: () => this.fs,
         currentDirectory: () => this.cwd,
-        changeDirectory: path => this.buildFileContext().setCwd(path),
+        enterDirectory: target => enterDirectory(this.buildFileContext(), target),
+        directoryStack: () => this.directoryStack(),
+        captureLocation: () => this.captureLocation(),
+        prompt: () => this.commandPrompt(),
         environment: () => this.getEnvVars(),
         setVariable: (name, value) => this.setEnvVar(name, value),
         removeVariable: name => this.removeEnvVar(name),
@@ -3743,18 +3767,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
       case 'powershell.exe':
-        return runPowerShellShim({
+        return this.inChildProcess(() => runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
           runFullPs: (code) => this.runPowerShellCode(code),
-        }, args, splitCmdArgs(expanded, true).slice(1));
+          isPowerShellCommand: (word) => this.powerShellKnows(word),
+        }, args, splitCmdArgs(expanded, true).slice(1)));
       case 'pwsh':
       case 'pwsh.exe':
-        return runPowerShellShim({
+        return this.inChildProcess(() => runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psCoreShimState,
           runFullPs: (code) => this.runPowerShellCode(code, 'core'),
-        }, args, splitCmdArgs(expanded, true).slice(1));
+          isPowerShellCommand: (word) => this.powerShellKnows(word, 'core'),
+        }, args, splitCmdArgs(expanded, true).slice(1)));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
@@ -3766,6 +3792,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'date':    return this.cmdDate(args);
       case 'time':    return this.cmdTime(args);
       case 'start':   return this.cmdStart(args);
+      case 'prompt':  return this.cmdPrompt(expanded);
       case 'setx':    return this.cmdSetx(args);
       case 'schtasks': return this.cmdSchtasks(args);
       case 'print':    return cmdPrint(this.buildNetContext(), args);
@@ -4105,66 +4132,92 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         flushed: this._activeShellSession?.inputReader != null,
       }),
       setEnv: (name: string, value: string) => this.setEnvVar(name, value),
-      setCwd: (path: string) => {
-        // When the new cwd belongs to a different drive than the old one,
-        // remember the previous drive's cwd in the active session's
-        // per-drive map so a later bare `C:` returns to the right
-        // location (terminal_gap.md §6.3).
-        const oldDrive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
-        const newDrive = path.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
-        const s = this._activeShellSession;
-        if (s && oldDrive && newDrive && oldDrive !== newDrive) {
-          s.driveCwd.set(oldDrive, this.cwd);
-        }
-        if (s && newDrive) s.driveCwd.set(newDrive, path);
-        this.cwd = path;
-      },
+      setCwd: (path: string) => this.changeCurrentDirectory(path),
+      driveDirectory: (letter: string) => this.driveDirectory(letter),
+      setDriveDirectory: (letter: string, path: string) => this.rememberDriveDirectory(letter, path),
     };
   }
 
-  /**
-   * Handle a bare drive-letter command (`D:` / `D:\path`). When typed at
-   * the prompt this is *not* an external command — it changes the active
-   * drive. Real cmd.exe semantics:
-   *   - `D:` alone     → switch to D, restoring D's last-known cwd
-   *                      (or `D:\` if D has never been visited).
-   *   - `D:\some\path` → switch to D and chdir to `D:\some\path` (only if
-   *                      it exists; otherwise leave the cwd untouched).
-   * The previous drive's cwd is saved into the session's `driveCwd` map.
-   *
-   * If the drive does not exist on the simulated FS, mirror the real
-   * cmd.exe error.
-   */
-  private switchActiveDrive(letter: string, fullPath: string | null): string {
-    const target = fullPath ?? `${letter}:\\`;
-    const normalised = this.fs.normalizePath(target, this.cwd);
-    // Drives in the sim are virtual directories rooted at `<L>:\\`. Treat
-    // an unknown root as "system cannot find the drive specified".
-    const root = `${letter}:\\`;
-    if (!this.fs.isDirectory(root)) {
-      return 'The system cannot find the drive specified.';
-    }
+  private driveMemory(): Map<string, string> {
+    return this._activeShellSession?.driveCwd ?? this.deviceDriveDirectories;
+  }
 
-    const s = this._activeShellSession;
-    const oldDrive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
-    // Save the current drive's cwd before leaving.
-    if (s && oldDrive) s.driveCwd.set(oldDrive, this.cwd);
+  driveDirectory(letter: string): string {
+    const remembered = directoryOfDrive(letter, this.cwd, this.driveMemory());
+    return this.fs.isDirectory(remembered) ? remembered : `${letter}:\\`;
+  }
 
-    let next: string;
-    if (fullPath) {
-      if (!this.fs.isDirectory(normalised)) {
-        return 'The system cannot find the path specified.';
-      }
-      next = normalised;
-    } else {
-      // No path given — go to the session's remembered cwd for that
-      // drive, fall back to its root.
-      next = (s?.driveCwd.get(letter)) ?? root;
-      if (!this.fs.isDirectory(next)) next = root;
-    }
-    this.cwd = next;
-    if (s) s.driveCwd.set(letter, next);
+  private rememberDriveDirectory(letter: string, path: string): void {
+    if (driveLetterOf(this.cwd) === letter) this.changeCurrentDirectory(path);
+    else this.driveMemory().set(letter, path);
+  }
+
+  private changeCurrentDirectory(path: string): void {
+    const memory = this.driveMemory();
+    const left = driveLetterOf(this.cwd);
+    const entered = driveLetterOf(path);
+    if (left !== null && entered !== null && left !== entered) memory.set(left, this.cwd);
+    if (entered !== null) memory.set(entered, path);
+    this.cwd = path;
+  }
+
+  commandPrompt(session: WindowsShellSession | null = null): string {
+    const timezone = this.identity.timezone;
+    const nowMs = this.simulatedDate().getTime();
+    const idle = session !== null && session !== this._activeShellSession ? session : null;
+    return renderPrompt((idle?.env ?? this.getEnvVars()).get('PROMPT') ?? DEFAULT_PROMPT, {
+      directory: idle?.cwd ?? this.cwd,
+      stackDepth: (idle?.directoryStack ?? this.directoryStack()).length,
+      date: WinSys.cmdDate([], timezone, nowMs),
+      time: WinSys.clockTimeWithCentiseconds(timezone, nowMs),
+      version: WindowsPC.VER_STRING.trim(),
+      remoteName: '',
+    });
+  }
+
+  private cmdPrompt(line: string): string {
+    const text = line.trim().replace(/^prompt\b[\s=,;]*/i, '');
+    if (text === '/?') return PROMPT_HELP;
+    this.setEnvVar('PROMPT', text === '' ? DEFAULT_PROMPT : text);
     return '';
+  }
+
+  private async inChildProcess<T>(run: () => T | Promise<T>): Promise<T> {
+    const restoreLocation = this.captureLocation();
+    try {
+      return await run();
+    } finally {
+      restoreLocation();
+    }
+  }
+
+  private directoryStack(): string[] {
+    return this._activeShellSession?.directoryStack ?? this.deviceDirectoryStack;
+  }
+
+  private captureLocation(): () => void {
+    const cwd = this.cwd;
+    const memory = this.driveMemory();
+    const remembered = [...memory];
+    const stack = this.directoryStack();
+    const stacked = [...stack];
+    return () => {
+      this.cwd = cwd;
+      memory.clear();
+      for (const [letter, directory] of remembered) memory.set(letter, directory);
+      stack.splice(0, stack.length, ...stacked);
+    };
+  }
+
+  private directoriesInUse(): string[] {
+    const sessions = [...this.shellSessions.values()].filter(session => !session.disposed);
+    const held = sessions.filter(session => session !== this._activeShellSession).map(session => session.cwd);
+    if (this._activeShellSession !== null || sessions.length === 0) held.push(this.cwd);
+    return held;
+  }
+
+  private switchActiveDrive(letter: string, fullPath: string | null): string {
+    return enterDirectory(this.buildFileContext(), fullPath ?? `${letter}:`) ?? '';
   }
 
   tracertHost(): TracertHost {
@@ -4868,7 +4921,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       lastExitCode: () => exitCode,
     };
   }
-  setCwd(path: string): void { this.cwd = path; }
+  setCwd(path: string): void { this.changeCurrentDirectory(path); }
   /**
    * String-returning surface for PowerShell/cmd consumers (PSDeviceContext).
    * Deliberately NOT named `getDefaultGateway` - that name is EndHost's own
@@ -5013,6 +5066,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return ip6 ? ip6.toString() : null;
       },
       tcpStack: () => this.getTcpStack(),
+      interfaceAddress: (name: string): string | null => this.getPorts().find(port => port.getName() === name)?.getIPAddress()?.toString() ?? null,
+      ownsAddress: (address: string): boolean => {
+        const ip = IPAddress.tryParse(address);
+        return ip !== null && this.isLocalAddress(ip);
+      },
       trustAnchors: () => this.trustedCAs,
       readFile: (path: string): string | null => {
         const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
@@ -6674,6 +6732,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
     this.shellSessions.set(session.id, session);
     return session;
+  }
+
+  forkShellSession(parent: WindowsShellSession, inheritDriveDirectories = true): WindowsShellSession {
+    const child = this.openShellSession({ user: parent.user, cwd: parent.cwd, env: parent.env });
+    if (inheritDriveDirectories) for (const [letter, directory] of parent.driveCwd) child.driveCwd.set(letter, directory);
+    return child;
   }
 
   /** Tear down a shell session — the cmd.exe instance is reclaimed. */

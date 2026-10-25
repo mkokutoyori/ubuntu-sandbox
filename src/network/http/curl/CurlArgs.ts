@@ -24,7 +24,6 @@ export interface CurlOptions {
   fail: boolean;
   location: boolean;
   remoteName: boolean;
-  output: string | null;
   writeOut: string | null;
   method: string | null;
   data: string[];
@@ -55,6 +54,11 @@ export interface CurlOptions {
   connectTimeoutMs: number | null;
   maxTimeMs: number | null;
   localPorts: LocalPortRange | null;
+  outputs: string[];
+  ftpPort: string | null;
+  listOnly: boolean;
+  disableEprt: boolean;
+  disableEpsv: boolean;
   urls: string[];
 }
 
@@ -73,9 +77,9 @@ const TRY_HELP = "curl: try 'curl --help' for more information";
  */
 export const LITTERAL = '\u0000';
 
-const SHORT_NO_ARG = 'IksSvfLOiV';
+const SHORT_NO_ARG = 'IksSvfLOiVl';
 
-const SHORT_WITH_ARG = 'owXdHuAbceDTFmE';
+const SHORT_WITH_ARG = 'owXdHuAbceDTFmEP';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -90,6 +94,12 @@ const LONG_NO_ARG: Record<string, string> = {
   include: 'i',
   version: 'V',
   'retry-all-errors': 'retry-all-errors',
+  'list-only': 'l',
+  'disable-eprt': 'disable-eprt',
+  eprt: 'eprt',
+  'disable-epsv': 'disable-epsv',
+  epsv: 'epsv',
+  'ftp-pasv': 'ftp-pasv',
   tlsv1: 'tlsv1.0',
   'tlsv1.0': 'tlsv1.0',
   'tlsv1.1': 'tlsv1.1',
@@ -123,6 +133,7 @@ const LONG_WITH_ARG: Record<string, string> = {
   'connect-timeout': 'connect-timeout',
   'max-time': 'm',
   'local-port': 'local-port',
+  'ftp-port': 'P',
   'tls-max': 'tls-max',
   ciphers: 'ciphers',
   'tls13-ciphers': 'tls13-ciphers',
@@ -138,7 +149,7 @@ const UNSUPPORTED_SHORT: Record<string, true> = {
   // n'avait aucun appelant.
   x: true, C: true, '#': true,
   y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
-  K: true, r: true, P: true, Q: true, p: true, U: true,
+  K: true, r: true, Q: true, p: true, U: true,
 };
 
 const NEEDS_ABSENT_LIBCURL_FEATURE: ReadonlySet<string> = new Set([
@@ -160,7 +171,7 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   'speed-limit': true, 'speed-time': true, range: true, 'time-cond': true,
   'remote-time': true, netrc: true, 'trace': true, 'trace-ascii': true,
   config: true,
-  'proxytunnel': true, 'ftp-port': true, quote: true, 'no-buffer': true,
+  'proxytunnel': true, quote: true, 'no-buffer': true,
 };
 
 export interface LocalPortRange {
@@ -220,7 +231,7 @@ function defaults(): CurlOptions {
     fail: false,
     location: false,
     remoteName: false,
-    output: null,
+    outputs: [],
     writeOut: null,
     method: null,
     data: [],
@@ -242,6 +253,10 @@ function defaults(): CurlOptions {
     connectTimeoutMs: null,
     maxTimeMs: null,
     localPorts: null,
+    ftpPort: null,
+    listOnly: false,
+    disableEprt: false,
+    disableEpsv: false,
     urls: [],
   };
 }
@@ -284,12 +299,13 @@ function applyValued(
   spelling: string,
 ): CurlParseResult | null {
   switch (key) {
-    case 'o': opts.output = value; break;
+    case 'o': opts.outputs.push(value); break;
     case 'w': opts.writeOut = value; break;
     case 'X': opts.method = value.toUpperCase(); break;
     case 'd': opts.data.push(value); break;
     case 'H': opts.headers.push(value); break;
     case 'u': opts.user = value; break;
+    case 'P': opts.ftpPort = value; break;
     case 'b': opts.cookie = value; break;
     case 'c': opts.cookieJar = value; break;
     case 'e': opts.referer = value; break;
@@ -388,6 +404,12 @@ function applyValued(
 function applyFlag(opts: CurlOptions, letter: string): void {
   switch (letter) {
     case 'I': opts.head = true; break;
+    case 'l': opts.listOnly = true; break;
+    case 'disable-eprt': opts.disableEprt = true; break;
+    case 'eprt': opts.disableEprt = false; break;
+    case 'disable-epsv': opts.disableEpsv = true; break;
+    case 'epsv': opts.disableEpsv = false; break;
+    case 'ftp-pasv': opts.ftpPort = null; break;
     case 'i': opts.include = true; break;
     case 'V': opts.version = true; break;
     case 'retry-all-errors': opts.retryAllErrors = true; break;

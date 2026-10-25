@@ -2,7 +2,7 @@ import type { RsyslogMessage } from '../Message';
 import { renderTemplate, renderTemplateJson } from '../Template';
 import type { ActionDefinition } from './Config';
 import type { FileHandle, RsyslogHost } from './Host';
-import type { ActionArguments, ActionOutcome, ActionWorker } from './Modules';
+import type { ActionArguments, ActionOutcome, ActionWorker, ImmediateActionWorker, TransactionalActionWorker } from './Modules';
 import type { Sleep } from './Execution';
 import { jsonText } from '../Json';
 import { RS_RET } from './Log';
@@ -10,7 +10,21 @@ import type { ScriptState } from '../config/Expressions';
 import type { RenderContext } from '../Properties';
 
 export type ActionState = 'ready' | 'retry' | 'suspended' | 'disabled';
-export type SubmitResult = 'delivered' | 'dropped' | 'deferred';
+export type SubmitResult = 'delivered' | 'dropped' | 'deferred' | 'requeued';
+
+type CommitCode = 'ok' | 'suspended' | 'failed' | 'datafail' | 'disabled';
+
+interface BatchEntry {
+  readonly args: ActionArguments;
+  readonly message: RsyslogMessage;
+}
+
+interface RetryReport {
+  slept: boolean;
+  sleepDeferred: boolean;
+}
+
+const freshReport = (): RetryReport => ({ slept: false, sleepDeferred: false });
 
 export interface ActionServices {
   readonly host: RsyslogHost;
@@ -43,8 +57,9 @@ export class ActionRuntime {
   private resumeInRow = 0;
   private errorHandle: FileHandle | null = null;
   private errorFileSize = 0;
-  private transactionMessages = 0;
-  private pendingFailures: Array<{ readonly status: number; readonly strings: readonly string[]; readonly hard: boolean }> = [];
+  private batch: BatchEntry[] = [];
+  private hardFailure = false;
+  private transactionalWorker: boolean | null = null;
   counters = {
     processed: 0, batchesProcessed: 0, failed: 0, suspended: 0, suspendedDuration: 0, resumed: 0,
     rateLimitAllowed: 0, rateLimitDropped: 0, rateLimitPaced: 0, rateLimitPacedMicroseconds: 0,
@@ -69,7 +84,7 @@ export class ActionRuntime {
   }
 
   stop(): void {
-    this.flushFailures();
+    this.batch = [];
     this.errorHandle?.close();
     this.errorHandle = null;
     this.worker?.close();
@@ -77,11 +92,145 @@ export class ActionRuntime {
     this.definition.instance.teardown?.();
   }
 
-  commit(): void {
-    this.flushFailures();
-    if (this.state !== 'ready') return;
-    const outcome = this.worker?.endTransaction?.();
-    if (outcome === 'suspended') this.enterRetry();
+  disable(): void {
+    this.state = 'disabled';
+  }
+
+  private get transactional(): boolean {
+    if (this.transactionalWorker === null) this.transactionalWorker = 'commitTransaction' in this.ensureWorker();
+    return this.transactionalWorker;
+  }
+
+  private stateCode(): CommitCode {
+    switch (this.state) {
+      case 'ready': return this.hardFailure ? 'datafail' : 'ok';
+      case 'retry': return 'suspended';
+      case 'suspended': return 'failed';
+      case 'disabled': return 'disabled';
+    }
+  }
+
+  private statusOf(code: CommitCode): number {
+    switch (code) {
+      case 'ok': return RS_RET.OK_VALUE;
+      case 'suspended': return RS_RET.SUSPENDED;
+      case 'failed': return RS_RET.ACTION_FAILED;
+      case 'datafail': return RS_RET.DATAFAIL;
+      case 'disabled': return RS_RET.DISABLE_ACTION;
+    }
+  }
+
+  private *sleepBeforeRetryingTransaction(): Generator<Sleep, void> {
+    const options = this.definition.options;
+    if (options.resumeRetryCount === 0 || options.resumeInterval <= 0) return;
+    yield { sleepMs: options.resumeInterval * 1000 };
+  }
+
+  private *transact(batch: readonly BatchEntry[]): Generator<Sleep, ActionOutcome> {
+    const worker = this.ensureWorker() as TransactionalActionWorker;
+    const outcome = worker.commitTransaction(batch.map((entry) => entry.args));
+    const pauseMs = worker.pauseAfterAction?.() ?? 0;
+    if (pauseMs > 0) yield { sleepMs: pauseMs };
+    return outcome;
+  }
+
+  private *tryCommit(batch: readonly BatchEntry[], permitSleep: boolean, report: RetryReport): Generator<Sleep, CommitCode> {
+    yield* this.prepare(permitSleep, report);
+    if (this.state !== 'ready') return this.stateCode();
+    const outcome = yield* this.transact(batch);
+    this.hardFailure = false;
+    switch (outcome) {
+      case 'suspended':
+        this.enterRetry();
+        break;
+      case 'disable':
+        this.state = 'disabled';
+        break;
+      case 'fail': {
+        const status = this.ensureWorker().failureCode?.() ?? RS_RET.DATAFAIL;
+        this.services.log(
+          3, status,
+          `action '${this.name}' (module '${this.moduleDisplayName}') message lost, could not be processed. Check for additional error messages before this one.`,
+        );
+        this.hardFailure = true;
+        return 'datafail';
+      }
+      default:
+        this.resumeInRow = 0;
+    }
+    return this.stateCode();
+  }
+
+  private *removeHardErrors(batch: readonly BatchEntry[]): Generator<Sleep, { readonly pending: BatchEntry[]; readonly allSuspendedSlept: boolean }> {
+    const pending: BatchEntry[] = [];
+    let allSuspendedSlept = true;
+    for (let index = 0; index < batch.length; index++) {
+      const entry = batch[index];
+      this.resumeInRow = 0;
+      const report = freshReport();
+      let code = yield* this.tryCommit([entry], false, report);
+      if (report.sleepDeferred) {
+        yield* this.sleepBeforeRetryingTransaction();
+        report.slept = true;
+        report.sleepDeferred = false;
+        code = yield* this.tryCommit([entry], false, report);
+        if (report.sleepDeferred) {
+          pending.push(...batch.slice(index));
+          return { pending, allSuspendedSlept: true };
+        }
+      }
+      if (code === 'suspended') {
+        if (!report.slept) allSuspendedSlept = false;
+        pending.push(entry);
+      } else if (code !== 'ok') {
+        this.writeErrorFile(this.statusOf(code), [entry]);
+      }
+    }
+    return { pending, allSuspendedSlept };
+  }
+
+  *commit(): Generator<Sleep, void> {
+    if (!this.transactional) return;
+    const batch = this.batch;
+    this.batch = [];
+    if (this.state === 'disabled' || batch.length === 0) return;
+    if (this.state === 'suspended') {
+      this.writeErrorFile(RS_RET.OK_VALUE, batch);
+      return;
+    }
+    let code = yield* this.tryCommit(batch, true, freshReport());
+    if (code === 'ok') return;
+    let pending = batch;
+    let sleepBeforeRetry = false;
+    if (batch.length === 1) {
+      if (code === 'datafail') return;
+      sleepBeforeRetry = code === 'suspended';
+    } else {
+      const split = yield* this.removeHardErrors(batch);
+      pending = split.pending;
+      sleepBeforeRetry = pending.length > 0 && !split.allSuspendedSlept;
+    }
+    if (pending.length === 0) return;
+    for (let done = false; !done;) {
+      if (sleepBeforeRetry) {
+        yield* this.sleepBeforeRetryingTransaction();
+        sleepBeforeRetry = false;
+      }
+      code = yield* this.tryCommit(pending, true, freshReport());
+      if (code === 'suspended') {
+        const report = freshReport();
+        yield* this.retryLoop(true, report);
+        const resumed = this.stateCode();
+        if (resumed !== 'ok') {
+          this.writeErrorFile(resumed === 'disabled' ? RS_RET.DISABLE_ACTION : RS_RET.SUSPENDED, pending);
+          done = true;
+        } else {
+          sleepBeforeRetry = !report.slept;
+        }
+        continue;
+      }
+      done = true;
+    }
   }
 
   resumeDelayMs(): number {
@@ -139,9 +288,11 @@ export class ActionRuntime {
     this.resumeInRow++;
   }
 
-  private *retryLoop(): Generator<Sleep, void> {
+  private *retryLoop(permitSleep: boolean, report: RetryReport): Generator<Sleep, void> {
     const options = this.definition.options;
     let attempts = 0;
+    report.slept = false;
+    report.sleepDeferred = false;
     while (this.state === 'retry') {
       let outcome: ActionOutcome = this.ensureWorker().tryResume?.() ?? 'ok';
       let treatOkAsSuspended = false;
@@ -160,8 +311,12 @@ export class ActionRuntime {
         if (options.resumeRetryCount !== -1 && attempts >= options.resumeRetryCount) {
           this.suspendNow();
           if (this.retriesInRow < 20) this.retriesInRow++;
+        } else if (!permitSleep) {
+          report.sleepDeferred = true;
+          return;
         } else {
           attempts++;
+          report.slept = true;
           yield { sleepMs: options.resumeInterval * 1000 };
         }
       } else if (outcome === 'disable') {
@@ -171,15 +326,16 @@ export class ActionRuntime {
     if (this.state === 'ready') this.retriesInRow = 0;
   }
 
-  private *prepare(): Generator<Sleep, void> {
+  private *prepare(permitSleep = true, report: RetryReport = freshReport()): Generator<Sleep, void> {
     if (this.state === 'disabled') return;
     this.ensureWorker();
     if (this.state === 'suspended' && this.nowSeconds() >= this.resumeAtSeconds) this.state = 'retry';
-    if (this.state === 'retry') yield* this.retryLoop();
+    if (this.state === 'retry') yield* this.retryLoop(permitSleep, report);
     if (this.state === 'ready' && this.definition.options.externalStateFile !== null) {
       if (this.externalStateSuspends()) yield* this.externalStateRetryLoop();
       this.state = 'ready';
     }
+    if (this.state === 'ready' && !this.hardFailure && this.ensureWorker().beginTransaction?.() === 'suspended') this.enterRetry();
   }
 
   private externalStateSuspends(): boolean {
@@ -215,18 +371,7 @@ export class ActionRuntime {
     if (this.state === 'ready') this.retriesInRow = 0;
   }
 
-  private flushFailures(): void {
-    const failures = this.pendingFailures;
-    const total = this.transactionMessages;
-    this.pendingFailures = [];
-    this.transactionMessages = 0;
-    for (const failure of failures) {
-      if (failure.hard && total === 1) continue;
-      this.writeErrorFile(failure.status, failure.strings);
-    }
-  }
-
-  private writeErrorFile(status: number, strings: readonly string[]): void {
+  private writeErrorFile(status: number, entries: readonly BatchEntry[]): void {
     this.counters.failed++;
     const options = this.definition.options;
     const path = options.errorFile;
@@ -243,34 +388,33 @@ export class ActionRuntime {
       this.errorHandle = opened.handle;
       if (options.errorFileMaxSize > 0) this.errorFileSize = files.statSize(path) ?? 0;
     }
-    const entry: { [key: string]: string | number } = { action: this.name, status };
-    strings.forEach((text, index) => { entry[`template${index}`] = text; });
-    let rendered = `${jsonText(entry)}\n`;
-    if (options.errorFileMaxSize > 0) {
-      let toWrite = rendered.length;
-      if (this.errorFileSize + toWrite > options.errorFileMaxSize) toWrite = options.errorFileMaxSize - this.errorFileSize;
-      this.errorFileSize += toWrite;
-      rendered = toWrite > 0 ? `${rendered.slice(0, toWrite - 1)}\n` : '';
+    for (const { args } of entries) {
+      const entry: { [key: string]: string | number } = { action: this.name, status };
+      args.strings.forEach((text, index) => { entry[`template${index}`] = text; });
+      let rendered = `${jsonText(entry)}\n`;
+      if (options.errorFileMaxSize > 0) {
+        let toWrite = rendered.length;
+        if (this.errorFileSize + toWrite > options.errorFileMaxSize) toWrite = options.errorFileMaxSize - this.errorFileSize;
+        this.errorFileSize += toWrite;
+        rendered = toWrite > 0 ? `${rendered.slice(0, toWrite - 1)}\n` : '';
+      }
+      if (rendered.length > 0) this.errorHandle.write(rendered);
     }
-    if (rendered.length > 0) this.errorHandle.write(rendered);
   }
 
   private *execute(args: ActionArguments, message: RsyslogMessage): Generator<Sleep, SubmitResult> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const suspendedBefore = this.state === 'suspended';
       yield* this.prepare();
       if (this.state === 'disabled') return 'dropped';
-      if (this.state !== 'ready') {
-        if (this.state === 'suspended') this.pendingFailures.push({ status: suspendedBefore ? RS_RET.OK_VALUE : RS_RET.SUSPENDED, strings: args.strings, hard: false });
-        return 'deferred';
-      }
-      const outcome = this.ensureWorker().doAction(args, message);
+      if (this.state !== 'ready') return 'deferred';
+      const worker = this.ensureWorker() as ImmediateActionWorker;
+      const outcome = worker.doAction(args, message);
       switch (outcome) {
         case 'ok':
         case 'discard':
         case 'defer': {
           this.resumeInRow = 0;
-          const pauseMs = this.ensureWorker().pauseAfterAction?.() ?? 0;
+          const pauseMs = worker.pauseAfterAction?.() ?? 0;
           if (pauseMs > 0) yield { sleepMs: pauseMs };
           return 'delivered';
         }
@@ -281,8 +425,7 @@ export class ActionRuntime {
           this.state = 'disabled';
           return 'dropped';
         default: {
-          const status = this.ensureWorker().failureCode?.() ?? RS_RET.DATAFAIL;
-          this.pendingFailures.push({ status, strings: args.strings, hard: true });
+          const status = worker.failureCode?.() ?? RS_RET.DATAFAIL;
           this.services.log(
             3, status,
             `action '${this.name}' (module '${this.moduleDisplayName}') message lost, could not be processed. Check for additional error messages before this one.`,
@@ -352,8 +495,15 @@ export class ActionRuntime {
     this.counters.processed++;
     if (options.queue.type === 'Direct') this.counters.batchesProcessed++;
     if (!(yield* this.passesOutputRateLimit())) return 'dropped';
-    this.transactionMessages++;
     const args = this.render(message);
+    if (this.transactional) {
+      this.batch.push({ args, message });
+      yield* this.prepare();
+      const prepared = this.stateCode();
+      const collected = prepared === 'disabled' ? 'dropped' : prepared === 'ok' ? 'delivered' : prepared === 'datafail' ? 'requeued' : 'deferred';
+      script.previousSuspended = collected === 'deferred';
+      return collected;
+    }
     const result = yield* this.execute(args, message);
     script.previousSuspended = result === 'deferred';
     return result;

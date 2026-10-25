@@ -135,7 +135,7 @@ describe('MASQUERADE leaves a 0.0.0.0 source alone, as nf_nat_masquerade_ipv4 do
     direction: 'forward', iface: 'eth0', outIface: 'eth1', protocol: 17, srcIP, srcPort: 68, dstIP: '203.0.113.2', dstPort: 67,
   });
   const decide = (srcIP: string, manager: LinuxIptablesManager) => manager.natHook(
-    () => facts(srcIP), {}, 'POSTROUTING', { masqueradeAddress: '203.0.113.1', redirectAddress: null },
+    () => facts(srcIP), {}, 'POSTROUTING', { masqueradeAddress: '203.0.113.1', redirectAddress: null, outInterface: 'eth1' },
     () => ({ action: 'MASQUERADE', range: masquerade }),
   );
 
@@ -156,7 +156,7 @@ describe('MASQUERADE leaves a 0.0.0.0 source alone, as nf_nat_masquerade_ipv4 do
     const manager = (gateway as unknown as { executor: { iptables: LinuxIptablesManager } }).executor.iptables;
     const snat = { ...masquerade, addresses: { min: new IPAddress('203.0.113.50'), max: new IPAddress('203.0.113.50') } };
     const outcome = manager.natHook(
-      () => facts('0.0.0.0'), {}, 'POSTROUTING', { masqueradeAddress: '203.0.113.1', redirectAddress: null },
+      () => facts('0.0.0.0'), {}, 'POSTROUTING', { masqueradeAddress: '203.0.113.1', redirectAddress: null, outInterface: 'eth1' },
       () => ({ action: 'SNAT', range: snat }),
     );
     expect(outcome).toMatchObject({ kind: 'accept', translation: { side: 'source', address: '203.0.113.50' } });

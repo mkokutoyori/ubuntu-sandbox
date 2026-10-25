@@ -16,10 +16,13 @@ import type { PSValue, PSEnvironment } from '@/powershell/runtime/PSEnvironment'
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import type { NativeResult } from '@/powershell/nativeAsync';
+import type { PSLocationState } from '@/powershell/runtime/PSLocationState';
 
 // PSRuntime is referenced here via a forward-declaration interface to avoid
 // circular imports (PSRuntime imports CmdletContext, CmdletContext imports PSRuntime).
 export interface IRuntimeRef {
+  readonly edition: 'desktop' | 'core';
+  readonly locations: PSLocationState;
   execute(code: string): string;
   executeInteractive(code: string): string;
   acceptNativeResult(result: NativeResult): PSValue;

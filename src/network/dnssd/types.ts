@@ -31,6 +31,7 @@ export interface ServiceRegistration {
   readonly type: string;
   readonly port: number;
   readonly txt: readonly string[];
+  readonly moreTxt?: readonly (readonly string[])[];
   /**
    * §7.1 — les sous-types sous lesquels ce service veut aussi être
    * trouvé : `_printer` fait répondre à

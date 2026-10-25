@@ -49,8 +49,8 @@ export const chattrCommand: LinuxCommand = {
         sorties.push(`chattr: Operation not permitted while setting flags on ${cible}`);
         continue;
       }
-      if (signe === '=') inode.immutable = lettres.includes('i');
-      else if (lettres.includes('i')) inode.immutable = signe === '+';
+      if (signe === '=') ctx.executor.vfs.setImmutable(chemin(ctx, cible), lettres.includes('i'));
+      else if (lettres.includes('i')) ctx.executor.vfs.setImmutable(chemin(ctx, cible), signe === '+');
     }
     return { output: sorties.join('\n'), exitCode: sorties.length > 0 ? 1 : 0 };
   },

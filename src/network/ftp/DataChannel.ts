@@ -8,6 +8,8 @@
  * §2.1.6) — nothing here enforces that.
  */
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import { IPAddress } from '@/network/core/types';
 
 export type DataChannelMode = 'active' | 'passive';
 
@@ -37,17 +39,30 @@ export function encodeEprtArgument(protocol: NetProtocol, address: string, port:
   return `${delimiter}${protocol}${delimiter}${address}${delimiter}${port}${delimiter}`;
 }
 
-export function decodeEprtArgument(arg: string): { protocol: NetProtocol; address: string; port: number } | null {
-  if (arg.length < 2) return null;
-  const delimiter = arg[0];
-  const parts = arg.split(delimiter);
-  if (parts.length < 5) return null;
+export type EprtParse =
+  | { readonly kind: 'ok'; readonly protocol: NetProtocol; readonly address: string; readonly port: number }
+  | { readonly kind: 'bad-protocol' }
+  | { readonly kind: 'bad-command' };
+
+export function parseEprtArgument(arg: string, delimiter?: string): EprtParse {
+  if (arg.length < 2) return { kind: 'bad-command' };
+  const separator = delimiter ?? arg[0];
+  if (arg[0] !== separator) return { kind: 'bad-command' };
+  const parts = arg.split(separator);
+  if (parts.length < 5) return { kind: 'bad-command' };
   const protocol = parseInt(parts[1], 10);
-  if (protocol !== 1 && protocol !== 2) return null;
+  if (protocol !== 1 && protocol !== 2) return { kind: 'bad-protocol' };
   const address = parts[2];
+  if (!address || (protocol === 1 && IPAddress.tryParse(address) === null)) return { kind: 'bad-command' };
+  if (!/^\d+$/.test(parts[3]) || parts[4] !== '') return { kind: 'bad-command' };
   const port = parseInt(parts[3], 10);
-  if (!address || Number.isNaN(port) || port <= 0 || port > 65535) return null;
-  return { protocol, address, port };
+  if (port > 65535) return { kind: 'bad-command' };
+  return { kind: 'ok', protocol, address, port };
+}
+
+export function decodeEprtArgument(arg: string): { protocol: NetProtocol; address: string; port: number } | null {
+  const parsed = parseEprtArgument(arg);
+  return parsed.kind === 'ok' && parsed.port > 0 ? { protocol: parsed.protocol, address: parsed.address, port: parsed.port } : null;
 }
 
 /** RFC 2428 §3 — the `229` reply's `(<d><d><d><tcp-port><d>)`: net-prt/net-addr are omitted, since the client is expected to reuse the control connection's peer address. */
@@ -81,6 +96,7 @@ export interface ActiveDataChannel {
   readonly mode: 'active';
   readonly address: string;
   readonly port: number;
+  readonly sourcePort?: number;
 }
 
 /** Server-side passive listener; `socket` is populated once the client connects in (§ handleAccept). */
@@ -109,6 +125,27 @@ export type FtpDataChannel = ActiveDataChannel | PassiveDataChannel;
 /** Opens (passive: already-accepted, active: server dials out) the actual data `TcpSocket` for one transfer. */
 export function openDataConnection(channel: FtpDataChannel, tcpStack: TcpStack): TcpSocket | null {
   if (channel.mode === 'passive') return channel.socket;
-  const socket = tcpStack.connect(channel.address, channel.port);
+  const socket = tcpStack.connect(channel.address, channel.port,
+    channel.sourcePort === undefined ? {} : { localPort: PortNumber.of(channel.sourcePort), reuseAddress: true });
   return socket && socket.state === 'established' ? socket : null;
+}
+
+export interface PassivePortRange {
+  readonly min: number;
+  readonly max: number;
+}
+
+export function openPassiveChannelInRange(
+  range: PassivePortRange, tcpStack: TcpStack, random: () => number,
+  onAccept?: (socket: TcpSocket) => void, attempts = 9,
+): PassiveDataChannel | null {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const port = range.min + Math.floor(random() * (range.max - range.min + 1));
+    try {
+      return new PassiveDataChannel(port, tcpStack, onAccept);
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }

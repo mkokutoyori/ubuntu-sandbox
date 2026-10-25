@@ -214,26 +214,23 @@ export class TailCommand {
       const body = stdin === undefined ? '' : sliceTail(stdin, opts);
       return { output: body, exitCode: 0 };
     }
-    const parts: string[] = [];
+    let output = '';
     let exit = 0;
     const showHeaders = opts.verbose || (!opts.quiet && opts.files.length > 1);
-    for (let i = 0; i < opts.files.length; i++) {
-      const f = opts.files[i];
+    let first = true;
+    for (const f of opts.files) {
       const abs = this.fs.normalizePath(f, cwd);
       const content = this.fs.readFile(abs);
       if (content === null) {
-        parts.push(`tail: cannot open '${f}' for reading: No such file or directory`);
+        output += `tail: cannot open '${f}' for reading: No such file or directory\n`;
         exit = 1;
         continue;
       }
-      if (showHeaders) {
-        if (i > 0) parts.push('');
-        parts.push(tailHeader(f));
-      }
-      const body = sliceTail(content, opts);
-      if (body !== '') parts.push(body.replace(/\n$/, ''));
+      if (showHeaders) output += `${first ? '' : '\n'}${tailHeader(f)}\n`;
+      output += sliceTail(content, opts);
+      first = false;
     }
-    return { output: parts.join('\n'), exitCode: exit };
+    return { output, exitCode: exit };
   }
 
   /**

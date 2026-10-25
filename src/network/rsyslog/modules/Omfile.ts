@@ -7,7 +7,8 @@ import type {
   ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, DirectiveRegistration, ModuleContext, OutputModule, SelectorParse,
   TemplateRequest,
 } from '../engine/Modules';
-import type { RsyslogMessage } from '../Message';
+import { configureCryptoProvider, cryptoParameterDescriptors, isCryptoProviderName } from '../crypto/CryptoEnvironment';
+import type { CryptoFile, CryptoProvider } from '../crypto/CryptoProvider';
 import { OmfileStream, type StreamSettings } from './OmfileStream';
 import { parseSelectorTemplate } from './SelectorTemplate';
 
@@ -155,6 +156,7 @@ interface OmfileInstanceSettings {
   readonly sync: boolean;
   readonly followSymlinks: boolean;
   readonly followSymlinksExplicit: boolean;
+  readonly crypto: CryptoProvider | null;
 }
 
 interface CacheEntry {
@@ -263,13 +265,25 @@ class OmfileInstance implements ActionModuleInstance {
   private open(path: string): OmfileStream | { error: string; reported: boolean } {
     const first = this.openRaw(path);
     if ('error' in first) return first;
+    let encrypted: CryptoFile | null = null;
+    if (this.settings.crypto !== null) {
+      const file = this.settings.crypto.openFile(path, 'w');
+      if ('error' in file) {
+        first.close();
+        return { error: file.error, reported: true };
+      }
+      encrypted = file;
+    }
     return new OmfileStream(path, first, this.streamSettings(), {
       open: () => this.openRaw(path),
       size: (target) => this.context.host.files.statSize(target),
       schedule: (callback, delayMs) => this.context.host.schedule(callback, delayMs),
-      run: (argv) => { this.context.host.process?.run?.(argv); },
+      run: (argv) => {
+        const child = this.context.host.process?.run?.(argv);
+        if (child !== undefined) this.context.runtime.childExited(child.pid, child.exitCode);
+      },
       report: (text, code) => this.context.runtime.error(text, code),
-    });
+    }, this.settings.crypto, encrypted);
   }
 
   private validate(path: string): boolean {
@@ -378,9 +392,17 @@ class OmfileInstance implements ActionModuleInstance {
     return 'ok';
   }
 
-  commit(): ActionOutcome {
+  commitTransaction(batch: readonly ActionArguments[]): ActionOutcome {
+    let outcome: ActionOutcome = 'ok';
+    this.transactionFailureCode = null;
+    for (const entry of batch) {
+      const result = this.write(entry.strings[0] ?? '', entry.strings[1] ?? '');
+      if (result === 'ok' || result === 'discard' || result === 'defer' || outcome !== 'ok') continue;
+      outcome = result;
+      if (result === 'fail') this.transactionFailureCode = this.failureCode();
+    }
     if (this.settings.flushOnTxEnd) this.current?.flush();
-    return 'ok';
+    return outcome;
   }
 
   private closeHandle(handle: OmfileStream): void {
@@ -394,6 +416,8 @@ class OmfileInstance implements ActionModuleInstance {
     handle.close();
   }
 
+  private transactionFailureCode: number | null = null;
+
   private failureCode(): number {
     switch (this.current?.lastFailure) {
       case 'disabled': return RS_RET.STREAM_DISABLED;
@@ -404,9 +428,8 @@ class OmfileInstance implements ActionModuleInstance {
 
   createWorker(): ActionWorker {
     return {
-      doAction: (args: ActionArguments, _message: RsyslogMessage) => this.write(args.strings[0] ?? '', args.strings[1] ?? ''),
-      endTransaction: () => this.commit(),
-      failureCode: () => this.failureCode(),
+      commitTransaction: (batch: readonly ActionArguments[]) => this.commitTransaction(batch),
+      failureCode: () => this.transactionFailureCode ?? RS_RET.DATAFAIL,
       close: () => undefined,
     };
   }
@@ -463,7 +486,7 @@ function buildSettings(
     zipLevel: legacy.zipLevel, veryRobustZip: false, driver: moduleConfig(context).compressionDriver, asyncWriting: legacy.asyncWriting,
     flushIntervalSeconds: legacy.flushIntervalSeconds, flushOnTxEnd: legacy.flushOnTxEnd, ioBufferSize: legacy.ioBufferSize,
     sync: legacy.enableSync, followSymlinks: effectiveFollow(context, moduleConfig(context).followSymlinks),
-    followSymlinksExplicit: moduleConfig(context).followSymlinks !== null, ...overrides,
+    followSymlinksExplicit: moduleConfig(context).followSymlinks !== null, crypto: null, ...overrides,
   };
 }
 
@@ -513,6 +536,14 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
     context.runtime.error('omfile: either the "file" or "dynafile" parameter must be given', RS_RET.CONF_PARSE_ERROR);
     return null;
   }
+  const providerName = stringParam(values, 'cry.provider');
+  const providerValues = providerName !== undefined && isCryptoProviderName(providerName)
+    ? getParams(params, cryptoParameterDescriptors(providerName, 'cry.'), {
+      report: (message) => context.runtime.error(message, RS_RET.CONF_PARSE_ERROR),
+      uidOf: () => null,
+      gidOf: () => null,
+    })
+    : null;
   reportUnused(params, (message) => context.runtime.error(message, RS_RET.CONF_PARSE_ERROR));
   const module = moduleConfig(context);
   const flag = (key: string): boolean | undefined => {
@@ -562,13 +593,20 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
     followSymlinks: effectiveFollow(context, flag('followsymlinks') ?? module.followSymlinks),
     followSymlinksExplicit: flag('followsymlinks') !== undefined || module.followSymlinks !== null,
   });
-  const cryProvider = stringParam(values, 'cry.provider');
-  if (cryProvider !== undefined) {
-    const library = `lmcry_${cryProvider}`;
-    if (!context.moduleFileAvailable(`${library}.so`)) {
+  let crypto: CryptoProvider | null = null;
+  if (providerName !== undefined) {
+    const library = `lmcry_${providerName}`;
+    if (!context.moduleFileAvailable(`${library}.so`) || !isCryptoProviderName(providerName)) {
       context.runtime.error(`omfile: could not load crypto provider '${library}' - encryption disabled`, RS_RET.CONF_PARSE_ERROR);
       return null;
     }
+    crypto = configureCryptoProvider(
+      providerName,
+      { get: (parameter) => stringParam(providerValues ?? new Map(), `cry.${parameter}`) },
+      context.host,
+      (text, code) => context.runtime.error(text, code),
+    );
+    if (crypto === null) return null;
   }
   const sigProvider = stringParam(values, 'sig.provider');
   if (sigProvider !== undefined && !context.moduleFileAvailable(`lmsig_${sigProvider}.so`)) {
@@ -581,7 +619,7 @@ function newActionInstance(params: NvList, context: ModuleContext): ActionModule
       return null;
     }
   }
-  return new OmfileInstance(settings, context);
+  return new OmfileInstance(crypto === null ? settings : { ...settings, crypto }, context);
 }
 
 function directives(): DirectiveRegistration[] {

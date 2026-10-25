@@ -9,6 +9,9 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import type { IFileSystemProvider, DirEntry } from './PSProviders';
 import { normalizeWindowsPath } from '@/network/devices/windows/windowsPath';
+import { expandHomePath } from './homePath';
+
+const SIMULATED_HOME = 'C:\\Users\\User';
 
 export class SimulatedFileSystem implements IFileSystemProvider {
   private readonly files = new Map<string, string>();
@@ -38,7 +41,7 @@ export class SimulatedFileSystem implements IFileSystemProvider {
   }
 
   private norm(path: string): string {
-    return normalizeWindowsPath(path, this.cwd).toLowerCase();
+    return normalizeWindowsPath(expandHomePath(path, SIMULATED_HOME), this.cwd).toLowerCase();
   }
 
   exists(path: string): boolean {
@@ -118,7 +121,7 @@ export class SimulatedFileSystem implements IFileSystemProvider {
   }
 
   normalizePath(path: string, cwd: string): string {
-    return normalizeWindowsPath(path, cwd);
+    return normalizeWindowsPath(expandHomePath(path, SIMULATED_HOME), cwd);
   }
 
   getCwd(): string { return this.cwd; }

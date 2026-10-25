@@ -1056,10 +1056,96 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   rien ne vidait — après `iptables -t nat -F` la source était encore
   réécrite —, et la réécriture paquet par paquet de `handleIPv4` et
   `forwardIPv4`.
-- **Reste** : la chaîne OUTPUT de la table `nat` pour le TCP et l'ICMP que
-  la machine ouvre elle-même (et les jambes de bouclage), la défragmentation
-  autour de la traduction, le renvoi par la même interface, NAT66, le
-  vidage des flux MASQUERADE quand l'interface tombe.
+- **Ce que la machine ouvre elle-même** : la chaîne OUTPUT de la table
+  `nat` s'applique au TCP et à l'UDP qu'elle émet, dans l'ordre du noyau —
+  suivi de connexions, chaîne `nat` OUTPUT (DNAT, REDIRECT vers 127.0.0.1,
+  DROP), nouvelle décision de routage si l'adresse a changé
+  (`ip_route_me_harder`), chaîne OUTPUT du filtre, puis POSTROUTING. Le
+  même point (`EndHost.originate`) sert la pile TCP (par le port étroit
+  `TcpHost.originate`, qui remplace `filterLocalSegment` et
+  `filterOutgoing`) et l'UDP ; le cas particulier de l'UDP, qui lisait la
+  table `nat` hors du suivi et inscrivait le tuple traduit comme tuple
+  d'origine, disparaît. Les jambes de bouclage traversent POSTROUTING et
+  INPUT avec leur entrée de suivi, si bien que la réponse d'un serveur
+  local derrière un REDIRECT repart sous le port que le client a composé.
+  L'événement `tcp.segment.sent` est publié après les crochets, avec le
+  paquet tel qu'il traverse l'interface : `tcpdump -i lo` montre le port
+  atteint, pas le port composé.
+- **Le renvoi par la même interface** (hairpin NAT, routeur sur un bâton) :
+  `EndHost.forwardIPv4` ne jette plus un paquet qui ressort par son
+  interface d'arrivée. L'ordre est celui d'`ip_forward` : TTL, MTU avec DF
+  (`Frag needed` part avant la chaîne FORWARD), redirection ICMP, chaîne
+  FORWARD. La redirection est celle d'`ip_rt_send_redirect` : source
+  directement connectée sur l'interface, `send_redirects`, `shared_media`
+  (ou une passerelle sur le lien de la source), au plus neuf redirections
+  par source avec une attente qui double, puis le silence. Les paramètres
+  `/proc/sys/net/ipv4/conf/{all,default,<if>}/{send_redirects,
+  accept_redirects,secure_redirects,shared_media}` sont de vrais
+  paramètres (`Ipv4DeviceConf` : OU de `all` et de l'interface, ET pour
+  `accept_redirects` d'un routeur, une écriture sur `default` atteint les
+  interfaces où personne n'a écrit, `ip_forward` bascule
+  `all/accept_redirects`) et `accept_redirects` décide de ce que l'hôte
+  fait d'une redirection reçue. La construction du paquet de redirection
+  est celle des autres erreurs ICMP (`buildICMPError`), pour la
+  `Router` Cisco comme pour Linux.
+- **Les fragments** : dès qu'une règle a besoin du suivi de connexions (cible
+  NAT, `-m state`, `-m conntrack`, `-m connmark` —
+  `LinuxIptablesManager.needsConnectionTracking`), la passerelle remonte les
+  fragments avant les crochets (`nf_defrag_ipv4`, PREROUTING, priorité
+  -400), si bien que la table nat et le suivi voient le datagramme entier ;
+  elle le recoupe à la sortie sans dépasser ni la MTU ni le plus grand
+  fragment reçu (`frag_max_size`, porté par `largestFragmentBytes`, effacé à
+  chaque réception comme `skb->cb`). DF n'est conservé que si un fragment
+  de la plus grande taille le portait (`ip_frag_reasm`). Un datagramme
+  transmis compte pour un (`ForwDatagrams`) et le recoupage compte
+  `FragOKs` et `FragCreates` ; les `ReasmReqds`, `ReasmOKs` et `ReasmFails`
+  sont tenus par la même fonction pour la remise locale et pour le
+  transit. Une file qui expire pour un hôte derrière la passerelle ne
+  répond rien (`ip_expire`). Sans règle qui ait besoin du suivi, le routeur
+  transmet les fragments un par un.
+- **Les portées des interfaces** : une interface qui apparaît après la
+  construction de la machine (`ip link add … type dummy|veth|vlan|bond`) a
+  sa portée `/proc/sys/net/ipv4/conf/<nom>`, copiée de `default` au moment
+  de la création (`inetdev_init`), et la perd quand elle disparaît
+  (`inetdev_destroy`) ; une interface recréée sous le même nom repart de
+  `default`. `all` et `default` ne se retirent jamais.
+- **Les flux MASQUERADE suivent leur interface** : le suivi retient
+  l'interface par laquelle un flux traduit par MASQUERADE est sorti
+  (`masq_index` de `nf_nat_masquerade_ipv4`). Fermer l'interface
+  (`ip link set … down`, ou la supprimer) oublie ces flux
+  (`masq_device_event`) ; retirer une adresse n'oublie que les flux de cette
+  interface traduits par elle (`masq_inet_event`, `inet_cmp`) ; un paquet du
+  sens d'origine qui sortirait par une autre interface que celle du flux
+  est jeté avec son flux (`nf_nat_oif_changed`, `nf_ct_kill_acct`). Une
+  perte de porteuse n'est pas une fermeture, et un flux SNAT n'a pas
+  d'interface à suivre.
+- **Ce que la machine émet sans socket TCP ni UDP** : l'écho de `ping`
+  (et celui de `hping3 -1`, de `traceroute -I`), le datagramme brut de
+  `hping3 --rawip` et de `traceroute -P`, le datagramme adressé à un
+  groupe, le rapport IGMP et le datagramme externe d'un tunnel GRE passent
+  par le même `EndHost.originate` : chaîne `nat` OUTPUT, route refaite,
+  chaîne OUTPUT du filtre. POSTROUTING lit ensuite le datagramme ENTIER
+  (`ip_output` avant `ip_fragment`), de sorte que les trois fragments d'un
+  `ping -s 3000` sortent tous sous l'adresse traduite, et le voisin est
+  résolu en dernier (`ip_finish_output2`), pour le saut suivant de
+  l'adresse traduite : un paquet que OUTPUT jette ne provoque aucun ARP,
+  `ip neigh` ne garde pas d'entrée FAILED pour l'adresse composée, et le
+  premier écho vers un voisin inconnu paie l'échange ARP dans son temps
+  aller-retour (iputils date la sonde avant `sendmsg`). Pour un écho, un
+  échec de la route refaite après la réécriture rend `ENETUNREACH`
+  (`NF_DROP_ERR`), là où un DROP rend `EPERM`.
+- **Un voisin dont la résolution a échoué n'est pas un voisin** : l'entrée
+  `FAILED` que laisse un ARP sans réponse (`ip neigh` la montre) n'a pas
+  d'adresse de couche lien, et la pile y avait mis celle de la diffusion :
+  un datagramme, un SYN ou un paquet transmis partait pour
+  `ff:ff:ff:ff:ff:ff`. Une entrée `FAILED` qu'un paquet réveille repasse à
+  `INCOMPLETE`, émet un nouvel ARP et met le paquet en file
+  (`__neigh_event_send`), et `neigh_output` n'envoie jamais pour l'adresse de
+  diffusion d'un voisin muet. Un seul accesseur (`resolvedNeighbour`) écarte
+  l'entrée pour tous les lecteurs : la transmission, l'envoi local, le garde
+  de TCP (`neighbourResolved`), la sonde d'adresse de `dhcpd`, la redirection,
+  `neighbourUnresolved`, `resolveARP` et `resolveArpSync`.
+- **Reste** : NAT66 au-delà du DNAT de PREROUTING.
 - Vérification : `probe-iptables-nat-traduit-aussi-le-sens-retour.test.ts`
   (93 cas de bout en bout),
   `probe-iptables-le-tuple-unique-vient-du-noyau.test.ts` (66 cas : les
@@ -1067,10 +1153,29 @@ paquet des deux sens (`nf_nat_packet`). Cette phase construit cela sur le
   suivi seul : liaison unique, refus à l'insertion, échéance, reprise d'une
   traduction),
   `probe-iptables-chaque-crochet-de-la-table-nat-decide.test.ts` (19 cas)
-  et `port-address-toward.test.ts` (7 cas) ;
-  `linux-dnat-port-forward.test.ts` et
-  `linux-nat-redirect-output.test.ts` vont maintenant jusqu'à
-  l'établissement de la connexion.
+  et `port-address-toward.test.ts` (7 cas) pour la traduction dans les deux
+  sens ;
+  `probe-iptables-la-chaine-output-de-nat-traduit-ce-que-la-machine-ouvre.test.ts`
+  (41 cas) pour ce que la machine ouvre elle-même ;
+  `probe-linux-renvoie-par-l-interface-d-arrivee-et-envoie-la-redirection.test.ts`
+  (55 cas), `icmp-redirect-rules.test.ts` et `ipv4-device-conf.test.ts`
+  pour le renvoi par la même interface ;
+  `probe-linux-reassemble-avant-les-crochets-et-recoupe-a-la-sortie.test.ts`
+  (27 cas) et `ipv4-reassembly-bookkeeping.test.ts` (11 cas) pour les
+  fragments ;
+  `probe-une-interface-qui-apparait-recoit-sa-portee-de-conf-copiee-de-default.test.ts`
+  (18 cas) et les six cas de `ipv4-device-conf.test.ts` sur le retrait pour
+  les portées des interfaces ;
+  `probe-iptables-un-flux-masquerade-suit-l-interface-qui-l-a-vu-naitre.test.ts`
+  (16 cas), `connection-tracker-masquerade.test.ts` (10 cas) et
+  `masquerade-flow-projection.test.ts` (10 cas) pour les flux MASQUERADE ;
+  `probe-iptables-l-echo-et-le-paquet-brut-que-la-machine-emet-traversent-la-table-nat.test.ts`
+  (70 cas) pour l'écho, le datagramme brut et le datagramme de groupe que la
+  machine émet ;
+  `probe-un-voisin-dont-la-resolution-a-echoue-n-est-pas-un-voisin.test.ts`
+  (15 cas) pour les voisins dont la résolution a échoué ;
+  `linux-dnat-port-forward.test.ts` et `linux-nat-redirect-output.test.ts`
+  vont maintenant jusqu'à l'établissement de la connexion.
 
 ---
 

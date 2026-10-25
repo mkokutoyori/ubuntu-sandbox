@@ -100,14 +100,6 @@ export function isBroadcastOrMulticastDest(ip: string): boolean {
   return first >= 224 && first <= 239;
 }
 
-export function parseNatAddress(spec: string): { ip: string; port?: number } {
-  const idx = spec.lastIndexOf(':');
-  if (idx === -1) return { ip: spec };
-  const port = parseInt(spec.slice(idx + 1), 10);
-  if (isNaN(port) || port < 1 || port > 65535) return { ip: spec };
-  return { ip: spec.slice(0, idx), port };
-}
-
 export function rewriteNatAddress(
   pkt: IPv4Packet, target: 'src' | 'dst', ip: string, port?: number,
 ): IPv4Packet {

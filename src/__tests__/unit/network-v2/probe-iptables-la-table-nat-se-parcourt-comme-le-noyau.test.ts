@@ -28,6 +28,11 @@
  * (deja vrai), la politique compte ce qu'aucune regle ne decide (E1d), RETURN rend le paquet a la regle qui suit le saut (coincidence :
  * le saut n'etait pas suivi, donc la regle suivante etait lue de toute facon) et les trois cas de non-regression qui lisent l'adresse que
  * la regle nomme (SNAT, REDIRECT sous ses deux orthographes : l'ancienne boucle la rendait deja).
+ *
+ * Depuis la chaine OUTPUT de nat des paquets que la machine ouvre, l'UDP passe par le suivi comme le TCP : la table n'est lue que pour le
+ * premier paquet d'un flux (`nf_nat_inet_fn`, « Already setup manip »). Le cas OUTPUT de DROP envoie donc son second datagramme depuis un autre
+ * port source -- un flux neuf --, qui seul est refuse, et un cas de plus tient la regle du noyau : un flux deja etabli n'est pas relu. Le
+ * fichier compte 26 cas ; l'ancien cas supposait que chaque datagramme relisait la table, ce qui n'est pas ce que fait le noyau.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -179,8 +184,16 @@ describe('a DROP of the nat table kills the packet where the hook stands', () =>
     b.udpListen(5000, 'probe', {});
     expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5000, 4000, 'x', 1)).toBe(true);
     await nat(a, '-A OUTPUT -p udp --dport 5000 -j DROP');
-    expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5000, 4000, 'x', 1)).toBe(false);
-    expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5001, 4000, 'x', 1)).toBe(true);
+    expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5000, 4001, 'x', 1)).toBe(false);
+    expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5001, 4001, 'x', 1)).toBe(true);
+  });
+
+  it('OUTPUT : a flow already set up is not read again, so a rule added afterwards does not refuse its datagrams', async () => {
+    const { a, b } = pair();
+    b.udpListen(5000, 'probe', {});
+    expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5000, 4000, 'x', 1)).toBe(true);
+    await nat(a, '-A OUTPUT -p udp --dport 5000 -j DROP');
+    expect(a.sendUdpDatagram(new IPAddress('10.0.0.2'), 5000, 4000, 'x', 1)).toBe(true);
   });
 
   it('POSTROUTING : the packet a gateway forwards dies on the way out', async () => {

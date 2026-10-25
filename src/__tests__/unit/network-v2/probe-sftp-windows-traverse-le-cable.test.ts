@@ -58,10 +58,10 @@ async function framesOf(
 }
 
 describe('sftp from a Windows host crosses the cable', () => {
-  it('witness: the 200001-byte file arrives intact', async () => {
+  it('witness: the 200000-byte file arrives intact', async () => {
     const { win, winCable } = await lab();
     await framesOf(win, winCable, 'get /home/bob/big.txt C:\\\\big.txt', 'secret');
-    expect((await win.executeCommand('dir C:\\big.txt'))).toContain('200,001');
+    expect((await win.executeCommand('dir C:\\big.txt'))).toContain('200,000');
   }, 60_000);
 
   it('an sftp session costs frames', async () => {

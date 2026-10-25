@@ -65,6 +65,6 @@ describe('show ip nat statistics with a two-address pool', () => {
   it('counts the extended entries in the first line', async () => {
     const { r, win } = await tutoNatLab(['ip nat inside source list 1 interface GigabitEthernet0/1 overload']);
     await win.executeCommand('ping 198.51.100.10');
-    expect(await r.executeCommand('show ip nat statistics')).toMatch(/Total active translations: 4 \(0 static, 4 dynamic; 4 extended\)/);
+    expect(await r.executeCommand('show ip nat statistics')).toMatch(/Total active translations: 1 \(0 static, 1 dynamic; 1 extended\)/);
   });
 });

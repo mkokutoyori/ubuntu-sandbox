@@ -18,6 +18,7 @@ import { describeScalarType } from '@/powershell/runtime/semantics/PSTypes';
 import { hasWildcard, wildcardMatches } from '@/powershell/runtime/PSWildcard';
 import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { parentPathOf } from '@/network/devices/windows/windowsPath';
 
 const GROUP_KEY_DELIMITER = '\u0000';
 
@@ -775,11 +776,11 @@ function fileSources(ctx: CmdletContext, paths: readonly string[]): MatchSource[
   for (const given of paths) {
     const absolute = files.normalizePath(given, files.getCwd());
     const separator = absolute.lastIndexOf('\\');
-    const directory = absolute.slice(0, separator);
+    const directory = parentPathOf(absolute);
     const pattern = absolute.slice(separator + 1);
     const matched = hasWildcard(pattern)
       ? files.listDir(directory).filter(entry => !entry.isDirectory && wildcardMatches(pattern, entry.name))
-        .map(entry => `${directory}\\${entry.name}`)
+        .map(entry => `${directory.replace(/\\+$/, '')}\\${entry.name}`)
       : [absolute];
     for (const path of matched) {
       if (!files.exists(path)) {

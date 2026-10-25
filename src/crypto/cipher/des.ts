@@ -256,5 +256,5 @@ export function desKeyHasOddParity(key: Uint8Array): boolean {
 
 export function isDesWeakKey(key: Uint8Array): boolean {
   if (key.length !== BLOCK_SIZE) throw new Error(`DES: key must be 8 bytes (got ${key.length})`);
-  return WEAK_KEYS.some((weak) => weak.every((byte, index) => byte === key[index]));
+  return WEAK_KEYS.some((weak) => weak.every((byte, index) => (byte & 0xfe) === (key[index] & 0xfe)));
 }

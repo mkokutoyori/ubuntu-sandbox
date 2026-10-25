@@ -1,7 +1,8 @@
 import type { Errno } from '@/network/core/Errno';
 import { decodeSeverityName } from '../config/Filters';
 import { RS_RET } from './Log';
-import { yamlEvents, type YamlEvent } from './YamlEvents';
+import { parseYaml } from '@/network/yaml/YamlParser';
+import type { YamlEvent, YamlParse } from '@/network/yaml/YamlTypes';
 
 export type RateLimitScope = 'input' | 'output';
 export type OutputMode = 'drop' | 'pace';
@@ -160,7 +161,7 @@ class PolicyWalker {
         case 'mapping-end': this.mappingEnd(); break;
         case 'sequence-start': this.sequenceStart(); break;
         case 'sequence-end': this.inOverrides = false; this.lastKey = null; break;
-        case 'scalar': this.scalar(event.value); break;
+        case 'scalar': this.scalar(cString(event.value)); break;
       }
     }
   }
@@ -322,20 +323,25 @@ class PolicyWalker {
   }
 }
 
-function readEvents(files: PolicyFiles, path: string, log: PolicyLog, openFailure: string): { events: YamlEvent[]; problem: string | null } | null {
+function cString(value: string): string {
+  const end = value.indexOf('\0');
+  return end < 0 ? value : value.slice(0, end);
+}
+
+function readEvents(files: PolicyFiles, path: string, log: PolicyLog, openFailure: string): YamlParse | null {
   const text = files.exists(path) ? files.read(path) : null;
   if (text === null) {
     log.error(`${openFailure} ${path}`, RS_RET.FILE_NOT_FOUND, 'ENOENT');
     return null;
   }
-  return yamlEvents(text);
+  return parseYaml(text);
 }
 
-function walkAll(walker: PolicyWalker, parse: { events: YamlEvent[]; problem: string | null }, reader: Reader): number {
+function walkAll(walker: PolicyWalker, parse: YamlParse, reader: Reader): number {
   try {
     walker.walk(parse.events);
-    if (parse.problem !== null) {
-      reader.log.error(`ratelimit: yaml parser error in policy file ${reader.path}: ${parse.problem}`, RS_RET.CONF_PARAM_INVLD);
+    if (parse.error !== null) {
+      reader.log.error(`ratelimit: yaml parser error in policy file ${reader.path}: ${parse.error.problem}`, RS_RET.CONF_PARAM_INVLD);
       return RS_RET.CONF_PARAM_INVLD;
     }
     walker.finish();

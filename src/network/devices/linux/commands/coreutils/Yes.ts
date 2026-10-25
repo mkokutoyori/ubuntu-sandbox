@@ -33,7 +33,7 @@ export const YES_MAX_LINES = 10000;
 export function runYes(args: string[]): string {
   const operands = args.filter((a) => a !== '--');
   const line = operands.length > 0 ? operands.join(' ') : 'y';
-  return Array.from({ length: YES_MAX_LINES }, () => line).join('\n');
+  return `${line}\n`.repeat(YES_MAX_LINES);
 }
 
 export const yesCommand: LinuxCommand = {
