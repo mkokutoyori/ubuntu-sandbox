@@ -811,8 +811,8 @@ Total steps: 400
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=2 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=2 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=12 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=12 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=3 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=40167 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=40167 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50726 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50726 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44948 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44948 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=33972 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=33972 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
 
 [158/400] srvdc srvdc$ cat /proc/net/nf_conntrack
@@ -1545,8 +1545,8 @@ Total steps: 400
   icmp     1 29 src=10.1.1.10 dst=10.3.3.1 type=8 code=0 id=2 src=10.3.3.1 dst=10.1.1.10 type=0 code=0 id=2 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=10.2.2.10 type=8 code=0 id=4 src=10.2.2.10 dst=10.1.1.10 type=0 code=0 id=4 mark=0 use=1
+  udp      17 29 src=10.1.1.11 dst=224.0.0.251 sport=59815 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=59815 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=5 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=5 mark=0 use=1
-  udp      17 29 src=10.1.1.11 dst=224.0.0.251 sport=56288 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=56288 mark=0 use=1
   icmp     1 29 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=1 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=1 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=6 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=6 mark=0 use=1
   icmp     1 29 src=10.3.3.11 dst=10.1.1.10 type=8 code=0 id=1 src=10.1.1.10 dst=10.3.3.11 type=0 code=0 id=1 mark=0 use=1
@@ -1558,14 +1558,14 @@ Total steps: 400
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=11 [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=11 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=12 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=12 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.1.1.1 type=8 code=0 id=13 src=10.1.1.1 dst=10.1.1.10 type=0 code=0 id=13 mark=0 use=1
-  icmp     1 30 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=14 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=14 mark=0 use=1
   udp      17 30 src=10.1.1.11 dst=224.0.0.251 sport=5353 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=5353 mark=0 use=1
+  icmp     1 30 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=14 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=14 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=15 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=15 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.1.1.1 type=8 code=0 id=16 src=10.1.1.1 dst=10.1.1.10 type=0 code=0 id=16 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.2.2.1 type=8 code=0 id=17 src=10.2.2.1 dst=10.1.1.10 type=0 code=0 id=17 mark=0 use=1
   icmp     1 30 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=4 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=4 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:47 dst=ff02::1:3 sport=32954 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:47 sport=5355 dport=32954 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:4b dst=ff02::1:3 sport=64249 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4b sport=5355 dport=64249 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:47 dst=ff02::1:3 sport=52073 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:47 sport=5355 dport=52073 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:4b dst=ff02::1:3 sport=61627 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4b sport=5355 dport=61627 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 25 flow entries have been shown.
 
 [310/400] lhq lhq$ conntrack -S
@@ -1585,7 +1585,7 @@ Total steps: 400
   iptables: Permission denied
 
 [315/400] lbr lbr$ conntrack -L
-  udp      17 29 src=10.2.2.10 dst=224.0.0.251 sport=54881 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=54881 mark=0 use=1
+  udp      17 29 src=10.2.2.10 dst=224.0.0.251 sport=64379 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=64379 mark=0 use=1
   icmp     1 29 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=1 src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=1 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=2 [UNREPLIED] src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=2 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=3 src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=3 mark=0 use=1
@@ -1594,8 +1594,8 @@ Total steps: 400
   icmp     1 30 src=10.2.2.11 dst=10.1.1.1 type=8 code=0 id=5 src=10.1.1.1 dst=10.2.2.11 type=0 code=0 id=5 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=10.2.2.1 type=8 code=0 id=6 src=10.2.2.1 dst=10.2.2.11 type=0 code=0 id=6 mark=0 use=1
   icmp     1 30 src=198.51.100.10 dst=10.2.2.11 type=8 code=0 id=2 src=10.2.2.11 dst=198.51.100.10 type=0 code=0 id=2 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:4f dst=ff02::1:3 sport=60425 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4f sport=5355 dport=60425 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:53 dst=ff02::1:3 sport=49495 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:53 sport=5355 dport=49495 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:4f dst=ff02::1:3 sport=60723 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4f sport=5355 dport=60723 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:53 dst=ff02::1:3 sport=42084 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:53 sport=5355 dport=42084 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 11 flow entries have been shown.
 
 [316/400] lbr lbr$ conntrack -S
@@ -1621,8 +1621,8 @@ Total steps: 400
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=4 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.1.1.1 type=8 code=0 id=5 src=10.1.1.1 dst=10.3.3.11 type=0 code=0 id=5 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.2.2.1 type=8 code=0 id=6 src=10.2.2.1 dst=10.3.3.11 type=0 code=0 id=6 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=40167 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=40167 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50726 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50726 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44948 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44948 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=33972 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=33972 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
 
 [322/400] ldc ldc$ conntrack -S
@@ -1685,8 +1685,8 @@ Total steps: 400
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=15 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=15 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.2.2.11 type=0 code=0 id=4 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=4 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=40167 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=40167 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50726 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50726 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44948 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44948 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=33972 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=33972 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 11 flow entries have been shown.
 
 [328/400] srvdc srvdc$ conntrack -S

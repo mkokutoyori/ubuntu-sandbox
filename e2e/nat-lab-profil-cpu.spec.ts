@@ -9,12 +9,13 @@ import { buildLab, lineCount, openTerminal, typeIn, waitForStore } from './helpe
 const SCENARIO = process.env.PROFILE ?? 'curl-ext-500';
 const COMMANDS: Record<string, { client: 'lin' | 'ext'; target: string; command: (t: string) => string; tcpdump: boolean }> = {
   'curl-ext-500': { client: 'lin', target: '203.0.113.9', command: (t) => `for i in $(seq 1 500); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`, tcpdump: false },
+  'curl-2000': { client: 'lin', target: '170.20.0.2', command: (t) => `for i in $(seq 1 2000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`, tcpdump: true },
   'curl-500': { client: 'lin', target: '170.20.0.2', command: (t) => `for i in $(seq 1 500); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`, tcpdump: true },
 };
 
 test('profile', async ({ page }) => {
   test.skip(!process.env.PROFILE, 'PROFILE=<epreuve> pour profiler');
-  test.setTimeout(300_000);
+  test.setTimeout(600_000);
   const spec = COMMANDS[SCENARIO];
   await page.goto('/');
   await waitForStore(page);
@@ -33,7 +34,7 @@ test('profile', async ({ page }) => {
   await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
   await cdp.send('Profiler.start');
   await typeIn(page, ids[spec.client], spec.command(spec.target)).catch(() => undefined);
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 500; i++) {
     await page.waitForTimeout(1000);
     if (await lineCount(page, ids[spec.client], 'FINISHED') > 0) break;
   }

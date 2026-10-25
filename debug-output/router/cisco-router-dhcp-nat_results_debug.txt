@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-10-25T16:57:40.770Z
+Generated: 2026-10-25T18:01:50.393Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1368,7 +1368,7 @@ Total steps: 369
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1687YAV3
+  Processor board ID FTX182184M2
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1380,7 +1380,7 @@ Total steps: 369
   
   Current configuration : 5425 bytes
   !
-  ! Last configuration change at 16:57:45 UTC Sun Oct 25 2026 by console
+  ! Last configuration change at 18:01:55 UTC Sun Oct 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2100,19 +2100,19 @@ Total steps: 369
   
   Log Buffer (4096 bytes):
   
-  *Oct 25 16:57:40.766: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 25 16:57:40.766: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 25 16:57:40.767: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 25 16:57:40.767: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 25 16:57:40.791: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.837: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.872: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.880: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.889: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.901: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:45.920: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:45.951: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:45.978: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.389: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 18:01:50.390: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 18:01:50.391: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:50.391: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:50.423: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.478: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.541: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.547: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.554: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.566: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:55.584: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:55.622: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:55.644: %SYS-5-CONFIG_I: Configured from console by console
 
 [296/369] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2124,7 +2124,7 @@ Total steps: 369
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 500 (1/100 of seconds), resolution is 4001
-  reference time is EE88B38A.0A7EF9DB (16:57:46.041 UTC Sun Oct 25 2026)
+  reference time is EE88C293.AF1A9FBE (18:01:55.684 UTC Sun Oct 25 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2135,7 +2135,7 @@ Total steps: 369
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [299/369] r1 R1# show clock
-  *16:57:46.000 UTC Sun Oct 25 2026
+  *18:01:55.000 UTC Sun Oct 25 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2299,7 +2299,7 @@ Total steps: 369
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1687YAV3
+  Processor board ID FTX182184M2
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2311,7 +2311,7 @@ Total steps: 369
   
   Current configuration : 5425 bytes
   !
-  ! Last configuration change at 16:57:45 UTC Sun Oct 25 2026 by console
+  ! Last configuration change at 18:01:55 UTC Sun Oct 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2723,23 +2723,23 @@ Total steps: 369
   
   Log Buffer (4096 bytes):
   
-  *Oct 25 16:57:40.766: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 25 16:57:40.766: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 25 16:57:40.767: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 25 16:57:40.767: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 25 16:57:40.791: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.837: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.872: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.880: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.889: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:40.901: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:45.920: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:45.951: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 25 16:57:45.978: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.389: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 18:01:50.390: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 25 18:01:50.391: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:50.391: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:50.423: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.478: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.541: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.547: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.554: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:50.566: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:55.584: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:55.622: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:55.644: %SYS-5-CONFIG_I: Configured from console by console
 
 [313/369] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1687YAV3
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX182184M2
 
 [314/369] r1 R1# show environment
   Number of Critical alarms:  0

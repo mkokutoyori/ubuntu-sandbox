@@ -2810,14 +2810,14 @@ Total steps: 400
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/0 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 1), 0 routes, runtime 0.5429379999995945ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 1), 0 routes, runtime 0.4601170000005368ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/1 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 2), 0 routes, runtime 0.044509999999718275ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 2), 0 routes, runtime 0.04706899999928282ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 3), 0 routes, runtime 0.04446100000041042ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 4), 0 routes, runtime 0.15282500000012078ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 3), 0 routes, runtime 0.047757999999703316ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 4), 0 routes, runtime 0.09526999999980035ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 5), 0 routes, runtime 0.10943100000076811ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 5), 0 routes, runtime 0.13964299999952345ms
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Down to Init, HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Init to ExStart, TwoWayReceived
@@ -2828,9 +2828,9 @@ Total steps: 400
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 6), 2 routes, runtime 0.140479000000596ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 7), 2 routes, runtime 0.0892069999999876ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 8), 2 routes, runtime 0.043329000000085216ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 6), 2 routes, runtime 0.06716000000051281ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 7), 2 routes, runtime 0.07176400000025751ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 8), 2 routes, runtime 0.04711399999996502ms
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Down to Init, HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Init to ExStart, TwoWayReceived
@@ -2841,42 +2841,42 @@ Total steps: 400
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 9), 4 routes, runtime 0.07368700000006356ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 10), 4 routes, runtime 0.026136999999835098ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 11), 4 routes, runtime 0.06227799999942363ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 12), 4 routes, runtime 0.05261499999960506ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 13), 4 routes, runtime 0.07337199999983568ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 9), 4 routes, runtime 0.07342500000049768ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 10), 4 routes, runtime 0.025029000000358792ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 11), 4 routes, runtime 0.06905000000006112ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 12), 4 routes, runtime 0.05609499999991385ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 13), 4 routes, runtime 0.045033999999759544ms
   *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 14), 4 routes, runtime 0.02830699999958597ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 15), 4 routes, runtime 0.02704399999947782ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 16), 4 routes, runtime 0.02701100000012957ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 17), 4 routes, runtime 0.04316300000027695ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 18), 4 routes, runtime 0.0387749999999869ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 14), 4 routes, runtime 0.02871099999993021ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 15), 4 routes, runtime 0.026770000000396976ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 16), 4 routes, runtime 0.033892000000378175ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 17), 4 routes, runtime 0.03928699999960372ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 18), 4 routes, runtime 0.04104800000004616ms
   *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 19), 4 routes, runtime 0.024943000000348547ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 20), 4 routes, runtime 0.027959000000009837ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 19), 4 routes, runtime 0.023910999999316118ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 20), 4 routes, runtime 0.02577099999962229ms
   *Jun  6 08:00:00.001: OSPF: Interface GigabitEthernet0/2 state change from DR to PointToPoint
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 21), 4 routes, runtime 0.14978699999937817ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 21), 4 routes, runtime 0.1451889999998457ms
   *Jun  6 08:00:00.001: OSPF: Interface GigabitEthernet0/2 state change from PointToPoint to Waiting
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 22), 4 routes, runtime 0.046239000000241504ms
-  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 23), 4 routes, runtime 0.04590600000028644ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 22), 4 routes, runtime 0.04731199999969249ms
+  *Jun  6 08:00:00.001: OSPF: Running full SPF (run 23), 4 routes, runtime 0.0399569999999585ms
   *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 24), 4 routes, runtime 0.03183000000080938ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 25), 4 routes, runtime 0.02943500000037602ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 24), 4 routes, runtime 0.03190499999982421ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 25), 4 routes, runtime 0.02661199999965902ms
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 40, Hello R 10 C 5, Mask R 255.255.255.252 C 255.255.255.252
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 40, Hello R 10 C 5, Mask R 255.255.255.252 C 255.255.255.252
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 40, Hello R 10 C 5, Mask R 255.255.255.252 C 255.255.255.252
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 26), 2 routes, runtime 0.039909000000079686ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 26), 2 routes, runtime 0.03690199999982724ms
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 20, Hello R 10 C 5, Mask R 255.255.255.252 C 255.255.255.252
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 20, Hello R 10 C 5, Mask R 255.255.255.252 C 255.255.255.252
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 20, Hello R 10 C 5, Mask R 255.255.255.252 C 255.255.255.252
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 27), 2 routes, runtime 0.09781199999997625ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 27), 2 routes, runtime 0.06237299999975221ms
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 20, Hello R 10 C 10, Mask R 255.255.255.252 C 255.255.255.252
@@ -2884,7 +2884,7 @@ Total steps: 400
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 20, Hello R 10 C 10, Mask R 255.255.255.252 C 255.255.255.252
   *Jun  6 08:00:00.002: OSPF: Mismatched hello parameters from 172.16.13.2
   *Jun  6 08:00:00.002: OSPF: Dead R 40 C 20, Hello R 10 C 10, Mask R 255.255.255.252 C 255.255.255.252
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 28), 2 routes, runtime 0.03489700000045559ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 28), 2 routes, runtime 0.035217999999986205ms
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Down to Init, HelloReceived
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Init to ExStart, TwoWayReceived
@@ -2895,7 +2895,7 @@ Total steps: 400
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 29), 4 routes, runtime 0.043329000000085216ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 29), 4 routes, runtime 0.04843299999993178ms
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
@@ -2907,7 +2907,7 @@ Total steps: 400
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 30), 4 routes, runtime 0.04262199999993754ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 30), 4 routes, runtime 0.11254299999927753ms
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
@@ -2918,10 +2918,10 @@ Total steps: 400
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 31), 4 routes, runtime 0.04002500000024156ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 31), 4 routes, runtime 0.04242599999997765ms
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 32), 4 routes, runtime 0.02807400000074267ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 33), 4 routes, runtime 0.026934999999866704ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 32), 4 routes, runtime 0.02626799999961804ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 33), 4 routes, runtime 0.028628000000026077ms
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.12.2 dropped on GigabitEthernet0/1: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.12.2 dropped on GigabitEthernet0/1: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.12.2 dropped on GigabitEthernet0/1: authentication mismatch
@@ -2930,14 +2930,14 @@ Total steps: 400
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.12.2 dropped on GigabitEthernet0/1: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.12.2 dropped on GigabitEthernet0/1: authentication mismatch
   *Jun  6 08:00:00.002: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.12.2 dropped on GigabitEthernet0/1: authentication mismatch
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 34), 4 routes, runtime 0.024927000000388944ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 35), 4 routes, runtime 0.02672400000028574ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 36), 4 routes, runtime 0.1855199999999968ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 34), 4 routes, runtime 0.024717999999666063ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 35), 4 routes, runtime 0.02534800000012183ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 36), 4 routes, runtime 0.1842559999995501ms
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Full to Down, KillNbr
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Full -> Down, event KillNbr
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Full to Down, KillNbr
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Full -> Down, event KillNbr
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 37), 0 routes, runtime 0.03643199999987701ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 37), 0 routes, runtime 0.03803200000038487ms
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Down to Init, HelloReceived
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Init to ExStart, TwoWayReceived
@@ -2948,7 +2948,7 @@ Total steps: 400
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 38), 2 routes, runtime 0.16022400000019843ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 38), 2 routes, runtime 0.14834500000051776ms
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Down to Init, HelloReceived
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Init to ExStart, TwoWayReceived
@@ -2957,29 +2957,29 @@ Total steps: 400
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Exchange to Full, ExchangeDone
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Full, event ExchangeDone
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 39), 4 routes, runtime 0.06569599999966158ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 40), 4 routes, runtime 0.047392999999829044ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 39), 4 routes, runtime 0.062304000000040105ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 40), 4 routes, runtime 0.03963999999996304ms
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 41), 4 routes, runtime 0.05246699999952398ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 42), 4 routes, runtime 0.04189500000029511ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 41), 4 routes, runtime 0.051409000000603555ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 42), 4 routes, runtime 0.03956400000060967ms
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 43), 5 routes, runtime 0.03533499999957712ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 44), 4 routes, runtime 0.026405999999951746ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 45), 4 routes, runtime 0.03446600000006583ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 46), 4 routes, runtime 0.026528999999754888ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 47), 4 routes, runtime 0.03169900000011694ms
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 48), 4 routes, runtime 0.06284299999970244ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 43), 5 routes, runtime 0.02853199999935896ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 44), 4 routes, runtime 0.026898000000073807ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 45), 4 routes, runtime 0.02778500000022177ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 46), 4 routes, runtime 1.7132259999998496ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 47), 4 routes, runtime 0.035609999999905995ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 48), 4 routes, runtime 0.024284999999508727ms
   *Jun  6 08:00:00.002: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Full to Down, KillNbr
   *Jun  6 08:00:00.002: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Full -> Down, event KillNbr
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 49), 2 routes, runtime 0.03365800000028685ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 49), 2 routes, runtime 0.03068399999938265ms
   *Jun  6 08:00:00.002: %LINK-5-CHANGED: Interface GigabitEthernet0/2, changed state to administratively down
   *Jun  6 08:00:00.002: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down
-  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 50), 2 routes, runtime 0.025778999999602092ms
+  *Jun  6 08:00:00.002: OSPF: Running full SPF (run 50), 2 routes, runtime 0.02424700000028679ms
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.003: OSPF: Interface GigabitEthernet0/2 state change from Down to Waiting
   *Jun  6 08:00:00.003: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Down to Init, HelloReceived
   *Jun  6 08:00:00.003: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
-  *Jun  6 08:00:00.003: OSPF: Running full SPF (run 51), 2 routes, runtime 0.03593600000021979ms
+  *Jun  6 08:00:00.003: OSPF: Running full SPF (run 51), 2 routes, runtime 0.03316400000039721ms
   *Jun  6 08:00:00.003: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.003: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.003: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Init to ExStart, TwoWayReceived
@@ -2990,9 +2990,9 @@ Total steps: 400
   *Jun  6 08:00:00.003: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.003: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.003: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.003: OSPF: Running full SPF (run 52), 4 routes, runtime 0.03348900000037247ms
+  *Jun  6 08:00:00.003: OSPF: Running full SPF (run 52), 4 routes, runtime 0.028519999999844003ms
   *Jun  6 08:00:00.003: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.004: OSPF: Running full SPF (run 53), 4 routes, runtime 0.04778100000021368ms
+  *Jun  6 08:00:00.004: OSPF: Running full SPF (run 53), 4 routes, runtime 0.047278000000005704ms
   *Jun  6 08:00:00.004: %SYS-5-CONFIG_I: Configured from console by console
 
 [400/400] rbr <R-BR> display logbuffer

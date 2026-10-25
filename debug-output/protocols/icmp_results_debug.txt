@@ -2301,8 +2301,8 @@ Total steps: 301
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
-  *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.13.1
-  *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.13.1, dst 10.1.1.10
+  *Jun  6 08:00:00.002: ICMP: echo received, src 10.1.1.10, dst 172.16.13.1
+  *Jun  6 08:00:00.002: ICMP: echo reply sent, src 172.16.13.1, dst 10.1.1.10
   *Jun  6 08:00:00.002: ICMP: echo received, src 10.2.2.11, dst 172.16.12.1
   *Jun  6 08:00:00.002: ICMP: echo reply sent, src 172.16.12.1, dst 10.2.2.11
   *Jun  6 08:00:00.002: ICMP: echo received, src 10.2.2.11, dst 172.16.13.1

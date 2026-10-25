@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-10-25T16:57:35.012Z
+Generated: 2026-10-25T18:01:50.765Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -1247,7 +1247,7 @@ Total steps: 346
   Fa0/1                   4968             44              2              8
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/1                   6864             49             18             14
+  Fa0/1                   7256             49             22             14
 
 [152/346] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -1266,16 +1266,16 @@ Total steps: 346
        Received 8 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       81 packets output, 6864 bytes, 0 underruns
+       85 packets output, 7256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [153/346] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
-  Fa0/2                   4076             44              3              1
+  Fa0/2                   4272             44              5              1
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/2                   6480             45             15             21
+  Fa0/2                   6676             45             17             21
 
 [154/346] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
@@ -1290,11 +1290,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       48 packets input, 4076 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       50 packets input, 4272 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       81 packets output, 6480 bytes, 0 underruns
+       83 packets output, 6676 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1303,7 +1303,7 @@ Total steps: 346
   Fa0/3                   4916             45              3              5
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/3                   7112             52             14             17
+  Fa0/3                   7504             52             18             17
 
 [156/346] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
@@ -1322,7 +1322,7 @@ Total steps: 346
        Received 5 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       83 packets output, 7112 bytes, 0 underruns
+       87 packets output, 7504 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1380,21 +1380,21 @@ Total steps: 346
   Fa0/1                   4968             44              2              8
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/1                   6864             49             18             14
+  Fa0/1                   7256             49             22             14
 
 [166/346] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
-  Fa0/2                   4076             44              3              1
+  Fa0/2                   4272             44              5              1
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/2                   6480             45             15             21
+  Fa0/2                   6676             45             17             21
 
 [167/346] sw1 SW1# show interfaces FastEthernet0/3 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
   Fa0/3                   4916             45              3              5
   
   Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
-  Fa0/3                   7112             52             14             17
+  Fa0/3                   7504             52             18             17
 
 [168/346] sw1 SW1# show interfaces FastEthernet0/4 counters
   Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
@@ -2234,7 +2234,7 @@ Total steps: 346
        Received 8 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       81 packets output, 6864 bytes, 0 underruns
+       85 packets output, 7256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2251,11 +2251,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       48 packets input, 4076 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       50 packets input, 4272 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       81 packets output, 6480 bytes, 0 underruns
+       83 packets output, 6676 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2276,7 +2276,7 @@ Total steps: 346
        Received 5 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       83 packets output, 7112 bytes, 0 underruns
+       87 packets output, 7504 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2721,7 +2721,7 @@ Total steps: 346
        Received 4 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       79 packets output, 6584 bytes, 0 underruns
+       83 packets output, 6976 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2738,11 +2738,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       48 packets input, 4076 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       50 packets input, 4272 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       76 packets output, 5970 bytes, 0 underruns
+       78 packets output, 6166 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2763,7 +2763,7 @@ Total steps: 346
        Received 3 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       75 packets output, 6306 bytes, 0 underruns
+       79 packets output, 6698 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

@@ -6,7 +6,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildLab, lineCount, openTerminal, typeIn, waitForStore, type Ids } from './helpers/natLab';
+import { buildLab, lineCount, lineCountContaining, openTerminal, typeIn, waitForStore, type Ids } from './helpers/natLab';
 
 const OUT = '/tmp/nat-lab-stress';
 mkdirSync(OUT, { recursive: true });
@@ -21,6 +21,8 @@ interface Scenario {
   target?: string;
   budgetMs?: number;
   maxLagMs?: number;
+  markerContains?: string;
+  before?: string[];
 }
 
 const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
@@ -35,6 +37,15 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'seq-500000', client: 'lin', commands: () => [`seq 1 500000; echo FINISHED`] },
   { name: 'yes-head-200000', client: 'lin', commands: () => [`yes spam | head -200000; echo FINISHED`] },
   { name: 'nat-table-flood', client: 'lin', commands: (t) => [`for i in $(seq 1 3000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
+  { name: 'logger-100000', client: 'lin', commands: () => [`for i in $(seq 1 100000); do logger -t stress "message number $i with a bit of text to be realistic"; done; echo FINISHED`] },
+  { name: 'win-cmd-for-50000', client: 'win', commands: () => ['(for /L %i in (1,1,50000) do @echo %i) & echo FINISHED'] },
+  { name: 'win-ps-range-100000', client: 'win', commands: () => [`powershell -Command "1..100000 | ForEach-Object { $_ }; 'FINISHED'"`] },
+  { name: 'win-curl-300', client: 'win', commands: (t) => [`(for /L %i in (1,1,300) do @curl.exe -s -o NUL --max-time 5 http://${t}/) & echo FINISHED`] },
+  { name: 'while-true', client: 'lin', commands: () => [`while true; do :; done`] },
+  { name: 'lin-big-pipeline', client: 'lin', commands: () => [`seq 1 300000 | sort -rn | uniq | wc -l; echo FINISHED`] },
+  { name: 'cisco-ping-repeat-3000', client: 'r', commands: () => ['ping 203.0.113.1 repeat 3000'], markerContains: 'Success rate is' },
+  { name: 'cisco-debug-packet-ping-2000', client: 'r', before: ['debug ip packet'], commands: () => ['ping 203.0.113.9 repeat 2000'], markerContains: 'Success rate is' },
+  { name: 'cisco-show-run-x500', client: 'r', commands: () => ['show running-config | include interface'], markerContains: 'interface GigabitEthernet0/1' },
   { name: 'ping-flood-500', client: 'lin', commands: (t) => [`ping -c 500 -i 0.002 ${t}; echo FINISHED`] },
   { name: 'nmap-1024', client: 'lin', commands: (t) => [`nmap -p 1-1024 ${t}; echo FINISHED`] },
   { name: 'nc-zv-300', client: 'lin', commands: (t) => [`for i in $(seq 1 300); do nc -zv -w 1 ${t} 80 & done; wait; echo FINISHED`] },
@@ -76,6 +87,7 @@ for (const scenario of SCENARIOS) {
     const started = Date.now();
     let maxLag = 0;
     let finished = false;
+    for (const line of scenario.before ?? []) await typeIn(page, ids[scenario.client], line);
     const commands = scenario.commands(target);
     for (const [index, command] of commands.entries()) {
       const marker = commands.length > 1 ? `FINISHED${index + 1}` : 'FINISHED';
@@ -89,7 +101,7 @@ for (const scenario of SCENARIOS) {
         ]);
         if (lag < 0) { note(`[${scenario.name}] page unresponsive (${lag})`); break; }
         maxLag = Math.max(maxLag, lag);
-        if (await lineCount(page, ids[scenario.client], marker) > 0) { finished = true; break; }
+        if ((scenario.markerContains !== undefined ? await lineCountContaining(page, ids[scenario.client], scenario.markerContains) : await lineCount(page, ids[scenario.client], marker)) > 0) { finished = true; break; }
       }
       if (!finished) break;
     }

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-10-25T16:56:18.829Z
+Generated: 2026-10-25T17:50:58.108Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -667,7 +667,7 @@ $ [102/302]> ping -c 2 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [103/302]> ping -c 1 192.168.10.2
@@ -680,7 +680,7 @@ $ [104/302]> ping -c 3 -i 1 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+  3 packets transmitted, 3 received, 0% packet loss, time 2000ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [105/302]> ping -c 1 -W 1 192.168.10.99
@@ -764,7 +764,7 @@ $ [120/302]> tracepath 127.0.0.1
        Resume: pmtu 65535 hops 1 back 1 
 
 $ [121/302]> mtr -r -c 1 127.0.0.1
-  Start: 2026-10-25T16:58:21.855Z
+  Start: 2026-10-25T17:53:01.135Z
   L-SRV-NET-DBG (127.0.0.1)
                                          Packets               Pings
    Host                                Loss%   Snt   Last   Avg  Best  Wrst StDev
@@ -1054,18 +1054,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-10-25 16:58:21--  http://192.168.10.1
+  --2026-10-25 17:53:01--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-10-25 16:58:21--  http://192.168.10.1
+  --2026-10-25 17:53:01--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-10-25 16:58:21--  http://192.168.10.99
+  --2026-10-25 17:53:01--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1285,51 +1285,51 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:S8P3iggCg3baUMeRpw1oVNrWO0b8J9JD4OUp9X2DcQ8 root@L-SRV-NET-DBG
+  SHA256:vtMecjAsm5tspmcP7B5KCuuhy7q3BW0xXJaXBfeAZiA root@L-SRV-NET-DBG
   The key's randomart image is:
   +---[RSA 2048]----+
-  |  ..oo.. o   .E. |
-  |   o+o=.= o . +..|
-  |  .o ==* + . o o.|
-  |. . o..o*     . .|
-  |+o .   =S=..     |
-  |.o=   ..o++.     |
-  | ....   .   .    |
-  |   . . . . .     |
-  |      . . .      |
+  |    E +o.=+      |
+  |   . +. *. o     |
+  |    +  +    .    |
+  |   . o .         |
+  |  . o . S        |
+  |   o . = o       |
+  |..  o * o.o      |
+  |ooo+ +==.+..     |
+  |O*o.oB*.oo.      |
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 1823 Oct 25 16:58 /tmp/id_rsa
-  -rw-r--r-- 1 root root 400 Oct 25 16:58 /tmp/id_rsa.pub
+  -rw------- 1 root root 1823 Oct 25 17:53 /tmp/id_rsa
+  -rw-r--r-- 1 root root 400 Oct 25 17:53 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCIw5NEy2uzC5itY0P+qpW8ThKYh3wds7HWOkypQ1GUE9nZJmwCLgvZQYAml6A0jVOUmmCjq+fjIN3spcfVXIfkMlf4h1tA15caVUCGQc7YPcEBwihlyFUDoWEPBE+ChmTW50pnPWpNtE31h7NnhxL1izdmePgUNAFbM7XRwRvOG6Wud51W8fo6zkrKGLPTH9kUYQrCK/AU1pe+adOjT3UYbMLrLPJWR9a4FFvQg0UnSbfh/CXYjLLGL6e1Te4LpizSFcCM2PRrSQzCOnwZJj2Ujw/2pDZBqJuVLnEW/U5jiMxxjzBfqYgeDJSu41UbcXvQlXj+flwyZKHzaActQ3f root@L-SRV-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDGyVfhW3Qf4vYdTQneemJKFCWfcXTQvBSFRSeU01P35Ww0iF97FjZ9PXE+HOmC4Bavuzwcu4DQSi0mYMOgsVeF3D5OqdZF+oP9wHJgQv8h+5UbvihCvK5laghwxuPQyruQ/QZlzNX5S4bjNFWFPIBdE+3Qt0qO3Wbr6noqt9IeMsrqS3kNG8USmlyK8IWW/vdkNCf22YDR6QOfKsDhO9iXJ7L8rOArYaEtnOcDQ6Faieyj90OrNTSm61MFV21IuuhhsdOoCvYGHdsmTMQU8sfGt2xz6WXYBM+z519BXap7qVDt7tHvKnbyorhlwGyuc1tnYStd02RrkBdQygzNDd/L root@L-SRV-NET-DBG
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:KOejZ4C6iakdJEieg8MpTqH3ZMd240SoaDd02KyXokk root@L-SRV-NET-DBG
+  SHA256:+M5a/n2jqhArGRDz+wGMt6KIC3cpFCtBIeweLz+ZKV0 root@L-SRV-NET-DBG
   The key's randomart image is:
   +--[ED25519 256]--+
-  |                 |
-  |     + .         |
-  | o  o = .        |
-  |B +o = +         |
-  |BBE.X O S        |
-  |+BoB.X + .       |
-  | o+ ..o .        |
-  |o+ . .o.         |
-  |B.. .o           |
+  |oo+              |
+  |o. *             |
+  |o + =            |
+  | + = + .         |
+  |o * + + S        |
+  |o* o E =         |
+  |= * X + o        |
+  |.+ X . *   .  o  |
+  |. . . ..=oo.oo . |
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
-  2048 SHA256:S8P3iggCg3baUMeRpw1oVNrWO0b8J9JD4OUp9X2DcQ8 root@L-SRV-NET-DBG (RSA)
+  2048 SHA256:vtMecjAsm5tspmcP7B5KCuuhy7q3BW0xXJaXBfeAZiA root@L-SRV-NET-DBG (RSA)
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCIw5NEy2uzC5itY0P+qpW8ThKYh3wds7HWOkypQ1GUE9nZJmwCLgvZQYAml6A0jVOUmmCjq+fjIN3spcfVXIfkMlf4h1tA15caVUCGQc7YPcEBwihlyFUDoWEPBE+ChmTW50pnPWpNtE31h7NnhxL1izdmePgUNAFbM7XRwRvOG6Wud51W8fo6zkrKGLPTH9kUYQrCK/AU1pe+adOjT3UYbMLrLPJWR9a4FFvQg0UnSbfh/CXYjLLGL6e1Te4LpizSFcCM2PRrSQzCOnwZJj2Ujw/2pDZBqJuVLnEW/U5jiMxxjzBfqYgeDJSu41UbcXvQlXj+flwyZKHzaActQ3f root@L-SRV-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDGyVfhW3Qf4vYdTQneemJKFCWfcXTQvBSFRSeU01P35Ww0iF97FjZ9PXE+HOmC4Bavuzwcu4DQSi0mYMOgsVeF3D5OqdZF+oP9wHJgQv8h+5UbvihCvK5laghwxuPQyruQ/QZlzNX5S4bjNFWFPIBdE+3Qt0qO3Wbr6noqt9IeMsrqS3kNG8USmlyK8IWW/vdkNCf22YDR6QOfKsDhO9iXJ7L8rOArYaEtnOcDQ6Faieyj90OrNTSm61MFV21IuuhhsdOoCvYGHdsmTMQU8sfGt2xz6WXYBM+z519BXap7qVDt7tHvKnbyorhlwGyuc1tnYStd02RrkBdQygzNDd/L root@L-SRV-NET-DBG
 
 $ [224/302]> ssh -V
   OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022
@@ -1354,12 +1354,12 @@ $ [228/302]> dhclient -v eth0
   Listening on LPF/eth0/02:00:00:aa:bb:cc
   Sending on   LPF/eth0/02:00:00:aa:bb:cc
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xf221ef2c)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xf221ef2c)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xf221ef2c)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xf221ef2c)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xf221ef2c)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xf221ef2c)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x4ee41a6d)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0x4ee41a6d)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0x4ee41a6d)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0x4ee41a6d)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0x4ee41a6d)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0x4ee41a6d)
   No DHCPOFFERS received.
   No working leases in persistent database - sleeping.
 

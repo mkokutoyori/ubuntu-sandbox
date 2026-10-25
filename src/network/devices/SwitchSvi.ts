@@ -4,6 +4,7 @@ import {
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
   createIPv4Packet,
 } from '../core/types';
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import {
   decrementForForwarding, isDirectedBroadcast, ipv4HeaderProblem,
   type ConnectedIpv4Prefix,
@@ -711,6 +712,7 @@ export class SwitchSvi {
       results.push(row);
       hooks?.onResult?.(row);
       if (hooks?.shouldStop?.()) break;
+      await yieldWhenSliceIsSpent();
     }
     return results;
   }

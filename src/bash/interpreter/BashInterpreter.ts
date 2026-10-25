@@ -18,7 +18,7 @@
  * is replayed. Each unique occurrence executes exactly once.
  */
 
-import { yieldWhenSliceIsSpent } from '@/bash/runtime/CooperativeYield';
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import type {
   Program, CommandList, AndOrList, Pipeline, Command,
   SimpleCommand, IfClause, ForClause, WhileClause, UntilClause,

@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
 import type { CbacPort } from './router/security/CbacFirewall';
@@ -6387,6 +6388,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
       results.push(row);
       hooks?.onResult?.(row);
+      await yieldWhenSliceIsSpent();
     }
     return results;
   }
@@ -6417,6 +6419,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
       results.push(row);
       hooks?.onResult?.(row);
+      await yieldWhenSliceIsSpent();
     }
     return results;
   }
@@ -6460,6 +6463,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const dataSize = Math.max(0, (hooks?.sizeBytes ?? 100) - 48);
     for (let seq = 1; seq <= count; seq++) {
       if (hooks?.shouldStop?.()) break;
+      await yieldWhenSliceIsSpent();
       this.pingIdCounter++;
       const id = this.pingIdCounter;
       const sentAt = PathClock.now();

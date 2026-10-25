@@ -18,6 +18,7 @@
  *          └─ ICMP Packet (protocol 1)
  */
 
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
@@ -5194,6 +5195,7 @@ export abstract class EndHost extends Equipment {
     const results: PingResult[] = [];
     for (let seq = firstSeq; seq < firstSeq + count; seq++) {
       const observed = observe(seq);
+      await yieldWhenSliceIsSpent();
       try {
         results.push(observed.attachTo(await transmit(seq)));
       } catch (err: unknown) {

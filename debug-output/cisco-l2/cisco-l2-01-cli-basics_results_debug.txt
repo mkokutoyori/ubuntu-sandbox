@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-10-25T16:57:27.595Z
+Generated: 2026-10-25T18:01:41.340Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -152,7 +152,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *16:57:27.000 UTC Sun Oct 25 2026
+  *18:01:41.000 UTC Sun Oct 25 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -507,7 +507,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC4529GADJ
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC6943L9PC
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1372,7 +1372,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *16:57:27.000 UTC Sun Oct 25 2026
+  *18:01:41.000 UTC Sun Oct 25 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1524,15 +1524,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Oct 25 16:57:27.510: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Oct 25 16:57:27.511: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Oct 25 16:57:27.514: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Oct 25 16:57:27.514: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Oct 25 16:57:27.518: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Oct 25 16:57:27.518: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Oct 25 16:57:27.532: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 25 16:57:27.532: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 25 16:57:27.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:41.258: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Oct 25 18:01:41.258: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Oct 25 18:01:41.261: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Oct 25 18:01:41.261: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Oct 25 18:01:41.267: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Oct 25 18:01:41.267: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Oct 25 18:01:41.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:41.276: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:41.308: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -3238,7 +3238,7 @@ Total steps: 366
 [197/366] srv1 srv1$ systemctl status sshd
   [0;1;32m●[0m ssh.service - OpenBSD Secure Shell server
        Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
-       Active: [0;1;32mactive (running)[0m since Sun, 25 Oct 2026 16:57:27 GMT
+       Active: [0;1;32mactive (running)[0m since Sun, 25 Oct 2026 18:01:41 GMT
      Main PID: 22 (sshd)
         Tasks: 1
        Memory: 4.2M
@@ -3623,7 +3623,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   16:57:27 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3730,7 +3730,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          10/25/2026, 4:57:27 PM
+  System Boot Time:          10/25/2026, 6:01:41 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3782,7 +3782,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   16:57:27 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   L2
@@ -3810,7 +3810,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   16:57:27 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3917,7 +3917,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          10/25/2026, 4:57:27 PM
+  System Boot Time:          10/25/2026, 6:01:41 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3969,7 +3969,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   16:57:27 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
