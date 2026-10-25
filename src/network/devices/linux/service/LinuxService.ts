@@ -32,6 +32,8 @@ export class LinuxService extends OSService implements ServiceUnit {
   restartSec?: number;
   startLimitBurst?: number;
   startLimitIntervalSec?: number;
+  logRateLimitIntervalUsec?: number;
+  logRateLimitBurst?: number;
   listenStream?: number;
   onActiveSec?: number;
   onBootSec?: number;
@@ -76,6 +78,8 @@ export class LinuxService extends OSService implements ServiceUnit {
     this.allowIsolate = init.allowIsolate;
     this.restartSec = init.restartSec;
     this.startLimitBurst = init.startLimitBurst;
+    this.logRateLimitIntervalUsec = init.logRateLimitIntervalUsec;
+    this.logRateLimitBurst = init.logRateLimitBurst;
     this.startLimitIntervalSec = init.startLimitIntervalSec;
     this.lastExit = init.lastExit;
     this.failedReason = init.failedReason;

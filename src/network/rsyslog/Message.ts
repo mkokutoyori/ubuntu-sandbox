@@ -54,6 +54,7 @@ export class RsyslogMessage {
   cee: { [key: string]: JsonValue } = {};
   localVariables: { [key: string]: JsonValue } = {};
   discarded = false;
+  flowControl: 'none' | 'light' | 'full' = 'none';
 
   constructor(info: ReceiveInfo) {
     this.rawMsg = info.rawMsg;

@@ -263,3 +263,212 @@ source »). Ils passaient, donc rien ne signalait le problème : c'est la
 vérification contre la documentation de rsyslog — et non l'exécution de la
 suite — qui l'a trouvé. Un test vert ne prouve que la cohérence du code
 avec lui-même.
+
+## Moteur porté : démon Linux, paramètres globaux, omfile, imfile
+
+Le démon Linux n'est plus un lecteur de lignes : c'est le moteur de `src/network/rsyslog` (RainerScript,
+rulesets, machine à états des actions, files, limiteurs, réduction des messages répétés) piloté par
+`LinuxRsyslogHost`. Ce que ce lot a rendu réel, avec les sondes qui le prouvent :
+
+- **Fichiers tenus par inode** (`VirtualFileSystem.openAppend`) : un fichier renommé ou supprimé continue de
+  recevoir jusqu'au SIGHUP ; `logrotate` + `postrotate` rouvrent le bon fichier
+  (`linux-rsyslog-daemon.test.ts`). Les temporisations (MARK, reprise d'action, expiration de certificat) sont sur
+  l'horloge de la machine : `advanceTime()` les déclenche, chacune à son heure.
+- **TLS RFC 5425** par le sous-système `tls/` et `pki/` (modes anon, fingerprint, certvalid, name ; pairs permis
+  avec jokers) : `linux-rsyslog-tls.test.ts`, `rsyslog-peer-auth.test.ts`.
+- **Windows** : `Send-SyslogMessage` (RFC 3164, RFC 5424, cadrage TCP) partage les codecs de `src/network/syslog` :
+  `windows-syslog-emission.test.ts`.
+- **Paramètres globaux évalués** (`linux-rsyslog-globals.test.ts`) : `privdrop.*` (identité du processus visible
+  dans `ps`, droits d'écriture vérifiés pour l'acteur, `chown` refusé à un non-root, `failOnChownFailure`),
+  `maxOpenFiles` (RLIMIT_NOFILE du gestionnaire de processus, EMFILE), `umask`, `abortOnUncleanConfig`,
+  `inputStartupPolicy`, `oversizemsg.*` (modes truncate/split/accept, fichier d'erreurs JSON). Les messages
+  internes émis pendant l'activation sont mis en file puis rejoués une fois les entrées démarrées.
+- **omfile** (`linux-rsyslog-omfile.test.ts`) : `OmfileStream` porte le tampon d'E/S de `runtime/stream.c`
+  (`ioBufferSize`, `flushOnTXEnd`, `asyncWriting` + `flushInterval` sur l'horloge simulée), les flux gzip et zstd
+  (`zipLevel`, `veryRobustZip`, `compression.driver`), la limite de taille et sa commande de rotation,
+  `$outchannel` / `:omfile:$canal`, `followSymlinks`, et le refus honnête d'un fournisseur `cry.provider` non
+  installé. La file appelle `endBatch` en fin de lot : les actions ont enfin une phase de commit.
+- **imfile** (`linux-rsyslog-imfile.test.ts`) : arbre de surveillance à jokers, liens symboliques, rotation,
+  suppression retardée, modes inotify (évènements du VFS) et polling, lignes partielles retenues, fichiers d'état
+  `imfile-state:<inode>[:<siphash>]` dans le répertoire de travail, reprise après redémarrage, `freshStartTail`,
+  readMode 0/1/2, `startmsg.regex` / `endmsg.regex`, `readTimeout`, `reopenOnTruncate`, métadonnées, limites par
+  minute, `maxInotifyWatches` et son balayage de repli.
+
+- **Phase de commit des actions** (`rsyslog-action-commit.test.ts`) : omfile et omfwd sont transactionnels, comme dans
+  `action.c` — les messages d'un lot sont collectés puis confiés ensemble au module en fin de lot (`endBatch` de la file,
+  qui peut dormir sur l'horloge simulée pendant que le lot reste dans la file). Un lot qui échoue est rejoué message par
+  message (les lignes déjà écrites le sont une seconde fois), les messages qui échouent encore sont journalisés puis
+  écrits dans `action.errorfile` avec le statut de l'état de l'action (`RS_RET_DATAFAIL`, `RS_RET_SUSPENDED`, ou 0 pour
+  un lot arrivé pendant la suspension). Un message seul qui échoue n'est que journalisé. Après un échec dur l'action reste en
+  `ACT_STATE_DATAFAIL` jusqu'au prochain commit réussi : le message suivant revient en échec de `processMsgMain`, reste
+  READY dans `processBatchMain` et `DeleteProcessedBatch` le remet en fin de file (le vrai ouvrier reboucle sans pause, le
+  simulateur une fois par seconde pour que `advanceTime()` se termine). La boucle de reprise d'`actionCommit` ne sort pas
+  d'un échec dur sur un message déjà en reprise (l'état n'est ni RDY, ni SUSP, ni DISABLED) ; le simulateur s'arrête
+  plutôt que de reboucler sans fin. `tryResume` d'omfile répond
+  toujours OK : la garde des dix reprises suspend l'action.
+
+- **Sorties d'enfants et démarrage des files** : le programme de rotation d'omfile est un vrai processus fils de rsyslogd
+  (pid dans la table des processus) et `global(reportChildProcessExits)` (`none`, `errors`, `all`) décide de ce qui est
+  journalisé (`linux-rsyslog-child-exits.test.ts`). Une file « disk » sans `queue.fileName` ne démarre pas : l'action est
+  désactivée, ou le démon s'arrête sur la ligne de la source avec `abortOnFailedQueueStartup`
+  (`linux-rsyslog-queue-startup.test.ts`).
+
+- **journald.conf** (`linux-journald-config.test.ts`) : le démon lit `/etc/systemd/journald.conf` puis les drop-ins de
+  `journald.conf.d` (fusionnés par nom, `/etc` masque `/usr/lib`), au démarrage du service. Ubuntu livre le drop-in
+  `syslog.conf` (`ForwardToSyslog=yes`), qui est ce qui confie le journal à rsyslog : `ForwardToSyslog`, `MaxLevelSyslog`,
+  `MaxLevelStore`, `Storage` et `LineMax` sont évalués, et les erreurs de syntaxe sont journalisées avec le fichier et la ligne.
+
+- **Transmission de journald** (`linux-journald-forward.test.ts`) : `ForwardToWall` (diffusion avec l'en-tête de `wall(3)`, `MaxLevelWall`
+  `emerg` par défaut), `ForwardToConsole` (`[ s.us] identifiant[pid]: message` sur `TTYPath`), `ForwardToKMsg` (tampon noyau, que journald
+  ne relit pas), `ReadKMsg` et `Audit` (indicateur `enabled` du noyau d'audit, `yes` par défaut) sont évalués à l'ingestion, avant le
+  stockage et la limitation de débit, comme dans `journald-server.c`.
+
+- **Espace, rotation, vacuum, débit et fichiers par utilisateur** (`journald-space-oracle.test.ts`, `linux-journald-space.test.ts`) :
+  le modèle d'octets du fichier journal (objets data, field, entry, entry array et tables de hachage, allocation par pas de 8 Mio plafonnée
+  à `MaxFileSize`) est celui du format ; une rotation a lieu quand la table de hachage des données dépasse 75 % de remplissage, quand
+  l'allocation dépasse `MaxFileSize` (E2BIG), quand l'entrée la plus ancienne dépasse `MaxFileSec`, quand l'horloge recule, ou à la
+  demande ; `journal_directory_vacuum` (partagé avec `journalctl --vacuum-*`) applique `MaxUse` (plafonné par `KeepFree` et
+  l'espace libre du système de fichiers), `MaxFiles` et `MaxRetentionSec`, ce dernier par la minuterie de `journald.c` sur l'horloge
+  simulée. Les fichiers occupent des octets du système de fichiers de la machine (`df`, `ls`, `du`, `journalctl --disk-usage` concordent).
+  `RateLimitIntervalSec`/`RateLimitBurst` (et `LogRateLimit*` du fichier d'unité) limitent par unité et par groupe de priorités, avec la
+  modulation du seuil par l'espace disponible de `journald-rate-limit.c`, et le message « Suppressed N messages from unit ». `SplitMode`
+  répartit les messages en `user-<uid>.journal`. `Compress=` fixe le drapeau `COMPRESSED-ZSTD` des fichiers créés et le seuil
+  au-delà duquel un objet est compressé ; la taille compressée est une estimation (LZ77 et entropie, `PayloadCompression.ts`, à 35 % de zstd
+  sur les douze charges mesurées), zstd lui-même n'étant pas porté. `SyncIntervalSec` fait passer le fichier actif à OFFLINE (immédiatement pour `crit`).
+  Les cinq cas de l'oracle (fichiers restants, message d'usage du disque, messages de suppression, `--vacuum-*`) sont mesurés contre
+  le vrai binaire 255.4 (`scripts/oracle/record_journald_space.py`). Limite assumée : le système de fichiers de la machine est un
+  volume unique, donc `/run` (journal volatil) partage la capacité de la racine.
+
+- **Scellement du journal, `Seal=` et `journalctl --setup-keys` / `--verify-key`** (`journald-seal.test.ts`) : `journal/seal/Fsprg.ts` porte
+  `fsprg.c` (générateur déterministe SHA-256, deux nombres premiers de 768 bits congrus à 3 modulo 4, évolution par élévation au carré,
+  `seek` direct), `SealingKeyFile.ts` le fichier `fss` (`KSHHRHLP`, 88 octets d'en-tête, 394 d'état : 482 octets) et la clé de vérification
+  `graine/époque-intervalle`, `SetupKeys.ts` la commande (trois lignes « Generating… », texte du terminal, refus sans `--force`, intervalle
+  invalide). `SealChain.ts` suit `journal-authenticate.c` : un objet Tag de 64 octets par intervalle de scellement franchi sur l'HORLOGE SIMULÉE,
+  HMAC-SHA256 sur l'en-tête, les tables de hachage et les objets écrits depuis le tag précédent, clé tirée de l'état de l'époque, puis
+  évolution et réécriture du fichier de clé. `JournalFile` porte les drapeaux `SEALED`/`SEALED_CONTINUOUS` et le compteur de tags de `--header` ;
+  `Seal=no` ou l'absence de fichier de clé laisse les fichiers neufs non scellés. `--verify` applique `journal_file_verify` : époque continue,
+  bornes des entrées, tag recalculé ; avec la bonne clé il rapporte « Validated from … to … », avec une autre « Tag failed verification »
+  (« Bad message »), sans clé « Required key not available ». La chaîne a été comparée au vrai `systemd-journald` et `journalctl` 255.4 sur un
+  fichier scellé ; le défaut amont selon lequel le premier fichier d'un démarrage échoue à la vérification de son premier tag (le seqnum_id de
+  l'en-tête change à la première entrée) est reproduit volontairement.
+
+- **Files de messages** (`rsyslog-queue-params.test.ts`, `rsyslog-disk-assisted.test.ts`, `rsyslog-disk-queue.test.ts`,
+  `rsyslog-queue-shutdown.test.ts`, `rsyslog-queue-enqueue-timeout.test.ts`) : `Queue.ts` est un ensemble de workers comme `queue.c`.
+  Chaque worker depile un lot entier, le traite, le valide (commit des actions) puis le supprime ; `workerThreads` et
+  `workerThreadMinimumMessages` decident du nombre de workers actifs ; `dequeueSlowdown`, la fenetre horaire, `minDequeueBatchSize`
+  (et son delai), `samplingInterval`, `discardMark`/`discardSeverity` et les marques `fullDelayMark` / `lightDelayMark` (qui retiennent
+  le producteur d'une entree retardable : imfile plein, imtcp/imuxsock/imklog leger, sans jamais perdre le message) sont evalues. Quand
+  la file est pleine, un message attend `timeoutEnqueue` ms qu'une place se libere avant d'etre rejete ; le simulateur n'ayant pas de fil
+  producteur a suspendre, le message attend dans l'ordre d'arrivee et le delai de chacun part quand il arrive en tete.
+  `qqueueApplyCnfParam` et `qqueueCorrectParams` sont portes avec leurs phrases (`QueueParams.ts`) : file trop petite ou trop grande,
+  marques incoherentes (corrigees), mode direct avec parametres (ignores, une file d'action est directe sauf `queue.type`), disque sans
+  `queue.fileName` (devient linkedList pour les parametres `queue.*`, echoue au demarrage pour les directives `$...Queue*`), prefixe de
+  fichier deja pris, `queue.spoolDirectory`. A l'arret, chaque worker tourne encore `timeoutShutdown` ms (1500 pour la file principale et les rulesets,
+  10 pour une action) puis `timeoutActionCompletion` ms pour le message en cours : le simulateur n'ayant pas de fil a annuler, ce delai est
+  depense en declenchant les reveils du worker ; `shutdown.queue.doubleSize` double la capacite de toutes les files avant ce vidage.
+  `default.action.queue.timeout*` et `default.ruleset.queue.timeout*` alimentent les files creees apres le `global()`.
+- **File disque classique** : une file `Disk`, ou la file fille « `<nom>[DA]` » d'une file assistee (`queue.fileName` sur FixedArray/LinkedList),
+  ecrit chaque message en enregistrements du flux d'objets de la source (`obj.c`, `msg.c` : `<Obj:1:msg:1:`, `+nom:type:longueur:donnee:`, `>End`)
+  dans `<fileName>.NNNNNNNN` du repertoire de travail, tourne a `maxFileSize`, supprime un fichier quand le pointeur de suppression l'a quitte,
+  ecrit `<fileName>.qi` (deux enregistrements `strm`) au changement de fichier, a chaque `checkpointInterval`, apres une suppression et a l'arret,
+  refuse au-dela de `maxDiskSpace` et reprend son arriere-plan apres un redemarrage. Une file assistee remplit sa fille quand le nombre de messages
+  en attente atteint `highWatermark`, jusqu'a `lowWatermark` ; a l'arret la partie memoire passe dans la fille (`saveOnShutdown`).
+- **Corruption d'une file disque classique** (`rsyslog-queue-corruption.test.ts`) : `queue.onCorruption` est evalue au demarrage par
+  `DiskQueueRecovery.ts` (port de `qqueueVerifyAndRecover`) : le repertoire de travail est compare au `.qi` (`.qi` absent ou invalide alors que des
+  fichiers numerotes existent, numero hors bornes, fichier manquant dans la chaine entre le fichier de suppression et celui d'ecriture, fichier
+  orphelin). `safe` (defaut) deplace `.qi` et fichiers vers `<prefixe>.bad.<AAAAMMJJhhmmss>` et repart a neuf, `inMemory` laisse les fichiers et fait
+  tourner la file en liste chainee non persistante, `ignore` ne verifie rien. Un enregistrement abime est saute par une resynchronisation bornee (1 Mio)
+  sur le prochain en-tete d'objet message ; sans en-tete, le reste de la file est mis en quarantaine dans `<prefixe>.bad.<horodatage>.<pid>`. Les
+  `.encinfo` suivent leur fichier de donnees, la ou la source les laisse derriere elle (ce qui rendrait la quarantaine illisible). Limite assumee :
+  le magasin lit tout le backlog au demarrage, la corruption decouverte pendant le fonctionnement par `qDeqDisk` (lecture incrementale) n'existe pas ici.
+
+- **Chiffrement des journaux et des files** (`rsyslog-crypto-omfile.test.ts`, `rsyslog-crypto-queue.test.ts`, `linux-rsyslog-crypto.test.ts`,
+  `rsyslog-crypto-oracle.test.ts`) : `crypto/CryptoProvider.ts` porte `lmcry_gcry` et `lmcry_ossl` (`cry.provider` d'omfile, `queue.cry.provider` d'une file
+  disque ou assistee). Chaque tampon vide est complete par des NUL jusqu'au bloc du chiffre puis chiffre sur place par UN contexte qui vit autant que le
+  fichier ; `<fichier>.encinfo` (0600) porte `FILETYPE:`, `IV:<hex>` a l'ouverture et `END:<decalage>` a la fermeture, un fichier rouvert en ajout recevant un
+  second bloc. `cry.key`, `cry.keyfile` (64 Kio au plus), `cry.keyprogram` (gcry, protocole `RSYSLOG-KEY-PROVIDER:0`), `cry.algo` et `cry.mode` sont lus avec les
+  messages de la source ; la cle d'une file est relue au demarrage et le `.qi` reste en clair, ses decalages etant ceux du fichier chiffre (blocs entiers,
+  chaque message etant vide seul). Les 18 algorithmes de libgcrypt x 7 modes sont mesures contre la vraie bibliotheque (`scripts/oracle/record_rsyslog_crypto.py` :
+  appariements refuses a l'ouverture, cles DES faibles, mode CTR dont le compteur ignore le `setiv` de rsyslog, echec d'AESWRAP) ; cote ossl les suites sont
+  celles d'`openssl enc` (`src/crypto/cipher/blockModes.ts` et `blockCiphers.ts`, partages avec elle), les modes CTR/CFB/OFB (taille de bloc EVP egale a 1, IV
+  d'un octet) n'ayant pas de comportement defini dans la source - l'IV est complete par des zeros - et les chiffres AEAD n'etant pas offerts. La commande
+  `rscryutil` (`-d`, `-k`, `-K`, `-p`, `-a`, `-m`, `-l`, `-r`, `-W`, `-f`) dechiffre bloc par bloc d'apres l'encinfo, retire le remplissage pour gcry seulement
+  (comme l'outil), ecrit ses fichiers de cle en 0400 et reproduit « error 1 processing file » pour un bloc sans `END`.
+
+- **File disque segmentee** (`rsyslog-segmented-disk.test.ts`, `rsyslog-segmented-disk-formats.test.ts`) : en 8.2610 le moteur par defaut de la
+  fille d'une file assistee neuve est `segmentedDisk` (`queue_da.c`), choisi au demarrage d'apres le contenu du repertoire de travail (`.qi` ou fichiers
+  numerotes = classique ; `<prefixe>.segq` = segmente ; `<prefixe>.da-engine` = marqueur de choix, `RSYSLOG-DA-ENGINE-V1 disk|segmentedDisk`) :
+  donnees des deux moteurs, marqueur contraire aux donnees ou mal forme = « cannot select disk-assisted queue engine », la file reste en memoire ;
+  `queue.diskQueueType` (`auto`, `disk`, `segmentedDisk`), `queue.diskQueueAutoUpgrade` (un marqueur `disk` avec file vidangee passe a `segmentedDisk`
+  au redemarrage) et les options reservees au moteur classique (`queue.cry.provider`, `queue.onCorruption` autre que `safe`) sont evalues. Le magasin
+  (`segdisk/SegmentedDiskStore.ts`, port de `segdisk_store.c`) est un repertoire `<prefixe>.segq` : un fichier `state` de 512 octets a deux
+  emplacements (`RSSEGST2`, generation, CRC32C) et des fichiers `segment-NNNNNNNNNNNNNNNNNNNN.open|recover|seg` faits d'un en-tete (`RSSEGH02`), d'enregistrements
+  TLV cadres (`RSRECD02`, CRC32C de l'en-tete et de la charge) et, une fois le segment clos a `maxFileSize`, d'un pied (`RSSEAL02`). Il est cree a la premiere
+  mise de cote (le marqueur d'abord), un segment ouvert au demarrage precedent devient `.recover`, les segments valides sont supprimes par plage prealablement
+  publiee dans l'etat, et il est retire (`state`, segments, repertoire ; le marqueur reste) quand la file est vide depuis `queue.diskQueueIdleTimeout` ms
+  (60 000 par defaut, `-1` pour jamais) sans activite de la file parente. Un enregistrement dont la somme echoue est ignore et compte
+  (`corruption.records`, message « segmentedDisk salvage skipped N corrupt records »), des octets qui ne forment pas d'en-tete sont survoles un a un
+  (`corruption.bytes`) ; un etat absent alors que des fichiers existent, un `.qi` herite ou un etat v1 sont refuses. `queue.type="segmentedDisk"` donne une
+  file pure creee des le demarrage. Les compteurs `disk.usage`, `segments`, `checkpoints`, `replayed`, `corruption.*`, `retry.overage.*`, `state.*`,
+  `recovery.*`, `startup.*`, `store.*` et `workers.current` sont publies sur l'objet de statistiques de la file. Ecarts assumes : l'arriere-plan est lu
+  en entier au demarrage au lieu d'etre decouvert par les workers au fil des lots (les compteurs `recovery.*` prennent donc leur valeur finale tout de
+  suite) ; les points d'injection de panne de `ENABLE_IMDIAG` et le crash (`kill -9`) entre deux etapes n'existent pas, la reprise d'un segment `.open`
+  laisse par un arret propre est en revanche portee ; `queue.cry.provider` absent de la machine echoue avec « could not load crypto provider ».
+- **Fichiers de politique de `ratelimit()` et `policyWatch`** (`rsyslog-ratelimit-yaml.test.ts`, `yaml-libyaml-oracle.test.ts`, `linux-rsyslog-policy-watch.test.ts`) :
+  le YAML des politiques est lu par `src/network/yaml/`, port de `reader.c`, `scanner.c` et `parser.c` de libyaml 0.2.5 (la bibliotheque que rsyslog lie pour
+  `ratelimit.c`) : flux d'evenements avec ancres, alias, etiquettes (`%TAG`, `!!`, `!<uri>`, echappements `%XX`), scalaires en bloc (`|`, `>`, indicateurs de
+  chomping et d'indentation), scalaires multi-lignes pliees, echappements des chaines entre guillemets, documents multiples et directives, avec les marques
+  (index, ligne, colonne) et les messages d'erreur du lecteur, du scanner et du parseur. Le port est compare a la vraie bibliotheque par
+  `scripts/oracle/record_yaml_events.py` (le harnais C `yaml_events_harness.c` lit les documents avec `yaml_parser_set_input_file`, comme rsyslog) sur 1 270 documents :
+  un corpus ecrit a la main qui couvre chaque production et chaque erreur, un fuzz a graine fixe (concatenations de fragments, mutations d'un caractere de documents
+  valides) et des documents qui enjambent le tampon brut de 16 Kio de libyaml, dont la limite de 1 024 caracteres d'une cle simple ; evenements, marques et erreurs sont
+  identiques. Le consommateur (`RateLimitPolicy.ts`) lit les evenements dans l'ordre comme `ratelimit.c` : un alias est ignore, une valeur scalaire est une chaine C
+  (coupee au premier NUL), une erreur de l'analyseur est journalisee apres les evenements qui l'ont precedee. `policyWatch` suit `rswatch.c` : la surveillance est posee sur le
+  REPERTOIRE du fichier avec le masque `IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB | IN_CREATE`, les evenements dont le nom est celui du fichier arment le delai de
+  coalescence. Le systeme de fichiers virtuel offre cette meme vue (`onDirectoryEvent`, qui remplace l'ancien `onEntryChange`) : ecriture, renommage vers le nom,
+  creation d'un nom (fichier, repertoire, lien symbolique, lien dur, tube) et changement d'attributs (`chmod`, `chown`, `chgrp`, `touch`, `setfacl`, `chattr`) sont signales sous le nom
+  auquel le chemin se resout ; un lien symbolique place au chemin de la politique n'emet donc rien dans son repertoire quand on ecrit la cible, comme inotify. Le
+  suivi des expediteurs de `global(senders.keepTrack)` etait deja porte (`Statistics.ts`) ; seule la source `imptcp` y manque encore.
+- **`resource-usage`** (`linux-rsyslog-resource-usage.test.ts`, `io-page-cache.test.ts`) : l'objet d'`impstats` rapporte un `getrusage(RUSAGE_SELF)` calcule a partir
+  d'evenements que le demon cause reellement (`process/ProcessUsage.ts`, `process/IoPageCache.ts`). `oublock` compte les secteurs de 512 octets des pages de 4 Kio
+  salies (8 secteurs la premiere fois, de nouveau une fois la page ecrite par le noyau apres `dirty_expire_centisecs` = 30 s) ; `inblock` les secteurs lus sur un
+  disque froid avec la fenetre de lecture anticipee de 128 Kio, puis servis par le cache (un fichier qu'un autre processus vient d'ecrire y est deja) ; `nvcsw` les
+  reveils du demon (datagramme, segment ou connexion TCP, minuterie, lecture qui attend le disque) ; `maxrss` le pic de la taille residente et `minflt` ses pages.
+  `stime`, `majflt` et `nivcsw` valent 0 par construction : le simulateur n'a ni mode noyau, ni pagination a la demande, ni contention de processeur.
+- **`imptcp`** (`rsyslog-imptcp.test.ts`, `linux-rsyslog-imptcp.test.ts`, `rsyslog-zlib-stream.test.ts`, `rsyslog-imtcp-wiring.test.ts`) : port de
+  `plugins/imptcp/imptcp.c` (`modules/Imptcp.ts`, `PtcpFramer.ts`). Les parametres de `module()` (`threads`, `maxsessions`, `processOnPoller`), ceux de `input()` et les
+  directives `$InputPTCPServer*` sont lus ; les ecoutes TCP sont posees avant l'abandon des privileges (une famille a la fois, IPv4 puis IPv6, le port 0 dynamique
+  reutilise pour la seconde et ecrit dans `listenPortFileName`), un echec de `bind` est dit avec le proprietaire visible du port (`one visible listener is PID n (comm)`
+  ou `listener owner unavailable`, comme `log_bind_failure`), et une socket UNIX en flux (`path`, `unlink`, `fileCreateMode`, `fileOwner`/`fileGroup`) est creee dans le VFS et
+  atteignable par `nc -U`. Le cadrage est la machine a etats octet par octet de `processDataRcvd` : un compte d'octets refuse (zero, trop grand) retombe en octet-stuffing en
+  gardant (trop grand) ou en perdant (zero) ses chiffres, `multiLine` decide a la fin du tampon de reception, le cadrage par expression reguliere reutilise le tampon doublé
+  du source (y compris son contenu perime apres un vidage), une ligne trop longue est coupee et signalee, `discardTruncatedMsg` jette la suite, et le journal des messages trop
+  longs (`oversizemsg.errorfile`) recoit la trame. La compression de flux (`stream:always`, `stream:auto` avec l'echantillon de 2 a 4 096 octets) s'appuie sur un
+  decompresseur zlib reprenable (`Inflater`, `ZlibInflateStream` dans `Zlib.ts`, qui remplace le decodeur monolithique : `zlibDecompress` et `gzipDecompressTolerant` le servent
+  aussi) controle contre le zlib de node sur 30 000 flux corrompus d'un bit (memes refus, memes codes Z_DATA_ERROR / Z_NEED_DICT, memes tables de Huffman refusees) ; les
+  echecs sont formules comme `logCompressedStreamFailure` (« zlib state Z_DATA_ERROR (-3) »), y compris le flux tronque detecte a la fermeture. Chaque listener publie son objet de
+  statistiques `<nom>(<ip|*>/<port>/<IPv4|IPv6>)` (tronque a 63 caracteres comme le tampon du source) avec `submitted`, `sessions.opened`, `sessions.openfailed`,
+  `sessions.closed`, `bytes.received`, `bytes.decompressed`, et le module l'objet `io-work-q` (`enqueued`, `maxqsize`, qui ne bougent que si `processOnPoller` est coupe).
+  `sessions.openfailed` suit le source a la lettre : la boucle d'acceptation compte un echec de plus quand `accept()` revient sur EAGAIN, donc une connexion acceptee en
+  coute un (et la livraison etant synchrone, chaque connexion est un reveil a elle seule). Le parametre `failOnChownFailure` est accepte et ignore, parce que le source
+  l'attend sous un autre nom (`failonpermsfailure`) et ne le lit donc jamais ; `threads` est enregistre (le pool d'ouvriers n'a pas d'effet observable avec une livraison
+  synchrone). Trois parametres que `imtcp` lisait sans les employer le sont maintenant, pour les deux modules : `keepAlive*` (SO_KEEPALIVE, TCP_KEEPCNT, TCP_KEEPIDLE,
+  TCP_KEEPINTVL sur chaque socket acceptee, les zeros valant les defauts du noyau 9 / 7 200 s / 75 s), `socketBacklog` (la file d'attente de `listen`) et l'ecriture dans
+  `oversizemsg.errorfile` ; le compteur `submitted` ne compte plus les messages que le limiteur a rejetes (`InputSubmitter.submit` rend un booleen).
+- **Options de compilation et signaux** (`linux-rsyslog-compat.test.ts`) : `compatibility.configFormat.{legacy,syslogd,property}` (`enable`/`warn`/`disable`
+  avec les phrases de `glbl.c`), `libcapng.*` et `stdlog.channelSpec` (la configuration par defaut du source n'active ni libcap-ng ni
+  liblogging-stdlog : le parametre echoue avec le message de `glbl.c`), `defaultOpensslEngine` (moteur absent signale au demarrage du pilote
+  ossl, premiere ligne seulement : la pile d'erreurs d'OpenSSL qui suit n'est pas reproductible ici), `shutdown.enable.ctlc` (SIGINT/SIGQUIT
+  ignores par defaut, arret avec « exiting on signal N. » sinon) et le bit « continuer malgre une erreur dure » de `internal.developerOnly.options`.
+
+Parametres acceptes sans effet observable, par decision et non par oubli : `systemd.notifyReadyDelay` (le service passe actif sans delai mesurable
+dans le simulateur), `inputs.timeout.shutdown` (les entrees s'arretent de facon synchrone), `allMessagesToStderr` et
+`errorMessagesToStderr.maxNumber` (la sortie d'erreur du demon part vers `/dev/null` sous l'unite livree - `StandardOutput=null` - et le simulateur
+n'a pas de lancement au premier plan), la famille `debug.*` (pas de mode debug), le bit 2 de `internal.developerOnly.options` (marque
+« temporary for bughunt » dans le source), `queue.syncQueueFiles` (un `fsync` n'est pas observable dans un systeme de fichiers virtuel),
+`queue.timeoutWorkerThreadShutdown` (arret d'un worker inactif, sans trace visible), `queue.scope` et `queue.local.*` (graphe de files local
+experimental).
+
+Limites assumées : le mode `fen` (Solaris) et les anciens fichiers d'état v1 ne sont pas portés ; `sync="on"`
+n'a pas d'effet observable (les inodes sont déjà durables) ; `delay.message` reprend la lecture sur l'horloge
+simulée au lieu de bloquer le fil.

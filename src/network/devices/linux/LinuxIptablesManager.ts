@@ -62,6 +62,7 @@ const IPTABLES_MATCH_MODULES = new Set([
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
+const CONNECTION_TRACKING_MODULES: ReadonlySet<string> = new Set(['state', 'conntrack', 'connmark']);
 
 type ModuleOptionFlags = '' | 'I' | 'M' | 'F' | 'IM' | 'IF';
 
@@ -400,6 +401,7 @@ export type NatHook = 'PREROUTING' | 'OUTPUT' | 'INPUT' | 'POSTROUTING';
 export interface NatHookContext {
   readonly masqueradeAddress: string | null;
   readonly redirectAddress: string | null;
+  readonly outInterface: string | null;
 }
 
 export type NatHookOutcome =
@@ -410,6 +412,7 @@ const TARGET_FLAG_OPTIONS: ReadonlySet<string> = new Set([
   '--random', '--random-fully', '--persistent', '--log-tcp-sequence', '--log-tcp-options', '--log-ip-options', '--log-uid',
 ]);
 
+const LOOPBACK_ADDRESS = '127.0.0.1';
 const NAT_TARGETS: ReadonlySet<string> = new Set(['DNAT', 'SNAT', 'MASQUERADE', 'REDIRECT']);
 const NAT_PORT_PROTOCOLS: ReadonlySet<number> = new Set([IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, IP_PROTO_SCTP, IP_PROTO_DCCP]);
 
@@ -585,6 +588,12 @@ export class LinuxIptablesManager {
     return this.attached.has(subject);
   }
 
+  needsConnectionTracking(): boolean {
+    return [...this.tables.values()].some((table) => [...table.chains.values()].some((chain) =>
+      chain.rules.some((rule) => NAT_TARGETS.has(rule.target)
+        || rule.matches.some((match) => CONNECTION_TRACKING_MODULES.has(match.module)))));
+  }
+
   natHook(
     facts: () => PacketInfo, subject: object, hook: NatHook, context: NatHookContext,
     decide: (state: ConnectionState) => NatResult | null,
@@ -595,20 +604,28 @@ export class LinuxIptablesManager {
     if (entry.state === 'NEW' && !this.connections.initialized(entry, manipulation)) {
       const result = decide(entry.state);
       if (result?.action === 'DROP') return { kind: 'drop' };
-      const range = result === null ? null : this.natRangeFor(result, context, facts());
+      const range = result === null ? null : this.natRangeFor(result, context, facts(), hook);
       if (range === 'drop') return { kind: 'drop' };
       if (range === null) this.connections.bindUnchanged(entry, manipulation);
       else this.connections.bind(entry, range, manipulation);
+      if (result?.action === 'MASQUERADE' && range !== null && context.outInterface !== null) {
+        this.connections.masquerade(entry, context.outInterface);
+      }
+    } else if (hook === 'POSTROUTING' && context.outInterface !== null
+      && this.connections.leavesByAnotherInterface(entry, context.outInterface)) {
+      this.connections.kill(entry);
+      return { kind: 'drop' };
     }
     return { kind: 'accept', translation: this.connections.translation(entry, manipulation), error: null };
   }
 
-  private natRangeFor(result: NatResult, context: NatHookContext, pkt: PacketInfo): NatRange | 'drop' | null {
+  private natRangeFor(result: NatResult, context: NatHookContext, pkt: PacketInfo, hook: NatHook): NatRange | 'drop' | null {
     const range = result.range ?? null;
     if (range === null) return null;
     if (result.action === 'DNAT' || result.action === 'SNAT') return range;
     if (result.action === 'MASQUERADE' && pkt.srcIP === '0.0.0.0') return null;
-    const address = result.action === 'MASQUERADE' ? context.masqueradeAddress : context.redirectAddress;
+    const address = result.action === 'MASQUERADE' ? context.masqueradeAddress
+      : hook === 'OUTPUT' ? LOOPBACK_ADDRESS : context.redirectAddress;
     if (address === null) return 'drop';
     return { ...range, addresses: { min: new IPAddress(address), max: new IPAddress(address) } };
   }
@@ -1391,8 +1408,8 @@ export class LinuxIptablesManager {
     const cn = args[0];
     const ch = table.chains.get(cn);
     if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
-    const r = this.parseRule(args.slice(1));
-    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const r = this.parseRuleFor(cn, args.slice(1));
+    if ('exitCode' in r) return r;
     // Validate target exists if it's a chain jump
     if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
@@ -1482,8 +1499,8 @@ export class LinuxIptablesManager {
     }
 
     // Delete by specification
-    const spec = this.parseRule(args.slice(1));
-    if (typeof spec === 'string') return { output: spec, exitCode: 1 };
+    const spec = this.parseRuleFor(cn, args.slice(1));
+    if ('exitCode' in spec) return spec;
     const idx = ch.rules.findIndex(r => this.rulesEqual(r, spec));
     if (idx === -1) return { output: 'iptables: Bad rule (does a matching rule exist in that chain?).', exitCode: 1 };
     ch.rules.splice(idx, 1);
@@ -1507,8 +1524,8 @@ export class LinuxIptablesManager {
       ruleArgs = args.slice(1);
     }
 
-    const r = this.parseRule(ruleArgs);
-    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const r = this.parseRuleFor(cn, ruleArgs);
+    if ('exitCode' in r) return r;
     const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT')
       ?? this.structureError(r, cn, 'RULE_INSERT');
     if (natErrI) return { output: natErrI, exitCode: 4 };
@@ -1525,8 +1542,8 @@ export class LinuxIptablesManager {
     if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     const num = parseInt(args[1]);
     if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
-    const r = this.parseRule(args.slice(2));
-    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const r = this.parseRuleFor(cn, args.slice(2));
+    if ('exitCode' in r) return r;
     const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE')
       ?? this.structureError(r, cn, 'RULE_REPLACE');
     if (natErrR) return { output: natErrR, exitCode: 4 };
@@ -1541,8 +1558,8 @@ export class LinuxIptablesManager {
     const cn = args[0];
     const ch = table.chains.get(cn);
     if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
-    const spec = this.parseRule(args.slice(1));
-    if (typeof spec === 'string') return { output: spec, exitCode: 1 };
+    const spec = this.parseRuleFor(cn, args.slice(1));
+    if ('exitCode' in spec) return spec;
     if (!ch.rules.some(r => this.rulesEqual(r, spec))) {
       return { output: 'iptables: Bad rule (does a matching rule exist in that chain?).', exitCode: 1 };
     }
@@ -1784,6 +1801,23 @@ export class LinuxIptablesManager {
 
   private parameterProblem(message: string): string {
     return `${this.banner}: ${message}\nTry \`${this.tool} -h' or '${this.tool} --help' for more information.`;
+  }
+
+  private parseRuleFor(chain: string, args: string[]): IptablesRule | { output: string; exitCode: number } {
+    const rule = this.parseRule(args);
+    if (typeof rule === 'string') return { output: rule, exitCode: 2 };
+    const misplaced = this.interfaceOptionProblem(chain, rule);
+    return misplaced === null ? rule : { output: misplaced, exitCode: 2 };
+  }
+
+  private interfaceOptionProblem(chain: string, rule: IptablesRule): string | null {
+    if ((chain === 'PREROUTING' || chain === 'INPUT') && rule.outInterface !== '') {
+      return this.parameterProblem(`Can't use -o with ${chain}\n`);
+    }
+    if ((chain === 'POSTROUTING' || chain === 'OUTPUT') && rule.inInterface !== '') {
+      return this.parameterProblem(`Can't use -i with ${chain}\n`);
+    }
+    return null;
   }
 
   private multiportProtocolProblem(rule: IptablesRule): string | null {

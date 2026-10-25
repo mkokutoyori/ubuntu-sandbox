@@ -133,6 +133,14 @@ export class LinuxAuditRules {
 
   private daemonActive = false;
 
+  setEnabledFromJournald(enabled: boolean): void {
+    if (this.kernel.status.enabled >= 2) return;
+    this.runAsDaemon(() => this.kernel.request(K.AUDIT_SET, 0, {
+      kind: 'status',
+      status: { ...this.kernel.status, mask: K.AUDIT_STATUS_ENABLED, enabled: enabled ? 1 : 0 },
+    }));
+  }
+
   runAsDaemon<T>(action: () => T): T {
     const previous = this.daemonActive;
     this.daemonActive = true;

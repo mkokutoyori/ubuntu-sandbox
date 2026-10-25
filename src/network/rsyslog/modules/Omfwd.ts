@@ -2,13 +2,12 @@ import { errnoNumber, type Errno } from '@/network/core/Errno';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import type { NvList } from '../config/Ast';
 import { arrayParam, getParams, numberParam, reportUnused, stringParam, type ParamDescriptor } from '../config/Params';
-import type { RsyslogMessage } from '../Message';
 import type { Resolution, SrvRecord, StreamConnection } from '../engine/Host';
 import { emptyTlsExtras, readTlsExtras, resolveStreamTls, type StreamTlsExtras, type StreamTlsOptions } from '../engine/StreamDriver';
 import { RS_RET } from '../engine/Log';
 import type { StatsObject } from '../engine/Statistics';
 import type {
-  ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, DirectiveRegistration, ModuleContext, ModuleRateLimiter,
+  ActionArguments, ActionModuleInstance, ActionOutcome, ActionWorker, TransactionalActionWorker, DirectiveRegistration, ModuleContext, ModuleRateLimiter,
   OutputModule, SelectorParse, TemplateRequest,
 } from '../engine/Modules';
 import { zlibCompress } from '../Zlib';
@@ -200,7 +199,7 @@ class ForwardTarget {
   }
 }
 
-class OmfwdWorker implements ActionWorker {
+class OmfwdWorker implements TransactionalActionWorker {
   private readonly targets: ForwardTarget[];
   private actualTarget = 0;
   private transmissions = 0;
@@ -525,9 +524,17 @@ class OmfwdWorker implements ActionWorker {
     return outcome;
   }
 
-  doAction(args: ActionArguments, _message: RsyslogMessage): ActionOutcome {
+  beginTransaction(): ActionOutcome {
+    if (this.poolResume() === 'ok') return 'ok';
+    this.context.runtime.log(
+      LOG_WARNING, RS_RET.SUSPENDED,
+      `omfwd: [wrkr ${this.workerId}/${this.threadIdentifier}] no working target servers in pool available, suspending action (state: beginTx)`,
+    );
+    return 'suspended';
+  }
+
+  commitTransaction(batch: readonly ActionArguments[]): ActionOutcome {
     const settings = this.settings;
-    const text = args.strings[0] ?? '';
     let outcome: ActionOutcome = 'ok';
     if (settings.rebindInterval > 0 && this.transmissions++ >= settings.rebindInterval) {
       this.transmissions = 0;
@@ -539,7 +546,9 @@ class OmfwdWorker implements ActionWorker {
     } else {
       this.countActiveTargets();
       const source = `${settings.protocol}:[${settings.targets[0]}]:${settings.ports[0]}`;
-      if (settings.rateLimiter === null || settings.rateLimiter.admit(source)) {
+      for (const entry of batch) {
+        if (settings.rateLimiter !== null && !settings.rateLimiter.admit(source)) continue;
+        const text = entry.strings[0] ?? '';
         let delivered = false;
         for (let attempt = 0; !delivered && attempt < this.targets.length; attempt++) {
           const target = this.targets[this.actualTarget++ % this.targets.length];
@@ -550,9 +559,9 @@ class OmfwdWorker implements ActionWorker {
             LOG_INFO, RS_RET.SUSPENDED, `omfwd: [wrkr ${this.workerId}] found no working target server when trying to send messages (main loop)`,
           );
           outcome = 'suspended';
-        } else {
-          this.transmissions++;
+          break;
         }
+        this.transmissions++;
       }
     }
     if (this.countActiveTargets() === 0) outcome = 'suspended';

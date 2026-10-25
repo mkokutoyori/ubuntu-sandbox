@@ -151,7 +151,7 @@ import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from '../qos/CarPolicer';
 import {
-  buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT,
+  buildICMPError, mayGenerateICMPError, ICMP_REDIRECT_HOST, ICMP_UNREACH_PORT,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType, type ICMPErrorOptions,
 } from '../core/IcmpErrors';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
@@ -214,7 +214,6 @@ import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
-import { inspectAndRewriteFtpAlg } from './router/nat/FtpAlg';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
@@ -3576,10 +3575,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       && originalPkt.destinationIP.toString() !== fwdPkt.destinationIP.toString();
     const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort,
       isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
-    if (natOutbound) {
-      const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
-      fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
-    }
+    if (natOutbound) fwdPkt = natOutbound;
     else if (this.natEngine.consumeOutboundRefusal()) {
       this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 1);
       return;
@@ -3925,18 +3921,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = inPortObj.getIPAddress();
     if (!myIP) return;
 
-    const redirectICMP: ICMPPacket = {
-      type: 'icmp',
-      icmpType: 'redirect',
-      code: 1, // Redirect for Host
-      id: 0, sequence: 0, dataSize: 0,
-      gateway: redirectGW,
-      originalPacket: offendingPkt,
-    };
-
-    const redirectIP = createIPv4Packet(
-      myIP, offendingPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
-      redirectICMP, 8,
+    const redirectIP = buildICMPError(
+      myIP, offendingPkt, 'redirect', ICMP_REDIRECT_HOST, this.defaultTTL, { gateway: redirectGW },
     );
 
     this.counters.icmpOutMsgs++;

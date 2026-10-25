@@ -2,6 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { JournalctlHost, PathStat } from './JournalctlTool';
 import { systemdCatalog } from './Catalog';
+import { kernelHostname } from '../KernelHostname';
 
 const INTERPRETER = /^#!\s*(\S+)/;
 
@@ -11,11 +12,35 @@ function randomId128(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function journalctlHost(executor: LinuxCommandExecutor): JournalctlHost {
+export function journalctlHost(executor: LinuxCommandExecutor, onTty = false): JournalctlHost {
   const { vfs, userMgr } = executor;
   const journald = executor.logMgr.journald;
   const groupNames = (): string[] => userMgr.getUserGroups(userMgr.currentUser).map((group) => group.name);
+  const machineId = (): string => executor.identity.machineId;
+  const keyPath = (): string => `/var/log/journal/${machineId()}/fss`;
   return {
+    verify: (path, key, format) => journald.verify(path, key, format),
+    sealing: {
+      persistentDirectory: () => {
+        const inode = vfs.resolveInode('/var/log/journal');
+        return inode === null ? 'missing' : inode.type === 'directory' ? 'directory' : 'other';
+      },
+      machineId,
+      bootId: () => journald.bootId,
+      hostname: () => kernelHostname(vfs),
+      keyPath,
+      keyExists: () => vfs.resolveInode(keyPath()) !== null,
+      removeKey: () => (vfs.deleteFile(keyPath()) || vfs.resolveInode(keyPath()) === null ? null : 'EACCES'),
+      writeKey: (content) => {
+        const temporary = `${keyPath()}.tmp.${randomId128().slice(0, 6)}`;
+        if (!vfs.writeFile(temporary, content, userMgr.currentUid, userMgr.currentGid, 0o077)) return 'EACCES';
+        if (vfs.rename(temporary, keyPath())) return null;
+        vfs.deleteFile(temporary);
+        return 'EIO';
+      },
+      randomBytes: (count) => crypto.getRandomValues(new Uint8Array(count)),
+      onTty: () => onTty,
+    },
     files: () => journald.fileInfos(),
     varlink: (method) => {
       if (userMgr.currentUid !== 0) return { error: 'Access denied' };

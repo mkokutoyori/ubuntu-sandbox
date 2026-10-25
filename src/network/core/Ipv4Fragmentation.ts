@@ -198,12 +198,15 @@ export class IPv4Reassembler {
     const first = entry.fragments[0].pkt;
     const totalPayloadBytes = entry.fragments.reduce((sum, f) => sum + f.lengthBytes, 0);
     const headerBytes = first.ihl * 4;
+    const largest = Math.max(...entry.fragments.map((f) => f.pkt.totalLength));
+    const largestWithDf = Math.max(0, ...entry.fragments.filter((f) => (f.pkt.flags & IPV4_FLAG_DF) !== 0).map((f) => f.pkt.totalLength));
     const reassembled: IPv4Packet = {
       ...first,
       totalLength: headerBytes + totalPayloadBytes,
-      flags: first.flags & IPV4_FLAG_DF,
+      flags: largestWithDf === largest ? IPV4_FLAG_DF : 0,
       fragmentOffset: 0,
       headerChecksum: 0,
+      largestFragmentBytes: largest,
     };
     reassembled.headerChecksum = computeIPv4Checksum(reassembled);
     return reassembled;

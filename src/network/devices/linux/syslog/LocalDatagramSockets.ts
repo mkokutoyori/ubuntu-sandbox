@@ -38,6 +38,7 @@ export interface UnixStreamListenOptions {
   readonly mode: number;
   readonly uid: number;
   readonly gid: number;
+  readonly unlink?: boolean;
 }
 
 export type UnixStreamErrno = 'EADDRINUSE' | 'ENOENT' | 'EACCES' | 'ECONNREFUSED';
@@ -129,6 +130,10 @@ export class LocalDatagramSockets {
   ): UnixStreamListenOutcome {
     const slash = path.lastIndexOf('/');
     const directory = slash <= 0 ? '/' : path.slice(0, slash);
+    if (options.unlink === true && this.vfs.existsNoFollow(path)) {
+      this.streamListeners.delete(path);
+      this.vfs.deleteFile(path);
+    }
     if (this.vfs.exists(path)) return { errno: 'EADDRINUSE' };
     if (this.vfs.getType(directory) !== 'directory') return { errno: 'ENOENT' };
     if (!this.vfs.createSocket(path, options.mode, options.uid, options.gid)) return { errno: 'EACCES' };

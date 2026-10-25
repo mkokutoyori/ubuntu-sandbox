@@ -3420,66 +3420,18 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
-la persistance de `dyn_stats` : l'ecriture est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
-compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
-(l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
-les statistiques par expediteur (`_sender_stat`) ne sont alimentees que par `imtcp` (le source alimente aussi `imptcp`, absent ici) ; `resource-usage` ne fournit que
-utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
-oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
-source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
+les parametres `push.*` d'`impstats` n'existent que sous l'option de
+compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ;
+`imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
 omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
-### [rsyslog] ratelimit() : limites du lecteur YAML, de policyWatch et de la creation des limiteurs
-`ratelimit()` est porte de rsyslog 8.2608.0 (`engine/SharedRateLimit.ts`, `PerSourceRateLimit.ts`, `RateLimitPolicy.ts`, `YamlEvents.ts`) :
-fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
-`YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
-etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
-sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage vers le chemin et de `chmod` du VFS (`onWrite`, `onEntryChange`) ;
-`chown`, `touch` sans ecriture et la creation d'un lien n'en emettent pas ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
-source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
-(`global(senders.keepTrack)`) restent a porter.
-
-### [rsyslog] `action.errorfile` et `action.externalstate.file` : le moteur n'a pas la phase de commit de la source
-Les deux parametres sont evalues (`engine/ActionRuntime.ts`) : le fichier d'etat externe suspend l'action avant chaque message et la
-relance quand il ne dit plus `SUSPENDED` ; le fichier d'erreurs recoit une ligne JSON par message perdu et le compteur `failed`
-suit. Ce qui reste : le moteur execute `doAction()` message par message, la ou la source collecte les messages d'une transaction
-et les valide ensemble ; le fichier d'erreurs est donc alimente a la fin du lot et non par la phase de commit, qui rejoue chaque
-message d'un lot en echec isolement avant de l'ecrire (le module voit un essai de plus dans la source) ; le code de statut ecrit
-vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desactive, `-2125` sans commande de limite de taille,
-`-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
-source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
-
-### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
-Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
-Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
-`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
-`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
-`allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
-`libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
-`abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
-Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
-`lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
-(et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
-moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
-`dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
-« linkedlist » en memoire.
-
-### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
-Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
-`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
-(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
-Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
-System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
-TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
-(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
-`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
-8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
-hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
-`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
-le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
+### [journald] `journalctl --verify` ne peut pas detecter une alteration du fichier
+Le scellement est complet (cles FSPRG, objets Tag, `--setup-keys`, `--verify-key` : `journald-seal.test.ts`), mais `JournalFile` compte les octets des objets sans
+etre un fichier binaire du systeme de fichiers : `--verify` rejoue la chaine de tags gardee en memoire, il ne relit aucun octet et ne peut donc pas rapporter
+« File corruption detected at … » apres une edition du fichier par `dd` ou `truncate`. A reprendre avec un journal ecrit en octets reels dans le VFS.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
@@ -3744,6 +3696,11 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
 (`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
 
-### [nat-ftp-actif] le mode actif FTP ne traverse pas un NAT (mesure : natlab, curl -P - contre vsftpd, pool et interface overload)
+### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 
-Mesure avec `curl -P -` depuis PC-LINUX vers le vsftpd d'EXT a travers R-AKWA, que l'ALG FTP soit regle par defaut. (1) `inspectAndRewriteFtpAlg` ne reconnait que `PORT` : un `EPRT |1|192.168.10.22|n|` traverse intact, vsftpd repond `500 Illegal EPRT command.` (l'adresse annoncee n'est pas celle du pair de controle). (2) Pour `PORT`, `Router.processIPv4` passe a l'ALG l'adresse de l'interface de sortie et non l'adresse source traduite : avec un pool, l'entree creee est `203.0.113.2:40000` alors que la connexion de controle porte `203.0.113.4`. (3) Apres la reecriture de la commande, la longueur du segment change sans ajustement des numeros de sequence et d'acquittement : la reponse du serveur n'arrive jamais et curl attend son delai. A fermer dans `nat/FtpAlg.ts` et dans la table de sessions de `NATEngine` (delta de sequence par session), avec EPRT, puis rejouer curl -P en probe.
+`%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
+
+### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
+
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+

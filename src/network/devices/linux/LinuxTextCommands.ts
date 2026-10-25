@@ -352,42 +352,59 @@ function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out
   }
 }
 
+function leadingLines(content: string, count: number): string {
+  if (count < 0) {
+    const records = content.split(/(?<=\n)/);
+    return records.slice(0, Math.max(0, records.length + count)).join('');
+  }
+  let end = 0;
+  for (let taken = 0; taken < count; taken++) {
+    const newline = content.indexOf('\n', end);
+    if (newline < 0) return content;
+    end = newline + 1;
+  }
+  return content.slice(0, end);
+}
+
 export function cmdHead(ctx: ShellContext, args: string[], stdin?: string): string {
   let lines = 10;
   let bytes: number | undefined;
+  let quiet = false;
+  let verbose = false;
   const files: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '-n' && args[i + 1]) { lines = parseInt(args[i + 1], 10); i++; continue; }
-    if (a === '-c' && args[i + 1]) { bytes = parseInt(args[i + 1], 10); i++; continue; }
+    if ((a === '-n' || a === '--lines') && args[i + 1] !== undefined) { lines = parseInt(args[i + 1], 10); i++; continue; }
+    if ((a === '-c' || a === '--bytes') && args[i + 1] !== undefined) { bytes = parseInt(args[i + 1], 10); i++; continue; }
+    if (a === '-q' || a === '--quiet' || a === '--silent') { quiet = true; continue; }
+    if (a === '-v' || a === '--verbose') { verbose = true; continue; }
     if (a.match(/^-\d+$/)) { lines = parseInt(a.slice(1), 10); continue; }
-    if (!a.startsWith('-')) files.push(a);
+    if (a === '-' || !a.startsWith('-')) files.push(a);
   }
 
-  const processContent = (content: string): string => {
-    if (bytes !== undefined) {
-      return content.slice(0, bytes);
-    }
-    return content.split('\n').slice(0, lines).join('\n');
-  };
+  const processContent = (content: string): string =>
+    bytes !== undefined ? content.slice(0, bytes) : leadingLines(content, lines);
 
   if (files.length === 0) {
     return stdin !== undefined ? processContent(stdin) : '';
   }
 
-  const results: string[] = [];
-  for (const f of files) {
+  const showHeaders = verbose || (!quiet && files.length > 1);
+  let out = '';
+  files.forEach((f, index) => {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    if (bytes !== undefined) {
-      const data = ctx.vfs.readFileBytes(absPath, bytes);
-      results.push(data);
-    } else {
-      const content = ctx.vfs.readFile(absPath);
-      if (content !== null) results.push(processContent(content));
+    const content = f === '-' ? (stdin ?? '')
+      : bytes !== undefined && ctx.vfs.exists(absPath) ? ctx.vfs.readFileBytes(absPath, bytes)
+      : ctx.vfs.readFile(absPath);
+    if (content === null) {
+      out += `head: cannot open '${f}' for reading: No such file or directory\n`;
+      return;
     }
-  }
-  return results.join('\n');
+    if (showHeaders) out += `${index > 0 ? '\n' : ''}==> ${f === '-' ? 'standard input' : f} <==\n`;
+    out += processContent(content);
+  });
+  return out;
 }
 
 
@@ -434,17 +451,22 @@ export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string
     return { lines, words, bytes, chars, maxLine };
   };
 
-  // wc right-pads each metric column to 7 chars (real coreutils).
+  // GNU wc: one column and one operand (or none) print unpadded; otherwise the
+  // columns are as wide as the digits of the largest file size, and 7 for stdin.
+  const selected = [countLines, countWords, countChars, countBytes, countMaxLine].filter(Boolean).length;
+  const regularSizes = files.map((f) => ctx.vfs.readFile(ctx.vfs.normalizePath(f, ctx.cwd))).filter((c): c is string => c !== null)
+    .map((c) => fileTextToBytes(c).length);
+  const columnWidth = files.length <= 1 && selected === 1 ? 1
+    : files.length === 0 ? 7 : Math.max(1, String(regularSizes.reduce((a, b) => a + b, 0)).length);
   const formatRow = (s: Stats, filename?: string): string => {
     const parts: string[] = [];
-    const push = (n: number) => parts.push(padToWidth(String(n), 7, 'right'));
+    const push = (n: number) => parts.push(padToWidth(String(n), columnWidth, 'right'));
     if (countLines) push(s.lines);
     if (countWords) push(s.words);
     if (countChars) push(s.chars);
     if (countBytes) push(s.bytes);
     if (countMaxLine) push(s.maxLine);
-    const row = parts.join(' ').trimStart();
-    return filename ? `${parts.join(' ')} ${filename}` : row;
+    return filename ? `${parts.join(' ')} ${filename}` : parts.join(' ');
   };
 
   if (files.length === 0) {
@@ -546,7 +568,7 @@ function versionCompare(a: string, b: string): number {
 export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): string {
   let numeric = false, reverse = false, unique = false;
   let human = false, version = false, randomise = false;
-  let monthSort = false, ignoreCase = false, ignoreLeading = false;
+  let monthSort = false, ignoreCase = false, ignoreLeading = false, stable = false;
   let delimiter: string | undefined;
   const keys: SortKey[] = [];
   const files: string[] = [];
@@ -567,6 +589,7 @@ export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): stri
       case a.startsWith('-k'): keys.push(parseSortKey(a.slice(2))); continue;
       case a === '-t': delimiter = args[++i] ?? '\t'; continue;
       case a.startsWith('-t'): delimiter = a.slice(2); continue;
+      case a === '-s' || a === '--stable':       stable = true; continue;
       case a === '-c' || a === '--check': continue; // we always succeed
     }
     if (!a.startsWith('-')) files.push(a);
@@ -647,13 +670,13 @@ export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): stri
         });
         if (d !== 0) return (key.reverse ? -1 : 1) * d;
       }
-      return 0;
+      return stable || unique ? 0 : (la < lb ? -1 : la > lb ? 1 : 0);
     });
   } else {
     lines.sort((a, b) => compareValues(
       extractKey(a), extractKey(b),
       { numeric, human, version, monthSort, ignoreCase },
-    ));
+    ) || (stable || unique ? 0 : (a < b ? -1 : a > b ? 1 : 0)));
   }
 
   if (reverse && !randomise) lines.reverse();

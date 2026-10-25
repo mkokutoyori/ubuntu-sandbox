@@ -171,7 +171,7 @@ class KernelLogReader implements InputInstance {
     this.ensureLimiter();
     const ruleset = settings.ruleset !== null && this.context.rulesetExists(settings.ruleset) ? settings.ruleset : null;
     this.context.submitter.submit({
-      raw: body, inputName: 'imklog', fromHost: null, fromHostIp: '127.0.0.1', fromHostPort: null, ruleset, localOrigin: true,
+      raw: body, inputName: 'imklog', fromHost: null, fromHostIp: '127.0.0.1', fromHostPort: null, ruleset, localOrigin: true, flowControl: 'light',
       receivedAtMs: timestampMs ?? undefined, limiter: this.limiter ?? undefined,
       preparsed: { priority, offsetAfterPriority: 0, tag: 'kernel:', msg: body, timestamp: null, parseHostname: false },
     });

@@ -152,9 +152,22 @@ class StatisticsReporter implements InputInstance {
     const path = this.settings.logFile as string;
     const text = this.pendingFile ?? '';
     this.pendingFile = null;
-    if (!this.context.host.files.write(path, text)) {
-      this.context.runtime.error(`impstats: error renaming temp stats file ${path}.tmp.XXXXXX to ${path}`, RS_RET.ERR);
+    const files = this.context.host.files;
+    const temporary = `${path}.tmp.${this.temporarySuffix()}`;
+    if (!files.write(temporary, text)) {
+      this.context.runtime.error(`impstats: error creating temp stats file ${temporary}`, RS_RET.ERR);
+      return;
     }
+    if (files.rename(temporary, path)) return;
+    this.context.runtime.error(`impstats: error renaming temp stats file ${temporary} to ${path}`, RS_RET.ERR);
+    files.remove(temporary);
+  }
+
+  private temporarySuffix(): string {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let suffix = '';
+    for (let index = 0; index < 6; index++) suffix += alphabet[Math.floor(this.context.host.random() * alphabet.length)];
+    return suffix;
   }
 
   private submitLine(line: string): void {

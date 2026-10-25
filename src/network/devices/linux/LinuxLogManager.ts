@@ -9,7 +9,11 @@ import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import { LinuxJournald } from './journal/LinuxJournald';
-import type { ProcessFacts } from './journal/JournaldServer';
+import type { JournaldStorage, ProcessFacts } from './journal/JournaldServer';
+import { readJournaldConfig } from './journal/JournaldConfig';
+import { consoleLine, kmsgLine, wallText, type ForwardedMessage } from './journal/JournalForwarders';
+import { formatTimestamp, systemdClock } from './systemd/SystemdTime';
+import { JOURNALD_CONF_PATH, JOURNALD_CONF_TEXT, UBUNTU_SYSLOG_DROP_IN_PATH, UBUNTU_SYSLOG_DROP_IN_TEXT } from './journal/JournaldDefaults';
 import type { JournalRecord } from './journal/JournalRecord';
 import { fieldValues } from './journal/JournalRecord';
 import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
@@ -17,6 +21,8 @@ import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { SYSLOG_FACILITY } from '@/network/syslog/types';
 import { SyslogForwardSocket } from './syslog/SyslogForwardSocket';
 import type { AppendCreation, AppendDescriptor, AppendFailure } from './VirtualFileSystem';
+import { decodeSealingKey, encodeSealingKey } from './journal/seal/SealingKeyFile';
+import type { SealKey } from './journal/seal/SealChain';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -58,12 +64,33 @@ export function fmtHumanDate(d: Date, zone?: string): string {
   return formatLocalTime('%a %b %e %H:%M:%S %Y', d.getTime(), zone);
 }
 
+export interface JournalTimers {
+  schedule(callback: () => void, delayMs: number): () => void;
+}
+
+export interface JournalTerminals {
+  sessions(): string[];
+  write(tty: string, text: string): void;
+}
+
+interface KernelRingEntry {
+  serial: number;
+  priority: number;
+  monotonicUsec: number;
+  text: string;
+}
+
+const PRINTK_TIME = true;
+
 export class LinuxLogManager {
   readonly journald: LinuxJournald;
   private readonly syntheticFacts = new Map<number, ProcessFacts>();
   private processProbe: ((pid: number) => ProcessFacts | null) | null = null;
   private seeding = true;
   private dmesgBuffer: DmesgEntry[] = [];
+  private kernelRing: KernelRingEntry[] = [];
+  private nextKernelSerial = 0;
+  private terminals: JournalTerminals | null = null;
   private bootTime: Date;
   private nextPid = 100;
   readonly syslogSocket = new SyslogForwardSocket();
@@ -94,16 +121,26 @@ export class LinuxLogManager {
 
   registerProcessFacts(pid: number, facts: ProcessFacts): void { this.syntheticFacts.set(pid, facts); }
 
+  attachTerminals(terminals: JournalTerminals): void { this.terminals = terminals; }
+
   syncJournalFiles(): void {
     const directory = this.journald.directory;
     this.vfs.mkdirp(directory, 0o2755, 0, 4);
-    const wanted = new Set(this.journald.fileInfos().map((info) => info.path));
+    const infos = this.journald.fileInfos();
+    const wanted = new Set(infos.map((info) => info.path));
     for (const entry of this.vfs.listDirectory(directory) ?? []) {
       const path = `${directory}/${entry.name}`;
       if (entry.name.endsWith('.journal') && !wanted.has(path)) this.vfs.deleteFile(path);
     }
-    for (const path of wanted) if (!this.vfs.exists(path)) this.vfs.writeFile(path, '', 0, 4, 0o027, false, 8 * 1024 * 1024);
+    for (const info of infos) {
+      if (this.vfs.lstat(info.path)?.size === info.diskUsageBytes) continue;
+      this.vfs.writeFile(info.path, '', 0, 4, 0o027, false, info.diskUsageBytes);
+    }
   }
+
+  private journalTimers: JournalTimers | null = null;
+
+  attachJournalTimers(timers: JournalTimers): void { this.journalTimers = timers; }
 
   private pendingCgroup: string | null = null;
 
@@ -123,18 +160,24 @@ export class LinuxLogManager {
       text = text.slice(prefix[0].length);
     }
     if (priority >> 3 === 0) priority |= 8;
-    const atMs = this.nowMs();
-    this.journald.deliverKernel({ priority, message: text, monotonicUsec: Math.max(0, atMs * 1000 - this.bootTime.getTime() * 1000), realtimeUsec: atMs * 1000 });
+    this.appendToKernelRing(priority, text, this.nowMs());
     return true;
   }
 
+  private appendToKernelRing(priority: number, text: string, atMs: number): void {
+    const monotonicUsec = Math.max(0, atMs * 1000 - this.bootTime.getTime() * 1000);
+    const serial = this.nextKernelSerial++;
+    this.kernelRing.push({ serial, priority, monotonicUsec, text });
+    const entry: DmesgEntry = { offsetSec: monotonicUsec / 1_000_000, level: priority & 7, message: text };
+    this.dmesgBuffer.push(entry);
+    if (!this.seeding) this.emitToDmesgFollowers(entry);
+    const settings = this.journald.settings;
+    const ignoredAsOwnForward = settings.forwardToKmsg && priority >> 3 !== 0;
+    if (settings.readKmsg && !ignoredAsOwnForward) this.journald.deliverKernel({ priority, message: text, monotonicUsec, realtimeUsec: atMs * 1000, serial });
+  }
+
   kernelRingRecords(): string {
-    return this.journald.records().filter((record) => fieldValues(record, '_TRANSPORT').some((value) => new TextDecoder().decode(value) === 'kernel')).map((record) => {
-      const level = new TextDecoder().decode(fieldValues(record, 'PRIORITY')[0] ?? new Uint8Array());
-      const facility = new TextDecoder().decode(fieldValues(record, 'SYSLOG_FACILITY')[0] ?? new Uint8Array());
-      const message = new TextDecoder().decode(fieldValues(record, 'MESSAGE')[0] ?? new Uint8Array());
-      return `${(Number(facility) << 3) | Number(level)},${record.seqnum},${record.monotonicUsec},-;${message.replace(/\\/g, '\\x5c').replace(/\n/g, '\\x0a')}\n`;
-    }).join('');
+    return this.kernelRing.map((entry) => `${entry.priority},${entry.serial},${Math.floor(entry.monotonicUsec)},-;${entry.text.replace(/\\/g, '\\x5c').replace(/\n/g, '\\x0a')}\n`).join('');
   }
 
   setProcessProbe(probe: (pid: number) => ProcessFacts | null): void { this.processProbe = probe; }
@@ -151,14 +194,62 @@ export class LinuxLogManager {
       hostname: () => this.currentHostname(),
       probe: (pid) => this.probeFacts(pid),
       journaldPid: () => null,
-      persistentStorage: () => this.vfs.resolveInode('/var/log/journal') !== null,
-      diskFreeBytes: () => 20 * 1024 ** 3,
+      persistentStorage: () => this.persistentJournal(),
+      filesystem: () => ({ sizeBytes: this.vfs.getCapacityBytes(), availableBytes: this.vfs.freeBytes() }),
+      trustedClock: () => !this.seeding,
+      filesChanged: () => this.syncJournalFiles(),
+      sealingKey: () => this.loadSealingKey(),
+      schedule: (delayMs, callback) => (this.journalTimers === null ? () => undefined : this.journalTimers.schedule(callback, delayMs)),
     });
+    this.seedJournaldConfiguration();
+    this.reloadJournaldConfig();
     this.journald.onRecord((record) => this.onJournalRecord(record));
     this.populateBootMessages();
     this.seeding = false;
     this.syncJournalFiles();
     this.vfs.registerWritableGeneratedFile('/dev/kmsg', () => this.kernelRingRecords(), (content) => this.writeKernelRing(content), 0o644, 0, 0);
+  }
+
+  private journaldStorage: JournaldStorage = 'auto';
+
+  private loadSealingKey(): SealKey | null {
+    const machineId = this.machineId();
+    const path = `/var/log/journal/${machineId}/fss`;
+    const text = this.vfs.readFile(path);
+    if (text === null) return null;
+    const decoded = decodeSealingKey(text, machineId);
+    if (typeof decoded === 'string') return null;
+    const key: SealKey = {
+      startUsec: decoded.startUsec,
+      intervalUsec: decoded.intervalUsec,
+      state: decoded.state,
+      persist: () => { this.vfs.writeFile(path, encodeSealingKey({ ...decoded, state: key.state }), 0, 0, 0o077); },
+    };
+    return key;
+  }
+
+  private persistentJournal(): boolean {
+    if (this.journaldStorage === 'persistent') return true;
+    if (this.journaldStorage === 'volatile') return false;
+    return this.vfs.resolveInode('/var/log/journal') !== null;
+  }
+
+  private seedJournaldConfiguration(): void {
+    if (!this.vfs.exists(JOURNALD_CONF_PATH)) this.vfs.writeFile(JOURNALD_CONF_PATH, JOURNALD_CONF_TEXT, 0, 0, 0o022);
+    if (!this.vfs.exists(UBUNTU_SYSLOG_DROP_IN_PATH)) {
+      this.vfs.mkdirp('/usr/lib/systemd/journald.conf.d', 0o755, 0, 0);
+      this.vfs.writeFile(UBUNTU_SYSLOG_DROP_IN_PATH, UBUNTU_SYSLOG_DROP_IN_TEXT, 0, 0, 0o022);
+    }
+  }
+
+  reloadJournaldConfig(journaldPid = 0): void {
+    const readout = readJournaldConfig(this.vfs, this.kernelCommandLine());
+    Object.assign(this.journald.settings, readout.settings);
+    this.journaldStorage = readout.settings.storage;
+    this.journald.reconfigure();
+    for (const diagnostic of readout.diagnostics) {
+      this.submitLibcSyslog(SYSLOG_FACILITY.daemon << 3 | diagnostic.priority, 'systemd-journald', journaldPid, diagnostic.message, this.nowMs());
+    }
   }
 
   /** La ligne de commande du noyau, celle que `/proc/cmdline` rend. */
@@ -408,7 +499,7 @@ export class LinuxLogManager {
   }, atMs: number = this.nowMs()): void {
     const run = (): void => {
       if (opts.facility === FACILITY_NAMES.kern) {
-        this.journald.deliverKernel({ priority: (opts.facility << 3) | opts.priority, message: opts.message, monotonicUsec: Math.max(0, atMs * 1000 - this.bootTime.getTime() * 1000), realtimeUsec: atMs * 1000 });
+        this.appendToKernelRing((opts.facility << 3) | opts.priority, opts.message, atMs);
         return;
       }
       if (opts.unitField !== undefined) {
@@ -484,7 +575,8 @@ export class LinuxLogManager {
   private onJournalRecord(record: JournalRecord): void {
     const entry = this.entryOf(record);
     const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
-    this.syslogSocket.deliver({
+    const settings = this.journald.settings;
+    if (settings.forwardToSyslog && entry.priority <= settings.maxLevelSyslog) this.syslogSocket.deliver({
       text: `<${(entry.facility << 3) | entry.priority}>${fmtSyslogTimestamp(entry.timestamp, this.zoneName())} ${entry.tag}${pidPart}: ${entry.message}`,
       pid: entry.senderPid,
       uid: entry.senderUid,
@@ -492,15 +584,7 @@ export class LinuxLogManager {
       receivedAtMs: entry.timestamp.getTime(),
     });
     if (this.seeding) return;
-    if (entry.transport === 'kernel') {
-      const dEntry: DmesgEntry = {
-        offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
-        level: entry.priority,
-        message: entry.message,
-      };
-      this.dmesgBuffer.push(dEntry);
-      this.emitToDmesgFollowers(dEntry);
-    }
+    this.forwardToSinks(entry, record.realtimeUsec);
     if (!this.syslogSocket.isAttached) return;
     if (this.attachedBus && this.attachedDeviceId) {
       const sevName = this.SEVERITY_NAME[entry.priority] ?? 'informational';
@@ -512,6 +596,23 @@ export class LinuxLogManager {
           tag: entry.tag, message: entry.message, ts: entry.timestamp.getTime(),
         },
       });
+    }
+  }
+
+  private forwardToSinks(entry: JournalEntry, realtimeUsec: number): void {
+    const settings = this.journald.settings;
+    const message: ForwardedMessage = {
+      priority: entry.priority, facility: entry.facility, identifier: entry.tag, pid: entry.senderPid, message: entry.message, monotonicUsec: entry.monotonicUsec,
+    };
+    if (settings.forwardToKmsg && entry.priority <= settings.maxLevelKmsg) this.writeKernelRing(kmsgLine(message));
+    const terminals = this.terminals;
+    if (terminals === null) return;
+    const tty = settings.ttyPath ?? '/dev/console';
+    if (settings.forwardToConsole && entry.priority <= settings.maxLevelConsole && tty.startsWith('/dev/')) terminals.write(tty.slice('/dev/'.length), consoleLine(message, PRINTK_TIME));
+    if (settings.forwardToWall && entry.priority <= settings.maxLevelWall) {
+      const stamp = formatTimestamp(realtimeUsec, 'pretty', systemdClock(this.zoneName() ?? 'UTC')) ?? '';
+      const text = wallText(message, this.currentHostname(), stamp);
+      for (const session of terminals.sessions()) terminals.write(session, text);
     }
   }
 
@@ -600,7 +701,6 @@ export class LinuxLogManager {
     const bt = this.bootTime;
 
     for (const km of kernelBootMessages(this.bootFacts)) {
-      this.dmesgBuffer.push({ offsetSec: km.offset, level: km.level, message: km.msg });
       this.addEntry({ priority: km.level, facility: FACILITY_NAMES.kern, unit: '', tag: 'kernel', message: km.msg, pid: 0, hostname: this.currentHostname() }, bt.getTime() + km.offset * 1000);
     }
 

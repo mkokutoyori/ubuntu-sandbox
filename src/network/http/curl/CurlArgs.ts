@@ -24,7 +24,6 @@ export interface CurlOptions {
   fail: boolean;
   location: boolean;
   remoteName: boolean;
-  output: string | null;
   writeOut: string | null;
   method: string | null;
   data: string[];
@@ -55,6 +54,7 @@ export interface CurlOptions {
   connectTimeoutMs: number | null;
   maxTimeMs: number | null;
   localPorts: LocalPortRange | null;
+  outputs: string[];
   ftpPort: string | null;
   listOnly: boolean;
   disableEprt: boolean;
@@ -231,7 +231,7 @@ function defaults(): CurlOptions {
     fail: false,
     location: false,
     remoteName: false,
-    output: null,
+    outputs: [],
     writeOut: null,
     method: null,
     data: [],
@@ -299,7 +299,7 @@ function applyValued(
   spelling: string,
 ): CurlParseResult | null {
   switch (key) {
-    case 'o': opts.output = value; break;
+    case 'o': opts.outputs.push(value); break;
     case 'w': opts.writeOut = value; break;
     case 'X': opts.method = value.toUpperCase(); break;
     case 'd': opts.data.push(value); break;

@@ -1,6 +1,6 @@
 import type { Errno } from '@/network/core/Errno';
 import type {
-  Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions, ProcessDetails, OpenFileOptions, OpenFileResult, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions,
+  Datagram, DatagramOptions, FileHandle, FileStat, OpenReadResult, ListenOptions, ListenOutcome, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions, LocalStreamBinding, LocalStreamOptions, LocalStreamStage, ProcessDetails, OpenFileOptions, OpenFileResult, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions,
   TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { ConfigLoader, type ModuleCatalog } from '@/network/rsyslog/engine/Loader';
@@ -80,6 +80,7 @@ export class LabHost implements RsyslogHost {
   private readonly startMs: number;
   private timers: ScheduledTimer[] = [];
   private nextTimerId = 1;
+  private readonly boundFamilies = new WeakMap<object, Map<number, Set<'IPv4' | 'IPv6'>>>();
   private readonly streamListeners = new Map<number, (connection: StreamConnection) => void>();
   private readonly datagramListeners = new Map<number, (datagram: Datagram) => void>();
   readonly fileSystem = new Map<string, string>();
@@ -106,9 +107,19 @@ export class LabHost implements RsyslogHost {
     exists: (path: string): boolean => this.fileSystem.has(path) || this.directories.has(path),
     isDirectory: (path: string): boolean => this.directories.has(path),
     isSymbolicLink: (): boolean => false,
+    lstat: (path: string): FileStat | null => this.statOf(path),
+    stat: (path: string): FileStat | null => this.statOf(path),
+    openRead: (path: string): OpenReadResult => {
+      const content = this.fileSystem.get(path);
+      if (content === undefined) return { error: 'No such file or directory', missing: true };
+      return { file: { inode: this.inodeOf(path), read: (offset, length) => (this.fileSystem.get(path) ?? '').slice(offset, offset + length), close: () => undefined } };
+    },
+    realpath: (path: string): string | null => (this.fileSystem.has(path) || this.directories.has(path) ? path : null),
+    remove: (path: string): boolean => this.fileSystem.delete(path),
+    observe: (): (() => void) => () => undefined,
     list: (directory: string): string[] => {
       const prefix = directory.replace(/\/$/, '') + '/';
-      return [...this.fileSystem.keys()].filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/')).map((path) => path.slice(prefix.length)).sort();
+      return [...this.fileSystem.keys(), ...this.directories].filter((path) => path.startsWith(prefix) && path.length > prefix.length && !path.slice(prefix.length).includes('/')).map((path) => path.slice(prefix.length)).sort();
     },
     glob: (pattern: string): string[] => {
       const regex = new RegExp(`^${pattern.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`);
@@ -121,6 +132,26 @@ export class LabHost implements RsyslogHost {
     },
     write: (path: string, text: string): boolean => {
       this.fileSystem.set(path, text);
+      return true;
+    },
+    mkdir: (path: string): boolean => {
+      if (this.directories.has(path) || this.fileSystem.has(path)) return false;
+      const slash = path.lastIndexOf('/');
+      if (slash > 0 && !this.directories.has(path.slice(0, slash))) return false;
+      this.directories.add(path);
+      return true;
+    },
+    rmdir: (path: string): boolean => {
+      const prefix = `${path}/`;
+      if (!this.directories.has(path)) return false;
+      if ([...this.fileSystem.keys(), ...this.directories].some((entry) => entry.startsWith(prefix))) return false;
+      return this.directories.delete(path);
+    },
+    rename: (from: string, to: string): boolean => {
+      const content = this.fileSystem.get(from);
+      if (content === undefined) return false;
+      this.fileSystem.delete(from);
+      this.fileSystem.set(to, content);
       return true;
     },
     watch: (path: string, onEvent: () => void): (() => void) | null => {
@@ -174,6 +205,9 @@ export class LabHost implements RsyslogHost {
     restoreConsoleLogLevel: (): void => { this.consoleLogLevel = null; },
   };
   readonly localSockets = new Map<string, (message: LocalSocketMessage) => void>();
+  readonly unixStreamListeners = new Map<string, (connection: StreamConnection) => void>();
+  readonly unixStreamOptions: { path: string; options: LocalStreamOptions }[] = [];
+  readonly unixStreamErrors = new Map<string, { errno: Errno; stage: LocalStreamStage }>();
   readonly supervisedSockets = new Set<string>(['/run/systemd/journal/syslog']);
   readonly socketFiles = new Set<string>();
   readonly processes = new Map<number, ProcessDetails>();
@@ -188,6 +222,15 @@ export class LabHost implements RsyslogHost {
       this.localSockets.set(path, onMessage);
       this.socketFiles.add(path);
       return { close: () => { this.localSockets.delete(path); }, acquiredFromSupervisor: acquired };
+    },
+    listenStream: (path: string, options: LocalStreamOptions, onAccept: (connection: StreamConnection) => void): LocalStreamBinding => {
+      this.unixStreamOptions.push({ path, options });
+      const failure = this.unixStreamErrors.get(path);
+      if (failure !== undefined) return failure;
+      if (this.unixStreamListeners.has(path) && !options.unlink) return { errno: 'EADDRINUSE', stage: 'bind' };
+      this.unixStreamListeners.set(path, onAccept);
+      this.socketFiles.add(path);
+      return { close: () => { this.unixStreamListeners.delete(path); } };
     },
     isSocket: (path: string): boolean => this.socketFiles.has(path) || this.supervisedSockets.has(path),
     systemdBooted: (): boolean => this.systemd,
@@ -256,6 +299,20 @@ export class LabHost implements RsyslogHost {
     return known === undefined ? { error: 'Name or service not known' } : { addresses: [...known] };
   }
 
+  private readonly inodes = new Map<string, number>();
+
+  private inodeOf(path: string): number {
+    if (!this.inodes.has(path)) this.inodes.set(path, this.inodes.size + 1);
+    return this.inodes.get(path) as number;
+  }
+
+  private statOf(path: string): FileStat | null {
+    const content = this.fileSystem.get(path);
+    if (content !== undefined) return { inode: this.inodeOf(path), size: content.length, mtimeMs: this.nowMs, ctimeMs: this.nowMs, kind: 'file' };
+    if (this.directories.has(path)) return { inode: this.inodeOf(path), size: 0, mtimeMs: this.nowMs, ctimeMs: this.nowMs, kind: 'directory' };
+    return null;
+  }
+
   private openFile(path: string, options: OpenFileOptions): OpenFileResult {
     const slash = path.lastIndexOf('/');
     const directory = slash <= 0 ? '/' : path.slice(0, slash);
@@ -295,12 +352,28 @@ export class LabHost implements RsyslogHost {
     }
     const failures: ListenOutcome['failures'] = [];
     const listeners: ListenOutcome['listeners'] = [];
-    if (registry.has(port) || this.busyPorts.has(port)) {
+    const bound = this.boundFamilies.get(registry) ?? new Map<number, Set<'IPv4' | 'IPv6'>>();
+    this.boundFamilies.set(registry, bound);
+    const taken = bound.get(port) ?? new Set<'IPv4' | 'IPv6'>();
+    if (this.busyPorts.has(port) || families.some((family) => taken.has(family)) || (registry.has(port) && taken.size === 0)) {
       for (const family of families) failures.push({ family, errno: 'EADDRINUSE' });
       return { listeners, failures };
     }
-    if (families.length > 0) registry.set(port, handler);
-    for (const family of families) listeners.push({ family, address: address ?? '*', port, close: () => { registry.delete(port); } });
+    if (families.length > 0 && !registry.has(port)) registry.set(port, handler);
+    for (const family of families) {
+      taken.add(family);
+      listeners.push({
+        family, address: address ?? '*', port,
+        close: () => {
+          taken.delete(family);
+          if (taken.size === 0) {
+            bound.delete(port);
+            registry.delete(port);
+          }
+        },
+      });
+    }
+    bound.set(port, taken);
     return { listeners, failures };
   }
 
@@ -311,6 +384,17 @@ export class LabHost implements RsyslogHost {
     const destination = this.net.hosts.get(address);
     destination?.datagramListeners.get(port)?.({ sourceIp: this.address, sourcePort: 40000, payload: payload.slice() });
     return null;
+  }
+
+  connectUnix(path: string): LabConnection | { readonly errno: Errno } {
+    const accept = this.unixStreamListeners.get(path);
+    if (accept === undefined) return { errno: 'ECONNREFUSED' };
+    const client = new LabConnection('', 0);
+    const server = new LabConnection('', 0);
+    client.peer = server;
+    server.peer = client;
+    accept(server);
+    return client;
   }
 
   private connect(address: string, port: number): LabConnection | { readonly errno: Errno } {
@@ -346,7 +430,7 @@ export function startRsyslog(host: LabHost, configText: string, options: { files
   for (const [path, content] of Object.entries(options.files ?? {})) host.fileSystem.set(path, content);
   const catalog = options.catalog ?? new BuiltinModuleCatalog('/usr/lib/x86_64-linux-gnu/rsyslog', (path) => path.endsWith('.so'));
   const holder: { engine: RsyslogEngine | null } = { engine: null };
-  const submitter: InputSubmitter = { submit: (info: InputSubmission) => holder.engine?.submit(info) };
+  const submitter: InputSubmitter = { submit: (info: InputSubmission) => holder.engine?.submit(info) ?? false };
   const loader = new ConfigLoader({ host, catalog, submitter });
   const config = loader.loadFile('/etc/rsyslog.conf');
   const internalMessages: LabEngine['internalMessages'] = [];

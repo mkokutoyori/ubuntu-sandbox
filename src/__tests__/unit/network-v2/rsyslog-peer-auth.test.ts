@@ -20,6 +20,7 @@ function recorder(): { runtime: RuntimeLog; lines: string[] } {
     info: (text) => { lines.push(`info: ${text}`); },
     log: (severity, _code, text) => { lines.push(`log ${severity}: ${text}`); },
     internal: () => undefined,
+    childExited: () => undefined,
   };
   return { runtime, lines };
 }

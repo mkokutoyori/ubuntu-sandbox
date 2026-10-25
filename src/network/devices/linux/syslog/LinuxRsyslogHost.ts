@@ -6,14 +6,16 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  Datagram, DatagramOptions, FileHandle, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
-  OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
+  ChildExit, Datagram, DatagramOptions, FileChange, FileHandle, FileStat, KeepAliveOptions, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
+  LocalStreamBinding, LocalStreamOptions, OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
-import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure } from '../VirtualFileSystem';
+import { latin1Text } from '@/network/rsyslog/engine/Latin1';
+import type { VirtualFileSystem, AppendCreation, AppendDescriptor, AppendFailure, INode } from '../VirtualFileSystem';
 import type { SyslogForwardSocket } from './SyslogForwardSocket';
-import type { LocalDatagramSockets } from './LocalDatagramSockets';
+import type { LocalDatagramSockets, UnixStreamEnd } from './LocalDatagramSockets';
 import type { ClockTimers } from './ClockTimers';
+import type { ProcessUsage } from '../process/ProcessUsage';
 
 export const JOURNAL_SYSLOG_SOCKET = '/run/systemd/journal/syslog';
 const KERNEL_LOG_PATH = '/proc/kmsg';
@@ -47,12 +49,13 @@ export interface LinuxRsyslogPlatform {
   tcp(): TcpStack;
   holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | AppendFailure;
   descriptorLimitReached(): boolean;
+  readonly usage: ProcessUsage;
   resourceUsage(): ResourceUsage;
   userNameOfUid(uid: number): string | null;
   supplementaryGidsOf(userName: string): number[];
   applyCredentials(uid: number, gid: number): void;
   restoreProcessLimits(): void;
-  runProgram(argv: readonly string[], uid: number, gid: number): number;
+  runProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): ChildExit;
   setOpenFilesLimit(uid: number, limit: number): { readonly errno: Errno; readonly hardLimit: number } | null;
   wallMs(): number;
   monotonicMs(): number;
@@ -79,12 +82,6 @@ export interface LinuxRsyslogPlatform {
   submitLibcSyslog(priority: number, message: string): void;
   setConsoleLogLevel(level: number): Errno | null;
   restoreConsoleLogLevel(): void;
-}
-
-function latin1Of(bytes: Uint8Array): string {
-  let text = '';
-  for (let index = 0; index < bytes.length; index += 8192) text += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  return text;
 }
 
 function bytesOfLatin1(text: string): Uint8Array {
@@ -120,8 +117,9 @@ class SocketConnection implements StreamConnection {
   private finished = false;
   closedByPeer = false;
 
-  constructor(private readonly socket: TcpSocket) {
+  constructor(private readonly socket: TcpSocket, private readonly woken: () => void) {
     socket.onData((chunk) => {
+      this.woken();
       const bytes = bytesOfLatin1(String(chunk));
       if (this.data === null) this.buffered.push(bytes);
       else this.data(bytes);
@@ -146,7 +144,7 @@ class SocketConnection implements StreamConnection {
 
   write(bytes: Uint8Array): Errno | null {
     if (this.finished || this.socket.closed) return 'EPIPE';
-    return this.socket.write(latin1Of(bytes)) === 'ok' ? null : 'EPIPE';
+    return this.socket.write(latin1Text(bytes)) === 'ok' ? null : 'EPIPE';
   }
 
   close(): void {
@@ -168,15 +166,71 @@ class SocketConnection implements StreamConnection {
   }
 }
 
+class UnixConnection implements StreamConnection {
+  private data: ((bytes: Uint8Array) => void) | null = null;
+  private closeHandler: (() => void) | null = null;
+  private readonly buffered: Uint8Array[] = [];
+  private finished = false;
+  closedByPeer = false;
+  readonly remoteIp = '';
+  readonly remotePort = 0;
+
+  constructor(private readonly end: UnixStreamEnd, private readonly woken: () => void) {
+    end.setHandlers({
+      onData: (text) => {
+        this.woken();
+        const bytes = bytesOfLatin1(text);
+        if (this.data === null) this.buffered.push(bytes);
+        else this.data(bytes);
+      },
+      onClose: () => {
+        this.closedByPeer = true;
+        this.finished = true;
+        this.closeHandler?.();
+      },
+    });
+  }
+
+  write(bytes: Uint8Array): Errno | null {
+    return this.end.write(latin1Text(bytes)) ? null : 'EPIPE';
+  }
+
+  close(): void {
+    this.end.close();
+  }
+
+  onData(handler: (bytes: Uint8Array) => void): void {
+    this.data = handler;
+    for (const chunk of this.buffered.splice(0)) handler(chunk);
+  }
+
+  onClose(handler: () => void): void {
+    this.closeHandler = handler;
+    if (this.finished) handler();
+  }
+}
+
+const KERNEL_KEEPALIVE = { probes: 9, timeSeconds: 7200, intervalSeconds: 75 } as const;
+
+function enableKeepAlive(socket: TcpSocket, options: KeepAliveOptions): void {
+  const probes = options.probes > 0 ? options.probes : KERNEL_KEEPALIVE.probes;
+  const time = options.timeSeconds > 0 ? options.timeSeconds : KERNEL_KEEPALIVE.timeSeconds;
+  const interval = options.intervalSeconds > 0 ? options.intervalSeconds : KERNEL_KEEPALIVE.intervalSeconds;
+  socket.enableKeepAlive(time * 1000, interval * 1000, probes);
+}
+
 class HeldHandle implements FileHandle {
   constructor(
     readonly path: string,
     private readonly descriptor: AppendDescriptor,
     private readonly release: () => void,
+    private readonly account: (path: string, bytes: number, failed: boolean) => void,
   ) {}
 
   write(text: string): string | null {
-    return this.descriptor.append(text);
+    const failure = this.descriptor.append(text);
+    this.account(this.path, text.length, failure !== null);
+    return failure;
   }
 
   flush(): void {}
@@ -230,8 +284,35 @@ export class LinuxRsyslogHost implements RsyslogHost {
     currentGid: () => this.credentials.gid,
     setUmask: (mask) => { this.credentials.umask = mask & 0o777; },
     setOpenFilesLimit: (limit) => this.platform.setOpenFilesLimit(this.credentials.uid, limit),
-    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid),
+    run: (argv) => this.platform.runProgram(argv, this.credentials.uid, this.credentials.gid, this.platform.daemonPid()),
   };
+
+  private awakened(callback: () => void): void {
+    this.platform.usage.wake();
+    callback();
+  }
+
+  private accountRead(inode: INode, offset: number, length: number, size: number): void {
+    if (inode.generator || inode.type !== 'file') return;
+    this.platform.usage.fileRead(inode.id, offset, length, size);
+  }
+
+  private accountAppend(path: string, bytes: number, failed: boolean): void {
+    if (failed) return;
+    const inode = this.platform.vfs.resolveInode(path);
+    if (inode === null || inode.generator || inode.type !== 'file') return;
+    this.platform.usage.fileWrite(inode.id, inode.size - bytes, bytes, Math.max(0, inode.size - bytes));
+  }
+
+  private statOf(inode: INode | null): FileStat | null {
+    if (inode === null) return null;
+    const kind = inode.type === 'file' || inode.type === 'directory' || inode.type === 'symlink' ? inode.type : 'other';
+    return { inode: inode.id, size: inode.generator ? this.contentOf(inode).length : inode.size, mtimeMs: inode.mtime, ctimeMs: inode.ctime, kind };
+  }
+
+  private contentOf(inode: INode): string {
+    return inode.generator ? inode.generator() : inode.content;
+  }
 
   readonly files = {
     open: (path: string, options: OpenFileOptions): OpenFileResult => {
@@ -249,9 +330,37 @@ export class LinuxRsyslogHost implements RsyslogHost {
         actor: { ...this.credentials, gids: this.credentials.groups },
       });
       if ('error' in held) return held;
-      return { handle: new HeldHandle(path, held.handle, held.release), notices: held.handle.notices };
+      return { handle: new HeldHandle(path, held.handle, held.release, (target, bytes, failed) => this.accountAppend(target, bytes, failed)), notices: held.handle.notices };
     },
-    read: (path: string): string | null => this.platform.vfs.readFile(path),
+    lstat: (path: string): FileStat | null => this.statOf(this.platform.vfs.resolveInode(path, false)),
+    stat: (path: string): FileStat | null => this.statOf(this.platform.vfs.resolveInode(path)),
+    openRead: (path: string): OpenReadResult => {
+      const inode = this.platform.vfs.resolveInode(path);
+      if (inode === null) return { error: 'No such file or directory', missing: true };
+      const actor = this.credentials;
+      if (!this.platform.vfs.checkAccess(inode, 'r', actor.uid, actor.gid, actor.groups)) return { error: 'Permission denied', missing: false };
+      const content = (): string => (inode.type === 'directory' ? '' : this.contentOf(inode));
+      return {
+        file: {
+          inode: inode.id,
+          read: (offset, length) => {
+            const text = content();
+            this.accountRead(inode, offset, length, text.length);
+            return text.slice(offset, offset + length);
+          },
+          close: () => undefined,
+        },
+      };
+    },
+    realpath: (path: string): string | null => this.platform.vfs.realpath(path),
+    remove: (path: string): boolean => this.platform.vfs.deleteFile(path),
+    observe: (listener: (change: FileChange) => void): (() => void) => this.platform.vfs.onChange(listener),
+    read: (path: string): string | null => {
+      const text = this.platform.vfs.readFile(path);
+      const inode = text === null ? null : this.platform.vfs.resolveInode(path);
+      if (text !== null && inode !== null) this.accountRead(inode, 0, text.length, text.length);
+      return text;
+    },
     exists: (path: string): boolean => this.platform.vfs.exists(path),
     isDirectory: (path: string): boolean => this.platform.vfs.getType(path) === 'directory',
     isSymbolicLink: (path: string): boolean => this.platform.vfs.resolveInode(path, false)?.type === 'symlink',
@@ -266,16 +375,27 @@ export class LinuxRsyslogHost implements RsyslogHost {
       const inode = this.platform.vfs.resolveInode(path);
       if (inode === null || inode.type !== 'file') return null;
       const content = this.platform.vfs.readFile(path) ?? '';
+      this.accountRead(inode, offset, content.length - offset, content.length);
       return { text: content.slice(offset), size: content.length, inode: String(inode.id) };
     },
-    write: (path: string, text: string): boolean => this.platform.vfs.writeFile(path, text, 0, 0, 0o022),
+    write: (path: string, text: string): boolean => {
+      const before = this.platform.vfs.resolveInode(path);
+      const sizeBefore = before === null ? 0 : before.size;
+      const written = this.platform.vfs.writeFile(path, text, 0, 0, 0o022);
+      const after = written ? this.platform.vfs.resolveInode(path) : null;
+      if (after !== null) this.platform.usage.fileWrite(after.id, 0, text.length, sizeBefore);
+      return written;
+    },
+    mkdir: (path: string, mode: number): boolean => this.platform.vfs.mkdir(path, mode, this.credentials.uid, this.credentials.gid),
+    rmdir: (path: string): boolean => this.platform.vfs.rmdir(path),
+    rename: (from: string, to: string): boolean => this.platform.vfs.rename(from, to),
     watch: (path: string, onEvent: () => void): (() => void) | null => {
-      const stopWrites = this.platform.vfs.onWrite(path, () => onEvent());
-      const stopEntries = this.platform.vfs.onEntryChange(path, onEvent);
-      return () => {
-        stopWrites();
-        stopEntries();
-      };
+      const slash = path.lastIndexOf('/');
+      const directory = slash < 0 ? '/' : slash === 0 ? '/' : path.slice(0, slash);
+      const name = path.slice(slash + 1);
+      return this.platform.vfs.onDirectoryEvent(directory, (changed) => {
+        if (changed === name) onEvent();
+      });
     },
   };
 
@@ -320,6 +440,14 @@ export class LinuxRsyslogHost implements RsyslogHost {
       this.listenDatagram(port, address, options, onDatagram),
     listenStream: (port: number, address: string | null, options: ListenOptions, onAccept: (connection: StreamConnection) => void): ListenOutcome =>
       this.listenStream(port, address, options, onAccept),
+    streamListenerOwner: (port: number): { readonly pid: number; readonly comm: string | null } | null => {
+      const owners = this.platform.tcp().listListeners()
+        .filter((listener) => listener.localPort === port && listener.identity.pid !== undefined)
+        .map((listener) => listener.identity.pid as number)
+        .sort((first, second) => first - second);
+      if (owners.length === 0) return null;
+      return { pid: owners[0], comm: this.platform.processDetails(owners[0])?.comm ?? null };
+    },
   };
 
   readonly sockets = {
@@ -335,6 +463,18 @@ export class LinuxRsyslogHost implements RsyslogHost {
       }));
       if ('errno' in outcome) return { errno: outcome.errno };
       return { close: outcome.close, acquiredFromSupervisor: false };
+    },
+    listenStream: (path: string, options: LocalStreamOptions, onAccept: (connection: StreamConnection) => void): LocalStreamBinding => {
+      const owner = options.uid ?? this.credentials.uid;
+      const group = options.gid ?? this.credentials.gid;
+      if (this.credentials.uid !== 0 && (owner !== this.credentials.uid || group !== this.credentials.gid)) return { errno: 'EPERM', stage: 'chown' };
+      const outcome = this.platform.localSockets.listenStream(
+        path, { mode: options.mode, uid: owner, gid: group, unlink: options.unlink }, (end) => {
+          this.platform.usage.wake();
+          onAccept(new UnixConnection(end, () => this.platform.usage.wake()));
+        },
+      );
+      return 'errno' in outcome ? { errno: outcome.errno, stage: 'bind' } : { close: outcome.close };
     },
     isSocket: (path: string): boolean => path === JOURNAL_SYSLOG_SOCKET || this.platform.localSockets.isBound(path),
     systemdBooted: (): boolean => true,
@@ -383,11 +523,11 @@ export class LinuxRsyslogHost implements RsyslogHost {
   }
 
   schedule(callback: () => void, delayMs: number): () => void {
-    return this.platform.timers.schedule(callback, delayMs);
+    return this.platform.timers.schedule(() => this.awakened(callback), delayMs);
   }
 
   scheduleEvery(callback: () => void, periodMs: number): () => void {
-    return this.platform.timers.scheduleEvery(callback, periodMs);
+    return this.platform.timers.scheduleEvery(() => this.awakened(callback), periodMs);
   }
 
   syslog(priority: number, message: string): void {
@@ -459,11 +599,9 @@ export class LinuxRsyslogHost implements RsyslogHost {
       return { errno: refused ? 'ECONNREFUSED' : 'ETIMEDOUT' };
     }
     if (options?.userTimeoutMs !== undefined && options.userTimeoutMs > 0) socket.setUserTimeout(options.userTimeoutMs);
-    if (options?.keepAlive !== undefined) {
-      socket.enableKeepAlive(options.keepAlive.timeSeconds * 1000, options.keepAlive.intervalSeconds * 1000, options.keepAlive.probes);
-    }
+    if (options?.keepAlive !== undefined) enableKeepAlive(socket, options.keepAlive);
     if (options?.tls !== undefined) return openTlsClient(socket, options.tls, this.platform.vfsReader, { nowMs: () => this.clock.wallMs() });
-    return new SocketConnection(socket);
+    return new SocketConnection(socket, () => this.platform.usage.wake());
   }
 
   private familiesFor(address: string | null, options: ListenOptions): ('IPv4' | 'IPv6')[] {
@@ -488,6 +626,7 @@ export class LinuxRsyslogHost implements RsyslogHost {
     const receive = (delivery: { udp: { sourcePort: number; payload: unknown }; sourceIP: { toString(): string } }): void => {
       const bytes = payloadBytes(delivery.udp.payload);
       if (bytes === null) return;
+      this.platform.usage.wake();
       onDatagram({ sourceIp: delivery.sourceIP.toString(), sourcePort: delivery.udp.sourcePort, payload: bytes });
     };
     const udp = this.platform.udp;
@@ -546,8 +685,11 @@ export class LinuxRsyslogHost implements RsyslogHost {
           identity: { pid, processName: 'rsyslogd' },
           ...(options.device === undefined ? {} : { boundDevice: options.device }),
           ...(options.receiveBufferBytes === undefined ? {} : { receiveWindow: Math.min(options.receiveBufferBytes, 65535) }),
+          ...(options.backlog === undefined ? {} : { backlog: options.backlog }),
           onAccept: (socket) => {
-            if (options.tls === undefined) onAccept(new SocketConnection(socket));
+            if (options.keepAlive !== undefined) enableKeepAlive(socket, options.keepAlive);
+            this.platform.usage.wake();
+            if (options.tls === undefined) onAccept(new SocketConnection(socket, () => this.platform.usage.wake()));
             else acceptTlsServer(socket, options.tls, this.platform.vfsReader, { nowMs: () => this.clock.wallMs() }, onAccept);
           },
         }, bindAddress);

@@ -16,8 +16,7 @@
  * incremented for each lost message at once. The 3 that pass in both states are the WITNESS (an action with neither
  * parameter writes what it receives), the file that does not say SUSPENDED (ignoring it is also what the old code did) and
  * the transaction of several failing messages (the old code counted every one of them, which is right there).
- * Recorded in TODO.md: the engine runs doAction() message by message, so the error file is fed when the batch ends rather
- * than by the commit phase of the source, which re-tries each message of a failed batch alone before it writes it.
+ * The commit phase itself (a failed transaction replayed message by message) is probed in rsyslog-action-commit.test.ts.
  */
 import { describe, expect, it } from 'vitest';
 import { LabHost, LabNetwork, lines, startRsyslog, submitLocal, type LabEngine } from './_helpers/rsyslogLab';
@@ -82,8 +81,9 @@ describe('action.errorfile and the failed counter', () => {
     const { host, lab } = rig(unwritable('action.errorfile="/var/log/err.json"'));
     flood(lab, 25);
     const entries = written(host, '/var/log/err.json');
-    expect(entries.length).toBeGreaterThanOrEqual(1);
-    expect(entries[0]).toMatch(/^\{ "action": "out", "status": 0, "template0": "\s*message number \d+\\n" \}$/);
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+    expect(entries[0]).toMatch(/^\{ "action": "out", "status": -2007, "template0": "\s*message number 0\\n" \}$/);
+    expect(entries[1]).toMatch(/^\{ "action": "out", "status": 0, "template0": "\s*message number \d+\\n" \}$/);
     host.advance(60_000);
     expect(actionLine(host)).toContain(`failed=${entries.length} `);
   });

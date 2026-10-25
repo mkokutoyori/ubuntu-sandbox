@@ -1,4 +1,4 @@
-import { IPAddress, IPv6Address } from '@/network/core/types';
+import { isNumericHost } from './NumericHost';
 import type { RsyslogHost } from './Host';
 import { RS_RET } from './Log';
 import type { GlobalSettings } from './Settings';
@@ -25,10 +25,6 @@ export class SenderResolver {
     return Math.floor(this.host.clock.wallMs() / 1000);
   }
 
-  private isNumericHost(name: string): boolean {
-    return IPAddress.isValid(name) || IPv6Address.tryParse(name) !== null;
-  }
-
   private entry(ip: string, fqdn: string): CacheEntry {
     return { ip, fqdn, fqdnLowerCase: fqdn.toLowerCase(), validUntilSeconds: this.nowSeconds() + this.settings().dnsCache.defaultTtlSeconds };
   }
@@ -39,7 +35,7 @@ export class SenderResolver {
     if (!settings.disableDns) {
       const name = this.host.network.reverse(ip);
       if (name !== null) {
-        if (this.isNumericHost(name)) {
+        if (isNumericHost(name)) {
           if (settings.dropMessagesWithMaliciousDnsPtrRecords) {
             this.log().error(`Malicious PTR record, message dropped IP = "${ip}" HOST = "${name}"`, RS_RET.MALICIOUS_ENTITY);
             return this.entry(UNRESOLVED_IP, UNRESOLVED_IP);
@@ -54,7 +50,7 @@ export class SenderResolver {
   }
 
   resolve(ip: string): ResolvedSender {
-    if (!IPAddress.isValid(ip) && IPv6Address.tryParse(ip) === null) return { ip: UNRESOLVED_IP, fqdn: UNRESOLVED_IP, fqdnLowerCase: UNRESOLVED_IP };
+    if (!isNumericHost(ip)) return { ip: UNRESOLVED_IP, fqdn: UNRESOLVED_IP, fqdnLowerCase: UNRESOLVED_IP };
     const cached = this.cache.get(ip);
     const ttl = this.settings().dnsCache;
     if (cached !== undefined && !(ttl.enableTtl && cached.validUntilSeconds <= this.nowSeconds())) return cached;
