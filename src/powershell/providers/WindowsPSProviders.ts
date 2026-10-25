@@ -215,6 +215,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
       isDirectory: e.entry.type === 'directory',
       size: e.entry.size,
       mtime: e.entry.mtime,
+      ctime: e.entry.ctime,
       attributes: new Set(e.entry.attributes),
       owner: e.entry.owner,
     }));
@@ -248,8 +249,22 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     const r = this.fs().moveFile(this.abs(src), this.abs(dest));
     if (!r.ok) throw new Error(r.error ?? `Cannot move`);
   }
+  private driveAliases: () => ReadonlyMap<string, string> = () => new Map();
+
+  attachDriveAliases(roots: () => ReadonlyMap<string, string>): void {
+    this.driveAliases = roots;
+  }
+
+  private aliased(path: string): string {
+    const alias = /^([A-Za-z][A-Za-z0-9_]*):(?:[\\/]+(.*))?$/.exec(path);
+    const root = alias === null ? undefined : this.driveAliases().get(alias[1].toLowerCase());
+    if (alias === null || root === undefined) return path;
+    const rest = alias[2] ?? '';
+    return rest === '' ? root : `${root.replace(/\\+$/, '')}\\${rest}`;
+  }
+
   normalizePath(path: string, cwd: string): string {
-    return this.fs().normalizePath(expandHomePath(path, this.pc.getEnvVars().get('USERPROFILE') ?? 'C:\\Users\\User'), cwd);
+    return this.fs().normalizePath(expandHomePath(this.aliased(path), this.pc.getEnvVars().get('USERPROFILE') ?? 'C:\\Users\\User'), cwd);
   }
   getCwd(): string {
     return this.pc.getCwd();
