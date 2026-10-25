@@ -111,3 +111,7 @@ export function menuLayout(menu: NanoMenuName, options: MenuOptions): MenuLayout
   const restricted = menu === 'main' ? shown.map((entry) => (entry.tag === 'Read File' ? E('^J', 'Justify') : entry)) : shown;
   return { entries: restricted, slots: restricted.length + unboundSlots };
 }
+
+export function shownEntryCount(cols: number, slots: number): number {
+  return Math.min(slots, Math.floor((cols + 40) / 20) * 2);
+}

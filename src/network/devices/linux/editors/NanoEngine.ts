@@ -1,5 +1,5 @@
 import type { ChildShellRun, EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
-import type { EditorKeyInput } from './EditorKeyInput';
+import { editorKey, type EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type DecodedFile, type NanoFileFormat } from './nano/NanoFormat';
@@ -13,14 +13,14 @@ import { yesNoAnswer } from './nano/NanoYesNo';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
-import { buildNanoScreen } from './nano/NanoScreen';
+import { buildNanoScreen, promptCursorAtColumn } from './nano/NanoScreen';
 import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import {
   DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
   paragraphEnd, paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
 } from './nano/NanoJustify';
 import { nextBlockLine, nextWordSpot, previousBlockLine, previousWordSpot } from './nano/NanoMotion';
-import type { NanoMenuName } from './nano/NanoMenus';
+import type { MenuOptions, NanoMenuName } from './nano/NanoMenus';
 import { helpAction, helpCursorMotion, unboundKeyMessage } from './nano/NanoHelpKeys';
 import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
@@ -28,6 +28,7 @@ import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
+import { clickedShortcut, clickedYesNo, keyOfShortcutLabel, WHEEL_STEP } from './nano/NanoMouse';
 import { WorkingDirectoryFs } from './WorkingDirectoryFs';
 
 export type NanoMode =
@@ -37,12 +38,13 @@ export type NanoMode =
 
 const DEFAULT_FILL = -8;
 
-const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 'tabstospaces' | 'autoindent' | 'smarthome' | 'cutfromcursor'; readonly epithet: string }>> = {
+const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 'tabstospaces' | 'autoindent' | 'smarthome' | 'cutfromcursor' | 'mouse'; readonly epithet: string }>> = {
   l: { flag: 'breaklonglines', epithet: 'Hard wrapping of overlong lines' },
   o: { flag: 'tabstospaces', epithet: 'Conversion of typed tabs to spaces' },
   i: { flag: 'autoindent', epithet: 'Auto indent' },
   h: { flag: 'smarthome', epithet: 'Smart home key' },
   k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
+  m: { flag: 'mouse', epithet: 'Mouse support' },
 };
 
 function swappedDeleteKey(input: EditorKeyInput): EditorKeyInput {
@@ -367,6 +369,19 @@ export class NanoEngine {
       this.keyInHelp(k);
       return;
     }
+    this.runInput(k, () => {
+      const wasPrompting = this.isPrompting();
+      if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') {
+        if (this.helpTitle === null) this.toggleHelpInPrompt();
+      } else if (wasPrompting && this.helpTitle === null && k.ctrl && k.key.toLowerCase() === 'g' && this.helpMenuOfPrompt() !== null) {
+        this.openHelp(this.helpMenuOfPrompt()!);
+      } else {
+        this.dispatchKey(k);
+      }
+    });
+  }
+
+  private runInput(k: EditorKeyInput | null, act: () => void): void {
     this.pauseNote = null;
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
@@ -378,17 +393,11 @@ export class NanoEngine {
     this.searchSpotlight = null;
     this.manner = 'centering';
     this.verticalKey = false;
-    if (!this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
+    if (k !== null && !this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
     if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     const cursorBefore = { line: this._cursorLine, col: this._cursorCol };
-    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') {
-      if (this.helpTitle === null) this.toggleHelpInPrompt();
-    } else if (wasPrompting && k.ctrl && k.key.toLowerCase() === 'g' && this.helpMenuOfPrompt() !== null) {
-      this.openHelp(this.helpMenuOfPrompt()!);
-    } else {
-      this.dispatchKey(k);
-    }
+    act();
     if (this.searchSpotlight === null && this.isPrompting()) this.searchSpotlight = carriedSpotlight;
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
@@ -440,22 +449,109 @@ export class NanoEngine {
   }
 
   clickAt(row: number, col: number): void {
-    if (this._mode !== 'edit') return;
+    if (!this.live.mouse || this._exited) return;
+    if (this.helpViewer !== null) {
+      this.helpViewer.clickAt(row, col);
+      this.settleHelpViewer();
+      return;
+    }
+    const yesNo = this.yesNoQuestion();
+    if (yesNo !== null) {
+      const footerRow = this.footerRowOf(row);
+      const choice = footerRow === null ? null : clickedYesNo(this.window.cols, yesNo.withAll, footerRow, col);
+      if (choice !== null) this.feedKeys([choice === 'cancel' ? editorKey('c', { ctrl: true }) : editorKey(choice)]);
+      return;
+    }
+    const footerRow = this.footerRowOf(row);
+    if (footerRow !== null && footerRow > 0 && this.window.layout.barsFrom !== null) {
+      this.feedOrIgnore(this.pointerKeys(row, col, null));
+      return;
+    }
+    if (this.helpTitle !== null) {
+      this.runInput(null, () => undefined);
+      return;
+    }
+    this.runInput(null, () => {
+      if (this._mode === 'edit') this.clickInEditWindow(row, col);
+      else if (footerRow !== null) this.clickInPrompt(col);
+    });
+  }
+
+  wheelAt(row: number, col: number, forward: boolean): void {
+    if (!this.live.mouse || this._exited) return;
+    if (this.helpViewer !== null) {
+      this.helpViewer.wheelAt(row, col, forward);
+      this.settleHelpViewer();
+      return;
+    }
+    this.feedOrIgnore(this.pointerKeys(row, col, forward ? 'down' : 'up'));
+  }
+
+  pointerKeys(row: number, col: number, wheel: 'up' | 'down' | null): EditorKeyInput[] {
+    const layout = this.window.layout;
+    const footerRow = this.footerRowOf(row);
+    if (wheel !== null) {
+      const inMiddle = row >= layout.editFrom && row < layout.editFrom + this.window.editRows;
+      if (!inMiddle && footerRow !== 0) return [];
+      return Array.from({ length: WHEEL_STEP }, () => editorKey(wheel === 'up' ? 'ArrowUp' : 'ArrowDown'));
+    }
+    if (footerRow === null || footerRow === 0 || layout.barsFrom === null) return [];
+    const entry = clickedShortcut(this.window.cols, this.activeMenu(), this.menuOptions(), footerRow, col);
+    const key = entry === null ? null : keyOfShortcutLabel(entry.key);
+    return key === null ? [] : [key];
+  }
+
+  private feedOrIgnore(keys: readonly EditorKeyInput[]): void {
+    if (keys.length === 0) this.runInput(null, () => undefined);
+    else this.feedKeys(keys);
+  }
+
+  private feedKeys(keys: readonly EditorKeyInput[]): void {
+    for (const key of keys) this.applyKey(key);
+  }
+
+  private footerRowOf(row: number): number | null {
+    const statusRow = this.window.layout.statusRow;
+    return row >= statusRow && row < this.window.rows ? row - statusRow : null;
+  }
+
+  private yesNoQuestion(): { withAll: boolean } | null {
+    switch (this._mode) {
+      case 'exit-save-prompt':
+      case 'confirm':
+        return { withAll: false };
+      case 'replace-confirm':
+        return { withAll: true };
+      default:
+        return null;
+    }
+  }
+
+  private clickInEditWindow(row: number, col: number): void {
     const window = this.window;
     const top = window.layout.editFrom;
-    if (row < top || row >= top + window.editRows) return;
+    if (row < top || row >= top + window.editRows || col < window.margin) return;
+    const was = { line: this._cursorLine, col: this._cursorCol, row: window.cursorRow };
     const at = { line: window.edittop, leftedge: window.firstcolumn };
     window.goForward(row - top, at);
     const text = this.line(at.line);
     let column = Math.max(0, col - window.margin);
     if (this.live.softwrap) column += at.leftedge;
-    else if (at.line === this._cursorLine) column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
+    else column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
     this._cursorLine = at.line;
     this._cursorCol = actualX(text, column, this.live.tabsize);
     this.manner = 'flowing';
     this.placeWant = window.columnOf(this._cursorLine, this._cursorCol);
     this.verticalKey = true;
     this.followCursor();
+    if (row - top === was.row && this._cursorLine === was.line && this._cursorCol === was.col) this.toggleMark();
+    else this.cutAction = null;
+  }
+
+  private clickInPrompt(col: number): void {
+    const prompt = this.promptView();
+    if (prompt === null) return;
+    this._promptCursor = promptCursorAtColumn(this.window.cols, prompt.label, prompt.answer, this._promptCursor, this.live.tabsize, col);
   }
 
   get softwrapEnabled(): boolean { return this.live.softwrap; }
@@ -526,6 +622,15 @@ export class NanoEngine {
     return `${base}${format}${this.live.backup ? ' [Backup]' : ''}`;
   }
 
+  private activeMenu(prompt: { menu: NanoMenuName } | null = this.promptView()): NanoMenuName {
+    if (this.helpTitle !== null) return prompt === null ? 'help' : 'search-in-help';
+    return prompt === null ? 'main' : prompt.menu;
+  }
+
+  private menuOptions(): MenuOptions {
+    return { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.live.preserve };
+  }
+
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
     switch (this._mode) {
       case 'save-prompt': return { label: this.writeOutLabel(), answer: this.saveFileNameBuffer, menu: 'write-out' };
@@ -589,8 +694,8 @@ export class NanoEngine {
         ? { question: 'Save modified buffer? ', withAll: false }
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
-      menu: this.helpTitle !== null ? (prompt === null ? 'help' : 'search-in-help') : prompt === null ? 'main' : prompt.menu,
-      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.live.preserve },
+      menu: this.activeMenu(prompt),
+      menuOptions: this.menuOptions(),
       pause: messageExpired ? null : this.pauseNote,
       pauseKeepsMenu: this.pauseKeepsMenu,
     });
@@ -741,8 +846,13 @@ export class NanoEngine {
     if (this.reportsPositionAsMessage() && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
   }
 
-  scrollView(up: boolean, count: number): void {
-    for (let i = 0; i < count; i++) this.scrollRow(up);
+  scrollView(forward: boolean, count: number): void {
+    if (this.live.mouse) this.wheelAt(this.window.layout.editFrom, 0, forward);
+    else this.scrollLines(forward, count);
+  }
+
+  private scrollLines(forward: boolean, count: number): void {
+    for (let i = 0; i < count; i++) this.scrollRow(forward);
     this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
@@ -1251,8 +1361,8 @@ export class NanoEngine {
 
   private applyEditAltKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
-    if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollView(false, 1); return; }
-    if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollView(true, 1); return; }
+    if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollLines(false, 1); return; }
+    if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollLines(true, 1); return; }
     if (key === 'z') { this.toggleHiddenInterface(); return; }
     if (key === 'x') { this.toggleHelpLines(); return; }
     if (key === 'c') { this.toggleConstantShow(); return; }
@@ -2222,8 +2332,12 @@ export class NanoEngine {
   }
 
   private keyInHelp(k: EditorKeyInput): void {
+    this.helpViewer!.applyKey(k);
+    this.settleHelpViewer();
+  }
+
+  private settleHelpViewer(): void {
     const viewer = this.helpViewer!;
-    viewer.applyKey(k);
     if (!viewer.exited) return;
     const footer = viewer.screen.rows[this.window.layout.statusRow];
     this.lastSearchTerm = viewer.lastSearchTerm;
@@ -2242,10 +2356,10 @@ export class NanoEngine {
     const action = helpAction(k, this.live.preserve);
     switch (action) {
       case 'scroll-up':
-        this.scrollView(false, 1);
+        this.scrollLines(false, 1);
         return;
       case 'scroll-down':
-        if (this.window.edittop + this.window.editRows - 1 < this.linesArr.length - 1) this.scrollView(true, 1);
+        if (this.window.edittop + this.window.editRows - 1 < this.linesArr.length - 1) this.scrollLines(true, 1);
         return;
       case 'page-up':
         this.pageUp();

@@ -93,11 +93,20 @@ describe('nano over SSH: the screen follows the terminal geometry', () => {
   it('moves the cursor to the clicked cell', async () => {
     const { channel } = await wireShellChannel();
     await channel.runLine(`printf 'alpha\\nbravo\\ncharlie\\n' > /tmp/n6.txt`);
-    await channel.openEditor('nano /tmp/n6.txt');
+    await channel.openEditor('nano -m /tmp/n6.txt');
     const view = await channel.clickEditor(3, 4) as NanoEditorView;
     expect(view.cursorLine).toBe(2);
     expect(view.cursorCol).toBe(4);
     expect(view.screen.cursor).toEqual({ row: 3, col: 4 });
+  }, 30000);
+
+  it('ignores a click when nano was not started with -m', async () => {
+    const { channel } = await wireShellChannel();
+    await channel.runLine(`printf 'alpha\nbravo\ncharlie\n' > /tmp/n6b.txt`);
+    await channel.openEditor('nano /tmp/n6b.txt');
+    const view = await channel.clickEditor(3, 4) as NanoEditorView;
+    expect(view.cursorLine).toBe(0);
+    expect(view.cursorCol).toBe(0);
   }, 30000);
 
   it('shows the same rows as a local engine fed the same keys at the same size', async () => {

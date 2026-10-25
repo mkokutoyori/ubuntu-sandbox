@@ -830,6 +830,9 @@ dans tmux :
 - **`-S -l` sur une ligne de cinq tranches** : apres `M-\ PageDown C-d BSpace`
   le binaire laisse la rangee de la derniere tranche vide et le curseur colonne 0
   de la rangee suivante.
+- **`-0` et l'invite qui couvre une rangee de texte** : `^O` ferme l'invite sans
+  que nano repeigne la rangee qu'elle couvrait (`nano-mouse-oracle.test.ts`,
+  mou2-72) ; le moteur la repeint toujours.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
