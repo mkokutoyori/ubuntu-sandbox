@@ -6,7 +6,7 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { formatBsdSyslog, type SyslogPacket } from '@/network/syslog/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  ChildExit, Datagram, DatagramOptions, FileChange, FileHandle, FileStat, KeepAliveOptions, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
+  ChildExit, Datagram, DatagramOptions, HttpPostOutcome, HttpPostRequest, RsyslogHttp, FileChange, FileHandle, FileStat, KeepAliveOptions, OpenReadResult, ListenOptions, ListenOutcome, Listener, LocalSocketBinding, LocalSocketMessage, LocalSocketOptions,
   LocalStreamBinding, LocalStreamOptions, OpenFileOptions, OpenFileResult, ProcessDetails, ResourceUsage, RsyslogProcess, Resolution, RsyslogHost, SrvRecord, StreamConnection, StreamOptions, TerminalSink,
 } from '@/network/rsyslog/engine/Host';
 import { acceptTlsServer, openTlsClient } from '@/network/rsyslog/host/TlsStreams';
@@ -16,6 +16,11 @@ import type { SyslogForwardSocket } from './SyslogForwardSocket';
 import type { LocalDatagramSockets, UnixStreamEnd } from './LocalDatagramSockets';
 import type { ClockTimers } from './ClockTimers';
 import type { ProcessUsage } from '../process/ProcessUsage';
+import type { LinuxNetKernel } from '../LinuxNetKernel';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { linuxCurlHost } from '../commands/net/LinuxCurlHost';
+import { parseCurlArgs } from '@/network/http/curl/CurlArgs';
+import { parseCurlUrl, performCurlRequest } from '@/network/http/curl/CurlTransfer';
 
 export const JOURNAL_SYSLOG_SOCKET = '/run/systemd/journal/syslog';
 const KERNEL_LOG_PATH = '/proc/kmsg';
@@ -47,6 +52,7 @@ export interface LinuxRsyslogPlatform {
   readonly localSockets: LocalDatagramSockets;
   readonly udp: RsyslogUdpEndpoint;
   tcp(): TcpStack;
+  readonly http: { readonly net: LinuxNetKernel; readonly trustAnchors: () => readonly X509Certificate[] };
   holdFile(path: string, creation: AppendCreation): { readonly handle: AppendDescriptor; readonly release: () => void } | AppendFailure;
   descriptorLimitReached(): boolean;
   readonly usage: ProcessUsage;
@@ -412,6 +418,38 @@ export class LinuxRsyslogHost implements RsyslogHost {
   private terminalSink(tty: string): TerminalSink {
     return { write: (text: string) => this.platform.writeTerminal(tty, text) };
   }
+
+  private readAsDaemon(path: string): string | null {
+    const opened = this.files.openRead(path);
+    return 'error' in opened ? null : opened.file.read(0, Number.MAX_SAFE_INTEGER);
+  }
+
+  readonly http: RsyslogHttp = {
+    post: async (request: HttpPostRequest): Promise<HttpPostOutcome> => {
+      const { tls } = request;
+      const parsed = parseCurlArgs([
+        '-X', 'POST', '-A', request.userAgent, '-m', String(request.timeoutMs / 1000),
+        ...request.headers.flatMap((header) => ['-H', header]),
+        ...(tls.caFile === null ? [] : ['--cacert', tls.caFile]),
+        ...(tls.certFile === null ? [] : ['--cert', tls.certFile]),
+        ...(tls.keyFile === null ? [] : ['--key', tls.keyFile]),
+        ...(tls.insecure ? ['-k'] : []),
+        request.url,
+      ]);
+      if (parsed.ok === false) return { curlCode: parsed.exitCode };
+      const url = parseCurlUrl(request.url);
+      if (url.ok === false) return { curlCode: url.code };
+      const options = { ...parsed.options, data: [latin1Text(request.body)] };
+      const host = linuxCurlHost({
+        net: this.platform.http.net,
+        trustAnchors: this.platform.http.trustAnchors,
+        readFile: (path) => this.readAsDaemon(path),
+        writeFile: () => false,
+      });
+      const outcome = await performCurlRequest(host, url.url, options);
+      return outcome.ok === false ? { curlCode: outcome.code } : { status: outcome.statusCode };
+    },
+  };
 
   readonly network = {
     resolve: (name: string): Resolution => {

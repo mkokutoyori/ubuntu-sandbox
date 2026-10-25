@@ -1750,6 +1750,7 @@ export abstract class LinuxMachine extends EndHost
       localSockets: executor.localDatagramSockets,
       udp: this as unknown as RsyslogUdpEndpoint,
       tcp: () => this.getTcpStack(),
+      http: { net: this.net, trustAnchors: () => this.trustedCAs },
       holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
       usage: processUsage,
       resourceUsage: () => {

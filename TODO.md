@@ -3420,8 +3420,6 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
-les parametres `push.*` d'`impstats` n'existent que sous l'option de
-compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ;
 `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
 omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout

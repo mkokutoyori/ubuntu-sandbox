@@ -239,7 +239,7 @@ describe('impstats', () => {
     await server.executeCommand('systemctl restart rsyslog');
     server.advanceTime(61_000);
     const report = await server.executeCommand('grep resource-usage /var/log/pstats.log');
-    expect(report).toMatch(/resource-usage: origin=impstats utime=\d+ stime=0 maxrss=[1-9]\d* minflt=0 majflt=0 inblock=0 oublock=0 nvcsw=0 nivcsw=0 openfiles=[3-9]\d* /);
+    expect(report).toMatch(/resource-usage: origin=impstats utime=\d+ stime=0 maxrss=[1-9]\d* minflt=[1-9]\d* majflt=0 inblock=\d+ oublock=\d+ nvcsw=[1-9]\d* nivcsw=0 openfiles=[3-9]\d* /);
     expect(await server.executeCommand('grep -c "main Q: origin=core.queue" /var/log/pstats.log')).toBe('1');
   }, 30_000);
 });

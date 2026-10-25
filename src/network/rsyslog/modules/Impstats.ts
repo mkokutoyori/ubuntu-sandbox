@@ -1,9 +1,10 @@
-import { getParams, numberParam, stringParam, type ParamDescriptor } from '../config/Params';
+import { arrayParam, getParams, numberParam, stringParam, type ParamDescriptor } from '../config/Params';
 import { ctime } from '../engine/ActionRuntime';
 import type { FileHandle } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
 import type { DirectiveRegistration, InputContext, InputInstance, InputModule, ModuleContext } from '../engine/Modules';
 import type { StatisticsFormat, StatsObject } from '../engine/Statistics';
+import { PUSH_PARAMS, StatisticsPusher, defaultPushConfig, validatePushTls, type PushConfig } from './ImpstatsPush';
 
 const DEFAULT_STATS_PERIOD = 5 * 60;
 const DEFAULT_FACILITY = 5;
@@ -16,6 +17,7 @@ const MODULE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'interval', type: 'int' }, { name: 'facility', type: 'int' }, { name: 'severity', type: 'int' },
   { name: 'bracketing', type: 'binary' }, { name: 'log.syslog', type: 'binary' }, { name: 'resetcounters', type: 'binary' },
   { name: 'log.file', type: 'word' }, { name: 'log.file.overwrite', type: 'binary' }, { name: 'format', type: 'word' }, { name: 'ruleset', type: 'string' },
+  ...PUSH_PARAMS,
 ];
 
 interface ImpstatsConfig {
@@ -30,6 +32,7 @@ interface ImpstatsConfig {
   logFile: string | null;
   logOverwrite: boolean;
   ruleset: string | null;
+  push: PushConfig;
   legacy: { intervalSeconds: number; facility: number; severity: number; json: boolean; cee: boolean };
 }
 
@@ -40,12 +43,34 @@ function defaultLegacy(): ImpstatsConfig['legacy'] {
 function defaultConfig(): ImpstatsConfig {
   return {
     configuredViaModule: false, intervalSeconds: DEFAULT_STATS_PERIOD, facility: DEFAULT_FACILITY, severity: DEFAULT_SEVERITY,
-    format: 'legacy', bracketing: false, logToSyslog: true, resetCounters: false, logFile: null, logOverwrite: false, ruleset: null, legacy: defaultLegacy(),
+    format: 'legacy', bracketing: false, logToSyslog: true, resetCounters: false, logFile: null, logOverwrite: false, ruleset: null, push: defaultPushConfig(), legacy: defaultLegacy(),
   };
 }
 
 function config(context: ModuleContext): ImpstatsConfig {
   return context.moduleState('impstats.config', defaultConfig);
+}
+
+function applyPushParams(values: Parameters<typeof numberParam>[0], push: PushConfig): void {
+  push.url = stringParam(values, 'push.url') ?? push.url;
+  push.labels = arrayParam(values, 'push.labels') ?? push.labels;
+  push.timeoutMs = numberParam(values, 'push.timeout.ms') ?? push.timeoutMs;
+  const flag = (name: string, current: boolean): boolean => {
+    const value = numberParam(values, name);
+    return value === undefined ? current : value !== 0;
+  };
+  push.labelInstance = flag('push.label.instance', push.labelInstance);
+  push.labelOrigin = flag('push.label.origin', push.labelOrigin);
+  push.labelName = flag('push.label.name', push.labelName);
+  push.labelJob = stringParam(values, 'push.label.job') ?? push.labelJob;
+  push.tlsCaFile = stringParam(values, 'push.tls.cafile') ?? push.tlsCaFile;
+  push.tlsCertFile = stringParam(values, 'push.tls.certfile') ?? push.tlsCertFile;
+  push.tlsKeyFile = stringParam(values, 'push.tls.keyfile') ?? push.tlsKeyFile;
+  push.tlsInsecureSkipVerify = flag('push.tls.insecureSkipVerify', push.tlsInsecureSkipVerify);
+  const maxBytes = numberParam(values, 'push.batch.maxBytes');
+  if (maxBytes !== undefined) push.batchMaxBytes = Math.max(0, maxBytes);
+  const maxSeries = numberParam(values, 'push.batch.maxSeries');
+  if (maxSeries !== undefined) push.batchMaxSeries = Math.max(0, maxSeries);
 }
 
 function formatOf(name: string): ImpstatsConfig['format'] | null {
@@ -67,6 +92,7 @@ class StatisticsReporter implements InputInstance {
   private ruleset: string | null = null;
   private intervalSeconds: number;
   private resourceObject: StatsObject | null = null;
+  private pusher: StatisticsPusher | null = null;
   private pendingFile: string | null = null;
   private readonly resource = { utime: 0, stime: 0, maxrss: 0, minflt: 0, majflt: 0, inblock: 0, oublock: 0, nvcsw: 0, nivcsw: 0, openfiles: 0 };
 
@@ -86,10 +112,21 @@ class StatisticsReporter implements InputInstance {
   }
 
   start(): boolean {
+    this.activatePush();
     this.context.statistics.enabled = true;
     this.registerResourceUsage();
     this.cancel = this.context.host.scheduleEvery(() => this.report(), this.intervalSeconds * 1000);
     return true;
+  }
+
+  private activatePush(): void {
+    const push = this.settings.push;
+    if (push.url === null) return;
+    if (!validatePushTls(push, this.context)) {
+      this.context.runtime.error('impstats: disabling push due to TLS configuration error', RS_RET.PARAM_ERROR);
+      return;
+    }
+    this.pusher = new StatisticsPusher(push, push.labelInstance ? this.context.localHostName() : '', this.context.host, this.context);
   }
 
   stop(): void {
@@ -136,6 +173,7 @@ class StatisticsReporter implements InputInstance {
     if (overwrite) this.pendingFile = '';
     if (settings.bracketing) this.submitLine('BEGIN');
     this.sampleResourceUsage();
+    this.pusher?.push(this.context.statistics);
     if (settings.format === 'zabbix') this.submitLine(this.context.statistics.zabbixLine(this.timedate(), settings.resetCounters));
     else for (const line of this.context.statistics.lines(settings.format, settings.resetCounters)) this.submitLine(line);
     if (settings.bracketing) this.submitLine('END');
@@ -269,6 +307,7 @@ export const impstats: InputModule = {
     const logOverwrite = numberParam(values, 'log.file.overwrite');
     if (logOverwrite !== undefined) settings.logOverwrite = logOverwrite !== 0;
     settings.ruleset = stringParam(values, 'ruleset') ?? settings.ruleset;
+    applyPushParams(values, settings.push);
     const formatName = stringParam(values, 'format');
     if (formatName !== undefined) {
       const format = formatOf(formatName);

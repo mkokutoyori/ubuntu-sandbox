@@ -429,6 +429,18 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   creation d'un nom (fichier, repertoire, lien symbolique, lien dur, tube) et changement d'attributs (`chmod`, `chown`, `chgrp`, `touch`, `setfacl`, `chattr`) sont signales sous le nom
   auquel le chemin se resout ; un lien symbolique place au chemin de la politique n'emet donc rien dans son repertoire quand on ecrit la cible, comme inotify. Le
   suivi des expediteurs de `global(senders.keepTrack)` etait deja porte (`Statistics.ts`) ; seule la source `imptcp` y manque encore.
+- **`push.*` d'impstats** (`rsyslog-impstats-push.test.ts`, `linux-rsyslog-impstats-push.test.ts`, `prometheus-remote-write.test.ts`, `snappy-libsnappy-oracle.test.ts`,
+  `curl-strerror-oracle.test.ts`) : port de `impstats_push.c` et `prometheus_remote_write.c` (`modules/ImpstatsPush.ts`, `PrometheusRemoteWrite.ts`, `Snappy.ts`).
+  A chaque intervalle les compteurs de tous les objets de statistiques sont lus sans remise a zero, chacun devient une serie `origine_objet_compteur_total`
+  (nom encode comme `EncodePrometheusMetricName`), etiquetee (`push.labels`, puis `instance`, `job`, `origin`, `name` selon `push.label.*`, une cle deja
+  presente n'etant pas remplacee), les etiquettes sont triees, la requete est serialisee en protobuf proto3 (un scalaire nul et une chaine vide ne sont pas
+  ecrits), compressee en Snappy puis envoyee en POST avec `Content-Type: application/x-protobuf`, `Content-Encoding: snappy` et
+  `X-Prometheus-Remote-Write-Version: 0.1.0`. `push.batch.maxSeries` et `push.batch.maxBytes` decoupent la requete (la seconde par l'estimation du source) et le
+  premier lot refuse arrete les suivants. Le compresseur Snappy est compare octet pour octet a libsnappy 1.1.10 sur 564 entrees et le decompresseur
+  a 1912 flux alteres ou forges (`scripts/oracle/record_snappy.py`). Le client HTTP est le moteur `curl` de la machine, atteint par le port etroit `RsyslogHttp` :
+  l'ancre de confiance, `--cacert`, `--cert`/`--key` et `-k` valent donc ce qu'ils valent en ligne de commande, les fichiers sont lus avec les identifiants que le
+  demon a apres avoir abandonne ses privileges, et les erreurs reprennent le texte de `curl_easy_strerror` (table verifiee contre libcurl 8.5.0). Les envois
+  sont sequentiels et asynchrones : le demon ne bloque pas pendant la requete, mais deux intervalles ne se chevauchent jamais.
 - **`resource-usage`** (`linux-rsyslog-resource-usage.test.ts`, `io-page-cache.test.ts`) : l'objet d'`impstats` rapporte un `getrusage(RUSAGE_SELF)` calcule a partir
   d'evenements que le demon cause reellement (`process/ProcessUsage.ts`, `process/IoPageCache.ts`). `oublock` compte les secteurs de 512 octets des pages de 4 Kio
   salies (8 secteurs la premiere fois, de nouveau une fois la page ecrite par le noyau apres `dirty_expire_centisecs` = 30 s) ; `inblock` les secteurs lus sur un

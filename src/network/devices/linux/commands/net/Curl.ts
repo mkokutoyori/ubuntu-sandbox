@@ -2,27 +2,14 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import { listenForInterruption } from '../CommandInterruption';
-import { IPAddress } from '@/network/core/types';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl, CURL_FLAGS, CURL_USAGE } from '@/network/http/curl/CurlEngine';
+import { linuxCurlHost } from './LinuxCurlHost';
 
-function linuxCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost {
-  return {
+function commandCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost {
+  return linuxCurlHost({
     signal,
-    async resolveHostname(name: string): Promise<string | null> {
-      if (!name.includes(':')) {
-        const ip = await ctx.net.resolveHostname(name);
-        if (ip) return ip.toString();
-      }
-      const ip6 = await ctx.net.resolveHostname6(name);
-      return ip6 ? ip6.toString() : null;
-    },
-    tcpStack: () => ctx.net.getTcpStack(),
-    interfaceAddress: (name: string): string | null => ctx.net.getPorts().get(name)?.getIPAddress()?.toString() ?? null,
-    ownsAddress: (address: string): boolean => {
-      const ip = IPAddress.tryParse(address);
-      return ip !== null && ctx.net.isLocalAddress(ip);
-    },
+    net: ctx.net,
     trustAnchors: () => ctx.tlsTrustAnchors,
     readFile(path: string): string | null {
       const vfs = ctx.executor.vfs;
@@ -38,13 +25,13 @@ function linuxCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost 
         0o022,
       );
     },
-  };
+  });
 }
 
 async function runCurlInterruptibly(ctx: LinuxCommandContext, args: string[]) {
   const interruption = listenForInterruption(ctx);
   try {
-    const result = await runCurl(linuxCurlHost(ctx, interruption.signal), args);
+    const result = await runCurl(commandCurlHost(ctx, interruption.signal), args);
     const status = interruption.exitStatus();
     if (status !== null) return { output: '', exitCode: status, stderr: '' };
     return { output: result.output, exitCode: result.exitCode, stderr: result.stderr };
