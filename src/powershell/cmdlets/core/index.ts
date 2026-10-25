@@ -41,7 +41,7 @@ import {
   MeasureCommandCmdlet,
 } from './DateTimeCmdlets';
 import {
-  SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet,
+  SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet, ConvertPathCmdlet,
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
   ClearContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
@@ -337,6 +337,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new JoinPathCmdlet());
   registry.register(new TestPathCmdlet());
   registry.register(new ResolvePathCmdlet());
+  registry.register(new ConvertPathCmdlet());
   registry.register(new GetChildItemCmdlet());
   registry.register(new GetContentCmdlet());
   registry.register(new SetContentCmdlet());

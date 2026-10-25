@@ -72,8 +72,10 @@ describe('Split-Path', () => {
     expect(runAndGet('$r = Split-Path "C:\\Users\\Alice\\file.txt" -Parent', 'r')).toBe('C:\\Users\\Alice');
   });
 
-  it('-Extension returns the extension', () => {
-    expect(runAndGet('$r = Split-Path "C:\\x\\file.txt" -Extension', 'r')).toBe('.txt');
+  it('-Extension returns the extension in PowerShell 7', () => {
+    const interp = new PSInterpreter(undefined, { language: 'core' });
+    interp.execute('$r = Split-Path "C:\\x\\file.txt" -Extension');
+    expect(interp.getVariable('r')).toBe('.txt');
   });
 
   it('handles forward slashes', () => {

@@ -452,7 +452,7 @@ for (const t of STACK_TYPES) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DRIVE_NAME = /^[A-Za-z]:$/;
+const DRIVE_NAME = /^[A-Za-z][A-Za-z0-9_]*:$/;
 
 export class PSRuntime {
   private readonly lexer: PSLexer;
@@ -656,15 +656,17 @@ export class PSRuntime {
     if (!globalEnv) {
       seedBuiltins(this.global, edition);
       this.global.set('__drives__', {
-        c:        { Name: 'C',        Root: 'C:\\',   Used: 0, Free: 0 },
-        d:        { Name: 'D',        Root: 'D:\\',   Used: 0, Free: 0 },
-        env:      { Name: 'Env',      Root: '',       Used: 0, Free: 0 },
-        variable: { Name: 'Variable', Root: '',       Used: 0, Free: 0 },
-        function: { Name: 'Function', Root: '',       Used: 0, Free: 0 },
-        hklm:     { Name: 'HKLM',     Root: 'HKLM:\\', Used: 0, Free: 0 },
-        hkcu:     { Name: 'HKCU',     Root: 'HKCU:\\', Used: 0, Free: 0 },
+        c:        { Name: 'C',        Root: 'C:\\', Provider: 'FileSystem' },
+        d:        { Name: 'D',        Root: 'D:\\', Provider: 'FileSystem' },
+        alias:    { Name: 'Alias',    Root: '', Provider: 'Alias' },
+        env:      { Name: 'Env',      Root: '', Provider: 'Environment' },
+        variable: { Name: 'Variable', Root: '', Provider: 'Variable' },
+        function: { Name: 'Function', Root: '', Provider: 'Function' },
+        hklm:     { Name: 'HKLM',     Root: 'HKLM:\\', Provider: 'Registry' },
+        hkcu:     { Name: 'HKCU',     Root: 'HKCU:\\', Provider: 'Registry' },
       } as Record<string, PSValue>);
     }
+    this.providers.filesystem?.attachDriveAliases?.(() => this.fileSystemDriveRoots());
     this.seedVersionTableFromRegistry();
   }
 
@@ -1779,6 +1781,8 @@ export class PSRuntime {
    */
   private resolveExpansionVar(token: string, env: PSEnvironment): PSValue {
     const colon = token.indexOf(':');
+    const derived = this.locationVariable(token.slice(colon + 1));
+    if (derived !== undefined && (colon === -1 || token.slice(0, colon).toLowerCase() !== 'env')) return derived;
     if (colon === -1) {
       const val = env.get(token);
       return val === undefined ? null : val;
@@ -1817,17 +1821,28 @@ export class PSRuntime {
     table['BuildVersion'] = `${currentVersion}.${build}.1`;
   }
 
+  private fileSystemDriveRoots(): ReadonlyMap<string, string> {
+    const declared = (this.global.get('__drives__') as Record<string, Record<string, PSValue>> | null) ?? {};
+    const roots = new Map<string, string>();
+    for (const [key, drive] of Object.entries(declared)) {
+      if (drive['Provider'] !== 'FileSystem') continue;
+      const root = String(drive['Root']);
+      if (root.toLowerCase() !== `${key}:\\`) roots.set(key, root);
+    }
+    return roots;
+  }
+
   currentLocationPath(): string {
     return this.locations.foreign ?? this.providers.filesystem?.getCwd() ?? '';
   }
 
   private locationVariable(name: string): PSValue | undefined {
-    const fs = this.providers.filesystem;
-    if (!fs) return undefined;
+    if (!this.providers.filesystem) return undefined;
     const lower = name.toLowerCase();
     if (lower !== 'pwd' && lower !== 'executioncontext') return undefined;
-    const cwd = this.currentLocationPath();
-    const location = { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
+    const cmdlet = this.registry.resolve('get-location');
+    if (!cmdlet) return undefined;
+    const location = cmdlet.execute(this.buildCmdletContext([], {}, null, this.global, [], 'continue', 'Get-Location', {}));
     if (lower === 'pwd') return location;
     return { SessionState: { Path: { CurrentLocation: location } } } as unknown as PSValue;
   }

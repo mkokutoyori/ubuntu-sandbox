@@ -3,10 +3,12 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { hasWildcard } from '@/powershell/runtime/PSWildcard';
+import { pathInfo } from '@/powershell/runtime/PSPathInfo';
 import { isRegistryPath, registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
 import { expandPathSpec } from './PathCmdlets';
 
 const FOREIGN_DRIVES: Readonly<Record<string, readonly string[]>> = {
+  alias: ['Alias'],
   registry: ['HKLM', 'HKCU'],
   environment: ['Env'],
   variable: ['Variable'],
@@ -14,7 +16,7 @@ const FOREIGN_DRIVES: Readonly<Record<string, readonly string[]>> = {
 };
 
 const PROVIDER_NAMES: Readonly<Record<string, string>> = {
-  registry: 'Registry', environment: 'Environment', variable: 'Variable', function: 'Function',
+  alias: 'Alias', registry: 'Registry', environment: 'Environment', variable: 'Variable', function: 'Function',
 };
 
 const driveNotFound = (name: string): string => `Cannot find drive. A drive with the name '${name}' does not exist.`;
@@ -28,7 +30,7 @@ const NO_HISTORY_FORWARDS = 'There is no location history left to navigate forwa
 type Located =
   | { readonly refusal: string }
   | { readonly kind: 'file'; readonly path: string }
-  | { readonly kind: 'provider'; readonly drive: string; readonly provider: string; readonly path: string };
+  | { readonly kind: 'provider'; readonly drive: string; readonly provider: string; readonly path: string; readonly real?: string };
 
 interface Declared {
   readonly Name: string;
@@ -48,7 +50,14 @@ function foreignDrive(name: string): { provider: string; drive: string } | null 
 function declaredDrive(ctx: CmdletContext, name: string): Declared | null {
   const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
   const found = declared[name.toLowerCase()] as Record<string, PSValue> | undefined;
-  return found === undefined ? null : { Name: psValueToString(found['Name']), Root: psValueToString(found['Root']) };
+  if (found === undefined) return null;
+  const drive = { Name: psValueToString(found['Name']), Root: psValueToString(found['Root']) };
+  return drive.Root === '' || drive.Root.toLowerCase() === `${drive.Name.toLowerCase()}:\\` ? null : drive;
+}
+
+function mappedPath(declared: Declared, path: string): string {
+  const relative = path.slice(declared.Name.length + 2);
+  return relative === '' ? declared.Root : `${declared.Root.replace(/\\+$/, '')}\\${relative}`;
 }
 
 function providerOfLocation(path: string): string {
@@ -58,14 +67,23 @@ function providerOfLocation(path: string): string {
   return found === null ? 'FileSystem' : PROVIDER_NAMES[found.provider];
 }
 
-function pathInfoOf(path: string): Record<string, PSValue> {
+function providerPathOf(ctx: CmdletContext, path: string): string {
   const qualifier = qualifierOf(path);
-  return {
-    Path: path,
-    ProviderPath: isRegistryPath(path) ? registryProviderPath(path) : path,
-    Provider: { Name: providerOfLocation(path) } as Record<string, PSValue>,
-    Drive: { Name: (qualifier ?? 'C').toUpperCase() } as Record<string, PSValue>,
-  };
+  const declared = qualifier === null ? null : declaredDrive(ctx, qualifier);
+  if (declared !== null && foreignDrive(qualifier!) === null) {
+    const mapped = mappedPath(declared, path);
+    return isRegistryPath(mapped) ? registryProviderPath(mapped) : mapped;
+  }
+  return isRegistryPath(path) ? registryProviderPath(path) : path;
+}
+
+function pathInfoOf(ctx: CmdletContext, path: string): Record<string, PSValue> {
+  return pathInfo({
+    path,
+    providerPath: providerPathOf(ctx, path),
+    provider: providerOfLocation(path),
+    drive: (qualifierOf(path) ?? 'C').toUpperCase(),
+  });
 }
 
 function currentLocation(ctx: CmdletContext): string {
@@ -92,26 +110,33 @@ function foreignContainer(ctx: CmdletContext, drive: string, provider: string, p
 }
 
 function declaredContainer(ctx: CmdletContext, declared: Declared, path: string, typed: string): Located {
-  const relative = path.slice(declared.Name.length + 2);
-  const mapped = relative === '' ? declared.Root : `${declared.Root.replace(/\\+$/, '')}\\${relative}`;
-  const exists = relative === '' || ctx.providers.filesystem?.isDirectory(mapped) === true;
-  return exists ? { kind: 'provider', drive: declared.Name, provider: 'declared', path } : { refusal: pathNotFound(typed) };
+  const mapped = mappedPath(declared, path);
+  const registry = isRegistryPath(mapped);
+  const atRoot = path.slice(declared.Name.length + 2) === '';
+  const exists = atRoot || (registry
+    ? ctx.providers.registry?.testPath(mapped) === true
+    : ctx.providers.filesystem?.isDirectory(mapped) === true);
+  return exists
+    ? { kind: 'provider', drive: declared.Name, provider: 'declared', path, real: registry ? undefined : mapped }
+    : { refusal: pathNotFound(typed) };
 }
 
 function locate(ctx: CmdletContext, typed: string, literal: boolean): Located {
   const state = ctx.runtime.locations;
   const qualifier = qualifierOf(typed);
 
-  if (qualifier !== null && qualifier.length > 1) {
+  if (qualifier !== null) {
     const found = foreignDrive(qualifier);
     const declared = found === null ? declaredDrive(ctx, qualifier) : null;
-    if (found === null && declared === null) return { refusal: driveNotFound(qualifier) };
-    const name = found?.drive ?? declared!.Name;
-    const rest = typed.slice(qualifier.length + 1);
-    const path = rest === '' ? state.remembered(name) ?? `${name}:\\` : joinForeign(name, segmentsOf(rest));
-    return found !== null
-      ? foreignContainer(ctx, found.drive, found.provider, path, typed)
-      : declaredContainer(ctx, declared!, path, typed);
+    if (found === null && declared === null && qualifier.length > 1) return { refusal: driveNotFound(qualifier) };
+    if (found !== null || declared !== null) {
+      const name = found?.drive ?? declared!.Name;
+      const rest = typed.slice(qualifier.length + 1);
+      const path = rest === '' ? state.remembered(name) ?? `${name}:\\` : joinForeign(name, segmentsOf(rest));
+      return found !== null
+        ? foreignContainer(ctx, found.drive, found.provider, path, typed)
+        : declaredContainer(ctx, declared!, path, typed);
+    }
   }
 
   if (qualifier === null && state.foreign !== null) {
@@ -147,6 +172,7 @@ function enter(ctx: CmdletContext, located: Exclude<Located, { refusal: string }
     ctx.providers.filesystem?.setCwd(located.path);
   } else {
     state.enter(located.provider, located.drive, located.path);
+    if (located.real !== undefined) ctx.providers.filesystem?.setCwd(located.real);
   }
 }
 
@@ -212,7 +238,7 @@ export class SetLocationCmdlet implements ICmdlet {
     const literal = ctx.named['literalpath'] !== undefined;
     if (typed === '' && ctx.runtime.edition !== 'core') return null;
     if (!setLocation(ctx, typed === '' ? homeOf(ctx) : typed, literal)) return null;
-    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
+    return ctx.named['passthru'] === true ? pathInfoOf(ctx, currentLocation(ctx)) : null;
   }
 }
 
@@ -228,7 +254,7 @@ export class PushLocationCmdlet implements ICmdlet {
     ctx.runtime.locations.push(stackNameOf(ctx), currentLocation(ctx));
     const typed = pathArgument(ctx);
     if (typed !== '') setLocation(ctx, typed, ctx.named['literalpath'] !== undefined);
-    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
+    return ctx.named['passthru'] === true ? pathInfoOf(ctx, currentLocation(ctx)) : null;
   }
 }
 
@@ -248,7 +274,7 @@ export class PopLocationCmdlet implements ICmdlet {
     }
     const previous = state.pop(name);
     if (previous !== null) setLocation(ctx, previous, true);
-    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
+    return ctx.named['passthru'] === true ? pathInfoOf(ctx, currentLocation(ctx)) : null;
   }
 }
 
@@ -267,7 +293,7 @@ export class GetLocationCmdlet implements ICmdlet {
         ctx.emitError(stackNotFound(name));
         return null;
       }
-      return state.entries(name).map(pathInfoOf) as PSValue;
+      return state.entries(name).map(entry => pathInfoOf(ctx, entry)) as PSValue;
     }
 
     const drive = ctx.named['psdrive'] !== undefined ? psValueToString(ctx.named['psdrive']) : null;
@@ -275,16 +301,16 @@ export class GetLocationCmdlet implements ICmdlet {
 
     const provider = ctx.named['psprovider'] !== undefined ? psValueToString(ctx.named['psprovider']) : null;
     if (provider !== null) {
-      if (provider.toLowerCase() === 'filesystem') return pathInfoOf(ctx.providers.filesystem?.getCwd() ?? 'C:\\');
+      if (provider.toLowerCase() === 'filesystem') return pathInfoOf(ctx, ctx.providers.filesystem?.getCwd() ?? 'C:\\');
       const drives = FOREIGN_DRIVES[provider.toLowerCase()];
       if (drives === undefined) {
         ctx.emitError(`Cannot find the PowerShell provider '${provider}'.`);
         return null;
       }
-      return pathInfoOf(state.lastOnProvider(provider.toLowerCase()) ?? `${drives[0]}:\\`);
+      return pathInfoOf(ctx, state.lastOnProvider(provider.toLowerCase()) ?? `${drives[0]}:\\`);
     }
 
-    return pathInfoOf(currentLocation(ctx));
+    return pathInfoOf(ctx, currentLocation(ctx));
   }
 
   private locationOfDrive(ctx: CmdletContext, name: string): PSValue {
@@ -295,7 +321,7 @@ export class GetLocationCmdlet implements ICmdlet {
         ctx.emitError(driveNotFound(name));
         return null;
       }
-      return pathInfoOf(fs.driveLocation?.(letter) ?? `${letter}:\\`);
+      return pathInfoOf(ctx, fs.driveLocation?.(letter) ?? `${letter}:\\`);
     }
     const found = foreignDrive(name);
     const declared = found === null ? declaredDrive(ctx, name) : null;
@@ -304,6 +330,6 @@ export class GetLocationCmdlet implements ICmdlet {
       return null;
     }
     const known = found?.drive ?? declared!.Name;
-    return pathInfoOf(ctx.runtime.locations.remembered(known) ?? `${known}:\\`);
+    return pathInfoOf(ctx, ctx.runtime.locations.remembered(known) ?? `${known}:\\`);
   }
 }
