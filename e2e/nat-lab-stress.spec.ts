@@ -52,6 +52,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'ext-nmap-router', client: 'ext', commands: () => [`nmap -p- 203.0.113.2; echo FINISHED`] },
   { name: 'srv-ping-f-router', client: 'srv', commands: () => [`ping -f -c 3000 192.168.10.1; echo FINISHED`] },
   { name: 'win-ping-300', client: 'win', commands: () => [`ping -n 300 203.0.113.9 > NUL & echo FINISHED`] },
+  { name: 'win-nmap-all-ports', client: 'win', commands: () => ['nmap -p- 203.0.113.2 & echo FINISHED'] },
   { name: 'ping-flood-500', client: 'lin', commands: (t) => [`ping -c 500 -i 0.002 ${t}; echo FINISHED`] },
   { name: 'nmap-1024', client: 'lin', commands: (t) => [`nmap -p 1-1024 ${t}; echo FINISHED`] },
   { name: 'nc-zv-300', client: 'lin', commands: (t) => [`for i in $(seq 1 300); do nc -zv -w 1 ${t} 80 & done; wait; echo FINISHED`] },

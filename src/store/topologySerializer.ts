@@ -49,7 +49,8 @@ import type { WindowsService } from '@/network/devices/windows/WindowsServiceMan
 import {
   captureOracleState, restoreOracleState, type OracleTopologyState,
 } from '@/terminal/commands/database';
-import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import { VirtualFileSystem, type INode } from '@/network/devices/linux/VirtualFileSystem';
+import { isContentDeferred } from '@/network/core/DeferredContent';
 import { bondOptionLines } from '@/network/devices/linux/net/LinuxBonding';
 import { Firewall } from '@/network/devices/firewall/Firewall';
 import {
@@ -450,6 +451,10 @@ function linuxVfs(device: LinuxMachine): VirtualFileSystem {
   return (device as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
 }
 
+function sameOwnership(baseline: INode | null, inode: INode): boolean {
+  return baseline !== null && baseline.uid === inode.uid && baseline.gid === inode.gid && baseline.permissions === inode.permissions;
+}
+
 function captureLinuxFiles(device: LinuxMachine, twin: LinuxMachine): TopologyFileExport[] {
   const vfs = linuxVfs(device);
   const pristine = linuxVfs(twin);
@@ -458,6 +463,7 @@ function captureLinuxFiles(device: LinuxMachine, twin: LinuxMachine): TopologyFi
     if (!isCapturableVfsPath(path)) continue;
     const inode = vfs.resolveInode(path);
     if (!inode || inode.generator) continue; // synthetic — regenerated on read, not real content
+    if (isContentDeferred(inode) && sameOwnership(pristine.resolveInode(path), inode)) continue;
     const content = vfs.readFile(path);
     if (content === null) continue;
     const baseline = pristine.resolveInode(path);
