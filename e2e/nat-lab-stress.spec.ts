@@ -27,6 +27,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'curl-500', client: 'lin', commands: (t) => [`for i in $(seq 1 500); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
   { name: 'curl-1000', client: 'lin', commands: (t) => [`for i in $(seq 1 1000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
   { name: 'curl-200-x3', client: 'lin', commands: (t) => [1, 2, 3].map((n) => `for i in $(seq 1 200); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED${n}`) },
+  { name: 'curl-200-x10', client: 'lin', commands: (t) => Array.from({ length: 10 }, (_, n) => `for i in $(seq 1 200); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED${n + 1}`) },
   { name: 'ping-flood-500', client: 'lin', commands: (t) => [`ping -c 500 -i 0.002 ${t}; echo FINISHED`] },
   { name: 'nmap-1024', client: 'lin', commands: (t) => [`nmap -p 1-1024 ${t}; echo FINISHED`] },
   { name: 'nc-zv-300', client: 'lin', commands: (t) => [`for i in $(seq 1 300); do nc -zv -w 1 ${t} 80 & done; wait; echo FINISHED`] },

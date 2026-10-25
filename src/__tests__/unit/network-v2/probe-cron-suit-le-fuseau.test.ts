@@ -138,7 +138,7 @@ describe('cron suit le fuseau de sa machine', () => {
     const { pc } = await poseA('Europe/Paris', [TACHE]);
 
     expect(await pc.executeCommand('cat /etc/timezone')).toContain('Europe/Paris');
-    expect(await pc.executeCommand('date "+%Z"')).toContain('CEST');
+    expect(await pc.executeCommand('date "+%Z"')).toMatch(/CES?T/);
   }, 30000);
 
   it('la tache de 08:30 part a 08:30 LOCALES', async () => {

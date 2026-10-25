@@ -6655,13 +6655,14 @@ export class LinuxCommandExecutor {
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)
-        if (cmd.startsWith('./') || cmd.startsWith('/')) {
+        if (cmd.includes('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
-          if (this.vfs.exists(absPath)) {
-            const commandLine = ['/bin/bash', absPath, ...args].join(' ');
-            return this.runScriptProcess(commandLine, (identity, bridge) =>
-              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
-          }
+          const shellName = this.childShellRunning ? 'bash: line 1: ' : '';
+          if (!this.vfs.exists(absPath)) return { output: `${shellName}${cmd}: No such file or directory`, exitCode: 127 };
+          if (this.vfs.getType(absPath) === 'directory') return { output: `${shellName}${cmd}: Is a directory`, exitCode: 126 };
+          const commandLine = ['/bin/bash', absPath, ...args].join(' ');
+          return this.runScriptProcess(commandLine, (identity, bridge) =>
+            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
         }
 
         // `stdin` was popped off `args` above for the switch cases here that

@@ -838,6 +838,15 @@ sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
 nano ferait apres un `^L`.
 
+### [nano] `~` dans les invites de fichier
+Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
+developpe `~/x` avec le HOME du processus (`expand_leading_tilde`) et complete `~util` avec
+`/etc/passwd` (`username_completion`). `EditorFsContext` ne porte ni le HOME
+ni la liste des comptes : le moteur traite `~` comme un nom ordinaire (aucune
+completion, aucun developpement, y compris a l'ouverture d'un fichier).
+**Report** : il faut une couture `EditorFsContext.homeDirectory()` et un acces
+a la table des comptes de la machine, branches sur `LinuxUserManager`.
+
 ---
 
 ### [terminal] Ctrl-C ne libere le terminal que pour les clients declares `foregroundClient`
@@ -3707,3 +3716,14 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
+
+### [ping-rafale] ping attend chaque sonde sans reponse l'une apres l'autre, meme avec un intervalle minuscule
+
+Mesure dans Chromium sur nat-lab (e2e/nat-lab-stress.spec.ts) : `ping -c 500 -i 0.002` vers un hote silencieux prend 254 s,
+car la simulation attend le delai d'expiration de chaque sonde avant d'emettre la suivante ; un vrai ping emet au rythme de
+`-i` et recoit les reponses en parallele. Non ferme : demande de rendre l'emission de ping independante de l'attente des reponses.
+
+### [service-mainpid] le $$ d'un script ExecStart differe du MainPID de l'unite d'un pid
+
+`script-process-coherence.test.ts` « a service ExecStart script sees the unit MainPID as $$ » : `systemctl show -p MainPID` rend
+`MainPID=40` alors que le script ecrit `39`. Echoue aussi sur main (602de93d5), donc sans lien avec le rendu cooperatif de bash.

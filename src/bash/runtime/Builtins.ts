@@ -72,7 +72,9 @@ export function executeBuiltin(
     case 'read': return builtinRead(args, env, pipeInput);
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return builtinSet(args, env);
-    case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
+    case 'source': case '.':
+      if (args.length > 0) return { output: '', exitCode: 0 }; // handled at higher level
+      return { output: `bash: ${name}: filename argument required\n${name}: usage: ${name} filename [arguments]\n`, exitCode: 2 };
     case 'declare': return builtinDeclare(args, env, false);
     case 'readonly': return builtinDeclare(args, env, true);
     case 'let': return builtinLet(args, env);

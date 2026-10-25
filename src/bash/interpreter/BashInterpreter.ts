@@ -18,6 +18,7 @@
  * is replayed. Each unique occurrence executes exactly once.
  */
 
+import { yieldWhenSliceIsSpent } from '@/bash/runtime/CooperativeYield';
 import type {
   Program, CommandList, AndOrList, Pipeline, Command,
   SimpleCommand, IfClause, ForClause, WhileClause, UntilClause,
@@ -346,6 +347,7 @@ export class BashInterpreter {
         feed = normalizeResult(await this.executeCommand(
           step.value.argv, step.value.env, step.value.background, step.value.outputPiped,
           step.value.stdin));
+        await yieldWhenSliceIsSpent();
       } catch (e) {
         if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);

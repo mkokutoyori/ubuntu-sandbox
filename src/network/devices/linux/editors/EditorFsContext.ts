@@ -30,6 +30,7 @@ export interface EditorFsContext {
   kindOf?(path: string): EditorPathKind;
   isReadOnly?(path: string): boolean;
   canonicalPath?(path: string): string | null;
+  listDirectory?(path: string): string[] | null;
   /** Whether a file exists at this (already-resolved) path. */
   exists(path: string): boolean;
   /** Delete a file. Returns whether a file was actually removed. */

@@ -53,6 +53,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorCanonicalPath(this.resolvePath(path));
   }
 
+  listDirectory(path: string): string[] | null {
+    return this.dev.editorListDirectory(this.resolvePath(path), this.session);
+  }
+
   deleteFile(path: string): boolean {
     const abs = this.resolvePath(path);
     return this.session

@@ -5,6 +5,7 @@ export class WorkingDirectoryFs implements EditorFsContext {
   readonly kindOf?: (path: string) => EditorPathKind;
   readonly isReadOnly?: (path: string) => boolean;
   readonly canonicalPath?: (path: string) => string | null;
+  readonly listDirectory?: (path: string) => string[] | null;
   readonly runChildShell?: (cmd: string, stdin?: string) => ChildShellRun;
 
   constructor(private readonly inner: EditorFsContext, readonly directory: string) {
@@ -12,6 +13,7 @@ export class WorkingDirectoryFs implements EditorFsContext {
     if (inner.kindOf) this.kindOf = (path) => inner.kindOf!(this.resolvePath(path));
     if (inner.isReadOnly) this.isReadOnly = (path) => inner.isReadOnly!(this.resolvePath(path));
     if (inner.canonicalPath) this.canonicalPath = (path) => inner.canonicalPath!(this.resolvePath(path));
+    if (inner.listDirectory) this.listDirectory = (path) => inner.listDirectory!(this.resolvePath(path));
     if (inner.runChildShell) this.runChildShell = (cmd, stdin) => inner.runChildShell!(cmd, stdin, directory);
   }
 
