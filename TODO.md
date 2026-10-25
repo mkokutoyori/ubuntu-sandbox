@@ -3747,12 +3747,13 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
-### [charge-grande-topologie] cout par machine et par rafale mesure dans Chromium, non ferme (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
+### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Apres les correctifs de memoire (un LinuxPC passe de 11 Mo a 1,9 Mo de tas), 400 postes Linux sur 20 switchs montent a 2,8 Go de tas dans Chromium sans plantage, mais
-la configuration (`ip addr add` par poste) coute 330 ms par poste a 400 postes contre 120 ms a 100 : le cout par poste augmente avec le nombre de postes, cause non isolee
-(piste : l'ARP gratuit de chaque `ip addr add` traverse tous les switchs jusqu'a tous les postes). Une rafale de 5000 curl en parallele prend 279 s (56 ms par curl contre
-13 ms dans Node) : le rendu de quatre terminaux ouverts s'ajoute a la simulation, et la table des processus tient 15 inodes /proc par curl simultane. Le journal de journald
-garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
+Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage. Ajouter ou connecter un equipement relance `computeCableRoutes` sur tous les
+cables (102 ms pour 209 cables dans Node, 55 ms de moyenne par mise a jour dans Chromium) : dans une boucle serree de 400 ajouts, chaque mise a jour du magasin rend la toile
+de facon synchrone, ce qui explique les 330 ms par poste observes a 400 postes (22 s de rendu sur 50 s a 200 postes) ; une ouverture de fichier passe par `replaceTopology`,
+une seule mise a jour. Non traite : un routage incremental des cables. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre
+terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
 
-Export d'une topologie, apres le correctif des cles d'hote : un pare-feu FortiGate coute encore 340 ms par equipement (le jumeau d'usine regenere son certificat) et un routeur Huawei 104 ms ; les autres types sont sous 60 ms.
+Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
+retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
