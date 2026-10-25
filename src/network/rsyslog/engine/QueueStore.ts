@@ -10,6 +10,7 @@ export interface QueuePosition {
 export interface LoadedBacklog {
   readonly messages: RsyslogMessage[];
   readonly positions: QueuePosition[];
+  readonly unrecoverable?: boolean;
 }
 
 export interface QueueStore {

@@ -94,7 +94,7 @@ export class WorkerQueue<T extends QueueItem> {
     readonly settings: QueueSettings,
     private readonly host: QueueHost,
     private readonly process: (item: T) => Generator<Sleep, ProcessOutcome>,
-    readonly disk: QueueStore | null = null,
+    public disk: QueueStore | null = null,
     readonly assist: WorkerQueue<T> | null = null,
   ) {}
 
@@ -200,6 +200,12 @@ export class WorkerQueue<T extends QueueItem> {
     for (const item of items) this.items.push(item);
     this.noteSize();
     this.adviseWorkers();
+  }
+
+  switchToMemoryOnly(): void {
+    this.disk = null;
+    this.settings.type = 'LinkedList';
+    this.settings.fileName = null;
   }
 
   closeStore(): void {

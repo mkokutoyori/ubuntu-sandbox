@@ -16,7 +16,8 @@ import { RateLimiter } from './RateLimiter';
 import { OperatingStateFile } from './OperatingState';
 import { RSYSLOG_VERSION } from './Log';
 import { DiskQueueStore } from './DiskQueueStore';
-import type { QueueStore } from './QueueStore';
+import { loadDiskQueue } from './DiskQueueRecovery';
+import type { LoadedBacklog, QueueStore } from './QueueStore';
 import { SegmentedDiskStore } from './segdisk/SegmentedDiskStore';
 import { DiskEngineConflict, resolveDiskEngine, writeEngineMarker, type DiskEngineSelection } from './segdisk/DiskEngine';
 import type { QueueSettings } from './Settings';
@@ -111,7 +112,7 @@ export class RsyslogEngine implements InputSubmitter {
       endBatch,
     };
     let disk: QueueStore | null = null;
-    if (settings.fileName !== null && settings.type === 'Disk') disk = this.newDiskStore(settings);
+    if (settings.fileName !== null && settings.type === 'Disk') disk = this.newDiskStore(settings, name);
     if (settings.fileName !== null && settings.type === 'SegmentedDisk') disk = this.openSegmentedStore(settings, name, false, null);
     const assisted = (settings.type === 'FixedArray' || settings.type === 'LinkedList') && settings.fileName !== null;
     let assist: WorkerQueue<RsyslogMessage> | null = null;
@@ -124,7 +125,7 @@ export class RsyslogEngine implements InputSubmitter {
         const childName = `${name}[DA]`;
         const store = segmentedChild
           ? this.openSegmentedStore(childSettings, childName, !selection.segmentedData, this.markerWriter(settings, selection))
-          : this.newDiskStore(childSettings);
+          : this.newDiskStore(childSettings, childName);
         assist = new WorkerQueue<RsyslogMessage>(childName, childSettings, host, process, store);
         this.registerQueueStatistics(assist);
       }
@@ -818,7 +819,7 @@ export class RsyslogEngine implements InputSubmitter {
     }
   }
 
-  private newDiskStore(settings: QueueSettings): DiskQueueStore {
+  private newDiskStore(settings: QueueSettings, name: string): DiskQueueStore {
     const global = this.config.settings;
     const prefix = settings.fileName ?? '';
     const maxFileSize = settings.maxFileSize;
@@ -834,6 +835,7 @@ export class RsyslogEngine implements InputSubmitter {
         codec: () => ({ localHostName: this.localHostName(), defaultTimeZone: null, compactJson: global.compactJson }),
         report: (severity, text) => this.internal(severity, -1, text),
         crypto: settings.crypto,
+        name,
       },
       {
         mode: 0o600, directoryMode: 0o700, uid: null, gid: null, directoryUid: null, directoryGid: null,
@@ -857,7 +859,22 @@ export class RsyslogEngine implements InputSubmitter {
   private restoreQueues(): void {
     for (const queue of this.allQueues()) {
       if (queue.disk === null) continue;
-      const backlog = queue.disk.load();
+      let backlog: LoadedBacklog | null;
+      if (queue.disk instanceof DiskQueueStore) {
+        const outcome = loadDiskQueue(queue.disk, {
+          name: queue.name,
+          mode: queue.settings.onCorruption,
+          files: this.host.files,
+          now: () => this.config.localClock.now(),
+          pid: this.host.sockets.ownPid(),
+          report: (severity, code, text) => this.internal(severity, code, text),
+        });
+        if (outcome.kind === 'emergency') {
+          queue.switchToMemoryOnly();
+          continue;
+        }
+        backlog = outcome.kind === 'backlog' ? outcome.backlog : null;
+      } else backlog = queue.disk.load();
       if (backlog === null) continue;
       if (!(queue.disk instanceof SegmentedDiskStore)) {
         this.internal(6, RS_RET.NO_ERRCODE, `${queue.name}: queue files exist on disk, re-starting with ${backlog.messages.length} messages. This will keep the disk queue file open, details: https://rainer.gerhards.net/2013/07/rsyslog-why-disk-assisted-queues-keep-a-file-open.html`);

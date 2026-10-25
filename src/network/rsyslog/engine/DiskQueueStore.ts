@@ -16,6 +16,7 @@ const STREAM_MODE_WRITE = 2;
 const OPEN_MODE = 0o600;
 
 const CRYPTO_READ_BUFFER = 4096;
+const RS_RET_ERR = -3000;
 
 interface PlainFile {
   readonly content: string;
@@ -31,7 +32,17 @@ export interface DiskQueueSettings {
   readonly maxDiskSpace: number;
 }
 
+export interface LoadOptions {
+  readonly resynchronize: boolean;
+  readonly report?: (severity: number, code: number, text: string) => void;
+}
+
+const RESYNC_MAX_SCAN = 1024 * 1024;
+const LOG_ALERT = 1;
+const LOG_WARNING = 4;
+
 export interface DiskQueueEnvironment {
+  readonly name?: string;
   readonly files: RsyslogFiles;
   readonly codec: () => MessageCodecContext;
   readonly report: (severity: number, text: string) => void;
@@ -211,6 +222,24 @@ export class DiskQueueStore implements QueueStore {
       .finish();
   }
 
+  abandon(): void {
+    this.handle?.close();
+    this.handle = null;
+    this.encrypted?.close(this.writeOffset);
+    this.encrypted = null;
+  }
+
+  resetState(): void {
+    this.writeFile = 1;
+    this.writeOffset = 0;
+    this.deleteFile = 1;
+    this.deleteOffset = 0;
+    this.sizeOnDisk = 0;
+    this.forcePersist = 0;
+    this.needDeleteInfoFile = false;
+    this.deleteOnClose = true;
+  }
+
   drop(): void {
     const files = this.environment.files;
     this.handle?.close();
@@ -288,7 +317,7 @@ export class DiskQueueStore implements QueueStore {
     };
   }
 
-  load(): LoadedBacklog | null {
+  load(options: LoadOptions = { resynchronize: false }): LoadedBacklog | null {
     const files = this.environment.files;
     const text = files.read(this.infoFile);
     if (text === null) return null;
@@ -308,6 +337,7 @@ export class DiskQueueStore implements QueueStore {
     this.needDeleteInfoFile = true;
     const messages: RsyslogMessage[] = [];
     const positions: QueuePosition[] = [];
+    let unrecoverable = false;
     for (let file = this.deleteFile; file <= this.writeFile; file++) {
       const path = queueFileName(this.settings.directory, this.settings.prefix, file);
       const plain = this.readPlain(path);
@@ -320,16 +350,55 @@ export class DiskQueueStore implements QueueStore {
           at++;
           continue;
         }
-        const record = readRecord(content, at);
-        const message = deserializeMessage(record, this.environment.codec());
-        at = record.end;
+        let decoded: { message: RsyslogMessage; end: number };
+        try {
+          decoded = this.decodeAt(content, at);
+        } catch (error) {
+          if (!(error instanceof ObjectStreamError) || !options.resynchronize) throw error;
+          const recovered = this.resynchronize(content, at, limitChar, file, plain, options);
+          if (recovered === null) {
+            unrecoverable = true;
+            break;
+          }
+          decoded = recovered;
+        }
+        at = decoded.end;
         while (at < content.length && content.charCodeAt(at) === 0 && plain.padded) at++;
-        const position = { file, offset: physicalOffset(at) };
-        this.positions.set(message, position);
-        messages.push(message);
+        const position = { file, offset: plain.physicalOffset(at) };
+        this.positions.set(decoded.message, position);
+        messages.push(decoded.message);
         positions.push(position);
       }
+      if (unrecoverable) break;
     }
-    return { messages, positions };
+    return unrecoverable ? { messages, positions, unrecoverable } : { messages, positions };
+  }
+
+  private decodeAt(content: string, at: number): { message: RsyslogMessage; end: number } {
+    const record = readRecord(content, at);
+    return { message: deserializeMessage(record, this.environment.codec()), end: record.end };
+  }
+
+  private resynchronize(
+    content: string, start: number, limit: number, file: number, plain: PlainFile, options: LoadOptions,
+  ): { message: RsyslogMessage; end: number } | null {
+    const name = this.environment.name ?? this.settings.prefix;
+    const report = options.report ?? (() => undefined);
+    report(LOG_ALERT, RS_RET_ERR, `${name}: disk queue corruption detected while dequeuing at file ${file} offset ${plain.physicalOffset(start)}; attempting bounded resync`);
+    let scanned = 0;
+    for (let index = start; index < limit && scanned < RESYNC_MAX_SCAN;) {
+      const character = content[index++];
+      scanned++;
+      if (character !== '<') continue;
+      try {
+        const recovered = this.decodeAt(content, index - 1);
+        report(LOG_WARNING, 0, `${name}: disk queue corruption recovery resumed after skipping a damaged record; resynchronized at file ${file} offset ${plain.physicalOffset(recovered.end)} after scanning ${scanned} bytes`);
+        return recovered;
+      } catch (error) {
+        if (!(error instanceof ObjectStreamError)) throw error;
+      }
+    }
+    report(LOG_ALERT, RS_RET_ERR, `${name}: disk queue corruption recovery failed after bounded scan of ${scanned} bytes; quarantining unread tail`);
+    return null;
   }
 }

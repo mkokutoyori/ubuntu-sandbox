@@ -373,6 +373,15 @@ rulesets, machine à états des actions, files, limiteurs, réduction des messag
   ecrit `<fileName>.qi` (deux enregistrements `strm`) au changement de fichier, a chaque `checkpointInterval`, apres une suppression et a l'arret,
   refuse au-dela de `maxDiskSpace` et reprend son arriere-plan apres un redemarrage. Une file assistee remplit sa fille quand le nombre de messages
   en attente atteint `highWatermark`, jusqu'a `lowWatermark` ; a l'arret la partie memoire passe dans la fille (`saveOnShutdown`).
+- **Corruption d'une file disque classique** (`rsyslog-queue-corruption.test.ts`) : `queue.onCorruption` est evalue au demarrage par
+  `DiskQueueRecovery.ts` (port de `qqueueVerifyAndRecover`) : le repertoire de travail est compare au `.qi` (`.qi` absent ou invalide alors que des
+  fichiers numerotes existent, numero hors bornes, fichier manquant dans la chaine entre le fichier de suppression et celui d'ecriture, fichier
+  orphelin). `safe` (defaut) deplace `.qi` et fichiers vers `<prefixe>.bad.<AAAAMMJJhhmmss>` et repart a neuf, `inMemory` laisse les fichiers et fait
+  tourner la file en liste chainee non persistante, `ignore` ne verifie rien. Un enregistrement abime est saute par une resynchronisation bornee (1 Mio)
+  sur le prochain en-tete d'objet message ; sans en-tete, le reste de la file est mis en quarantaine dans `<prefixe>.bad.<horodatage>.<pid>`. Les
+  `.encinfo` suivent leur fichier de donnees, la ou la source les laisse derriere elle (ce qui rendrait la quarantaine illisible). Limite assumee :
+  le magasin lit tout le backlog au demarrage, la corruption decouverte pendant le fonctionnement par `qDeqDisk` (lecture incrementale) n'existe pas ici.
+
 - **Chiffrement des journaux et des files** (`rsyslog-crypto-omfile.test.ts`, `rsyslog-crypto-queue.test.ts`, `linux-rsyslog-crypto.test.ts`,
   `rsyslog-crypto-oracle.test.ts`) : `crypto/CryptoProvider.ts` porte `lmcry_gcry` et `lmcry_ossl` (`cry.provider` d'omfile, `queue.cry.provider` d'une file
   disque ou assistee). Chaque tampon vide est complete par des NUL jusqu'au bloc du chiffre puis chiffre sur place par UN contexte qui vit autant que le
