@@ -8,6 +8,8 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import type { VolumeInfo } from '@/powershell/providers/PSProviders';
+import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import {
   type ProcessPolicyPort, EXECUTION_POLICIES, EXECUTION_POLICY_SCOPES,
@@ -649,15 +651,23 @@ export class WaitJobCmdlet implements ICmdlet {
   }
 }
 
+const PROVIDERS = ['Alias', 'Environment', 'FileSystem', 'Function', 'Registry', 'Variable'] as const;
+
+function providerNamed(name: string): string | undefined {
+  return PROVIDERS.find(candidate => candidate.toLowerCase() === name.toLowerCase());
+}
+
 export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
   readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'PSProvider', 'Root', 'Description', 'Scope', 'Persist', 'Credential'] as const;
+  readonly switchParameters = ['Persist'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     const root = psValueToString(ctx.named['root'] ?? ctx.positional[2] ?? '');
+    const existing = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
     // A UNC root names a share on another machine: mapping it is a real
     // SMB connection, recorded where `net use` reads it, not a row in a
     // shell variable.
@@ -674,12 +684,25 @@ export class NewPSDriveCmdlet implements ICmdlet {
       }
       return { Name: name, Root: root, Used: 0, Free: 0, Provider: 'FileSystem' } as Record<string, PSValue>;
     }
-    const drive = { Name: name, Root: root, Used: 0, Free: 0 } as Record<string, PSValue>;
-    // Register drive in global scope for Get-PSDrive to retrieve
-    const existing = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    if (existing[name.toLowerCase()] !== undefined) {
+      ctx.emitError(`New-PSDrive : A drive with the name '${name}' already exists.`);
+      return null;
+    }
+    const requested = ctx.named['psprovider'] !== undefined ? psValueToString(ctx.named['psprovider']) : isRegistryPath(root) ? 'Registry' : 'FileSystem';
+    const provider = providerNamed(requested);
+    if (provider === undefined) {
+      ctx.emitError(`New-PSDrive : Cannot find a provider with the name '${requested}'.`);
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (provider === 'FileSystem' && fs !== undefined && !(fs.exists(root) && fs.isDirectory(root))) {
+      ctx.emitError(`New-PSDrive : The specified drive root "${root}" either does not exist, or it is not a folder.`);
+      return null;
+    }
+    const drive = { Name: name, Root: root, Provider: provider } as Record<string, PSValue>;
     (existing as Record<string, PSValue>)[name.toLowerCase()] = drive;
     ctx.runtime.setVariable('__drives__', existing);
-    return drive;
+    return { Name: name, ...occupancyOf(ctx, root), Provider: provider, Root: root };
   }
 }
 
@@ -689,22 +712,50 @@ export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
   readonly displayName = 'Get-PSDrive';
   readonly aliases = ['gdr'] as const;
-  readonly parameters = ['Name'] as const;
+  readonly parameters = ['Name', 'PSProvider', 'Scope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
+    const rows = this.drives(ctx);
+    const providers = namesOf(ctx.named['psprovider']);
+    for (const provider of providers) {
+      if (!hasWildcard(provider) && !PROVIDERS.some(candidate => candidate.toLowerCase() === provider.toLowerCase())) {
+        ctx.emitError(`Get-PSDrive : Cannot find a provider with the name '${provider}'.`);
+        return null;
+      }
+    }
+    const byProvider = providers.length === 0
+      ? rows
+      : rows.filter(row => providers.some(pattern => wildcardMatches(pattern, psValueToString(row['Provider']))));
+    const patterns = [...namesOf(ctx.named['name']), ...ctx.positional.flatMap(namesOf)];
+    if (patterns.length === 0) return byProvider;
+    const found: Record<string, PSValue>[] = [];
+    for (const pattern of patterns) {
+      const matching = byProvider.filter(row => wildcardMatches(pattern, psValueToString(row['Name'])));
+      if (matching.length === 0 && !hasWildcard(pattern)) {
+        ctx.emitError(`Get-PSDrive : Cannot find drive. A drive with the name '${pattern}' does not exist.`);
+        continue;
+      }
+      for (const row of matching) if (!found.includes(row)) found.push(row);
+    }
+    return found.length === 0 ? null : found.length === 1 ? found[0] : found;
+  }
+
+  private drives(ctx: CmdletContext): Record<string, PSValue>[] {
     const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
     const rows: Record<string, PSValue>[] = [];
+    const fs = ctx.providers.filesystem;
 
     // The file-system drives are the volumes the machine actually mounts,
     // with their real occupancy — not a frozen list beside the file system.
     for (const volume of ctx.providers.disks?.listVolumes() ?? []) {
+      const letter = volume.driveLetter;
+      const here = fs?.driveLocation?.(letter) ?? `${letter}:\\`;
       rows.push({
-        Name:     volume.driveLetter,
-        Used:     driveGigabytes(volume.size - volume.sizeRemaining),
-        Free:     driveGigabytes(volume.sizeRemaining),
+        Name:     letter,
+        ...volumeOccupancy(volume),
         Provider: 'FileSystem',
-        Root:     `${volume.driveLetter}:\\`,
+        Root:     `${letter}:\\`,
+        CurrentLocation: here.slice(3),
       });
     }
     const mounted = new Set(rows.map(r => psValueToString(r['Name']).toLowerCase()));
@@ -713,9 +764,8 @@ export class GetPSDriveCmdlet implements ICmdlet {
       const rec = value as Record<string, PSValue>;
       rows.push({
         Name:     rec['Name'],
-        Used:     rec['Used'] ?? '',
-        Free:     rec['Free'] ?? '',
-        Provider: rec['Provider'] ?? inferProvider(String(rec['Root'] ?? '')),
+        ...occupancyOf(ctx, String(rec['Root'])),
+        Provider: rec['Provider'],
         Root:     rec['Root'],
       });
     }
@@ -732,12 +782,13 @@ export class GetPSDriveCmdlet implements ICmdlet {
       });
     }
 
-    if (nameFilter) {
-      const found = rows.find(r => psValueToString(r['Name']).toLowerCase() === nameFilter);
-      return found ?? null;
-    }
-    return rows;
+    return rows.sort((a, b) => psValueToString(a['Name']).toLowerCase().localeCompare(psValueToString(b['Name']).toLowerCase()));
   }
+}
+
+function namesOf(value: PSValue): string[] {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).map(psValueToString).filter(name => name !== '');
 }
 
 // ─── Remove-PSDrive ────────────────────────────────────────────────────────
@@ -768,10 +819,16 @@ function driveGigabytes(bytes: number): string {
   return (bytes / 1_073_741_824).toFixed(2);
 }
 
-function inferProvider(root: string): string {
-  if (/^[A-Za-z]:\\?$/.test(root)) return 'FileSystem';
-  if (/^HK/i.test(root))           return 'Registry';
-  return '';
+function volumeOccupancy(volume: VolumeInfo): { Used: string; Free: string } {
+  return { Used: driveGigabytes(volume.size - volume.sizeRemaining), Free: driveGigabytes(volume.sizeRemaining) };
+}
+
+function occupancyOf(ctx: CmdletContext, root: string): { Used: string; Free: string } {
+  const letter = /^([A-Za-z]):/.exec(root)?.[1].toUpperCase();
+  const volume = letter === undefined
+    ? undefined
+    : ctx.providers.disks?.listVolumes().find(candidate => candidate.driveLetter.toUpperCase() === letter);
+  return volume === undefined ? { Used: '', Free: '' } : volumeOccupancy(volume);
 }
 
 // ─── Clear-Host ───────────────────────────────────────────────────────────

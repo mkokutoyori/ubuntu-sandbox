@@ -475,6 +475,21 @@ export class PSParser {
       || next.position.offset > token.position.offset + token.value.length;
   }
 
+  private startsSymbolArgumentCommand(): boolean {
+    const head = this.peek();
+    const next = this.peekAt(1);
+    if (head.type !== PSTokenType.WORD || next === undefined) return false;
+    const separated = next.position.offset > (head.end ?? head.position.offset + head.value.length);
+    return separated && (next.type === PSTokenType.DOT || next.type === PSTokenType.RANGE || BAREWORD_LEADERS.has(next.type));
+  }
+
+  private parseCommandPipelineOnRight(pos: SourcePosition): PSExpression {
+    const commands: PSCommand[] = [this.parseCommand()];
+    while (this.check(PSTokenType.PIPE)) { this.advance(); commands.push(this.parseCommand()); }
+    const redirections = this.parseRedirections();
+    return { type: 'PipelineExpression', pipeline: makePipeline(commands, pos), redirections, position: pos };
+  }
+
   private startsCommandArgument(): boolean {
     const t = this.peek().type;
     if ((t === PSTokenType.MINUS || t === PSTokenType.PLUS) && this.standsAlone()) return true;
@@ -922,6 +937,8 @@ export class PSParser {
     }
     const typedChain = this.check(PSTokenType.TYPE) ? this.typedAssignmentTypeCount() : 0;
     if (typedChain > 0) return this.parseTypedAssignment(typedChain) as unknown as PSExpression;
+
+    if (this.startsSymbolArgumentCommand()) return this.parseCommandPipelineOnRight(pos);
 
     const first = this.parseCommaList();
 
