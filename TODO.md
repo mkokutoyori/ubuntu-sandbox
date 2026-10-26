@@ -3757,7 +3757,7 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 ### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage, et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
+Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 3,5 Go sans plantage et se montent en 63 s (200 postes : 18 s), et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
 recalcule en entier des qu'un cable, une position ou le zoom change (102 ms pour 209 cables dans Node) : un routage INCREMENTAL reste non traite, mais il ne se declenche plus pour une adresse IP posee dans un
 terminal. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les
 enregistrements et les octets du fichier), environ 13 Ko par entree.
