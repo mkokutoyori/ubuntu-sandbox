@@ -16,12 +16,13 @@
  * data, so monitoring scripts get truthful values.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { OsSecurityContext } from './types';
 import {
   oracleZoneLabel, UTC_SPEC, type OracleTimeZoneSpec,
 } from '../time/OracleTimeZone';
+import { hostNowDate } from '../time/OracleHostClock';
 
 /** USERENV `AUTHENTICATION_METHOD` values understood by real Oracle. */
 export type AuthenticationMethod =
@@ -237,8 +238,8 @@ export class OracleSession {
     this.bgJobId = null;
     this.fgJobId = null;
 
-    this.logonTime = simulationDate();
-    this.lastCallAt = simulationDate();
+    this.logonTime = hostNowDate();
+    this.lastCallAt = hostNowDate();
 
     this.status = 'ACTIVE';
     this.event = 'SQL*Net message from client';
@@ -376,7 +377,7 @@ export class OracleSession {
     this.containerId = id;
   }
 
-  touch(): void { this.lastCallAt = simulationDate(); }
+  touch(): void { this.lastCallAt = hostNowDate(); }
 
   // ── Helpers ────────────────────────────────────────────────────
 

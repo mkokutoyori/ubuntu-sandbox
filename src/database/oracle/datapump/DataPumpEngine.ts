@@ -1,8 +1,9 @@
 import { WallDate } from '../functions/dateSupport';
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { OracleDatabase } from '../OracleDatabase';
 import type { TableMeta, StorageRow, CellValue } from '../../engine/storage/BaseStorage';
+import { hostNowDate } from '../time/OracleHostClock';
 
 /** Serialized cell — Dates need an explicit envelope to survive JSON. */
 type DumpCell = string | number | boolean | null | { $date: string };
@@ -92,7 +93,7 @@ export class DataPumpEngine {
         format: 'ORACLE-SIM-DATAPUMP',
         version: 1,
         mode,
-        exportedAt: simulationDate().toISOString(),
+        exportedAt: hostNowDate().toISOString(),
         tables: entries,
       },
       report: { lines, tables: entries.length, rows: rowTotal },

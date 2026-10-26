@@ -12,9 +12,10 @@
  *   - DBA           → stays locked until `ACCOUNT UNLOCK`.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { LoginAttemptRecord, AccountLockReason } from './types';
+import { hostNowDate, hostNowMs } from '../time/OracleHostClock';
 
 export type LockStatus = 'OPEN' | 'LOCKED_BY_FAILED_LOGINS' | 'LOCKED_BY_DBA';
 
@@ -38,7 +39,7 @@ export class LoginTracker {
   recordFailure(username: string): void {
     const rec = this.record(username.toUpperCase());
     rec.failedCount++;
-    rec.lastFailedAt = simulationDate();
+    rec.lastFailedAt = hostNowDate();
   }
 
   recordSuccess(username: string): void {
@@ -47,7 +48,7 @@ export class LoginTracker {
     rec.lastFailedAt = null;
     rec.lockedAt = null;
     rec.lockReason = null;
-    rec.lastSuccessAt = simulationDate();
+    rec.lastSuccessAt = hostNowDate();
   }
 
   // ── Lock management ───────────────────────────────────────────────
@@ -58,7 +59,7 @@ export class LoginTracker {
    */
   lockAccount(username: string, reason: AccountLockReason = 'FAILED_LOGIN'): void {
     const rec = this.record(username.toUpperCase());
-    rec.lockedAt = simulationDate();
+    rec.lockedAt = hostNowDate();
     rec.lockReason = reason;
   }
 
@@ -103,7 +104,7 @@ export class LoginTracker {
     const rec = this.attempts.get(username.toUpperCase());
     if (!rec?.lockedAt || rec.lockReason !== 'FAILED_LOGIN') return false;
     const lockMs = lockTimeDays * 24 * 60 * 60 * 1000;
-    return simulationNowMs() - rec.lockedAt.getTime() >= lockMs;
+    return hostNowMs() - rec.lockedAt.getTime() >= lockMs;
   }
 
   /**

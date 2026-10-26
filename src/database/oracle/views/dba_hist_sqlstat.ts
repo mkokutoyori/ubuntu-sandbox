@@ -2,17 +2,18 @@
  * DBA_HIST_SQLSTAT — historical per-SQL execution stats per snapshot.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'DBA_HIST_SQLSTAT',
   comment: 'Historical SQL execution stats',
   query({ runtime }) {
-    const now = simulationNowMs();
+    const now = hostNowMs();
     const elapsedHours = Math.max(1, Math.floor((now - runtime.startedAt) / 3_600_000));
     const buckets = Math.min(elapsedHours, 50);
     const rows: (string | number)[][] = [];

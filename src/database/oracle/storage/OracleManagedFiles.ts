@@ -1,5 +1,6 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { hostNowMs } from '../time/OracleHostClock';
 
 export type OmfBackupKind =
   | 'datafile-full'
@@ -41,7 +42,7 @@ export function omfDatedDirectory(
   recoveryFileDest: string,
   dbUniqueName: string,
   kind: OmfBackupKind,
-  at: Date = ZonedDate.in(simulationNowMs(), 'UTC'),
+  at: Date = ZonedDate.in(hostNowMs(), 'UTC'),
 ): string {
   const pad = (n: number): string => String(n).padStart(2, '0');
   const day = `${at.getFullYear()}_${pad(at.getMonth() + 1)}_${pad(at.getDate())}`;
@@ -54,7 +55,7 @@ export function omfBackupPiecePath(
   dbUniqueName: string,
   kind: OmfBackupKind,
   label: string,
-  at: Date = ZonedDate.in(simulationNowMs(), 'UTC'),
+  at: Date = ZonedDate.in(hostNowMs(), 'UTC'),
   unique: string = omfUniqueString(),
 ): string {
   const directory = omfDatedDirectory(recoveryFileDest, dbUniqueName, kind, at);

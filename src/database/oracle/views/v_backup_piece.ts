@@ -28,7 +28,7 @@ registerView({
         b.setId, 1, b.pieceId, b.handle, b.bytes,
         new Date(b.startedAt).toISOString(),
         new Date(b.completedAt).toISOString(),
-        b.status === 'COMPLETED' ? 'A' : 'X',
+        b.status === 'COMPLETED' ? 'A' : b.status === 'DELETED' ? 'D' : 'X',
         'DISK',
       ])
     );

@@ -9,8 +9,7 @@
  *   - OracleExecutor (statement execution)
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
-import { hostOffsetSpec, hostWallDate } from './time/OracleHostClock';
+import { hostOffsetSpec, hostWallDate, hostNowDate, hostNowMs, withHostClock } from './time/OracleHostClock';
 
 import { OracleInstance } from './OracleInstance';
 import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
@@ -488,6 +487,10 @@ export class OracleDatabase implements SqlCommandHost {
    * Authenticate a user and create a new connection/session.
    * Returns a session ID or throws on auth failure.
    */
+  private atHostTime<T>(run: () => T): T {
+    return withHostClock(this.instance.hostClock(), run);
+  }
+
   connect(
     username: string,
     password: string,
@@ -495,141 +498,143 @@ export class OracleDatabase implements SqlCommandHost {
     transport: ConnectTransport = 'beq',
     proxyUser?: string,
   ): { sid: number; executor: OracleExecutor } {
-    if (!this.instance.isOpen) {
-      throw new Error(ORACLE_ERRORS.ORA_01034);
-    }
-
-    const upperUser = username.toUpperCase();
-    const user = this.catalog.getUser(upperUser);
-
-    // Proxy connect (`CONNECT proxy[client]/proxy_password`): the
-    // password belongs to the proxy, the session belongs to the client.
-    // The authorisation is checked before the password so an
-    // unauthorised proxy learns nothing about the client's account.
-    const upperProxy = proxyUser?.toUpperCase();
-    let proxyGrant: { client: string; proxy: string; role: string | null } | undefined;
-    if (upperProxy) {
-      proxyGrant = this.catalog.getProxyUsers().find(
-        r => r.client === upperUser && r.proxy === upperProxy);
-      if (!proxyGrant) {
-        this.catalog.recordLogon(upperProxy, 0, 28150, osCtx.osUser, osCtx.hostname, osCtx.terminal);
-        this.instance.logAlertEvent(`Failed proxy logon: ${upperProxy}[${upperUser}] ORA-28150`);
-        throw new Error(`ORA-28150: proxy not authorized to connect as client`);
+    return this.atHostTime(() => {
+      if (!this.instance.isOpen) {
+        throw new Error(ORACLE_ERRORS.ORA_01034);
       }
-    }
 
-    /**
-     * Wrap a failed-auth throw so every rejection path also leaves a
-     * trace in the audit trail and alert log. SESSIONID 0 is the
-     * canonical Oracle marker for "no session was ever opened".
-     */
-    const failLogon = (code: number, message: string): never => {
-      this.catalog.recordLogon(upperUser, 0, code, osCtx.osUser, osCtx.hostname, osCtx.terminal);
-      this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(code).padStart(5, '0')}`);
-      this.publishConnectionTrace({
-        username: upperUser, sessionId: 0, serial: 0, osCtx,
-        authMethod: 'PASSWORD', role: 'NORMAL',
-        outcome: 'FAILURE', returncode: code,
-      });
-      throw new Error(message);
-    };
+      const upperUser = username.toUpperCase();
+      const user = this.catalog.getUser(upperUser);
 
-    // Dispatch on AUTHENTICATION_TYPE recorded at CREATE USER time.
-    if (user?.authenticationType === 'EXTERNAL') {
-      // OS-authenticated user: name must match `<os_prefix><osUser>` (default OPS$).
-      // Real Oracle uses init parameter OS_AUTHENT_PREFIX; we simulate with 'OPS$'.
-      const expected = `OPS$${osCtx.osUser.toUpperCase()}`;
-      if (upperUser !== expected) {
+      // Proxy connect (`CONNECT proxy[client]/proxy_password`): the
+      // password belongs to the proxy, the session belongs to the client.
+      // The authorisation is checked before the password so an
+      // unauthorised proxy learns nothing about the client's account.
+      const upperProxy = proxyUser?.toUpperCase();
+      let proxyGrant: { client: string; proxy: string; role: string | null } | undefined;
+      if (upperProxy) {
+        proxyGrant = this.catalog.getProxyUsers().find(
+          r => r.client === upperUser && r.proxy === upperProxy);
+        if (!proxyGrant) {
+          this.catalog.recordLogon(upperProxy, 0, 28150, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+          this.instance.logAlertEvent(`Failed proxy logon: ${upperProxy}[${upperUser}] ORA-28150`);
+          throw new Error(`ORA-28150: proxy not authorized to connect as client`);
+        }
+      }
+
+      /**
+       * Wrap a failed-auth throw so every rejection path also leaves a
+       * trace in the audit trail and alert log. SESSIONID 0 is the
+       * canonical Oracle marker for "no session was ever opened".
+       */
+      const failLogon = (code: number, message: string): never => {
+        this.catalog.recordLogon(upperUser, 0, code, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+        this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(code).padStart(5, '0')}`);
+        this.publishConnectionTrace({
+          username: upperUser, sessionId: 0, serial: 0, osCtx,
+          authMethod: 'PASSWORD', role: 'NORMAL',
+          outcome: 'FAILURE', returncode: code,
+        });
+        throw new Error(message);
+      };
+
+      // Dispatch on AUTHENTICATION_TYPE recorded at CREATE USER time.
+      if (user?.authenticationType === 'EXTERNAL') {
+        // OS-authenticated user: name must match `<os_prefix><osUser>` (default OPS$).
+        // Real Oracle uses init parameter OS_AUTHENT_PREFIX; we simulate with 'OPS$'.
+        const expected = `OPS$${osCtx.osUser.toUpperCase()}`;
+        if (upperUser !== expected) {
+          failLogon(1017, ORACLE_ERRORS.ORA_01017);
+        }
+      } else if (user?.authenticationType === 'GLOBAL') {
+        // Directory-authenticated: no password path supported in this simulation.
         failLogon(1017, ORACLE_ERRORS.ORA_01017);
+      } else {
+        // Standard password authentication via SecurityEngine:
+        // enforces lock, failed-login tracking, expiry.
+        const authUser = upperProxy ?? upperUser;
+        const storedPassword = this.catalog.getStoredPassword(authUser);
+        const authResult = this.securityEngine.authenticate(authUser, password, this.catalog, storedPassword);
+        if (!authResult.success) {
+          failLogon(authResult.errorCode || 1017, authResult.message || ORACLE_ERRORS.ORA_01017);
+        }
       }
-    } else if (user?.authenticationType === 'GLOBAL') {
-      // Directory-authenticated: no password path supported in this simulation.
-      failLogon(1017, ORACLE_ERRORS.ORA_01017);
-    } else {
-      // Standard password authentication via SecurityEngine:
-      // enforces lock, failed-login tracking, expiry.
-      const authUser = upperProxy ?? upperUser;
-      const storedPassword = this.catalog.getStoredPassword(authUser);
-      const authResult = this.securityEngine.authenticate(authUser, password, this.catalog, storedPassword);
-      if (!authResult.success) {
-        failLogon(authResult.errorCode || 1017, authResult.message || ORACLE_ERRORS.ORA_01017);
+
+      // Enforce CREATE SESSION privilege (direct or via role)
+      if (!this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'CREATE SESSION')) {
+        failLogon(1045, 'ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
       }
-    }
 
-    // Enforce CREATE SESSION privilege (direct or via role)
-    if (!this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'CREATE SESSION')) {
-      failLogon(1045, 'ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
-    }
+      // RESTRICTED SESSION mode (STARTUP RESTRICT / ALTER SYSTEM ENABLE
+      // RESTRICTED SESSION): only users holding the RESTRICTED SESSION
+      // privilege may log on. SYSDBA connections bypass this entirely
+      // (they use connectAsSysdba, not this path).
+      if (this.instance.restrictedSession
+          && !this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'RESTRICTED SESSION')) {
+        failLogon(1035, ORACLE_ERRORS.ORA_01035);
+      }
 
-    // RESTRICTED SESSION mode (STARTUP RESTRICT / ALTER SYSTEM ENABLE
-    // RESTRICTED SESSION): only users holding the RESTRICTED SESSION
-    // privilege may log on. SYSDBA connections bypass this entirely
-    // (they use connectAsSysdba, not this path).
-    if (this.instance.restrictedSession
-        && !this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'RESTRICTED SESSION')) {
-      failLogon(1035, ORACLE_ERRORS.ORA_01035);
-    }
+      const sid = this.sidCounter++;
+      const serial = Math.floor(Math.random() * 50000) + 1;
 
-    const sid = this.sidCounter++;
-    const serial = Math.floor(Math.random() * 50000) + 1;
+      const connInfo: ConnectionInfo = {
+        username: upperUser,
+        schema: upperUser,
+        connectedAt: hostNowDate(),
+        sid,
+        serial,
+        role: 'NORMAL',
+        osCtx,
+      };
+      this.connections.set(sid, connInfo);
 
-    const connInfo: ConnectionInfo = {
-      username: upperUser,
-      schema: upperUser,
-      connectedAt: simulationDate(),
-      sid,
-      serial,
-      role: 'NORMAL',
-      osCtx,
-    };
-    this.connections.set(sid, connInfo);
+      // Register session in SecurityEngine with the same sid/serial used by OracleDatabase
+      const sessionId = String(sid);
+      const sessionResult = this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
+      if (!sessionResult.ok) {
+        this.connections.delete(sid);
+        this.catalog.recordLogon(upperUser, sid, 2391, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+        throw new Error(sessionResult.error ?? 'ORA-02391: exceeded simultaneous SESSIONS_PER_USER limit');
+      }
+      this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+      this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
+      this.publishConnectionTrace({
+        username: upperUser, sessionId: sid, serial, osCtx,
+        authMethod: user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
+          : user?.authenticationType === 'GLOBAL' ? 'GLOBAL' : 'PASSWORD',
+        role: 'NORMAL', outcome: 'SUCCESS', returncode: 0,
+      });
 
-    // Register session in SecurityEngine with the same sid/serial used by OracleDatabase
-    const sessionId = String(sid);
-    const sessionResult = this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
-    if (!sessionResult.ok) {
-      this.connections.delete(sid);
-      this.catalog.recordLogon(upperUser, sid, 2391, osCtx.osUser, osCtx.hostname, osCtx.terminal);
-      throw new Error(sessionResult.error ?? 'ORA-02391: exceeded simultaneous SESSIONS_PER_USER limit');
-    }
-    this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
-    this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
-    this.publishConnectionTrace({
-      username: upperUser, sessionId: sid, serial, osCtx,
-      authMethod: user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
-        : user?.authenticationType === 'GLOBAL' ? 'GLOBAL' : 'PASSWORD',
-      role: 'NORMAL', outcome: 'SUCCESS', returncode: 0,
+      const authMethod: AuthenticationMethod =
+        user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
+        : user?.authenticationType === 'GLOBAL' ? 'GLOBAL'
+        : 'PASSWORD';
+      connInfo.authMethod = authMethod;
+      const session = this.openSession({
+        sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
+        transport, proxyUser: upperProxy,
+      });
+      // `WITH ROLE r` narrows the proxy session to that role alone; without
+      // the clause the client keeps the roles its account would enable.
+      if (proxyGrant?.role) session.setEnabledRoles([proxyGrant.role]);
+
+      const context: ExecutionContext = {
+        currentUser: upperUser,
+        currentSchema: upperUser,
+        autoCommit: false,
+        serverOutput: false,
+        feedback: true,
+        timing: false,
+        session,
+      };
+
+      const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+      executor.setSessionId(String(sid));
+      executor.setCommandHost(this);
+      executor.setDatabaseRef(this);
+      connInfo.executor = executor;
+      return { sid, executor };
     });
-
-    const authMethod: AuthenticationMethod =
-      user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
-      : user?.authenticationType === 'GLOBAL' ? 'GLOBAL'
-      : 'PASSWORD';
-    connInfo.authMethod = authMethod;
-    const session = this.openSession({
-      sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
-      transport, proxyUser: upperProxy,
-    });
-    // `WITH ROLE r` narrows the proxy session to that role alone; without
-    // the clause the client keeps the roles its account would enable.
-    if (proxyGrant?.role) session.setEnabledRoles([proxyGrant.role]);
-
-    const context: ExecutionContext = {
-      currentUser: upperUser,
-      currentSchema: upperUser,
-      autoCommit: false,
-      serverOutput: false,
-      feedback: true,
-      timing: false,
-      session,
-    };
-
-    const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
-    executor.setSessionId(String(sid));
-    executor.setCommandHost(this);
-    executor.setDatabaseRef(this);
-    connInfo.executor = executor;
-    return { sid, executor };
   }
 
   /**
@@ -707,58 +712,60 @@ export class OracleDatabase implements SqlCommandHost {
     osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
     auth?: AdminConnectAuth,
   ): { sid: number; executor: OracleExecutor } {
-    this.authorizeAdminConnect('SYSDBA', osCtx, auth);
-    const sid = this.sidCounter++;
-    const serial = Math.floor(Math.random() * 50000) + 1;
+    return this.atHostTime(() => {
+      this.authorizeAdminConnect('SYSDBA', osCtx, auth);
+      const sid = this.sidCounter++;
+      const serial = Math.floor(Math.random() * 50000) + 1;
 
-    const connInfo: ConnectionInfo = {
-      username: 'SYS',
-      schema: 'SYS',
-      connectedAt: simulationDate(),
-      sid,
-      serial,
-      role: 'SYSDBA',
-      authMethod: 'SYSDBA',
-      osCtx,
-    };
-    this.connections.set(sid, connInfo);
+      const connInfo: ConnectionInfo = {
+        username: 'SYS',
+        schema: 'SYS',
+        connectedAt: hostNowDate(),
+        sid,
+        serial,
+        role: 'SYSDBA',
+        authMethod: 'SYSDBA',
+        osCtx,
+      };
+      this.connections.set(sid, connInfo);
 
-    // Register SYSDBA session with matching sid/serial
-    const sessionId = String(sid);
-    this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog, sid, serial);
-    // Record audit + alert log — SYSDBA logons are first-class events.
-    this.catalog.recordAudit({
-      sessionId: sid, username: 'SYS', actionName: 'LOGON', returncode: 0,
-      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
-      privUsed: 'SYSDBA', statementType: 'LOGON',
+      // Register SYSDBA session with matching sid/serial
+      const sessionId = String(sid);
+      this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog, sid, serial);
+      // Record audit + alert log — SYSDBA logons are first-class events.
+      this.catalog.recordAudit({
+        sessionId: sid, username: 'SYS', actionName: 'LOGON', returncode: 0,
+        osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+        privUsed: 'SYSDBA', statementType: 'LOGON',
+      });
+      this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
+      this.publishConnectionTrace({
+        username: 'SYS', sessionId: sid, serial, osCtx,
+        authMethod: 'SYSDBA', role: 'SYSDBA', outcome: 'SUCCESS', returncode: 0,
+      });
+
+      const sysSession = this.openSession({
+        sid, serial, username: 'SYS', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+        authenticationMethod: 'SYSDBA',
+      });
+
+      const context: ExecutionContext = {
+        currentUser: 'SYS',
+        currentSchema: 'SYS',
+        autoCommit: false,
+        serverOutput: false,
+        feedback: true,
+        timing: false,
+        session: sysSession,
+      };
+
+      const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+      executor.setSessionId(String(sid));
+      executor.setCommandHost(this);
+      executor.setDatabaseRef(this);
+      connInfo.executor = executor;
+      return { sid, executor };
     });
-    this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
-    this.publishConnectionTrace({
-      username: 'SYS', sessionId: sid, serial, osCtx,
-      authMethod: 'SYSDBA', role: 'SYSDBA', outcome: 'SUCCESS', returncode: 0,
-    });
-
-    const sysSession = this.openSession({
-      sid, serial, username: 'SYS', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
-      authenticationMethod: 'SYSDBA',
-    });
-
-    const context: ExecutionContext = {
-      currentUser: 'SYS',
-      currentSchema: 'SYS',
-      autoCommit: false,
-      serverOutput: false,
-      feedback: true,
-      timing: false,
-      session: sysSession,
-    };
-
-    const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
-    executor.setSessionId(String(sid));
-    executor.setCommandHost(this);
-    executor.setDatabaseRef(this);
-    connInfo.executor = executor;
-    return { sid, executor };
   }
 
   /**
@@ -769,75 +776,79 @@ export class OracleDatabase implements SqlCommandHost {
     osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
     auth?: AdminConnectAuth,
   ): { sid: number; executor: OracleExecutor } {
-    this.authorizeAdminConnect('SYSOPER', osCtx, auth);
-    const sid = this.sidCounter++;
-    const serial = Math.floor(Math.random() * 50000) + 1;
+    return this.atHostTime(() => {
+      this.authorizeAdminConnect('SYSOPER', osCtx, auth);
+      const sid = this.sidCounter++;
+      const serial = Math.floor(Math.random() * 50000) + 1;
 
-    const connInfo: ConnectionInfo = {
-      username: 'PUBLIC',
-      schema: 'PUBLIC',
-      connectedAt: simulationDate(),
-      sid,
-      serial,
-      role: 'SYSOPER',
-      authMethod: 'SYSOPER',
-      osCtx,
-    };
-    this.connections.set(sid, connInfo);
+      const connInfo: ConnectionInfo = {
+        username: 'PUBLIC',
+        schema: 'PUBLIC',
+        connectedAt: hostNowDate(),
+        sid,
+        serial,
+        role: 'SYSOPER',
+        authMethod: 'SYSOPER',
+        osCtx,
+      };
+      this.connections.set(sid, connInfo);
 
-    const sessionId = String(sid);
-    this.securityEngine.openSession(sessionId, 'PUBLIC', 'PUBLIC',
-      { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
-      this.catalog, sid, serial);
+      const sessionId = String(sid);
+      this.securityEngine.openSession(sessionId, 'PUBLIC', 'PUBLIC',
+        { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+        this.catalog, sid, serial);
 
-    const sysoperSession = this.openSession({
-      sid, serial, username: 'PUBLIC', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
-      authenticationMethod: 'SYSOPER',
+      const sysoperSession = this.openSession({
+        sid, serial, username: 'PUBLIC', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+        authenticationMethod: 'SYSOPER',
+      });
+      this.publishConnectionTrace({
+        username: 'PUBLIC', sessionId: sid, serial, osCtx,
+        authMethod: 'SYSOPER', role: 'SYSOPER', outcome: 'SUCCESS', returncode: 0,
+      });
+
+      const context: ExecutionContext = {
+        currentUser: 'PUBLIC',
+        currentSchema: 'PUBLIC',
+        autoCommit: false,
+        serverOutput: false,
+        feedback: true,
+        timing: false,
+        session: sysoperSession,
+      };
+
+      const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+      executor.setSessionId(String(sid));
+      executor.setCommandHost(this);
+      executor.setDatabaseRef(this);
+      connInfo.executor = executor;
+      return { sid, executor };
     });
-    this.publishConnectionTrace({
-      username: 'PUBLIC', sessionId: sid, serial, osCtx,
-      authMethod: 'SYSOPER', role: 'SYSOPER', outcome: 'SUCCESS', returncode: 0,
-    });
-
-    const context: ExecutionContext = {
-      currentUser: 'PUBLIC',
-      currentSchema: 'PUBLIC',
-      autoCommit: false,
-      serverOutput: false,
-      feedback: true,
-      timing: false,
-      session: sysoperSession,
-    };
-
-    const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
-    executor.setSessionId(String(sid));
-    executor.setCommandHost(this);
-    executor.setDatabaseRef(this);
-    connInfo.executor = executor;
-    return { sid, executor };
   }
 
   /**
    * Disconnect a session.
    */
   disconnect(sid: number): void {
-    const conn = this.connections.get(sid);
-    if (conn) {
-      conn.executor?.commitOnLogoff();
-      this.catalog.recordLogoff(conn.username, sid);
-      const role = conn.role ?? 'NORMAL';
-      this.instance.logAlertEvent(
-        `Logoff: user=${conn.username} sid=${sid}${role === 'NORMAL' ? '' : ` as ${role}`}`);
-      this.publishConnectionTrace({
-        username: conn.username, sessionId: sid, serial: conn.serial,
-        osCtx: conn.osCtx ?? DEFAULT_OS_CONTEXT,
-        authMethod: conn.authMethod ?? 'PASSWORD', role,
-        outcome: 'LOGOFF', returncode: 0,
-      });
-    }
-    this.connections.delete(sid);
-    this.securityEngine.closeSession(String(sid));
-    this.closeSession(sid);
+    this.atHostTime(() => {
+      const conn = this.connections.get(sid);
+      if (conn) {
+        conn.executor?.commitOnLogoff();
+        this.catalog.recordLogoff(conn.username, sid);
+        const role = conn.role ?? 'NORMAL';
+        this.instance.logAlertEvent(
+          `Logoff: user=${conn.username} sid=${sid}${role === 'NORMAL' ? '' : ` as ${role}`}`);
+        this.publishConnectionTrace({
+          username: conn.username, sessionId: sid, serial: conn.serial,
+          osCtx: conn.osCtx ?? DEFAULT_OS_CONTEXT,
+          authMethod: conn.authMethod ?? 'PASSWORD', role,
+          outcome: 'LOGOFF', returncode: 0,
+        });
+      }
+      this.connections.delete(sid);
+      this.securityEngine.closeSession(String(sid));
+      this.closeSession(sid);
+    });
   }
 
   /** Build and publish the rich oracle.security.connection-traced event. */
@@ -852,7 +863,7 @@ export class OracleDatabase implements SqlCommandHost {
     const authType = args.role === 'SYSDBA' || args.role === 'SYSOPER' ? 'DATABASE'
       : args.authMethod === 'EXTERNAL' ? 'OS'
       : args.authMethod === 'GLOBAL' ? 'NETWORK' : 'DATABASE';
-    const now = simulationDate();
+    const now = hostNowDate();
     const payload: OracleConnectionTracedPayload = {
       deviceId: this.instance.getDeviceId(),
       sid: this.instance.config.sid,
@@ -959,57 +970,59 @@ export class OracleDatabase implements SqlCommandHost {
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
   executeSql(executor: OracleExecutor, sql: string): ResultSet {
-    const trimmed = sql.trim().replace(/;\s*$/, '');
-    if (!trimmed) return emptyResult();
+    return this.atHostTime(() => {
+      const trimmed = sql.trim().replace(/;\s*$/, '');
+      if (!trimmed) return emptyResult();
 
-    this.idleMonitor.sweep();
-    this.noticeSessionTermination(executor);
-    this.securityEngine.sessions.noteCall(String(executor.boundSid));
+      this.idleMonitor.sweep();
+      this.noticeSessionTermination(executor);
+      this.securityEngine.sessions.noteCall(String(executor.boundSid));
 
-    const upper = trimmed.toUpperCase();
+      const upper = trimmed.toUpperCase();
 
-    if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
-      && standbyRefusesStatement(trimmed)) {
-      return emptyResult(ORA_16000);
-    }
-
-    if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
-      && mountedRefusesQuery(trimmed)) {
-      return emptyResult(ORA_01219);
-    }
-
-    // PL/SQL is a distinct language whose unit bodies contain semicolons
-    // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
-    // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
-    // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
-    const plsql = this.routePlsql(executor, trimmed, upper);
-    if (plsql) return plsql;
-
-    // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
-    // does not model the external-table clause, so it is registered here.
-    if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
-      return this.createExternalTable(executor, trimmed);
-    }
-
-    const tokens = this.lexer.tokenize(trimmed);
-    const parser = new OracleParser();
-    const statements = parser.parseMultiple(tokens);
-
-    if (statements.length === 0) return emptyResult();
-
-    let result: ResultSet = emptyResult();
-    for (const stmt of statements) {
-      // Attach the source SQL so audit/journaling records the original
-      // user text — the AST type alone is useless to a DBA.
-      (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
-      result = executor.execute(stmt);
-      try {
-        this.maybeLockForUpdate(executor, stmt);
-      } catch (e: unknown) {
-        return emptyResult(e instanceof Error ? e.message : String(e));
+      if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
+        && standbyRefusesStatement(trimmed)) {
+        return emptyResult(ORA_16000);
       }
-    }
-    return result;
+
+      if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
+        && mountedRefusesQuery(trimmed)) {
+        return emptyResult(ORA_01219);
+      }
+
+      // PL/SQL is a distinct language whose unit bodies contain semicolons
+      // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
+      // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
+      // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
+      const plsql = this.routePlsql(executor, trimmed, upper);
+      if (plsql) return plsql;
+
+      // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
+      // does not model the external-table clause, so it is registered here.
+      if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
+        return this.createExternalTable(executor, trimmed);
+      }
+
+      const tokens = this.lexer.tokenize(trimmed);
+      const parser = new OracleParser();
+      const statements = parser.parseMultiple(tokens);
+
+      if (statements.length === 0) return emptyResult();
+
+      let result: ResultSet = emptyResult();
+      for (const stmt of statements) {
+        // Attach the source SQL so audit/journaling records the original
+        // user text — the AST type alone is useless to a DBA.
+        (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
+        result = executor.execute(stmt);
+        try {
+          this.maybeLockForUpdate(executor, stmt);
+        } catch (e: unknown) {
+          return emptyResult(e instanceof Error ? e.message : String(e));
+        }
+      }
+      return result;
+    });
   }
 
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
@@ -1303,7 +1316,7 @@ export class OracleDatabase implements SqlCommandHost {
       updateSent: false,
       heterogeneous: false,
       protocol: 'UNKWN',
-      openedAt: simulationNowMs(),
+      openedAt: hostNowMs(),
     });
     return opened;
   }
@@ -1688,7 +1701,7 @@ export class OracleDatabase implements SqlCommandHost {
       parameters,
       body,
       sourceLines: sql.split('\n'),
-      created: simulationDate(),
+      created: hostNowDate(),
       status: 'VALID',
     });
   }
@@ -1740,7 +1753,7 @@ export class OracleDatabase implements SqlCommandHost {
       returnType,
       body,
       sourceLines: sql.split('\n'),
-      created: simulationDate(),
+      created: hostNowDate(),
       status: 'VALID',
     });
   }
@@ -1946,7 +1959,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storedUnits.set(key, {
       schema, name, type: 'PACKAGE', parameters: [],
       body: source, sourceLines: sql.split('\n'),
-      created: simulationDate(), status: compilation.ok ? 'VALID' : 'INVALID',
+      created: hostNowDate(), status: compilation.ok ? 'VALID' : 'INVALID',
     });
 
     if (compilation.ok === false) {
@@ -1988,7 +2001,7 @@ export class OracleDatabase implements SqlCommandHost {
       this.storedUnits.set(bodyUnitKey, {
         schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
         body: source, sourceLines: sql.split('\n'),
-        created: simulationDate(), status: 'INVALID',
+        created: hostNowDate(), status: 'INVALID',
       });
       this.catalog.setCompilationErrors(schema, pkgName, 'PACKAGE BODY', errors);
       return emptyResult('Warning: Package Body created with compilation errors.');
@@ -2008,7 +2021,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storedUnits.set(bodyUnitKey, {
       schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
       body: source, sourceLines: sql.split('\n'),
-      created: simulationDate(), status: 'VALID',
+      created: hostNowDate(), status: 'VALID',
     });
     this.catalog.clearCompilationErrors(schema, pkgName);
     pkg.body = compilation.section;

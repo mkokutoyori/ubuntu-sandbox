@@ -76,6 +76,8 @@ export type RmanEvent =
   | { type: 'CROSSCHECK_PIECE';     jobId: string; kind: 'backup piece' | 'archived log'; status: 'AVAILABLE' | 'EXPIRED' }
   | { type: 'VALIDATION_REPORT';    jobId: string; files: ReadonlyArray<ValidatedFile>; elapsedMs: number }
   | { type: 'ARCHIVELOG_DELETED';   jobId: string; path: string }
+  | { type: 'BACKUP_PIECE_DELETED'; jobId: string; path: string; bpKey: number; stamp: number }
+  | { type: 'DELETE_DONE';          deleted: number; emptyMessage?: string }
   // Restore / Recover
   | { type: 'RESTORE_DATAFILE_STARTED';   jobId: string; channelId: string; fileNo: number; to: string }
   | { type: 'RESTORE_DATAFILE_COMPLETED'; jobId: string; fileNo: number; elapsedMs: number }

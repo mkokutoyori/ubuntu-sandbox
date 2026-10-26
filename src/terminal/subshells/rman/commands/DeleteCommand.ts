@@ -17,8 +17,24 @@ import { JobBuilder } from '../job/JobBuilder';
 import { RedundancyPolicy } from '../policy/RedundancyPolicy';
 import { RecoveryWindowPolicy } from '../policy/RecoveryWindowPolicy';
 import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
+import { implicitToDate } from '@/database/oracle/functions/valueUtils';
+import { rmanNowMs } from '../core/pureUtils';
 
-export type DeleteMode = 'EXPIRED' | 'OBSOLETE' | 'BY_TAG' | 'BY_BSKEY' | 'ARCHIVELOG';
+const NO_MATCHING_BACKUP = 'specification does not match any backup in the repository';
+const NO_OBSOLETE_BACKUP = 'no obsolete backups found';
+const MS_PER_DAY = 86_400_000;
+
+function parseCompletedBefore(raw: string, nowMs: number): number | null {
+  const text = raw.replace(/^'|'$/g, '').trim();
+  const relative = text.match(/^SYSDATE(?:\s*([+-])\s*(\d+(?:\.\d+)?))?$/i);
+  if (relative) {
+    const days = relative[2] === undefined ? 0 : Number(relative[2]);
+    return nowMs + (relative[1] === '-' ? -days : days) * MS_PER_DAY;
+  }
+  return implicitToDate(text)?.getTime() ?? null;
+}
+
+export type DeleteMode = 'EXPIRED' | 'OBSOLETE' | 'BY_TAG' | 'BY_BSKEY' | 'ARCHIVELOG' | 'ALL' | 'BEFORE';
 
 export class DeleteCommand implements IRmanCommand<string[] | void> {
   readonly name = 'DELETE';
@@ -43,8 +59,8 @@ export class DeleteCommand implements IRmanCommand<string[] | void> {
         })();
         const snap = catalog.listAll();
         if (snap.ok === false) return snap;
-        const obsolete = activePolicy.findObsolete(snap.value.sets).map(s => s.bsKey);
-        return engine.run(JobBuilder.deleteObsolete(obsolete));
+        const obsolete = activePolicy.findObsolete(snap.value.sets, rmanNowMs(ctx)).map(s => s.bsKey);
+        return engine.run(JobBuilder.deleteObsolete(obsolete, NO_OBSOLETE_BACKUP));
       }
 
       case 'BY_TAG': {
@@ -53,20 +69,40 @@ export class DeleteCommand implements IRmanCommand<string[] | void> {
         const snap = catalog.listAll();
         if (snap.ok === false) return snap;
         const matching = snap.value.sets.filter(s => s.tag.label.toUpperCase() === tag).map(s => s.bsKey);
-        return engine.run(JobBuilder.deleteObsolete(matching));
+        return engine.run(JobBuilder.deleteObsolete(matching, NO_MATCHING_BACKUP));
       }
 
       case 'BY_BSKEY': {
-        const n = Number(args[0]);
-        if (!Number.isFinite(n)) {
+        const keys = (args[0] ?? '').split(',').map(part => Number(part.trim()));
+        if (keys.length === 0 || keys.some(key => !Number.isInteger(key))) {
           return err({ code: 'RMAN_01009', message: 'DELETE BACKUPSET requires a numeric key' });
         }
-        return engine.run(JobBuilder.deleteObsolete([n]));
+        return engine.run(JobBuilder.deleteObsolete(keys, NO_MATCHING_BACKUP));
+      }
+
+      case 'ALL': {
+        const snap = catalog.listAll();
+        if (snap.ok === false) return snap;
+        return engine.run(JobBuilder.deleteObsolete(snap.value.sets.map(s => s.bsKey), NO_MATCHING_BACKUP));
+      }
+
+      case 'BEFORE': {
+        const cutoff = parseCompletedBefore(args[0] ?? '', rmanNowMs(ctx));
+        if (cutoff === null) {
+          return err({ code: 'RMAN_01009', message: `DELETE BACKUP COMPLETED BEFORE: invalid date ${args[0] ?? ''}` });
+        }
+        const snap = catalog.listAll();
+        if (snap.ok === false) return snap;
+        const older = snap.value.sets.filter(s => s.completionTime < cutoff).map(s => s.bsKey);
+        return engine.run(JobBuilder.deleteObsolete(older, NO_MATCHING_BACKUP));
       }
 
       case 'ARCHIVELOG': {
         const paths = ctx.getArchivelogPaths?.() ?? [];
-        for (const p of paths) ctx.vfs.deleteFile(p);
+        for (const p of paths) {
+          ctx.vfs.deleteFile(p);
+          ctx.recordArchivedLogDeleted?.(p);
+        }
         if (paths.length === 0) {
           return ok(['specification matches no archived logs in the recovery catalog']);
         }

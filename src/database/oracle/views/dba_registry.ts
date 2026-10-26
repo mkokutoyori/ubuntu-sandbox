@@ -6,11 +6,12 @@
  * to verify a healthy upgrade behave as expected.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 const COMPONENTS: Array<[string, string, string, string]> = [
   ['CATALOG',  'Oracle Database Catalog Views',      'SYS',   '19.0.0.0.0'],
@@ -34,7 +35,7 @@ registerView({
   name: 'DBA_REGISTRY',
   comment: 'Installed database components',
   query({ instance }) {
-    const created = instance.startupTime ?? simulationDate();
+    const created = instance.startupTime ?? hostNowDate();
     const ts = created.toISOString();
     return queryResult(
       [

@@ -9,9 +9,10 @@
  *   - PASSWORD EXPIRE: force change on next login
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { PasswordHistoryRecord } from './types';
+import { hostNowDate, hostNowMs } from '../time/OracleHostClock';
 
 export type PasswordStatus = 'OPEN' | 'EXPIRED' | 'EXPIRED(GRACE)';
 
@@ -28,9 +29,9 @@ export class PasswordManager {
   setPassword(username: string, newPassword: string): void {
     const key = username.toUpperCase();
     const existing = this.history.get(key) ?? [];
-    existing.unshift({ password: newPassword, changedAt: simulationDate() });
+    existing.unshift({ password: newPassword, changedAt: hostNowDate() });
     this.history.set(key, existing);
-    this.lastChanged.set(key, simulationDate());
+    this.lastChanged.set(key, hostNowDate());
     this.forceExpired.delete(key);
   }
 
@@ -66,7 +67,7 @@ export class PasswordManager {
 
     if (lifetimeDays === Infinity) return 'OPEN';
 
-    const ageMs = simulationNowMs() - changed.getTime();
+    const ageMs = hostNowMs() - changed.getTime();
     const ageDays = ageMs / (24 * 60 * 60 * 1000);
 
     if (ageDays > lifetimeDays + graceDays) return 'EXPIRED';
@@ -92,7 +93,7 @@ export class PasswordManager {
     if (reuseTimeDays === Infinity) return false;
     const key = username.toUpperCase();
     const records = this.history.get(key) ?? [];
-    const cutoff = simulationNowMs() - reuseTimeDays * 24 * 60 * 60 * 1000;
+    const cutoff = hostNowMs() - reuseTimeDays * 24 * 60 * 60 * 1000;
     return records.some(
       r => r.password === candidate && r.changedAt.getTime() > cutoff
     );
@@ -126,7 +127,7 @@ export class PasswordManager {
     if (records.length < 2) return false;          // no prior password
     if (records[1].password !== candidate) return false;
     if (rolloverDays === Infinity) return true;    // UNLIMITED window
-    const ageDays = (simulationNowMs() - records[0].changedAt.getTime()) / (24 * 60 * 60 * 1000);
+    const ageDays = (hostNowMs() - records[0].changedAt.getTime()) / (24 * 60 * 60 * 1000);
     return ageDays <= rolloverDays;
   }
 

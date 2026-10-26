@@ -58,7 +58,8 @@ export class RmanCommandDispatcher {
   }
 
   dispatch(line: string, cmdCtx: RmanCommandContext): Result<string[], RmanError> {
-    const trimmed = line.trim();
+    const trimmed = line.trim().replace(/^(BACKUP)\s+AS\s+(COMPRESSED\s+)?BACKUPSET\s+(.*)$/i,
+      (_, verb: string, compressed: string | undefined, rest: string) => `${verb} ${rest}${compressed ? ' COMPRESSED' : ''}`);
     for (const { pattern, command } of this._entries) {
       // Test the upper-cased line so command keywords are case-insensitive,
       // but if there are capture groups, re-run against the original line
@@ -167,7 +168,9 @@ export class RmanCommandDispatcher {
       { pattern: /^DELETE (?:NOPROMPT )?EXPIRED BACKUP$/i,           command: new DeleteCommand('EXPIRED') },
       { pattern: /^DELETE (?:NOPROMPT )?OBSOLETE(?:\s+(.+))?$/i,     command: new DeleteCommand('OBSOLETE') },
       { pattern: /^DELETE (?:NOPROMPT )?BACKUP TAG '([^']+)'$/i,     command: new DeleteCommand('BY_TAG') },
-      { pattern: /^DELETE (?:NOPROMPT )?BACKUPSET (\d+)$/i,          command: new DeleteCommand('BY_BSKEY') },
+      { pattern: /^DELETE (?:NOPROMPT )?BACKUPSET ([\d, ]+)$/i,       command: new DeleteCommand('BY_BSKEY') },
+      { pattern: /^DELETE (?:NOPROMPT )?BACKUP COMPLETED BEFORE ('[^']+')$/i, command: new DeleteCommand('BEFORE') },
+      { pattern: /^DELETE (?:NOPROMPT )?BACKUP$/i,                    command: new DeleteCommand('ALL') },
       { pattern: /^DELETE (?:NOPROMPT )?ARCHIVELOG ALL$/i,           command: new DeleteCommand('ARCHIVELOG') },
       { pattern: /^SHOW ALL$/i,                       command: new ShowCommand('ALL') },
       { pattern: /^SHOW RETENTION POLICY$/i,          command: new ShowCommand('RETENTION_POLICY') },

@@ -3,9 +3,10 @@
  * for at least `thresholdDays`. Produced by `DormantAccountAnalyzer`.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { IDormantAccountRecord } from './interfaces';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class DormantAccountRecord implements IDormantAccountRecord {
   readonly username: string;
@@ -34,7 +35,7 @@ export class DormantAccountRecord implements IDormantAccountRecord {
     this.thresholdDays = init.thresholdDays;
     this.profile = init.profile.toUpperCase();
     this.createdAt = init.createdAt;
-    this.detectedAt = init.detectedAt ?? simulationDate();
+    this.detectedAt = init.detectedAt ?? hostNowDate();
     this.contactEmail = init.contactEmail ?? null;
     this.lastPasswordChangeAt = init.lastPasswordChangeAt ?? null;
   }

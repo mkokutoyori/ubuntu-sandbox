@@ -2,13 +2,14 @@
  * V$SYSMETRIC_SUMMARY — last-hour min/max/avg/stddev per metric.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
 import { METRIC_CATALOGUE } from './v_sysmetric';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$SYSMETRIC_SUMMARY',
@@ -16,7 +17,7 @@ registerView({
   query(ctx) {
     const sample = queryView('V$SYSMETRIC', ctx);
     if (!sample) return queryResult([], []);
-    const now = simulationNowMs();
+    const now = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

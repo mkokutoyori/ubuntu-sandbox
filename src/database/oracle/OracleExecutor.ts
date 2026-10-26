@@ -4,12 +4,10 @@
  * Handles SELECT, INSERT, UPDATE, DELETE, DDL, DCL, and admin commands.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TimeZone } from '@/network/core/time/TimeZone';
 import { offsetMinutesAt } from '@/network/core/time/TimeZoneRegistry';
-import {
-  hostOffsetSpec, hostZoneOf, type OracleClockReading,
-} from './time/OracleHostClock';
+import { hostOffsetSpec, hostZoneOf, type OracleClockReading, hostNowDate, hostNowMs } from './time/OracleHostClock';
 
 import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
 import {
@@ -570,7 +568,7 @@ export class OracleExecutor extends BaseExecutor {
       osUsername: session?.osUser ?? 'oracle',
       userhost: session?.machine ?? 'localhost',
       terminal: session?.terminal ?? 'pts/0',
-      timestamp: simulationDate(),
+      timestamp: hostNowDate(),
       policies: policies.join(', '),
     });
   }
@@ -621,7 +619,7 @@ export class OracleExecutor extends BaseExecutor {
     const osUsername = session?.osUser ?? 'oracle';
     const userhost = session?.machine ?? 'localhost';
     const terminal = session?.terminal ?? 'pts/0';
-    const timestamp = simulationDate();
+    const timestamp = hostNowDate();
     catalog.recordAudit({
       sessionId: sessionIdNum,
       username: this.context.currentSchema,
@@ -671,7 +669,7 @@ export class OracleExecutor extends BaseExecutor {
     for (const p of matched) {
       catalog.recordFgaAudit({
         sessionId: parseInt(this._sessionId, 10) || 0,
-        timestamp: simulationDate(),
+        timestamp: hostNowDate(),
         dbUser: this.context.currentSchema,
         osUser: 'oracle',
         objectSchema: p.objectSchema,
@@ -857,7 +855,7 @@ export class OracleExecutor extends BaseExecutor {
           if (s.action === 'COMPUTE_STATISTICS' || s.action === 'ESTIMATE_STATISTICS') {
             // Stamp the table with a real LAST_ANALYZED timestamp.
             const meta = this.storage.getTableMeta(schema, name)!;
-            meta.lastAnalyzed = simulationDate();
+            meta.lastAnalyzed = hostNowDate();
           } else if (s.action === 'DELETE_STATISTICS') {
             const meta = this.storage.getTableMeta(schema, name)!;
             meta.lastAnalyzed = null;
@@ -3186,7 +3184,7 @@ export class OracleExecutor extends BaseExecutor {
       username: stmt.connectUser ? stmt.connectUser.toUpperCase() : null,
       password: stmt.connectPassword ?? null,
       host: stmt.usingAlias ?? null,
-      created: simulationDate(),
+      created: hostNowDate(),
     });
     this.emitDdl('CREATE DATABASE LINK', `${owner}.${name}`);
     return emptyResult('Database link created.');
@@ -3221,7 +3219,7 @@ export class OracleExecutor extends BaseExecutor {
     if (!stmt.orReplace && this.catalog.getDirectory(name)) {
       throw new OracleError(955, 'name is already used by an existing object');
     }
-    this.catalog.registerDirectory({ name, path: stmt.path, created: simulationDate() });
+    this.catalog.registerDirectory({ name, path: stmt.path, created: hostNowDate() });
     this.emitDdl('CREATE DIRECTORY', `SYS.${name}`);
     return emptyResult('Directory created.');
   }
@@ -3291,7 +3289,7 @@ export class OracleExecutor extends BaseExecutor {
       refreshMethod: stmt.refreshMethod ?? 'FORCE',
       refreshMode: stmt.refreshMode ?? 'DEMAND',
       baseTables: this.collectBaseTables(stmt.query),
-      lastRefresh: deferred ? null : simulationDate(),
+      lastRefresh: deferred ? null : hostNowDate(),
       staleness: deferred ? 'UNUSABLE' : 'FRESH',
     });
     this.emitDdl('CREATE MATERIALIZED VIEW', `${owner}.${name}`);
@@ -3335,7 +3333,7 @@ export class OracleExecutor extends BaseExecutor {
     const result = this.executeSelect(meta.queryAst as SelectStatement);
     this.storage.deleteRows(o, n, () => true);
     for (const row of result.rows) this.storage.insertRow(o, n, row as StorageRow);
-    meta.lastRefresh = simulationDate();
+    meta.lastRefresh = hostNowDate();
     meta.staleness = 'FRESH';
   }
 
@@ -3356,7 +3354,7 @@ export class OracleExecutor extends BaseExecutor {
       withPrimaryKey: stmt.withPrimaryKey || !stmt.withRowid,
       withSequence: stmt.withSequence,
       pendingChanges: 0,
-      created: simulationDate(),
+      created: hostNowDate(),
     });
     this.emitDdl('CREATE MATERIALIZED VIEW LOG', `${owner}.${master}`);
     return emptyResult('Materialized view log created.');
@@ -4238,7 +4236,7 @@ export class OracleExecutor extends BaseExecutor {
         // DBMS_UTILITY (no-parens access)
         if (pkgName === 'DBMS_UTILITY') {
           const fn = expr.name.toUpperCase();
-          if (fn === 'GET_TIME') return simulationNowMs() % 2147483647;
+          if (fn === 'GET_TIME') return hostNowMs() % 2147483647;
           if (fn === 'FORMAT_ERROR_BACKTRACE' || fn === 'FORMAT_ERROR_STACK') return '';
         }
         // DBMS_LOB (no-parens access)

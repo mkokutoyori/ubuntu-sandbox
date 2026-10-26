@@ -25,11 +25,12 @@ export interface BackupSetSpec {
   readonly encrypted?:  boolean;
   readonly deviceType?: DeviceType;
   readonly keepNote?:   string;
+  readonly nowMs?:      number;
 }
 
 export const BackupSetFactory = {
   createBackupSet(spec: BackupSetSpec): BackupSet {
-    const now  = simulationNowMs();
+    const now  = spec.nowMs ?? simulationNowMs();
     const key  = BackupKey.next();
     const tag  = spec.tag ?? RmanTag.generate();
     const scnR = Scn.of(Math.floor(1_800_000 + Math.random() * 100_000));

@@ -36,11 +36,12 @@
  * unaffected.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { HostCapableDevice } from '@/network';
 import type { OracleDatabase } from '../OracleDatabase';
+import { hostNowDate } from '../time/OracleHostClock';
 
 export interface RacMember {
   readonly deviceId: string;
@@ -173,7 +174,7 @@ export function evictMember(dbName: string, deviceId: string): RacMember | null 
   const member = cluster?.members.get(deviceId);
   if (!cluster || !member || member.status === 'EVICTED') return null;
   member.status = 'EVICTED';
-  member.evictedAt = simulationDate();
+  member.evictedAt = hostNowDate();
   return member;
 }
 

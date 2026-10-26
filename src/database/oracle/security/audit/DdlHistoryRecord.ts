@@ -8,9 +8,10 @@
  * a single monotonic timeline.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { IDdlHistoryRecord } from './interfaces';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class DdlHistoryRecord implements IDdlHistoryRecord {
   readonly scn: number;
@@ -36,7 +37,7 @@ export class DdlHistoryRecord implements IDdlHistoryRecord {
     timestamp?: Date;
   }) {
     this.scn = init.scn;
-    this.timestamp = init.timestamp ?? simulationDate();
+    this.timestamp = init.timestamp ?? hostNowDate();
     this.sessionId = init.sessionId;
     this.username = init.username.toUpperCase();
     this.schema = init.schema.toUpperCase();

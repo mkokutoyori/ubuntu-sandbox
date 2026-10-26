@@ -37,7 +37,7 @@ import type { DatafileEntry, BackupSet } from '../catalog/types';
 import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
-import { generatePieceName, rmanWall } from '../core/pureUtils';
+import { generatePieceName, oracleStamp, rmanNowMs, rmanWall } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
@@ -145,7 +145,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
       case 'CROSSCHECK':         return this._doCrosscheck(job);
-      case 'DELETE_EXPIRED':     return this._doDeleteExpired();
+      case 'DELETE_EXPIRED':     return this._doDeleteExpired(job);
       case 'DELETE_OBSOLETE':    return this._doDeleteObsolete(job);
       default:                   return ok(undefined);
     }
@@ -250,7 +250,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       return Object.freeze({
         fileNo: df.fileNo, level: incLevel ?? (0 as 0 | 1),
         ckpScn: ckp.ok ? ckp.value : Scn.ZERO,
-        ckpTime: simulationNowMs(), path: df.path,
+        ckpTime: rmanNowMs(this._ctx), path: df.path,
       });
     });
 
@@ -292,10 +292,10 @@ export class RmanJobEngine implements IRmanJobEngine {
         if (!writeR.ok) return writeR;
         const set = BackupSetFactory.createBackupSet({
           type: 'DATAFILECOPY', level: 0, path: copyPath,
-          sizeBytes: df.sizeBytes, tag,
+          sizeBytes: df.sizeBytes, tag, nowMs: rmanNowMs(this._ctx),
           datafiles: [Object.freeze({
             fileNo: df.fileNo, level: 0 as 0 | 1,
-            ckpScn: ckp, ckpTime: simulationNowMs(), path: df.path,
+            ckpScn: ckp, ckpTime: rmanNowMs(this._ctx), path: df.path,
           })],
           compressed, encrypted,
         });
@@ -357,7 +357,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       if (!writeResult.ok) return writeResult;
 
       const set = BackupSetFactory.createBackupSet({
-        type, level, path, sizeBytes: size, tag,
+        type, level, path, sizeBytes: size, tag, nowMs: rmanNowMs(this._ctx),
         datafiles: i === 1 ? dfEntries : [],
         compressed, encrypted, keepNote,
       });
@@ -966,7 +966,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     const params = job.params ?? {};
     const limites = this._maxCorruptOf(params);
     const kind = params.asCopy === 'true' ? 'COPY' : 'BACKUPSET';
-    const setStamp = Math.floor(simulationNowMs() / 1000);
+    const setStamp = Math.floor(rmanNowMs(this._ctx) / 1000);
     const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
     for (const df of datafiles) {
       const defaut = datafileFault(this._ctx.vfs, df, params.checkLogical === 'true');
@@ -1225,36 +1225,37 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
-  private _doDeleteExpired(): Result<void, RmanError> {
+  private _doDeleteExpired(job: RmanJob): Result<void, RmanError> {
     const expired = this._catalog.listExpired();
     if (expired.ok === false) return expired;
-    const seen = new Set<number>();
-    for (const p of expired.value) {
-      if (seen.has(p.bsKey)) continue;
-      seen.add(p.bsKey);
-      // best-effort: delete the file too
-      this._ctx.vfs.deleteFile(p.path);
-      this._catalog.deleteBackupSet(p.bsKey);
-    }
-    return ok(undefined);
+    const keys = [...new Set(expired.value.map(p => p.bsKey))];
+    return this._deleteBackupSets(job, keys, 'specification does not match any backup in the repository');
   }
 
   private _doDeleteObsolete(job: RmanJob): Result<void, RmanError> {
-    const explicitKeys = (job.params?.setKeys ?? '').split(',').filter(Boolean).map(Number);
-    if (explicitKeys.length === 0) return ok(undefined);
-    for (const bsKey of explicitKeys) {
-      const set = this._catalog.findByKey({ _tag: 'BackupKey', bsKey, bpKey: bsKey, copy: 1 });
-      // Best effort: even if findByKey can't resolve via piece key, attempt delete.
-      const all = this._catalog.listAll();
-      if (all.ok) {
-        const found = all.value.sets.find(s => s.bsKey === bsKey);
-        if (found) {
-          for (const p of found.pieces) this._ctx.vfs.deleteFile(p.path);
-        }
+    const keys = (job.params?.setKeys ?? '').split(',').filter(Boolean).map(Number);
+    return this._deleteBackupSets(job, keys, job.params?.emptyMessage);
+  }
+
+  private _deleteBackupSets(job: RmanJob, bsKeys: readonly number[], emptyMessage?: string): Result<void, RmanError> {
+    const snapshot = this._catalog.listAll();
+    if (snapshot.ok === false) return snapshot;
+    let deleted = 0;
+    for (const bsKey of bsKeys) {
+      const set = snapshot.value.sets.find(s => s.bsKey === bsKey);
+      if (!set) continue;
+      for (const piece of set.pieces) {
+        this._ctx.vfs.deleteFile(piece.path);
+        this._ctx.recordBackupPieceDeleted?.(piece.path);
+        this._bus.emit({
+          type: 'BACKUP_PIECE_DELETED', jobId: job.id, path: piece.path,
+          bpKey: piece.key.bpKey, stamp: oracleStamp(piece.completionTime),
+        });
+        deleted++;
       }
-      void set;
       this._catalog.deleteBackupSet(bsKey);
     }
+    this._bus.emit({ type: 'DELETE_DONE', deleted, emptyMessage: deleted === 0 ? emptyMessage : undefined });
     return ok(undefined);
   }
 

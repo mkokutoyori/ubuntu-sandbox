@@ -1,4 +1,5 @@
-import { simulationDate } from '@/network/core/SystemClock';
+import { hostNowDate } from '../time/OracleHostClock';
+
 
 export class FlashbackArchiveTablespace {
   readonly archiveName: string;
@@ -30,7 +31,7 @@ export class FlashbackArchive {
     this.flashbackArchiveName = init.flashbackArchiveName.toUpperCase();
     this.owner = (init.owner ?? 'SYS').toUpperCase();
     this.retentionInDays = init.retentionInDays;
-    this.createTime = simulationDate();
+    this.createTime = hostNowDate();
     this.lastPurgeTime = null;
     this.status = 'ACTIVE';
     this.isDefault = init.isDefault ?? false;

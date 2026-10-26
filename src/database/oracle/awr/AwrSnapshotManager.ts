@@ -12,10 +12,11 @@
  * remain deterministic.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { OracleInstance } from '../OracleInstance';
 import { AwrSnapshot, type SqlStatSnapshot, type SysStatSnapshot } from './AwrSnapshot';
+import { hostNowDate, hostNowMs } from '../time/OracleHostClock';
 
 export interface SnapshotSettings {
   /** Interval in minutes between automatic snapshots. Default 60. */
@@ -37,14 +38,14 @@ export class AwrSnapshotManager {
   };
 
   constructor(private readonly instance: OracleInstance) {
-    this.lastEndInterval = instance.startupTime ?? simulationDate();
+    this.lastEndInterval = instance.startupTime ?? hostNowDate();
   }
 
   // ── DBMS_WORKLOAD_REPOSITORY routines ─────────────────────────────
 
   /** CREATE_SNAPSHOT — capture state now. Returns the new snap_id. */
   createSnapshot(opts: { flushLevel?: 'TYPICAL' | 'ALL' | 'BASIC'; manual?: boolean } = {}): number {
-    const now = simulationDate();
+    const now = hostNowDate();
     const runtime = this.instance.getRuntimeState();
     const startup = this.instance.startupTime ?? now;
 
@@ -134,7 +135,7 @@ export class AwrSnapshotManager {
   // ── Internal ──────────────────────────────────────────────────────
 
   private purgeOld(): void {
-    const cutoff = simulationNowMs() - this.settings.retentionMinutes * 60_000;
+    const cutoff = hostNowMs() - this.settings.retentionMinutes * 60_000;
     this.snapshots = this.snapshots.filter(s => s.endInterval.getTime() >= cutoff);
   }
 }

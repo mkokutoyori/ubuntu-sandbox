@@ -1,4 +1,5 @@
-import { simulationDate } from '@/network/core/SystemClock';
+import { hostNowDate } from '../time/OracleHostClock';
+
 
 export type ResultCacheStatus = 'NEW' | 'PUBLISHED' | 'BYPASS' | 'EXPIRED' | 'INVALID';
 export type ResultCacheObjectType = 'Result' | 'Dependency';
@@ -48,7 +49,7 @@ export class ResultCacheEntry {
     this.pinCount = 0;
     this.scanCount = 0;
     this.spaceForResultCacheMb = this.blockCount * 8 / 1024;
-    this.cachedAt = simulationDate();
+    this.cachedAt = hostNowDate();
     this.invalidatedAt = null;
     this.invalidationsCount = 0;
     this.creator = init.creator ?? 'SYS';
@@ -57,7 +58,7 @@ export class ResultCacheEntry {
 
   invalidate(): void {
     this.status = 'INVALID';
-    this.invalidatedAt = simulationDate();
+    this.invalidatedAt = hostNowDate();
     this.invalidationsCount++;
   }
 

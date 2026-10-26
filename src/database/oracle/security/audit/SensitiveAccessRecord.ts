@@ -2,9 +2,10 @@
  * SensitiveAccessRecord — concrete `ISensitiveAccessRecord`.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { ISensitiveAccessRecord, AccessAction, SensitivityClass } from './interfaces';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class SensitiveAccessRecord implements ISensitiveAccessRecord {
   readonly accessId: number;
@@ -29,7 +30,7 @@ export class SensitiveAccessRecord implements ISensitiveAccessRecord {
     sensitiveColumns?: string[]; timestamp?: Date;
   }) {
     this.accessId = init.accessId;
-    this.timestamp = init.timestamp ?? simulationDate();
+    this.timestamp = init.timestamp ?? hostNowDate();
     this.sessionId = init.sessionId;
     this.username = init.username.toUpperCase();
     this.action = init.action;

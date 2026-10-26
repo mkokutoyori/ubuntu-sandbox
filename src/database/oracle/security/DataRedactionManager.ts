@@ -15,7 +15,8 @@
  */
 
 import { WallDate } from '../functions/dateSupport';
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { hostNowDate, hostNowMs } from '../time/OracleHostClock';
+
 
 export type RedactionFunctionType =
   | 'FULL' | 'PARTIAL' | 'RANDOM' | 'REGEXP' | 'NONE' | 'NULLIFY';
@@ -114,7 +115,7 @@ export class DataRedactionManager {
       objectOwner: o, objectName: t, policyName: p.policyName.toUpperCase(),
       expression: p.expression, enabled: true,
       policyDescription: p.policyDescription ?? '',
-      createdAt: simulationDate(),
+      createdAt: hostNowDate(),
     });
   }
 
@@ -223,7 +224,7 @@ export class DataRedactionManager {
       case 'RANDOM': {
         if (typeof value === 'number') return Math.floor(Math.random() * 1_000_000);
         if (value instanceof Date) {
-          return new WallDate(simulationNowMs() - Math.floor(Math.random() * 31536000000));
+          return new WallDate(hostNowMs() - Math.floor(Math.random() * 31536000000));
         }
         const s = String(value);
         return Array.from(s, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
