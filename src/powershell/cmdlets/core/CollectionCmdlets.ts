@@ -11,7 +11,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
+import { isScriptBlockValue, type PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { languageEquals } from '@/powershell/runtime/semantics/PSCompare';
 import { describeScalarType } from '@/powershell/runtime/semantics/PSTypes';
@@ -82,7 +82,7 @@ function resolveColumns(raw: PSValue[], sample: PSValue, ctx: CmdletContext): Co
         h['Label'] ?? h['label'] ?? h['L'] ?? h['l'] ?? '');
       const expr = h['Expression'] ?? h['expression'] ?? h['E'] ?? h['e'];
       if (!name) continue;
-      if (isScriptBlockVal(expr)) {
+      if (isScriptBlockValue(expr)) {
         cols.push({ name, get: it => ctx.invokeBlock(expr as PSScriptBlock, it) });
       } else {
         const pn = psValueToString(expr);
@@ -118,7 +118,7 @@ export class WhereObjectCmdlet implements ICmdlet {
     // Form 1 — scriptblock: `Where-Object { $_.X -gt 3 }` /
     // `Where-Object -FilterScript { ... }`.
     const sb = (ctx.named['filterscript'] ?? ctx.positional[0]) as PSValue;
-    if (isScriptBlockVal(sb)) {
+    if (isScriptBlockValue(sb)) {
       return input.filter(item => isTruthy(ctx.invokeBlock(sb as PSScriptBlock, item)));
     }
 
@@ -219,11 +219,6 @@ function compare(actual: PSValue, op: string, expected: PSValue): boolean {
     case 'isnot':return !(typeof actual === eStr.toLowerCase());
     default:     return false;
   }
-}
-
-function isScriptBlockVal(v: PSValue): boolean {
-  return v !== null && typeof v === 'object' && !Array.isArray(v)
-    && (v as Record<string, unknown>).type === 'ScriptBlock';
 }
 
 function isTruthy(val: PSValue): boolean {
@@ -560,7 +555,7 @@ export class GroupObjectCmdlet implements ICmdlet {
     const noElement = isTruthy(ctx.named['noelement'] ?? false);
 
     const keyArg = ctx.named['property'] ?? ctx.positional[0];
-    const sb = isScriptBlockVal(keyArg) ? (keyArg as PSScriptBlock) : null;
+    const sb = isScriptBlockValue(keyArg) ? (keyArg as PSScriptBlock) : null;
     const props = sb ? [] : stringArgs(ctx.positional, ctx.named, 'property');
 
     const keyOf = (item: PSValue): string => {

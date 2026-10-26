@@ -596,6 +596,11 @@ export function makeCommand(
   return { type: 'Command', name, parameters: params, arguments: args, position: pos, sequence };
 }
 
+export function isScriptBlockValue(value: unknown): value is PSScriptBlock {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && (value as { type?: unknown }).type === 'ScriptBlock';
+}
+
 export function makeCommandParam(name: string, value: PSExpression | null, pos?: SourcePosition, text?: string): PSCommandParameter {
   return { type: 'CommandParameter', name, value, position: pos, text };
 }

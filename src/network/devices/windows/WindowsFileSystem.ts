@@ -793,7 +793,10 @@ export class WindowsFileSystem {
       const srcName = srcPath.substring(srcPath.lastIndexOf('\\') + 1);
       destPath = destPath.replace(/\\$/, '') + '\\' + srcName;
     }
-    if (this.sameEntry(srcPath, destPath)) return { ok: true };
+    if (this.sameEntry(srcPath, destPath)) {
+      srcEntry.name = destPath.substring(destPath.lastIndexOf('\\') + 1);
+      return { ok: true };
+    }
     if (srcEntry.type === 'directory' && (destPath.toLowerCase() + '\\').startsWith(srcPath.toLowerCase().replace(/\\$/, '') + '\\')) {
       return { ok: false, error: 'Access is denied.' };
     }

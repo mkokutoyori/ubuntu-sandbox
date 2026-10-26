@@ -20,7 +20,7 @@ function interactive(code: string): string {
   return interp.resumeInteractive().replace(/\r?\n/g, '|');
 }
 
-const MISSING = "Get-Item: Cannot find path 'nope_zz' because it does not exist.";
+const MISSING = "Get-Item: Cannot find path 'C:\\nope_zz' because it does not exist.";
 
 const CASES: Array<[string, string]> = [
   ['Get-Item nope_zz; $?', `${MISSING}|False`],

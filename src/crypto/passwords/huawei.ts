@@ -27,12 +27,24 @@ const KEY_BYTES = 32;
 const CIPHER_KEY = sha256(utf8ToBytes('ubuntu-sandbox/huawei-vrp-cipher-key'));
 const CIPHER_IV = sha256(utf8ToBytes('ubuntu-sandbox/huawei-vrp-cipher-iv')).subarray(0, 16);
 
+const irreversibleBlobs = new Map<string, string>();
+const IRREVERSIBLE_MEMO_ENTRIES = 64;
+
 /**
  * One-way PBKDF2-HMAC-SHA256 hash for `password irreversible-cipher …`.
  * Salt is derived deterministically from the password and embedded, so the
  * blob is stable per password without leaking the cleartext.
  */
 export function huaweiIrreversibleCipher(password: string): string {
+  const known = irreversibleBlobs.get(password);
+  if (known !== undefined) return known;
+  const blob = deriveIrreversibleBlob(password);
+  if (irreversibleBlobs.size >= IRREVERSIBLE_MEMO_ENTRIES) irreversibleBlobs.delete(irreversibleBlobs.keys().next().value as string);
+  irreversibleBlobs.set(password, blob);
+  return blob;
+}
+
+function deriveIrreversibleBlob(password: string): string {
   const salt = sha256(utf8ToBytes(`huawei-irreversible:${password}`)).subarray(0, SALT_BYTES);
   const dk = pbkdf2(SHA256, utf8ToBytes(password), salt, IRREVERSIBLE_ITERATIONS, KEY_BYTES);
   const blob = new Uint8Array(salt.length + dk.length);

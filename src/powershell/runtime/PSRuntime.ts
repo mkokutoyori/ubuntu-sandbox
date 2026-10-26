@@ -83,6 +83,7 @@ import type {
   PSClassDefinition, PSEnumDefinition, PSPipelineChainStatement, PSTernaryExpression, PSMethodDefinition, PSPropertyDeclaration,
   PSBreakStatement, PSContinueStatement, PSTrapStatement, PSRedirection,
 } from '@/powershell/parser/PSASTNode';
+import { isScriptBlockValue } from '@/powershell/parser/PSASTNode';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Section 1 — Types, signals, and setup
@@ -3756,8 +3757,7 @@ export class PSRuntime {
   }
 
   private isScriptBlock(val: PSValue): boolean {
-    return val !== null && typeof val === 'object' && !Array.isArray(val)
-      && (val as Record<string, unknown>).type === 'ScriptBlock';
+    return isScriptBlockValue(val);
   }
 
   private resolveCommandName(nameNode: PSExpression, env: PSEnvironment): string {
@@ -4112,7 +4112,9 @@ export class PSRuntime {
     this.errorsWritten++;
     const exception = record.Exception as Record<string, PSValue> | null | undefined;
     const message = String(exception?.Message ?? record.Message ?? '');
-    const category = String((record.CategoryInfo as Record<string, PSValue> | undefined)?.Category ?? 'NotSpecified');
+    const categoryInfo = record.CategoryInfo as Record<string, PSValue> | undefined;
+    const category = String(categoryInfo?.Category ?? 'NotSpecified');
+    const activity = String(categoryInfo?.Activity ?? cmdletDisplayName);
     const fullyQualifiedErrorId = String(record.FullyQualifiedErrorId ?? '');
     const exceptionName = String(exception?.__type__ ?? 'WriteErrorException').replace(/^.*\./, '');
     const target = record.TargetObject;
@@ -4129,7 +4131,7 @@ export class PSRuntime {
       ? [`${cmdletDisplayName}: ${message}`]
       : [
           `${cmdletDisplayName} : ${message}`,
-          `    + CategoryInfo          : ${category}: (${targetText}) [${cmdletDisplayName}], ${exceptionName}`,
+          `    + CategoryInfo          : ${category}: (${targetText}) [${activity}], ${exceptionName}`,
           `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
         ];
     this.streams.deliver('error', record, lines);

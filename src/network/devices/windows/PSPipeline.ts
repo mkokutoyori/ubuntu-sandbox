@@ -745,11 +745,10 @@ export function formatDefault(objects: PSObject[]): string {
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
-    const body = formatTable(objects, defaultCols.join(', '));
-    // FileSystem objects get the canonical "Directory: <path>" banner that
-    // real `Get-ChildItem` prints above the table.
-    const dirBanner = filesystemDirectoryBanner(objects);
-    return dirBanner ? `${dirBanner}${body}` : body;
+    const columns = defaultCols.join(', ');
+    const directories = filesystemDirectories(objects);
+    if (directories === null) return formatTable(objects, columns);
+    return directories.map(group => `\n\n    Directory: ${group.directory}\n${formatTable(group.rows, columns)}`).join('');
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
@@ -810,29 +809,20 @@ function partitionDiskGroups(objects: PSObject[]): string | null {
     .join('\n');
 }
 
-/**
- * For filesystem entries, derive the parent directory and return a banner
- * matching real PowerShell's Get-ChildItem header:
- *
- *     Directory: C:\Users
- *
- * Returns an empty string when the rows are not filesystem objects, or when
- * the rows span multiple parent directories (rare; we fall back to no banner).
- */
-function filesystemDirectoryBanner(objects: PSObject[]): string {
+function filesystemDirectories(objects: PSObject[]): Array<{ directory: string; rows: PSObject[] }> | null {
   const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
-  if (!lower.has('mode') || !lower.has('lastwritetime') || !lower.has('name')) return '';
+  if (!lower.has('mode') || !lower.has('lastwritetime') || !lower.has('name')) return null;
   const fullKey = Object.keys(objects[0]).find(k => k.toLowerCase() === 'fullname');
-  if (!fullKey) return '';
-  const parents = new Set<string>();
+  if (!fullKey) return null;
+  const groups = new Map<string, PSObject[]>();
   for (const o of objects) {
     const full = String((o as Record<string, unknown>)[fullKey] ?? '');
     const sep = Math.max(full.lastIndexOf('\\'), full.lastIndexOf('/'));
-    if (sep > 1) parents.add(sep === 2 ? full.slice(0, 3) : full.slice(0, sep));
+    if (sep <= 1) return null;
+    const directory = sep === 2 ? full.slice(0, 3) : full.slice(0, sep);
+    groups.set(directory, [...(groups.get(directory) ?? []), o]);
   }
-  if (parents.size !== 1) return '';
-  const dir = parents.values().next().value;
-  return `\n\n    Directory: ${dir}\n`;
+  return [...groups].map(([directory, rows]) => ({ directory, rows }));
 }
 
 /**
