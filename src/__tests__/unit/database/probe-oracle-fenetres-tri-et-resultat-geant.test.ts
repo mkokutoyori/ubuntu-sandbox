@@ -14,7 +14,9 @@
  *
  * - `CREATE USER` : 74 ms chacun (100 utilisateurs : 7,4 s), la derivation PBKDF2 des verificateurs de SYS.USER$ etant faite a la creation alors que `getStoredVerifiers` sait la faire a la demande ; elle est maintenant paresseuse, a valeur identique (derivation deterministe).
  *
- * Discrimine par `git stash push -- src/database/oracle src/terminal/commands/database.ts` : 9 cas sur 14 tombent (tri sur colonne cachee, tri groupe sur agregat cache, fenetre
+ * - SYSDATE / SYSTIMESTAMP evalues par ligne : les sept champs de l'horloge (deux fuseaux, quatre rendus de texte) etaient recalcules a chaque ligne, plus de la moitie du temps d'un INSERT … SELECT (150 000 lignes : 2,3 s). La lecture est memorisee tant que la milliseconde, le fuseau de l'hote, celui de la base et celui de la session ne changent pas (0,63 s).
+ *
+ * Discrimine par `git stash push -- src/database/oracle src/terminal/commands/database.ts` : 10 cas sur 15 tombent (tri sur colonne cachee, tri groupe sur agregat cache, fenetre
  * PRECEDING vide en tete de partition — 10 au lieu de NULL —, ROLLBACK de 40 000 lignes : 4,8 s contre 0,15 s, SELECT * geant dans SQL*Plus, SUM OVER cumulatif de 60 000 lignes :
  * 184 s, AVG OVER sur le meme volume : 189 s). Passent des deux cotes, TEMOINS : les valeurs des fonctions de fenetre sur petites donnees (cumul, partition, ROWS BETWEEN glissant,
  * UNBOUNDED FOLLOWING, MIN/MAX, FIRST/LAST/NTH_VALUE, RANK) et le tri sur colonne selectionnee.
@@ -171,6 +173,15 @@ describe('lecture coherente pendant une transaction ouverte', () => {
     expect(value.rows[0][0]).toBe(1250025000);
     expect(ms).toBeLessThan(1500);
     expect(exec('SELECT SUM(amount) FROM shared').rows[0][0]).toBe(1250075000);
+  }, 120_000);
+});
+
+describe('horloge lue par ligne', () => {
+  test('INSERT … SELECT de 300 000 lignes avec SYSDATE ne recalcule pas l\'horloge a chaque ligne', () => {
+    exec('CREATE TABLE stamped (id NUMBER PRIMARY KEY, created DATE)');
+    const { ms } = timed(() => exec('INSERT INTO stamped SELECT level, SYSDATE FROM dual CONNECT BY level <= 300000'));
+    expect(ms).toBeLessThan(2500);
+    expect(exec('SELECT COUNT(*) FROM stamped').rows[0][0]).toBe(300000);
   }, 120_000);
 });
 

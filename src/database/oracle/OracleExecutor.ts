@@ -206,13 +206,33 @@ export class OracleExecutor extends BaseExecutor {
   });
   private _currentRowNum: number = 0;
 
+  private clockReadingCache: {
+    at: number; zone: string; database: OracleTimeZoneSpec;
+    sessionZone: OracleTimeZoneSpec | null | undefined; reading: OracleClockReading;
+  } | null = null;
+
   oracleClock(): OracleClockReading {
     const host = this.instance.hostClock();
     const at = host.nowMs();
-    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
     const database = this.instance.timeZone;
-    const session = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)
-      ?.timeZone ?? hostOffsetSpec(host);
+    const sessionZone = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)?.timeZone;
+    const zone = host.zoneName();
+    const cached = this.clockReadingCache;
+    if (cached && cached.at === at && cached.zone === zone
+      && cached.database === database && cached.sessionZone === sessionZone) {
+      return cached.reading;
+    }
+    const reading = this.readOracleClock(host, at, database, sessionZone);
+    this.clockReadingCache = { at, zone, database, sessionZone, reading };
+    return reading;
+  }
+
+  private readOracleClock(
+    host: ReturnType<OracleInstance['hostClock']>, at: number,
+    database: OracleTimeZoneSpec, sessionZone: OracleTimeZoneSpec | null | undefined,
+  ): OracleClockReading {
+    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
+    const session = sessionZone ?? hostOffsetSpec(host);
     const sessionOffset = oracleOffsetMinutes(session, at);
     return {
       sysdate: oracleDateText(at, hostOffset),

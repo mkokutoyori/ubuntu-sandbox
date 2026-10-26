@@ -3777,4 +3777,4 @@ retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'un
 
 ### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
 
-Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 4 s, et rien ne peut le couper.
+Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 1,4 s (4,2 s avant que l'horloge ne soit lue une seule fois par milliseconde), et rien ne peut le couper : rendre l'executeur cooperatif suppose de le reecrire en generateurs ou de l'executer dans un worker.
