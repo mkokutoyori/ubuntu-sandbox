@@ -25,6 +25,7 @@ import { detachedBus } from '@/events/BusHolder';
 import { EventBus, type IEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
+import { reclaimableBytesInRecoveryArea } from '@/terminal/subshells/rman/policy/ReclaimableBackups';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
@@ -90,6 +91,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     if (typeof hostWithClock?.hostWallClock === 'function') {
       db.instance.setHostClock(hostWithClock.hostWallClock());
     }
+    db.instance.setRecoveryAreaReclaimProbe(() => {
+      const snapshot = DeviceCatalogRegistry.get(deviceId).listAll();
+      if (snapshot.ok === false) return 0;
+      return reclaimableBytesInRecoveryArea(
+        snapshot.value.sets,
+        DeviceConfigRegistry.get(deviceId).snapshot().retentionPolicy,
+        db.instance.getParameter('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA,
+        db.instance.hostClock().nowMs());
+    });
     // Device VFS reader for server-side reads (UTL_FILE, external tables,
     // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
     // under host DAC, falling back to the editor path on devices that do
