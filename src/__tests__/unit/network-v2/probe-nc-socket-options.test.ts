@@ -137,13 +137,13 @@ describe('nc -M, -T : the datagrams and segments leave with what was asked', () 
 
   it('UDP over IPv4 carries both', async () => {
     const peer = scriptedPeer();
-    await nc(peer, `echo hi | nc -u -M 9 -T cs6 ${PEER_ADDRESS} 4000`);
+    await nc(peer, `echo hi | nc -u -q 0 -M 9 -T cs6 ${PEER_ADDRESS} 4000`);
     expect(onWire(peer, IP_PROTO_UDP)).toEqual([{ ttl: 9, tos: 0xc0, protocol: IP_PROTO_UDP }]);
   });
 
   it('UDP over IPv6 carries both', async () => {
     const peer = scriptedPeer('linux', 'ipv6');
-    await nc(peer, `echo hi | nc -u -6 -M 9 -T cs6 ${PEER_ADDRESS_V6} 4000`);
+    await nc(peer, `echo hi | nc -u -q 0 -6 -M 9 -T cs6 ${PEER_ADDRESS_V6} 4000`);
     expect(onWire(peer, IP_PROTO_UDP)).toEqual([{ ttl: 9, tos: 0xc0, protocol: IP_PROTO_UDP }]);
   });
 
@@ -271,7 +271,7 @@ describe('the minimum incoming TTL (IP_MINTTL, IPV6_MINHOPCOUNT, RFC 5082)', () 
 
   it('WITNESS: a UDP socket is not subject to the floor (no UDP code reads min_ttl)', async () => {
     const peer = scriptedPeer();
-    const out = await nc(peer, `echo hi | nc -u -m 255 ${PEER_ADDRESS} 4000; echo "status=$?"`);
+    const out = await nc(peer, `echo hi | nc -u -q 0 -m 255 ${PEER_ADDRESS} 4000; echo "status=$?"`);
     expect(out.trim()).toBe('status=0');
   });
 });
@@ -320,14 +320,14 @@ describe('nc -N tells a server that waits for the end of the input that it came'
   it('without -N the same server never gets to answer', async () => {
     const { a, b } = pair();
     answeringAfterEnd(b);
-    expect((await a.executeCommand('echo request | nc 10.0.0.2 4000')).trim()).toBe('');
+    expect((await a.executeCommand('echo request | nc -w 1 10.0.0.2 4000')).trim()).toBe('');
   });
 
   it('-N changes nothing for a server that answers at once', async () => {
     const { a, b } = pair();
     b.getTcpStack().listen(4000, { onAccept: (socket) => { socket.onData(() => socket.write('pong')); } });
     expect((await a.executeCommand('echo ping | nc -N 10.0.0.2 4000')).trim()).toBe('pong');
-    expect((await a.executeCommand('echo ping | nc 10.0.0.2 4000')).trim()).toBe('pong');
+    expect((await a.executeCommand('echo ping | nc -w 1 10.0.0.2 4000')).trim()).toBe('pong');
   });
 });
 

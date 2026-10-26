@@ -551,6 +551,7 @@ export class BashInterpreter {
 
   private lastLineOriented: boolean | undefined = undefined;
   private pendingBackground = false;
+  private backgroundLastStage = false;
 
   private *visitAndOrList(node: AndOrList): Effects<void> {
     if (node.background && node.rest.length === 0
@@ -560,6 +561,18 @@ export class BashInterpreter {
       try {
         yield* this.visitPipeline(node.first);
       } finally {
+        this.pendingBackground = false;
+      }
+      this.env.lastExitCode = 0;
+      return;
+    }
+    if (node.background && node.rest.length === 0 && !node.first.negated
+        && node.first.commands.length > 1 && node.first.commands.every((command) => command.type === 'SimpleCommand')) {
+      this.backgroundLastStage = true;
+      try {
+        yield* this.visitPipeline(node.first);
+      } finally {
+        this.backgroundLastStage = false;
         this.pendingBackground = false;
       }
       this.env.lastExitCode = 0;
@@ -618,6 +631,10 @@ export class BashInterpreter {
         // must NOT trigger errexit, only the final stage's (or, with
         // pipefail, the aggregate) does.
         const isLast = i === node.commands.length - 1;
+        if (isLast && this.backgroundLastStage) {
+          this.backgroundLastStage = false;
+          this.pendingBackground = true;
+        }
         if (!isLast) this.errexitSuppress++;
         // A non-last stage's stdout always feeds this pipe (non-tty); the
         // last stage inherits whatever the ambient context already was

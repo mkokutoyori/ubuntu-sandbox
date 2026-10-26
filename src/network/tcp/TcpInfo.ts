@@ -13,6 +13,7 @@ export interface TcpTimer {
 export interface TcpQueues {
   readonly receive: number;
   readonly send: number;
+  readonly unread: number;
 }
 
 export interface TcpSocketFacts {

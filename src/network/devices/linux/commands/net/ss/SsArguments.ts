@@ -130,6 +130,7 @@ export interface SsRequest {
   readonly showTcpInfo: boolean;
   readonly showTos: boolean;
   readonly showCgroup: boolean;
+  readonly showMemory: boolean;
   readonly showInetSockopt: boolean;
   readonly showHeader: boolean;
   readonly oneline: boolean;
@@ -171,6 +172,7 @@ export function parseSsArguments(args: readonly string[], environment: SsArgumen
   let showTcpInfo = false;
   let showTos = false;
   let showCgroup = false;
+  let showMemory = false;
   let showInetSockopt = false;
   let showHeader = true;
   let oneline = false;
@@ -191,8 +193,7 @@ export function parseSsArguments(args: readonly string[], environment: SsArgumen
         case 'r': resolveHosts = true; break;
         case 'o': showOptions = true; break;
         case 'e': showOptions = true; showDetails++; break;
-        case 'm':
-          throw new SsError('ss: -m needs socket buffer accounting (sk_rcvbuf, sk_sndbuf, skb truesize), which this TCP stack does not keep\n', 255);
+        case 'm': showMemory = true; break;
         case 'i': showTcpInfo = true; break;
         case 'p': showUsers = true; break;
         case 'b': showOptions = true; break;
@@ -265,7 +266,7 @@ export function parseSsArguments(args: readonly string[], environment: SsArgumen
     }
 
     const request: SsRequest = {
-      filter, numeric, resolveHosts, showOptions, showDetails, showUsers, showTcpInfo, showTos, showCgroup,
+      filter, numeric, resolveHosts, showOptions, showDetails, showUsers, showTcpInfo, showTos, showCgroup, showMemory,
       showInetSockopt, showHeader, oneline, summary,
       summaryOnly: summary && filter.doDefault && operands.length === 0,
     };

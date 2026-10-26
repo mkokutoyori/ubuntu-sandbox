@@ -36,12 +36,26 @@ interface RootRunner {
 
 const EPHEMERAL_PORT_FIRST = 32768;
 
-export function maskEphemeralPorts(text: string): string {
-  return text.replace(/(Connection received on \S+ )(\d+)/g, (whole, head: string, port: string) => (Number(port) >= EPHEMERAL_PORT_FIRST ? `${head}<ephemeral>` : whole));
+export function comparableOutput(text: string): string {
+  return text
+    .replace(/(Connection received on \S+ )(\d+)/g, (whole, head: string, port: string) => (Number(port) >= EPHEMERAL_PORT_FIRST ? `${head}<ephemeral>` : whole))
+    .replace(/^\[\d+\][+-]?\s+(Done|Exit \d+|Terminated|Killed|Running)\b.*\n?/gm, '');
 }
 
 const DAEMONS = ['ssh', 'systemd-resolved', 'chrony', 'rsyslog', 'cron', 'atd', 'fail2ban', 'auditd', 'systemd-networkd'];
 const STATUS_MARK = '@@RC ';
+export const STEP_TIMEOUT_OUTPUT = '@@STEP-TIMEOUT';
+const STEP_TIMEOUT_MS = 20000;
+
+async function withinStepTimeout(run: Promise<string>): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<string>((resolve) => { timer = setTimeout(() => resolve(`${STEP_TIMEOUT_OUTPUT}\n${STATUS_MARK}-1`), STEP_TIMEOUT_MS); });
+  try {
+    return await Promise.race([run, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const PIDS_MARK = '@@PIDS ';
 const LAB_DIRECTORY = '/tmp/lab';
 
@@ -73,7 +87,7 @@ export async function replayNetCmdsCase(lab: NetCmdsCase): Promise<NetCmdsRun> {
   }
   const steps: NetCmdsStep[] = [];
   for (const step of lab.steps) {
-    const raw = await asRoot(`cd ${LAB_DIRECTORY}; ${step.cmd}\necho "${STATUS_MARK}$?"`);
+    const raw = await withinStepTimeout(asRoot(`cd ${LAB_DIRECTORY}; ${step.cmd}\necho "${STATUS_MARK}$?"`));
     const at = raw.lastIndexOf(STATUS_MARK);
     const status = at < 0 ? -1 : Number(raw.slice(at + STATUS_MARK.length).trim());
     const output = at < 0 ? raw : raw.slice(0, at).replace(/\n$/, '');

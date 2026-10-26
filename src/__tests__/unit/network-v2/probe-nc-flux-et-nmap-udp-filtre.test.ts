@@ -61,15 +61,15 @@ describe('probe — nc -l carries data, nmap -sU reads filtering ICMP', () => {
   it('nc -l > file receives what the client sends', async () => {
     const { srv, pc } = lab();
     await srv.executeCommand('nc -l -p 9300 > /tmp/in.txt &');
-    await pc.executeCommand('echo hello | nc 10.0.1.2 9300');
+    await pc.executeCommand('echo hello | nc -N 10.0.1.2 9300');
     expect((await srv.executeCommand('cat /tmp/in.txt')).trim()).toBe('hello');
   });
 
   it('nc -l -k > file appends every connection', async () => {
     const { srv, pc } = lab();
     await srv.executeCommand('nc -l -k -p 9300 > /tmp/in.txt &');
-    await pc.executeCommand('echo one | nc 10.0.1.2 9300');
-    await pc.executeCommand('echo two | nc 10.0.1.2 9300');
+    await pc.executeCommand('echo one | nc -N 10.0.1.2 9300');
+    await pc.executeCommand('echo two | nc -N 10.0.1.2 9300');
     expect((await srv.executeCommand('cat /tmp/in.txt')).split('\n').filter(Boolean)).toEqual(['one', 'two']);
   });
 

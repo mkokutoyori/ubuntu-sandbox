@@ -86,7 +86,7 @@ import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
-  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
+  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
@@ -318,6 +318,7 @@ const sideOf = (translation: NatTranslation): 'src' | 'dst' => translation.side 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   private readonly ipv4Settings = new LinuxIpv4Settings();
+  private readonly ipv4Vectors = new KernelVectorStore(LINUX_IPV4_VECTOR_KNOBS);
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly ipv6Settings = new LinuxIpv6Settings();
   private deviceConfStore: Ipv4DeviceConf | null = null;
@@ -487,6 +488,11 @@ export abstract class LinuxMachine extends EndHost
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
         () => `${this.ipv4Settings.get(knob.name)}\n`,
         (text) => this.ipv4Settings.write(knob.name, text));
+    }
+    for (const knob of LINUX_IPV4_VECTOR_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
+        () => `${this.ipv4Vectors.text(knob.name)}\n`,
+        (text) => this.ipv4Vectors.write(knob.name, text));
     }
     this.executor.vfs.mkdirp('/proc/sys/net/ipv6', 0o755, 0, 0);
     for (const knob of LINUX_IPV6_KNOBS) {
@@ -659,9 +665,10 @@ export abstract class LinuxMachine extends EndHost
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
-    const journalTimers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
-    this.executor.onClockAdvanced(() => journalTimers.pump());
-    this.executor.logMgr.attachJournalTimers(journalTimers);
+    const machineTimers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
+    this.executor.onClockAdvanced(() => machineTimers.pump());
+    this.executor.logMgr.attachJournalTimers(machineTimers);
+    this.executor.attachProcessTimers(machineTimers);
     this.executor.logMgr.attachTerminals({ sessions: () => this.loggedInTerminals().map((terminal) => terminal.tty), write: (tty, text) => this.writeTerminal(tty, text) });
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
@@ -1014,6 +1021,14 @@ export abstract class LinuxMachine extends EndHost
   ): { outcome: TcpWireOutcome; received: string } {
     const exchange = super.tcpExchange(targetIP, port, payload, options);
     return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };
+  }
+
+  override tcpOpen(
+    targetIP: IPAddress | IPv6Address, port: number,
+    options: TcpExchangeSocketOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
+    const opened = super.tcpOpen(targetIP, port, options);
+    return { ...opened, outcome: this.failedNeighbourIsHostUnreachable(targetIP, opened.outcome) };
   }
 
   private nssHostAddressesSync(name: string, family: 2 | 10): string[] {
@@ -4594,6 +4609,7 @@ export abstract class LinuxMachine extends EndHost
       flushRouteExceptions: () => this.flushRouteExceptions(),
       udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
+      tcpOpen: (target, port, options) => this.tcpOpen(target, port, options),
       ping6Sequence: (
         target: IPv6Address,
         count: number,
