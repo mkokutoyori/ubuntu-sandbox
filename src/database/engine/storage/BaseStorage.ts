@@ -258,7 +258,7 @@ export abstract class BaseStorage {
 
   insertRows(schema: string, tableName: string, rows: StorageRow[]): number {
     const table = this.getTableData(schema, tableName);
-    table.rows.push(...rows);
+    for (const row of rows) table.rows.push(row);
     table.meta.rowCount = table.rows.length;
     if (this.undoSink) {
       for (const row of rows) this.undoSink.recordInsert(schema, tableName, row);
@@ -302,6 +302,37 @@ export abstract class BaseStorage {
       }
     }
     return count;
+  }
+
+  removeLastMatching(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): boolean {
+    const table = this.getTableData(schema, tableName);
+    for (let i = table.rows.length - 1; i >= 0; i--) {
+      if (!predicate(table.rows[i])) continue;
+      table.rows.splice(i, 1);
+      table.meta.rowCount = table.rows.length;
+      table.epoch = BaseStorage.epochSource++;
+      return true;
+    }
+    return false;
+  }
+
+  replaceMatching(
+    schema: string, tableName: string, predicate: (row: StorageRow) => boolean, replacement: StorageRow, nearIndex: number,
+  ): number {
+    const table = this.getTableData(schema, tableName);
+    const length = table.rows.length;
+    const start = Math.min(Math.max(nearIndex, 0), length - 1);
+    for (let step = 0; step < length; step++) {
+      const i = (start - step + length) % length;
+      if (!predicate(table.rows[i])) continue;
+      const before = table.rows[i];
+      table.rows[i] = replacement;
+      const fromEpoch = table.epoch;
+      table.epoch = BaseStorage.epochSource++;
+      this.rowIndexes.rowReplaced(`${schema.toUpperCase()}.${tableName.toUpperCase()}`, fromEpoch, table.epoch, i, before, replacement);
+      return i;
+    }
+    return -1;
   }
 
   truncateTable(schema: string, tableName: string): void {

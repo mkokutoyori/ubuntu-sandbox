@@ -1,11 +1,14 @@
 /**
- * Mesure (Node, SQL*Plus sur un LinuxServer) de trois requetes de volume que le moteur traitait en temps quadratique ou par recursion :
+ * Mesure (Node, SQL*Plus sur un LinuxServer) de requetes de volume que le moteur traitait en temps quadratique ou par recursion :
  *
  * - `INSERT … SELECT … FROM DUAL CONNECT BY LEVEL <= 5000` : « ORA-00900: Maximum call stack size exceeded » (parcours recursif, un niveau par ligne ; la
  *   plus grande valeur qui passait etait un millier), et plafonne en silence a 10 000 lignes meme sans pile ;
  * - `SELECT … FROM big a JOIN big b ON a.id = b.id` : boucle imbriquee, 12,5 s pour 5000 lignes, 221 s pour 20 000 (l'onglet du navigateur est fige tout ce temps) ;
  * - `UPDATE big SET amount = amount + 1` : 5,3 s pour 5000 lignes, 3,2 s pour 4000 — chaque ligne mise a jour invalidait l'index de cles (RowIndexCache) que la
  *   verification de contrainte reconstruisait ensuite en entier.
+ * - `ROLLBACK` d'un `UPDATE` de 50 000 lignes : 34,7 s (chaque enregistrement d'annulation cherchait sa ligne dans toute la table) ; l'annulation d'une insertion cherche depuis la fin, celle
+ *   d'une mise a jour part de la derniere ligne restauree ;
+ * - `INSERT … SELECT` de plus de ~125 000 lignes : « Maximum call stack size exceeded » (`rows.push(...rows)`), maintenant une boucle.
  *
  * Corrige : parcours CONNECT BY iteratif (plafond de profondeur pour les seules hierarchies a PRIOR, 2 000 000 lignes au plus : ORA-30009), jointure par
  * hachage sur les egalites colonne = colonne (la condition ON complete est toujours reevaluee sur les candidats ; repli sur la boucle quand les types des cles
@@ -13,9 +16,10 @@
  *
  * NOCYCLE ne coupait aucune boucle (la cle de visite portait le niveau, donc ne se repetait jamais : 10 000 lignes pour un cycle de 3) ; la cle ignore maintenant le niveau.
  *
- * Discrimine par `git stash push -- src/database` : 4 cas sur 12 tombent (CONNECT BY 30 000, NOCYCLE, jointure 3000x3000, UPDATE 6000 lignes, ce dernier parce que son
- * remplissage passe par CONNECT BY) ; passent des deux cotes, TEMOINS : les hierarchies a PRIOR, les semantiques de jointure (LEFT, doublons, cles texte, predicat
- * en plus, types differents, USING), la cle primaire decalee par un UPDATE et le doublon refuse.
+ * Discrimine par `git stash push -- src/database` : 6 cas sur 16 tombent (CONNECT BY 30 000, NOCYCLE, jointure 3000x3000, UPDATE 6000 lignes — ce dernier parce que son
+ * remplissage passe par CONNECT BY —, puis les deux ROLLBACK de 20 000 lignes, 1,6 s et 2,7 s avant contre quelques dizaines de ms). Passent des deux cotes, TEMOINS : les
+ * hierarchies a PRIOR, les semantiques de jointure (LEFT, doublons, cles texte, predicat en plus, types differents, USING), la cle primaire decalee par un UPDATE, le doublon
+ * refuse, ROLLBACK TO SAVEPOINT, et l'INSERT de 200 000 lignes (la pile de Node est plus haute que celle de Chromium, ou la limite est d'environ 125 000).
  */
 import { describe, test, expect, beforeEach } from 'vitest';
 import { OracleDatabase } from '../../../database/oracle/OracleDatabase';
@@ -163,3 +167,42 @@ describe('UPDATE de volume', () => {
     expect(() => exec('UPDATE keyed SET id = 5 WHERE id = 6')).toThrow(/ORA-00001/);
   });
 });
+
+describe('annulation de volume', () => {
+  test('ROLLBACK d\'un UPDATE de 20 000 lignes tient sous 0,6 s et restaure les valeurs', () => {
+    exec('CREATE TABLE big (id NUMBER PRIMARY KEY, amount NUMBER)');
+    exec('INSERT INTO big SELECT level, level FROM dual CONNECT BY level <= 20000');
+    exec('COMMIT');
+    exec('UPDATE big SET amount = amount + 1000000');
+    const { ms } = timed(() => exec('ROLLBACK'));
+    expect(ms).toBeLessThan(600);
+    expect(scalar('SELECT SUM(amount) FROM big')).toBe(20000 * 20001 / 2);
+  }, 120_000);
+
+  test('ROLLBACK de 20 000 insertions tient sous 0,6 s', () => {
+    exec('CREATE TABLE grow (n NUMBER)');
+    exec('INSERT INTO grow SELECT level FROM dual CONNECT BY level <= 20000');
+    const { ms } = timed(() => exec('ROLLBACK'));
+    expect(ms).toBeLessThan(600);
+    expect(scalar('SELECT COUNT(*) FROM grow')).toBe(0);
+  }, 120_000);
+
+  test('un INSERT … SELECT de 200 000 lignes ne depasse pas la pile (temoin sous Node, dont la pile est plus haute que celle de Chromium)', () => {
+    exec('CREATE TABLE huge (n NUMBER)');
+    exec('INSERT INTO huge SELECT level FROM dual CONNECT BY level <= 200000');
+    expect(scalar('SELECT COUNT(*) FROM huge')).toBe(200000);
+  }, 120_000);
+
+  test('TEMOIN — ROLLBACK TO SAVEPOINT restaure la mise a jour et la suppression', () => {
+    exec('CREATE TABLE acct (id NUMBER PRIMARY KEY, balance NUMBER)');
+    exec('INSERT INTO acct SELECT level, 100 FROM dual CONNECT BY level <= 10');
+    exec('COMMIT');
+    exec('SAVEPOINT s1');
+    exec('UPDATE acct SET balance = 0 WHERE id <= 5');
+    exec('DELETE FROM acct WHERE id > 8');
+    exec('ROLLBACK TO SAVEPOINT s1');
+    expect(scalar('SELECT SUM(balance) FROM acct')).toBe(1000);
+    expect(scalar('SELECT COUNT(*) FROM acct')).toBe(10);
+  });
+});
+

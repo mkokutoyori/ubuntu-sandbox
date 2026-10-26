@@ -33,6 +33,8 @@ export interface SnapshotableStorage {
   insertRow(schema: string, tableName: string, row: StorageRow): void;
   deleteRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): number;
   updateRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow): number;
+  removeLastMatching(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): boolean;
+  replaceMatching(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, replacement: StorageRow, nearIndex: number): number;
   setUndoSink(sink: UndoSink | null): UndoSink | null;
 }
 
@@ -257,28 +259,20 @@ export class TransactionManager implements UndoSink {
     if (this.undoLog.length <= downTo) return;
     this.applyingUndo = true;
     const prevSink = this.storage.setUndoSink(null);
+    const restoredNear = new Map<string, number>();
     try {
       for (let i = this.undoLog.length - 1; i >= downTo; i--) {
         const rec = this.undoLog[i];
         if (!this.storage.tableExists(rec.schema, rec.table)) continue;
         if (rec.kind === 'insert') {
-          let removed = false;
-          this.storage.deleteRows(rec.schema, rec.table, r => {
-            if (removed || !rowEquals(r, rec.row)) return false;
-            removed = true;
-            return true;
-          });
+          this.storage.removeLastMatching(rec.schema, rec.table, r => rowEquals(r, rec.row));
         } else if (rec.kind === 'delete') {
           this.storage.insertRow(rec.schema, rec.table, [...rec.row]);
         } else {
-          let restored = false;
-          this.storage.updateRows(rec.schema, rec.table,
-            r => {
-              if (restored || !rowEquals(r, rec.after)) return false;
-              restored = true;
-              return true;
-            },
-            () => [...rec.before]);
+          const tableKey = `${rec.schema}.${rec.table}`;
+          const near = restoredNear.get(tableKey) ?? Number.MAX_SAFE_INTEGER;
+          const at = this.storage.replaceMatching(rec.schema, rec.table, r => rowEquals(r, rec.after), [...rec.before], near);
+          if (at >= 0) restoredNear.set(tableKey, at);
         }
       }
     } finally {
