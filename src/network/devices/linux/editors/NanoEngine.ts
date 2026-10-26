@@ -38,6 +38,7 @@ import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
 import { completeFileName, nextHistoryCompletion } from './nano/NanoCompletion';
 import { clickedShortcut, clickedYesNo, keyOfShortcutLabel, WHEEL_STEP } from './nano/NanoMouse';
+import { canonicalNanoKey } from './nano/NanoKeyAliases';
 import { WorkingDirectoryFs } from './WorkingDirectoryFs';
 
 let temporaryCounter = 0;
@@ -469,7 +470,13 @@ export class NanoEngine {
 
   applyKey(input: EditorKeyInput): void {
     if (this._exited) return;
-    const k = this.live.rebinddelete ? swappedDeleteKey(input) : input;
+    const typed = this.live.rebinddelete ? swappedDeleteKey(input) : input;
+    const context = this.helpViewer !== null ? 'help' : this.isPrompting() ? 'prompt' : 'edit';
+    if (context === 'edit' && typed.key === 'F12' && !typed.ctrl && !typed.alt) {
+      this.runInput(typed, () => this.invokeSpeller());
+      return;
+    }
+    const k = canonicalNanoKey(typed, context);
     if (this.live.preserve && k.ctrl && (k.key.toLowerCase() === 'q' || k.key.toLowerCase() === 's')) return;
     if (k.alt) this.metaKeyUsed = true;
     if (this.helpViewer !== null) {
