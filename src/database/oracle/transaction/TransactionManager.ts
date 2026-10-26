@@ -46,32 +46,6 @@ export type UndoRecord =
 /** Global mutation order, shared by every session of every instance. */
 let undoSeqSource = 1;
 
-export function rowEquals(a: StorageRow, b: StorageRow): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const va = a[i], vb = b[i];
-    if (va instanceof Date || vb instanceof Date) {
-      const ta = va instanceof Date ? va.getTime() : va;
-      const tb = vb instanceof Date ? vb.getTime() : vb;
-      if (ta !== tb) return false;
-    } else if (va !== vb) return false;
-  }
-  return true;
-}
-
-/** Reverse-apply one undo record on an in-memory row set (for readers). */
-export function reverseApplyInMemory(rows: StorageRow[], rec: UndoRecord): void {
-  if (rec.kind === 'insert') {
-    const idx = rows.findIndex(r => rowEquals(r, rec.row));
-    if (idx >= 0) rows.splice(idx, 1);
-  } else if (rec.kind === 'delete') {
-    rows.push([...rec.row]);
-  } else {
-    const idx = rows.findIndex(r => rowEquals(r, rec.after));
-    if (idx >= 0) rows[idx] = [...rec.before];
-  }
-}
-
 function rowSignature(row: StorageRow): string {
   let key = '';
   for (const cell of row) {
@@ -83,7 +57,7 @@ function rowSignature(row: StorageRow): string {
   return `${row.length}|${key}`;
 }
 
-function restoreRows(rows: StorageRow[], newestFirst: readonly UndoRecord[]): void {
+export function restoreRows(rows: StorageRow[], newestFirst: readonly UndoRecord[]): void {
   const bySignature = new Map<string, StorageRow[]>();
   const index = (row: StorageRow): void => {
     const key = rowSignature(row);
