@@ -100,6 +100,28 @@ FUSER_FILES = [
 ]
 
 
+FUSER_PARSING = [
+    "fuser -ntcp 9000 2>&1", "fuser --namespace tcp 9000 2>&1", "fuser --namespace=tcp 9000 2>&1", "fuser -n=tcp 9000 2>&1", "fuser -vntcp 9000 2>&1",
+    "fuser -n tcp,udp 9000 2>&1", "fuser -n tcp -n udp 5300 2>&1", "fuser -nfile 9000 2>&1", "fuser -n 2>&1; echo rc=$?", "fuser -n tcp 2>&1; echo rc=$?",
+    "fuser 9000/tcp -v 2>&1", "fuser -sv 9000/tcp; echo rc=$?", "fuser -vsa 1234/tcp; echo rc=$?", "fuser -va 1234/tcp 9000/tcp 2>&1",
+    "fuser --verbose --user 9000/tcp 2>&1", "fuser --all 1234/tcp 2>&1", "fuser --silent 9000/tcp; echo rc=$?", "fuser --quiet 9000/tcp; echo rc=$?",
+    "fuser --ipv4 9000/tcp 2>&1", "fuser --ipv6 9000/tcp 2>&1", "fuser -46 9000/tcp 2>&1", "fuser -64 9000/tcp 2>&1", "fuser --version 2>&1 | head -1",
+    "fuser --help 2>&1 | head -2", "fuser --list-signals | head -1", "fuser --bogus 9000/tcp 2>&1 | head -2", "fuser -x 9000/tcp 2>&1 | head -2",
+    "fuser -d 9000/tcp 2>&1 | head -2", "fuser -T 9000/tcp 2>&1 | head -2", "fuser -f 9000/tcp 2>&1", "fuser -- 9000/tcp 2>&1; echo rc=$?",
+    "fuser -- -v 2>&1 | head -2", "fuser '' 2>&1 | head -2", "fuser 9000/tcp/extra 2>&1; echo rc=$?", "fuser 0/tcp 2>&1; echo rc=$?",
+    "fuser 65536/tcp 2>&1; echo rc=$?", "fuser 99999999999/tcp 2>&1; echo rc=$?", "fuser -1 9000/tcp 2>&1 | head -2", "fuser 9000/TCP 2>&1; echo rc=$?",
+    "fuser ssh/tcp 2>&1; echo rc=$?", "fuser -n tcp ssh 2>&1; echo rc=$?", "fuser http/tcp 2>&1; echo rc=$?", "fuser 9000,127.0.0.1/tcp 2>&1",
+    "fuser 9000,127.0.0.1,40001/tcp 2>&1", "fuser 9000,127.0.0.1,40002/tcp 2>&1", "fuser ,127.0.0.1,9000/tcp 2>&1", "fuser 40001,127.0.0.1,9000/tcp 2>&1",
+    "fuser ,,40001/tcp 2>&1", "fuser ,,9000/tcp 2>&1", "fuser 9000,localhost,40001/tcp 2>&1", "fuser 9000,nosuchhost,40001/tcp 2>&1; echo rc=$?",
+    "fuser 9000,127.0.0.1,abc/tcp 2>&1; echo rc=$?", "fuser 9000,10.0.0.1/tcp 2>&1", "fuser -v 40001,127.0.0.1,9000/tcp 2>&1",
+    "fuser -k -s 9000/tcp 2>&1; echo rc=$?", "fuser -9 -k 7000/tcp 2>&1; echo rc=$?", "fuser -k -SIGTERM 5300/udp 2>&1; echo rc=$?",
+    "fuser -kTERM 5300/udp 2>&1; echo rc=$?", "fuser -k -0 5300/udp 2>&1; echo rc=$?", "fuser -k -64 5300/udp 2>&1; echo rc=$?",
+    "fuser -k -65 5300/udp 2>&1; echo rc=$?", "fuser -k -RTMIN 5300/udp 2>&1; echo rc=$?", "fuser -kv 5300/udp 2>&1; echo rc=$?",
+    "fuser -kw 5300/udp 2>&1; echo rc=$?", "fuser -l -v 2>&1 | head -1", "fuser -V -v 2>&1 | head -1", "fuser -l 9000/tcp 2>&1 | head -1",
+    "fuser -4 -V 2>&1 | head -1",
+]
+
+
 def fuser_cases():
     out = []
     ports = [
@@ -114,6 +136,8 @@ def fuser_cases():
         "sleep 60 < /tmp/lab/f1 & P1=$!", "tail -f /tmp/lab/f2 > /dev/null & P2=$!", "(cd /tmp/lab/d; exec sleep 60) & P3=$!",
     ]
     out.append(case("fuser-files", files, FUSER_FILES, ["P1", "P2", "P3"], ADDRESSES))
+    out.append(case("fuser-parsing", ["nc -l 127.0.0.1 9000 & P1=$!", "nc -lu 127.0.0.1 5300 & P2=$!", "nc -l 10.0.0.1 7000 & P3=$!", "sleep 0.3",
+                                      "nc -p 40001 127.0.0.1 9000 & P4=$!"], FUSER_PARSING, ["P1", "P2", "P3", "P4"], ADDRESSES))
     out.append(case("fuser-files-none", ["echo data > /tmp/lab/f1", "echo data > /tmp/lab/f2", "mkdir -p /tmp/lab/d"], FUSER_FILES, [], ADDRESSES))
     return out
 

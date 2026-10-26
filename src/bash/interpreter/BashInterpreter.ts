@@ -18,6 +18,7 @@
  * is replayed. Each unique occurrence executes exactly once.
  */
 
+import { backgroundGroupText } from './CommandText';
 import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import type {
   Program, CommandList, AndOrList, Pipeline, Command,
@@ -141,6 +142,10 @@ export interface IOContext {
    */
   bindBackgroundStdout?(pid: number, path: string): void;
   bindBackgroundStderr?(pid: number, path: string, append: boolean): void;
+  holdBackgroundStdin?(pid: number, path: string): void;
+  beginBackgroundSubshell?(label: string): number;
+  endBackgroundSubshell?(pid: number, outcome: { cwd: string; image: readonly string[] | null; output: string; exitCode: number; parked: boolean }): void;
+  backgroundAnnouncement?(pid: number): string | null;
 }
 
 export interface InterpreterOptions {
@@ -169,6 +174,7 @@ export interface InterpreterOptions {
   /** True for a backgrounded job — makes unconditional loops (`while
    *  true`) run their body once, then park via {@link DaemonParkSignal}. */
   daemonMode?: boolean;
+  interactive?: boolean;
   stdin?: string;
 }
 
@@ -236,6 +242,8 @@ export class BashInterpreter {
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
   private readonly daemonMode: boolean;
+  private readonly interactive: boolean;
+  private daemonDepth = 0;
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
@@ -243,6 +251,7 @@ export class BashInterpreter {
     this.aliases = options.aliases ?? new AliasTable();
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
+    this.interactive = options.interactive ?? false;
     if (options.stdin !== undefined) {
       const lines = options.stdin.split('\n');
       if (lines[lines.length - 1] === '') lines.pop();
@@ -550,10 +559,18 @@ export class BashInterpreter {
   }
 
   private lastLineOriented: boolean | undefined = undefined;
+  private execImage: string[] | null = null;
   private pendingBackground = false;
   private backgroundLastStage = false;
 
   private *visitAndOrList(node: AndOrList): Effects<void> {
+    if (node.background && node.rest.length === 0 && !node.first.negated && node.first.commands.length === 1
+        && (node.first.commands[0].type === 'Subshell' || node.first.commands[0].type === 'BraceGroup')
+        && this.io?.beginBackgroundSubshell !== undefined) {
+      yield* this.runBackgroundGroup(node.first.commands[0]);
+      this.env.lastExitCode = 0;
+      return;
+    }
     if (node.background && node.rest.length === 0
         && node.first.commands.length === 1 && !node.first.negated
         && node.first.commands[0].type === 'SimpleCommand') {
@@ -929,6 +946,7 @@ export class BashInterpreter {
     // Whether the command produced a genuinely separate stderr stream
     // (only external commands that opt in via the `stderr` field do).
     let explicitStderr: string | null = null;
+    let explicitInterleaved: string | undefined;
     let backgroundedPid: number | undefined;
 
     // Check for function
@@ -937,7 +955,10 @@ export class BashInterpreter {
       // `command` runs its operand skipping function and alias lookup.
       yield* this.runCommandWord(args.slice(1), pipeInput);
     } else if (cmdName === 'exec') {
-      if (args.length > 1) yield* this.runCommandWord(args.slice(1), pipeInput);
+      if (args.length > 1) {
+        this.execImage = args.slice(1);
+        yield* this.runCommandWord(args.slice(1), pipeInput);
+      }
     } else if (fn) {
       yield* this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {
@@ -972,6 +993,7 @@ export class BashInterpreter {
         // and must not leak into the next stage's stdin (see
         // `runPipelineStages`).
         explicitStderr = result.stderr;
+        explicitInterleaved = result.interleaved;
         const terminalView = !hasAnyRedirect && !this.nonLastPipelineStage ? result.interleaved : undefined;
         if (terminalView !== undefined) {
           if (terminalView) this.output.push(terminalText(terminalView, result.lineOriented));
@@ -1007,9 +1029,13 @@ export class BashInterpreter {
         node.redirections, capturedOutput,
         explicitStderr !== null ? capturedStderr : undefined,
         cmdName,
+        explicitInterleaved,
       );
       if (backgroundedPid !== undefined) yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
+    } else if (backgroundedPid !== undefined && node.redirections.length > 0) {
+      yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
     }
+    if (backgroundedPid !== undefined) this.announceBackground(backgroundedPid);
 
     this.flushOutSubs();
 
@@ -1181,6 +1207,8 @@ export class BashInterpreter {
       } else if ((redir.op === '>' || redir.op === '>>') && (redir.fd === undefined || redir.fd === 1)) {
         stdoutPath = this.resolveHere(target);
         this.io.bindBackgroundStdout(pid, stdoutPath);
+      } else if (redir.op === '<' && (redir.fd === undefined || redir.fd === 0)) {
+        this.io.holdBackgroundStdin?.(pid, this.resolveHere(target));
       }
     }
   }
@@ -1190,6 +1218,7 @@ export class BashInterpreter {
     capturedOutput: string,
     capturedStderr?: string,
     command?: string,
+    interleaved?: string,
   ): Effects<void> {
     if (!this.io) {
       if (capturedOutput) this.output.push(capturedOutput);
@@ -1201,7 +1230,7 @@ export class BashInterpreter {
     // each to its own redirection target (or the terminal) independently —
     // no exit-code heuristic needed.
     if (capturedStderr !== undefined) {
-      yield* this.applyRedirectionsExplicit(redirections, capturedOutput, capturedStderr, command);
+      yield* this.applyRedirectionsExplicit(redirections, capturedOutput, capturedStderr, command, interleaved);
       return;
     }
 
@@ -1310,6 +1339,7 @@ export class BashInterpreter {
     stdout: string,
     stderr: string,
     command?: string,
+    interleaved?: string,
   ): Effects<void> {
     if (!this.io) {
       if (stdout) this.output.push(stdout);
@@ -1357,7 +1387,10 @@ export class BashInterpreter {
         return false;
       }
     };
-    if (deliver(stdout, fd1)) deliver(stderr, fd2, true);
+    const merged = interleaved !== undefined
+      && (fd1.kind === 'fd1' && fd2.kind === 'fd1' || fd1.kind === 'file' && fd2.kind === 'file' && fd1.path === fd2.path);
+    if (merged) deliver(interleaved, fd1);
+    else if (deliver(stdout, fd1)) deliver(stderr, fd2, true);
   }
 
   private redirectFailureText(error: Error, command: string | undefined): string {
@@ -1461,7 +1494,7 @@ export class BashInterpreter {
 
   private *runWhileLoop(node: WhileClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
-    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, true);
+    const parkAfterFirst = (this.daemonMode || this.daemonDepth > 0) && isUnconditional(node.condition, true);
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
@@ -1489,7 +1522,7 @@ export class BashInterpreter {
 
   private *visitUntil(node: UntilClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
-    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, false);
+    const parkAfterFirst = (this.daemonMode || this.daemonDepth > 0) && isUnconditional(node.condition, false);
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
@@ -1600,6 +1633,48 @@ export class BashInterpreter {
   }
 
   // ─── Brace Group & Subshell ───────────────────────────────────
+
+  private announceBackground(pid: number): void {
+    if (!this.interactive) return;
+    const text = this.io?.backgroundAnnouncement?.(pid);
+    if (text) this.output.push(`${text}\n`);
+  }
+
+  private *runBackgroundGroup(group: Subshell | BraceGroup): Effects<void> {
+    const io = this.io!;
+    const pid = io.beginBackgroundSubshell!(backgroundGroupText(group));
+    this.env.set('!', String(pid));
+    const parentEnv = this.env;
+    const parentOutput = this.output;
+    const parentImage = this.execImage;
+    const childEnv = parentEnv.createSubshell();
+    this.env = childEnv;
+    this.output = [];
+    this.execImage = null;
+    let output = '';
+    let parked = false;
+    this.daemonDepth++;
+    try {
+      yield* this.visitCommandList(group.body);
+    } catch (error) {
+      if (!(error instanceof DaemonParkSignal)) throw error;
+      parked = true;
+    } finally {
+      this.daemonDepth--;
+      output = this.output.join('');
+      this.output = parentOutput;
+      this.env = parentEnv;
+    }
+    if (group.redirections.some((redirection) => redirection.op === '>' || redirection.op === '>>' || redirection.op === '>&')) {
+      yield* this.applyRedirections(group.redirections, output);
+      output = '';
+    }
+    io.endBackgroundSubshell!(pid, {
+      cwd: childEnv.get('PWD') ?? io.resolvePath('.'), image: this.execImage, output, exitCode: childEnv.lastExitCode, parked,
+    });
+    this.execImage = parentImage;
+    this.announceBackground(pid);
+  }
 
   private *visitBraceGroup(node: BraceGroup): Effects<void> {
     const hasRedirect = node.redirections && node.redirections.some(r =>

@@ -14,10 +14,11 @@
  *
  * ss : les lignes sont triees avant la comparaison (l'ordre est celui des tables de hachage du noyau), les pid, inodes, cookies, minuteries
  * et chemins de cgroup sont remplaces par un jeton, et les totaux machine de `ss -s` par une difference a la base mesuree avant le labo.
- * La machine simulee se dit Ubuntu 22.04 (iproute2 5.15) alors que le binaire enregistre est celui de 24.04 (6.1.0) : `-V`, `-h` et le
- * message d'option inconnue ne sont donc pas rejoues.  Le noyau d'enregistrement utilise bbr (facteur 3 pour le tampon d'emission, tcp_info
+ * La machine simulee se dit Ubuntu 22.04 alors que les binaires enregistres sont ceux de 24.04 (iproute2 6.1.0, net-tools 2.10, psmisc 23.7) :
+ * leurs versions suivent les enregistrements et la base de paquets les annonce de meme (TODO.md note le reste de l'identite).  Le noyau d'enregistrement utilise bbr (facteur 3 pour le tampon d'emission, tcp_info
  * propre a bbr), la pile simulee un Reno : les tampons autoregles et `-i` d'une connexion etablie ne se comparent pas.
  *
+ * `fuser -m ... | head -3` depend de l'ensemble des processus : le noyau d'enregistrement n'en a que ceux du labo, la machine simulee tous ses demons.
  * Un pas qui passe alors qu'il est declare non porte fait echouer le test pour qu'on le retire de la liste.
  */
 import { describe, it, expect } from 'vitest';
@@ -41,9 +42,17 @@ const UNPORTED_STEPS: ReadonlySet<string> = new Set([
   'ss-unix|ss -xa',
   'ss-unix|ss -xl',
   'ss-unix|ss -f unix -a',
+  'netstat-unix|netstat',
+  'netstat-unix|netstat -a',
+  'netstat-unix|netstat -l',
+  'netstat-unix|netstat -n',
+  'netstat-unix|netstat -an',
+  'netstat-unix|netstat -x',
+  'netstat-unix|netstat -xa',
+  'netstat-unix|netstat -A unix',
+  'fuser-files|fuser -vm / 2>&1 | head -3',
+  'fuser-files-none|fuser -vm / 2>&1 | head -3',
 ]);
-
-const UNPORTED_COMMANDS: ReadonlySet<string> = new Set(['ss -V', 'ss -h', 'ss --nope']);
 
 const fixtures = readdirSync(directory).filter((name) => name.endsWith('.json')).sort()
   .map((name) => ({ name, fixture: JSON.parse(readFileSync(`${directory}/${name}`, 'utf8')) as NetCmdsFixture }));
@@ -54,6 +63,8 @@ describe('the recordings come from the real tools', () => {
     for (const { fixture } of fixtures) {
       expect(fixture.tools.nc).toContain('1.226');
       expect(fixture.tools.ss).toContain('iproute2-6.1');
+      expect(fixture.tools.netstat).toContain('2.10');
+      expect(fixture.tools.fuser).toContain('23.7');
     }
   });
 });
@@ -66,11 +77,10 @@ for (const { name, fixture } of fixtures) {
         const wrong: string[] = [];
         const fixed: string[] = [];
         lab.steps.forEach((step, index) => {
-          if (UNPORTED_COMMANDS.has(step.cmd)) return;
           const got = run.steps[index];
           const loose = looksLikeNetlinkRun(step.output);
-          const expected = normalizeNetOutput(comparableOutput(step.output), { pids: lab.recordedPids, baseline: lab.baseline }, step.cmd, loose);
-          const actual = normalizeNetOutput(comparableOutput(got.output), { pids: run.pids, baseline: run.baseline }, step.cmd, loose);
+          const expected = normalizeNetOutput(comparableOutput(step.output), { pids: lab.recordedPids, baseline: lab.baseline, shellPid: 1 }, step.cmd, loose);
+          const actual = normalizeNetOutput(comparableOutput(got.output), { pids: run.pids, baseline: run.baseline, shellPid: run.shellPid }, step.cmd, loose);
           const same = actual === expected && got.status === step.status;
           const key = `${lab.id}|${step.cmd}`;
           if (!same && !UNPORTED_STEPS.has(key)) wrong.push(`$ ${step.cmd}\n  real (rc ${step.status}): ${JSON.stringify(expected)}\n  sim  (rc ${got.status}): ${JSON.stringify(actual)}`);

@@ -12,6 +12,9 @@
  *   nc -u -p 40003 H 5300 &       a connected UDP socket is ESTAB with its peer in ss -ua (it showed UNCONN 0.0.0.0:40003)
  *   echo x | nc -u H P            with a listener the client stays (no reply ever comes); with a closed port the ICMP error ends it at once, rc 0
  *
+ * A job started from a typed line is announced `[N] pid` whatever the line holds (an interactive bash does, a script never does), so `root` strips the notice
+ * and `typed` keeps it.
+ *
  * Measured with the sources at HEAD: 7 of the 10 cases fall (the piped client, kill -0, the accept queue, skmem, the connected UDP socket, the piped UDP
  * client and the queued connection's cgroup). The three that pass either way are named: the foreground `-N` client (WITNESS: the lab is sound and the
  * faithful loop did not break the short exchange), the standalone trailing `&` (NON-REGRESSION: its `[N] pid` announcement existed) and
@@ -23,9 +26,13 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 let pc: LinuxPC;
 
-async function root(line: string): Promise<string> {
+async function typed(line: string): Promise<string> {
   const machine = pc as unknown as { executor: { runAsUser<T>(user: string, run: () => Promise<T>): Promise<T> } };
   return machine.executor.runAsUser('root', () => pc.executeCommand(line));
+}
+
+async function root(line: string): Promise<string> {
+  return (await typed(line)).replace(/^\[\d+\] \d+\n?/gm, '').replace(/\n$/, '');
 }
 
 beforeEach(async () => {
@@ -39,11 +46,11 @@ beforeEach(async () => {
 describe('long-lived nc connections', () => {
   it('a client typed alone with a trailing & returns at once', async () => {
     await root('nc -l 127.0.0.1 9300 & sleep 0.3');
-    expect(await root('nc 127.0.0.1 9300 &')).toMatch(/^\[\d+\] \d+$/);
+    expect(await typed('nc 127.0.0.1 9300 &')).toMatch(/^\[\d+\] \d+$/);
   });
 
   it('a trailing & only backgrounds the last command of the line', async () => {
-    expect(await root('echo start; sleep 100 & echo after')).toBe('start\nafter');
+    expect(await typed('echo start; sleep 100 & echo after')).toMatch(/^start\n\[\d+\] \d+\nafter$/);
   });
 
   it('a piped client without -N stays connected until it is killed', async () => {

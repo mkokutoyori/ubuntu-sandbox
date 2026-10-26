@@ -1381,14 +1381,14 @@ export class VirtualFileSystem {
 
   // ─── Link Operations ──────────────────────────────────────────────
 
-  createSymlink(path: string, target: string, uid: number, gid: number): boolean {
+  createSymlink(path: string, target: string, uid: number, gid: number, permissions = 0o777): boolean {
     const parent = this.resolveParent(path);
     if (!parent) return false;
     const [parentInode, basename] = parent;
 
     if (parentInode.children.has(basename)) return false;
 
-    const inode = this.allocInode('symlink', 0o777, uid, gid);
+    const inode = this.allocInode('symlink', permissions, uid, gid);
     inode.target = target;
     this.resize(inode, target.length);
     parentInode.children.set(basename, inode.id);
@@ -1685,7 +1685,7 @@ export class VirtualFileSystem {
     options: any,
     results: string[],
   ): void {
-    const inode = this.resolveInode(path);
+    const inode = this.resolveInode(path, depth === 0);
     if (!inode) return;
 
     if (options.maxdepth !== undefined && depth > options.maxdepth) return;

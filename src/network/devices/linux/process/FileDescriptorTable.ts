@@ -22,6 +22,7 @@ export interface OpenDescriptor {
   readonly fd: number;
   /** La cible que `/proc/<pid>/fd/<n>` montre — un chemin ou `socket:[id]`. */
   readonly target: string;
+  readonly writable: boolean;
 }
 
 /** Ce dont le calcul a besoin, et rien de plus. */
@@ -29,7 +30,7 @@ export interface DescriptorSources {
   /** `/dev/pts/0` pour un processus attaché à un terminal. */
   readonly tty?: string;
   readonly pid: number;
-  readonly openFiles?: ReadonlyArray<{ fd: number; path: string }>;
+  readonly openFiles?: ReadonlyArray<{ fd: number; path: string; mode?: 'r' | 'w' | 'rw' | 'a' }>;
   readonly socketIds?: readonly number[];
 }
 
@@ -43,15 +44,20 @@ export interface DescriptorSources {
 export function openDescriptors(p: DescriptorSources): OpenDescriptor[] {
   const out: OpenDescriptor[] = [];
   const stdTarget = p.tty && p.tty !== '?' ? `/dev/${p.tty}` : `socket:[${10000 + p.pid}]`;
-  for (const n of [0, 1, 2]) out.push({ fd: n, target: stdTarget });
+  const redirected = new Map((p.openFiles ?? []).filter((f) => f.fd < 3).map((f) => [f.fd, f] as const));
+  for (const n of [0, 1, 2]) {
+    const file = redirected.get(n);
+    out.push(file === undefined ? { fd: n, target: stdTarget, writable: true } : { fd: n, target: file.path, writable: file.mode !== 'r' });
+  }
 
   let nextFd = 3;
   for (const f of p.openFiles ?? []) {
-    out.push({ fd: f.fd, target: f.path });
+    if (f.fd < 3) continue;
+    out.push({ fd: f.fd, target: f.path, writable: f.mode !== 'r' });
     nextFd = Math.max(nextFd, f.fd + 1);
   }
   for (const id of p.socketIds ?? []) {
-    out.push({ fd: nextFd, target: `socket:[${id}]` });
+    out.push({ fd: nextFd, target: `socket:[${id}]`, writable: true });
     nextFd++;
   }
   return out;

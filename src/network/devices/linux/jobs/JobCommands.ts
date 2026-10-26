@@ -30,10 +30,9 @@ function marker(table: LinuxJobTable, j: JobEntry): string {
 }
 
 function formatJob(table: LinuxJobTable, j: JobEntry, long: boolean): string {
-  const pid = long ? ` ${padToWidth(String(j.pid), 5, 'right')}` : '';
-  // bash columns: "[N]<marker> <pid?> <state><pad>command"
-  const state = padToWidth(j.state, 22);
-  return `[${j.id}]${marker(table, j)}${pid} ${state}${j.command}`;
+  const state = padToWidth(j.state, 24);
+  const head = long ? `${marker(table, j)} ${padToWidth(String(j.pid), 5, 'right')} ` : `${marker(table, j)}  `;
+  return `[${j.id}]${head}${state}${j.command}`;
 }
 
 // ─── jobs ─────────────────────────────────────────────────────────────

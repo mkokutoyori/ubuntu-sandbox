@@ -949,14 +949,6 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
 - Le test d'un `nc -u` vers un port qui ECOUTE mais ne repond jamais ne se termine pas sans `-w`,
   `-q` ou Ctrl-C : c'est la mesure (rc 124 sous `timeout`), pas un defaut.
 
-### [bash] `( ... ) &` et `{ ...; } &` s'executent au premier plan
-Mesure : `(sleep 100; echo x) &` rend la main apres avoir avance l'horloge de 100 s et affiche `x`,
-sans annoncer de job (`[1] pid`) ; `sleep 100 & echo a` met bien le job en arriere-plan. Un sous-shell
-ou un groupe suivi de `&` doit devenir un job (processus fils, sortie tardive, `jobs`, `wait`).
-`LinuxCommandExecutor.startBackgroundJob` ne prend que la commande simple (`isSingleSimpleCommand`) ;
-le chemin de l'interpreteur (`pendingBackground`) ne sait mettre en arriere-plan qu'une commande
-simple ou le dernier etage d'un tube.
-
 ### [ss] ce que le portage d'iproute2 6.1 laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `ss-iproute2-6.1.json`, 10 labos, 520 des 531 sorties
 identiques apres normalisation) :
@@ -966,10 +958,24 @@ identiques apres normalisation) :
   reglage automatique de la fenetre de reception n'est pas modele.
 - Prises UNIX (`ss -x`, `netstat -x`, `/proc/net/unix`) : pas de table avec inodes, pairs et
   chemins (c'est aussi ce qui fait refuser `nc -U -l`, voir l'entree [nc]).
-- Identite de la machine simulee : Ubuntu 22.04.4 / iproute2 5.15 (`PackageDatabase`, `SS_VERSION`)
-  alors que les oracles sont ceux d'Ubuntu 24.04 (iproute2 6.1, net-tools 2.10, psmisc 23.7,
-  netcat-openbsd 1.226) ; le controle de congestion par defaut est Reno ici, bbr sur la machine
-  d'enregistrement (masque dans la comparaison).
+- Identite de la machine simulee : `/etc/os-release` et `lsb_release` se declarent Ubuntu 22.04.4
+  alors que les outils portes suivent les enregistrements d'Ubuntu 24.04 (iproute2 6.1.0, net-tools
+  2.10, psmisc 23.7, netcat-openbsd 1.226, procps-ng 4.0.4). `PackageDatabase` et `SS_VERSION` /
+  `NET_TOOLS_VERSION` disent deja 24.04 pour ces paquets ; l'identite du systeme, elle, reste a
+  trancher (changer la version annoncee decale `uname -r`, apt et les captures existantes). Le
+  controle de congestion par defaut est Reno ici, bbr sur la machine d'enregistrement (masque dans
+  la comparaison).
+
+### [fuser] ce que le portage de psmisc 23.7 laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `fuser-psmisc-23.7.json`, 179 des 181 sorties identiques
+et le labo `fuser-parsing`, 68 pas sur 68) :
+- `fuser -k -SIGNAL` : les signaux que `LinuxProcessManager` sait delivrer sont les 12 de son union
+  `Signal` ; les autres numeros (1 a 64) sont acceptes comme sur le vrai et recoivent l'action par
+  defaut de leur classe (ignore : CHLD, URG, WINCH ; arret : TSTP, TTIN, TTOU ; sinon terminaison),
+  pas le comportement propre a chacun (dump de memoire de QUIT/SEGV, par exemple).
+- Les deux pas `fuser -vm / 2>&1 | head -3` (labos `fuser-files` et `fuser-files-none`) dependent de
+  l'environnement : sur la machine d'enregistrement `/` liste les processus de l'espace de noms
+  hote, ici ceux du simulateur. Ils sont declares non portes dans `UNPORTED_STEPS`.
 
 ### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
 Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »

@@ -27,6 +27,7 @@ export interface NetCmdsFixture {
 export interface NetCmdsRun {
   readonly steps: readonly NetCmdsStep[];
   readonly pids: Readonly<Record<string, number | null>>;
+  readonly shellPid: number;
   readonly baseline: string;
 }
 
@@ -39,7 +40,9 @@ const EPHEMERAL_PORT_FIRST = 32768;
 export function comparableOutput(text: string): string {
   return text
     .replace(/(Connection received on \S+ )(\d+)/g, (whole, head: string, port: string) => (Number(port) >= EPHEMERAL_PORT_FIRST ? `${head}<ephemeral>` : whole))
-    .replace(/^\[\d+\][+-]?\s+(Done|Exit \d+|Terminated|Killed|Running)\b.*\n?/gm, '');
+    .replace(/^\[\d+\][+-]?\s+(Done|Exit \d+|Terminated|Killed|Hangup|Running)\b.*\n?/gm, '')
+    .replace(/^\[\d+\] \d+\n?/gm, '')
+    .replace(/^\S+\.sh: line \d+:\s+\d+ (Done|Exit \d+|Terminated|Killed|Hangup)\b.*\n?/gm, '');
 }
 
 const DAEMONS = ['ssh', 'systemd-resolved', 'chrony', 'rsyslog', 'cron', 'atd', 'fail2ban', 'auditd', 'systemd-networkd'];
@@ -85,6 +88,7 @@ export async function replayNetCmdsCase(lab: NetCmdsCase): Promise<NetCmdsRun> {
       pids[name] = /^\d+$/.test(value ?? '') ? Number(value) : null;
     }
   }
+  const shellPid = Number((await asRoot('echo $$')).trim());
   const steps: NetCmdsStep[] = [];
   for (const step of lab.steps) {
     const raw = await withinStepTimeout(asRoot(`cd ${LAB_DIRECTORY}; ${step.cmd}\necho "${STATUS_MARK}$?"`));
@@ -93,5 +97,5 @@ export async function replayNetCmdsCase(lab: NetCmdsCase): Promise<NetCmdsRun> {
     const output = at < 0 ? raw : raw.slice(0, at).replace(/\n$/, '');
     steps.push({ cmd: step.cmd, output, status });
   }
-  return { steps, pids, baseline };
+  return { steps, pids, shellPid, baseline };
 }

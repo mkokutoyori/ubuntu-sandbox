@@ -172,7 +172,7 @@ export class SsRowPrinter {
     if (!this.request.showUsers) return;
     const { owner } = view.row;
     if (owner === null || owner.fd === null || !this.host.canInspectProcessOf(owner.uid)) return;
-    this.table.out(` users:(("${owner.name}",pid=${owner.pid},fd=${owner.fd}))`);
+    this.table.out(` users:(("${owner.name}",pid=${owner.pid},${this.request.showThreads ? `tid=${owner.pid},` : ''}fd=${owner.fd}))`);
   }
 
   private printTimer(view: SsSocketView): void {

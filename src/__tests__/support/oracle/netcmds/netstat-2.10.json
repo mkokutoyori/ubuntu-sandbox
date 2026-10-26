@@ -1,0 +1,2512 @@
+{
+ "family": "netstat",
+ "tools": {
+  "ss": "ss utility, iproute2-6.1.0",
+  "netstat": "net-tools 2.10",
+  "fuser": "fuser (PSmisc) 23.7",
+  "nc": "netcat-openbsd 1.226-1ubuntu2",
+  "kernel": "6.18.44-fc-v153"
+ },
+ "cases": [
+  {
+   "id": "netstat-empty",
+   "setup": [],
+   "pids": [],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 4\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-one-tcp",
+   "setup": [
+    "nc -l 8080 & P1=$!"
+   ],
+   "pids": [
+    "P1"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer\ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167581     off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167581    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167581    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167581     7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN      off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7
+   },
+   "baseline": "Total: 2\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-tcp-and-udp",
+   "setup": [
+    "nc -l 8080 & P1=$!",
+    "nc -lu 5353 & P2=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                          \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                          \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:5353            0.0.0.0:*                          \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:5353            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      7/nc                \nudp        0      0 0.0.0.0:5353            0.0.0.0:*                           8/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer\ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167770     off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167770    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167770    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      0          167770     7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN      7/nc                \nudp        0      0 0.0.0.0:mdns            0.0.0.0:*                           8/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN      off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:5353            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     \nudp        0      0 0.0.0.0:5353            0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 0.0.0.0:http-alt        0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 8
+   },
+   "baseline": "Total: 6\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-bound",
+   "setup": [
+    "nc -l 127.0.0.1 9000 & P1=$!",
+    "nc -l 10.0.0.1 7000 & P2=$!",
+    "nc -lu 127.0.0.1 5300 & P3=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     \nudp        0      0 localhost:5300          0.0.0.0:*                          \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     \nudp        0      0 localhost:5300          0.0.0.0:*                          \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      8/nc                \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                           9/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      8/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer\ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          168454     off (0.00/0/0)\ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      0          169493     off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          168454    \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      0          169493    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          168454    \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      0          169493    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     \nudp        0      0 localhost:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     \nudp        0      0 localhost:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     \nudp        0      0 localhost:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN      8/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          168454     7/nc                \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      0          169493     8/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN      8/nc                \nudp        0      0 localhost:5300          0.0.0.0:*                           9/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN      off (0.00/0/0)\ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN      off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN      8/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:7000           0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 10.0.0.1:bbs            0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 8,
+    "P3": 9
+   },
+   "baseline": "Total: 6\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-connected",
+   "setup": [
+    "nc -l 127.0.0.1 9000 & P1=$!",
+    "sleep 0.3",
+    "nc -p 40001 127.0.0.1 9000 & P2=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED\nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED\nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED\nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED\nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 9/nc                \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer\ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          169509     off (0.00/0/0)\ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 0          168668     off (0.00/0/0)\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 0          169510     off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          169509    \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 0          168668    \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 0          169510    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          169509    \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 0          168668    \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 0          169510    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED 9/nc                \ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED 7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          169509     7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED 9/nc                \ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED 7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN      off (0.00/0/0)\ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED off (0.00/0/0)\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 9
+   },
+   "baseline": "Total: 6\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-two-connections",
+   "setup": [
+    "nc -k -l 127.0.0.1 9000 & P1=$!",
+    "sleep 0.3",
+    "nc -p 40001 127.0.0.1 9000 & P2=$!",
+    "sleep 0.3",
+    "nc -p 40002 127.0.0.1 9000 & P3=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED\nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED\nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED\nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED\nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 9/nc                \ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED 11/nc               \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED -                   \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer\ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          22619      off (0.00/0/0)\ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 0          21777      off (0.00/0/0)\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED 0          21780      off (0.00/0/0)\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED 0          0          off (0.00/0/0)\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 0          22620      off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          22619     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 0          21777     \ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED 0          21780     \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED 0          0         \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 0          22620     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          22619     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED 0          21777     \ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED 0          21780     \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED 0          0         \ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED 0          22620     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED 9/nc                \ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED 11/nc               \ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED -                   \ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED 7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      0          22619      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN      7/nc                \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED 9/nc                \ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED 11/nc               \ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED -                   \ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED 7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN      off (0.00/0/0)\ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED off (0.00/0/0)\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED off (0.00/0/0)\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED off (0.00/0/0)\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED off (0.00/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 127.0.0.1:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 127.0.0.1:40001         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:40002         127.0.0.1:9000          ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40002         ESTABLISHED\ntcp        0      0 127.0.0.1:9000          127.0.0.1:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        1      0 localhost:9000          0.0.0.0:*               LISTEN     \ntcp        0      0 localhost:40001         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:40002         localhost:9000          ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40002         ESTABLISHED\ntcp        0      0 localhost:9000          localhost:40001         ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 9,
+    "P3": 11
+   },
+   "baseline": "Total: 6\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-udp-connected",
+   "setup": [
+    "nc -lu 127.0.0.1 5300 & P1=$!",
+    "sleep 0.3",
+    "nc -u -p 40003 127.0.0.1 5300 & P2=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED\nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED\nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 127.0.0.1:40003         127.0.0.1:5300          ESTABLISHED\nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          \nudp        0      0 127.0.0.1:40003         127.0.0.1:5300          ESTABLISHED\nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                           7/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 localhost:5300          0.0.0.0:*                          \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \nudp        0      0 localhost:5300          0.0.0.0:*                           7/nc                \nudp        0      0 localhost:40003         localhost:5300          ESTABLISHED 9/nc                ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nudp        0      0 127.0.0.1:5300          0.0.0.0:*                          \nudp        0      0 127.0.0.1:40003         127.0.0.1:5300          ESTABLISHED",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 9
+   },
+   "baseline": "Total: 6\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-unix",
+   "setup": [
+    "nc -lU /tmp/lab/s1 & P1=$!",
+    "sleep 0.3",
+    "nc -U /tmp/lab/s1 & P2=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   \nunix  2      [ ACC ]     STREAM     LISTENING     171213   /tmp/lab/s1",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  2      [ ACC ]     STREAM     LISTENING     171213   /tmp/lab/s1",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   \nunix  2      [ ACC ]     STREAM     LISTENING     171213   /tmp/lab/s1",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   \nunix  2      [ ACC ]     STREAM     LISTENING     171213   /tmp/lab/s1",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path\nunix  3      [ ]         STREAM     CONNECTED     171214   /tmp/lab/s1\nunix  3      [ ]         STREAM     CONNECTED     171215   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 9
+   },
+   "baseline": "Total: 6\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "netstat-closed",
+   "setup": [
+    "nc -l 127.0.0.1 9000 & P1=$!",
+    "sleep 0.3",
+    "echo hello | nc -N -p 40004 127.0.0.1 9000"
+   ],
+   "pids": [
+    "P1"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "netstat",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -l",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \nActive UNIX domain sockets (only servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -n",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  \nActive UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -an",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  \nActive UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -t",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ta",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tl",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuln",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tulnp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanp",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT   -                   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanoe",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      Timer\ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT   0          0          timewait (59.55/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taneee",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT   0          0         ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tane",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode     \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT   0          0         ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -u",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ua",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -x",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -xa",
+     "output": "Active UNIX domain sockets (servers and established)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -w",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -wa",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -4 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --inet6 -a",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --tcp -l --numeric",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat --wide -tan",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanW",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -V",
+     "output": "net-tools 2.10\nFred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others\n+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX\nAF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH\nHW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -h",
+     "output": "usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -z",
+     "output": "netstat: invalid option -- 'z'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat --nope",
+     "output": "netstat: unrecognized option '--nope'\nusage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n       netstat [-vWnNcaeol] [<Socket> ...]\n       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }\n\n        -r, --route              display routing table\n        -i, --interfaces         display interface table\n        -g, --groups             display multicast group memberships\n        -s, --statistics         display networking statistics (like SNMP)\n        -M, --masquerade         display masqueraded connections\n\n        -v, --verbose            be verbose\n        -W, --wide               don't truncate IP addresses\n        -n, --numeric            don't resolve names\n        --numeric-hosts          don't resolve host names\n        --numeric-ports          don't resolve port names\n        --numeric-users          don't resolve user names\n        -N, --symbolic           resolve hardware names\n        -e, --extend             display other/more information\n        -p, --programs           display PID/Program name for sockets\n        -o, --timers             display timers\n        -c, --continuous         continuous listing\n\n        -l, --listening          display listening server sockets\n        -a, --all                display all sockets (default: connected)\n        -F, --fib                display Forwarding Information Base (default)\n        -C, --cache              display routing cache instead of FIB\n        -Z, --context            display SELinux security context for sockets\n\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n           {-x|--unix} --ax25 --ipx --netrom\n  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: inet\n  List of possible address families (which support routing):\n    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) \n    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) \n    ddp (Appletalk DDP) x25 (CCITT X.25) ",
+     "status": 3
+    },
+    {
+     "cmd": "netstat -tp",
+     "output": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT   -                   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlp",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnpe",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       User       Inode      PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tuap",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT   -                   ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -taov",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT   timewait (59.44/0/0)",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnW",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -ltn",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -lntu",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tanl",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -aunt",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tln --program",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tlnv",
+     "output": "Active Internet connections (only servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-hosts",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 127.0.0.1:40004         127.0.0.1:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -tal --numeric-ports",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -talN",
+     "output": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State      \ntcp        0      0 localhost:40004         localhost:9000          TIME_WAIT  ",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A unix",
+     "output": "Active UNIX domain sockets (w/o servers)\nProto RefCnt Flags       Type       State         I-Node   Path",
+     "status": 0
+    },
+    {
+     "cmd": "netstat -A tcp,udp -l",
+     "output": "Unknown address family `tcp'.",
+     "status": 1
+    }
+   ],
+   "recordedPids": {
+    "P1": 7
+   },
+   "baseline": "Total: 4\nTCP:   14 (estab 0, closed 14, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  }
+ ]
+}
