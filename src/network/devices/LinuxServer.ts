@@ -12,7 +12,7 @@
 import { IPAddress, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
-import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript } from '@/terminal/commands/database';
+import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
@@ -25,6 +25,7 @@ import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
 import { SmtpServer, SMTP_PORT, SMTP_SUBMISSION_PORT, SMTP_SUBMISSION_TLS_PORT } from '../smtp/SmtpServer';
 import { selfSignedSmtpCert, type TlsServerConfig } from '../smtp/starttls';
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
@@ -182,17 +183,38 @@ export class LinuxServer extends LinuxMachine {
     // `rman target / <<EOF … EOF` and `echo "BACKUP …;" | rman target /`
     // drive the real reactive RMAN engine, not a banner-only stub.
     this.executor._oracleRman = (args: string[], stdin?: string) => {
-      const { subShell, banner } = ReactiveRmanSubShell.create(this, args);
-      const out = [...banner];
-      const script = (stdin ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      for (const line of script) {
-        const res = subShell.processLine(line);
-        out.push(...res.output);
-        if (res.exit) break;
-      }
-      subShell.dispose();
-      return out.join('\n');
+      const steps = this.rmanScriptSteps(args, stdin);
+      let step = steps.next();
+      while (!step.done) step = steps.next();
+      return step.value;
     };
+    this.executor._oracleRmanAsync = async (args: string[], stdin?: string) => {
+      const steps = this.rmanScriptSteps(args, stdin);
+      let step = steps.next();
+      while (!step.done) {
+        await yieldWhenSliceIsSpent();
+        step = steps.next();
+      }
+      return step.value;
+    };
+  }
+
+  protected override acceptTnsConnection(socket: Parameters<typeof serveOracleNetConnection>[1] & { close(): void }): void {
+    if (!serveOracleNetConnection(this.id, socket)) socket.close();
+  }
+
+  private *rmanScriptSteps(args: string[], stdin?: string): Generator<void, string> {
+    const { subShell, banner } = ReactiveRmanSubShell.create(this, args);
+    const out = [...banner];
+    const script = (stdin ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const line of script) {
+      const res = subShell.processLine(line);
+      for (const text of res.output) out.push(text);
+      if (res.exit) break;
+      yield;
+    }
+    subShell.dispose();
+    return out.join('\n');
   }
 
   /** Real freeradius ships a working-but-minimal default config (localhost-only client, no users) — so does this. */

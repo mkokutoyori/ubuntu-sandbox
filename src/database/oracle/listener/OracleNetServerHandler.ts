@@ -42,6 +42,19 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
     }
     const key = `${context.peer.remoteIp}:${context.peer.remotePort}`;
 
+    if (decoded.call === OracleNetCallId.Identify) {
+      return encodeResponse({
+        status: OracleNetCallStatus.Ok,
+        result: {
+          columns: [
+            { name: 'INSTANCE_NAME', dataType: 'VARCHAR2' },
+            { name: 'DEVICE_ID', dataType: 'VARCHAR2' },
+          ],
+          rows: [[database.instance.config.sid, database.instance.getDeviceId()]],
+          isQuery: true,
+        },
+      });
+    }
     if (decoded.call === OracleNetCallId.Logon) {
       return this.logon(database, key, decoded.body, context);
     }

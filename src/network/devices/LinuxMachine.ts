@@ -3268,12 +3268,16 @@ export abstract class LinuxMachine extends EndHost
    * en place avant d'ouvrir la sienne), et `lsnrctl stop` le ferme pour
    * de bon.
    */
+  protected acceptTnsConnection(socket: { close(): void }): void {
+    socket.close();
+  }
+
   private bindTnsListener(): void {
     const stack = this.getTcpStack();
     const identity = { pid: 2001, processName: 'tnslsnr', banner: TNS_BOOT_BANNER };
     for (const addr of ['0.0.0.0', '::']) {
       try {
-        stack.listen(TNS_PORT, { onAccept: (socket) => socket.close(), identity }, addr);
+        stack.listen(TNS_PORT, { onAccept: (socket) => this.acceptTnsConnection(socket), identity }, addr);
       } catch { /* déjà ouvert */ }
     }
   }

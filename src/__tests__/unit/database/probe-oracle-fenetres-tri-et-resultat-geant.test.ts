@@ -10,7 +10,11 @@
  *   300 000 lignes) ; `ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING` renvoyait la valeur de la ligne courante en tete de partition au lieu de NULL (bornes ecretees avant le test de fenetre vide). La fenetre est maintenant un intervalle et SUM / AVG / COUNT / MIN / MAX sont cumules d'une ligne a la suivante quand le debut de la fenetre ne bouge
  *   pas (memes additions, dans le meme ordre).
  *
- * Discrimine par `git stash push -- src/database src/terminal/commands/database.ts` : 7 cas sur 10 tombent (tri sur colonne cachee, tri groupe sur agregat cache, fenetre
+ * - lecture coherente d'une table mise a jour par une autre session non validee : chaque enregistrement d'annulation cherchait sa ligne dans l'image entiere (`reverseApplyInMemory`, doublon de la restauration du ROLLBACK : 0,94 s a 20 000 lignes contre 0,06 s apres) ; le lecteur passe maintenant par `restoreRows`.
+ *
+ * - `CREATE USER` : 74 ms chacun (100 utilisateurs : 7,4 s), la derivation PBKDF2 des verificateurs de SYS.USER$ etant faite a la creation alors que `getStoredVerifiers` sait la faire a la demande ; elle est maintenant paresseuse, a valeur identique (derivation deterministe).
+ *
+ * Discrimine par `git stash push -- src/database/oracle src/terminal/commands/database.ts` : 9 cas sur 14 tombent (tri sur colonne cachee, tri groupe sur agregat cache, fenetre
  * PRECEDING vide en tete de partition — 10 au lieu de NULL —, ROLLBACK de 40 000 lignes : 4,8 s contre 0,15 s, SELECT * geant dans SQL*Plus, SUM OVER cumulatif de 60 000 lignes :
  * 184 s, AVG OVER sur le meme volume : 189 s). Passent des deux cotes, TEMOINS : les valeurs des fonctions de fenetre sur petites donnees (cumul, partition, ROWS BETWEEN glissant,
  * UNBOUNDED FOLLOWING, MIN/MAX, FIRST/LAST/NTH_VALUE, RANK) et le tri sur colonne selectionnee.
@@ -154,4 +158,42 @@ describe('fonctions de fenetre', () => {
     expect(value.rows[0][0]).toBe(2);
     expect(ms).toBeLessThan(3000);
   }, 120_000);
+});
+
+describe('lecture coherente pendant une transaction ouverte', () => {
+  test('un lecteur voit l\'image validee d\'une table de 50 000 lignes mise a jour par une autre session', () => {
+    exec('CREATE TABLE shared (id NUMBER PRIMARY KEY, amount NUMBER)');
+    exec('INSERT INTO shared SELECT level, level FROM dual CONNECT BY level <= 50000');
+    exec('COMMIT');
+    exec('UPDATE shared SET amount = amount + 1');
+    const reader = db.connectAsSysdba().executor;
+    const { value, ms } = timed(() => db.executeSql(reader, 'SELECT SUM(amount) FROM shared'));
+    expect(value.rows[0][0]).toBe(1250025000);
+    expect(ms).toBeLessThan(1500);
+    expect(exec('SELECT SUM(amount) FROM shared').rows[0][0]).toBe(1250075000);
+  }, 120_000);
+});
+
+describe('creation d\'utilisateurs', () => {
+  test('100 CREATE USER ne paient pas la derivation PBKDF2 des verificateurs', () => {
+    const { ms } = timed(() => {
+      for (let i = 1; i <= 100; i++) exec(`CREATE USER u${i} IDENTIFIED BY "Pw#${i}"`);
+    });
+    expect(ms).toBeLessThan(2500);
+  }, 120_000);
+
+  test('TEMOIN — le verificateur 12c reste lisible dans SYS.USER$ a la demande', () => {
+    exec('CREATE USER verif IDENTIFIED BY "Secret#1"');
+    const spare4 = String(exec("SELECT spare4 FROM sys.user$ WHERE name = 'VERIF'").rows[0][0]);
+    expect(spare4).toMatch(/^S:/);
+    expect(spare4).toContain('T:');
+  });
+
+  test('TEMOIN — changer le mot de passe change le verificateur', () => {
+    exec('CREATE USER verif2 IDENTIFIED BY "Secret#1"');
+    const before = String(exec("SELECT spare4 FROM sys.user$ WHERE name = 'VERIF2'").rows[0][0]);
+    exec('ALTER USER verif2 IDENTIFIED BY "Autre#2"');
+    const after = String(exec("SELECT spare4 FROM sys.user$ WHERE name = 'VERIF2'").rows[0][0]);
+    expect(after).not.toBe(before);
+  });
 });

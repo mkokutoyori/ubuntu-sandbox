@@ -65,7 +65,7 @@ describe('V$SESSION_CONTEXT (USERENV)', () => {
     // devices). It used to read 'oracle' because the view answered for a
     // leaked demo-installer session instead of the live one.
     expect(out).toMatch(/USERENV\s+OS_USER\s+root/);
-    expect(out).toMatch(/USERENV\s+HOST\s+linux-server/);
+    expect(out).toMatch(/USERENV\s+HOST\s+vsc-1/);
     sh.dispose();
   });
 });

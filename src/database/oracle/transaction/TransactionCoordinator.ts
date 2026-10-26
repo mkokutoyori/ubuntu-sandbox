@@ -12,7 +12,7 @@
  */
 
 import type { StorageRow } from '../../engine/storage/BaseStorage';
-import { reverseApplyInMemory, type UndoRecord } from './TransactionManager';
+import { restoreRows, type UndoRecord } from './TransactionManager';
 
 export interface UndoRecordsProvider {
   undoRecordsFor(schema: string, tableName: string): readonly UndoRecord[];
@@ -41,11 +41,9 @@ export class TransactionCoordinator {
       records = records ? records.concat(recs) : [...recs];
     }
     if (!records) return null;
-    records.sort((a, b) => a.seq - b.seq);
+    records.sort((a, b) => b.seq - a.seq);
     const rows = physicalRows().map(r => [...r]);
-    for (let i = records.length - 1; i >= 0; i--) {
-      reverseApplyInMemory(rows, records[i]);
-    }
+    restoreRows(rows, records);
     return rows;
   }
 }

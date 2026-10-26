@@ -78,6 +78,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   oracle('ora-dictionary-views', ['SELECT * FROM dba_objects;', 'SELECT * FROM dba_tables;', 'SELECT * FROM v$parameter;', 'SELECT * FROM dba_users;']),
   { name: 'ora-remote-sessions-100', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 100, false, t)], mustNotContain: ['ORA-', 'SP2-'] },
   { name: 'ora-remote-parallel-100', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 100, true, t)], mustNotContain: ['ORA-', 'SP2-'] },
+  { name: 'ora-nat-sessions-50', client: 'ext', target: '203.0.113.3', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 50, false, t)], mustNotContain: ['ORA-', 'SP2-'] },
   { name: 'ora-remote-parallel-3', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 3, true, t)] },
   { name: 'ora-remote-sessions-3', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 3, false, t)] },
   { name: 'ora-local-parallel-100', client: 'srv', commands: () => ['for i in $(seq 1 100); do echo "SELECT 1 FROM dual;" | sqlplus -S / as sysdba & done; wait; echo FINISHED'], mustNotContain: ['ORA-', 'SP2-'] },

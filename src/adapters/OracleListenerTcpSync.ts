@@ -44,6 +44,13 @@ export class OracleListenerTcpSync {
     this.bindings.clear();
   }
 
+  serve(deviceId: string, socket: Parameters<OracleListenerNetworkBinding['accept']>[0]): boolean {
+    const binding = this.bindings.get(deviceId);
+    if (!binding) return false;
+    binding.accept(socket);
+    return true;
+  }
+
   /** Bind the listener that just booted before `resolveDatabase` was wired up. */
   primeListener(deviceId: string): void {
     this.attach(deviceId);
