@@ -37,6 +37,14 @@ async function waitForText(page: Page, needle: string | RegExp, timeout = 8_000)
   ).toBe(true);
 }
 
+async function sudoTcpdump(page: Page, filter: string): Promise<void> {
+  await typeCmd(page, `sudo tcpdump -c 1 ${filter}`);
+  const password = page.locator('[data-testid="terminal-modal"] input[type="password"]').last();
+  await password.focus();
+  await password.fill('admin');
+  await password.press('Enter');
+}
+
 interface SpanLab { sw: string; pcA: string; pcB: string; pcM: string }
 
 async function buildSpanLab(page: Page): Promise<SpanLab> {
@@ -103,7 +111,7 @@ test.describe('Cisco SPAN — monitor session through the real UI', () => {
     ]) await injectFromHost(page, sw, c);
 
     await openTerminal(page, pcM);
-    await typeCmd(page, 'tcpdump -c 1 icmp');
+    await sudoTcpdump(page, 'icmp');
     await waitForText(page, 'listening on eth0');
 
     await injectFromHost(page, pcA, 'ping -c 1 10.0.0.2');
@@ -138,7 +146,7 @@ test.describe('Cisco SPAN — monitor session through the real UI', () => {
     await openTerminal(page, pcM);
     // Filter to ICMP: STP BPDUs reach every access port naturally and
     // would otherwise satisfy a bare `tcpdump -c 1`.
-    await typeCmd(page, 'tcpdump -c 1 icmp');
+    await sudoTcpdump(page, 'icmp');
     await waitForText(page, 'listening on eth0');
     await injectFromHost(page, pcA, 'ping -c 2 10.0.0.2');
     await page.waitForTimeout(1_500);

@@ -52,9 +52,10 @@ test.describe('Scénario 9 (e2e) — bannière Cisco et délimiteur ^C dans show
     await typeCmd(page, 'show running-config | section banner motd');
 
     const text = await modalText(page);
-    expect(text).toContain('banner motd ^C');
-    expect(text).toContain('Bienvenue sur SW-MANDENG-01');
-    expect(text).not.toContain('banner motd $');
+    const shown = text.slice(text.lastIndexOf('show running-config | section banner motd'));
+    expect(shown).toContain('banner motd ^C');
+    expect(shown).toContain('Bienvenue sur SW-MANDENG-01');
+    expect(shown).not.toContain('banner motd $');
   });
 
   test('re-coller la sortie show run (délimiteur visuel ^C) reproduit la même bannière', async ({ page }) => {

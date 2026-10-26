@@ -20,6 +20,14 @@ async function waitForStore(page: Page): Promise<void> {
   );
 }
 
+async function taper(page: Page, ligne: string): Promise<void> {
+  const champ = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
+  await champ.focus();
+  await champ.fill(ligne);
+  await champ.press('Enter');
+  await page.waitForTimeout(300);
+}
+
 test.setTimeout(180_000);
 
 test.beforeEach(async ({ page }) => {
@@ -60,23 +68,17 @@ test('un ASA se pose, s\'ouvre, et repond dans son terminal', async ({ page }) =
     journal.push(`ECRAN APRES OUVERTURE:\n${texte.slice(0, 3000)}`);
 
 
-    await page.locator('body').click({ position: { x: 400, y: 300 } });
     for (const ligne of ['enable', 'show version', 'conf t', 'interface GigabitEthernet0/0']) {
-      await page.keyboard.type(ligne);
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(300);
+      await taper(page, ligne);
     }
     await page.screenshot({ path: `${SHOTS}/04-commandes.png`, fullPage: true });
     journal.push(`APRES COMMANDES:\n${(await page.locator('body').innerText()).slice(0, 4000)}`);
 
-    await page.keyboard.type('nameif inside');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-    await page.keyboard.type('ip address 192.168.1.1 255.255.255.0');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-    await page.keyboard.type('show ');
-    await page.keyboard.press('?');
+    await taper(page, 'nameif inside');
+    await taper(page, 'ip address 192.168.1.1 255.255.255.0');
+    const champ = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
+    await champ.fill('show ');
+    await champ.press('?');
     await page.waitForTimeout(500);
     await page.screenshot({ path: `${SHOTS}/05-aide.png`, fullPage: true });
     journal.push(`APRES AIDE:\n${(await page.locator('body').innerText()).slice(0, 5000)}`);
