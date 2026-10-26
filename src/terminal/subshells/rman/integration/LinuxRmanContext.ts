@@ -24,7 +24,7 @@ import type { ConnectPeerOutcome } from './IRmanOracleContext';
 import type { Equipment } from '@/network';
 import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
-import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
+import { getOracleDatabase } from '@/terminal/commands/database';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { archivedLogFromPath } from '../core/archivedLogNaming';
@@ -82,7 +82,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
   connectTarget(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome {
     const local = this._device as unknown as HostCapableDevice;
     const resolved = resolveOracleConnectTarget(
-      local, identifier, (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+      local, identifier, getOracleDatabase);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     return {
       ok: true,
@@ -114,7 +114,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
      | { ok: false; error: string } {
     const resolved = resolveOracleConnectTarget(
       localDevice as unknown as HostCapableDevice, identifier,
-      (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+      getOracleDatabase);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     const deviceId = resolved.db.instance.getDeviceId();
     const targetDevice = EquipmentRegistry.getInstance().getById(deviceId) ?? localDevice;
@@ -161,7 +161,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   static forDevice(device: Equipment): LinuxRmanContext {
     const oracle = (() => {
-      try { return getRegisteredOracleDatabase((device as { id?: string }).id ?? '') ?? null; }
+      try { return getOracleDatabase((device as { id?: string }).id ?? ''); }
       catch { return null; }
     })();
     return new LinuxRmanContext(device, oracle);

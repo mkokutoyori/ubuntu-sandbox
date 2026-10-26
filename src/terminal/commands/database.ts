@@ -263,7 +263,7 @@ export interface SqlPlusInvocation {
 }
 
 export function parseSqlPlusInvocation(args: readonly string[], stdin?: string): SqlPlusInvocation {
-  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
+  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.filter(a => !a.startsWith('-')).join(' '));
   const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
   const sqlSource = [
     ...args.filter(a => a !== connectArg && !a.startsWith('-') && SQL_ARGUMENT.test(a)),
