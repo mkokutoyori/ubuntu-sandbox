@@ -124,6 +124,29 @@ function perPath(ctx: CmdletContext, body: (path: string) => PSValue): PSValue {
   return results.length === 0 ? null : results.length === 1 ? results[0] : results;
 }
 
+function contentValue(ctx: CmdletContext): PSValue {
+  const pathIsNamed = ctx.named['path'] !== undefined || ctx.named['literalpath'] !== undefined;
+  return ctx.named['value'] ?? ctx.positional[pathIsNamed ? 0 : 1] ?? ctx.pipeInput ?? '';
+}
+
+function contentPaths(ctx: CmdletContext, fs: FileSystem, typed: string, allowNonexistent: boolean): string[] {
+  const absolute = fs.normalizePath(typed, fs.getCwd());
+  const globbed = ctx.named['literalpath'] === undefined && hasWildcard(typed);
+  const found = globbed ? expandPathSpec(fs, absolute, ctx.named['force'] === true) : fs.exists(absolute) ? [absolute] : [];
+  if (found.length === 0 && allowNonexistent && !globbed) return [absolute];
+  const kept = survivingGlobbing(ctx, typed, found);
+  if (kept.length === 0) ctx.emitFailure(pathNotFound(absolute));
+  return kept;
+}
+
+function perContentPath(ctx: CmdletContext, allowNonexistent: boolean, body: (path: string) => PSValue): PSValue {
+  return perPath(ctx, located => {
+    const fs = ctx.providers.filesystem;
+    if (!fs || located === '' || namespaceTarget(located) !== null || isRegistryPath(located)) return body(located);
+    return contentPaths(ctx, fs, located, allowNonexistent).flatMap(path => listOf(body(path)));
+  });
+}
+
 function resolvedPaths(ctx: CmdletContext, typed: string, literal: boolean): string[] {
   const located = locatedPath(ctx, typed);
   const namespace = namespaceTarget(located);
@@ -605,11 +628,11 @@ export class SetContentCmdlet implements ICmdlet {
   readonly aliases = ['sc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    return perPath(ctx, path => this.write(ctx, path));
+    return perContentPath(ctx, true, path => this.write(ctx, path));
   }
 
   private write(ctx: CmdletContext, path: string): PSValue {
-    const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
+    const raw   = contentValue(ctx);
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
     // PowerShell Set-Content treats each input value as its own line; an
@@ -640,7 +663,7 @@ export class ClearContentCmdlet implements ICmdlet {
   readonly aliases = ['clc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    return perPath(ctx, path => this.clear(ctx, path));
+    return perContentPath(ctx, false, path => this.clear(ctx, path));
   }
 
   private clear(ctx: CmdletContext, path: string): PSValue {
@@ -654,10 +677,6 @@ export class ClearContentCmdlet implements ICmdlet {
     }
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    if (!fs.exists(path)) {
-      missingPath(ctx, fs, path);
-      return null;
-    }
     if (!ctx.shouldProcess(`Item: ${fs.normalizePath(path, fs.getCwd())}`, 'Clear Content')) return null;
     fs.writeFile(path, '');
     return null;
@@ -673,11 +692,11 @@ export class AddContentCmdlet implements ICmdlet {
   readonly aliases = ['ac'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    return perPath(ctx, path => this.append(ctx, path));
+    return perContentPath(ctx, true, path => this.append(ctx, path));
   }
 
   private append(ctx: CmdletContext, path: string): PSValue {
-    const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
+    const raw   = contentValue(ctx);
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
     const namespace = namespaceTarget(path);

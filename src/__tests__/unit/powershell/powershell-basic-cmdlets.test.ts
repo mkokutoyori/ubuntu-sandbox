@@ -282,7 +282,7 @@ describe('2. Copy‑Item', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path "C:\\[special]" -ItemType Directory -Force');
-    await ps.execute('Set-Content "C:\\[special]\\file.txt" "content"');
+    await ps.execute('Set-Content -LiteralPath "C:\\[special]\\file.txt" "content"');
     await ps.execute('Copy-Item -LiteralPath "C:\\[special]" -Destination C:\\litCopy -Recurse');
     const content = await ps.execute('Get-Content C:\\litCopy\\file.txt');
     expect(content.trim()).toBe('content');
@@ -509,7 +509,7 @@ describe('3. Get‑ChildItem', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path "C:\\[bracket]dir" -ItemType Directory -Force');
-    await ps.execute('Set-Content "C:\\[bracket]dir\\f.txt" "f"');
+    await ps.execute('Set-Content -LiteralPath "C:\\[bracket]dir\\f.txt" "f"');
     const out = await ps.execute('Get-ChildItem -LiteralPath "C:\\[bracket]dir"');
     expect(out).toContain('f.txt');
   });
@@ -2175,7 +2175,7 @@ describe('3. Get‑ChildItem (30+)', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path "C:\\[b]dir" -ItemType Directory -Force');
-    await ps.execute('Set-Content "C:\\[b]dir\\f.txt" "f"');
+    await ps.execute('Set-Content -LiteralPath "C:\\[b]dir\\f.txt" "f"');
     const out = await ps.execute('Get-ChildItem -LiteralPath "C:\\[b]dir"');
     expect(out).toContain('f.txt');
   });
