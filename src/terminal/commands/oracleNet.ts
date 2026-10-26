@@ -195,6 +195,7 @@ const WIRE_ERRORS: Readonly<Record<string, string>> = Object.freeze({
   prohibited: 'ORA-12541: TNS:no listener',
   timeout: 'ORA-12170: TNS:Connect timeout occurred',
   unreachable: 'ORA-12170: TNS:Connect timeout occurred',
+  'host-unreachable': 'ORA-12545: Connect failed because target host or object does not exist',
 });
 
 function tnsWireVerdict(
