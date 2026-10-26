@@ -179,7 +179,7 @@ function drawDataRow(
   if (barLook !== null) canvas.mark(window.cols - 1, window.cols, barLook);
   if (input.syntax !== null) {
     const rowWindow = { fromX: display.fromX, tillX: display.tillX, fromCol, tabsize: input.tabsize, shownColumns: display.cells.length };
-    for (const range of paintRow(input.lines, lineIndex, input.syntax.rules, input.syntax.multi, rowWindow)) canvas.mark(margin + range.from, margin + range.to, paintLook(range.rule.combination));
+    for (const range of paintRow(input.lines, lineIndex, input.syntax.rules, input.syntax.multi, rowWindow)) canvas.mark(margin + range.from, margin + Math.min(range.to, window.editCols), paintLook(range.rule.combination));
   }
   drawGuideStripe(input, canvas, fromCol, display, sequel);
   const text = input.lines[lineIndex] ?? '';

@@ -839,7 +839,7 @@ dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
   col1-82).
 - **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
   `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) et
-  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0, syn3-130) ; la rangee a le
+  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0), `nano-package-oracle.test.ts` (pkg1-128, pkg2-2) ; la rangee a le
   guide quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
@@ -868,10 +868,14 @@ est l'etat intermediaire d'une campagne en cours et non un livrable :
   echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
   `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
   n'est pas portee : le moteur ecrase la sauvegarde.
-- `/etc/nanorc` n'existe pas dans le systeme de fichiers des machines ; la version
-  d'Ubuntu 24.04 (`set historylog`, `set locking`, `set stateflags`, `include
-  "/usr/share/nano/*.nanorc"`) n'y sera posee qu'avec les 44 fichiers de syntaxe (28c),
-  faute de quoi l'`include` ferait afficher « Mistakes in '/etc/nanorc' » a chaque lancement.
+
+### [nano] entree litterale (`M-V`) : « [ Verbatim Input ] » n'existe pas
+Mesure avec `nano-package-oracle.test.ts` (corpus package, avant le retrait de `M-v` des gestes
+tires) : `M-V` affiche « [ Verbatim Input ] » dans la barre d'etat et la touche suivante est
+inseree telle quelle (un code de controle, une sequence d'echappement, ou un point de code saisi
+en octal / hexadecimal : 3 chiffres octaux, `u` + 4 a 6 chiffres hexadecimaux) ; le moteur ne
+connait pas la touche et affiche la position du curseur. Rien a voir avec les syntaxes : c'est
+une fonction de nano 7.2 que ni le moteur ni les corpus n'avaient encore exercee.
 
 ### [nano] `^R` en mode vue ouvre un NOUVEAU tampon
 Mesure avec `nano-colors-oracle.test.ts` (UNPORTED_CASES : col1-67, col1-117, col1-138,

@@ -1787,8 +1787,12 @@ export class NanoEngine {
       if (this.line(index) === '') continue;
       this.linesArr[index] = unit + this.line(index);
       if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + unit.length;
-      if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += unit.length;
+      if (index === this._cursorLine && this._cursorCol > 0) {
+        this._cursorCol += unit.length;
+        this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+      }
     }
+    this.verticalKey = true;
   }
 
   private cutTillEnd(): void {
@@ -1843,13 +1847,20 @@ export class NanoEngine {
       if (action === 'COMMENT') {
         this.linesArr[index] = prefix + text + suffix;
         if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + prefix.length;
-        if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += prefix.length;
+        if (index === this._cursorLine && this._cursorCol > 0) {
+          this._cursorCol += prefix.length;
+          this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+        }
       } else if (isCommented(text)) {
         this.linesArr[index] = text.slice(prefix.length, text.length - suffix.length);
         if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - prefix.length);
-        if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - prefix.length);
+        if (index === this._cursorLine) {
+          this._cursorCol = Math.max(0, this._cursorCol - prefix.length);
+          this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+        }
       }
     }
+    this.verticalKey = true;
     this.undoFinish();
     this._modified = true;
   }
@@ -1882,8 +1893,12 @@ export class NanoEngine {
       if (removed === 0) continue;
       this.linesArr[index] = this.line(index).slice(removed);
       if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - removed);
-      if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - removed);
+      if (index === this._cursorLine) {
+        this._cursorCol = Math.max(0, this._cursorCol - removed);
+        this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+      }
     }
+    this.verticalKey = true;
     this.undoFinish();
     this._modified = true;
   }
