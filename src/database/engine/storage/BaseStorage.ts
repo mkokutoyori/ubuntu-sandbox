@@ -294,7 +294,9 @@ export abstract class BaseStorage {
       if (predicate(table.rows[i])) {
         const before = table.rows[i];
         table.rows[i] = updater(table.rows[i]);
+        const fromEpoch = table.epoch;
         table.epoch = BaseStorage.epochSource++;
+        this.rowIndexes.rowReplaced(`${schema.toUpperCase()}.${tableName.toUpperCase()}`, fromEpoch, table.epoch, i, before, table.rows[i]);
         this.undoSink?.recordUpdate(schema, tableName, before, table.rows[i]);
         count++;
       }

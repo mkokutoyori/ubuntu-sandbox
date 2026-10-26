@@ -123,6 +123,70 @@ const PSEUDO_COLUMN_NAMES: readonly string[] = [...Object.keys(CLOCK_PSEUDO_COLU
 const DATE_PSEUDO_COLUMNS: ReadonlySet<string> = new Set(['SYSDATE', 'CURRENT_DATE']);
 const TIMESTAMP_PSEUDO_COLUMNS: ReadonlySet<string> = new Set(['SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'LOCALTIMESTAMP']);
 
+interface EquiJoinKeys {
+  readonly leftIndices: readonly number[];
+  readonly rightIndices: readonly number[];
+}
+
+function joinKeyOf(row: StorageRow, indices: readonly number[]): string | null {
+  let key = '';
+  for (const index of indices) {
+    const value = row[index];
+    if (typeof value === 'number') key += `n${value}\u0000`;
+    else if (typeof value === 'string') key += `s${value}\u0000`;
+    else return null;
+  }
+  return key;
+}
+
+function keyKinds(rows: readonly StorageRow[], indices: readonly number[]): Array<'number' | 'string' | 'mixed' | undefined> {
+  const kinds: Array<'number' | 'string' | 'mixed' | undefined> = indices.map(() => undefined);
+  for (const row of rows) {
+    indices.forEach((index, position) => {
+      const value = row[index];
+      if (value === null || value === undefined) return;
+      const kind = typeof value === 'number' ? 'number' : typeof value === 'string' ? 'string' : 'mixed';
+      kinds[position] = kinds[position] === undefined || kinds[position] === kind ? kind : 'mixed';
+    });
+  }
+  return kinds;
+}
+
+function buildJoinIndex(
+  leftRows: readonly StorageRow[], rightRows: readonly StorageRow[], keys: EquiJoinKeys,
+): { candidates(leftRow: StorageRow): readonly number[] } | undefined {
+  const left = keyKinds(leftRows, keys.leftIndices);
+  const right = keyKinds(rightRows, keys.rightIndices);
+  for (let position = 0; position < left.length; position++) {
+    if (left[position] === 'mixed' || right[position] === 'mixed') return undefined;
+    if (left[position] !== undefined && right[position] !== undefined && left[position] !== right[position]) return undefined;
+  }
+  const buckets = new Map<string, number[]>();
+  rightRows.forEach((row, ri) => {
+    const key = joinKeyOf(row, keys.rightIndices);
+    if (key === null) return;
+    const bucket = buckets.get(key);
+    if (bucket === undefined) buckets.set(key, [ri]); else bucket.push(ri);
+  });
+  const none: readonly number[] = [];
+  return {
+    candidates(leftRow: StorageRow): readonly number[] {
+      const key = joinKeyOf(leftRow, keys.leftIndices);
+      return key === null ? none : buckets.get(key) ?? none;
+    },
+  };
+}
+
+const CONNECT_BY_LOOP_DEPTH = 10000;
+const CONNECT_BY_MAX_ROWS = 2_000_000;
+
+function containsPrior(node: unknown): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  const record = node as Record<string, unknown>;
+  if (record.type === 'UnaryExpr' && record.operator === 'PRIOR') return true;
+  return Object.values(record).some(containsPrior);
+}
+
 export class OracleExecutor extends BaseExecutor {
   declare protected catalog: OracleCatalog;
   declare protected storage: OracleStorage;
@@ -1938,7 +2002,8 @@ export class OracleExecutor extends BaseExecutor {
       };
 
       // Execute join with custom condition
-      return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalUsing);
+      return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalUsing,
+        { leftIndices: conditions.map(c => c.leftIdx), rightIndices: conditions.map(c => c.rightIdx) });
     }
 
     if (join.joinType === 'CROSS') {
@@ -1959,7 +2024,34 @@ export class OracleExecutor extends BaseExecutor {
       return !onCondition || this.evaluateCondition(onCondition, fullCombined, allRightCols);
     };
 
-    return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalOn);
+    return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalOn,
+      onCondition ? this.equiJoinKeys(onCondition, allRightCols, leftCols.length) : undefined);
+  }
+
+  private equiJoinKeys(condition: Expression, combined: StorageColMeta[], leftWidth: number): EquiJoinKeys | undefined {
+    const conjuncts: Expression[] = [];
+    const flatten = (expr: Expression): void => {
+      if (expr.type === 'BinaryExpr' && expr.operator === 'AND') { flatten(expr.left); flatten(expr.right); } else conjuncts.push(expr);
+    };
+    flatten(condition);
+    const leftIndices: number[] = [];
+    const rightIndices: number[] = [];
+    for (const conjunct of conjuncts) {
+      if (conjunct.type !== 'BinaryExpr' || conjunct.operator !== '=') continue;
+      if (conjunct.left.type !== 'Identifier' || conjunct.right.type !== 'Identifier') continue;
+      let a: number;
+      let b: number;
+      try {
+        a = this.resolveColumnIndex(conjunct.left, combined);
+        b = this.resolveColumnIndex(conjunct.right, combined);
+      } catch {
+        return undefined;
+      }
+      if (a < 0 || b < 0) continue;
+      if (a < leftWidth && b >= leftWidth) { leftIndices.push(a); rightIndices.push(b - leftWidth); }
+      else if (b < leftWidth && a >= leftWidth) { leftIndices.push(b); rightIndices.push(a - leftWidth); }
+    }
+    return leftIndices.length > 0 ? { leftIndices, rightIndices } : undefined;
   }
 
   private executeJoinLoop(
@@ -1968,14 +2060,18 @@ export class OracleExecutor extends BaseExecutor {
     combinedCols: StorageColMeta[],
     nullRight: null[], nullLeft: null[],
     joinType: string,
-    evalCondition: (leftRow: StorageRow, rightRow: StorageRow) => boolean
+    evalCondition: (leftRow: StorageRow, rightRow: StorageRow) => boolean,
+    equiKeys?: EquiJoinKeys,
   ): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const resultRows: StorageRow[] = [];
     const rightMatched = new Set<number>();
+    const index = equiKeys === undefined ? undefined : buildJoinIndex(leftRows, rightRows, equiKeys);
+    const everyRight = rightRows.map((_, ri) => ri);
 
     for (let li = 0; li < leftRows.length; li++) {
       let matched = false;
-      for (let ri = 0; ri < rightRows.length; ri++) {
+      const candidates = index === undefined ? everyRight : index.candidates(leftRows[li]);
+      for (const ri of candidates) {
         if (evalCondition(leftRows[li], rightRows[ri])) {
           const rightVals = rightColIndices.map(i => rightRows[ri][i]);
           resultRows.push([...leftRows[li], ...rightVals]);
@@ -2522,48 +2618,39 @@ export class OracleExecutor extends BaseExecutor {
 
     const result: StorageRow[] = [];
     const visited = new Set<string>();
+    const referencesPrior = containsPrior(connectBy.condition);
+    const depthCap = referencesPrior ? CONNECT_BY_LOOP_DEPTH : Number.POSITIVE_INFINITY;
 
-    // Safety cap matching Oracle's default ORA-30009 threshold (10000).
-    const MAX_DEPTH = 10000;
+    interface Walk { row: StorageRow; level: number; next: number; key: string | null }
+    const stack: Walk[] = [];
 
-    const traverse = (parentRow: StorageRow, level: number) => {
-      const rowKey = JSON.stringify(parentRow) + '#' + level;
-      if (connectBy.noCycle && visited.has(rowKey)) return;
-      if (level > MAX_DEPTH) return;
-
-      visited.add(rowKey);
-      const rowWithLevel = [...parentRow];
-      rowWithLevel[levelIdx] = level;
-      result.push(rowWithLevel);
-
-      // Find children by re-evaluating the CONNECT BY condition. The
-      // candidate child's LEVEL pseudo-column must reflect what its
-      // depth *would be* if it were emitted, otherwise predicates like
-      // `LEVEL <= N` never terminate the recursion correctly.
-      const childLevel = level + 1;
-      for (const childRow of rows) {
-        const childWithLevel = [...childRow];
-        childWithLevel[levelIdx] = childLevel;
-        const ok = this.evaluateConnectByCondition(connectBy.condition, rowWithLevel, childWithLevel, columns);
-        if (ok) {
-          traverse(childWithLevel, childLevel);
-        }
-      }
-
-      visited.delete(rowKey);
+    const enter = (row: StorageRow, level: number): void => {
+      const key = connectBy.noCycle ? JSON.stringify(row.map((value, position) => (position === levelIdx ? null : value))) : null;
+      if (key !== null && visited.has(key)) return;
+      if (level > depthCap) return;
+      if (key !== null) visited.add(key);
+      result.push(row);
+      if (result.length > CONNECT_BY_MAX_ROWS) throw new OracleError(30009, 'Not enough memory for CONNECT BY operation');
+      stack.push({ row, level, next: 0, key });
     };
 
-    // Seed traversal: root rows get LEVEL=1. Without PRIOR / START WITH
-    // and a single-row source (e.g. DUAL), this is the standard "row
-    // generator" idiom.
     for (const root of rootRows) {
       const rootWithLevel = [...root];
       rootWithLevel[levelIdx] = 1;
-      // The first emission is unconditional only when the predicate
-      // accepts LEVEL=1 — real Oracle still applies the CONNECT BY
-      // filter to the root, except that LEVEL=1 always satisfies a
-      // `LEVEL <= N` style guard.
-      traverse(rootWithLevel, 1);
+      enter(rootWithLevel, 1);
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        if (top.next >= rows.length) {
+          if (top.key !== null) visited.delete(top.key);
+          stack.pop();
+          continue;
+        }
+        const childRow = rows[top.next++];
+        const childLevel = top.level + 1;
+        const childWithLevel = [...childRow];
+        childWithLevel[levelIdx] = childLevel;
+        if (this.evaluateConnectByCondition(connectBy.condition, top.row, childWithLevel, columns)) enter(childWithLevel, childLevel);
+      }
     }
 
     return result;
