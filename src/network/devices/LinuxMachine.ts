@@ -5136,6 +5136,11 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
   }
 
+  appendSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
+    const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022, true);
+  }
+
   /**
    * Programmatic file deletion. Used by adapters that materialise
    * external state (e.g. Oracle FS sync removing dropped datafiles).

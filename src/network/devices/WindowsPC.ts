@@ -218,8 +218,10 @@ import { ClusterSignalStore } from './windows/server/cluster/observables';
 import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/ClusterSignalRefreshActor';
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
-import { dialWinRm, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult } from './windows/server/winrm/WinRmClient';
+import { dialWinRm, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult, WinRmRunspace, type WinRmRunspaceOpening, WINRM_UNREACHABLE } from './windows/server/winrm/WinRmClient';
 import type { WinRmIdentity, WinRmCommandResult } from './windows/server/winrm/WinRmServer';
+import type { WinRmShellHost } from './windows/server/winrm/WinRmShell';
+import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 // WEC collector discovery is an explicit non-objective of
 // docs/PRD-Frame-Only-Refactor.md §2.2, inherited from docs/PRD-Wecutil.md
 // §2.2. Not pending work.
@@ -353,6 +355,7 @@ function seededFirewallRules(): Map<string, NetFirewallRuleEntry> {
 }
 
 const STATUS_CONTROL_C_EXIT = -1073741510;
+const EXIT_PSSESSION = /^\s*exit-pssession\s*$/i;
 
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
@@ -1500,6 +1503,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       wec: { receiveForwardedEvent: (subscriptionId, sourceMachine, event) => this.receiveForwardedEvent(subscriptionId, sourceMachine, event) },
       kerberos: this.kerberosServiceIdentity(),
       runCommand: (line, identity) => this.runRemoteLine(line, identity),
+      openShell: (identity) => this.openWinRmShell(identity),
       refreshPolicy: (scope, delayMinutes, identity) => this.refreshPolicyForAdministrator(scope, delayMinutes, identity),
     });
   }
@@ -1542,6 +1546,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return { ok: true, output: '' };
   }
 
+  private openWinRmShell(identity: WinRmIdentity): WinRmShellHost | null {
+    if (!this.winrm.enabled || !this.isRemoteAdministrator(identity)) return null;
+    const account = this.resolveAccountName(identity.sam) ?? identity.sam;
+    const directory = `C:\\Users\\${account}\\Documents`;
+    this.fs.mkdirp(directory);
+    const vty = this.createVtyShell(account, { primaryKind: 'powershell', directory });
+    if (vty === null) return null;
+    return {
+      prompt: () => vty.getPrompt(),
+      run: async (line) => {
+        const output = await vty.execute(EXIT_PSSESSION.test(line) ? 'exit' : line);
+        return { output, prompt: vty.getPrompt(), ended: vty.lastEndedSession() };
+      },
+      complete: (line) => ({ candidates: vty.getCompletions(line), start: vty.completionStart(line) }),
+      close: () => vty.close(),
+    };
+  }
+
   private runRemoteLine(line: string, identity: WinRmIdentity): WinRmCommandResult {
     if (!this.winrm.enabled) return { ok: false, message: 'Access is denied.' };
     if (!this.isRemoteAdministrator(identity)) return { ok: false, message: 'Access is denied.' };
@@ -1556,16 +1578,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
+  private winRmAuthentication(
+    computerName: string, credential?: { username: string; password: string },
+  ): { credential: { username: string; password: string } } | { apReq: Uint8Array } | null {
+    if (credential) return { credential };
+    const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
+    return apReq === null ? null : { apReq };
+  }
+
   runRemoteRequest(computerName: string, request: Record<string, unknown>, credential?: { username: string; password: string }): WinRmRunResult {
     const target = this.resolveHostnameSync(computerName);
     if (!target) {
       return { ok: false, error: `The computer "${computerName}" could not be resolved.` };
     }
-    const base = { tcpStack: this.getTcpStack(), targetIp: target.toString(), request };
-    if (credential) return runWinRmRequest({ ...base, credential });
-    const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
-    if (!apReq) return { ok: false, error: 'Access is denied.' };
-    return runWinRmRequest({ ...base, apReq });
+    const authentication = this.winRmAuthentication(computerName, credential);
+    if (authentication === null) return { ok: false, error: 'Access is denied.' };
+    return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, ...authentication });
   }
 
   runRemoteCommand(computerName: string, line: string, credential?: { username: string; password: string }): WinRmRunResult {
@@ -1918,6 +1946,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
     return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+  }
+
+  async openWinRmRunspace(computerName: string, credential?: { username: string; password: string }): Promise<WinRmRunspaceOpening> {
+    const target = this.resolveHostnameSync(computerName);
+    if (!target) return { ok: false, error: WINRM_UNREACHABLE };
+    const authentication = this.winRmAuthentication(computerName, credential);
+    if (authentication === null) return { ok: false, error: 'Access is denied.' };
+    const targetIp = target.toString();
+    return WinRmRunspace.open({ tcpStack: this.getTcpStack(), targetIp, pathAlive: peerLiveness(this, targetIp), ...authentication });
   }
 
   /**
@@ -4855,16 +4892,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  createVtyShell(user: string): {
+  createVtyShell(user: string, options: { primaryKind?: 'cmd' | 'powershell'; directory?: string } = {}): {
     execute(rawInput: string): Promise<string>;
     getPrompt(): string;
     getCompletions(line: string): string[];
+    completionStart(line: string): number | null;
     isNested(): boolean;
     lastClearedScreen(): boolean;
     lastPendingInput(): { kind: 'password' | 'text'; promptText: string } | null;
     lastEndedSession(): boolean;
     lastExitCode(): number;
     handleInput(value: string): Promise<string>;
+    close(): void;
   } | null {
     let stack: CrossVendorRemoteShell;
     installDefaultShells();
@@ -4873,7 +4912,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (previousUser !== sessionOwner) this.setCurrentUser(sessionOwner);
     try {
       stack = new CrossVendorRemoteShell({
-        device: this, user, primaryKind: 'cmd',
+        device: this, user, primaryKind: options.primaryKind ?? 'cmd', directory: options.directory,
       });
     } catch {
       return null;
@@ -4914,11 +4953,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       handleInput: (value: string) => asSessionUser(async () => absorb(await stack.handleInput(value))),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
+      completionStart: (line: string) => stack.completionStart(line),
       isNested: () => stack.depth > 1,
       lastClearedScreen: () => cleared,
       lastPendingInput: () => pending,
       lastEndedSession: () => ended,
       lastExitCode: () => exitCode,
+      close: () => stack.dispose(),
     };
   }
   setCwd(path: string): void { this.changeCurrentDirectory(path); }

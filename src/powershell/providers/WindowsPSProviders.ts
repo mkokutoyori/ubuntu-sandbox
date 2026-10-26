@@ -278,6 +278,13 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   isDirectory(path: string): boolean {
     return this.fs().isDirectory(this.abs(path));
   }
+  attributesOf(path: string): ReadonlySet<string> | null {
+    return this.fs().resolve(this.abs(path))?.attributes ?? null;
+  }
+  clearAttributes(path: string, names: readonly string[]): void {
+    const attributes = this.fs().resolve(this.abs(path))?.attributes;
+    for (const name of names) attributes?.delete(name);
+  }
   getAcl(path: string) {
     const e = this.fs().resolve(this.abs(path));
     if (!e) return null;

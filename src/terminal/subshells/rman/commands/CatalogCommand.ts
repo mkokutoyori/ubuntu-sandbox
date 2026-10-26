@@ -9,7 +9,7 @@
  *   CATALOG RECOVERY AREA [NOPROMPT]
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+import { rmanNowMs } from '../core/pureUtils';
 
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
@@ -75,11 +75,12 @@ export class CatalogCommand implements IRmanCommand<string[]> {
       level:     0,
       path,
       sizeBytes: 0,
+      nowMs:     rmanNowMs(cmdCtx.ctx),
       datafiles: nature === 'DATAFILECOPY' ? [Object.freeze({
         fileNo:  0,
         level:   0 as 0 | 1,
         ckpScn:  ckp.ok ? ckp.value : Scn.ZERO,
-        ckpTime: simulationNowMs(),
+        ckpTime: rmanNowMs(cmdCtx.ctx),
         path,
       })] : [],
     });

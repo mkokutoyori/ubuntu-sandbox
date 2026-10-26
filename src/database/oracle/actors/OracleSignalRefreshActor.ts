@@ -13,11 +13,12 @@
  *   refresh.stop();
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { OracleSignalStore } from '../observables';
 import type { InstanceState } from '../OracleInstance';
+import { hostNowMs } from '../time/OracleHostClock';
 
 export interface OracleSignalRefreshOptions {
   /** Maximum lines kept in the alertLog ring buffer (default 200). */
@@ -60,7 +61,7 @@ export class OracleSignalRefreshActor {
         this.store.instance.set({
           state: p.newState,
           sid: p.sid,
-          startedAt: p.newState === 'SHUTDOWN' ? null : (this.store.instance.get().startedAt ?? simulationNowMs()),
+          startedAt: p.newState === 'SHUTDOWN' ? null : (this.store.instance.get().startedAt ?? hostNowMs()),
         });
         if (p.newState === 'SHUTDOWN') {
           this.processes.clear();

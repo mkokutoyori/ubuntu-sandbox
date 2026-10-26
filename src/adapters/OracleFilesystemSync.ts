@@ -50,6 +50,7 @@ export interface OracleFilesystemSyncCtx {
 interface FsEquipment {
   writeFileFromEditor(path: string, content: string): void;
   installSystemFile?: (path: string, content: string, uid?: number, gid?: number) => boolean;
+  appendSystemFile?: (path: string, content: string, uid?: number, gid?: number) => boolean;
   deleteFileFromEditor?: (path: string) => boolean;
   registerProcess?: (pid: number, user: string, cmd: string) => void;
   unregisterProcess?: (pid: number) => void;
@@ -89,6 +90,12 @@ function datafileContent(
   return `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
 }
 
+function appendAsOracle(dev: FsEquipment, path: string, content: string): boolean {
+  if (!dev.appendSystemFile) return false;
+  if (path.startsWith('/u01')) return dev.appendSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
+  return dev.appendSystemFile(path, content);
+}
+
 function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
   if (!dev.installSystemFile) {
     dev.writeFileFromEditor(path, content);
@@ -104,6 +111,7 @@ export class OracleFilesystemSync {
   private spfileParams: Map<string, Map<string, string>> = new Map();
   /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
   private auditCounters: Map<string, number> = new Map();
+  private linesWritten: Map<string, number> = new Map();
   /** Datafile paths already materialised per device — see syncDatafiles. */
   private materializedDatafiles: Map<string, Set<string>> = new Map();
   /** SGA KiB currently reserved in each device's host memory (0 = none). */
@@ -136,7 +144,14 @@ export class OracleFilesystemSync {
         // the adapter doesn't keep history itself).
         const db = this.ctx.resolveDatabase(deviceId);
         if (db) {
-          writeAsOracle(dev, path, db.instance.getAlertLog().join('\n') + '\n');
+          const lines = db.instance.getAlertLog();
+          const trackKey = `${deviceId}:${path}`;
+          if (this.linesWritten.get(trackKey) === lines.length - 1 && appendAsOracle(dev, path, line + '\n')) {
+            this.linesWritten.set(trackKey, lines.length);
+          } else {
+            writeAsOracle(dev, path, lines.join('\n') + '\n');
+            this.linesWritten.set(trackKey, lines.length);
+          }
         } else {
           // No DB available — best effort, write just this line.
           writeAsOracle(dev, path, line + '\n');
@@ -150,10 +165,16 @@ export class OracleFilesystemSync {
         const path = `${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/trace/listener.log`;
         const db = this.ctx.resolveDatabase(deviceId);
         if (db) {
-          writeAsOracle(dev, path, db.instance.getListenerLog()
-            .map(entry => `${entry.timestamp} * (CONNECT_DATA=(SERVICE_NAME=${entry.service})) * `
-              + `(ADDRESS=(PROTOCOL=tcp)(HOST=${entry.sourceIp})) * ${entry.result} * ${entry.returnCode}`)
-            .join('\n') + '\n');
+          const entries = db.instance.getListenerLog();
+          const render = (entry: typeof entries[number]): string => `${entry.timestamp} * (CONNECT_DATA=(SERVICE_NAME=${entry.service})) * `
+            + `(ADDRESS=(PROTOCOL=tcp)(HOST=${entry.sourceIp})) * ${entry.result} * ${entry.returnCode}`;
+          const trackKey = `${deviceId}:${path}`;
+          if (this.linesWritten.get(trackKey) === entries.length - 1 && appendAsOracle(dev, path, render(entries[entries.length - 1]) + '\n')) {
+            this.linesWritten.set(trackKey, entries.length);
+          } else {
+            writeAsOracle(dev, path, entries.map(render).join('\n') + '\n');
+            this.linesWritten.set(trackKey, entries.length);
+          }
         } else {
           writeAsOracle(dev, path, e.payload.line + '\n');
         }

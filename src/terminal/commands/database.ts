@@ -263,7 +263,7 @@ export interface SqlPlusInvocation {
 }
 
 export function parseSqlPlusInvocation(args: readonly string[], stdin?: string): SqlPlusInvocation {
-  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
+  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.filter(a => !a.startsWith('-')).join(' '));
   const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
   const sqlSource = [
     ...args.filter(a => a !== connectArg && !a.startsWith('-') && SQL_ARGUMENT.test(a)),
@@ -279,7 +279,7 @@ export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource
   const out: string[] = [];
   for (const raw of sqlSource.split(';')) {
     const stmt = raw.trim();
-    if (stmt) out.push(...session.processLine(`${stmt};`).output);
+    if (stmt) for (const line of session.processLine(`${stmt};`).output) out.push(line);
   }
   session.disconnect();
   return out.join('\n');

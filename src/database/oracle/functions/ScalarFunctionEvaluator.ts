@@ -8,7 +8,7 @@
  * everything else lives here. Adding a function touches only this module.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TimeZone } from '@/network/core/time/TimeZone';
 
 import type { FunctionCallExpr, Expression } from '../../engine/parser/ASTNode';
@@ -21,6 +21,7 @@ import { coerceDateValue as coerceDate, formatDateValue as formatDate } from './
 import {
   addMonths, attachTimeZone, extractField, extractUtc, lastDay, monthsBetween, newTime, nextDay, truncateDate,
 } from './dateArithmetic';
+import { hostNowMs } from '../time/OracleHostClock';
 
 // Re-exported under their historical names for existing consumers.
 export { coerceDate, formatDate };
@@ -401,7 +402,7 @@ export class ScalarFunctionEvaluator {
 
       // DBMS_UTILITY functions
       case 'GET_TIME': {
-        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return simulationNowMs() % 2147483647;
+        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return hostNowMs() % 2147483647;
         return null;
       }
       case 'FORMAT_ERROR_BACKTRACE': {

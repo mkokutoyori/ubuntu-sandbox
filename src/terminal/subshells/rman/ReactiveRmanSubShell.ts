@@ -244,6 +244,14 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push(`channel ORA_DISK_1: restored block(s) from backup piece 1`);
         this._push('channel ORA_DISK_1: block restore complete, elapsed time: 00:00:03');
         break;
+      case 'BACKUP_PIECE_DELETED':
+        this._push('deleted backup piece');
+        this._push(`backup piece handle=${e.path} RECID=${e.bpKey} STAMP=${e.stamp}`);
+        break;
+      case 'DELETE_DONE':
+        if (e.deleted > 0) this._push(`Deleted ${e.deleted} objects`);
+        else if (e.emptyMessage) this._push(e.emptyMessage);
+        break;
       case 'CROSSCHECK_PIECE':
         this._push(`crosschecked ${e.kind}: found to be '${e.status}'`);
         break;

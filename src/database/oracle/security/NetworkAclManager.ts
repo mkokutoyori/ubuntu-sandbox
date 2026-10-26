@@ -1,3 +1,4 @@
+import { hostNowDate } from '../time/OracleHostClock';
 /**
  * NetworkAclManager — Oracle 12c+ network-ACL administration
  * (DBMS_NETWORK_ACL_ADMIN).
@@ -15,7 +16,7 @@
  * etc.) the DBA would use in production.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 export interface NetworkAcl {
   readonly aclName: string;
@@ -87,7 +88,7 @@ export class NetworkAclManager {
         host: host.toLowerCase(),
         lowerPort, upperPort, aclOwner: 'SYS',
         aclId: `0000000000000000${this.aclIdSeq.toString(16).toUpperCase()}`,
-        createdAt: simulationDate(),
+        createdAt: hostNowDate(),
       };
       this.acls.push(acl);
       this.aclIdSeq++;

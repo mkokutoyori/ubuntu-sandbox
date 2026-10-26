@@ -2,18 +2,19 @@
  * V$SERVICEMETRIC — per-service current metric snapshot.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$SERVICEMETRIC',
   comment: 'Per-service current metric',
   query({ runtime }) {
-    const intervalS = Math.max(15, Math.floor((simulationNowMs() - runtime.startedAt) / 1000));
-    const end = simulationNowMs();
+    const intervalS = Math.max(15, Math.floor((hostNowMs() - runtime.startedAt) / 1000));
+    const end = hostNowMs();
     const active = [...runtime.services.values()].filter(s => s.active);
     return queryResult(
       [

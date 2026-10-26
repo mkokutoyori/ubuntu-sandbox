@@ -78,6 +78,7 @@ export interface IRmanOracleContext {
   readonly dbId:    DbId;
   readonly dbName:  string;
   hostZoneName?(): string;
+  hostNowMs?(): number;
   readonly vfs:     VfsAdapter;
   getDatafiles():   ReadonlyArray<DatafileInfo>;
   getSpfileParam(name: string): string | undefined;
@@ -105,6 +106,8 @@ export interface IRmanOracleContext {
   getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
+  recordBackupPieceDeleted?(handle: string): void;
+  recordArchivedLogDeleted?(path: string): void;
   recordBlockCorruption?(fileNo: number, blocks: number, type: BlockCorruptionType): void;
   getBlockCorruptions?(): ReadonlyArray<{ fileNo: number; blocks: number }>;
   clearBlockCorruption?(fileNo: number): void;

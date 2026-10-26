@@ -3761,3 +3761,20 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 ### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+
+### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
+
+Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage. Ajouter ou connecter un equipement relance `computeCableRoutes` sur tous les
+cables (102 ms pour 209 cables dans Node, 55 ms de moyenne par mise a jour dans Chromium) : dans une boucle serree de 400 ajouts, chaque mise a jour du magasin rend la toile
+de facon synchrone, ce qui explique les 330 ms par poste observes a 400 postes (22 s de rendu sur 50 s a 200 postes) ; une ouverture de fichier passe par `replaceTopology`,
+une seule mise a jour. Non traite : un routage incremental des cables. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre
+terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
+
+Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
+retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
+
+### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
+
+Oracle Net et ssh ne passent pas par l'adresse globale d'un NAT statique : `sqlplus user@203.0.113.3` depuis l'exterieur rend ORA-12545 parce que le client retrouve l'equipement par son adresse dans le registre d'equipements (`findEquipmentByIp`) au lieu de traverser le reseau, donc la traduction du routeur n'est jamais appliquee ; l'adresse interne de la meme machine fonctionne. Le defaut est le raccourci que la regle 4 interdit, pas un reglage. `reverseApplyInMemory` (lecture d'une autre session pendant une transaction ouverte) reste O(n) par enregistrement d'annulation : une transaction de 100 000 lignes lue par une seconde session coute le produit. `CREATE USER` coute environ 70 ms (PBKDF2-SHA512 reel) : 200 utilisateurs creent une tache de 14 s dans le navigateur. Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 4 s, et rien ne peut le couper.
+
+`V$RECOVERY_FILE_DEST.SPACE_RECLAIMABLE` vaut 10 % de `SPACE_USED` (valeur inventee) : la politique de retention qui dit ce qui est recuperable vit dans la configuration de la session RMAN (`RmanConfig`), pas dans le fichier de controle que la vue lit. Le moteur RMAN reprend deja la place des sauvegardes obsoletes quand la zone est pleine ; la vue doit lire la meme politique, donc `CONFIGURE RETENTION POLICY` doit etre rangee dans l'etat de la base (comme le fait deja `CONFIGURE CONTROLFILE AUTOBACKUP` pour les sessions suivantes) avant que la vue puisse la calculer.

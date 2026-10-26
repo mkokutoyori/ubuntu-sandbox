@@ -26,8 +26,8 @@ export function recoveryAreaUsage(
   limitText: string | undefined,
   runtime: Pick<OracleRuntimeState, 'backups' | 'archivedLogs' | 'flashbackHistory'>,
 ): RecoveryAreaUsage {
-  const pieces = runtime.backups.filter(b => isInsideRecoveryArea(b.handle, destination));
-  const logs = runtime.archivedLogs.filter(l => isInsideRecoveryArea(l.name, destination));
+  const pieces = runtime.backups.filter(b => b.status !== 'DELETED' && isInsideRecoveryArea(b.handle, destination));
+  const logs = runtime.archivedLogs.filter(l => !l.deleted && isInsideRecoveryArea(l.name, destination));
   const backupPieceBytes = pieces.reduce((total, b) => total + b.bytes, 0);
   const archivedLogBytes = logs.length * ARCHIVED_LOG_BYTES;
   return {

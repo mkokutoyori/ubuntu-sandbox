@@ -17,6 +17,7 @@ import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import type { NativeResult } from '@/powershell/nativeAsync';
 import type { PSLocationState } from '@/powershell/runtime/PSLocationState';
+import type { ProviderFailure } from './core/ProviderFailures';
 
 // PSRuntime is referenced here via a forward-declaration interface to avoid
 // circular imports (PSRuntime imports CmdletContext, CmdletContext imports PSRuntime).
@@ -138,6 +139,12 @@ export interface CmdletContext {
 
   /** Write a ready-made ErrorRecord to the error stream (non-terminating). */
   emitErrorRecord(record: PSValue): void;
+
+  /** Write a provider failure as an ErrorRecord that names this cmdlet, or `command` when the cmdlet speaks for another. */
+  emitFailure(failure: ProviderFailure, command?: string): void;
+
+  /** Ask whether the operation may run: false, after saying what would have happened, under -WhatIf or `$WhatIfPreference`. */
+  shouldProcess(target: string, action: string): boolean;
 
   /**
    * Evaluate a script block with a given $_ binding and optional named vars.

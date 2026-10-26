@@ -1,6 +1,7 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { SqlFunctionBundle } from './types';
+import { hostNowMs } from '../time/OracleHostClock';
 
 export const packageFunctions: SqlFunctionBundle = {
   'DBMS_RANDOM.VALUE': (args) => {
@@ -34,7 +35,7 @@ export const packageFunctions: SqlFunctionBundle = {
 
   'DBMS_LOCK.SLEEP': () => null,
 
-  'DBMS_UTILITY.GET_TIME': () => simulationNowMs() % 2147483647,
+  'DBMS_UTILITY.GET_TIME': () => hostNowMs() % 2147483647,
 
   'DBMS_UTILITY.FORMAT_ERROR_BACKTRACE': () => '',
 

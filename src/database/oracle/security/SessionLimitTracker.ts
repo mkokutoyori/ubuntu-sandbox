@@ -4,9 +4,10 @@
  * Also tracks session metadata (terminal, program, hostname) for V$SESSION.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { OsSecurityContext } from './types';
+import { hostNowDate } from '../time/OracleHostClock';
 
 export type SessionStatus = 'ACTIVE' | 'INACTIVE' | 'KILLED' | 'SNIPED' | 'CACHED';
 
@@ -81,11 +82,11 @@ export class SessionLimitTracker {
       clientIp: osCtx.clientIp ?? null,
       terminal: osCtx.terminal,
       program: osCtx.program,
-      logonTime: simulationDate(),
+      logonTime: hostNowDate(),
       status: 'ACTIVE',
       type,
       lastCallEt: 0,
-      lastCallAt: simulationDate(),
+      lastCallAt: hostNowDate(),
       terminationError: null,
       sqlId: null,
       sqlExecStart: null,
@@ -117,7 +118,7 @@ export class SessionLimitTracker {
     const info = this.sessions.get(sessionId);
     if (!info) return;
     info.sqlId = sqlId;
-    info.sqlExecStart = sqlId ? simulationDate() : null;
+    info.sqlExecStart = sqlId ? hostNowDate() : null;
     info.sqlChildNumber = sqlId ? 0 : null;
     info.lastCallEt = 0;
   }
@@ -130,16 +131,16 @@ export class SessionLimitTracker {
   noteCall(sessionId: string): void {
     const info = this.sessions.get(sessionId);
     if (!info) return;
-    info.lastCallAt = simulationDate();
+    info.lastCallAt = hostNowDate();
     info.lastCallEt = 0;
   }
 
-  idleSeconds(info: ActiveSessionInfo, now: Date = simulationDate()): number {
+  idleSeconds(info: ActiveSessionInfo, now: Date = hostNowDate()): number {
     return Math.max(info.lastCallEt,
       Math.floor((now.getTime() - info.lastCallAt.getTime()) / 1000));
   }
 
-  connectedSeconds(info: ActiveSessionInfo, now: Date = simulationDate()): number {
+  connectedSeconds(info: ActiveSessionInfo, now: Date = hostNowDate()): number {
     return Math.floor((now.getTime() - info.logonTime.getTime()) / 1000);
   }
 

@@ -110,6 +110,7 @@ export class WindowsPowerShellShell extends AbstractShell {
       output: r.output ?? [],
       exit: r.exit,
       clearScreen: r.clearScreen,
+      childShell: r.childShell,
     };
   }
 

@@ -6,17 +6,18 @@
  * stamps a fresh 19c install.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'DBA_REGISTRY_HISTORY',
   comment: 'Database install / patch / upgrade history',
   query({ instance }) {
-    const created = instance.startupTime ?? simulationDate();
+    const created = instance.startupTime ?? hostNowDate();
     return queryResult(
       [
         col.date('ACTION_TIME'),

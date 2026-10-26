@@ -1,17 +1,13 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
+import { isScriptBlockValue } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { formatString } from '@/powershell/runtime/semantics/CompositeFormat';
 
 function toArray(value: PSValue): PSValue[] {
   if (value === null || value === undefined) return [];
   return Array.isArray(value) ? value : [value];
-}
-
-function isScriptBlock(value: PSValue): value is PSScriptBlock {
-  return value !== null && typeof value === 'object' && (value as { type?: string }).type === 'ScriptBlock';
 }
 
 export class JoinStringCmdlet implements ICmdlet {
@@ -40,7 +36,7 @@ export class JoinStringCmdlet implements ICmdlet {
     for (const item of items) {
       if (item === null || item === undefined) continue;
       let value: PSValue = item;
-      if (isScriptBlock(property)) {
+      if (isScriptBlockValue(property)) {
         value = ctx.invokeBlock(property, item);
       } else if (property !== undefined && property !== null) {
         const record = item as Record<string, PSValue>;

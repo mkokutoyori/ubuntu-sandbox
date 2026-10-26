@@ -2,12 +2,13 @@
  * V$WAITCLASSMETRIC — current per-wait-class metric snapshot.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
 import { EVENT_CATALOGUE } from './v_event_name';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$WAITCLASSMETRIC',
@@ -20,7 +21,7 @@ registerView({
       const t = totals.get(w.waitClass);
       if (t) { t.waits++; t.tot += w.waitTimeMicros; }
     }
-    const end = simulationNowMs();
+    const end = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

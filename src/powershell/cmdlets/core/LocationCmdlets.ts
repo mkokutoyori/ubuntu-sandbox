@@ -6,18 +6,22 @@ import { hasWildcard } from '@/powershell/runtime/PSWildcard';
 import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
 import { PROVIDER_QUALIFIER, joinProviderPath, providerSegments } from '@/powershell/runtime/PSLocationState';
 import { expandPathSpec, pathItemOf } from './PathCmdlets';
+import { driveNotFound, pathNotFound, type ProviderFailure } from './ProviderFailures';
 import { FOREIGN_DRIVES, declaredDrive, foreignDrive, mappedPath, pathInfoOf, qualifierOf, type Declared } from './ProviderPaths';
 
-const driveNotFound = (name: string): string => `Cannot find drive. A drive with the name '${name}' does not exist.`;
-const pathNotFound = (typed: string): string => `Cannot find path '${typed}' because it does not exist.`;
 const stackNotFound = (name: string): string => `Cannot find location stack '${name}'. It does not exist or it is not a container.`;
-const resolvedToMultiple = (typed: string): string =>
-  `Cannot set the location because path '${typed}' resolved to multiple containers. You can only set the location to a single container at a time.`;
+const resolvedToMultiple = (typed: string): ProviderFailure => ({
+  message: `Cannot set the location because path '${typed}' resolved to multiple containers. You can only set the location to a single container at a time.`,
+  exceptionType: 'System.ArgumentException',
+  errorId: 'Argument',
+  category: 'InvalidArgument',
+  target: typed,
+});
 const NO_HISTORY_BACKWARDS = 'There is no location history left to navigate backwards.';
 const NO_HISTORY_FORWARDS = 'There is no location history left to navigate forwards.';
 
 type Located =
-  | { readonly refusal: string }
+  | { readonly refusal: ProviderFailure }
   | { readonly kind: 'file'; readonly path: string }
   | { readonly kind: 'provider'; readonly drive: string; readonly provider: string; readonly path: string; readonly real?: string };
 
@@ -25,14 +29,14 @@ function currentLocation(ctx: CmdletContext): string {
   return ctx.runtime.locations.foreign ?? ctx.providers.filesystem?.getCwd() ?? 'C:\\';
 }
 
-function foreignContainer(ctx: CmdletContext, drive: string, provider: string, path: string, typed: string): Located {
+function foreignContainer(ctx: CmdletContext, drive: string, provider: string, path: string): Located {
   const root = `${drive}:\\`;
   const registry = provider === 'registry' && ctx.providers.registry;
   const exists = registry ? path === root || registry.testPath(path) === true : path === root;
-  return exists ? { kind: 'provider', drive, provider, path } : { refusal: pathNotFound(typed) };
+  return exists ? { kind: 'provider', drive, provider, path } : { refusal: pathNotFound(path) };
 }
 
-function declaredContainer(ctx: CmdletContext, declared: Declared, path: string, typed: string): Located {
+function declaredContainer(ctx: CmdletContext, declared: Declared, path: string): Located {
   const mapped = mappedPath(declared, path);
   const registry = isRegistryPath(mapped);
   const atRoot = path.slice(declared.Name.length + 2) === '';
@@ -41,7 +45,7 @@ function declaredContainer(ctx: CmdletContext, declared: Declared, path: string,
     : ctx.providers.filesystem?.isDirectory(mapped) === true);
   return exists
     ? { kind: 'provider', drive: declared.Name, provider: 'declared', path, real: registry ? undefined : mapped }
-    : { refusal: pathNotFound(typed) };
+    : { refusal: pathNotFound(path) };
 }
 
 function locate(ctx: CmdletContext, typed: string, literal: boolean): Located {
@@ -57,8 +61,8 @@ function locate(ctx: CmdletContext, typed: string, literal: boolean): Located {
       const rest = typed.slice(qualifier.length + 1);
       const path = rest === '' ? state.remembered(name) ?? `${name}:\\` : joinProviderPath(name, providerSegments(rest));
       return found !== null
-        ? foreignContainer(ctx, found.drive, found.provider, path, typed)
-        : declaredContainer(ctx, declared!, path, typed);
+        ? foreignContainer(ctx, found.drive, found.provider, path)
+        : declaredContainer(ctx, declared!, path);
     }
   }
 
@@ -70,8 +74,8 @@ function locate(ctx: CmdletContext, typed: string, literal: boolean): Located {
       const name = found?.drive ?? declared!.Name;
       const path = state.resolve(typed) ?? `${name}:\\`;
       return found !== null
-        ? foreignContainer(ctx, found.drive, found.provider, path, typed)
-        : declaredContainer(ctx, declared!, path, typed);
+        ? foreignContainer(ctx, found.drive, found.provider, path)
+        : declaredContainer(ctx, declared!, path);
     }
   }
 
@@ -82,12 +86,12 @@ function locate(ctx: CmdletContext, typed: string, literal: boolean): Located {
   const matches = !literal && hasWildcard(typed)
     ? expandPathSpec(fs, absolute).filter(candidate => fs.isDirectory(candidate))
     : [absolute].filter(candidate => fs.isDirectory(candidate));
-  if (matches.length === 0) return { refusal: pathNotFound(typed) };
+  if (matches.length === 0) return { refusal: pathNotFound(!literal && hasWildcard(typed) || fs.exists(absolute) ? typed : absolute) };
   if (matches.length > 1) return { refusal: resolvedToMultiple(typed) };
   return { kind: 'file', path: matches[0] };
 }
 
-function enter(ctx: CmdletContext, located: Exclude<Located, { refusal: string }>): void {
+function enter(ctx: CmdletContext, located: Exclude<Located, { refusal: ProviderFailure }>): void {
   const state = ctx.runtime.locations;
   if (located.kind === 'file') {
     state.foreign = null;
@@ -101,7 +105,7 @@ function enter(ctx: CmdletContext, located: Exclude<Located, { refusal: string }
 function relocate(ctx: CmdletContext, typed: string, literal: boolean): boolean {
   const located = locate(ctx, typed, literal);
   if ('refusal' in located) {
-    ctx.emitError(located.refusal);
+    ctx.emitFailure(located.refusal);
     return false;
   }
   enter(ctx, located);
@@ -243,7 +247,7 @@ export class GetLocationCmdlet implements ICmdlet {
     if (name.length === 1) {
       const letter = name.toUpperCase();
       if (fs === undefined || !fs.exists(`${letter}:\\`)) {
-        ctx.emitError(driveNotFound(name));
+        ctx.emitFailure(driveNotFound(name));
         return null;
       }
       return pathInfoOf(ctx, fs.driveLocation?.(letter) ?? `${letter}:\\`);
@@ -251,7 +255,7 @@ export class GetLocationCmdlet implements ICmdlet {
     const found = foreignDrive(name);
     const declared = found === null ? declaredDrive(ctx, name) : null;
     if (found === null && declared === null) {
-      ctx.emitError(driveNotFound(name));
+      ctx.emitFailure(driveNotFound(name));
       return null;
     }
     const known = found?.drive ?? declared!.Name;

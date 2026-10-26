@@ -1,3 +1,5 @@
+import { bytesToBinaryString } from '@/crypto/encoding';
+
 export function put16(value: number): string {
   return String.fromCharCode((value >>> 8) & 0xff, value & 0xff);
 }
@@ -32,9 +34,7 @@ export function signed64(value: number): number {
 }
 
 export function utf8Bytes(text: string): string {
-  let out = '';
-  for (const byte of new TextEncoder().encode(text)) out += String.fromCharCode(byte);
-  return out;
+  return bytesToBinaryString(new TextEncoder().encode(text));
 }
 
 export function utf8Text(bytes: string): string {

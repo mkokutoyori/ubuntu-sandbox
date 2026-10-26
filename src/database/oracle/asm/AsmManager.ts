@@ -1,3 +1,4 @@
+import { hostNowDate } from '../time/OracleHostClock';
 /**
  * AsmManager — real Automatic Storage Management state for the
  * simulated instance.
@@ -13,7 +14,7 @@
  * "what the catalog reports" always matches "what the engine holds".
  * No fabricated rows.
  */
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 export type AsmRedundancy = 'EXTERNAL' | 'NORMAL' | 'HIGH';
 export type AsmDiskState = 'NORMAL' | 'ADDING' | 'DROPPING' | 'HUNG' | 'FORCING' | 'UNKNOWN';
@@ -104,7 +105,7 @@ export class AsmManager {
       blockSize: options.blockSize ?? 4096,
       allocationUnitSize: options.allocationUnitSize ?? 1048576,
       disks: new Map(), files: new Map(),
-      createDate: simulationDate(),
+      createDate: hostNowDate(),
     };
     this.diskgroups.set(groupNumber, dg);
     this.nextDiskNumber.set(groupNumber, 0);
@@ -148,7 +149,7 @@ export class AsmManager {
       mountStatus: 'CACHED',
       modeStatus: 'ONLINE',
       failgroup: (options.failgroup ?? disk_failgroupDefault(dg.name, diskNumber)).toUpperCase(),
-      createDate: simulationDate(),
+      createDate: hostNowDate(),
     };
     dg.disks.set(diskNumber, disk);
     return { diskgroup: dg, disk };

@@ -1,6 +1,6 @@
 import type { PSValue } from '../PSEnvironment';
 import { PSRuntimeError } from '../PSRuntimeError';
-import { registerPSDisplayFormatter } from '../PSExpansion';
+import { psValueToString, registerPSDisplayFormatter } from '../PSExpansion';
 import { makeExceptionObject } from './PSExceptions';
 
 export type StreamKind = 'error' | 'warning' | 'verbose' | 'debug' | 'information';
@@ -78,14 +78,21 @@ export interface ErrorRecordSpec {
   readonly exceptionType: string;
   readonly fullyQualifiedErrorId: string;
   readonly category?: string;
+  readonly activity?: string;
   readonly targetObject?: PSValue;
+  readonly targetType?: string;
 }
 
 export function newErrorRecord(spec: ErrorRecordSpec): Record<string, PSValue> {
   return typed({
     Message: spec.message,
     Exception: makeExceptionObject(spec.exceptionType, spec.message) as unknown as PSValue,
-    CategoryInfo: { Category: spec.category ?? 'NotSpecified' } as Record<string, PSValue>,
+    CategoryInfo: {
+      Category: spec.category ?? 'NotSpecified',
+      Activity: spec.activity ?? null,
+      TargetName: spec.targetObject === undefined || spec.targetObject === null ? '' : psValueToString(spec.targetObject),
+      TargetType: spec.targetObject === undefined || spec.targetObject === null ? '' : spec.targetType ?? (typeof spec.targetObject === 'string' ? 'String' : 'Object'),
+    } as Record<string, PSValue>,
     TargetObject: spec.targetObject ?? null,
     FullyQualifiedErrorId: spec.fullyQualifiedErrorId,
   } as Record<string, PSValue>, 'System.Management.Automation.ErrorRecord');

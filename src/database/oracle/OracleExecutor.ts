@@ -4,12 +4,10 @@
  * Handles SELECT, INSERT, UPDATE, DELETE, DDL, DCL, and admin commands.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TimeZone } from '@/network/core/time/TimeZone';
 import { offsetMinutesAt } from '@/network/core/time/TimeZoneRegistry';
-import {
-  hostOffsetSpec, hostZoneOf, type OracleClockReading,
-} from './time/OracleHostClock';
+import { hostOffsetSpec, hostZoneOf, type OracleClockReading, hostNowDate, hostNowMs } from './time/OracleHostClock';
 
 import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
 import {
@@ -44,7 +42,7 @@ import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './s
 import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord, type ReferencedColumns } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { attachTimeZone } from './functions/dateArithmetic';
-import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
+import { resolveWindowFunction, type FrameRange, type WindowPartition } from './functions/windowFunctions';
 import {
   formatDateWithPattern, formatDateValue, parseDateWithPattern, coerceDateValue, instantMsOf, isInstantText, wallLiteralText, WallDate,
 } from './functions/dateSupport';
@@ -122,6 +120,70 @@ const CLOCK_PSEUDO_COLUMNS: Readonly<Record<string, keyof OracleClockReading>> =
 const PSEUDO_COLUMN_NAMES: readonly string[] = [...Object.keys(CLOCK_PSEUDO_COLUMNS), 'USER', 'ROWNUM'];
 const DATE_PSEUDO_COLUMNS: ReadonlySet<string> = new Set(['SYSDATE', 'CURRENT_DATE']);
 const TIMESTAMP_PSEUDO_COLUMNS: ReadonlySet<string> = new Set(['SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'LOCALTIMESTAMP']);
+
+interface EquiJoinKeys {
+  readonly leftIndices: readonly number[];
+  readonly rightIndices: readonly number[];
+}
+
+function joinKeyOf(row: StorageRow, indices: readonly number[]): string | null {
+  let key = '';
+  for (const index of indices) {
+    const value = row[index];
+    if (typeof value === 'number') key += `n${value}\u0000`;
+    else if (typeof value === 'string') key += `s${value}\u0000`;
+    else return null;
+  }
+  return key;
+}
+
+function keyKinds(rows: readonly StorageRow[], indices: readonly number[]): Array<'number' | 'string' | 'mixed' | undefined> {
+  const kinds: Array<'number' | 'string' | 'mixed' | undefined> = indices.map(() => undefined);
+  for (const row of rows) {
+    indices.forEach((index, position) => {
+      const value = row[index];
+      if (value === null || value === undefined) return;
+      const kind = typeof value === 'number' ? 'number' : typeof value === 'string' ? 'string' : 'mixed';
+      kinds[position] = kinds[position] === undefined || kinds[position] === kind ? kind : 'mixed';
+    });
+  }
+  return kinds;
+}
+
+function buildJoinIndex(
+  leftRows: readonly StorageRow[], rightRows: readonly StorageRow[], keys: EquiJoinKeys,
+): { candidates(leftRow: StorageRow): readonly number[] } | undefined {
+  const left = keyKinds(leftRows, keys.leftIndices);
+  const right = keyKinds(rightRows, keys.rightIndices);
+  for (let position = 0; position < left.length; position++) {
+    if (left[position] === 'mixed' || right[position] === 'mixed') return undefined;
+    if (left[position] !== undefined && right[position] !== undefined && left[position] !== right[position]) return undefined;
+  }
+  const buckets = new Map<string, number[]>();
+  rightRows.forEach((row, ri) => {
+    const key = joinKeyOf(row, keys.rightIndices);
+    if (key === null) return;
+    const bucket = buckets.get(key);
+    if (bucket === undefined) buckets.set(key, [ri]); else bucket.push(ri);
+  });
+  const none: readonly number[] = [];
+  return {
+    candidates(leftRow: StorageRow): readonly number[] {
+      const key = joinKeyOf(leftRow, keys.leftIndices);
+      return key === null ? none : buckets.get(key) ?? none;
+    },
+  };
+}
+
+const CONNECT_BY_LOOP_DEPTH = 10000;
+const CONNECT_BY_MAX_ROWS = 2_000_000;
+
+function containsPrior(node: unknown): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  const record = node as Record<string, unknown>;
+  if (record.type === 'UnaryExpr' && record.operator === 'PRIOR') return true;
+  return Object.values(record).some(containsPrior);
+}
 
 export class OracleExecutor extends BaseExecutor {
   declare protected catalog: OracleCatalog;
@@ -506,7 +568,7 @@ export class OracleExecutor extends BaseExecutor {
       osUsername: session?.osUser ?? 'oracle',
       userhost: session?.machine ?? 'localhost',
       terminal: session?.terminal ?? 'pts/0',
-      timestamp: simulationDate(),
+      timestamp: hostNowDate(),
       policies: policies.join(', '),
     });
   }
@@ -557,7 +619,7 @@ export class OracleExecutor extends BaseExecutor {
     const osUsername = session?.osUser ?? 'oracle';
     const userhost = session?.machine ?? 'localhost';
     const terminal = session?.terminal ?? 'pts/0';
-    const timestamp = simulationDate();
+    const timestamp = hostNowDate();
     catalog.recordAudit({
       sessionId: sessionIdNum,
       username: this.context.currentSchema,
@@ -607,7 +669,7 @@ export class OracleExecutor extends BaseExecutor {
     for (const p of matched) {
       catalog.recordFgaAudit({
         sessionId: parseInt(this._sessionId, 10) || 0,
-        timestamp: simulationDate(),
+        timestamp: hostNowDate(),
         dbUser: this.context.currentSchema,
         osUser: 'oracle',
         objectSchema: p.objectSchema,
@@ -793,7 +855,7 @@ export class OracleExecutor extends BaseExecutor {
           if (s.action === 'COMPUTE_STATISTICS' || s.action === 'ESTIMATE_STATISTICS') {
             // Stamp the table with a real LAST_ANALYZED timestamp.
             const meta = this.storage.getTableMeta(schema, name)!;
-            meta.lastAnalyzed = simulationDate();
+            meta.lastAnalyzed = hostNowDate();
           } else if (s.action === 'DELETE_STATISTICS') {
             const meta = this.storage.getTableMeta(schema, name)!;
             meta.lastAnalyzed = null;
@@ -1474,16 +1536,25 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       }
-      resultRows.sort((a, b) => {
-        for (const ob of stmt.orderBy!) {
-          // Try to resolve by column alias or position in result set
-          const idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
-          if (idx < 0) continue;
-          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
+      const resolved = stmt.orderBy.map(ob => this.resolveOrderByIndex(ob.expr, selectCols, columns));
+      const hiddenKeys = stmt.orderBy.map((ob, position) => (resolved[position] >= 0 || stmt.distinct
+        ? null
+        : rows.map(source => this.evaluateExpression(ob.expr, source, columns))));
+      const order = resultRows.map((_, position) => position);
+      order.sort((left, right) => {
+        for (let position = 0; position < stmt.orderBy!.length; position++) {
+          const ob = stmt.orderBy![position];
+          const hidden = hiddenKeys[position];
+          const cmp = hidden !== null
+            ? this.compareWithOrderSpec(hidden[left], hidden[right], ob)
+            : resolved[position] >= 0
+              ? this.compareWithOrderSpec(resultRows[left][resolved[position]], resultRows[right][resolved[position]], ob)
+              : 0;
           if (cmp !== 0) return cmp;
         }
         return 0;
       });
+      resultRows = order.map(position => resultRows[position]);
     }
 
     // ── Step 7: FETCH/OFFSET ───────────────────────────────────────
@@ -1527,6 +1598,14 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     return { rows, columns };
+  }
+
+  private indexedRowSet(
+    ref: import('../engine/parser/ASTNode').TableRef, schema: string, tableName: string, where: Expression | undefined,
+  ): ReadonlySet<StorageRow> | null {
+    if (where === undefined) return null;
+    const candidates = this.tryIndexAccessPath({ ...ref, schema, name: tableName }, where, this.storage.getRows(schema, tableName));
+    return candidates === null ? null : new Set(candidates);
   }
 
   private tryIndexAccessPath(
@@ -1938,7 +2017,8 @@ export class OracleExecutor extends BaseExecutor {
       };
 
       // Execute join with custom condition
-      return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalUsing);
+      return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalUsing,
+        { leftIndices: conditions.map(c => c.leftIdx), rightIndices: conditions.map(c => c.rightIdx) });
     }
 
     if (join.joinType === 'CROSS') {
@@ -1959,7 +2039,34 @@ export class OracleExecutor extends BaseExecutor {
       return !onCondition || this.evaluateCondition(onCondition, fullCombined, allRightCols);
     };
 
-    return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalOn);
+    return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalOn,
+      onCondition ? this.equiJoinKeys(onCondition, allRightCols, leftCols.length) : undefined);
+  }
+
+  private equiJoinKeys(condition: Expression, combined: StorageColMeta[], leftWidth: number): EquiJoinKeys | undefined {
+    const conjuncts: Expression[] = [];
+    const flatten = (expr: Expression): void => {
+      if (expr.type === 'BinaryExpr' && expr.operator === 'AND') { flatten(expr.left); flatten(expr.right); } else conjuncts.push(expr);
+    };
+    flatten(condition);
+    const leftIndices: number[] = [];
+    const rightIndices: number[] = [];
+    for (const conjunct of conjuncts) {
+      if (conjunct.type !== 'BinaryExpr' || conjunct.operator !== '=') continue;
+      if (conjunct.left.type !== 'Identifier' || conjunct.right.type !== 'Identifier') continue;
+      let a: number;
+      let b: number;
+      try {
+        a = this.resolveColumnIndex(conjunct.left, combined);
+        b = this.resolveColumnIndex(conjunct.right, combined);
+      } catch {
+        return undefined;
+      }
+      if (a < 0 || b < 0) continue;
+      if (a < leftWidth && b >= leftWidth) { leftIndices.push(a); rightIndices.push(b - leftWidth); }
+      else if (b < leftWidth && a >= leftWidth) { leftIndices.push(b); rightIndices.push(a - leftWidth); }
+    }
+    return leftIndices.length > 0 ? { leftIndices, rightIndices } : undefined;
   }
 
   private executeJoinLoop(
@@ -1968,14 +2075,18 @@ export class OracleExecutor extends BaseExecutor {
     combinedCols: StorageColMeta[],
     nullRight: null[], nullLeft: null[],
     joinType: string,
-    evalCondition: (leftRow: StorageRow, rightRow: StorageRow) => boolean
+    evalCondition: (leftRow: StorageRow, rightRow: StorageRow) => boolean,
+    equiKeys?: EquiJoinKeys,
   ): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const resultRows: StorageRow[] = [];
     const rightMatched = new Set<number>();
+    const index = equiKeys === undefined ? undefined : buildJoinIndex(leftRows, rightRows, equiKeys);
+    const everyRight = rightRows.map((_, ri) => ri);
 
     for (let li = 0; li < leftRows.length; li++) {
       let matched = false;
-      for (let ri = 0; ri < rightRows.length; ri++) {
+      const candidates = index === undefined ? everyRight : index.candidates(leftRows[li]);
+      for (const ri of candidates) {
         if (evalCondition(leftRows[li], rightRows[ri])) {
           const rightVals = rightColIndices.map(i => rightRows[ri][i]);
           resultRows.push([...leftRows[li], ...rightVals]);
@@ -2121,7 +2232,7 @@ export class OracleExecutor extends BaseExecutor {
     stmt: SelectStatement
   ): ResultSet {
     const resultColumns: ColumnMeta[] = [];
-    const resultRows: Row[] = [];
+    let resultRows: Row[] = [];
 
     // Build column metadata from first call
     for (const item of stmt.columns) {
@@ -2139,15 +2250,23 @@ export class OracleExecutor extends BaseExecutor {
 
     // ORDER BY on grouped results
     if (stmt.orderBy && stmt.orderBy.length > 0) {
-      resultRows.sort((a, b) => {
-        for (const ob of stmt.orderBy!) {
-          const idx = this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns);
-          if (idx < 0) continue;
-          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
+      const resolved = stmt.orderBy.map(ob => this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns));
+      const hiddenKeys = stmt.orderBy.map((ob, position) => (resolved[position] >= 0
+        ? null
+        : groups.map(group => this.evaluateExpressionGrouped(ob.expr, group.rows, columns))));
+      const order = resultRows.map((_, position) => position);
+      order.sort((left, right) => {
+        for (let position = 0; position < stmt.orderBy!.length; position++) {
+          const ob = stmt.orderBy![position];
+          const hidden = hiddenKeys[position];
+          const cmp = hidden !== null
+            ? this.compareWithOrderSpec(hidden[left], hidden[right], ob)
+            : this.compareWithOrderSpec(resultRows[left][resolved[position]], resultRows[right][resolved[position]], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
       });
+      resultRows = order.map(position => resultRows[position]);
     }
 
     return queryResult(resultColumns, resultRows);
@@ -2190,15 +2309,19 @@ export class OracleExecutor extends BaseExecutor {
       for (const [, indices] of partitions) {
         // Sort within partition
         if (windowSpec.orderBy && windowSpec.orderBy.length > 0) {
-          indices.sort((a, b) => {
-            for (const ob of windowSpec.orderBy!) {
-              const va = this.evaluateExpression(ob.expr, sourceRows[a], sourceColumns);
-              const vb = this.evaluateExpression(ob.expr, sourceRows[b], sourceColumns);
-              const cmp = this.compareWithOrderSpec(va, vb, ob);
+          const orderBy = windowSpec.orderBy;
+          const keyed = indices.map(index => ({
+            index,
+            keys: orderBy.map(ob => this.evaluateExpression(ob.expr, sourceRows[index], sourceColumns)),
+          }));
+          keyed.sort((a, b) => {
+            for (let k = 0; k < orderBy.length; k++) {
+              const cmp = this.compareWithOrderSpec(a.keys[k], b.keys[k], orderBy[k]);
               if (cmp !== 0) return cmp;
             }
             return 0;
           });
+          for (let k = 0; k < keyed.length; k++) indices[k] = keyed[k].index;
         }
 
         const partition: WindowPartition = {
@@ -2206,7 +2329,7 @@ export class OracleExecutor extends BaseExecutor {
           argCount: funcExpr.args.length,
           star: funcExpr.args.length === 0 || funcExpr.args[0]?.type === 'Star',
           arg: (i, pos) => this.evaluateExpression(funcExpr.args[i], sourceRows[indices[pos]], sourceColumns),
-          frame: (pos) => this.resolveFramePositions(windowSpec, indices.length, pos),
+          frame: (pos) => this.resolveFrameRange(windowSpec, indices.length, pos),
           rowsEqual: (a, b) => this.windowRowsEqual(windowSpec, sourceRows[indices[a]], sourceRows[indices[b]], sourceColumns),
           compare: (a, b) => this.compareValues(a, b),
         };
@@ -2233,21 +2356,16 @@ export class OracleExecutor extends BaseExecutor {
     return true;
   }
 
-  /** Window-frame positions (0-based, within the partition) for `pos`. */
-  private resolveFramePositions(
+  private resolveFrameRange(
     windowSpec: import('../engine/parser/ASTNode').WindowSpec,
     partitionSize: number,
     posInPartition: number
-  ): number[] {
-    const positions = (start: number, end: number): number[] => {
-      if (start > end) return [];
-      return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-    };
+  ): FrameRange {
     const frame = windowSpec.frame;
     if (!frame) {
       // Default frame: if ORDER BY present, UNBOUNDED PRECEDING to CURRENT ROW; else whole partition
       const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
-      return positions(0, hasOrderBy ? posInPartition : partitionSize - 1);
+      return { start: 0, end: hasOrderBy ? posInPartition : partitionSize - 1 };
     }
     const resolveBound = (bound: import('../engine/parser/ASTNode').FrameBound): number => {
       switch (bound.type) {
@@ -2256,17 +2374,17 @@ export class OracleExecutor extends BaseExecutor {
         case 'CURRENT_ROW': return posInPartition;
         case 'PRECEDING': {
           const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
-          return Math.max(0, posInPartition - n);
+          return posInPartition - n;
         }
         case 'FOLLOWING': {
           const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
-          return Math.min(partitionSize - 1, posInPartition + n);
+          return posInPartition + n;
         }
       }
     };
     const start = resolveBound(frame.start);
     const end = frame.end ? resolveBound(frame.end) : posInPartition; // single bound defaults end to CURRENT ROW
-    return positions(start, end);
+    return { start: Math.max(0, start), end: Math.min(partitionSize - 1, end) };
   }
 
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
@@ -2522,48 +2640,39 @@ export class OracleExecutor extends BaseExecutor {
 
     const result: StorageRow[] = [];
     const visited = new Set<string>();
+    const referencesPrior = containsPrior(connectBy.condition);
+    const depthCap = referencesPrior ? CONNECT_BY_LOOP_DEPTH : Number.POSITIVE_INFINITY;
 
-    // Safety cap matching Oracle's default ORA-30009 threshold (10000).
-    const MAX_DEPTH = 10000;
+    interface Walk { row: StorageRow; level: number; next: number; key: string | null }
+    const stack: Walk[] = [];
 
-    const traverse = (parentRow: StorageRow, level: number) => {
-      const rowKey = JSON.stringify(parentRow) + '#' + level;
-      if (connectBy.noCycle && visited.has(rowKey)) return;
-      if (level > MAX_DEPTH) return;
-
-      visited.add(rowKey);
-      const rowWithLevel = [...parentRow];
-      rowWithLevel[levelIdx] = level;
-      result.push(rowWithLevel);
-
-      // Find children by re-evaluating the CONNECT BY condition. The
-      // candidate child's LEVEL pseudo-column must reflect what its
-      // depth *would be* if it were emitted, otherwise predicates like
-      // `LEVEL <= N` never terminate the recursion correctly.
-      const childLevel = level + 1;
-      for (const childRow of rows) {
-        const childWithLevel = [...childRow];
-        childWithLevel[levelIdx] = childLevel;
-        const ok = this.evaluateConnectByCondition(connectBy.condition, rowWithLevel, childWithLevel, columns);
-        if (ok) {
-          traverse(childWithLevel, childLevel);
-        }
-      }
-
-      visited.delete(rowKey);
+    const enter = (row: StorageRow, level: number): void => {
+      const key = connectBy.noCycle ? JSON.stringify(row.map((value, position) => (position === levelIdx ? null : value))) : null;
+      if (key !== null && visited.has(key)) return;
+      if (level > depthCap) return;
+      if (key !== null) visited.add(key);
+      result.push(row);
+      if (result.length > CONNECT_BY_MAX_ROWS) throw new OracleError(30009, 'Not enough memory for CONNECT BY operation');
+      stack.push({ row, level, next: 0, key });
     };
 
-    // Seed traversal: root rows get LEVEL=1. Without PRIOR / START WITH
-    // and a single-row source (e.g. DUAL), this is the standard "row
-    // generator" idiom.
     for (const root of rootRows) {
       const rootWithLevel = [...root];
       rootWithLevel[levelIdx] = 1;
-      // The first emission is unconditional only when the predicate
-      // accepts LEVEL=1 — real Oracle still applies the CONNECT BY
-      // filter to the root, except that LEVEL=1 always satisfies a
-      // `LEVEL <= N` style guard.
-      traverse(rootWithLevel, 1);
+      enter(rootWithLevel, 1);
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        if (top.next >= rows.length) {
+          if (top.key !== null) visited.delete(top.key);
+          stack.pop();
+          continue;
+        }
+        const childRow = rows[top.next++];
+        const childLevel = top.level + 1;
+        const childWithLevel = [...childRow];
+        childWithLevel[levelIdx] = childLevel;
+        if (this.evaluateConnectByCondition(connectBy.condition, top.row, childWithLevel, columns)) enter(childWithLevel, childLevel);
+      }
     }
 
     return result;
@@ -2994,9 +3103,10 @@ export class OracleExecutor extends BaseExecutor {
     const visible = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns);
     const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
 
+    const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
     const count = this.storage.updateRows(
       schema, tableName,
-      (row) => (!visible || visible(row))
+      (row) => (indexed === null || indexed.has(row)) && (!visible || visible(row))
         && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns)),
       (row) => {
         const newRow = [...row];
@@ -3035,8 +3145,9 @@ export class OracleExecutor extends BaseExecutor {
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
     const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
+    const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
     const deletable = (row: StorageRow): boolean =>
-      (!visible || visible(row))
+      (indexed === null || indexed.has(row)) && (!visible || visible(row))
       && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
 
     // Validate FK constraints on rows to be deleted
@@ -3073,7 +3184,7 @@ export class OracleExecutor extends BaseExecutor {
       username: stmt.connectUser ? stmt.connectUser.toUpperCase() : null,
       password: stmt.connectPassword ?? null,
       host: stmt.usingAlias ?? null,
-      created: simulationDate(),
+      created: hostNowDate(),
     });
     this.emitDdl('CREATE DATABASE LINK', `${owner}.${name}`);
     return emptyResult('Database link created.');
@@ -3108,7 +3219,7 @@ export class OracleExecutor extends BaseExecutor {
     if (!stmt.orReplace && this.catalog.getDirectory(name)) {
       throw new OracleError(955, 'name is already used by an existing object');
     }
-    this.catalog.registerDirectory({ name, path: stmt.path, created: simulationDate() });
+    this.catalog.registerDirectory({ name, path: stmt.path, created: hostNowDate() });
     this.emitDdl('CREATE DIRECTORY', `SYS.${name}`);
     return emptyResult('Directory created.');
   }
@@ -3178,7 +3289,7 @@ export class OracleExecutor extends BaseExecutor {
       refreshMethod: stmt.refreshMethod ?? 'FORCE',
       refreshMode: stmt.refreshMode ?? 'DEMAND',
       baseTables: this.collectBaseTables(stmt.query),
-      lastRefresh: deferred ? null : simulationDate(),
+      lastRefresh: deferred ? null : hostNowDate(),
       staleness: deferred ? 'UNUSABLE' : 'FRESH',
     });
     this.emitDdl('CREATE MATERIALIZED VIEW', `${owner}.${name}`);
@@ -3222,7 +3333,7 @@ export class OracleExecutor extends BaseExecutor {
     const result = this.executeSelect(meta.queryAst as SelectStatement);
     this.storage.deleteRows(o, n, () => true);
     for (const row of result.rows) this.storage.insertRow(o, n, row as StorageRow);
-    meta.lastRefresh = simulationDate();
+    meta.lastRefresh = hostNowDate();
     meta.staleness = 'FRESH';
   }
 
@@ -3243,7 +3354,7 @@ export class OracleExecutor extends BaseExecutor {
       withPrimaryKey: stmt.withPrimaryKey || !stmt.withRowid,
       withSequence: stmt.withSequence,
       pendingChanges: 0,
-      created: simulationDate(),
+      created: hostNowDate(),
     });
     this.emitDdl('CREATE MATERIALIZED VIEW LOG', `${owner}.${master}`);
     return emptyResult('Materialized view log created.');
@@ -4125,7 +4236,7 @@ export class OracleExecutor extends BaseExecutor {
         // DBMS_UTILITY (no-parens access)
         if (pkgName === 'DBMS_UTILITY') {
           const fn = expr.name.toUpperCase();
-          if (fn === 'GET_TIME') return simulationNowMs() % 2147483647;
+          if (fn === 'GET_TIME') return hostNowMs() % 2147483647;
           if (fn === 'FORMAT_ERROR_BACKTRACE' || fn === 'FORMAT_ERROR_STACK') return '';
         }
         // DBMS_LOB (no-parens access)

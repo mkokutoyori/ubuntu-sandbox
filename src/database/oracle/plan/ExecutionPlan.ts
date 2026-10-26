@@ -1,3 +1,4 @@
+import { hostNowDate } from '../time/OracleHostClock';
 /**
  * ExecutionPlan — concrete representation of a SQL execution plan.
  *
@@ -10,7 +11,7 @@
  * only models the result.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 export type PlanOperation =
   | 'SELECT STATEMENT' | 'INSERT STATEMENT' | 'UPDATE STATEMENT' | 'DELETE STATEMENT'
@@ -76,7 +77,7 @@ export class ExecutionPlan {
     this.sqlText = init.sqlText;
     this.nodes = init.nodes;
     this.planHashValue = init.planHashValue ?? ExecutionPlan.hash(init.sqlText, init.nodes);
-    this.createdAt = init.createdAt ?? simulationDate();
+    this.createdAt = init.createdAt ?? hostNowDate();
   }
 
   /** Total cost — sum of node costs, like Oracle's SELECT STATEMENT COST. */

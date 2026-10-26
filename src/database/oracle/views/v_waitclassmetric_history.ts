@@ -2,12 +2,13 @@
  * V$WAITCLASSMETRIC_HISTORY — last-hour history of V$WAITCLASSMETRIC.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult, type Row } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$WAITCLASSMETRIC_HISTORY',
@@ -16,7 +17,7 @@ registerView({
     const sample = queryView('V$WAITCLASSMETRIC', ctx);
     if (!sample) return queryResult([], []);
     const rows: Row[] = [];
-    const now = simulationNowMs();
+    const now = hostNowMs();
     for (let b = 0; b < 60; b++) {
       const end = now - b * 60_000;
       const begin = end - 60_000;

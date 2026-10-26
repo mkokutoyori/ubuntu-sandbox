@@ -6,11 +6,12 @@
  * monotonically increasing.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'DBA_HIST_SNAPSHOT',
@@ -41,7 +42,7 @@ registerView({
       ]));
     }
     // Synthetic hourly snapshots so DBA_HIST_SNAPSHOT is never empty.
-    const now = simulationNowMs();
+    const now = hostNowMs();
     const elapsedHours = Math.max(1, Math.floor((now - runtime.startedAt) / 3_600_000));
     const rows: (string | number)[][] = [];
     for (let i = 0; i < Math.min(elapsedHours, 200); i++) {

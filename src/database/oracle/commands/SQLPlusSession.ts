@@ -16,8 +16,8 @@
  *   - PROMPT, ACCEPT (simulated)
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
-import { hostBannerDate } from '../time/OracleHostClock';
+
+import { hostBannerDate, hostNowMs, withHostClock } from '../time/OracleHostClock';
 
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
@@ -462,22 +462,28 @@ export class SQLPlusSession {
    * spool file records the prompt + command line followed by whatever
    * the command printed (SET TRIMSPOOL ON strips trailing blanks).
    */
+  private atHostTime<T>(run: () => T): T {
+    return withHostClock(this.db.instance.hostClock(), run);
+  }
+
   processLine(line: string): SQLPlusResult {
-    const promptBefore = this.lastPromptShown ?? this.getPrompt();
-    const result = this.processLineInner(line);
-    if (this.spool) {
-      this.spool.lines.push(`${promptBefore}${line}`);
-      for (const out of result.output) {
-        this.spool.lines.push(this.settings.trimspool ? out.replace(/\s+$/, '') : out);
+    return this.atHostTime(() => {
+      const promptBefore = this.lastPromptShown ?? this.getPrompt();
+      const result = this.processLineInner(line);
+      if (this.spool) {
+        this.spool.lines.push(`${promptBefore}${line}`);
+        for (const out of result.output) {
+          this.spool.lines.push(this.settings.trimspool ? out.replace(/\s+$/, '') : out);
+        }
+        this.flushSpool();
+        if (this.spoolClosing) {
+          this.spool = null;
+          this.spoolClosing = false;
+        }
       }
-      this.flushSpool();
-      if (this.spoolClosing) {
-        this.spool = null;
-        this.spoolClosing = false;
-      }
-    }
-    this.lastPromptShown = result.prompt;
-    return result;
+      this.lastPromptShown = result.prompt;
+      return result;
+    });
   }
 
   private processLineInner(line: string): SQLPlusResult {
@@ -879,11 +885,11 @@ export class SQLPlusSession {
     const output: string[] = [...substituted.verifyLines];
 
     try {
-      const startTime = simulationNowMs();
+      const startTime = hostNowMs();
       const result = this.netSession
         ? this.executeOverOracleNet(sql)
         : this.db.executeSql(this.executor, sql);
-      const elapsed = simulationNowMs() - startTime;
+      const elapsed = hostNowMs() - startTime;
 
       if (result.isQuery && result.columns.length > 0) {
         if (result.rows.length === 0) {
@@ -894,7 +900,7 @@ export class SQLPlusSession {
             output.push('no rows selected');
           }
         } else {
-          output.push(...this.formatQueryResult(result));
+          for (const line of this.formatQueryResult(result)) output.push(line);
         }
       } else if (result.message) {
         output.push('');
@@ -1757,7 +1763,7 @@ export class SQLPlusSession {
     for (const raw of content.replace(/\n$/, '').split('\n')) {
       const inner = this.processLineInner(raw);
       if (this.settings.echo) output.push(`${scriptPrompt}${raw}`);
-      output.push(...inner.output);
+      for (const line of inner.output) output.push(line);
       scriptPrompt = inner.prompt;
       if (inner.exit) {
         return { output, exit: true, needsMoreInput: false, prompt: inner.prompt };

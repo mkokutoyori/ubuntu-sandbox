@@ -45,17 +45,12 @@ export class LinuxLastlogRegistry {
     if (this.vfs === null || uid === undefined) return undefined;
     const before = this.read(uid);
     if (before) this.previous.set(user, before);
-    const bytes = this.bytes();
-    const offset = uid * LASTLOG_RECORD_SIZE;
-    const grown = new Uint8Array(Math.max(bytes.length, offset + LASTLOG_RECORD_SIZE));
-    grown.set(bytes);
-    const record = grown.subarray(offset, offset + LASTLOG_RECORD_SIZE);
-    record.fill(0);
-    const view = new DataView(record.buffer, record.byteOffset, record.byteLength);
+    const record = new Uint8Array(LASTLOG_RECORD_SIZE);
+    const view = new DataView(record.buffer);
     view.setInt32(0, Math.floor(when / 1000), true);
     record.set(new TextEncoder().encode(tty).subarray(0, LINE_SIZE), 4);
     record.set(new TextEncoder().encode(sourceHost).subarray(0, HOST_SIZE), 4 + LINE_SIZE);
-    this.store(grown);
+    this.splice(uid, bytesToBinaryString(record));
     return before;
   }
 
@@ -76,19 +71,19 @@ export class LinuxLastlogRegistry {
   clearUser(user: string): void {
     const uid = this.uidOf(user);
     if (uid === undefined) return;
-    const bytes = this.bytes();
-    const offset = uid * LASTLOG_RECORD_SIZE;
-    if (offset + LASTLOG_RECORD_SIZE > bytes.length) return;
-    bytes.fill(0, offset, offset + LASTLOG_RECORD_SIZE);
-    this.store(bytes);
+    if ((this.vfs?.readFile(LASTLOG_PATH) ?? '').length < (uid + 1) * LASTLOG_RECORD_SIZE) return;
+    this.splice(uid, '\0'.repeat(LASTLOG_RECORD_SIZE));
   }
 
   filePath(): string {
     return LASTLOG_PATH;
   }
 
-  private bytes(): Uint8Array {
-    return binaryStringToBytes(this.vfs?.readFile(LASTLOG_PATH) ?? '');
+  private splice(uid: number, record: string): void {
+    const content = this.vfs?.readFile(LASTLOG_PATH) ?? '';
+    const offset = uid * LASTLOG_RECORD_SIZE;
+    const head = content.length >= offset ? content.slice(0, offset) : content + '\0'.repeat(offset - content.length);
+    this.vfs?.writeFile(LASTLOG_PATH, head + record + content.slice(offset + LASTLOG_RECORD_SIZE), 0, 0, 0o022);
   }
 
   private store(bytes: Uint8Array): void {
@@ -96,10 +91,10 @@ export class LinuxLastlogRegistry {
   }
 
   private read(uid: number): LastlogEntry | undefined {
-    const bytes = this.bytes();
+    const content = this.vfs?.readFile(LASTLOG_PATH) ?? '';
     const offset = uid * LASTLOG_RECORD_SIZE;
-    if (offset + LASTLOG_RECORD_SIZE > bytes.length) return undefined;
-    const record = bytes.subarray(offset, offset + LASTLOG_RECORD_SIZE);
+    if (offset + LASTLOG_RECORD_SIZE > content.length) return undefined;
+    const record = binaryStringToBytes(content.slice(offset, offset + LASTLOG_RECORD_SIZE));
     const seconds = new DataView(record.buffer, record.byteOffset, record.byteLength).getInt32(0, true);
     if (seconds === 0) return undefined;
     return {

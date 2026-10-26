@@ -1,8 +1,9 @@
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$PDBS',
@@ -30,7 +31,7 @@ registerView({
       instance.multitenant.getAll().map(p => [
         p.conId, p.dbid, String(p.dbid), p.guid, p.name, p.openMode,
         p.restricted ? 'YES' : 'NO',
-        p.openMode === 'MOUNTED' ? null : simulationDate().toISOString(),
+        p.openMode === 'MOUNTED' ? null : hostNowDate().toISOString(),
         100000, p.totalSizeBytes, 8192, p.status,
         p.applicationRoot ? 'YES' : 'NO',
         p.applicationPdb ? 'YES' : 'NO',
