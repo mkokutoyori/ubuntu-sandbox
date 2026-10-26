@@ -1,7 +1,7 @@
 export type Errno =
   | 'EPERM' | 'ENOENT' | 'ENODEV' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
   | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
-  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT' | 'EBADMSG' | 'ENODATA' | 'EPROTONOSUPPORT' | 'ENOKEY' | 'EIO' | 'ERANGE' | 'ENOTDIR' | 'EFBIG' | 'ENOMEM';
+  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT' | 'EBADMSG' | 'ENODATA' | 'EPROTONOSUPPORT' | 'ENOKEY' | 'EIO' | 'ERANGE' | 'ENOTDIR' | 'EFBIG' | 'ENOMEM' | 'EINPROGRESS';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EPERM: { number: 1, text: 'Operation not permitted' },
@@ -33,6 +33,7 @@ const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   ENOTDIR: { number: 20, text: 'Not a directory' },
   EFBIG: { number: 27, text: 'File too large' },
   ENOMEM: { number: 12, text: 'Cannot allocate memory' },
+  EINPROGRESS: { number: 115, text: 'Operation now in progress' },
 };
 
 export interface MessageTooLong {

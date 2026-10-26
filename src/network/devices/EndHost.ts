@@ -3926,17 +3926,23 @@ export abstract class EndHost extends Equipment {
 
   public udpListen(
     port: number, processName: string, owner: { pid?: number; uid?: number },
-    onDatagram?: (payload: Uint8Array) => void,
+    onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null {
     const listener: UdpListener = onDatagram === undefined ? () => undefined : (delivery) => {
       const payload = delivery.udp.payload;
-      if (payload instanceof Uint8Array) onDatagram(payload);
-      else if (typeof payload === 'string') onDatagram(new TextEncoder().encode(payload));
+      const from = { address: delivery.sourceIP.toString(), port: delivery.udp.sourcePort };
+      if (payload instanceof Uint8Array) onDatagram(payload, from);
+      else if (typeof payload === 'string') onDatagram(new TextEncoder().encode(payload), from);
     };
     try {
+      if (address !== undefined && address !== '0.0.0.0' && address !== '::') {
+        this.udpBindAddress(address, port, listener, processName, undefined, owner);
+        return null;
+      }
       return this.udpBind(port, listener, processName, owner) === false ? 'EADDRINUSE' : null;
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EACCES')) return 'EACCES';
+      if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return 'EADDRINUSE';
       throw error;
     }
   }
@@ -4070,12 +4076,13 @@ export abstract class EndHost extends Equipment {
    */
   public udpBindAddress(
     address: string, port: number, listener: UdpListener, processName?: string, boundDevice?: string,
+    owner: { pid?: number; uid?: number } = {},
   ): void {
     if (boundDevice !== undefined && !this.ports.has(boundDevice)) {
       throw new Error(`ENODEV: No such device ${boundDevice}`);
     }
-    this.socketTable.bind('udp', address, port, undefined, processName, undefined,
-      boundDevice === undefined ? undefined : { boundDevice });
+    this.socketTable.bind('udp', address, port, owner.pid, processName, undefined,
+      { ownerUid: owner.uid, ...(boundDevice === undefined ? {} : { boundDevice }) });
     this.udpAddressListeners.set(`${address}:${port}`, { listener, boundDevice: boundDevice ?? null });
   }
 

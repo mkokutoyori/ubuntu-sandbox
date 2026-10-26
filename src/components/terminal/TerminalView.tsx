@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore }
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
 import { useGridGeometry } from '../gridGeometry';
+import { copySelectionToClipboard, pasteFromClipboard } from './clipboard';
 import type {
   RemoteNanoController,
   RemoteVimController,
@@ -37,27 +38,6 @@ import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 
 export function useTerminalSession(session: TerminalSession): number {
   return useSyncExternalStore(session.subscribe, session.getVersion);
-}
-
-// ─── Clipboard helpers ───────────────────────────────────────────
-
-async function copySelectionToClipboard(): Promise<boolean> {
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || !selection.toString().trim()) return false;
-  try {
-    await navigator.clipboard.writeText(selection.toString());
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function pasteFromClipboard(): Promise<string | null> {
-  try {
-    return await navigator.clipboard.readText();
-  } catch {
-    return null;
-  }
 }
 
 // ─── Main Component ───────────────────────────────────────────────

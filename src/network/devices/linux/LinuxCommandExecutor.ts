@@ -522,15 +522,36 @@ type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly st
 
 const HOST_KEY_ADDED_NOTICE = 'Warning: Permanently added';
 
-function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: string; stdinPath?: string } {
+interface SplitRedirections {
+  argv: string[];
+  stdoutPath?: string;
+  stdinPath?: string;
+  stderrPath?: string;
+  stderrAppend: boolean;
+}
+
+function splitRedirections(tokens: string[]): SplitRedirections {
   const argv: string[] = [];
   let stdoutPath: string | undefined;
   let stdinPath: string | undefined;
+  let stderrPath: string | undefined;
+  let stderrAppend = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    const out = /^1?(>>?)(.*)$/.exec(token);
+    const out = /^1?(>>?)(?!&)(.*)$/.exec(token);
+    const err = /^2(>>?)(?!&)(.*)$/.exec(token);
     const input = /^<(.*)$/.exec(token);
-    if (out) {
+    if (token === '2>&1') {
+      if (stdoutPath !== undefined) {
+        stderrPath = stdoutPath;
+        stderrAppend = true;
+      }
+    } else if (/^1?>&[0-9]$/.test(token)) {
+      continue;
+    } else if (err) {
+      stderrPath = err[2] !== '' ? err[2] : tokens[++i];
+      stderrAppend = err[1] === '>>';
+    } else if (out) {
       stdoutPath = out[2] !== '' ? out[2] : tokens[++i];
     } else if (input) {
       stdinPath = input[1] !== '' ? input[1] : tokens[++i];
@@ -538,7 +559,7 @@ function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: str
       argv.push(token);
     }
   }
-  return { argv, stdoutPath, stdinPath };
+  return { argv, stdoutPath, stdinPath, stderrPath, stderrAppend };
 }
 
 const AUDIT_SYSLOG_PRIORITY: Readonly<Record<AuditPriority, number>> = {
@@ -3343,9 +3364,10 @@ export class LinuxCommandExecutor {
     const noNetworkWork: Promise<unknown> = Promise.resolve();
     let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
-      const { argv: netArgv, stdoutPath, stdinPath } = splitRedirections(
+      const { argv: netArgv, stdoutPath, stdinPath, stderrPath, stderrAppend } = splitRedirections(
         simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
       if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
+      if (stderrPath !== undefined) this.bindBackgroundStderr(proc.pid, this.vfs.normalizePath(stderrPath, this.cwd), stderrAppend);
       const netStdin = stdinPath === undefined ? undefined
         : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
@@ -3354,11 +3376,16 @@ export class LinuxCommandExecutor {
         ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
         : null;
       this.runningBackgroundJobPid = null;
+      this.materializeProcFd(proc.pid);
       if (pending) {
         captured = '';
         exitCode = 0;
         settled = pending
-          .then((r) => { job.capturedOutput = r.output; job.exitCode = r.exitCode; })
+          .then((r) => {
+            job.capturedOutput = r.output;
+            job.exitCode = r.exitCode;
+            if (r.stderr) this.emitLateStderr(proc.pid, `${r.stderr}\n`);
+          })
           .catch(() => { job.exitCode = 1; })
           .then(() => {
             if (!parked) {
@@ -5094,6 +5121,36 @@ export class LinuxCommandExecutor {
     this.vfs.writeFile(file.path, text, file.uid, file.gid, file.umask, true, undefined, false);
   }
 
+  private readonly lateStderr = new Map<number, {
+    file?: { path: string; uid: number; gid: number; umask: number };
+    pending: string[];
+  }>();
+
+  private bindBackgroundStderr(pid: number, path: string, append: boolean): void {
+    const file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
+    if (!append) this.vfs.writeFile(file.path, '', file.uid, file.gid, file.umask, false, undefined, false);
+    const sink = this.lateStderr.get(pid) ?? { pending: [] };
+    sink.file = file;
+    this.lateStderr.set(pid, sink);
+    for (const text of sink.pending.splice(0)) this.appendLateStdout(file, text);
+  }
+
+  isBackgroundJob(pid: number): boolean {
+    return this.jobTable.findByPid(pid) !== undefined;
+  }
+
+  emitLateStderr(pid: number, text: string): void {
+    if (text === '') return;
+    if (!this.processMgr.get(pid)) {
+      this.lateStderr.delete(pid);
+      return;
+    }
+    const sink = this.lateStderr.get(pid) ?? { pending: [] };
+    this.lateStderr.set(pid, sink);
+    if (sink.file) this.appendLateStdout(sink.file, text);
+    else sink.pending.push(text);
+  }
+
   emitLateStdout(pid: number, text: string): void {
     if (text === '') return;
     if (!this.processMgr.get(pid)) {
@@ -5130,6 +5187,9 @@ export class LinuxCommandExecutor {
       },
       resolvePath: (path: string) => {
         return this.vfs.normalizePath(path, this.cwd);
+      },
+      bindBackgroundStderr: (pid: number, path: string, append: boolean) => {
+        this.bindBackgroundStderr(pid, this.vfs.normalizePath(path, this.cwd), append);
       },
       bindBackgroundStdout: (pid: number, path: string) => {
         const sink = this.lateStdout.get(pid) ?? { pending: [] };

@@ -188,7 +188,7 @@ test.describe('Scénario 2 (e2e) — lignes console, VTY et AUX', () => {
     }, { cisco, pc });
 
     await openTerminal(page, pc);
-    await typeCmd(page, 'ssh admin@10.0.0.1');
+    await typeCmd(page, 'ssh -o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa admin@10.0.0.1');
     await waitForText(page, /password/i);
     await submitPassword(page, 'Admin@2025');
     await waitForText(page, /\w+[#>]\s*$/m, 8_000);

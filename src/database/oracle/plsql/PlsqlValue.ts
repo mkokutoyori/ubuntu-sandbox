@@ -173,6 +173,7 @@ export interface StoredUnitLike {
 }
 
 export interface PlsqlHost {
+  sliceSpent?(): boolean;
   runSql(sql: string): {
     rows: Scalar[][];
     columns: string[];

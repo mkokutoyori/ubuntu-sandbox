@@ -113,6 +113,7 @@ test.describe('Cisco IOS erase startup-config through the UI really erases', () 
     const rid = await addRouter(page);
     await openTerminal(page, rid);
     await typeCmd(page, 'enable');
+    await typeCmd(page, 'terminal length 0');
     await typeCmd(page, 'configure terminal');
     await typeCmd(page, 'hostname E2E-SAVED');
     await typeCmd(page, 'end');

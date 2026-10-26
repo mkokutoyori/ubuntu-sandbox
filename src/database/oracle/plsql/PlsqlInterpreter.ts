@@ -48,18 +48,39 @@ export class PlsqlInterpreter {
   }
 
   run(block: Block): void {
+    this.drive(this.runSteps(block));
+  }
+
+  *runSteps(block: Block): Generator<void, void, void> {
     const root = new Scope(null);
-    this.execBlock(block, root);
+    yield* this.execBlockSteps(block, root);
+  }
+
+  private drive(steps: Generator<void, void, void>): void {
+    let step = steps.next();
+    while (!step.done) step = steps.next();
   }
 
   private execBlock(block: Block, parent: Scope): void {
+    this.drive(this.execBlockSteps(block, parent));
+  }
+
+  private execStmts(stmts: Stmt[], scope: Scope): void {
+    this.drive(this.execStmtsSteps(stmts, scope));
+  }
+
+  private *pauseWhenSliceSpent(): Generator<void, void, void> {
+    if (this.host.sliceSpent?.() === true) yield;
+  }
+
+  private *execBlockSteps(block: Block, parent: Scope): Generator<void, void, void> {
     const scope = parent.child();
     for (const d of block.declarations) this.declare(d, scope);
     const autonomous = block.declarations.some(
       d => d.kind === 'pragma' && d.name.toUpperCase() === 'AUTONOMOUS_TRANSACTION');
     if (autonomous) this.host.beginAutonomousScope?.();
     try {
-      this.execStmts(block.body, scope);
+      yield* this.execStmtsSteps(block.body, scope);
     } catch (e) {
       if (e instanceof ExitSignal || e instanceof ContinueSignal || e instanceof ReturnSignal || e instanceof GotoSignal) throw e;
       const ex = this.toPlsqlException(e);
@@ -70,7 +91,7 @@ export class PlsqlInterpreter {
       this.sqlcode = this.computeSqlcode(ex);
       this.sqlerrm = ex.message;
       try {
-        this.execStmts(handler.body, scope);
+        yield* this.execStmtsSteps(handler.body, scope);
       } finally {
         this.sqlcode = prevCode;
         this.sqlerrm = prevErr;
@@ -187,11 +208,11 @@ export class PlsqlInterpreter {
     return value;
   }
 
-  private execStmts(stmts: Stmt[], scope: Scope): void {
+  private *execStmtsSteps(stmts: Stmt[], scope: Scope): Generator<void, void, void> {
     let i = 0;
     while (i < stmts.length) {
       try {
-        this.execStmt(stmts[i], scope);
+        yield* this.execStmtSteps(stmts[i], scope);
       } catch (sig) {
         if (sig instanceof GotoSignal) {
           const idx = stmts.findIndex(s => s.kind === 'labelMark' && s.label === sig.label);
@@ -203,36 +224,36 @@ export class PlsqlInterpreter {
     }
   }
 
-  private execStmt(s: Stmt, scope: Scope): void {
+  private *execStmtSteps(s: Stmt, scope: Scope): Generator<void, void, void> {
     switch (s.kind) {
       case 'null': case 'labelMark': return;
-      case 'block': this.execBlock(s, scope); return;
+      case 'block': yield* this.execBlockSteps(s, scope); return;
       case 'assign': this.execAssign(s.target, this.evalExpr(s.value, scope), scope); return;
       case 'if': {
         for (const b of s.branches) {
-          if (this.truth(this.evalExpr(b.cond, scope))) { this.execStmts(b.body, scope); return; }
+          if (this.truth(this.evalExpr(b.cond, scope))) { yield* this.execStmtsSteps(b.body, scope); return; }
         }
-        if (s.elseBody) this.execStmts(s.elseBody, scope);
+        if (s.elseBody) yield* this.execStmtsSteps(s.elseBody, scope);
         return;
       }
       case 'case': {
         if (s.selector) {
           const sel = this.evalExpr(s.selector, scope);
           for (const w of s.whens) {
-            if (this.eq(sel, this.evalExpr(w.match, scope))) { this.execStmts(w.body, scope); return; }
+            if (this.eq(sel, this.evalExpr(w.match, scope))) { yield* this.execStmtsSteps(w.body, scope); return; }
           }
         } else {
           for (const w of s.whens) {
-            if (this.truth(this.evalExpr(w.match, scope))) { this.execStmts(w.body, scope); return; }
+            if (this.truth(this.evalExpr(w.match, scope))) { yield* this.execStmtsSteps(w.body, scope); return; }
           }
         }
-        if (s.elseBody) { this.execStmts(s.elseBody, scope); return; }
+        if (s.elseBody) { yield* this.execStmtsSteps(s.elseBody, scope); return; }
         throw new PlsqlException('CASE_NOT_FOUND', 6592, 'ORA-06592: CASE not found while executing CASE statement');
       }
-      case 'loop': this.runLoop(s.label, () => true, s.body, scope, null); return;
-      case 'while': this.runLoop(s.label, () => this.truth(this.evalExpr(s.cond, scope)), s.body, scope, null); return;
-      case 'forNum': this.runForNum(s, scope); return;
-      case 'forCursor': this.runForCursor(s, scope); return;
+      case 'loop': yield* this.runLoopSteps(s.label, () => true, s.body, scope, null); return;
+      case 'while': yield* this.runLoopSteps(s.label, () => this.truth(this.evalExpr(s.cond, scope)), s.body, scope, null); return;
+      case 'forNum': yield* this.runForNumSteps(s, scope); return;
+      case 'forCursor': yield* this.runForCursorSteps(s, scope); return;
       case 'exit': {
         if (s.when && !this.truth(this.evalExpr(s.when, scope))) return;
         throw new ExitSignal(s.label);
@@ -256,14 +277,15 @@ export class PlsqlInterpreter {
     }
   }
 
-  private runLoop(label: string | null, cond: () => boolean, body: Stmt[], scope: Scope, beforeIter: (() => void) | null): void {
+  private *runLoopSteps(label: string | null, cond: () => boolean, body: Stmt[], scope: Scope, beforeIter: (() => void) | null): Generator<void, void, void> {
     let guard = MAX_LOOP;
     while (cond()) {
       if (guard-- <= 0) throw new PlsqlException('STORAGE_ERROR', 6500, 'ORA-06500: PL/SQL: storage error (loop limit exceeded)');
       const iterScope = scope.child();
       if (beforeIter) beforeIter();
+      yield* this.pauseWhenSliceSpent();
       try {
-        this.execStmts(body, iterScope);
+        yield* this.execStmtsSteps(body, iterScope);
       } catch (sig) {
         if (sig instanceof ExitSignal) {
           if (sig.label === null || sig.label === label) return;
@@ -278,14 +300,14 @@ export class PlsqlInterpreter {
     }
   }
 
-  private runForNum(s: Extract<Stmt, { kind: 'forNum' }>, scope: Scope): void {
+  private *runForNumSteps(s: Extract<Stmt, { kind: 'forNum' }>, scope: Scope): Generator<void, void, void> {
     const lo = Number(this.evalExpr(s.low, scope));
     const hi = Number(this.evalExpr(s.high, scope));
     const values: number[] = [];
     if (s.reverse) { for (let v = hi; v >= lo; v--) values.push(v); }
     else { for (let v = lo; v <= hi; v++) values.push(v); }
     let idx = 0;
-    this.runLoopIndexed(s.label, () => idx < values.length, s.body, scope, () => {
+    yield* this.runLoopIndexedSteps(s.label, () => idx < values.length, s.body, scope, () => {
       const sc = scope.child();
       sc.declareVar(s.varName, { type: { name: 'PLS_INTEGER', args: [] }, value: values[idx], constant: true });
       idx++;
@@ -293,13 +315,14 @@ export class PlsqlInterpreter {
     });
   }
 
-  private runLoopIndexed(label: string | null, cond: () => boolean, body: Stmt[], parent: Scope, makeScope: () => Scope): void {
+  private *runLoopIndexedSteps(label: string | null, cond: () => boolean, body: Stmt[], parent: Scope, makeScope: () => Scope): Generator<void, void, void> {
     let guard = MAX_LOOP;
     while (cond()) {
       if (guard-- <= 0) throw new PlsqlException('STORAGE_ERROR', 6500, 'ORA-06500: PL/SQL: storage error');
       const iterScope = makeScope();
+      yield* this.pauseWhenSliceSpent();
       try {
-        this.execStmts(body, iterScope);
+        yield* this.execStmtsSteps(body, iterScope);
       } catch (sig) {
         if (sig instanceof ExitSignal) { if (sig.label === null || sig.label === label) return; throw sig; }
         if (sig instanceof ContinueSignal) { if (sig.label === null || sig.label === label) continue; throw sig; }
@@ -308,7 +331,7 @@ export class PlsqlInterpreter {
     }
   }
 
-  private runForCursor(s: Extract<Stmt, { kind: 'forCursor' }>, scope: Scope): void {
+  private *runForCursorSteps(s: Extract<Stmt, { kind: 'forCursor' }>, scope: Scope): Generator<void, void, void> {
     let sql: string;
     if (s.query) {
       sql = this.interpolateBinds(s.query, scope);
@@ -321,7 +344,7 @@ export class PlsqlInterpreter {
     }
     const rs = this.runQuery(sql);
     let idx = 0;
-    this.runLoopIndexed(s.label, () => idx < rs.rows.length, s.body, scope, () => {
+    yield* this.runLoopIndexedSteps(s.label, () => idx < rs.rows.length, s.body, scope, () => {
       const sc = scope.child();
       const rec = new PlsqlRecord(s.varName);
       rs.columns.forEach((c, ci) => {

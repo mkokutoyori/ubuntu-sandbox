@@ -233,7 +233,7 @@ export interface LinuxNetKernel {
 
   udpListen(
     port: number, processName: string, owner: { pid?: number; uid?: number },
-    onDatagram?: (payload: Uint8Array) => void,
+    onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null;
 
   routeException(target: IPAddress): RouteException | null;

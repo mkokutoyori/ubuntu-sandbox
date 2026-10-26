@@ -83,6 +83,7 @@ test.describe('Scénario 3 (e2e) — bannières Cisco', () => {
     await typeCmd(page, '#');
     await typeCmd(page, 'end');
 
+    await typeCmd(page, 'terminal length 0');
     await typeCmd(page, 'show running-config');
     await waitForText(page, 'AVERTISSEMENT SYSTEME PRIVE');
     await waitForText(page, 'Acces non autorise interdit');

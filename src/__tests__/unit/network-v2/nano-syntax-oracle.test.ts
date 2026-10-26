@@ -17,13 +17,13 @@
  * (139 laboratoires).
  *
  * Mesure : un moteur qui lit les syntaxes sans les evaluer (le commit precedent) laissait tomber 199 cas sur 200 (seed 1), 197
- * (seed 2) et 196 (seed 3) ; 0 apres, hors quatre cas non portes.  Chaque seed a ete enregistre une premiere fois sans fichiers
+ * (seed 2) et 196 (seed 3) ; 0 apres, hors trois cas non portes.  Chaque seed a ete enregistre une premiere fois sans fichiers
  * inclus ni commentaires : les divergences trouvees en rejouant sont toutes dans le moteur et resumees dans le message du
  * commit (peinture qui s'arrete au texte montre, `\t` avec REG_ICASE qui ne reconnait rien dans la libc, `~` developpe avant
  * le glob, `bind` / `unbind` qui ferment une syntaxe sans commande de couleur...).
  *
- * Cas non portes, 4 sur 600, tous mesures (un cas de la liste qui se met a passer fait echouer le test) :
- *   - repeint incremental (syn2-8, syn2-115, syn3-0, syn3-130) : une rangee que nano ne repeint pas, sans le guide `-J` que le
+ * Cas non portes, 3 sur 600, tous mesures (un cas de la liste qui se met a passer fait echouer le test) :
+ *   - repeint incremental (syn2-8, syn2-115, syn3-0) : une rangee que nano ne repeint pas, sans le guide `-J` que le
  *     moteur y dessine sur la nouvelle ligne magique ; voir TODO.md, « le repeint incremental ».
  */
 import { describe, it, expect } from 'vitest';
@@ -35,7 +35,7 @@ const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoStateCase[] }) }));
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
-  'syn2-8', 'syn2-115', 'syn3-0', 'syn3-130',
+  'syn2-8', 'syn2-115', 'syn3-0',
 ]);
 
 describe('nano syntax colouring recorded from a real nano', () => {

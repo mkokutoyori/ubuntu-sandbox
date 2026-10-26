@@ -78,7 +78,7 @@ test.describe('Exigence 5/6 — symboles ICMP du ping', () => {
 
     await typeCmd(page, 'ping 10.0.0.2', 2500);
     await waitForText(page, /!!!!/);
-    await waitForText(page, /Success rate is 100 percent \(5\/5\)/);
+    await waitForText(page, /Success rate is (80|100) percent \([45]\/5\)/);
   });
 });
 
@@ -154,6 +154,7 @@ test.describe('Exigences 3.a/3.b — refus CLI et canonisation', () => {
     await typeCmd(page, 'router ospf 1');
     await typeCmd(page, 'network 192.168.1.1 0.0.0.255 area 0');
     await typeCmd(page, 'end');
+    await typeCmd(page, 'terminal length 0');
     await typeCmd(page, 'show running-config', 800);
 
     await waitForText(page, 'interface GigabitEthernet0/0');

@@ -9,6 +9,7 @@ import { bytesToFileText } from '@/crypto/encoding';
 import { simulationNowMs } from '../../core/SystemClock';
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
+import { NANO_PACKAGE_DIRECTORIES, NANO_PACKAGE_FILES, NANO_PACKAGE_LINKS } from './editors/nano/NanoPackageFiles';
 import { VfsPath, type PathActor } from './VfsPath';
 import { fnmatch, globPaths } from './fs/Glob';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
@@ -63,6 +64,7 @@ export interface INode {
   mtime: number;
   atime: number;
   ctime: number;
+  revision?: number;
   deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
   /**
    * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
@@ -219,6 +221,7 @@ export class VirtualFileSystem {
   private resize(inode: INode, size: number): void {
     if (this.countsAgainstCapacity(inode)) this.bytesInUse += size - inode.size;
     inode.size = size;
+    inode.revision = (inode.revision ?? 0) + 1;
   }
 
   private release(inode: INode): void {
@@ -396,6 +399,9 @@ export class VirtualFileSystem {
     this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
     for (const path of pluginFilePaths(LIBSASL2_MODULES_PLUGINS)) this.createFileAt(path, '\x7fELF', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
+    for (const directory of NANO_PACKAGE_DIRECTORIES) this.mkdirp(directory, 0o755, 0, 0);
+    for (const file of NANO_PACKAGE_FILES) this.createFileAt(file.path, file.content, 0o644, 0, 0);
+    for (const link of NANO_PACKAGE_LINKS) this.createSymlink(link.path, link.target, 0, 0);
     this.createFileAt('/etc/lsb-release',
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
       'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',

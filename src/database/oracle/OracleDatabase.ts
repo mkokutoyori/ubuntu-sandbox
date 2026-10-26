@@ -55,6 +55,7 @@ import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from './OracleConfig';
 import { emptyResult } from '../engine/executor/ResultSet';
+import { through, settle } from '../engine/executor/Continuation';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import type { CellValue } from '../engine/storage/BaseStorage';
 import { SodEvaluator } from './security/audit/SodEvaluator';
@@ -69,7 +70,7 @@ import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
-import { runAnonymousBlock, PlsqlInterpreter } from './plsql';
+import { runAnonymousBlockSteps, PlsqlInterpreter, type PlsqlRunOutcome } from './plsql';
 import type { PlsqlHost, StoredUnitLike, Scalar, PackageSection, PackageRuntimeHandle, PackageSessionState } from './plsql';
 import { compilePackageSection, declarationNames } from './plsql';
 import { compileStoredUnit } from './plsql/unitSource';
@@ -894,9 +895,9 @@ export class OracleDatabase implements SqlCommandHost {
    * it to the SQL parser). Centralises what used to be a dozen ad-hoc
    * regex checks scattered through executeSql.
    */
-  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string): ResultSet | null {
+  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string, sliceMs: number): ResultSet | null {
     if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
-      return this.executePLSQL(executor, trimmed);
+      return this.executePLSQL(executor, trimmed, sliceMs);
     }
     if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
       return this.createStoredProcedure(executor, trimmed);
@@ -970,59 +971,86 @@ export class OracleDatabase implements SqlCommandHost {
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
   executeSql(executor: OracleExecutor, sql: string): ResultSet {
-    return this.atHostTime(() => executor.withCallBudget(() => {
-      const trimmed = sql.trim().replace(/;\s*$/, '');
-      if (!trimmed) return emptyResult();
+    return settle(this.executeSqlSliced(executor, sql, Infinity));
+  }
 
-      this.idleMonitor.sweep();
-      this.noticeSessionTermination(executor);
-      this.securityEngine.sessions.noteCall(String(executor.boundSid));
-
-      const upper = trimmed.toUpperCase();
-
-      if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
-        && standbyRefusesStatement(trimmed)) {
-        return emptyResult(ORA_16000);
-      }
-
-      if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
-        && mountedRefusesQuery(trimmed)) {
-        return emptyResult(ORA_01219);
-      }
-
-      // PL/SQL is a distinct language whose unit bodies contain semicolons
-      // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
-      // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
-      // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
-      const plsql = this.routePlsql(executor, trimmed, upper);
-      if (plsql) return plsql;
-
-      // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
-      // does not model the external-table clause, so it is registered here.
-      if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
-        return this.createExternalTable(executor, trimmed);
-      }
-
-      const tokens = this.lexer.tokenize(trimmed);
-      const parser = new OracleParser();
-      const statements = parser.parseMultiple(tokens);
-
-      if (statements.length === 0) return emptyResult();
-
-      let result: ResultSet = emptyResult();
-      for (const stmt of statements) {
-        // Attach the source SQL so audit/journaling records the original
-        // user text — the AST type alone is useless to a DBA.
-        (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
-        result = executor.execute(stmt);
+  executeSqlSliced(executor: OracleExecutor, sql: string, sliceMs: number): ResultSet {
+    const scope = executor.beginCallScope();
+    return through<ResultSet>(
+      (run) => {
         try {
-          this.maybeLockForUpdate(executor, stmt);
+          return this.atHostTime(() => scope.run(run));
         } catch (e: unknown) {
-          return emptyResult(e instanceof Error ? e.message : String(e));
+          scope.end();
+          throw e;
         }
-      }
-      return result;
-    }));
+      },
+      () => this.parseAndRun(executor, sql, sliceMs),
+      (result) => {
+        scope.end();
+        return result;
+      },
+    );
+  }
+
+  private parseAndRun(executor: OracleExecutor, sql: string, sliceMs: number): ResultSet {
+    const trimmed = sql.trim().replace(/;\s*$/, '');
+    if (!trimmed) return emptyResult();
+
+    this.idleMonitor.sweep();
+    this.noticeSessionTermination(executor);
+    this.securityEngine.sessions.noteCall(String(executor.boundSid));
+
+    const upper = trimmed.toUpperCase();
+
+    if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
+      && standbyRefusesStatement(trimmed)) {
+      return emptyResult(ORA_16000);
+    }
+
+    if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
+      && mountedRefusesQuery(trimmed)) {
+      return emptyResult(ORA_01219);
+    }
+
+    // PL/SQL is a distinct language whose unit bodies contain semicolons
+    // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
+    // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
+    // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
+    const plsql = this.routePlsql(executor, trimmed, upper, sliceMs);
+    if (plsql) return plsql;
+
+    // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
+    // does not model the external-table clause, so it is registered here.
+    if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
+      return this.createExternalTable(executor, trimmed);
+    }
+
+    const tokens = this.lexer.tokenize(trimmed);
+    const parser = new OracleParser();
+    const statements = parser.parseMultiple(tokens);
+
+    if (statements.length === 0) return emptyResult();
+
+    const runFrom = (index: number): ResultSet => {
+      const stmt = statements[index];
+      // Attach the source SQL so audit/journaling records the original
+      // user text — the AST type alone is useless to a DBA.
+      (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
+      return through<ResultSet>(
+        (run) => run(),
+        () => executor.executeSliced(stmt, sliceMs),
+        (result) => {
+          try {
+            this.maybeLockForUpdate(executor, stmt);
+          } catch (e: unknown) {
+            return emptyResult(e instanceof Error ? e.message : String(e));
+          }
+          return index + 1 < statements.length ? runFrom(index + 1) : result;
+        },
+      );
+    };
+    return runFrom(0);
   }
 
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
@@ -1181,29 +1209,39 @@ export class OracleDatabase implements SqlCommandHost {
    * - DML (INSERT, UPDATE, DELETE)
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
-  private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
+  private executePLSQL(executor: OracleExecutor, sql: string, sliceMs: number = Infinity): ResultSet {
     const ctx = executor.getContext();
     const output: string[] = [];
     const { host, flush } = this.buildPlsqlHost(executor, output);
+    host.sliceSpent = () => executor.sliceSpent();
 
-    const outcome = runAnonymousBlock(sql, host);
-    if (outcome.parseError) {
-      // Real Oracle reports compilation problems as ORA-06550 followed by
-      // the PLS- diagnostic. There is deliberately no fallback interpreter:
-      // the legacy regex-based engine was removed (it silently produced
-      // different semantics from the AST interpreter on the same source).
-      const detail = outcome.parseErrorMessage ?? 'PLS-00103: Encountered the symbol "end-of-file"';
-      return emptyResult(`ORA-06550: line 1, column 1:\n${detail}`);
-    }
+    const conclude = (outcome: PlsqlRunOutcome): ResultSet => {
+      if (outcome.parseError) {
+        // Real Oracle reports compilation problems as ORA-06550 followed by
+        // the PLS- diagnostic. There is deliberately no fallback interpreter:
+        // the legacy regex-based engine was removed (it silently produced
+        // different semantics from the AST interpreter on the same source).
+        const detail = outcome.parseErrorMessage ?? 'PLS-00103: Encountered the symbol "end-of-file"';
+        return emptyResult(`ORA-06550: line 1, column 1:\n${detail}`);
+      }
 
-    flush();
-    if (!outcome.ok && outcome.error) {
-      return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
-    }
-    if (ctx.serverOutput && output.length > 0) {
-      return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
-    }
-    return emptyResult('PL/SQL procedure successfully completed.');
+      flush();
+      if (!outcome.ok && outcome.error) {
+        return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+      }
+      if (ctx.serverOutput && output.length > 0) {
+        return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
+      }
+      return emptyResult('PL/SQL procedure successfully completed.');
+    };
+
+    const steps = runAnonymousBlockSteps(sql, host);
+    const advance = (): ResultSet => {
+      const step = executor.withinSlice(sliceMs, () => steps.next());
+      if (step.done) return conclude(step.value);
+      return { ...emptyResult(), continuation: advance };
+    };
+    return advance();
   }
 
   /**

@@ -108,14 +108,16 @@ test.describe('Cisco IOS CLI — ? help & suggestions through the UI', () => {
     await waitForText(page, 'version');
   });
 
-  test('silent no-match — "zzz?" returns nothing (no % error in IOS)', async ({ page }) => {
+  test('no match — "zzz?" gets the usual refusal, never "% Unrecognized command"', async ({ page }) => {
     const rid = await addRouter(page);
     await openTerminal(page, rid);
+    await waitForText(page, 'Press RETURN to get started.');
     const before = await modalText(page);
     await typeCmd(page, 'zzz?');
     const after = await modalText(page);
     const delta = after.slice(before.length);
-    expect(delta).not.toContain('%');
+    expect(delta).toContain("% Invalid input detected at '^' marker.");
+    expect(delta).not.toContain('Unrecognized command');
   });
 
   test('interface ? lists interface families via hint suggestions', async ({ page }) => {
@@ -179,10 +181,12 @@ test.describe('Cisco IOS CLI — ? help & suggestions through the UI', () => {
   test('privileged-EXEC ? lists privileged-only commands (configure/reload/copy/write) that user-EXEC ? does NOT', async ({ page }) => {
     const rid = await addRouter(page);
     await openTerminal(page, rid);
+    await waitForText(page, 'Press RETURN to get started.');
+    const before = await modalText(page);
     // User EXEC '?' — must NOT contain privileged-only commands
     await typeCmd(page, '?');
     await waitForText(page, 'enable');
-    const userText = await modalText(page);
+    const userText = (await modalText(page)).slice(before.length);
     expect(userText).not.toContain('configure');
     expect(userText).not.toContain('reload');
     expect(userText).not.toContain('copy');

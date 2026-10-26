@@ -8,6 +8,7 @@
  * a new engine needs to be reachable from both.
  */
 
+import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { parseNanoCommandLine, type CommandLineMemory, type NanoStart } from './nano/NanoCommandLine';
 import { applyRcfiles, type RcHost } from './nano/NanoRc';
 import type { MenuFlags } from './NanoEngine';
@@ -58,7 +59,7 @@ export function isEditorSegment(segment: string): boolean {
 export function parseEditorLaunch(commandLine: string): EditorLaunch | null {
   const trimmed = commandLine.trim();
   const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trimStart() : trimmed;
-  const parts = noSudo.split(/\s+/).filter(Boolean);
+  const parts = splitShellWords(noSudo).words;
   const head = parts[0] as EditorName | undefined;
   if (!head || !EDITOR_NAMES.includes(head)) return null;
 

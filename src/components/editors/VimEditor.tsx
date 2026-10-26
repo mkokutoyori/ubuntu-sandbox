@@ -13,6 +13,7 @@ import { GridRows } from './EditorGrid';
 import { useHeldScreen } from './useHeldScreen';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
+import { editorKeyOf } from './browserKeys';
 import type { CaretShape } from './gridLayout';
 
 /**
@@ -89,7 +90,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   const dispatch = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault();
     advance();
-    engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
+    engine.applyKey(editorKeyOf(e));
     if (engine.exited) {
       onExit(engine.savedOnExit);
       return;

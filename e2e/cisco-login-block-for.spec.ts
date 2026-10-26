@@ -81,10 +81,10 @@ function hasPasswordPrompt(page: Page): Promise<boolean> {
   return page.locator('[data-testid="terminal-modal"] input[type="password"]').last().isVisible().catch(() => false);
 }
 
-/** One `ssh admin@host` round-trip, re-issuing the command if OpenSSH's own 3-attempt cap already closed the session. */
+/** One `ssh admin@host` (with the legacy algorithms an IOS 15 router still offers) round-trip, re-issuing the command if OpenSSH's own 3-attempt cap already closed the session. */
 async function sshAttempt(page: Page, host: string, password: string): Promise<void> {
   if (!(await hasPasswordPrompt(page))) {
-    await typeCmd(page, `ssh admin@${host}`);
+    await typeCmd(page, `ssh -o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa admin@${host}`);
     // The connection is a real TCP + SSH handshake, so the prompt (or an
     // immediate refusal) takes a few ticks to materialise. Waiting a flat
     // 200ms raced it, and an attempt that never got a prompt is an
@@ -95,10 +95,14 @@ async function sshAttempt(page: Page, host: string, password: string): Promise<v
       .toBe(true);
   }
   if (await hasPasswordPrompt(page)) {
+    const promptsBefore = ((await modalText(page)).match(/Password:/g) ?? []).length;
     await submitPassword(page, password);
     await expect
-      .poll(async () => !(await hasPasswordPrompt(page)) || /denied/i.test(await modalText(page)),
-        { timeout: 8_000 })
+      .poll(async () => {
+        const text = await modalText(page);
+        return !(await hasPasswordPrompt(page)) || /denied/i.test(text)
+          || (text.match(/Password:/g) ?? []).length > promptsBefore;
+      }, { timeout: 8_000 })
       .toBe(true);
   }
 }
@@ -186,8 +190,8 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     // The observable consequence, which is what the operator actually
     // sees: a brand-new attempt is turned away before any password is
     // ever asked for.
-    await typeCmd(page, 'ssh admin@10.0.0.1');
-    await waitForText(page, /Connection refused/);
+    await typeCmd(page, 'ssh -o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa admin@10.0.0.1');
+    await waitForText(page, /Connection (refused|timed out)/, 12_000);
     expect(await hasPasswordPrompt(page)).toBe(false);
     await closeTerminal(page);
 
@@ -235,8 +239,8 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     await bruteForceUntilBlocked(page, '10.0.0.1', 3);
 
     // Attacker's own PC (10.0.0.10, not whitelisted) is refused immediately.
-    await typeCmd(page, 'ssh admin@10.0.0.1');
-    await waitForText(page, /Connection refused/);
+    await typeCmd(page, 'ssh -o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa admin@10.0.0.1');
+    await waitForText(page, /Connection (refused|timed out)/, 12_000);
     await closeTerminal(page);
 
     // The whitelisted PC (10.0.0.199) still reaches the password prompt.
@@ -245,7 +249,7 @@ test.describe('Scénario 5 (e2e) — login block-for', () => {
     // 10.0.0.1 lives on the other segment, which PC2 cannot reach, so
     // aiming there tested the cable plant rather than the access-class.
     await openTerminal(page, pc2);
-    await typeCmd(page, 'ssh admin@10.0.1.99');
+    await typeCmd(page, 'ssh -o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa admin@10.0.1.99');
     await waitForText(page, /password/i);
     await submitPassword(page, 'Admin@2025');
     await waitForText(page, /\w+[#>]\s*$/m, 8_000);

@@ -1,7 +1,9 @@
+import { posix } from 'path';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { parseNanoCommandLine } from '@/network/devices/linux/editors/nano/NanoCommandLine';
 import { editorLaunchFailure, launchedFilePath, withRcfiles, type EditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { NANO_PACKAGE_FILES, NANO_PACKAGE_LINKS } from '@/network/devices/linux/editors/nano/NanoPackageFiles';
 import { applyNanoStep, compareDisk, compareNanoScreen, seededFileSystem, type NanoRecorded, type NanoScreenCase, type RecordedDisk } from './nanoScreenReplay';
 
 export interface RecordedEntry { mode: number; content?: string }
@@ -30,6 +32,7 @@ export interface NanoStateCase {
   xdg: Record<string, string>;
   env: Record<string, string>;
   rc?: boolean;
+  package?: boolean;
   etc_nanorc?: string;
   paint?: boolean;
   legend?: Record<string, string>;
@@ -44,8 +47,15 @@ function withTokens(text: string, c: NanoStateCase): string {
   return text.replace(/@WORK@/g, c.casedir).replace(/@LAB@/g, c.lab);
 }
 
+function shippedPackageFiles(): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const file of NANO_PACKAGE_FILES) files[file.path] = file.content;
+  for (const link of NANO_PACKAGE_LINKS) files[link.path] = files[posix.normalize(`${posix.dirname(link.path)}/${link.target}`)];
+  return files;
+}
+
 function seededState(c: NanoStateCase): InMemoryEditorFsContext {
-  const extra: Record<string, string> = c.rc ? { '/etc/nanorc': withTokens(c.etc_nanorc ?? '', c) } : {};
+  const extra: Record<string, string> = c.package ? shippedPackageFiles() : c.rc ? { '/etc/nanorc': withTokens(c.etc_nanorc ?? '', c) } : {};
   const directories: string[] = [];
   for (const [tree, root] of [[c.home, HOME], [c.xdg, `${c.lab}/xdg`]] as const) {
     for (const [relative, content] of Object.entries(tree)) {
@@ -107,7 +117,7 @@ function wantedNoticeRows(rows: string[] | undefined): string[] {
 
 export function replayNanoStateCase(c: NanoStateCase): string | null {
   const fs = seededState(c);
-  const ignored = [`${HOME}/`, `${c.lab}/xdg/`, '/etc/nanorc'];
+  const ignored = [`${HOME}/`, `${c.lab}/xdg/`, '/etc/nanorc', '/usr/share/nano/'];
   for (let index = 0; index < c.runs.length; index++) {
     const run = c.runs[index];
     const label = `${c.id} run ${index} ${c.rows}x${c.cols} ${JSON.stringify(run.args)}`;

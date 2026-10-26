@@ -4592,7 +4592,7 @@ export abstract class LinuxMachine extends EndHost
       routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
       flushRouteExceptions: () => this.flushRouteExceptions(),
-      udpListen: (port, processName, owner, onDatagram) => this.udpListen(port, processName, owner, onDatagram),
+      udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (
         target: IPv6Address,
@@ -5083,6 +5083,12 @@ export abstract class LinuxMachine extends EndHost
     let current = path;
     while (current !== '/' && this.executor.vfs.getType(current) === null) current = current.slice(0, current.lastIndexOf('/')) || '/';
     return this.executor.vfs.getType(current) === 'directory';
+  }
+
+  editorModificationStamp(path: string, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const inode = vfs.resolveInode(vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd()));
+    return inode === null ? null : `${inode.mtime}:${inode.revision ?? 0}`;
   }
 
   editorPathIsReadOnly(path: string): boolean {

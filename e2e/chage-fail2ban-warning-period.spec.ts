@@ -73,8 +73,8 @@ test.describe('Scénario 3 — chage -W avertissement + sensibilité Fail2ban (U
     const out = await page.evaluate(async ({ clientId }) => {
       const store = (window as Record<string, unknown>).__networkStore as { getState(): { deviceInstances: Map<string, Record<string, unknown>> } };
       const dev = store.getState().deviceInstances.get(clientId) as Record<string, unknown>;
-      const exec = dev.executeCommand as (c: string) => Promise<string>;
-      return exec.call(dev, 'sshpass -p wonderland ssh alice@10.0.0.2 whoami');
+      const exec = dev.executeCommand as (c: string, stdin?: string) => Promise<string>;
+      return exec.call(dev, 'ssh alice@10.0.0.2', 'wonderland\nwhoami\nexit\n');
     }, { clientId: client });
 
     expect(out).toMatch(/Warning: your password will expire in 3 days\./);
