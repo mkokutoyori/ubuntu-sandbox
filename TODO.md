@@ -2255,18 +2255,6 @@ sont deux inventions opposees, aussi peu attestees l'une que l'autre.
 
 ## Outillage
 
-### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
-Mesuré : `npx playwright test <n'importe quel spec>` sur un serveur de
-développement non démarré fait échouer le PREMIER test sur
-`page.goto('/')` — 30 s dépassées —, et tous les suivants passent. Vérifié
-par `--repeat-each=2` sur un seul cas : la première exécution tombe, la
-seconde passe. Ce n'est donc pas le spec mais l'amorçage de Vite.
-**Report** : le délai est global (`playwright.config.ts` : `timeout` du
-test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
-fichier partagé et toute la suite ; le relever dans un seul spec
-soignerait le symptôme à un endroit alors que tous y sont exposés. À
-trancher avec l'autre agent, qui exécute la même suite.
-
 ### [typecheck] 229 erreurs de type au compteur
 `npm run typecheck` en compte 229, contre 341 avant la passe de cette
 session. Les erreurs des fichiers de PRODUCTION ont presque toutes été
@@ -3911,6 +3899,6 @@ retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'un
 
 ### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
 
-Les boucles de lignes d'un INSERT … SELECT (filtre WHERE, CONNECT BY, projection, insertion), d'un UPDATE, d'un DELETE et d'un ROLLBACK sont reprenables, ainsi que les boucles FOR / WHILE / LOOP d'un bloc PL/SQL anonyme : au profil Chromium, `ora-insert-300k` passe de 1 059 a 144 ms de tache longue, `ora-update-delete-300k` de 1 722 a 135 ms et `ora-plsql-inserts-20k` de 784 a 126 ms. Reste atomique, donc source de gel proportionnel au volume : le tri (ORDER BY), GROUP BY et les fonctions d'agregat, les jointures, les fonctions de fenetre, DISTINCT, le corps d'une procedure ou d'une fonction stockee appelee depuis un bloc (seules les boucles du bloc anonyme lui-meme rendent la main), COMMIT (117 ms pour 300 000 changements, `onCommit` recoit tout le journal d'annulation) et toute instruction lancee par un appelant synchrone (script `@fichier`, `sqlplus` en tube depuis bash, serveur Oracle Net distant) ; seul le sous-shell interactif rend la main a la boucle d'evenements entre deux tranches. Les limites de profil (`CPU_PER_CALL` …) coupent toujours une instruction demesuree, et leur temps ne compte que le temps actif.
+Les boucles de lignes d'un INSERT … SELECT (filtre WHERE, CONNECT BY, projection, insertion), d'un UPDATE, d'un DELETE et d'un ROLLBACK sont reprenables, ainsi que les boucles FOR / WHILE / LOOP d'un bloc PL/SQL anonyme : au profil Chromium, `ora-insert-300k` passe de 1 059 a 144 ms de tache longue, `ora-update-delete-300k` de 1 722 a 135 ms et `ora-plsql-inserts-20k` de 784 a 126 ms. Reste atomique, donc source de gel proportionnel au volume : le tri (ORDER BY), GROUP BY et les fonctions d'agregat, les jointures, les fonctions de fenetre, DISTINCT, le corps d'une procedure ou d'une fonction stockee appelee depuis un bloc (seules les boucles du bloc anonyme lui-meme rendent la main), COMMIT (74 ms pour 300 000 changements : `appendRedo` copie chaque enregistrement), une jointure de deux tables de 20 000 lignes (671 ms d'une tranche), GROUP BY et fonctions de fenetre sur 50 000 a 300 000 lignes (110 a 150 ms), une sous-requete correlee sans index (en O(n x m)) et toute instruction lancee par un appelant synchrone (script `@fichier`, `sqlplus` en tube depuis bash, serveur Oracle Net distant) ; seul le sous-shell interactif rend la main a la boucle d'evenements entre deux tranches. Les limites de profil (`CPU_PER_CALL` …) coupent toujours une instruction demesuree, et leur temps ne compte que le temps actif.
 
 Pendant qu'une instruction est suspendue, une autre session peut valider ses propres lignes dans la meme table : un INSERT concurrent est conserve, un DELETE concurrent (la table est reecrite) fait echouer la tranche suivante avec ORA-08177. Une vue lue par une autre session au milieu d'un ROLLBACK en tranches voit un etat intermediaire de la table (les indices de lignes ne sont rafraichis qu'a la fin). Ces deux points n'ont pas de sonde au-dela de l'ORA-08177 et de la conservation de l'insertion concurrente.
