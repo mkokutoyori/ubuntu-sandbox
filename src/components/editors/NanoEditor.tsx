@@ -9,6 +9,7 @@ import { useHeldScreen } from './useHeldScreen';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
 import { copySelectionToClipboard, isCopyGesture, isNativePasteGesture, pasteFromClipboard } from '../terminal/clipboard';
+import { barShortcutAt, editorKeyOf } from './browserKeys';
 
 /**
  * What the renderer needs from whatever holds the buffer. A local
@@ -31,6 +32,7 @@ interface NanoEditorProps {
 }
 
 const WHEEL_ROWS = 3;
+const BROWSER_RESERVED_CODES = ['KeyW', 'KeyT', 'KeyN'];
 
 function slice(screen: EditorScreen, from: number, to: number): EditorScreen {
   const cursor = screen.cursor !== null && screen.cursor.row >= from && screen.cursor.row < to
@@ -71,6 +73,12 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     bodyRef.current?.focus();
   });
 
+  useEffect(() => {
+    const keyboard = (navigator as Navigator & { keyboard?: { lock?: (codes: string[]) => Promise<void>; unlock?: () => void } }).keyboard;
+    void keyboard?.lock?.(BROWSER_RESERVED_CODES)?.catch(() => undefined);
+    return () => keyboard?.unlock?.();
+  }, []);
+
   const dispatch = useCallback((e: React.KeyboardEvent) => {
     if (e.metaKey || isNativePasteGesture(e)) return;
     e.preventDefault();
@@ -79,7 +87,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       return;
     }
     advance();
-    engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
+    engine.applyKey(editorKeyOf(e));
     if (engine.exited) {
       onExit(engine.savedOnExit, engine.exitNotice);
       return;
@@ -114,9 +122,25 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     const rect = body.getBoundingClientRect();
     const cell = measureCell(body);
     if (!(cell > 0)) return;
-    engine.clickAt(Math.floor((e.clientY - rect.top) / GRID_LINE_HEIGHT), Math.floor((e.clientX - rect.left) / cell));
+    const row = Math.floor((e.clientY - rect.top) / GRID_LINE_HEIGHT);
+    const col = Math.floor((e.clientX - rect.left) / cell);
+    const current = shown(engine.screen);
+    const bars = current.bands?.find((candidate) => candidate.name === 'bars');
+    const key = bars !== undefined && row >= bars.from && row < bars.to
+      ? barShortcutAt(current.rows.slice(bars.from, bars.to).map((line) => line.text), row - bars.from, col)
+      : null;
+    if (key !== null) {
+      advance();
+      engine.applyKey(key);
+    } else {
+      engine.clickAt(row, col);
+    }
+    if (engine.exited) {
+      onExit(engine.savedOnExit, engine.exitNotice);
+      return;
+    }
     bump();
-  }, [engine, bump]);
+  }, [engine, onExit, bump, advance, shown]);
 
   const screen = shown(engine.screen);
   const band = (name: ScreenBand['name']): ScreenBand | undefined => screen.bands?.find((candidate) => candidate.name === name);

@@ -958,12 +958,24 @@ correspondance vide sur un caractere large apres un remplacement), l'indicateur 
 des recherches longues, les touches tapees pendant la pause de 600 ms de « Key is invalid in view
 mode » (le rejeu n'a pas de file d'attente).
 
-### [nano] touches : `F1`-`F12`, touches modifiees, redimensionnement pendant l'aide
-- tmux envoie pour `F1`-`F12` et pour certaines touches modifiees des sequences que ncurses coupe :
-  nano repond « Unbound key: 1 » ; le rejeu ne les reproduit pas (`nano-help-oracle.test.ts`).
+### [nano] touches : touches modifiees, redimensionnement pendant l'aide, `rawsequences`
+- `F1`-`F12` sont portees d'apres `global.c` de nano 7.2 (`NanoKeyAliases` : F1 aide, F2 quitter, F3 ecrire,
+  F4 justifier, F5 lire, F6 chercher, F7/F8 pages, F9 couper, F10 coller, F11 position, F12 correcteur ;
+  dans une invite seulement F1 F9 F10, dans l'aide F1 F2 F6 F7 F8) mais NON rejouees : tmux envoie pour
+  ces touches des sequences que ncurses coupe (« Unbound key: 1 »), le corpus ne peut pas les enregistrer.
+- Les touches modifiees dont tmux envoie des sequences que ncurses coupe ne sont pas rejouees non plus.
 - Quand la fenetre change de taille pendant l'aide, nano redecoupe le texte de l'aide ; le moteur
   garde le decoupage de l'ouverture.
 - `rawsequences` (`-K`) : lu, jamais evalue (touches Home/End des terminaux xterm / linux).
+
+### [navigateur] Ctrl+W, Ctrl+T et Ctrl+N ne parviennent pas a la page
+Chrome, Edge, Firefox et Safari gardent pour eux Ctrl+W (fermer l'onglet), Ctrl+T (en ouvrir un) et Ctrl+N
+(fenetre), hors plein ecran : `preventDefault` n'y peut rien. Dans nano, `^W` (Chercher), `^T` (Executer) et
+`^N` (ligne suivante) sont donc inatteignables au clavier dans un onglet ordinaire, alors que la barre les
+annonce. Ce qui est fait : la barre est cliquable (`barShortcutAt`), `F6` chercher (`NanoKeyAliases`),
+`navigator.keyboard.lock(['KeyW','KeyT','KeyN'])` demande a l'ouverture (ne vaut qu'en plein ecran, Chrome
+et Edge seulement). Reste : `^T` n'a aucune alternative clavier dans nano lui-meme ; aucune mesure dans un
+vrai navigateur (jsdom ne ferme pas d'onglet), a verifier a la main en plein ecran.
 
 ### [nano] caracteres non enregistres
 Les corpus contiennent des accents precomposes (`é`, `café`) et du chinois (`中文`, largeur 2, avec
