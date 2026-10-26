@@ -106,7 +106,7 @@ describe('getopt and the two streams', () => {
   it('-zvw1 is three options, and an unknown one prints the usage', async () => {
     const { pc } = await lab();
     expect(await pc.executeCommand('nc -zvw1 10.0.0.2 22')).toBe('Connection to 10.0.0.2 22 port [tcp/ssh] succeeded!');
-    expect(await pc.executeCommand('nc --help')).toMatch(/^nc: invalid option -- '-'\nusage: nc \[-46cDdFhklNnrStUuvz\]/);
+    expect(await pc.executeCommand('nc --help')).toMatch(/^nc: invalid option -- '-'\nusage: nc \[-46CDdFhklNnrStUuvZz\]/);
     expect(await pc.executeCommand('nc -zv 10.0.0.2 99999; echo rc=$?')).toBe('nc: port number too large: 99999\nrc=1');
   });
 

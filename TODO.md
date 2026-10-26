@@ -921,6 +921,40 @@ en mode Insertion le texte est insere tel quel, sans indentation automatique ; e
 est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes gestes que
 `NanoEditor` (`terminal/clipboard.ts`) et une mesure sous tmux du bracketed paste de vim 9.1.0016.
 
+### [nc] ce que le portage de `netcat.c` (Ubuntu 1.226-1ubuntu2) laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans un espace de noms) :
+- `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : les controles de `main()` sont portes
+  (« no proxy support for listen », « missing closing bracket in proxy »...) mais la connexion par
+  mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
+  le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
+  prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
+- `-U -l` (ecoute sur une socket UNIX) et `-U -u` (datagramme UNIX) sont refuses : le registre
+  `localDatagramSockets` sait connecter une socket flux, pas en ecouter une.
+- Deux `nc -l 9000` : `nc` pose SO_REUSEADDR et SO_REUSEPORT, donc le vrai accepte le second
+  ecouteur (meme uid) ; `SocketTable.bind` repond EADDRINUSE.
+- Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
+  (`getnameinfo`) : sur la machine d'enregistrement le DNS injoignable donne « nc: getnameinfo:
+  Temporary failure in name resolution » pour un joker, donc seul 127.0.0.1 (« localhost », via
+  /etc/hosts) est dans le corpus.
+- `ncat` est un alias de `nc` dans la declaration de la commande ; c'est l'outil de Nmap, pas
+  `netcat-openbsd` (options, messages et `-e` differents).
+- `-q`, `-W`, `-d`, `-C`, `-i` (delai entre lignes) et `-t` (telnet) : la boucle `readwrite` n'est
+  pas portee, la commande echange sa sortie standard en un bloc.
+
+### [bash] `cmd 2> fichier &` : le fichier n'est pas cree et le message s'affiche a l'ecran
+Mesure avec `nc -lv 127.0.0.1 9101 2> e.txt &` puis `ls e.txt` : le fichier n'existe pas et
+« Listening on localhost 9101 » n'arrive nulle part ; `cmd > f 2> g &` cree `f` mais pas `g`.
+`LinuxCommandExecutor.runBackgroundJob` ne connait que `>` et `<` (`splitRedirections`,
+`bindBackgroundStdout`) ; la sortie differee d'un processus d'arriere-plan (`emitLateStdout`) n'a pas
+de pendant pour l'erreur standard, alors que `Connection received on ...` de `nc -v` est ecrit sur
+elle. 6 pas de `netcmds-oracle.test.ts` y sont declares non portes.
+
+### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
+Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
+alors que `ping 10.0.0.1` aboutit et que Linux repond « Connection refused ». Le rejeu des labos
+pose donc l'adresse sur `eth0`. Meme famille : `nc -s 10.0.0.2 127.0.0.1 9000` (source locale non
+loopback vers 127.0.0.1) expire chez nous, aboutit sur Linux (2 pas declares non portes).
+
 ### [nano] navigateur de fichiers (`^T` dans `^R`, `^O`, `M-F`)
 La barre d'invite annonce `^T Browse` comme nano mais le navigateur n'existe pas : la touche est
 ignoree. Vu en mesurant : `nano-tools-oracle.test.ts` (3 cas du corpus), `nano-colors-oracle.test.ts`

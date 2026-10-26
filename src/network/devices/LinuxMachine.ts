@@ -4592,7 +4592,7 @@ export abstract class LinuxMachine extends EndHost
       routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
       flushRouteExceptions: () => this.flushRouteExceptions(),
-      udpListen: (port, processName, owner, onDatagram) => this.udpListen(port, processName, owner, onDatagram),
+      udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (
         target: IPv6Address,
