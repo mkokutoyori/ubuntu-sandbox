@@ -11,9 +11,10 @@
  * DATABASE;` aussi ; `TAG nom` sans guillemets etait ignore (etiquette horodatee a la place) ; `DELETE BACKUPSET n` ne disait ni piece ni total (« Finished delete » seul) ;
  * et surtout la suppression retirait le fichier et l'entree du catalogue mais PAS l'enregistrement qui alimente V$RECOVERY_FILE_DEST : l'espace n'etait jamais rendu et la
  * troisieme sauvegarde echouait en ORA-19809 alors que la zone etait vide. `V$BACKUP_PIECE` rend maintenant STATUS = 'D' et `V$ARCHIVED_LOG.DELETED` = 'YES'.
+ * Une zone pleine reprend maintenant la place des sauvegardes obsoletes selon la politique de retention (REDUNDANCY 1 par defaut) : quatre BACKUP DATABASE de suite echouaient en ORA-19809 des la troisieme, ce que les epreuves de charge n'ont pas vu parce qu'elles jettent la sortie dans /dev/null.
  * Le STAMP imprime avec « backup piece handle=… RECID=… STAMP=… » compte les secondes depuis le 1er janvier 1988 (origine retenue de memoire, non verifiable ici).
  *
- * Discrimine par `git stash push -- src/database src/terminal` : 17 cas sur 18 tombent ; seul passe des deux cotes, TEMOIN, SYSDATE apres `date -s` (deja correct).
+ * Discrimine par `git stash push -- src/database src/terminal` : 18 cas sur 20 tombent ; passent des deux cotes, TEMOINS : SYSDATE apres `date -s` (deja correct) et le refus ORA-19809 d'une zone pleine sans politique de retention (la place n'est reprise qu'aux sauvegardes obsoletes ; sans elle, la zone se remplit et la troisieme sauvegarde est refusee).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -162,6 +163,23 @@ describe('suppression RMAN', () => {
     const third = rman.execute('BACKUP DATABASE;');
     expect(third).not.toContain('ORA-19809');
     expect(third).toContain('Finished backup');
+  });
+
+  it('une zone pleine reprend la place des sauvegardes obsoletes (REDUNDANCY 1) au lieu d\'echouer', () => {
+    const outputs = [1, 2, 3, 4].map(() => rman.execute('BACKUP DATABASE;'));
+    for (const out of outputs) {
+      expect(out).not.toContain('ORA-19809');
+      expect(out).toContain('Finished backup');
+    }
+    const kept = rman.execute('LIST BACKUP SUMMARY;').match(/\n\d+\s+B\s+F/g) ?? [];
+    expect(kept.length).toBeLessThanOrEqual(2);
+  });
+
+  it('TEMOIN — sans politique de retention rien n\'est recuperable et la zone pleine refuse', () => {
+    rman.execute('CONFIGURE RETENTION POLICY TO NONE;');
+    const outputs = [1, 2, 3].map(() => rman.execute('BACKUP DATABASE;'));
+    expect(outputs[2]).toContain('ORA-19809');
+    expect(rman.execute('LIST BACKUP SUMMARY;').match(/\n\d+\s+B\s+F/g)?.length).toBe(2);
   });
 
   it('V$BACKUP_PIECE marque la piece supprimee « D »', () => {

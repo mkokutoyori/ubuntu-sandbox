@@ -53,6 +53,8 @@ const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
 
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
+import { isInsideRecoveryArea } from '@/database/oracle/storage/RecoveryArea';
+import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
 
@@ -71,6 +73,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     private readonly _pool:    IChannelPool,
     private readonly _catalog: IRmanCatalogRepository,
     private readonly _ctx:     IRmanOracleContext,
+    private readonly _retention: () => IRetentionPolicy | undefined = () => undefined,
   ) {}
 
   run(job: RmanJob): Result<void, RmanError> {
@@ -346,7 +349,11 @@ export class RmanJobEngine implements IRmanJobEngine {
         ? (totalSize - pieceSize * (pieceCount - 1))
         : pieceSize;
       if (!params.format) {
-        const overflow = this._recoveryAreaOverflow(size);
+        let overflow = this._recoveryAreaOverflow(size);
+        if (overflow) {
+          this._reclaimObsolete(size);
+          overflow = this._recoveryAreaOverflow(size);
+        }
         if (overflow) return err(overflow);
       }
       const body = isControlfile
@@ -1244,19 +1251,40 @@ export class RmanJobEngine implements IRmanJobEngine {
     for (const bsKey of bsKeys) {
       const set = snapshot.value.sets.find(s => s.bsKey === bsKey);
       if (!set) continue;
-      for (const piece of set.pieces) {
-        this._ctx.vfs.deleteFile(piece.path);
-        this._ctx.recordBackupPieceDeleted?.(piece.path);
+      for (const piece of this._dropBackupSet(set)) {
         this._bus.emit({
           type: 'BACKUP_PIECE_DELETED', jobId: job.id, path: piece.path,
           bpKey: piece.key.bpKey, stamp: oracleStamp(piece.completionTime),
         });
         deleted++;
       }
-      this._catalog.deleteBackupSet(bsKey);
     }
     this._bus.emit({ type: 'DELETE_DONE', deleted, emptyMessage: deleted === 0 ? emptyMessage : undefined });
     return ok(undefined);
+  }
+
+  private _dropBackupSet(set: BackupSet): readonly BackupSet['pieces'][number][] {
+    for (const piece of set.pieces) {
+      this._ctx.vfs.deleteFile(piece.path);
+      this._ctx.recordBackupPieceDeleted?.(piece.path);
+    }
+    this._catalog.deleteBackupSet(set.bsKey);
+    return set.pieces;
+  }
+
+  private _reclaimObsolete(neededBytes: number): void {
+    const policy = this._retention();
+    const snapshot = this._catalog.listAll();
+    if (!policy || snapshot.ok === false) return;
+    const limit = parseSize(this._ctx.getSpfileParam('db_recovery_file_dest_size'));
+    const destination = this._ctx.getSpfileParam('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA;
+    const obsolete = policy.findObsolete(snapshot.value.sets, rmanNowMs(this._ctx))
+      .sort((a, b) => a.completionTime - b.completionTime);
+    for (const set of obsolete) {
+      if ((this._ctx.getRecoveryAreaUsedBytes?.() ?? 0) + neededBytes <= limit) return;
+      if (!set.pieces.some(piece => isInsideRecoveryArea(piece.path, destination))) continue;
+      this._dropBackupSet(set);
+    }
   }
 
   private _emitFailed(job: RmanJob, error: RmanError, start: number): void {

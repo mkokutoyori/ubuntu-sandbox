@@ -23,6 +23,7 @@ interface Scenario {
   maxLagMs?: number;
   markerContains?: string;
   before?: string[];
+  mustNotContain?: string[];
 }
 
 const oracle = (name: string, lines: string[], extra: Partial<Scenario> = {}): Scenario => ({
@@ -66,6 +67,9 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   oracle('ora-join-20k', [BIG_TABLE, fill(20000), 'SELECT COUNT(*) FROM big a JOIN big b ON a.id = b.id WHERE a.grp = 7;']),
   oracle('ora-update-all-50k', [BIG_TABLE, fill(50000), 'UPDATE big SET amount = amount + 1;', 'ROLLBACK;']),
   oracle('ora-select-all-20k', [BIG_TABLE, fill(20000), 'SELECT * FROM big;']),
+  oracle('ora-window-100k', [BIG_TABLE, fill(100000), 'SELECT MAX(r) FROM (SELECT SUM(amount) OVER (ORDER BY id) r FROM big);']),
+  oracle('ora-select-all-150k', [BIG_TABLE, fill(150000), 'SELECT * FROM big;']),
+  oracle('ora-rollback-mixed-40k', [BIG_TABLE, fill(40000), 'COMMIT;', 'UPDATE big SET amount = amount + 1;', 'DELETE FROM big WHERE MOD(id, 3) = 0;', 'UPDATE big SET amount = amount + 1;', 'ROLLBACK;', 'SELECT COUNT(*) FROM big;']),
   oracle('ora-plsql-inserts-20k', ['CREATE TABLE t2 (id NUMBER, v VARCHAR2(20));', "BEGIN FOR i IN 1..20000 LOOP INSERT INTO t2 VALUES (i, 'v'||i); END LOOP; COMMIT; END;", '/']),
   oracle('ora-plsql-updates-3k', [BIG_TABLE, fill(20000), 'BEGIN FOR i IN 1..3000 LOOP UPDATE big SET amount = amount + 1 WHERE id = i; END LOOP; COMMIT; END;', '/']),
   oracle('ora-put-line-20k', ["BEGIN FOR i IN 1..20000 LOOP DBMS_OUTPUT.PUT_LINE('line ' || i); END LOOP; END;", '/']),
@@ -77,9 +81,11 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'ora-remote-parallel-3', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 3, true, t)] },
   { name: 'ora-remote-sessions-3', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 3, false, t)] },
   { name: 'ora-local-parallel-100', client: 'srv', commands: () => ['for i in $(seq 1 100); do echo "SELECT 1 FROM dual;" | sqlplus -S / as sysdba & done; wait; echo FINISHED'] },
-  { name: 'rman-bash-loop-30', client: 'srv', commands: () => ['for i in $(seq 1 30); do echo "BACKUP DATABASE;" | rman target / > /dev/null; done; echo FINISHED'] },
+  { name: 'rman-bash-loop-30', client: 'srv', commands: () => ['for i in $(seq 1 30); do echo "BACKUP DATABASE;" | rman target / | grep -E "RMAN-[0-9]+|ORA-[0-9]+" | head -2; done; echo FINISHED'], mustNotContain: ['RMAN-0', 'RMAN-1', 'ORA-19'] },
   { name: 'rman-interactive-30', client: 'srv', before: ['rman target /', ...Array.from({ length: 30 }, () => 'BACKUP DATABASE;'), 'LIST BACKUP;', 'CROSSCHECK BACKUP;', 'REPORT OBSOLETE;', 'VALIDATE DATABASE;', 'RESTORE DATABASE VALIDATE;'], commands: () => ['REPORT SCHEMA;'], markerContains: 'Report of database schema' },
-  { name: 'rman-script-300', client: 'srv', commands: () => ['(for i in $(seq 1 300); do echo "BACKUP DATABASE;"; echo "LIST BACKUP SUMMARY;"; done; echo "EXIT;") | rman target / > /dev/null; echo FINISHED'] },
+  { name: 'rman-script-300', client: 'srv', commands: () => ['(for i in $(seq 1 300); do echo "BACKUP DATABASE;"; echo "LIST BACKUP SUMMARY;"; done; echo "EXIT;") | rman target / | grep -E "RMAN-[0-9]+|ORA-[0-9]+" | head -3; echo FINISHED'], mustNotContain: ['RMAN-0', 'RMAN-1', 'ORA-19'] },
+  { name: 'rman-delete-cycle-100', client: 'srv', commands: () => ['(for i in $(seq 1 100); do echo "BACKUP DATABASE;"; echo "DELETE NOPROMPT BACKUP;"; done; echo "EXIT;") | rman target / | grep -E "RMAN-[0-9]+|ORA-[0-9]+" | head -3; echo FINISHED'], mustNotContain: ['RMAN-0', 'RMAN-1', 'ORA-19'] },
+  { name: 'rman-clock-jump', client: 'srv', commands: () => ['sudo date -s "2027-03-01 10:00:00" > /dev/null; echo "BACKUP DATABASE;" | rman target / | grep -E "Finished backup|RMAN-[0-9]+|ORA-[0-9]+"; echo FINISHED'], mustNotContain: ['RMAN-0', 'ORA-19'] },
   { name: 'ping-flood-500', client: 'lin', commands: (t) => [`ping -c 500 -i 0.002 ${t}; echo FINISHED`] },
   { name: 'nmap-1024', client: 'lin', commands: (t) => [`nmap -p 1-1024 ${t}; echo FINISHED`] },
   { name: 'nc-zv-300', client: 'lin', commands: (t) => [`for i in $(seq 1 300); do nc -zv -w 1 ${t} 80 & done; wait; echo FINISHED`] },
@@ -149,6 +155,8 @@ for (const scenario of SCENARIOS) {
       writeFileSync(join(OUT, `${scenario.name}.terminal.txt`), text.slice(-6000));
     }
     note(`[${scenario.name}] finished=${finished} crashed=${crashed} elapsed=${Date.now() - started}ms maxLag=${maxLag}ms errors=${errors.length} stats=${JSON.stringify(stats)}`);
+    const terminalText = await page.locator(`[data-testid="terminal-modal"][data-device-id="${ids[scenario.client]}"]`).innerText().catch(() => '');
+    for (const forbidden of scenario.mustNotContain ?? []) expect(terminalText).not.toContain(forbidden);
     expect(crashed).toBe(false);
     expect(finished).toBe(true);
     expect(errors).toEqual([]);
