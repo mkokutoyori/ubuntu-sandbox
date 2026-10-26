@@ -51,7 +51,8 @@ import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
 import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
-import { SESSION_CPU_EXCEEDED } from './security/SessionLimitTracker';
+import { CallResourceBudget, SessionResourceMeter, type ResourceLimits } from './executor/CallResourceBudget';
+import { blocksOfRows } from './storage/BlockModel';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -77,7 +78,7 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'CreateSynonymStatement', 'DropSynonymStatement',
   'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
   'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
-  'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
+  'CreateProfileStatement', 'AlterProfileStatement', 'AlterResourceCostStatement', 'DropProfileStatement',
   'CreateDbLinkStatement', 'DropDbLinkStatement',
   'CreateDirectoryStatement', 'DropDirectoryStatement',
   'CreateTypeStatement', 'AlterCompileStatement',
@@ -735,6 +736,7 @@ export class OracleExecutor extends BaseExecutor {
       AlterDatabaseStatement: 'ALTER DATABASE',
       CreateProfileStatement: 'CREATE PROFILE',
       AlterProfileStatement: 'ALTER PROFILE',
+      AlterResourceCostStatement: 'ALTER RESOURCE COST',
       DropProfileStatement: 'DROP PROFILE',
     };
     return map[stmt.type] ?? null;
@@ -960,6 +962,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropMviewLogStatement': return this.executeDropMviewLog(statement);
       case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
       case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
+      case 'AlterResourceCostStatement': return this.userAdmin.executeAlterResourceCost(statement);
       case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
       case 'AuditStatement': return this.securityDcl.executeAudit(statement);
       case 'NoauditStatement': return this.securityDcl.executeNoaudit(statement);
@@ -1462,6 +1465,7 @@ export class OracleExecutor extends BaseExecutor {
       const narrowed = this.tryIndexAccessPath(stmt.from![0], stmt.where, rows);
       if (narrowed) rows = narrowed;
     }
+    this.noteLogicalReads(rows.length);
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
@@ -3126,6 +3130,7 @@ export class OracleExecutor extends BaseExecutor {
     const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
 
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
+    this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
     const count = this.storage.updateRows(
       schema, tableName,
       (row) => (indexed === null || indexed.has(row)) && (!visible || visible(row))
@@ -3168,6 +3173,7 @@ export class OracleExecutor extends BaseExecutor {
 
     const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
+    this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
     const deletable = (row: StorageRow): boolean =>
       (indexed === null || indexed.has(row)) && (!visible || visible(row))
       && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
@@ -4224,9 +4230,9 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── Expression evaluation ─────────────────────────────────────────
 
-  private callBudget: { startedAt: number; callLimitMs: number; sessionLimitMs: number } | null = null;
+  private callBudget: CallResourceBudget | null = null;
   private callBudgetTicks = 0;
-  private sessionCpuMs = 0;
+  private readonly sessionMeter = new SessionResourceMeter();
 
   withCallBudget<T>(run: () => T): T {
     if (this.callBudget !== null) return run();
@@ -4236,37 +4242,63 @@ export class OracleExecutor extends BaseExecutor {
     try {
       return run();
     } finally {
-      this.sessionCpuMs += performance.now() - budget.startedAt;
+      budget.close();
       this.callBudget = null;
     }
   }
 
-  private openCallBudget(): { startedAt: number; callLimitMs: number; sessionLimitMs: number } | null {
-    const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+  private openCallBudget(): CallResourceBudget | null {
+    const catalog = this.catalog as OracleCatalog;
+    const engine = catalog.getSecurityEngine();
     if (!engine || this.instance.getParameter('resource_limit')?.toUpperCase() !== 'TRUE') return null;
-    const user = (this.catalog as OracleCatalog).getUser(this.context.currentUser.toUpperCase());
+    const user = catalog.getUser(this.context.currentUser.toUpperCase());
     if (!user) return null;
-    const callLimitMs = engine.profiles.resolveCpuPerCallCentiseconds(user.profile) * 10;
-    const sessionLimitMs = engine.profiles.resolveCpuPerSessionCentiseconds(user.profile) * 10 - this.sessionCpuMs;
-    if (!Number.isFinite(callLimitMs) && !Number.isFinite(sessionLimitMs)) return null;
-    return { startedAt: performance.now(), callLimitMs, sessionLimitMs };
+    const { profiles } = engine;
+    const costs = profiles.getResourceCosts();
+    const limits: ResourceLimits = {
+      cpuPerCallMs: profiles.resolveCpuPerCallCentiseconds(user.profile) * 10,
+      cpuPerSessionMs: profiles.resolveCpuPerSessionCentiseconds(user.profile) * 10,
+      logicalReadsPerCall: profiles.resolveLogicalReadsPerCall(user.profile),
+      logicalReadsPerSession: profiles.resolveLogicalReadsPerSession(user.profile),
+      compositeLimit: profiles.resolveCompositeLimit(user.profile),
+      costs: {
+        cpuPerSession: costs.get('CPU_PER_SESSION') ?? 0,
+        logicalReadsPerSession: costs.get('LOGICAL_READS_PER_SESSION') ?? 0,
+        connectTime: costs.get('CONNECT_TIME') ?? 0,
+        privateSga: costs.get('PRIVATE_SGA') ?? 0,
+      },
+    };
+    const limited = [
+      limits.cpuPerCallMs, limits.cpuPerSessionMs, limits.logicalReadsPerCall,
+      limits.logicalReadsPerSession, limits.compositeLimit,
+    ].some(Number.isFinite);
+    if (!limited) return null;
+    return new CallResourceBudget(limits, this.sessionMeter, () => performance.now(), () => {
+      const session = engine.sessions.getSessionBySid(this.boundSid);
+      return session ? engine.sessions.connectedSeconds(session) / 60 : 0;
+    });
   }
 
   private tickCallBudget(): void {
     if (this.callBudget === null || (++this.callBudgetTicks & 255) !== 0) return;
-    const budget = this.callBudget;
-    const elapsed = performance.now() - budget.startedAt;
-    if (elapsed > budget.callLimitMs) {
-      budget.callLimitMs = Infinity;
-      throw new OracleError(2393, 'exceeded call limit on CPU usage');
+    this.enforceCallBudget();
+  }
+
+  private noteLogicalReads(rowCount: number): void {
+    if (this.callBudget === null) return;
+    this.callBudget.noteLogicalReads(blocksOfRows(rowCount));
+    this.enforceCallBudget();
+  }
+
+  private enforceCallBudget(): void {
+    const exceeded = this.callBudget?.evaluate() ?? null;
+    if (exceeded === null) return;
+    if (exceeded.logoff) {
+      const sessions = (this.catalog as OracleCatalog).getSecurityEngine()?.sessions;
+      const session = sessions?.getSessionBySid(this.boundSid);
+      if (sessions && session) sessions.terminate(session.sid, session.serial, 'KILLED', exceeded);
     }
-    if (elapsed > budget.sessionLimitMs) {
-      budget.sessionLimitMs = Infinity;
-      const engine = (this.catalog as OracleCatalog).getSecurityEngine();
-      const session = engine?.sessions.getSessionBySid(this.boundSid);
-      if (engine && session) engine.sessions.terminate(session.sid, session.serial, 'KILLED', SESSION_CPU_EXCEEDED);
-      throw new OracleError(2392, 'exceeded session limit on CPU usage, you are being logged off');
-    }
+    throw new OracleError(exceeded.code, exceeded.message);
   }
 
   evaluateExpression(expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue {

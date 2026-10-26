@@ -3777,6 +3777,4 @@ retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'un
 
 ### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
 
-Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 1,4 s (4,2 s avant que l'horloge ne soit lue une seule fois par milliseconde). Seul `CPU_PER_CALL` / `CPU_PER_SESSION` d'un profil peut la couper (ORA-02393 / ORA-02392) ; rendre l'executeur cooperatif suppose de le reecrire en generateurs ou de l'executer dans un worker.
-
-Limites de profil rendues par `DBA_PROFILES` et jamais evaluees : `LOGICAL_READS_PER_CALL`, `LOGICAL_READS_PER_SESSION` (il manque la brique « lecture logique » : le moteur compte des lignes, pas des blocs), `PRIVATE_SGA` et `COMPOSITE_LIMIT` (qui pondere les trois precedentes). `CPU_PER_CALL` et `CPU_PER_SESSION` sont appliquees.
+Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 1,4 s (4,2 s avant que l'horloge ne soit lue une seule fois par milliseconde). Seules les limites de profil (`CPU_PER_CALL`, `LOGICAL_READS_PER_CALL`, `COMPOSITE_LIMIT` …) peuvent la couper ; rendre l'executeur cooperatif suppose de le reecrire en generateurs ou de l'executer dans un worker.

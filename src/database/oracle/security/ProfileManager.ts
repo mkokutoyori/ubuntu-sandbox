@@ -123,6 +123,31 @@ export class ProfileManager {
     return v === 'UNLIMITED' ? Infinity : parseFloat(v);
   }
 
+  private readonly resourceCosts = new Map<string, number>([
+    ['CPU_PER_SESSION', 0], ['LOGICAL_READS_PER_SESSION', 0], ['CONNECT_TIME', 0], ['PRIVATE_SGA', 0],
+  ]);
+
+  getResourceCosts(): ReadonlyMap<string, number> { return this.resourceCosts; }
+
+  setResourceCost(name: string, unitCost: number): void {
+    this.resourceCosts.set(name.toUpperCase(), unitCost);
+  }
+
+  resolveLogicalReadsPerCall(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'LOGICAL_READS_PER_CALL');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
+  }
+
+  resolveLogicalReadsPerSession(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'LOGICAL_READS_PER_SESSION');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
+  }
+
+  resolveCompositeLimit(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'COMPOSITE_LIMIT');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
+  }
+
   resolveCpuPerCallCentiseconds(profileName: string): number {
     const v = this.resolveLimit(profileName, 'CPU_PER_CALL');
     return v === 'UNLIMITED' ? Infinity : parseFloat(v);
