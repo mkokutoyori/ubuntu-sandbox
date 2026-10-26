@@ -38,6 +38,10 @@ async function typeCmd(page: Page, command: string): Promise<void> {
   await input.fill(command);
   await input.press('Enter');
   await page.waitForTimeout(350);
+  await expect.poll(
+    async () => /[#$]$/.test((await page.locator('[data-testid="terminal-modal"]').innerText()).trimEnd()),
+    { timeout: 90_000 },
+  ).toBe(true);
 }
 
 async function lastLines(page: Page, n = 8): Promise<string> {
@@ -53,7 +57,7 @@ async function buildCa(page: Page): Promise<void> {
   await typeCmd(page, 'openssl genrsa -out /tmp/w.key 2048');
   await typeCmd(page, 'openssl req -new -key /tmp/w.key -out /tmp/w.csr -subj "/CN=www.lab"');
   await typeCmd(page,
-    'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+    'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
     + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
 }
 
@@ -67,15 +71,15 @@ test.describe('la CRL d\'un labo est opposable', () => {
     await buildCa(page);
 
     await typeCmd(page,
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -gencrl -out /tmp/lab.crl');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -gencrl -out /tmp/lab.crl');
     await typeCmd(page,
       'openssl verify -crl_check -CAfile /etc/ssl/CA/ca.crt -CRLfile /tmp/lab.crl /tmp/w.crt');
     expect(await lastLines(page, 4)).toContain('/tmp/w.crt: OK');
 
     await typeCmd(page,
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await typeCmd(page,
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -gencrl -out /tmp/lab.crl');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -gencrl -out /tmp/lab.crl');
 
     await typeCmd(page,
       'openssl verify -crl_check -CAfile /etc/ssl/CA/ca.crt -CRLfile /tmp/lab.crl /tmp/w.crt');
@@ -92,12 +96,12 @@ test.describe('la CRL d\'un labo est opposable', () => {
 
     await buildCa(page);
     await typeCmd(page,
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await typeCmd(page,
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -gencrl -out /tmp/lab.crl');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -gencrl -out /tmp/lab.crl');
 
-    await typeCmd(page, 'openssl crl -in /tmp/lab.crl -noout -text');
-    const texte = await lastLines(page, 12);
+    await typeCmd(page, 'openssl crl -in /tmp/lab.crl -noout -text | grep -A3 "Revoked Certificates"');
+    const texte = await lastLines(page, 8);
     expect(texte).toContain('Revoked Certificates:');
     expect(texte).toMatch(/Revocation Date: [A-Z][a-z]{2} /);
   });

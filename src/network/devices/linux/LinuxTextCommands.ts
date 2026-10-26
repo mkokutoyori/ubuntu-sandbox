@@ -114,11 +114,14 @@ export function cmdGrep(
     if (a.startsWith('--regexp=')) { patterns.push(a.slice(9)); patternGiven = true; continue; }
     if (a === '-f' || a === '--file') { addPatternsFromFile(ctx, args[++i] ?? '', patterns); patternGiven = true; continue; }
     if (a.startsWith('--file=')) { addPatternsFromFile(ctx, a.slice(7), patterns); patternGiven = true; continue; }
-    if (a === '-m' || a === '--max-count') { fl.maxCount = parseInt(args[++i], 10) || 0; continue; }
+    if (a === '--max-count') { fl.maxCount = parseInt(args[++i], 10) || 0; continue; }
     if (a.startsWith('--max-count=')) { fl.maxCount = parseInt(a.slice(12), 10) || 0; continue; }
-    if (a === '-A' || a === '--after-context') { fl.after = parseInt(args[++i], 10) || 0; continue; }
-    if (a === '-B' || a === '--before-context') { fl.before = parseInt(args[++i], 10) || 0; continue; }
-    if (a === '-C' || a === '--context') { const n = parseInt(args[++i], 10) || 0; fl.after = n; fl.before = n; continue; }
+    if (a === '--after-context') { fl.after = parseInt(args[++i], 10) || 0; continue; }
+    if (a.startsWith('--after-context=')) { fl.after = parseInt(a.slice(16), 10) || 0; continue; }
+    if (a === '--before-context') { fl.before = parseInt(args[++i], 10) || 0; continue; }
+    if (a.startsWith('--before-context=')) { fl.before = parseInt(a.slice(17), 10) || 0; continue; }
+    if (a === '--context') { const n = parseInt(args[++i], 10) || 0; fl.after = n; fl.before = n; continue; }
+    if (a.startsWith('--context=')) { const n = parseInt(a.slice(10), 10) || 0; fl.after = n; fl.before = n; continue; }
     if (a.startsWith('--include=')) { fl.includeGlobs.push(a.slice(10)); continue; }
     if (a.startsWith('--exclude=')) { fl.excludeGlobs.push(a.slice(10)); continue; }
     // `never` eteint, tout le reste allume. `auto` colore parce que la
@@ -144,7 +147,7 @@ export function cmdGrep(
     if (a === '--extended-regexp') { fl.extended = true; continue; }
     if (a === '--basic-regexp') { fl.extended = false; continue; }
     if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
-      if (!applyShortFlags(a.slice(1), fl)) { /* unknown short flag → ignore */ }
+      i = applyShortCluster(a, args, i, fl);
       continue;
     }
     if (a.startsWith('--')) continue; // unknown long option
@@ -218,6 +221,33 @@ export function cmdGrep(
 
   const exitCode = errors.length > 0 ? 2 : anyMatch ? 0 : 1;
   return { output: [...errors, ...results].join('\n'), exitCode };
+}
+
+function applyShortCluster(cluster: string, args: string[], at: number, fl: GrepFlags): number {
+  let last = at;
+  for (let k = 1; k < cluster.length; k++) {
+    const flag = cluster[k];
+    if (flag === 'A' || flag === 'B' || flag === 'C' || flag === 'm') {
+      const attached = cluster.slice(k + 1);
+      const count = parseInt(attached !== '' ? attached : (args[++last] ?? ''), 10) || 0;
+      if (flag === 'A') fl.after = count;
+      else if (flag === 'B') fl.before = count;
+      else if (flag === 'C') { fl.after = count; fl.before = count; }
+      else fl.maxCount = count;
+      return last;
+    }
+    if (flag >= '0' && flag <= '9') {
+      let end = k;
+      while (end < cluster.length && cluster[end] >= '0' && cluster[end] <= '9') end++;
+      const count = parseInt(cluster.slice(k, end), 10);
+      fl.after = count;
+      fl.before = count;
+      k = end - 1;
+      continue;
+    }
+    applyShortFlags(flag, fl);
+  }
+  return last;
 }
 
 function applyShortFlags(flagChars: string, fl: GrepFlags): boolean {
@@ -306,11 +336,16 @@ function grepLines(
   const sortedShow = [...showSet].sort((a, b) => a - b);
   const matchSet = new Set(matchIndices);
 
+  const withContext = fl.after > 0 || fl.before > 0;
+  let previous = -2;
   for (const idx of sortedShow) {
     const line = lines[idx];
     const isMatch = matchSet.has(idx);
-    const prefix = showFilename ? `${filename}:` : '';
-    const lineNum = fl.lineNumbers ? `${idx + 1}:` : '';
+    if (withContext && (idx !== previous + 1 || previous === -2) && results.length > 0) results.push('--');
+    previous = idx;
+    const separator = isMatch ? ':' : '-';
+    const prefix = showFilename ? `${filename}${separator}` : '';
+    const lineNum = fl.lineNumbers ? `${idx + 1}${separator}` : '';
     if (fl.onlyMatching && isMatch && !fl.invert) {
       const hits: { index: number; text: string }[] = [];
       for (const re of matchers) {
