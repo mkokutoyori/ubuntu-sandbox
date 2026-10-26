@@ -133,7 +133,7 @@ import {
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector, TcpDialFailure } from '@/network/tcp/types';
-import type { ISubShell } from '@/terminal/subshells/ISubShell';
+import { processSubShellLine, type ISubShell } from '@/terminal/subshells/ISubShell';
 import { CC } from '@/network/devices/linux/tty/Termios';
 import { echoedControl, echoesInput, interruptsOn } from '@/network/devices/linux/tty/TtyLineDiscipline';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -2652,7 +2652,7 @@ export class LinuxTerminalSession extends TerminalSession {
         else this.addShellOutputLine(text);
         this.notify();
       };
-      const maybePromise = this.activeSubShell.processLine(line, onProgress);
+      const maybePromise = processSubShellLine(this.activeSubShell, line, onProgress);
 
       const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
         if (result.clearScreen) this.clear();

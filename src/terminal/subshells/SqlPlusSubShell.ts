@@ -8,7 +8,8 @@
 import type { Equipment, HostCapableDevice } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
-import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import type { SQLPlusSession, SQLPlusResult } from '@/database/oracle/commands/SQLPlusSession';
+import { yieldToEventLoop } from '@/events/CooperativeYield';
 import type { HostCommandRunner } from '@/database/oracle/commands/HostCommandRunner';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
@@ -48,6 +49,8 @@ function captureOsContext(device: Equipment, host: SyncShellHost | null): OsSecu
     program: `sqlplus@${hostname}`,
   };
 }
+
+const SQL_SLICE_MS = 12;
 
 const STATEMENT_KEYWORDS: readonly string[] = [
   'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'CREATE', 'DROP', 'ALTER',
@@ -144,7 +147,25 @@ export class SqlPlusSubShell implements ISubShell {
   }
 
   processLine(line: string): SubShellResult {
-    const result = this.session.processLine(line);
+    return this.subShellResult(line, this.session.processLine(line));
+  }
+
+  processLineCooperative(line: string): SubShellResult | Promise<SubShellResult> {
+    const first = this.session.processLineSliced(line, SQL_SLICE_MS);
+    if (first.continuation === undefined) return this.subShellResult(line, first);
+    return this.settleAcrossTurns(line, first);
+  }
+
+  private async settleAcrossTurns(line: string, pending: SQLPlusResult): Promise<SubShellResult> {
+    let current = pending;
+    while (current.continuation !== undefined) {
+      await yieldToEventLoop();
+      current = current.continuation();
+    }
+    return this.subShellResult(line, current);
+  }
+
+  private subShellResult(line: string, result: SQLPlusResult): SubShellResult {
     this.prompt = result.prompt;
 
     // Phase 7c: the OracleFilesystemSync adapter (auto-attached by

@@ -55,6 +55,7 @@ import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from './OracleConfig';
 import { emptyResult } from '../engine/executor/ResultSet';
+import { through, settle } from '../engine/executor/Continuation';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import type { CellValue } from '../engine/storage/BaseStorage';
 import { SodEvaluator } from './security/audit/SodEvaluator';
@@ -970,59 +971,86 @@ export class OracleDatabase implements SqlCommandHost {
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
   executeSql(executor: OracleExecutor, sql: string): ResultSet {
-    return this.atHostTime(() => executor.withCallBudget(() => {
-      const trimmed = sql.trim().replace(/;\s*$/, '');
-      if (!trimmed) return emptyResult();
+    return settle(this.executeSqlSliced(executor, sql, Infinity));
+  }
 
-      this.idleMonitor.sweep();
-      this.noticeSessionTermination(executor);
-      this.securityEngine.sessions.noteCall(String(executor.boundSid));
-
-      const upper = trimmed.toUpperCase();
-
-      if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
-        && standbyRefusesStatement(trimmed)) {
-        return emptyResult(ORA_16000);
-      }
-
-      if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
-        && mountedRefusesQuery(trimmed)) {
-        return emptyResult(ORA_01219);
-      }
-
-      // PL/SQL is a distinct language whose unit bodies contain semicolons
-      // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
-      // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
-      // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
-      const plsql = this.routePlsql(executor, trimmed, upper);
-      if (plsql) return plsql;
-
-      // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
-      // does not model the external-table clause, so it is registered here.
-      if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
-        return this.createExternalTable(executor, trimmed);
-      }
-
-      const tokens = this.lexer.tokenize(trimmed);
-      const parser = new OracleParser();
-      const statements = parser.parseMultiple(tokens);
-
-      if (statements.length === 0) return emptyResult();
-
-      let result: ResultSet = emptyResult();
-      for (const stmt of statements) {
-        // Attach the source SQL so audit/journaling records the original
-        // user text — the AST type alone is useless to a DBA.
-        (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
-        result = executor.execute(stmt);
+  executeSqlSliced(executor: OracleExecutor, sql: string, sliceMs: number): ResultSet {
+    const scope = executor.beginCallScope();
+    return through<ResultSet>(
+      (run) => {
         try {
-          this.maybeLockForUpdate(executor, stmt);
+          return this.atHostTime(() => scope.run(run));
         } catch (e: unknown) {
-          return emptyResult(e instanceof Error ? e.message : String(e));
+          scope.end();
+          throw e;
         }
-      }
-      return result;
-    }));
+      },
+      () => this.parseAndRun(executor, sql, sliceMs),
+      (result) => {
+        scope.end();
+        return result;
+      },
+    );
+  }
+
+  private parseAndRun(executor: OracleExecutor, sql: string, sliceMs: number): ResultSet {
+    const trimmed = sql.trim().replace(/;\s*$/, '');
+    if (!trimmed) return emptyResult();
+
+    this.idleMonitor.sweep();
+    this.noticeSessionTermination(executor);
+    this.securityEngine.sessions.noteCall(String(executor.boundSid));
+
+    const upper = trimmed.toUpperCase();
+
+    if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
+      && standbyRefusesStatement(trimmed)) {
+      return emptyResult(ORA_16000);
+    }
+
+    if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
+      && mountedRefusesQuery(trimmed)) {
+      return emptyResult(ORA_01219);
+    }
+
+    // PL/SQL is a distinct language whose unit bodies contain semicolons
+    // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
+    // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
+    // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
+    const plsql = this.routePlsql(executor, trimmed, upper);
+    if (plsql) return plsql;
+
+    // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
+    // does not model the external-table clause, so it is registered here.
+    if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
+      return this.createExternalTable(executor, trimmed);
+    }
+
+    const tokens = this.lexer.tokenize(trimmed);
+    const parser = new OracleParser();
+    const statements = parser.parseMultiple(tokens);
+
+    if (statements.length === 0) return emptyResult();
+
+    const runFrom = (index: number): ResultSet => {
+      const stmt = statements[index];
+      // Attach the source SQL so audit/journaling records the original
+      // user text — the AST type alone is useless to a DBA.
+      (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
+      return through<ResultSet>(
+        (run) => run(),
+        () => executor.executeSliced(stmt, sliceMs),
+        (result) => {
+          try {
+            this.maybeLockForUpdate(executor, stmt);
+          } catch (e: unknown) {
+            return emptyResult(e instanceof Error ? e.message : String(e));
+          }
+          return index + 1 < statements.length ? runFrom(index + 1) : result;
+        },
+      );
+    };
+    return runFrom(0);
   }
 
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {

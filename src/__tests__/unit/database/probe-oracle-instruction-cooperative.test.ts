@@ -1,0 +1,194 @@
+/**
+ * Une instruction Oracle volumineuse se decoupe en tranches au lieu de figer l'onglet.
+ *
+ * MESURE DE DEPART (Chromium, e2e/nat-lab-stress.spec.ts, `ora-insert-300k` et
+ * `ora-update-delete-300k`) : la tache longue la plus grosse durait 1 059 ms pour
+ * `INSERT … SELECT … CONNECT BY level <= 300000` et 1 722 ms pour la suite UPDATE / DELETE /
+ * ROLLBACK de 300 000 lignes — le ROLLBACK seul 2,3 s, `restoreRows` indexant toute la table. Une
+ * instruction tournait d'une traite sur le fil de l'onglet parce que la chaine d'appel est
+ * synchrone du terminal au stockage.
+ *
+ * Les boucles de lignes (filtre WHERE, CONNECT BY, projection, insertion, UPDATE, DELETE, annulation)
+ * sont maintenant reprenables : `OracleDatabase.executeSqlSliced` rend un ResultSet portant une
+ * `continuation`, et chaque couche (executeur, base, session SQL*Plus) la reprend sous sa propre portee
+ * — horloge de la machine, budget d'appel, puit d'annulation. `executeSql` reste le pilote synchrone :
+ * il regle la continuation d'une traite, donc tous les appelants existants voient le meme resultat.
+ * Le sous-shell SQL*Plus du terminal rend la main a la boucle d'evenements entre deux tranches.
+ * Au profil Chromium : `ora-insert-300k` 1 059 -> 144 ms, `ora-update-delete-300k` 1 722 -> 135 ms.
+ *
+ * Le temps CPU d'un profil (CPU_PER_CALL) ne compte que le temps ACTIF : le budget se suspend entre deux
+ * tranches, sans quoi une instruction coupee en tranches serait facturee de son attente.
+ *
+ * Discrimine par `git stash push -- src/database src/terminal src/shell src/events` : les onze cas qui
+ * appellent `executeSqlSliced` tombent (l'API n'existe pas). Passe des deux cotes, TEMOIN : le pilote
+ * synchrone ne rend jamais de continuation et regle l'instruction d'une traite.
+ */
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { OracleDatabase } from '../../../database/oracle/OracleDatabase';
+import type { OracleExecutor } from '../../../database/oracle/OracleExecutor';
+import type { ResultSet } from '../../../database/engine/executor/ResultSet';
+
+let db: OracleDatabase;
+let executor: OracleExecutor;
+
+afterEach(() => { vi.restoreAllMocks(); });
+
+function exec(sql: string, who: OracleExecutor = executor): ResultSet {
+  return db.executeSql(who, sql);
+}
+
+function scalar(sql: string): unknown {
+  return exec(sql).rows[0][0];
+}
+
+function sliced(sql: string, who: OracleExecutor = executor, between?: () => void): { result: ResultSet; slices: number } {
+  let result = db.executeSqlSliced(who, sql, 1);
+  let slices = 1;
+  while (result.continuation) {
+    between?.();
+    result = result.continuation();
+    slices++;
+  }
+  return { result, slices };
+}
+
+const FILL = (rows: number): string =>
+  `INSERT INTO big SELECT level, MOD(level, 100), 'name_' || level, level * 1.5 FROM dual CONNECT BY level <= ${rows}`;
+
+beforeEach(() => {
+  db = new OracleDatabase();
+  db.instance.startup();
+  executor = db.connectAsSysdba().executor;
+  exec('CREATE TABLE big (id NUMBER PRIMARY KEY, grp NUMBER, name VARCHAR2(40), amount NUMBER(10,2))');
+});
+
+describe('la voie synchrone', () => {
+  test('TEMOIN — executeSql ne rend jamais de continuation et regle l instruction d une traite', () => {
+    const result = exec(FILL(30000));
+    expect(result.continuation).toBeUndefined();
+    expect(result.message).toBe('30000 rows created.');
+    expect(scalar('SELECT COUNT(*) FROM big')).toBe(30000);
+  });
+});
+
+describe('INSERT … SELECT … CONNECT BY', () => {
+  test('se decoupe en plusieurs tranches et cree toutes les lignes', () => {
+    const { result, slices } = sliced(FILL(40000));
+    expect(slices).toBeGreaterThan(3);
+    expect(result.message).toBe('40000 rows created.');
+    expect(scalar('SELECT COUNT(*) FROM big')).toBe(40000);
+  });
+
+  test('TEMOIN — la voie en tranches pose les memes donnees que la voie synchrone', () => {
+    exec(FILL(20000));
+    const direct = [scalar('SELECT SUM(id) FROM big'), scalar('SELECT SUM(amount) FROM big'), scalar("SELECT MAX(name) FROM big")];
+    exec('ROLLBACK');
+    sliced(FILL(20000));
+    const viaSlices = [scalar('SELECT SUM(id) FROM big'), scalar('SELECT SUM(amount) FROM big'), scalar("SELECT MAX(name) FROM big")];
+    expect(viaSlices).toEqual(direct);
+  });
+
+  test('une erreur de la derniere tranche remonte, et l executeur reste utilisable', () => {
+    exec("INSERT INTO big VALUES (39000, 1, 'dup', 1)");
+    exec('COMMIT');
+    let slices = 0;
+    let result = db.executeSqlSliced(executor, FILL(40000), 1);
+    const drive = (): void => {
+      while (result.continuation) { slices++; result = result.continuation(); }
+    };
+    expect(drive).toThrow(/ORA-00001/);
+    expect(slices).toBeGreaterThan(1);
+    expect(scalar('SELECT 1 FROM dual')).toBe(1);
+    expect(exec('INSERT INTO big VALUES (500000, 1, \'ok\', 1)').message).toBe('1 row created.');
+  });
+});
+
+describe('UPDATE, DELETE, ROLLBACK', () => {
+  beforeEach(() => { exec(FILL(30000)); exec('COMMIT'); });
+
+  test('UPDATE se decoupe et compte les memes lignes', () => {
+    const { result, slices } = sliced('UPDATE big SET amount = amount + 1');
+    expect(slices).toBeGreaterThan(2);
+    expect(result.message).toBe('30000 rows updated.');
+    expect(scalar('SELECT SUM(amount) FROM big')).toBe(30000 * 30001 / 2 * 1.5 + 30000);
+  });
+
+  test('DELETE se decoupe, valide les cles etrangeres et retire les bonnes lignes', () => {
+    const { result, slices } = sliced('DELETE FROM big WHERE MOD(id, 2) = 0');
+    expect(slices).toBeGreaterThan(2);
+    expect(result.message).toBe('15000 rows deleted.');
+    expect(scalar('SELECT COUNT(*) FROM big')).toBe(15000);
+    expect(scalar('SELECT MIN(id) FROM big')).toBe(1);
+    expect(scalar('SELECT MAX(id) FROM big')).toBe(29999);
+  });
+
+  test('ROLLBACK se decoupe et restaure l etat valide, insertions, mises a jour et suppressions', () => {
+    const before = [scalar('SELECT COUNT(*) FROM big'), scalar('SELECT SUM(amount) FROM big')];
+    sliced('UPDATE big SET amount = amount * 2');
+    sliced('DELETE FROM big WHERE MOD(id, 3) = 0');
+    sliced("INSERT INTO big VALUES (900001, 1, 'x', 5)");
+    const rolled = sliced('ROLLBACK');
+    expect(rolled.slices).toBeGreaterThan(1);
+    expect(rolled.result.message).toBe('Rollback complete.');
+    expect([scalar('SELECT COUNT(*) FROM big'), scalar('SELECT SUM(amount) FROM big')]).toEqual(before);
+  });
+
+  test('un DELETE concurrent d une autre session fait echouer la tranche suivante : ORA-08177', () => {
+    const other = db.connectAsSysdba().executor;
+    let result = db.executeSqlSliced(executor, 'UPDATE big SET amount = 0', 1);
+    expect(result.continuation).toBeDefined();
+    exec("DELETE FROM big WHERE id = 1", other);
+    expect(() => { while (result.continuation) result = result.continuation(); }).toThrow(/ORA-08177/);
+  });
+
+  test('une insertion concurrente d une autre session n est ni perdue ni mise a jour', () => {
+    const other = db.connectAsSysdba().executor;
+    let result = db.executeSqlSliced(executor, 'DELETE FROM big WHERE id <= 20000', 1);
+    expect(result.continuation).toBeDefined();
+    exec("INSERT INTO big VALUES (777777, 1, 'late', 9)", other);
+    exec('COMMIT', other);
+    while (result.continuation) result = result.continuation();
+    expect(result.message).toBe('20000 rows deleted.');
+    expect(scalar('SELECT COUNT(*) FROM big WHERE id = 777777')).toBe(1);
+  });
+});
+
+describe('SELECT', () => {
+  test('un SELECT volumineux se decoupe et rend les memes lignes', () => {
+    exec(FILL(50000));
+    exec('COMMIT');
+    const direct = exec('SELECT id, amount FROM big WHERE MOD(id, 7) = 0');
+    const { result, slices } = sliced('SELECT id, amount FROM big WHERE MOD(id, 7) = 0');
+    expect(slices).toBeGreaterThan(2);
+    expect(result.rows).toEqual(direct.rows);
+    expect(result.continuation).toBeUndefined();
+  });
+});
+
+describe('budget d appel d un profil', () => {
+  function cappedUser(cpuCentiseconds: number): OracleExecutor {
+    exec('CREATE TABLE owner_t (n NUMBER)');
+    exec(`CREATE PROFILE capped LIMIT CPU_PER_CALL ${cpuCentiseconds}`);
+    exec('CREATE USER capped_user IDENTIFIED BY "Pw#1234" PROFILE capped');
+    exec('GRANT CREATE SESSION, UNLIMITED TABLESPACE TO capped_user');
+    exec('GRANT INSERT, SELECT ON sys.owner_t TO capped_user');
+    return db.connect('CAPPED_USER', 'Pw#1234').executor;
+  }
+
+  test('l attente entre deux tranches n est pas facturee au CPU de l appel', () => {
+    const user = cappedUser(100);
+    const real = performance.now.bind(performance);
+    let skew = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => real() + skew);
+    const { result, slices } = sliced(
+      'INSERT INTO sys.owner_t SELECT level FROM dual CONNECT BY level <= 30000', user, () => { skew += 5000; });
+    expect(slices).toBeGreaterThan(3);
+    expect(result.message).toBe('30000 rows created.');
+  });
+
+  test('TEMOIN — un appel qui consomme vraiment le budget est coupe : ORA-02393', () => {
+    const user = cappedUser(5);
+    expect(() => sliced('INSERT INTO sys.owner_t SELECT level FROM dual CONNECT BY level <= 400000', user)).toThrow(/ORA-02393/);
+    expect(scalar('SELECT COUNT(*) FROM owner_t')).toBe(0);
+  });
+});

@@ -53,7 +53,7 @@ import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
 import { CompletionController, ReadlinePolicy, LastWordSource, FullLineSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, scanWords, SubShellCompletionControllers } from '@/terminal/completion';
 import { CMD_COMPLETION_WORDS, completeWindowsPath, pathLooksLikeAPath } from '@/network/devices/windows/PathCompletion';
 import type { SubShellTabHost } from '@/terminal/completion';
-import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
+import { processSubShellLine, type ISubShell, type SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { WINDOWS_TELNET } from '@/terminal/subshells/telnetDialect';
@@ -1424,7 +1424,7 @@ export class WindowsTerminalSession extends TerminalSession {
         else this.addShellOutputLine(text);
         this.notify();
       };
-      const maybePromise = this.activeSubShell.processLine(line, onProgress);
+      const maybePromise = processSubShellLine(this.activeSubShell, line, onProgress);
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _powerShellLanguage?: 'desktop' | 'core'; _enterCmd?: boolean; childShell?: IShell }) => {
         if (result.clearScreen) {

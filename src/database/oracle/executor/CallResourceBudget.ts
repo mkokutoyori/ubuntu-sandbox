@@ -26,7 +26,8 @@ export class SessionResourceMeter {
 }
 
 export class CallResourceBudget {
-  private readonly startedAt: number;
+  private activeMs = 0;
+  private activeSince: number | null;
   private callReads = 0;
   private tripped = new Set<number>();
 
@@ -36,20 +37,34 @@ export class CallResourceBudget {
     private readonly now: () => number,
     private readonly connectedMinutes: () => number,
   ) {
-    this.startedAt = now();
+    this.activeSince = now();
   }
 
   noteLogicalReads(blocks: number): void {
     this.callReads += blocks;
   }
 
+  suspend(): void {
+    if (this.activeSince === null) return;
+    this.activeMs += this.now() - this.activeSince;
+    this.activeSince = null;
+  }
+
+  resume(): void {
+    if (this.activeSince === null) this.activeSince = this.now();
+  }
+
+  private elapsed(): number {
+    return this.activeMs + (this.activeSince === null ? 0 : this.now() - this.activeSince);
+  }
+
   close(): void {
-    this.session.cpuMs += this.now() - this.startedAt;
+    this.session.cpuMs += this.elapsed();
     this.session.logicalReads += this.callReads;
   }
 
   evaluate(): ExceededLimit | null {
-    const elapsed = this.now() - this.startedAt;
+    const elapsed = this.elapsed();
     const sessionCpuMs = this.session.cpuMs + elapsed;
     const sessionReads = this.session.logicalReads + this.callReads;
     const { limits } = this;

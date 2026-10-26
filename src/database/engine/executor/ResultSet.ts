@@ -40,6 +40,7 @@ export interface ResultSet {
   warnings?: string[];
   /** Row count reported by some producers (EXPLAIN PLAN, utilities). */
   rowCount?: number;
+  continuation?: () => ResultSet;
 }
 
 /**

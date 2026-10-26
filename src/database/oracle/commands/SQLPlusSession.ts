@@ -21,6 +21,7 @@ import { hostBannerDate, hostNowMs, withHostClock } from '../time/OracleHostCloc
 
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
+import { through, settle } from '../../engine/executor/Continuation';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from '../security/types';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../OracleConfig';
@@ -79,6 +80,7 @@ export interface SQLPlusResult {
   exit: boolean;
   needsMoreInput: boolean;
   prompt: string;
+  continuation?: () => SQLPlusResult;
 }
 
 /**
@@ -467,26 +469,55 @@ export class SQLPlusSession {
   }
 
   processLine(line: string): SQLPlusResult {
-    return this.atHostTime(() => {
-      const promptBefore = this.lastPromptShown ?? this.getPrompt();
-      const result = this.processLineInner(line);
-      if (this.spool) {
-        this.spool.lines.push(`${promptBefore}${line}`);
-        for (const out of result.output) {
-          this.spool.lines.push(this.settings.trimspool ? out.replace(/\s+$/, '') : out);
+    return settle(this.processLineSliced(line, Infinity));
+  }
+
+  processLineSliced(line: string, sliceMs: number): SQLPlusResult {
+    const promptBefore = this.lastPromptShown ?? this.getPrompt();
+    return through<SQLPlusResult>(
+      (run) => this.atHostTime(run),
+      () => this.withLineSlice(sliceMs, () => this.processLineInner(line)),
+      (result) => this.atHostTime(() => {
+        if (this.spool) {
+          this.spool.lines.push(`${promptBefore}${line}`);
+          for (const out of result.output) {
+            this.spool.lines.push(this.settings.trimspool ? out.replace(/\s+$/, '') : out);
+          }
+          this.flushSpool();
+          if (this.spoolClosing) {
+            this.spool = null;
+            this.spoolClosing = false;
+          }
         }
-        this.flushSpool();
-        if (this.spoolClosing) {
-          this.spool = null;
-          this.spoolClosing = false;
-        }
-      }
-      this.lastPromptShown = result.prompt;
-      return result;
-    });
+        this.lastPromptShown = result.prompt;
+        return result;
+      }),
+    );
+  }
+
+  private lineSliceMs = Infinity;
+  private lineDepth = 0;
+
+  private withLineSlice<T>(sliceMs: number, run: () => T): T {
+    const previous = this.lineSliceMs;
+    this.lineSliceMs = sliceMs;
+    try {
+      return run();
+    } finally {
+      this.lineSliceMs = previous;
+    }
   }
 
   private processLineInner(line: string): SQLPlusResult {
+    this.lineDepth++;
+    try {
+      return this.dispatchLine(line);
+    } finally {
+      this.lineDepth--;
+    }
+  }
+
+  private dispatchLine(line: string): SQLPlusResult {
     const trimmed = line.trim();
 
     // If we're accumulating a PL/SQL block
@@ -883,12 +914,10 @@ export class SQLPlusSession {
 
     this.lastStatement = sql;
     const output: string[] = [...substituted.verifyLines];
+    const sliceMs = this.lineDepth === 1 ? this.lineSliceMs : Infinity;
+    const startTime = hostNowMs();
 
-    try {
-      const startTime = hostNowMs();
-      const result = this.netSession
-        ? this.executeOverOracleNet(sql)
-        : this.db.executeSql(this.executor, sql);
+    const finish = (result: ResultSet): SQLPlusResult => {
       const elapsed = hostNowMs() - startTime;
 
       if (result.isQuery && result.columns.length > 0) {
@@ -921,14 +950,39 @@ export class SQLPlusSession {
         output.push('');
         output.push(`Elapsed: 00:00:0${elapsed / 1000 < 10 ? '0' : ''}${(elapsed / 1000).toFixed(2)}`);
       }
-    } catch (err: unknown) {
+      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    };
+
+    const fail = (err: unknown): SQLPlusResult => {
       output.push(...this.renderSqlError(sql, err));
       if (SERVER_TERMINATION_CODES.has((err as { code?: string }).code ?? '')) {
         this.connected = false;
       }
-    }
+      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    };
 
-    return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    const follow = (result: ResultSet): SQLPlusResult => {
+      const next = result.continuation;
+      if (next === undefined) return finish(result);
+      return {
+        output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt(),
+        continuation: () => {
+          try {
+            return follow(next());
+          } catch (err: unknown) {
+            return fail(err);
+          }
+        },
+      };
+    };
+
+    try {
+      return follow(this.netSession
+        ? this.executeOverOracleNet(sql)
+        : this.db.executeSqlSliced(this.executor, sql, sliceMs));
+    } catch (err: unknown) {
+      return fail(err);
+    }
   }
 
   /**
