@@ -47,6 +47,7 @@ export interface NatStaticEntry {
   isNetwork?: boolean;
   prefixLen?: number;
   rawConfig?: string;
+  interfaceName?: string;
   /** Number of packets this static mapping has translated (`show ip nat statistics`'s per-entry refcount). */
   hitCount?: number;
 }
@@ -349,6 +350,29 @@ export class NATEngine {
       e => !(e.localIP === localIP && e.globalIP === globalIP)
     );
     this.dropStaticFlows((s) => s.localIP === localIP && s.globalIP === globalIP);
+  }
+
+  removeStaticMapping(spec: {
+    localIP: string; globalIP: string; protocol?: 'tcp' | 'udp';
+    localPort?: number; globalPort?: number; interfaceName?: string; vrf?: string;
+  }): boolean {
+    const matches = (e: NatStaticEntry): boolean =>
+      e.localIP === spec.localIP && e.protocol === spec.protocol
+      && e.localPort === spec.localPort && e.globalPort === spec.globalPort
+      && e.vrf === spec.vrf
+      && (spec.interfaceName === undefined
+        ? e.interfaceName === undefined && e.globalIP === spec.globalIP
+        : e.interfaceName?.toLowerCase() === spec.interfaceName.toLowerCase());
+    const removed = this.staticEntries.filter(matches);
+    if (removed.length === 0) return false;
+    this.staticEntries = this.staticEntries.filter(e => !matches(e));
+    for (const entry of removed) {
+      this.dropStaticFlows((s) => s.localIP === entry.localIP && s.globalIP === entry.globalIP
+        && (entry.protocol === undefined
+          || (s.protocol === (entry.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP)
+            && s.localPort === entry.localPort && s.globalPort === entry.globalPort)));
+    }
+    return true;
   }
 
   removeAllStaticEntries(): void {
