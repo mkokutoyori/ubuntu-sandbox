@@ -3757,11 +3757,10 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 ### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage. Ajouter ou connecter un equipement relance `computeCableRoutes` sur tous les
-cables (102 ms pour 209 cables dans Node, 55 ms de moyenne par mise a jour dans Chromium) : dans une boucle serree de 400 ajouts, chaque mise a jour du magasin rend la toile
-de facon synchrone, ce qui explique les 330 ms par poste observes a 400 postes (22 s de rendu sur 50 s a 200 postes) ; une ouverture de fichier passe par `replaceTopology`,
-une seule mise a jour. Non traite : un routage incremental des cables. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre
-terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
+Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage, et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
+recalcule en entier des qu'un cable, une position ou le zoom change (102 ms pour 209 cables dans Node) : un routage INCREMENTAL reste non traite, mais il ne se declenche plus pour une adresse IP posee dans un
+terminal. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les
+enregistrements et les octets du fichier), environ 13 Ko par entree.
 
 Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
 retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
