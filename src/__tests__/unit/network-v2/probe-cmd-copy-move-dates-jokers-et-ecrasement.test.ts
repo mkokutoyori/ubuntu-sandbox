@@ -185,6 +185,7 @@ describe('the overwrite question', () => {
 
   it('asks once more per file until All', async () => {
     const pc = await lab();
+    pc.getFileSystem().resolve('C:\\src\\a.txt')!.attributes.delete('hidden');
     await pc.executeCommand('copy src\\*.txt C:\\dst');
     const out = await pc.executeCommand('copy src\\*.txt C:\\dst', 'a');
 

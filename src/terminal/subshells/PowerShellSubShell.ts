@@ -22,8 +22,8 @@ import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleten
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
-import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { credentialFromValue } from '@/powershell/cmdlets/core/RemotingCmdlets';
+import { WinRmPowerShellShell } from '@/shell/adapters/WinRmPowerShellShell';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import { scanWords, type WordScan } from '@/terminal/completion/words';
@@ -46,7 +46,7 @@ import { completeProviderPath, type ProviderPathSources } from './PowerShellProv
  * del / ren / mkdir / rmdir / hostname / whoami) are also first-class
  * ICmdlets in the interpreter's core registry.
  */
-const CONTINUATION_PROMPT = '>> ';
+export const CONTINUATION_PROMPT = '>> ';
 
 const ACTION_PREFERENCES = ['Continue', 'Ignore', 'Inquire', 'SilentlyContinue', 'Stop', 'Suspend'] as const;
 const ACTION_PREFERENCE_PARAMETERS: ReadonlySet<string> = new Set(['erroraction', 'warningaction', 'informationaction']);
@@ -68,8 +68,6 @@ export class PowerShellSubShell implements ISubShell {
    * shared fields (terminal_gap.md §7.x).
    */
   private session: WindowsShellSession | null = null;
-  /** Set for a sub-shell pushed by `Enter-PSSession` — prefixes every prompt with `[computername]: `. */
-  private promptPrefix = '';
   private userPromptText: string | null = null;
 
   private readonly language: 'desktop' | 'core';
@@ -102,12 +100,11 @@ export class PowerShellSubShell implements ISubShell {
    */
   static create(
     device: Equipment,
-    opts?: { initialCwd?: string; session?: WindowsShellSession | null; promptPrefix?: string; language?: 'desktop' | 'core' },
+    opts?: { initialCwd?: string; session?: WindowsShellSession | null; language?: 'desktop' | 'core' },
   ): { subShell: PowerShellSubShell; banner: string[] } {
     const language = opts?.language ?? 'desktop';
     const subShell = new PowerShellSubShell(device, language);
     subShell.session = opts?.session ?? null;
-    subShell.promptPrefix = opts?.promptPrefix ?? '';
     // Prefer the caller-provided cwd (per-terminal session); fall back to
     // the device's shared cwd so legacy call sites still work.
     if (opts?.initialCwd && !subShell.session) (device as unknown as { setCwd(p: string): void }).setCwd(opts.initialCwd);
@@ -124,10 +121,10 @@ export class PowerShellSubShell implements ISubShell {
 
   getPrompt(): string {
     if (this.pendingLines.length > 0) return CONTINUATION_PROMPT;
-    if (this.userPromptText !== null) return `${this.promptPrefix}${this.userPromptText}`;
+    if (this.userPromptText !== null) return this.userPromptText;
     const location = this.interp.foreignLocation()
       ?? this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
-    return `${this.promptPrefix}PS ${location}> `;
+    return `PS ${location}> `;
   }
 
   private promptFunctionText(): string {
@@ -228,10 +225,6 @@ export class PowerShellSubShell implements ISubShell {
       } as SubShellResult & { _enterCmd: boolean };
     }
 
-    // "Enter-PSSession" / "etsn" — real network reachability + auth over
-    // TCP/5985 (PRD-Windows-Server.md §5 P4), then the session pushes a
-    // nested PowerShellSubShell bound to the remote device (its prompt
-    // prefixed "[computername]: ", matching real WinRM).
     const enterPsMatch = /^(?:enter-pssession|etsn)\b(.*)$/i.exec(trimmed);
     if (enterPsMatch) {
       return this.tryEnterPSSession(enterPsMatch[1]);
@@ -272,13 +265,7 @@ export class PowerShellSubShell implements ISubShell {
     };
   }
 
-  /**
-   * `Enter-PSSession -ComputerName X [-Credential user[:password]]` — real
-   * TCP/5985 dial + auth (PRD-Windows-Server.md §5 P4). On success returns
-   * a marker the host terminal session uses to push a nested
-   * PowerShellSubShell bound to the remote device.
-   */
-  private tryEnterPSSession(argsStr: string): SubShellResult {
+  private async tryEnterPSSession(argsStr: string): Promise<SubShellResult> {
     const compMatch = /-ComputerName\s+(\S+)/i.exec(argsStr);
     const bareMatch = !compMatch ? /^\s*(\S+)/.exec(argsStr) : null;
     const computerName = (compMatch?.[1] ?? bareMatch?.[1] ?? '').replace(/^["']|["']$/g, '');
@@ -291,35 +278,22 @@ export class PowerShellSubShell implements ISubShell {
       return { output: [`Enter-PSSession : Connecting to remote server ${computerName} failed.`], exit: false, prompt: this.getPrompt() };
     }
 
-    const fail = () => ({
-      output: [
-        `Enter-PSSession : Connecting to remote server ${computerName} failed with the following error message: ` +
-        `WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer ` +
-        `is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows ` +
-        `access from this computer.`,
-      ],
+    const fail = (message: string) => ({
+      output: [`Enter-PSSession : Connecting to remote server ${computerName} failed with the following error message: ${message}`],
       exit: false,
       prompt: this.getPrompt(),
     });
 
-    const targetIp = this.device.resolveHostnameSync(computerName);
-    if (!targetIp) return fail();
-    const found = findHostByAddress(targetIp.toString());
-    if (!found || found.poweredOff || found.interfaceDown) return fail();
-
     const credential = credMatch
       ? credentialFromValue(credMatch[1].startsWith('$') ? this.interp.getVariable(credMatch[1].slice(1)) : credMatch[1])
-      : { username: this.device.getUserManager().currentUser, password: '' };
-    const dial = this.device.dialWinRm(targetIp.toString(), credential.username, credential.password);
-    if (!dial.ok) return fail();
+      : undefined;
+    const opening = await this.device.openWinRmRunspace(computerName, credential);
+    if (opening.ok === false) return fail(opening.error);
 
-    const hostname = (found.device as unknown as { getHostname?: () => string }).getHostname?.() ?? computerName;
-    return {
-      output: [],
-      exit: false,
-      prompt: '',
-      _enterRemotePS: { device: found.device, promptPrefix: `[${hostname}]: ` },
-    } as SubShellResult & { _enterRemotePS: { device: Equipment; promptPrefix: string } };
+    const childShell = new WinRmPowerShellShell({
+      device: this.device, user: credential?.username ?? this.device.getUserManager().currentUser, computerName, runspace: opening.runspace,
+    });
+    return { output: [], exit: false, prompt: childShell.getPrompt(), childShell };
   }
 
   private async dispatchCommand(line: string): Promise<string | null> {

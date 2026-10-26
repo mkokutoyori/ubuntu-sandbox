@@ -103,6 +103,7 @@ describe('Copy-Item honore ce qu il declare', () => {
     await ps('New-Item -Path C:\\src -ItemType Directory');
     await ps('Set-Content C:\\src\\un.txt -Value 1');
     await ps('Set-Content C:\\src\\deux.txt -Value 2');
+    await ps('New-Item -Path C:\\dst -ItemType Directory');
     await ps('Copy-Item C:\\src\\* C:\\dst');
     expect((await ps('Test-Path C:\\dst\\un.txt')).trim()).toBe('True');
     expect((await ps('Test-Path C:\\dst\\deux.txt')).trim()).toBe('True');
@@ -113,9 +114,11 @@ describe('Copy-Item honore ce qu il declare', () => {
     await ps('New-Item -Path C:\\mele -ItemType Directory');
     await ps('Set-Content C:\\mele\\a.txt -Value a');
     await ps('Set-Content C:\\mele\\b.log -Value b');
+    await ps('New-Item -Path C:\\filtre -ItemType Directory');
     await ps('Copy-Item C:\\mele\\* C:\\filtre -Filter *.txt');
     expect((await ps('Test-Path C:\\filtre\\a.txt')).trim()).toBe('True');
     expect((await ps('Test-Path C:\\filtre\\b.log')).trim()).toBe('False');
+    await ps('New-Item -Path C:\\exclu -ItemType Directory');
     await ps('Copy-Item C:\\mele\\* C:\\exclu -Exclude *.log');
     expect((await ps('Test-Path C:\\exclu\\b.log')).trim()).toBe('False');
   });

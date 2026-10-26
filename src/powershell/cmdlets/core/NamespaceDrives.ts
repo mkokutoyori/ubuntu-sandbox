@@ -6,6 +6,7 @@ import { joinProviderPath } from '@/powershell/runtime/PSLocationState';
 import { allAliases } from './AliasCmdlets';
 import { functionRow } from './CommandRows';
 import { NAMESPACE_DRIVES, qualifierOf, type NamespaceKind } from './ProviderPaths';
+import { pathNotFound } from './ProviderFailures';
 
 export type { NamespaceKind };
 
@@ -83,7 +84,7 @@ export function namespaceExists(ctx: CmdletContext, target: NamespaceTarget): bo
 }
 
 function notFound(ctx: CmdletContext, target: NamespaceTarget): void {
-  ctx.emitError(`Cannot find path '${namespacePath(target)}' because it does not exist.`);
+  ctx.emitFailure(pathNotFound(namespacePath(target)));
 }
 
 function matchesOrReport(ctx: CmdletContext, target: NamespaceTarget): NamespaceEntry[] {
@@ -195,7 +196,10 @@ export function setNamespaceItem(ctx: CmdletContext, target: NamespaceTarget, va
 
 export function removeNamespaceItems(ctx: CmdletContext, target: NamespaceTarget): void {
   if (leafOf(ctx, target) === null) return;
-  for (const entry of matchesOrReport(ctx, target)) erase(ctx, target.kind, String(entry['Name']));
+  for (const entry of matchesOrReport(ctx, target)) {
+    const name = String(entry['Name']);
+    if (ctx.shouldProcess(`Item: ${name}`, 'Remove Item')) erase(ctx, target.kind, name);
+  }
 }
 
 export function renameNamespaceItem(ctx: CmdletContext, target: NamespaceTarget, newName: string, force: boolean, passThru: boolean): PSValue {
@@ -203,6 +207,7 @@ export function renameNamespaceItem(ctx: CmdletContext, target: NamespaceTarget,
   const [entry] = matchesOrReport(ctx, target);
   if (entry === undefined) return null;
   const name = String(entry['Name']);
+  if (!ctx.shouldProcess(`Item: ${name} NewName: ${newName}`, 'Rename Item')) return null;
   if (name.toLowerCase() !== newName.toLowerCase()) {
     if (namespaceItem(ctx, target.kind, newName) !== null && !force) {
       ctx.emitError(`The item at path '${newName}' already exists.`);
@@ -224,6 +229,7 @@ export function copyNamespaceItem(ctx: CmdletContext, from: NamespaceTarget, to:
   if (entry === undefined) return null;
   const name = leafOf(ctx, to);
   if (name === null) return null;
+  if (!ctx.shouldProcess(`Item: ${String(entry['Name'])} Destination: ${name}`, 'Copy Item')) return null;
   const failure = from.kind === to.kind ? assign(ctx, to.kind, name, valueOf(ctx, entry, from.kind)) : COPY_ACROSS_PROVIDERS;
   if (failure !== null) {
     ctx.emitError(failure);

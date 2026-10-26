@@ -38,44 +38,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
-
-const key = (name: string): KeyEvent => ({ key: name, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
-
-async function settle(times = 8): Promise<void> {
-  for (let i = 0; i < times; i++) {
-    await Promise.resolve();
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-  }
-}
-
-class Console {
-  private constructor(private readonly session: WindowsTerminalSession) {}
-
-  static async open(machine: WindowsPC, id: string): Promise<Console> {
-    const session = new WindowsTerminalSession(id, machine);
-    await session.init();
-    return new Console(session);
-  }
-
-  get prompt(): string {
-    return this.session.getPrompt();
-  }
-
-  async run(line: string): Promise<string> {
-    const before = this.session.lines.length;
-    this.session.setInput(line);
-    this.session.setInputBuf(line);
-    this.session.handleKey(key('Enter'));
-    await settle();
-    return this.session.lines.slice(before + 1).map(entry => entry.text).join('\n');
-  }
-
-  async runAll(...lines: string[]): Promise<void> {
-    for (const line of lines) await this.run(line);
-  }
-}
+import { Console } from './_helpers/windowsConsole';
 
 beforeEach(() => {
   EquipmentRegistry.getInstance().clear();
@@ -208,13 +171,13 @@ describe('Windows PowerShell location rules', () => {
   it('reads cd - as a path of that name', async () => {
     const shell = await windowsPowerShell();
     const output = await shell.run('cd -');
-    expect(output).toContain("Cannot find path '-' because it does not exist.");
+    expect(output).toContain("Cannot find path 'C:\\Users\\User\\-' because it does not exist.");
     expect(shell.prompt).toBe(PS('C:\\Users\\User'));
   });
 
   it('reads cd + as a path of that name', async () => {
     const shell = await windowsPowerShell();
-    expect(await shell.run('cd +')).toContain("Cannot find path '+' because it does not exist.");
+    expect(await shell.run('cd +')).toContain("Cannot find path 'C:\\Users\\User\\+' because it does not exist.");
   });
 
   it('stays in place for Set-Location without a path', async () => {
