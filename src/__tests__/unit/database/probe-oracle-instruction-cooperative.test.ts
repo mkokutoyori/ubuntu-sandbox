@@ -19,6 +19,13 @@
  * Le temps CPU d'un profil (CPU_PER_CALL) ne compte que le temps ACTIF : le budget se suspend entre deux
  * tranches, sans quoi une instruction coupee en tranches serait facturee de son attente.
  *
+ * Une sous-requete NON CORRELEE (aucune lecture de la ligne exterieure pendant son evaluation) n'est plus
+ * reexecutee pour chaque ligne exterieure : `IN (SELECT id FROM big WHERE grp = 7)` sur 300 000 lignes coutait 31 s
+ * (la sous-requete etait rejouee 300 000 fois, puis balayee lineairement a chaque ligne) et coute 84 ms ; sur
+ * 20 000 lignes le cas ci-dessous passe de 38,5 s a moins de 1,5 s (quatre temoins passent des deux cotes : NOT IN
+ * et NULL, textes et types mixtes, correlation, vie du cache). Le resultat
+ * vit le temps de l'instruction ; une sous-requete correlee reste reevaluee ligne par ligne.
+ *
  * Les boucles d'un bloc PL/SQL anonyme (FOR, WHILE, LOOP) rendent aussi la main : `ora-plsql-inserts-20k` avait
  * une tache longue de 784 ms.
  *
@@ -202,6 +209,54 @@ describe('bloc PL/SQL anonyme', () => {
     const result = exec(LOOP(5000));
     expect(result.continuation).toBeUndefined();
     expect(scalar('SELECT COUNT(*) FROM big')).toBe(5000);
+  });
+});
+
+describe('sous-requetes', () => {
+  beforeEach(() => {
+    exec('CREATE TABLE ref (id NUMBER, label VARCHAR2(10), g NUMBER)');
+  });
+
+  test('IN (sous-requete non correlee) sur 20 000 lignes : evalue une fois, sonde par table de hachage', () => {
+    exec(FILL(20000));
+    exec('COMMIT');
+    const startedAt = performance.now();
+    const count = scalar('SELECT COUNT(*) FROM big WHERE id IN (SELECT id FROM big WHERE grp = 7)');
+    expect(count).toBe(200);
+    expect(performance.now() - startedAt).toBeLessThan(1500);
+  }, 30_000);
+
+  test('TEMOIN — NOT IN avec un NULL dans la sous-requete ne laisse passer aucune ligne', () => {
+    exec("INSERT INTO ref VALUES (1, 'a', 1)");
+    exec('INSERT INTO ref VALUES (NULL, \'b\', 1)');
+    exec(FILL(10));
+    expect(scalar('SELECT COUNT(*) FROM big WHERE id NOT IN (SELECT id FROM ref)')).toBe(0);
+    expect(scalar('SELECT COUNT(*) FROM big WHERE id IN (SELECT id FROM ref)')).toBe(1);
+  });
+
+  test('TEMOIN — IN sur des textes et sur des types mixtes garde la comparaison d Oracle', () => {
+    exec("INSERT INTO ref VALUES (5, '7', 1)");
+    exec(FILL(10));
+    expect(scalar("SELECT COUNT(*) FROM big WHERE name IN (SELECT 'name_' || id FROM ref)")).toBe(1);
+    expect(scalar('SELECT COUNT(*) FROM big WHERE id IN (SELECT label FROM ref)')).toBe(1);
+  });
+
+  test('TEMOIN — une sous-requete correlee est reevaluee pour chaque ligne', () => {
+    exec('INSERT INTO ref VALUES (1, \'x\', 1)');
+    exec('INSERT INTO ref VALUES (2, \'y\', 1)');
+    exec('INSERT INTO ref VALUES (3, \'z\', 2)');
+    exec('INSERT INTO ref VALUES (4, \'w\', 2)');
+    const rows = exec('SELECT id FROM ref a WHERE a.id > (SELECT AVG(id) FROM ref b WHERE b.g = a.g) ORDER BY id').rows;
+    expect(rows.map(row => row[0])).toEqual([2, 4]);
+  });
+
+  test('TEMOIN — la sous-requete mise en cache ne survit pas a l instruction', () => {
+    exec(FILL(10));
+    exec('INSERT INTO ref VALUES (1, \'x\', 1)');
+    const query = 'SELECT COUNT(*) FROM big WHERE id IN (SELECT id FROM ref)';
+    expect(scalar(query)).toBe(1);
+    exec('INSERT INTO ref VALUES (2, \'y\', 1)');
+    expect(scalar(query)).toBe(2);
   });
 });
 

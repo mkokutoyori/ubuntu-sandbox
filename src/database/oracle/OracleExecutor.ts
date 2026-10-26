@@ -198,6 +198,12 @@ const PASS_THROUGH_SCOPE: CallScope = {
   end: () => undefined,
 };
 
+interface InIndex {
+  readonly numbers: Set<number> | null;
+  readonly strings: Set<string> | null;
+  readonly hasNull: boolean;
+}
+
 interface InsertQueryJob {
   readonly subResult: ResultSet;
   next: number;
@@ -354,13 +360,20 @@ export class OracleExecutor extends BaseExecutor {
         const scn = instance.advanceScn();
         const journalises: typeof changes[number][] = [];
         const nonJournalises = new Map<string, number>();
+        const placement = new Map<string, { ts: string | undefined; journalise: boolean }>();
         for (const change of changes) {
-          const ts = storage.tablespaceOfTable(change.schema, change.table);
-          const journalise = instance.forceLogging
-            || ts === undefined
-            || storage.tablespaceIsLogging(ts);
-          if (journalise) { journalises.push(change); continue; }
-          nonJournalises.set(ts, (nonJournalises.get(ts) ?? 0) + 1);
+          const key = `${change.schema}.${change.table}`;
+          let where = placement.get(key);
+          if (where === undefined) {
+            const ts = storage.tablespaceOfTable(change.schema, change.table);
+            where = {
+              ts,
+              journalise: instance.forceLogging || ts === undefined || storage.tablespaceIsLogging(ts),
+            };
+            placement.set(key, where);
+          }
+          if (where.journalise) { journalises.push(change); continue; }
+          nonJournalises.set(where.ts!, (nonJournalises.get(where.ts!) ?? 0) + 1);
         }
         instance.appendRedo(journalises, scn);
         for (const [ts, blocs] of nonJournalises) {
@@ -484,6 +497,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   executeSliced(statement: Statement, sliceMs: number): ResultSet {
+    this.uncorrelatedSubqueries.clear();
     this.emitSqlParsed(statement);
     let activeMs = 0;
     return through<ResultSet>(
@@ -4658,7 +4672,15 @@ export class OracleExecutor extends BaseExecutor {
           // Subquery IN — values is a SelectStatement
           const subStmt = expr.values as unknown as SelectStatement;
           const subResult = this.executeSubquery(subStmt, row, columns);
-          res = inList(subResult.rows.map(r => r[0]));
+          const index = this.inIndexOf(subResult);
+          const probe = index !== null && val !== null && !(typeof val === 'number' && Number.isNaN(val))
+            ? (typeof val === 'number' && index.numbers !== null ? index.numbers.has(val)
+              : typeof val === 'string' && index.strings !== null && !isInstantText(val) ? index.strings.has(val)
+                : undefined)
+            : undefined;
+          res = probe === undefined
+            ? inList(subResult.rows.map(r => r[0]))
+            : probe ? true : index!.hasNull ? null : false;
         }
         return expr.negated ? not3(res) : res;
       }
@@ -4704,7 +4726,35 @@ export class OracleExecutor extends BaseExecutor {
    * Execute a subquery in the context of an outer row (for correlated subqueries).
    * Replaces references to outer table aliases with values from the current row.
    */
+  private readonly uncorrelatedSubqueries = new Map<SelectStatement, ResultSet>();
+  private readonly inIndexes = new WeakMap<ResultSet, InIndex | null>();
+
+  private inIndexOf(result: ResultSet): InIndex | null {
+    const standing = this.inIndexes.get(result);
+    if (standing !== undefined) return standing;
+    const numbers = new Set<number>();
+    const strings = new Set<string>();
+    let hasNull = false;
+    let index: InIndex | null | undefined;
+    for (const row of result.rows) {
+      const value = row[0];
+      if (value === null) { hasNull = true; continue; }
+      if (typeof value === 'number' && !Number.isNaN(value)) numbers.add(value);
+      else if (typeof value === 'string' && !isInstantText(value)) strings.add(value);
+      else { index = null; break; }
+    }
+    if (index === undefined) {
+      if (numbers.size > 0 && strings.size > 0) index = null;
+      else index = { numbers: strings.size === 0 ? numbers : null, strings: numbers.size === 0 ? strings : null, hasNull };
+    }
+    this.inIndexes.set(result, index);
+    return index;
+  }
+
   private executeSubquery(subStmt: SelectStatement, outerRow: StorageRow, outerColumns: StorageColMeta[]): ResultSet {
+    const standing = this.uncorrelatedSubqueries.get(subStmt);
+    if (standing !== undefined) return standing;
+    let readOuterRow = false;
     // Create a patched version that falls back to outer row for unresolved identifiers
     const origMethod = this.evaluateExpression;
     this.evaluateExpression = (expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue => {
@@ -4717,6 +4767,7 @@ export class OracleExecutor extends BaseExecutor {
         // Then try outer columns (correlated reference)
         const outerIdx = this.resolveColumnIndex(expr, outerColumns);
         if (outerIdx >= 0 && outerIdx < outerRow.length) {
+          readOuterRow = true;
           return outerRow[outerIdx];
         }
         // DBMS_RANDOM without parens
@@ -4746,7 +4797,9 @@ export class OracleExecutor extends BaseExecutor {
     };
 
     try {
-      return this.executeSelect(subStmt);
+      const result = this.executeSelect(subStmt);
+      if (!readOuterRow) this.uncorrelatedSubqueries.set(subStmt, result);
+      return result;
     } finally {
       this.evaluateExpression = origMethod;
     }
