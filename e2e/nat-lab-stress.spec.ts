@@ -31,7 +31,7 @@ const oracle = (name: string, lines: string[], extra: Partial<Scenario> = {}): S
 const BIG_TABLE = 'CREATE TABLE big (id NUMBER PRIMARY KEY, grp NUMBER, name VARCHAR2(40), amount NUMBER(10,2), created DATE);';
 const fill = (rows: number): string => `INSERT INTO big SELECT level, MOD(level,100), 'name_' || level, level * 1.5, SYSDATE FROM dual CONNECT BY level <= ${rows};`;
 const viaSqlplus = (sql: string, count: number, parallel: boolean, target: string): string =>
-  `for i in $(seq 1 ${count}); do echo "${sql}" | sqlplus -S system/oracle@${target}:1521/ORCL${parallel ? ' &' : ''}; done; ${parallel ? 'wait; ' : ''}echo FINISHED`;
+  `for i in $(seq 1 ${count}); do echo "${sql}" | sqlplus -S system/oracle@${target}:1521/ORCL${parallel ? ' &' : ';'} done; ${parallel ? 'wait; ' : ''}echo FINISHED`;
 
 const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'curl-500', client: 'lin', commands: (t) => [`for i in $(seq 1 500); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
@@ -72,8 +72,10 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   oracle('ora-ddl-300', ["BEGIN FOR i IN 1..300 LOOP EXECUTE IMMEDIATE 'CREATE TABLE tbl_' || i || ' (id NUMBER, v VARCHAR2(10))'; END LOOP; END;", '/', "SELECT COUNT(*) FROM user_tables;"]),
   oracle('ora-users-200', ["BEGIN FOR i IN 1..200 LOOP EXECUTE IMMEDIATE 'CREATE USER u' || i || ' IDENTIFIED BY \"Pw#' || i || '\"'; END LOOP; END;", '/', "SELECT COUNT(*) FROM dba_users;"]),
   oracle('ora-dictionary-views', ['SELECT * FROM dba_objects;', 'SELECT * FROM dba_tables;', 'SELECT * FROM v$parameter;', 'SELECT * FROM dba_users;']),
-  { name: 'ora-remote-sessions-100', client: 'ext', target: '203.0.113.3', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 100, false, t)] },
-  { name: 'ora-remote-parallel-100', client: 'ext', target: '203.0.113.3', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 100, true, t)] },
+  { name: 'ora-remote-sessions-100', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 100, false, t)] },
+  { name: 'ora-remote-parallel-100', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 100, true, t)] },
+  { name: 'ora-remote-parallel-3', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 3, true, t)] },
+  { name: 'ora-remote-sessions-3', client: 'lin', target: '203.0.113.9', commands: (t) => [viaSqlplus('SELECT 1 FROM DUAL;', 3, false, t)] },
   { name: 'ora-local-parallel-100', client: 'srv', commands: () => ['for i in $(seq 1 100); do echo "SELECT 1 FROM dual;" | sqlplus -S / as sysdba & done; wait; echo FINISHED'] },
   { name: 'rman-bash-loop-30', client: 'srv', commands: () => ['for i in $(seq 1 30); do echo "BACKUP DATABASE;" | rman target / > /dev/null; done; echo FINISHED'] },
   { name: 'rman-interactive-30', client: 'srv', before: ['rman target /', ...Array.from({ length: 30 }, () => 'BACKUP DATABASE;'), 'LIST BACKUP;', 'CROSSCHECK BACKUP;', 'REPORT OBSOLETE;', 'VALIDATE DATABASE;', 'RESTORE DATABASE VALIDATE;'], commands: () => ['REPORT SCHEMA;'], markerContains: 'Report of database schema' },
@@ -125,7 +127,7 @@ for (const scenario of SCENARIOS) {
       const marker = commands.length > 1 ? `FINISHED${index + 1}` : 'FINISHED';
       await typeIn(page, ids[scenario.client], command).catch((error: Error) => note(`[${scenario.name}] typeIn failed: ${error.message.slice(0, 120)}`));
       finished = false;
-      for (let tick = 0; tick < 560 && !crashed; tick++) {
+      for (let tick = 0; tick < Number(process.env.STRESS_TICKS ?? 560) && !crashed; tick++) {
         await page.waitForTimeout(1000).catch(() => undefined);
         const lag = await Promise.race([
           page.evaluate(() => Date.now() - ((window as Record<string, unknown>).__beat as number)).catch(() => -1),
@@ -142,6 +144,10 @@ for (const scenario of SCENARIOS) {
       heapMB: Math.round(((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0) / 1e6),
       nodes: document.getElementsByTagName('*').length,
     })).catch(() => null);
+    if (!finished || process.env.STRESS_DUMP) {
+      const text = await page.locator(`[data-testid="terminal-modal"][data-device-id="${ids[scenario.client]}"]`).innerText().catch(() => '');
+      writeFileSync(join(OUT, `${scenario.name}.terminal.txt`), text.slice(-6000));
+    }
     note(`[${scenario.name}] finished=${finished} crashed=${crashed} elapsed=${Date.now() - started}ms maxLag=${maxLag}ms errors=${errors.length} stats=${JSON.stringify(stats)}`);
     expect(crashed).toBe(false);
     expect(finished).toBe(true);

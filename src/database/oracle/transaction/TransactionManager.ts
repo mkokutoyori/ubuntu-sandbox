@@ -33,8 +33,7 @@ export interface SnapshotableStorage {
   insertRow(schema: string, tableName: string, row: StorageRow): void;
   deleteRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): number;
   updateRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow): number;
-  removeLastMatching(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): boolean;
-  replaceMatching(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, replacement: StorageRow, nearIndex: number): number;
+  rewriteRows(schema: string, tableName: string, apply: (rows: StorageRow[]) => void): void;
   setUndoSink(sink: UndoSink | null): UndoSink | null;
 }
 
@@ -71,6 +70,49 @@ export function reverseApplyInMemory(rows: StorageRow[], rec: UndoRecord): void 
     const idx = rows.findIndex(r => rowEquals(r, rec.after));
     if (idx >= 0) rows[idx] = [...rec.before];
   }
+}
+
+function rowSignature(row: StorageRow): string {
+  let key = '';
+  for (const cell of row) {
+    if (cell === null || cell === undefined) key += 'N;';
+    else if (cell instanceof Date) key += `d${cell.getTime()};`;
+    else if (typeof cell === 'string') key += `s${cell.length}:${cell};`;
+    else key += `${typeof cell === 'number' ? 'n' : 'b'}${cell};`;
+  }
+  return `${row.length}|${key}`;
+}
+
+function restoreRows(rows: StorageRow[], newestFirst: readonly UndoRecord[]): void {
+  const bySignature = new Map<string, StorageRow[]>();
+  const index = (row: StorageRow): void => {
+    const key = rowSignature(row);
+    const bucket = bySignature.get(key);
+    if (bucket) bucket.push(row); else bySignature.set(key, [row]);
+  };
+  const take = (row: StorageRow): StorageRow | undefined => bySignature.get(rowSignature(row))?.pop();
+  for (const row of rows) index(row);
+  const removed = new Set<StorageRow>();
+  for (const rec of newestFirst) {
+    if (rec.kind === 'insert') {
+      const found = take(rec.row);
+      if (found) removed.add(found);
+    } else if (rec.kind === 'delete') {
+      const restored = [...rec.row];
+      rows.push(restored);
+      index(restored);
+    } else {
+      const found = take(rec.after);
+      if (!found) continue;
+      found.length = 0;
+      for (const cell of rec.before) found.push(cell);
+      index(found);
+    }
+  }
+  if (removed.size === 0) return;
+  let kept = 0;
+  for (const row of rows) if (!removed.has(row)) rows[kept++] = row;
+  rows.length = kept;
 }
 
 /** Lifecycle notifications, used by the executor to publish oracle.transaction.* events. */
@@ -259,21 +301,17 @@ export class TransactionManager implements UndoSink {
     if (this.undoLog.length <= downTo) return;
     this.applyingUndo = true;
     const prevSink = this.storage.setUndoSink(null);
-    const restoredNear = new Map<string, number>();
     try {
+      const perTable = new Map<string, UndoRecord[]>();
       for (let i = this.undoLog.length - 1; i >= downTo; i--) {
         const rec = this.undoLog[i];
         if (!this.storage.tableExists(rec.schema, rec.table)) continue;
-        if (rec.kind === 'insert') {
-          this.storage.removeLastMatching(rec.schema, rec.table, r => rowEquals(r, rec.row));
-        } else if (rec.kind === 'delete') {
-          this.storage.insertRow(rec.schema, rec.table, [...rec.row]);
-        } else {
-          const tableKey = `${rec.schema}.${rec.table}`;
-          const near = restoredNear.get(tableKey) ?? Number.MAX_SAFE_INTEGER;
-          const at = this.storage.replaceMatching(rec.schema, rec.table, r => rowEquals(r, rec.after), [...rec.before], near);
-          if (at >= 0) restoredNear.set(tableKey, at);
-        }
+        const key = `${rec.schema}\u0000${rec.table}`;
+        const list = perTable.get(key);
+        if (list) list.push(rec); else perTable.set(key, [rec]);
+      }
+      for (const records of perTable.values()) {
+        this.storage.rewriteRows(records[0].schema, records[0].table, rows => restoreRows(rows, records));
       }
     } finally {
       this.storage.setUndoSink(prevSink);

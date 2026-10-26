@@ -44,7 +44,7 @@ import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './s
 import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord, type ReferencedColumns } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { attachTimeZone } from './functions/dateArithmetic';
-import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
+import { resolveWindowFunction, type FrameRange, type WindowPartition } from './functions/windowFunctions';
 import {
   formatDateWithPattern, formatDateValue, parseDateWithPattern, coerceDateValue, instantMsOf, isInstantText, wallLiteralText, WallDate,
 } from './functions/dateSupport';
@@ -1538,16 +1538,25 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       }
-      resultRows.sort((a, b) => {
-        for (const ob of stmt.orderBy!) {
-          // Try to resolve by column alias or position in result set
-          const idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
-          if (idx < 0) continue;
-          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
+      const resolved = stmt.orderBy.map(ob => this.resolveOrderByIndex(ob.expr, selectCols, columns));
+      const hiddenKeys = stmt.orderBy.map((ob, position) => (resolved[position] >= 0 || stmt.distinct
+        ? null
+        : rows.map(source => this.evaluateExpression(ob.expr, source, columns))));
+      const order = resultRows.map((_, position) => position);
+      order.sort((left, right) => {
+        for (let position = 0; position < stmt.orderBy!.length; position++) {
+          const ob = stmt.orderBy![position];
+          const hidden = hiddenKeys[position];
+          const cmp = hidden !== null
+            ? this.compareWithOrderSpec(hidden[left], hidden[right], ob)
+            : resolved[position] >= 0
+              ? this.compareWithOrderSpec(resultRows[left][resolved[position]], resultRows[right][resolved[position]], ob)
+              : 0;
           if (cmp !== 0) return cmp;
         }
         return 0;
       });
+      resultRows = order.map(position => resultRows[position]);
     }
 
     // ── Step 7: FETCH/OFFSET ───────────────────────────────────────
@@ -2225,7 +2234,7 @@ export class OracleExecutor extends BaseExecutor {
     stmt: SelectStatement
   ): ResultSet {
     const resultColumns: ColumnMeta[] = [];
-    const resultRows: Row[] = [];
+    let resultRows: Row[] = [];
 
     // Build column metadata from first call
     for (const item of stmt.columns) {
@@ -2243,15 +2252,23 @@ export class OracleExecutor extends BaseExecutor {
 
     // ORDER BY on grouped results
     if (stmt.orderBy && stmt.orderBy.length > 0) {
-      resultRows.sort((a, b) => {
-        for (const ob of stmt.orderBy!) {
-          const idx = this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns);
-          if (idx < 0) continue;
-          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
+      const resolved = stmt.orderBy.map(ob => this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns));
+      const hiddenKeys = stmt.orderBy.map((ob, position) => (resolved[position] >= 0
+        ? null
+        : groups.map(group => this.evaluateExpressionGrouped(ob.expr, group.rows, columns))));
+      const order = resultRows.map((_, position) => position);
+      order.sort((left, right) => {
+        for (let position = 0; position < stmt.orderBy!.length; position++) {
+          const ob = stmt.orderBy![position];
+          const hidden = hiddenKeys[position];
+          const cmp = hidden !== null
+            ? this.compareWithOrderSpec(hidden[left], hidden[right], ob)
+            : this.compareWithOrderSpec(resultRows[left][resolved[position]], resultRows[right][resolved[position]], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
       });
+      resultRows = order.map(position => resultRows[position]);
     }
 
     return queryResult(resultColumns, resultRows);
@@ -2294,15 +2311,19 @@ export class OracleExecutor extends BaseExecutor {
       for (const [, indices] of partitions) {
         // Sort within partition
         if (windowSpec.orderBy && windowSpec.orderBy.length > 0) {
-          indices.sort((a, b) => {
-            for (const ob of windowSpec.orderBy!) {
-              const va = this.evaluateExpression(ob.expr, sourceRows[a], sourceColumns);
-              const vb = this.evaluateExpression(ob.expr, sourceRows[b], sourceColumns);
-              const cmp = this.compareWithOrderSpec(va, vb, ob);
+          const orderBy = windowSpec.orderBy;
+          const keyed = indices.map(index => ({
+            index,
+            keys: orderBy.map(ob => this.evaluateExpression(ob.expr, sourceRows[index], sourceColumns)),
+          }));
+          keyed.sort((a, b) => {
+            for (let k = 0; k < orderBy.length; k++) {
+              const cmp = this.compareWithOrderSpec(a.keys[k], b.keys[k], orderBy[k]);
               if (cmp !== 0) return cmp;
             }
             return 0;
           });
+          for (let k = 0; k < keyed.length; k++) indices[k] = keyed[k].index;
         }
 
         const partition: WindowPartition = {
@@ -2310,7 +2331,7 @@ export class OracleExecutor extends BaseExecutor {
           argCount: funcExpr.args.length,
           star: funcExpr.args.length === 0 || funcExpr.args[0]?.type === 'Star',
           arg: (i, pos) => this.evaluateExpression(funcExpr.args[i], sourceRows[indices[pos]], sourceColumns),
-          frame: (pos) => this.resolveFramePositions(windowSpec, indices.length, pos),
+          frame: (pos) => this.resolveFrameRange(windowSpec, indices.length, pos),
           rowsEqual: (a, b) => this.windowRowsEqual(windowSpec, sourceRows[indices[a]], sourceRows[indices[b]], sourceColumns),
           compare: (a, b) => this.compareValues(a, b),
         };
@@ -2337,21 +2358,16 @@ export class OracleExecutor extends BaseExecutor {
     return true;
   }
 
-  /** Window-frame positions (0-based, within the partition) for `pos`. */
-  private resolveFramePositions(
+  private resolveFrameRange(
     windowSpec: import('../engine/parser/ASTNode').WindowSpec,
     partitionSize: number,
     posInPartition: number
-  ): number[] {
-    const positions = (start: number, end: number): number[] => {
-      if (start > end) return [];
-      return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-    };
+  ): FrameRange {
     const frame = windowSpec.frame;
     if (!frame) {
       // Default frame: if ORDER BY present, UNBOUNDED PRECEDING to CURRENT ROW; else whole partition
       const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
-      return positions(0, hasOrderBy ? posInPartition : partitionSize - 1);
+      return { start: 0, end: hasOrderBy ? posInPartition : partitionSize - 1 };
     }
     const resolveBound = (bound: import('../engine/parser/ASTNode').FrameBound): number => {
       switch (bound.type) {
@@ -2360,17 +2376,17 @@ export class OracleExecutor extends BaseExecutor {
         case 'CURRENT_ROW': return posInPartition;
         case 'PRECEDING': {
           const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
-          return Math.max(0, posInPartition - n);
+          return posInPartition - n;
         }
         case 'FOLLOWING': {
           const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
-          return Math.min(partitionSize - 1, posInPartition + n);
+          return posInPartition + n;
         }
       }
     };
     const start = resolveBound(frame.start);
     const end = frame.end ? resolveBound(frame.end) : posInPartition; // single bound defaults end to CURRENT ROW
-    return positions(start, end);
+    return { start: Math.max(0, start), end: Math.min(partitionSize - 1, end) };
   }
 
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
