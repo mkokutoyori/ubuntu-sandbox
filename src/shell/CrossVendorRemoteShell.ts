@@ -28,6 +28,7 @@ export interface CrossVendorRemoteShellOptions {
   readonly user: string;
   /** Kind of the remote's primary shell — `bash`, `cmd`, `cisco-ios`, … */
   readonly primaryKind: string;
+  readonly directory?: string;
   /**
    * OpenSSH-style SSH_CONNECTION string: "client_ip client_port server_ip
    * server_port". Propagated to the remote shell's env so `echo
@@ -81,6 +82,7 @@ export class CrossVendorRemoteShell implements IShell {
     const primary = ShellFactory.create(opts.primaryKind, {
       device: opts.device,
       user: opts.user,
+      cwd: opts.directory,
       connection: 'ssh',
       extras: {
         sshConnection: opts.sshConnection,
@@ -214,6 +216,10 @@ export class CrossVendorRemoteShell implements IShell {
 
   getCompletions(line: string): readonly string[] {
     return this.top.getCompletions(line);
+  }
+
+  completionStart(line: string): number | null {
+    return this.top.completionStart?.(line) ?? null;
   }
 
   activate(): void {

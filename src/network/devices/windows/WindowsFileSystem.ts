@@ -759,7 +759,7 @@ export class WindowsFileSystem {
       return { ok: false, error: 'The file cannot be copied onto itself.' };
     }
     const existing = this.resolve(target);
-    if (existing && existing.type === 'file' && existing.attributes.has('readonly')) {
+    if (existing && existing.type === 'file' && (existing.attributes.has('readonly') || existing.attributes.has('hidden'))) {
       return { ok: false, error: 'Access is denied.' };
     }
 
