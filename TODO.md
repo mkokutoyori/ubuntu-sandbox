@@ -3757,3 +3757,8 @@ terminaux ouverts s'ajoute), et le journal de journald garde deux representation
 
 Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
 retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
+
+### [rman-sauvegardes] syntaxes de sauvegarde et de suppression que le simulateur refuse encore (releve pendant les epreuves de charge Oracle)
+
+`BACKUP AS COMPRESSED BACKUPSET DATABASE;` et `DELETE NOPROMPT BACKUP;` (ainsi que `DELETE NOPROMPT BACKUP COMPLETED BEFORE '…';`) rendent « RMAN-01009: syntax error: found: unknown command » alors que RMAN les accepte ; `DELETE NOPROMPT BACKUPSET 1;` ne rapporte ni piece ni jeu supprime (« Finished delete » seul). La duree n'est pas en cause : 30 `BACKUP DATABASE` sur une base de 30 000 lignes coutent 12 a 60 ms chacun.
+

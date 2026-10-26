@@ -1593,6 +1593,14 @@ export class OracleExecutor extends BaseExecutor {
     return { rows, columns };
   }
 
+  private indexedRowSet(
+    ref: import('../engine/parser/ASTNode').TableRef, schema: string, tableName: string, where: Expression | undefined,
+  ): ReadonlySet<StorageRow> | null {
+    if (where === undefined) return null;
+    const candidates = this.tryIndexAccessPath({ ...ref, schema, name: tableName }, where, this.storage.getRows(schema, tableName));
+    return candidates === null ? null : new Set(candidates);
+  }
+
   private tryIndexAccessPath(
     ref: import('../engine/parser/ASTNode').TableReference,
     where: Expression,
@@ -3081,9 +3089,10 @@ export class OracleExecutor extends BaseExecutor {
     const visible = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns);
     const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
 
+    const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
     const count = this.storage.updateRows(
       schema, tableName,
-      (row) => (!visible || visible(row))
+      (row) => (indexed === null || indexed.has(row)) && (!visible || visible(row))
         && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns)),
       (row) => {
         const newRow = [...row];
@@ -3122,8 +3131,9 @@ export class OracleExecutor extends BaseExecutor {
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
     const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
+    const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
     const deletable = (row: StorageRow): boolean =>
-      (!visible || visible(row))
+      (indexed === null || indexed.has(row)) && (!visible || visible(row))
       && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
 
     // Validate FK constraints on rows to be deleted
