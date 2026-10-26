@@ -3,7 +3,9 @@ import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
 import { layoutCompletions } from './NanoCompletion';
 import { menuLayout, shownEntryCount, type MenuOptions, type NanoMenuName } from './NanoMenus';
-import type { InterfacePaints, SpanLook } from './NanoPaint';
+import { paintLook, type InterfacePaints, type SpanLook } from './NanoPaint';
+import { paintRow, type MultiData } from './NanoSyntaxPaint';
+import type { ColorRule } from './NanoSyntax';
 import type { NanoWindow, Position } from './NanoWindow';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -39,6 +41,7 @@ export interface NanoScreenInput {
   readonly softwrap: boolean;
   readonly emphasis: 'reverse' | 'bold';
   readonly paints: InterfacePaints;
+  readonly syntax: { readonly rules: readonly ColorRule[]; readonly multi: MultiData } | null;
   readonly stripe: number | null;
   readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null; readonly heading?: string };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean; readonly raw?: boolean } | null;
@@ -174,6 +177,10 @@ function drawDataRow(
   canvas.putCells(margin, display.cells);
   const barLook = barLit === null ? null : barLit ? input.paints.scrollerLit : input.paints.scroller;
   if (barLook !== null) canvas.mark(window.cols - 1, window.cols, barLook);
+  if (input.syntax !== null) {
+    const rowWindow = { fromX: display.fromX, tillX: display.tillX, fromCol, tabsize: input.tabsize, shownColumns: display.cells.length };
+    for (const range of paintRow(input.lines, lineIndex, input.syntax.rules, input.syntax.multi, rowWindow)) canvas.mark(margin + range.from, margin + range.to, paintLook(range.rule.combination));
+  }
   drawGuideStripe(input, canvas, fromCol, display, sequel);
   const text = input.lines[lineIndex] ?? '';
   const bounds = selectionBounds(input);

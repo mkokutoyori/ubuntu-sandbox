@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|syntax|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"paint": true` records, for every row, one letter per cell from a legend kept for the whole case (`legend`: letter -> `FG/BG/FLAGS`,
 FG and BG a 0-255 palette index or `-` for the default, FLAGS any of `biur` for bold, italic, underline, reverse), read from `capture-pane -e -N`.
@@ -1119,6 +1119,7 @@ def run_state_case(case, workdir):
         arguments = " ".join(shlex.quote(tokens(a)) for a in run["args"])
         inner = "%smount --bind %s /root && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color %s nano %s %s; sleep 20" % (etc_binding, shlex.quote(home), words, ignore, arguments)
         tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name, "cd %s && unshare -m sh -c %s" % (shlex.quote(casedir), shlex.quote(inner)))
+        time.sleep(0.4)
         opened = record_screen(name, None, True, False, legend)
         record = {"args": run["args"], "steps": [], "opened": opened, "after": []}
         for step in run["steps"] + STATE_FINISH:
@@ -1393,6 +1394,119 @@ def gen_colors(seed, count):
         cases.append({"id": "col%d-%d" % (seed, i), "text": text, "files": {"sub/keep": ["k"]}, "rows": rows, "cols": cols, "home": home, "xdg": {}, "env": env, "rc": True, "etc_nanorc": etc, "paint": True, "runs": runs})
     return cases
 
+SYNTAX_EXTENSIONS = ['"\\.txt$"', '"\\.txt$"', '"t\\.txt"', '"t\\.txt"', '"\\.(txt|md)$"', '".*"', '"^[a-z]"', '"\\.c$"', '"\\<t"', '"(unclosed"', '"u\\.c$" "\\.txt$"', '"x" "(bad"', "\\.txt$", '""', '"[a-"']
+SYNTAX_HEADERS = ['"^alpha"', '"^delta"', '"foo"', '"^#"', '"alpha" "^x"', '"(oops"', 'alpha', '""']
+SYNTAX_REGEXES = ['alpha', 'beta', 'GAMMA', 'foo', 'bar', 'Hello', 'caf\u00e9', '\u4e2d\u6587', '\\<(alpha|beta)\\>', '[A-Z]+', '[[:digit:]]+', '^ +', ' +$', '\\t', 'a.', 'o*', 'x*', '\\(x\\)', '[[:space:]]+', 'end\\.', '^[a-z]', '\\<b', 'a$', '^', '$', 'e|a', '.', 'ab*c?', '[', 'a{2', '*a', '(', ')', 'a\\']
+SYNTAX_LINES = ['"/\\*" end="\\*/"', '"//" end="$"', '"\\(" end="\\)"', '"\\"" end="\\""', '"^#" end="^$"', '"a" end="b"', '"x*" end="y*"', '"\\*/" end="\\*/"']
+
+def syntax_color_spec(r):
+    return r.choice(['red', 'green', 'blue', 'yellow', 'cyan', 'magenta', 'white', 'black', 'brightgreen,blue', 'bold,red', 'italic,green', 'bold,italic,yellow,blue', 'lightred', ',red', 'normal,cyan', '#f80', 'pink', 'nosuch', 'bold'])
+
+def syntax_rule_line(r):
+    keyword = r.choice(['color', 'color', 'color', 'icolor'])
+    spec = syntax_color_spec(r)
+    kind = r.random()
+    if kind < 0.45:
+        return '%s %s "%s"' % (keyword, spec, r.choice(SYNTAX_REGEXES))
+    if kind < 0.6:
+        return '%s %s "%s" "%s"' % (keyword, spec, r.choice(SYNTAX_REGEXES), r.choice(SYNTAX_REGEXES))
+    if kind < 0.85:
+        return '%s %s start=%s' % (keyword, spec, r.choice(SYNTAX_LINES))
+    return r.choice(['%s %s' % (keyword, spec), keyword, '%s %s alpha' % (keyword, spec), '%s %s ""' % (keyword, spec), '%s %s "alpha' % (keyword, spec), '%s %s start="a" "b"' % (keyword, spec), '%s %s start="a" end=b' % (keyword, spec), '%s %s "a" start="b" end="c" "d"' % (keyword, spec)])
+
+def syntax_block(r, name):
+    lines = []
+    head = r.random()
+    if head < 0.1:
+        lines.append(r.choice(['syntax', 'syntax ""', 'syntax "', 'syntax "a', 'syntax a"', 'syntax none', 'syntax "none" "x"', 'syntax "my lang" "\\.txt$"']))
+    elif head < 0.2:
+        lines.append('syntax "default"' + r.choice(['', '', ' "\\.txt$"']))
+    elif head < 0.9:
+        lines.append('syntax "%s" %s' % (name, r.choice(SYNTAX_EXTENSIONS)))
+    else:
+        lines.append('syntax %s %s' % (name, r.choice(SYNTAX_EXTENSIONS)))
+    for _ in range(r.randint(0, 2)):
+        lines.append('header %s' % r.choice(SYNTAX_HEADERS)) if r.random() < 0.6 else lines.append(r.choice(['magic "x"', 'header', 'magic']))
+    for _ in range(r.randint(0, 6)):
+        kind = r.random()
+        if kind < 0.7:
+            lines.append(syntax_rule_line(r))
+        elif kind < 0.78:
+            lines.append(r.choice(['comment "//"', 'comment //', 'comment', 'comment "', 'tabgives "  "', 'tabgives', 'linter xx', 'formatter yy', 'linter "q', 'comment "<!--"']))
+        elif kind < 0.84:
+            lines.append(r.choice(['# a comment', '', '   ', '\tcolor red "a"']))
+        elif kind < 0.9:
+            lines.append(r.choice(['set linenumbers', 'unset softwrap', 'set tabsize 3', 'include "/nonexistent"', 'bind ^S savefile main']))
+        elif kind < 0.95:
+            lines.append(r.choice(['frobnicate', 'colour red "a"', 'Color red "a"']))
+        else:
+            lines.append('syntax "inner%d" "\\.zzz$"' % r.randint(1, 9))
+    return lines
+
+SYNTAX_INCLUDES = ['include "~/syn/*.nanorc"', 'include "/root/syn/a.nanorc"', 'include ~/syn/b.nanorc', 'include "/root/syn/*.nanorc" extra', 'include "/root/nothing/*.nanorc"', 'include "/root/syn"', 'include "/root/syn/"', 'include', 'include "/root/syn/a.nanorc', 'include "~/syn/[ab].nanorc"', 'include "/dev/null"', 'include "/root/syn/c.nanorc"']
+
+def syntax_include_files(r):
+    files = {}
+    for name in r.sample(["a", "b", "c"], r.randint(0, 3)):
+        lines = []
+        for syntax_name in r.sample(['alpha', 'beta', 'gamma', 'c', 'text', 'markdown', 'default'], r.randint(1, 2)):
+            lines.extend(syntax_block(r, syntax_name))
+        if r.random() < 0.3:
+            lines.insert(r.randint(0, len(lines)), r.choice(['set tabsize 4', 'include "/root/syn/a.nanorc"', 'bind ^S savefile main', 'unset softwrap', 'extendsyntax alpha color red "a"', 'frob']))
+        files["syn/%s.nanorc" % name] = "\n".join(lines) + "\n"
+    return files
+
+def syntax_rc_text(r):
+    lines = []
+    if r.random() < 0.15:
+        lines.append(r.choice(['set linenumbers', 'set softwrap', 'set tabsize 4', 'set foo']))
+    names = r.sample(['alpha', 'beta', 'gamma', 'c', 'text', 'markdown', 'default'], r.randint(1, 3))
+    for name in names:
+        lines.extend(syntax_block(r, name))
+        if r.random() < 0.2:
+            lines.append(r.choice(SYNTAX_INCLUDES))
+    for _ in range(r.randint(0, 2)):
+        if r.random() < 0.5:
+            lines.append('extendsyntax %s %s' % (r.choice(names + ['nothere']), r.choice(['color red "alpha"', 'icolor blue "BETA"', 'header "^x"', 'comment "//"', 'tabgives "  "', 'color red "("', 'frob', 'magic "z"', 'color nosuch "a"', ''])))
+    return "\n".join(lines) + ("\n" if r.random() < 0.9 else "")
+
+SYNTAX_WORDS = ["alpha", "beta", "GAMMA", "foo", "bar", "Hello", "world", "caf\u00e9", "\u4e2d\u6587", "123", "(x)", "[1,2]", "a_b", "end.", "\ttab", "x", "ab", "abc", "aab", "/*", "*/", "//", "# note", "\"q\""]
+
+def syntax_line(r):
+    return " ".join(r.choice(SYNTAX_WORDS) for _ in range(r.randint(0, 9)))
+
+SYNTAX_STEPS = [["M-3"], ["M-3", "M-3"], ["M-o", "Tab"], ["C-6", "Down", "M-3"], ["Down"], ["Down", "Down"], ["Up"], ["End"], ["Home"], ["Right", "Right"], ["PageDown"], ["PageUp"], ["M-\\"], ["M-/"], ["M-y"], ["M-y", "M-y"], ["C-w", "alpha", "Enter"], ["C-w", "foo", "Enter"], ["C-6", "Down", "Right"], ["C-k"], ["C-u"], ["Enter"], ["BSpace"], ["DC"], ["/*"], ["*/"], ["x"], ["(", "x", ")"], ["Tab"], ["M-n"], ["M-s"], ["C-_", "3", "Enter"]]
+
+def gen_syntax(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [syntax_line(r) for _ in range(r.choice([4, 8, 14, 30]))]
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        home = {".nanorc": syntax_rc_text(r)}
+        if r.random() < 0.35:
+            home.update(syntax_include_files(r))
+        etc = syntax_rc_text(r) if r.random() < 0.25 else ""
+        files = {}
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-q", "-c", "-x", "-0", "-_", "-D", "-%", "-v", "-E", "-A", "-J"], r.choice([0, 0, 1, 2]))
+            if "-J" in args:
+                args += ["10"] if False else []
+                args.remove("-J")
+                args += ["-J", r.choice(["5", "20"])]
+            if r.random() < 0.25:
+                args += ["-Y", r.choice(["alpha", "beta", "gamma", "c", "text", "markdown", "default", "none", "nosuch", "x"])]
+            steps = []
+            for _ in range(r.randint(2, 7)):
+                steps.extend(r.choice(SYNTAX_STEPS))
+            if r.random() < 0.2:
+                steps.extend(["C-o", "BSpace", "BSpace", "BSpace", "BSpace", "BSpace", r.choice(["u.c", "n.md", "z.txt", "q"]), "Enter"])
+            steps = without_stray_exec_keys(steps)
+            runs.append({"args": args + ["t.txt"], "steps": steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x"]])})
+        cases.append({"id": "syn%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": {}, "env": {}, "rc": True, "etc_nanorc": etc, "paint": True, "runs": runs})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "state":
         return gen_state(seed, count)
@@ -1400,6 +1514,8 @@ def gen(seed, count, corpus):
         return gen_rc(seed, count)
     if corpus == "colors":
         return gen_colors(seed, count)
+    if corpus == "syntax":
+        return gen_syntax(seed, count)
     if corpus == "tab":
         return gen_tab(seed, count)
     if corpus == "mouse":
@@ -1475,7 +1591,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_state_case if a.corpus in ("state", "rc", "colors") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_state_case if a.corpus in ("state", "rc", "colors", "syntax") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

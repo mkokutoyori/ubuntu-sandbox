@@ -126,10 +126,17 @@ export interface GlobFileSystem {
 export interface GlobOptions {
   readonly noCheck?: boolean;
   readonly home?: string;
+  readonly abortOnUnreadable?: boolean;
+}
+
+export class GlobAborted extends Error {
+  constructor(readonly directory: string) {
+    super(`Unreadable directory ${directory}`);
+  }
 }
 
 function expandComponents(
-  fs: GlobFileSystem, base: string, components: readonly string[], index: number, out: string[],
+  fs: GlobFileSystem, base: string, components: readonly string[], index: number, out: string[], strict: boolean,
 ): void {
   if (index >= components.length) {
     out.push(base);
@@ -141,16 +148,21 @@ function expandComponents(
   if (!hasMagic(component)) {
     const path = join(unescape(component));
     if (fs.existsNoFollow(path) && (last || fs.isDirectory(path))) {
-      expandComponents(fs, path, components, index + 1, out);
+      expandComponents(fs, path, components, index + 1, out, strict);
+    } else if (strict && components.slice(index + 1).some(hasMagic)) {
+      throw new GlobAborted(path);
     }
     return;
   }
   const names = fs.listNames(base === '' ? '.' : base);
-  if (names === null) return;
+  if (names === null) {
+    if (strict) throw new GlobAborted(base === '' ? '.' : base);
+    return;
+  }
   for (const name of [...names].sort()) {
     if (!fnmatch(component, name, { period: true })) continue;
     const path = join(name);
-    if (last || fs.isDirectory(path)) expandComponents(fs, path, components, index + 1, out);
+    if (last || fs.isDirectory(path)) expandComponents(fs, path, components, index + 1, out, strict);
   }
 }
 
@@ -162,7 +174,7 @@ export function globPaths(fs: GlobFileSystem, pattern: string, options: GlobOpti
   const absolute = effective.startsWith('/');
   const components = effective.split('/').filter((part) => part !== '');
   const found: string[] = [];
-  expandComponents(fs, absolute ? '/' : '', components, 0, found);
+  expandComponents(fs, absolute ? '/' : '', components, 0, found, options.abortOnUnreadable === true);
   const trailing = effective.endsWith('/') && effective.length > 1;
   const sorted = [...found].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const matches = trailing ? sorted.filter((path) => fs.isDirectory(path)).map((path) => `${path}/`) : sorted;
