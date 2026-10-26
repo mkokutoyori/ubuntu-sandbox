@@ -7,8 +7,10 @@
  * traduction vit dans le routeur. C'est le raccourci que la regle 4 du depot interdit (un echange entre deux machines passe par les trames). Adresse inconnue du registre : le client
  * ouvre maintenant la connexion TCP sur le fil (le SYN franchit le routeur, qui le traduit), mene la poignee de main Oracle Net, puis demande a celui qui repond QUI il est
  * (appel Identify du listener, la reponse du service handler) et c'est cette reponse, non l'adresse, qui designe la base. L'adresse interne continue de marcher.
+ * Un serveur dont personne n'avait touche Oracle (la base se materialise a la premiere commande locale) fermait la connexion des l'acceptation : « ORA-12547: TNS:lost contact ». L'ecoute posee
+ * au demarrage de la machine materialise maintenant la base a la premiere connexion et lui remet la prise (`serveOracleNetConnection`).
  *
- * Discrimine par `git stash push -- src/terminal src/network src/database` : 2 cas sur 4 tombent. Passent des deux cotes, TEMOINS : la connexion par l'adresse interne depuis le LAN, et le refus d'une adresse publique que personne ne traduit.
+ * Discrimine par `git stash push -- src/terminal src/network src/database` : 3 cas sur 5 tombent. Passent des deux cotes, TEMOINS : la connexion par l'adresse interne depuis le LAN, et le refus d'une adresse publique que personne ne traduit.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -33,7 +35,7 @@ const ORACLE_IP = '192.168.10.20';
 const ORACLE_PUBLIC_IP = '203.0.113.10';
 const UNMAPPED_PUBLIC_IP = '203.0.113.99';
 
-async function buildLab(): Promise<Lab> {
+async function buildLab(startInstance = true): Promise<Lab> {
   const lanSw = new GenericSwitch('switch-generic', 'lan-sw', 8, 0, 0);
   const wanSw = new GenericSwitch('switch-generic', 'wan-sw', 8, 0, 0);
   const router = new CiscoRouter('router', 0, 0);
@@ -62,7 +64,7 @@ async function buildLab(): Promise<Lab> {
     'ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1', 'end',
   ]) await router.executeCommand(cmd);
 
-  getOracleDatabase(oracle.id);
+  if (startInstance) getOracleDatabase(oracle.id);
   return { oracle, outside, inside, router };
 }
 
@@ -94,6 +96,13 @@ describe('Oracle Net a travers un NAT statique', () => {
     const translations = await router.executeCommand('show ip nat translations');
     expect(translations).toContain(`${ORACLE_PUBLIC_IP}:1521`);
     expect(translations).toContain(`${ORACLE_IP}:1521`);
+  });
+
+  it('derriere le NAT, un serveur dont personne n\'a touche Oracle repond quand meme (le listener demarre avec la machine)', async () => {
+    const { outside } = await buildLab(false);
+    const out = String(await outside.executeCommand(`echo "SELECT 1 FROM dual;" | sqlplus -S system/oracle@${ORACLE_PUBLIC_IP}:1521/ORCL`));
+    expect(out).not.toContain('ORA-12547');
+    expect(out).toContain('1 row selected.');
   });
 
   it('une adresse publique que personne ne traduit n\'aboutit pas', async () => {

@@ -415,6 +415,13 @@ export function createSQLPlusSession(
  * Oracle React hooks so they can safely return their empty fallback
  * before the user opens SQL*Plus.
  */
+export function serveOracleNetConnection(
+  deviceId: string, socket: Parameters<OracleListenerTcpSync['serve']>[1],
+): boolean {
+  getOracleDatabase(deviceId);
+  return oracleListenerTcpSyncs.get(deviceId)?.serve(deviceId, socket) ?? false;
+}
+
 export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | undefined {
   return oracleInstances.get(deviceId);
 }

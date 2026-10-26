@@ -12,7 +12,7 @@
 import { IPAddress, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
-import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript } from '@/terminal/commands/database';
+import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
@@ -197,6 +197,10 @@ export class LinuxServer extends LinuxMachine {
       }
       return step.value;
     };
+  }
+
+  protected override acceptTnsConnection(socket: Parameters<typeof serveOracleNetConnection>[1] & { close(): void }): void {
+    if (!serveOracleNetConnection(this.id, socket)) socket.close();
   }
 
   private *rmanScriptSteps(args: string[], stdin?: string): Generator<void, string> {
