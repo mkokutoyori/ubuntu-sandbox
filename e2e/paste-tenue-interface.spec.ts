@@ -11,7 +11,8 @@ import { waitForStore, addDevice, openTerminal } from './helpers/ciscoBangLab';
  * caractère.
  */
 
-const BLOC = Array.from({ length: 250 }, (_, i) => `no ip host h${i}`).join('\n') + '\n';
+const LIGNES = 4000;
+const BLOC = Array.from({ length: LIGNES }, (_, i) => `no ip host h${i}`).join('\n') + '\n';
 
 /** Colle `text` via un vrai évènement `paste`, comme un Ctrl+V. */
 async function pasteIntoTerminal(page: Page, text: string): Promise<void> {
@@ -52,13 +53,13 @@ test.describe('collage : l\'onglet reste vivant', () => {
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
       const t = await terminalText(page);
-      if (t.includes('no ip host h249')) break;
+      if (t.includes(`no ip host h${LIGNES - 1}`)) break;
       if (t.includes('no ip host h0')) { vuPendant = t.length; break; }
       await page.waitForTimeout(50);
     }
     expect(vuPendant, 'aucun rendu intermédiaire : le collage est resté opaque').toBeGreaterThan(0);
 
-    await expect.poll(async () => (await terminalText(page)).includes('no ip host h249'),
+    await expect.poll(async () => (await terminalText(page)).includes(`no ip host h${LIGNES - 1}`),
       { timeout: 90_000 }).toBe(true);
   });
 
@@ -80,6 +81,6 @@ test.describe('collage : l\'onglet reste vivant', () => {
     await expect.poll(async () => /Paste aborted/.test(await terminalText(page)),
       { timeout: 30_000 }).toBe(true);
     const texte = await terminalText(page);
-    expect(texte, 'le collage a continué après le Ctrl-C').not.toContain('no ip host h249');
+    expect(texte, 'le collage a continué après le Ctrl-C').not.toContain(`no ip host h${LIGNES - 1}`);
   });
 });

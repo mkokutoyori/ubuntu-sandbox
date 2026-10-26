@@ -737,7 +737,7 @@ export abstract class TerminalSession {
     const trailing = lines.pop() ?? '';
     this._pasteAborted = false;
     this._pasteRunning = true;
-    let tranche = simulationNowMs();
+    let tranche = performance.now();
     try {
       for (let i = 0; i < lines.length; i++) {
         if (this.disposed) return;
@@ -747,9 +747,9 @@ export abstract class TerminalSession {
           return;
         }
         await this.submitPastedLine(lines[i]);
-        if (simulationNowMs() - tranche >= PASTE_SLICE_MS) {
+        if (performance.now() - tranche >= PASTE_SLICE_MS) {
           await yieldToEventLoop();
-          tranche = simulationNowMs();
+          tranche = performance.now();
         }
       }
       if (!this.disposed) this.insertText(trailing);
