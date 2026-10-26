@@ -2664,7 +2664,7 @@ export class NanoEngine {
     if (key !== 's' && key !== 't' && key !== 'y' && key !== 'o' && key !== 'j' && key !== 'v') return false;
     this.resetHistoryRecall();
     this._mode = 'edit';
-    if (key === 's' || key === 't') this._statusMessage = '[ Error invoking "spell" ]';
+    if (key === 's' || key === 't') this.invokeSpeller();
     else if (key === 'y') this.invokeLinter();
     else if (key === 'o') this.invokeFormatter();
     else if (key === 'j') this.justifyText(true);
@@ -2822,7 +2822,22 @@ export class NanoEngine {
       this.postStatus(MESSAGE_LEVEL.alert, 'Error writing temp file: No such file or directory');
       return;
     }
-    this.treat(path, formatter);
+    this.treat(path, formatter, false);
+    this.fs.deleteFile(path);
+  }
+
+  private invokeSpeller(): void {
+    if (this.refuseWhenRestricted()) return;
+    const region = this.getMarkedRegion();
+    const path = this.temporaryFilePath();
+    if (path === null || !this.fs.writeFile(path, region === null ? this.serialize() : this.extractRegionText(region))) {
+      if (path !== null) this.fs.deleteFile(path);
+      this.postStatus(MESSAGE_LEVEL.alert, 'Error writing temp file: No such file or directory');
+      return;
+    }
+    const speller = this.live.speller;
+    if (speller !== null && speller !== '') this.treat(path, speller, true);
+    else this.postStatus(MESSAGE_LEVEL.alert, 'Error invoking "spell"');
     this.fs.deleteFile(path);
   }
 
@@ -2843,13 +2858,16 @@ export class NanoEngine {
     return name;
   }
 
-  private treat(path: string, program: string): void {
+  private treat(path: string, program: string, spelling: boolean): void {
+    const region = spelling ? this.getMarkedRegion() : null;
     const wasLine = this._cursorLine;
     const wasPlaceWant = this.placeWant;
-    const wasCol = this._cursorCol;
+    let wasCol = this._cursorCol;
     const wasAtEnd = wasCol >= this.line(wasLine).length;
+    const markWasBefore = this.markLine !== null && (this.markLine < wasLine || (this.markLine === wasLine && (this.markCol ?? 0) < wasCol));
+    const wasMarkLine = this.markLine;
     if ((this.fs.readFile(path) ?? '') === '') {
-      this.postStatus(MESSAGE_LEVEL.ahem, 'Buffer is empty');
+      this.postStatus(MESSAGE_LEVEL.ahem, spelling && region !== null ? 'Selection is empty' : 'Buffer is empty');
       return;
     }
     const stamp = this.fs.modificationStamp?.(path) ?? null;
@@ -2867,12 +2885,20 @@ export class NanoEngine {
     const content = this.fs.readFile(path);
     if (content === null) return;
     const decoded = decodeFile(content, !this.live.noconvert, false);
-    this.undoBegin('COUPLE', 'formatting');
-    this.linesArr = [''];
-    this._cursorLine = 0;
-    this._cursorCol = 0;
-    this.insertText(decoded.lines.join('\n'));
-    this.ensureTrailingBlankLine();
+    this.undoBegin('COUPLE', spelling ? 'spelling correction' : 'formatting');
+    if (region !== null) {
+      this.excise(region);
+      this.insertText(decoded.lines.join('\n'));
+      if (markWasBefore) wasCol = this._cursorCol;
+      else this.markCol = this._cursorCol;
+      this.markLine = wasMarkLine === null ? null : Math.min(wasMarkLine, this.linesArr.length - 1);
+    } else {
+      this.linesArr = [''];
+      this._cursorLine = 0;
+      this._cursorCol = 0;
+      this.insertText(decoded.lines.join('\n'));
+      this.ensureTrailingBlankLine();
+    }
     this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
     this._cursorCol = Math.min(wasCol, this.line(this._cursorLine).length);
     if (wasAtEnd) this._cursorCol = this.line(this._cursorLine).length;
@@ -2881,7 +2907,7 @@ export class NanoEngine {
     this.manner = 'stationary';
     this.undoFinish();
     this._modified = true;
-    this.postStatus(MESSAGE_LEVEL.remark, 'Buffer has been processed');
+    this.postStatus(MESSAGE_LEVEL.remark, spelling ? 'Finished checking spelling' : 'Buffer has been processed');
   }
 
   private runChildShell(command: string, stdin?: string): ChildShellRun {

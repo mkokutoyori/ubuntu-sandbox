@@ -850,11 +850,11 @@ est l'etat intermediaire d'une campagne en cours et non un livrable :
   syntaxique (`syntax`, `header`, `color`, `icolor`, `extendsyntax`, `include`, `comment`,
   `tabgives`, `-Y`, `M-Y` ; `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`),
   `linter` et `formatter` (`^T ^Y`, `^T ^O`, `M-B`, `M-F` ; `probe-nano-lint.test.ts`)
-  sont evaluees.
+  et `speller` (`-s`, `^T ^S` ; `probe-nano-spell.test.ts`) sont evaluees.
 - `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
   parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
   encore dans le moteur (28e) ; `magic` reste un mot-cle inconnu, comme dans le nano
-  d'Ubuntu (sans libmagic) ; `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+  d'Ubuntu (sans libmagic) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
 - `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
   echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
   `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
@@ -876,6 +876,16 @@ sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse d
 (« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
 bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
 fonctionner comme sur Ubuntu.
+
+### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
+Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
+`spell`) dont la sortie passe par `sort` puis `uniq`, lit la liste des mots inconnus et propose
+chacun dans `fix_spello` (invite « Edit a replacement », « Replace with », remplacement de toutes
+les occurrences, retour au mot suivant). Le moteur repond « Error invoking "spell" » (comme un
+Ubuntu nu, le texte est le bon) parce que la machine simulee n'a ni `hunspell` ni `spell` ni
+dictionnaire. Il manque deux briques : une commande `hunspell` / `spell` avec un dictionnaire (rien
+dans le depot ne porte de liste de mots) et le dialogue `fix_spello`. Le correcteur ALTERNATIF
+(`-s PROGRAMME`, `set speller`) est complet.
 
 ### [nano] entree litterale (`M-V`) : « [ Verbatim Input ] » n'existe pas
 Mesure avec `nano-package-oracle.test.ts` (corpus package, avant le retrait de `M-v` des gestes

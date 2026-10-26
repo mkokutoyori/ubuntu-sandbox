@@ -1171,7 +1171,7 @@ export class LinuxTerminalSession extends TerminalSession {
    */
   private openEditorFromCmd(cmd: string): boolean {
     const noSudo = cmd.startsWith('sudo ') ? cmd.slice(5).trim() : cmd;
-    const parts = noSudo.split(/\s+/);
+    const parts = splitShellWords(noSudo).words;
     const head = parts[0];
     if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
     return this.openEditor(head, parts.slice(1));
