@@ -19,9 +19,15 @@
  * Le temps CPU d'un profil (CPU_PER_CALL) ne compte que le temps ACTIF : le budget se suspend entre deux
  * tranches, sans quoi une instruction coupee en tranches serait facturee de son attente.
  *
- * Discrimine par `git stash push -- src/database src/terminal src/shell src/events` : les onze cas qui
- * appellent `executeSqlSliced` tombent (l'API n'existe pas). Passe des deux cotes, TEMOIN : le pilote
- * synchrone ne rend jamais de continuation et regle l'instruction d'une traite.
+ * Les boucles d'un bloc PL/SQL anonyme (FOR, WHILE, LOOP) rendent aussi la main : `ora-plsql-inserts-20k` avait
+ * une tache longue de 784 ms.
+ *
+ * Discrimine en deux temps. Contre l'arbre d'avant tout le chantier (`git stash push -- src/database src/terminal
+ * src/shell src/events` sur le premier lot), les onze cas SQL qui appellent `executeSqlSliced` tombent (l'API
+ * n'existe pas). Contre l'arbre du lot SQL (le lot PL/SQL retire), trois cas tombent : la boucle FOR qui se
+ * decoupe, DBMS_OUTPUT en tranches et le gestionnaire d'exception apres plusieurs tranches. Passent des deux
+ * cotes, TEMOINS : le pilote synchrone ne rend jamais de continuation et regle l'instruction d'une traite, SQL
+ * comme PL/SQL, et une erreur non attrapee remonte avec ORA-06512 que le bloc soit decoupe ou non.
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { OracleDatabase } from '../../../database/oracle/OracleDatabase';
@@ -150,6 +156,52 @@ describe('UPDATE, DELETE, ROLLBACK', () => {
     while (result.continuation) result = result.continuation();
     expect(result.message).toBe('20000 rows deleted.');
     expect(scalar('SELECT COUNT(*) FROM big WHERE id = 777777')).toBe(1);
+  });
+});
+
+describe('bloc PL/SQL anonyme', () => {
+  const LOOP = (rows: number): string =>
+    `BEGIN FOR i IN 1..${rows} LOOP INSERT INTO big VALUES (i, 1, 'n', i); END LOOP; END;`;
+
+  test('une boucle FOR se decoupe et execute toutes ses iterations', () => {
+    const { result, slices } = sliced(LOOP(20000));
+    expect(slices).toBeGreaterThan(2);
+    expect(result.message).toBe('PL/SQL procedure successfully completed.');
+    expect(scalar('SELECT COUNT(*) FROM big')).toBe(20000);
+  });
+
+  test('DBMS_OUTPUT garde toutes ses lignes dans l ordre', () => {
+    executor.getContext().serverOutput = true;
+    const block = "BEGIN FOR i IN 1..20000 LOOP DBMS_OUTPUT.PUT_LINE('ligne ' || i); END LOOP; END;";
+    const direct = exec(block).message;
+    const { result, slices } = sliced(block);
+    expect(slices).toBeGreaterThan(2);
+    expect(result.message).toBe(direct);
+    expect(result.message).toContain('ligne 20000');
+    expect(result.message!.split('\n')[0]).toBe('ligne 1');
+  });
+
+  test('un gestionnaire d exception attrape une erreur levee apres plusieurs tranches', () => {
+    exec("INSERT INTO big VALUES (15000, 1, 'dup', 1)");
+    exec('COMMIT');
+    const block = `BEGIN FOR i IN 1..20000 LOOP INSERT INTO big VALUES (i, 1, 'n', i); END LOOP;
+      EXCEPTION WHEN DUP_VAL_ON_INDEX THEN DBMS_OUTPUT.PUT_LINE('doublon'); END;`;
+    const { result, slices } = sliced(block);
+    expect(slices).toBeGreaterThan(2);
+    expect(result.message).toContain('PL/SQL procedure successfully completed.');
+  });
+
+  test('une erreur non attrapee remonte avec ORA-06512', () => {
+    exec("INSERT INTO big VALUES (15000, 1, 'dup', 1)");
+    exec('COMMIT');
+    const { result } = sliced(LOOP(20000));
+    expect(result.message).toMatch(/ORA-00001[\s\S]*ORA-06512/);
+  });
+
+  test('TEMOIN — le pilote synchrone regle le meme bloc d une traite', () => {
+    const result = exec(LOOP(5000));
+    expect(result.continuation).toBeUndefined();
+    expect(scalar('SELECT COUNT(*) FROM big')).toBe(5000);
   });
 });
 

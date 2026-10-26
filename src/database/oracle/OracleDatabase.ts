@@ -70,7 +70,7 @@ import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
-import { runAnonymousBlock, PlsqlInterpreter } from './plsql';
+import { runAnonymousBlockSteps, PlsqlInterpreter, type PlsqlRunOutcome } from './plsql';
 import type { PlsqlHost, StoredUnitLike, Scalar, PackageSection, PackageRuntimeHandle, PackageSessionState } from './plsql';
 import { compilePackageSection, declarationNames } from './plsql';
 import { compileStoredUnit } from './plsql/unitSource';
@@ -895,9 +895,9 @@ export class OracleDatabase implements SqlCommandHost {
    * it to the SQL parser). Centralises what used to be a dozen ad-hoc
    * regex checks scattered through executeSql.
    */
-  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string): ResultSet | null {
+  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string, sliceMs: number): ResultSet | null {
     if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
-      return this.executePLSQL(executor, trimmed);
+      return this.executePLSQL(executor, trimmed, sliceMs);
     }
     if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
       return this.createStoredProcedure(executor, trimmed);
@@ -1017,7 +1017,7 @@ export class OracleDatabase implements SqlCommandHost {
     // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
     // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
     // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
-    const plsql = this.routePlsql(executor, trimmed, upper);
+    const plsql = this.routePlsql(executor, trimmed, upper, sliceMs);
     if (plsql) return plsql;
 
     // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
@@ -1209,29 +1209,39 @@ export class OracleDatabase implements SqlCommandHost {
    * - DML (INSERT, UPDATE, DELETE)
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
-  private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
+  private executePLSQL(executor: OracleExecutor, sql: string, sliceMs: number = Infinity): ResultSet {
     const ctx = executor.getContext();
     const output: string[] = [];
     const { host, flush } = this.buildPlsqlHost(executor, output);
+    host.sliceSpent = () => executor.sliceSpent();
 
-    const outcome = runAnonymousBlock(sql, host);
-    if (outcome.parseError) {
-      // Real Oracle reports compilation problems as ORA-06550 followed by
-      // the PLS- diagnostic. There is deliberately no fallback interpreter:
-      // the legacy regex-based engine was removed (it silently produced
-      // different semantics from the AST interpreter on the same source).
-      const detail = outcome.parseErrorMessage ?? 'PLS-00103: Encountered the symbol "end-of-file"';
-      return emptyResult(`ORA-06550: line 1, column 1:\n${detail}`);
-    }
+    const conclude = (outcome: PlsqlRunOutcome): ResultSet => {
+      if (outcome.parseError) {
+        // Real Oracle reports compilation problems as ORA-06550 followed by
+        // the PLS- diagnostic. There is deliberately no fallback interpreter:
+        // the legacy regex-based engine was removed (it silently produced
+        // different semantics from the AST interpreter on the same source).
+        const detail = outcome.parseErrorMessage ?? 'PLS-00103: Encountered the symbol "end-of-file"';
+        return emptyResult(`ORA-06550: line 1, column 1:\n${detail}`);
+      }
 
-    flush();
-    if (!outcome.ok && outcome.error) {
-      return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
-    }
-    if (ctx.serverOutput && output.length > 0) {
-      return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
-    }
-    return emptyResult('PL/SQL procedure successfully completed.');
+      flush();
+      if (!outcome.ok && outcome.error) {
+        return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+      }
+      if (ctx.serverOutput && output.length > 0) {
+        return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
+      }
+      return emptyResult('PL/SQL procedure successfully completed.');
+    };
+
+    const steps = runAnonymousBlockSteps(sql, host);
+    const advance = (): ResultSet => {
+      const step = executor.withinSlice(sliceMs, () => steps.next());
+      if (step.done) return conclude(step.value);
+      return { ...emptyResult(), continuation: advance };
+    };
+    return advance();
   }
 
   /**
