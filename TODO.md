@@ -941,14 +941,6 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
 - `-q`, `-W`, `-d`, `-C`, `-i` (delai entre lignes) et `-t` (telnet) : la boucle `readwrite` n'est
   pas portee, la commande echange sa sortie standard en un bloc.
 
-### [bash] `cmd 2> fichier &` : le fichier n'est pas cree et le message s'affiche a l'ecran
-Mesure avec `nc -lv 127.0.0.1 9101 2> e.txt &` puis `ls e.txt` : le fichier n'existe pas et
-« Listening on localhost 9101 » n'arrive nulle part ; `cmd > f 2> g &` cree `f` mais pas `g`.
-`LinuxCommandExecutor.runBackgroundJob` ne connait que `>` et `<` (`splitRedirections`,
-`bindBackgroundStdout`) ; la sortie differee d'un processus d'arriere-plan (`emitLateStdout`) n'a pas
-de pendant pour l'erreur standard, alors que `Connection received on ...` de `nc -v` est ecrit sur
-elle. 6 pas de `netcmds-oracle.test.ts` y sont declares non portes.
-
 ### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
 Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
 alors que `ping 10.0.0.1` aboutit et que Linux repond « Connection refused ». Le rejeu des labos

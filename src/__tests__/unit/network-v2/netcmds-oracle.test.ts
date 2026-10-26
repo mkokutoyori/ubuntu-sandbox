@@ -6,7 +6,7 @@
  * reseau et de processus neuf (`unshare -n -p -f --mount-proc`), sur un pty de 80 colonnes, donc hermetique : rien d'autre que le
  * labo n'y ecoute, les PID repartent de 1.  Le meme script de labo (les memes lignes `nc ... &` puis les memes commandes) est rejoue sur
  * une machine Linux simulee neuve, en root, dont les demons ont ete arretes ; la sortie ET le code de retour de chaque commande sont
- * compares.  Differences d'environnement connues, hors de portee du simulateur : le noyau d'enregistrement n'a pas IPv6 (les labos IPv6
+ * compares.  Le port ephemere qu'un client choisit sans `-p` est tire au hasard par le noyau d'enregistrement et suit une suite dans le simulateur : il est masque des deux cotes (maskEphemeralPorts).  Differences d'environnement connues, hors de portee du simulateur : le noyau d'enregistrement n'a pas IPv6 (les labos IPv6
  * ne sont pas enregistres), pas de module dummy (les adresses 10.0.0.x sont posees sur `lo` en vrai, sur eth0 ici), et un resolveur
  * DNS injoignable (les noms inconnus ne sont pas enregistres).
  *
@@ -14,19 +14,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
-import { replayNetCmdsCase, type NetCmdsFixture } from '../../support/oracle/netCmdsReplay';
+import { maskEphemeralPorts, replayNetCmdsCase, type NetCmdsFixture } from '../../support/oracle/netCmdsReplay';
 
 const directory = 'src/__tests__/support/oracle/netcmds';
 
 const UNPORTED_STEPS: ReadonlySet<string> = new Set([
   'nc-scan-down|nc -zv -s 10.0.0.2 127.0.0.1 9000',
   'nc-scan-up|nc -zv -s 10.0.0.2 127.0.0.1 9000',
-  'nc-session|nc -lv 127.0.0.1 9000 > got.txt 2> srv.err & S1=$!; sleep 0.3; cat srv.err',
-  'nc-session|sleep 0.3; cat got.txt; cat srv.err',
-  'nc-session|nc -lv 127.0.0.1 9001 > got2.txt 2> srv2.err & sleep 0.3; cat srv2.err',
-  'nc-session|sleep 0.3; cat got2.txt; cat srv2.err',
-  'nc-session|nc -l 10.0.0.1 9002 2> srv3.err & sleep 0.3; cat srv3.err',
-  'nc-udp-session|nc -ulv 127.0.0.1 5300 > gotu.txt 2> srvu.err & sleep 0.3; cat srvu.err',
 ]);
 
 const fixtures = readdirSync(directory).filter((name) => name.endsWith('.json')).sort()
@@ -51,7 +45,7 @@ for (const { name, fixture } of fixtures) {
         const fixed: string[] = [];
         lab.steps.forEach((step, index) => {
           const got = run.steps[index];
-          const same = got.output === step.output && got.status === step.status;
+          const same = maskEphemeralPorts(got.output) === maskEphemeralPorts(step.output) && got.status === step.status;
           const key = `${lab.id}|${step.cmd}`;
           if (!same && !UNPORTED_STEPS.has(key)) wrong.push(`$ ${step.cmd}\n  real (rc ${step.status}): ${JSON.stringify(step.output)}\n  sim  (rc ${got.status}): ${JSON.stringify(got.output)}`);
           if (same && UNPORTED_STEPS.has(key)) fixed.push(key);
