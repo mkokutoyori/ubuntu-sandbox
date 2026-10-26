@@ -513,7 +513,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private sliceUntil = Infinity;
 
-  private withinSlice<T>(sliceMs: number, run: () => T): T {
+  withinSlice<T>(sliceMs: number, run: () => T): T {
     const previous = this.sliceUntil;
     this.sliceUntil = sliceMs === Infinity ? Infinity : performance.now() + sliceMs;
     try {
@@ -523,7 +523,7 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
-  private sliceSpent(): boolean {
+  sliceSpent(): boolean {
     return performance.now() >= this.sliceUntil;
   }
 
