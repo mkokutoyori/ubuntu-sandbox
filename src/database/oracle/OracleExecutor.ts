@@ -4,12 +4,10 @@
  * Handles SELECT, INSERT, UPDATE, DELETE, DDL, DCL, and admin commands.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TimeZone } from '@/network/core/time/TimeZone';
 import { offsetMinutesAt } from '@/network/core/time/TimeZoneRegistry';
-import {
-  hostOffsetSpec, hostZoneOf, type OracleClockReading,
-} from './time/OracleHostClock';
+import { hostOffsetSpec, hostZoneOf, type OracleClockReading, hostNowDate, hostNowMs } from './time/OracleHostClock';
 
 import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
 import {
@@ -53,6 +51,8 @@ import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
 import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
+import { CallResourceBudget, SessionResourceMeter, type ResourceLimits } from './executor/CallResourceBudget';
+import { blocksOfRows } from './storage/BlockModel';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -78,7 +78,7 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'CreateSynonymStatement', 'DropSynonymStatement',
   'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
   'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
-  'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
+  'CreateProfileStatement', 'AlterProfileStatement', 'AlterResourceCostStatement', 'DropProfileStatement',
   'CreateDbLinkStatement', 'DropDbLinkStatement',
   'CreateDirectoryStatement', 'DropDirectoryStatement',
   'CreateTypeStatement', 'AlterCompileStatement',
@@ -208,13 +208,33 @@ export class OracleExecutor extends BaseExecutor {
   });
   private _currentRowNum: number = 0;
 
+  private clockReadingCache: {
+    at: number; zone: string; database: OracleTimeZoneSpec;
+    sessionZone: OracleTimeZoneSpec | null | undefined; reading: OracleClockReading;
+  } | null = null;
+
   oracleClock(): OracleClockReading {
     const host = this.instance.hostClock();
     const at = host.nowMs();
-    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
     const database = this.instance.timeZone;
-    const session = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)
-      ?.timeZone ?? hostOffsetSpec(host);
+    const sessionZone = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)?.timeZone;
+    const zone = host.zoneName();
+    const cached = this.clockReadingCache;
+    if (cached && cached.at === at && cached.zone === zone
+      && cached.database === database && cached.sessionZone === sessionZone) {
+      return cached.reading;
+    }
+    const reading = this.readOracleClock(host, at, database, sessionZone);
+    this.clockReadingCache = { at, zone, database, sessionZone, reading };
+    return reading;
+  }
+
+  private readOracleClock(
+    host: ReturnType<OracleInstance['hostClock']>, at: number,
+    database: OracleTimeZoneSpec, sessionZone: OracleTimeZoneSpec | null | undefined,
+  ): OracleClockReading {
+    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
+    const session = sessionZone ?? hostOffsetSpec(host);
     const sessionOffset = oracleOffsetMinutes(session, at);
     return {
       sysdate: oracleDateText(at, hostOffset),
@@ -570,7 +590,7 @@ export class OracleExecutor extends BaseExecutor {
       osUsername: session?.osUser ?? 'oracle',
       userhost: session?.machine ?? 'localhost',
       terminal: session?.terminal ?? 'pts/0',
-      timestamp: simulationDate(),
+      timestamp: hostNowDate(),
       policies: policies.join(', '),
     });
   }
@@ -621,7 +641,7 @@ export class OracleExecutor extends BaseExecutor {
     const osUsername = session?.osUser ?? 'oracle';
     const userhost = session?.machine ?? 'localhost';
     const terminal = session?.terminal ?? 'pts/0';
-    const timestamp = simulationDate();
+    const timestamp = hostNowDate();
     catalog.recordAudit({
       sessionId: sessionIdNum,
       username: this.context.currentSchema,
@@ -671,7 +691,7 @@ export class OracleExecutor extends BaseExecutor {
     for (const p of matched) {
       catalog.recordFgaAudit({
         sessionId: parseInt(this._sessionId, 10) || 0,
-        timestamp: simulationDate(),
+        timestamp: hostNowDate(),
         dbUser: this.context.currentSchema,
         osUser: 'oracle',
         objectSchema: p.objectSchema,
@@ -716,6 +736,7 @@ export class OracleExecutor extends BaseExecutor {
       AlterDatabaseStatement: 'ALTER DATABASE',
       CreateProfileStatement: 'CREATE PROFILE',
       AlterProfileStatement: 'ALTER PROFILE',
+      AlterResourceCostStatement: 'ALTER RESOURCE COST',
       DropProfileStatement: 'DROP PROFILE',
     };
     return map[stmt.type] ?? null;
@@ -857,7 +878,7 @@ export class OracleExecutor extends BaseExecutor {
           if (s.action === 'COMPUTE_STATISTICS' || s.action === 'ESTIMATE_STATISTICS') {
             // Stamp the table with a real LAST_ANALYZED timestamp.
             const meta = this.storage.getTableMeta(schema, name)!;
-            meta.lastAnalyzed = simulationDate();
+            meta.lastAnalyzed = hostNowDate();
           } else if (s.action === 'DELETE_STATISTICS') {
             const meta = this.storage.getTableMeta(schema, name)!;
             meta.lastAnalyzed = null;
@@ -941,6 +962,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropMviewLogStatement': return this.executeDropMviewLog(statement);
       case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
       case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
+      case 'AlterResourceCostStatement': return this.userAdmin.executeAlterResourceCost(statement);
       case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
       case 'AuditStatement': return this.securityDcl.executeAudit(statement);
       case 'NoauditStatement': return this.securityDcl.executeNoaudit(statement);
@@ -1443,6 +1465,7 @@ export class OracleExecutor extends BaseExecutor {
       const narrowed = this.tryIndexAccessPath(stmt.from![0], stmt.where, rows);
       if (narrowed) rows = narrowed;
     }
+    this.noteLogicalReads(rows.length);
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
@@ -2988,6 +3011,7 @@ export class OracleExecutor extends BaseExecutor {
         throw new OracleError(947, 'not enough values');
       }
       for (const subRow of subResult.rows) {
+        this.tickCallBudget();
         const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
         const provided = new Set<number>();
         if (stmt.columns) {
@@ -3106,6 +3130,7 @@ export class OracleExecutor extends BaseExecutor {
     const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
 
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
+    this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
     const count = this.storage.updateRows(
       schema, tableName,
       (row) => (indexed === null || indexed.has(row)) && (!visible || visible(row))
@@ -3148,6 +3173,7 @@ export class OracleExecutor extends BaseExecutor {
 
     const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
+    this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
     const deletable = (row: StorageRow): boolean =>
       (indexed === null || indexed.has(row)) && (!visible || visible(row))
       && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
@@ -3186,7 +3212,7 @@ export class OracleExecutor extends BaseExecutor {
       username: stmt.connectUser ? stmt.connectUser.toUpperCase() : null,
       password: stmt.connectPassword ?? null,
       host: stmt.usingAlias ?? null,
-      created: simulationDate(),
+      created: hostNowDate(),
     });
     this.emitDdl('CREATE DATABASE LINK', `${owner}.${name}`);
     return emptyResult('Database link created.');
@@ -3221,7 +3247,7 @@ export class OracleExecutor extends BaseExecutor {
     if (!stmt.orReplace && this.catalog.getDirectory(name)) {
       throw new OracleError(955, 'name is already used by an existing object');
     }
-    this.catalog.registerDirectory({ name, path: stmt.path, created: simulationDate() });
+    this.catalog.registerDirectory({ name, path: stmt.path, created: hostNowDate() });
     this.emitDdl('CREATE DIRECTORY', `SYS.${name}`);
     return emptyResult('Directory created.');
   }
@@ -3291,7 +3317,7 @@ export class OracleExecutor extends BaseExecutor {
       refreshMethod: stmt.refreshMethod ?? 'FORCE',
       refreshMode: stmt.refreshMode ?? 'DEMAND',
       baseTables: this.collectBaseTables(stmt.query),
-      lastRefresh: deferred ? null : simulationDate(),
+      lastRefresh: deferred ? null : hostNowDate(),
       staleness: deferred ? 'UNUSABLE' : 'FRESH',
     });
     this.emitDdl('CREATE MATERIALIZED VIEW', `${owner}.${name}`);
@@ -3335,7 +3361,7 @@ export class OracleExecutor extends BaseExecutor {
     const result = this.executeSelect(meta.queryAst as SelectStatement);
     this.storage.deleteRows(o, n, () => true);
     for (const row of result.rows) this.storage.insertRow(o, n, row as StorageRow);
-    meta.lastRefresh = simulationDate();
+    meta.lastRefresh = hostNowDate();
     meta.staleness = 'FRESH';
   }
 
@@ -3356,7 +3382,7 @@ export class OracleExecutor extends BaseExecutor {
       withPrimaryKey: stmt.withPrimaryKey || !stmt.withRowid,
       withSequence: stmt.withSequence,
       pendingChanges: 0,
-      created: simulationDate(),
+      created: hostNowDate(),
     });
     this.emitDdl('CREATE MATERIALIZED VIEW LOG', `${owner}.${master}`);
     return emptyResult('Materialized view log created.');
@@ -4204,7 +4230,79 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── Expression evaluation ─────────────────────────────────────────
 
+  private callBudget: CallResourceBudget | null = null;
+  private callBudgetTicks = 0;
+  private readonly sessionMeter = new SessionResourceMeter();
+
+  withCallBudget<T>(run: () => T): T {
+    if (this.callBudget !== null) return run();
+    const budget = this.openCallBudget();
+    if (budget === null) return run();
+    this.callBudget = budget;
+    try {
+      return run();
+    } finally {
+      budget.close();
+      this.callBudget = null;
+    }
+  }
+
+  private openCallBudget(): CallResourceBudget | null {
+    const catalog = this.catalog as OracleCatalog;
+    const engine = catalog.getSecurityEngine();
+    if (!engine || this.instance.getParameter('resource_limit')?.toUpperCase() !== 'TRUE') return null;
+    const user = catalog.getUser(this.context.currentUser.toUpperCase());
+    if (!user) return null;
+    const { profiles } = engine;
+    const costs = profiles.getResourceCosts();
+    const limits: ResourceLimits = {
+      cpuPerCallMs: profiles.resolveCpuPerCallCentiseconds(user.profile) * 10,
+      cpuPerSessionMs: profiles.resolveCpuPerSessionCentiseconds(user.profile) * 10,
+      logicalReadsPerCall: profiles.resolveLogicalReadsPerCall(user.profile),
+      logicalReadsPerSession: profiles.resolveLogicalReadsPerSession(user.profile),
+      compositeLimit: profiles.resolveCompositeLimit(user.profile),
+      costs: {
+        cpuPerSession: costs.get('CPU_PER_SESSION') ?? 0,
+        logicalReadsPerSession: costs.get('LOGICAL_READS_PER_SESSION') ?? 0,
+        connectTime: costs.get('CONNECT_TIME') ?? 0,
+        privateSga: costs.get('PRIVATE_SGA') ?? 0,
+      },
+    };
+    const limited = [
+      limits.cpuPerCallMs, limits.cpuPerSessionMs, limits.logicalReadsPerCall,
+      limits.logicalReadsPerSession, limits.compositeLimit,
+    ].some(Number.isFinite);
+    if (!limited) return null;
+    return new CallResourceBudget(limits, this.sessionMeter, () => performance.now(), () => {
+      const session = engine.sessions.getSessionBySid(this.boundSid);
+      return session ? engine.sessions.connectedSeconds(session) / 60 : 0;
+    });
+  }
+
+  private tickCallBudget(): void {
+    if (this.callBudget === null || (++this.callBudgetTicks & 255) !== 0) return;
+    this.enforceCallBudget();
+  }
+
+  private noteLogicalReads(rowCount: number): void {
+    if (this.callBudget === null) return;
+    this.callBudget.noteLogicalReads(blocksOfRows(rowCount));
+    this.enforceCallBudget();
+  }
+
+  private enforceCallBudget(): void {
+    const exceeded = this.callBudget?.evaluate() ?? null;
+    if (exceeded === null) return;
+    if (exceeded.logoff) {
+      const sessions = (this.catalog as OracleCatalog).getSecurityEngine()?.sessions;
+      const session = sessions?.getSessionBySid(this.boundSid);
+      if (sessions && session) sessions.terminate(session.sid, session.serial, 'KILLED', exceeded);
+    }
+    throw new OracleError(exceeded.code, exceeded.message);
+  }
+
   evaluateExpression(expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue {
+    this.tickCallBudget();
     switch (expr.type) {
       case 'Literal':
         if (expr.dataType === 'null') return null;
@@ -4238,7 +4336,7 @@ export class OracleExecutor extends BaseExecutor {
         // DBMS_UTILITY (no-parens access)
         if (pkgName === 'DBMS_UTILITY') {
           const fn = expr.name.toUpperCase();
-          if (fn === 'GET_TIME') return simulationNowMs() % 2147483647;
+          if (fn === 'GET_TIME') return hostNowMs() % 2147483647;
           if (fn === 'FORMAT_ERROR_BACKTRACE' || fn === 'FORMAT_ERROR_STACK') return '';
         }
         // DBMS_LOB (no-parens access)

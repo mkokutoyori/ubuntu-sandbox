@@ -2,11 +2,12 @@
  * V$EVENTMETRIC — current per-event wait metric snapshot.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$EVENTMETRIC',
@@ -18,7 +19,7 @@ registerView({
       if (cur) { cur.waits++; cur.totMicros += w.waitTimeMicros; }
       else agg.set(w.event, { event: w.event, cls: w.waitClass, waits: 1, totMicros: w.waitTimeMicros });
     }
-    const end = simulationNowMs();
+    const end = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

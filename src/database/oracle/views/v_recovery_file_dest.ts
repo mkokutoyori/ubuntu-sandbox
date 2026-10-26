@@ -24,7 +24,7 @@ registerView({
         col.num('NUMBER_OF_FILES'),
       ],
       [[usage.destination, usage.limitBytes, usage.usedBytes,
-        Math.floor(usage.usedBytes * 0.1), usage.fileCount]]
+        instance.recoveryAreaReclaimableBytes(), usage.fileCount]]
     );
   },
 });

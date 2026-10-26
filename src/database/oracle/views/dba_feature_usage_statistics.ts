@@ -8,11 +8,12 @@
  * exactly as they do on a real DB — a row with `currently_used='FALSE'`.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 interface FeatureProbe {
   name: string;
@@ -44,7 +45,7 @@ registerView({
   name: 'DBA_FEATURE_USAGE_STATISTICS',
   comment: 'Feature usage telemetry (MMON sampled)',
   query(ctx) {
-    const now = (ctx.instance.startupTime ?? simulationDate()).toISOString();
+    const now = (ctx.instance.startupTime ?? hostNowDate()).toISOString();
     return queryResult(
       [
         col.num('DBID'),

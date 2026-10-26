@@ -5,7 +5,7 @@
  * Queries against these views return simulated metadata from the storage layer.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { TableHistory } from './flashback/TableHistory';
 import { BaseCatalog, type CatalogUser, type CatalogPrivilege } from '../engine/catalog/BaseCatalog';
@@ -25,6 +25,7 @@ import { deriveStoredVerifiers, type OracleStoredVerifiers } from './security/st
 // definition. Adding a new view requires only creating a new file there
 // and adding it to `views/index.ts` — no edits to the catalog.
 import './views';
+import { hostNowDate } from './time/OracleHostClock';
 
 /** Stored PL/SQL unit shape (avoids circular import with OracleDatabase) */
 export interface StoredUnit {
@@ -372,7 +373,7 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private initDefaultUsersAndRoles(): void {
-    const now = simulationDate();
+    const now = hostNowDate();
     const defaultUsers: (CatalogUser & { password: string })[] = [
       { username: 'SYS', userId: this.nextUserId++, defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'oracle' },
       { username: 'SYSTEM', userId: this.nextUserId++, defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'oracle' },
@@ -402,7 +403,7 @@ export class OracleCatalog extends BaseCatalog {
       'DROP ANY TABLE', 'ALTER ANY TABLE', 'CREATE TABLESPACE',
       'ALTER TABLESPACE', 'DROP TABLESPACE', 'ALTER SYSTEM',
       'ALTER DATABASE', 'UNLIMITED TABLESPACE', 'CREATE ANY DIRECTORY',
-      'AUDIT SYSTEM', 'AUDIT ANY', 'CREATE PROFILE', 'ALTER PROFILE',
+      'AUDIT SYSTEM', 'AUDIT ANY', 'CREATE PROFILE', 'ALTER PROFILE', 'ALTER RESOURCE COST',
       'DROP PROFILE', 'SELECT ANY DICTIONARY',
     ];
     for (const priv of sysPrivs) {
@@ -483,7 +484,7 @@ export class OracleCatalog extends BaseCatalog {
   setPassword(username: string, password: string): void {
     const upper = username.toUpperCase();
     this.passwords.set(upper, password);
-    this.storedVerifiers.set(upper, deriveStoredVerifiers(upper, password));
+    this.storedVerifiers.delete(upper);
   }
 
   getStoredVerifiers(username: string): OracleStoredVerifiers | undefined {
@@ -608,7 +609,7 @@ export class OracleCatalog extends BaseCatalog {
       osUsername: entry.osUsername ?? 'oracle',
       userhost: entry.userhost ?? 'localhost',
       terminal: entry.terminal ?? 'pts/0',
-      timestamp: entry.timestamp ?? simulationDate(),
+      timestamp: entry.timestamp ?? hostNowDate(),
       username: entry.username,
       actionName: entry.actionName,
       objName: entry.objName ?? null,
@@ -763,7 +764,7 @@ export class OracleCatalog extends BaseCatalog {
     ['DATA_PUMP_DIR', {
       name: 'DATA_PUMP_DIR',
       path: `${ORACLE_CONFIG.BASE}/admin/${ORACLE_CONFIG.SID}/dpdump/`,
-      created: simulationDate(),
+      created: hostNowDate(),
     }],
   ]);
 
@@ -932,7 +933,7 @@ export class OracleCatalog extends BaseCatalog {
     const full: RecyclebinEntry = {
       ...entry,
       objectName,
-      droptime: entry.droptime ?? simulationDate(),
+      droptime: entry.droptime ?? hostNowDate(),
     };
     this.recyclebin.push(full);
     return full;
@@ -1185,7 +1186,7 @@ export class OracleCatalog extends BaseCatalog {
     if (!this.tdeWallet || this.tdeWallet.status === 'CLOSED') {
       throw new Error('ORA-28365: wallet is not open');
     }
-    const now = simulationDate();
+    const now = hostNowDate();
     // Synthesise a 78-char base64-like key id from time + sequence — real
     // Oracle uses a UUID-style identifier; reproducibility is fine here.
     const seq = (this.tdeKeys.length + 1).toString().padStart(4, '0');
@@ -1627,7 +1628,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // Tables.
     for (const t of this.storage.getAllTables()) {
-      const created = simulationDate();
+      const created = hostNowDate();
       const id = allocId(nextId++);
       out.push({
         owner: t.schema, name: t.name, subobject: null,
@@ -1641,7 +1642,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // User-defined views.
     for (const v of this.storage.getAllViews()) {
-      const created = simulationDate();
+      const created = hostNowDate();
       out.push({
         owner: v.schema, name: v.name, subobject: null,
         objectId: allocId(nextId++), dataObjectId: null,
@@ -1655,7 +1656,7 @@ export class OracleCatalog extends BaseCatalog {
     // Indexes.
     for (const schema of this.storage.getSchemas()) {
       for (const idx of this.storage.getIndexes(schema)) {
-        const created = simulationDate();
+        const created = hostNowDate();
         const id = allocId(nextId++);
         out.push({
           owner: schema, name: idx.name, subobject: null,
@@ -1677,7 +1678,7 @@ export class OracleCatalog extends BaseCatalog {
       const map = seqs?.get(schema);
       if (!map) continue;
       for (const seqName of map.keys()) {
-        const created = simulationDate();
+        const created = hostNowDate();
         out.push({
           owner: schema, name: seqName, subobject: null,
           objectId: allocId(nextId++), dataObjectId: null,
@@ -1691,7 +1692,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // Synonyms.
     for (const s of this.storage.getAllSynonyms()) {
-      const created = simulationDate();
+      const created = hostNowDate();
       out.push({
         owner: s.owner, name: s.name, subobject: null,
         objectId: allocId(nextId++), dataObjectId: null,
@@ -1715,7 +1716,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // Triggers.
     for (const t of this.storage.getAllTriggers()) {
-      const created = simulationDate();
+      const created = hostNowDate();
       out.push({
         owner: t.schema, name: t.name, subobject: null,
         objectId: allocId(nextId++), dataObjectId: null,

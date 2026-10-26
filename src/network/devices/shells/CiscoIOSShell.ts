@@ -143,9 +143,12 @@ import {
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
 import { showProcessesCpu, ciscoClockReading } from './cisco/CiscoCommonShow';
+import { showNATTranslations, showNATStatistics, natHostOf } from './cisco/CiscoNATCommands';
 import {
-  showNATTranslations, showNATStatistics, networkPrefixLength, natErrorMessageFor,
-} from './cisco/CiscoNATCommands';
+  natConfigFamily, natStaticErrorMessage, networkPrefixLength,
+} from '@/cli/commands/nat/natConfigFamily';
+import { natClearFamily } from '@/cli/commands/nat/natClearFamily';
+import { natShowFamily } from '@/cli/commands/nat/natShowFamily';
 import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
@@ -232,11 +235,7 @@ import {
   netflowEemShowSpecs,
   netflowInterfaceSpecs,
 } from './cisco/CiscoEemNetflowArchiveCommands';
-import {
-  buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
-  natConfigSpecs,
-  registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs, natExecSpecs,
-} from './cisco/CiscoNATCommands';
+import { natInterfaceSpecs } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import {
   SOCLE, ROUTEUR_SEUL, appliquerContinuations, continuationsPourLeSocle,
@@ -672,8 +671,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...netflowInterfaceSpecs(this),
       ...ospfInterfaceSpecs(this),
       ...configIfSpecs(this),
-      ...natConfigSpecs(this),
-      ...natExecSpecs(() => this.d()),
+      ...natConfigFamily(() => natHostOf(this)),
+      ...natClearFamily(() => natHostOf(this)),
       ...netflowEemShowSpecs(() => this.d()),
       ...securityShowSpecs(() => this.d()),
       ...pimGlobalSpecs({ r: () => this.d() }),
@@ -693,7 +692,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...igmpShowSpecs(this.multicastShowContext()),
       ...ipSlaShowSpecs(this),
       ...ospfShowSpecs(() => this.d()),
-      ...natShowSpecs(() => this.d()),
+      ...natShowFamily(() => natHostOf(this)),
       ...cryptoShowSpecs(() => this.d()),
       ...routingProtoShowSpecs(this, this.routingCfg),
       ...ospfClearSpecs(() => this.d()),
@@ -1585,7 +1584,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         }
         const res = this.d()._getNATEngine().addStaticEntry(
           { localIP: local, globalIP: global, isNetwork: true, prefixLen, vrf });
-        return res.ok === false ? `% ${natErrorMessageFor(res.reason)}` : '';
+        return res.ok === false ? `% ${natStaticErrorMessage(res.reason)}` : '';
       },
       retirerStatiqueDeReseau: (local, global) => {
         this.d()._getNATEngine().removeStaticEntry(local, global);
@@ -2422,7 +2421,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.registerShowCommands(this.privilegedTrie);
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
-    registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
@@ -2451,9 +2449,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
-    // NAT
-    buildNATConfigCommands(this.configTrie, this);
-    buildNATInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
@@ -2615,9 +2610,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     // IPSec show commands
     registerIPSecShowCommands(trie, getRouter);
-
-    // NAT show commands
-    registerNATShowCommands(trie, getRouter);
 
 
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));

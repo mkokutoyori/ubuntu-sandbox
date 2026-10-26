@@ -14,7 +14,7 @@
  * else touches the journal directly.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type {
@@ -37,6 +37,7 @@ import { SodViolation } from './SodPolicy';
 import { SecurityAnomalyRecord } from './SecurityAnomalyRecord';
 import { DEFAULT_SECURITY_POLICY, isOffHours, type SecurityPolicyConfig } from './SecurityPolicyConfig';
 import type { Severity } from './interfaces';
+import { hostNowDate, hostNowMs } from '../../time/OracleHostClock';
 
 interface FailedLoginEntry {
   username: string;
@@ -56,7 +57,7 @@ export class SecurityAuditActor {
     private readonly deviceId: string,
     private readonly journal: AuditJournal,
     private readonly policy: SecurityPolicyConfig = DEFAULT_SECURITY_POLICY,
-    private readonly wallNow: () => Date = () => new Date(simulationNowMs()),
+    private readonly wallNow: () => Date = () => new Date(hostNowMs()),
   ) {}
 
   start(): void {
@@ -204,7 +205,7 @@ export class SecurityAuditActor {
               username: p.schema, action,
               objectSchema: sens.schema, objectName: sens.object,
               classification: sens.classification, rowsAffected: p.rowsAffected,
-              sqlText: null, timestamp: simulationDate(), offHours,
+              sqlText: null, timestamp: hostNowDate(), offHours,
             } as OracleSensitiveAccessPayload,
           });
           // Increment session counter for "mass select" pattern.
@@ -313,7 +314,7 @@ export class SecurityAuditActor {
   /** Slide failed-logon window for a username. */
   private recordFailedLogin(username: string): void {
     const u = username.toUpperCase();
-    const now = simulationNowMs();
+    const now = hostNowMs();
     const cutoff = now - this.policy.bruteForceWindowMs;
     const rec = this.failedLogins.get(u) ?? { username: u, timestamps: [] };
     rec.timestamps = rec.timestamps.filter(t => t >= cutoff);
@@ -419,7 +420,7 @@ export class SecurityAuditActor {
         deviceId: this.deviceId, sid: '', username: rec.username,
         lastLoginAt: rec.lastLoginAt, daysSinceLastLogin: rec.daysSinceLastLogin,
         thresholdDays: rec.thresholdDays, accountStatus: rec.accountStatus,
-        timestamp: simulationDate(),
+        timestamp: hostNowDate(),
       } as OracleDormantDetectedPayload,
     });
   }

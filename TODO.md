@@ -245,15 +245,6 @@ pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonct
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
 
-### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
-**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
-`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
-simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
-FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
-**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
-« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
-meme port d'horloge dans `IRmanOracleContext`.
-
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
 BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /
@@ -820,7 +811,7 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 ### [nano] le repeint incremental de nano 7.2 : des rangees que le tampon ne justifie pas
 Mesure avec `nano-attributes-oracle.test.ts` (UNPORTED_CASES : atr3-21,
 atr3-47, atr3-101, bar2-2, bar2-41), 5 cas sur 690 enregistres sur nano 7.2
-dans tmux :
+dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
 - **Ligne magique** : un caractere tape sur la derniere ligne (que `PageDown`
   atteint) cree une nouvelle ligne magique en dessous ; nano ne repeint que la
   rangee courante, la rangee de la nouvelle ligne magique reste vide, SANS le
@@ -830,9 +821,17 @@ dans tmux :
 - **`-S -l` sur une ligne de cinq tranches** : apres `M-\ PageDown C-d BSpace`
   le binaire laisse la rangee de la derniere tranche vide et le curseur colonne 0
   de la rangee suivante.
-- **`-0` et l'invite qui couvre une rangee de texte** : `^O` ferme l'invite sans
-  que nano repeigne la rangee qu'elle couvrait (`nano-mouse-oracle.test.ts`,
-  mou2-72) ; le moteur la repeint toujours.
+- **`-0` et l'invite qui couvre une rangee de texte** : quand l'invite `^_` est quittee
+  par `^W` / `^O` (saut de paragraphe qui ne fait pas defiler), `edit_redraw` ne repeint que
+  l'ancienne et la nouvelle ligne courante et la rangee que l'invite couvrait reste vide ;
+  porte pour ce pas (mou2-72, blo1-21, col1-52 passent) mais le moteur la repeint a la
+  touche suivante, alors que nano la laisse vide jusqu'au prochain `refresh_needed`
+  (`nano-blocks-oracle.test.ts` blo1-61, blo2-129, blo4-149, `nano-colors-oracle.test.ts`
+  col1-82).
+- **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
+  `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) et
+  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0, syn3-130) ; la rangee a le
+  guide quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
@@ -845,18 +844,17 @@ nano ferait apres un `^L`.
 de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machine
 ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
 est l'etat intermediaire d'une campagne en cours et non un livrable :
-- `bind`, `unbind` (raccourcis reconfigures), `include`, `syntax`, `header`, `magic`,
-  `color`, `icolor`, `comment`, `tabgives`, `linter`, `formatter`, `extendsyntax` :
-  ignorees, y compris les erreurs qu'elles produiraient (« A 'color' command requires
-  a preceding 'syntax' command », « Error reading F: ... » sur un `include` sans
-  fichier). Syntaxes et couleurs : 28b ; raccourcis : 28d.
-- `titlecolor`, `numbercolor`, `stripecolor`, `scrollercolor`, `selectedcolor`,
-  `spotlightcolor`, `minicolor`, `promptcolor`, `statuscolor`, `errorcolor`, `keycolor`,
-  `functioncolor` : arguments non analyses (28b).
+- `bind`, `unbind` (raccourcis reconfigures) : lues sans effet (elles ferment bien une
+  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. `linter`,
+  `formatter` : memorisees par syntaxe, jamais lancees (`^Y` / `^O` du menu Execute
+  repondent « No linter is defined »). Raccourcis : 28d. Les douze `*color` d'interface
+  (`nano-colors-oracle.test.ts`) et la coloration syntaxique (`syntax`, `header`,
+  `color`, `icolor`, `extendsyntax`, `include`, `comment`, `tabgives`, `-Y`, `M-Y` ;
+  `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`) sont evaluees.
 - `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
   parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
-  encore dans le moteur (28e) ; `magic` n'a d'effet qu'avec les syntaxes (28b) ;
-  `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+  encore dans le moteur (28e) ; `magic` reste un mot-cle inconnu, comme dans le nano
+  d'Ubuntu (sans libmagic) ; `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
 - `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
   echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
   `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
@@ -865,6 +863,16 @@ est l'etat intermediaire d'une campagne en cours et non un livrable :
   d'Ubuntu 24.04 (`set historylog`, `set locking`, `set stateflags`, `include
   "/usr/share/nano/*.nanorc"`) n'y sera posee qu'avec les 44 fichiers de syntaxe (28c),
   faute de quoi l'`include` ferait afficher « Mistakes in '/etc/nanorc' » a chaque lancement.
+
+### [nano] `^R` en mode vue ouvre un NOUVEAU tampon
+Mesure avec `nano-colors-oracle.test.ts` (UNPORTED_CASES : col1-67, col1-117, col1-138,
+col1-151, col1-153, col1-169, col2-6, col2-48, col2-58, col3-137, col3-170, col3-190), nano
+7.2 sous `-v` : `^R` affiche l'invite « File to read
+into new buffer [from ./]: » (menu `^T Browse`, `M-N No Conversion`) au lieu de « Key is
+invalid in view mode » ; le moteur refuse la touche. Il faut des tampons multiples
+(`-F`, `M-<` `M->`) et le navigateur de fichiers (`^T` de l'invite, col3-20, col3-28,
+col3-173 : l'invite `^R` puis `^T` ouvre le navigateur) : pas de liste de tampons ni de
+navigateur dans le moteur aujourd'hui.
 
 ### [nano] `~` dans les invites de fichier
 Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
@@ -3749,20 +3757,14 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 ### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage. Ajouter ou connecter un equipement relance `computeCableRoutes` sur tous les
-cables (102 ms pour 209 cables dans Node, 55 ms de moyenne par mise a jour dans Chromium) : dans une boucle serree de 400 ajouts, chaque mise a jour du magasin rend la toile
-de facon synchrone, ce qui explique les 330 ms par poste observes a 400 postes (22 s de rendu sur 50 s a 200 postes) ; une ouverture de fichier passe par `replaceTopology`,
-une seule mise a jour. Non traite : un routage incremental des cables. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre
-terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
+Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 3,5 Go sans plantage et se montent en 63 s (200 postes : 18 s), et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
+recalcule en entier des qu'un cable, une position ou le zoom change (102 ms pour 209 cables dans Node) : un routage INCREMENTAL reste non traite, mais il ne se declenche plus pour une adresse IP posee dans un
+terminal. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les
+enregistrements et les octets du fichier), environ 13 Ko par entree.
 
 Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
 retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
 
-### [rman-sauvegardes] syntaxes de sauvegarde et de suppression que le simulateur refuse encore (releve pendant les epreuves de charge Oracle)
-
-`BACKUP AS COMPRESSED BACKUPSET DATABASE;` et `DELETE NOPROMPT BACKUP;` (ainsi que `DELETE NOPROMPT BACKUP COMPLETED BEFORE '…';`) rendent « RMAN-01009: syntax error: found: unknown command » alors que RMAN les accepte ; `DELETE NOPROMPT BACKUPSET 1;` ne rapporte ni piece ni jeu supprime (« Finished delete » seul). La duree n'est pas en cause : 30 `BACKUP DATABASE` sur une base de 30 000 lignes coutent 12 a 60 ms chacun.
-
-
 ### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
 
-Oracle Net et ssh ne passent pas par l'adresse globale d'un NAT statique : `sqlplus user@203.0.113.3` depuis l'exterieur rend ORA-12545 parce que le client retrouve l'equipement par son adresse dans le registre d'equipements (`findEquipmentByIp`) au lieu de traverser le reseau, donc la traduction du routeur n'est jamais appliquee ; l'adresse interne de la meme machine fonctionne. Le defaut est le raccourci que la regle 4 interdit, pas un reglage. `reverseApplyInMemory` (lecture d'une autre session pendant une transaction ouverte) reste O(n) par enregistrement d'annulation : une transaction de 100 000 lignes lue par une seconde session coute le produit. `CREATE USER` coute environ 70 ms (PBKDF2-SHA512 reel) : 200 utilisateurs creent une tache de 14 s dans le navigateur. Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 4 s, et rien ne peut le couper.
+Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 1,4 s (4,2 s avant que l'horloge ne soit lue une seule fois par milliseconde). Seules les limites de profil (`CPU_PER_CALL`, `LOGICAL_READS_PER_CALL`, `COMPOSITE_LIMIT` …) peuvent la couper ; rendre l'executeur cooperatif suppose de le reecrire en generateurs ou de l'executer dans un worker.

@@ -31,11 +31,12 @@
  * touches nouvelles n'ont aucun effet visible (curseur deja au debut du texte, un seul paragraphe, touche ignoree dans
  * une invite) : elles servent de temoin que le laboratoire est sain.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 5 cas sur 600.  Un cas de la liste qui se met a passer
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 4 cas sur 600.  Un cas de la liste qui se met a passer
  * fait echouer le test pour qu'on le retire.
- *   - blo1-21, blo1-61, blo2-129, blo4-149 : avec -0, l'invite Go To Line couvre la derniere rangee de texte et nano ne la
+ *   - blo1-61, blo2-129, blo4-149 : avec -0, l'invite Go To Line couvre la derniere rangee de texte et nano ne la
  *     redessine pas quand l'invite se ferme par ^W ou ^O sans que la fenetre defile (edit_redraw ne repeint que l'ancienne
- *     et la nouvelle ligne courante) ; le moteur repeint toujours la rangee.
+ *     et la nouvelle ligne courante) ; le moteur laisse la rangee vide a ce pas (blo1-21 passe depuis que c'est porte) mais la
+ *     repeint a la touche suivante, alors que nano la laisse vide jusqu'au prochain rafraichissement complet.
  *   - blo1-139 : -S avec les numeros de ligne, « 2,99 » puis PageDown : la colonne souhaitee de 98 tombe sur un autre
  *     tronçon de la ligne repliee.
  * Non rejoue : l'invite Execute Command (^T de l'edition : ^S ^Y ^O et les erreurs de commande), le navigateur de fichiers
@@ -49,7 +50,7 @@ const dir = 'src/__tests__/support/oracle/nano-blocks';
 const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoCliCase[] }) }));
 
-const UNPORTED_CASES: ReadonlySet<string> = new Set(['blo1-21', 'blo1-61', 'blo1-139', 'blo2-129', 'blo4-149']);
+const UNPORTED_CASES: ReadonlySet<string> = new Set(['blo1-61', 'blo1-139', 'blo2-129', 'blo4-149']);
 
 describe('nano paragraph and block motions and the Go To Line prompt recorded from a real nano', () => {
   it('loads the recorded sessions', () => {

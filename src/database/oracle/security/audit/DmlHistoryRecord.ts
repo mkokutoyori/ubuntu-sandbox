@@ -5,9 +5,10 @@
  * a DML row change, plus tx id and an SCN allocated by the journal.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { IDmlHistoryRecord } from './interfaces';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class DmlHistoryRecord implements IDmlHistoryRecord {
   readonly scn: number;
@@ -34,7 +35,7 @@ export class DmlHistoryRecord implements IDmlHistoryRecord {
     timestamp?: Date;
   }) {
     this.scn = init.scn;
-    this.timestamp = init.timestamp ?? simulationDate();
+    this.timestamp = init.timestamp ?? hostNowDate();
     this.sessionId = init.sessionId;
     this.username = init.username.toUpperCase();
     this.schema = init.schema.toUpperCase();

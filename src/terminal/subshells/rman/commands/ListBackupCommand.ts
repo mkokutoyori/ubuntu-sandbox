@@ -5,14 +5,13 @@
  * view (set + pieces + datafiles).
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import type { BackupSet } from '../catalog/types';
 import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
-import { formatOracleDate, rmanWall, rmanWallDay } from '../core/pureUtils';
+import { formatOracleDate, rmanNowMs, rmanWall, rmanWallDay } from '../core/pureUtils';
 import { backupSetLines } from '../core/backupSetReport';
 import { renderTable, type TableColumn, type TableStyle } from '@/network/devices/shells/cli/TextTable';
 
@@ -41,7 +40,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       const rows = [
         {
           incKey: 1, status: 'PARENT', resetScn: 1,
-          resetTime: rmanWallDay(rmanWall(ctx, simulationNowMs() - 86_400_000)),
+          resetTime: rmanWallDay(rmanWall(ctx, rmanNowMs(ctx) - 86_400_000)),
         },
         {
           incKey: 2, status: 'CURRENT', resetScn: 1_892_354,
@@ -77,7 +76,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       return ok(lines);
     }
     if (this.variant === 'OBSOLETE') {
-      const obsolete = policy.findObsolete(snap.value.sets);
+      const obsolete = policy.findObsolete(snap.value.sets, rmanNowMs(ctx));
       if (obsolete.length === 0) return ok(['', 'no obsolete backups found', '']);
       return ok(this._detail(obsolete, ctx));
     }

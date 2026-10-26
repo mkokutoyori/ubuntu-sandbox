@@ -3,11 +3,12 @@
  * flags, control-file type, all derived from the live instance.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$DATABASE',
@@ -42,7 +43,7 @@ registerView({
       ],
       [[
         instance.getDbId(), instance.getActivationId(),
-        instance.config.sid, simulationDate().toISOString(),
+        instance.config.sid, hostNowDate().toISOString(),
         instance.archiveLogMode ? 'ARCHIVELOG' : 'NOARCHIVELOG',
         instance.state !== 'OPEN' ? 'MOUNTED'
           : instance.databaseRole === 'PHYSICAL STANDBY'

@@ -57,6 +57,8 @@ export function helpCursorMotion(input: EditorKeyInput): EditorKeyInput | null {
 
 const NAMED_CONTROL_CODES: Readonly<Record<string, number>> = { Enter: 13, Tab: 9 };
 
+const CONTROL_DIGIT_LABELS: Readonly<Record<string, string>> = { '6': '^' };
+
 export function unboundKeyMessage(input: EditorKeyInput): string {
   const key = input.key;
   const function_ = /^F(\d+)$/.exec(key);
@@ -68,6 +70,6 @@ export function unboundKeyMessage(input: EditorKeyInput): string {
   const code = key.charCodeAt(0);
   if (code > 0x7F) return 'Unbound key';
   if (input.alt) return code < 0x20 ? `Unbindable key: M-^${String.fromCharCode(code + 0x40)}` : `Unbound key: M-${key.toUpperCase()}`;
-  if (input.ctrl) return `Unbound key: ^${key === ' ' ? '@' : key.toUpperCase()}`;
+  if (input.ctrl) return `Unbound key: ^${key === ' ' ? '@' : CONTROL_DIGIT_LABELS[key] ?? key.toUpperCase()}`;
   return `Unbound key: ${key}`;
 }

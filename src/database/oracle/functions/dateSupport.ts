@@ -1,6 +1,7 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TimeZone } from '@/network/core/time/TimeZone';
 import { offsetMinutesAt, utcMsForLocal } from '@/network/core/time/TimeZoneRegistry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
@@ -17,7 +18,7 @@ const pad = (n: number, width = 2): string => String(n).padStart(width, '0');
  * current year's are 0-49 — otherwise both stay in the current century.
  */
 function resolveRRYear(twoDigit: number): number {
-  const currentYear = new Date(simulationNowMs()).getUTCFullYear();
+  const currentYear = new Date(hostNowMs()).getUTCFullYear();
   const century = Math.floor(currentYear / 100) * 100;
   const currentYY = currentYear % 100;
   if (twoDigit <= 49) {

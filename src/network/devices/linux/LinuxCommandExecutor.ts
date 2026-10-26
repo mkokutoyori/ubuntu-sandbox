@@ -435,6 +435,10 @@ function reportsOwnFailure(argv: readonly string[], exitCode: number): boolean {
   return exitCode === WRAPPER_FAILURE_STATUS && COMMAND_WRAPPERS.has(name);
 }
 
+function rmanExitCode(output: string): number {
+  return /RMAN-\d|ORA-\d/.test(output) ? 1 : 0;
+}
+
 function writesLines(argv: readonly string[]): boolean {
   const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
   const name = lead[0]?.split('/').pop();
@@ -812,6 +816,7 @@ export class LinuxCommandExecutor {
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
   _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
+  _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<string>) | null = null;
   /**
    * Optional bridge into `LinuxMachine`'s `LinuxCommandRegistry` — set by
    * `LinuxMachine` so `LinuxCommand` objects that need full network context
@@ -4175,6 +4180,9 @@ export class LinuxCommandExecutor {
     // that policy check entirely. `sudo bash script.sh` therefore still
     // takes the pre-existing synchronous path (a known, narrower residual
     // gap) rather than risk bypassing sudoers enforcement.
+    if (!background && argv[0] === 'rman' && stdin && this.isServer && this._oracleRmanAsync) {
+      return this._oracleRmanAsync(argv.slice(1), stdin).then((output) => ({ output, exitCode: rmanExitCode(output) }));
+    }
     if (!background && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
       const effective = viaSudo ? argv.slice(1) : argv;
@@ -6568,7 +6576,7 @@ export class LinuxCommandExecutor {
       case 'rman': {
         if (this.isServer && this._oracleRman) {
           const output = this._oracleRman(args, stdin);
-          if (output !== null) return { output, exitCode: /RMAN-\d|ORA-\d/.test(output) ? 1 : 0 };
+          if (output !== null) return { output, exitCode: rmanExitCode(output) };
         }
         return {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',

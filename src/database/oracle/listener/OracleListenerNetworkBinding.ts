@@ -62,6 +62,8 @@ export class OracleListenerNetworkBinding {
     this.service.setCallHandler(handler);
   }
 
+  accept(socket: OracleNetSocket): void { this.service.accept(socket); }
+
   isAttached(): boolean { return this.attached; }
   getBoundPort(): number | null { return this.boundPort; }
 

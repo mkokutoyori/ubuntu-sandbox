@@ -1,4 +1,5 @@
-import { simulationDate } from '@/network/core/SystemClock';
+import { hostNowDate } from '../time/OracleHostClock';
+
 
 export type CaptureType = 'LOCAL' | 'DOWNSTREAM' | 'SYNC';
 export type CaptureState = 'CAPTURING CHANGES' | 'ENABLED' | 'DISABLED' | 'PAUSED' | 'ABORTED';
@@ -34,13 +35,13 @@ export class CaptureProcess {
     this.appliedScn = this.startScn;
     this.enqueuedScn = this.startScn;
     this.ruleSetName = init.ruleSetName ?? null;
-    this.createdAt = simulationDate();
+    this.createdAt = hostNowDate();
   }
 
   recordEnqueue(scn: number): void {
     this.capturedScn = scn;
     this.enqueuedScn = scn;
-    this.lastEnqueueTime = simulationDate();
+    this.lastEnqueueTime = hostNowDate();
   }
 }
 
@@ -74,10 +75,10 @@ export class ApplyProcess {
     this.applyUser = (init.applyUser ?? 'STRMADMIN').toUpperCase();
     this.ruleSetName = init.ruleSetName ?? null;
     this.errorMessage = null;
-    this.createdAt = simulationDate();
+    this.createdAt = hostNowDate();
   }
 
-  recordApply(scn: number, at: Date = simulationDate()): void {
+  recordApply(scn: number, at: Date = hostNowDate()): void {
     this.appliedMessageNumber = scn;
     this.appliedMessageCreateTime = at;
   }
@@ -129,7 +130,7 @@ export class GoldenGateExtract {
     this.status = init.status ?? 'RUNNING';
     this.lagSeconds = init.lagSeconds ?? 0;
     this.positionFile = init.positionFile ?? `ogg_extract_${init.extractName.toLowerCase()}.dat`;
-    this.createdAt = simulationDate();
+    this.createdAt = hostNowDate();
   }
 }
 

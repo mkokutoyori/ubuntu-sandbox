@@ -25,6 +25,7 @@ import { detachedBus } from '@/events/BusHolder';
 import { EventBus, type IEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
+import { reclaimableBytesInRecoveryArea } from '@/terminal/subshells/rman/policy/ReclaimableBackups';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
@@ -90,6 +91,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     if (typeof hostWithClock?.hostWallClock === 'function') {
       db.instance.setHostClock(hostWithClock.hostWallClock());
     }
+    db.instance.setRecoveryAreaReclaimProbe(() => {
+      const snapshot = DeviceCatalogRegistry.get(deviceId).listAll();
+      if (snapshot.ok === false) return 0;
+      return reclaimableBytesInRecoveryArea(
+        snapshot.value.sets,
+        DeviceConfigRegistry.get(deviceId).snapshot().retentionPolicy,
+        db.instance.getParameter('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA,
+        db.instance.hostClock().nowMs());
+    });
     // Device VFS reader for server-side reads (UTL_FILE, external tables,
     // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
     // under host DAC, falling back to the editor path on devices that do
@@ -263,7 +273,7 @@ export interface SqlPlusInvocation {
 }
 
 export function parseSqlPlusInvocation(args: readonly string[], stdin?: string): SqlPlusInvocation {
-  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
+  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.filter(a => !a.startsWith('-')).join(' '));
   const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
   const sqlSource = [
     ...args.filter(a => a !== connectArg && !a.startsWith('-') && SQL_ARGUMENT.test(a)),
@@ -415,6 +425,13 @@ export function createSQLPlusSession(
  * Oracle React hooks so they can safely return their empty fallback
  * before the user opens SQL*Plus.
  */
+export function serveOracleNetConnection(
+  deviceId: string, socket: Parameters<OracleListenerTcpSync['serve']>[1],
+): boolean {
+  getOracleDatabase(deviceId);
+  return oracleListenerTcpSyncs.get(deviceId)?.serve(deviceId, socket) ?? false;
+}
+
 export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | undefined {
   return oracleInstances.get(deviceId);
 }

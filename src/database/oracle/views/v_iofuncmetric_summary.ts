@@ -2,12 +2,13 @@
  * V$IOFUNCMETRIC_SUMMARY — hourly summary of V$IOFUNCMETRIC.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$IOFUNCMETRIC_SUMMARY',
@@ -15,7 +16,7 @@ registerView({
   query(ctx) {
     const sample = queryView('V$IOFUNCMETRIC', ctx);
     if (!sample) return queryResult([], []);
-    const end = simulationNowMs();
+    const end = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

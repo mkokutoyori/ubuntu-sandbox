@@ -4,11 +4,12 @@
  * Derived from event-fed SQL cache aggregates spread across datafiles.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$FILEMETRIC',
@@ -23,7 +24,7 @@ registerView({
       ts.datafiles.map((df, i) => ({ ts: ts.name, file: i + 1, path: df.path }))
     );
     const n = Math.max(1, datafiles.length);
-    const end = simulationNowMs();
+    const end = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

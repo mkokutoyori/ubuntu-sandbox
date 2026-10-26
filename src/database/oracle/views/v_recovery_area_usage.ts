@@ -11,6 +11,7 @@ registerView({
   name: 'V$RECOVERY_AREA_USAGE',
   comment: 'FRA usage per file type',
   query({ instance, runtime }) {
+    const reclaimable = instance.recoveryAreaReclaimableBytes();
     const usage = recoveryAreaUsage(
       instance.getParameter('db_recovery_file_dest') ?? '',
       instance.getParameter('db_recovery_file_dest_size'),
@@ -27,7 +28,7 @@ registerView({
         ['CONTROL FILE', 0, 0, 0],
         ['REDO LOG', 0, 0, 0],
         ['ARCHIVED LOG', (usage.archivedLogBytes / total) * 100, 0, usage.archivedLogCount],
-        ['BACKUP PIECE', (usage.backupPieceBytes / total) * 100, 0, usage.backupPieceCount],
+        ['BACKUP PIECE', (usage.backupPieceBytes / total) * 100, (reclaimable / total) * 100, usage.backupPieceCount],
         ['IMAGE COPY', 0, 0, 0],
         ['FLASHBACK LOG', 0, 0, usage.flashbackLogCount],
         ['FOREIGN ARCHIVED LOG', 0, 0, 0],

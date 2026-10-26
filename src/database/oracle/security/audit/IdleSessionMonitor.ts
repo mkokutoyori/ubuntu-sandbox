@@ -17,7 +17,7 @@
  *  • DBA_OUTSTANDING_ALERTS / DBA_ALERT_HISTORY surface the event
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { IEventBus } from '@/events/EventBus';
 import type { SecurityEngine } from '../SecurityEngine';
@@ -25,6 +25,7 @@ import type { OracleCatalog } from '../../OracleCatalog';
 import {
   SESSION_IDLE_SNIPED, SESSION_CONNECT_TIME_EXCEEDED,
 } from '../SessionLimitTracker';
+import { hostNowDate, hostNowMs } from '../../time/OracleHostClock';
 
 export class IdleSessionMonitor {
   constructor(
@@ -40,7 +41,7 @@ export class IdleSessionMonitor {
    * IDLE_TIME profile limit, and snipe + close anyone over budget.
    * Returns the list of sniped session ids.
    */
-  sweep(now: Date = simulationDate()): number[] {
+  sweep(now: Date = hostNowDate()): number[] {
     const sniped: number[] = [];
     const tracker = this.engine.sessions;
     for (const s of tracker.getAllSessions()) {
@@ -81,11 +82,11 @@ export class IdleSessionMonitor {
     const s = this.engine.sessions.getSession(sessionId);
     if (!s) return;
     s.lastCallEt = idleSeconds;
-    s.lastCallAt = new Date(simulationNowMs() - idleSeconds * 1000);
+    s.lastCallAt = new Date(hostNowMs() - idleSeconds * 1000);
   }
 
   bumpConnected(sessionId: string, connectedSeconds: number): void {
     const s = this.engine.sessions.getSession(sessionId);
-    if (s) s.logonTime = new Date(simulationNowMs() - connectedSeconds * 1000);
+    if (s) s.logonTime = new Date(hostNowMs() - connectedSeconds * 1000);
   }
 }

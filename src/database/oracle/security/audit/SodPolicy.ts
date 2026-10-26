@@ -10,9 +10,10 @@
  * their own via `SecurityAuditState.registerSodPolicy(...)`.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { ISodPolicy, ISodViolation, Severity } from './interfaces';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class SodPolicy implements ISodPolicy {
   readonly name: string;
@@ -35,7 +36,7 @@ export class SodPolicy implements ISodPolicy {
     this.conflictingPrivileges = init.conflictingPrivileges.map(p => p.toUpperCase());
     this.enabled = init.enabled ?? true;
     this.owner = (init.owner ?? 'SYS').toUpperCase();
-    this.createdAt = init.createdAt ?? simulationDate();
+    this.createdAt = init.createdAt ?? hostNowDate();
   }
 
   /**
@@ -66,7 +67,7 @@ export class SodViolation implements ISodViolation {
     description: string; timestamp?: Date;
   }) {
     this.violationId = init.violationId;
-    this.timestamp = init.timestamp ?? simulationDate();
+    this.timestamp = init.timestamp ?? hostNowDate();
     this.policyName = init.policyName.toUpperCase();
     this.username = init.username.toUpperCase();
     this.sessionId = init.sessionId;

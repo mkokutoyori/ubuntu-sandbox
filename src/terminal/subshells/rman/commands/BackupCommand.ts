@@ -160,8 +160,8 @@ export interface BackupOptions {
 
 export function parseBackupOptions(text: string): BackupOptions {
   const out: BackupOptions = {};
-  const tagMatch = text.match(/\bTAG\s+(?:'([^']+)'|"([^"]+)")/i);
-  if (tagMatch) out.tag = (tagMatch[1] ?? tagMatch[2]).toUpperCase();
+  const tagMatch = text.match(/\bTAG\s+(?:'([^']+)'|"([^"]+)"|([A-Za-z][\w$#]*))/i);
+  if (tagMatch) out.tag = (tagMatch[1] ?? tagMatch[2] ?? tagMatch[3]).toUpperCase();
   const fmtMatch = text.match(/\bFORMAT\s+(?:'([^']+)'|"([^"]+)")/i);
   if (fmtMatch) out.format = fmtMatch[1] ?? fmtMatch[2];
   if (/\bDELETE\s+INPUT\b/i.test(text)) out.deleteInput = true;

@@ -8,6 +8,7 @@ export enum OracleNetCallId {
   /** LNS -> RFS : le primaire expedie un journal archive a la standby. */
   ShipRedo = 5,
   ShipDatafile = 6,
+  Identify = 7,
 }
 
 export enum OracleNetCallStatus {
@@ -90,6 +91,7 @@ export type OracleNetRequest =
   | { readonly call: OracleNetCallId.ExecuteStatement; readonly body: OracleNetStatementRequest }
   | { readonly call: OracleNetCallId.ShipRedo; readonly body: OracleNetShipRedoRequest }
   | { readonly call: OracleNetCallId.ShipDatafile; readonly body: OracleNetShipDatafileRequest }
+  | { readonly call: OracleNetCallId.Identify; readonly body: Record<string, never> }
   | { readonly call: OracleNetCallId.Logoff; readonly body: Record<string, never> };
 
 export type OracleNetResponse =
@@ -127,6 +129,9 @@ export function decodeRequest(payload: Uint8Array): OracleNetRequest | null {
   }
   if (call === OracleNetCallId.ShipDatafile) {
     return { call, body: body as OracleNetShipDatafileRequest };
+  }
+  if (call === OracleNetCallId.Identify) {
+    return { call, body: {} };
   }
   if (call === OracleNetCallId.Logoff) {
     return { call, body: {} };

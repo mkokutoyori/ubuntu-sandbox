@@ -2,6 +2,7 @@ import React, { type CSSProperties } from 'react';
 import type { EditorScreen, ScreenRow, ScreenStyle } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { layoutRow, type CaretShape, type GridRun } from './gridLayout';
 import { GRID_LINE_HEIGHT } from './gridMetrics';
+import { paintStyle } from './paintCss';
 
 const STYLES: Record<ScreenStyle, CSSProperties> = {
   linenr: { color: '#585b70' },
@@ -17,6 +18,7 @@ const STYLES: Record<ScreenStyle, CSSProperties> = {
   alert: { backgroundColor: '#c01c28', color: '#ffffff', fontWeight: 'bold' },
   search: { backgroundColor: '#f9e2af', color: '#1e1e2e' },
   incsearch: { backgroundColor: '#d3d7cf', color: '#300a24' },
+  paint: {},
 };
 
 const CARETS: Record<CaretShape, CSSProperties> = {
@@ -29,6 +31,7 @@ const CARETS: Record<CaretShape, CSSProperties> = {
 function runStyle(run: GridRun, caret: CaretShape): CSSProperties {
   return {
     ...(run.style === null ? {} : STYLES[run.style]),
+    ...(run.paint === null ? {} : paintStyle(run.paint)),
     ...(run.wide ? { display: 'inline-block', width: '2ch' } : {}),
     ...(run.caret ? CARETS[caret] : {}),
   };

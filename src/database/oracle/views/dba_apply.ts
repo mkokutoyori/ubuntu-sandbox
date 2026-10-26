@@ -1,8 +1,9 @@
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'DBA_APPLY',
@@ -28,7 +29,7 @@ registerView({
       instance.replication.getApplies().map(a => [
         a.applyName, a.queueName, a.queueOwner, a.applyUser, a.ruleSetName,
         a.status, null, null, 'YES', null,
-        simulationDate().toISOString(),
+        hostNowDate().toISOString(),
         null, a.errorMessage, a.createdAt.toISOString(),
       ]),
     );

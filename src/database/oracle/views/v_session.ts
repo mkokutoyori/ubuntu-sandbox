@@ -11,13 +11,14 @@
  * so monitoring scripts that SELECT explicit columns find them.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
 import { processAddr } from './_processAddr';
 import { BACKGROUND_SESSIONS } from './_sessionCounts';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'V$SESSION',
@@ -91,7 +92,7 @@ registerView({
     const liveSessions = instance.getLiveSessions();
     const liveBySid = new Map<number, typeof liveSessions[number]>();
     for (const ls of liveSessions) liveBySid.set(ls.sid, ls);
-    const now = simulationDate().toISOString();
+    const now = hostNowDate().toISOString();
     const saddr = (sid: number) => `00000000${sid.toString(16).padStart(8, '0').toUpperCase()}`;
     const fallbackPaddr = (sid: number) => `0000FFFF${(sid * 17).toString(16).padStart(8, '0').toUpperCase()}`;
     const bgPidByName = new Map(instance.getBackgroundProcesses().map(p => [p.name, p.pid]));

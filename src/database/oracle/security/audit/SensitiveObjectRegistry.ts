@@ -8,9 +8,10 @@
  * deployments would have DBAs adding more via `SECDEMO.MARK_SENSITIVE`.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { ISensitiveObject, SensitivityClass, SensitiveObjectRegistryView } from './interfaces';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class SensitiveObject implements ISensitiveObject {
   readonly schema: string;
@@ -30,7 +31,7 @@ export class SensitiveObject implements ISensitiveObject {
     this.classification = init.classification;
     this.sensitiveColumns = (init.sensitiveColumns ?? []).map(c => c.toUpperCase());
     this.description = init.description ?? '';
-    this.registeredAt = init.registeredAt ?? simulationDate();
+    this.registeredAt = init.registeredAt ?? hostNowDate();
   }
 }
 

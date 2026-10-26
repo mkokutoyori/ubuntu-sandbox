@@ -13,7 +13,7 @@
  * that protect production traffic.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { OracleDatabase } from '../../OracleDatabase';
 import type { SecurityAuditActor } from './SecurityAuditActor';
@@ -21,6 +21,7 @@ import type { SodEvaluator } from './SodEvaluator';
 import type { DormantAccountAnalyzer } from './DormantAccountAnalyzer';
 import type { SecurityAnomalyKind, OracleFraudInjectedPayload } from '../../events';
 import type { OsSecurityContext } from '../types';
+import { hostNowDate, hostNowMs } from '../../time/OracleHostClock';
 
 export interface FraudScenarioResult {
   scenario: string;
@@ -154,7 +155,7 @@ export class FraudScenarioSimulator {
     const hr = this.db.catalog.getUser('HR');
     if (hr) {
       // Rewrite created date to 200 days ago — analyzer sees no AUD$ LOGON either.
-      (hr as { created: Date }).created = new Date(simulationNowMs() - 200 * 24 * 60 * 60 * 1000);
+      (hr as { created: Date }).created = new Date(hostNowMs() - 200 * 24 * 60 * 60 * 1000);
     }
     this.dormant.sweep();
     steps.push('Marked HR as dormant (>90 days since creation, no logons)');
@@ -194,7 +195,7 @@ export class FraudScenarioSimulator {
         deviceId: this.db.instance.getDeviceId(),
         sid: this.db.instance.config.sid,
         scenario, description: steps.join(' | '),
-        expectedAnomalies: expected, timestamp: simulationDate(),
+        expectedAnomalies: expected, timestamp: hostNowDate(),
       } as OracleFraudInjectedPayload,
     });
   }

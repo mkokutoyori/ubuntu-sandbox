@@ -6,17 +6,18 @@
  * always have something to project.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'DBA_PRIV_CAPTURES',
   comment: 'Privilege capture jobs',
   query({ instance }) {
-    const startedAt = instance.startupTime ?? simulationDate();
+    const startedAt = instance.startupTime ?? hostNowDate();
     return queryResult(
       [
         col.str('NAME', 128),

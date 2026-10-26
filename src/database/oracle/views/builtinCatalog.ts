@@ -114,6 +114,7 @@ export const BUILTIN_VIEWS: readonly BuiltinViewEntry[] = Object.freeze([
   { name: 'DBA_FGA_AUDIT_TRAIL',    text: fixed('DBA_FGA_AUDIT_TRAIL', 'SYS.FGA_LOG$'), comment: 'Fine-grained audit trail' },
   { name: 'UNIFIED_AUDIT_TRAIL',    text: fixed('UNIFIED_AUDIT_TRAIL', 'SYS.UNIFIED_AUDIT_TRAIL'), comment: 'Unified audit trail (12c+)' },
   { name: 'DBA_PROFILES',           text: fixed('DBA_PROFILES', 'SYS.PROFILE$'),   comment: 'Resource limit profiles' },
+  { name: 'RESOURCE_COST',          text: fixed('RESOURCE_COST', 'SYS.RESOURCE_COST$'), comment: 'Unit cost of each resource weighted by COMPOSITE_LIMIT' },
   { name: 'DBA_TS_QUOTAS',          text: fixed('DBA_TS_QUOTAS', 'SYS.TSQ$'),      comment: 'Tablespace quotas' },
   { name: 'DBA_TAB_STATISTICS',     text: fixed('DBA_TAB_STATISTICS', 'SYS.TAB_STATS$'), comment: 'Table statistics' },
   { name: 'DBA_DIRECTORIES',        text: fixed('DBA_DIRECTORIES', 'SYS.DIR$'),    comment: 'Directory objects' },

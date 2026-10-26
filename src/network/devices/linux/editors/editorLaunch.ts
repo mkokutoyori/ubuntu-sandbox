@@ -12,6 +12,7 @@ import { parseNanoCommandLine, type CommandLineMemory, type NanoStart } from './
 import { applyRcfiles, type RcHost } from './nano/NanoRc';
 import type { MenuFlags } from './NanoEngine';
 import type { NanoSettings } from './nano/NanoSettings';
+import type { SyntaxCatalog } from './nano/NanoSyntax';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './nano/NanoOperatingDirectory';
 
 export type EditorName = 'nano' | 'vi' | 'vim';
@@ -25,6 +26,7 @@ export interface NanoRcNotices {
   readonly errors: readonly string[];
   readonly startupProblem: string | null;
   readonly failure: string | null;
+  readonly catalog: SyntaxCatalog | null;
 }
 
 export interface NanoLaunch {
@@ -94,7 +96,7 @@ export function withRcfiles(host: RcHost, launch: EditorLaunch): EditorLaunch {
   const nano = launch.nano;
   if (nano === null || nano.memory === undefined || (nano.rc ?? null) !== null) return launch;
   const outcome = applyRcfiles(host, { settings: nano.settings, memory: nano.memory });
-  const rc: NanoRcNotices = { errors: outcome.errors, startupProblem: outcome.startupProblem, failure: outcome.failure };
+  const rc: NanoRcNotices = { errors: outcome.errors, startupProblem: outcome.startupProblem, failure: outcome.failure, catalog: outcome.catalog };
   const menuFlags: MenuFlags = { preserve: nano.settings.preserve, saveonexit: nano.settings.saveonexit };
   return { ...launch, nano: { ...nano, settings: outcome.settings, rc, menuFlags } };
 }

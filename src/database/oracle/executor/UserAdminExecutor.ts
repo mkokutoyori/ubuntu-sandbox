@@ -10,14 +10,14 @@
  * statement family (ORA-01918/01920/01921/02379/02380/28003/28009…).
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { ExecutionContext } from '../../engine/executor/BaseExecutor';
 import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
   CreateUserStatement, AlterUserStatement, DropUserStatement,
   CreateRoleStatement, DropRoleStatement,
-  CreateProfileStatement, AlterProfileStatement, DropProfileStatement,
+  CreateProfileStatement, AlterProfileStatement, AlterResourceCostStatement, DropProfileStatement,
 } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
 import type { OracleStorage } from '../OracleStorage';
@@ -25,6 +25,7 @@ import type { OracleCatalog } from '../OracleCatalog';
 import type { OracleInstance } from '../OracleInstance';
 import type { PrivilegeEnforcer } from '../security/PrivilegeEnforcer';
 import type { UserActivityKind } from '../events';
+import { hostNowDate } from '../time/OracleHostClock';
 
 /** SYS-supplied schemas that can never be dropped (ORA-28009). */
 const PROTECTED_SCHEMAS: ReadonlySet<string> = new Set([
@@ -76,9 +77,9 @@ export class UserAdminExecutor {
       defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
       temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
       accountStatus: stmt.accountLocked ? 'LOCKED' : 'OPEN',
-      lockDate: stmt.accountLocked ? simulationDate() : null,
+      lockDate: stmt.accountLocked ? hostNowDate() : null,
       expiryDate: null,
-      created: simulationDate(),
+      created: hostNowDate(),
       profile: profileName,
       authenticationType: authType,
       externalName: stmt.externalName,
@@ -270,6 +271,20 @@ export class UserAdminExecutor {
     return emptyResult('Profile altered.');
   }
 
+  executeAlterResourceCost(stmt: AlterResourceCostStatement): ResultSet {
+    this.privileges.requireSystemPrivilege('ALTER RESOURCE COST');
+    const engine = this.catalog.getSecurityEngine();
+    const known = engine?.profiles.getResourceCosts();
+    for (const [name, value] of stmt.costs) {
+      const unitCost = Number(value);
+      if (!known?.has(name.toUpperCase()) || !Number.isInteger(unitCost) || unitCost < 0) {
+        throw new OracleError(905, 'missing keyword');
+      }
+    }
+    for (const [name, value] of stmt.costs) engine!.profiles.setResourceCost(name, Number(value));
+    return emptyResult('Resource cost altered.');
+  }
+
   executeDropProfile(stmt: DropProfileStatement): ResultSet {
     this.privileges.requireSystemPrivilege('DROP PROFILE');
     if (!this.catalog.profileExists(stmt.profileName)) {
@@ -295,7 +310,7 @@ export class UserAdminExecutor {
         username: username.toUpperCase(), kind,
         sessionId: this.deps.getSessionId(),
         performedBy: this.context.currentSchema,
-        detail, timestamp: simulationDate(),
+        detail, timestamp: hostNowDate(),
       },
     });
   }

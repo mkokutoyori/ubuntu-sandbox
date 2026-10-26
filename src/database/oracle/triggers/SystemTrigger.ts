@@ -1,3 +1,4 @@
+import { hostNowDate } from '../time/OracleHostClock';
 /**
  * SystemTrigger — concrete representation of a database-level event
  * trigger (`CREATE TRIGGER name AFTER LOGON ON DATABASE` and the
@@ -16,7 +17,7 @@
  * `enabled` flag flipped by ALTER TRIGGER … {ENABLE|DISABLE}.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 export type TriggerTiming = 'BEFORE' | 'AFTER';
 export type TriggerEvent =
@@ -55,7 +56,7 @@ export class SystemTrigger {
     this.scopeSchema = init.scopeSchema ? init.scopeSchema.toUpperCase() : null;
     this.body = init.body;
     this.enabled = init.enabled ?? true;
-    this.created = init.created ?? simulationDate();
+    this.created = init.created ?? hostNowDate();
   }
 
   /** Does this trigger apply for the given event + (schema, ifScope)? */
@@ -69,7 +70,7 @@ export class SystemTrigger {
   }
 
   /** Stamp a successful firing. */
-  recordFiring(at: Date = simulationDate()): void {
+  recordFiring(at: Date = hostNowDate()): void {
     this.lastFiredAt = at;
     this.fireCount++;
   }

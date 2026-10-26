@@ -3,6 +3,8 @@
  * fuseau de BASE et un fuseau de SESSION, et cesse de confondre l'heure
  * du serveur avec celle de la session.
  *
+ * L'horloge de la base est posee au 1er juillet 2026 : le test attendait +02:00 pour Paris et echouait l'hiver, quand Paris est a +01:00.
+ *
  * ── Ce qui a ete mesure avant correctif ─────────────────────────────
  *
  *     SELECT DBTIMEZONE FROM DUAL                 -> null
@@ -73,6 +75,7 @@ let executor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'] | null =
 
 beforeEach(() => {
   db = new OracleDatabase();
+  db.instance.setHostClock({ nowMs: () => Date.UTC(2026, 6, 1, 12, 0, 0), zoneName: () => 'UTC' });
   executor = null;
 });
 

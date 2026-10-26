@@ -76,7 +76,7 @@ class EreParser {
   hasAlternation = false;
   hasQuantifier = false;
 
-  constructor(pattern: string, private readonly ignoreCase = false) {
+  constructor(pattern: string, private readonly ignoreCase = false, private readonly directCompile: { readonly notBol?: boolean } | null = null) {
     this.chars = Array.from(pattern);
   }
 
@@ -126,7 +126,7 @@ class EreParser {
     switch (character) {
       case '*': case '+': case '?': case '{':
         throw new PosixRegexError(MESSAGES.repeat);
-      case '^': return '^';
+      case '^': return this.directCompile?.notBol ? '(?!)' : '^';
       case '$': return '$';
       case '\\': {
         const escaped = this.chars[this.position++];
@@ -148,6 +148,7 @@ class EreParser {
       return `(?:\\${escaped})`;
     }
     if (escaped in WORD_OPERATORS) return WORD_OPERATORS[escaped];
+    if (this.ignoreCase && this.directCompile !== null && escaped >= 'a' && escaped <= 'z') return '(?!)';
     return literal(escaped);
   }
 
@@ -294,28 +295,43 @@ export interface EreMatch {
 
 const LONGEST_SEARCH_LIMIT = 2000;
 
+interface EreVariant {
+  readonly source: string;
+  readonly scanner: RegExp;
+}
+
 export class CompiledEre {
   readonly source: string;
   readonly groupCount: number;
   private readonly flags: string;
-  private readonly scanner: RegExp;
+  private readonly variants: { readonly normal: EreVariant; withoutLineStart: EreVariant | null };
   private readonly ambiguous: boolean;
 
-  constructor(pattern: string, ignoreCase: boolean) {
-    const parser = new EreParser(pattern, ignoreCase);
+  constructor(private readonly pattern: string, private readonly ignoreCase: boolean) {
+    const parser = new EreParser(pattern, ignoreCase, {});
     this.source = parser.parse();
     this.groupCount = parser.groupCount;
     this.ambiguous = parser.hasAlternation || parser.hasQuantifier;
     this.flags = `du${ignoreCase ? 'i' : ''}`;
-    this.scanner = new RegExp(this.source, `g${this.flags}`);
+    this.variants = { normal: { source: this.source, scanner: new RegExp(this.source, `g${this.flags}`) }, withoutLineStart: null };
   }
 
-  exec(text: string, from: number): EreMatch | null {
-    this.scanner.lastIndex = from;
-    const found = this.scanner.exec(text);
+  private variant(notBol: boolean): EreVariant {
+    if (!notBol) return this.variants.normal;
+    if (this.variants.withoutLineStart === null) {
+      const source = new EreParser(this.pattern, this.ignoreCase, { notBol: true }).parse();
+      this.variants.withoutLineStart = { source, scanner: new RegExp(source, `g${this.flags}`) };
+    }
+    return this.variants.withoutLineStart;
+  }
+
+  exec(text: string, from: number, notBol = false): EreMatch | null {
+    const variant = this.variant(notBol);
+    variant.scanner.lastIndex = from;
+    const found = variant.scanner.exec(text);
     if (found === null) return null;
     let match = this.describe(found);
-    if (this.ambiguous && text.length <= LONGEST_SEARCH_LIMIT) match = this.lengthen(text, match);
+    if (this.ambiguous && text.length <= LONGEST_SEARCH_LIMIT) match = this.lengthen(text, match, variant.source);
     return match;
   }
 
@@ -326,11 +342,11 @@ export class CompiledEre {
     return { index: found.index, end: found.index + found[0].length, groups };
   }
 
-  private lengthen(text: string, match: EreMatch): EreMatch {
+  private lengthen(text: string, match: EreMatch, source: string): EreMatch {
     for (let end = text.length; end > match.end; end--) {
       if (end < text.length && /[\udc00-\udfff]/.test(text[end]) && /[\ud800-\udbff]/.test(text[end - 1])) continue;
       const remaining = Array.from(text.slice(end)).length;
-      const forced = new RegExp(`(?:${this.source})(?=[^]{${remaining}}$)`, `y${this.flags}`);
+      const forced = new RegExp(`(?:${source})(?=[^]{${remaining}}$)`, `y${this.flags}`);
       forced.lastIndex = match.index;
       const found = forced.exec(text);
       if (found !== null) return this.describe(found);

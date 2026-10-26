@@ -1,16 +1,20 @@
 import type { EditorFsContext } from '../EditorFsContext';
 import { parseNanoNumber, type CommandLineMemory } from './NanoCommandLine';
 import { fullPathOf } from './NanoOpening';
+import { ELEMENT_OPTIONS, parseCombination, type ElementCombinations, type NanoElement } from './NanoPaint';
 import { NANO_FLAGS, DEFAULT_TABSIZE, type NanoFlag, type NanoSettings } from './NanoSettings';
 import { nanoHomeDirectory } from './NanoStateDirectory';
+import { GlobAborted, globPaths, type GlobFileSystem } from '@/network/devices/linux/fs/Glob';
+import { nextWord, SyntaxCatalog, type RcLocation } from './NanoSyntax';
 
-export type RcHost = Pick<EditorFsContext, 'identity' | 'readFile' | 'kindOf' | 'exists' | 'resolvePath' | 'canonicalPath' | 'readError' | 'homeDirectory' | 'environmentVariable'>;
+export type RcHost = Pick<EditorFsContext, 'identity' | 'readFile' | 'kindOf' | 'exists' | 'resolvePath' | 'canonicalPath' | 'readError' | 'homeDirectory' | 'environmentVariable' | 'listDirectory'>;
 
 export interface RcOutcome {
   readonly settings: NanoSettings;
   readonly errors: readonly string[];
   readonly startupProblem: string | null;
   readonly failure: string | null;
+  readonly catalog: SyntaxCatalog | null;
 }
 
 type RcFlagTarget = NanoFlag | 'nowrap';
@@ -28,19 +32,9 @@ const RC_FLAG_OPTIONS: Readonly<Record<string, RcFlagTarget>> = {
   wordbounds: 'wordbounds', zap: 'zap', zero: 'zero',
 };
 
-const RC_COLOR_OPTIONS: ReadonlySet<string> = new Set([
-  'titlecolor', 'numbercolor', 'stripecolor', 'scrollercolor', 'selectedcolor', 'spotlightcolor',
-  'minicolor', 'promptcolor', 'statuscolor', 'errorcolor', 'keycolor', 'functioncolor',
-]);
-
 const RC_VALUED_OPTIONS: ReadonlySet<string> = new Set([
   'brackets', 'fill', 'operatingdir', 'punct', 'quotestr', 'speller', 'backupdir', 'guidestripe',
-  'matchbrackets', 'tabsize', 'whitespace', 'wordchars', ...RC_COLOR_OPTIONS,
-]);
-
-const SYNTAX_AND_BINDING_KEYWORDS: ReadonlySet<string> = new Set([
-  'syntax', 'header', 'magic', 'color', 'icolor', 'comment', 'tabgives', 'linter', 'formatter',
-  'extendsyntax', 'include', 'bind', 'unbind',
+  'matchbrackets', 'tabsize', 'whitespace', 'wordchars', ...Object.keys(ELEMENT_OPTIONS),
 ]);
 
 const BLANK = /[ \t\u1680\u2000-\u2006\u2008-\u200A\u205F\u3000]/;
@@ -61,19 +55,27 @@ interface RcValues {
 }
 
 class RcReader {
+  constructor(private readonly host: RcHost) {}
+
   readonly flags = new Map<RcFlagTarget, boolean>();
   readonly values: RcValues = {};
+  readonly colors: { -readonly [E in NanoElement]?: ElementCombinations[E] } = {};
   readonly errors: string[] = [];
+  readonly catalog = new SyntaxCatalog();
   startupProblem: string | null = null;
   file: string | null = null;
   private lineNumber = 0;
 
-  jot(message: string): void {
-    if (this.startupProblem === null && this.file !== null) this.startupProblem = `Mistakes in '${this.file}'`;
-    this.errors.push(this.lineNumber > 0 ? `Error in ${this.file} on line ${this.lineNumber}: ${message}` : message);
+  jot(message: string, at?: RcLocation): void {
+    const file = at?.file ?? this.file;
+    const line = at?.line ?? this.lineNumber;
+    if (this.startupProblem === null && file !== null) this.startupProblem = `Mistakes in '${file}'`;
+    this.errors.push(line > 0 ? `Error in ${file} on line ${line}: ${message}` : message);
   }
 
-  parse(text: string): void {
+  private readonly report = (message: string, at?: RcLocation): void => this.jot(message, at);
+
+  parse(text: string, included = false): void {
     this.lineNumber = 0;
     const lines = text.split('\n');
     if (lines[lines.length - 1] === '') lines.pop();
@@ -82,12 +84,86 @@ class RcReader {
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
       const trimmed = line.replace(/^[ \t]+/, '');
       if (trimmed === '' || trimmed.startsWith('#')) continue;
-      const [keyword, rest] = splitWord(trimmed);
-      if (keyword === 'set') this.option(rest, true);
-      else if (keyword === 'unset') this.option(rest, false);
-      else if (!SYNTAX_AND_BINDING_KEYWORDS.has(keyword)) this.jot(`Command "${keyword}" not understood`);
+      this.command(trimmed, lines, included);
     }
+    this.catalog.checkNonEmpty(this.report);
     this.lineNumber = 0;
+  }
+
+  private command(trimmed: string, sourceLines: readonly string[], included: boolean): void {
+    let [keyword, rest] = splitWord(trimmed);
+    const here: RcLocation = { file: this.file!, line: this.lineNumber };
+    let closesExtension = false;
+    if (keyword === 'extendsyntax' && !included) {
+      const outcome = this.catalog.extend(rest, here, this.report);
+      if (outcome.applyImmediately === null) return;
+      [keyword, rest] = nextWord(outcome.applyImmediately);
+      closesExtension = true;
+    }
+    if (included && ['set', 'unset', 'bind', 'unbind', 'include', 'extendsyntax'].includes(keyword)) this.jot(`Command "${keyword}" not allowed in included file`);
+    else if (keyword === 'syntax') {
+      this.catalog.checkNonEmpty(this.report);
+      this.catalog.begin(rest, here, sourceLines, this.report);
+    } else if (keyword === 'header') this.catalog.header(rest, this.report);
+    else if (['color', 'icolor', 'comment', 'tabgives', 'linter', 'formatter'].includes(keyword)) this.catalog.noteBodyCommand(keyword, this.report);
+    else if (keyword === 'include') this.include(rest);
+    else if (keyword === 'set' || keyword === 'unset') {
+      this.catalog.checkNonEmpty(this.report);
+      this.option(rest, keyword === 'set');
+    } else if (keyword === 'bind' || keyword === 'unbind') this.catalog.checkNonEmpty(this.report);
+    else if (keyword !== 'magic') this.jot(`Command "${keyword}" not understood`);
+    if (closesExtension) this.catalog.closeImmediateExtension();
+  }
+
+  private include(argument: string): void {
+    this.catalog.checkNonEmpty(this.report);
+    let pattern = splitWord(argument)[0];
+    if (argument.startsWith('"')) {
+      const last = argument.lastIndexOf('"');
+      if (last <= 0) {
+        this.jot(`Argument '${argument}' has an unterminated "`);
+        pattern = argument.slice(1);
+      } else pattern = argument.slice(1, last);
+    }
+    const home = nanoHomeDirectory(this.host);
+    const expanded = home !== null && (pattern === '~' || pattern.startsWith('~/')) ? `${home}${pattern.slice(1)}` : pattern;
+    let matches: string[];
+    try {
+      matches = globPaths(globFileSystem(this.host), expanded, { abortOnUnreadable: true });
+    } catch (error) {
+      if (!(error instanceof GlobAborted)) throw error;
+      this.jot(`Error expanding ${pattern}: ${this.unreadableReason(error.directory)}`);
+      return;
+    }
+    if (matches.length === 0) matches = [expanded.length > 1 ? expanded.replace(/\/$/, '') : expanded];
+    for (const file of matches) this.includeFile(file);
+  }
+
+  private unreadableReason(directory: string): string {
+    const kind = this.host.kindOf?.(this.host.resolvePath(directory)) ?? 'missing';
+    if (kind === 'missing') return 'No such file or directory';
+    if (kind !== 'directory') return 'Not a directory';
+    return this.host.readError?.(this.host.resolvePath(directory)) ?? 'Permission denied';
+  }
+
+  private includeFile(file: string): void {
+    const kind = file === '' ? 'missing' : this.host.kindOf?.(file) ?? (this.host.exists(file) ? 'file' : 'missing');
+    const refusal = kind === 'missing' ? 'No such file or directory' : this.host.readError?.(file) ?? null;
+    if (refusal === null && (kind === 'directory' || kind === 'device')) {
+      this.jot(kind === 'directory' ? `"${file}" is a directory` : `"${file}" is a device file`);
+      return;
+    }
+    const content = refusal === null ? this.host.readFile(file) : null;
+    if (content === null) {
+      this.jot(`Error reading ${file}: ${refusal ?? 'No such file or directory'}`);
+      return;
+    }
+    const outerFile = this.file;
+    const outerLine = this.lineNumber;
+    this.file = file;
+    this.parse(content, true);
+    this.file = outerFile;
+    this.lineNumber = outerLine;
   }
 
   private option(rest: string, enabling: boolean): void {
@@ -112,7 +188,15 @@ class RcReader {
   }
 
   private valued(name: string, argument: string): void {
-    if (RC_COLOR_OPTIONS.has(name)) return;
+    const element = ELEMENT_OPTIONS[name];
+    if (element !== undefined) {
+      const outcome = parseCombination(argument);
+      if ('error' in outcome) {
+        this.jot(outcome.error);
+        this.colors[element] = null;
+      } else this.colors[element] = outcome.combination;
+      return;
+    }
     switch (name) {
       case 'operatingdir': this.values.operatingdir = argument; return;
       case 'fill': {
@@ -155,6 +239,15 @@ class RcReader {
   }
 }
 
+function globFileSystem(host: RcHost): GlobFileSystem {
+  const kind = (path: string) => host.kindOf?.(host.resolvePath(path)) ?? (host.exists(host.resolvePath(path)) ? 'file' : 'missing');
+  return {
+    listNames: (directory) => host.listDirectory?.(host.resolvePath(directory)) ?? null,
+    existsNoFollow: (path) => kind(path) !== 'missing',
+    isDirectory: (path) => kind(path) === 'directory',
+  };
+}
+
 function splitWord(text: string): [string, string] {
   const end = text.search(/[ \t]/);
   if (end < 0) return [text, ''];
@@ -183,6 +276,7 @@ export function mergeRcSettings(cmd: NanoSettings, memory: CommandLineMemory, rc
     for (const field of ['brackets', 'punct', 'matchbrackets', 'whitespace'] as const) {
       if (values[field] !== undefined) merged[field] = values[field] ?? null;
     }
+    if (Object.keys(rc.colors).length > 0) merged.colors = { ...rc.colors };
     if (merged.speller !== null) merged.speller = merged.speller.replace(/^[ \t]+/, '');
   }
   if (merged.restricted) {
@@ -213,11 +307,11 @@ function parseOne(host: RcHost, reader: RcReader, path: string): void {
 
 export function applyRcfiles(host: RcHost, invocation: { readonly settings: NanoSettings; readonly memory: CommandLineMemory }): RcOutcome {
   const cmd = invocation.settings;
-  if (cmd.ignorercfiles) return { settings: mergeRcSettings(cmd, invocation.memory, null), errors: [], startupProblem: null, failure: null };
-  const reader = new RcReader();
+  if (cmd.ignorercfiles) return { settings: mergeRcSettings(cmd, invocation.memory, null), errors: [], startupProblem: null, failure: null, catalog: null };
+  const reader = new RcReader(host);
   if (cmd.rcfile !== null) {
     const path = fullPathOf(cmd.rcfile, host);
-    if (path === null || (host.kindOf?.(path) ?? (host.exists(path) ? 'file' : 'missing')) === 'missing') return { settings: cmd, errors: [], startupProblem: null, failure: 'Specified rcfile does not exist' };
+    if (path === null || (host.kindOf?.(path) ?? (host.exists(path) ? 'file' : 'missing')) === 'missing') return { settings: cmd, errors: [], startupProblem: null, failure: 'Specified rcfile does not exist', catalog: null };
     reader.file = path;
     if (isGood(host, reader, path)) parseOne(host, reader, path);
   } else {
@@ -243,5 +337,6 @@ export function applyRcfiles(host: RcHost, invocation: { readonly settings: Nano
     errors: reader.errors,
     startupProblem: reader.startupProblem,
     failure: null,
+    catalog: reader.catalog.isEmpty ? null : reader.catalog,
   };
 }
