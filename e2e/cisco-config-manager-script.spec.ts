@@ -49,9 +49,11 @@ test.describe('Scénario 10 (e2e) — cisco-config-manager.sh dans un terminal L
     await typeCmd(page, "SAFE='$'; guard() { echo \"$1\" | grep -qF \"$SAFE\" && { echo REFUS; return 1; }; echo OK; }");
     await typeCmd(page, "guard 'Cout: 5\\$ par acces'; echo \"exit=$?\"");
     const text = await modalText(page);
-    expect(text).toContain('REFUS');
-    expect(text).toContain('exit=1');
-    expect(text).not.toContain('OK');
+    const call = text.slice(text.lastIndexOf("guard 'Cout"));
+    const out = call.slice(call.indexOf('\n'));
+    expect(out).toContain('REFUS');
+    expect(out).toContain('exit=1');
+    expect(out).not.toContain('OK');
   });
 
   test('cisco_set_banner accepte un contenu avec des # mais sans le délimiteur (exit 0)', async ({ page }) => {
