@@ -63,6 +63,8 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'win-ping-300', client: 'win', commands: () => [`ping -n 300 203.0.113.9 > NUL & echo FINISHED`] },
   { name: 'win-nmap-all-ports', client: 'win', commands: () => ['nmap -p- 203.0.113.2 & echo FINISHED'] },
   oracle('ora-insert-100k', [BIG_TABLE, fill(100000), 'COMMIT;']),
+  oracle('ora-insert-300k', [BIG_TABLE, fill(300000), 'COMMIT;']),
+  oracle('ora-update-delete-300k', [BIG_TABLE, fill(300000), 'UPDATE big SET amount = amount + 1;', 'DELETE FROM big WHERE MOD(id, 2) = 0;', 'ROLLBACK;']),
   oracle('ora-aggregates-50k', [BIG_TABLE, fill(50000), 'SELECT grp, COUNT(*), SUM(amount) FROM big GROUP BY grp ORDER BY grp;', 'SELECT id FROM big ORDER BY amount DESC FETCH FIRST 10 ROWS ONLY;']),
   oracle('ora-join-20k', [BIG_TABLE, fill(20000), 'SELECT COUNT(*) FROM big a JOIN big b ON a.id = b.id WHERE a.grp = 7;']),
   oracle('ora-update-all-50k', [BIG_TABLE, fill(50000), 'UPDATE big SET amount = amount + 1;', 'ROLLBACK;']),

@@ -907,6 +907,11 @@ export interface AlterProfileStatement extends ASTNode {
   limits: Map<string, string>;
 }
 
+export interface AlterResourceCostStatement extends ASTNode {
+  type: 'AlterResourceCostStatement';
+  costs: Map<string, string>;
+}
+
 export interface DropProfileStatement extends ASTNode {
   type: 'DropProfileStatement';
   profileName: string;
@@ -1197,7 +1202,7 @@ export type Statement =
   // Alter
   | AlterSequenceStatement | AlterIndexStatement
   // Profile
-  | CreateProfileStatement | AlterProfileStatement | DropProfileStatement
+  | CreateProfileStatement | AlterProfileStatement | AlterResourceCostStatement | DropProfileStatement
   // Audit
   | AuditStatement | NoauditStatement
   | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement

@@ -16,6 +16,7 @@ import {
 } from './time/OracleTimeZone';
 import { ScalarFunctionEvaluator } from './functions/ScalarFunctionEvaluator';
 import { type ResultSet, emptyResult, queryResult, type ColumnMeta, type Row } from '../engine/executor/ResultSet';
+import { through, settle, andThen } from '../engine/executor/Continuation';
 import type { Statement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
   CreateTableStatement, DropTableStatement, TruncateTableStatement, AlterTableStatement,
   CreateIndexStatement, DropIndexStatement, CreateSequenceStatement, DropSequenceStatement,
@@ -51,6 +52,8 @@ import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
 import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
+import { CallResourceBudget, SessionResourceMeter, type ResourceLimits } from './executor/CallResourceBudget';
+import { blocksOfRows } from './storage/BlockModel';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -76,7 +79,7 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'CreateSynonymStatement', 'DropSynonymStatement',
   'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
   'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
-  'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
+  'CreateProfileStatement', 'AlterProfileStatement', 'AlterResourceCostStatement', 'DropProfileStatement',
   'CreateDbLinkStatement', 'DropDbLinkStatement',
   'CreateDirectoryStatement', 'DropDirectoryStatement',
   'CreateTypeStatement', 'AlterCompileStatement',
@@ -185,6 +188,27 @@ function containsPrior(node: unknown): boolean {
   return Object.values(record).some(containsPrior);
 }
 
+export interface CallScope {
+  run<T>(run: () => T): T;
+  end(): void;
+}
+
+const PASS_THROUGH_SCOPE: CallScope = {
+  run: <T>(run: () => T): T => run(),
+  end: () => undefined,
+};
+
+interface InsertQueryJob {
+  readonly subResult: ResultSet;
+  next: number;
+  inserted: number;
+}
+
+// Oracle SQL*Plus reports "<n> row[s] created." (not "inserted").
+function rowsCreated(count: number): ResultSet {
+  return emptyResult(`${count} row${count !== 1 ? 's' : ''} created.`, count);
+}
+
 export class OracleExecutor extends BaseExecutor {
   declare protected catalog: OracleCatalog;
   declare protected storage: OracleStorage;
@@ -206,13 +230,33 @@ export class OracleExecutor extends BaseExecutor {
   });
   private _currentRowNum: number = 0;
 
+  private clockReadingCache: {
+    at: number; zone: string; database: OracleTimeZoneSpec;
+    sessionZone: OracleTimeZoneSpec | null | undefined; reading: OracleClockReading;
+  } | null = null;
+
   oracleClock(): OracleClockReading {
     const host = this.instance.hostClock();
     const at = host.nowMs();
-    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
     const database = this.instance.timeZone;
-    const session = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)
-      ?.timeZone ?? hostOffsetSpec(host);
+    const sessionZone = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)?.timeZone;
+    const zone = host.zoneName();
+    const cached = this.clockReadingCache;
+    if (cached && cached.at === at && cached.zone === zone
+      && cached.database === database && cached.sessionZone === sessionZone) {
+      return cached.reading;
+    }
+    const reading = this.readOracleClock(host, at, database, sessionZone);
+    this.clockReadingCache = { at, zone, database, sessionZone, reading };
+    return reading;
+  }
+
+  private readOracleClock(
+    host: ReturnType<OracleInstance['hostClock']>, at: number,
+    database: OracleTimeZoneSpec, sessionZone: OracleTimeZoneSpec | null | undefined,
+  ): OracleClockReading {
+    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
+    const session = sessionZone ?? hostOffsetSpec(host);
     const sessionOffset = oracleOffsetMinutes(session, at);
     return {
       sysdate: oracleDateText(at, hostOffset),
@@ -436,23 +480,55 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   execute(statement: Statement): ResultSet {
-    const parseStart = performance.now();
+    return settle(this.executeSliced(statement, Infinity));
+  }
+
+  executeSliced(statement: Statement, sliceMs: number): ResultSet {
     this.emitSqlParsed(statement);
-    let result: ResultSet;
+    let activeMs = 0;
+    return through<ResultSet>(
+      (run) => {
+        const startedAt = performance.now();
+        try {
+          return this.withinSlice(sliceMs, run);
+        } catch (e: unknown) {
+          const code = e instanceof OracleError ? parseInt(e.code.replace('ORA-', ''), 10) : 600;
+          const message = e instanceof Error ? e.message : String(e);
+          this.recordAuditForStatement(statement, code);
+          this.emitError(code, message);
+          throw e;
+        } finally {
+          activeMs += performance.now() - startedAt;
+        }
+      },
+      () => this.executeStatement(statement),
+      (result) => {
+        this.emitSqlExecuted(statement, result, activeMs);
+        this.recordAuditForStatement(statement, 0);
+        this.emitForStatement(statement, result);
+        return result;
+      },
+    );
+  }
+
+  private sliceUntil = Infinity;
+
+  private withinSlice<T>(sliceMs: number, run: () => T): T {
+    const previous = this.sliceUntil;
+    this.sliceUntil = sliceMs === Infinity ? Infinity : performance.now() + sliceMs;
     try {
-      result = this.executeStatement(statement);
-    } catch (e: unknown) {
-      const code = e instanceof OracleError ? parseInt(e.code.replace('ORA-', ''), 10) : 600;
-      const message = e instanceof Error ? e.message : String(e);
-      this.recordAuditForStatement(statement, code);
-      this.emitError(code, message);
-      throw e;
+      return run();
+    } finally {
+      this.sliceUntil = previous;
     }
-    const elapsed = performance.now() - parseStart;
-    this.emitSqlExecuted(statement, result, elapsed);
-    this.recordAuditForStatement(statement, 0);
-    this.emitForStatement(statement, result);
-    return result;
+  }
+
+  private sliceSpent(): boolean {
+    return performance.now() >= this.sliceUntil;
+  }
+
+  private suspended(next: () => ResultSet): ResultSet {
+    return { ...emptyResult(), continuation: next };
   }
 
   private _lastSqlText = '';
@@ -714,6 +790,7 @@ export class OracleExecutor extends BaseExecutor {
       AlterDatabaseStatement: 'ALTER DATABASE',
       CreateProfileStatement: 'CREATE PROFILE',
       AlterProfileStatement: 'ALTER PROFILE',
+      AlterResourceCostStatement: 'ALTER RESOURCE COST',
       DropProfileStatement: 'DROP PROFILE',
     };
     return map[stmt.type] ?? null;
@@ -761,20 +838,26 @@ export class OracleExecutor extends BaseExecutor {
     // Attribute every row mutation of this statement to this session's
     // transaction (row-level undo). Scoped save/restore keeps nested
     // executions (PL/SQL calling back into SQL) on the right session.
-    const prevSink = this.storage.setUndoSink(this.txn);
-    let out: ResultSet;
-    try {
-      out = this.dispatchStatement(statement);
-    } finally {
-      this.storage.setUndoSink(prevSink);
-    }
-    if (isDdl && this.txn.isActive) this.commitActiveTransaction();
-    // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
-    const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
-      || statement.type === 'DeleteStatement' || statement.type === 'MergeStatement';
-    if (isDml && this.context.autoCommit && this.txn.isActive) this.commitActiveTransaction();
-    this.invalidateResultCacheForStatement(statement);
-    return out;
+    return through<ResultSet>(
+      (run) => {
+        const prevSink = this.storage.setUndoSink(this.txn);
+        try {
+          return run();
+        } finally {
+          this.storage.setUndoSink(prevSink);
+        }
+      },
+      () => this.dispatchStatement(statement),
+      (out) => {
+        if (isDdl && this.txn.isActive) this.commitActiveTransaction();
+        // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
+        const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
+          || statement.type === 'DeleteStatement' || statement.type === 'MergeStatement';
+        if (isDml && this.context.autoCommit && this.txn.isActive) this.commitActiveTransaction();
+        this.invalidateResultCacheForStatement(statement);
+        return out;
+      },
+    );
   }
 
   private invalidateResultCacheForStatement(stmt: Statement): void {
@@ -801,7 +884,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private dispatchStatement(statement: Statement): ResultSet {
     switch (statement.type) {
-      case 'SelectStatement': return this.executeSelect(statement);
+      case 'SelectStatement': return this.driveSliced(this.selectSteps(statement));
       case 'InsertStatement':
       case 'UpdateStatement':
       case 'DeleteStatement': {
@@ -939,6 +1022,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropMviewLogStatement': return this.executeDropMviewLog(statement);
       case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
       case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
+      case 'AlterResourceCostStatement': return this.userAdmin.executeAlterResourceCost(statement);
       case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
       case 'AuditStatement': return this.securityDcl.executeAudit(statement);
       case 'NoauditStatement': return this.securityDcl.executeNoaudit(statement);
@@ -1163,8 +1247,13 @@ export class OracleExecutor extends BaseExecutor {
     this.readOnlyTransaction = false;
     this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('ROLLBACK');
-    this.txn.rollback();
-    return emptyResult('Rollback complete.');
+    const job = this.txn.beginRollback();
+    const rollbackSlice = (): ResultSet => {
+      if (!job.advance(() => this.sliceSpent())) return this.suspended(rollbackSlice);
+      job.finish();
+      return emptyResult('Rollback complete.');
+    };
+    return rollbackSlice();
   }
 
   private executeSavepoint(name: string): ResultSet {
@@ -1175,23 +1264,38 @@ export class OracleExecutor extends BaseExecutor {
   // ── SELECT ────────────────────────────────────────────────────────
 
   private executeSelect(stmt: SelectStatement): ResultSet {
+    return this.runToCompletion(this.selectSteps(stmt));
+  }
+
+  private runToCompletion(steps: Generator<void, ResultSet, void>): ResultSet {
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  private driveSliced(steps: Generator<void, ResultSet, void>): ResultSet {
+    const step = steps.next();
+    return step.done ? step.value : this.suspended(() => this.driveSliced(steps));
+  }
+
+  private *selectSteps(stmt: SelectStatement): Generator<void, ResultSet, void> {
     const cached = this.tryResultCacheHit(stmt);
     if (cached) return cached;
-    const result = this.executeSelectInner(stmt);
+    const result = yield* this.selectInnerSteps(stmt);
     this.maybeStoreInResultCache(stmt, result);
     return result;
   }
 
-  private executeSelectInner(stmt: SelectStatement): ResultSet {
+  private *selectInnerSteps(stmt: SelectStatement): Generator<void, ResultSet, void> {
     const outerRowNum = this._currentRowNum;
     try {
-      return this.executeSelectBlock(stmt);
+      return yield* this.selectBlockSteps(stmt);
     } finally {
       this._currentRowNum = outerRowNum;
     }
   }
 
-  private executeSelectBlock(stmt: SelectStatement): ResultSet {
+  private *selectBlockSteps(stmt: SelectStatement): Generator<void, ResultSet, void> {
     // Handle WITH (CTE) clause — materialize CTEs as temporary tables, execute inner SELECT, then clean up
     if (stmt.withClause) {
       return this.executeWithCTE(stmt);
@@ -1218,7 +1322,7 @@ export class OracleExecutor extends BaseExecutor {
     // GROUP BY, aggregates, HAVING, DISTINCT, ORDER BY, and FETCH.
     // `loadTable` materialises catalog views as virtual row sources so
     // `SELECT COUNT(*) FROM v$log` etc. evaluate correctly.
-    return this.executeSelectFromTable(stmt);
+    return yield* this.selectFromTableSteps(stmt);
   }
 
   /** Detect the RESULT_CACHE optimizer hint in the original source SQL. */
@@ -1425,7 +1529,7 @@ export class OracleExecutor extends BaseExecutor {
     return queryResult(columns, [row]);
   }
 
-  private executeSelectFromTable(stmt: SelectStatement): ResultSet {
+  private *selectFromTableSteps(stmt: SelectStatement): Generator<void, ResultSet, void> {
     if (!stmt.from || stmt.from.length === 0) {
       return this.executeSelectFromDual(stmt);
     }
@@ -1441,11 +1545,14 @@ export class OracleExecutor extends BaseExecutor {
       const narrowed = this.tryIndexAccessPath(stmt.from![0], stmt.where, rows);
       if (narrowed) rows = narrowed;
     }
+    this.noteLogicalReads(rows.length);
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
       const filtered: StorageRow[] = [];
-      for (const row of rows) {
+      for (let scanned = 0; scanned < rows.length; scanned++) {
+        if ((scanned & 255) === 255 && this.sliceSpent()) yield;
+        const row = rows[scanned];
         this._currentRowNum = filtered.length + 1;
         if (this.evaluateCondition(stmt.where!, row, columns)) {
           filtered.push(row);
@@ -1462,7 +1569,7 @@ export class OracleExecutor extends BaseExecutor {
 
     // ── Step 2b: CONNECT BY (hierarchical query) ─────────────────
     if (stmt.connectBy) {
-      rows = this.executeConnectBy(rows, columns, stmt.connectBy);
+      rows = yield* this.connectBySteps(rows, columns, stmt.connectBy);
     }
 
     // ── Step 3: GROUP BY + aggregation ─────────────────────────────
@@ -1496,9 +1603,12 @@ export class OracleExecutor extends BaseExecutor {
       }
     }
 
-    let resultRows: Row[] = rows.map((row, rowIndex) => {
+    let resultRows: Row[] = [];
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      if ((rowIndex & 255) === 255 && this.sliceSpent()) yield;
+      const row = rows[rowIndex];
       this._currentRowNum = rowIndex + 1;
-      return selectCols.map(col => {
+      resultRows.push(selectCols.map(col => {
         if (col.colIndex >= 0) return row[col.colIndex];
         if (col.expr) {
           // Skip window function evaluation here — handled below
@@ -1506,8 +1616,8 @@ export class OracleExecutor extends BaseExecutor {
           return this.evaluateExpression(col.expr, row, columns);
         }
         return null;
-      });
-    });
+      }));
+    }
 
     // ── Step 4b: Evaluate window functions ────────────────────────
     if (windowColIndices.length > 0) {
@@ -2614,7 +2724,7 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── CONNECT BY (hierarchical queries) ────────────────────────────
 
-  private executeConnectBy(rows: StorageRow[], columns: StorageColMeta[], connectBy: ConnectByClause): StorageRow[] {
+  private *connectBySteps(rows: StorageRow[], columns: StorageColMeta[], connectBy: ConnectByClause): Generator<void, StorageRow[], void> {
     // Find root rows (matching START WITH if present)
     let rootRows: StorageRow[];
     if (connectBy.startWith) {
@@ -2660,7 +2770,9 @@ export class OracleExecutor extends BaseExecutor {
       const rootWithLevel = [...root];
       rootWithLevel[levelIdx] = 1;
       enter(rootWithLevel, 1);
+      let walked = 0;
       while (stack.length > 0) {
+        if ((++walked & 255) === 0 && this.sliceSpent()) yield;
         const top = stack[stack.length - 1];
         if (top.next >= rows.length) {
           if (top.key !== null) visited.delete(top.key);
@@ -2977,40 +3089,49 @@ export class OracleExecutor extends BaseExecutor {
       }
     } else if (stmt.query) {
       // INSERT INTO ... SELECT — execute subquery and validate column count
-      const subResult = this.executeSelect(stmt.query);
-      const expectedCols = stmt.columns ? stmt.columns.length : tableMeta.columns.length;
-      if (subResult.columns.length > expectedCols) {
-        throw new OracleError(913, 'too many values');
-      }
-      if (subResult.columns.length < expectedCols) {
-        throw new OracleError(947, 'not enough values');
-      }
-      for (const subRow of subResult.rows) {
-        const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
-        const provided = new Set<number>();
-        if (stmt.columns) {
-          for (let i = 0; i < stmt.columns.length; i++) {
-            const colIdx = this.findColumnIndex(tableMeta, stmt.columns![i]);
-            if (colIdx >= 0) { row[colIdx] = subRow[i] as CellValue; provided.add(colIdx); }
-          }
-        } else {
-          for (let i = 0; i < subResult.columns.length && i < tableMeta.columns.length; i++) {
-            row[i] = subRow[i] as CellValue;
-            provided.add(i);
-          }
+      return andThen(this.driveSliced(this.selectSteps(stmt.query)), (subResult) => {
+        const expectedCols = stmt.columns ? stmt.columns.length : tableMeta.columns.length;
+        if (subResult.columns.length > expectedCols) {
+          throw new OracleError(913, 'too many values');
         }
-        // Columns the SELECT did not supply fall back to their DEFAULT.
-        this.applyColumnDefaults(tableMeta, row, provided);
-        requireWritable(row);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
-        this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.insertRowChecked(schema, tableName, tableMeta, row);
-        insertedCount++;
-      }
+        if (subResult.columns.length < expectedCols) {
+          throw new OracleError(947, 'not enough values');
+        }
+        const job: InsertQueryJob = { subResult, next: 0, inserted: 0 };
+        const insertSlice = (): ResultSet => {
+          const { rows } = subResult;
+          while (job.next < rows.length) {
+            if ((job.next & 255) === 255 && this.sliceSpent()) return this.suspended(insertSlice);
+            const subRow = rows[job.next++];
+            this.tickCallBudget();
+            const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+            const provided = new Set<number>();
+            if (stmt.columns) {
+              for (let i = 0; i < stmt.columns.length; i++) {
+                const colIdx = this.findColumnIndex(tableMeta, stmt.columns![i]);
+                if (colIdx >= 0) { row[colIdx] = subRow[i] as CellValue; provided.add(colIdx); }
+              }
+            } else {
+              for (let i = 0; i < subResult.columns.length && i < tableMeta.columns.length; i++) {
+                row[i] = subRow[i] as CellValue;
+                provided.add(i);
+              }
+            }
+            // Columns the SELECT did not supply fall back to their DEFAULT.
+            this.applyColumnDefaults(tableMeta, row, provided);
+            requireWritable(row);
+            this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
+            this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
+            this.insertRowChecked(schema, tableName, tableMeta, row);
+            job.inserted++;
+          }
+          return rowsCreated(job.inserted);
+        };
+        return insertSlice();
+      });
     }
 
-    // Oracle SQL*Plus reports "<n> row[s] created." (not "inserted").
-    return emptyResult(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} created.`, insertedCount);
+    return rowsCreated(insertedCount);
   }
 
   private buildInsertRow(tableMeta: import('../engine/storage/BaseStorage').TableMeta, columns: string[] | undefined, values: Expression[]): StorageRow {
@@ -3104,34 +3225,39 @@ export class OracleExecutor extends BaseExecutor {
     const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
 
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
-    const count = this.storage.updateRows(
-      schema, tableName,
-      (row) => (indexed === null || indexed.has(row)) && (!visible || visible(row))
-        && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns)),
-      (row) => {
-        const newRow = [...row];
-        for (const assign of stmt.assignments) {
-          const colIdx = this.findColumnIndex(tableMeta, assign.column);
-          if (colIdx >= 0) {
-            newRow[colIdx] = isDefaultKeyword(assign.value)
-              ? this.columnDefault(tableMeta, colIdx)
-              : this.evaluateExpression(assign.value, row, tableMeta.columns);
-          }
+    this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
+    const scan = this.storage.beginUpdateScan(schema, tableName);
+    const predicate = (row: StorageRow): boolean =>
+      (indexed === null || indexed.has(row)) && (!visible || visible(row))
+      && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
+    const updater = (row: StorageRow): StorageRow => {
+      const newRow = [...row];
+      for (const assign of stmt.assignments) {
+        const colIdx = this.findColumnIndex(tableMeta, assign.column);
+        if (colIdx >= 0) {
+          newRow[colIdx] = isDefaultKeyword(assign.value)
+            ? this.columnDefault(tableMeta, colIdx)
+            : this.evaluateExpression(assign.value, row, tableMeta.columns);
         }
-        if (checkOption && !checkOption(newRow)) {
-          throw new OracleError(28115, 'policy with check option violation');
-        }
-        // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK).
-        // Pass the pre-update row so uniqueness checks can exclude it
-        // from the existing-row set (otherwise an UPDATE that leaves
-        // the PK column unchanged would self-conflict).
-        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
-        this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
-        return newRow;
       }
-    );
-
-    return emptyResult(`${count} row${count !== 1 ? 's' : ''} updated.`, count);
+      if (checkOption && !checkOption(newRow)) {
+        throw new OracleError(28115, 'policy with check option violation');
+      }
+      // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK).
+      // Pass the pre-update row so uniqueness checks can exclude it
+      // from the existing-row set (otherwise an UPDATE that leaves
+      // the PK column unchanged would self-conflict).
+      this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
+      this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
+      return newRow;
+    };
+    const updateSlice = (): ResultSet => {
+      if (!this.storage.advanceUpdateScan(schema, tableName, scan, predicate, updater, () => this.sliceSpent())) {
+        return this.suspended(updateSlice);
+      }
+      return emptyResult(`${scan.count} row${scan.count !== 1 ? 's' : ''} updated.`, scan.count);
+    };
+    return updateSlice();
   }
 
   // ── DELETE ────────────────────────────────────────────────────────
@@ -3146,19 +3272,30 @@ export class OracleExecutor extends BaseExecutor {
 
     const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
+    this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
     const deletable = (row: StorageRow): boolean =>
       (indexed === null || indexed.has(row)) && (!visible || visible(row))
       && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
 
-    // Validate FK constraints on rows to be deleted
-    const rowsToDelete = this.storage.getRows(schema, tableName).filter(deletable);
-    for (const row of rowsToDelete) {
-      this.constraints.validateDeleteForeignKeys(schema, tableName, row);
-    }
-
-    const count = this.storage.deleteRows(schema, tableName, deletable);
-
-    return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
+    const scan = this.storage.beginDeleteScan(schema, tableName);
+    let validated = 0;
+    let scanned = false;
+    const deleteSlice = (): ResultSet => {
+      if (!scanned) {
+        if (!this.storage.advanceDeleteScan(scan, deletable, () => this.sliceSpent())) {
+          return this.suspended(deleteSlice);
+        }
+        scanned = true;
+      }
+      // Validate FK constraints on rows to be deleted
+      while (validated < scan.removed.length) {
+        if ((validated & 255) === 255 && this.sliceSpent()) return this.suspended(deleteSlice);
+        this.constraints.validateDeleteForeignKeys(schema, tableName, scan.removed[validated++]);
+      }
+      const count = this.storage.finishDeleteScan(schema, tableName, scan);
+      return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
+    };
+    return deleteSlice();
   }
 
   // ── DDL ───────────────────────────────────────────────────────────
@@ -4202,7 +4339,94 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── Expression evaluation ─────────────────────────────────────────
 
+  private callBudget: CallResourceBudget | null = null;
+  private callBudgetTicks = 0;
+  private readonly sessionMeter = new SessionResourceMeter();
+
+  withCallBudget<T>(run: () => T): T {
+    const scope = this.beginCallScope();
+    try {
+      return scope.run(run);
+    } finally {
+      scope.end();
+    }
+  }
+
+  beginCallScope(): CallScope {
+    if (this.callBudget !== null) return PASS_THROUGH_SCOPE;
+    const budget = this.openCallBudget();
+    if (budget === null) return PASS_THROUGH_SCOPE;
+    return {
+      run: <T>(run: () => T): T => {
+        budget.resume();
+        this.callBudget = budget;
+        try {
+          return run();
+        } finally {
+          this.callBudget = null;
+          budget.suspend();
+        }
+      },
+      end: () => budget.close(),
+    };
+  }
+
+  private openCallBudget(): CallResourceBudget | null {
+    const catalog = this.catalog as OracleCatalog;
+    const engine = catalog.getSecurityEngine();
+    if (!engine || this.instance.getParameter('resource_limit')?.toUpperCase() !== 'TRUE') return null;
+    const user = catalog.getUser(this.context.currentUser.toUpperCase());
+    if (!user) return null;
+    const { profiles } = engine;
+    const costs = profiles.getResourceCosts();
+    const limits: ResourceLimits = {
+      cpuPerCallMs: profiles.resolveCpuPerCallCentiseconds(user.profile) * 10,
+      cpuPerSessionMs: profiles.resolveCpuPerSessionCentiseconds(user.profile) * 10,
+      logicalReadsPerCall: profiles.resolveLogicalReadsPerCall(user.profile),
+      logicalReadsPerSession: profiles.resolveLogicalReadsPerSession(user.profile),
+      compositeLimit: profiles.resolveCompositeLimit(user.profile),
+      costs: {
+        cpuPerSession: costs.get('CPU_PER_SESSION') ?? 0,
+        logicalReadsPerSession: costs.get('LOGICAL_READS_PER_SESSION') ?? 0,
+        connectTime: costs.get('CONNECT_TIME') ?? 0,
+        privateSga: costs.get('PRIVATE_SGA') ?? 0,
+      },
+    };
+    const limited = [
+      limits.cpuPerCallMs, limits.cpuPerSessionMs, limits.logicalReadsPerCall,
+      limits.logicalReadsPerSession, limits.compositeLimit,
+    ].some(Number.isFinite);
+    if (!limited) return null;
+    return new CallResourceBudget(limits, this.sessionMeter, () => performance.now(), () => {
+      const session = engine.sessions.getSessionBySid(this.boundSid);
+      return session ? engine.sessions.connectedSeconds(session) / 60 : 0;
+    });
+  }
+
+  private tickCallBudget(): void {
+    if (this.callBudget === null || (++this.callBudgetTicks & 255) !== 0) return;
+    this.enforceCallBudget();
+  }
+
+  private noteLogicalReads(rowCount: number): void {
+    if (this.callBudget === null) return;
+    this.callBudget.noteLogicalReads(blocksOfRows(rowCount));
+    this.enforceCallBudget();
+  }
+
+  private enforceCallBudget(): void {
+    const exceeded = this.callBudget?.evaluate() ?? null;
+    if (exceeded === null) return;
+    if (exceeded.logoff) {
+      const sessions = (this.catalog as OracleCatalog).getSecurityEngine()?.sessions;
+      const session = sessions?.getSessionBySid(this.boundSid);
+      if (sessions && session) sessions.terminate(session.sid, session.serial, 'KILLED', exceeded);
+    }
+    throw new OracleError(exceeded.code, exceeded.message);
+  }
+
   evaluateExpression(expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue {
+    this.tickCallBudget();
     switch (expr.type) {
       case 'Literal':
         if (expr.dataType === 'null') return null;

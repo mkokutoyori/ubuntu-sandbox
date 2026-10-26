@@ -2,12 +2,13 @@
  * NetworkCanvas - Main canvas for network topology design
  */
 
-import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine, ConnectionLabel } from './ConnectionLine';
-import { computeCableRoutes, shouldShowPortLabels, type CableRoute } from './connection-line-logic';
+import { shouldShowPortLabels } from './connection-line-logic';
+import { useCableRoutes } from './useCableRoutes';
 import { NETWORK_CANVAS_ID, screenToWorld } from './canvas-geometry';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
@@ -56,27 +57,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   // not a message on every re-render.
   const [announcement, setAnnouncement] = useState('');
   const prevDeviceCount = useRef(devices.length);
-  const previousRoutes = useRef<Map<string, CableRoute> | null>(null);
-  const cableRoutes = useMemo(() => computeCableRoutes(
-    connections.flatMap(connection => {
-      const source = devices.find(d => d.id === connection.sourceDeviceId);
-      const target = devices.find(d => d.id === connection.targetDeviceId);
-      if (!source || !target) return [];
-      return [{
-        id: connection.id,
-        sourceDeviceId: connection.sourceDeviceId,
-        targetDeviceId: connection.targetDeviceId,
-        source: { x: source.x, y: source.y },
-        target: { x: target.x, y: target.y },
-        sourceInterface: connection.sourceInterfaceId,
-        targetInterface: connection.targetInterfaceId,
-      }];
-    }),
-    devices.map(device => ({ x: device.x, y: device.y })),
-    zoom,
-    previousRoutes.current ?? undefined,
-  ), [connections, devices, zoom]);
-  previousRoutes.current = cableRoutes;
+  const cableRoutes = useCableRoutes(connections, devices, zoom);
 
   const prevConnectionCount = useRef(connections.length);
   const prevSelectedDeviceId = useRef(selectedDeviceId);

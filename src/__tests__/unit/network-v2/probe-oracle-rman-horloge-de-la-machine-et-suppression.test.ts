@@ -12,9 +12,10 @@
  * et surtout la suppression retirait le fichier et l'entree du catalogue mais PAS l'enregistrement qui alimente V$RECOVERY_FILE_DEST : l'espace n'etait jamais rendu et la
  * troisieme sauvegarde echouait en ORA-19809 alors que la zone etait vide. `V$BACKUP_PIECE` rend maintenant STATUS = 'D' et `V$ARCHIVED_LOG.DELETED` = 'YES'.
  * Une zone pleine reprend maintenant la place des sauvegardes obsoletes selon la politique de retention (REDUNDANCY 1 par defaut) : quatre BACKUP DATABASE de suite echouaient en ORA-19809 des la troisieme, ce que les epreuves de charge n'ont pas vu parce qu'elles jettent la sortie dans /dev/null.
+ * V$RECOVERY_FILE_DEST.SPACE_RECLAIMABLE valait 10 % de SPACE_USED (valeur inventee) ; elle est maintenant la taille des pieces de la zone que la politique de retention du device declare obsoletes (meme fonction que celle qui reprend la place quand la zone est pleine).
  * Le STAMP imprime avec « backup piece handle=… RECID=… STAMP=… » compte les secondes depuis le 1er janvier 1988 (origine retenue de memoire, non verifiable ici).
  *
- * Discrimine par `git stash push -- src/database src/terminal` : 18 cas sur 20 tombent ; passent des deux cotes, TEMOINS : SYSDATE apres `date -s` (deja correct) et le refus ORA-19809 d'une zone pleine sans politique de retention (la place n'est reprise qu'aux sauvegardes obsoletes ; sans elle, la zone se remplit et la troisieme sauvegarde est refusee).
+ * Discrimine par `git stash push -- src/database src/terminal` : 20 cas sur 22 tombent ; passent des deux cotes, TEMOINS : SYSDATE apres `date -s` (deja correct) et le refus ORA-19809 d'une zone pleine sans politique de retention (la place n'est reprise qu'aux sauvegardes obsoletes ; sans elle, la zone se remplit et la troisieme sauvegarde est refusee).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -180,6 +181,24 @@ describe('suppression RMAN', () => {
     const outputs = [1, 2, 3].map(() => rman.execute('BACKUP DATABASE;'));
     expect(outputs[2]).toContain('ORA-19809');
     expect(rman.execute('LIST BACKUP SUMMARY;').match(/\n\d+\s+B\s+F/g)?.length).toBe(2);
+  });
+
+  it('SPACE_RECLAIMABLE compte les pieces obsoletes selon la politique de retention, pas 10 % de l\'espace utilise', () => {
+    const reclaimable = (): number => Number(/\n\s*\S+\s+\d+\s+\d+\s+(\d+)\s+\d+/.exec(
+      sql.execute('SELECT name, space_limit, space_used, space_reclaimable, number_of_files FROM v$recovery_file_dest;'))?.[1]);
+    rman.execute('BACKUP DATABASE;');
+    expect(reclaimable()).toBe(0);
+    rman.execute('BACKUP DATABASE;');
+    const used = Number(/\n\s*\S+\s+\d+\s+(\d+)/.exec(sql.execute('SELECT name, space_limit, space_used FROM v$recovery_file_dest;'))?.[1]);
+    expect(reclaimable()).toBeGreaterThan(0);
+    expect(reclaimable()).toBe(used / 2);
+  });
+
+  it('sans politique de retention rien n\'est recuperable', () => {
+    rman.execute('CONFIGURE RETENTION POLICY TO NONE;');
+    rman.execute('BACKUP DATABASE;');
+    rman.execute('BACKUP DATABASE;');
+    expect(sql.execute('SELECT space_reclaimable FROM v$recovery_file_dest;')).toMatch(/\n\s*0\s*\n/);
   });
 
   it('V$BACKUP_PIECE marque la piece supprimee « D »', () => {

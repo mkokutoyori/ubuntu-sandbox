@@ -14,6 +14,7 @@
 
 import type { OracleStorage } from '../OracleStorage';
 import { hostNowDate } from '../time/OracleHostClock';
+import { blocksOfRows } from '../storage/BlockModel';
 
 export type HistogramKind = 'NONE' | 'FREQUENCY' | 'HEIGHT BALANCED' | 'HYBRID' | 'TOP-FREQUENCY';
 
@@ -101,7 +102,7 @@ export class StatisticsManager {
     if (!meta) return false;
     const rows = this.storage.getRows(owner, tableName);
     const now = hostNowDate();
-    const blocks = Math.max(1, Math.ceil(rows.length / 8));
+    const blocks = blocksOfRows(rows.length);
     const avgRowLen = meta.columns.reduce((s, c) => s + (c.dataType.precision ?? 4), 0);
     this.tableStats.set(`${owner}.${tableName}`, new TableStatistics(
       owner, tableName, rows.length, blocks, Math.floor(blocks * 0.1), 0, 0,

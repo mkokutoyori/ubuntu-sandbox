@@ -57,37 +57,75 @@ function rowSignature(row: StorageRow): string {
   return `${row.length}|${key}`;
 }
 
-export function restoreRows(rows: StorageRow[], newestFirst: readonly UndoRecord[]): void {
-  const bySignature = new Map<string, StorageRow[]>();
-  const index = (row: StorageRow): void => {
-    const key = rowSignature(row);
-    const bucket = bySignature.get(key);
-    if (bucket) bucket.push(row); else bySignature.set(key, [row]);
-  };
-  const take = (row: StorageRow): StorageRow | undefined => bySignature.get(rowSignature(row))?.pop();
-  for (const row of rows) index(row);
-  const removed = new Set<StorageRow>();
-  for (const rec of newestFirst) {
-    if (rec.kind === 'insert') {
-      const found = take(rec.row);
-      if (found) removed.add(found);
-    } else if (rec.kind === 'delete') {
-      const restored = [...rec.row];
-      rows.push(restored);
-      index(restored);
-    } else {
-      const found = take(rec.after);
-      if (!found) continue;
-      found.length = 0;
-      for (const cell of rec.before) found.push(cell);
-      index(found);
-    }
+class RowRestorer {
+  private readonly bySignature = new Map<string, StorageRow[]>();
+  private readonly removed = new Set<StorageRow>();
+  private readonly indexedCount: number;
+  private indexed = 0;
+  private applied = 0;
+
+  constructor(
+    private readonly rows: StorageRow[],
+    private readonly newestFirst: readonly UndoRecord[],
+  ) {
+    this.indexedCount = rows.length;
   }
-  if (removed.size === 0) return;
-  let kept = 0;
-  for (const row of rows) if (!removed.has(row)) rows[kept++] = row;
-  rows.length = kept;
+
+  private index(row: StorageRow): void {
+    const key = rowSignature(row);
+    const bucket = this.bySignature.get(key);
+    if (bucket) bucket.push(row); else this.bySignature.set(key, [row]);
+  }
+
+  private take(row: StorageRow): StorageRow | undefined {
+    return this.bySignature.get(rowSignature(row))?.pop();
+  }
+
+  advance(stop: () => boolean): boolean {
+    const { rows, newestFirst } = this;
+    while (this.indexed < this.indexedCount) {
+      if ((this.indexed & 255) === 255 && stop()) return false;
+      this.index(rows[this.indexed++]);
+    }
+    while (this.applied < newestFirst.length) {
+      if ((this.applied & 255) === 255 && stop()) return false;
+      const rec = newestFirst[this.applied++];
+      if (rec.kind === 'insert') {
+        const found = this.take(rec.row);
+        if (found) this.removed.add(found);
+      } else if (rec.kind === 'delete') {
+        const restored = [...rec.row];
+        rows.push(restored);
+        this.index(restored);
+      } else {
+        const found = this.take(rec.after);
+        if (!found) continue;
+        found.length = 0;
+        for (const cell of rec.before) found.push(cell);
+        this.index(found);
+      }
+    }
+    if (this.removed.size === 0) return true;
+    let kept = 0;
+    for (const row of rows) if (!this.removed.has(row)) rows[kept++] = row;
+    rows.length = kept;
+    return true;
+  }
 }
+
+export function restoreRows(rows: StorageRow[], newestFirst: readonly UndoRecord[]): void {
+  new RowRestorer(rows, newestFirst).advance(() => false);
+}
+
+export interface UndoApplication {
+  advance(stop: () => boolean): boolean;
+}
+
+export interface RollbackJob extends UndoApplication {
+  finish(): boolean;
+}
+
+const NOTHING_TO_UNDO: UndoApplication = { advance: () => true };
 
 /** Lifecycle notifications, used by the executor to publish oracle.transaction.* events. */
 export interface TransactionObserver {
@@ -189,14 +227,25 @@ export class TransactionManager implements UndoSink {
 
   /** End the transaction reverting only this session's changes. */
   rollback(): boolean {
-    this.applyUndo(0);
-    const wasActive = this.active;
-    this.undoLog = [];
-    this.savepoints.clear();
-    this.active = false;
-    this.coordinator?.unregisterWriter(this);
-    if (wasActive) this.observer.onRollback(this.txId);
-    return wasActive;
+    const job = this.beginRollback();
+    job.advance(() => false);
+    return job.finish();
+  }
+
+  beginRollback(): RollbackJob {
+    const undo = this.beginUndo(0);
+    return {
+      advance: (stop) => undo.advance(stop),
+      finish: () => {
+        const wasActive = this.active;
+        this.undoLog = [];
+        this.savepoints.clear();
+        this.active = false;
+        this.coordinator?.unregisterWriter(this);
+        if (wasActive) this.observer.onRollback(this.txId);
+        return wasActive;
+      },
+    };
   }
 
   /**
@@ -272,24 +321,48 @@ export class TransactionManager implements UndoSink {
    * SESSION).
    */
   private applyUndo(downTo: number): void {
-    if (this.undoLog.length <= downTo) return;
-    this.applyingUndo = true;
-    const prevSink = this.storage.setUndoSink(null);
-    try {
-      const perTable = new Map<string, UndoRecord[]>();
-      for (let i = this.undoLog.length - 1; i >= downTo; i--) {
-        const rec = this.undoLog[i];
-        if (!this.storage.tableExists(rec.schema, rec.table)) continue;
-        const key = `${rec.schema}\u0000${rec.table}`;
-        const list = perTable.get(key);
-        if (list) list.push(rec); else perTable.set(key, [rec]);
-      }
-      for (const records of perTable.values()) {
-        this.storage.rewriteRows(records[0].schema, records[0].table, rows => restoreRows(rows, records));
-      }
-    } finally {
-      this.storage.setUndoSink(prevSink);
-      this.applyingUndo = false;
+    this.beginUndo(downTo).advance(() => false);
+  }
+
+  private beginUndo(downTo: number): UndoApplication {
+    if (this.undoLog.length <= downTo) return NOTHING_TO_UNDO;
+    const perTable = new Map<string, UndoRecord[]>();
+    for (let i = this.undoLog.length - 1; i >= downTo; i--) {
+      const rec = this.undoLog[i];
+      if (!this.storage.tableExists(rec.schema, rec.table)) continue;
+      const key = `${rec.schema}\u0000${rec.table}`;
+      const list = perTable.get(key);
+      if (list) list.push(rec); else perTable.set(key, [rec]);
     }
+    const tables = [...perTable.values()];
+    let current = 0;
+    let restorer: RowRestorer | null = null;
+    let restoring: StorageRow[] | null = null;
+    return {
+      advance: (stop) => {
+        this.applyingUndo = true;
+        const prevSink = this.storage.setUndoSink(null);
+        try {
+          while (current < tables.length) {
+            const records = tables[current];
+            const { schema, table } = records[0];
+            const rows = this.storage.getRows(schema, table);
+            if (restorer !== null && restoring !== rows) {
+              throw new OracleError(8177, "can't serialize access for this transaction");
+            }
+            restorer ??= new RowRestorer(rows, records);
+            restoring = rows;
+            if (!restorer.advance(stop)) return false;
+            this.storage.rewriteRows(schema, table, () => undefined);
+            restorer = null;
+            current++;
+          }
+          return true;
+        } finally {
+          this.storage.setUndoSink(prevSink);
+          this.applyingUndo = false;
+        }
+      },
+    };
   }
 }

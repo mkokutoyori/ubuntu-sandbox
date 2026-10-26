@@ -17,7 +17,7 @@ import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
   CreateUserStatement, AlterUserStatement, DropUserStatement,
   CreateRoleStatement, DropRoleStatement,
-  CreateProfileStatement, AlterProfileStatement, DropProfileStatement,
+  CreateProfileStatement, AlterProfileStatement, AlterResourceCostStatement, DropProfileStatement,
 } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
 import type { OracleStorage } from '../OracleStorage';
@@ -269,6 +269,20 @@ export class UserAdminExecutor {
     }
     this.catalog.alterProfile(stmt.profileName, stmt.limits);
     return emptyResult('Profile altered.');
+  }
+
+  executeAlterResourceCost(stmt: AlterResourceCostStatement): ResultSet {
+    this.privileges.requireSystemPrivilege('ALTER RESOURCE COST');
+    const engine = this.catalog.getSecurityEngine();
+    const known = engine?.profiles.getResourceCosts();
+    for (const [name, value] of stmt.costs) {
+      const unitCost = Number(value);
+      if (!known?.has(name.toUpperCase()) || !Number.isInteger(unitCost) || unitCost < 0) {
+        throw new OracleError(905, 'missing keyword');
+      }
+    }
+    for (const [name, value] of stmt.costs) engine!.profiles.setResourceCost(name, Number(value));
+    return emptyResult('Resource cost altered.');
   }
 
   executeDropProfile(stmt: DropProfileStatement): ResultSet {

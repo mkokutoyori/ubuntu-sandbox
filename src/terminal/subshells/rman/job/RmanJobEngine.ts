@@ -53,7 +53,7 @@ const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
 
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
-import { isInsideRecoveryArea } from '@/database/oracle/storage/RecoveryArea';
+import { obsoleteSetsInRecoveryArea } from '../policy/ReclaimableBackups';
 import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
@@ -1278,11 +1278,8 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (!policy || snapshot.ok === false) return;
     const limit = parseSize(this._ctx.getSpfileParam('db_recovery_file_dest_size'));
     const destination = this._ctx.getSpfileParam('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA;
-    const obsolete = policy.findObsolete(snapshot.value.sets, rmanNowMs(this._ctx))
-      .sort((a, b) => a.completionTime - b.completionTime);
-    for (const set of obsolete) {
+    for (const set of obsoleteSetsInRecoveryArea(snapshot.value.sets, policy, destination, rmanNowMs(this._ctx))) {
       if ((this._ctx.getRecoveryAreaUsedBytes?.() ?? 0) + neededBytes <= limit) return;
-      if (!set.pieces.some(piece => isInsideRecoveryArea(piece.path, destination))) continue;
       this._dropBackupSet(set);
     }
   }

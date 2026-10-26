@@ -1157,6 +1157,7 @@ export abstract class BaseParser {
     if (this.checkKeyword('TABLE')) return this.parseAlterTable(pos);
     if (this.checkKeyword('USER')) return this.parseAlterUser(pos);
     if (this.matchKeyword('PROFILE')) return this.parseAlterProfile(pos);
+    if (this.check(TokenType.IDENTIFIER) && this.current().value.toUpperCase() === 'RESOURCE') return this.parseAlterResourceCost(pos);
     // Delegate to dialect
     const dialectResult = this.parseDialectAlter(pos);
     if (dialectResult) return dialectResult;
@@ -1555,6 +1556,14 @@ export abstract class BaseParser {
     }
     const limits = this.parseProfileLimits();
     return { type: 'AlterProfileStatement', position: pos, profileName, limits };
+  }
+
+  protected parseAlterResourceCost(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').AlterResourceCostStatement {
+    this.advance();
+    const cost = this.current().value.toUpperCase();
+    if (cost !== 'COST') throw this.error('Expected COST after ALTER RESOURCE');
+    this.advance();
+    return { type: 'AlterResourceCostStatement', position: pos, costs: this.parseProfileLimits() };
   }
 
   protected parseDropProfile(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').DropProfileStatement {

@@ -17,6 +17,11 @@ function nextMacrotask(): Promise<void> {
   });
 }
 
+export async function yieldToEventLoop(): Promise<void> {
+  await nextMacrotask();
+  sliceStartedMs = performance.now();
+}
+
 export async function yieldWhenSliceIsSpent(): Promise<void> {
   if (performance.now() - sliceStartedMs < SLICE_MS) return;
   await nextMacrotask();

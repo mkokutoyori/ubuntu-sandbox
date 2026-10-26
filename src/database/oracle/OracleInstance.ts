@@ -346,6 +346,16 @@ export class OracleInstance {
     return withHostClock(this._hostClock, run);
   }
 
+  private _recoveryAreaReclaimProbe: (() => number) | null = null;
+
+  setRecoveryAreaReclaimProbe(probe: (() => number) | null): void {
+    this._recoveryAreaReclaimProbe = probe;
+  }
+
+  recoveryAreaReclaimableBytes(): number {
+    return this._recoveryAreaReclaimProbe?.() ?? 0;
+  }
+
   hostClock(): OracleHostClock {
     return this._hostClock;
   }

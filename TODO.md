@@ -245,15 +245,6 @@ pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonct
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
 
-### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
-**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
-`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
-simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
-FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
-**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
-« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
-meme port d'horloge dans `IRmanOracleContext`.
-
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
 BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /
@@ -3787,17 +3778,16 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 ### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 2,8 Go sans plantage. Ajouter ou connecter un equipement relance `computeCableRoutes` sur tous les
-cables (102 ms pour 209 cables dans Node, 55 ms de moyenne par mise a jour dans Chromium) : dans une boucle serree de 400 ajouts, chaque mise a jour du magasin rend la toile
-de facon synchrone, ce qui explique les 330 ms par poste observes a 400 postes (22 s de rendu sur 50 s a 200 postes) ; une ouverture de fichier passe par `replaceTopology`,
-une seule mise a jour. Non traite : un routage incremental des cables. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre
-terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les enregistrements et les octets du fichier), environ 13 Ko par entree.
+Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 3,5 Go sans plantage et se montent en 63 s (200 postes : 18 s), et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
+recalcule en entier des qu'un cable, une position ou le zoom change (102 ms pour 209 cables dans Node) : un routage INCREMENTAL reste non traite, mais il ne se declenche plus pour une adresse IP posee dans un
+terminal. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les
+enregistrements et les octets du fichier), environ 13 Ko par entree.
 
 Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
 retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
 
 ### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
 
-Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 4 s, et rien ne peut le couper.
+Les boucles de lignes d'un INSERT … SELECT (filtre WHERE, CONNECT BY, projection, insertion), d'un UPDATE, d'un DELETE et d'un ROLLBACK sont reprenables : au profil Chromium, `ora-insert-300k` passe de 1 059 a 144 ms de tache longue et `ora-update-delete-300k` de 1 722 a 135 ms. Reste atomique, donc source de gel proportionnel au volume : le tri (ORDER BY), GROUP BY et les fonctions d'agregat, les jointures, les fonctions de fenetre, DISTINCT, un bloc PL/SQL (une boucle FOR de N instructions tourne d'une traite), COMMIT (117 ms pour 300 000 changements, `onCommit` recoit tout le journal d'annulation) et toute instruction lancee par un appelant synchrone (script `@fichier`, `sqlplus` en tube depuis bash, serveur Oracle Net distant) ; seul le sous-shell interactif rend la main a la boucle d'evenements entre deux tranches. Les limites de profil (`CPU_PER_CALL` …) coupent toujours une instruction demesuree, et leur temps ne compte que le temps actif.
 
-`V$RECOVERY_FILE_DEST.SPACE_RECLAIMABLE` vaut 10 % de `SPACE_USED` (valeur inventee) : la politique de retention qui dit ce qui est recuperable vit dans la configuration de la session RMAN (`RmanConfig`), pas dans le fichier de controle que la vue lit. Le moteur RMAN reprend deja la place des sauvegardes obsoletes quand la zone est pleine ; la vue doit lire la meme politique, donc `CONFIGURE RETENTION POLICY` doit etre rangee dans l'etat de la base (comme le fait deja `CONFIGURE CONTROLFILE AUTOBACKUP` pour les sessions suivantes) avant que la vue puisse la calculer.
+Pendant qu'une instruction est suspendue, une autre session peut valider ses propres lignes dans la meme table : un INSERT concurrent est conserve, un DELETE concurrent (la table est reecrite) fait echouer la tranche suivante avec ORA-08177. Une vue lue par une autre session au milieu d'un ROLLBACK en tranches voit un etat intermediaire de la table (les indices de lignes ne sont rafraichis qu'a la fin). Ces deux points n'ont pas de sonde au-dela de l'ORA-08177 et de la conservation de l'insertion concurrente.
