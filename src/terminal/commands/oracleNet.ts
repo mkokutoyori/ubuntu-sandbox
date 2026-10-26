@@ -37,6 +37,8 @@ import {
 import {
   findBalancedGroups, readConnectAddresses, readRequestedService,
 } from '@/network/oracle-net/wire/ConnectDescriptor';
+import { identifyOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 export interface TnsDescriptor {
   host: string;
@@ -197,20 +199,40 @@ const WIRE_ERRORS: Readonly<Record<string, string>> = Object.freeze({
 
 function tnsWireVerdict(
   localDevice: HostCapableDevice,
-  host: string,
-  target: Equipment | HostCapableDevice,
+  dst: string | undefined,
   port: number,
 ): string | null {
   const dialer = localDevice as unknown as {
     tcpConnectOutcome?: (ip: IPAddress, port: number) => string;
   };
   if (typeof dialer.tcpConnectOutcome !== 'function') return null;
-
-  const dst = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? host : primaryIpv4(target);
   if (!dst) return null;
 
   const outcome = dialer.tcpConnectOutcome(new IPAddress(dst), port);
   return outcome === 'open' ? null : (WIRE_ERRORS[outcome] ?? null);
+}
+
+function resolveByDialing(
+  localDevice: HostCapableDevice,
+  host: string,
+  port: number,
+  service: string,
+  getDb: (deviceId: string) => OracleDatabase,
+): { ok: true; db: OracleDatabase; remote: boolean; session?: OracleNetSession }
+  | { ok: false; error: string } {
+  const unknownHost = { ok: false as const, error: 'ORA-12545: Connect failed because target host or object does not exist' };
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return unknownHost;
+  const verdict = tnsWireVerdict(localDevice, host, port);
+  if (verdict !== null) return { ok: false, error: verdict };
+  const dialed = openOracleNetSession(localDevice, host, port, service);
+  if (dialed.ok === false) return { ok: false, error: dialed.error };
+  const peer = identifyOverOracleNet(dialed.session);
+  const answering = peer ? EquipmentRegistry.getInstance().getById(peer.deviceId) : null;
+  if (!answering) {
+    dialed.session.close();
+    return unknownHost;
+  }
+  return { ok: true, db: getDb(answering.getId()), remote: true, session: dialed.session };
 }
 
 function resolveOneAddress(
@@ -226,7 +248,7 @@ function resolveOneAddress(
   if (!isLocalAddress(localDevice, host)) {
     const found = findEquipmentByIp(host) ?? findEquipmentByHostname(host);
     if (!found) {
-      return { ok: false, error: 'ORA-12545: Connect failed because target host or object does not exist' };
+      return resolveByDialing(localDevice, host, port, service, getDb);
     }
     const isOn = (found as unknown as { getIsPoweredOn?: () => boolean }).getIsPoweredOn?.() ?? true;
     if (!isOn) {
@@ -275,7 +297,7 @@ function resolveOneAddress(
   }
 
   if (remote) {
-    const verdict = tnsWireVerdict(localDevice, host, target, port);
+    const verdict = tnsWireVerdict(localDevice, /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? host : primaryIpv4(target), port);
     if (verdict !== null) return { ok: false, error: verdict };
   }
 
