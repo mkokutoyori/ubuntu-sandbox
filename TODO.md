@@ -913,6 +913,14 @@ Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la
 les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
 fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
 
+### [vim] coller depuis un autre programme (Ctrl+Maj+V, Maj+Inser, clic droit)
+Mesure en corrigeant le meme defaut dans nano : `VimEditor` annule chaque touche (`preventDefault`)
+et n'a ni gestionnaire `paste` ni moteur de collage, donc rien ne se colle dans vim depuis Notepad.
+Dans un vrai terminal le collage arrive comme des frappes (vim 9.1 active le « bracketed paste » :
+en mode Insertion le texte est insere tel quel, sans indentation automatique ; en mode Normal il
+est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes gestes que
+`NanoEditor` (`terminal/clipboard.ts`) et une mesure sous tmux du bracketed paste de vim 9.1.0016.
+
 ### [nano] navigateur de fichiers (`^T` dans `^R`, `^O`, `M-F`)
 La barre d'invite annonce `^T Browse` comme nano mais le navigateur n'existe pas : la touche est
 ignoree. Vu en mesurant : `nano-tools-oracle.test.ts` (3 cas du corpus), `nano-colors-oracle.test.ts`

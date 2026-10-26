@@ -8,6 +8,7 @@ import { GridRows } from './EditorGrid';
 import { useHeldScreen } from './useHeldScreen';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
+import { copySelectionToClipboard, isCopyGesture, isNativePasteGesture, pasteFromClipboard } from '../terminal/clipboard';
 
 /**
  * What the renderer needs from whatever holds the buffer. A local
@@ -71,7 +72,12 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   });
 
   const dispatch = useCallback((e: React.KeyboardEvent) => {
+    if (e.metaKey || isNativePasteGesture(e)) return;
     e.preventDefault();
+    if (isCopyGesture(e)) {
+      void copySelectionToClipboard();
+      return;
+    }
     advance();
     engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
     if (engine.exited) {
@@ -85,6 +91,15 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     e.preventDefault();
     engine.applyPaste(e.clipboardData.getData('text'));
     bump();
+  }, [engine, bump]);
+
+  const pasteAtContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    void pasteFromClipboard().then((text) => {
+      if (!text) return;
+      engine.applyPaste(text);
+      bump();
+    });
   }, [engine, bump]);
 
   const wheel = useCallback((e: React.WheelEvent) => {
@@ -127,6 +142,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         tabIndex={0}
         onKeyDown={dispatch}
         onPaste={paste}
+        onContextMenu={pasteAtContextMenu}
         onWheel={wheel}
         onMouseUp={click}
         className="absolute inset-0 outline-none"
