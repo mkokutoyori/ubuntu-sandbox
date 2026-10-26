@@ -3,22 +3,14 @@
  * (PRD-Windows-Server.md §5 P4). Mirrors `SshServerHandler`/`SmbServerHandler`:
  * a fresh handler per accepted connection, JSON ops over the real
  * `TcpConnection`.
- *
- * Scope: this validates real network reachability and authentication
- * for WinRM — the two things `Invoke-Command`/`Enter-PSSession`/
- * `Test-WSMan` need to honour cables, routing, firewalls and the
- * WinRM/service state. Once authenticated, script execution itself is
- * still dispatched via `PSInterpreter.invokeRemote()` on the target
- * device's own interpreter (as it was before this phase) — this
- * simulator runs every device in one JS process, so there is no real
- * wire representation of a `PSScriptBlock` AST to ship; only the
- * connection-establishment step is new here.
  */
 
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { WindowsUserManager } from '../../WindowsUserManager';
 import { verifyApReq, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
 import { base64ToBytes } from '@/crypto/encoding';
+import { JsonMessageAssembler } from '../JsonMessageAssembler';
+import type { WinRmShellHost } from './WinRmShell';
 
 export interface WinRmIdentity {
   readonly sam: string;
@@ -35,6 +27,7 @@ export interface WinRmServerContext {
   userMgr: WindowsUserManager;
   kerberos?: KerberosServiceIdentity;
   runCommand?: (line: string, identity: WinRmIdentity) => WinRmCommandResult;
+  openShell?: (identity: WinRmIdentity) => WinRmShellHost | null;
   refreshPolicy?: (scope: 'both' | 'computer' | 'user', delayMinutes: number, identity: WinRmIdentity) => WinRmCommandResult;
   /** Domain-account fallback (PRD-Windows-Server.md §5 P6) — see `SmbServerContext.domainAuth`. */
   domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[] } | null;
@@ -53,11 +46,16 @@ export class WinRmServerHandler {
 
   register(conn: TcpConnection): void {
     const reply = (msg: Record<string, unknown>) => conn.write(JSON.stringify(msg));
+    const assembler = new JsonMessageAssembler();
     let identity: WinRmIdentity | null = null;
+    let shell: WinRmShellHost | null = null;
 
-    conn.onData((data) => {
-      let parsed: Record<string, unknown>;
-      try { parsed = JSON.parse(String(data)) as Record<string, unknown>; } catch { return; }
+    conn.onClose?.(() => {
+      shell?.close();
+      shell = null;
+    });
+
+    const handle = (parsed: Record<string, unknown>): void => {
       const op = parsed.op as string | undefined;
 
       if (op === 'negotiate') {
@@ -119,6 +117,48 @@ export class WinRmServerHandler {
         return;
       }
 
+      if (op === 'shell_open') {
+        if (identity === null) {
+          reply({ ok: false, message: 'Access is denied.' });
+          return;
+        }
+        if (!this.ctx.openShell) {
+          reply({ ok: false, message: 'The WinRM shell service is not available on this computer.' });
+          return;
+        }
+        shell?.close();
+        shell = this.ctx.openShell(identity);
+        reply(shell === null ? { ok: false, message: 'Access is denied.' } : { ok: true, prompt: shell.prompt() });
+        return;
+      }
+
+      if (op === 'shell_run') {
+        if (shell === null) {
+          reply({ ok: false, message: 'The WinRM shell is not open.' });
+          return;
+        }
+        shell.run(String(parsed.line ?? '')).then(
+          (outcome) => reply({ ok: true, ...outcome }),
+          (error: unknown) => reply({ ok: false, message: error instanceof Error ? error.message : String(error) }),
+        );
+        return;
+      }
+
+      if (op === 'shell_complete') {
+        if (shell === null) {
+          reply({ ok: false, message: 'The WinRM shell is not open.' });
+          return;
+        }
+        reply({ ok: true, ...shell.complete(String(parsed.line ?? '')) });
+        return;
+      }
+
+      if (op === 'shell_close') {
+        shell?.close();
+        shell = null;
+        return;
+      }
+
       if (op === 'wecPush') {
         if (identity === null) {
           reply({ ok: false, message: 'Access is denied.' });
@@ -134,6 +174,10 @@ export class WinRmServerHandler {
         const res = this.ctx.wec.receiveForwardedEvent(subscriptionId, sourceMachine, event);
         reply(res);
       }
+    };
+
+    conn.onData((data) => {
+      for (const parsed of assembler.push(String(data))) handle(parsed);
     });
   }
 }

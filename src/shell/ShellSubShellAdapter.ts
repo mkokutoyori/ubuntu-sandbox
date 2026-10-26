@@ -25,7 +25,12 @@ export class ShellSubShellAdapter implements ISubShell {
   get kind(): string { return this.shell.kind; }
   get connection() { return this.shell.connection; }
 
-  constructor(private readonly shell: IShell) {}
+  getCompletionsAsync?: (line: string) => Promise<string[]>;
+
+  constructor(private readonly shell: IShell) {
+    const asynchronous = shell.getCompletionsAsync?.bind(shell);
+    if (asynchronous !== undefined) this.getCompletionsAsync = async (line) => [...await asynchronous(line)];
+  }
 
   get inner(): IShell { return this.shell; }
 
