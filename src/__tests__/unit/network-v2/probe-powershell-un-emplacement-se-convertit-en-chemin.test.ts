@@ -281,7 +281,7 @@ describe('Convert-Path', () => {
 
   it('refuses a path that does not exist', async () => {
     const shell = await powershell();
-    expect(await shell.run('Convert-Path nothing')).toContain("Cannot find path 'nothing' because it does not exist.");
+    expect(await shell.run('Convert-Path nothing')).toContain("Cannot find path 'C:\\Users\\User\\nothing' because it does not exist.");
   });
 });
 

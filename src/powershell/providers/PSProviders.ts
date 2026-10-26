@@ -1229,6 +1229,8 @@ export interface IFileSystemProvider {
   attachDriveAliases?(roots: () => ReadonlyMap<string, string>): void;
   /** Check if path is a directory. */
   isDirectory(path: string): boolean;
+  /** The Windows attributes of an entry (archive, hidden, system, readonly), or null when the path does not exist. */
+  attributesOf?(path: string): ReadonlySet<string> | null;
   /** Get ACL info for a path. */
   getAcl(path: string): { owner: string; acl: Array<{ principal: string; type: string; permissions: string[] }> } | null;
   /** Set the owner of a path. Returns true on success. */

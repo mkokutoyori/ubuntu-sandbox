@@ -67,6 +67,7 @@ import type { PSProviders } from '@/powershell/providers/PSProviders';
 import { wildcardMatches, escapeWildcard, unescapeWildcard, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import type { ICmdlet, ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
+import type { ProviderFailure } from '@/powershell/cmdlets/core/ProviderFailures';
 import type {
   PSProgram, PSStatementList, PSStatement,
   PSPipelineStatement, PSAssignmentStatement,
@@ -124,6 +125,10 @@ function shortestSingleText(value: number): string {
 }
 
 const COMMON_SWITCH_PARAMETERS: readonly string[] = ['verbose', 'debug', 'whatif', 'confirm'];
+
+function performing(action: string, target: string): string {
+  return `Performing the operation "${action}" on target "${target}".`;
+}
 
 function sourcePosition(source: string, offset: number): { line: number; column: number; lineText: string; message: string } {
   const before = source.slice(0, offset);
@@ -4205,8 +4210,7 @@ export class PSRuntime {
 
   private shouldProcess(command: BoundCommand, scope: PSEnvironment, name: string, args: PSValue[]): boolean {
     const text = args.map(psValueToString);
-    const description = text.length >= 3 ? text[0]
-      : `Performing the operation "${text.length === 2 ? text[1] : name}" on target "${text[0] ?? ''}".`;
+    const description = text.length >= 3 ? text[0] : performing(text.length === 2 ? text[1] : name, text[0] ?? '');
     if (truthiness(scope.get('WhatIfPreference'))) {
       this.outputLines.push(`What if: ${description}`);
       return false;
@@ -4420,6 +4424,23 @@ export class PSRuntime {
       },
 
       emitErrorRecord: (record: PSValue) => { self.writeErrorRecord(record as Record<string, PSValue>, errorSource, errorAction); },
+
+      shouldProcess: (target: string, action: string) => {
+        const asked = named['whatif'] !== undefined ? named['whatif'] === true : truthiness(env.get('WhatIfPreference'));
+        if (asked) self.outputLines.push(`What if: ${performing(action, target)}`);
+        return !asked;
+      },
+
+      emitFailure: (failure: ProviderFailure, command: string = cmdletDisplayName) => {
+        self.writeErrorRecord(newErrorRecord({
+          message: failure.message,
+          exceptionType: failure.exceptionType,
+          category: failure.category,
+          activity: command,
+          targetObject: failure.target,
+          fullyQualifiedErrorId: `${failure.errorId},Microsoft.PowerShell.Commands.${command.replace(/-/g, '')}Command`,
+        }), errorSource, errorAction);
+      },
 
       invokeBlock: (
         block: PSScriptBlock,

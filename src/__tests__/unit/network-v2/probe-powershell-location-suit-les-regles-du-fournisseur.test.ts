@@ -208,13 +208,13 @@ describe('Windows PowerShell location rules', () => {
   it('reads cd - as a path of that name', async () => {
     const shell = await windowsPowerShell();
     const output = await shell.run('cd -');
-    expect(output).toContain("Cannot find path '-' because it does not exist.");
+    expect(output).toContain("Cannot find path 'C:\\Users\\User\\-' because it does not exist.");
     expect(shell.prompt).toBe(PS('C:\\Users\\User'));
   });
 
   it('reads cd + as a path of that name', async () => {
     const shell = await windowsPowerShell();
-    expect(await shell.run('cd +')).toContain("Cannot find path '+' because it does not exist.");
+    expect(await shell.run('cd +')).toContain("Cannot find path 'C:\\Users\\User\\+' because it does not exist.");
   });
 
   it('stays in place for Set-Location without a path', async () => {

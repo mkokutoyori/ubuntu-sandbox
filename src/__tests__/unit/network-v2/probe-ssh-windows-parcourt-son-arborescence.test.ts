@@ -266,7 +266,7 @@ for (const [client, connect] of CLIENTS) {
       const remote = await connect();
       await remote.run('powershell');
       const output = await remote.run('cd nonexistent');
-      expect(output).toContain("Cannot find path 'nonexistent' because it does not exist.");
+      expect(output).toContain("Cannot find path 'C:\\Users\\User\\nonexistent' because it does not exist.");
       expect(remote.prompt).toBe('PS C:\\Users\\User> ');
     });
   });
