@@ -29,6 +29,7 @@ export interface EditorFsContext {
   writeFile(path: string, content: string): boolean;
   kindOf?(path: string): EditorPathKind;
   isReadOnly?(path: string): boolean;
+  modificationStamp?(path: string): string | null;
   canonicalPath?(path: string): string | null;
   listDirectory?(path: string): string[] | null;
   homeDirectory?(): string | null;

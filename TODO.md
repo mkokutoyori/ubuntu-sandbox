@@ -830,7 +830,7 @@ dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
   col1-82).
 - **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
   `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) et
-  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0, syn3-130) ; la rangee a le
+  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0), `nano-package-oracle.test.ts` (pkg1-128, pkg2-2) ; la rangee a le
   guide quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
@@ -845,24 +845,55 @@ de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machin
 ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
 est l'etat intermediaire d'une campagne en cours et non un livrable :
 - `bind`, `unbind` (raccourcis reconfigures) : lues sans effet (elles ferment bien une
-  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. `linter`,
-  `formatter` : memorisees par syntaxe, jamais lancees (`^Y` / `^O` du menu Execute
-  repondent « No linter is defined »). Raccourcis : 28d. Les douze `*color` d'interface
-  (`nano-colors-oracle.test.ts`) et la coloration syntaxique (`syntax`, `header`,
-  `color`, `icolor`, `extendsyntax`, `include`, `comment`, `tabgives`, `-Y`, `M-Y` ;
-  `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`) sont evaluees.
+  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. Raccourcis :
+  28d. Les douze `*color` d'interface (`nano-colors-oracle.test.ts`), la coloration
+  syntaxique (`syntax`, `header`, `color`, `icolor`, `extendsyntax`, `include`, `comment`,
+  `tabgives`, `-Y`, `M-Y` ; `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`),
+  `linter` et `formatter` (`^T ^Y`, `^T ^O`, `M-B`, `M-F` ; `probe-nano-lint.test.ts`)
+  et `speller` (`-s`, `^T ^S` ; `probe-nano-spell.test.ts`) sont evaluees.
 - `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
   parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
   encore dans le moteur (28e) ; `magic` reste un mot-cle inconnu, comme dans le nano
-  d'Ubuntu (sans libmagic) ; `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+  d'Ubuntu (sans libmagic) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
 - `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
   echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
   `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
   n'est pas portee : le moteur ecrase la sauvegarde.
-- `/etc/nanorc` n'existe pas dans le systeme de fichiers des machines ; la version
-  d'Ubuntu 24.04 (`set historylog`, `set locking`, `set stateflags`, `include
-  "/usr/share/nano/*.nanorc"`) n'y sera posee qu'avec les 44 fichiers de syntaxe (28c),
-  faute de quoi l'`include` ferait afficher « Mistakes in '/etc/nanorc' » a chaque lancement.
+
+### [nano] linter : un message pour un fichier non ouvert, reponse « oui »
+`do_linter` de nano 7.2 demande « This message is for unopened file F, open it in a new
+buffer? » quand le linter parle d'un autre fichier existant. La reponse « non » et ^C sont
+portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que le moteur ne sait
+pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
+`^R` en mode vue (entree suivante).
+
+### [machine Linux] `dash` absent, `sh -n` et `bash -n` sans effet
+Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
+n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
+`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' » ; et `sh -n script` /
+`bash -n script` n'ont pas la semantique « analyser sans executer » (le script est lance, `sh -n`
+sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse de dash
+(« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
+bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
+fonctionner comme sur Ubuntu.
+
+### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
+Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
+`spell`) dont la sortie passe par `sort` puis `uniq`, lit la liste des mots inconnus et propose
+chacun dans `fix_spello` (invite « Edit a replacement », « Replace with », remplacement de toutes
+les occurrences, retour au mot suivant). Le moteur repond « Error invoking "spell" » (comme un
+Ubuntu nu, le texte est le bon) parce que la machine simulee n'a ni `hunspell` ni `spell` ni
+dictionnaire. Il manque deux briques : une commande `hunspell` / `spell` avec un dictionnaire (rien
+dans le depot ne porte de liste de mots) et le dialogue `fix_spello`. Le correcteur ALTERNATIF
+(`-s PROGRAMME`, `set speller`) est complet.
+
+### [nano] entree litterale (`M-V`) : « [ Verbatim Input ] » n'existe pas
+Mesure avec `nano-package-oracle.test.ts` (corpus package, avant le retrait de `M-v` des gestes
+tires) : `M-V` affiche « [ Verbatim Input ] » dans la barre d'etat et la touche suivante est
+inseree telle quelle (un code de controle, une sequence d'echappement, ou un point de code saisi
+en octal / hexadecimal : 3 chiffres octaux, `u` + 4 a 6 chiffres hexadecimaux) ; le moteur ne
+connait pas la touche et affiche la position du curseur. Rien a voir avec les syntaxes : c'est
+une fonction de nano 7.2 que ni le moteur ni les corpus n'avaient encore exercee.
 
 ### [nano] `^R` en mode vue ouvre un NOUVEAU tampon
 Mesure avec `nano-colors-oracle.test.ts` (UNPORTED_CASES : col1-67, col1-117, col1-138,

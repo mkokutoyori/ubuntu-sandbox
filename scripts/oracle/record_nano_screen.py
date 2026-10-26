@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|syntax|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|syntax|package|lint|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"paint": true` records, for every row, one letter per cell from a legend kept for the whole case (`legend`: letter -> `FG/BG/FLAGS`,
 FG and BG a 0-255 palette index or `-` for the default, FLAGS any of `biur` for bold, italic, underline, reverse), read from `capture-pane -e -N`.
@@ -1105,11 +1105,11 @@ def run_state_case(case, workdir):
                 open(target, "w", encoding="utf-8").write(tokens(content))
     environment = {key: tokens(value) for key, value in case.get("env", {}).items()}
     etc_binding = ""
-    if case.get("rc"):
+    if case.get("rc") and not case.get("package"):
         etc_file = os.path.join(lab, "etc-nanorc")
         open(etc_file, "w", encoding="utf-8").write(tokens(case.get("etc_nanorc", "")))
         etc_binding = "mount --bind %s /etc/nanorc && " % shlex.quote(etc_file)
-    ignore = "" if case.get("rc") else "-I"
+    ignore = "" if case.get("rc") or case.get("package") else "-I"
     legend = {} if case.get("paint") else None
     runs = []
     for run in case["runs"]:
@@ -1126,6 +1126,8 @@ def run_state_case(case, workdir):
             if not nano_running(name):
                 break
             send(name, step)
+            if case.get("settle"):
+                time.sleep(case["settle"])
             snap = record_screen(name, None, True, False, legend)
             if snap is None:
                 break
@@ -1507,6 +1509,113 @@ def gen_syntax(seed, count):
         cases.append({"id": "syn%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": {}, "env": {}, "rc": True, "etc_nanorc": etc, "paint": True, "runs": runs})
     return cases
 
+PACKAGE_REAL_EXTENSIONS = ["c", "h", "cc", "hpp", "py", "sh", "bash", "pl", "pm", "json", "yaml", "yml", "xml", "html", "css", "js", "go", "rb", "sql", "md", "s", "S", "1", "5", "cmake", "txt", "conf", "el", "tcl", "mk"]
+PACKAGE_HAND_SAMPLES = {
+    "java": ["package demo;", "import java.util.List;", "/** Doc comment. */", "public class Demo extends Base {", "    private static final int LIMIT = 42; // limit", "    @Override public String toString() { return \"Demo\"; }", "    void run() throws Exception { if (LIMIT > 1) throw new Exception(\"x\"); }", "}"],
+    "rs": ["use std::collections::HashMap;", "// A comment", "#[derive(Debug)]", "pub struct Point { x: i32, y: i32 }", "impl Point {", "    pub fn new(x: i32, y: i32) -> Self { Point { x, y } }", "    fn show(&self) { println!(\"{} {}\", self.x, self.y); }", "}", "fn main() { let p = Point::new(1, 2); let n: u8 = 0x1f; p.show(); }"],
+    "patch": ["diff --git a/f.c b/f.c", "index 83db48f..bf2a3c1 100644", "--- a/f.c", "+++ b/f.c", "@@ -1,4 +1,5 @@ int main(void)", " context line", "-removed line", "+added line", "+another added", " tail"],
+    "scm": ["(define (square x) (* x x))", "; comment", "(let ((a 1) (b \"two\"))", "  (display (string-append \"a\" b)) #t)", "'(1 2 3)"],
+    "hs": ["module Main where", "-- comment", "import Data.List (sort)", "data Shape = Circle Double | Square Double deriving (Show)", "area :: Shape -> Double", "area (Circle r) = pi * r * r", "main = print $ sort [3, 1, 2]", "{- block", "comment -}"],
+    "ml": ["(* comment *)", "let rec fact n = if n <= 1 then 1 else n * fact (n - 1)", "type t = A | B of int", "let () = print_endline \"hi\"", "module M = struct let x = 0x10 end"],
+    "ac": ["AC_INIT([demo], [1.0])", "dnl comment", "AM_INIT_AUTOMAKE([foreign])", "AC_PROG_CC", "AC_CONFIG_FILES([Makefile])", "AC_OUTPUT"],
+    "nft": ["#!/usr/sbin/nft -f", "flush ruleset", "table inet filter {", "  chain input {", "    type filter hook input priority 0; policy drop;", "    ct state established,related accept", "    tcp dport { 22, 80 } accept", "  }", "}"],
+    "tex": ["\\documentclass{article}", "% comment", "\\usepackage{amsmath}", "\\begin{document}", "\\section{Intro} Text with $x^2$ and \\emph{words}.", "\\end{document}"],
+    "texi": ["\\input texinfo", "@c comment", "@setfilename demo.info", "@node Top", "@chapter Intro", "@code{foo} and @emph{bar}.", "@bye"],
+    "php": ["<?php", "// comment", "namespace App;", "class Demo { public function run(array $a): int { return count($a) + 0x1; } }", "$x = \"text\" . 'single';", "echo $x; ?>"],
+    "lua": ["-- comment", "local t = { a = 1, b = \"two\" }", "function t.run(x) if x > 1 then return x end end", "for i = 1, 10 do print(i) end", "--[[ block", "comment ]]"],
+    "awk": ["#!/usr/bin/awk -f", "BEGIN { FS = \":\" }", "# comment", "/^root/ { print $1, NR }", "END { print \"done\" }"],
+    "po": ["# translator comment", "msgid \"\"", "msgstr \"\"", "\"Content-Type: text/plain; charset=UTF-8\\n\"", "", "#: src/main.c:10", "msgid \"Hello\"", "msgstr \"Bonjour\""],
+    "m": ["#import <Foundation/Foundation.h>", "// comment", "@interface Demo : NSObject", "- (void)run;", "@end", "@implementation Demo", "- (void)run { NSLog(@\"hi\"); }", "@end"],
+    "eml": ["From: Ann <ann@example.org>", "To: Bob <bob@example.org>", "Subject: hello", "", "> quoted text", "plain text with https://example.org/page.html link"],
+    "ChangeLog": ["2024-01-02  Ann <ann@example.org>", "", "\t* src/main.c (main): Fix the thing.", "\t* README: Update."],
+    "spec": ["Name: demo", "Version: 1.0", "%description", "A demo package.", "%build", "make %{?_smp_mflags}", "%files", "%{_bindir}/demo"],
+    "pov": ["#include \"colors.inc\"", "// comment", "camera { location <0, 2, -3> look_at <0, 1, 2> }", "sphere { <0, 1, 2>, 2 texture { pigment { color Yellow } } }"],
+    "nanorc": ["## comment", "set linenumbers", "syntax demo \"\\.demo$\"", "color red \"alpha\"", "bind ^X exit main"],
+    "ms": [".TH DEMO 1", ".SH NAME", "demo \\- do the thing", ".B bold text", "\\fIitalic\\fR and \\*(lq quoted \\*(rq", ".\\\" comment"],
+    "list": ["deb http://archive.ubuntu.com/ubuntu noble main restricted", "# comment", "deb-src http://archive.ubuntu.com/ubuntu noble universe"],
+}
+PACKAGE_HEADER_FILES = [
+    ("run", "#!/bin/sh", ["echo \"hi\" # trailing", "if [ -n \"$1\" ]; then", "  exit 0", "fi"]),
+    ("tool", "#!/usr/bin/env python3", ["import os", "def main():", "    print('x', 0x10)  # note", "main()"]),
+    ("doc", "<?xml version=\"1.0\"?>", ["<root a=\"1\">", "  <!-- comment -->", "  <item>text &amp; more</item>", "</root>"]),
+    ("page", "<!DOCTYPE html>", ["<html><body class=\"x\">", "<a href=\"https://example.org\">link</a>", "</body></html>"]),
+    ("scr", "#!/usr/bin/perl", ["my $x = 1;", "print \"hi\\n\" if $x; # c", "sub f { return @_ }"]),
+    ("rubyscript", "#!/usr/bin/env ruby", ["class A", "  def b; :sym; end", "end", "puts \"x\" # c"]),
+    ("luascript", "#!/usr/bin/lua", ["local x = 1 -- c", "print(x)"]),
+    ("csrc", "/* -*- C -*- */", ["#include <stdio.h>", "int main(void) { return 0; }"]),
+    ("mkfile", "# -*- Makefile -*-", ["all: a.o", "\tcc -o $@ $^", "CFLAGS = -O2"]),
+    ("Makefile", "CC = gcc", ["all: main", "main: main.o", "\t$(CC) -o main main.o # link", ".PHONY: all", "include other.mk"]),
+    ("CMakeLists.txt", "cmake_minimum_required(VERSION 3.10)", ["project(demo C)", "# comment", "add_executable(demo main.c)", "if(WIN32)", "endif()"]),
+    ("ChangeLog.old", "Wed Jan  2 2024  Ann  <ann@example.org>", ["", "\t* file.c: change"]),
+    ("sources.list", "deb http://archive.ubuntu.com/ubuntu noble main", ["# comment", "deb-src http://archive.ubuntu.com/ubuntu noble main"]),
+    ("script.zsh", "#!/bin/zsh", ["export A=1", "for f in *; do echo $f; done"]),
+    ("profile", "# shell profile", ["export PATH=\"$PATH:/opt/bin\"", "alias ll='ls -l'"]),
+    ("plain", "Plain text mentioning https://example.org/a.html and ann@example.org", ["Date 2024.01.15 and GNU nano 7.2 \"Cool\"", "\t \tspace before tab", "# comment-like line", "[section]"]),
+]
+PACKAGE_SYNTAX_NAMES = ["c", "python", "sh", "default", "none", "makefile", "json", "html", "xml", "yaml", "perl", "ruby", "go", "css", "javascript", "man", "markdown", "nosuch", "patch", "sql", "tcl", "asm", "email", "cmake"]
+PACKAGE_STEPS = SYNTAX_STEPS + [["\""], ["'"], ["#"], ["<!--"], ["-->"], ["\\"], ["{", "}"], ["["], ["]"], ["`"], ["$"], [" "], ["C-y"]]
+
+def package_real_candidates(extension):
+    found = subprocess.run("find / -xdev -type f -name '*.%s' -size -40k -size +200c 2>/dev/null | head -300" % extension, shell=True, capture_output=True, text=True).stdout.split()
+    return sorted(found)
+
+def package_window(r, path):
+    try:
+        lines = open(path, encoding="utf-8").read().split("\n")
+    except (UnicodeDecodeError, OSError):
+        return None
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines = [line[:170] for line in lines if "\r" not in line and "\x00" not in line]
+    if len(lines) < 3:
+        return None
+    start = r.randint(0, max(0, min(len(lines) - 3, 300)))
+    return lines[start:start + r.choice([6, 12, 20, 40])]
+
+def package_sample(r, candidates):
+    kind = r.random()
+    if kind < 0.55:
+        extension = r.choice(PACKAGE_REAL_EXTENSIONS)
+        for _ in range(20):
+            files = candidates.setdefault(extension, package_real_candidates(extension))
+            if not files:
+                break
+            window = package_window(r, r.choice(files))
+            if window:
+                return "sample.%s" % extension, window
+    elif kind < 0.85:
+        extension = r.choice(sorted(PACKAGE_HAND_SAMPLES))
+        name = "ChangeLog" if extension == "ChangeLog" else "sample.%s" % extension
+        return name, list(PACKAGE_HAND_SAMPLES[extension])
+    name, first, rest = r.choice(PACKAGE_HEADER_FILES)
+    return name, [first] + rest
+
+def gen_package(seed, count):
+    r = random.Random(seed)
+    candidates = {}
+    cases = []
+    for i in range(count):
+        name, text = package_sample(r, candidates)
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-q", "-c", "-x", "-0", "-_", "-D", "-%", "-v", "-E", "-A", "-J"], r.choice([0, 0, 1, 2]))
+            if "-J" in args:
+                args.remove("-J")
+                args += ["-J", r.choice(["5", "20"])]
+            if r.random() < 0.15:
+                args += ["-Y", r.choice(PACKAGE_SYNTAX_NAMES)]
+            steps = []
+            for _ in range(r.randint(2, 8)):
+                steps.extend(r.choice(PACKAGE_STEPS))
+            if r.random() < 0.15:
+                steps.extend(["C-o", "BSpace", "BSpace", "BSpace", "BSpace", "BSpace", r.choice(["u.c", "n.md", "z.txt", "q.py", "r.sh", "Makefile", "a.json"]), "Enter"])
+            steps = without_stray_exec_keys(steps)
+            runs.append({"args": args + [name], "steps": steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x"]])})
+        cases.append({"id": "pkg%d-%d" % (seed, i), "text": [""], "files": {name: text}, "rows": rows, "cols": cols, "home": {}, "xdg": {}, "env": {}, "rc": True, "package": True, "paint": True, "runs": runs})
+    return cases
+
+
 def gen(seed, count, corpus):
     if corpus == "state":
         return gen_state(seed, count)
@@ -1516,6 +1625,8 @@ def gen(seed, count, corpus):
         return gen_colors(seed, count)
     if corpus == "syntax":
         return gen_syntax(seed, count)
+    if corpus == "package":
+        return gen_package(seed, count)
     if corpus == "tab":
         return gen_tab(seed, count)
     if corpus == "mouse":
@@ -1591,7 +1702,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_state_case if a.corpus in ("state", "rc", "colors", "syntax") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_state_case if a.corpus in ("state", "rc", "colors", "syntax", "package", "lint") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

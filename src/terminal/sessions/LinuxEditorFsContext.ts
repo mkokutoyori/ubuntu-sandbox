@@ -45,6 +45,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorPathKind(this.resolvePath(path));
   }
 
+  modificationStamp(path: string): string | null {
+    return this.dev.editorModificationStamp(this.resolvePath(path), this.session);
+  }
+
   isReadOnly(path: string): boolean {
     return this.dev.editorPathIsReadOnly(this.resolvePath(path));
   }
