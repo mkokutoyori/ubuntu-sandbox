@@ -351,8 +351,11 @@ export function parsePipeFilter(trimmed: string): { cmd: string; filter: PipeFil
  * Apply a pipe filter (include/exclude/grep/findstr) to CLI output.
  * Strips surrounding quotes from pattern before matching (Cisco behavior).
  */
+const PARSER_DIAGNOSTIC = /^(?: *\^\n)?(?:% (?:Invalid input detected|Incomplete command|Ambiguous command)|Error: (?:Unrecognized command|Incomplete command|Wrong parameter|Too many parameters|Ambiguous command))/;
+
 export function applyPipeFilter(output: string, filter: PipeFilter | null): string {
   if (!filter || !output) return output;
+  if (PARSER_DIAGNOSTIC.test(output)) return output;
 
   const lines = output.split('\n');
   let pattern = filter.pattern;

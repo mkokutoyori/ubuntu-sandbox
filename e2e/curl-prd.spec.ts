@@ -74,9 +74,9 @@ test.describe('curl dans le terminal Linux', () => {
   });
 
   test('un protocole hors périmètre est refusé, pas simulé', async ({ page }) => {
-    await typeCmd(page, 'curl ftp://ftp.example.com/pub/x');
+    await typeCmd(page, 'curl gopher://ftp.example.com/pub/x');
     expect(await lastLines(page, 5))
-      .toContain('curl: (1) Protocol "ftp" not supported or disabled in libcurl');
+      .toContain('curl: (1) Protocol "gopher" not supported or disabled in libcurl');
   });
 
   test('rien n\'écoute : (7), et `|| echo KO` se déclenche', async ({ page }) => {
@@ -131,9 +131,9 @@ test.describe('curl existe aussi sur Windows, et dit la même chose', () => {
   });
 
   test('le même refus de protocole', async ({ page }) => {
-    await typeCmd(page, 'curl ftp://files.example.com/x');
+    await typeCmd(page, 'curl gopher://files.example.com/x');
     expect(await lastLines(page, 5))
-      .toContain('curl: (1) Protocol "ftp" not supported or disabled in libcurl');
+      .toContain('curl: (1) Protocol "gopher" not supported or disabled in libcurl');
   });
 
   test('curl.exe est la même commande', async ({ page }) => {

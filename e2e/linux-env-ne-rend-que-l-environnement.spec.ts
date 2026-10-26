@@ -58,7 +58,7 @@ test.describe('env rend l environnement, pas la table du shell', () => {
 
     await typeCmd(page, 'clear');
     await typeCmd(page, 'echo "uid=$UID host=$HOSTNAME"');
-    expect(await modalText(page)).toMatch(/uid=1000 host=linux-pc/);
+    expect(await modalText(page)).toMatch(/uid=1000 host=PC\d+/);
 
     await closeTerminal(page);
   });
