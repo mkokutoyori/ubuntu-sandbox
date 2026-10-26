@@ -484,7 +484,7 @@ export class OracleCatalog extends BaseCatalog {
   setPassword(username: string, password: string): void {
     const upper = username.toUpperCase();
     this.passwords.set(upper, password);
-    this.storedVerifiers.set(upper, deriveStoredVerifiers(upper, password));
+    this.storedVerifiers.delete(upper);
   }
 
   getStoredVerifiers(username: string): OracleStoredVerifiers | undefined {

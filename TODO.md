@@ -3775,6 +3775,6 @@ retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'un
 
 ### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
 
-`CREATE USER` coute environ 70 ms (PBKDF2-SHA512 reel) : 200 utilisateurs creent une tache de 14 s dans le navigateur. Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 4 s, et rien ne peut le couper.
+Une instruction SQL ou un bloc PL/SQL tourne d'une traite sur le fil de l'onglet (l'executeur est synchrone) : un `INSERT … CONNECT BY` de 300 000 lignes fige la page environ 4 s, et rien ne peut le couper.
 
 `V$RECOVERY_FILE_DEST.SPACE_RECLAIMABLE` vaut 10 % de `SPACE_USED` (valeur inventee) : la politique de retention qui dit ce qui est recuperable vit dans la configuration de la session RMAN (`RmanConfig`), pas dans le fichier de controle que la vue lit. Le moteur RMAN reprend deja la place des sauvegardes obsoletes quand la zone est pleine ; la vue doit lire la meme politique, donc `CONFIGURE RETENTION POLICY` doit etre rangee dans l'etat de la base (comme le fait deja `CONFIGURE CONTROLFILE AUTOBACKUP` pour les sessions suivantes) avant que la vue puisse la calculer.
