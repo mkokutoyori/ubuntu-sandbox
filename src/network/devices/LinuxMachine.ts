@@ -5085,6 +5085,12 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.vfs.getType(current) === 'directory';
   }
 
+  editorModificationStamp(path: string, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const inode = vfs.resolveInode(vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd()));
+    return inode === null ? null : `${inode.mtime}:${inode.revision ?? 0}`;
+  }
+
   editorPathIsReadOnly(path: string): boolean {
     const inode = this.executor.vfs.resolveInode(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
     return inode !== null && (inode.permissions & 0o222) === 0;

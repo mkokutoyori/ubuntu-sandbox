@@ -32,6 +32,7 @@ import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import { resolveInterfacePaints } from './nano/NanoPaint';
 import { GENERAL_COMMENT, type SyntaxCatalog, type SyntaxDefinition } from './nano/NanoSyntax';
 import { precalculateMultiData, type MultiData } from './nano/NanoSyntaxPaint';
+import { argumentList, parseLintOutput, shellCommandLine, type LintMessage } from './nano/NanoExternalTools';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
@@ -39,10 +40,12 @@ import { completeFileName, nextHistoryCompletion } from './nano/NanoCompletion';
 import { clickedShortcut, clickedYesNo, keyOfShortcutLabel, WHEEL_STEP } from './nano/NanoMouse';
 import { WorkingDirectoryFs } from './WorkingDirectoryFs';
 
+let temporaryCounter = 0;
+
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
   | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
-  | 'help' | 'execute-prompt' | 'read-file-prompt' | 'confirm';
+  | 'help' | 'execute-prompt' | 'read-file-prompt' | 'confirm' | 'linting';
 
 const DEFAULT_FILL = -8;
 
@@ -73,6 +76,13 @@ export interface Confirmation {
   readonly yes: () => void;
   readonly no: () => void;
   readonly cancel: () => void;
+}
+
+interface LintSession {
+  readonly messages: LintMessage[];
+  current: number;
+  shown: number | null;
+  readonly restoreNoHelp: boolean;
 }
 
 export interface MenuFlags {
@@ -153,6 +163,9 @@ export class NanoEngine {
   }
   private markFlagHidden = false;
   private statusText = '';
+  private statusLevel: number | null = null;
+  private lint: LintSession | null = null;
+  private afterWrite: (() => void) | null = null;
   private statusCountdown = 0;
   private statusAlert = false;
   private pauseNote: string | null = null;
@@ -162,9 +175,17 @@ export class NanoEngine {
   private openingAlerted = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
+  private currentLevel(): number { return this.statusLevel ?? messageLevel(this.statusText); }
+  private postStatus(level: number, text: string): void {
+    if (this.messageThisKey && level < this.currentLevel() && this.currentLevel() > MESSAGE_LEVEL.notice) return;
+    this._statusMessage = `[ ${text} ]`;
+    this.statusLevel = level;
+    this.statusAlert = level >= MESSAGE_LEVEL.ahem;
+  }
   private set _statusMessage(value: string) {
     this.staleFooter = null;
     this.statusText = value;
+    this.statusLevel = null;
     this.statusCountdown = value === '' ? 0 : this.live.quickblank ? 1 : STATUS_LINGER_KEYS;
     this.statusAlert = messageLevel(value) >= MESSAGE_LEVEL.ahem;
     this.statusRaw = false;
@@ -338,7 +359,7 @@ export class NanoEngine {
   }
 
   private raiseAlert(text: string): void {
-    if (messageLevel(this._statusMessage) === MESSAGE_LEVEL.alert) this.statusMore = true;
+    if (this.currentLevel() === MESSAGE_LEVEL.alert) this.statusMore = true;
     else this._statusMessage = `[ ${text} ]`;
   }
 
@@ -503,14 +524,14 @@ export class NanoEngine {
   }
 
   private makeRoomForMessage(): void {
-    if (!this.zeroMode() || this.isPrompting() || messageLevel(this.statusText) <= MESSAGE_LEVEL.hush) return;
+    if (!this.zeroMode() || this.isPrompting() || this.currentLevel() <= MESSAGE_LEVEL.hush) return;
     if (this.window.cursorRow !== this.window.editRows - 1) return;
     this.window.scroll(true);
     this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
   private settleTally(): void {
-    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark;
+    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && this.currentLevel() < MESSAGE_LEVEL.remark;
     this.tally = this.reportSizePending && drawn ? this.writtenLineCount() : null;
     if (drawn) this.reportSizePending = false;
   }
@@ -522,7 +543,7 @@ export class NanoEngine {
   private minibarInfo(messageExpired: boolean): MinibarInfo | null {
     const prompting = this.isPrompting();
     if (!this.minibarMode() || prompting || this.helpTitle !== null) return null;
-    if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
+    if (!messageExpired && this.currentLevel() >= MESSAGE_LEVEL.remark) return null;
     const text = this.line(this._cursorLine);
     const code = this._cursorCol < text.length
       ? `U+${text.codePointAt(this._cursorCol)!.toString(16).toUpperCase().padStart(4, '0')}`
@@ -766,6 +787,7 @@ export class NanoEngine {
 
   private activeMenu(prompt: { menu: NanoMenuName } | null = this.promptView()): NanoMenuName {
     if (this.helpTitle !== null) return prompt === null ? 'help' : 'search-in-help';
+    if (this.lint !== null) return 'linter';
     return prompt === null ? 'main' : prompt.menu;
   }
 
@@ -790,7 +812,7 @@ export class NanoEngine {
     if (this.helpViewer !== null) return this.helpViewer.screen;
     const live = this.paintScreen(false);
     if (this.pauseNote !== null) return { ...live, hold: { millis: this.pauseMillis, then: this.paintScreen(true) } };
-    const level = messageLevel(this.statusText);
+    const level = this.currentLevel();
     const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
     if (!transient || this.isPrompting()) return live;
     return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
@@ -814,7 +836,7 @@ export class NanoEngine {
 
   private paintScreen(messageExpired: boolean): EditorScreen {
     const prompt = this.promptView();
-    const hidden = messageExpired || (this.bareDisplay() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark);
+    const hidden = messageExpired || (this.bareDisplay() && this.currentLevel() < MESSAGE_LEVEL.remark);
     const message = hidden ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
     const screen = buildNanoScreen({
       window: this.window,
@@ -833,7 +855,8 @@ export class NanoEngine {
         state: this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
         branding: 'GNU nano 7.2',
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
-        heading: this.helpTitle ?? undefined,
+        heading: this.lint !== null ? this.titleName : this.helpTitle ?? undefined,
+        prefix: this.lint !== null ? 'Linting --' : undefined,
       },
       status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore, raw: this.statusRaw },
       minibar: this.minibarInfo(messageExpired),
@@ -961,6 +984,7 @@ export class NanoEngine {
   private wipeStatus(): void {
     this.staleFooter = null;
     this.statusText = '';
+    this.statusLevel = null;
     this.statusCountdown = 0;
     this.statusAlert = false;
     this.statusMore = false;
@@ -1034,6 +1058,7 @@ export class NanoEngine {
       case 'goto-line': return this.applyGotoLineKey(k);
       case 'execute-prompt': return this.applyExecutePromptKey(k);
       case 'read-file-prompt': return this.applyReadFilePromptKey(k);
+      case 'linting': return this.applyLintKey(k);
     }
   }
 
@@ -1593,11 +1618,11 @@ export class NanoEngine {
       return;
     }
     if (key === 'b') {
-      this._statusMessage = '[ No linter is defined for this type of file ]';
+      this.invokeLinter();
       return;
     }
     if (key === 'f') {
-      this._statusMessage = '[ No formatter is defined for this type of file ]';
+      this.invokeFormatter();
       return;
     }
     if (key === 'w') {
@@ -2120,6 +2145,7 @@ export class NanoEngine {
   }
 
   private cancelPrompt(): void {
+    this.afterWrite = null;
     this._statusMessage = 'Cancelled';
     this._mode = 'edit';
   }
@@ -2205,6 +2231,7 @@ export class NanoEngine {
       return;
     }
     if (this.live.restricted) {
+      this.afterWrite = null;
       this.pauseWith('File exists -- cannot overwrite');
       return;
     }
@@ -2227,6 +2254,8 @@ export class NanoEngine {
       this._statusMessage = `[ ${this.operating.writeRefusal()} ]`;
       return;
     }
+    const continuation = this.afterWrite;
+    this.afterWrite = null;
     const region = selection ? this.getMarkedRegion() : null;
     const written = region === null ? this.serialize() : this.serializeRegion(region);
     const method = this.writeMethod;
@@ -2268,6 +2297,7 @@ export class NanoEngine {
     const n = this.writtenLineCount();
     if (this.minibarMode()) this.reportSizePending = true;
     else this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+    continuation?.();
   }
 
   private backupPathFor(target: string): string {
@@ -2447,7 +2477,7 @@ export class NanoEngine {
     const circuit = new SearchCircuit(pattern, request.backwards);
     const hit = this.findNext(pattern, 'JUSTFIND', false, { line: 0, col: 0 }, circuit);
     if (hit === null) this.reportNotFound(request.pattern);
-    else if (messageLevel(this.statusText) <= MESSAGE_LEVEL.remark) this.wipeStatus();
+    else if (this.currentLevel() <= MESSAGE_LEVEL.remark) this.wipeStatus();
   }
 
   private gotoLineNumbers(line: number | null, column: number): void {
@@ -2537,6 +2567,10 @@ export class NanoEngine {
     if (viewer.historyChanged) this.historyChanged = true;
     this.helpViewer = null;
     this.wipeStatus();
+    if (this.lint !== null) {
+      this.lintStep();
+      return;
+    }
     if (this.footerKeepsStaleText()) this.staleFooter = footer;
     if (this.reportsPositionAsMessage() && this._mode === 'edit') this._statusMessage = this.locationMessage();
   }
@@ -2631,11 +2665,223 @@ export class NanoEngine {
     this.resetHistoryRecall();
     this._mode = 'edit';
     if (key === 's' || key === 't') this._statusMessage = '[ Error invoking "spell" ]';
-    else if (key === 'y') this._statusMessage = '[ No linter is defined for this type of file ]';
-    else if (key === 'o') this._statusMessage = '[ No formatter is defined for this type of file ]';
+    else if (key === 'y') this.invokeLinter();
+    else if (key === 'o') this.invokeFormatter();
     else if (key === 'j') this.justifyText(true);
     else this.cutTillEnd();
     return true;
+  }
+
+  private invokeLinter(): void {
+    if (this.refuseWhenRestricted()) return;
+    const linter = this.activeSyntax?.linter ?? null;
+    if (linter === null) {
+      this.postStatus(MESSAGE_LEVEL.ahem, 'No linter is defined for this type of file');
+      return;
+    }
+    this.clearMark();
+    if (!this._modified) {
+      this.startLinter(linter);
+      return;
+    }
+    this.ask(
+      'Save modified buffer before linting?',
+      () => {
+        this.afterWrite = () => this.startLinter(linter);
+        if (this.titleName === '') {
+          this.beginWriteOut(false);
+          return;
+        }
+        this.exitAfterSave = false;
+        this.writeMethod = 'overwrite';
+        this.saveFileNameBuffer = this.titleName;
+        this.submitWriteName();
+      },
+      () => this.startLinter(linter),
+      () => this.postStatus(MESSAGE_LEVEL.hush, 'Cancelled'),
+    );
+  }
+
+  private startLinter(linter: string): void {
+    const run = this.runChildShell(shellCommandLine(argumentList(linter, this.titleName)));
+    if (run.status > 2) {
+      this.postStatus(MESSAGE_LEVEL.alert, `Error invoking '${linter}'`);
+      return;
+    }
+    const messages = parseLintOutput(run.output);
+    if (messages.length === 0) {
+      this.postStatus(MESSAGE_LEVEL.remark, `Got 0 parsable lines from command: ${linter}`);
+      return;
+    }
+    const helpless = this.live.nohelp;
+    if (helpless && this.window.rows > 5) {
+      this.live.nohelp = false;
+      this.window.align();
+    }
+    this.lint = { messages, current: 0, shown: null, restoreNoHelp: helpless };
+    this._mode = 'linting';
+    this.lintStep();
+  }
+
+  private lintMessageIsForAnotherFile(message: LintMessage): boolean {
+    const kind = this.fs.kindOf?.(message.filename) ?? (this.fs.exists(message.filename) ? 'file' : 'missing');
+    if (kind === 'missing') return false;
+    const there = this.fs.canonicalPath?.(message.filename) ?? this.fs.resolvePath(message.filename);
+    const here = this.fs.canonicalPath?.(this.bufferPath) ?? this.bufferPath;
+    return there !== here;
+  }
+
+  private lintStep(): void {
+    const lint = this.lint!;
+    const message = lint.messages[lint.current];
+    if (this.lintMessageIsForAnotherFile(message)) {
+      const resume = (): void => {
+        this._mode = 'linting';
+        this.dropLintMessagesOf(message.filename);
+      };
+      this.ask(
+        `This message is for unopened file ${message.filename}, open it in a new buffer?`,
+        resume,
+        resume,
+        () => {
+          this.leaveLint();
+          this.wipeStatus();
+        },
+      );
+      return;
+    }
+    if (lint.shown === lint.current) return;
+    lint.shown = lint.current;
+    const target = Math.min(Math.max(1, message.line), this.linesArr.length) - 1;
+    const text = this.line(target);
+    const column = wideness(text, message.column - 1, this.live.tabsize);
+    this._cursorLine = target;
+    this._cursorCol = actualX(text, column, this.live.tabsize);
+    this.placeWant = column;
+    this.manner = 'recentering';
+    this.verticalKey = true;
+    this.postStatus(MESSAGE_LEVEL.notice, message.text);
+  }
+
+  private dropLintMessagesOf(filename: string): void {
+    const lint = this.lint!;
+    const rest = lint.messages.slice(lint.current).filter((message) => message.filename !== filename);
+    const kept = lint.messages.slice(0, lint.current);
+    if (rest.length === 0) {
+      this.leaveLint();
+      this.wipeStatus();
+      return;
+    }
+    lint.messages.splice(0, lint.messages.length, ...kept, ...rest);
+    lint.shown = null;
+    this.lintStep();
+  }
+
+  private leaveLint(): void {
+    const lint = this.lint!;
+    this.lint = null;
+    this._mode = 'edit';
+    if (!lint.restoreNoHelp) return;
+    this.live.nohelp = true;
+    this.window.align();
+  }
+
+  private applyLintKey(k: EditorKeyInput): void {
+    const lint = this.lint!;
+    this.verticalKey = true;
+    const key = k.key.toLowerCase();
+    const leaves = (k.ctrl && (key === 'c' || key === 'x')) || (!k.ctrl && !k.alt && k.key === 'Enter');
+    const previous = (!k.ctrl && !k.alt && k.key === 'PageUp') || (k.ctrl && !k.alt && (key === 'y' || k.key === 'ArrowUp')) || (k.alt && k.key === '7');
+    const next = (!k.ctrl && !k.alt && k.key === 'PageDown') || (k.ctrl && !k.alt && (key === 'v' || k.key === 'ArrowDown')) || (k.alt && k.key === '8');
+    if (leaves) {
+      this.leaveLint();
+      this.wipeStatus();
+      return;
+    }
+    if (k.ctrl && key === 'g') {
+      lint.shown = null;
+      this.openHelp('linter');
+      return;
+    }
+    if (previous && lint.current > 0) lint.current--;
+    else if (next && lint.current < lint.messages.length - 1) lint.current++;
+    this.lintStep();
+    if (this._mode === 'linting') this.postStatus(MESSAGE_LEVEL.notice, lint.messages[lint.current].text);
+  }
+
+  private invokeFormatter(): void {
+    if (this.refuseWhenRestricted()) return;
+    const formatter = this.activeSyntax?.formatter ?? null;
+    if (formatter === null) {
+      this.postStatus(MESSAGE_LEVEL.ahem, 'No formatter is defined for this type of file');
+      return;
+    }
+    this.clearMark();
+    const path = this.temporaryFilePath();
+    if (path === null || !this.fs.writeFile(path, this.serialize())) {
+      this.postStatus(MESSAGE_LEVEL.alert, 'Error writing temp file: No such file or directory');
+      return;
+    }
+    this.treat(path, formatter);
+    this.fs.deleteFile(path);
+  }
+
+  private temporaryFilePath(): string | null {
+    const usable = (directory: string | null): string | null => {
+      if (directory === null || directory === '') return null;
+      const kind = this.fs.kindOf?.(directory) ?? 'directory';
+      return kind === 'directory' && !(this.fs.isReadOnly?.(directory) ?? false) ? (directory.endsWith('/') ? directory : `${directory}/`) : null;
+    };
+    const directory = usable(this.fs.environmentVariable?.('TMPDIR') ?? null) ?? usable('/tmp') ?? '/tmp/';
+    const dot = this.titleName.lastIndexOf('.');
+    const extension = dot < 0 || this.titleName.slice(dot).includes('/') ? '' : this.titleName.slice(dot);
+    let name = '';
+    do {
+      temporaryCounter++;
+      name = `${directory}nano.${temporaryCounter.toString(36).toUpperCase().padStart(6, 'A')}${extension}`;
+    } while (this.fs.exists(name));
+    return name;
+  }
+
+  private treat(path: string, program: string): void {
+    const wasLine = this._cursorLine;
+    const wasPlaceWant = this.placeWant;
+    const wasCol = this._cursorCol;
+    const wasAtEnd = wasCol >= this.line(wasLine).length;
+    if ((this.fs.readFile(path) ?? '') === '') {
+      this.postStatus(MESSAGE_LEVEL.ahem, 'Buffer is empty');
+      return;
+    }
+    const stamp = this.fs.modificationStamp?.(path) ?? null;
+    const arguments_ = argumentList(program, path);
+    const run = this.runChildShell(shellCommandLine(arguments_));
+    if (run.status > 2) {
+      this.postStatus(MESSAGE_LEVEL.alert, `Error invoking '${arguments_[0]}'`);
+      return;
+    }
+    if (run.status !== 0) this.postStatus(MESSAGE_LEVEL.alert, `Program '${arguments_[0]}' complained`);
+    if (stamp !== null && this.fs.modificationStamp?.(path) === stamp) {
+      this.postStatus(MESSAGE_LEVEL.remark, 'Nothing changed');
+      return;
+    }
+    const content = this.fs.readFile(path);
+    if (content === null) return;
+    const decoded = decodeFile(content, !this.live.noconvert, false);
+    this.undoBegin('COUPLE', 'formatting');
+    this.linesArr = [''];
+    this._cursorLine = 0;
+    this._cursorCol = 0;
+    this.insertText(decoded.lines.join('\n'));
+    this.ensureTrailingBlankLine();
+    this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
+    this._cursorCol = Math.min(wasCol, this.line(this._cursorLine).length);
+    if (wasAtEnd) this._cursorCol = this.line(this._cursorLine).length;
+    this.placeWant = wasPlaceWant;
+    this.verticalKey = true;
+    this.manner = 'stationary';
+    this.undoFinish();
+    this._modified = true;
+    this.postStatus(MESSAGE_LEVEL.remark, 'Buffer has been processed');
   }
 
   private runChildShell(command: string, stdin?: string): ChildShellRun {

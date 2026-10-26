@@ -854,12 +854,12 @@ de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machin
 ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
 est l'etat intermediaire d'une campagne en cours et non un livrable :
 - `bind`, `unbind` (raccourcis reconfigures) : lues sans effet (elles ferment bien une
-  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. `linter`,
-  `formatter` : memorisees par syntaxe, jamais lancees (`^Y` / `^O` du menu Execute
-  repondent « No linter is defined »). Raccourcis : 28d. Les douze `*color` d'interface
-  (`nano-colors-oracle.test.ts`) et la coloration syntaxique (`syntax`, `header`,
-  `color`, `icolor`, `extendsyntax`, `include`, `comment`, `tabgives`, `-Y`, `M-Y` ;
-  `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`) sont evaluees.
+  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. Raccourcis :
+  28d. Les douze `*color` d'interface (`nano-colors-oracle.test.ts`), la coloration
+  syntaxique (`syntax`, `header`, `color`, `icolor`, `extendsyntax`, `include`, `comment`,
+  `tabgives`, `-Y`, `M-Y` ; `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`),
+  `linter` et `formatter` (`^T ^Y`, `^T ^O`, `M-B`, `M-F` ; `probe-nano-lint.test.ts`)
+  sont evaluees.
 - `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
   parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
   encore dans le moteur (28e) ; `magic` reste un mot-cle inconnu, comme dans le nano
@@ -868,6 +868,23 @@ est l'etat intermediaire d'une campagne en cours et non un livrable :
   echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
   `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
   n'est pas portee : le moteur ecrase la sauvegarde.
+
+### [nano] linter : un message pour un fichier non ouvert, reponse « oui »
+`do_linter` de nano 7.2 demande « This message is for unopened file F, open it in a new
+buffer? » quand le linter parle d'un autre fichier existant. La reponse « non » et ^C sont
+portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que le moteur ne sait
+pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
+`^R` en mode vue (entree suivante).
+
+### [machine Linux] `dash` absent, `sh -n` et `bash -n` sans effet
+Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
+n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
+`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' » ; et `sh -n script` /
+`bash -n script` n'ont pas la semantique « analyser sans executer » (le script est lance, `sh -n`
+sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse de dash
+(« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
+bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
+fonctionner comme sur Ubuntu.
 
 ### [nano] entree litterale (`M-V`) : « [ Verbatim Input ] » n'existe pas
 Mesure avec `nano-package-oracle.test.ts` (corpus package, avant le retrait de `M-v` des gestes

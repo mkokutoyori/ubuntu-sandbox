@@ -43,7 +43,7 @@ export interface NanoScreenInput {
   readonly paints: InterfacePaints;
   readonly syntax: { readonly rules: readonly ColorRule[]; readonly multi: MultiData } | null;
   readonly stripe: number | null;
-  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null; readonly heading?: string };
+  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null; readonly heading?: string; readonly prefix?: string };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean; readonly raw?: boolean } | null;
   readonly minibar: MinibarInfo | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
@@ -101,43 +101,51 @@ function clipped(text: string, width: number, tabsize: number): string {
   return text.slice(0, end);
 }
 
-export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null, look: SpanLook, inHelp = false): ScreenRow {
+export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null, look: SpanLook, inHelp = false, prefix = ''): ScreenRow {
   const canvas = new Canvas(cols);
   const flagged = flags !== null && state !== 'View';
   const stateWord = flagged ? STATE_FLAGS_PLACEHOLDER : state;
   let upperleft = branding;
   let verlen = breadth(upperleft, tabsize) + 3;
+  let prefixlen = breadth(prefix, tabsize);
+  if (prefixlen > 0) prefixlen++;
   let pluglen = 0;
   if (stateWord === '' && !inHelp) pluglen = breadth('Modified', tabsize) + 1;
   let statelen = breadth(stateWord, tabsize) + 2;
   let pathlen = breadth(name, tabsize);
   if (statelen > 2) pathlen++;
 
-  if (verlen + pathlen + pluglen + statelen <= cols) {
+  if (verlen + prefixlen + pathlen + pluglen + statelen <= cols) {
     canvas.put(2, upperleft);
   } else {
     upperleft = '';
     verlen = 2;
-    if (verlen + pathlen + pluglen + statelen > cols) pluglen = 0;
-    if (verlen + pathlen + pluglen + statelen > cols) {
+    if (verlen + prefixlen + pathlen + pluglen + statelen > cols) pluglen = 0;
+    if (verlen + prefixlen + pathlen + pluglen + statelen > cols) {
       verlen = 0;
       statelen -= 2;
     }
   }
 
   let offset = 0;
-  if (verlen > 0) offset = verlen + Math.floor((cols - (verlen + pluglen + statelen) - pathlen) / 2);
+  if (verlen > 0) offset = verlen + Math.floor((cols - (verlen + pluglen + statelen) - (prefixlen + pathlen)) / 2);
 
-  let afterPath = offset;
+  let pathAt = offset;
+  if (verlen + prefixlen + pathlen + pluglen + statelen <= cols) {
+    canvas.put(offset, prefix);
+    pathAt = offset + prefixlen;
+  }
+
+  let afterPath = pathAt;
   if (pathlen + pluglen + statelen <= cols) {
     const caption = displayString(name, 0, pathlen, { isData: false, isPrompt: false, softwrap: false, tabsize });
-    canvas.putCells(offset, caption.cells);
-    afterPath = offset + caption.cells.length;
+    canvas.putCells(pathAt, caption.cells);
+    afterPath = pathAt + caption.cells.length;
   } else if (5 + statelen <= cols) {
-    canvas.put(offset, '...');
+    canvas.put(pathAt, '...');
     const caption = displayString(name, 3 + pathlen - cols + statelen, cols - statelen, { isData: false, isPrompt: false, softwrap: false, tabsize });
-    canvas.putCells(offset + 3, caption.cells);
-    afterPath = offset + 3 + caption.cells.length;
+    canvas.putCells(pathAt + 3, caption.cells);
+    afterPath = pathAt + 3 + caption.cells.length;
   }
 
   if (flagged && flags !== null) {
@@ -478,7 +486,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   const rows: ScreenRow[] = new Array(window.rows).fill(SPACE_ROW);
   let cursorAt: { row: number; col: number } | null = null;
 
-  if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? titleRow(cols, input.title.heading, '', '', tabsize, null, input.paints.title, true) : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags, input.paints.title);
+  if (layout.titleRows > 0) rows[0] = input.title.heading !== undefined ? titleRow(cols, input.title.heading, '', '', tabsize, null, input.paints.title, true, input.title.prefix ?? '') : titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags, input.paints.title);
 
   const body = input.completions ? completionRows(input, input.completions) : editRows(input);
   const bodyTop = layout.editFrom;

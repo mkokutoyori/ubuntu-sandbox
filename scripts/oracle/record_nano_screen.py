@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|syntax|package|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|syntax|package|lint|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
 
 A case with `"paint": true` records, for every row, one letter per cell from a legend kept for the whole case (`legend`: letter -> `FG/BG/FLAGS`,
 FG and BG a 0-255 palette index or `-` for the default, FLAGS any of `biur` for bold, italic, underline, reverse), read from `capture-pane -e -N`.
@@ -1126,6 +1126,8 @@ def run_state_case(case, workdir):
             if not nano_running(name):
                 break
             send(name, step)
+            if case.get("settle"):
+                time.sleep(case["settle"])
             snap = record_screen(name, None, True, False, legend)
             if snap is None:
                 break
@@ -1700,7 +1702,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_state_case if a.corpus in ("state", "rc", "colors", "syntax", "package") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_state_case if a.corpus in ("state", "rc", "colors", "syntax", "package", "lint") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

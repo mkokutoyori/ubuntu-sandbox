@@ -24,6 +24,7 @@ const DEVICE_PATHS: ReadonlySet<string> = new Set(['/dev/null', '/dev/zero', '/d
 export class InMemoryEditorFsContext implements EditorFsContext {
   private files = new Map<string, string>();
   private modes = new Map<string, number>();
+  private revisions = new Map<string, number>();
   private directories = new Set<string>();
   private environment = new Map<string, string>();
   private home: string | null = '/root';
@@ -68,7 +69,13 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     if (this.strictDirectories && this.kindOf(target.slice(0, target.lastIndexOf('/')) || '/') !== 'directory') return false;
     if (this.directories.has(target)) return false;
     this.files.set(target, content);
+    this.revisions.set(target, (this.revisions.get(target) ?? 0) + 1);
     return true;
+  }
+
+  modificationStamp(path: string): string | null {
+    const target = this.resolvePath(path);
+    return this.files.has(target) ? String(this.revisions.get(target) ?? 0) : null;
   }
 
   refuseWritesIntoMissingDirectories(): void {

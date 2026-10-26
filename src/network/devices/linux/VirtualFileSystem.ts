@@ -64,6 +64,7 @@ export interface INode {
   mtime: number;
   atime: number;
   ctime: number;
+  revision?: number;
   deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
   /**
    * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
@@ -220,6 +221,7 @@ export class VirtualFileSystem {
   private resize(inode: INode, size: number): void {
     if (this.countsAgainstCapacity(inode)) this.bytesInUse += size - inode.size;
     inode.size = size;
+    inode.revision = (inode.revision ?? 0) + 1;
   }
 
   private release(inode: INode): void {
