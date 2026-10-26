@@ -838,8 +838,9 @@ dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
   (`nano-blocks-oracle.test.ts` blo1-61, blo2-129, blo4-149, `nano-colors-oracle.test.ts`
   col1-82).
 - **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
-  `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) ; la rangee a le guide
-  quand le moteur la repeint, et n'en a pas chez nano.
+  `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) et
+  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0, syn3-130) ; la rangee a le
+  guide quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
@@ -852,16 +853,17 @@ nano ferait apres un `^L`.
 de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machine
 ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
 est l'etat intermediaire d'une campagne en cours et non un livrable :
-- `bind`, `unbind` (raccourcis reconfigures), `include`, `syntax`, `header`, `magic`,
-  `color`, `icolor`, `comment`, `tabgives`, `linter`, `formatter`, `extendsyntax` :
-  ignorees, y compris les erreurs qu'elles produiraient (« A 'color' command requires
-  a preceding 'syntax' command », « Error reading F: ... » sur un `include` sans
-  fichier). Syntaxes : 28b-2 ; raccourcis : 28d. Les douze `*color` d'interface sont
-  evaluees (`nano-colors-oracle.test.ts`).
+- `bind`, `unbind` (raccourcis reconfigures) : lues sans effet (elles ferment bien une
+  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. `linter`,
+  `formatter` : memorisees par syntaxe, jamais lancees (`^Y` / `^O` du menu Execute
+  repondent « No linter is defined »). Raccourcis : 28d. Les douze `*color` d'interface
+  (`nano-colors-oracle.test.ts`) et la coloration syntaxique (`syntax`, `header`,
+  `color`, `icolor`, `extendsyntax`, `include`, `comment`, `tabgives`, `-Y`, `M-Y` ;
+  `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`) sont evaluees.
 - `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
   parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
-  encore dans le moteur (28e) ; `magic` n'a d'effet qu'avec les syntaxes (28b) ;
-  `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+  encore dans le moteur (28e) ; `magic` reste un mot-cle inconnu, comme dans le nano
+  d'Ubuntu (sans libmagic) ; `speller` (28f) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
 - `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
   echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
   `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)

@@ -30,6 +30,8 @@ import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import { resolveInterfacePaints } from './nano/NanoPaint';
+import { GENERAL_COMMENT, type SyntaxCatalog, type SyntaxDefinition } from './nano/NanoSyntax';
+import { precalculateMultiData, type MultiData } from './nano/NanoSyntaxPaint';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
@@ -224,6 +226,10 @@ export class NanoEngine {
   private stateDirectory: string | null = null;
   private historyChanged = false;
   private startupProblem: string | null = null;
+  private catalog: SyntaxCatalog | null = null;
+  private activeSyntax: SyntaxDefinition | null = null;
+  private syntaxHidden = false;
+  private multiCache: { readonly key: string; readonly syntax: SyntaxDefinition; readonly data: MultiData } | null = null;
   private readonly exitNotices: string[] = [];
   private historyStash: string | null = null;
   private useRegex = false;
@@ -320,14 +326,51 @@ export class NanoEngine {
     this.caseSensitive = this.live.casesensitive;
     this.useRegex = this.live.regexp;
     this.openStateFiles();
+    this.catalog = launch.rc?.catalog ?? null;
+    this.selectSyntax();
     const positioned = start !== null && this.applyStart(start);
     if (!positioned && named) this.restoreLoggedPosition(typedName);
     if (this.startupProblem !== null) this.announceStartupProblem(this.startupProblem);
   }
 
   private announceStartupProblem(problem: string): void {
+    this.raiseAlert(problem);
+  }
+
+  private raiseAlert(text: string): void {
     if (messageLevel(this._statusMessage) === MESSAGE_LEVEL.alert) this.statusMore = true;
-    else this._statusMessage = `[ ${problem} ]`;
+    else this._statusMessage = `[ ${text} ]`;
+  }
+
+  private selectSyntax(): void {
+    if (this.catalog === null || this.helpTitle !== null) return;
+    const name = this.titleName;
+    const fullName = (name === '' ? null : fullPathOf(name, this.fs)) ?? name;
+    const selection = this.catalog.select(this.live.syntax, fullName, this.linesArr[0] ?? '', (message, at) => this.recordSyntaxError(message, at?.file ?? '', at?.line ?? 0));
+    this.activeSyntax = selection.syntax;
+    this.multiCache = null;
+    if (selection.alert !== null) this.raiseAlert(selection.alert);
+  }
+
+  private recordSyntaxError(message: string, file: string, line: number): void {
+    this.exitNotices.push(line > 0 ? `Error in ${file} on line ${line}: ${message}` : message);
+    this.startupProblem ??= `Mistakes in '${file}'`;
+  }
+
+  private syntaxPainting(): { rules: SyntaxDefinition['rules']; multi: MultiData } | null {
+    const syntax = this.activeSyntax;
+    if (syntax === null || this.syntaxHidden || syntax.rules.length === 0) return null;
+    const key = this.linesArr.join('\n');
+    if (this.multiCache === null || this.multiCache.key !== key || this.multiCache.syntax !== syntax) {
+      this.multiCache = { key, syntax, data: precalculateMultiData(this.linesArr, syntax.rules, syntax.multiCount) };
+    }
+    return { rules: syntax.rules, multi: this.multiCache.data.map((states) => states.slice()) };
+  }
+
+  private toggleSyntax(): void {
+    this.verticalKey = true;
+    this.syntaxHidden = !this.syntaxHidden;
+    this._statusMessage = `[ Color syntax highlighting ${this.syntaxHidden ? 'disabled' : 'enabled'} ]`;
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -783,6 +826,7 @@ export class NanoEngine {
       softwrap: this.live.softwrap,
       emphasis: this.live.boldtext ? 'bold' : 'reverse',
       paints: this.interfacePaints(),
+      syntax: this.syntaxPainting(),
       stripe: this.live.guidestripe,
       title: {
         name: this.titleName === '' ? 'New Buffer' : this.titleName,
@@ -1236,9 +1280,9 @@ export class NanoEngine {
           return;
         }
         const cur = this.line(this._cursorLine);
-        const tab = this.live.tabstospaces
+        const tab = this.activeSyntax?.tab ?? (this.live.tabstospaces
           ? ' '.repeat(this.live.tabsize - (wideness(cur, this._cursorCol, this.live.tabsize) % this.live.tabsize))
-          : '\t';
+          : '\t');
         this.typeText(tab);
         return;
       }
@@ -1476,6 +1520,7 @@ export class NanoEngine {
     if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollLines(false, 1); return; }
     if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollLines(true, 1); return; }
     if (key === 'z') { this.toggleHiddenInterface(); return; }
+    if (key === 'y') { this.toggleSyntax(); return; }
     if (key === 'x') { this.toggleHelpLines(); return; }
     if (key === 'c') { this.toggleConstantShow(); return; }
     if (key === 'n') {
@@ -1512,6 +1557,10 @@ export class NanoEngine {
     }
     const toggle = EDIT_TOGGLES[key];
     if (toggle !== undefined) {
+      if (toggle.flag === 'tabstospaces' && this.activeSyntax?.tab != null) {
+        this._statusMessage = '[ Current syntax determines Tab ]';
+        return;
+      }
       this.live[toggle.flag] = !this.live[toggle.flag];
       this.manner = 'flowing';
       const quietForStateFlags = (toggle.flag === 'autoindent' || toggle.flag === 'breaklonglines')
@@ -1760,7 +1809,14 @@ export class NanoEngine {
   }
 
   private commentLines(): void {
-    const prefix = '#';
+    const sequence = this.activeSyntax?.comment ?? GENERAL_COMMENT;
+    if (sequence === '') {
+      this._statusMessage = '[ Commenting is not supported for this file type ]';
+      return;
+    }
+    const bar = sequence.indexOf('|');
+    const prefix = bar < 0 ? sequence : sequence.slice(0, bar);
+    const suffix = bar < 0 ? '' : sequence.slice(bar + 1);
     const range = this.markedLineRange();
     const last = this.linesArr.length - 1;
     if (range.top === range.bottom && range.bottom === last && !this.live.nonewlines) {
@@ -1768,11 +1824,12 @@ export class NanoEngine {
       return;
     }
     const commentable = (index: number): boolean => this.live.nonewlines || index !== last;
+    const isCommented = (text: string): boolean => text.startsWith(prefix) && (suffix === '' || text.endsWith(suffix));
     let action: 'COMMENT' | 'UNCOMMENT' = 'UNCOMMENT';
     let allEmpty = true;
     for (let index = range.top; index <= range.bottom; index++) {
       const empty = [...this.line(index)].every((ch) => isBlankChar(ch));
-      if (!empty && !(commentable(index) && this.line(index).startsWith(prefix))) {
+      if (!empty && !(commentable(index) && isCommented(this.line(index)))) {
         action = 'COMMENT';
         break;
       }
@@ -1784,11 +1841,11 @@ export class NanoEngine {
       if (!commentable(index)) continue;
       const text = this.line(index);
       if (action === 'COMMENT') {
-        this.linesArr[index] = prefix + text;
+        this.linesArr[index] = prefix + text + suffix;
         if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + prefix.length;
         if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += prefix.length;
-      } else if (text.startsWith(prefix)) {
-        this.linesArr[index] = text.slice(prefix.length);
+      } else if (isCommented(text)) {
+        this.linesArr[index] = text.slice(prefix.length, text.length - suffix.length);
         if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - prefix.length);
         if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - prefix.length);
       }
@@ -1806,7 +1863,7 @@ export class NanoEngine {
       return;
     }
     this.undoBegin('INDENT');
-    this.shiftLinesRight(top, range.bottom, this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t');
+    this.shiftLinesRight(top, range.bottom, this.activeSyntax?.tab ?? (this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t'));
     this.undoFinish();
     this._modified = true;
   }
@@ -2212,6 +2269,7 @@ export class NanoEngine {
     this.dropLock();
     this.titleName = name;
     this.bufferPath = target;
+    this.selectSyntax();
     if (this.live.locking) this.acquireLock(name, false);
   }
 

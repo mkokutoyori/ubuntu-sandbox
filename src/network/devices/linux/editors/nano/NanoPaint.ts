@@ -124,7 +124,7 @@ export function parseCombination(specification: string): CombinationOutcome {
   return { combination: { fg: fg === THE_DEFAULT ? null : fg, bg: bg === THE_DEFAULT ? null : bg, bold, italic } };
 }
 
-function paintOf(combination: ColorCombination, reverse = false): SpanLook {
+export function paintLook(combination: ColorCombination, reverse = false): SpanLook {
   return { style: 'paint', paint: { fg: combination.fg, bg: combination.bg, bold: combination.bold, italic: combination.italic, underline: false, reverse } };
 }
 
@@ -136,7 +136,7 @@ export function resolveInterfacePaints(combinations: ElementCombinations, boldte
   const rescind = noColorRequested && !configured;
   const look = (element: NanoElement, fallback: SpanLook | null): SpanLook | null => {
     const combination = combinations[element];
-    return combination === null || combination === undefined ? fallback : paintOf(combination);
+    return combination === null || combination === undefined ? fallback : paintLook(combination);
   };
   const title = look('title', hilite)!;
   const scrollerCombination = combinations.scroller;
@@ -145,7 +145,7 @@ export function resolveInterfacePaints(combinations: ElementCombinations, boldte
     number: look('number', hilite)!,
     stripe: look('stripe', { style: 'reverse' })!,
     scroller: look('scroller', null),
-    scrollerLit: scrollerCombination === null || scrollerCombination === undefined ? { style: 'reverse' } : paintOf(scrollerCombination, true),
+    scrollerLit: scrollerCombination === null || scrollerCombination === undefined ? { style: 'reverse' } : paintLook(scrollerCombination, true),
     selected: look('selected', hilite)!,
     spotlight: look('spotlight', { style: rescind ? 'reverse' : 'search' })!,
     mini: look('mini', title)!,
