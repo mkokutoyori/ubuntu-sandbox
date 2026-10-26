@@ -123,6 +123,16 @@ export class ProfileManager {
     return v === 'UNLIMITED' ? Infinity : parseFloat(v);
   }
 
+  resolveCpuPerCallCentiseconds(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'CPU_PER_CALL');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
+  }
+
+  resolveCpuPerSessionCentiseconds(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'CPU_PER_SESSION');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
+  }
+
   resolveConnectTimeMinutes(profileName: string): number {
     const v = this.resolveLimit(profileName, 'CONNECT_TIME');
     return v === 'UNLIMITED' ? Infinity : parseFloat(v);

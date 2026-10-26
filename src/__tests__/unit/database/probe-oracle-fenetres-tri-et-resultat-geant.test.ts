@@ -16,7 +16,9 @@
  *
  * - SYSDATE / SYSTIMESTAMP evalues par ligne : les sept champs de l'horloge (deux fuseaux, quatre rendus de texte) etaient recalcules a chaque ligne, plus de la moitie du temps d'un INSERT … SELECT (150 000 lignes : 2,3 s). La lecture est memorisee tant que la milliseconde, le fuseau de l'hote, celui de la base et celui de la session ne changent pas (0,63 s).
  *
- * Discrimine par `git stash push -- src/database/oracle src/terminal/commands/database.ts` : 10 cas sur 15 tombent (tri sur colonne cachee, tri groupe sur agregat cache, fenetre
+ * - CPU_PER_CALL et CPU_PER_SESSION des profils etaient rendus par DBA_PROFILES et jamais evalues (critere range sans effet) : une instruction demesuree ne pouvait etre coupee par aucun profil. Elles sont maintenant appliquees (RESOURCE_LIMIT = TRUE) : ORA-02393 coupe l'instruction et la defait ; ORA-02392 termine la session. Le temps compte est le temps d'execution reel de l'executeur, la seule mesure de CPU dont dispose un simulateur qui tourne dans un seul fil.
+ *
+ * Discrimine par `git stash push -- src/database/oracle src/terminal/commands/database.ts` : 12 cas sur 20 tombent (tri sur colonne cachee, tri groupe sur agregat cache, fenetre
  * PRECEDING vide en tete de partition — 10 au lieu de NULL —, ROLLBACK de 40 000 lignes : 4,8 s contre 0,15 s, SELECT * geant dans SQL*Plus, SUM OVER cumulatif de 60 000 lignes :
  * 184 s, AVG OVER sur le meme volume : 189 s). Passent des deux cotes, TEMOINS : les valeurs des fonctions de fenetre sur petites donnees (cumul, partition, ROWS BETWEEN glissant,
  * UNBOUNDED FOLLOWING, MIN/MAX, FIRST/LAST/NTH_VALUE, RANK) et le tri sur colonne selectionnee.
@@ -207,4 +209,53 @@ describe('creation d\'utilisateurs', () => {
     const after = String(exec("SELECT spare4 FROM sys.user$ WHERE name = 'VERIF2'").rows[0][0]);
     expect(after).not.toBe(before);
   });
+});
+
+describe('limites de ressources du profil', () => {
+  const HEAVY = 'INSERT INTO sys.owner_t SELECT level FROM dual CONNECT BY level <= 400000';
+
+  function limitedUser(profileLimits: string): OracleExecutor {
+    exec('CREATE TABLE owner_t (n NUMBER)');
+    exec('CREATE TABLE audit_t (n NUMBER)');
+    exec(`CREATE PROFILE capped LIMIT ${profileLimits}`);
+    exec('CREATE USER capped_user IDENTIFIED BY "Pw#1234" PROFILE capped');
+    exec('GRANT CREATE SESSION, CREATE TABLE, UNLIMITED TABLESPACE TO capped_user');
+    exec('GRANT INSERT, SELECT ON sys.owner_t TO capped_user');
+    return db.connect('CAPPED_USER', 'Pw#1234').executor;
+  }
+
+  test('CPU_PER_CALL coupe l\'instruction qui le depasse : ORA-02393 et rien n\'est insere', () => {
+    const user = limitedUser('CPU_PER_CALL 5');
+    expect(() => db.executeSql(user, HEAVY)).toThrow(/ORA-02393/);
+    expect(exec('SELECT COUNT(*) FROM owner_t').rows[0][0]).toBe(0);
+  }, 120_000);
+
+  test('CPU_PER_CALL laisse passer une instruction courte et la limite repart a chaque appel', () => {
+    const user = limitedUser('CPU_PER_CALL 500');
+    db.executeSql(user, 'INSERT INTO sys.owner_t VALUES (1)');
+    db.executeSql(user, 'INSERT INTO sys.owner_t VALUES (2)');
+    db.executeSql(user, 'COMMIT');
+    expect(exec('SELECT COUNT(*) FROM owner_t').rows[0][0]).toBe(2);
+  });
+
+  test('TEMOIN — sans limite (UNLIMITED) la meme instruction aboutit', () => {
+    const user = limitedUser('CPU_PER_CALL UNLIMITED');
+    db.executeSql(user, 'INSERT INTO sys.owner_t SELECT level FROM dual CONNECT BY level <= 20000');
+    db.executeSql(user, 'COMMIT');
+    expect(exec('SELECT COUNT(*) FROM owner_t').rows[0][0]).toBe(20000);
+  });
+
+  test('RESOURCE_LIMIT = FALSE suspend l\'application des limites', () => {
+    const user = limitedUser('CPU_PER_CALL 1');
+    exec('ALTER SYSTEM SET resource_limit = FALSE');
+    db.executeSql(user, 'INSERT INTO sys.owner_t SELECT level FROM dual CONNECT BY level <= 30000');
+    db.executeSql(user, 'COMMIT');
+    expect(exec('SELECT COUNT(*) FROM owner_t').rows[0][0]).toBe(30000);
+  });
+
+  test('CPU_PER_SESSION coupe la session : ORA-02392 puis la session est terminee', () => {
+    const user = limitedUser('CPU_PER_SESSION 5');
+    expect(() => db.executeSql(user, HEAVY)).toThrow(/ORA-02392/);
+    expect(() => db.executeSql(user, 'INSERT INTO sys.owner_t VALUES (1)')).toThrow(/ORA-02392|ORA-00028|ORA-01012/);
+  }, 120_000);
 });

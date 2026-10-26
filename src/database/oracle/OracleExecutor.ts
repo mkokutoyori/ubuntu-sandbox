@@ -51,6 +51,7 @@ import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
 import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
+import { SESSION_CPU_EXCEEDED } from './security/SessionLimitTracker';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -3006,6 +3007,7 @@ export class OracleExecutor extends BaseExecutor {
         throw new OracleError(947, 'not enough values');
       }
       for (const subRow of subResult.rows) {
+        this.tickCallBudget();
         const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
         const provided = new Set<number>();
         if (stmt.columns) {
@@ -4222,7 +4224,53 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── Expression evaluation ─────────────────────────────────────────
 
+  private callBudget: { startedAt: number; callLimitMs: number; sessionLimitMs: number } | null = null;
+  private callBudgetTicks = 0;
+  private sessionCpuMs = 0;
+
+  withCallBudget<T>(run: () => T): T {
+    if (this.callBudget !== null) return run();
+    const budget = this.openCallBudget();
+    if (budget === null) return run();
+    this.callBudget = budget;
+    try {
+      return run();
+    } finally {
+      this.sessionCpuMs += performance.now() - budget.startedAt;
+      this.callBudget = null;
+    }
+  }
+
+  private openCallBudget(): { startedAt: number; callLimitMs: number; sessionLimitMs: number } | null {
+    const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+    if (!engine || this.instance.getParameter('resource_limit')?.toUpperCase() !== 'TRUE') return null;
+    const user = (this.catalog as OracleCatalog).getUser(this.context.currentUser.toUpperCase());
+    if (!user) return null;
+    const callLimitMs = engine.profiles.resolveCpuPerCallCentiseconds(user.profile) * 10;
+    const sessionLimitMs = engine.profiles.resolveCpuPerSessionCentiseconds(user.profile) * 10 - this.sessionCpuMs;
+    if (!Number.isFinite(callLimitMs) && !Number.isFinite(sessionLimitMs)) return null;
+    return { startedAt: performance.now(), callLimitMs, sessionLimitMs };
+  }
+
+  private tickCallBudget(): void {
+    if (this.callBudget === null || (++this.callBudgetTicks & 255) !== 0) return;
+    const budget = this.callBudget;
+    const elapsed = performance.now() - budget.startedAt;
+    if (elapsed > budget.callLimitMs) {
+      budget.callLimitMs = Infinity;
+      throw new OracleError(2393, 'exceeded call limit on CPU usage');
+    }
+    if (elapsed > budget.sessionLimitMs) {
+      budget.sessionLimitMs = Infinity;
+      const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+      const session = engine?.sessions.getSessionBySid(this.boundSid);
+      if (engine && session) engine.sessions.terminate(session.sid, session.serial, 'KILLED', SESSION_CPU_EXCEEDED);
+      throw new OracleError(2392, 'exceeded session limit on CPU usage, you are being logged off');
+    }
+  }
+
   evaluateExpression(expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue {
+    this.tickCallBudget();
     switch (expr.type) {
       case 'Literal':
         if (expr.dataType === 'null') return null;

@@ -970,7 +970,7 @@ export class OracleDatabase implements SqlCommandHost {
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
   executeSql(executor: OracleExecutor, sql: string): ResultSet {
-    return this.atHostTime(() => {
+    return this.atHostTime(() => executor.withCallBudget(() => {
       const trimmed = sql.trim().replace(/;\s*$/, '');
       if (!trimmed) return emptyResult();
 
@@ -1022,7 +1022,7 @@ export class OracleDatabase implements SqlCommandHost {
         }
       }
       return result;
-    });
+    }));
   }
 
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {

@@ -15,6 +15,9 @@ export const SESSION_KILLED = { code: 28, message: 'your session has been killed
 export const SESSION_IDLE_SNIPED = {
   code: 2396, message: 'exceeded maximum idle time, please connect again',
 };
+export const SESSION_CPU_EXCEEDED = {
+  code: 2392, message: 'exceeded session limit on CPU usage, you are being logged off',
+};
 export const SESSION_CONNECT_TIME_EXCEEDED = {
   code: 2399, message: 'exceeded maximum connect time, you are being logged off',
 };
