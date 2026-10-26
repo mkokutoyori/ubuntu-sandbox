@@ -150,7 +150,7 @@ test.describe('Huawei VRP — terminal monitor through the real UI', () => {
     await waitForText(page, 'Current terminal monitor is on');
 
     await publishOspfAdjChange(page, id, 'Loading', 'Full', 'LoadingDone');
-    await waitForText(page, /%OSPF-5-NOTIFICATIONS: Process 1, Nbr 2\.2\.2\.2 on GigabitEthernet0\/0\/0 from Loading to Full, LoadingDone/, 4_000);
+    await waitForText(page, /%OSPF-5-ADJCHG: Process 1, Nbr 2\.2\.2\.2 on GigabitEthernet0\/0\/0 from Loading to Full, LoadingDone/, 4_000);
   });
 
   test('undo terminal monitor stops the syslog stream', async ({ page }) => {
@@ -179,7 +179,7 @@ test.describe('Huawei VRP — terminal monitor through the real UI', () => {
     await typeCmd(page, 'debugging ospf event');
     await typeCmd(page, 'terminal debugging');
 
-    await publishOspfAdjChange(page, id, 'Init', '2WAY');
+    await publishOspfAdjChange(page, id, 'Loading', 'Full', 'LoadingDone');
     await waitForText(page, /OSPF: Neighbor \(2\.2\.2\.2\)/, 4_000);
     await waitForText(page, /Nbr 2\.2\.2\.2/, 4_000);
 
