@@ -62,7 +62,7 @@ test.describe('Scénario (e2e) — coller et cliquer dans nano', () => {
     await expect.poll(() => nanoText(page)).toMatch(/nameserver 1\.1\.1\.1/);
 
     const titlebar = page.locator('[data-testid="nano-titlebar"]');
-    await expect(titlebar).toContainText('Modified');
+    await expect(titlebar).toContainText(/ \*\s*$/);
   });
 
   test('le collage entier s\'annule en un seul Alt+U', async ({ page }) => {

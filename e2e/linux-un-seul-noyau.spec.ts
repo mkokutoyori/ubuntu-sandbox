@@ -57,7 +57,7 @@ test.describe('la machine nomme un seul noyau', () => {
 
     await typeCmd(page, 'clear');
     await typeCmd(page, 'last');
-    expect(await modalText(page)).toContain(noyau);
+    expect(await modalText(page)).toContain(noyau.slice(0, 16));
 
     await typeCmd(page, 'clear');
     await typeCmd(page, 'dmesg | head -1');

@@ -44,10 +44,10 @@ test.describe('Scénario UI-1/UI-4 (e2e) — interface nano', () => {
     await expect(titlebar).toBeVisible({ timeout: 5_000 });
     await expect(titlebar).toContainText('GNU nano');
     await expect(titlebar).toContainText('/etc/hostname');
-    await expect(titlebar).not.toContainText('Modified');
+    await expect(titlebar).not.toContainText(/ \*\s*$/);
   });
 
-  test('barre de titre affiche "Modified" après une frappe, disparaît après sauvegarde', async ({ page }) => {
+  test('barre de titre marque un astérisque après une frappe, disparaît après sauvegarde', async ({ page }) => {
     await typeCmd(page, 'echo "line1" > /tmp/nano-title-test.txt');
     await typeCmd(page, 'nano /tmp/nano-title-test.txt');
     const titlebar = page.locator('[data-testid="nano-titlebar"]');
@@ -55,11 +55,11 @@ test.describe('Scénario UI-1/UI-4 (e2e) — interface nano', () => {
 
     await page.keyboard.press('End');
     await page.keyboard.press('x');
-    await expect(titlebar).toContainText('Modified');
+    await expect(titlebar).toContainText(/ \*\s*$/);
 
     await page.keyboard.press('Control+o');
     await page.keyboard.press('Enter');
-    await expect(titlebar).not.toContainText('Modified');
+    await expect(titlebar).not.toContainText(/ \*\s*$/);
   });
 
   test('nano -v ouvre en lecture seule : "View" dans le titre, barre de commandes entière, frappe sans effet', async ({ page }) => {
@@ -73,7 +73,7 @@ test.describe('Scénario UI-1/UI-4 (e2e) — interface nano', () => {
     await expect(shortcutBar).toContainText('Write Out');
 
     await page.keyboard.type('HACKED');
-    await expect(titlebar).not.toContainText('Modified');
+    await expect(titlebar).not.toContainText(/ \*\s*$/);
 
     await page.keyboard.press('Control+x');
     await expect(page.locator('[data-testid="nano-titlebar"]')).not.toBeVisible({ timeout: 5_000 });

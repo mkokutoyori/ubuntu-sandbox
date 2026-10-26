@@ -27,6 +27,13 @@ async function typeCmd(page: Page, command: string): Promise<void> {
   await input.press('Enter');
   await page.waitForTimeout(250);
 }
+async function answerSudo(page: Page): Promise<void> {
+  const secret = page.locator('[data-testid="terminal-modal"] input[type="password"]').last();
+  if (await secret.count() === 0) return;
+  await secret.fill('admin');
+  await secret.press('Enter');
+  await page.waitForTimeout(500);
+}
 async function modalText(page: Page): Promise<string> {
   return (await page.locator('[data-testid="terminal-modal"]').innerText()).trim();
 }
@@ -78,9 +85,11 @@ test.describe('Scénario 6 (e2e) — fichiers de configuration réseau', () => {
   });
 
   test('vim /etc/network/interfaces: create a static config, validated by ifup --no-act', async ({ page }) => {
-    await typeCmd(page, 'vim /etc/network/interfaces');
-    await expect(page.getByText('interfaces', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await typeCmd(page, 'sudo vim /etc/network/interfaces');
+    await answerSudo(page);
+    await expect(page.getByText('"/etc/network/interfaces"')).toBeVisible({ timeout: 5_000 });
 
+    await exCmd(page, '%d');
     await page.keyboard.press('i');
     await typeText(page, 'auto eth0');
     await page.keyboard.press('Enter');
@@ -95,9 +104,10 @@ test.describe('Scénario 6 (e2e) — fichiers de configuration réseau', () => {
 
     await exCmd(page, 'wq');
 
-    await typeCmd(page, 'ifup --no-act eth0');
+    await typeCmd(page, 'sudo ifup --no-act eth0');
+    await answerSudo(page);
     const transcript = await modalText(page);
-    const out = lastCommandOutput(transcript, 'ifup --no-act eth0');
+    const out = lastCommandOutput(transcript, 'sudo ifup --no-act eth0');
     expect(out).not.toContain('could not read');
     expect(out).toContain('192.168.10.101');
   });
