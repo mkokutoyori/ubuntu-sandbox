@@ -3926,12 +3926,13 @@ export abstract class EndHost extends Equipment {
 
   public udpListen(
     port: number, processName: string, owner: { pid?: number; uid?: number },
-    onDatagram?: (payload: Uint8Array) => void, address?: string,
+    onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null {
     const listener: UdpListener = onDatagram === undefined ? () => undefined : (delivery) => {
       const payload = delivery.udp.payload;
-      if (payload instanceof Uint8Array) onDatagram(payload);
-      else if (typeof payload === 'string') onDatagram(new TextEncoder().encode(payload));
+      const from = { address: delivery.sourceIP.toString(), port: delivery.udp.sourcePort };
+      if (payload instanceof Uint8Array) onDatagram(payload, from);
+      else if (typeof payload === 'string') onDatagram(new TextEncoder().encode(payload), from);
     };
     try {
       if (address !== undefined && address !== '0.0.0.0' && address !== '::') {

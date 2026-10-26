@@ -305,10 +305,15 @@ function runListen(ctx: LinuxCommandContext, opts: NetcatOptions, out: NcOutput,
   if (!localAddressOwned(ctx, address)) throw new NetcatExit([`nc: ${strerror('EADDRNOTAVAIL')}`]);
   if (opts.udp) {
     const pid = ctx.executor.currentPid();
+    let announced = false;
     const failure = ctx.net.udpListen(port, 'nc', { pid, uid: ownerUid },
-      (payload) => ctx.executor.emitLateStdout(pid, new TextDecoder().decode(payload)), address);
+      (payload, from) => {
+        if (opts.verbose && !announced) ctx.executor.emitLateStderr(pid, `${reportSock(ctx, 'Connection received', from.address, from.port, opts)}\n`);
+        announced = !opts.keep;
+        ctx.executor.emitLateStdout(pid, new TextDecoder().decode(payload));
+      }, address);
     if (failure !== null) throw new NetcatExit([`nc: ${strerror(failure)}`]);
-    if (opts.verbose) out.write('stderr', reportSock(ctx, 'Bound', address, port, opts));
+    if (opts.verbose) announceListening(ctx, out, reportSock(ctx, 'Bound', address, port, opts));
     return 0;
   }
   const table = ctx.executor.getSocketTable();
@@ -319,16 +324,27 @@ function runListen(ctx: LinuxCommandContext, opts: NetcatOptions, out: NcOutput,
     const denied = error instanceof Error && error.message.startsWith('EACCES');
     throw new NetcatExit([`nc: ${strerror(denied ? 'EACCES' : 'EADDRINUSE')}`]);
   }
-  if (!openTcpListener(ctx, port, address, ownerUid, socketSettingsOf(opts, address.includes(':')), opts.keep, stdin)) {
+  const listenerPid = ctx.executor.currentPid();
+  const announce = (peer: string, peerPort: number): void => {
+    if (opts.verbose) ctx.executor.emitLateStderr(listenerPid, `${reportSock(ctx, 'Connection received', peer, peerPort, opts)}\n`);
+  };
+  if (!openTcpListener(ctx, port, address, ownerUid, socketSettingsOf(opts, address.includes(':')), opts.keep, stdin, announce)) {
     table.unbind('tcp', address, port);
     throw new NetcatExit([`nc: ${strerror('EADDRINUSE')}`]);
   }
-  if (opts.verbose) out.write('stderr', reportSock(ctx, 'Listening', address, port, opts));
+  if (opts.verbose) announceListening(ctx, out, reportSock(ctx, 'Listening', address, port, opts));
   return 0;
+}
+
+function announceListening(ctx: LinuxCommandContext, out: NcOutput, line: string): void {
+  const pid = ctx.executor.currentPid();
+  if (ctx.executor.isBackgroundJob(pid)) ctx.executor.emitLateStderr(pid, `${line}\n`);
+  else out.write('stderr', line);
 }
 
 function openTcpListener(
   ctx: LinuxCommandContext, port: number, address: string, ownerUid: number, settings: SocketSettings, keep: boolean, greeting: string,
+  announce: (peer: string, peerPort: number) => void,
 ): boolean {
   const device = localDeviceOf(ctx) as unknown as {
     getTcpStack?: () => { listen(localPort: number, opts: TcpListenOptions, localIp?: string): unknown };
@@ -339,6 +355,7 @@ function openTcpListener(
     const pid = ctx.executor.currentPid();
     stack.listen(port, {
       onAccept: (socket) => {
+        announce(socket.remoteIp, socket.remotePort);
         socket.onData((chunk) => {
           if (typeof chunk === 'string') ctx.executor.emitLateStdout(pid, chunk);
           else if (chunk instanceof Uint8Array) ctx.executor.emitLateStdout(pid, new TextDecoder().decode(chunk));
@@ -379,6 +396,7 @@ export const ncCommand: LinuxCommand = {
   package: 'netcat-openbsd',
   aliases: ['ncat'],
   needsNetworkContext: true,
+  opensWireSession: true,
   ownsHelpOption: true,
   readsStdin: true,
   complete: makeArgCompleter({

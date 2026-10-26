@@ -140,6 +140,7 @@ export interface IOContext {
    * the file to the job's pid once the redirection is applied.
    */
   bindBackgroundStdout?(pid: number, path: string): void;
+  bindBackgroundStderr?(pid: number, path: string, append: boolean): void;
 }
 
 export interface InterpreterOptions {
@@ -433,7 +434,7 @@ export class BashInterpreter {
   private *subcommandG(cmd: string): Effects<string> {
     const fileOnly = cmd.trim().match(/^<\s*(\S+)$/);
     if (fileOnly && this.io) {
-      const path = this.io.resolvePath(fileOnly[1]);
+      const path = this.resolveHere(fileOnly[1]);
       const content = this.io.readFile(path);
       if (content !== null) return content;
       this.env.lastExitCode = 1;
@@ -456,6 +457,12 @@ export class BashInterpreter {
       const result = normalizeResult(yield { argv: cmd.split(/\s+/) });
       return result.output;
     }
+  }
+
+  private resolveHere(path: string): string {
+    const here = this.env.get('PWD');
+    const anchored = here === undefined || path.startsWith('/') || path.startsWith('~') ? path : `${here}/${path}`;
+    return this.io!.resolvePath(anchored);
   }
 
   private makeGlobFn(): GlobFn | undefined {
@@ -800,7 +807,7 @@ export class BashInterpreter {
       for (const redir of node.redirections) {
         if (redir.op === '<' && this.io) {
           const target = yield* this.expandWordG(redir.target);
-          const path = this.io.resolvePath(target);
+          const path = this.resolveHere(target);
           const content = this.io.readFile(path);
           if (content !== null) pipeInput = content;
         } else if (redir.op === '<<<') {
@@ -1148,10 +1155,16 @@ export class BashInterpreter {
   /** Apply output redirections to captured output. */
   private *bindBackgroundStdout(redirections: Redirection[], pid: number): Effects<void> {
     if (!this.io?.bindBackgroundStdout) return;
+    let stdoutPath: string | undefined;
     for (const redir of redirections) {
-      if ((redir.op !== '>' && redir.op !== '>>') || (redir.fd !== undefined && redir.fd !== 1)) continue;
       const target = yield* this.expandWordG(redir.target);
-      this.io.bindBackgroundStdout(pid, this.io.resolvePath(target));
+      if (redir.fd === 2) {
+        if (redir.op === '>' || redir.op === '>>') this.io.bindBackgroundStderr?.(pid, this.resolveHere(target), redir.op === '>>');
+        else if (redir.op === '>&' && target === '1' && stdoutPath !== undefined) this.io.bindBackgroundStderr?.(pid, stdoutPath, true);
+      } else if ((redir.op === '>' || redir.op === '>>') && (redir.fd === undefined || redir.fd === 1)) {
+        stdoutPath = this.resolveHere(target);
+        this.io.bindBackgroundStdout(pid, stdoutPath);
+      }
     }
   }
 
@@ -1185,7 +1198,7 @@ export class BashInterpreter {
 
     for (const redir of redirections) {
       const target = yield* this.expandWordG(redir.target);
-      const path = this.io.resolvePath(target);
+      const path = this.resolveHere(target);
       const append = redir.op === '>>';
 
       try {
@@ -1259,7 +1272,7 @@ export class BashInterpreter {
     for (const redir of redirections) {
       if (redir.op !== '>' && redir.op !== '>>') continue;
       const target = yield* this.expandWordG(redir.target);
-      const path = this.io ? this.io.resolvePath(target) : target;
+      const path = this.io ? this.resolveHere(target) : target;
       const append = redir.op === '>>';
       const fd = redir.fd ?? 1;
       this.execRedirect ??= {};
@@ -1298,9 +1311,9 @@ export class BashInterpreter {
         if (fd === 1) fd1 = source;
         else if (fd === 2) fd2 = source;
       } else if (redir.op === '>&') {
-        fd1 = fd2 = { kind: 'file', path: this.io.resolvePath(target), append: false };
+        fd1 = fd2 = { kind: 'file', path: this.resolveHere(target), append: false };
       } else if (redir.op === '>' || redir.op === '>>') {
-        const sink: Sink = { kind: 'file', path: this.io.resolvePath(target), append: redir.op === '>>' };
+        const sink: Sink = { kind: 'file', path: this.resolveHere(target), append: redir.op === '>>' };
         if (fd === 1) fd1 = sink;
         else if (fd === 2) fd2 = sink;
       }
@@ -1406,7 +1419,7 @@ export class BashInterpreter {
     for (const redir of redirections) {
       const target = this.materializeWord(redir.target);
       if (redir.op === '<') {
-        const path = this.io.resolvePath(yield* this.expandWordG(target));
+        const path = this.resolveHere(yield* this.expandWordG(target));
         content = this.io.readFile(path);
       } else if (redir.op === '<<<' || redir.op === '<<') {
         content = (yield* this.expandWordG(target)) + '\n';
@@ -1559,7 +1572,7 @@ export class BashInterpreter {
       this.env.lastExitCode = 1;
       return;
     }
-    const path = this.io.resolvePath(filePath);
+    const path = this.resolveHere(filePath);
     const content = this.io.readFile(path);
     if (content === null) {
       this.output.push(`bash: source: ${filePath}: No such file or directory\n`);
@@ -1634,7 +1647,7 @@ export class BashInterpreter {
     // File tests — delegate to the IOContext stat hook.
     const stat = this.io?.stat;
     if (!stat) return false;
-    const abs = this.io?.resolvePath?.(v) ?? v;
+    const abs = this.io ? this.resolveHere(v) : v;
     const st = stat(abs);
     switch (op) {
       case '-e':

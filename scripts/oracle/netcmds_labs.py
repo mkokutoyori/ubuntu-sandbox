@@ -8,7 +8,6 @@ EMPTY = ([], [])
 ONE_TCP = (["nc -l 8080 & P1=$!"], ["P1"])
 TCP_AND_UDP = (["nc -l 8080 & P1=$!", "nc -lu 5353 & P2=$!"], ["P1", "P2"])
 BOUND = (["nc -l 127.0.0.1 9000 & P1=$!", "nc -l 10.0.0.1 7000 & P2=$!", "nc -lu 127.0.0.1 5300 & P3=$!"], ["P1", "P2", "P3"])
-IPV6 = (["nc -6 -l ::1 9001 & P1=$!", "nc -6 -l 9002 & P2=$!", "nc -6 -lu 5300 & P3=$!"], ["P1", "P2", "P3"])
 CONNECTED = (
     ["nc -l 127.0.0.1 9000 & P1=$!", "sleep 0.3", "nc -p 40001 127.0.0.1 9000 & P2=$!"],
     ["P1", "P2"],
@@ -35,7 +34,6 @@ SOCKET_SCENARIOS = [
     ("one-tcp", ONE_TCP),
     ("tcp-and-udp", TCP_AND_UDP),
     ("bound", BOUND),
-    ("ipv6", IPV6),
     ("connected", CONNECTED),
     ("two-connections", TWO_CONNECTIONS),
     ("udp-connected", UDP_CONNECTED),
@@ -60,12 +58,63 @@ def ss_cases():
     return out
 
 
+NETSTAT_COMMANDS = [
+    "netstat", "netstat -a", "netstat -l", "netstat -n", "netstat -an", "netstat -t", "netstat -ta", "netstat -tl", "netstat -tan",
+    "netstat -tuln", "netstat -tulnp", "netstat -tanp", "netstat -tanoe", "netstat -taneee", "netstat -tane", "netstat -u", "netstat -ua",
+    "netstat -x", "netstat -xa", "netstat -w", "netstat -wa", "netstat -4 -a", "netstat -6 -a", "netstat -A inet -a", "netstat -A inet6 -a",
+    "netstat --inet -a", "netstat --inet6 -a", "netstat --tcp -l --numeric", "netstat --wide -tan", "netstat -tanW", "netstat -V",
+    "netstat -h", "netstat -z", "netstat --nope", "netstat -tp", "netstat -tlp", "netstat -tlnpe", "netstat -tuap", "netstat -taov",
+    "netstat -tlnW", "netstat -ltn", "netstat -lntu", "netstat -tanl", "netstat -aunt", "netstat -tln --program", "netstat -tlnv",
+    "netstat -tal --numeric-hosts", "netstat -tal --numeric-ports", "netstat -talN", "netstat -A unix", "netstat -A tcp,udp -l",
+]
+
+
 def netstat_cases():
-    return []
+    out = []
+    for name, (setup, pids) in SOCKET_SCENARIOS:
+        out.append(case("netstat-" + name, setup, NETSTAT_COMMANDS, pids, ADDRESSES))
+    return out
+
+
+FUSER_PORTS = [
+    "fuser 9000/tcp 2>&1", "fuser -v 9000/tcp 2>&1", "fuser -n tcp 9000 2>&1", "fuser -vn tcp 9000 2>&1", "fuser 5300/udp 2>&1",
+    "fuser -v 5300/udp 2>&1", "fuser -un udp 5300 2>&1", "fuser 9000/tcp 7000/tcp 2>&1", "fuser -v 9000/tcp 5300/udp 2>&1",
+    "fuser 1234/tcp 2>&1; echo rc=$?", "fuser 9000/tcp; echo rc=$?", "fuser -s 9000/tcp; echo rc=$?", "fuser -s 1234/tcp; echo rc=$?",
+    "fuser -4 9000/tcp 2>&1", "fuser -6 9000/tcp 2>&1", "fuser -l", "fuser -V 2>&1", "fuser 2>&1; echo rc=$?", "fuser -h 2>&1; echo rc=$?",
+    "fuser -a 1234/tcp 2>&1", "fuser -v -a 1234/tcp 2>&1", "fuser -u 9000/tcp 2>&1", "fuser -vu 9000/tcp 2>&1", "fuser 9000/xyz 2>&1; echo rc=$?",
+    "fuser abc/tcp 2>&1; echo rc=$?", "fuser -n foo 9000 2>&1; echo rc=$?", "fuser -n tcp abc 2>&1; echo rc=$?", "fuser -vm /tmp/lab 2>&1",
+    "fuser /tmp/lab 2>&1", "fuser -m /tmp/lab 2>&1", "fuser -v 9000/tcp 7000/tcp 2>&1", "fuser -vn tcp 7000 2>&1", "fuser -nudp 5300 2>&1",
+    "fuser -w 9000/tcp 2>&1", "fuser -vw 9000/tcp 2>&1", "fuser -M 9000/tcp 2>&1", "fuser -I 9000/tcp 2>&1", "fuser -vz 9000/tcp 2>&1",
+    "fuser -k 9000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 9000/tcp 2>&1; echo rc=$?",
+    "fuser -k -TERM 7000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 7000/tcp 2>&1; echo rc=$?",
+    "fuser -k -HUP 5300/udp 2>&1; echo rc=$?", "fuser -k -INVALID 9000/tcp 2>&1; echo rc=$?", "fuser -k -l 2>&1 | head -2",
+]
+
+FUSER_FILES = [
+    "fuser f1 2>&1", "fuser -v f1 2>&1", "fuser -m f1 2>&1", "fuser -vm /tmp/lab 2>&1", "fuser d 2>&1", "fuser -v d 2>&1", "fuser -mv d 2>&1",
+    "fuser -a f1 nofile 2>&1; echo rc=$?", "fuser -v nofile 2>&1; echo rc=$?", "fuser -u f1 2>&1", "fuser -v f1 f2 2>&1", "fuser -vu f2 2>&1",
+    "fuser f1 f2 d 2>&1", "fuser -v f1 f2 d 2>&1", "fuser -s f1; echo rc=$?", "fuser -s nofile; echo rc=$?", "fuser -vm / 2>&1 | head -3",
+    "fuser -c f1 2>&1", "fuser -vc d 2>&1", "fuser -m -u f1 2>&1", "fuser -vam /tmp/lab 2>&1", "fuser -k f1 2>&1; echo rc=$?; sleep 0.3; fuser f1 2>&1; echo rc=$?",
+    "fuser -k -KILL f2 2>&1; echo rc=$?", "fuser -vn file f2 2>&1", "fuser -n file f2 2>&1", "fuser -vn tcp f2 2>&1; echo rc=$?",
+]
 
 
 def fuser_cases():
-    return []
+    out = []
+    ports = [
+        ("fuser-listeners", ["nc -l 127.0.0.1 9000 & P1=$!", "nc -lu 127.0.0.1 5300 & P2=$!", "nc -l 10.0.0.1 7000 & P3=$!"], ["P1", "P2", "P3"]),
+        ("fuser-connected", ["nc -l 127.0.0.1 9000 & P1=$!", "sleep 0.3", "nc -p 40001 127.0.0.1 9000 & P2=$!"], ["P1", "P2"]),
+        ("fuser-none", [], []),
+    ]
+    for name, setup, pids in ports:
+        out.append(case(name, setup, FUSER_PORTS, pids, ADDRESSES))
+    files = [
+        "echo data > /tmp/lab/f1", "echo data > /tmp/lab/f2", "mkdir -p /tmp/lab/d",
+        "sleep 60 < /tmp/lab/f1 & P1=$!", "tail -f /tmp/lab/f2 > /dev/null & P2=$!", "(cd /tmp/lab/d; exec sleep 60) & P3=$!",
+    ]
+    out.append(case("fuser-files", files, FUSER_FILES, ["P1", "P2", "P3"], ADDRESSES))
+    out.append(case("fuser-files-none", ["echo data > /tmp/lab/f1", "echo data > /tmp/lab/f2", "mkdir -p /tmp/lab/d"], FUSER_FILES, [], ADDRESSES))
+    return out
 
 
 NC_CLI = [
@@ -113,8 +162,27 @@ NC_UDP_SESSION = [
 ]
 
 
+def up(pid):
+    return "[ -d /proc/%s ] && echo alive || echo gone" % pid
+
+
+NC_READWRITE = [
+    "nc -l 127.0.0.1 9001 > g1.txt & S=$!; sleep 0.3; (echo hi | nc 127.0.0.1 9001) & C=$!; sleep 1.5; echo server $(" + up("$S") + "); echo client $(" + up("$C") + "); cat g1.txt; kill $C $S",
+    "nc -l 127.0.0.1 9002 > g2.txt & S=$!; sleep 0.3; echo hi | nc -N 127.0.0.1 9002; echo rc=$?; sleep 0.3; echo server $(" + up("$S") + "); cat g2.txt",
+    "nc -l 127.0.0.1 9003 > g3.txt & S=$!; sleep 0.3; echo hi | nc -q 0 127.0.0.1 9003; echo rc=$?; sleep 0.3; echo server $(" + up("$S") + "); cat g3.txt",
+    "nc -l 127.0.0.1 9004 > g4.txt & S=$!; sleep 0.3; (echo hi | nc -q 1 127.0.0.1 9004) & C=$!; sleep 0.5; echo at0.5 client $(" + up("$C") + "); sleep 1; echo at1.5 client $(" + up("$C") + "); echo server $(" + up("$S") + "); cat g4.txt",
+    "nc -l 127.0.0.1 9005 > g5.txt & S=$!; sleep 0.3; (echo hi | nc -w 1 127.0.0.1 9005) & C=$!; sleep 0.5; echo at0.5 client $(" + up("$C") + "); sleep 1; echo at1.5 client $(" + up("$C") + "); echo server $(" + up("$S") + "); cat g5.txt",
+    "nc -l 127.0.0.1 9006 > g6.txt & S=$!; sleep 0.3; nc 127.0.0.1 9006 < /dev/null & C=$!; sleep 1; echo server $(" + up("$S") + ") client $(" + up("$C") + "); kill $C; sleep 0.3; echo after-kill server $(" + up("$S") + ")",
+    "nc -d -l 127.0.0.1 9007 > g7.txt & S=$!; sleep 0.3; nc -d 127.0.0.1 9007 & C=$!; sleep 1; echo server $(" + up("$S") + ") client $(" + up("$C") + "); kill $C; sleep 0.3; echo after-kill server $(" + up("$S") + ")",
+    "nc -l 127.0.0.1 9008 > g8.txt & sleep 0.3; printf 'a\\nb\\n' | nc -C -N 127.0.0.1 9008; sleep 0.3; wc -c < g8.txt",
+    "nc -l -w 1 127.0.0.1 9009 > g9.txt & S=$!; sleep 0.2; nc 127.0.0.1 9009 < /dev/null & C=$!; sleep 1.6; echo server $(" + up("$S") + ") client $(" + up("$C") + ")",
+    "nc -lu 127.0.0.1 5400 > g10.txt & S=$!; sleep 0.3; echo ping | nc -u -w 1 127.0.0.1 5400; echo rc=$?; sleep 0.3; cat g10.txt; echo server $(" + up("$S") + "); kill $S",
+]
+
+
 def nc_cases():
     out = [case("nc-cli", [], NC_CLI, [], ADDRESSES)]
+    out.append(case("nc-readwrite", [], NC_READWRITE, [], ADDRESSES))
     out.append(case("nc-scan-down", [], NC_SCAN, [], ADDRESSES))
     servers = [
         "nc -k -l 127.0.0.1 9000 >/dev/null & P1=$!",

@@ -34,6 +34,12 @@ interface RootRunner {
   readonly executor: { runAsUser<T>(username: string, fn: () => Promise<T>): Promise<T> };
 }
 
+const EPHEMERAL_PORT_FIRST = 32768;
+
+export function maskEphemeralPorts(text: string): string {
+  return text.replace(/(Connection received on \S+ )(\d+)/g, (whole, head: string, port: string) => (Number(port) >= EPHEMERAL_PORT_FIRST ? `${head}<ephemeral>` : whole));
+}
+
 const DAEMONS = ['ssh', 'systemd-resolved', 'chrony', 'rsyslog', 'cron', 'atd', 'fail2ban', 'auditd', 'systemd-networkd'];
 const STATUS_MARK = '@@RC ';
 const PIDS_MARK = '@@PIDS ';
