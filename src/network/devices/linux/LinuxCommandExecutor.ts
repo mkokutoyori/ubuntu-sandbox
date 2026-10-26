@@ -3231,7 +3231,7 @@ export class LinuxCommandExecutor {
   private startBackgroundJob(input: string): { announcement: string; settled: Promise<unknown> } | null {
     if (!endsWithUnquotedAmp(input)) return null;
     let cmdLine = input.replace(/\s*&\s*$/, '').trim();
-    if (!cmdLine) return null;
+    if (!cmdLine || !isSingleSimpleCommand(cmdLine)) return null;
 
     // `nohup CMD &` — strip the nohup wrapper and detach from the shell.
     let nohup = false;
@@ -3295,7 +3295,7 @@ export class LinuxCommandExecutor {
   }
 
   private spawnBackgroundJob(
-    cmdLine: string, nohup: boolean,
+    cmdLine: string, nohup: boolean, pipedInput?: string,
   ): { pid: number; jobId: number; settled: Promise<unknown> } | null {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
@@ -3368,7 +3368,7 @@ export class LinuxCommandExecutor {
         simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
       if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
       if (stderrPath !== undefined) this.bindBackgroundStderr(proc.pid, this.vfs.normalizePath(stderrPath, this.cwd), stderrAppend);
-      const netStdin = stdinPath === undefined ? undefined
+      const netStdin = stdinPath === undefined ? pipedInput
         : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
@@ -3380,7 +3380,7 @@ export class LinuxCommandExecutor {
       if (pending) {
         captured = '';
         exitCode = 0;
-        settled = pending
+        const finished = pending
           .then((r) => {
             job.capturedOutput = r.output;
             job.exitCode = r.exitCode;
@@ -3393,6 +3393,8 @@ export class LinuxCommandExecutor {
               job.completesAt = this.logicalNow() + job.durationMs;
             }
           });
+        const running = new Promise<void>((resolve) => { this.backgroundRunning.set(proc.pid, resolve); });
+        settled = Promise.race([finished, running]);
       }
     }
     // The sync simulator executes the work eagerly. We still want
@@ -3436,6 +3438,17 @@ export class LinuxCommandExecutor {
     if (deltaMs <= 0) return;
     this.clockPort.step(deltaMs);
     this.notifyClockAdvanced();
+  }
+
+  private processTimers: { schedule(callback: () => void, delayMs: number): () => void } | null = null;
+
+  attachProcessTimers(timers: { schedule(callback: () => void, delayMs: number): () => void }): void {
+    this.processTimers = timers;
+  }
+
+  scheduleAfter(delayMs: number, callback: () => void): () => void {
+    if (this.processTimers === null) throw new Error('process timers are not attached to this machine');
+    return this.processTimers.schedule(callback, delayMs);
   }
 
   private readonly clockListeners: Array<() => void> = [];
@@ -4658,7 +4671,8 @@ export class LinuxCommandExecutor {
     if (argv.length === 0) return { output: '', exitCode: 0 };
     argv = this.shippedBinaryInvocation(argv);
     if (background) {
-      const spawned = this.spawnBackgroundJob(argv.join(' '), false);
+      const fed = interpreterStdin !== undefined && interpreterStdin !== '' && argv[argv.length - 1] === interpreterStdin;
+      const spawned = this.spawnBackgroundJob((fed ? argv.slice(0, -1) : argv).join(' '), false, fed ? interpreterStdin : undefined);
       if (!spawned) return { output: '', exitCode: 0 };
       return { output: '', exitCode: 0, backgroundPid: spawned.pid };
     }
@@ -5133,6 +5147,13 @@ export class LinuxCommandExecutor {
     sink.file = file;
     this.lateStderr.set(pid, sink);
     for (const text of sink.pending.splice(0)) this.appendLateStdout(file, text);
+  }
+
+  private readonly backgroundRunning = new Map<number, () => void>();
+
+  announceBackgroundRunning(pid: number): void {
+    this.backgroundRunning.get(pid)?.();
+    this.backgroundRunning.delete(pid);
   }
 
   isBackgroundJob(pid: number): boolean {
@@ -8907,6 +8928,22 @@ function parseBackgroundDurationMs(cmdLine: string): number {
   const factor = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000
     : unit === 'd' ? 86_400_000 : 1_000;
   return Math.round(value * factor);
+}
+
+function isSingleSimpleCommand(input: string): boolean {
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  for (const c of input) {
+    if (escaped) { escaped = false; continue; }
+    if (c === '\\' && quote !== "'") { escaped = true; continue; }
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (';|&\n()`'.includes(c)) return false;
+  }
+  return true;
 }
 
 function endsWithUnquotedAmp(input: string): boolean {

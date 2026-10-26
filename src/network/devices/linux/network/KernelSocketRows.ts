@@ -35,7 +35,7 @@ export interface KernelSocketSources {
   readonly processes: ProcessDirectory;
 }
 
-const NO_QUEUES: TcpQueues = { receive: 0, send: 0 };
+const NO_QUEUES: TcpQueues = { receive: 0, send: 0, unread: 0 };
 
 function connectionKey(localAddress: string, localPort: number, remoteAddress: string, remotePort: number): string {
   return `${localAddress}|${localPort}|${remoteAddress}|${remotePort}`;
@@ -121,7 +121,7 @@ export function kernelSocketRows(sources: KernelSocketSources): KernelSocketRow[
     rows.push({
       entry,
       state: socketStateOfTcp(socket.state) ?? entry.state,
-      owner: ownerOf(entry, ownerPid ?? socket.ownerPid ?? undefined, processes, descriptors),
+      owner: ownerOf(entry, ownerPid ?? socket.ownerPid ?? socket.pendingListener?.identity.pid, processes, descriptors),
       queues: stack.queuesOf(socket), listener: null, timer: stack.timerOf(socket),
       info: fullSocket ? stack.infoOf(socket) : null,
       facts: fullSocket ? stack.factsOf(socket) : null,

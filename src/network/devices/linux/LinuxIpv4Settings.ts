@@ -42,7 +42,47 @@ export const LINUX_IPV4_KNOBS: readonly KernelByteKnob[] = [
 
 export const LINUX_CORE_KNOBS: readonly KernelByteKnob[] = [
   { name: 'somaxconn', initial: 4096, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'rmem_default', initial: 212992, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'wmem_default', initial: 212992, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'rmem_max', initial: 212992, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'wmem_max', initial: 212992, minimum: 0, maximum: 2_147_483_647 },
 ];
+
+export interface KernelVectorKnob {
+  readonly name: string;
+  readonly initial: readonly number[];
+}
+
+export const LINUX_IPV4_VECTOR_KNOBS: readonly KernelVectorKnob[] = [
+  { name: 'tcp_rmem', initial: [4096, 131072, 6291456] },
+  { name: 'tcp_wmem', initial: [4096, 16384, 4194304] },
+];
+
+export class KernelVectorStore {
+  private readonly values: Map<string, number[]>;
+
+  constructor(private readonly knobs: readonly KernelVectorKnob[]) {
+    this.values = new Map(knobs.map((knob) => [knob.name, [...knob.initial]]));
+  }
+
+  get(name: string): readonly number[] {
+    return this.values.get(name) ?? [];
+  }
+
+  text(name: string): string {
+    return this.get(name).join('\t');
+  }
+
+  write(name: string, text: string): boolean {
+    const knob = this.knobs.find((candidate) => candidate.name === name);
+    const fields = text.trim().split(/\s+/);
+    if (knob === undefined || fields.length !== knob.initial.length || !fields.every((field) => /^\d+$/.test(field))) return false;
+    const numbers = fields.map(Number);
+    if (numbers.some((value, index) => index > 0 && value < numbers[index - 1])) return false;
+    this.values.set(name, numbers);
+    return true;
+  }
+}
 
 export class KernelKnobStore {
   private readonly values: Map<string, number>;

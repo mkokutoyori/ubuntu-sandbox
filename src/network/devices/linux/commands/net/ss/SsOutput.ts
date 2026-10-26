@@ -6,6 +6,7 @@ import { SS, STATE_NAMES } from './SsModel';
 import { addressBytes, type SsFilterSubject } from './SsFilterExpression';
 import type { SsRequest } from './SsArguments';
 import { COLUMN, SsTable } from './SsTable';
+import { skmemText, type SocketBufferSettings } from './SsMemory';
 import {
   bandwidthText, formatG, hexMask, printMsTimer, wholeJiffies, wholeMicroseconds,
 } from './SsFormat';
@@ -19,6 +20,7 @@ export interface SsOutputHost {
   cookieOf(socketId: number): number;
   defaultCongestionControl(): string;
   canInspectProcessOf(uid: number): boolean;
+  socketBuffers(): SocketBufferSettings;
 }
 
 export interface SsSocketView {
@@ -117,7 +119,7 @@ export class SsRowPrinter {
     if (this.request.showTos && full) this.printTos(view);
     if (this.request.showCgroup && full) this.printCgroup(view);
     if (this.request.showInetSockopt && full) this.printSocketOptions(view);
-    if (this.request.showTcpInfo && view.protocol === 'tcp') this.printTcpInfo(view);
+    if (this.request.showMemory || (this.request.showTcpInfo && view.protocol === 'tcp')) this.printContinuation(view, full);
   }
 
   private printState(view: SsSocketView): void {
@@ -209,6 +211,7 @@ export class SsRowPrinter {
     const tos = view.row.facts?.typeOfService ?? 0;
     this.table.out(` tos:${hexMask(tos)}`);
     if (view.family === 6) this.table.out(` tclass:${hexMask(tos)}`);
+    this.table.out(` class_id:${hexMask(0)}`);
   }
 
   private printSocketOptions(view: SsSocketView): void {
@@ -220,9 +223,19 @@ export class SsRowPrinter {
     table.out(')');
   }
 
-  private printTcpInfo(view: SsSocketView): void {
+  private printContinuation(view: SsSocketView, full: boolean): void {
     const { table, request } = this;
     if (!request.oneline) table.out('\n\t');
+    if (request.showMemory && full) {
+      table.out(skmemText({
+        protocol: view.protocol, listening: view.state === SS.LISTEN, queues: view.row.queues, info: view.row.info,
+      }, this.host.socketBuffers()));
+    }
+    if (request.showTcpInfo && view.protocol === 'tcp') this.printTcpInfo(view);
+  }
+
+  private printTcpInfo(view: SsSocketView): void {
+    const { table } = this;
     const { info, listener } = view.row;
     if (info !== null) {
       table.out(this.tcpInfoText(info));

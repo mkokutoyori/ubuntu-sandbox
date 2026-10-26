@@ -21,6 +21,7 @@ export interface ListenerIdentity {
   /** Nom du processus, lu par `ss -p`, `netstat -p` et `lsof`. */
   processName?: string;
   service?: string;
+  uid?: number;
   /**
    * Salutation applicative : les premiers octets que le service écrit sur
    * une connexion fraîche. `TcpStack` les ÉMET à l'acceptation, avant de

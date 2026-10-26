@@ -337,6 +337,18 @@ export class SocketTable {
     return entry;
   }
 
+  connectDatagram(socketId: number, localAddress: string, remoteAddress: string, remotePort: number): boolean {
+    const entry = this.sockets.get(socketId) as { -readonly [K in keyof SocketEntry]: SocketEntry[K] } | undefined;
+    if (entry === undefined) return false;
+    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
+    entry.localAddress = localAddress;
+    entry.remoteAddress = remoteAddress;
+    entry.remotePort = remotePort;
+    entry.state = 'ESTABLISHED';
+    this.bindings.add(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
+    return true;
+  }
+
   /**
    * Remove an active 4-tuple entry — invoked when a connection reaches
    * CLOSED (the kernel removes the TCB from the socket table). The

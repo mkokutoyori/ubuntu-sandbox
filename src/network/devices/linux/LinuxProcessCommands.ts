@@ -181,11 +181,15 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
   }
 
   let signal: Signal = 'SIGTERM';
+  let probe = false;
   const pidArgs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '-s' || a === '-n') {
+    if (a === '-0' || ((a === '-s' || a === '-n') && args[i + 1] === '0')) {
+      probe = true;
+      if (a !== '-0') i++;
+    } else if (a === '-s' || a === '-n') {
       const sig = parseSignalArg(args[++i] || '');
       if (!sig) return { output: `kill: ${args[i]}: invalid signal specification`, exitCode: 1 };
       signal = sig;
@@ -237,6 +241,7 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
         exitCode = 1;
         continue;
       }
+      if (probe) continue;
       ctx.pm.kill(job.pid, signal);
       const TERMINATES = new Set<Signal>(['SIGTERM','SIGINT','SIGQUIT','SIGKILL','SIGHUP']);
       if (TERMINATES.has(signal)) ctx.jobs?.remove(job.id);
@@ -253,6 +258,7 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
       exitCode = 1;
       continue;
     }
+    if (probe) continue;
     const ok = ctx.pm.kill(pid, signal);
     if (!ok) {
       errors.push(`kill: (${pid}) - Operation not permitted`);

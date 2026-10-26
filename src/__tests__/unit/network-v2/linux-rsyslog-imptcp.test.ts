@@ -46,13 +46,13 @@ async function lab(listener: string): Promise<{ server: LinuxServer; client: Lin
 describe('imptcp on a Linux host', () => {
   it('witness: an imtcp listener files what a client sends over the wire', async () => {
     const { server, client } = await lab('module(load="imtcp")\ninput(type="imtcp" port="5514")');
-    await client.executeCommand('echo "<13>Oct 19 12:00:01 client1 probe: over the wire" | nc 192.168.50.1 5514');
+    await client.executeCommand('echo "<13>Oct 19 12:00:01 client1 probe: over the wire" | nc -N 192.168.50.1 5514');
     expect(await server.executeCommand('cat /var/log/ptcp.log')).toContain('over the wire');
   });
 
   it('files what a client sends over the wire to an imptcp listener', async () => {
     const { server, client } = await lab('module(load="imptcp")\ninput(type="imptcp" port="5514")');
-    await client.executeCommand('echo "<13>Oct 19 12:00:01 client1 probe: over the wire" | nc 192.168.50.1 5514');
+    await client.executeCommand('echo "<13>Oct 19 12:00:01 client1 probe: over the wire" | nc -N 192.168.50.1 5514');
     expect(await server.executeCommand('cat /var/log/ptcp.log')).toContain('over the wire');
   });
 

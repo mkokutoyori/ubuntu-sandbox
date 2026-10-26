@@ -7,6 +7,8 @@ import { PortNumber } from '../../../../core/ports/PortNumber';
 import { strerror, type Errno } from '../../../../core/Errno';
 import { connectErrno } from '../../../../tcp/types';
 import { retransmitSilentSyn } from '../../../../tcp/SynRetransmission';
+import type { TcpListener, TcpSocket } from '../../../../tcp/TcpStack';
+import { listenForInterruption } from '../CommandInterruption';
 import {
   DiffServField, HopLimit, TimeToLive, TtlFloor,
 } from '../../../../core/IpHeaderFields';
@@ -184,7 +186,7 @@ export function ncUnixClientPath(args: readonly string[]): string | null {
   }
 }
 
-function runUnixConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: string, out: NcOutput): number {
+function runUnixConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: string | undefined, out: NcOutput): number {
   const path = opts.host!;
   let received = '';
   const end = ctx.executor.connectUnixStream(path, { onData: (text) => { received += text; }, onClose: () => undefined });
@@ -192,13 +194,112 @@ function runUnixConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: st
     out.write('stderr', `nc: ${path}: ${strerror(UNIX_CONNECT_ERRORS[end.errno])}`);
     return 1;
   }
-  if (!opts.zero && !opts.detach && stdin !== '') end.write(stdin);
+  if (!opts.zero && !opts.detach && stdin !== undefined && stdin !== '') end.write(stdin);
   end.close();
   if (!opts.zero && received !== '') out.write('stdout', received.replace(/\r?\n$/, ''));
   return 0;
 }
 
-async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: string, out: NcOutput): Promise<number> {
+function wireText(chunk: unknown): string {
+  if (typeof chunk === 'string') return chunk;
+  return chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : '';
+}
+
+function linesOf(payload: string): string[] {
+  return payload.match(/[^\n]*\n|[^\n]+/g) ?? [];
+}
+
+interface Peer {
+  write(text: string): void;
+  close(): void;
+  refused?(): boolean;
+  onData?(handler: (text: string) => void): () => void;
+  onEnd?(handler: () => void): () => void;
+  onClose?(handler: () => void): () => void;
+}
+
+function tcpPeer(socket: TcpSocket): Peer {
+  return {
+    write: (text) => { socket.write(text); },
+    close: () => { socket.close(); },
+    onData: (handler) => socket.onData((chunk) => handler(wireText(chunk))),
+    onEnd: (handler) => socket.onEnd(handler),
+    onClose: (handler) => socket.onClose(() => handler()),
+  };
+}
+
+function converse(
+  ctx: LinuxCommandContext, pid: number, peer: Peer, opts: NetcatOptions, stdin: string | undefined, out: NcOutput,
+): Promise<number | null> {
+  const background = ctx.executor.isBackgroundJob(pid);
+  const terminal = stdin === undefined && !background;
+  const payload = opts.detach ? '' : (opts.crlf ? (stdin ?? '').replace(/\n/g, '\r\n') : stdin ?? '');
+  const interruption = listenForInterruption(ctx);
+  let received = '';
+  return new Promise<number | null>((resolve) => {
+    const timers: Array<() => void> = [];
+    const watchers: Array<() => void> = [];
+    let idle: (() => void) | null = null;
+    let settled = false;
+    let quitting = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      idle?.();
+      for (const cancel of timers) cancel();
+      for (const stop of watchers) stop();
+      interruption.release();
+      peer.close();
+      if (!background && received !== '') out.write('stdout', received.replace(/\r?\n$/, ''));
+      if (background) ctx.executor.processMgr.exit(pid, interruption.exitStatus() ?? 0);
+      resolve(interruption.exitStatus());
+    };
+    const after = (ms: number, then: () => void): (() => void) => {
+      const cancel = ctx.executor.scheduleAfter(ms, then);
+      timers.push(cancel);
+      return cancel;
+    };
+    const armIdle = (): void => {
+      if (opts.timeoutMs <= 0 || settled) return;
+      idle?.();
+      idle = after(opts.timeoutMs, finish);
+    };
+    interruption.signal.addEventListener('abort', finish, { once: true });
+    if (peer.onData) {
+      watchers.push(peer.onData((text) => {
+        if (background) ctx.executor.emitLateStdout(pid, text);
+        else received += text;
+        armIdle();
+      }));
+    }
+    const peerGone = (): void => { if (!quitting) finish(); };
+    if (peer.onEnd) watchers.push(peer.onEnd(peerGone));
+    if (peer.onClose) watchers.push(peer.onClose(peerGone));
+    if (settled) return;
+    armIdle();
+    if (background) ctx.executor.announceBackgroundRunning(pid);
+    void (async () => {
+      const pieces = opts.intervalSeconds > 0 ? linesOf(payload) : payload === '' ? [] : [payload];
+      for (const piece of pieces) {
+        if (opts.intervalSeconds > 0) await new Promise<void>((resume) => { after(opts.intervalSeconds * 1000, resume); });
+        if (settled) return;
+        peer.write(piece);
+        armIdle();
+      }
+      if (settled) return;
+      if (terminal || (peer.refused?.() === true && opts.quitSeconds < 0)) {
+        finish();
+        return;
+      }
+      quitting = opts.quitSeconds > 0;
+      if (opts.shutdownWrite) peer.close();
+      if (opts.quitSeconds === 0) finish();
+      else if (quitting) after(opts.quitSeconds * 1000, finish);
+    })();
+  });
+}
+
+async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: string | undefined, out: NcOutput): Promise<number> {
   const wait = (ms: number): Promise<void> => ctx.net.getScheduler().delay(ms);
   const host = opts.host!;
   const ports = buildPorts(ctx, opts);
@@ -207,16 +308,16 @@ async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: 
   const sourcePort = sourcePortOf(ctx, opts.sourcePort);
   const sourceIP = sourceAddressOf(ctx, opts.sourceAddress, target);
   if (opts.dccp) return 1;
-  const payload = opts.zero || opts.detach ? '' : stdin;
   const proto = opts.udp ? 'udp' : 'tcp';
   const settings = socketSettingsOf(opts, target instanceof IPv6Address);
+  const pid = ctx.executor.currentPid();
   let ret = 1;
 
   for (const port of ports) {
     if (opts.udp) {
       const socket = ctx.net.udpConnect(target, port, {
         localPort: sourcePort?.value, source: sourceIP, processName: 'nc',
-        pid: ctx.executor.currentPid(), uid: ctx.executor.userMgr.currentUid,
+        pid, uid: ctx.executor.userMgr.currentUid,
         ...(settings.ttl === undefined ? {} : { ttl: settings.ttl }),
         ...(settings.diffServ === undefined ? {} : { diffServ: settings.diffServ }),
       });
@@ -226,15 +327,22 @@ async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: 
         continue;
       }
       ret = 0;
-      const exchanges = opts.zero;
-      if (exchanges && !udpTest(() => socket.send(new Uint8Array([0x58])))) {
+      if (opts.zero && !udpTest(() => socket.send(new Uint8Array([0x58])))) {
         ret = 1;
         socket.close();
         continue;
       }
-      if (exchanges) out.write('stderr', connectionInfo(ctx, host, address, port, proto, opts));
-      if (payload !== '') socket.send(new TextEncoder().encode(payload));
-      socket.close();
+      if (opts.zero) {
+        out.write('stderr', connectionInfo(ctx, host, address, port, proto, opts));
+        socket.close();
+        continue;
+      }
+      const status = await converse(ctx, pid, {
+        write: (text) => { socket.send(new TextEncoder().encode(text)); },
+        close: () => { socket.close(); },
+        refused: () => socket.peekError() !== null,
+      }, opts, stdin, out);
+      if (status !== null) return status;
       continue;
     }
 
@@ -242,22 +350,24 @@ async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: 
       if (opts.verbose) out.write('stderr', connectFailure(host, address, port, proto, 'EADDRNOTAVAIL', opts));
       continue;
     }
-    const exchange = await retransmitSilentSyn(
-      () => ctx.net.tcpExchange(target, port, payload, {
-        sourcePort, sourceIP, ...settings, ...(opts.shutdownWrite ? { shutdownWrite: true } : {}),
-      }),
+    const opened = await retransmitSilentSyn(
+      () => ctx.net.tcpOpen(target, port, { sourcePort, sourceIP, ...settings, owner: { pid } }),
       (attempt) => attempt.outcome === 'timeout', wait, opts.timeoutMs > 0 ? opts.timeoutMs : undefined);
-    if (exchange.outcome !== 'open') {
+    if (opened.socket === null) {
       if (opts.verbose) {
-        out.write('stderr', connectFailure(host, address, port, proto, connectErrno(exchange.outcome), opts,
-          exchange.outcome === 'timeout' && opts.timeoutMs > 0));
+        out.write('stderr', connectFailure(host, address, port, proto, connectErrno(opened.outcome as Exclude<typeof opened.outcome, 'open'>), opts,
+          opened.outcome === 'timeout' && opts.timeoutMs > 0));
       }
       continue;
     }
     ret = 0;
     if (opts.verbose || opts.zero) out.write('stderr', connectionInfo(ctx, host, address, port, proto, opts));
-    if (!opts.zero && opts.intervalSeconds > 0) await wait(opts.intervalSeconds * 1000);
-    if (!opts.zero && exchange.received !== '') out.write('stdout', exchange.received.replace(/\r?\n$/, ''));
+    if (opts.zero) {
+      opened.socket.close();
+      continue;
+    }
+    const status = await converse(ctx, pid, tcpPeer(opened.socket), opts, stdin, out);
+    if (status !== null) return status;
   }
   return ret;
 }
@@ -297,7 +407,7 @@ function reportSock(ctx: LinuxCommandContext, message: string, address: string, 
   return `${message} on ${name} ${port}`;
 }
 
-function runListen(ctx: LinuxCommandContext, opts: NetcatOptions, out: NcOutput, stdin: string): number {
+function runListen(ctx: LinuxCommandContext, opts: NetcatOptions, out: NcOutput, stdin: string | undefined): number {
   const proto = opts.udp ? 'udp' : 'tcp';
   const address = listenAddressOf(ctx, opts);
   const port = listenServicePort(opts.ports[0], proto, ctx);
@@ -316,22 +426,12 @@ function runListen(ctx: LinuxCommandContext, opts: NetcatOptions, out: NcOutput,
     if (opts.verbose) announceListening(ctx, out, reportSock(ctx, 'Bound', address, port, opts));
     return 0;
   }
-  const table = ctx.executor.getSocketTable();
-  if (!table) throw new NetcatExit(['nc: no socket table available']);
-  try {
-    table.bind('tcp', address, port, ctx.executor.currentPid(), 'nc', undefined, { ownerUid });
-  } catch (error) {
-    const denied = error instanceof Error && error.message.startsWith('EACCES');
-    throw new NetcatExit([`nc: ${strerror(denied ? 'EACCES' : 'EADDRINUSE')}`]);
-  }
   const listenerPid = ctx.executor.currentPid();
   const announce = (peer: string, peerPort: number): void => {
     if (opts.verbose) ctx.executor.emitLateStderr(listenerPid, `${reportSock(ctx, 'Connection received', peer, peerPort, opts)}\n`);
   };
-  if (!openTcpListener(ctx, port, address, ownerUid, socketSettingsOf(opts, address.includes(':')), opts.keep, stdin, announce)) {
-    table.unbind('tcp', address, port);
-    throw new NetcatExit([`nc: ${strerror('EADDRINUSE')}`]);
-  }
+  const refusal = openTcpListener(ctx, port, address, ownerUid, socketSettingsOf(opts, address.includes(':')), opts, stdin ?? '', announce);
+  if (refusal !== null) throw new NetcatExit([`nc: ${strerror(refusal)}`]);
   if (opts.verbose) announceListening(ctx, out, reportSock(ctx, 'Listening', address, port, opts));
   return 0;
 }
@@ -343,38 +443,59 @@ function announceListening(ctx: LinuxCommandContext, out: NcOutput, line: string
 }
 
 function openTcpListener(
-  ctx: LinuxCommandContext, port: number, address: string, ownerUid: number, settings: SocketSettings, keep: boolean, greeting: string,
+  ctx: LinuxCommandContext, port: number, address: string, ownerUid: number, settings: SocketSettings, opts: NetcatOptions, greeting: string,
   announce: (peer: string, peerPort: number) => void,
-): boolean {
+): Errno | null {
   const device = localDeviceOf(ctx) as unknown as {
-    getTcpStack?: () => { listen(localPort: number, opts: TcpListenOptions, localIp?: string): unknown };
+    getTcpStack?: () => {
+      listen(localPort: number, opts: TcpListenOptions, localIp?: string): TcpListener;
+      acceptNext(listener: TcpListener): void;
+    };
   } | null;
   const stack = device?.getTcpStack?.();
-  if (!stack) return true;
+  if (!stack) return null;
+  const pid = ctx.executor.currentPid();
   try {
-    const pid = ctx.executor.currentPid();
-    stack.listen(port, {
+    const listener: TcpListener = stack.listen(port, {
+      serialAccept: true,
       onAccept: (socket) => {
         announce(socket.remoteIp, socket.remotePort);
+        let idle: (() => void) | null = null;
+        const armIdle = (): void => {
+          if (opts.timeoutMs <= 0) return;
+          idle?.();
+          idle = ctx.executor.scheduleAfter(opts.timeoutMs, () => {
+            socket.close();
+            if (opts.keep) stack.acceptNext(listener);
+            else ctx.executor.processMgr.exit(pid, 0);
+          });
+        };
         socket.onData((chunk) => {
-          if (typeof chunk === 'string') ctx.executor.emitLateStdout(pid, chunk);
-          else if (chunk instanceof Uint8Array) ctx.executor.emitLateStdout(pid, new TextDecoder().decode(chunk));
+          ctx.executor.emitLateStdout(pid, wireText(chunk));
+          armIdle();
         });
         socket.onEnd(() => {
-          if (keep) socket.close();
-          else ctx.executor.processMgr.exit(pid, 0);
+          idle?.();
+          if (!opts.keep) {
+            ctx.executor.processMgr.exit(pid, 0);
+            return;
+          }
+          socket.close();
+          stack.acceptNext(listener);
         });
+        armIdle();
         if (greeting !== '') socket.write(greeting);
       },
+      identity: { pid, processName: 'nc', uid: ownerUid },
       ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings,
     }, address);
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (error) {
+    return error instanceof Error && error.message.includes('(EACCES)') ? 'EACCES' : 'EADDRINUSE';
   }
 }
 
-async function runNc(ctx: LinuxCommandContext, args: string[], stdin = ''): Promise<NcResult> {
+async function runNc(ctx: LinuxCommandContext, args: string[], stdin?: string): Promise<NcResult> {
   const out = new NcOutput();
   try {
     const opts = parseNetcatArguments(args);

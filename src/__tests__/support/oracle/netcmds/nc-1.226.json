@@ -629,6 +629,70 @@
     "P4": 10
    },
    "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "nc-readwrite",
+   "setup": [],
+   "pids": [],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "nc -l 127.0.0.1 9001 > g1.txt & S=$!; sleep 0.3; echo hi | nc 127.0.0.1 9001 & C=$!; sleep 1.5; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone); echo client $(kill -0 $C 2>/dev/null && echo alive || echo gone); cat g1.txt; kill $C 2>/dev/null; kill $S 2>/dev/null; true",
+     "output": "server alive\nclient alive\nhi",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l 127.0.0.1 9002 > g2.txt & S=$!; sleep 0.3; echo hi | nc -N 127.0.0.1 9002; echo rc=$?; sleep 0.3; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone); cat g2.txt",
+     "output": "rc=0\nserver gone\nhi",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l 127.0.0.1 9003 > g3.txt & S=$!; sleep 0.3; echo hi | nc -q 0 127.0.0.1 9003; echo rc=$?; sleep 0.3; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone); cat g3.txt",
+     "output": "rc=0\nserver gone\nhi",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l 127.0.0.1 9004 > g4.txt & S=$!; sleep 0.3; echo hi | nc -q 1 127.0.0.1 9004 & C=$!; sleep 0.5; echo at0.5 client $(kill -0 $C 2>/dev/null && echo alive || echo gone); sleep 1; echo at1.5 client $(kill -0 $C 2>/dev/null && echo alive || echo gone); echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone); cat g4.txt",
+     "output": "at0.5 client alive\nat1.5 client gone\nserver gone\nhi",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l 127.0.0.1 9005 > g5.txt & S=$!; sleep 0.3; echo hi | nc -w 1 127.0.0.1 9005 & C=$!; sleep 0.5; echo at0.5 client $(kill -0 $C 2>/dev/null && echo alive || echo gone); sleep 1; echo at1.5 client $(kill -0 $C 2>/dev/null && echo alive || echo gone); echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone); cat g5.txt",
+     "output": "at0.5 client alive\nat1.5 client gone\nserver gone\nhi",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l 127.0.0.1 9006 > g6.txt & S=$!; sleep 0.3; nc 127.0.0.1 9006 < /dev/null & C=$!; sleep 1; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone) client $(kill -0 $C 2>/dev/null && echo alive || echo gone); kill $C; sleep 0.3; echo after-kill server $(kill -0 $S 2>/dev/null && echo alive || echo gone)",
+     "output": "server alive client alive\nafter-kill server gone",
+     "status": 0
+    },
+    {
+     "cmd": "nc -d -l 127.0.0.1 9007 > g7.txt & S=$!; sleep 0.3; nc -d 127.0.0.1 9007 & C=$!; sleep 1; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone) client $(kill -0 $C 2>/dev/null && echo alive || echo gone); kill $C; sleep 0.3; echo after-kill server $(kill -0 $S 2>/dev/null && echo alive || echo gone)",
+     "output": "server alive client alive\nafter-kill server gone",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l 127.0.0.1 9008 > g8.txt & sleep 0.3; printf 'a\\nb\\n' | nc -C -N 127.0.0.1 9008; sleep 0.3; wc -c < g8.txt",
+     "output": "6",
+     "status": 0
+    },
+    {
+     "cmd": "nc -l -w 1 127.0.0.1 9009 > g9.txt & S=$!; sleep 0.2; nc 127.0.0.1 9009 < /dev/null & C=$!; sleep 1.6; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone) client $(kill -0 $C 2>/dev/null && echo alive || echo gone)",
+     "output": "server gone client gone",
+     "status": 0
+    },
+    {
+     "cmd": "nc -lu 127.0.0.1 5400 > g10.txt & S=$!; sleep 0.3; echo ping | nc -u -w 1 127.0.0.1 5400; echo rc=$?; sleep 0.3; cat g10.txt; echo server $(kill -0 $S 2>/dev/null && echo alive || echo gone); kill $S",
+     "output": "rc=0\nping\nserver alive",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
   }
  ]
 }

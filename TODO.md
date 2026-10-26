@@ -938,8 +938,38 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   /etc/hosts) est dans le corpus.
 - `ncat` est un alias de `nc` dans la declaration de la commande ; c'est l'outil de Nmap, pas
   `netcat-openbsd` (options, messages et `-e` differents).
-- `-q`, `-W`, `-d`, `-C`, `-i` (delai entre lignes) et `-t` (telnet) : la boucle `readwrite` n'est
-  pas portee, la commande echange sa sortie standard en un bloc.
+- `-W` (arret apres N paquets) et `-t` (negociation telnet) : la boucle `readwrite` est portee
+  (`converse` dans `Nc.ts` : `-N -q -w -C -i -d`, connexion persistante, ecoute en service unique),
+  pas ces deux-la.
+- Entree standard du TERMINAL : un `nc host port` tape seul lit le clavier dans un vrai terminal
+  (il envoie ce qu'on tape jusqu'a Ctrl-D ou Ctrl-C) ; le terminal simule n'a pas d'entree
+  interactive pour une commande, donc `nc` lit la salutation du serveur puis se comporte comme un
+  Ctrl-C immediat (indicateur `terminal` de `converse`). Un `nc` en avant-plan alimente par un tube
+  (`echo x | nc ...`) reste connecte jusqu'a la fermeture du pair, `-N`, `-q` ou `-w`, comme le vrai.
+- Le test d'un `nc -u` vers un port qui ECOUTE mais ne repond jamais ne se termine pas sans `-w`,
+  `-q` ou Ctrl-C : c'est la mesure (rc 124 sous `timeout`), pas un defaut.
+
+### [bash] `( ... ) &` et `{ ...; } &` s'executent au premier plan
+Mesure : `(sleep 100; echo x) &` rend la main apres avoir avance l'horloge de 100 s et affiche `x`,
+sans annoncer de job (`[1] pid`) ; `sleep 100 & echo a` met bien le job en arriere-plan. Un sous-shell
+ou un groupe suivi de `&` doit devenir un job (processus fils, sortie tardive, `jobs`, `wait`).
+`LinuxCommandExecutor.startBackgroundJob` ne prend que la commande simple (`isSingleSimpleCommand`) ;
+le chemin de l'interpreteur (`pendingBackground`) ne sait mettre en arriere-plan qu'une commande
+simple ou le dernier etage d'un tube.
+
+### [ss] ce que le portage d'iproute2 6.1 laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `ss-iproute2-6.1.json`, 10 labos, 520 des 531 sorties
+identiques apres normalisation) :
+- `ss -m` : `skmem` est exact au repos et pour les prises de `nc` ; la file d'emission (`w`, `o`) et
+  le `tb` auto-regle apres un vrai transfert ne sont pas modelises au-dela des valeurs au repos.
+- `net.ipv4.tcp_rmem` / `tcp_wmem` sont stockes, rendus par `sysctl` et lus par `ss -m` ; le
+  reglage automatique de la fenetre de reception n'est pas modele.
+- Prises UNIX (`ss -x`, `netstat -x`, `/proc/net/unix`) : pas de table avec inodes, pairs et
+  chemins (c'est aussi ce qui fait refuser `nc -U -l`, voir l'entree [nc]).
+- Identite de la machine simulee : Ubuntu 22.04.4 / iproute2 5.15 (`PackageDatabase`, `SS_VERSION`)
+  alors que les oracles sont ceux d'Ubuntu 24.04 (iproute2 6.1, net-tools 2.10, psmisc 23.7,
+  netcat-openbsd 1.226) ; le controle de congestion par defaut est Reno ici, bbr sur la machine
+  d'enregistrement (masque dans la comparaison).
 
 ### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
 Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »

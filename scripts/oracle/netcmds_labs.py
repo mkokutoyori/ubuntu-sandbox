@@ -13,7 +13,7 @@ CONNECTED = (
     ["P1", "P2"],
 )
 TWO_CONNECTIONS = (
-    ["nc -k -l 127.0.0.1 9000 & P1=$!", "sleep 0.3", "nc -p 40001 127.0.0.1 9000 & P2=$!", "nc -p 40002 127.0.0.1 9000 & P3=$!"],
+    ["nc -k -l 127.0.0.1 9000 & P1=$!", "sleep 0.3", "nc -p 40001 127.0.0.1 9000 & P2=$!", "sleep 0.3", "nc -p 40002 127.0.0.1 9000 & P3=$!"],
     ["P1", "P2", "P3"],
 )
 UDP_CONNECTED = (
@@ -47,7 +47,8 @@ SS_COMMANDS = [
     "ss -4 -a", "ss -6 -a", "ss -tlH", "ss -tlO", "ss -tlnr", "ss -tan state established", "ss -tan state listening",
     "ss -tan sport = :9000", "ss -tan dport = :9000", "ss -tlnp sport = :8080", "ss -tan src 127.0.0.1", "ss -tan dst 127.0.0.1",
     "ss -ltn 'sport = :8080 or sport = :9000'", "ss -ltn exclude listening", "ss -f inet -a", "ss -f inet6 -a", "ss -f unix -a",
-    "ss -A tcp", "ss -A udp,tcp", "ss -A raw", "ss -tm", "ss --tos -t", "ss --cgroup -t", "ss -V", "ss -h", "ss -z", "ss --nope", "ss -tp",
+    "ss -A tcp", "ss -A udp,tcp", "ss -A raw", "ss -tm", "ss --tos -t", "ss --cgroup -t",
+    "ss --tos -ta", "ss --cgroup -ta", "ss -tam", "ss -uam", "ss -tlm", "ss -tanm", "ss -tmH", "ss -tamO", "ss -V", "ss -h", "ss -z", "ss --nope", "ss -tp",
 ]
 
 
@@ -163,15 +164,15 @@ NC_UDP_SESSION = [
 
 
 def up(pid):
-    return "[ -d /proc/%s ] && echo alive || echo gone" % pid
+    return "kill -0 %s 2>/dev/null && echo alive || echo gone" % pid
 
 
 NC_READWRITE = [
-    "nc -l 127.0.0.1 9001 > g1.txt & S=$!; sleep 0.3; (echo hi | nc 127.0.0.1 9001) & C=$!; sleep 1.5; echo server $(" + up("$S") + "); echo client $(" + up("$C") + "); cat g1.txt; kill $C $S",
+    "nc -l 127.0.0.1 9001 > g1.txt & S=$!; sleep 0.3; echo hi | nc 127.0.0.1 9001 & C=$!; sleep 1.5; echo server $(" + up("$S") + "); echo client $(" + up("$C") + "); cat g1.txt; kill $C 2>/dev/null; kill $S 2>/dev/null; true",
     "nc -l 127.0.0.1 9002 > g2.txt & S=$!; sleep 0.3; echo hi | nc -N 127.0.0.1 9002; echo rc=$?; sleep 0.3; echo server $(" + up("$S") + "); cat g2.txt",
     "nc -l 127.0.0.1 9003 > g3.txt & S=$!; sleep 0.3; echo hi | nc -q 0 127.0.0.1 9003; echo rc=$?; sleep 0.3; echo server $(" + up("$S") + "); cat g3.txt",
-    "nc -l 127.0.0.1 9004 > g4.txt & S=$!; sleep 0.3; (echo hi | nc -q 1 127.0.0.1 9004) & C=$!; sleep 0.5; echo at0.5 client $(" + up("$C") + "); sleep 1; echo at1.5 client $(" + up("$C") + "); echo server $(" + up("$S") + "); cat g4.txt",
-    "nc -l 127.0.0.1 9005 > g5.txt & S=$!; sleep 0.3; (echo hi | nc -w 1 127.0.0.1 9005) & C=$!; sleep 0.5; echo at0.5 client $(" + up("$C") + "); sleep 1; echo at1.5 client $(" + up("$C") + "); echo server $(" + up("$S") + "); cat g5.txt",
+    "nc -l 127.0.0.1 9004 > g4.txt & S=$!; sleep 0.3; echo hi | nc -q 1 127.0.0.1 9004 & C=$!; sleep 0.5; echo at0.5 client $(" + up("$C") + "); sleep 1; echo at1.5 client $(" + up("$C") + "); echo server $(" + up("$S") + "); cat g4.txt",
+    "nc -l 127.0.0.1 9005 > g5.txt & S=$!; sleep 0.3; echo hi | nc -w 1 127.0.0.1 9005 & C=$!; sleep 0.5; echo at0.5 client $(" + up("$C") + "); sleep 1; echo at1.5 client $(" + up("$C") + "); echo server $(" + up("$S") + "); cat g5.txt",
     "nc -l 127.0.0.1 9006 > g6.txt & S=$!; sleep 0.3; nc 127.0.0.1 9006 < /dev/null & C=$!; sleep 1; echo server $(" + up("$S") + ") client $(" + up("$C") + "); kill $C; sleep 0.3; echo after-kill server $(" + up("$S") + ")",
     "nc -d -l 127.0.0.1 9007 > g7.txt & S=$!; sleep 0.3; nc -d 127.0.0.1 9007 & C=$!; sleep 1; echo server $(" + up("$S") + ") client $(" + up("$C") + "); kill $C; sleep 0.3; echo after-kill server $(" + up("$S") + ")",
     "nc -l 127.0.0.1 9008 > g8.txt & sleep 0.3; printf 'a\\nb\\n' | nc -C -N 127.0.0.1 9008; sleep 0.3; wc -c < g8.txt",

@@ -364,6 +364,7 @@ export interface TcpExchangeOptions {
   diffServ?: DiffServField;
   ttlFloor?: TtlFloor;
   shutdownWrite?: boolean;
+  owner?: { pid: number; service?: string };
 }
 
 export interface TcpConnectOptions {
@@ -396,6 +397,7 @@ export interface TcpBindOptions {
   allowHalfOpen?: boolean;
   backlog?: number;
   boundDevice?: string;
+  serialAccept?: boolean;
 }
 
 export interface TcpListenOptions extends TcpBindOptions {
@@ -802,6 +804,10 @@ export class TcpListener {
 
   get accepting(): boolean { return this.onAccept !== null; }
 
+  serialAccept = false;
+  serving = false;
+  readonly awaiting: TcpSocket[] = [];
+
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
 }
 
@@ -953,6 +959,7 @@ export class TcpStack {
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
+    listener.serialAccept = opts.serialAccept ?? false;
     this.listeners.set(listener.key(), listener);
     this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined, !listener.accepting);
     if (listener.accepting) this.announceListener(listener, true);
@@ -1044,12 +1051,13 @@ export class TcpStack {
   }
 
   queuesOf(socket: TcpSocket): TcpQueues {
-    if (socket.isRequestSock || socket.state === 'time-wait') return { receive: 0, send: 0 };
+    if (socket.isRequestSock || socket.state === 'time-wait') return { receive: 0, send: 0, unread: 0 };
     const unsent = socket.sendBacklog.reduce((total, entry) => total + entry.payload.length, 0);
     const finQueued = socket.closeAfterFlush ? 1 : 0;
     return {
       receive: socket.unreadBytes + (socket.finUnread ? 1 : 0),
       send: ((socket.sendNext - socket.sendUnacked) + unsent + finQueued) >>> 0,
+      unread: socket.unreadBytes,
     };
   }
 
@@ -1244,10 +1252,9 @@ export class TcpStack {
     return received === '' ? null : received;
   }
 
-  exchange(
-    remoteIp: string, remotePort: number, payload: string,
-    opts: TcpExchangeOptions = {},
-  ): { outcome: TcpWireOutcome; received: string } {
+  open(
+    remoteIp: string, remotePort: number, opts: TcpExchangeOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
     const socket = this.connect(remoteIp, remotePort, {
       ...(opts.localPort === undefined ? {} : { localPort: opts.localPort }),
       ...(opts.localIp === undefined ? {} : { localIp: opts.localIp }),
@@ -1255,12 +1262,23 @@ export class TcpStack {
       ...(opts.diffServ === undefined ? {} : { diffServ: opts.diffServ }),
       ...(opts.ttlFloor === undefined ? {} : { ttlFloor: opts.ttlFloor }),
     });
-    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', received: '' };
+    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', socket: null };
     if (!socket.everEstablished) {
       const outcome = socket.connectProhibited ? 'prohibited' : socket.connectRefused ? 'refused' : 'timeout';
       socket.close();
-      return { outcome, received: '' };
+      return { outcome, socket: null };
     }
+    if (opts.owner !== undefined) this.setSocketOwner(socket, opts.owner.pid, opts.owner.service);
+    return { outcome: 'open', socket };
+  }
+
+  exchange(
+    remoteIp: string, remotePort: number, payload: string,
+    opts: TcpExchangeOptions = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    const opened = this.open(remoteIp, remotePort, opts);
+    const socket = opened.socket;
+    if (socket === null) return { outcome: opened.outcome, received: '' };
     let received = '';
     const stop = socket.onData((chunk) => {
       if (typeof chunk === 'string') received += chunk;
@@ -2549,11 +2567,35 @@ export class TcpStack {
     return true;
   }
 
+  acceptNext(listener: TcpListener): void {
+    listener.serving = false;
+    for (let next = listener.awaiting.shift(); next !== undefined; next = listener.awaiting.shift()) {
+      if (next.pendingListener !== listener || next.state !== 'established') continue;
+      this.admit(listener, next);
+      return;
+    }
+  }
+
   private completePassiveOpen(socket: TcpSocket): void {
     const listener = socket.pendingListener;
     if (!listener) return;
+    if (listener.serialAccept && listener.serving) {
+      listener.awaiting.push(socket);
+      return;
+    }
+    this.admit(listener, socket);
+  }
+
+  private inheritOwner(listener: TcpListener, socket: TcpSocket): void {
+    if (listener.identity.pid !== undefined && socket.ownerPid === null) {
+      this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
+    }
+  }
+
+  private admit(listener: TcpListener, socket: TcpSocket): void {
     socket.pendingListener = null;
-    if (listener.identity.pid !== undefined) this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
+    if (listener.serialAccept) listener.serving = true;
+    this.inheritOwner(listener, socket);
     if (listener.identity.banner) socket.write(listener.identity.banner);
     try { listener.onAccept?.(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
   }

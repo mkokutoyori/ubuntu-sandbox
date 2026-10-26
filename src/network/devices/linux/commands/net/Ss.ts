@@ -4,6 +4,7 @@ import { makeArgCompleter } from '../completionHelpers';
 import { reverseNameOf } from '../../network/ReverseName';
 import { TCP_CONGESTION_ALGORITHM } from '@/network/tcp/TcpCongestionControl';
 import { runSs, type SsHost } from './ss/SsRun';
+import type { SocketBufferSettings } from './ss/SsMemory';
 
 const LOCAL_PORT_RANGE_FILE = '/proc/sys/net/ipv4/ip_local_port_range';
 const FALLBACK_EPHEMERAL = { low: 1024, high: 4999 };
@@ -13,6 +14,21 @@ function ephemeralPortsOf(ctx: LinuxCommandContext): { low: number; high: number
   const text = ctx.executor.vfs.readFile(LOCAL_PORT_RANGE_FILE);
   const [low, high] = (text ?? '').trim().split(/\s+/).map(Number);
   return Number.isFinite(low) && Number.isFinite(high) ? { low, high } : FALLBACK_EPHEMERAL;
+}
+
+function numbersOf(ctx: LinuxCommandContext, path: string): number[] {
+  return (ctx.executor.vfs.readFile(path) ?? '').trim().split(/\s+/).map(Number);
+}
+
+function socketBuffersOf(ctx: LinuxCommandContext): SocketBufferSettings {
+  const [, tcpReceive] = numbersOf(ctx, '/proc/sys/net/ipv4/tcp_rmem');
+  const [, tcpSend, tcpSendMax] = numbersOf(ctx, '/proc/sys/net/ipv4/tcp_wmem');
+  const [datagramReceive] = numbersOf(ctx, '/proc/sys/net/core/rmem_default');
+  const [datagramSend] = numbersOf(ctx, '/proc/sys/net/core/wmem_default');
+  return {
+    tcpReceiveBuffer: tcpReceive, tcpSendBuffer: tcpSend, tcpSendBufferMax: tcpSendMax,
+    datagramReceiveBuffer: datagramReceive, datagramSendBuffer: datagramSend,
+  };
 }
 
 function hostOf(ctx: LinuxCommandContext, stdin: string | undefined): SsHost {
@@ -28,6 +44,7 @@ function hostOf(ctx: LinuxCommandContext, stdin: string | undefined): SsHost {
     cgroupOf: (pid) => executor.cgroupPathFor(pid),
     cookieOf: (socketId) => executor.socketCookies.of(socketId),
     defaultCongestionControl: () => TCP_CONGESTION_ALGORITHM,
+    socketBuffers: () => socketBuffersOf(ctx),
     canInspectProcessOf: (uid) => executor.userMgr.currentUid === 0 || executor.userMgr.currentUid === uid,
     servicePort: (name, protocol) => executor.resolveServicePort(name, protocol),
     hostAddresses: (name) => executor.resolveHostAddresses(name),
@@ -72,6 +89,7 @@ export const ssCommand: LinuxCommand = {
     { flag: '-l', aliases: ['--listening'], description: 'Display only listening sockets.' },
     { flag: '-o', aliases: ['--options'], description: 'Show timer information.' },
     { flag: '-e', aliases: ['--extended'], description: 'Show detailed socket information.' },
+    { flag: '-m', aliases: ['--memory'], description: 'Show socket memory usage.' },
     { flag: '-p', aliases: ['--processes'], description: 'Show process using socket.' },
     { flag: '-i', aliases: ['--info'], description: 'Show internal TCP information.' },
     { flag: '-s', aliases: ['--summary'], description: 'Print summary statistics.' },
