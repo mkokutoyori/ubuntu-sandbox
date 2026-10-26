@@ -137,7 +137,7 @@ test.describe('FortiGate — diagnostic et journaux dans le terminal', () => {
     await openTerminal(page, id);
 
     await typeCmd(page, 'execute log display');
-    await waitForText(page, 'No matching log data.');
+    await waitForText(page, '0 logs found.');
   });
 
   test('`diagnose ?` annonce les familles de diagnostic', async ({ page }) => {

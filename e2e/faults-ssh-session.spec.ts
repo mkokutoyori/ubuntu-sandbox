@@ -177,7 +177,7 @@ async function powerOff(page: Page, id: string): Promise<void> {
 
 /** Log in from the client's terminal and land in the remote's shell. */
 async function sshInto(page: Page, user: string, password: string): Promise<void> {
-  await typeCommand(page, `ssh ${user}@${TARGET_IP}`);
+  await typeCommand(page, `ssh -o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa ${user}@${TARGET_IP}`);
   await expect(inTerminal(page, 'password').first()).toBeVisible({ timeout: 12_000 });
   await typePassword(page, password);
   await expect(

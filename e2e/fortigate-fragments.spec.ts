@@ -75,13 +75,13 @@ test.describe('FortiGate — le recollage des fragments dans un vrai terminal', 
       const id = await poserFortiGate(page);
       await openTerminal(page, id);
 
-      await typeCmd(page, 'show full-configuration system settings');
+      await typeCmd(page, 'show full-configuration system global | grep ip-fragment');
       await waitForText(page, 'set ip-fragment-mem-thresholds 32');
 
       for (const ligne of [
-        'config system settings', 'set ip-fragment-mem-thresholds 256', 'end',
+        'config system global', 'set ip-fragment-mem-thresholds 256', 'end',
       ]) await typeCmd(page, ligne);
-      await typeCmd(page, 'show system settings');
+      await typeCmd(page, 'show system global | grep ip-fragment');
       await waitForText(page, 'set ip-fragment-mem-thresholds 256');
     });
 
@@ -89,7 +89,7 @@ test.describe('FortiGate — le recollage des fragments dans un vrai terminal', 
     const id = await poserFortiGate(page);
     await openTerminal(page, id);
 
-    await typeCmd(page, 'config system settings');
+    await typeCmd(page, 'config system global');
     await typeCmd(page, 'set ip-fragment-mem-thresholds 4096');
     await waitForText(page, 'value parse error');
 
