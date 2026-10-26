@@ -353,16 +353,15 @@ export class GetChildItemCmdlet implements ICmdlet {
     }
 
     const items: PSValue[] = [];
+    const startedFrom = new Map<PSValue, string>();
     for (const root of roots) {
       if (root !== '.' && !fs.exists(root)) {
         ctx.emitFailure(pathNotFound(root));
         continue;
       }
-      if (root !== '.' && !fs.isDirectory(root)) {
-        items.push(itemObject(fs, root));
-        continue;
-      }
-      items.push(...this.collect(fs, root, recurse, depth, 0, wanted));
+      const listed = root !== '.' && !fs.isDirectory(root) ? [itemObject(fs, root)] : this.collect(fs, root, recurse, depth, 0, wanted);
+      for (const item of listed) startedFrom.set(item, root);
+      items.push(...listed);
     }
 
     let kept = items;
@@ -386,10 +385,7 @@ export class GetChildItemCmdlet implements ICmdlet {
     if (onlyDirs) {
       kept = kept.filter(item => (item as Record<string, PSValue>)['PSIsContainer']);
     }
-    if (nameOnly) {
-      return kept.map(item => (item as Record<string, PSValue>)['Name']) as PSValue;
-    }
-    return kept;
+    return nameOnly ? kept.map(item => relativeName(item as Record<string, PSValue>, startedFrom.get(item) ?? '')) : kept;
   }
 
   private attributeFilter(ctx: CmdletContext): ((attrs: ReadonlySet<string>) => boolean) | null {
@@ -429,6 +425,12 @@ export class GetChildItemCmdlet implements ICmdlet {
 }
 
 const FILE_SYSTEM_PREFIX = 'Microsoft.PowerShell.Core\\FileSystem::';
+
+function relativeName(item: Record<string, PSValue>, container: string): PSValue {
+  const full = psValueToString(item['FullName'] ?? '');
+  const prefix = `${container.replace(/[\\/]+$/, '')}\\`;
+  return container !== '' && full.toLowerCase().startsWith(prefix.toLowerCase()) ? full.slice(prefix.length) : item['Name'];
+}
 
 const ATTRIBUTE_ORDER = ['readonly', 'hidden', 'system', 'directory', 'archive', 'normal', 'reparsepoint', 'offline', 'notcontentindexed'] as const;
 
