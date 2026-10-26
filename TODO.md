@@ -895,15 +895,74 @@ en octal / hexadecimal : 3 chiffres octaux, `u` + 4 a 6 chiffres hexadecimaux) ;
 connait pas la touche et affiche la position du curseur. Rien a voir avec les syntaxes : c'est
 une fonction de nano 7.2 que ni le moteur ni les corpus n'avaient encore exercee.
 
-### [nano] `^R` en mode vue ouvre un NOUVEAU tampon
-Mesure avec `nano-colors-oracle.test.ts` (UNPORTED_CASES : col1-67, col1-117, col1-138,
-col1-151, col1-153, col1-169, col2-6, col2-48, col2-58, col3-137, col3-170, col3-190), nano
-7.2 sous `-v` : `^R` affiche l'invite « File to read
-into new buffer [from ./]: » (menu `^T Browse`, `M-N No Conversion`) au lieu de « Key is
-invalid in view mode » ; le moteur refuse la touche. Il faut des tampons multiples
-(`-F`, `M-<` `M->`) et le navigateur de fichiers (`^T` de l'invite, col3-20, col3-28,
-col3-173 : l'invite `^R` puis `^T` ouvre le navigateur) : pas de liste de tampons ni de
-navigateur dans le moteur aujourd'hui.
+### [nano] tampons multiples : `-F`, plusieurs fichiers, `M-<` `M->`, `M-F`, `^R` en mode vue
+Le moteur n'a qu'un tampon. Ce qui en depend, mesure sur nano 7.2 :
+- `^R` sous `-v` ouvre un NOUVEAU tampon : invite « File to read into new buffer [from ./]: »
+  (menu `^T Browse`, `M-N No Conversion`) au lieu de « Key is invalid in view mode » ; le moteur
+  refuse la touche (`nano-colors-oracle.test.ts`, UNPORTED_CASES col1-67, col1-117, col1-138,
+  col1-151, col1-153, col1-169, col2-6, col2-48, col2-58, col3-137, col3-170, col3-190 ; 7 cas
+  de `nano-layout-oracle.test.ts`) ;
+- `nano a b` : titre `[1/N]`, `M-<` / `M->` pour passer d'un tampon a l'autre, fermeture
+  (« Close »), message `[ x -- N lines ]` ; `-F` (`multibuffer`) fait de `^R` une lecture dans
+  un nouveau tampon, `M-F` aussi (menu Execute) ; `nano -` lit l'entree standard (« Reading data
+  from keyboard ») ;
+- le « oui » du linter pour un fichier non ouvert (entree suivante), et les clics de souris qui
+  peuvent ouvrir un tampon (`nano-mouse-oracle.test.ts`) ;
+- l'aide de l'invite « File to read into new buffer ».
+Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la marque, l'annulation,
+les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
+fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
+
+### [nano] navigateur de fichiers (`^T` dans `^R`, `^O`, `M-F`)
+La barre d'invite annonce `^T Browse` comme nano mais le navigateur n'existe pas : la touche est
+ignoree. Vu en mesurant : `nano-tools-oracle.test.ts` (3 cas du corpus), `nano-colors-oracle.test.ts`
+(col3-20, col3-28, col3-173). Lu dans `browser.c` de nano 7.2 (pas encore mesure sur le binaire) :
+`browse` / `read_the_list` / `browser_refresh` (liste triee mise en colonnes, largeur du plus long
+nom, taille ou « (dir) » affichee), `goto_dir`, recherche `findfile` / `search_filename`, `to_first_file`
+/ `to_last_file`, pages, fleches, mots et blocs, aide propre au navigateur, `^X` pour en sortir, Entree
+sur un dossier (qu'on entre) ou sur un fichier (qui revient dans l'invite). Brique a ecrire dans le
+moteur d'invites ; elle sert les trois invites de fichier.
+
+### [nano] « File was modified since you opened it »
+Non porte : le moteur ne compare pas la date de modification du fichier a celle qu'il a relevee a
+l'ouverture. La brique existe maintenant (`EditorFsContext.modificationStamp`, ajoutee pour
+« Nothing changed » du formateur) ; reste a la relever a l'ouverture et a la relire a
+l'ecriture (`write_it_out` pose la question « File was modified since you opened it; continue
+saving? »). Aussi `rnano` (nom du programme = mode restreint) : le lanceur ne l'aiguille pas.
+
+### [nano] annulation : « Undid insertion », `und3-175`, `un24-6`
+Cas de `nano-undo-oracle.test.ts` (UNPORTED_CASES : und3-175, un24-6) et de `nano-insert-oracle.test.ts` :
+- `und3-175` : avec `-k`, nano 7.2 annule une justification en laissant un tampon VIDE (le texte est
+  perdu). Defaut du binaire, volontairement NON reproduit.
+- `un24-6` : frappe au milieu d'une ligne deja trop longue avec `-b` : nano coupe a un autre
+  blanc que le moteur ; pas encore analyse.
+- « Undid insertion » : l'annulation de l'insertion d'un fichier (`^R`) porte le nom propre a ce
+  genre d'action chez nano 7.2 ; le moteur dit « Undid action » (ASSESSMENT, ligne `^R`).
+- L'insertion d'un FIFO par `^R` (nano lit jusqu'a la fin du flux).
+
+### [nano] recherche : ce qu'une regex POSIX fait et que JavaScript ne fait pas
+`-Q` et `M-R` passent par `CompiledEre` (`PosixEre`). Restent : la semantique POSIX des groupes de
+capture sous un quantificateur (derniere iteration, groupe non participant vide : celle de
+JavaScript est appliquee), `\c` sous `REG_ICASE` (defaut de la glibc), `[[:alpha:]]` et les classes
+par categories Unicode, les decalages en octets de nano (UTF-16 ici : seul le point de depart de
+la recherche arriere sur une fin de ligne multi-octet peut differer, `sea3-96` blanc d'une
+correspondance vide sur un caractere large apres un remplacement), l'indicateur « Searching... »
+des recherches longues, les touches tapees pendant la pause de 600 ms de « Key is invalid in view
+mode » (le rejeu n'a pas de file d'attente).
+
+### [nano] touches : `F1`-`F12`, touches modifiees, redimensionnement pendant l'aide
+- tmux envoie pour `F1`-`F12` et pour certaines touches modifiees des sequences que ncurses coupe :
+  nano repond « Unbound key: 1 » ; le rejeu ne les reproduit pas (`nano-help-oracle.test.ts`).
+- Quand la fenetre change de taille pendant l'aide, nano redecoupe le texte de l'aide ; le moteur
+  garde le decoupage de l'ouverture.
+- `rawsequences` (`-K`) : lu, jamais evalue (touches Home/End des terminaux xterm / linux).
+
+### [nano] caracteres non enregistres
+Les corpus contiennent des accents precomposes (`é`, `café`) et du chinois (`中文`, largeur 2, avec
+des tabulations) mais PAS : les emoji hors du plan de base, les caracteres combinants et de largeur
+nulle (le recorder sait les compter, `cell_width`, aucun texte n'en contient), les octets UTF-8
+invalides, ni les caracteres de controle hors tabulation. Le moteur n'est donc ni valide ni
+refute sur ces textes : a enregistrer avant de pretendre que le rendu y est fidele.
 
 ### [nano] `~` dans les invites de fichier
 Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
