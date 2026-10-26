@@ -894,7 +894,7 @@ export class SQLPlusSession {
             output.push('no rows selected');
           }
         } else {
-          output.push(...this.formatQueryResult(result));
+          for (const line of this.formatQueryResult(result)) output.push(line);
         }
       } else if (result.message) {
         output.push('');
@@ -1757,7 +1757,7 @@ export class SQLPlusSession {
     for (const raw of content.replace(/\n$/, '').split('\n')) {
       const inner = this.processLineInner(raw);
       if (this.settings.echo) output.push(`${scriptPrompt}${raw}`);
-      output.push(...inner.output);
+      for (const line of inner.output) output.push(line);
       scriptPrompt = inner.prompt;
       if (inner.exit) {
         return { output, exit: true, needsMoreInput: false, prompt: inner.prompt };

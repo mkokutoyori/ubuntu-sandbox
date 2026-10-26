@@ -258,7 +258,7 @@ export abstract class BaseStorage {
 
   insertRows(schema: string, tableName: string, rows: StorageRow[]): number {
     const table = this.getTableData(schema, tableName);
-    table.rows.push(...rows);
+    for (const row of rows) table.rows.push(row);
     table.meta.rowCount = table.rows.length;
     if (this.undoSink) {
       for (const row of rows) this.undoSink.recordInsert(schema, tableName, row);
@@ -302,6 +302,13 @@ export abstract class BaseStorage {
       }
     }
     return count;
+  }
+
+  rewriteRows(schema: string, tableName: string, apply: (rows: StorageRow[]) => void): void {
+    const table = this.getTableData(schema, tableName);
+    apply(table.rows);
+    table.meta.rowCount = table.rows.length;
+    table.epoch = BaseStorage.epochSource++;
   }
 
   truncateTable(schema: string, tableName: string): void {

@@ -279,7 +279,7 @@ export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource
   const out: string[] = [];
   for (const raw of sqlSource.split(';')) {
     const stmt = raw.trim();
-    if (stmt) out.push(...session.processLine(`${stmt};`).output);
+    if (stmt) for (const line of session.processLine(`${stmt};`).output) out.push(line);
   }
   session.disconnect();
   return out.join('\n');
