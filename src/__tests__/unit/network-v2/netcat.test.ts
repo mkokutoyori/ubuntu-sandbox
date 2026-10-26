@@ -25,10 +25,10 @@ async function buildPair() {
 }
 
 describe('nc / ncat — real TCP probe', () => {
-  it('-z on a listening port (22 sshd) exits 0 with no output', async () => {
+  it('-z on a listening port (22 sshd) reports the connection, -z implies the report', async () => {
     const { pc } = await buildPair();
     const out = await pc.executeCommand('nc -z 10.0.0.2 22');
-    expect(out).toBe('');
+    expect(out).toBe('Connection to 10.0.0.2 22 port [tcp/ssh] succeeded!');
   });
 
   it('-zv on a listening port emits the OpenBSD "succeeded" line', async () => {

@@ -332,7 +332,7 @@ describe('a capture shows the packets as they cross the interface, after the tra
     inside.getTcpStack().listen(8080, { onAccept: () => undefined });
     await sudo(inside, 'ip6tables -A OUTPUT -o lo -p tcp --dport 8080 -j DROP');
     await capture(inside, 'lo', 'six-output');
-    expect(await connect(inside, '::1', 8080)).toContain('Connection timed out');
+    expect(await connect(inside, '::1', 8080)).toContain('timed out: Operation now in progress');
     expect(await seen(inside, 'six-output')).not.toContain('Flags [S]');
   });
 
@@ -341,7 +341,7 @@ describe('a capture shows the packets as they cross the interface, after the tra
     inside.getTcpStack().listen(8080, { onAccept: () => undefined });
     await sudo(inside, 'ip6tables -A INPUT -i lo -p tcp --dport 8080 -j DROP');
     await capture(inside, 'lo', 'six-input');
-    expect(await connect(inside, '::1', 8080)).toContain('Connection timed out');
+    expect(await connect(inside, '::1', 8080)).toContain('timed out: Operation now in progress');
     expect(await seen(inside, 'six-input')).toMatch(/IP6 ::1\.\d+ > ::1\.8080: Flags \[S\]/);
   });
 
@@ -373,7 +373,7 @@ describe('a DROP in the nat OUTPUT chain stops what the host opens', () => {
     await sudo(neighbour, 'systemctl start ssh');
     await nat(inside, '-A OUTPUT -p tcp --dport 22 -j DROP');
     await sudo(neighbour, `iptables -A INPUT -s ${INSIDE_IP} -p tcp -j ACCEPT`);
-    expect(await connect(inside, NEIGHBOUR_IP, 22)).toContain('Connection timed out');
+    expect(await connect(inside, NEIGHBOUR_IP, 22)).toContain('timed out: Operation now in progress');
     expect(await natPackets(inside, 'OUTPUT')).toBeGreaterThanOrEqual(1);
     expect(await filterPackets(neighbour, 'INPUT')).toBe(0);
   });

@@ -5,7 +5,7 @@
  * un FortiGate dont le `port1` porte `set allowaccess ping https`, donc
  * ni `ssh` ni `telnet` :
  *
- *   nc -zv -w 1 10.0.10.2 23   nc: connect to ... failed: Connection timed out
+ *   nc -zv -w 1 10.0.10.2 23   nc: connect to ... timed out: Operation now in progress
  *   ssh admin@10.0.10.2        ssh: ... : Connection timed out
  *   telnet 10.0.10.2           telnet: connect to address ...: Connection refused
  *
@@ -134,7 +134,7 @@ describe('un paquet JETE est un silence, pour telnet aussi', () => {
     const { poste } = await laboratoire();
 
     expect(await poste.executeCommand(`nc -zv -w 1 ${PARE_FEU} 23`))
-      .toMatch(/Connection timed out/);
+      .toMatch(/timed out: Operation now in progress/);
   });
 
   it('`ssh` le disait deja aussi — le TEMOIN', async () => {
