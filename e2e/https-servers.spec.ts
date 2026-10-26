@@ -145,6 +145,7 @@ test.describe('HTTPS, typed by the operator', () => {
     await typeCmd(page, 'ls /etc/apache2/sites-enabled');
     expect(await lastLines(page, 4)).not.toContain('default-ssl.conf');
 
+    await typeCmd(page, 'a2enmod ssl');
     // `a2ensite default-ssl` is only an `ln -s`.
     await typeCmd(page,
       'ln -s ../sites-available/default-ssl.conf /etc/apache2/sites-enabled/default-ssl.conf');

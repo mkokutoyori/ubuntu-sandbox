@@ -14,23 +14,53 @@ async function waitForStore(page: Page): Promise<void> {
   );
 }
 
-/** Deux serveurs câblés par un switch, avec /mnt/data monté en NFS. */
-async function buildLab(page: Page): Promise<string> {
-  return page.evaluate(() => {
+/**
+ * Deux serveurs câblés par un switch ; le serveur sert son export pour de
+ * bon (NFS est un vrai protocole : un montage vers une machine qui n'exporte
+ * rien est refusé) et le client monte /mnt/data depuis lui.
+ */
+async function buildLab(page: Page): Promise<{ client: string; farCable: string }> {
+  return page.evaluate(async () => {
     const store = (window as Record<string, unknown>).__networkStore as {
       getState(): {
         addDevice(t: string, x: number, y: number): { id: string };
-        addConnection(a: string, ai: string, b: string, bi: string): unknown;
+        addConnection(a: string, ai: string, b: string, bi: string): { id: string };
+        deviceInstances: Map<string, Record<string, unknown>>;
       };
     };
     const s = store.getState();
     const cli = s.addDevice('linux-server', 250, 250);
     const sw = s.addDevice('switch-generic', 450, 250);
     const srv = s.addDevice('linux-server', 650, 250);
-    s.addConnection(cli.id, 'eth0', sw.id, 'Fa0/1');
-    s.addConnection(srv.id, 'eth0', sw.id, 'Fa0/2');
-    return cli.id;
+    const swPorts = (store.getState().deviceInstances.get(sw.id) as Record<string, unknown>)
+      .getPortNames as () => string[];
+    const ports = swPorts.call(store.getState().deviceInstances.get(sw.id));
+    s.addConnection(cli.id, 'eth0', sw.id, ports[0]);
+    const far = s.addConnection(srv.id, 'eth0', sw.id, ports[1]);
+    const run = async (id: string, command: string): Promise<void> => {
+      const dev = store.getState().deviceInstances.get(id) as Record<string, unknown>;
+      await (dev.executeCommand as (c: string) => Promise<string>).call(dev, command);
+    };
+    await run(cli.id, 'ip addr add 10.0.0.1/24 dev eth0');
+    await run(srv.id, 'ip addr add 10.0.0.2/24 dev eth0');
+    await run(srv.id, 'mkdir -p /export');
+    await run(srv.id, 'sh -c \'echo "/export 10.0.0.0/24(rw,sync,no_root_squash)" > /etc/exports\'');
+    await run(srv.id, 'systemctl start rpcbind');
+    await run(srv.id, 'systemctl start nfs-kernel-server');
+    await run(cli.id, 'mkdir -p /mnt/data');
+    await run(cli.id, 'mount -t nfs 10.0.0.2:/export /mnt/data');
+    return { client: cli.id, farCable: far.id };
   });
+}
+
+async function pullCable(page: Page, id: string): Promise<void> {
+  await page.evaluate((cableId) => {
+    const store = (window as Record<string, unknown>).__networkStore as {
+      getState(): { removeConnection(id: string): void };
+    };
+    store.getState().removeConnection(cableId);
+  }, id);
+  await page.waitForTimeout(300);
 }
 
 async function openTerminal(page: Page, id: string): Promise<void> {
@@ -64,16 +94,15 @@ async function lastJobPid(page: Page): Promise<string> {
 }
 
 test.describe('§F5.7 — attente ininterruptible sur un montage mort', () => {
+  let farCable = '';
+
   test.beforeEach(async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/', { timeout: 45_000 });
     await waitForStore(page);
-    await openTerminal(page, await buildLab(page));
-    // Le serveur est câblé mais n'a pas encore d'adresse : le montage vise
-    // une machine que rien ne rend joignable, donc il est mort d'emblée —
-    // le même fait physique qu'un serveur éteint.
-    await typeCmd(page, 'mkdir -p /mnt/data');
-    await typeCmd(page, 'mount -t nfs 10.0.0.2:/export /mnt/data');
+    const lab = await buildLab(page);
+    farCable = lab.farCable;
+    await openTerminal(page, lab.client);
   });
 
   test('le montage réseau apparaît avec son serveur', async ({ page }) => {
@@ -82,6 +111,7 @@ test.describe('§F5.7 — attente ininterruptible sur un montage mort', () => {
   });
 
   test('un accès en arrière-plan part en `D` et résiste à kill -9', async ({ page }) => {
+    await pullCable(page, farCable);
     await typeCmd(page, 'ls /mnt/data &');
     const pid = await lastJobPid(page);
 
@@ -100,6 +130,7 @@ test.describe('§F5.7 — attente ininterruptible sur un montage mort', () => {
   });
 
   test('`umount -l` libère, et le signal en attente tombe enfin', async ({ page }) => {
+    await pullCable(page, farCable);
     await typeCmd(page, 'ls /mnt/data &');
     const pid = await lastJobPid(page);
     await typeCmd(page, `kill -9 ${pid}`);

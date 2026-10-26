@@ -200,7 +200,7 @@ test.describe('FortiGate — les raccourcis d\'edition de ligne', () => {
 
     await entrer(page, 'ip link set eth0 up');
     await entrer(page, 'ip addr add 192.168.1.10/24 dev eth0');
-    await entrer(page, 'ssh admin@192.168.1.1');
+    await entrer(page, 'ssh -o StrictHostKeyChecking=no admin@192.168.1.1');
     const secret = page.locator('[data-testid="terminal-modal"] input[type="password"]');
     await secret.waitFor({ state: 'visible', timeout: 15_000 });
     await secret.focus();

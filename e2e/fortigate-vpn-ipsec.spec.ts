@@ -110,7 +110,7 @@ test.describe('FortiGate — IPsec dans le terminal', () => {
     await openTerminal(page, id);
 
     for (const c of [
-      'config vpn ipsec phase1-interface', 'edit "T"', 'set dhgrp 18',
+      'config vpn ipsec phase1-interface', 'edit "T"', 'set dhgrp 22',
     ]) await typeCmd(page, c);
 
     await waitForText(page, 'Command fail');

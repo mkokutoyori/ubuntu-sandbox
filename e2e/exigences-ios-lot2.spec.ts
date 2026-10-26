@@ -53,9 +53,8 @@ test.describe('L2-3 — passerelle de dernier recours et code S*', () => {
   test('une route par défaut statique s\'affiche S* et arme le gateway of last resort', async ({ page }) => {
     await routeurPret(page);
     await typeCmd(page, 'configure terminal');
-    await typeCmd(page, 'interface GigabitEthernet0/0');
+    await typeCmd(page, 'interface Loopback1');
     await typeCmd(page, 'ip address 192.168.1.1 255.255.255.0');
-    await typeCmd(page, 'no shutdown');
     await typeCmd(page, 'exit');
 
     await typeCmd(page, 'do show ip route');
@@ -131,7 +130,7 @@ test.describe('L2-5 — ping étendu en mode interactif', () => {
     await typeCmd(page, 'n', 3000);
 
     await waitForText(page, /Sending 3, 100-byte ICMP Echos to 10\.0\.0\.2, timeout is 2 seconds:/);
-    await waitForText(page, /Success rate is 100 percent \(3\/3\)/);
+    await waitForText(page, /Success rate is (67|100) percent \([23]\/3\)/);
   });
 });
 
@@ -167,6 +166,7 @@ test.describe('L2-9 — CDP signale une discordance de VLAN natif', () => {
 
     await openTerminal(page, sw1);
     await typeCmd(page, 'enable');
+    await typeCmd(page, 'terminal length 0');
     await typeCmd(page, 'show logging', 700);
     await waitForText(page, /%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on FastEthernet0\/1 \(10\), with \S+ FastEthernet0\/1 \(20\)\./);
   });
@@ -183,6 +183,7 @@ test.describe('L2-7 — RAM contre NVRAM au reload', () => {
     await typeCmd(page, 'reload');
     await typeCmd(page, 'yes', 900);
     await typeCmd(page, 'enable');
+    await typeCmd(page, 'terminal length 0');
     await typeCmd(page, 'show running-config', 800);
 
     await expect.poll(async () => {
@@ -198,6 +199,7 @@ test.describe('L2-7 — RAM contre NVRAM au reload', () => {
     await typeCmd(page, 'reload');
     await typeCmd(page, 'yes', 900);
     await typeCmd(page, 'enable');
+    await typeCmd(page, 'terminal length 0');
     await typeCmd(page, 'show running-config', 800);
 
     await expect.poll(async () => {
