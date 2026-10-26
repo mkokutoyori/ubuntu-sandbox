@@ -29,6 +29,7 @@ import { helpAction, helpCursorMotion, unboundKeyMessage } from './nano/NanoHelp
 import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
+import { resolveInterfacePaints } from './nano/NanoPaint';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
@@ -435,6 +436,8 @@ export class NanoEngine {
     this.searchSpotlight = null;
     this.manner = 'centering';
     this.verticalKey = false;
+    this.redrawsOnlyChangedLines = false;
+    const viewBefore = { top: this.window.edittop, left: this.window.firstcolumn };
     if (k !== null && !this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
     if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
@@ -451,6 +454,7 @@ export class NanoEngine {
     if (!this.verticalKey && !promptLeftCursorAlone) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
     if (this.reportsPositionAsMessage() && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
+    if (this.redrawsOnlyChangedLines && this.zeroMode() && this._mode === 'edit' && viewBefore.top === this.window.edittop && viewBefore.left === this.window.firstcolumn) this.staleFooter = { text: '', spans: [] };
     this.makeRoomForMessage();
     this.settleTally();
   }
@@ -749,6 +753,10 @@ export class NanoEngine {
     return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
   }
 
+  private interfacePaints() {
+    return resolveInterfacePaints(this.live.colors, this.live.boldtext, (this.fs.environmentVariable?.('NO_COLOR') ?? null) !== null);
+  }
+
   private minibarMode(): boolean {
     return this.live.minibar && !this.live.zero && this.window.rows > 1;
   }
@@ -774,6 +782,7 @@ export class NanoEngine {
       tabsize: this.live.tabsize,
       softwrap: this.live.softwrap,
       emphasis: this.live.boldtext ? 'bold' : 'reverse',
+      paints: this.interfacePaints(),
       stripe: this.live.guidestripe,
       title: {
         name: this.titleName === '' ? 'New Buffer' : this.titleName,
@@ -1110,6 +1119,7 @@ export class NanoEngine {
 
   private placeWant = 0;
   private verticalKey = false;
+  private redrawsOnlyChangedLines = false;
 
   private columnAtDisplay(line: number, want: number): number {
     return actualX(this.line(line), want, this.live.tabsize);
@@ -1128,6 +1138,11 @@ export class NanoEngine {
     this.placeWant = landed.placeWant;
     this.verticalKey = true;
     return 0;
+  }
+
+  private refuseInViewMode(): void {
+    this._statusMessage = '[ Key is invalid in view mode ]';
+    this.verticalKey = true;
   }
 
   private moveVertical(delta: number): void {
@@ -1186,7 +1201,7 @@ export class NanoEngine {
     // real nano simply ignores keys that would modify it.
     if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete' || k.key === 'Tab'
       || (k.key.length === 1 && !k.alt))) {
-      this._statusMessage = '[ Key is invalid in view mode ]';
+      this.refuseInViewMode();
       return;
     }
 
@@ -1319,7 +1334,7 @@ export class NanoEngine {
     // read-only, since every one of them would mutate the buffer.
     if (this._readOnly && (key === 'o' || key === 's' || key === 'k' || key === 'u' || key === '\\'
       || key === 'j' || key === 'r' || key === 't')) {
-      this._statusMessage = '[ Key is invalid in view mode ]';
+      this.refuseInViewMode();
       return;
     }
     switch (key) {
@@ -1481,17 +1496,17 @@ export class NanoEngine {
       return;
     }
     if (k.key === '}' || k.key === '{') {
-      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (this._readOnly) { this.refuseInViewMode(); return; }
       if (k.key === '}') this.indentLines(); else this.unindentLines();
       return;
     }
     if (key === 'j') {
-      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (this._readOnly) { this.refuseInViewMode(); return; }
       this.justifyText(true);
       return;
     }
     if (key === 't' || (k.key === '3' && !k.shift)) {
-      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (this._readOnly) { this.refuseInViewMode(); return; }
       if (key === 't') this.cutTillEnd(); else this.commentLines();
       return;
     }
@@ -2311,8 +2326,10 @@ export class NanoEngine {
     this._mode = 'edit';
     if (key === 'y') this.toFirstLine();
     else if (key === 'v') this.toLastLine();
-    else if (key === 'w') this.toParagraphBegin();
-    else this.toParagraphEnd();
+    else {
+      if (key === 'w') this.toParagraphBegin(); else this.toParagraphEnd();
+      this.redrawsOnlyChangedLines = true;
+    }
     return true;
   }
 
@@ -2873,7 +2890,7 @@ export class NanoEngine {
 
   private beginReplacePrompt(): void {
     if (this._readOnly) {
-      this._statusMessage = '[ Key is invalid in view mode ]';
+      this.refuseInViewMode();
       return;
     }
     this.searchDefaultText = this.searchDefaultNote();

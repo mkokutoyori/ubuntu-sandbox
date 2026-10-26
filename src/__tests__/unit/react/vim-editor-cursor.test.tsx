@@ -188,8 +188,8 @@ describe('gridLayout', () => {
   it('turns a row into runs and marks the cursor cell', () => {
     const runs = layoutRow({ text: 'ab', spans: [{ from: 1, to: 2, style: 'special' }] }, 0);
     expect(runs).toEqual([
-      { text: 'a', wide: false, style: null, caret: true },
-      { text: 'b', wide: false, style: 'special', caret: false },
+      { text: 'a', wide: false, style: null, paint: null, caret: true },
+      { text: 'b', wide: false, style: 'special', paint: null, caret: false },
     ]);
   });
 
@@ -201,7 +201,7 @@ describe('gridLayout', () => {
 
   it('keeps a double-width character on two columns and puts the cursor on both', () => {
     const runs = layoutRow({ text: '中\u0000x', spans: [] }, 1);
-    expect(runs[0]).toEqual({ text: '中', wide: true, style: null, caret: true });
+    expect(runs[0]).toEqual({ text: '中', wide: true, style: null, paint: null, caret: true });
     expect(runs[1].text).toBe('x');
   });
 });

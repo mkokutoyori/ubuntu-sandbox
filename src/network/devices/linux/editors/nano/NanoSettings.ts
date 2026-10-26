@@ -1,3 +1,5 @@
+import type { ElementCombinations } from './NanoPaint';
+
 export const NANO_FLAGS = [
   'afterends', 'atblanks', 'autoindent', 'backup', 'boldtext', 'bookstyle', 'breaklonglines',
   'casesensitive', 'constantshow', 'cutfromcursor', 'emptyline', 'historylog', 'ignorercfiles',
@@ -11,6 +13,8 @@ export const NANO_FLAGS = [
 export type NanoFlag = typeof NANO_FLAGS[number];
 
 export const DEFAULT_TABSIZE = 8;
+
+const NO_COLORS: ElementCombinations = Object.freeze({});
 
 export interface NanoSettings extends Readonly<Record<NanoFlag, boolean>> {
   readonly tabsize: number;
@@ -27,6 +31,7 @@ export interface NanoSettings extends Readonly<Record<NanoFlag, boolean>> {
   readonly speller: string | null;
   readonly syntax: string | null;
   readonly rcfile: string | null;
+  readonly colors: ElementCombinations;
 }
 
 export function defaultNanoSettings(overrides: Partial<NanoSettings> = {}): NanoSettings {
@@ -47,6 +52,7 @@ export function defaultNanoSettings(overrides: Partial<NanoSettings> = {}): Nano
     speller: null,
     syntax: null,
     rcfile: null,
+    colors: NO_COLORS,
     ...overrides,
   };
 }

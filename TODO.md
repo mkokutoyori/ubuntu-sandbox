@@ -820,7 +820,7 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 ### [nano] le repeint incremental de nano 7.2 : des rangees que le tampon ne justifie pas
 Mesure avec `nano-attributes-oracle.test.ts` (UNPORTED_CASES : atr3-21,
 atr3-47, atr3-101, bar2-2, bar2-41), 5 cas sur 690 enregistres sur nano 7.2
-dans tmux :
+dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
 - **Ligne magique** : un caractere tape sur la derniere ligne (que `PageDown`
   atteint) cree une nouvelle ligne magique en dessous ; nano ne repeint que la
   rangee courante, la rangee de la nouvelle ligne magique reste vide, SANS le
@@ -830,9 +830,16 @@ dans tmux :
 - **`-S -l` sur une ligne de cinq tranches** : apres `M-\ PageDown C-d BSpace`
   le binaire laisse la rangee de la derniere tranche vide et le curseur colonne 0
   de la rangee suivante.
-- **`-0` et l'invite qui couvre une rangee de texte** : `^O` ferme l'invite sans
-  que nano repeigne la rangee qu'elle couvrait (`nano-mouse-oracle.test.ts`,
-  mou2-72) ; le moteur la repeint toujours.
+- **`-0` et l'invite qui couvre une rangee de texte** : quand l'invite `^_` est quittee
+  par `^W` / `^O` (saut de paragraphe qui ne fait pas defiler), `edit_redraw` ne repeint que
+  l'ancienne et la nouvelle ligne courante et la rangee que l'invite couvrait reste vide ;
+  porte pour ce pas (mou2-72, blo1-21, col1-52 passent) mais le moteur la repeint a la
+  touche suivante, alors que nano la laisse vide jusqu'au prochain `refresh_needed`
+  (`nano-blocks-oracle.test.ts` blo1-61, blo2-129, blo4-149, `nano-colors-oracle.test.ts`
+  col1-82).
+- **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
+  `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) ; la rangee a le guide
+  quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
@@ -849,10 +856,8 @@ est l'etat intermediaire d'une campagne en cours et non un livrable :
   `color`, `icolor`, `comment`, `tabgives`, `linter`, `formatter`, `extendsyntax` :
   ignorees, y compris les erreurs qu'elles produiraient (« A 'color' command requires
   a preceding 'syntax' command », « Error reading F: ... » sur un `include` sans
-  fichier). Syntaxes et couleurs : 28b ; raccourcis : 28d.
-- `titlecolor`, `numbercolor`, `stripecolor`, `scrollercolor`, `selectedcolor`,
-  `spotlightcolor`, `minicolor`, `promptcolor`, `statuscolor`, `errorcolor`, `keycolor`,
-  `functioncolor` : arguments non analyses (28b).
+  fichier). Syntaxes : 28b-2 ; raccourcis : 28d. Les douze `*color` d'interface sont
+  evaluees (`nano-colors-oracle.test.ts`).
 - `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
   parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
   encore dans le moteur (28e) ; `magic` n'a d'effet qu'avec les syntaxes (28b) ;
@@ -865,6 +870,16 @@ est l'etat intermediaire d'une campagne en cours et non un livrable :
   d'Ubuntu 24.04 (`set historylog`, `set locking`, `set stateflags`, `include
   "/usr/share/nano/*.nanorc"`) n'y sera posee qu'avec les 44 fichiers de syntaxe (28c),
   faute de quoi l'`include` ferait afficher « Mistakes in '/etc/nanorc' » a chaque lancement.
+
+### [nano] `^R` en mode vue ouvre un NOUVEAU tampon
+Mesure avec `nano-colors-oracle.test.ts` (UNPORTED_CASES : col1-67, col1-117, col1-138,
+col1-151, col1-153, col1-169, col2-6, col2-48, col2-58, col3-137, col3-170, col3-190), nano
+7.2 sous `-v` : `^R` affiche l'invite « File to read
+into new buffer [from ./]: » (menu `^T Browse`, `M-N No Conversion`) au lieu de « Key is
+invalid in view mode » ; le moteur refuse la touche. Il faut des tampons multiples
+(`-F`, `M-<` `M->`) et le navigateur de fichiers (`^T` de l'invite, col3-20, col3-28,
+col3-173 : l'invite `^R` puis `^T` ouvre le navigateur) : pas de liste de tampons ni de
+navigateur dans le moteur aujourd'hui.
 
 ### [nano] `~` dans les invites de fichier
 Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
