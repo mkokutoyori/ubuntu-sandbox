@@ -1,6 +1,7 @@
 import type { EditorFsContext } from '../EditorFsContext';
 import { parseNanoNumber, type CommandLineMemory } from './NanoCommandLine';
 import { fullPathOf } from './NanoOpening';
+import { ELEMENT_OPTIONS, parseCombination, type ElementCombinations, type NanoElement } from './NanoPaint';
 import { NANO_FLAGS, DEFAULT_TABSIZE, type NanoFlag, type NanoSettings } from './NanoSettings';
 import { nanoHomeDirectory } from './NanoStateDirectory';
 
@@ -28,14 +29,9 @@ const RC_FLAG_OPTIONS: Readonly<Record<string, RcFlagTarget>> = {
   wordbounds: 'wordbounds', zap: 'zap', zero: 'zero',
 };
 
-const RC_COLOR_OPTIONS: ReadonlySet<string> = new Set([
-  'titlecolor', 'numbercolor', 'stripecolor', 'scrollercolor', 'selectedcolor', 'spotlightcolor',
-  'minicolor', 'promptcolor', 'statuscolor', 'errorcolor', 'keycolor', 'functioncolor',
-]);
-
 const RC_VALUED_OPTIONS: ReadonlySet<string> = new Set([
   'brackets', 'fill', 'operatingdir', 'punct', 'quotestr', 'speller', 'backupdir', 'guidestripe',
-  'matchbrackets', 'tabsize', 'whitespace', 'wordchars', ...RC_COLOR_OPTIONS,
+  'matchbrackets', 'tabsize', 'whitespace', 'wordchars', ...Object.keys(ELEMENT_OPTIONS),
 ]);
 
 const SYNTAX_AND_BINDING_KEYWORDS: ReadonlySet<string> = new Set([
@@ -63,6 +59,7 @@ interface RcValues {
 class RcReader {
   readonly flags = new Map<RcFlagTarget, boolean>();
   readonly values: RcValues = {};
+  readonly colors: { -readonly [E in NanoElement]?: ElementCombinations[E] } = {};
   readonly errors: string[] = [];
   startupProblem: string | null = null;
   file: string | null = null;
@@ -112,7 +109,15 @@ class RcReader {
   }
 
   private valued(name: string, argument: string): void {
-    if (RC_COLOR_OPTIONS.has(name)) return;
+    const element = ELEMENT_OPTIONS[name];
+    if (element !== undefined) {
+      const outcome = parseCombination(argument);
+      if ('error' in outcome) {
+        this.jot(outcome.error);
+        this.colors[element] = null;
+      } else this.colors[element] = outcome.combination;
+      return;
+    }
     switch (name) {
       case 'operatingdir': this.values.operatingdir = argument; return;
       case 'fill': {
@@ -183,6 +188,7 @@ export function mergeRcSettings(cmd: NanoSettings, memory: CommandLineMemory, rc
     for (const field of ['brackets', 'punct', 'matchbrackets', 'whitespace'] as const) {
       if (values[field] !== undefined) merged[field] = values[field] ?? null;
     }
+    if (Object.keys(rc.colors).length > 0) merged.colors = { ...rc.colors };
     if (merged.speller !== null) merged.speller = merged.speller.replace(/^[ \t]+/, '');
   }
   if (merged.restricted) {

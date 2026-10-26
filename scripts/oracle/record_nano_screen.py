@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+
+A case with `"paint": true` records, for every row, one letter per cell from a legend kept for the whole case (`legend`: letter -> `FG/BG/FLAGS`,
+FG and BG a 0-255 palette index or `-` for the default, FLAGS any of `biur` for bold, italic, underline, reverse), read from `capture-pane -e -N`.
 
 A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
 (the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
@@ -111,6 +114,81 @@ def capture_attrs(name, width, height):
         rows.append("".join(letters)[:width].ljust(width, "."))
     return rows
 
+PAINT_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+def paint_apply(state, params):
+    codes = [int(p) if p else 0 for p in params.split(";")] or [0]
+    index = 0
+    while index < len(codes):
+        code = codes[index]
+        if code == 0:
+            state.update(bold=False, italic=False, underline=False, reverse=False, fg=None, bg=None)
+        elif code == 1:
+            state["bold"] = True
+        elif code == 3:
+            state["italic"] = True
+        elif code == 4:
+            state["underline"] = True
+        elif code == 7:
+            state["reverse"] = True
+        elif code == 22:
+            state["bold"] = False
+        elif code == 23:
+            state["italic"] = False
+        elif code == 24:
+            state["underline"] = False
+        elif code == 27:
+            state["reverse"] = False
+        elif 30 <= code <= 37:
+            state["fg"] = str(code - 30)
+        elif 90 <= code <= 97:
+            state["fg"] = str(code - 90 + 8)
+        elif code == 39:
+            state["fg"] = None
+        elif 40 <= code <= 47:
+            state["bg"] = str(code - 40)
+        elif 100 <= code <= 107:
+            state["bg"] = str(code - 100 + 8)
+        elif code == 49:
+            state["bg"] = None
+        elif code in (38, 48):
+            if index + 2 < len(codes) and codes[index + 1] == 5:
+                value = str(codes[index + 2])
+                index += 2
+            elif index + 4 < len(codes) and codes[index + 1] == 2:
+                value = "rgb:%d,%d,%d" % (codes[index + 2], codes[index + 3], codes[index + 4])
+                index += 4
+            else:
+                value = "?"
+            state["fg" if code == 38 else "bg"] = value
+        index += 1
+
+def paint_key(state):
+    flags = "".join(letter for letter, name in (("b", "bold"), ("i", "italic"), ("u", "underline"), ("r", "reverse")) if state[name])
+    return "%s/%s/%s" % (state["fg"] if state["fg"] is not None else "-", state["bg"] if state["bg"] is not None else "-", flags)
+
+def capture_paint(name, width, height, legend):
+    legend.setdefault(".", "-/-/")
+    letters_of = {key: letter for letter, key in legend.items()}
+    raw = tmux("capture-pane", "-e", "-p", "-N", "-t", name).split("\n")
+    state = {"bold": False, "italic": False, "underline": False, "reverse": False, "fg": None, "bg": None}
+    rows = []
+    for index in range(height):
+        row = raw[index] if index < len(raw) else ""
+        letters = []
+        for token in SGR.split(row):
+            if SGR.fullmatch(token):
+                paint_apply(state, token[2:-1])
+                continue
+            key = paint_key(state)
+            if key not in letters_of:
+                letters_of[key] = PAINT_LETTERS[len(legend) - 1] if len(legend) - 1 < len(PAINT_LETTERS) else "?"
+                legend[letters_of[key]] = key
+            for char in token:
+                letters.extend(letters_of[key] * cell_width(char))
+        rows.append("".join(letters)[:width].ljust(width, "."))
+    return rows
+
 def settled(name):
     last = None
     for _ in range(40):
@@ -157,7 +235,7 @@ def record_disk(casedir, hidden=False):
                 disk[key] = raw.decode("utf-8", "replace")
     return disk
 
-def record_screen(name, casedir=None, hidden=False, attrs=False):
+def record_screen(name, casedir=None, hidden=False, attrs=False, legend=None):
     snap = settled(name)
     if snap is None:
         return None
@@ -165,6 +243,8 @@ def record_screen(name, casedir=None, hidden=False, attrs=False):
     record = {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
     if attrs:
         record["attrs"] = capture_attrs(name, width, height)
+    if legend is not None:
+        record["paint"] = capture_paint(name, width, height, legend)
     if casedir is not None:
         record["disk"] = record_disk(casedir, hidden)
     return record
@@ -1030,6 +1110,7 @@ def run_state_case(case, workdir):
         open(etc_file, "w", encoding="utf-8").write(tokens(case.get("etc_nanorc", "")))
         etc_binding = "mount --bind %s /etc/nanorc && " % shlex.quote(etc_file)
     ignore = "" if case.get("rc") else "-I"
+    legend = {} if case.get("paint") else None
     runs = []
     for run in case["runs"]:
         name = "nt%d_%06d" % (os.getpid(), next(SESSION_NUMBERS))
@@ -1038,13 +1119,13 @@ def run_state_case(case, workdir):
         arguments = " ".join(shlex.quote(tokens(a)) for a in run["args"])
         inner = "%smount --bind %s /root && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color %s nano %s %s; sleep 20" % (etc_binding, shlex.quote(home), words, ignore, arguments)
         tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name, "cd %s && unshare -m sh -c %s" % (shlex.quote(casedir), shlex.quote(inner)))
-        opened = record_screen(name, None, True, False)
+        opened = record_screen(name, None, True, False, legend)
         record = {"args": run["args"], "steps": [], "opened": opened, "after": []}
         for step in run["steps"] + STATE_FINISH:
             if not nano_running(name):
                 break
             send(name, step)
-            snap = record_screen(name, None, True, False)
+            snap = record_screen(name, None, True, False, legend)
             if snap is None:
                 break
             if not nano_running(name):
@@ -1062,7 +1143,7 @@ def run_state_case(case, workdir):
         for leftover in glob.glob(os.path.join(casedir, "*.save")):
             os.remove(leftover)
         runs.append(record)
-    return dict(case, casedir=casedir, lab=lab, runs=runs)
+    return dict(case, casedir=casedir, lab=lab, runs=runs, **({"legend": legend} if legend is not None else {}))
 
 STATE_FINISH = ["C-c", "C-x", "n"]
 STATE_FLAGS = [["-H"], ["-P"], ["-H", "-P"], ["-HP"], ["-H", "-P", "-R"], ["--historylog"], ["--positionlog"], ["-H", "-P", "-l"], ["-H", "-P", "-S"], ["-H", "-P", "-w"], ["-P", "-x"], []]
@@ -1238,11 +1319,87 @@ def gen_rc(seed, count):
         cases.append({"id": "rcf%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": xdg, "env": env, "rc": True, "etc_nanorc": etc, "runs": runs})
     return cases
 
+COLOR_ELEMENTS = ["titlecolor", "numbercolor", "stripecolor", "scrollercolor", "selectedcolor", "spotlightcolor", "minicolor", "promptcolor", "statuscolor", "errorcolor", "keycolor", "functioncolor"]
+COLOR_BASE = ["red", "green", "blue", "yellow", "cyan", "magenta", "white", "black"]
+COLOR_EXTENDED = ["normal", "pink", "purple", "mauve", "lagoon", "mint", "lime", "peach", "orange", "latte", "rosy", "beet", "plum", "sea", "sky", "slate", "teal", "sage", "brown", "ocher", "sand", "tawny", "brick", "crimson", "grey", "gray"]
+COLOR_BAD = ["pinkish", "#12", "#12345", "#xyz", "lightnormal", "brightpink", "lightgrey", "light#123", "bright", "light", "", "Red", "RED", "bold", "italic"]
+
+def color_name(r):
+    kind = r.random()
+    if kind < 0.45:
+        return r.choice(COLOR_BASE)
+    if kind < 0.6:
+        return r.choice(["light", "bright"]) + r.choice(COLOR_BASE)
+    if kind < 0.8:
+        return r.choice(COLOR_EXTENDED)
+    if kind < 0.92:
+        return "#" + "".join(r.choice("0123456789abcdefABCDEF") for _ in range(3))
+    return r.choice(COLOR_BAD)
+
+def color_spec(r):
+    kind = r.random()
+    prefix = ""
+    if r.random() < 0.2:
+        prefix = r.choice(["bold,", "italic,", "bold,italic,", "italic,bold,", "bold", "italic", "bold,bold,"])
+    if kind < 0.45:
+        return prefix + color_name(r)
+    if kind < 0.85:
+        return prefix + color_name(r) + "," + color_name(r)
+    if kind < 0.95:
+        return prefix + "," + color_name(r)
+    return prefix + color_name(r) + ","
+
+def colors_rc_text(r):
+    lines = []
+    for _ in range(r.randint(1, 6)):
+        kind = r.random()
+        if kind < 0.8:
+            lines.append("set %s %s" % (r.choice(COLOR_ELEMENTS), r.choice(['"%s"', "%s"]) % color_spec(r)))
+        elif kind < 0.9:
+            lines.append(r.choice(["unset titlecolor", "set titlecolor", "unset statuscolor", "set keycolor"]))
+        else:
+            lines.append(rc_line(r))
+    return "\n".join(lines) + "\n"
+
+COLOR_STEPS = [["C-6"], ["C-6", "Right", "Right"], ["C-6", "Down"], ["C-w", "foo", "Enter"], ["C-w", "zzzz", "Enter"], ["M-w"], ["C-g", "C-x"], ["C-o"], ["C-r"], ["C-_"], ["C-c"], ["M-n"], ["C-t"], ["C-\\"], ["x", "C-x"], ["M-6"], ["C-u"], ["C-k"], ["C-j"]]
+
+def gen_colors(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([3, 6, 12, 30, 60]))]
+        text[r.randrange(len(text))] += " foo bar baz alpha tab end."
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        home = {".nanorc": colors_rc_text(r)}
+        env = {"NO_COLOR": "1"} if r.random() < 0.15 else {}
+        etc = colors_rc_text(r) if r.random() < 0.2 else ""
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-q", "-c", "-x", "-0", "-_", "-D", "-%", "-v", "-E", "-A"], r.choice([0, 1, 2, 3]))
+            if r.random() < 0.3:
+                args += ["-J", r.choice(["2", "5", "10", "30"])]
+            args.append("t.txt")
+            steps = []
+            for _ in range(r.randint(2, 6)):
+                kind = r.random()
+                if kind < 0.35:
+                    steps.extend(r.choice(MOVES) for _ in range(r.randint(1, 4)))
+                elif kind < 0.5 and "-v" not in args:
+                    steps.append(r.choice(RC_TYPING))
+                else:
+                    steps.extend(r.choice(COLOR_STEPS))
+            steps = without_stray_exec_keys(steps)
+            runs.append({"args": args, "steps": steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x"]])})
+        cases.append({"id": "col%d-%d" % (seed, i), "text": text, "files": {"sub/keep": ["k"]}, "rows": rows, "cols": cols, "home": home, "xdg": {}, "env": env, "rc": True, "etc_nanorc": etc, "paint": True, "runs": runs})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "state":
         return gen_state(seed, count)
     if corpus == "rc":
         return gen_rc(seed, count)
+    if corpus == "colors":
+        return gen_colors(seed, count)
     if corpus == "tab":
         return gen_tab(seed, count)
     if corpus == "mouse":
@@ -1318,7 +1475,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_state_case if a.corpus in ("state", "rc") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_state_case if a.corpus in ("state", "rc", "colors") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

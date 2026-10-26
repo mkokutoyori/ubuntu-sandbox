@@ -2,7 +2,7 @@ import { installRealChildShell } from './nanoShellBridge';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import { plainRowText, type ScreenRow, type ScreenStyle } from '@/network/devices/linux/editors/screen/EditorScreen';
+import { paintKey, plainRowText, type ScreenRow, type ScreenStyle } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { codePointWidth } from '@/network/devices/linux/editors/vim/VimCells';
 import { parseNanoCommandLine, type NanoInvocation } from '@/network/devices/linux/editors/nano/NanoCommandLine';
 import { buildNanoLock, parseNanoLock, type NanoLockData } from '@/network/devices/linux/editors/nano/NanoLock';
@@ -10,7 +10,7 @@ import { launchedFilePath, type EditorLaunch } from '@/network/devices/linux/edi
 
 export type RecordedDisk = Record<string, string | { lock: NanoLockData }>;
 
-export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: RecordedDisk; attrs?: string[] }
+export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: RecordedDisk; attrs?: string[]; paint?: string[] }
 
 export interface NanoScreenCase {
   id: string;
@@ -151,7 +151,45 @@ function visibleLetters(letters: string, text: string): string {
   return [...letters].map((letter, index) => (index >= cell || blank.has(index) ? BLANK_LETTERS[letter] ?? letter : letter)).join('');
 }
 
-export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false, directory = '/tmp', ignoredPrefixes: readonly string[] = []): string | null {
+const DEFAULT_PAINT = '-/-/';
+const STYLE_KEYS: Partial<Record<ScreenStyle, string>> = { reverse: '-/-/r', bold: '-/-/b', alert: '7/1/b', search: '0/11/' };
+
+function blankColumns(text: string, width: number): boolean[] {
+  const blank = new Array<boolean>(width).fill(true);
+  let cell = 0;
+  for (const ch of text) {
+    const span = codePointWidth(ch.codePointAt(0)!);
+    for (let k = 0; k < Math.max(span, 1) && cell + k < width; k++) blank[cell + k] = ch === ' ';
+    cell += span;
+  }
+  return blank;
+}
+
+function settledKey(key: string, blank: boolean): string {
+  if (!blank) return key;
+  const [fg, bg, flags] = key.split('/');
+  const reverse = flags.includes('r');
+  return `${reverse ? fg : '-'}/${bg}/${flags.replace(/[bi]/g, '')}`;
+}
+
+export function paintKeys(row: ScreenRow, width: number): string[] {
+  const keys = new Array<string>(width).fill(DEFAULT_PAINT);
+  for (const span of row.spans) {
+    const key = span.style === 'paint' ? paintKey(span.paint!) : STYLE_KEYS[span.style] ?? `?${span.style}`;
+    for (let cell = Math.max(0, span.from); cell < Math.min(width, span.to); cell++) keys[cell] = key;
+  }
+  return keys;
+}
+
+function paintDifference(row: ScreenRow, text: string, wanted: string, legend: Readonly<Record<string, string>>, width: number, index: number): string | null {
+  const blank = blankColumns(text, width);
+  const gotKeys = paintKeys(row, width).map((key, cell) => settledKey(key, blank[cell]));
+  const wantKeys = [...wanted].map((letter, cell) => settledKey(legend[letter] ?? `?${letter}`, blank[cell] ?? true));
+  const differing = wantKeys.flatMap((key, cell) => (key === gotKeys[cell] ? [] : [`    col ${cell} ${JSON.stringify(text[cell] ?? ' ')} want ${key} got ${gotKeys[cell]}`]));
+  return differing.length === 0 ? null : `\n  paint row ${index} ${JSON.stringify(text)}\n${differing.slice(0, 6).join('\n')}${differing.length > 6 ? `\n    ... ${differing.length - 6} more` : ''}`;
+}
+
+export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false, directory = '/tmp', ignoredPrefixes: readonly string[] = [], legend: Readonly<Record<string, string>> | null = null): string | null {
   const screen = engine.screen;
   const got = screen.rows.map((row) => plainRowText(row).replace(/\s+$/, ''));
   const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows);
@@ -161,9 +199,13 @@ export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContex
   const gotAttrs = screen.rows.map((row, index) => visibleLetters(attributeLetters(row, want.width), got[index]));
   const wantAttrs = want.attrs?.map((letters, index) => visibleLetters(letters, want.rows[index] ?? ''));
   const attrsOk = wantAttrs === undefined || JSON.stringify(gotAttrs) === JSON.stringify(wantAttrs);
-  if (rowsOk && cursorOk && attrsOk) return diskFailure;
+  const paintLines = want.paint === undefined || legend === null ? [] : want.paint.flatMap((letters, index) => {
+    const difference = paintDifference(screen.rows[index] ?? { text: '', spans: [] }, want.rows[index] ?? '', letters, legend, want.width, index);
+    return difference === null ? [] : [difference];
+  });
+  if (rowsOk && cursorOk && attrsOk && paintLines.length === 0) return diskFailure;
   const attrLines = attrsOk ? '' : wantAttrs!.map((expected, index) => (expected === gotAttrs[index] ? null : `\n  attrs row ${index} ${JSON.stringify(got[index] ?? '')}\n    want ${expected}\n    got  ${gotAttrs[index]}`)).filter((line) => line !== null).join('');
-  return `${diskFailure ?? ''}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}${attrLines}`;
+  return `${diskFailure ?? ''}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}${attrLines}${paintLines.join('')}`;
 }
 
 export function replayNanoScreenCase(c: NanoScreenCase): string | null {

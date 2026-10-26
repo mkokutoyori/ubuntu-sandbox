@@ -31,6 +31,8 @@ export interface NanoStateCase {
   env: Record<string, string>;
   rc?: boolean;
   etc_nanorc?: string;
+  paint?: boolean;
+  legend?: Record<string, string>;
   runs: NanoStateRun[];
 }
 
@@ -127,11 +129,11 @@ export function replayNanoStateCase(c: NanoStateCase): string | null {
       settings: launch.nano!.settings, start: first?.start ?? null, displayName: name, rc: launch.nano!.rc, menuFlags: launch.nano!.menuFlags,
     });
     engine.resize(c.rows, c.cols);
-    const opened = compareNanoScreen(engine, fs, run.opened, true, c.casedir, ignored);
+    const opened = compareNanoScreen(engine, fs, run.opened, true, c.casedir, ignored, c.legend ?? null);
     if (opened) return `${label} opened${opened}`;
     for (let s = 0; s < run.after.length; s++) {
       applyNanoStep(engine, run.steps[s]);
-      const failure = compareNanoScreen(engine, fs, run.after[s], true, c.casedir, ignored);
+      const failure = compareNanoScreen(engine, fs, run.after[s], true, c.casedir, ignored, c.legend ?? null);
       if (failure) return `${label} step ${s} ${JSON.stringify(run.steps.slice(0, s + 1))}${failure}`;
     }
     if (run.exit_step !== undefined) {
