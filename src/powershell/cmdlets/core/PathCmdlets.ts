@@ -18,7 +18,7 @@ import { parseAttributeNames, isDefaultVisible } from '@/network/devices/windows
 import { joinPath } from '@/network/devices/windows/WinPathSpec';
 import { parentPathOf } from '@/network/devices/windows/windowsPath';
 import { namedRecord } from '@/powershell/runtime/PSPathInfo';
-import { driveNotFound, pathNotFound, type ProviderFailure } from './ProviderFailures';
+import { copyOntoItself, directoryExists, driveNotFound, pathNotFound, type ProviderFailure } from './ProviderFailures';
 import {
   CLEAR_CONTENT_REFUSAL, COPY_ACROSS_PROVIDERS, copyNamespaceItem, listNamespace, namespaceExists, namespaceTarget, newNamespaceItem,
   readNamespaceContent, removeNamespaceItems, renameNamespaceItem, resolveNamespacePaths, seekRefusal, setNamespaceItem, writeNamespaceContent,
@@ -801,13 +801,7 @@ function createItem(ctx: CmdletContext, path: string, typedType: string): PSValu
   const absolute = fs.normalizePath(path, fs.getCwd());
   if (kind === 'directory') {
     if (!force && fs.exists(absolute)) {
-      return providerFailure(ctx, 'New-Item', {
-        message: `An item with the specified name ${absolute} already exists.`,
-        exceptionType: 'System.IO.IOException',
-        errorId: 'DirectoryExist',
-        category: 'ResourceExists',
-        target: absolute,
-      });
+      return providerFailure(ctx, 'New-Item', directoryExists(absolute));
     }
     if (!ctx.shouldProcess(`Destination: ${absolute}`, 'Create Directory')) return null;
     fs.createDir(absolute);
@@ -957,7 +951,7 @@ export class RemoveItemCmdlet implements ICmdlet {
   private removeFromFileSystem(ctx: CmdletContext, fs: FileSystem, path: string, recurse: boolean): void {
     const absolute = fs.normalizePath(path, fs.getCwd());
     const wildcard = ctx.named['literalpath'] === undefined && hasWildcard(path);
-    const found = wildcard ? expandPathSpec(fs, absolute) : fs.exists(absolute) ? [absolute] : [];
+    const found = wildcard ? expandPathSpec(fs, absolute, ctx.named['force'] === true) : fs.exists(absolute) ? [absolute] : [];
     if (!wildcard && found.length === 0) {
       missingPath(ctx, fs, path);
       return;
@@ -986,6 +980,156 @@ export class RemoveItemCmdlet implements ICmdlet {
 
 // ─── Copy-Item ────────────────────────────────────────────────────────────
 
+const COPY_TO_LEAF = 'Container cannot be copied onto existing leaf item.';
+const COPY_TO_CONTAINER = 'Container cannot be copied to another container. The -Recurse or -Container parameter is not specified.';
+
+interface Branch {
+  readonly name: string;
+  readonly directory: boolean;
+  readonly children: readonly Branch[];
+}
+
+function branchesOf(fs: FileSystem, path: string): Branch[] {
+  return fs.listDir(path).map(entry => ({
+    name: entry.name,
+    directory: entry.isDirectory,
+    children: entry.isDirectory ? branchesOf(fs, joinPath(path, entry.name)) : [],
+  }));
+}
+
+const copyArgumentFailure = (ctx: CmdletContext, message: string, errorId: string, target: string): ProviderFailure => ({
+  message: `${message}${argumentNameSuffix(ctx, 'path')}`,
+  exceptionType: 'System.ArgumentException',
+  errorId,
+  category: 'InvalidArgument',
+  target,
+});
+
+const copyFileFailure = (source: string, message: string, exceptionType: string, access: boolean): ProviderFailure => ({
+  message,
+  exceptionType,
+  errorId: access ? 'CopyFileInfoItemUnauthorizedAccessError' : 'CopyFileInfoItemIOError',
+  category: access ? 'PermissionDenied' : 'WriteError',
+  target: source,
+  targetType: 'FileInfo',
+});
+
+class Copier {
+  private readonly produced: PSValue[] = [];
+
+  constructor(
+    private readonly ctx: CmdletContext,
+    private readonly fs: FileSystem,
+    private readonly force: boolean,
+  ) {}
+
+  output(): PSValue {
+    return this.produced.length === 0 ? null : this.produced.length === 1 ? this.produced[0] : this.produced;
+  }
+
+  isContainer(path: string): boolean {
+    return this.fs.exists(path) && this.fs.isDirectory(path);
+  }
+
+  private same(first: string, second: string): boolean {
+    return this.fs.normalizePath(first, this.fs.getCwd()).toLowerCase() === this.fs.normalizePath(second, this.fs.getCwd()).toLowerCase();
+  }
+
+  private emit(path: string): void {
+    if (this.ctx.named['passthru'] === true) this.produced.push(itemObject(this.fs, path));
+  }
+
+  private created(path: string): void {
+    if (!this.force && this.fs.exists(path)) {
+      this.ctx.emitFailure(directoryExists(path));
+      return;
+    }
+    if (this.fs.exists(path) && !this.fs.isDirectory(path)) return;
+    this.fs.createDir(path);
+    this.emit(path);
+  }
+
+  private blocksOverwrite(target: string): boolean {
+    const attributes = this.fs.attributesOf?.(target);
+    return attributes !== undefined && attributes !== null && (attributes.has('readonly') || attributes.has('hidden'));
+  }
+
+  private leaf(source: string, destination: string): void {
+    const name = baseNameOf(source);
+    const target = this.isContainer(destination) ? joinPath(destination, name) : destination;
+    if (this.same(target, source)) {
+      this.ctx.emitFailure(copyOntoItself(target));
+      return;
+    }
+    if (patternList(this.ctx.named['exclude']).some(pattern => wildcardMatches(pattern, name))) return;
+    if (!this.ctx.shouldProcess(`Item: ${source} Destination: ${target}`, 'Copy File')) return;
+    const denied = `Access to the path '${target}' is denied.`;
+    if (this.fs.exists(target) && (this.fs.isDirectory(target) || (!this.force && this.blocksOverwrite(target)))) {
+      this.ctx.emitFailure(copyFileFailure(source, denied, 'System.UnauthorizedAccessException', true));
+      return;
+    }
+    const parent = parentPathOf(target);
+    if (parent !== '' && !this.isContainer(parent)) {
+      this.ctx.emitFailure(copyFileFailure(source, `Could not find a part of the path '${target}'.`, 'System.IO.DirectoryNotFoundException', false));
+      return;
+    }
+    if (this.force && this.blocksOverwrite(target)) this.fs.clearAttributes?.(target, ['readonly', 'hidden']);
+    try {
+      this.fs.copy(source, target);
+    } catch (error) {
+      this.ctx.emitFailure(copyFileFailure(source, error instanceof Error ? error.message : String(error), 'System.IO.IOException', false));
+      return;
+    }
+    this.emit(target);
+  }
+
+  private directory(source: string, destination: string, branches: readonly Branch[] | null): void {
+    const target = this.isContainer(destination) ? joinPath(destination, baseNameOf(source)) : destination;
+    if (!this.ctx.shouldProcess(`Item: ${source} Destination: ${target}`, 'Copy Directory')) return;
+    this.created(target);
+    if (branches === null) return;
+    const filter = this.ctx.named['filter'] === undefined ? null : psValueToString(this.ctx.named['filter']);
+    for (const branch of branches.filter(entry => !entry.directory && (filter === null || wildcardMatches(filter, entry.name)))) {
+      this.leaf(joinPath(source, branch.name), target);
+    }
+    for (const branch of branches.filter(entry => entry.directory)) {
+      this.directory(joinPath(source, branch.name), target, branch.children);
+    }
+  }
+
+  private item(source: string, destination: string, recurse: boolean): void {
+    if (this.same(source, destination)) {
+      this.ctx.emitFailure(copyOntoItself(source));
+      return;
+    }
+    if (this.fs.isDirectory(source)) this.directory(source, destination, recurse ? branchesOf(this.fs, source) : null);
+    else this.leaf(source, destination);
+  }
+
+  private flatten(source: string, destination: string): void {
+    const walk = (base: string, branches: readonly Branch[]): void => {
+      for (const branch of branches) this.item(joinPath(base, branch.name), destination, false);
+      for (const branch of branches.filter(entry => entry.directory)) walk(joinPath(base, branch.name), branch.children);
+    };
+    walk(source, branchesOf(this.fs, source));
+  }
+
+  source(source: string, destination: string, destinationIsContainer: boolean, recurse: boolean, container: boolean): void {
+    if (!this.fs.isDirectory(source)) {
+      this.item(source, destination, recurse);
+    } else if (!destinationIsContainer) {
+      if (this.fs.exists(destination)) this.ctx.emitFailure(copyArgumentFailure(this.ctx, COPY_TO_LEAF, 'CopyContainerItemToLeafError', source));
+      else this.item(source, destination, recurse);
+    } else if (!container && !recurse) {
+      this.ctx.emitFailure(copyArgumentFailure(this.ctx, COPY_TO_CONTAINER, 'CopyContainerToContainerWithoutRecurseOrContainer', source));
+    } else if (!container) {
+      this.flatten(source, destination);
+    } else {
+      this.item(source, destination, recurse);
+    }
+  }
+}
+
 export class CopyItemCmdlet implements ICmdlet {
   readonly name = 'copy-item';
   readonly displayName = 'Copy-Item';
@@ -1004,14 +1148,19 @@ export class CopyItemCmdlet implements ICmdlet {
 
     const literal = ctx.named['literalpath'] !== undefined;
     const specs = pathInputs(ctx);
-    const dest = psValueToString(ctx.named['destination'] ?? ctx.positional[1] ?? '');
-    if (specs.length === 0 || specs.includes('') || !dest) {
-      ctx.emitError('Copy-Item : Both -Path and -Destination are required.');
+    if (specs.length === 0) {
+      ctx.emitError('Copy-Item : Cannot process command because of one or more missing mandatory parameters: Path.');
       return null;
     }
+    if (specs.includes('')) {
+      ctx.emitError("Copy-Item : Cannot bind argument to parameter 'Path' because it is an empty string.");
+      return null;
+    }
+    const typedDestination = ctx.named['destination'] ?? ctx.positional[1];
+    const dest = typedDestination === undefined ? '' : psValueToString(typedDestination);
 
     const fromNamespaces = specs.map(spec => namespaceTarget(locatedPath(ctx, spec)));
-    const toNamespace = namespaceTarget(locatedPath(ctx, dest));
+    const toNamespace = dest === '' ? null : namespaceTarget(locatedPath(ctx, dest));
     if (toNamespace !== null && fromNamespaces.every(from => from !== null)) {
       const copies = fromNamespaces.map(from => copyNamespaceItem(ctx, from!, toNamespace, ctx.named['passthru'] === true));
       return copies.length === 1 ? copies[0] : copies.flatMap(listOf);
@@ -1021,68 +1170,24 @@ export class CopyItemCmdlet implements ICmdlet {
       return null;
     }
 
-    const sources = specs.flatMap(spec => {
-      const found = literal ? [spec] : expandPathSpec(fs, spec);
-      if (found.length === 0) missingPath(ctx, fs, spec);
-      return found;
-    });
-    if (sources.length === 0) return null;
-    const kept = sources.filter(source => nameSurvivesFilters(ctx, baseNameOf(source)));
-
     const recurse = ctx.named['recurse'] === true;
-    const whatIf = ctx.named['whatif'] === true;
-    const many = kept.length > 1 || (!literal && specs.some(hasWildcard));
-    const copied: PSValue[] = [];
-    if (many && !whatIf && !fs.exists(dest)) fs.createDir(dest);
-
-    for (const source of kept) {
-      if (!fs.exists(source)) {
-        missingPath(ctx, fs, source);
+    const container = ctx.named['container'] !== undefined
+      ? ctx.named['container'] === true
+      : ctx.named['recurse'] === undefined || recurse;
+    const destination = fs.normalizePath(dest === '' ? '.' : dest, fs.getCwd());
+    const copier = new Copier(ctx, fs, ctx.named['force'] === true);
+    for (const spec of specs) {
+      const found = literal ? (fs.exists(spec) ? [fs.normalizePath(spec, fs.getCwd())] : []) : expandPathSpec(fs, spec, ctx.named['force'] === true);
+      if (found.length === 0) {
+        missingPath(ctx, fs, spec);
         continue;
       }
-      const target = many || (fs.exists(dest) && fs.isDirectory(dest) && !fs.isDirectory(source))
-        ? `${dest.replace(/\\+$/, '')}\\${baseNameOf(source)}`
-        : dest;
-      const from = fs.normalizePath(source, fs.getCwd());
-      const to = fs.normalizePath(target, fs.getCwd());
-      if (from.toLowerCase() === to.toLowerCase()) {
-        providerFailure(ctx, 'Copy-Item', {
-          message: `Cannot overwrite the item ${from} with itself.`,
-          exceptionType: 'System.IO.IOException',
-          errorId: 'CopyError',
-          category: 'WriteError',
-          target: from,
-        });
-        continue;
+      const destinationIsContainer = copier.isContainer(destination);
+      for (const source of survivingGlobbing(ctx, spec, found)) {
+        copier.source(source, destination, destinationIsContainer, recurse, container);
       }
-      if (!ctx.shouldProcess(`Item: ${from} Destination: ${to}`, `Copy ${fs.isDirectory(source) ? 'Directory' : 'File'}`)) continue;
-      try {
-        if (fs.isDirectory(source)) this.copyTree(ctx, fs, source, target, recurse);
-        else fs.copy(source, target);
-      } catch (e) {
-        ctx.emitError(e instanceof Error ? e.message : String(e));
-        continue;
-      }
-      if (ctx.named['passthru'] === true) copied.push(itemObject(fs, target));
     }
-
-    if (copied.length === 0) return null;
-    return (copied.length === 1 ? copied[0] : copied) as PSValue;
-  }
-
-  private copyTree(
-    ctx: CmdletContext, fs: NonNullable<CmdletContext['providers']['filesystem']>,
-    source: string, target: string, recurse: boolean,
-  ): void {
-    if (!fs.exists(target)) fs.createDir(target);
-    if (!recurse) return;
-    for (const entry of fs.listDir(source)) {
-      if (!nameSurvivesFilters(ctx, entry.name)) continue;
-      const from = `${source}\\${entry.name}`;
-      const to = `${target}\\${entry.name}`;
-      if (entry.isDirectory) this.copyTree(ctx, fs, from, to, recurse);
-      else fs.copy(from, to);
-    }
+    return copier.output();
   }
 }
 
@@ -1092,17 +1197,28 @@ function baseNameOf(path: string): string {
   return cut === -1 ? cleaned : cleaned.slice(cut + 1);
 }
 
-export function expandPathSpec(
-  fs: NonNullable<CmdletContext['providers']['filesystem']>, spec: string,
-): string[] {
-  if (!hasWildcard(spec)) return fs.exists(spec) ? [spec] : [];
-  const dir = parentPathOf(spec);
-  const pattern = baseNameOf(spec);
-  if (!fs.exists(dir) || !fs.isDirectory(dir)) return [];
-  const matcher = wildcardToRegex(pattern);
-  return fs.listDir(dir)
-    .filter(entry => matcher.test(entry.name))
-    .map(entry => `${dir.replace(/\\+$/, '')}\\${entry.name}`);
+export function expandPathSpec(fs: FileSystem, spec: string, force = false): string[] {
+  const absolute = fs.normalizePath(spec, fs.getCwd());
+  if (!hasWildcard(absolute)) return fs.exists(absolute) ? [absolute] : [];
+  const parts = absolute.split('\\').filter(part => part !== '');
+  const root = absolute.startsWith('\\\\') ? `\\\\${parts.shift() ?? ''}\\${parts.shift() ?? ''}\\` : `${parts.shift() ?? ''}\\`;
+  return parts.reduce<string[]>((bases, part) => bases.flatMap(base => {
+    if (!hasWildcard(part)) {
+      const next = joinPath(base, part);
+      return fs.exists(next) ? [next] : [];
+    }
+    if (!fs.isDirectory(base)) return [];
+    const matcher = wildcardToRegex(part);
+    return fs.listDir(base)
+      .filter(entry => matcher.test(entry.name) && (force || !entry.attributes?.has('hidden')))
+      .map(entry => joinPath(base, entry.name));
+  }), [root]);
+}
+
+function survivingGlobbing(ctx: CmdletContext, spec: string, found: string[]): string[] {
+  const globbed = ctx.named['literalpath'] === undefined
+    && (hasWildcard(spec) || patternList(ctx.named['include']).length > 0 || patternList(ctx.named['exclude']).length > 0);
+  return globbed ? found.filter(path => nameSurvivesFilters(ctx, baseNameOf(path))) : found;
 }
 
 function nameSurvivesFilters(ctx: CmdletContext, name: string): boolean {
@@ -1212,10 +1328,10 @@ export class MoveItemCmdlet implements ICmdlet {
     const literal = ctx.named['literalpath'] !== undefined;
     const destination = psValueToString(ctx.named['destination'] ?? ctx.positional[1] ?? '.');
     const sources = specs.flatMap(spec => {
-      const found = literal ? (fs.exists(spec) ? [spec] : []) : expandPathSpec(fs, spec);
+      const found = literal ? (fs.exists(spec) ? [spec] : []) : expandPathSpec(fs, spec, ctx.named['force'] === true);
       if (found.length === 0) missingPath(ctx, fs, spec);
-      return found;
-    }).filter(source => nameSurvivesFilters(ctx, baseNameOf(source)));
+      return survivingGlobbing(ctx, spec, found);
+    });
     const moved = sources.map(source => moveItem(ctx, fs, source, destination)).filter(item => item !== null);
     if (ctx.named['passthru'] !== true || moved.length === 0) return null;
     return moved.length === 1 ? moved[0] : moved;
@@ -1559,13 +1675,13 @@ export class GetItemCmdlet implements ICmdlet {
     if (!fs) return null;
     const absolute = fs.normalizePath(path, fs.getCwd());
     const found = ctx.named['literalpath'] === undefined && hasWildcard(path)
-      ? expandPathSpec(fs, absolute)
+      ? expandPathSpec(fs, absolute, ctx.named['force'] === true)
       : fs.exists(absolute) ? [absolute] : [];
     if (found.length === 0) {
       ctx.emitFailure(pathNotFound(absolute));
       return null;
     }
-    const items = found.filter(item => nameSurvivesFilters(ctx, baseNameOf(item))).map(item => itemObject(fs, item));
+    const items = survivingGlobbing(ctx, path, found).map(item => itemObject(fs, item));
     return items.length === 0 ? null : items.length === 1 ? items[0] : items;
   }
 }

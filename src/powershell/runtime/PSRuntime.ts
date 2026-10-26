@@ -4134,7 +4134,10 @@ export class PSRuntime {
     const fullyQualifiedErrorId = String(record.FullyQualifiedErrorId ?? '');
     const exceptionName = String(exception?.__type__ ?? 'WriteErrorException').replace(/^.*\./, '');
     const target = record.TargetObject;
-    const targetText = target === null || target === undefined ? ':' : `${psValueToString(target)}:${typeof target === 'string' ? 'String' : 'Object'}`;
+    const recordedType = categoryInfo?.TargetType;
+    const targetText = typeof recordedType === 'string'
+      ? `${String(categoryInfo?.TargetName ?? '')}:${recordedType}`
+      : target === null || target === undefined ? ':' : `${psValueToString(target)}:${typeof target === 'string' ? 'String' : 'Object'}`;
     if (errorAction === 'stop') {
       const stop = preferenceStopError('ErrorActionPreference', message);
       stop.errorRecord = record;
@@ -4438,6 +4441,7 @@ export class PSRuntime {
           category: failure.category,
           activity: command,
           targetObject: failure.target,
+          targetType: failure.targetType,
           fullyQualifiedErrorId: `${failure.errorId},Microsoft.PowerShell.Commands.${command.replace(/-/g, '')}Command`,
         }), errorSource, errorAction);
       },

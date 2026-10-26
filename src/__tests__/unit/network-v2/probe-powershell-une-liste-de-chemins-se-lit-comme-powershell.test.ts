@@ -26,7 +26,7 @@
  *
  * Sur l'arbre sans ce lot (05730d8ae) : 23 des 30 cas tombent. Passent des
  * deux cotes, tous de non-regression ou de garde : 'refuses a copy that
- * lacks its source or its destination' et 'asks for a path when none is
+ * lacks its source' et 'asks for a path when none is
  * given' (une commande sans chemin parle au lieu de se taire ; le texte
  * n'est pas epingle, PowerShell invite le parametre obligatoire), 'keeps
  * reading a single path as before', 'keeps the single header of a listing in
@@ -38,40 +38,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
-
-const key = (name: string): KeyEvent => ({ key: name, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
-
-async function settle(times = 8): Promise<void> {
-  for (let i = 0; i < times; i++) {
-    await Promise.resolve();
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-  }
-}
-
-class Console {
-  private constructor(private readonly session: WindowsTerminalSession) {}
-
-  static async open(machine: WindowsPC): Promise<Console> {
-    const session = new WindowsTerminalSession('a', machine);
-    await session.init();
-    return new Console(session);
-  }
-
-  async run(line: string): Promise<string> {
-    const before = this.session.lines.length;
-    this.session.setInput(line);
-    this.session.setInputBuf(line);
-    this.session.handleKey(key('Enter'));
-    await settle();
-    return this.session.lines.slice(before + 1).map(entry => entry.text).join('\n');
-  }
-
-  async runAll(...lines: string[]): Promise<void> {
-    for (const line of lines) await this.run(line);
-  }
-}
+import { Console } from './_helpers/windowsConsole';
 
 beforeEach(() => {
   EquipmentRegistry.getInstance().clear();
@@ -167,11 +134,10 @@ describe('the commands that take -Path read a list of paths', () => {
     expect((await shell.run('Get-ChildItem dest -Name')).split('\n')).toEqual(['a.txt', 'b.txt']);
   });
 
-  it('refuses a copy that lacks its source or its destination', async () => {
+  it('refuses a copy that lacks its source', async () => {
     const shell = await twoFolders();
     expect(await shell.run('Copy-Item -Destination db')).not.toBe('');
     expect(await shell.run("Copy-Item '' db")).not.toBe('');
-    expect(await shell.run('Copy-Item da\\a.txt')).not.toBe('');
   });
 
   it('refuses a copy whose sources are not all in the provider of the destination', async () => {
