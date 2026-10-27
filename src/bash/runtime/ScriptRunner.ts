@@ -46,6 +46,7 @@ export function runScript(
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
   identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean },
+  io?: IOContext,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -75,10 +76,10 @@ export function runScript(
   }
 
   // 4. Execute
-  const io = buildIOContext(ctx);
+  const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, identity, aliases, functions,
+    buildEnvVars(ctx), scriptIo, identity, aliases, functions,
   );
 }
 
@@ -158,6 +159,7 @@ export async function runScriptAsync(
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
   identity?: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean },
+  io?: IOContext,
 ): Promise<ScriptResult> {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -182,10 +184,10 @@ export async function runScriptAsync(
     return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
   }
 
-  const io = buildIOContext(ctx);
+  const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContentAsync(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, identity, aliases, functions,
+    buildEnvVars(ctx), scriptIo, identity, aliases, functions,
   );
 }
 
