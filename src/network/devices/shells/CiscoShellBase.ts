@@ -506,12 +506,6 @@ const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
 
 const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'motd-banner': null,
-  length: { name: 'lines', type: 'INT', description: 'Number of lines on a screen', range: [0, 512] },
-  width: { name: 'characters', type: 'INT', description: 'Width of the display terminal', range: [0, 512] },
-  'session-timeout': { name: 'minutes', type: 'INT', description: 'Timeout in minutes', range: [0, 35791] },
-  'absolute-timeout': { name: 'minutes', type: 'INT', description: 'Absolute session lifetime in minutes', range: [0, 35791] },
-  rotary: { name: 'group', type: 'INT', description: 'Rotary group number', range: [1, 100] },
-  autocommand: { name: 'command', type: 'REST', optional: true, description: 'Command to execute on connection' },
   password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
   speed: enumeration('bps', 'Transmit and receive speeds', [
     ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
@@ -533,16 +527,6 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
     ['none', 'Set no flow control'],
     ['software', 'Software flow control'],
   ]),
-  'escape-character': {
-    name: 'caractere', type: 'INT', optional: true, range: [0, 255],
-    description: 'ASCII decimal value of the escape character',
-    values: [
-      { keyword: 'break', description: 'Use the BREAK signal as the escape character' },
-      { keyword: 'default', description: 'Restore the default escape character' },
-      { keyword: 'none', description: 'Disable the escape character' },
-      { keyword: 'soft', description: 'Use a soft escape character' },
-    ],
-  },
 };
 
 const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
@@ -555,8 +539,6 @@ const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
 
 const LINE_KEYWORD_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
-  'privilege level': { name: 'level', type: 'INT', optional: true, description: 'Privilege level', range: [0, 15] },
-  'history size': { name: 'size', type: 'INT', optional: true, description: 'Size of history buffer', range: [0, 256] },
   'login authentication': LISTE_DE_METHODES('authentification'),
   'accounting commands': [
     { name: 'niveau', type: 'INT', range: [0, 15], description: 'Privilege level' },
@@ -641,18 +623,12 @@ function modesDuTrie(champ: string): readonly string[] {
 const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
   ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
   ['logging', [['synchronous', 'Synchronize logging output with EXEC output']]],
-  ['privilege', [['level', 'Set the privilege level of the line']]],
   ['exec', [['banner', 'Enable the display of the EXEC banner']]],
-  ['history', [['size', 'Set the size of the history buffer']]],
   ['no', [
-    ['absolute-timeout', 'Clear the absolute session limit'],
-    ['escape-character', 'Restore the default escape character'],
     ['exec', 'Disable the EXEC process'],
-    ['history', 'Disable the command history'],
     ['login', 'Disable authentication on the line'],
     ['logging', 'Disable synchronous logging'],
     ['password', 'Clear the line password'],
-    ['privilege', 'Clear the privilege level'],
   ]],
   ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
   ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
@@ -5415,6 +5391,50 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       clearAccessClass: (direction) => unset(
         direction === 'in' ? ['accessClassIn']
           : direction === 'out' ? ['accessClassOut'] : ['accessClassIn', 'accessClassOut']),
+      patch: (fields) => {
+        const target = vty();
+        target?.config?.upsert({ first: target.range.first, last: target.range.last, ...fields });
+      },
+      unset: (names) => unset(names),
+      setHistorySize: (size) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            historySize: size, historyEnabled: true,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineHistorySize = size;
+          this.consoleLineHistoryEnabled = true;
+          this.terminalHistorySize = size;
+          this.terminalHistoryEnabled = size > 0;
+        }
+      },
+      disableHistory: () => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, historyEnabled: false,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineHistoryEnabled = false;
+          this.consoleLineHistorySize = null;
+          this.terminalHistorySize = 0;
+          this.terminalHistoryEnabled = false;
+        }
+      },
+      setPrivilege: (level) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, privilege: level,
+          });
+        } else if (this.selectedConsoleLine != null) this.consolePrivilegeLevel(level);
+      },
+      clearPrivilege: () => {
+        if (this.selectedVtyRange) unset(['privilege']);
+        else if (this.selectedConsoleLine != null) this.consolePrivilegeLevel(null);
+      },
       setLoggingSynchronous: (on) => {
         const target = vty();
         if (target) {
@@ -5426,24 +5446,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
       },
     };
-  }
-
-  private vtyUnsetFields(
-    sub: string, args: readonly string[],
-  ): ReadonlyArray<'execTimeoutMinutes' | 'execTimeoutSeconds' | 'accessClassIn' | 'accessClassOut'
-    | 'sessionTimeoutMinutes' | 'privilege' | 'loginTimeoutSeconds' | 'rotaryGroup'> | null {
-    if (sub === 'exec-timeout') return ['execTimeoutMinutes', 'execTimeoutSeconds'];
-    if (sub === 'access-class') {
-      const direction = args[args.length - 1]?.toLowerCase();
-      if (direction === 'in') return ['accessClassIn'];
-      if (direction === 'out') return ['accessClassOut'];
-      return ['accessClassIn', 'accessClassOut'];
-    }
-    if (sub === 'session-timeout') return ['sessionTimeoutMinutes'];
-    if (sub === 'privilege') return ['privilege'];
-    if (sub === 'login-timeout') return ['loginTimeoutSeconds'];
-    if (sub === 'rotary') return ['rotaryGroup'];
-    return null;
   }
 
   private registerLineCommands(t: CommandTrie): void {
@@ -5460,10 +5462,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       t.requireArgs(kw, 1);
     }
     for (const kw of ['login', 'password',
-      'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
-      'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
-      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec',
-      'absolute-timeout', 'escape-character']) {
+      'no', 'speed', 'stopbits', 'databits', 'parity',
+      'flowcontrol', 'authorization',
+      'accounting', 'motd-banner', 'exec']) {
       t.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         this.requireLineKind(kw);
         const range = this.selectedVtyRange;
@@ -5496,37 +5497,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             this.consoleLineLoginAuthList = null;
             return '';
           }
-          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
-            this.consoleLineLoggingSynchronous = true;
-            return '';
-          }
-          if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-            const lvl = parseInt(args[1], 10);
-            if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-              return CISCO_ERRORS.INVALID_INPUT;
-            }
-            this.consolePrivilegeLevel(lvl);
-            return '';
-          }
-          if (kw === 'history') {
-            if ((args[0] ?? '').toLowerCase() !== 'size') return CISCO_ERRORS.INVALID_INPUT;
-            const n = parseInt(args[1] ?? '', 10);
-            if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
-            this.consoleLineHistorySize = n;
-            this.consoleLineHistoryEnabled = true;
-            this.terminalHistorySize = n;
-            this.terminalHistoryEnabled = n > 0;
-            return '';
-          }
           if (kw === 'no') {
             const sub = args[0]?.toLowerCase();
-            if (sub === 'history') {
-              this.consoleLineHistoryEnabled = false;
-              this.consoleLineHistorySize = null;
-              this.terminalHistorySize = 0;
-              this.terminalHistoryEnabled = false;
-              return '';
-            }
             if (sub === 'login') {
               this.consoleLineLoginAuthList = null;
               if (args[1]?.toLowerCase() === 'local') {
@@ -5537,8 +5509,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
               return '';
             }
             if (sub === 'password') { this.consoleLinePassword = null; return ''; }
-            if (sub === 'privilege') { this.consolePrivilegeLevel(null); return ''; }
-            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
           }
           return '';
         }
@@ -5579,40 +5549,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             update.linePassword = args.join(' ');
             update.linePasswordAlgo = 'plain';
           }
-        } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
-          update.loggingSynchronous = true;
-        } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-          update.privilege = parseInt(args[1], 10);
-        } else if (kw === 'session-timeout' && args[0]) {
-          update.sessionTimeoutMinutes = parseInt(args[0], 10);
-        } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
-          update.historySize = parseInt(args[1], 10);
-          update.historyEnabled = true;
-        } else if (kw === 'absolute-timeout' && args[0]) {
-          // `absolute-timeout <minutes>` : la duree MAXIMALE d'une
-          // session, activite comprise. `exec-timeout` ne borne que
-          // l'inactivite, donc un operateur qui tape sans arret n'etait
-          // jamais deconnecte — ce que cette commande existe pour
-          // empecher. Elle etait refusee.
-          const min = parseInt(args[0], 10);
-          if (!Number.isFinite(min) || min < 0) return CISCO_ERRORS.INVALID_INPUT;
-          update.absoluteTimeoutMinutes = min;
-        } else if (kw === 'escape-character' && args[0]) {
-          // `escape-character {break | <ascii> | default | none | soft}`.
-          const v = args[0].toLowerCase();
-          if (v === 'break' || v === 'default' || v === 'none' || v === 'soft') {
-            update.escapeCharacter = v;
-          } else {
-            const code = parseInt(args[0], 10);
-            if (!Number.isFinite(code) || code < 0 || code > 255) return CISCO_ERRORS.INVALID_INPUT;
-            update.escapeCharacter = String(code);
-          }
-        } else if (kw === 'length' && args[0]) {
-          update.terminalLength = parseInt(args[0], 10);
-        } else if (kw === 'width' && args[0]) {
-          update.terminalWidth = parseInt(args[0], 10);
-        } else if (kw === 'autocommand') {
-          update.autocommand = args.join(' ');
         } else if (kw === 'motd-banner') {
           update.motdBannerSuppressed = false;
         } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
@@ -5623,33 +5559,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
           if (kw === 'authorization') update.authorizationList = verdict.tail;
           else update.accountingList = verdict.tail;
-        } else if (kw === 'speed' && args[0]) {
-          update.speedBaud = parseInt(args[0], 10);
-        } else if (kw === 'stopbits' && args[0]) {
-          update.stopbits = parseInt(args[0], 10);
-        } else if (kw === 'rotary' && args[0]) {
-          update.rotaryGroup = parseInt(args[0], 10);
         } else if (kw === 'no' && args.length > 0) {
           const sub = args[0]?.toLowerCase();
           // `no password` clears the line secret (empty string → explicitly
           // unset, distinct from "never configured"); `no login` disables auth.
           if (sub === 'password') update.linePassword = '';
           else if (sub === 'login') update.login = 'none';
-          // `no history` COUPE l'historique ; ce n'est pas
-          // `history size 0`, qui en demande un de taille nulle.
-          else if (sub === 'history' && args.length === 1) update.historyEnabled = false;
-          else if (sub === 'absolute-timeout') update.absoluteTimeoutMinutes = 0;
-          else if (sub === 'escape-character') update.escapeCharacter = 'default';
           else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
           else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
-          else if (sub === 'autocommand') update.autocommand = '';
-          else {
-            const unsets = this.vtyUnsetFields(sub, args);
-            if (unsets !== null) {
-              dev._getVtyLineConfig?.().unset(range.first, range.last, unsets);
-              (this.d() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
-            }
-          }
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
