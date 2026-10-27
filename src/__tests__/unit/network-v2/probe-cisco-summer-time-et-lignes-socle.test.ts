@@ -4,7 +4,9 @@
  * on the socle.
  * Discriminated with git stash of src/network: 4 of 12 (first batch); second batch: 2 of 6 fail before (`escape-character` bare
  * accepted, `no length`/`no width` leaving the line); the other four are
- * witnesses/non-regressions; fourth batch (login, password): 0 of 6 fail
+ * witnesses/non-regressions; fifth batch (serial keywords): 2 of 5 fail before (console and aux rendering); the
+ * other three are non-regressions (range refusal, vty refusal, removal). Fourth
+ * batch (login, password): 0 of 6 fail
  * before, by design: it is a behaviour-preserving migration and the cases pin the
  * behaviour (vty warning, incomplete, stray word, console round trip); third batch: 1 of 5 fails before (`no accounting
  * exec default` left the list in the running-config), the other four are
@@ -208,5 +210,35 @@ describe('line settings, fourth batch (login and password)', () => {
     await r.executeCommand('line console 0');
     await r.executeCommand('no login local');
     expect(await config(r)).not.toContain(' login local');
+  });
+});
+
+describe('line settings, fifth batch (serial keywords)', () => {
+  const config = async (r: Cli): Promise<string> => {
+    await r.executeCommand('end');
+    return r.executeCommand('show running-config');
+  };
+  it('renders the console serial settings it was given', async () => {
+    const r = await router('line console 0', 'speed 115200', 'parity even', 'stopbits 2');
+    const out = await config(r);
+    expect(out).toContain(' speed 115200');
+    expect(out).toContain(' parity even');
+    expect(out).toContain(' stopbits 2');
+  });
+  it('removes a serial setting with no', async () => {
+    const r = await router('line console 0', 'speed 115200', 'no speed');
+    expect(await config(r)).not.toContain(' speed 115200');
+  });
+  it('refuses a speed that is not offered', async () => {
+    const r = await router('line console 0');
+    expect(await r.executeCommand('speed 1234')).toContain('Invalid input');
+  });
+  it('refuses a serial keyword on a vty', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('speed 9600')).toContain('Invalid input');
+  });
+  it('renders the aux serial settings', async () => {
+    const r = await router('line aux 0', 'flowcontrol hardware');
+    expect(await config(r)).toContain(' flowcontrol hardware');
   });
 });

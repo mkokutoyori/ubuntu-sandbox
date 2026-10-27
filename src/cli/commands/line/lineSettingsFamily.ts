@@ -3,6 +3,7 @@ import type { CommandSpec } from '../../CommandTable';
 
 export interface LineSettingsHost {
   guard(keyword: string): void;
+  allows(keyword: string): boolean;
   setExecTimeout(minutes: number, seconds: number): void;
   clearExecTimeout(): void;
   setLoginTimeout(seconds: number): void;
@@ -23,6 +24,8 @@ export interface LineSettingsHost {
   clearLinePassword(): void;
   setLogin(mode: 'password' | 'local' | 'aaa', list?: string): string;
   clearLogin(local: boolean): void;
+  setSerial(name: string, value: string): void;
+  clearSerial(name: string): void;
 }
 
 const MODES = ['config-line'];
@@ -102,6 +105,38 @@ function methodList(name: string): ArgumentSpec {
 const COMMAND_LEVEL: ArgumentSpec = {
   name: 'level', type: 'INT', range: [0, 15], description: 'Privilege level',
 };
+
+function choices(
+  name: string, description: string, entries: ReadonlyArray<readonly [string, string]>,
+): ArgumentSpec {
+  return {
+    name, type: 'ENUM', description,
+    values: entries.map(([keyword, text]) => ({ keyword, description: text })),
+  };
+}
+
+const SERIAL: ReadonlyArray<readonly [string, ArgumentSpec]> = [
+  ['speed', choices('bps', 'Transmit and receive speeds', [
+    ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
+    ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
+    ['38400', '38400 bps'], ['57600', '57600 bps'], ['115200', '115200 bps'],
+  ])],
+  ['databits', choices('bits', 'Number of data bits per character', [
+    ['5', 'Five data bits'], ['6', 'Six data bits'],
+    ['7', 'Seven data bits'], ['8', 'Eight data bits'],
+  ])],
+  ['stopbits', choices('bits', 'Number of stop bits', [
+    ['1', 'One stop bit'], ['2', 'Two stop bits'],
+  ])],
+  ['parity', choices('parity', 'Set terminal parity', [
+    ['even', 'Even parity'], ['none', 'No parity'], ['odd', 'Odd parity'],
+  ])],
+  ['flowcontrol', choices('method', 'Set the flow control', [
+    ['hardware', 'Hardware flow control'],
+    ['none', 'Set no flow control'],
+    ['software', 'Software flow control'],
+  ])],
+];
 
 export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] {
   const base = { modes: [...MODES], minPrivilege: 15 };
@@ -183,7 +218,18 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
     undoOf(base, 'line-password', ['password'], 'Set a password',
       () => guarded('password', () => host().clearLinePassword())),
   ];
-  return [
+  const serialSpecs = SERIAL.flatMap(([keyword, place]): CommandSpec[] => [
+    {
+      ...base, id: `line-${keyword}`, path: [keyword, place],
+      description: place.description ?? keyword,
+      run: (_session, args) => guarded(keyword, () => host().setSerial(keyword, args[place.name])),
+      undo: () => guarded(keyword, () => host().clearSerial(keyword)),
+    },
+    undoOf(base, `line-${keyword}`, [keyword], place.description ?? keyword,
+      () => guarded(keyword, () => host().clearSerial(keyword))),
+  ]);
+  const specs: CommandSpec[] = [
+    ...serialSpecs,
     ...loginSpecs,
     ...passwordSpecs,
     aaa('accounting', 'commands', 'Account for commands', true),
@@ -328,4 +374,8 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
       undo: () => { host().guard('logging'); host().setLoggingSynchronous(false); return ''; },
     },
   ];
+  return specs.map((spec) => ({
+    ...spec,
+    reachableWhen: () => host().allows(String(spec.path[0])),
+  }));
 }

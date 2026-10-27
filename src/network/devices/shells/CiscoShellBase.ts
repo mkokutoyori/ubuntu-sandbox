@@ -503,31 +503,6 @@ const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   ],
 };
 
-const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'motd-banner': null,
-  password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
-  speed: enumeration('bps', 'Transmit and receive speeds', [
-    ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
-    ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
-    ['38400', '38400 bps'], ['57600', '57600 bps'], ['115200', '115200 bps'],
-  ]),
-  databits: enumeration('bits', 'Number of data bits per character', [
-    ['5', 'Five data bits'], ['6', 'Six data bits'],
-    ['7', 'Seven data bits'], ['8', 'Eight data bits'],
-  ]),
-  stopbits: enumeration('bits', 'Number of stop bits', [
-    ['1', 'One stop bit'], ['2', 'Two stop bits'],
-  ]),
-  parity: enumeration('parity', 'Set terminal parity', [
-    ['even', 'Even parity'], ['none', 'No parity'], ['odd', 'Odd parity'],
-  ]),
-  flowcontrol: enumeration('method', 'Set the flow control', [
-    ['hardware', 'Hardware flow control'],
-    ['none', 'Set no flow control'],
-    ['software', 'Software flow control'],
-  ]),
-};
-
 const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
   name: 'protocol', type: 'ENUM', description: 'Transport protocol',
   values: [
@@ -1201,11 +1176,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     loggingSynchronous: boolean;
     historySize: number | null;
     historyEnabled: boolean;
+    serial: ReadonlyMap<string, string>;
   } | null {
     if (this.consoleLinePassword == null && this.consoleLineLogin == null
       && this.consolePrivilegeLevel() == null && this.consoleLineExecTimeoutMin == null
       && !this.consoleLineLoggingSynchronous
-      && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled) return null;
+      && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled
+      && this.consoleSerial.size === 0) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -1218,15 +1195,32 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       loggingSynchronous: this.consoleLineLoggingSynchronous,
       historySize: this.consoleLineHistorySize,
       historyEnabled: this.consoleLineHistoryEnabled,
+      serial: this.consoleSerial,
     };
   }
 
-  _getAuxLineConfig(): { line: number; noExec: boolean; transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null } | null {
-    if (!this.auxLineNoExec && this.auxLineTransportInput == null) return null;
+  protected readonly consoleSerial = new Map<string, string>();
+  protected readonly auxSerial = new Map<string, string>();
+
+  private serialStoreForSelectedLine(): Map<string, string> | null {
+    if (this.selectedAuxLine != null) return this.auxSerial;
+    if (this.selectedConsoleLine != null && !this.selectedVtyRange) return this.consoleSerial;
+    return null;
+  }
+
+  _getAuxLineConfig(): {
+    line: number; noExec: boolean;
+    transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+    serial: ReadonlyMap<string, string>;
+  } | null {
+    if (!this.auxLineNoExec && this.auxLineTransportInput == null && this.auxSerial.size === 0) {
+      return null;
+    }
     return {
       line: this.selectedAuxLine ?? 0,
       noExec: this.auxLineNoExec,
       transportInput: this.auxLineTransportInput,
+      serial: this.auxSerial,
     };
   }
   protected terminalMonitor = false;
@@ -5247,7 +5241,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         modes: ['config-line'], minPrivilege: 15,
         undoFrom: 'no',
-        argumentFor: (path) => LINE_ARGUMENTS[path],
         reachableWhenFor: (path) => () => this.lineKeywordAllowed(path),
         keywordsFor: (path) => path === 'transport' ? LINE_TRANSPORT_KEYWORDS : undefined,
       },
@@ -5310,6 +5303,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
     return {
       guard: (keyword) => this.requireLineKind(keyword),
+      allows: (keyword) => this.lineKeywordAllowed(keyword),
       setExecTimeout: (minutes, seconds) => {
         const target = vty();
         if (target) {
@@ -5409,6 +5403,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           this.consoleLineLogin = local ? null : 'none';
         }
       },
+      setSerial: (name, value) => {
+        const store = this.serialStoreForSelectedLine();
+        store?.set(name, value);
+      },
+      clearSerial: (name) => {
+        this.serialStoreForSelectedLine()?.delete(name);
+      },
       setAuxExec: (enabled) => {
         if (this.selectedAuxLine != null) this.auxLineNoExec = !enabled;
       },
@@ -5475,12 +5476,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * sur la promesse de `?` laissait croire a une regle d'acces posee.
      */
     t.requireArgs('transport', 1);
-    for (const kw of ['no', 'speed', 'stopbits', 'databits', 'parity', 'flowcontrol']) {
-      t.registerGreedy(kw, `line ${kw}`, () => {
-        this.requireLineKind(kw);
-        return '';
-      });
-    }
   }
 
   protected showSocleSpecs(): CommandSpec[] {
