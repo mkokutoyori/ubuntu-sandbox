@@ -3835,7 +3835,7 @@ export class LinuxCommandExecutor {
     }
     const r = cmdKill(resolved, this.processCmdContext());
     if (r.exitCode === 0) droppedJobIds.forEach(id => this.jobTable.remove(id));
-    return r.output;
+    return r.output + (r.stderr ?? '').replace(/\n$/, '');
   }
 
   /**
@@ -3873,6 +3873,7 @@ export class LinuxCommandExecutor {
       openRefusal: (absPath: string) => this.openRefusal(absPath),
       zone: this.localZone(),
       nowMs: this.wallNow,
+      deviceOf: (absPath: string) => this.mountTable.deviceOf(absPath),
     };
   }
 
@@ -4839,19 +4840,6 @@ export class LinuxCommandExecutor {
       actualArgs.pop();
     } else if (interpreterStdin === '') {
       stdin = '';
-    } else if (actualArgs.length > 0) {
-      const lastArg = actualArgs[actualArgs.length - 1];
-      // Heuristic: if last arg contains newlines, it's likely pipe input
-      if (lastArg?.includes('\n')) {
-        stdin = lastArg;
-        actualArgs.pop();
-      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ') && actualArgs.length > 1) {
-        // For text processing commands, multi-word content without newlines is also stdin —
-        // but only when a separate program/option arg precedes it, so a single-arg program
-        // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
-        stdin = lastArg;
-        actualArgs.pop();
-      }
     }
 
     let result: { output: string; exitCode: number };
@@ -5281,8 +5269,8 @@ export class LinuxCommandExecutor {
         const absPath = this.vfs.normalizePath(path, this.cwd);
         return this.vfs.readFile(absPath);
       },
-      resolvePath: (path: string) => {
-        return this.vfs.normalizePath(path, this.cwd);
+      resolvePath: (path: string, cwd?: string) => {
+        return this.vfs.normalizePath(path, cwd ?? this.cwd);
       },
       bindBackgroundStderr: (pid: number, path: string, append: boolean) => {
         this.bindBackgroundStderr(pid, this.vfs.normalizePath(path, this.cwd), append);
@@ -5310,20 +5298,15 @@ export class LinuxCommandExecutor {
         if (!inode) return null;
         return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
       },
-      globExpand: (pattern: string, cwd: string) => {
-        const hits = this.vfs.globExpand(pattern, cwd);
-        if (hits.length === 0) return null;
-        // Mirror bash conventions: relative patterns yield relative results.
-        if (!pattern.startsWith('/')) {
-          const prefix = cwd === '/' ? '/' : cwd + '/';
-          return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
-        }
-        return hits;
-      },
+      globExpand: (pattern: string, cwd: string, options) => this.vfs.globExpand(pattern, cwd, options),
       homeFor: (user: string) => {
         const u = this.userMgr.getUser(user);
         return u ? u.home : null;
       },
+      wallClock: () => ({
+        nowMs: () => this.simulatedDate().getTime(),
+        format: (pattern: string, epochMs: number) => formatLocalTime(pattern, epochMs, this.identity.timezone),
+      }),
     };
   }
 
@@ -5924,7 +5907,10 @@ export class LinuxCommandExecutor {
         return { output: r.preflight().output, exitCode: 0 };
       }
       case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
-      case 'sort': return { output: cmdSort(c, args, stdin), exitCode: 0 };
+      case 'sort': {
+        const sorted = cmdSort(c, args, stdin);
+        return sorted.startsWith('sort: cannot read: ') ? { output: '', stderr: `${sorted}\n`, exitCode: 2 } : { output: sorted, exitCode: 0 };
+      }
       case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
       case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
       case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
@@ -5967,7 +5953,7 @@ export class LinuxCommandExecutor {
       case 'umask': {
         const result = cmdUmask(c, args);
         if (result.newUmask !== undefined) this.umask = result.newUmask;
-        return { output: result.output, exitCode: 0 };
+        return { output: result.output, exitCode: result.exitCode };
       }
       case 'ulimit': {
         const flag = args[0] ?? '-f';
@@ -6307,6 +6293,13 @@ export class LinuxCommandExecutor {
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
             runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }));
+        }
+        if (stdin !== undefined && stdin !== '') {
+          return this.runScriptProcess(cmd, (identity, bridge) =>
+            runScriptContent(
+              stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
+              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+            ));
         }
         return { output: '', exitCode: 0 };
       }
@@ -6677,7 +6670,27 @@ export class LinuxCommandExecutor {
         const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
         return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
       }
-      case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+      case 'basename': {
+        const names: string[] = [];
+        let suffix = '';
+        let multiple = false;
+        for (let i = 0; i < args.length; i++) {
+          const word = args[i];
+          if (word === '-a' || word === '--multiple') multiple = true;
+          else if (word === '-s' || word === '--suffix') { suffix = args[++i] ?? ''; multiple = true; }
+          else if (word.startsWith('--suffix=')) { suffix = word.slice('--suffix='.length); multiple = true; }
+          else names.push(word);
+        }
+        if (names.length === 0) return { output: "basename: missing operand\nTry 'basename --help' for more information.", exitCode: 1 };
+        if (!multiple && names.length > 1) { suffix = names[1]; names.length = 1; }
+        const base = (name: string): string => {
+          const trimmed = name.replace(/\/+$/, '');
+          if (trimmed === '') return name === '' ? '' : '/';
+          const leaf = trimmed.slice(trimmed.lastIndexOf('/') + 1);
+          return suffix !== '' && leaf !== suffix && leaf.endsWith(suffix) ? leaf.slice(0, leaf.length - suffix.length) : leaf;
+        };
+        return { output: names.map(base).join('\n'), exitCode: 0 };
+      }
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
@@ -6812,7 +6825,14 @@ export class LinuxCommandExecutor {
         const lines: string[] = [];
         let exit = 0;
         for (const t of targets) {
-          const r = this.path(t).realpath(!noExist);
+          const parentOnly = !noExist && !args.includes('-e');
+          let r = this.path(t).realpath(!noExist && !parentOnly);
+          if (!r && parentOnly) {
+            const absolute = this.vfs.normalizePath(t, this.cwd);
+            const slash = absolute.lastIndexOf('/');
+            const parent = this.vfs.exists(absolute.slice(0, slash) || '/') ? this.path(absolute.slice(0, slash) || '/').realpath(true) : null;
+            if (parent) r = { value: `${parent.value === '/' ? '' : parent.value}/${absolute.slice(slash + 1)}` } as typeof r;
+          }
           if (!r) {
             exit = 1;
             if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
@@ -8238,7 +8258,7 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private handleType(args: string[]): { output: string; exitCode: number } {
+  private handleType(args: string[]): { output: string; exitCode: number; stderr?: string } {
     let typeOnly = false, pathOnly = false, all = false, forcePath = false;
     const names: string[] = [];
     for (let i = 0; i < args.length; i++) {
@@ -8259,13 +8279,14 @@ export class LinuxCommandExecutor {
 
     const resolver = new CommandResolver(this.shellIntrospection());
     const out: string[] = [];
+    const errors: string[] = [];
     let exitCode = 0;
     for (const name of names) {
       const resolutions = resolver.resolveAll(name, { forcePath });
       const found = resolutions[0].kind !== 'not-found';
       if (!found) {
         exitCode = 1;
-        if (!typeOnly && !pathOnly) out.push(`bash: type: ${name}: not found`);
+        if (!typeOnly && !pathOnly) errors.push(`bash: type: ${name}: not found`);
         continue;
       }
       if (typeOnly) {
@@ -8280,10 +8301,10 @@ export class LinuxCommandExecutor {
         out.push(...shown.map(r => r.describe()));
       }
     }
-    return { output: out.join('\n'), exitCode };
+    return { output: out.join('\n'), exitCode, ...(errors.length === 0 ? {} : { stderr: `${errors.join('\n')}\n` }) };
   }
 
-  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number } {
+  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number; stderr?: string } {
     const fs: TestFs = {
       exists: (p) => this.vfs.exists(p),
       resolveInode: (p) => this.vfs.resolveInode(p),
@@ -8299,7 +8320,7 @@ export class LinuxCommandExecutor {
         : false,
     };
     const r = runTest(fs, env, args, cmd === '[');
-    return { output: r.stderr, exitCode: r.exitCode };
+    return r.stderr === '' ? { output: '', exitCode: r.exitCode } : { output: '', stderr: `${r.stderr}\n`, exitCode: r.exitCode };
   }
 
   private handleExpr(args: string[]): { output: string; exitCode: number } {

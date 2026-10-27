@@ -565,7 +565,27 @@ function versionCompare(a: string, b: string): number {
   return 0;
 }
 
-export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): string {
+export function expandShortOptionClusters(args: readonly string[], withValue: string): string[] {
+  const expanded: string[] = [];
+  for (const arg of args) {
+    if (!/^-[A-Za-z]{2,}/.test(arg)) {
+      expanded.push(arg);
+      continue;
+    }
+    for (let index = 1; index < arg.length; index++) {
+      const letter = arg[index];
+      if (withValue.includes(letter)) {
+        expanded.push(`-${letter}${arg.slice(index + 1)}`);
+        break;
+      }
+      expanded.push(`-${letter}`);
+    }
+  }
+  return expanded;
+}
+
+export function cmdSort(ctx: ShellContext, rawArgs: string[], stdin?: string): string {
+  const args = expandShortOptionClusters(rawArgs, 'kto');
   let numeric = false, reverse = false, unique = false;
   let human = false, version = false, randomise = false;
   let monthSort = false, ignoreCase = false, ignoreLeading = false, stable = false;
@@ -597,11 +617,14 @@ export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): stri
 
   // Concatenate every named file plus stdin (in that order, like real sort).
   let content = '';
+  const unreadable: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
     const raw = ctx.vfs.readFile(absPath);
-    if (raw !== null) content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
+    if (raw === null) unreadable.push(`sort: cannot read: ${f}: No such file or directory`);
+    else content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
   }
+  if (unreadable.length > 0) return unreadable.join('\n');
   if (files.length === 0 && stdin !== undefined) content = stdin;
   let lines = content.split('\n');
   // Drop the trailing empty line caused by a final newline, but keep

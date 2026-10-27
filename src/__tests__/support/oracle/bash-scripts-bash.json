@@ -1,0 +1,885 @@
+{
+ "bash": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+ "cases": [
+  {
+   "script": "set -e\nf() { false; echo in; }\nf || echo caught\necho after",
+   "stdout": "in\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "set -e\nif ! false; then echo ok; fi\nfalse || true\necho done",
+   "stdout": "ok\ndone\n",
+   "status": 0
+  },
+  {
+   "script": "set -eu\nx=1\necho ${x}\necho ${y:-unset}",
+   "stdout": "1\nunset\n",
+   "status": 0
+  },
+  {
+   "script": "set -o pipefail\nfalse | true\necho $?\ntrue | false | true\necho $?",
+   "stdout": "1\n1\n",
+   "status": 0
+  },
+  {
+   "script": "f() { return 3; }\nf\necho $?\nf || echo failed $?",
+   "stdout": "3\nfailed 3\n",
+   "status": 0
+  },
+  {
+   "script": "f() { local r=$1; (( r > 1 )) && return 1; return 0; }\nf 1 && echo a\nf 5 || echo b",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "script": "for i in 1 2 3; do\n  case $i in\n    2) continue;;\n  esac\n  echo $i\ndone",
+   "stdout": "1\n3\n",
+   "status": 0
+  },
+  {
+   "script": "i=0\nwhile :; do\n  i=$((i+1))\n  [ $i -ge 3 ] && break\ndone\necho $i",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "script": "for a in 1 2; do for b in x y; do if [ $b = y ]; then continue 2; fi; echo $a$b; done; done",
+   "stdout": "1x\n2x\n",
+   "status": 0
+  },
+  {
+   "script": "until [ ${n:=0} -ge 3 ]; do n=$((n+1)); done; echo $n",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "script": "x=5\nif [ $x -gt 3 ] && [ $x -lt 10 ]; then echo mid; elif [ $x -gt 10 ]; then echo big; else echo small; fi",
+   "stdout": "mid\n",
+   "status": 0
+  },
+  {
+   "script": "case \"Hello World\" in\n  [Hh]ello*) echo greet;;\n  *) echo other;;\nesac",
+   "stdout": "greet\n",
+   "status": 0
+  },
+  {
+   "script": "for f in a.txt b.log c.txt; do case $f in *.txt) echo \"$f is text\";; *) echo \"$f other\";; esac; done",
+   "stdout": "a.txt is text\nb.log other\nc.txt is text\n",
+   "status": 0
+  },
+  {
+   "script": "n=10; while [ $n -gt 0 ]; do n=$((n - 3)); done; echo $n",
+   "stdout": "-2\n",
+   "status": 0
+  },
+  {
+   "script": "select_one() { for v in \"$@\"; do echo \"> $v\"; done; }\nselect_one a \"b c\" d",
+   "stdout": "> a\n> b c\n> d\n",
+   "status": 0
+  },
+  {
+   "script": "f() { echo \"$#:$1:$2\"; }\nf\nf a\nf a b c\nf \"\"",
+   "stdout": "0::\n1:a:\n3:a:b\n1::\n",
+   "status": 0
+  },
+  {
+   "script": "f() { for a; do echo \"[$a]\"; done; }\nf 1 \"2 3\" 4",
+   "stdout": "[1]\n[2 3]\n[4]\n",
+   "status": 0
+  },
+  {
+   "script": "g() { echo \"${1:-default}\"; }\ng\ng \"\"\ng x",
+   "stdout": "default\ndefault\nx\n",
+   "status": 0
+  },
+  {
+   "script": "h() { echo ${1:+set} ${2-unset}; }\nh a\nh \"\" b",
+   "stdout": "set unset\nb\n",
+   "status": 0
+  },
+  {
+   "script": "main() { echo start; helper; echo end; }\nhelper() { echo helping; }\nmain",
+   "stdout": "start\nhelping\nend\n",
+   "status": 0
+  },
+  {
+   "script": "fib() { local n=$1; if (( n < 2 )); then echo $n; else echo $(( $(fib $((n-1))) + $(fib $((n-2))) )); fi; }\nfib 12",
+   "stdout": "144\n",
+   "status": 0
+  },
+  {
+   "script": "count() { local c=0; for x in \"$@\"; do ((c++)); done; echo $c; }\ncount a b c d",
+   "stdout": "4\n",
+   "status": 0
+  },
+  {
+   "script": "swap() { local t=$1; eval \"$1=\\$$2; $2=\\$t\"; }\na=1; b=2; swap a b; echo $a $b",
+   "stdout": "2 a\n",
+   "status": 0
+  },
+  {
+   "script": "x=global\nf() { local x=local; g; }\ng() { echo $x; }\nf\ng",
+   "stdout": "local\nglobal\n",
+   "status": 0
+  },
+  {
+   "script": "f() { x=changed; }\nx=orig; f; echo $x",
+   "stdout": "changed\n",
+   "status": 0
+  },
+  {
+   "script": "f() { local -a arr=(1 2 3); echo ${#arr[@]}; }\nf; echo ${arr[@]:-none}",
+   "stdout": "3\nnone\n",
+   "status": 0
+  },
+  {
+   "script": "outer() { inner() { echo in; }; inner; }\nouter\ninner",
+   "stdout": "in\nin\n",
+   "status": 0
+  },
+  {
+   "script": "f() { return 256; }; f; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "script": "f() { exit 3; }\n(f)\necho $?",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "script": "(exit 5); echo $?; (exit 0); echo $?",
+   "stdout": "5\n0\n",
+   "status": 0
+  },
+  {
+   "script": "false; echo $?; true; echo $?; ! true; echo $?",
+   "stdout": "1\n0\n1\n",
+   "status": 0
+  },
+  {
+   "script": "{ echo a; false; } && echo b || echo c",
+   "stdout": "a\nc\n",
+   "status": 0
+  },
+  {
+   "script": "true && { echo yes; } || { echo no; }",
+   "stdout": "yes\n",
+   "status": 0
+  },
+  {
+   "script": "if true; then :; fi; echo $?",
+   "stdout": "0\n",
+   "status": 0
+  },
+  {
+   "script": "echo $(( 5 > 3 )) $(( 5 < 3 ))",
+   "stdout": "1 0\n",
+   "status": 0
+  },
+  {
+   "script": "s=\"hello world\"\necho ${s^^}\necho ${s:6}\necho ${s/o/0}\necho ${s//o/0}\necho ${#s}",
+   "stdout": "HELLO WORLD\nworld\nhell0 world\nhell0 w0rld\n11\n",
+   "status": 0
+  },
+  {
+   "script": "s=/usr/local/lib/libfoo.so.1.2\necho ${s##*/}\necho ${s%/*}\necho ${s%%.*}\necho ${s#*.}",
+   "stdout": "libfoo.so.1.2\n/usr/local/lib\n/usr/local/lib/libfoo\nso.1.2\n",
+   "status": 0
+  },
+  {
+   "script": "path=/a/b/c.tar.gz\nbase=${path##*/}\nname=${base%%.*}\next=${base#*.}\necho $base $name $ext",
+   "stdout": "c.tar.gz c tar.gz\n",
+   "status": 0
+  },
+  {
+   "script": "v=\"  padded  \"\necho \"[${v}]\"\nv=${v#\"${v%%[![:space:]]*}\"}\necho \"[${v}]\"",
+   "stdout": "[  padded  ]\n[padded  ]\n",
+   "status": 0
+  },
+  {
+   "script": "str=abc\nfor ((i=0;i<${#str};i++)); do echo -n \"${str:i:1}-\"; done; echo",
+   "stdout": "a-b-c-\n",
+   "status": 0
+  },
+  {
+   "script": "rev() { local s=$1 r=; for ((i=${#s}-1;i>=0;i--)); do r+=${s:i:1}; done; echo $r; }\nrev stressed",
+   "stdout": "desserts\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"a,b,c\" | tr , '\\n'",
+   "stdout": "a\nb\nc\n",
+   "status": 0
+  },
+  {
+   "script": "IFS=, read -ra parts <<< \"x,y,z\"\necho ${#parts[@]} ${parts[1]}",
+   "stdout": "3 y\n",
+   "status": 0
+  },
+  {
+   "script": "IFS=: ; set -- a:b:c; echo $#; echo \"$*\"; IFS=\" \"; echo \"$*\"",
+   "stdout": "1\na:b:c\na:b:c\n",
+   "status": 0
+  },
+  {
+   "script": "line=\"key=value=more\"\necho ${line%%=*} ${line#*=}",
+   "stdout": "key value=more\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"%s\\n\" \"one two\" three | while read -r a b; do echo \"$a|$b\"; done",
+   "stdout": "one|two\nthree|\n",
+   "status": 0
+  },
+  {
+   "script": "upper() { echo \"$1\" | tr a-z A-Z; }\nupper hello",
+   "stdout": "HELLO\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"abc\" | sed s/b/X/",
+   "stdout": "aXc\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"a b c\" | awk '{print $2}'",
+   "stdout": "b\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"3\\n1\\n2\\n\" | sort -n | tr '\\n' \" \"; echo",
+   "stdout": "1 2 3 \n",
+   "status": 0
+  },
+  {
+   "script": "printf \"a\\nb\\na\\nc\\nb\\n\" | sort | uniq -c | sort -rn | head -2",
+   "stdout": "      2 b\n      2 a\n",
+   "status": 0
+  },
+  {
+   "script": "echo hello | wc -c",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"x y\\n\" | cut -d\" \" -f2",
+   "stdout": "y\n",
+   "status": 0
+  },
+  {
+   "script": "echo abc | rev",
+   "stdout": "cba\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"one two three\" | xargs -n1",
+   "stdout": "one\ntwo\nthree\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"%05.1f|%-6s|%6s|\\n\" 3.14159 ab cd",
+   "stdout": "003.1|ab    |    cd|\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"%s=%d\\n\" a 1 b 2",
+   "stdout": "a=1\nb=2\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"[%s]\" a b c; echo",
+   "stdout": "[a][b][c]\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"tab\\there\"; echo -e \"tab\\there\"; echo -n \"no newline\"; echo",
+   "stdout": "tab\\there\ntab\there\nno newline\n",
+   "status": 0
+  },
+  {
+   "script": "x=$(echo \"  trim me  \" | sed 's/^ *//;s/ *$//'); echo \"[$x]\"",
+   "stdout": "[trim me]\n",
+   "status": 0
+  },
+  {
+   "script": "a=\"x\"; b=\"y\"; echo \"$a$b\" \"${a}_${b}\" \"$a-$b\"",
+   "stdout": "xy x_y x-y\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"${HOME:-nohome}\" > /dev/null; echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "script": "v=abc; echo \"${v:0:1}\" \"${v: -1}\" \"${v:1:1}\"",
+   "stdout": "a c b\n",
+   "status": 0
+  },
+  {
+   "script": "n=007; echo $((10#$n + 1))",
+   "stdout": "8\n",
+   "status": 0
+  },
+  {
+   "script": "echo $((16#ff)) $((2#1010)) $((8#17))",
+   "stdout": "255 10 15\n",
+   "status": 0
+  },
+  {
+   "script": "x=3; echo $((x**2)) $((x<<2)) $((x%2)) $((x/2))",
+   "stdout": "9 12 1 1\n",
+   "status": 0
+  },
+  {
+   "script": "echo $((5/2)) $((-5/2)) $((5%-3)) $((-5%3))",
+   "stdout": "2 -2 2 -2\n",
+   "status": 0
+  },
+  {
+   "script": "i=5; echo $((i++)) $((++i)) $i",
+   "stdout": "5 7 7\n",
+   "status": 0
+  },
+  {
+   "script": "echo $(( (1+2)*3 - 4/2 ))",
+   "stdout": "7\n",
+   "status": 0
+  },
+  {
+   "script": "a=(one two three)\necho ${a[1]} ${#a[@]} ${a[@]:1}",
+   "stdout": "two 3 two three\n",
+   "status": 0
+  },
+  {
+   "script": "a=(1 2 3); a+=(4 5); echo ${#a[@]} ${a[-1]}",
+   "stdout": "5 5\n",
+   "status": 0
+  },
+  {
+   "script": "a=(x y z); for i in \"${!a[@]}\"; do echo \"$i=${a[$i]}\"; done",
+   "stdout": "0=x\n1=y\n2=z\n",
+   "status": 0
+  },
+  {
+   "script": "declare -A m=([k1]=v1 [k2]=v2)\nfor k in $(printf \"%s\\n\" \"${!m[@]}\" | sort); do echo \"$k=${m[$k]}\"; done",
+   "stdout": "k1=v1\nk2=v2\n",
+   "status": 0
+  },
+  {
+   "script": "declare -A c; for w in a b a c a; do ((c[$w]++)); done; for k in a b c; do echo \"$k ${c[$k]}\"; done",
+   "stdout": "a 3\nb 1\nc 1\n",
+   "status": 0
+  },
+  {
+   "script": "a=(5 3 9 1); printf \"%s\\n\" \"${a[@]}\" | sort -n | tr '\\n' \" \"; echo",
+   "stdout": "1 3 5 9 \n",
+   "status": 0
+  },
+  {
+   "script": "a=(\"a b\" \"c d\"); echo ${#a[@]}; for x in \"${a[@]}\"; do echo \"[$x]\"; done",
+   "stdout": "2\n[a b]\n[c d]\n",
+   "status": 0
+  },
+  {
+   "script": "a=(1 2 3); unset \"a[1]\"; echo ${a[@]} ${#a[@]} ${!a[@]}",
+   "stdout": "1 3 2 0 2\n",
+   "status": 0
+  },
+  {
+   "script": "a=(); a[3]=x; echo ${#a[@]} ${!a[@]}",
+   "stdout": "1 3\n",
+   "status": 0
+  },
+  {
+   "script": "mapfile -t lines < <(printf \"l1\\nl2\\nl3\\n\"); echo ${#lines[@]} ${lines[2]}",
+   "stdout": "3 l3\n",
+   "status": 0
+  },
+  {
+   "script": "readarray -t -n 2 first < <(printf \"a\\nb\\nc\\n\"); echo ${first[@]}",
+   "stdout": "a b\n",
+   "status": 0
+  },
+  {
+   "script": "arr=(a b c); echo \"${arr[*]}\"; IFS=-; echo \"${arr[*]}\"",
+   "stdout": "a b c\na-b-c\n",
+   "status": 0
+  },
+  {
+   "script": "a=(1 2 3); b=(\"${a[@]}\" 4); echo ${b[@]}",
+   "stdout": "1 2 3 4\n",
+   "status": 0
+  },
+  {
+   "script": "a=(1 2 3 4 5); echo ${a[@]:1:3}; echo ${a[@]: -2}",
+   "stdout": "2 3 4\n4 5\n",
+   "status": 0
+  },
+  {
+   "script": "a=(apple banana cherry); echo ${a[@]/a/A}; echo ${a[@]^^}",
+   "stdout": "Apple bAnana cherry\nAPPLE BANANA CHERRY\n",
+   "status": 0
+  },
+  {
+   "script": "declare -a x=(1 2); declare -p x",
+   "stdout": "declare -a x=([0]=\"1\" [1]=\"2\")\n",
+   "status": 0
+  },
+  {
+   "script": "declare -A y=([a]=1); y[b]=2; echo ${#y[@]} ${y[b]}; unset y[a]; echo ${#y[@]}",
+   "stdout": "2 2\n1\n",
+   "status": 0
+  },
+  {
+   "script": "k=key; declare -A m; m[$k]=val; echo ${m[key]} ${m[$k]}",
+   "stdout": "val val\n",
+   "status": 0
+  },
+  {
+   "script": "a=(1 2 3); for ((i=0;i<${#a[@]};i++)); do echo $((a[i]*2)); done",
+   "stdout": "2\n4\n6\n",
+   "status": 0
+  },
+  {
+   "script": "echo hi > f; cat f; echo more >> f; cat f; wc -l < f",
+   "stdout": "hi\nhi\nmore\n2\n",
+   "status": 0
+  },
+  {
+   "script": "cat <<EOF\nline $((1+1))\n$(echo sub)\nEOF",
+   "stdout": "line 2\nsub\n",
+   "status": 0
+  },
+  {
+   "script": "cat <<'EOF'\n$notexpanded\nEOF",
+   "stdout": "$notexpanded\n",
+   "status": 0
+  },
+  {
+   "script": "x=1; cat <<-EOF\n\tindent $x\n\tEOF",
+   "stdout": "indent 1\n",
+   "status": 0
+  },
+  {
+   "script": "cat <<< \"herestring\"",
+   "stdout": "herestring\n",
+   "status": 0
+  },
+  {
+   "script": "{ echo a; echo b; } | tac",
+   "stdout": "b\na\n",
+   "status": 0
+  },
+  {
+   "script": "echo err >&2; echo out",
+   "stdout": "out\n",
+   "status": 0
+  },
+  {
+   "script": "(echo a; echo b >&2) 2>/dev/null",
+   "stdout": "a\n",
+   "status": 0
+  },
+  {
+   "script": "f() { echo out; echo err >&2; }; f 2>&1 | wc -l; f 2>/dev/null",
+   "stdout": "2\nout\n",
+   "status": 0
+  },
+  {
+   "script": "exec 3>f3; echo a >&3; echo b >&3; exec 3>&-; cat f3",
+   "stdout": "a\nb\n",
+   "status": 0
+  },
+  {
+   "script": "while read -r l; do echo \"got $l\"; done < <(printf \"x\\ny\\n\")",
+   "stdout": "got x\ngot y\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"a b\\nc d\\n\" | while read x y; do echo \"$y $x\"; done",
+   "stdout": "b a\nd c\n",
+   "status": 0
+  },
+  {
+   "script": "echo one > f1; echo two > f2; cat f1 f2 | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "script": "diff <(echo a) <(echo b) > /dev/null; echo $?",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "tee f4 <<< \"teed\" > /dev/null; cat f4",
+   "stdout": "teed\n",
+   "status": 0
+  },
+  {
+   "script": "echo data | { read v; echo \"v=$v\"; }",
+   "stdout": "v=data\n",
+   "status": 0
+  },
+  {
+   "script": "cmd=echo; $cmd hi; \"$cmd\" hi2",
+   "stdout": "hi\nhi2\n",
+   "status": 0
+  },
+  {
+   "script": "echo $(echo $(echo nested))",
+   "stdout": "nested\n",
+   "status": 0
+  },
+  {
+   "script": "x=$(printf \"a\\nb\\n\"); echo \"$x\"; echo $x",
+   "stdout": "a\nb\na b\n",
+   "status": 0
+  },
+  {
+   "script": "echo `echo back`",
+   "stdout": "back\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"$(cat <<EOF\nin subst\nEOF\n)\"",
+   "stdout": "in subst\n",
+   "status": 0
+  },
+  {
+   "script": "echo $0 | grep -c bash",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "f() { echo ${FUNCNAME[0]}; }; f",
+   "stdout": "f\n",
+   "status": 0
+  },
+  {
+   "script": "echo ${BASH_VERSINFO[0]}",
+   "stdout": "5\n",
+   "status": 0
+  },
+  {
+   "script": "echo $(( RANDOM >= 0 )) $((RANDOM < 32768))",
+   "stdout": "1 1\n",
+   "status": 0
+  },
+  {
+   "script": "echo ${#PATH} | grep -c .",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "type -t cd; type -t ls; type -t nonexistent_zzz; echo $?",
+   "stdout": "builtin\nfile\n1\n",
+   "status": 0
+  },
+  {
+   "script": "command -v cd; command -v nonexistent_zzz; echo $?",
+   "stdout": "cd\n1\n",
+   "status": 0
+  },
+  {
+   "script": "trap 'echo bye' EXIT; echo main",
+   "stdout": "main\nbye\n",
+   "status": 0
+  },
+  {
+   "script": "trap 'echo err $?' ERR; false; echo after",
+   "stdout": "err 1\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "trap 'echo sig' USR1; kill -USR1 $$; echo cont",
+   "stdout": "sig\ncont\n",
+   "status": 0
+  },
+  {
+   "script": "trap - EXIT; trap 'echo x' EXIT; trap -p EXIT",
+   "stdout": "trap -- 'echo x' EXIT\nx\n",
+   "status": 0
+  },
+  {
+   "script": "(trap 'echo sub-exit' EXIT; echo in-sub); echo out",
+   "stdout": "in-sub\nsub-exit\nout\n",
+   "status": 0
+  },
+  {
+   "script": "set -- a b c; echo $#; shift; echo $@; set -- ; echo $#",
+   "stdout": "3\nb c\n0\n",
+   "status": 0
+  },
+  {
+   "script": "set -- x y; for i; do echo $i; done",
+   "stdout": "x\ny\n",
+   "status": 0
+  },
+  {
+   "script": "while getopts \"ab:c\" o; do echo \"$o:${OPTARG:-}\"; done <<< \"\"; set -- -a -b val -c rest; while getopts \"ab:c\" o; do echo \"$o:${OPTARG:-}\"; done; echo $OPTIND",
+   "stdout": "a:\nb:val\nc:\n5\n",
+   "status": 0
+  },
+  {
+   "script": "declare -i n=5; n+=3; n=n*2; echo $n",
+   "stdout": "16\n",
+   "status": 0
+  },
+  {
+   "script": "declare -r R=1; echo $R",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "declare -x E=exported; env | grep -c \"^E=exported\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "declare -l low=ABC; declare -u up=abc; echo $low $up",
+   "stdout": "abc ABC\n",
+   "status": 0
+  },
+  {
+   "script": "f() { declare -g G=1; }; f; echo $G",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "readonly RO=x; (RO=y) 2>/dev/null; echo $RO",
+   "stdout": "x\n",
+   "status": 0
+  },
+  {
+   "script": "unset -v nothing; echo \"[${nothing-unset}]\"",
+   "stdout": "[unset]\n",
+   "status": 0
+  },
+  {
+   "script": "x=1; unset x; echo \"[${x-gone}]\"",
+   "stdout": "[gone]\n",
+   "status": 0
+  },
+  {
+   "script": "v=value; ref=v; echo ${!ref}",
+   "stdout": "value\n",
+   "status": 0
+  },
+  {
+   "script": "declare -n r=target; target=5; r=6; echo $target",
+   "stdout": "6\n",
+   "status": 0
+  },
+  {
+   "script": "name=World; echo \"Hello, ${name}!\"",
+   "stdout": "Hello, World!\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"${undefined:-a b c}\" | wc -w",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "script": "eval \"x=5; y=6\"; echo $((x+y))",
+   "stdout": "11\n",
+   "status": 0
+  },
+  {
+   "script": "cmd=\"echo from eval\"; eval $cmd",
+   "stdout": "from eval\n",
+   "status": 0
+  },
+  {
+   "script": "eval \"echo \\$((1+2))\"",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "script": "let \"a = 3 + 4\"; echo $a; let a++; echo $a",
+   "stdout": "7\n8\n",
+   "status": 0
+  },
+  {
+   "script": "((a = 2 ** 5)); echo $a; (( a > 10 )) && echo big",
+   "stdout": "32\nbig\n",
+   "status": 0
+  },
+  {
+   "script": "echo $((0x1f)) $((010))",
+   "stdout": "31 8\n",
+   "status": 0
+  },
+  {
+   "script": "test -z \"\" && echo empty; test -n \"x\" && echo nonempty",
+   "stdout": "empty\nnonempty\n",
+   "status": 0
+  },
+  {
+   "script": "[ -e /etc/passwd ] && echo exists; [ -d /nonexistent ] || echo nodir",
+   "stdout": "exists\nnodir\n",
+   "status": 0
+  },
+  {
+   "script": "[[ \"abc\" =~ ^(a)(b)(c)$ ]] && echo ${BASH_REMATCH[1]}${BASH_REMATCH[3]}",
+   "stdout": "ac\n",
+   "status": 0
+  },
+  {
+   "script": "[[ foo.txt == *.txt ]] && echo match; [[ foo.txt == \"*.txt\" ]] || echo nomatch",
+   "stdout": "match\nnomatch\n",
+   "status": 0
+  },
+  {
+   "script": "[[ 5 -lt 10 && \"a\" < \"b\" ]] && echo both",
+   "stdout": "both\n",
+   "status": 0
+  },
+  {
+   "script": "[ \"a\" = \"a\" ] && [ 1 -eq 1 ] && echo ok",
+   "stdout": "ok\n",
+   "status": 0
+  },
+  {
+   "script": "x=; [ -z \"$x\" ] && echo z; [ -n \"${x:-}\" ] || echo n",
+   "stdout": "z\nn\n",
+   "status": 0
+  },
+  {
+   "script": "i=0; while (( i < 3 )); do echo $i; (( i++ )); done",
+   "stdout": "0\n1\n2\n",
+   "status": 0
+  },
+  {
+   "script": "for i in {1..3} {a..c}; do echo -n $i; done; echo",
+   "stdout": "123abc\n",
+   "status": 0
+  },
+  {
+   "script": "echo {a,b}{1,2}; echo x{1..3}y; echo {01..03}",
+   "stdout": "a1 a2 b1 b2\nx1y x2y x3y\n01 02 03\n",
+   "status": 0
+  },
+  {
+   "script": "echo ~ | grep -c /",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "pwd; cd /tmp; pwd; cd - >/dev/null; pwd",
+   "stdout": "/tmp/w\n/tmp\n/tmp/w\n",
+   "status": 0
+  },
+  {
+   "script": "cd /tmp && echo in-tmp; cd / && pwd",
+   "stdout": "in-tmp\n/\n",
+   "status": 0
+  },
+  {
+   "script": "mkdir -p d1/d2; cd d1/d2; pwd; cd ../..; pwd",
+   "stdout": "/tmp/w/d1/d2\n/tmp/w\n",
+   "status": 0
+  },
+  {
+   "script": "ls /nonexistent_dir 2>/dev/null; echo $?",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "script": "touch a b c; ls | wc -l; ls | head -2",
+   "stdout": "3\na\nb\n",
+   "status": 0
+  },
+  {
+   "script": "mkdir x; touch x/f; ls x; rm -r x; ls | wc -l",
+   "stdout": "f\n0\n",
+   "status": 0
+  },
+  {
+   "script": "echo test > t; cp t u; mv u v; cat v; rm t v",
+   "stdout": "test\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"b\\na\\n\" > s; sort s; sort -r s",
+   "stdout": "a\nb\nb\na\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"a b\\n\" | read -r x y; echo \"[$x][$y]\"",
+   "stdout": "[][]\n",
+   "status": 0
+  },
+  {
+   "script": "seq 1 5 | paste -sd+ | bc 2>/dev/null || echo nobc",
+   "stdout": "15\n",
+   "status": 0
+  },
+  {
+   "script": "seq 5 | while read n; do echo -n \"$((n*n)) \"; done; echo",
+   "stdout": "1 4 9 16 25 \n",
+   "status": 0
+  },
+  {
+   "script": "seq 3 | xargs -I{} echo item-{}",
+   "stdout": "item-1\nitem-2\nitem-3\n",
+   "status": 0
+  },
+  {
+   "script": "echo a b c | tr \" \" \"\\n\" | grep -n b",
+   "stdout": "2:b\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"one\\ntwo\\nthree\\n\" | grep -v two | wc -l",
+   "stdout": "2\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"k=v\\n\" | cut -d= -f1",
+   "stdout": "k\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"A1B2\" | tr -d \"0-9\"",
+   "stdout": "AB\n",
+   "status": 0
+  },
+  {
+   "script": "echo hello | tr a-y b-z",
+   "stdout": "ifmmp\n",
+   "status": 0
+  },
+  {
+   "script": "printf \"%s\\n\" 3 1 2 | sort | head -1",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "yes x | head -3 | wc -l",
+   "stdout": "3\n",
+   "status": 0
+  },
+  {
+   "script": "date +%Y | grep -c \"^20\"",
+   "stdout": "1\n",
+   "status": 0
+  },
+  {
+   "script": "expr 2 + 3; expr length hello",
+   "stdout": "5\n5\n",
+   "status": 0
+  },
+  {
+   "script": "basename /a/b/c.txt .txt; dirname /a/b/c.txt",
+   "stdout": "c\n/a/b\n",
+   "status": 0
+  },
+  {
+   "script": "echo $((1<<10)); echo $((0xff & 0x0f))",
+   "stdout": "1024\n15\n",
+   "status": 0
+  }
+ ]
+}

@@ -16,8 +16,8 @@ describe('set builtin', () => {
   describe('display variables', () => {
     it('should list all variables with no args', () => {
       const result = run('set', [], { FOO: 'bar', BAZ: 'qux' });
-      expect(result.output).toContain("FOO='bar'");
-      expect(result.output).toContain("BAZ='qux'");
+      expect(result.output).toContain('FOO=bar');
+      expect(result.output).toContain('BAZ=qux');
     });
 
     it('should sort output alphabetically', () => {
@@ -93,11 +93,19 @@ describe('shift builtin', () => {
     expect(env.getPositionalArgs()).toEqual(['c', 'd']);
   });
 
-  it('should error when shifting more than available', () => {
+  it('should fail silently when shifting more than available', () => {
     const env = new Environment({ positionalArgs: ['a'] });
     const result = executeBuiltin('shift', ['5'], env, new Map());
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('shift count');
+    expect(result.stderr).toBeUndefined();
+  });
+
+  it('should name the count when shift_verbose is on', () => {
+    const env = new Environment({ positionalArgs: ['a'] });
+    env.set('BASHOPTS', 'shift_verbose');
+    const result = executeBuiltin('shift', ['5'], env, new Map());
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('5: shift count out of range');
   });
 
   it('should handle shift 0', () => {
@@ -124,14 +132,14 @@ describe('type builtin', () => {
   it('should report not found for unknown commands', () => {
     const result = run('type', ['nonexistent']);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('not found');
+    expect(result.stderr).toContain('not found');
   });
 
   it('should handle multiple arguments', () => {
     const result = run('type', ['echo', 'cd', 'nonexistent']);
     expect(result.output).toContain('echo is a shell builtin');
     expect(result.output).toContain('cd is a shell builtin');
-    expect(result.output).toContain('not found');
+    expect(result.stderr).toContain('not found');
     expect(result.exitCode).toBe(1);
   });
 });

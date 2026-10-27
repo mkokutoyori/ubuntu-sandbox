@@ -16,7 +16,15 @@
  */
 
 import { TokenType, BASH_KEYWORDS, type Token, type SourcePosition } from './Token';
+import { decodeBackslashEscapes } from '@/bash/runtime/EscapeSequences';
 import { LexerError } from './LexerError';
+
+export interface LexerWarning {
+  readonly line: number;
+  readonly reportedLine: number;
+  readonly text: string;
+}
+import { closingBrace, closingParenthesis } from './Spans';
 
 export class BashLexer {
   private input: string = '';
@@ -40,50 +48,68 @@ export class BashLexer {
     delimiter: string;
     stripTabs: boolean;
     bodyToken: Token;
+    line: number;
   }> = [];
+
+  private warnings: LexerWarning[] = [];
 
   /**
    * Tokenize the full input string.
    * @param input   Bash source code.
    * @param strip   If true, filter out comments (default: true).
    */
-  tokenize(input: string, strip: boolean = true): Token[] {
+  tokenize(input: string, strip: boolean = true, firstLine = 1): Token[] {
+    return this.scan(input, strip, false, firstLine).tokens;
+  }
+
+  tokenizeRecovering(input: string, strip: boolean = true, firstLine = 1): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
+    return this.scan(input, strip, true, firstLine);
+  }
+
+  private scan(input: string, strip: boolean, recover: boolean, firstLine: number): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
     this.input = input;
     this.pos = 0;
-    this.line = 1;
+    this.line = firstLine;
     this.column = 1;
     this.queued = [];
     this.pendingHeredocs = [];
+    this.warnings = [];
 
     const tokens: Token[] = [];
+    let error: LexerError | null = null;
 
-    while (!this.isAtEnd() || this.queued.length > 0) {
-      if (this.queued.length > 0) {
-        tokens.push(this.queued.shift()!);
-        continue;
-      }
-      const posBeforeSkip = this.pos;
-      this.skipSpacesAndTabs();
-      if (this.isAtEnd()) break;
-      const noWhitespaceBefore = this.pos === posBeforeSkip;
+    try {
+      while (!this.isAtEnd() || this.queued.length > 0) {
+        if (this.queued.length > 0) {
+          tokens.push(this.queued.shift()!);
+          continue;
+        }
+        const posBeforeSkip = this.pos;
+        this.skipSpacesAndTabs();
+        if (this.isAtEnd()) break;
+        const noWhitespaceBefore = this.pos === posBeforeSkip;
 
-      const tok = this.scanToken();
-      if (tok) {
-        if (strip && tok.type === TokenType.WORD && tok.value.startsWith('#')) continue;
-        // Mark tokens that butt directly against the previous one so the
-        // parser can fuse `name='a b'` / `pre"$x"` into one word.
-        if (noWhitespaceBefore && tokens.length > 0) tok.adjacent = true;
-        tokens.push(tok);
+        const tok = this.scanToken();
+        if (tok) {
+          if (strip && tok.type === TokenType.WORD && tok.value.startsWith('#')) continue;
+          // Mark tokens that butt directly against the previous one so the
+          // parser can fuse `name='a b'` / `pre"$x"` into one word.
+          if (noWhitespaceBefore && tokens.length > 0) tok.adjacent = true;
+          tokens.push(tok);
+        }
       }
+
+      // A heredoc left open at EOF (no delimiter line, or no trailing
+      // newline at all) takes the rest of the input as its body — bash
+      // warns but accepts; keeping it lenient matches the interactive use.
+      if (this.pendingHeredocs.length > 0) this.collectHeredocBodies();
+    } catch (e) {
+      if (!recover || !(e instanceof LexerError)) throw e;
+      error = e;
     }
 
-    // A heredoc left open at EOF (no delimiter line, or no trailing
-    // newline at all) takes the rest of the input as its body — bash
-    // warns but accepts; keeping it lenient matches the interactive use.
-    if (this.pendingHeredocs.length > 0) this.collectHeredocBodies();
-
     tokens.push(this.makeToken(TokenType.EOF, ''));
-    return tokens;
+    return { tokens, error, warnings: this.warnings };
   }
 
   // ─── Main Scanner ──────────────────────────────────────────────
@@ -113,7 +139,7 @@ export class BashLexer {
     if (ch === '|') return this.scanPipe();
     if (ch === '&') return this.scanAmpersand();
     if (ch === ';') return this.scanSemicolon();
-    if (ch === '(') return this.advance1(TokenType.LPAREN);
+    if (ch === '(') return this.scanOpenParen();
     if (ch === ')') return this.advance1(TokenType.RPAREN);
     // { is only a brace group delimiter when followed by whitespace/newline/EOF
     // Otherwise it's part of a word (e.g., {1..3}, {echo)
@@ -173,6 +199,13 @@ export class BashLexer {
         // quoting context — a `"` inside it must not be mistaken for
         // the outer string's terminator (e.g. `"$(cmd "$x")"`).
         value += this.consumeBalancedParenSpan();
+      } else if (this.peek() === '$' && this.peekAt(1) === '{') {
+        const close = closingBrace(this.input, this.pos + 1);
+        const stop = close < 0 ? this.pos : close;
+        while (this.pos <= stop) {
+          value += this.peek();
+          this.advance();
+        }
       } else if (this.peek() === '`') {
         // Same for a backtick command substitution embedded inside.
         value += this.consumeBalancedBacktickSpan();
@@ -248,6 +281,10 @@ export class BashLexer {
     this.advance(); // skip `
     let value = '';
     while (!this.isAtEnd() && this.peek() !== '`') {
+      if (this.peek() === '\\' && this.peekAt(1) !== undefined) {
+        value += this.peek();
+        this.advance();
+      }
       value += this.peek();
       this.advance();
     }
@@ -275,53 +312,18 @@ export class BashLexer {
     // (\n, \t, \r, \\, \', \", \xNN, \0NN, \uNNNN); $-expansion does
     // NOT happen inside, mirroring real bash.
     if (next === "'") {
-      this.advance(); // skip '
-      let value = '';
+      this.advance();
+      let raw = '';
       while (!this.isAtEnd() && this.peek() !== "'") {
-        const c = this.peek();
-        if (c === '\\' && !this.isAtEnd()) {
-          this.advance();
-          const esc = this.peek();
-          switch (esc) {
-            case 'n': value += '\n'; this.advance(); break;
-            case 't': value += '\t'; this.advance(); break;
-            case 'r': value += '\r'; this.advance(); break;
-            case 'a': value += '\x07'; this.advance(); break;
-            case 'b': value += '\b'; this.advance(); break;
-            case 'f': value += '\f'; this.advance(); break;
-            case 'v': value += '\v'; this.advance(); break;
-            case 'e': value += '\x1b'; this.advance(); break;
-            case '\\': value += '\\'; this.advance(); break;
-            case "'": value += "'"; this.advance(); break;
-            case '"': value += '"'; this.advance(); break;
-            case 'x': {
-              this.advance();
-              let hex = '';
-              for (let i = 0; i < 2 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
-                hex += this.peek(); this.advance();
-              }
-              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
-              break;
-            }
-            case 'u': {
-              this.advance();
-              let hex = '';
-              for (let i = 0; i < 4 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
-                hex += this.peek(); this.advance();
-              }
-              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
-              break;
-            }
-            default:
-              value += '\\' + esc; this.advance(); break;
-          }
-        } else {
-          value += c;
+        if (this.peek() === '\\' && this.peekAt(1) !== undefined) {
+          raw += this.peek();
           this.advance();
         }
+        raw += this.peek();
+        this.advance();
       }
-      if (!this.isAtEnd()) this.advance(); // skip closing '
-      return { type: TokenType.SINGLE_QUOTED, value, position: start };
+      if (!this.isAtEnd()) this.advance();
+      return { type: TokenType.SINGLE_QUOTED, value: decodeBackslashEscapes(raw, 'ansi-c').text, position: start };
     }
 
     // $(cmd) — command substitution
@@ -354,57 +356,72 @@ export class BashLexer {
     return { type: TokenType.WORD, value: '$', position: start };
   }
 
-  private scanArithSub(start: SourcePosition): Token {
-    this.advance(); // skip first (
-    this.advance(); // skip second (
-    let depth = 1;
-    let expr = '';
-    while (!this.isAtEnd() && depth > 0) {
-      if (this.peek() === '(' && this.peekAt(1) === '(') {
-        depth++;
-        expr += '((';
-        this.advance();
-        this.advance();
-      } else if (this.peek() === ')' && this.peekAt(1) === ')') {
-        depth--;
-        if (depth > 0) {
-          expr += '))';
-          this.advance();
-          this.advance();
-        }
-      } else {
-        expr += this.peek();
-        this.advance();
+  private scanOpenParen(): Token {
+    if (this.peekAt(1) === '(') {
+      const expression = this.arithmeticCommandBody();
+      if (expression !== null) {
+        const start = this.position();
+        for (let consumed = 0; consumed < expression.length + 4; consumed++) this.advance();
+        return { type: TokenType.ARITH_CMD, value: expression, position: start };
       }
     }
-    if (depth > 0) throw new LexerError("Unterminated arithmetic substitution", start);
-    this.advance(); // skip first )
-    this.advance(); // skip second )
-    return { type: TokenType.ARITH_SUB, value: expr, position: start };
+    return this.advance1(TokenType.LPAREN);
+  }
+
+  private arithmeticCommandBody(): string | null {
+    let depth = 0;
+    for (let index = this.pos + 2; index < this.input.length; index++) {
+      const character = this.input[index];
+      if (character === '(') depth++;
+      else if (character === ')') {
+        if (depth > 0) depth--;
+        else return this.input[index + 1] === ')' ? this.input.slice(this.pos + 2, index) : null;
+      }
+    }
+    return null;
+  }
+
+  private scanArithSub(start: SourcePosition): Token {
+    this.advance();
+    this.advance();
+    let parentheses = 0;
+    let expr = '';
+    while (!this.isAtEnd()) {
+      const character = this.peek();
+      if (character === '(') parentheses++;
+      else if (character === ')') {
+        if (parentheses === 0 && this.peekAt(1) === ')') {
+          this.advance();
+          this.advance();
+          return { type: TokenType.ARITH_SUB, value: expr, position: start };
+        }
+        parentheses--;
+      }
+      expr += character;
+      this.advance();
+    }
+    throw new LexerError("Unterminated arithmetic substitution", start);
   }
 
   private scanCmdSub(start: SourcePosition): Token {
+    const close = closingParenthesis(this.input, this.pos);
+    if (close < 0) throw new LexerError("Unterminated command substitution", start);
     this.advance(); // skip (
-    let depth = 1;
     let cmd = '';
-    while (!this.isAtEnd() && depth > 0) {
-      if (this.peek() === '(') depth++;
-      else if (this.peek() === ')') {
-        depth--;
-        if (depth === 0) break;
-      }
+    while (this.pos < close) {
       cmd += this.peek();
       this.advance();
     }
-    if (this.isAtEnd() && depth > 0) throw new LexerError("Unterminated command substitution", start);
     this.advance(); // skip )
     return { type: TokenType.CMD_SUB, value: cmd, position: start };
   }
 
   private scanVarBraced(start: SourcePosition): Token {
+    const close = closingBrace(this.input, this.pos);
+    if (close < 0) throw new LexerError("Unterminated variable expansion ${...}", start);
     this.advance(); // skip {
     let content = '';
-    while (!this.isAtEnd() && this.peek() !== '}') {
+    while (this.pos < close) {
       content += this.peek();
       this.advance();
     }
@@ -434,7 +451,11 @@ export class BashLexer {
     }
     if (!this.isAtEnd() && this.peek() === '>') {
       this.advance();
-      return { type: TokenType.GREATAND, value: '>&', position: start };
+      if (!this.isAtEnd() && this.peek() === '>') {
+        this.advance();
+        return { type: TokenType.REDIR_OP, value: '&>>', position: start };
+      }
+      return { type: TokenType.REDIR_OP, value: '&>', position: start };
     }
     return { type: TokenType.AMP, value: '&', position: start };
   }
@@ -492,6 +513,10 @@ export class BashLexer {
     if (!this.isAtEnd() && this.peek() === '&') {
       this.advance();
       return { type: TokenType.GREATAND, value: '>&', position: start };
+    }
+    if (!this.isAtEnd() && this.peek() === '|') {
+      this.advance();
+      return { type: TokenType.REDIR_OP, value: '>|', position: start };
     }
     return { type: TokenType.GREAT, value: '>', position: start };
   }
@@ -552,7 +577,7 @@ export class BashLexer {
           position: this.position(),
         };
         this.queued.push(bodyToken);
-        this.pendingHeredocs.push({ delimiter: delim.value, stripTabs, bodyToken });
+        this.pendingHeredocs.push({ delimiter: delim.value, stripTabs, bodyToken, line: start.line });
       }
       return { type: TokenType.HEREDOC, value: '<<', position: start };
     }
@@ -563,11 +588,13 @@ export class BashLexer {
     return { type: TokenType.LESS, value: '<', position: start };
   }
 
-  /** Check if current position is a file-descriptor redirect (e.g. 2> or 2>>) */
+  /** Check if current position is a file-descriptor redirect (e.g. 2>, 2>>, 3<, 3<&0) */
   private isFdRedirect(): boolean {
     let look = this.pos;
     while (look < this.input.length && this.isDigit(this.input[look])) look++;
-    return look < this.input.length && this.input[look] === '>';
+    if (look === this.pos || look >= this.input.length) return false;
+    if (this.input[look] === '>') return true;
+    return this.input[look] === '<' && this.input[look + 1] !== '(' && this.input[look + 1] !== '<';
   }
 
   private scanFdRedirect(): Token {
@@ -577,36 +604,100 @@ export class BashLexer {
       fd += this.peek();
       this.advance();
     }
-    // Now at '>'
+    const direction = this.peek();
     this.advance();
+    if (direction === '<') {
+      if (!this.isAtEnd() && this.peek() === '&') {
+        this.advance();
+        return { type: TokenType.REDIR_OP, value: `${fd}<&${this.descriptorTarget()}`, position: start };
+      }
+      return { type: TokenType.REDIR_OP, value: `${fd}<`, position: start };
+    }
     if (!this.isAtEnd() && this.peek() === '>') {
       this.advance();
       return { type: TokenType.FD_DGREAT, value: `${fd}>>`, position: start };
     }
     if (!this.isAtEnd() && this.peek() === '&') {
       this.advance();
-      // e.g., 2>&1
-      let target = '';
-      while (!this.isAtEnd() && this.isDigit(this.peek())) {
-        target += this.peek();
-        this.advance();
-      }
-      return { type: TokenType.GREATAND, value: `${fd}>&${target}`, position: start };
+      return { type: TokenType.GREATAND, value: `${fd}>&${this.descriptorTarget()}`, position: start };
+    }
+    if (!this.isAtEnd() && this.peek() === '|') {
+      this.advance();
+      return { type: TokenType.REDIR_OP, value: `${fd}>|`, position: start };
     }
     return { type: TokenType.FD_GREAT, value: `${fd}>`, position: start };
   }
 
+  private descriptorTarget(): string {
+    let target = '';
+    while (!this.isAtEnd() && (this.isDigit(this.peek()) || (target === '' && this.peek() === '-'))) {
+      target += this.peek();
+      this.advance();
+    }
+    return target;
+  }
+
   // ─── Word Scanner ─────────────────────────────────────────────
+
+  private extendedPatternEnd(): number {
+    let depth = 0;
+    for (let index = this.pos; index < this.input.length; index++) {
+      const character = this.input[index];
+      if (character === '\\') { index++; continue; }
+      if (this.isWhitespace(character) && depth === 0) return -1;
+      if (character === '(') depth++;
+      else if (character === ')' && --depth === 0) return index;
+    }
+    return -1;
+  }
+
+  private subscriptedAssignmentHead(): string | null {
+    const name = /^[A-Za-z_][A-Za-z_0-9]*\[/.exec(this.input.slice(this.pos));
+    if (name === null) return null;
+    let depth = 0;
+    for (let index = this.pos + name[0].length - 1; index < this.input.length; index++) {
+      const character = this.input[index];
+      if (character === "'" || character === '"') {
+        const close = this.input.indexOf(character, index + 1);
+        if (close < 0) return null;
+        index = close;
+        continue;
+      }
+      if (character === '\\') { index++; continue; }
+      if (character === '[') depth++;
+      else if (character === ']' && --depth === 0) {
+        const after = this.input.slice(index + 1, index + 3);
+        const operator = after.startsWith('+=') ? '+=' : after.startsWith('=') ? '=' : null;
+        return operator === null ? null : this.input.slice(this.pos, index + 1) + operator;
+      } else if (this.isWhitespace(character)) return null;
+    }
+    return null;
+  }
 
   private scanWord(): Token {
     const start = this.position();
     let value = '';
+    const head = this.subscriptedAssignmentHead();
+    if (head !== null) {
+      for (let consumed = 0; consumed < head.length; consumed++) this.advance();
+      value = head;
+    }
 
     while (!this.isAtEnd()) {
       const ch = this.peek();
 
       // Stop at whitespace, operators, and special chars
       if (this.isWhitespace(ch)) break;
+      if (ch === '(' && value !== '' && '@?*+!'.includes(value[value.length - 1])) {
+        const close = this.extendedPatternEnd();
+        if (close >= 0) {
+          while (this.pos <= close) {
+            value += this.peek();
+            this.advance();
+          }
+          continue;
+        }
+      }
       // Stop at ( ) but allow it inside word if preceded by alphanumeric (for func())
       if (ch === '(' || ch === ')') break;
       // } at start of word is a brace group ender
@@ -653,7 +744,7 @@ export class BashLexer {
     if (eqIdx > 0) {
       const nameEnd = value[eqIdx - 1] === '+' ? eqIdx - 1 : eqIdx;
       const lhs = value.substring(0, nameEnd);
-      const m = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[([^\]]+)\])?$/);
+      const m = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[(.+)\])?$/s);
       if (m) {
         return { type: TokenType.ASSIGNMENT_WORD, value, position: start };
       }
@@ -729,6 +820,7 @@ export class BashLexer {
     this.pendingHeredocs = [];
     for (const h of pending) {
       const bodyLines: string[] = [];
+      let closed = false;
       while (!this.isAtEnd()) {
         let lineEnd = this.input.indexOf('\n', this.pos);
         if (lineEnd === -1) lineEnd = this.input.length;
@@ -737,8 +829,12 @@ export class BashLexer {
         // Advance past the line (and its newline, if present).
         while (this.pos < lineEnd) this.advance();
         if (!this.isAtEnd()) this.advance();
-        if (line.trim() === h.delimiter) break;
+        if (line.trim() === h.delimiter) { closed = true; break; }
         bodyLines.push(line);
+      }
+      if (!closed) {
+        const reportedLine = this.line - (this.input.endsWith('\n') ? 1 : 0);
+        this.warnings.push({ line: h.line, reportedLine, text: `warning: here-document at line ${h.line} delimited by end-of-file (wanted \`${h.delimiter}')` });
       }
       h.bodyToken.value = bodyLines.join('\n');
     }

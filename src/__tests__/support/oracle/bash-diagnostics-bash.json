@@ -1,0 +1,525 @@
+{
+ "bash": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+ "cases": [
+  {
+   "script": "foo",
+   "output": "s.sh: line 1: foo: command not found\n",
+   "status": 127
+  },
+  {
+   "script": "echo a\nfoo bar\necho b",
+   "output": "a\ns.sh: line 2: foo: command not found\nb\n",
+   "status": 0
+  },
+  {
+   "script": "/nonexistent/prog",
+   "output": "s.sh: line 1: /nonexistent/prog: No such file or directory\n",
+   "status": 127
+  },
+  {
+   "script": "./noexec",
+   "output": "s.sh: line 1: ./noexec: Permission denied\n",
+   "status": 126
+  },
+  {
+   "script": "cd /nonexistent_dir\necho still",
+   "output": "s.sh: line 1: cd: /nonexistent_dir: No such file or directory\nstill\n",
+   "status": 0
+  },
+  {
+   "script": "cat /nonexistent_file",
+   "output": "cat: /nonexistent_file: No such file or directory\n",
+   "status": 1
+  },
+  {
+   "script": "ls /nonexistent_dir",
+   "output": "ls: cannot access '/nonexistent_dir': No such file or directory\n",
+   "status": 2
+  },
+  {
+   "script": "echo hi > /nonexistent_dir/f",
+   "output": "s.sh: line 1: /nonexistent_dir/f: No such file or directory\n",
+   "status": 1
+  },
+  {
+   "script": "echo hi < /nonexistent_file",
+   "output": "s.sh: line 1: /nonexistent_file: No such file or directory\n",
+   "status": 1
+  },
+  {
+   "script": "set -u\necho $undefined_var\necho after",
+   "output": "s.sh: line 2: undefined_var: unbound variable\n",
+   "status": 1
+  },
+  {
+   "script": "set -u\necho ${arr[5]}",
+   "output": "s.sh: line 2: arr[5]: unbound variable\n",
+   "status": 1
+  },
+  {
+   "script": "x=${y:?must be set}\necho after",
+   "output": "s.sh: line 1: y: must be set\n",
+   "status": 1
+  },
+  {
+   "script": "x=; : ${x:?empty}\necho after",
+   "output": "s.sh: line 1: x: empty\n",
+   "status": 1
+  },
+  {
+   "script": "echo $((1/0))\necho after",
+   "output": "s.sh: line 1: 1/0: division by 0 (error token is \"0\")\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "echo $((2 +))",
+   "output": "s.sh: line 1: 2 +: syntax error: operand expected (error token is \"+\")\n",
+   "status": 1
+  },
+  {
+   "script": "echo $((abc def))",
+   "output": "s.sh: line 1: abc def: syntax error in expression (error token is \"def\")\n",
+   "status": 1
+  },
+  {
+   "script": "echo ${#!}",
+   "output": "0\n",
+   "status": 0
+  },
+  {
+   "script": "echo ${bad subst}",
+   "output": "s.sh: line 1: ${bad subst}: bad substitution\n",
+   "status": 1
+  },
+  {
+   "script": "echo ${x@Z}",
+   "output": "\n",
+   "status": 0
+  },
+  {
+   "script": "readonly R=1\nR=2\necho after",
+   "output": "s.sh: line 2: R: readonly variable\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "f() { local x; }\nlocal y=1",
+   "output": "s.sh: line 2: local: can only be used in a function\n",
+   "status": 1
+  },
+  {
+   "script": "declare -r C=1\nunset C\necho $?",
+   "output": "s.sh: line 2: unset: C: cannot unset: readonly variable\n1\n",
+   "status": 0
+  },
+  {
+   "script": "export 1bad=x\necho $?",
+   "output": "s.sh: line 1: export: `1bad=x': not a valid identifier\n1\n",
+   "status": 0
+  },
+  {
+   "script": "unset 1bad\necho $?",
+   "output": "0\n",
+   "status": 0
+  },
+  {
+   "script": "read -z 2>&1\necho $?",
+   "output": "s.sh: line 1: read: -z: invalid option\nread: usage: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]\n2\n",
+   "status": 0
+  },
+  {
+   "script": "shift 5\necho $?",
+   "output": "1\n",
+   "status": 0
+  },
+  {
+   "script": "break\necho after",
+   "output": "s.sh: line 1: break: only meaningful in a `for', `while', or `until' loop\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "continue\necho after",
+   "output": "s.sh: line 1: continue: only meaningful in a `for', `while', or `until' loop\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "return 2>&1\necho $?",
+   "output": "s.sh: line 1: return: can only `return' from a function or sourced script\n2\n",
+   "status": 0
+  },
+  {
+   "script": "exit 3 4\necho after",
+   "output": "s.sh: line 1: exit: too many arguments\nafter\n",
+   "status": 0
+  },
+  {
+   "script": "exit abc\necho after",
+   "output": "s.sh: line 1: exit: abc: numeric argument required\n",
+   "status": 2
+  },
+  {
+   "script": "let \"x = 1 +\"",
+   "output": "s.sh: line 1: let: x = 1 +: syntax error: operand expected (error token is \"+\")\n",
+   "status": 1
+  },
+  {
+   "script": "(( 1 / 0 ))\necho $?",
+   "output": "s.sh: line 1: ((: 1 / 0 : division by 0 (error token is \"0 \")\n1\n",
+   "status": 0
+  },
+  {
+   "script": "for i in 1 2; do\n  echo $i\n",
+   "output": "s.sh: line 4: syntax error: unexpected end of file\n",
+   "status": 2
+  },
+  {
+   "script": "if true; then\n  echo yes\n",
+   "output": "s.sh: line 4: syntax error: unexpected end of file\n",
+   "status": 2
+  },
+  {
+   "script": "case x in\n  x) echo m\n",
+   "output": "s.sh: line 4: syntax error: unexpected end of file\n",
+   "status": 2
+  },
+  {
+   "script": "fi",
+   "output": "s.sh: line 1: syntax error near unexpected token `fi'\ns.sh: line 1: `fi'\n",
+   "status": 2
+  },
+  {
+   "script": "done",
+   "output": "s.sh: line 1: syntax error near unexpected token `done'\ns.sh: line 1: `done'\n",
+   "status": 2
+  },
+  {
+   "script": "echo a ;; echo b",
+   "output": "s.sh: line 1: syntax error near unexpected token `;;'\ns.sh: line 1: `echo a ;; echo b'\n",
+   "status": 2
+  },
+  {
+   "script": "echo (",
+   "output": "s.sh: line 1: syntax error near unexpected token `newline'\ns.sh: line 1: `echo ('\n",
+   "status": 2
+  },
+  {
+   "script": "echo )",
+   "output": "s.sh: line 1: syntax error near unexpected token `)'\ns.sh: line 1: `echo )'\n",
+   "status": 2
+  },
+  {
+   "script": "echo \"unterminated",
+   "output": "s.sh: line 1: unexpected EOF while looking for matching `\"'\n",
+   "status": 2
+  },
+  {
+   "script": "echo 'unterminated",
+   "output": "s.sh: line 1: unexpected EOF while looking for matching `''\n",
+   "status": 2
+  },
+  {
+   "script": "echo a |",
+   "output": "s.sh: line 2: syntax error: unexpected end of file\n",
+   "status": 2
+  },
+  {
+   "script": "echo a &&",
+   "output": "s.sh: line 2: syntax error: unexpected end of file\n",
+   "status": 2
+  },
+  {
+   "script": "| echo a",
+   "output": "s.sh: line 1: syntax error near unexpected token `|'\ns.sh: line 1: `| echo a'\n",
+   "status": 2
+  },
+  {
+   "script": "echo a ; ; echo b",
+   "output": "s.sh: line 1: syntax error near unexpected token `;'\ns.sh: line 1: `echo a ; ; echo b'\n",
+   "status": 2
+  },
+  {
+   "script": "f() {\n  echo hi\n",
+   "output": "s.sh: line 4: syntax error: unexpected end of file\n",
+   "status": 2
+  },
+  {
+   "script": "if then fi",
+   "output": "s.sh: line 1: syntax error near unexpected token `then'\ns.sh: line 1: `if then fi'\n",
+   "status": 2
+  },
+  {
+   "script": "while do done",
+   "output": "s.sh: line 1: syntax error near unexpected token `do'\ns.sh: line 1: `while do done'\n",
+   "status": 2
+  },
+  {
+   "script": "for in a b; do :; done",
+   "output": "s.sh: line 1: syntax error near unexpected token `a'\ns.sh: line 1: `for in a b; do :; done'\n",
+   "status": 2
+  },
+  {
+   "script": "echo $(",
+   "output": "s.sh: line 2: unexpected EOF while looking for matching `)'\n",
+   "status": 2
+  },
+  {
+   "script": "echo `",
+   "output": "s.sh: line 1: unexpected EOF while looking for matching ``'\n",
+   "status": 2
+  },
+  {
+   "script": "echo ${",
+   "output": "s.sh: line 1: unexpected EOF while looking for matching `}'\n",
+   "status": 2
+  },
+  {
+   "script": "x=(1 2",
+   "output": "s.sh: line 1: unexpected EOF while looking for matching `)'\n",
+   "status": 1
+  },
+  {
+   "script": "[[ a == ]]",
+   "output": "s.sh: line 1: unexpected argument `]]' to conditional binary operator\ns.sh: line 1: syntax error near `]]'\ns.sh: line 1: `[[ a == ]]'\n",
+   "status": 2
+  },
+  {
+   "script": "[[ -f ]]",
+   "output": "s.sh: line 1: unexpected argument `]]' to conditional unary operator\ns.sh: line 1: syntax error near `]]'\ns.sh: line 1: `[[ -f ]]'\n",
+   "status": 2
+  },
+  {
+   "script": "[ 1 -eq ]",
+   "output": "s.sh: line 1: [: 1: unary operator expected\n",
+   "status": 2
+  },
+  {
+   "script": "[ a = ]; echo $?",
+   "output": "s.sh: line 1: [: a: unary operator expected\n2\n",
+   "status": 0
+  },
+  {
+   "script": "[ 1 -eq abc ]\necho $?",
+   "output": "s.sh: line 1: [: abc: integer expression expected\n2\n",
+   "status": 0
+  },
+  {
+   "script": "test -z\necho $?",
+   "output": "0\n",
+   "status": 0
+  },
+  {
+   "script": "cat <<EOF\nnever closed",
+   "output": "s.sh: line 2: warning: here-document at line 1 delimited by end-of-file (wanted `EOF')\nnever closed\n",
+   "status": 0
+  },
+  {
+   "script": "declare -A m\nm=(a b)\necho done",
+   "output": "done\n",
+   "status": 0
+  },
+  {
+   "script": "a=(1 2 3)\necho ${a[@]:x}",
+   "output": "1 2 3\n",
+   "status": 0
+  },
+  {
+   "script": "echo ${1:2:-9}",
+   "output": "\n",
+   "status": 0
+  },
+  {
+   "script": "trap \"echo t\" BADSIG\necho $?",
+   "output": "s.sh: line 1: trap: BADSIG: invalid signal specification\n1\n",
+   "status": 0
+  },
+  {
+   "script": "kill -9 99999999\necho $?",
+   "output": "s.sh: line 1: kill: (99999999) - No such process\n1\n",
+   "status": 0
+  },
+  {
+   "script": "wait 99999999\necho $?",
+   "output": "s.sh: line 1: wait: pid 99999999 is not a child of this shell\n127\n",
+   "status": 0
+  },
+  {
+   "script": "unalias nosuchalias\necho $?",
+   "output": "s.sh: line 1: unalias: nosuchalias: not found\n1\n",
+   "status": 0
+  },
+  {
+   "script": "type nosuchcmd\necho $?",
+   "output": "s.sh: line 1: type: nosuchcmd: not found\n1\n",
+   "status": 0
+  },
+  {
+   "script": "command -v nosuchcmd\necho $?",
+   "output": "1\n",
+   "status": 0
+  },
+  {
+   "script": "source /nonexistent_file\necho $?",
+   "output": "s.sh: line 1: /nonexistent_file: No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": ". ./nonexistent\necho $?",
+   "output": "s.sh: line 1: ./nonexistent: No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": "bash /nonexistent_script.sh\necho $?",
+   "output": "bash: /nonexistent_script.sh: No such file or directory\n127\n",
+   "status": 0
+  },
+  {
+   "script": "sh -c \"exit 7\"\necho $?",
+   "output": "7\n",
+   "status": 0
+  },
+  {
+   "script": "eval \"foo bar\"\necho $?",
+   "output": "s.sh: line 1: foo: command not found\n127\n",
+   "status": 0
+  },
+  {
+   "script": "eval \"if\"\necho $?",
+   "output": "s.sh: eval: line 2: syntax error: unexpected end of file\n2\n",
+   "status": 0
+  },
+  {
+   "script": "mkdir /proc/x\necho $?",
+   "output": "mkdir: cannot create directory '/proc/x': No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": "cp /nonexistent /tmp/w/x\necho $?",
+   "output": "cp: cannot stat '/nonexistent': No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": "rm /nonexistent_file\necho $?",
+   "output": "rm: cannot remove '/nonexistent_file': No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": "rm -f /nonexistent_file\necho $?",
+   "output": "0\n",
+   "status": 0
+  },
+  {
+   "script": "mv /nonexistent /tmp/w/y\necho $?",
+   "output": "mv: cannot stat '/nonexistent': No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": "touch /nonexistent_dir/f\necho $?",
+   "output": "touch: cannot touch '/nonexistent_dir/f': No such file or directory\n1\n",
+   "status": 0
+  },
+  {
+   "script": "grep pat /nonexistent_file\necho $?",
+   "output": "grep: /nonexistent_file: No such file or directory\n2\n",
+   "status": 0
+  },
+  {
+   "script": "head /nonexistent_file",
+   "output": "head: cannot open '/nonexistent_file' for reading: No such file or directory\n",
+   "status": 1
+  },
+  {
+   "script": "wc /nonexistent_file",
+   "output": "wc: /nonexistent_file: No such file or directory\n",
+   "status": 1
+  },
+  {
+   "script": "sort /nonexistent_file",
+   "output": "sort: cannot read: /nonexistent_file: No such file or directory\n",
+   "status": 2
+  },
+  {
+   "script": "chmod 755 /nonexistent_file",
+   "output": "chmod: cannot access '/nonexistent_file': No such file or directory\n",
+   "status": 1
+  },
+  {
+   "script": "ln -s a b; ln -s a b\necho $?",
+   "output": "ln: failed to create symbolic link 'b': File exists\n1\n",
+   "status": 0
+  },
+  {
+   "script": "echo hi | nosuchcmd\necho ${PIPESTATUS[@]}",
+   "output": "s.sh: line 1: nosuchcmd: command not found\n0 127\n",
+   "status": 0
+  },
+  {
+   "script": "false\necho $?\nset -e\nfalse\necho unreachable",
+   "output": "1\n",
+   "status": 1
+  },
+  {
+   "script": "set -e\nf() { false; }\nf\necho unreachable",
+   "output": "",
+   "status": 1
+  },
+  {
+   "script": "set -eu\necho $UNSET_X",
+   "output": "s.sh: line 2: UNSET_X: unbound variable\n",
+   "status": 1
+  },
+  {
+   "script": "cd /tmp/w/nodir 2>&1 | cat\necho $?",
+   "output": "s.sh: line 1: cd: /tmp/w/nodir: No such file or directory\n0\n",
+   "status": 0
+  },
+  {
+   "script": "ls nosuch 2>&1 | head -1",
+   "output": "ls: cannot access 'nosuch': No such file or directory\n",
+   "status": 0
+  },
+  {
+   "script": "x=1 y=2 nosuchcmd\necho $x",
+   "output": "s.sh: line 1: nosuchcmd: command not found\n\n",
+   "status": 0
+  },
+  {
+   "script": "nosuchcmd arg1 arg2 2>/dev/null\necho $?",
+   "output": "127\n",
+   "status": 0
+  },
+  {
+   "script": "echo $LINENO\necho $LINENO",
+   "output": "1\n2\n",
+   "status": 0
+  },
+  {
+   "script": "f() { echo $LINENO; }\nf\necho ${BASH_LINENO[0]:-none}",
+   "output": "1\n0\n",
+   "status": 0
+  },
+  {
+   "script": "echo $0",
+   "output": "s.sh\n",
+   "status": 0
+  },
+  {
+   "script": "echo \"${BASH_SOURCE[0]}\"",
+   "output": "s.sh\n",
+   "status": 0
+  },
+  {
+   "script": "trap 'echo \"err at $LINENO\"' ERR\nfalse\ntrue",
+   "output": "err at 2\n",
+   "status": 0
+  },
+  {
+   "script": "trap 'echo \"exit $?\"' EXIT\nexit 4",
+   "output": "exit 4\n",
+   "status": 4
+  },
+  {
+   "script": "main() { false; }\nset -E\ntrap \"echo caught\" ERR\nmain",
+   "output": "caught\ncaught\n",
+   "status": 1
+  }
+ ]
+}

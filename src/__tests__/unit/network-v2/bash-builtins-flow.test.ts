@@ -38,7 +38,7 @@ describe('exit builtin', () => {
   it('should handle negative exit codes', () => {
     const e = catchSignal('exit', ['-1']);
     expect(e).toBeInstanceOf(ExitSignal);
-    expect((e as ExitSignal).exitCode).toBe(-1);
+    expect((e as ExitSignal).exitCode).toBe(255);
   });
 });
 
@@ -78,7 +78,7 @@ describe('break builtin', () => {
   it('should error with non-numeric argument', () => {
     const result = run('break', ['abc']);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('numeric argument required');
+    expect(result.stderr).toContain('numeric argument required');
   });
 
   it('should error with 0 or negative', () => {
@@ -103,7 +103,7 @@ describe('continue builtin', () => {
   it('should error with non-numeric argument', () => {
     const result = run('continue', ['abc']);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('numeric argument required');
+    expect(result.stderr).toContain('numeric argument required');
   });
 
   it('should error with 0 or negative', () => {

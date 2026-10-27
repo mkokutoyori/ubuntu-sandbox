@@ -160,6 +160,7 @@ export function parseSignalArg(token: string): Signal | null {
 export interface KillResult {
   output: string;
   exitCode: number;
+  stderr?: string;
 }
 
 export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
@@ -191,11 +192,11 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
       if (a !== '-0') i++;
     } else if (a === '-s' || a === '-n') {
       const sig = parseSignalArg(args[++i] || '');
-      if (!sig) return { output: `kill: ${args[i]}: invalid signal specification`, exitCode: 1 };
+      if (!sig) return { output: '', stderr: `kill: ${args[i]}: invalid signal specification\n`, exitCode: 1 };
       signal = sig;
     } else if (a.startsWith('-') && a.length > 1) {
       const sig = parseSignalArg(a);
-      if (!sig) return { output: `kill: ${a.slice(1)}: invalid signal specification`, exitCode: 1 };
+      if (!sig) return { output: '', stderr: `kill: ${a.slice(1)}: invalid signal specification\n`, exitCode: 1 };
       signal = sig;
     } else {
       pidArgs.push(a);
@@ -265,7 +266,7 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
       exitCode = 1;
     }
   }
-  return { output: errors.join('\n'), exitCode };
+  return { output: '', exitCode, ...(errors.length === 0 ? {} : { stderr: `${errors.join('\n')}\n` }) };
 }
 
 // ─── pidof / pgrep / pkill ────────────────────────────────────────────

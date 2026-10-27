@@ -1,73 +1,450 @@
-/**
- * Expansion — Word expansion for the bash interpreter.
- *
- * Handles:
- * - Variable expansion ($VAR, ${VAR}, ${VAR:-default}, etc.)
- * - Command substitution $(cmd) and `cmd` (delegates to interpreter)
- * - Arithmetic expansion $((expr))
- * - Quote removal (single/double quotes)
- * - Glob expansion (basic *, ?, [...]) — deferred to filesystem
- *
- * Does NOT handle tilde expansion or brace expansion (bash-specific
- * features that are less common in network simulator scripts).
- */
-
-import type { Word, WordPart } from '@/bash/parser/ASTNode';
+import type { Word } from '@/bash/parser/ASTNode';
+import { hasMagic } from '@/network/devices/linux/fs/Glob';
 import type { Environment } from './Environment';
-import { ExpansionError, ArithmeticError } from '@/bash/errors/BashError';
+import { evaluateArithmeticExpression } from './Arithmetic';
+import { expandParameter, BashRuntimeError } from './ParameterExpansion';
+import type { ParameterHost, ParameterResult } from './ParameterExpansion';
+import { isShellOptionEnabled } from './ShellOptions';
+import { closingBacktick, closingBrace, closingParenthesis } from '@/bash/lexer/Spans';
 
-/** Callback for executing command substitutions. */
+export { BashRuntimeError } from './ParameterExpansion';
+
 export type CommandSubstitutionFn = (command: string) => string;
 export type HomeForFn = (user: string) => string | null;
 
-/**
- * Expand a Word AST node into its final string value.
- */
-/**
- * Bash tilde expansion. Applied to LiteralWord values that start with
- * `~`, before any other expansion. Forms:
- *   `~`             → $HOME
- *   `~/path`        → $HOME + '/path'
- *   `~user`         → that user's $HOME (via `homeFor`)
- *   `~user/path`    → user's home + '/path'
- *   `~+` / `~-`     → $PWD / $OLDPWD
- * When no expansion applies (unknown user, no homeFor, `~` mid-word)
- * the literal is returned unchanged.
- */
-function expandTilde(s: string, env: Environment, homeFor?: HomeForFn): string {
-  if (!s.startsWith('~')) return s;
-  // End of the tilde-prefix is the first `/` or `:` (PATH-style) or EOS.
-  const slash = s.indexOf('/');
-  const head = slash < 0 ? s : s.slice(0, slash);
-  const tail = slash < 0 ? '' : s.slice(slash);
-  const userPart = head.slice(1);
-  if (userPart === '') {
-    const home = env.get('HOME');
-    if (home === undefined) return s;
-    return home + tail;
-  }
-  if (userPart === '+') {
-    const pwd = env.get('PWD');
-    return pwd === undefined ? s : pwd + tail;
-  }
-  if (userPart === '-') {
-    const oldpwd = env.get('OLDPWD');
-    return oldpwd === undefined ? s : oldpwd + tail;
-  }
-  if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(userPart)) return s;
-  const home = homeFor?.(userPart);
-  if (home == null) return s;
-  return home + tail;
+export interface GlobOptions {
+  readonly dotglob: boolean;
+  readonly nocaseglob: boolean;
+  readonly globstar: boolean;
 }
 
-/** Strip `\<ch>` → `<ch>` (quote removal for shell-style escapes). */
-function stripBackslashEscapes(s: string): string {
+export type GlobFn = (pattern: string, options: GlobOptions) => string[] | null;
+
+interface Context {
+  readonly env: Environment;
+  readonly execCmd?: CommandSubstitutionFn;
+  readonly homeFor?: HomeForFn;
+}
+
+const DEFAULT_IFS = ' \t\n';
+const IFS_WHITESPACE = ' \t\n';
+const GLOB_METACHARACTERS = /[*?[\]\\]/g;
+
+function escapeGlob(text: string): string {
+  return text.replace(GLOB_METACHARACTERS, '\\$&');
+}
+
+function fieldSeparators(env: Environment): string {
+  return env.get('IFS') ?? DEFAULT_IFS;
+}
+
+function joinCharacter(env: Environment): string {
+  const ifs = env.get('IFS');
+  return ifs === undefined ? ' ' : ifs.slice(0, 1);
+}
+
+function expandTilde(source: string, ctx: Context): string {
+  if (!source.startsWith('~')) return source;
+  const slash = source.indexOf('/');
+  const head = slash < 0 ? source : source.slice(0, slash);
+  const tail = slash < 0 ? '' : source.slice(slash);
+  const user = head.slice(1);
+  const { env } = ctx;
+  if (user === '') {
+    const home = env.get('HOME');
+    return home === undefined ? source : home + tail;
+  }
+  if (user === '+') return (env.get('PWD') ?? source) + (env.get('PWD') === undefined ? '' : tail);
+  if (user === '-') return (env.get('OLDPWD') ?? source) + (env.get('OLDPWD') === undefined ? '' : tail);
+  if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(user)) return source;
+  const home = ctx.homeFor?.(user);
+  return home == null ? source : home + tail;
+}
+
+function hostFor(ctx: Context): ParameterHost {
+  return {
+    env: ctx.env,
+    arithmetic: (expression) => evaluateArithmetic(expression, ctx.env, ctx.execCmd),
+    operand: (text) => expandOperand(text, ctx, false),
+    pattern: (text) => expandOperand(text, ctx, true),
+    option: (name) => isShellOptionEnabled(ctx.env, name),
+  };
+}
+
+function commandOutput(command: string, ctx: Context): string {
+  return ctx.execCmd === undefined ? '' : ctx.execCmd(command).replace(/\n+$/, '');
+}
+
+interface Scanned {
+  readonly result: ParameterResult;
+  readonly end: number;
+}
+
+function arithmeticEnd(text: string, open: number): number {
+  let depth = 0;
+  for (let index = open + 2; index < text.length; index++) {
+    if (text[index] === '(') depth++;
+    else if (text[index] === ')') {
+      if (depth > 0) depth--;
+      else return text[index + 1] === ')' ? index : -1;
+    }
+  }
+  return -1;
+}
+
+function scanDollar(text: string, at: number, ctx: Context): Scanned | null {
+  const next = text[at + 1];
+  if (next === undefined) return null;
+  if (next === '(' && text[at + 2] === '(') {
+    const end = arithmeticEnd(text, at + 1);
+    if (end >= 0) {
+      const value = evaluateArithmetic(text.slice(at + 3, end), ctx.env, ctx.execCmd);
+      return { result: { kind: 'text', text: value }, end: end + 2 };
+    }
+  }
+  if (next === '(') {
+    const close = closingParenthesis(text, at + 1);
+    if (close < 0) return null;
+    return { result: { kind: 'text', text: commandOutput(text.slice(at + 2, close), ctx) }, end: close + 1 };
+  }
+  if (next === '{') {
+    const close = closingBrace(text, at + 1);
+    if (close < 0) throw new BashRuntimeError(`${text.slice(at)}: bad substitution`);
+    return { result: expandParameter(text.slice(at + 2, close), hostFor(ctx)), end: close + 1 };
+  }
+  const identifier = /^[A-Za-z_][A-Za-z0-9_]*/.exec(text.slice(at + 1));
+  if (identifier !== null) {
+    return { result: expandParameter(identifier[0], hostFor(ctx)), end: at + 1 + identifier[0].length };
+  }
+  if (/[0-9]/.test(next) || '@*#?$!-'.includes(next)) {
+    return { result: expandParameter(next, hostFor(ctx)), end: at + 2 };
+  }
+  return null;
+}
+
+function backtickEnd(text: string, open: number): number {
+  return closingBacktick(text, open);
+}
+
+function backtickCommand(raw: string): string {
+  return raw.replace(/\\([$`\\])/g, '$1');
+}
+
+function listAsText(result: ParameterResult, env: Environment): string {
+  if (result.kind === 'text') return result.text;
+  return result.items.join(result.star ? joinCharacter(env) : ' ');
+}
+
+interface Sink {
+  text(value: string): void;
+  parameter(result: ParameterResult): void;
+}
+
+function walkDoubleQuoted(content: string, ctx: Context, sink: Sink): void {
+  let literal = '';
+  const flush = (): void => {
+    if (literal !== '') sink.text(literal);
+    literal = '';
+  };
+  for (let index = 0; index < content.length; index++) {
+    const character = content[index];
+    if (character === '\\' && index + 1 < content.length) {
+      const next = content[index + 1];
+      if ('$`"\\'.includes(next)) { literal += next; index++; continue; }
+      if (next === '\n') { index++; continue; }
+      literal += character;
+      continue;
+    }
+    if (character === '$') {
+      const scanned = scanDollar(content, index, ctx);
+      if (scanned !== null) {
+        flush();
+        sink.parameter(scanned.result);
+        index = scanned.end - 1;
+        continue;
+      }
+    }
+    if (character === '`') {
+      const end = backtickEnd(content, index);
+      if (end > 0) {
+        flush();
+        sink.text(commandOutput(backtickCommand(content.slice(index + 1, end)), ctx));
+        index = end;
+        continue;
+      }
+    }
+    literal += character;
+  }
+  flush();
+}
+
+function expandOperand(text: string, ctx: Context, pattern: boolean): string {
   let out = '';
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\' && i + 1 < s.length) { out += s[i + 1]; i++; continue; }
-    out += s[i];
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+    if (character === '\\' && index + 1 < text.length) {
+      out += pattern ? `\\${text[index + 1]}` : text[index + 1];
+      index++;
+      continue;
+    }
+    if (character === "'") {
+      const close = text.indexOf("'", index + 1);
+      if (close > 0) {
+        const quoted = text.slice(index + 1, close);
+        out += pattern ? escapeGlob(quoted) : quoted;
+        index = close;
+        continue;
+      }
+    }
+    if (character === '"') {
+      let close = index + 1;
+      while (close < text.length && text[close] !== '"') close += text[close] === '\\' ? 2 : 1;
+      if (close < text.length) {
+        let quoted = '';
+        walkDoubleQuoted(text.slice(index + 1, close), ctx, {
+          text: (value) => { quoted += value; },
+          parameter: (result) => { quoted += listAsText(result, ctx.env); },
+        });
+        out += pattern ? escapeGlob(quoted) : quoted;
+        index = close;
+        continue;
+      }
+    }
+    if (character === '$') {
+      const scanned = scanDollar(text, index, ctx);
+      if (scanned !== null) {
+        out += listAsText(scanned.result, ctx.env);
+        index = scanned.end - 1;
+        continue;
+      }
+    }
+    if (character === '`') {
+      const end = backtickEnd(text, index);
+      if (end > 0) {
+        out += commandOutput(backtickCommand(text.slice(index + 1, end)), ctx);
+        index = end;
+        continue;
+      }
+    }
+    if (character === '~' && index === 0) {
+      const slash = text.indexOf('/');
+      const head = slash < 0 ? text : text.slice(0, slash);
+      const expanded = expandTilde(head, ctx);
+      out += expanded;
+      index = head.length - 1;
+      continue;
+    }
+    out += character;
   }
   return out;
+}
+
+interface Segment {
+  readonly text: string;
+  readonly active: boolean;
+}
+
+interface Field {
+  readonly segments: Segment[];
+  keep: boolean;
+}
+
+class Fields {
+  private readonly fields: Field[] = [];
+  private current: Field | null = null;
+
+  constructor(private readonly env: Environment, private readonly splitting: boolean) {}
+
+  private open(): Field {
+    if (this.current === null) {
+      this.current = { segments: [], keep: false };
+      this.fields.push(this.current);
+    }
+    return this.current;
+  }
+
+  private end(): void {
+    this.current = null;
+  }
+
+  literal(text: string): void {
+    if (text !== '') this.open().segments.push({ text, active: true });
+  }
+
+  quoted(text: string): void {
+    const field = this.open();
+    field.keep = true;
+    if (text !== '') field.segments.push({ text, active: false });
+  }
+
+  quotedList(items: readonly string[]): void {
+    if (!this.splitting) {
+      this.quoted(items.join(' '));
+      return;
+    }
+    items.forEach((item, index) => {
+      if (index > 0) this.end();
+      this.quoted(item);
+    });
+  }
+
+  splittable(text: string): void {
+    if (text === '') return;
+    const separators = fieldSeparators(this.env);
+    if (!this.splitting || separators === '') {
+      this.literal(text);
+      return;
+    }
+    const whitespace = (character: string): boolean => IFS_WHITESPACE.includes(character) && separators.includes(character);
+    const separator = (character: string): boolean => separators.includes(character);
+    let buffer = '';
+    const flush = (): void => {
+      this.literal(buffer);
+      buffer = '';
+    };
+    for (let index = 0; index < text.length; index++) {
+      const character = text[index];
+      if (!separator(character)) {
+        buffer += character;
+        continue;
+      }
+      flush();
+      let cursor = index;
+      if (whitespace(character)) {
+        while (cursor < text.length && whitespace(text[cursor])) cursor++;
+        let delimited = false;
+        if (cursor < text.length && separator(text[cursor]) && !whitespace(text[cursor])) {
+          delimited = true;
+          cursor++;
+          while (cursor < text.length && whitespace(text[cursor])) cursor++;
+        }
+        if (this.current !== null) this.end();
+        else if (delimited) this.emptyField();
+      } else {
+        cursor++;
+        while (cursor < text.length && whitespace(text[cursor])) cursor++;
+        if (this.current !== null) this.end();
+        else this.emptyField();
+      }
+      index = cursor - 1;
+    }
+    flush();
+  }
+
+  private emptyField(): void {
+    this.fields.push({ segments: [], keep: true });
+  }
+
+  splittableList(items: readonly string[]): void {
+    items.forEach((item, index) => {
+      if (index > 0) this.end();
+      this.splittable(item);
+    });
+  }
+
+  parameter(result: ParameterResult, quoted: boolean): void {
+    if (result.kind === 'text') {
+      if (quoted) this.quoted(result.text);
+      else this.splittable(result.text);
+      return;
+    }
+    if (!result.star) {
+      if (quoted) this.quotedList(result.items);
+      else this.splittableList(result.items);
+      return;
+    }
+    const joined = result.items.join(joinCharacter(this.env));
+    if (quoted) this.quoted(joined);
+    else this.splittable(joined);
+  }
+
+  words(): Field[] {
+    return this.fields.filter((field) => field.keep || field.segments.length > 0);
+  }
+
+  text(): string {
+    return this.fields.map((field) => field.segments.map((segment) => segment.text).join('')).join('');
+  }
+
+  pattern(): string {
+    return this.fields.map(globPattern).join('');
+  }
+}
+
+function variableBody(name: string, modifier: string | undefined): string {
+  return modifier === '#' ? `#${name}` : name + (modifier ?? '');
+}
+
+function addLiteral(raw: string, fields: Fields): void {
+  let run = '';
+  for (let index = 0; index < raw.length; index++) {
+    if (raw[index] === '\\' && index + 1 < raw.length) {
+      if (run !== '') fields.literal(run);
+      run = '';
+      fields.quoted(raw[index + 1]);
+      index++;
+      continue;
+    }
+    run += raw[index];
+  }
+  if (run !== '') fields.literal(run);
+}
+
+function doubleQuotedText(word: Extract<Word, { type: 'DoubleQuotedWord' }>, ctx: Context, fields: Fields): void {
+  fields.quoted('');
+  for (const part of word.parts) {
+    const sink: Sink = {
+      text: (value) => fields.quoted(value),
+      parameter: (result) => fields.parameter(result, true),
+    };
+    switch (part.type) {
+      case 'text':
+        walkDoubleQuoted(part.value, ctx, sink);
+        break;
+      case 'variable':
+        sink.parameter(expandParameter(variableBody(part.name, part.modifier), hostFor(ctx)));
+        break;
+      case 'special':
+        sink.parameter(expandParameter(part.name, hostFor(ctx)));
+        break;
+      case 'command':
+        sink.text(commandOutput(part.command, ctx));
+        break;
+      case 'arithmetic':
+        sink.text(evaluateArithmetic(part.expression, ctx.env, ctx.execCmd));
+        break;
+    }
+  }
+}
+
+function addWord(word: Word, ctx: Context, fields: Fields, leading: boolean): void {
+  switch (word.type) {
+    case 'LiteralWord': {
+      const raw = leading && word.value.startsWith('~') ? expandTilde(word.value, ctx) : word.value;
+      addLiteral(raw, fields);
+      return;
+    }
+    case 'SingleQuotedWord':
+      fields.quoted(word.value);
+      return;
+    case 'DoubleQuotedWord':
+      doubleQuotedText(word, ctx, fields);
+      return;
+    case 'VariableRef':
+      fields.parameter(expandParameter(variableBody(word.name, word.modifier), hostFor(ctx)), false);
+      return;
+    case 'CommandSubstitution':
+      fields.splittable(commandOutput(word.backtick ? backtickCommand(word.command) : word.command, ctx));
+      return;
+    case 'ArithmeticSubstitution':
+      fields.splittable(evaluateArithmetic(word.expression, ctx.env, ctx.execCmd));
+      return;
+    case 'CompoundWord':
+      word.parts.forEach((part, index) => addWord(part, ctx, fields, leading && index === 0));
+      return;
+    default:
+      return;
+  }
 }
 
 export function expandWord(
@@ -76,40 +453,171 @@ export function expandWord(
   execCmd?: CommandSubstitutionFn,
   homeFor?: HomeForFn,
 ): string {
-  switch (word.type) {
-    case 'LiteralWord':
-      return expandTilde(stripBackslashEscapes(word.value), env, homeFor);
-    case 'SingleQuotedWord':
-      return word.value;
-    case 'DoubleQuotedWord':
-      return expandDoubleQuotedParts(word.parts, env, execCmd);
-    case 'VariableRef':
-      return expandVariable(word.name, word.braced, word.modifier, env);
-    case 'CommandSubstitution':
-      return execCmd ? execCmd(word.command).trimEnd() : '';
-    case 'ArithmeticSubstitution':
-      return evaluateArithmetic(word.expression, env);
-    case 'CompoundWord':
-      return word.parts.map((p, i) =>
-        // Tilde expansion only applies to the LEADING literal of a
-        // compound word (matches bash: `foo~bar` keeps the literal).
-        i === 0 ? expandWord(p, env, execCmd, homeFor)
-                : expandWord(p, env, execCmd)
-      ).join('');
-    default:
-      return '';
-  }
+  const fields = new Fields(env, false);
+  addWord(word, { env, execCmd, homeFor }, fields, true);
+  return fields.text();
 }
 
-/**
- * Expand an array of Words (e.g. command arguments).
- */
-/**
- * Glob-expand `pattern` against the live filesystem. The callback owns
- * cwd-resolution; returning `null` means "no glob support" and the
- * interpreter keeps the literal (bash `nullglob`-off semantics).
- */
-export type GlobFn = (pattern: string) => string[] | null;
+export function expandText(
+  text: string,
+  env: Environment,
+  execCmd?: CommandSubstitutionFn,
+  homeFor?: HomeForFn,
+): string {
+  return expandOperand(text, { env, execCmd, homeFor }, false);
+}
+
+export function expandPattern(
+  word: Word,
+  env: Environment,
+  execCmd?: CommandSubstitutionFn,
+  homeFor?: HomeForFn,
+): string {
+  const fields = new Fields(env, false);
+  addWord(word, { env, execCmd, homeFor }, fields, true);
+  return fields.pattern();
+}
+
+type Atom = { readonly kind: 'char'; readonly character: string } | { readonly kind: 'raw'; readonly text: string } | { readonly kind: 'part'; readonly word: Word };
+
+function toAtoms(word: Word): Atom[] {
+  if (word.type === 'CompoundWord') return word.parts.flatMap(toAtoms);
+  if (word.type !== 'LiteralWord') return [{ kind: 'part', word }];
+  const atoms: Atom[] = [];
+  for (let index = 0; index < word.value.length; index++) {
+    if (word.value[index] === '\\' && index + 1 < word.value.length) {
+      atoms.push({ kind: 'raw', text: word.value.slice(index, index + 2) });
+      index++;
+    } else {
+      atoms.push({ kind: 'char', character: word.value[index] });
+    }
+  }
+  return atoms;
+}
+
+function fromAtoms(atoms: readonly Atom[]): Word {
+  const parts: Word[] = [];
+  let run = '';
+  const flush = (): void => {
+    if (run !== '') parts.push({ type: 'LiteralWord', value: run });
+    run = '';
+  };
+  for (const atom of atoms) {
+    if (atom.kind === 'char') run += atom.character;
+    else if (atom.kind === 'raw') run += atom.text;
+    else { flush(); parts.push(atom.word); }
+  }
+  flush();
+  if (parts.length === 0) return { type: 'LiteralWord', value: '' };
+  return parts.length === 1 ? parts[0] : { type: 'CompoundWord', parts };
+}
+
+const isChar = (atom: Atom, character: string): boolean => atom.kind === 'char' && atom.character === character;
+
+function sequenceItems(body: string): string[] | null {
+  const numeric = /^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$/.exec(body);
+  if (numeric !== null) {
+    const [, from, to, stepText] = numeric;
+    const width = (/^-?0\d/.test(from) || /^-?0\d/.test(to)) ? Math.max(from.replace('-', '').length, to.replace('-', '').length) : 0;
+    const start = Number(from);
+    const finish = Number(to);
+    let step = Math.abs(Number(stepText ?? '1')) || 1;
+    step = start <= finish ? step : -step;
+    const items: string[] = [];
+    for (let value = start; step > 0 ? value <= finish : value >= finish; value += step) {
+      const digits = String(Math.abs(value)).padStart(width, '0');
+      items.push(value < 0 ? `-${digits}` : digits);
+    }
+    return items;
+  }
+  const letters = /^([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?$/.exec(body);
+  if (letters !== null) {
+    const start = letters[1].charCodeAt(0);
+    const finish = letters[2].charCodeAt(0);
+    let step = Math.abs(Number(letters[3] ?? '1')) || 1;
+    step = start <= finish ? step : -step;
+    const items: string[] = [];
+    for (let code = start; step > 0 ? code <= finish : code >= finish; code += step) items.push(String.fromCharCode(code));
+    return items;
+  }
+  return null;
+}
+
+function braceExpand(atoms: readonly Atom[]): Atom[][] {
+  for (let open = 0; open < atoms.length; open++) {
+    if (!isChar(atoms[open], '{') || (open > 0 && isChar(atoms[open - 1], '$'))) continue;
+    let depth = 0;
+    let close = -1;
+    const commas: number[] = [];
+    for (let index = open; index < atoms.length; index++) {
+      if (isChar(atoms[index], '{')) depth++;
+      else if (isChar(atoms[index], '}') && --depth === 0) { close = index; break; }
+      else if (isChar(atoms[index], ',') && depth === 1) commas.push(index);
+    }
+    if (close < 0) continue;
+    const prefix = atoms.slice(0, open);
+    const suffix = atoms.slice(close + 1);
+    let alternatives: Atom[][] | null = null;
+    if (commas.length > 0) {
+      const bounds = [open, ...commas, close];
+      alternatives = bounds.slice(0, -1).map((from, index) => [...atoms.slice(from + 1, bounds[index + 1])]);
+    } else {
+      const body = atoms.slice(open + 1, close);
+      if (body.every((atom) => atom.kind === 'char')) {
+        const items = sequenceItems(body.map((atom) => (atom as { character: string }).character).join(''));
+        if (items !== null) alternatives = items.map((item) => [...item].map((character): Atom => ({ kind: 'char', character })));
+      }
+    }
+    if (alternatives === null) continue;
+    const results: Atom[][] = [];
+    for (const alternative of alternatives) {
+      for (const inner of braceExpand(alternative)) {
+        for (const tail of braceExpand(suffix)) results.push([...prefix, ...inner, ...tail]);
+      }
+    }
+    return results;
+  }
+  return [[...atoms]];
+}
+
+function braceAlternatives(word: Word, env: Environment): Word[] {
+  const atoms = toAtoms(word);
+  if (!atoms.some((atom) => isChar(atom, '{'))) return [word];
+  const expanded = braceExpand(atoms);
+  return expanded.length === 1 && expanded[0].length === atoms.length ? [word] : expanded.map(fromAtoms);
+}
+
+function globPattern(field: Field): string {
+  return field.segments.map((segment) => (segment.active ? segment.text : escapeGlob(segment.text))).join('');
+}
+
+function plainText(field: Field): string {
+  return field.segments.map((segment) => segment.text).join('');
+}
+
+function unescapedGlob(pattern: string): string {
+  return pattern.replace(/\\(.)/gs, '$1');
+}
+
+function globOptions(env: Environment): GlobOptions {
+  return {
+    dotglob: isShellOptionEnabled(env, 'dotglob'),
+    nocaseglob: isShellOptionEnabled(env, 'nocaseglob'),
+    globstar: isShellOptionEnabled(env, 'globstar'),
+  };
+}
+
+function globField(field: Field, env: Environment, glob: GlobFn | undefined): string[] {
+  const text = plainText(field);
+  if (glob === undefined || isShellOptionEnabled(env, 'noglob')) return [text];
+  const pattern = globPattern(field);
+  if (!hasMagic(pattern)) return [text];
+  const hits = glob(pattern, globOptions(env));
+  if (hits === null) return [text];
+  if (hits.length > 0) return hits;
+  if (isShellOptionEnabled(env, 'failglob')) throw new BashRuntimeError(`no match: ${unescapedGlob(pattern)}`);
+  return isShellOptionEnabled(env, 'nullglob') ? [] : [text];
+}
 
 export function expandWords(
   words: Word[],
@@ -118,1289 +626,20 @@ export function expandWords(
   glob?: GlobFn,
   homeFor?: HomeForFn,
 ): string[] {
+  const ctx: Context = { env, execCmd, homeFor };
   const result: string[] = [];
-  for (const w of words) {
-    const expanded = expandWord(w, env, execCmd, homeFor);
-    // ── Brace expansion ──────────────────────────────────────────
-    // Runs BEFORE word splitting / globbing per bash precedence.
-    // Covers numeric ranges (`{1..5}`, `{0..10..2}`), comma lists
-    // (`{a,b,c}`), prefix/suffix concatenation (`pre{x,y}post`), and
-    // nested forms (`{a,b}{1,2}` → `a1 a2 b1 b2`).
-    if (isWordFullyUnquoted(w)) {
-      const exp = expandBraces(expanded);
-      if (exp.length > 1 || (exp.length === 1 && exp[0] !== expanded)) {
-        for (const e of exp) result.push(...maybeGlob(e, w, glob));
-        continue;
-      }
+  for (const word of words) {
+    for (const alternative of braceAlternatives(word, env)) {
+      const fields = new Fields(env, true);
+      addWord(alternative, ctx, fields, true);
+      for (const field of fields.words()) result.push(...globField(field, env, glob));
     }
-    if (shouldWordSplit(w) && /[ \t\n]/.test(expanded)) {
-      // Word splitting: unquoted variable/command expansions are split on IFS (whitespace)
-      const parts = expanded.split(/\s+/).filter(Boolean);
-      for (const part of parts) result.push(...maybeGlob(part, w, glob));
-      continue;
-    }
-    // Quoted array splatter: `"${arr[@]}"` injects U+0001 between
-    // elements so we can produce one word per element here WITHOUT
-    // triggering IFS splitting on whitespace inside elements. The
-    // sentinel is stripped before the values reach the caller.
-    if (expanded.includes(ARRAY_SEP)) {
-      for (const piece of expanded.split(ARRAY_SEP)) {
-        result.push(...maybeGlob(piece, w, glob));
-      }
-      continue;
-    }
-    result.push(...maybeGlob(expanded, w, glob));
   }
   return result;
 }
 
-/** Control char that joins array elements during expansion. */
-export const ARRAY_SEP = '';
-
-/**
- * Bash brace expansion. Order of recognition (per bash):
- *   1. `{N..M}` / `{N..M..STEP}`   numeric range
- *   2. `{a..z}`                    char range
- *   3. `{a,b,c}`                   comma list, recursive
- * Concatenation with prefix and suffix is automatic: `pre{x,y}post`
- * → `prexpost preypost`. Multiple groups multiply across the word:
- * `{a,b}{1,2}` → `a1 a2 b1 b2`. A `{single}` group without a comma
- * or `..` is preserved literally — that matches real bash.
- */
-function expandBraces(input: string): string[] {
-  const open = findBraceStart(input);
-  if (open < 0) return [input];
-  const close = findMatchingBrace(input, open);
-  if (close < 0) return [input];
-
-  const prefix = input.slice(0, open);
-  const body = input.slice(open + 1, close);
-  const suffix = input.slice(close + 1);
-
-  const expanded = expandBraceBody(body);
-  if (!expanded) {
-    const tails = expandBraces(suffix);
-    return tails.map(t => prefix + '{' + body + '}' + t);
-  }
-  const out: string[] = [];
-  for (const e of expanded) {
-    for (const tail of expandBraces(suffix)) {
-      out.push(prefix + e + tail);
-    }
-  }
-  return out;
-}
-
-function findBraceStart(s: string): number {
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\') { i++; continue; }
-    if (s[i] === '{') return i;
-  }
-  return -1;
-}
-
-function findMatchingBrace(s: string, open: number): number {
-  let depth = 1;
-  for (let i = open + 1; i < s.length; i++) {
-    if (s[i] === '\\') { i++; continue; }
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}') { depth--; if (depth === 0) return i; }
-  }
-  return -1;
-}
-
-function expandBraceBody(body: string): string[] | null {
-  const range = body.match(/^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$/);
-  if (range) {
-    const start = Number.parseInt(range[1], 10);
-    const end = Number.parseInt(range[2], 10);
-    const step = Math.abs(Number.parseInt(range[3] ?? '1', 10)) || 1;
-    const dir = start <= end ? 1 : -1;
-    const out: string[] = [];
-    for (let i = start; dir > 0 ? i <= end : i >= end; i += dir * step) out.push(String(i));
-    return out;
-  }
-  const charRange = body.match(/^([A-Za-z])\.\.([A-Za-z])$/);
-  if (charRange) {
-    const a = charRange[1].charCodeAt(0);
-    const b = charRange[2].charCodeAt(0);
-    const dir = a <= b ? 1 : -1;
-    const out: string[] = [];
-    for (let i = a; dir > 0 ? i <= b : i >= b; i += dir) out.push(String.fromCharCode(i));
-    return out;
-  }
-  const segments = splitTopLevelCommas(body);
-  if (segments.length <= 1) return null;
-  const out: string[] = [];
-  for (const seg of segments) out.push(...expandBraces(seg));
-  return out;
-}
-
-function splitTopLevelCommas(s: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let buf = '';
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '\\' && i + 1 < s.length) { buf += c + s[++i]; continue; }
-    if (c === '{') { depth++; buf += c; continue; }
-    if (c === '}') { depth--; buf += c; continue; }
-    if (c === ',' && depth === 0) { out.push(buf); buf = ''; continue; }
-    buf += c;
-  }
-  out.push(buf);
-  return out;
-}
-
-/**
- * Apply glob expansion only when the original word carries at least one
- * UN-escaped, UN-quoted meta-character. Bash semantics: a no-match
- * keeps the literal pattern.
- */
-function maybeGlob(value: string, w: Word, glob?: GlobFn): string[] {
-  if (!glob) return [value];
-  if (!hasUnescapedMeta(w) && !(hasUnquotedExpansion(w) && /[*?[]/.test(value))) return [value];
-  const hits = glob(value);
-  if (hits === null || hits.length === 0) return [value];
-  return hits;
-}
-
-/** True when the word contains an unquoted, unescaped `*`/`?`/`[`. */
-/** True when no part of the word came from quotes (used for brace expansion). */
-function isWordFullyUnquoted(w: Word): boolean {
-  switch (w.type) {
-    case 'SingleQuotedWord':
-    case 'DoubleQuotedWord':
-      return false;
-    case 'CompoundWord':
-      return w.parts.every(isWordFullyUnquoted);
-    default:
-      return true;
-  }
-}
-
-function hasUnescapedMeta(w: Word): boolean {
-  switch (w.type) {
-    case 'SingleQuotedWord':
-    case 'DoubleQuotedWord':
-      return false;
-    case 'LiteralWord':
-      return literalHasUnescapedMeta(w.value);
-    case 'CompoundWord':
-      return w.parts.some(hasUnescapedMeta);
-    case 'VariableRef':
-    case 'CommandSubstitution':
-    case 'ArithmeticSubstitution':
-      // Expansions undergo word-splitting but not glob in our model
-      // (matches bash without `set -f` only for cases without meta).
-      return false;
-    default:
-      return false;
-  }
-}
-
-function hasUnquotedExpansion(w: Word): boolean {
-  switch (w.type) {
-    case 'VariableRef':
-    case 'CommandSubstitution':
-      return true;
-    case 'CompoundWord':
-      return w.parts.some(hasUnquotedExpansion);
-    default:
-      return false;
-  }
-}
-
-function literalHasUnescapedMeta(raw: string): boolean {
-  for (let i = 0; i < raw.length; i++) {
-    if (raw[i] === '\\') { i++; continue; }
-    if (raw[i] === '*' || raw[i] === '?' || raw[i] === '[') return true;
-  }
-  return false;
-}
-
-function transformVariable(name: string, op: string, env: Environment): string {
-  const value = env.get(name) ?? '';
-  switch (op) {
-    case 'Q': return `'${value.replace(/'/g, `'\\''`)}'`;
-    case 'U': return value.toUpperCase();
-    case 'L': return value.toLowerCase();
-    case 'u': return value.charAt(0).toUpperCase() + value.slice(1);
-    case 'E': return value;
-    default:
-      throw new BashRuntimeError(`\${${name}@${op}}: bad substitution`);
-  }
-}
-
-/** Determine if a word should undergo IFS word splitting (unquoted expansions). */
-function shouldWordSplit(w: Word): boolean {
-  if (w.type === 'VariableRef' || w.type === 'CommandSubstitution') return true;
-  if (w.type === 'CompoundWord') {
-    return w.parts.some(p => p.type === 'VariableRef' || p.type === 'CommandSubstitution');
-  }
-  return false;
-}
-
-// ─── Variable Expansion ─────────────────────────────────────────
-
-/**
- * Convert a bash glob pattern (used by parameter-expansion `#`/`%`/`/`
- * operators) into a JS regex source. Supports `*` `?` `[…]` and
- * literal-escapes everything else. Anchored by the caller via `^`/`$`.
- */
-const EXTGLOB_OPS = new Set(['?', '*', '+', '@', '!']);
-
-function globToRegexSource(pattern: string): string {
-  const [src] = convertGlob(pattern, 0);
-  return src;
-}
-
-function convertGlob(pattern: string, start: number, stopAtParen = false): [string, number] {
-  let out = '';
-  let i = start;
-  while (i < pattern.length) {
-    const c = pattern[i];
-    if (stopAtParen && (c === ')' || c === '|')) break;
-    if (EXTGLOB_OPS.has(c) && pattern[i + 1] === '(') {
-      const [alts, next] = convertGlobAlternatives(pattern, i + 2);
-      out += extglobToRegex(c, alts);
-      i = next;
-      continue;
-    }
-    if (c === '*') { out += '.*'; i++; continue; }
-    if (c === '?') { out += '.';  i++; continue; }
-    if (c === '[') {
-      let cls = '[';
-      i++;
-      if (pattern[i] === '!' || pattern[i] === '^') { cls += '^'; i++; }
-      while (i < pattern.length && pattern[i] !== ']') { cls += pattern[i]; i++; }
-      cls += ']';
-      out += cls;
-      i++;
-      continue;
-    }
-    if (/[.+(){}^$|\\]/.test(c)) out += '\\' + c;
-    else out += c;
-    i++;
-  }
-  return [out, i];
-}
-
-function convertGlobAlternatives(pattern: string, start: number): [string[], number] {
-  const alts: string[] = [];
-  let i = start;
-  for (;;) {
-    const [branch, next] = convertGlob(pattern, i, true);
-    alts.push(branch);
-    i = next;
-    if (pattern[i] === '|') { i++; continue; }
-    if (pattern[i] === ')') { i++; break; }
-    break;
-  }
-  return [alts, i];
-}
-
-function extglobToRegex(op: string, alts: string[]): string {
-  const body = alts.join('|');
-  switch (op) {
-    case '?': return `(?:${body})?`;
-    case '*': return `(?:${body})*`;
-    case '+': return `(?:${body})+`;
-    case '@': return `(?:${body})`;
-    case '!': return `(?:(?!(?:${body})).)*`;
-    default:  return '';
-  }
-}
-
-/**
- * Bash parameter expansion. Supports the full POSIX/Bash menagerie:
- *
- *   ${name}              plain                ${#name}            length
- *   ${name:-w}  ${name-w}                     use default
- *   ${name:=w}  ${name=w}                     assign default
- *   ${name:+w}  ${name+w}                     use alternative
- *   ${name:?w}  ${name?w}                     error if unset
- *   ${name:n}   ${name:n:m}                   substring (negative ⇒ tail)
- *   ${name#pat} ${name##pat}                  strip prefix (short/long)
- *   ${name%pat} ${name%%pat}                  strip suffix (short/long)
- *   ${name/pat/repl}   ${name//pat/repl}      replace first / all
- *   ${name/#pat/repl}  ${name/%pat/repl}      anchored replace
- *   ${name^}   ${name^^}                      upper-case (first / all)
- *   ${name,}   ${name,,}                      lower-case (first / all)
- */
-function expandVariable(
-  name: string,
-  braced: boolean,
-  modifier: string | undefined,
-  env: Environment,
-): string {
-  // ── Name enumeration by prefix: `${!prefix*}` / `${!prefix@}` ──────
-  if (braced && !modifier && name.startsWith('!') && (name.endsWith('*') || name.endsWith('@'))) {
-    const prefix = name.slice(1, -1);
-    if (/^[A-Za-z_][A-Za-z_0-9]*$/.test(prefix) || prefix === '') {
-      const names = env.namesWithPrefix(prefix);
-      return name.endsWith('@') ? names.join(ARRAY_SEP) : names.join(' ');
-    }
-  }
-
-  // ── Indexed-array access: `${arr[expr]}` ──────────────────────────
-  // The name carries the subscript through the parser as part of the
-  // modifier (e.g. `[0]`), with optional further modifiers chained
-  // after (`[0]:offset`, `[@]/pat/repl`, …). We resolve the subscript
-  // first, then either return the element string directly or feed the
-  // sliced value back through the regular modifier pipeline.
-  if (modifier && modifier.startsWith('[')) {
-    const close = matchingBracket(modifier);
-    if (close > 0) {
-      const subscript = modifier.slice(1, close);
-      const restMod = modifier.slice(close + 1) || undefined;
-      return expandArrayAccess(name, subscript, restMod, env);
-    }
-  }
-
-  if (!modifier) {
-    // Bare `$arr` reads element 0 when an array exists, mirroring bash.
-    const arr = env.getArray(name);
-    if (arr !== undefined) return arr[0] ?? '';
-    const v = env.get(name);
-    if (v === undefined && isNounsetActive(env)) {
-      throw new BashRuntimeError(`${name}: unbound variable`);
-    }
-    return v ?? '';
-  }
-
-  if (modifier.startsWith('@')) {
-    return transformVariable(name, modifier.slice(1), env);
-  }
-
-  // ${#name} — length; ${#name[@]} / ${#name[*]} — array element count
-  if (modifier === '#') {
-    const arrayLen = name.match(/^(\w+)\[[@*]\]$/);
-    if (arrayLen) {
-      const arr = env.getArray(arrayLen[1]);
-      if (arr !== undefined) return String(arr.length);
-      return env.get(arrayLen[1]) !== undefined ? '1' : '0';
-    }
-    return String((env.get(name) ?? '').length);
-  }
-
-  const val = env.get(name);
-  const raw = val ?? '';
-
-  // ── Default / alternative / assign / error ────────────────────────
-  // Recognise the multi-char variants BEFORE bare `:` substring form.
-  const dm = modifier.match(/^(:[-+=?]|[-+=?])(.*)$/s);
-  if (dm) {
-    const [, op, word] = dm;
-    const isColon = op.startsWith(':');
-    const isEmpty = val === undefined || (isColon && val === '');
-    switch (op[op.length - 1]) {
-      case '-': return isEmpty ? word : raw;
-      case '=':
-        if (isEmpty) { env.set(name, word); return word; }
-        return raw;
-      case '+':
-        return val !== undefined && (!isColon || val !== '') ? word : '';
-      case '?':
-        if (isEmpty) throw new BashRuntimeError(word || `${name}: parameter null or not set`);
-        return raw;
-    }
-  }
-
-  // ── Substring: ${name:offset} / ${name:offset:length} ─────────────
-  if (modifier.startsWith(':') && /^-?\d/.test(modifier.slice(1))) {
-    const parts = modifier.slice(1).split(':');
-    const offsetRaw = Number.parseInt(parts[0], 10);
-    const lenRaw    = parts.length > 1 ? Number.parseInt(parts[1], 10) : undefined;
-    const len = lenRaw;
-    let start = offsetRaw < 0 ? Math.max(0, raw.length + offsetRaw) : offsetRaw;
-    if (start > raw.length) start = raw.length;
-    if (len === undefined) return raw.slice(start);
-    if (len < 0) {
-      const end = Math.max(start, raw.length + len);
-      return raw.slice(start, end);
-    }
-    return raw.slice(start, start + len);
-  }
-
-  // ── Prefix strip: ${name#pat} / ${name##pat} ──────────────────────
-  if (modifier.startsWith('#')) {
-    const longest = modifier.startsWith('##');
-    const pat = modifier.slice(longest ? 2 : 1);
-    if (pat === '') return raw;
-    const re = new RegExp(longest ? `^(?:${globToRegexSource(pat)})` : `^(?:${globToRegexSource(pat)}?)`);
-    return longest ? raw.replace(re, '') : stripShortestPrefix(raw, pat);
-  }
-
-  // ── Suffix strip: ${name%pat} / ${name%%pat} ──────────────────────
-  if (modifier.startsWith('%')) {
-    const longest = modifier.startsWith('%%');
-    const pat = modifier.slice(longest ? 2 : 1);
-    if (pat === '') return raw;
-    return longest ? stripLongestSuffix(raw, pat) : stripShortestSuffix(raw, pat);
-  }
-
-  // ── Pattern replacement: ${name/pat/repl}, ${name//pat/repl} ──────
-  if (modifier.startsWith('/')) {
-    const all  = modifier.startsWith('//');
-    const body = modifier.slice(all ? 2 : 1);
-    let anchor: '^' | '$' | '' = '';
-    let rest = body;
-    if (body.startsWith('#')) { anchor = '^'; rest = body.slice(1); }
-    else if (body.startsWith('%')) { anchor = '$'; rest = body.slice(1); }
-    // Split on the first unescaped '/'.
-    let pat = '', repl = '', sawSlash = false;
-    for (let i = 0; i < rest.length; i++) {
-      const c = rest[i];
-      if (!sawSlash && c === '\\' && rest[i + 1] === '/') { pat += '/'; i++; continue; }
-      if (!sawSlash && c === '/') { sawSlash = true; continue; }
-      if (sawSlash) repl += c; else pat += c;
-    }
-    if (pat === '') return raw;
-    const flags = all ? 'g' : '';
-    const src = anchor === '^' ? '^' + globToRegexSource(pat)
-              : anchor === '$' ? globToRegexSource(pat) + '$'
-              : globToRegexSource(pat);
-    try { return raw.replace(new RegExp(src, flags), repl); }
-    catch { return raw; }
-  }
-
-  // ── Case modification: ${name^}, ${name^^}, ${name,}, ${name,,} ───
-  if (modifier === '^^') return raw.toUpperCase();
-  if (modifier === ',,') return raw.toLowerCase();
-  if (modifier === '^')  return raw.length === 0 ? '' : raw[0].toUpperCase() + raw.slice(1);
-  if (modifier === ',')  return raw.length === 0 ? '' : raw[0].toLowerCase() + raw.slice(1);
-  if (modifier.startsWith('^^')) {
-    const pat = modifier.slice(2); if (pat === '') return raw.toUpperCase();
-    return raw.replace(new RegExp(globToRegexSource(pat), 'g'), (m) => m.toUpperCase());
-  }
-  if (modifier.startsWith(',,')) {
-    const pat = modifier.slice(2); if (pat === '') return raw.toLowerCase();
-    return raw.replace(new RegExp(globToRegexSource(pat), 'g'), (m) => m.toLowerCase());
-  }
-
-  return raw;
-}
-
-/** Bash runtime error thrown by `${var:?msg}` and similar guards. */
-export class BashRuntimeError extends Error {}
-
-/**
- * Position of the matching `]` for the opening `[` at index 0 of
- * `modifier`. Supports nested `[…]` (rare in practice, but legal).
- * Returns -1 when no match.
- */
-function matchingBracket(modifier: string): number {
-  let depth = 0;
-  for (let i = 0; i < modifier.length; i++) {
-    if (modifier[i] === '[') depth++;
-    else if (modifier[i] === ']') { depth--; if (depth === 0) return i; }
-  }
-  return -1;
-}
-
-/**
- * Resolve `${arr[subscript]}` (with optional trailing modifier).
- * Subscripts:
- *   N        numeric, possibly negative
- *   @ or *   every element (space-joined for the unquoted path)
- * Length form `${#arr[@]}` is handled separately by the brace parser
- * which strips the leading `#` and supplies a modifier directly.
- */
-function expandArrayAccess(
-  name: string,
-  subscript: string,
-  trailing: string | undefined,
-  env: Environment,
-): string {
-  const assoc = env.isAssoc(name);
-  const arr = env.getArray(name);
-  if (subscript === '@' || subscript === '*') {
-    if (assoc) {
-      const values = env.getAssocValues(name);
-      const joined = subscript === '@' ? values.join(ARRAY_SEP) : values.join(' ');
-      return trailing ? applyTrailingModifier(joined, trailing, env, name) : joined;
-    }
-    if (!arr) {
-      const scalar = env.get(name);
-      const value = scalar === undefined ? '' : scalar;
-      return trailing ? applyTrailingModifier(value, trailing, env, name) : value;
-    }
-    // `[@]` produces one word per element when expanded; `[*]` joins on
-    // IFS's first char (defaulting to space). For `[@]` we use the
-    // ARRAY_SEP sentinel so expandWords can split element-wise without
-    // re-triggering IFS splitting on whitespace inside an element.
-    const sep = subscript === '@' ? ARRAY_SEP : ' ';
-    if (trailing) {
-      // `${arr[@]:off[:len]}` slices the element list, not the joined
-      // string. `:-`/`:=`/`:+`/`:?` are default-value modifiers, not
-      // slices, hence the lookahead.
-      const slice = parseSliceModifier(trailing);
-      if (slice) {
-        const off = evalSubscript(slice.offset, env);
-        if (!Number.isFinite(off)) return '';
-        const start = off < 0 ? Math.max(arr.length + off, 0) : Math.min(off, arr.length);
-        let sliced = arr.slice(start);
-        if (slice.length !== undefined) {
-          const len = evalSubscript(slice.length, env);
-          if (!Number.isFinite(len)) return '';
-          sliced = len < 0 ? sliced.slice(0, Math.max(sliced.length + len, 0)) : sliced.slice(0, len);
-        }
-        return sliced.join(sep);
-      }
-      // Default-value family judges the array as a whole (`${arr[@]:-x}`
-      // expands to x only when the array is unset or empty).
-      if (/^(:?[-=+?])/.test(trailing)) {
-        return applyTrailingModifier(arr.join(sep), trailing, env, name, arr.length === 0);
-      }
-      // Pattern/case/replace operators apply per element, as bash does.
-      return arr.map(el => applyTrailingModifier(el, trailing, env, name)).join(sep);
-    }
-    return arr.join(sep);
-  }
-  if (assoc) {
-    // Substitute simple `$name` references in the key before lookup.
-    const key = subscript.replace(/\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?/g, (_, n) => env.get(n) ?? '');
-    const elem = env.getAssocElement(name, key);
-    // Route through the trailing modifier even when the element is
-    // missing so `${m[k]:-default}` falls back as bash does.
-    const value = elem ?? '';
-    if (trailing) return applyTrailingModifier(value, trailing, env, name, elem === undefined);
-    return value;
-  }
-  const idx = evalSubscript(subscript, env);
-  if (!Number.isFinite(idx)) return '';
-  const elem = env.getArrayElement(name, idx);
-  // A trailing modifier still applies when the element is missing, so
-  // `${arr[9]:-default}` falls back exactly like the assoc path above.
-  if (trailing) return applyTrailingModifier(elem ?? '', trailing, env, name, elem === undefined);
-  if (elem === undefined) {
-    if (arr === undefined && env.get(name) === undefined && isNounsetActive(env)) {
-      throw new BashRuntimeError(`${name}[${subscript}]: unbound variable`);
-    }
-    return '';
-  }
-  return elem;
-}
-
-/**
- * Indexed-array subscripts are arithmetic contexts in bash: `$i`, `i`,
- * `i+1` and `-1` are all legal. Falls back to a plain integer parse when
- * the expression engine rejects the text.
- */
-function evalSubscript(subscript: string, env: Environment): number {
-  try {
-    return Number(evaluateArithmetic(subscript, env));
-  } catch {
-    return Number.parseInt(subscript, 10);
-  }
-}
-
-/**
- * Split a `:offset[:length]` slice modifier. Returns null for the
- * default-value family (`:-` `:=` `:+` `:?`) and non-slice modifiers.
- * The second `:` is found at paren depth 0 so arithmetic offsets like
- * `:(x-1):2` survive.
- */
-function parseSliceModifier(mod: string): { offset: string; length?: string } | null {
-  if (!/^:(?![-=+?])/.test(mod)) return null;
-  const body = mod.slice(1);
-  let depth = 0;
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
-    if (ch === '(') depth++;
-    else if (ch === ')') depth--;
-    else if (ch === ':' && depth === 0) {
-      return { offset: body.slice(0, i), length: body.slice(i + 1) };
-    }
-  }
-  return { offset: body };
-}
-
-/**
- * Apply a tail modifier (`:n:m`, `#pat`, `/pat/repl`, …) to an
- * already-resolved string. We synthesise a one-shot environment entry
- * under a fresh key so we can reuse the full modifier engine without
- * mutating the live env. The synthetic name carries no `local` flag,
- * so cleanup happens automatically when the scope unwinds.
- */
-function applyTrailingModifier(
-  value: string,
-  modifier: string,
-  env: Environment,
-  hintName: string,
-  treatAsUnset = false,
-): string {
-  const tmpName = `__bashtmp_${hintName}_${Math.random().toString(36).slice(2, 9)}`;
-  env.declareLocal(tmpName);
-  // When the upstream lookup found nothing (`treatAsUnset`), leave the
-  // slot truly unset so default-value modifiers (`:-`, `-`) fire.
-  if (!treatAsUnset) env.set(tmpName, value);
-  try { return expandVariable(tmpName, true, modifier, env); }
-  finally { env.unset(tmpName); }
-}
-
-/** True when `set -u` (nounset) is active for the given environment. */
-function isNounsetActive(env: Environment): boolean {
-  const so = env.get('SHELLOPTS');
-  return !!so && so.split(':').includes('nounset');
-}
-
-function stripShortestPrefix(s: string, pattern: string): string {
-  const src = globToRegexSource(pattern);
-  for (let len = 0; len <= s.length; len++) {
-    if (new RegExp(`^(?:${src})$`).test(s.slice(0, len))) return s.slice(len);
-  }
-  return s;
-}
-function stripShortestSuffix(s: string, pattern: string): string {
-  const src = globToRegexSource(pattern);
-  for (let len = 0; len <= s.length; len++) {
-    if (new RegExp(`^(?:${src})$`).test(s.slice(s.length - len))) return s.slice(0, s.length - len);
-  }
-  return s;
-}
-function stripLongestSuffix(s: string, pattern: string): string {
-  const src = globToRegexSource(pattern);
-  for (let len = s.length; len >= 0; len--) {
-    if (new RegExp(`^(?:${src})$`).test(s.slice(s.length - len))) return s.slice(0, s.length - len);
-  }
-  return s;
-}
-
-// ─── Double-Quoted Expansion ────────────────────────────────────
-
-function expandDoubleQuotedParts(
-  parts: WordPart[],
-  env: Environment,
-  execCmd?: CommandSubstitutionFn,
-): string {
-  return parts.map(part => {
-    switch (part.type) {
-      case 'text': return expandInlineVars(part.value, env, execCmd);
-      case 'variable': return expandVariable(part.name, part.braced, part.modifier, env);
-      case 'special': return env.get(part.name) ?? '';
-      case 'command': return execCmd ? execCmd(part.command).trimEnd() : '';
-      case 'arithmetic': return evaluateArithmetic(part.expression, env);
-      default: return '';
-    }
-  }).join('');
-}
-
-/** Expand $VAR, ${VAR}, $(cmd), $((expr)), and `cmd` inline within a text string. */
-function expandInlineVars(
-  text: string,
-  env: Environment,
-  execCmd?: CommandSubstitutionFn,
-): string {
-  let result = '';
-  let i = 0;
-  while (i < text.length) {
-    // Escaped characters
-    if (text[i] === '\\' && i + 1 < text.length) {
-      const next = text[i + 1];
-      if (next === '$') { result += '$'; i += 2; continue; }
-      if (next === '"') { result += '"'; i += 2; continue; }
-      if (next === '`') { result += '`'; i += 2; continue; }
-      if (next === '\\') { result += '\\'; i += 2; continue; }
-      if (next === '\n') { i += 2; continue; }
-      result += text[i]; i++; continue;
-    }
-
-    // Backtick command substitution
-    if (text[i] === '`') {
-      i++;
-      let cmd = '';
-      while (i < text.length && text[i] !== '`') { cmd += text[i]; i++; }
-      if (i < text.length) i++; // skip closing `
-      result += execCmd ? execCmd(cmd).trimEnd() : '';
-      continue;
-    }
-
-    // Dollar expansions
-    if (text[i] === '$' && i + 1 < text.length) {
-      const next = text[i + 1];
-
-      // $((expr)) — arithmetic
-      if (next === '(' && i + 2 < text.length && text[i + 2] === '(') {
-        i += 3;
-        let depth = 1;
-        let expr = '';
-        while (i < text.length && depth > 0) {
-          if (text[i] === '(' && text[i + 1] === '(') { depth++; expr += '(('; i += 2; }
-          else if (text[i] === ')' && i + 1 < text.length && text[i + 1] === ')') {
-            depth--;
-            if (depth > 0) { expr += '))'; i += 2; }
-          }
-          else { expr += text[i]; i++; }
-        }
-        if (depth === 0) i += 2; // skip ))
-        result += evaluateArithmetic(expr, env);
-        continue;
-      }
-
-      // $(cmd) — command substitution. Quoted spans inside `cmd` are
-      // skipped verbatim so a `)` or `"` they contain can't be mistaken
-      // for the substitution's own terminator.
-      if (next === '(') {
-        i += 2;
-        let depth = 1;
-        let cmd = '';
-        while (i < text.length && depth > 0) {
-          const ch = text[i];
-          if (ch === '"' || ch === "'") {
-            const quote = ch;
-            cmd += ch; i++;
-            while (i < text.length && text[i] !== quote) {
-              if (quote === '"' && text[i] === '\\' && i + 1 < text.length) {
-                cmd += text[i] + text[i + 1]; i += 2; continue;
-              }
-              cmd += text[i]; i++;
-            }
-            if (i < text.length) { cmd += text[i]; i++; }
-            continue;
-          }
-          if (ch === '(') depth++;
-          else if (ch === ')') { depth--; if (depth === 0) break; }
-          cmd += ch; i++;
-        }
-        if (i < text.length) i++; // skip closing )
-        result += execCmd ? execCmd(cmd).trimEnd() : '';
-        continue;
-      }
-
-      // ${VAR...} — braced variable. Brace nesting is honoured so
-      // patterns containing `}` (rare, but legal inside replacement
-      // bodies) survive.
-      if (next === '{') {
-        i += 2;
-        let content = '';
-        let depth = 1;
-        while (i < text.length && depth > 0) {
-          const ch = text[i];
-          if (ch === '{') { depth++; content += ch; i++; continue; }
-          if (ch === '}') { depth--; if (depth === 0) { i++; break; } content += ch; i++; continue; }
-          content += ch; i++;
-        }
-        // ${#NAME} — scalar length OR ${#arr[@]} — array element count.
-        if (content.startsWith('#')) {
-          const lenMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)(\[([^\]]+)\])?$/);
-          if (lenMatch) {
-            const lname = lenMatch[1];
-            const sub = lenMatch[3];
-            if (sub === '@' || sub === '*') {
-              if (env.isAssoc(lname)) { result += String(env.getAssocSize(lname)); continue; }
-              result += String(env.getArrayLength(lname));
-              continue;
-            }
-            if (sub !== undefined) {
-              if (env.isAssoc(lname)) {
-                const v = env.getAssocElement(lname, sub) ?? '';
-                result += String(v.length);
-                continue;
-              }
-              const elem = env.getArrayElement(lname, Number.parseInt(sub, 10)) ?? '';
-              result += String(elem.length);
-              continue;
-            }
-            // Scalar length — but report array length when the bare
-            // name refers to an array (POSIX says element 0's length;
-            // bash reports element 0's length too).
-            result += expandVariable(lname, true, '#', env);
-            continue;
-          }
-        }
-        // ${!NAME[@]} — list of keys / indices.
-        if (content.startsWith('!')) {
-          const prefixMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)([@*])$/);
-          if (prefixMatch) {
-            const names = env.namesWithPrefix(prefixMatch[1]);
-            result += prefixMatch[2] === '@' ? names.join(ARRAY_SEP) : names.join(' ');
-            continue;
-          }
-          const keyMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)\[([@*])\]$/);
-          if (keyMatch) {
-            const lname = keyMatch[1];
-            if (env.isAssoc(lname)) {
-              result += env.getAssocKeys(lname).join(ARRAY_SEP);
-            } else {
-              const arr = env.getArray(lname);
-              if (arr) result += arr.map((_, i) => String(i)).join(ARRAY_SEP);
-            }
-            continue;
-          }
-          // ${!NAME} — indirect expansion.
-          const indMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)$/);
-          if (indMatch) {
-            const target = env.get(indMatch[1]);
-            result += target !== undefined ? (env.get(target) ?? '') : '';
-            continue;
-          }
-        }
-        // Split the head (name) from the modifier suffix.
-        const head = content.match(/^([A-Za-z_][A-Za-z_0-9]*|[0-9]+|[?@*#$!])/);
-        if (head) {
-          const name = head[1];
-          const modifier = content.slice(name.length);
-          result += expandVariable(name, true, modifier || undefined, env);
-        } else {
-          result += env.get(content) ?? '';
-        }
-        continue;
-      }
-
-      // $VAR or $? $# etc — simple variable
-      if (/[A-Za-z_]/.test(next)) {
-        i++;
-        let name = '';
-        while (i < text.length && /[A-Za-z_0-9]/.test(text[i])) { name += text[i]; i++; }
-        const v = env.get(name);
-        if (v === undefined && isNounsetActive(env)) {
-          throw new BashRuntimeError(`${name}: unbound variable`);
-        }
-        result += v ?? '';
-        continue;
-      }
-      if (/[?#@*$!\d]/.test(next)) {
-        const val = env.get(next);
-        // Positional parameter that's undefined at this scope: leave
-        // literal so a double-quoted heredoc carrying a function body
-        // (e.g. "fn() { echo \$1; }") survives the write to the
-        // destination file. Once a function is called the child scope
-        // will have $1 set and the substitution happens normally.
-        if (/\d/.test(next) && val === undefined) {
-          result += `$${next}`;
-        } else {
-          result += val ?? '';
-        }
-        i += 2;
-        continue;
-      }
-    }
-
-    result += text[i]; i++;
-  }
-  return result;
-}
-
-/** Strip surrounding quotes from a string (for ${VAR:-"default"} patterns). */
-function stripQuotes(s: string): string {
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1);
-  }
-  return s;
-}
-
-// ─── Arithmetic Expansion ───────────────────────────────────────
-
-/**
- * Evaluate a simple arithmetic expression.
- * Supports: +, -, *, /, %, parentheses, variable references, integers.
- */
-export function evaluateArithmetic(expr: string, env: Environment): string {
-  try {
-    const result = evalArithExpr(expr.trim(), env);
-    return String(result);
-  } catch (e) {
-    throw new ArithmeticError(`bad arithmetic expression: ${expr}`);
-  }
-}
-
-/** Tokenize and evaluate an arithmetic expression. */
-function evalArithExpr(expr: string, env: Environment): number {
-  const tokens = tokenizeArith(expr, env);
-  const parser = new ArithParser(tokens, env);
-  return parser.parse();
-}
-
-interface ArithToken {
-  type: 'number' | 'op' | 'lparen' | 'rparen' | 'question' | 'colon' | 'name';
-  value: string;
-}
-
-function tokenizeArith(expr: string, env: Environment): ArithToken[] {
-  const tokens: ArithToken[] = [];
-  let i = 0;
-  while (i < expr.length) {
-    const ch = expr[i];
-    if (/\s/.test(ch)) { i++; continue; }
-    if (/[0-9]/.test(ch)) {
-      let num = '';
-      while (i < expr.length && /[0-9]/.test(expr[i])) { num += expr[i]; i++; }
-      tokens.push({ type: 'number', value: num });
-    } else if (/[a-zA-Z_]/.test(ch)) {
-      let name = '';
-      while (i < expr.length && /[a-zA-Z_0-9]/.test(expr[i])) { name += expr[i]; i++; }
-      tokens.push({ type: 'name', value: name });
-    } else if (ch === '$') {
-      i++;
-      let name = '';
-      while (i < expr.length && /[a-zA-Z_0-9]/.test(expr[i])) { name += expr[i]; i++; }
-      tokens.push({ type: 'name', value: name });
-    } else if (ch === '(') {
-      tokens.push({ type: 'lparen', value: '(' }); i++;
-    } else if (ch === ')') {
-      tokens.push({ type: 'rparen', value: ')' }); i++;
-    } else if (ch === '?') {
-      tokens.push({ type: 'question', value: '?' }); i++;
-    } else if (ch === ':') {
-      tokens.push({ type: 'colon', value: ':' }); i++;
-    } else if (ch === '!' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '!=' }); i += 2;
-    } else if (ch === '!' ) {
-      tokens.push({ type: 'op', value: '!' }); i++;
-    } else if (ch === '=' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '==' }); i += 2;
-    } else if (ch === '=') {
-      tokens.push({ type: 'op', value: '=' }); i++;
-    } else if (ch === '+' && i + 1 < expr.length && expr[i + 1] === '+') {
-      tokens.push({ type: 'op', value: '++' }); i += 2;
-    } else if (ch === '-' && i + 1 < expr.length && expr[i + 1] === '-') {
-      tokens.push({ type: 'op', value: '--' }); i += 2;
-    } else if (ch === '*' && expr[i + 1] === '*') {
-      // Doit être reconnu avant `*=` et avant le repli sur `*` seul, qui
-      // rendait `$((2 ** 8))` égal à zéro en lisant deux multiplications.
-      tokens.push({ type: 'op', value: '**' }); i += 2;
-    } else if ((ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%')
-               && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: ch + '=' }); i += 2;
-    } else if (ch === '<' && expr[i + 1] === '<' && expr[i + 2] === '=') {
-      tokens.push({ type: 'op', value: '<<=' }); i += 3;
-    } else if (ch === '<' && expr[i + 1] === '<') {
-      tokens.push({ type: 'op', value: '<<' }); i += 2;
-    } else if (ch === '<' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '<=' }); i += 2;
-    } else if (ch === '<') {
-      tokens.push({ type: 'op', value: '<' }); i++;
-    } else if (ch === '>' && expr[i + 1] === '>' && expr[i + 2] === '=') {
-      tokens.push({ type: 'op', value: '>>=' }); i += 3;
-    } else if (ch === '>' && expr[i + 1] === '>') {
-      tokens.push({ type: 'op', value: '>>' }); i += 2;
-    } else if (ch === '>' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '>=' }); i += 2;
-    } else if (ch === '>') {
-      tokens.push({ type: 'op', value: '>' }); i++;
-    } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '&') {
-      tokens.push({ type: 'op', value: '&&' }); i += 2;
-    } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '&=' }); i += 2;
-    } else if (ch === '&') {
-      tokens.push({ type: 'op', value: '&' }); i++;
-    } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '|') {
-      tokens.push({ type: 'op', value: '||' }); i += 2;
-    } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '|=' }); i += 2;
-    } else if (ch === '|') {
-      tokens.push({ type: 'op', value: '|' }); i++;
-    } else if (ch === '^' && i + 1 < expr.length && expr[i + 1] === '=') {
-      tokens.push({ type: 'op', value: '^=' }); i += 2;
-    } else if (ch === '^') {
-      tokens.push({ type: 'op', value: '^' }); i++;
-    } else if ('+-*/%'.includes(ch)) {
-      // Handle unary minus
-      if (ch === '-' && (tokens.length === 0 || tokens[tokens.length - 1].type === 'op' || tokens[tokens.length - 1].type === 'lparen')) {
-        i++;
-        let num = '';
-        if (i < expr.length && /[0-9]/.test(expr[i])) {
-          while (i < expr.length && /[0-9]/.test(expr[i])) { num += expr[i]; i++; }
-          tokens.push({ type: 'number', value: '-' + num });
-        } else if (i < expr.length && /[a-zA-Z_]/.test(expr[i])) {
-          // Unary minus on variable: -x
-          let name = '';
-          while (i < expr.length && /[a-zA-Z_0-9]/.test(expr[i])) { name += expr[i]; i++; }
-          const val = env.get(name) ?? '0';
-          tokens.push({ type: 'number', value: String(-(parseInt(val) || 0)) });
-        } else {
-          tokens.push({ type: 'number', value: '0' });
-        }
-      } else {
-        tokens.push({ type: 'op', value: ch }); i++;
-      }
-    } else {
-      i++; // skip unknown
-    }
-  }
-  return tokens;
-}
-
-/** Recursive descent arithmetic parser with full operator precedence. */
-class ArithParser {
-  private tokens: ArithToken[];
-  private pos: number;
-  private env: Environment;
-
-  constructor(tokens: ArithToken[], env: Environment) {
-    this.tokens = tokens;
-    this.pos = 0;
-    this.env = env;
-  }
-
-  parse(): number {
-    if (this.tokens.length === 0) return 0;
-    const val = this.parseAssignment();
-    return val;
-  }
-
-  // assignment: name (= | += | -= | *= | /= | %=) expr | ternary
-  private parseAssignment(): number {
-    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'name') {
-      const nameIdx = this.pos;
-      const name = this.tokens[nameIdx].value;
-      const next = this.tokens[nameIdx + 1];
-      if (next && next.type === 'op'
-          && (next.value === '=' || next.value === '+=' || next.value === '-='
-              || next.value === '*=' || next.value === '/=' || next.value === '%='
-              || next.value === '<<=' || next.value === '>>=' || next.value === '&='
-              || next.value === '|=' || next.value === '^=')) {
-        const op = next.value;
-        this.pos = nameIdx + 2;
-        const rhs = this.parseAssignment();
-        const current = Number.parseInt(this.env.get(name) ?? '0', 10) || 0;
-        let next$: number;
-        switch (op) {
-          case '=':  next$ = rhs;             break;
-          case '+=': next$ = current + rhs;   break;
-          case '-=': next$ = current - rhs;   break;
-          case '*=': next$ = current * rhs;   break;
-          case '/=': next$ = rhs === 0 ? 0 : Math.trunc(current / rhs); break;
-          case '%=': next$ = rhs === 0 ? 0 : current - Math.trunc(current / rhs) * rhs; break;
-          case '<<=': next$ = current << rhs; break;
-          case '>>=': next$ = current >> rhs; break;
-          case '&=': next$ = current & rhs;   break;
-          case '|=': next$ = current | rhs;   break;
-          case '^=': next$ = current ^ rhs;   break;
-          default:   next$ = rhs;
-        }
-        this.env.set(name, String(next$));
-        return next$;
-      }
-    }
-    return this.parseTernary();
-  }
-
-  // ternary: logicalOr ? expr : expr
-  private parseTernary(): number {
-    let val = this.parseLogicalOr();
-    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'question') {
-      this.pos++; // skip ?
-      const trueVal = this.parseAssignment();
-      if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'colon') {
-        this.pos++; // skip :
-      }
-      const falseVal = this.parseAssignment();
-      val = val !== 0 ? trueVal : falseVal;
-    }
-    return val;
-  }
-
-  // logicalOr: logicalAnd (|| logicalAnd)*
-  private parseLogicalOr(): number {
-    let val = this.parseLogicalAnd();
-    while (this.matchOp('||')) {
-      const right = this.parseLogicalAnd();
-      val = (val !== 0 || right !== 0) ? 1 : 0;
-    }
-    return val;
-  }
-
-  // logicalAnd: bitOr (&& bitOr)*
-  private parseLogicalAnd(): number {
-    let val = this.parseBitOr();
-    while (this.matchOp('&&')) {
-      const right = this.parseBitOr();
-      val = (val !== 0 && right !== 0) ? 1 : 0;
-    }
-    return val;
-  }
-
-  // bitOr: bitXor (| bitXor)* — bash precedence: | above &&, below ^
-  private parseBitOr(): number {
-    let val = this.parseBitXor();
-    while (this.matchOp('|')) {
-      val = val | this.parseBitXor();
-    }
-    return val;
-  }
-
-  // bitXor: bitAnd (^ bitAnd)*
-  private parseBitXor(): number {
-    let val = this.parseBitAnd();
-    while (this.matchOp('^')) {
-      val = val ^ this.parseBitAnd();
-    }
-    return val;
-  }
-
-  // bitAnd: equality (& equality)*
-  private parseBitAnd(): number {
-    let val = this.parseEquality();
-    while (this.matchOp('&')) {
-      val = val & this.parseEquality();
-    }
-    return val;
-  }
-
-  // equality: relational ((== | !=) relational)*
-  private parseEquality(): number {
-    let val = this.parseRelational();
-    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           (this.tokens[this.pos].value === '==' || this.tokens[this.pos].value === '!=')) {
-      const op = this.tokens[this.pos].value;
-      this.pos++;
-      const right = this.parseRelational();
-      val = op === '==' ? (val === right ? 1 : 0) : (val !== right ? 1 : 0);
-    }
-    return val;
-  }
-
-  // relational: shift ((< | > | <= | >=) shift)*
-  private parseRelational(): number {
-    let val = this.parseShift();
-    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           ['<', '>', '<=', '>='].includes(this.tokens[this.pos].value)) {
-      const op = this.tokens[this.pos].value;
-      this.pos++;
-      const right = this.parseShift();
-      switch (op) {
-        case '<': val = val < right ? 1 : 0; break;
-        case '>': val = val > right ? 1 : 0; break;
-        case '<=': val = val <= right ? 1 : 0; break;
-        case '>=': val = val >= right ? 1 : 0; break;
-      }
-    }
-    return val;
-  }
-
-  // shift: additive ((<< | >>) additive)*
-  private parseShift(): number {
-    let val = this.parseAdditive();
-    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           (this.tokens[this.pos].value === '<<' || this.tokens[this.pos].value === '>>')) {
-      const op = this.tokens[this.pos].value;
-      this.pos++;
-      const right = this.parseAdditive();
-      val = op === '<<' ? val << right : val >> right;
-    }
-    return val;
-  }
-
-  // additive: multiplicative ((+ | -) multiplicative)*
-  private parseAdditive(): number {
-    let val = this.parseMultiplicative();
-    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           (this.tokens[this.pos].value === '+' || this.tokens[this.pos].value === '-')) {
-      const op = this.tokens[this.pos].value;
-      this.pos++;
-      const right = this.parseMultiplicative();
-      val = op === '+' ? val + right : val - right;
-    }
-    return val;
-  }
-
-  // multiplicative: unary ((* | / | %) unary)*
-  private parseMultiplicative(): number {
-    let val = this.parseUnary();
-    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           ['*', '/', '%'].includes(this.tokens[this.pos].value)) {
-      const op = this.tokens[this.pos].value;
-      this.pos++;
-      const right = this.parseUnary();
-      if ((op === '/' || op === '%') && right === 0) throw new ArithmeticError('division by zero');
-      val = op === '*' ? val * right : op === '/' ? Math.trunc(val / right) : val % right;
-    }
-    return val;
-  }
-
-  // power: postfix (** power)? — plus prioritaire que `*`, et associatif
-  // à droite, comme dans bash : 2**3**2 vaut 512, pas 64.
-  private parsePower(): number {
-    const base = this.parsePostfix();
-    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op'
-        && this.tokens[this.pos].value === '**') {
-      this.pos++;
-      const e = this.parseUnary();
-      // bash refuse un exposant négatif ; il ne le tronque pas à zéro.
-      if (e < 0) throw new ArithmeticError('exponent less than 0');
-      return Math.trunc(base ** e);
-    }
-    return base;
-  }
-
-  // unary: ! unary | - unary | ++name | --name | postfix
-  private parseUnary(): number {
-    const tok = this.tokens[this.pos];
-    if (tok && tok.type === 'op' && tok.value === '!') {
-      this.pos++;
-      const val = this.parseUnary();
-      return val === 0 ? 1 : 0;
-    }
-    if (tok && tok.type === 'op' && (tok.value === '++' || tok.value === '--')) {
-      this.pos++;
-      const nameTok = this.tokens[this.pos];
-      if (nameTok && nameTok.type === 'name') {
-        this.pos++;
-        const current = Number.parseInt(this.env.get(nameTok.value) ?? '0', 10) || 0;
-        const next = tok.value === '++' ? current + 1 : current - 1;
-        this.env.set(nameTok.value, String(next));
-        return next;
-      }
-      return 0;
-    }
-    return this.parsePower();
-  }
-
-  // postfix: primary (++ | --)?
-  private parsePostfix(): number {
-    const val = this.parsePrimary();
-    // Track the most recently consumed name so postfix can write back.
-    const tok = this.tokens[this.pos];
-    if (tok && tok.type === 'op' && (tok.value === '++' || tok.value === '--')) {
-      this.pos++;
-      // The previous primary must have been a `name` for the post-op
-      // to be meaningful; walk back to recover it.
-      const prior = this.tokens[this.pos - 2];
-      if (prior && prior.type === 'name') {
-        const current = Number.parseInt(this.env.get(prior.value) ?? '0', 10) || 0;
-        const next = tok.value === '++' ? current + 1 : current - 1;
-        this.env.set(prior.value, String(next));
-        // Postfix returns the value BEFORE the update.
-        return current;
-      }
-    }
-    return val;
-  }
-
-  // primary: number | name | ( expr )
-  private parsePrimary(): number {
-    if (this.pos >= this.tokens.length) return 0;
-    const tok = this.tokens[this.pos];
-
-    if (tok.type === 'lparen') {
-      this.pos++;
-      const val = this.parseAssignment();
-      if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'rparen') {
-        this.pos++;
-      }
-      return val;
-    }
-    if (tok.type === 'number') {
-      this.pos++;
-      return parseInt(tok.value, 10) || 0;
-    }
-    if (tok.type === 'name') {
-      this.pos++;
-      const val = this.env.get(tok.value) ?? '0';
-      return parseInt(val) || 0;
-    }
-    this.pos++;
-    return 0;
-  }
-
-  private matchOp(op: string): boolean {
-    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' && this.tokens[this.pos].value === op) {
-      this.pos++;
-      return true;
-    }
-    return false;
-  }
+export function evaluateArithmetic(expr: string, env: Environment, execCmd?: CommandSubstitutionFn): string {
+  const ctx: Context = { env, execCmd };
+  const expanded = expr.includes('$') || expr.includes('`') ? expandOperand(expr, ctx, false) : expr;
+  return String(evaluateArithmeticExpression(expanded, env));
 }

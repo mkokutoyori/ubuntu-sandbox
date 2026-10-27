@@ -65,7 +65,7 @@ describe('long-lived nc connections', () => {
   });
 
   it('kill -0 reports a missing process', async () => {
-    expect(await root('kill -0 4000; echo rc=$?')).toBe('kill: (4000) - No such process\nrc=1');
+    expect(await root('kill -0 4000; echo rc=$?')).toBe('bash: kill: (4000) - No such process\nrc=1');
     expect(await root('sleep 100 & kill -0 $!; echo rc=$?')).toBe('rc=0');
   });
 
