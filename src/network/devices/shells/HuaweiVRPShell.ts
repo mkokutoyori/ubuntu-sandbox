@@ -42,7 +42,8 @@ import {
   type VrpTimeRange, type VrpNamedLines, type VrpInterfaceBucket,
 } from './huawei/vrpShellStores';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
-import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
+import type { TcpStack } from '@/network/tcp/TcpStack';
+import { findHostByAddress } from '../linux/network/HostLookup';
 import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
@@ -916,42 +917,31 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const router = this.routerRef as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
       _getHostsTable?: () => { resolve: (n: string) => string | null };
+      getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'>;
     };
     if (!router) return 'Error: device not bound';
     let host = display;
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
 
-    let sourceIp: string | null = null;
+    const failure = `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    let hasSource = false;
     for (const [, p] of router._getPortsInternal()) {
-      const ip = p.getIPAddress();
-      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+      if (p.getIPAddress() && p.getIsUp()) { hasSource = true; break; }
     }
-    if (!sourceIp) return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    if (!hasSource) return failure;
 
     const remote = findHostByAddress(host, undefined, this.routerRef as never);
-    if (!remote || remote.poweredOff || remote.interfaceDown) {
-      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    if (!remote || remote.poweredOff || remote.interfaceDown) return failure;
+    const stack = router.getTcpStack?.();
+    if (!stack || !stack.hasEgressTo(remote.ip)) return failure;
+    const socket = stack.connect(remote.ip, port);
+    if (!socket || !socket.everEstablished) {
+      socket?.close();
+      return failure;
     }
-    if (!isPathReachable(sourceIp, remote.ip, this.routerRef as never)) {
-      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
-    }
-    if (!this.remoteAcceptsTelnet(remote.device, port)) {
-      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
-    }
+    socket.close();
     return `Trying ${display} ...\nPress CTRL+K to abort\nConnected to ${display} ...\n`;
-  }
-
-  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
-    if (port !== 23) return false;
-    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
-    const cls = d.constructor?.name ?? '';
-    const type = (d.getDeviceType?.() ?? '').toLowerCase();
-    const isNetworkCli = /Router|Switch/.test(cls) || /router|switch/.test(type);
-    if (!isNetworkCli) return false;
-    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
-    if (transport === undefined) return true;
-    return transport === 'telnet' || transport === 'all';
   }
 
   private sessionExecFermee = false;

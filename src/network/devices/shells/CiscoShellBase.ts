@@ -9461,6 +9461,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   getMode(): string { return this.mode; }
 
+  sessionRegistry(): OutgoingSessionRegistry { return this.outgoingSessions; }
+
   protected buildDevicePrompt(device: TDevice): string {
     const mode = this.mode === 'user' && this.currentPrivilegeLevel >= 2 ? 'privileged' : this.mode;
     return buildPrompt(mode, device._getHostnameInternal(), this.getPromptMap());

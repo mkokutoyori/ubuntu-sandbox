@@ -32,6 +32,10 @@ export interface TelnetDialect {
   noRoute(host: string, ip: string, port: number): string[];
   /** The session is open; these lines precede the remote's own output. */
   connected(host: string, ip: string): string[];
+  /** What the client says when the remote closes the connection. Absent keeps the BSD wording. */
+  closedByPeer?(host: string): string;
+  /** Whether the escape sequence suspends the session instead of closing it (IOS: Ctrl-Shift-6 then x). */
+  readonly suspendable?: boolean;
 }
 
 /** Linux/BSD `telnet(1)` — the previous behaviour, unchanged. */
@@ -94,6 +98,8 @@ export const IOS_TELNET: TelnetDialect = {
     '% Destination unreachable; gateway or host down',
   ],
   connected: (host) => [`Trying ${host} ...`, 'Open'],
+  closedByPeer: (host) => `[Connection to ${host} closed by foreign host]`,
+  suspendable: true,
 };
 
 /** Huawei VRP. One failure wording covers every reason, as on the box. */
@@ -150,10 +156,11 @@ export const WINDOWS_TELNET: TelnetDialect = {
     '',
     "Escape Character is 'CTRL+]'",
   ],
+  closedByPeer: () => 'Connection to host lost.',
 };
 
 const SAYS: Readonly<Record<
-  Exclude<TcpWireOutcome, 'open'>, keyof Omit<TelnetDialect, 'usage' | 'connected' | 'unresolved'>
+  Exclude<TcpWireOutcome, 'open'>, keyof Omit<TelnetDialect, 'usage' | 'connected' | 'unresolved' | 'closedByPeer' | 'suspendable'>
 >> = {
   refused: 'refused',
   timeout: 'timedOut',

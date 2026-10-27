@@ -4018,3 +4018,45 @@ Les trois bancs passent en entier ; restent mesures et non fermes :
 ### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
 
 Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.
+
+---
+
+## Telnet (client netkit, serveur netkit, clients des équipements réseau)
+
+Le client Linux est le port de netkit-telnet 0.17 (`src/network/protocols/telnet/client/`), rejoué contre le binaire réel
+(`telnet-client-netkit-oracle.test.ts`) ; le telnetd Linux suit la machine d'options de `in.telnetd` (`NetkitTelnetdNegotiation`).
+
+### [telnet] `z` ne suspend rien
+`host.suspend` est absent : la commande `z` rend la main immédiatement, ce que fait le vrai client dans un groupe de processus
+orphelin (relevé sous pty). Dans un shell à contrôle de tâches il s'arrêterait réellement. Brique manquante : un contrôle de tâches
+dans le terminal.
+
+### [telnet] `send synch` envoie le DM dans le flux
+Le client réel envoie l'octet DM en données urgentes (`MSG_OOB`) et traite une marque urgente entrante (`netex` : abandon des données
+en file). `TcpSocket` porte déjà `onUrgent` ; le port client ne l'utilise pas. Les octets du flux sont identiques, la marque urgente
+manque.
+
+### [telnet] routage par la source (`telnet @hop1@hop2:hote`)
+Le nom est résolu comme un nom ordinaire et échoue en `could not resolve`. Brique manquante : les options IP LSRR/SSRR dans la pile.
+
+### [telnet] `-n fichier` et `set tracefile` retiennent le nom sans rien écrire
+La trace des options (`toggle options`) va toujours à l'écran. Brique manquante : l'écriture d'un fichier par le client depuis la
+sortie standard du processus.
+
+### [telnet] les lignes d'un tube sont consommées avec une pause entre chacune
+`printf 'a\nb\n' | telnet h` envoie `a`, attend le calme du fil, puis `b`, comme si l'émetteur dormait. Un vrai tube remet tout d'un
+bloc puis l'EOF ; le client ferme alors avant la réponse du serveur. Le comportement choisi sert les scripts ; il n'est pas celui du
+binaire.
+
+### [telnet-windows] `telnet.exe` : invite `Microsoft Telnet>`, `set`, `display`, `unset`
+Le texte d'aide de `WindowsPC.cmdTelnet` vient d'une mémoire non vérifiée et la touche d'échappement `CTRL+]` n'ouvre aucune invite.
+Pas d'autorité atteignable ici (le proxy refuse `learn.microsoft.com`, 403) et pas de binaire Windows : rien n'est porté plutôt que
+deviné (`CLAUDE.md` §8).
+
+### [telnet-ios] touches d'échappement du client IOS autres que `x`
+`Ctrl-Maj-6 x` suspend et `resume`/`disconnect`/`show sessions`/Entrée reprennent, avec les libellés déjà rendus par le shell Cisco.
+Les autres touches (`c`, `b`, `h`, `n`, `p`, `1-9`) et le texte exact de la confirmation de `disconnect` n'ont pas de source
+atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à la connexion ne sont pas enregistrés : pas d'équipement.
+
+### [telnet-vrp] client VRP
+`Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
