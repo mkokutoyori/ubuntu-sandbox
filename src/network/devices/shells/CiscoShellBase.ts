@@ -4987,7 +4987,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           return '';
         }
         const parsed = parseNtpBroadcast(kind, rest);
-        if (!parsed.ok) throw new CliInvalidInput({ token: rest[parsed.refusedAt ?? 0] ?? head });
+        if (!parsed.ok) {
+          const at = parsed.refusedAt ?? 0;
+          if (at === rest.length - 1 && ['key', 'version', 'ttl', 'destination'].includes(rest[at].toLowerCase())) throw new CliIncomplete();
+          throw new CliInvalidInput({ token: rest[at] ?? head });
+        }
         for (const port of ports()) {
           if (parsed.client !== undefined) agent.setBroadcastClient(port, true, parsed.client.group);
           else agent.setBroadcastServer(port, parsed.server ?? null);
