@@ -1,6 +1,7 @@
 import { shortOptions, getoptDiagnostic, type LongOption } from '../../Getopt';
+import { NET_TOOLS_VERSION } from '../NetToolsVersion';
 
-export const NETSTAT_USAGE = [
+const NETSTAT_USAGE_HEAD = [
   'usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}',
   '       netstat [-vWnNcaeol] [<Socket> ...]',
   '       netstat { [-vWeenNac] -i | [-cnNe] -M | -s [-6tuw] }',
@@ -33,24 +34,28 @@ export const NETSTAT_USAGE = [
   '           {-x|--unix} --ax25 --ipx --netrom',
   '  <AF>=Use \'-6|-4\' or \'-A <af>\' or \'--<af>\'; default: inet',
   '  List of possible address families (which support routing):',
-  '    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) ',
-  '    netrom (AMPR NET/ROM) ipx (Novell IPX) ddp (Appletalk DDP) ',
-  '    x25 (CCITT X.25) ',
   '',
 ].join('\n');
 
+const NETSTAT_USAGE_FAMILIES = [
+  '    inet (DARPA Internet) inet6 (IPv6) ax25 (AMPR AX.25) ',
+  '    netrom (AMPR NET/ROM) rose (AMPR ROSE) ipx (Novell IPX) ',
+  '    ddp (Appletalk DDP) x25 (CCITT X.25) ',
+  '',
+].join('\n');
+
+export const NETSTAT_USAGE = NETSTAT_USAGE_HEAD + NETSTAT_USAGE_FAMILIES;
+
 export const NETSTAT_VERSION = [
-  'net-tools 2.10-alpha',
+  NET_TOOLS_VERSION,
   'Fred Baumgarten, Alan Cox, Bernd Eckenfels, Phil Blundell, Tuan Hoang, Brian Micek and others',
   '+NEW_ADDRT +RTF_IRTT +RTF_REJECT +FW_MASQUERADE +I18N +SELINUX',
   'AF: (inet) +UNIX +INET +INET6 +IPX +AX25 +NETROM +X25 +ATALK +ECONET +ROSE -BLUETOOTH',
-  'HW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64 ',
+  'HW:  +ETHER +ARC +SLIP +PPP +TUNNEL -TR +AX25 +NETROM +X25 +FR +ROSE +ASH +SIT +FDDI +HIPPI +HDLC/LAPB +EUI64',
   '',
 ].join('\n');
 
 const E_OPTERR = 3;
-const E_USAGE = 4;
-const E_VERSION = 5;
 
 const FAMILY_ALIASES: ReadonlyMap<string, string> = new Map([
   ['ax25', 'ax25'], ['ip', 'inet'], ['ip6', 'inet6'], ['ipx', 'ipx'], ['rose', 'rose'], ['appletalk', 'ddp'],
@@ -212,7 +217,7 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
       case 'o': flags.timers++; break;
       case '6': takeFamily('inet6'); break;
       case '4': takeFamily('inet'); break;
-      case 'V': return { options: null, exit: { stdout: NETSTAT_VERSION, stderr: '', exitCode: E_VERSION } };
+      case 'V': return { options: null, exit: { stdout: NETSTAT_VERSION, stderr: '', exitCode: 0 } };
       case 'v': flags.verbose++; break;
       case 'r': flags.routes++; break;
       case 't': flags.tcp++; break;
@@ -225,7 +230,7 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
       case 'x': takeFamily('unix'); break;
       case 'Z':
         return failure('SELinux is not enabled on this machine.\n');
-      case 'h': return { options: null, exit: { stdout: '', stderr: NETSTAT_USAGE, exitCode: E_USAGE } };
+      case 'h': return { options: null, exit: { stdout: NETSTAT_USAGE_HEAD, stderr: NETSTAT_USAGE_FAMILIES, exitCode: 0 } };
       case 's': flags.statistics++; break;
       default: return { options: null, exit: { stdout: '', stderr: NETSTAT_USAGE, exitCode: E_OPTERR } };
     }

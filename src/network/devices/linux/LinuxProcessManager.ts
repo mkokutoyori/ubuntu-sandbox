@@ -112,7 +112,7 @@ export interface ProcessFilter {
 export const TASK_COMM_LEN = 16;
 
 export function kernelComm(comm: string): string {
-  return comm.slice(0, TASK_COMM_LEN - 1);
+  return comm.replace(/^\[(.*)\]$/, '$1').slice(0, TASK_COMM_LEN - 1);
 }
 
 /** PID 1 — init/systemd is special and cannot be killed. */
@@ -227,6 +227,27 @@ export class LinuxProcessManager {
       },
     });
     return proc;
+  }
+
+  redirectStandardStream(pid: number, fd: 0 | 1 | 2, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.redirectStandardStream(fd, path, mode);
+  }
+
+  replaceImage(pid: number, cwd: string, image: readonly string[] | null): void {
+    const process = this.processes.get(pid);
+    if (!(process instanceof LinuxProcess)) return;
+    process.cwd = cwd;
+    if (image === null || image.length === 0) return;
+    process.comm = basename(image[0]);
+    process.exe = image[0];
+    process.command = image.join(' ');
+    process.args = image.slice(1);
+  }
+
+  openFile(pid: number, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.addOpenFile(path, mode);
   }
 
   /** Look up a process by PID. */

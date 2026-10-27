@@ -34,7 +34,7 @@ describe('Scénario 3 — re-parentage des orphelins vers PID 1', () => {
     // parent's own PID comes from the "[N] PID" backgrounding notice
     // (not a later `echo $!`, since the child's own nested `sleep &`
     // overwrites the shared `$!` slot before the outer statement returns).
-    const spawnNotice = await run('sleep 300 & echo $! > /tmp/child.pid; while true; do sleep 1; done &');
+    const spawnNotice = await run('( sleep 300 & echo $! > /tmp/child.pid; while true; do sleep 1; done ) &');
     const parentPid = /\[\d+\]\s+(\d+)/.exec(spawnNotice)?.[1] ?? '';
     const childPid = (await run('cat /tmp/child.pid')).trim();
 

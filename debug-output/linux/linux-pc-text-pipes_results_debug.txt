@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-10-25T17:26:42.861Z
+Generated: 2026-10-26T23:38:59.057Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -508,7 +508,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  70
+  71
 
 
 --- [92] § sort — tri ---
@@ -1273,7 +1273,7 @@ $ [230/303]> pr -t fruits.txt
 $ [231/303]> pr -n fruits.txt
   
   
-  Sun Oct 25 2026  fruits.txt  Page 1
+  Mon Oct 26 2026  fruits.txt  Page 1
   
   
       1	banane

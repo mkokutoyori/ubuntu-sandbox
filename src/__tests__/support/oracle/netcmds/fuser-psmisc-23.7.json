@@ -1,0 +1,1398 @@
+{
+ "family": "fuser",
+ "tools": {
+  "ss": "ss utility, iproute2-6.1.0",
+  "netstat": "net-tools 2.10",
+  "fuser": "fuser (PSmisc) 23.7",
+  "nc": "netcat-openbsd 1.226-1ubuntu2",
+  "kernel": "6.18.44-fc-v153"
+ },
+ "cases": [
+  {
+   "id": "fuser-listeners",
+   "setup": [
+    "nc -l 127.0.0.1 9000 & P1=$!",
+    "nc -lu 127.0.0.1 5300 & P2=$!",
+    "nc -l 10.0.0.1 7000 & P3=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "fuser 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp 9000 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vn tcp 9000 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 5300/udp 2>&1",
+     "output": "5300/udp:                8",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 5300/udp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n5300/udp:            root          8 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -un udp 5300 2>&1",
+     "output": "5300/udp:                8(root)",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/tcp 7000/tcp 2>&1",
+     "output": "9000/tcp:                7\n7000/tcp:                9",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 5300/udp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc\n5300/udp:            root          8 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 1234/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/tcp; echo rc=$?",
+     "output": "9000/tcp:                7\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s 9000/tcp; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s 1234/tcp; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -4 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -6 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -l",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -V 2>&1",
+     "output": "fuser (PSmisc) 23.7\nCopyright (C) 1993-2024 Werner Almesberger and Craig Small\n\nPSmisc comes with ABSOLUTELY NO WARRANTY.\nThis is free software, and you are welcome to redistribute it under\nthe terms of the GNU General Public License.\nFor more information about these matters, see the files named COPYING.",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 2>&1; echo rc=$?",
+     "output": "No process specification given\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -h 2>&1; echo rc=$?",
+     "output": "Usage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -a 1234/tcp 2>&1",
+     "output": "1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v -a 1234/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -u 9000/tcp 2>&1",
+     "output": "9000/tcp:                7(root)",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vu 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... (root)nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/xyz 2>&1; echo rc=$?",
+     "output": "Specified filename 9000/xyz does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser abc/tcp 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port abc: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n foo 9000 2>&1; echo rc=$?",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp abc 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port abc: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash\n                     root          7 .rce. nc\n                     root          8 .rce. nc\n                     root          9 .rce. nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser /tmp/lab 2>&1",
+     "output": "/tmp/lab:                1c     7c     8c     9c",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -m /tmp/lab 2>&1",
+     "output": "/tmp/lab:                1rce     7rce     8rce     9rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 7000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc\n7000/tcp:            root          9 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vn tcp 7000 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n7000/tcp:            root          9 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -nudp 5300 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -w 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vw 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -M 9000/tcp 2>&1",
+     "output": "You can only use files with mountpoint options\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -I 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vz 9000/tcp 2>&1",
+     "output": "fuser: Invalid option z\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -k 9000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 9000/tcp 2>&1; echo rc=$?",
+     "output": "9000/tcp:                7\n/tmp/tmp9c4s4379.sh: line 128:     7 Killed                  nc -l 127.0.0.1 9000\nrc=0\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -TERM 7000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 7000/tcp 2>&1; echo rc=$?",
+     "output": "7000/tcp:                9\nrc=0\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -HUP 5300/udp 2>&1; echo rc=$?",
+     "output": "5300/udp:                8\n/tmp/tmp9c4s4379.sh: line 134:     8 Hangup                  nc -lu 127.0.0.1 5300\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -INVALID 9000/tcp 2>&1; echo rc=$?",
+     "output": "INVALID: unknown signal; fuser -l lists signals.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -l 2>&1 | head -2",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS",
+     "status": 0
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 8,
+    "P3": 9
+   },
+   "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "fuser-connected",
+   "setup": [
+    "nc -l 127.0.0.1 9000 & P1=$!",
+    "sleep 0.3",
+    "nc -p 40001 127.0.0.1 9000 & P2=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "fuser 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp 9000 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vn tcp 9000 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 5300/udp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v 5300/udp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -un udp 5300 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser 9000/tcp 7000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 5300/udp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 1234/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/tcp; echo rc=$?",
+     "output": "9000/tcp:                7\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s 9000/tcp; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s 1234/tcp; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -4 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -6 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -l",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -V 2>&1",
+     "output": "fuser (PSmisc) 23.7\nCopyright (C) 1993-2024 Werner Almesberger and Craig Small\n\nPSmisc comes with ABSOLUTELY NO WARRANTY.\nThis is free software, and you are welcome to redistribute it under\nthe terms of the GNU General Public License.\nFor more information about these matters, see the files named COPYING.",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 2>&1; echo rc=$?",
+     "output": "No process specification given\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -h 2>&1; echo rc=$?",
+     "output": "Usage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -a 1234/tcp 2>&1",
+     "output": "1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v -a 1234/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -u 9000/tcp 2>&1",
+     "output": "9000/tcp:                7(root)",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vu 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... (root)nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/xyz 2>&1; echo rc=$?",
+     "output": "Specified filename 9000/xyz does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser abc/tcp 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port abc: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n foo 9000 2>&1; echo rc=$?",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp abc 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port abc: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash\n                     root          7 .rce. nc\n                     root          9 .rce. nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser /tmp/lab 2>&1",
+     "output": "/tmp/lab:                1c     7c     9c",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -m /tmp/lab 2>&1",
+     "output": "/tmp/lab:                1rce     7rce     9rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 7000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vn tcp 7000 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -nudp 5300 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -w 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vw 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -M 9000/tcp 2>&1",
+     "output": "You can only use files with mountpoint options\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -I 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vz 9000/tcp 2>&1",
+     "output": "fuser: Invalid option z\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -k 9000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 9000/tcp 2>&1; echo rc=$?",
+     "output": "9000/tcp:                7\nrc=0\n/tmp/tmpwyo1zllw.sh: line 128:     7 Killed                  nc -l 127.0.0.1 9000\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -TERM 7000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 7000/tcp 2>&1; echo rc=$?",
+     "output": "rc=1\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -HUP 5300/udp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -INVALID 9000/tcp 2>&1; echo rc=$?",
+     "output": "INVALID: unknown signal; fuser -l lists signals.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -l 2>&1 | head -2",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS",
+     "status": 0
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 9
+   },
+   "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "fuser-none",
+   "setup": [],
+   "pids": [],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "fuser 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n tcp 9000 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vn tcp 9000 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser 5300/udp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v 5300/udp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -un udp 5300 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser 9000/tcp 7000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 5300/udp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser 1234/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/tcp; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s 9000/tcp; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s 1234/tcp; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -4 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -6 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -l",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -V 2>&1",
+     "output": "fuser (PSmisc) 23.7\nCopyright (C) 1993-2024 Werner Almesberger and Craig Small\n\nPSmisc comes with ABSOLUTELY NO WARRANTY.\nThis is free software, and you are welcome to redistribute it under\nthe terms of the GNU General Public License.\nFor more information about these matters, see the files named COPYING.",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 2>&1; echo rc=$?",
+     "output": "No process specification given\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -h 2>&1; echo rc=$?",
+     "output": "Usage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -a 1234/tcp 2>&1",
+     "output": "1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v -a 1234/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -u 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vu 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser 9000/xyz 2>&1; echo rc=$?",
+     "output": "Specified filename 9000/xyz does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser abc/tcp 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port abc: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n foo 9000 2>&1; echo rc=$?",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp abc 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port abc: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser /tmp/lab 2>&1",
+     "output": "/tmp/lab:                1c",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -m /tmp/lab 2>&1",
+     "output": "/tmp/lab:                1rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v 9000/tcp 7000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vn tcp 7000 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -nudp 5300 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -w 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vw 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -M 9000/tcp 2>&1",
+     "output": "You can only use files with mountpoint options\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -I 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vz 9000/tcp 2>&1",
+     "output": "fuser: Invalid option z\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -k 9000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 9000/tcp 2>&1; echo rc=$?",
+     "output": "rc=1\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -TERM 7000/tcp 2>&1; echo rc=$?; sleep 0.3; fuser 7000/tcp 2>&1; echo rc=$?",
+     "output": "rc=1\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -HUP 5300/udp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -INVALID 9000/tcp 2>&1; echo rc=$?",
+     "output": "INVALID: unknown signal; fuser -l lists signals.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -l 2>&1 | head -2",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "fuser-files",
+   "setup": [
+    "echo data > /tmp/lab/f1",
+    "echo data > /tmp/lab/f2",
+    "mkdir -p /tmp/lab/d",
+    "sleep 60 < /tmp/lab/f1 & P1=$!",
+    "tail -f /tmp/lab/f2 > /dev/null & P2=$!",
+    "(cd /tmp/lab/d; exec sleep 60) & P3=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "fuser f1 2>&1",
+     "output": "/tmp/lab/f1:             8",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v f1 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/f1:         root          8 f.... sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -m f1 2>&1",
+     "output": "/tmp/lab/f1:             1rce     8rce     9rce    10rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash\n                     root          8 frce. sleep\n                     root          9 frce. tail\n                     root         10 .rce. sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser d 2>&1",
+     "output": "/tmp/lab/d:             10c",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v d 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/d:          root         10 ..c.. sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -mv d 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/d:          root     kernel mount /\n                     root          1 .rce. bash\n                     root          8 .rce. sleep\n                     root          9 .rce. tail\n                     root         10 .rce. sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -a f1 nofile 2>&1; echo rc=$?",
+     "output": "Specified filename nofile does not exist.\n/tmp/lab/f1:             8\nnofile:\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v nofile 2>&1; echo rc=$?",
+     "output": "Specified filename nofile does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -u f1 2>&1",
+     "output": "/tmp/lab/f1:             8(root)",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v f1 f2 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/f1:         root          8 f.... sleep\n/tmp/lab/f2:         root          9 f.... tail",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vu f2 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/f2:         root          9 f.... (root)tail",
+     "status": 0
+    },
+    {
+     "cmd": "fuser f1 f2 d 2>&1",
+     "output": "/tmp/lab/f1:             8\n/tmp/lab/f2:             9\n/tmp/lab/d:             10c",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v f1 f2 d 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/f1:         root          8 f.... sleep\n/tmp/lab/f2:         root          9 f.... tail\n/tmp/lab/d:          root         10 ..c.. sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s f1; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s nofile; echo rc=$?",
+     "output": "Specified filename nofile does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm / 2>&1 | head -3",
+     "output": "                     USER        PID ACCESS COMMAND\n/:                   root     kernel mount /\n                     root          1 frce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -c f1 2>&1",
+     "output": "/tmp/lab/f1:             1rce     8rce     9rce    10rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vc d 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/d:          root     kernel mount /\n                     root          1 .rce. bash\n                     root          8 .rce. sleep\n                     root          9 .rce. tail\n                     root         10 .rce. sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -m -u f1 2>&1",
+     "output": "/tmp/lab/f1:             1rce(root)     8rce(root)     9rce(root)    10rce(root)",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vam /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash\n                     root          8 frce. sleep\n                     root          9 frce. tail\n                     root         10 .rce. sleep",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k f1 2>&1; echo rc=$?; sleep 0.3; fuser f1 2>&1; echo rc=$?",
+     "output": "/tmp/lab/f1:             8\nrc=0\n/tmp/tmp6q8waot5.sh: line 80:     8 Killed                  sleep 60 < /tmp/lab/f1\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -KILL f2 2>&1; echo rc=$?",
+     "output": "/tmp/lab/f2:             9\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vn file f2 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n file f2 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vn tcp f2 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port f2: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    }
+   ],
+   "recordedPids": {
+    "P1": 8,
+    "P2": 9,
+    "P3": 10
+   },
+   "baseline": "Total: 5\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "fuser-files-none",
+   "setup": [
+    "echo data > /tmp/lab/f1",
+    "echo data > /tmp/lab/f2",
+    "mkdir -p /tmp/lab/d"
+   ],
+   "pids": [],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "fuser f1 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v f1 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -m f1 2>&1",
+     "output": "/tmp/lab/f1:             1rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser d 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v d 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -mv d 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/d:          root     kernel mount /\n                     root          1 .rce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -a f1 nofile 2>&1; echo rc=$?",
+     "output": "Specified filename nofile does not exist.\n/tmp/lab/f1:\nnofile:\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -v nofile 2>&1; echo rc=$?",
+     "output": "Specified filename nofile does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -u f1 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v f1 f2 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vu f2 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser f1 f2 d 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v f1 f2 d 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -s f1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -s nofile; echo rc=$?",
+     "output": "Specified filename nofile does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vm / 2>&1 | head -3",
+     "output": "                     USER        PID ACCESS COMMAND\n/:                   root     kernel mount /\n                     root          1 frce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -c f1 2>&1",
+     "output": "/tmp/lab/f1:             1rce",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vc d 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab/d:          root     kernel mount /\n                     root          1 .rce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -m -u f1 2>&1",
+     "output": "/tmp/lab/f1:             1rce(root)",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vam /tmp/lab 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n/tmp/lab:            root     kernel mount /\n                     root          1 .rce. bash",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k f1 2>&1; echo rc=$?; sleep 0.3; fuser f1 2>&1; echo rc=$?",
+     "output": "rc=1\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -KILL f2 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vn file f2 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n file f2 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vn tcp f2 2>&1; echo rc=$?",
+     "output": "Cannot resolve local port f2: Servname not supported for ai_socktype\nrc=1",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "fuser-parsing",
+   "setup": [
+    "nc -l 127.0.0.1 9000 & P1=$!",
+    "nc -lu 127.0.0.1 5300 & P2=$!",
+    "nc -l 10.0.0.1 7000 & P3=$!",
+    "sleep 0.3",
+    "nc -p 40001 127.0.0.1 9000 & P4=$!"
+   ],
+   "pids": [
+    "P1",
+    "P2",
+    "P3",
+    "P4"
+   ],
+   "addresses": [
+    "10.0.0.1/24",
+    "10.0.0.2/24"
+   ],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "fuser -ntcp 9000 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser --namespace tcp 9000 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --namespace=tcp 9000 2>&1",
+     "output": "fuser: Invalid option --namespace=tcp\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n=tcp 9000 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -vntcp 9000 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n tcp,udp 9000 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n tcp -n udp 5300 2>&1",
+     "output": "5300/udp:                8",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -nfile 9000 2>&1",
+     "output": "Invalid namespace name\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -n 2>&1; echo rc=$?",
+     "output": "Namespace option requires an argument.\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp 2>&1; echo rc=$?",
+     "output": "No process specification given\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/tcp -v 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -sv 9000/tcp; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -vsa 1234/tcp; echo rc=$?",
+     "output": "all option cannot be used with silent option.\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -va 1234/tcp 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n1234/tcp:\n9000/tcp:            root          7 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --verbose --user 9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n9000/tcp:            root          7 F.... (root)nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --all 1234/tcp 2>&1",
+     "output": "1234/tcp:",
+     "status": 1
+    },
+    {
+     "cmd": "fuser --silent 9000/tcp; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --quiet 9000/tcp; echo rc=$?",
+     "output": "fuser: Invalid option --quiet\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --ipv4 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --ipv6 9000/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -46 9000/tcp 2>&1",
+     "output": "You cannot search for only IPv4 and only IPv6 sockets at the same time\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -64 9000/tcp 2>&1",
+     "output": "You cannot search for only IPv4 and only IPv6 sockets at the same time\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n",
+     "status": 1
+    },
+    {
+     "cmd": "fuser --version 2>&1 | head -1",
+     "output": "fuser (PSmisc) 23.7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --help 2>&1 | head -2",
+     "output": "fuser: Invalid option --help\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --list-signals | head -1",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT",
+     "status": 0
+    },
+    {
+     "cmd": "fuser --bogus 9000/tcp 2>&1 | head -2",
+     "output": "fuser: Invalid option --bogus\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -x 9000/tcp 2>&1 | head -2",
+     "output": "fuser: Invalid option x\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -d 9000/tcp 2>&1 | head -2",
+     "output": "fuser: Invalid option d\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -T 9000/tcp 2>&1 | head -2",
+     "output": "T: unknown signal; fuser -l lists signals.",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -f 9000/tcp 2>&1",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -- 9000/tcp 2>&1; echo rc=$?",
+     "output": "No process specification given\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -- -v 2>&1 | head -2",
+     "output": "No process specification given\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]",
+     "status": 0
+    },
+    {
+     "cmd": "fuser '' 2>&1 | head -2",
+     "output": "Specified filename  does not exist.",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/tcp/extra 2>&1; echo rc=$?",
+     "output": "Specified filename 9000/tcp/extra does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 0/tcp 2>&1; echo rc=$?",
+     "output": "0/tcp:                   7     9    11\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 65536/tcp 2>&1; echo rc=$?",
+     "output": "65536/tcp:               7     9    11\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 99999999999/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -1 9000/tcp 2>&1 | head -2",
+     "output": "9000/tcp:                7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000/TCP 2>&1; echo rc=$?",
+     "output": "Specified filename 9000/TCP does not exist.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser ssh/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -n tcp ssh 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser http/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,127.0.0.1/tcp 2>&1",
+     "output": "9000,127.0.0.1/tcp:      7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,127.0.0.1,40001/tcp 2>&1",
+     "output": "9000,127.0.0.1,40001/tcp:     7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,127.0.0.1,40002/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser ,127.0.0.1,9000/tcp 2>&1",
+     "output": ",127.0.0.1,9000/tcp:    11",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 40001,127.0.0.1,9000/tcp 2>&1",
+     "output": "40001,127.0.0.1,9000/tcp:    11",
+     "status": 0
+    },
+    {
+     "cmd": "fuser ,,40001/tcp 2>&1",
+     "output": ",,40001/tcp:             7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser ,,9000/tcp 2>&1",
+     "output": ",,9000/tcp:             11",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,localhost,40001/tcp 2>&1",
+     "output": "9000,localhost,40001/tcp:     7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,nosuchhost,40001/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,127.0.0.1,abc/tcp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser 9000,10.0.0.1/tcp 2>&1",
+     "output": "",
+     "status": 1
+    },
+    {
+     "cmd": "fuser -v 40001,127.0.0.1,9000/tcp 2>&1",
+     "output": "                     USER        PID ACCESS COMMAND\n40001,127.0.0.1,9000/tcp:\n                     root         11 F.... nc",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -s 9000/tcp 2>&1; echo rc=$?",
+     "output": "/tmp/tmp7ztcp7nt.sh: line 178:     7 Killed                  nc -l 127.0.0.1 9000\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -9 -k 7000/tcp 2>&1; echo rc=$?",
+     "output": "7000/tcp:                9\nrc=0\n/tmp/tmp7ztcp7nt.sh: line 182:     9 Killed                  nc -l 10.0.0.1 7000",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -SIGTERM 5300/udp 2>&1; echo rc=$?",
+     "output": "5300/udp:                8\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -kTERM 5300/udp 2>&1; echo rc=$?",
+     "output": "kTERM: unknown signal; fuser -l lists signals.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -0 5300/udp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -64 5300/udp 2>&1; echo rc=$?",
+     "output": "You cannot search for only IPv4 and only IPv6 sockets at the same time\nUsage: fuser [-fIMuvw] [-a|-s] [-4|-6] [-c|-m|-n SPACE]\n             [-k [-i] [-SIGNAL]] NAME...\n       fuser -l\n       fuser -V\nShow which processes use the named files, sockets, or filesystems.\n\n  -a,--all              display unused files too\n  -i,--interactive      ask before killing (ignored without -k)\n  -I,--inode            use always inodes to compare files\n  -k,--kill             kill processes accessing the named file\n  -l,--list-signals     list available signal names\n  -m,--mount            show all processes using the named filesystems or\n                        block device\n  -M,--ismountpoint     fulfill request only if NAME is a mount point\n  -n,--namespace SPACE  search in this name space (file, udp, or tcp)\n  -s,--silent           silent operation\n  -SIGNAL               send this signal instead of SIGKILL\n  -u,--user             display user IDs\n  -v,--verbose          verbose output\n  -w,--writeonly        kill only processes with write access\n  -V,--version          display version information\n  -4,--ipv4             search IPv4 sockets only\n  -6,--ipv6             search IPv6 sockets only\n  udp/tcp names: [local_port][,[rmt_host][,[rmt_port]]]\n\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -65 5300/udp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -k -RTMIN 5300/udp 2>&1; echo rc=$?",
+     "output": "RTMIN: unknown signal; fuser -l lists signals.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -kv 5300/udp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -kw 5300/udp 2>&1; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -l -v 2>&1 | head -1",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -V -v 2>&1 | head -1",
+     "output": "fuser (PSmisc) 23.7",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -l 9000/tcp 2>&1 | head -1",
+     "output": "HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT",
+     "status": 0
+    },
+    {
+     "cmd": "fuser -4 -V 2>&1 | head -1",
+     "output": "fuser (PSmisc) 23.7",
+     "status": 0
+    }
+   ],
+   "recordedPids": {
+    "P1": 7,
+    "P2": 8,
+    "P3": 9,
+    "P4": 11
+   },
+   "baseline": "Total: 6\nTCP:   15 (estab 0, closed 15, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  }
+ ]
+}

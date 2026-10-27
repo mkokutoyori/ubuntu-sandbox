@@ -363,7 +363,7 @@ describe('ss selects like iproute2: states, expressions, files, families', () =>
     const { a } = lab();
     expect(await a.executeCommand('ss -tn state bogus; echo rc=$?')).toBe('ss: wrong state name: bogus\nrc=255');
     expect(await a.executeCommand('ss -tn dport = :nosuch; echo rc=$?')).toContain('rc=1');
-    expect(await a.executeCommand('ss -V; echo rc=$?')).toBe('ss utility, iproute2-5.15.0\nrc=0');
+    expect(await a.executeCommand('ss -V; echo rc=$?')).toBe('ss utility, iproute2-6.1.0\nrc=0');
     expect(await a.executeCommand('ss --nonsense >/dev/null 2>&1; echo rc=$?')).toBe('rc=255');
   });
 
@@ -572,12 +572,13 @@ describe('netstat prints what net-tools prints', () => {
     expect(await a.executeCommand('netstat -to')).toMatch(/ESTABLISHED off \(0\.00\/0\/0\)/);
   });
 
-  it('usage goes to stderr with the exit code of net-tools, and -V says which version', async () => {
+  it('usage goes to stderr with the exit code of net-tools on an error, -h prints it on stdout with rc 0, and -V says which version', async () => {
     const { a } = lab();
     expect(await a.executeCommand('netstat -z 2>&1 | head -1')).toBe("netstat: invalid option -- 'z'");
     expect(await a.executeCommand('netstat -z >/dev/null 2>&1; echo rc=$?')).toBe('rc=3');
-    expect(await a.executeCommand('netstat -V | head -1')).toBe('net-tools 2.10-alpha');
-    expect(await a.executeCommand('netstat -h 2>&1 >/dev/null | head -1')).toContain('usage: netstat [-vWeenNcCF] [<Af>] -r');
+    expect(await a.executeCommand('netstat -V | head -1')).toBe('net-tools 2.10');
+    expect(await a.executeCommand('netstat -h 2>/dev/null | head -1')).toContain('usage: netstat [-vWeenNcCF] [<Af>] -r');
+    expect(await a.executeCommand('netstat -h >/dev/null 2>&1; echo rc=$?')).toBe('rc=0');
   });
 
   it('options the machine cannot honour say so in the words of net-tools', async () => {

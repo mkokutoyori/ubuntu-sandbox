@@ -272,6 +272,11 @@ export class OSProcess {
     return fd;
   }
 
+  redirectStandardStream(fd: 0 | 1 | 2, path: string, mode: FileMode): void {
+    this.openFiles = this.openFiles.filter((f) => f.fd !== fd);
+    this.openFiles.push({ fd, path, mode, offset: 0 });
+  }
+
   closeOpenFile(fd: number): boolean {
     const before = this.openFiles.length;
     this.openFiles = this.openFiles.filter(f => f.fd !== fd);
