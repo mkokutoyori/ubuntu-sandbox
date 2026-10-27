@@ -697,6 +697,7 @@ export class BashInterpreter {
   }
 
   private readonly externalChildren = new Set<string>();
+  private readonly aliasDefinedOnLine = new Map<string, number>();
   private loopDepth = 0;
   private sourceDepth = 0;
 
@@ -1175,6 +1176,7 @@ export class BashInterpreter {
     } else if (cmdName === 'exit' && args.length > 1 && !this.exitArgumentsValid(args.slice(1))) {
       return undefined;
     } else if (isBuiltin(cmdName)) {
+      const aliasesBefore = cmdName === 'alias' ? new Map(this.aliases.list().map((alias) => [alias.name, alias.value])) : null;
       const result = executeBuiltin(
         cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined,
         this.stdin ?? undefined, this.aliases, (fd) => this.fdInputs.get(fd),
@@ -1182,6 +1184,11 @@ export class BashInterpreter {
       this.lastLineOriented = false;
       this.emitResult({ ...result, lineOriented: false }, result.exitCode);
       this.env.lastExitCode = result.exitCode;
+      if (aliasesBefore !== null) {
+        for (const alias of this.aliases.list()) {
+          if (aliasesBefore.get(alias.name) !== alias.value) this.aliasDefinedOnLine.set(alias.name, this.currentLine);
+        }
+      }
     } else {
       const stdinText = this.io?.ignoresStdin?.(args) ? undefined : this.stdin?.readRest();
       const fullArgs = stdinText ? [...args, stdinText] : args;
@@ -1275,7 +1282,7 @@ export class BashInterpreter {
       const head = result[0];
       if (seen.has(head)) break;
       const alias = this.aliases.get(head);
-      if (!alias) break;
+      if (!alias || this.aliasDefinedOnLine.get(head) === this.currentLine) break;
       seen.add(head);
       result = [...alias.tokens(), ...result.slice(1)];
     }
@@ -1852,7 +1859,7 @@ export class BashInterpreter {
 
   private *executeEvalG(code: string, sourced = false, firstLine = 1, label?: string): Effects<void> {
     try {
-      const ast = parseScript(code, firstLine);
+      const ast = parseScript(code, firstLine, this.interactive || isShellOptionEnabled(this.env, 'extglob') ? 'always' : 'declared');
       yield* this.visitCommandList(ast.body);
       if (ast.syntaxFailure !== undefined) this.reportSyntaxFailure(ast.syntaxFailure, label ?? this.syntaxLabel());
     } catch (e) {

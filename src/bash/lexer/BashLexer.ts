@@ -19,6 +19,18 @@ import { TokenType, BASH_KEYWORDS, type Token, type SourcePosition } from './Tok
 import { decodeBackslashEscapes } from '@/bash/runtime/EscapeSequences';
 import { LexerError } from './LexerError';
 
+export type ExtglobPolicy = 'always' | 'declared';
+
+function extglobToggles(input: string): Array<{ offset: number; enable: boolean }> {
+  const toggles: Array<{ offset: number; enable: boolean }> = [];
+  for (const match of input.matchAll(/\bshopt\s+-([su])\s+([^\n;&|]*)/g)) {
+    if (!/\bextglob\b/.test(match[2])) continue;
+    const newline = input.indexOf('\n', match.index);
+    toggles.push({ offset: newline < 0 ? input.length : newline, enable: match[1] === 's' });
+  }
+  return toggles;
+}
+
 export interface LexerWarning {
   readonly line: number;
   readonly reportedLine: number;
@@ -52,6 +64,15 @@ export class BashLexer {
   }> = [];
 
   private warnings: LexerWarning[] = [];
+  private extglobPolicy: ExtglobPolicy = 'always';
+  private extglobEvents: ReadonlyArray<{ readonly offset: number; readonly enable: boolean }> = [];
+
+  private extglobEnabled(): boolean {
+    if (this.extglobPolicy === 'always') return true;
+    let enabled = false;
+    for (const event of this.extglobEvents) if (event.offset <= this.pos) enabled = event.enable;
+    return enabled;
+  }
 
   /**
    * Tokenize the full input string.
@@ -59,15 +80,17 @@ export class BashLexer {
    * @param strip   If true, filter out comments (default: true).
    */
   tokenize(input: string, strip: boolean = true, firstLine = 1): Token[] {
-    return this.scan(input, strip, false, firstLine).tokens;
+    return this.scan(input, strip, false, firstLine, 'always').tokens;
   }
 
-  tokenizeRecovering(input: string, strip: boolean = true, firstLine = 1): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
-    return this.scan(input, strip, true, firstLine);
+  tokenizeRecovering(input: string, strip: boolean = true, firstLine = 1, extglob: ExtglobPolicy = 'always'): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
+    return this.scan(input, strip, true, firstLine, extglob);
   }
 
-  private scan(input: string, strip: boolean, recover: boolean, firstLine: number): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
+  private scan(input: string, strip: boolean, recover: boolean, firstLine: number, extglob: ExtglobPolicy): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
     this.input = input;
+    this.extglobPolicy = extglob;
+    this.extglobEvents = extglob === 'declared' ? extglobToggles(input) : [];
     this.pos = 0;
     this.line = firstLine;
     this.column = 1;
@@ -688,7 +711,7 @@ export class BashLexer {
 
       // Stop at whitespace, operators, and special chars
       if (this.isWhitespace(ch)) break;
-      if (ch === '(' && value !== '' && '@?*+!'.includes(value[value.length - 1])) {
+      if (ch === '(' && value !== '' && '@?*+!'.includes(value[value.length - 1]) && this.extglobEnabled()) {
         const close = this.extendedPatternEnd();
         if (close >= 0) {
           while (this.pos <= close) {

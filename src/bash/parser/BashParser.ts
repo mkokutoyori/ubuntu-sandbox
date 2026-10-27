@@ -114,7 +114,8 @@ export class BashParser {
   private unexpected(token: Token): ParserError {
     const index = this.tokens.indexOf(token);
     const functionHeader = token.type === TokenType.LPAREN && index > 0 && this.tokens[index - 1].type === TokenType.WORD;
-    const reported = functionHeader ? this.tokens[index + 1] ?? token : token;
+    const following = this.tokens[index + 1];
+    const reported = functionHeader && following !== undefined && (following.type === TokenType.NEWLINE || following.type === TokenType.EOF) ? following : token;
     return new ParserError(`Unexpected token '${reported.value}'`, reported.position, { token: reported });
   }
 

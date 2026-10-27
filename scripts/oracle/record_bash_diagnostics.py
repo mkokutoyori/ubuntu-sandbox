@@ -113,6 +113,14 @@ SCRIPTS = [
 'trap \'echo "err at $LINENO"\' ERR\nfalse\ntrue',
 'trap \'echo "exit $?"\' EXIT\nexit 4',
 'main() { false; }\nset -E\ntrap "echo caught" ERR\nmain',
+'shopt -s expand_aliases\nalias say="echo hi"; say\nsay',
+'echo !(a)',
+'x=a; case $x in !(b)) echo m;; esac',
+'shopt -s extglob\necho @(a|b)\ncase a in @(a|b)) echo yes;; esac',
+'echo ok\necho $(echo a ;; b)\necho after',
+'echo $(if)\necho after',
+'cat <(echo a\necho after',
+'shopt -u extglob\ncase a in @(a)) echo y;; esac',
 ]
 
 PRELUDE = 'rm -rf /tmp/w; mkdir -p /tmp/w; cd /tmp/w; touch noexec; '
