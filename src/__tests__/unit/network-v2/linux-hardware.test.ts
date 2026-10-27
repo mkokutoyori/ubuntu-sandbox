@@ -1693,10 +1693,10 @@ describe('Linux Hardware Command Suite', () => {
       expect(output.toLowerCase()).toContain('invalid');
     });
 
-    it('267. should reject df if human-readable parameter has typos (-hh)', async () => {
+    it('267. should accept a repeated human-readable flag and reject an unknown one (df -hh, df -hZ)', async () => {
       const pc = setupHardwarePC();
-      const output = await pc.executeCommand('df -hh');
-      expect(output.toLowerCase()).toContain('invalid');
+      expect((await pc.executeCommand('df -hh')).toLowerCase()).not.toContain('invalid');
+      expect((await pc.executeCommand('df -hZ')).toLowerCase()).toContain('invalid');
     });
 
     it('268. should handle long customized device paths safely inside fdisk rules (fdisk -l /dev/sda...)', async () => {

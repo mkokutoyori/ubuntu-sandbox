@@ -48,7 +48,7 @@ describe('curl with an IPv6 literal', () => {
 
   it('resolves a name that has only an AAAA record', async () => {
     const { pc } = await lab();
-    await pc.executeCommand("echo '2001:db8:1::2 v6only.example' >> /etc/hosts");
+    await pc.executeCommand("sudo sh -c \"echo '2001:db8:1::2 v6only.example' >> /etc/hosts\"");
     expect(await pc.executeCommand("curl -s -m 5 http://v6only.example/")).toMatch(/nginx/i);
   });
 });

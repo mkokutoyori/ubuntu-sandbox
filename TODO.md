@@ -245,6 +245,15 @@ pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonct
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
 
+### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
+**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
+`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
+simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
+FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
+**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
+« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
+meme port d'horloge dans `IRmanOracleContext`.
+
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
 BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /
@@ -811,7 +820,7 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 ### [nano] le repeint incremental de nano 7.2 : des rangees que le tampon ne justifie pas
 Mesure avec `nano-attributes-oracle.test.ts` (UNPORTED_CASES : atr3-21,
 atr3-47, atr3-101, bar2-2, bar2-41), 5 cas sur 690 enregistres sur nano 7.2
-dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
+dans tmux :
 - **Ligne magique** : un caractere tape sur la derniere ligne (que `PageDown`
   atteint) cree une nouvelle ligne magique en dessous ; nano ne repeint que la
   rangee courante, la rangee de la nouvelle ligne magique reste vide, SANS le
@@ -821,17 +830,6 @@ dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
 - **`-S -l` sur une ligne de cinq tranches** : apres `M-\ PageDown C-d BSpace`
   le binaire laisse la rangee de la derniere tranche vide et le curseur colonne 0
   de la rangee suivante.
-- **`-0` et l'invite qui couvre une rangee de texte** : quand l'invite `^_` est quittee
-  par `^W` / `^O` (saut de paragraphe qui ne fait pas defiler), `edit_redraw` ne repeint que
-  l'ancienne et la nouvelle ligne courante et la rangee que l'invite couvrait reste vide ;
-  porte pour ce pas (mou2-72, blo1-21, col1-52 passent) mais le moteur la repeint a la
-  touche suivante, alors que nano la laisse vide jusqu'au prochain `refresh_needed`
-  (`nano-blocks-oracle.test.ts` blo1-61, blo2-129, blo4-149, `nano-colors-oracle.test.ts`
-  col1-82).
-- **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
-  `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) et
-  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0), `nano-package-oracle.test.ts` (pkg1-128, pkg2-2) ; la rangee a le
-  guide quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
@@ -2310,6 +2308,18 @@ sont deux inventions opposees, aussi peu attestees l'une que l'autre.
 
 ## Outillage
 
+### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
+Mesuré : `npx playwright test <n'importe quel spec>` sur un serveur de
+développement non démarré fait échouer le PREMIER test sur
+`page.goto('/')` — 30 s dépassées —, et tous les suivants passent. Vérifié
+par `--repeat-each=2` sur un seul cas : la première exécution tombe, la
+seconde passe. Ce n'est donc pas le spec mais l'amorçage de Vite.
+**Report** : le délai est global (`playwright.config.ts` : `timeout` du
+test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
+fichier partagé et toute la suite ; le relever dans un seul spec
+soignerait le symptôme à un endroit alors que tous y sont exposés. À
+trancher avec l'autre agent, qui exécute la même suite.
+
 ### [typecheck] 229 erreurs de type au compteur
 `npm run typecheck` en compte 229, contre 341 avant la passe de cette
 session. Les erreurs des fichiers de PRODUCTION ont presque toutes été
@@ -3658,18 +3668,66 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
-`imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
+la persistance de `dyn_stats` : l'ecriture est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
+compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
+(l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
+les statistiques par expediteur (`_sender_stat`) ne sont alimentees que par `imtcp` (le source alimente aussi `imptcp`, absent ici) ; `resource-usage` ne fournit que
+utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
+oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
+source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
 omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
-### [journald] `journalctl --file=` ne sert que `--verify`
-`--verify` relit les octets du fichier dans le VFS et porte `journal-verify.c` (`format/JournalVerifier.ts`, compare a 13000 alterations rejouees contre le vrai
-`journalctl` 255.4 : `journal-verify-oracle.test.ts`). `--file=PATH` n'est accepte que pour `--verify` ; les autres actions (`-o`, `--header`, `-n`…) continuent a
-refuser `--file` (« Failed to open files »), la lecture des entrees d'un fichier arbitraire demandant que `JournalctlHost.records()` soit calcule par fichier.
-Les fichiers journal sont lisibles par tous dans le VFS quel que soit l'utilisateur : le mode `0640 root:systemd-journal` est pose mais `journalctl --file=` ne le
-consulte pas.
+### [rsyslog] ratelimit() : limites du lecteur YAML, de policyWatch et de la creation des limiteurs
+`ratelimit()` est porte de rsyslog 8.2608.0 (`engine/SharedRateLimit.ts`, `PerSourceRateLimit.ts`, `RateLimitPolicy.ts`, `YamlEvents.ts`) :
+fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
+`YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
+etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
+sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage vers le chemin et de `chmod` du VFS (`onWrite`, `onEntryChange`) ;
+`chown`, `touch` sans ecriture et la creation d'un lien n'en emettent pas ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
+source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
+(`global(senders.keepTrack)`) restent a porter.
+
+### [rsyslog] `action.errorfile` et `action.externalstate.file` : le moteur n'a pas la phase de commit de la source
+Les deux parametres sont evalues (`engine/ActionRuntime.ts`) : le fichier d'etat externe suspend l'action avant chaque message et la
+relance quand il ne dit plus `SUSPENDED` ; le fichier d'erreurs recoit une ligne JSON par message perdu et le compteur `failed`
+suit. Ce qui reste : le moteur execute `doAction()` message par message, la ou la source collecte les messages d'une transaction
+et les valide ensemble ; le fichier d'erreurs est donc alimente a la fin du lot et non par la phase de commit, qui rejoue chaque
+message d'un lot en echec isolement avant de l'ecrire (le module voit un essai de plus dans la source) ; le code de statut ecrit
+vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desactive, `-2125` sans commande de limite de taille,
+`-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
+source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
+
+### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
+Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
+Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
+`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
+`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
+`libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
+`abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
+Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
+`lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
+(et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
+moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
+`dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
+« linkedlist » en memoire.
+
+### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
+Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
+`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
+(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
+Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
+System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
+TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
+(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
+`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
+8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
+hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
+`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
+le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
@@ -3942,18 +4000,22 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
-### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 3,5 Go sans plantage et se montent en 63 s (200 postes : 18 s), et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
-recalcule en entier des qu'un cable, une position ou le zoom change (102 ms pour 209 cables dans Node) : un routage INCREMENTAL reste non traite, mais il ne se declenche plus pour une adresse IP posee dans un
-terminal. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les
-enregistrements et les octets du fichier), environ 13 Ko par entree.
+### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
 
-Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
-retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
+Les trois bancs passent en entier ; restent mesures et non fermes :
+- `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
+- Les constructeurs de contexte d'E/S existent en double : `ScriptRunner.runScriptContent*` et le chemin `bash` de l'executeur.
+- Un alias defini et utilise sur la meme ligne est deja developpe (bash ne le voit qu'a la ligne suivante).
+- `extglob` est toujours accepte par le lexeur, que `shopt -s extglob` ait ete tape ou non.
+- Les erreurs de syntaxe a l'interieur de `$(...)`, de `<(...)` et d'un `eval` imbrique passent encore par `BashParser.parse` (exception) : aucune commande qui precede n'est executee, contrairement a bash.
+- Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
+- `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
-### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
+### [find-grammaire] find n'a pas la grammaire d'expressions de findutils
 
-Les boucles de lignes d'un INSERT … SELECT (filtre WHERE, CONNECT BY, projection, insertion), d'un UPDATE, d'un DELETE et d'un ROLLBACK sont reprenables, ainsi que les boucles FOR / WHILE / LOOP d'un bloc PL/SQL anonyme : au profil Chromium, `ora-insert-300k` passe de 1 059 a 144 ms de tache longue, `ora-update-delete-300k` de 1 722 a 135 ms et `ora-plsql-inserts-20k` de 784 a 126 ms. Reste atomique, donc source de gel proportionnel au volume : le tri (ORDER BY), GROUP BY et les fonctions d'agregat, les jointures, les fonctions de fenetre, DISTINCT, le corps d'une procedure ou d'une fonction stockee appelee depuis un bloc (seules les boucles du bloc anonyme lui-meme rendent la main), COMMIT (74 ms pour 300 000 changements : `appendRedo` copie chaque enregistrement), une jointure de deux tables de 20 000 lignes (671 ms d'une tranche), GROUP BY et fonctions de fenetre sur 50 000 a 300 000 lignes (110 a 150 ms), une sous-requete correlee sans index (en O(n x m)) et toute instruction lancee par un appelant synchrone (script `@fichier`, `sqlplus` en tube depuis bash, serveur Oracle Net distant) ; seul le sous-shell interactif rend la main a la boucle d'evenements entre deux tranches. Les limites de profil (`CPU_PER_CALL` …) coupent toujours une instruction demesuree, et leur temps ne compte que le temps actif.
+`find` (LinuxSearchCommands.cmdFind) accepte `-perm` octal (`N`, `-N`, `/N`) et `-xdev` depuis le script d'audit lecture seule, mais ignore toujours en silence les predicats qu'il ne connait pas (`-o`, `-a`, parentheses, `-printf`, `-ls`, `-links`, `-regex`, `-perm` symbolique `u+x`, `-exec ... +`). Un critere ignore rend la recherche plus large que ce que l'operateur a ecrit ; a fermer en portant l'arbre d'expressions de findutils et en refusant l'inconnu avec `find: unknown predicate`.
 
-Pendant qu'une instruction est suspendue, une autre session peut valider ses propres lignes dans la meme table : un INSERT concurrent est conserve, un DELETE concurrent (la table est reecrite) fait echouer la tranche suivante avec ORA-08177. Une vue lue par une autre session au milieu d'un ROLLBACK en tranches voit un etat intermediaire de la table (les indices de lignes ne sont rafraichis qu'a la fin). Ces deux points n'ont pas de sonde au-dela de l'ORA-08177 et de la conservation de l'insertion concurrente.
+### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
+
+Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.

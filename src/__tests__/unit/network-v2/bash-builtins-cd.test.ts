@@ -99,7 +99,7 @@ describe('cd builtin', () => {
       const env = makeEnv({ PWD: '/tmp' });
       const result = executeBuiltin('cd', [], env, noFunctions);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toBe('bash: cd: HOME not set\n');
+      expect(result.stderr).toBe('bash: cd: HOME not set\n');
     });
 
     it('should cd ~ to HOME', () => {
@@ -133,7 +133,7 @@ describe('cd builtin', () => {
       const env = makeEnv({ PWD: '/home/user', HOME: '/home/user' });
       const result = executeBuiltin('cd', ['-'], env, noFunctions);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toBe('bash: cd: OLDPWD not set\n');
+      expect(result.stderr).toBe('bash: cd: OLDPWD not set\n');
     });
 
     it('should set OLDPWD after cd', () => {
@@ -149,7 +149,7 @@ describe('cd builtin', () => {
       const env = makeEnv({ PWD: '/home/user', HOME: '/home/user' });
       const result = executeBuiltin('cd', ['/tmp', '/var'], env, noFunctions);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toBe('bash: cd: too many arguments\n');
+      expect(result.stderr).toBe('bash: cd: too many arguments\n');
     });
 
     it('should error when target does not exist (with VFS)', () => {
@@ -157,7 +157,7 @@ describe('cd builtin', () => {
       const io = makeIO({}); // empty filesystem
       const result = executeBuiltin('cd', ['/nonexistent'], env, noFunctions, io);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toBe('bash: cd: /nonexistent: No such file or directory\n');
+      expect(result.stderr).toBe('bash: cd: /nonexistent: No such file or directory\n');
     });
 
     it('should error when target is a file not a directory (with VFS)', () => {
@@ -165,7 +165,7 @@ describe('cd builtin', () => {
       const io = makeIO({ '/etc/passwd': 'file' });
       const result = executeBuiltin('cd', ['/etc/passwd'], env, noFunctions, io);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toBe('bash: cd: /etc/passwd: Not a directory\n');
+      expect(result.stderr).toBe('bash: cd: /etc/passwd: Not a directory\n');
     });
 
     it('should not change PWD when cd fails', () => {
