@@ -377,6 +377,20 @@ const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
 
+const NEVER_READ_STDIN: ReadonlySet<string> = new Set([
+  'mkdir', 'rmdir', 'rm', 'mv', 'cp', 'ln', 'touch', 'chmod', 'chown', 'chgrp', 'ls', 'stat', 'umask', 'cd', 'pwd', 'sleep', 'id', 'whoami',
+  'date', 'hostname', 'uname', 'df', 'du', 'free', 'ps', 'kill', 'which', 'whereis', 'find', 'basename', 'dirname', 'realpath', 'readlink',
+  'mktemp', 'ip', 'ss', 'netstat', 'ping', 'echo', 'true', 'false', 'test', '[', 'type', 'command', 'uptime', 'who', 'last', 'getent',
+  'systemctl', 'journalctl', 'restorecon',
+]);
+
+function ignoresStandardInput(argv: readonly string[]): boolean {
+  const command = (argv[0] ?? '').split('/').pop() ?? '';
+  if (NEVER_READ_STDIN.has(command)) return true;
+  const known = ALWAYS_READ_STDIN.has(command) || READ_STDIN_WITHOUT_OPERAND.has(command) || READ_STDIN_WITH_ONE_OPERAND.has(command);
+  return known && !readsStandardInput(command, argv.slice(1));
+}
+
 function readsStandardInput(command: string, args: readonly string[]): boolean {
   if (ALWAYS_READ_STDIN.has(command)) return true;
   const operands = args.filter((argument) => !argument.startsWith('-') || argument === '-').length;
@@ -5279,6 +5293,7 @@ export class LinuxCommandExecutor {
         const job = this.jobTable.findByPid(pid);
         return job === undefined ? null : `[${job.id}] ${pid}`;
       },
+      ignoresStdin: (argv: readonly string[]) => ignoresStandardInput(argv),
       beginBackgroundSubshell: (label: string) => this.beginBackgroundSubshell(label),
       endBackgroundSubshell: (pid, outcome) => this.endBackgroundSubshell(pid, outcome),
       holdBackgroundStdin: (pid: number, path: string) => {

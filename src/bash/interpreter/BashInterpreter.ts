@@ -159,6 +159,7 @@ export interface IOContext {
   beginBackgroundSubshell?(label: string): number;
   endBackgroundSubshell?(pid: number, outcome: { cwd: string; image: readonly string[] | null; output: string; exitCode: number; parked: boolean }): void;
   backgroundAnnouncement?(pid: number): string | null;
+  ignoresStdin?(argv: readonly string[]): boolean;
 }
 
 type Sink =
@@ -1182,7 +1183,7 @@ export class BashInterpreter {
       this.emitResult({ ...result, lineOriented: false }, result.exitCode);
       this.env.lastExitCode = result.exitCode;
     } else {
-      const stdinText = this.stdin?.readRest();
+      const stdinText = this.io?.ignoresStdin?.(args) ? undefined : this.stdin?.readRest();
       const fullArgs = stdinText ? [...args, stdinText] : args;
       const envSnapshot = this.childEnvironment(node.assignments.map(a => a.name));
       const background = this.pendingBackground || undefined;
@@ -1372,7 +1373,7 @@ export class BashInterpreter {
       this.env.lastExitCode = r.exitCode;
       return;
     }
-    const stdinText = this.stdin?.readRest();
+    const stdinText = this.io?.ignoresStdin?.(target) ? undefined : this.stdin?.readRest();
     const fullArgs = stdinText ? [...target, stdinText] : target;
     const envSnapshot = this.childEnvironment([]);
     const result = normalizeResult(yield {
