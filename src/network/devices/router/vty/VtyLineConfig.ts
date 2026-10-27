@@ -156,6 +156,11 @@ export function mergeMethodListLines(existing: string | null | undefined, incomi
   return [...kept, incoming].join('\n');
 }
 
+export function withoutMethodListLine(existing: string | null | undefined, service: string): string {
+  const keyOf = (line: string): string => line.split(' ').slice(0, -1).join(' ');
+  return (existing ?? '').split('\n').filter((line) => line !== '' && keyOf(line) !== service).join('\n');
+}
+
 export class VtyLineConfig {
   readonly first: number;
   readonly last: number;
@@ -251,6 +256,17 @@ export class VtyLineConfig {
 
   get range(): VtyLineRange {
     return new VtyLineRange(this.first, this.last);
+  }
+
+  withoutMethodList(kind: 'accounting' | 'authorization', service: string): VtyLineConfig {
+    const field = kind === 'accounting' ? 'accountingList' : 'authorizationList';
+    const remaining = withoutMethodListLine(this[field], service);
+    const kept: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(this)) {
+      kept[name] = value === null ? undefined : value;
+    }
+    kept[field] = remaining === '' ? undefined : remaining;
+    return new VtyLineConfig(kept as unknown as VtyLineConfigInit);
   }
 
   withoutFields(names: readonly (keyof VtyLineConfigInit)[]): VtyLineConfig {

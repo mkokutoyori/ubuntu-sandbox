@@ -4,6 +4,8 @@
  * on the socle.
  * Discriminated with git stash of src/network: 4 of 12 (first batch); second batch: 2 of 6 fail before (`escape-character` bare
  * accepted, `no length`/`no width` leaving the line); the other four are
+ * witnesses/non-regressions; third batch: 1 of 5 fails before (`no accounting
+ * exec default` left the list in the running-config), the other four are
  * witnesses/non-regressions cases fail before
  * (week and weekday help after recurring, day-or-month help after date,
  * `no logging synchronous` on a vty leaving the line in the config).
@@ -137,5 +139,35 @@ describe('line settings, second batch', () => {
   it('witness: console history size is stored', async () => {
     const r = await router('line console 0', 'history size 50');
     expect(await config(r)).toContain('history size 50');
+  });
+});
+
+describe('line settings, third batch', () => {
+  const config = async (r: Cli): Promise<string> => {
+    await r.executeCommand('end');
+    return r.executeCommand('show running-config');
+  };
+  it('witness: accounting exec is stored on a vty', async () => {
+    const r = await router('line vty 0 4', 'accounting exec default');
+    expect(await config(r)).toContain('accounting exec default');
+  });
+  it('removes the accounting list it is asked to remove', async () => {
+    const r = await router('line vty 0 4', 'accounting exec default',
+      'authorization exec default', 'no accounting exec default');
+    const out = await config(r);
+    expect(out).not.toContain('accounting exec default');
+    expect(out).toContain('authorization exec default');
+  });
+  it('refuses a command level out of range', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('accounting commands 16 default')).toContain('Invalid input');
+  });
+  it('answers incomplete to accounting exec without its list', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('accounting exec')).toContain('Incomplete');
+  });
+  it('witness: motd-banner round trip on a vty', async () => {
+    const r = await router('line vty 0 4', 'no motd-banner');
+    expect(await config(r)).toContain('no motd-banner');
   });
 });

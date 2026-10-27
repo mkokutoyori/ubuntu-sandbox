@@ -16,6 +16,9 @@ export interface LineSettingsHost {
   disableHistory(): void;
   setPrivilege(level: number): void;
   clearPrivilege(): void;
+  setMethodList(kind: 'accounting' | 'authorization', service: string, list: string): void;
+  removeMethodList(kind: 'accounting' | 'authorization', service: string): void;
+  setAuxExec(enabled: boolean): void;
 }
 
 const MODES = ['config-line'];
@@ -82,6 +85,20 @@ function undoOf(
   };
 }
 
+function methodList(name: string): ArgumentSpec {
+  return {
+    name, type: 'WORD', description: 'Method list name',
+    alternatives: [
+      { keyword: 'default', description: 'The default method list' },
+      { keyword: 'WORD', description: 'Method list name' },
+    ],
+  };
+}
+
+const COMMAND_LEVEL: ArgumentSpec = {
+  name: 'level', type: 'INT', range: [0, 15], description: 'Privilege level',
+};
+
 export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] {
   const base = { modes: [...MODES], minPrivilege: 15 };
   const guarded = (keyword: string, body: () => void): string => {
@@ -108,7 +125,45 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
       undoOf(base, id, [keyword], description, clear),
     ];
   };
+  const aaa = (
+    kind: 'accounting' | 'authorization', service: string, description: string,
+    level: boolean,
+  ): CommandSpec => {
+    const list = methodList('list');
+    const key = (args: Record<string, string>): string =>
+      level ? `${service} ${Number(args.level)}` : service;
+    return {
+      ...base, id: `line-${kind}-${service}`,
+      path: [kind, service, ...(level ? [COMMAND_LEVEL] : []), list], description,
+      run: (_session, args) => guarded(kind, () =>
+        host().setMethodList(kind, key(args), args.list)),
+      undo: (_session, args) => guarded(kind, () => host().removeMethodList(kind, key(args))),
+    };
+  };
   return [
+    aaa('accounting', 'commands', 'Account for commands', true),
+    aaa('accounting', 'connection', 'Account for connections', false),
+    aaa('accounting', 'exec', 'Account for EXEC sessions', false),
+    aaa('authorization', 'commands', 'Authorize commands', true),
+    aaa('authorization', 'exec', 'Authorize EXEC sessions', false),
+    {
+      ...base, id: 'line-motd-banner', path: ['motd-banner'],
+      description: 'Enable the display of the MOTD banner',
+      run: () => guarded('motd-banner', () => host().patch({ motdBannerSuppressed: false })),
+      undo: () => guarded('motd-banner', () => host().patch({ motdBannerSuppressed: true })),
+    },
+    {
+      ...base, id: 'line-exec-banner', path: ['exec', 'banner'],
+      description: 'Enable the display of the EXEC banner',
+      run: () => guarded('exec', () => host().patch({ execBannerSuppressed: false })),
+      undo: () => guarded('exec', () => host().patch({ execBannerSuppressed: true })),
+    },
+    {
+      ...base, id: 'line-exec', path: ['exec'],
+      description: 'Enable the EXEC process',
+      run: () => guarded('exec', () => host().setAuxExec(true)),
+      undo: () => guarded('exec', () => host().setAuxExec(false)),
+    },
     ...valued('line-session-timeout', 'session-timeout',
       minutesFor('minutes', 'Timeout in minutes'), 'Set the interval for closing a connection when there is no input traffic',
       'sessionTimeoutMinutes', { unset: 'sessionTimeoutMinutes' }),

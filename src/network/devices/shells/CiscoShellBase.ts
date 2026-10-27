@@ -126,7 +126,6 @@ import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
   parseAaaMethod,
 } from './cisco/CiscoSecurityCommands';
-import { parseLineMethodList } from './cisco/lineMethodList';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
 import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
@@ -540,17 +539,6 @@ const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
 const LINE_KEYWORD_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'login authentication': LISTE_DE_METHODES('authentification'),
-  'accounting commands': [
-    { name: 'niveau', type: 'INT', range: [0, 15], description: 'Privilege level' },
-    LISTE_DE_METHODES('comptes-commandes'),
-  ],
-  'accounting connection': LISTE_DE_METHODES('comptes-connexion'),
-  'accounting exec': LISTE_DE_METHODES('comptes-exec'),
-  'authorization commands': [
-    { name: 'niveau-autorisation', type: 'INT', range: [0, 15], description: 'Privilege level' },
-    LISTE_DE_METHODES('autorisation-commandes'),
-  ],
-  'authorization exec': LISTE_DE_METHODES('autorisation-exec'),
 };
 
 const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
@@ -622,21 +610,12 @@ function modesDuTrie(champ: string): readonly string[] {
 
 const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
   ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
-  ['logging', [['synchronous', 'Synchronize logging output with EXEC output']]],
-  ['exec', [['banner', 'Enable the display of the EXEC banner']]],
   ['no', [
-    ['exec', 'Disable the EXEC process'],
     ['login', 'Disable authentication on the line'],
-    ['logging', 'Disable synchronous logging'],
     ['password', 'Clear the line password'],
   ]],
-  ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
-  ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
 ];
 
-function suitesDeLigne(mot: string): readonly string[] {
-  return (LINE_KEYWORD_SUITES.find(([k]) => k === mot)?.[1] ?? []).map(([s]) => s);
-}
 
 
 /*
@@ -5346,6 +5325,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     type VtyConfig = {
       upsert: (p: object) => unknown;
       unset: (first: number, last: number, names: readonly string[]) => unknown;
+      removeMethodList: (first: number, last: number, kind: string, service: string) => unknown;
     };
     const vty = (): { range: { first: number; last: number }; config: VtyConfig | undefined } | null => {
       const range = this.selectedVtyRange;
@@ -5396,6 +5376,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         target?.config?.upsert({ first: target.range.first, last: target.range.last, ...fields });
       },
       unset: (names) => unset(names),
+      setMethodList: (kind, service, list) => {
+        const target = vty();
+        target?.config?.upsert({
+          first: target.range.first, last: target.range.last,
+          [kind === 'accounting' ? 'accountingList' : 'authorizationList']: `${service} ${list}`,
+        });
+      },
+      removeMethodList: (kind, service) => {
+        const target = vty();
+        if (!target) return;
+        target.config?.removeMethodList(target.range.first, target.range.last, kind, service);
+      },
+      setAuxExec: (enabled) => {
+        if (this.selectedAuxLine != null) this.auxLineNoExec = !enabled;
+      },
       setHistorySize: (size) => {
         const target = vty();
         if (target) {
@@ -5458,20 +5453,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * ils gouvernent pourtant qui entre par cette ligne, donc valider
      * sur la promesse de `?` laissait croire a une regle d'acces posee.
      */
-    for (const kw of ['transport', 'accounting', 'authorization']) {
-      t.requireArgs(kw, 1);
-    }
+    t.requireArgs('transport', 1);
     for (const kw of ['login', 'password',
       'no', 'speed', 'stopbits', 'databits', 'parity',
-      'flowcontrol', 'authorization',
-      'accounting', 'motd-banner', 'exec']) {
+      'flowcontrol']) {
       t.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         this.requireLineKind(kw);
         const range = this.selectedVtyRange;
         if (!range) {
           if (this.selectedAuxLine != null) {
-            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
-            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
             return '';
           }
           if (this.selectedConsoleLine == null) return '';
@@ -5549,24 +5539,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             update.linePassword = args.join(' ');
             update.linePasswordAlgo = 'plain';
           }
-        } else if (kw === 'motd-banner') {
-          update.motdBannerSuppressed = false;
-        } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
-          update.execBannerSuppressed = false;
-        } else if (kw === 'authorization' || kw === 'accounting') {
-          const verdict = parseLineMethodList(args, suitesDeLigne(kw));
-          if ('incomplete' in verdict) throw new CliIncomplete();
-          if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
-          if (kw === 'authorization') update.authorizationList = verdict.tail;
-          else update.accountingList = verdict.tail;
         } else if (kw === 'no' && args.length > 0) {
           const sub = args[0]?.toLowerCase();
           // `no password` clears the line secret (empty string → explicitly
           // unset, distinct from "never configured"); `no login` disables auth.
           if (sub === 'password') update.linePassword = '';
           else if (sub === 'login') update.login = 'none';
-          else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
-          else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
