@@ -1,5 +1,6 @@
 import { IPv6Address } from '@/network/core/types';
 import { tryIpToUint32 } from '@/network/core/ip';
+import { fnmatch } from '../../../fs/Glob';
 import {
   AF, DB, SsError, SsFilter, type HostCondition, type SsExpression,
 } from './SsModel';
@@ -14,6 +15,7 @@ export interface SsEndpoint {
   readonly family: number;
   readonly address: Uint8Array;
   readonly port: number;
+  readonly name?: string;
 }
 
 export interface SsFilterSubject {
@@ -73,7 +75,9 @@ function addressMatches(socket: SsEndpoint, pattern: HostCondition): boolean {
 
 function conditionMatches(endpoint: SsEndpoint, conditions: readonly HostCondition[]): boolean {
   const first = conditions[0];
-  if (first.family === AF.UNIX) return false;
+  if (first.family === AF.UNIX) {
+    return endpoint.family === AF.UNIX && conditions.some((condition) => fnmatch(condition.pattern ?? '', endpoint.name ?? ''));
+  }
   if (first.port !== -1 && first.port !== endpoint.port) return false;
   if (first.bits === 0) return true;
   return conditions.some((condition) => addressMatches(endpoint, condition));
@@ -239,12 +243,16 @@ function parseHostCondition(
     context.filter.setStates(states);
   };
   const noAddress = new Uint8Array(ADDRESS_BYTES);
-  if (family === AF.UNIX || family === AF.PACKET || family === AF.NETLINK || family === AF.VSOCK) {
+  if (family === AF.UNIX) {
+    restrictFamilies();
+    return [{ family, address: noAddress, bits: 8 * text.length, port: -1, pattern: text }];
+  }
+  if (family === AF.PACKET || family === AF.NETLINK || family === AF.VSOCK) {
     const colon = text.lastIndexOf(':');
     const portText = isPort ? text : colon < 0 ? null : text.slice(colon + 1);
     const port = portText === null || portText === '' || portText === '*' ? -1 : parseInteger(portText) ?? -1;
     restrictFamilies();
-    return [{ family, address: noAddress, bits: family === AF.UNIX ? 8 * text.length : 0, port }];
+    return [{ family, address: noAddress, bits: 0, port }];
   }
 
   let host = text;

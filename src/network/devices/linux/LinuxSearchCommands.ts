@@ -5,7 +5,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { ShellContext } from './LinuxFileCommands';
 import { parseTouchDate } from './time/FileTimes';
-import type { FindTimeTest } from './VirtualFileSystem';
+import { isFindType, type FindTimeTest, type FindType } from './VirtualFileSystem';
 
 /** Parse a `-size` argument: `2k`, `+10M`, `-100c`, `1G`. */
 function parseSizeSpec(raw: string): { op: '+' | '-' | '='; value: number } | null {
@@ -30,7 +30,7 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   let iname: string | undefined;
   let pathPat: string | undefined;
   let ipathPat: string | undefined;
-  let type: 'f' | 'd' | 'l' | undefined;
+  let type: FindType | undefined;
   let empty = false;
   const timeTests: FindTimeTest[] = [];
   let timeError: string | null = null;
@@ -73,7 +73,8 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
       case '-ipath': ipathPat = args[++i]; break;
       case '-type': {
         const t = args[++i];
-        if (t === 'f' || t === 'd' || t === 'l') type = t;
+        if (t !== undefined && isFindType(t)) type = t;
+        else timeError = `find: Unknown argument to -type: ${t ?? ''}`;
         break;
       }
       case '-empty': empty = true; break;

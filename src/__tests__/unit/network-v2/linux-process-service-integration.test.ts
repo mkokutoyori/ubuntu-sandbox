@@ -23,7 +23,7 @@ describe('Linux process & service integration', () => {
     });
 
     it('ps aux shows ssh service as a real process', () => {
-      const out = exec.execute('ps aux');
+      const out = exec.execute('ps auxww');
       expect(out).toContain('sshd');
     });
 
@@ -54,7 +54,7 @@ describe('Linux process & service integration', () => {
       exec.execute('systemctl stop ssh');
       exec.execute('systemctl start ssh');
       expect(exec.execute('systemctl is-active ssh').trim()).toBe('active');
-      expect(exec.execute('ps aux')).toContain('sshd');
+      expect(exec.execute('ps auxww')).toContain('sshd');
     });
 
     it('disable ssh removes the wants symlink in the VFS', () => {
@@ -193,7 +193,7 @@ WantedBy=multi-user.target
       const server = new LinuxCommandExecutor(true);
       server.execute('systemctl start apache2');
       expect(server.execute('systemctl is-active apache2').trim()).toBe('active');
-      expect(server.execute('ps aux')).toContain('apachectl');
+      expect(server.execute('ps auxww')).toContain('apachectl');
     });
   });
 });

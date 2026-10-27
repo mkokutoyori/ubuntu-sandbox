@@ -1,7 +1,7 @@
 export type Errno =
   | 'EPERM' | 'ENOENT' | 'ENODEV' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
   | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
-  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT' | 'EBADMSG' | 'ENODATA' | 'EPROTONOSUPPORT' | 'ENOKEY' | 'EIO' | 'ERANGE' | 'ESRCH' | 'ENOTDIR' | 'EFBIG' | 'ENOMEM' | 'EINPROGRESS';
+  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT' | 'EBADMSG' | 'ENODATA' | 'EPROTONOSUPPORT' | 'ENOKEY' | 'EIO' | 'ERANGE' | 'ESRCH' | 'ENOTDIR' | 'EFBIG' | 'ENOMEM' | 'EINPROGRESS' | 'EAGAIN' | 'ENAMETOOLONG' | 'EPROTOTYPE';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EPERM: { number: 1, text: 'Operation not permitted' },
@@ -35,6 +35,9 @@ const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EFBIG: { number: 27, text: 'File too large' },
   ENOMEM: { number: 12, text: 'Cannot allocate memory' },
   EINPROGRESS: { number: 115, text: 'Operation now in progress' },
+  EAGAIN: { number: 11, text: 'Resource temporarily unavailable' },
+  ENAMETOOLONG: { number: 36, text: 'File name too long' },
+  EPROTOTYPE: { number: 91, text: 'Protocol wrong type for socket' },
 };
 
 export interface MessageTooLong {

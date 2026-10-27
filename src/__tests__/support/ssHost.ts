@@ -24,6 +24,9 @@ export function ssHostOver(table: SocketTable, overrides: Partial<SsHost> = {}, 
   const rows = (): KernelSocketRow[] => kernelSocketRows({ table, stack: null, processes: fixtureProcesses(processes) });
   return {
     rows,
+    unixSockets: () => [],
+    unixOwners: () => [],
+    fileDevice: () => 0,
     procFile: () => null,
     destroy: () => 'unsupported',
     screenWidth: () => null,

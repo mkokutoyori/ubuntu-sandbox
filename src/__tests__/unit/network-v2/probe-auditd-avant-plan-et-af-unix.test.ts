@@ -12,7 +12,8 @@
  * sockets »), le plugin af_unix creait un fichier socket sans personne pour l'ecouter. Avec src/network et src/terminal
  * remis avant, 10 cas sur 13 tombent ; 3 passent dans les deux etats : le temoin (service demarre, pid connu), « un
  * second demon au premier plan echoue aussitot » (le refus ne passe pas par le flux) et « Ctrl-C rend l'invite »
- * (l'invite est deja rendue quand rien ne bloque) ; ils bornent les cas qui bloquent.
+ * (l'invite est deja rendue quand rien ne bloque) ; ils bornent les cas qui bloquent. Le cas `nc -lU` affirmait que la ecoute UNIX restait
+ * refusee : la table des prises UNIX existe depuis (probe-prises-unix-une-seule-table), la these etait fausse, il affirme maintenant l'ecoute.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -119,8 +120,10 @@ describe('audisp-af_unix with a real client', () => {
     expect(await pc.executeCommand(`nc -U ${SOCKET}; echo rc=$?`)).toBe(`nc: ${SOCKET}: No such file or directory\nrc=1`);
   });
 
-  it('nc -lU stays refused', async () => {
-    expect(await pc.executeCommand('nc -lU /tmp/x.sock; echo rc=$?')).toContain('this simulator cannot build UNIX-domain listening sockets');
+  it('nc -lU listens now that the socket table exists', async () => {
+    await pc.executeCommand('nc -lU /tmp/x.sock &');
+    expect(await pc.executeCommand('ls -l /tmp/x.sock | cut -c1')).toBe('s');
+    expect(await pc.executeCommand('ss -xl | grep -c x.sock')).toBe('1');
   });
 
   it('a client receives each event as a line, and the plugin logs the connection', async () => {

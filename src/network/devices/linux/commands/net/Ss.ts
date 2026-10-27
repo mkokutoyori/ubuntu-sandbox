@@ -35,6 +35,9 @@ function hostOf(ctx: LinuxCommandContext, stdin: string | undefined): SsHost {
   const { executor } = ctx;
   return {
     rows: () => executor.kernelSocketRows(),
+    unixSockets: () => executor.localDatagramSockets.rows(),
+    unixOwners: (row) => executor.unixSocketOwners(row),
+    fileDevice: (path) => executor.unixFileDevice(path),
     procFile: (path) => executor.vfs.readFile(path),
     destroy: (row) => executor.destroySocket(row),
     screenWidth: () => (ctx.outputPiped === true ? null : executor.terminalColumns() ?? DEFAULT_SCREEN_COLUMNS),

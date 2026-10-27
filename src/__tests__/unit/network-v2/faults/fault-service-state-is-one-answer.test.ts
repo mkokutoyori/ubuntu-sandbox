@@ -40,7 +40,7 @@ function box(): LinuxPC {
 
 /** Le pid du processus principal d'un service, lu dans `ps`. */
 async function pidOf(pc: LinuxPC, exe: string): Promise<string | undefined> {
-  const ps = await pc.executeCommand('ps aux');
+  const ps = await pc.executeCommand('ps auxww');
   return ps.split('\n').find((l) => l.includes(exe))?.trim().split(/\s+/)[1];
 }
 

@@ -153,6 +153,8 @@ export interface IOContext {
    * moved on (`nc -l > file &` receives data minutes later): the shell binds
    * the file to the job's pid once the redirection is applied.
    */
+  getUmask?(): number;
+  setUmask?(mask: number): void;
   bindBackgroundStdout?(pid: number, path: string): void;
   bindBackgroundStderr?(pid: number, path: string, append: boolean): void;
   holdBackgroundStdin?(pid: number, path: string): void;
@@ -524,6 +526,7 @@ export class BashInterpreter {
     const outer = this.log;
     const inner = new OutputLog();
     const savedEnv = this.env;
+    const savedUmask = this.captureUmask();
     let status = 0;
     try {
       const lexer = new BashLexer();
@@ -553,6 +556,7 @@ export class BashInterpreter {
     } finally {
       this.env = savedEnv;
       this.log = outer;
+      this.restoreUmask(savedUmask);
     }
     this.forward(inner, outer, false);
     this.lastSubstitutionStatus = status;
@@ -869,7 +873,9 @@ export class BashInterpreter {
       const savedNonLastStage = this.nonLastPipelineStage;
       if (!isLast) this.nonLastPipelineStage = true;
       const shellEnv = this.env;
-      if (!(isLast && isShellOptionEnabled(shellEnv, 'lastpipe'))) this.env = shellEnv.createSubshell();
+      const runsInSubshell = !(isLast && isShellOptionEnabled(shellEnv, 'lastpipe'));
+      if (runsInSubshell) this.env = shellEnv.createSubshell();
+      const savedUmask = runsInSubshell ? this.captureUmask() : undefined;
       let stageStatus = 0;
       try {
         yield* this.visitCommand(cmd);
@@ -877,11 +883,14 @@ export class BashInterpreter {
       } catch (e) {
         stageStatus = e instanceof ReturnSignal ? e.exitCode : this.isolatedStatus(e);
       } finally {
+        const stageBackground = this.env.get('!') ?? '';
         this.env = shellEnv;
+        if (runsInSubshell && stageBackground !== '' && stageBackground !== shellEnv.get('!')) shellEnv.recordBackgroundPid(stageBackground);
         this.nonLastPipelineStage = savedNonLastStage;
         if (!isLast) this.errexitSuppress--;
         this.log = outer;
         this.stdin = outerStdin;
+        this.restoreUmask(savedUmask);
       }
       this.env.lastExitCode = stageStatus;
       stageCodes.push(stageStatus);
@@ -1230,7 +1239,8 @@ export class BashInterpreter {
     if (childShell) return ensureTrailingNewline(text);
     const prefix = this.diagnosticPrefix();
     return ensureTrailingNewline(text).split(/(?<=\n)/).map((raw) => {
-      const line = builtin !== undefined && raw.startsWith(`${builtin}: `) ? `bash: ${raw}` : raw.replace(/^bash: line \d+: /, 'bash: ');
+      const named = builtin !== undefined && raw.startsWith(`${builtin}: `) && !raw.startsWith(`${builtin}: usage: `);
+      const line = named ? `bash: ${raw}` : raw.replace(/^bash: line \d+: /, 'bash: ');
       if (line.startsWith('bash: ')) return prefix + line.slice(6);
       return bare && /: (command not found|Permission denied|No such file or directory|Is a directory)\n$/.test(line) ? prefix + line : line;
     }).join('');
@@ -1583,6 +1593,17 @@ export class BashInterpreter {
         this.fdInputs.delete(fd);
         continue;
       }
+      if (redir.op === '>&' && fd >= 3 && /^\d+$/.test(target)) {
+        const source = Number(target);
+        const sink: Sink | undefined = source === 1 ? { kind: 'out' } : source === 2 ? { kind: 'err' } : this.fdOutputs.get(source);
+        if (sink === undefined) {
+          this.emitError(`bash: ${source}: Bad file descriptor`);
+          this.env.lastExitCode = 1;
+          return;
+        }
+        this.fdOutputs.set(fd, sink);
+        continue;
+      }
       if (redir.op !== '>' && redir.op !== '>>') continue;
       const path = this.io ? this.absolutePath(target) : target;
       const append = redir.op === '>>';
@@ -1903,6 +1924,14 @@ export class BashInterpreter {
 
   // ─── Brace Group & Subshell ───────────────────────────────────
 
+  private captureUmask(): number | undefined {
+    return this.io?.getUmask?.();
+  }
+
+  private restoreUmask(saved: number | undefined): void {
+    if (saved !== undefined) this.io?.setUmask?.(saved);
+  }
+
   private announceBackground(pid: number): void {
     if (!this.interactive) return;
     const text = this.io?.backgroundAnnouncement?.(pid);
@@ -1922,6 +1951,7 @@ export class BashInterpreter {
     this.execImage = null;
     let output = '';
     let parked = false;
+    const savedUmask = this.captureUmask();
     this.daemonDepth++;
     try {
       yield* this.withRedirections(group.redirections, () => this.visitCommandList(group.body));
@@ -1930,6 +1960,7 @@ export class BashInterpreter {
       else if (error instanceof DaemonParkSignal) parked = true;
       else throw error;
     } finally {
+      this.restoreUmask(savedUmask);
       this.daemonDepth--;
       output = this.log.terminal();
       this.log = parentLog;
@@ -1952,6 +1983,7 @@ export class BashInterpreter {
     // Subshell forks an isolated snapshot — writes never leak back.
     const savedEnv = this.env;
     const childEnv = this.env.createSubshell();
+    const savedUmask = this.captureUmask();
     this.env = childEnv;
     let status: number;
     try {
@@ -1965,6 +1997,7 @@ export class BashInterpreter {
       yield* this.fireExitTrap();
     } finally {
       this.env = savedEnv;
+      this.restoreUmask(savedUmask);
     }
     savedEnv.lastExitCode = status;
   }

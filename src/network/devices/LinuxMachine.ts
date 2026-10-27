@@ -638,17 +638,17 @@ export abstract class LinuxMachine extends EndHost
     // no visibility into this registry, so without this a script running
     // `named-checkconf` sees "command not found" even though the same
     // command works fine typed directly at the prompt.
-    this.executor._registryCommandHook = (cmd, args, stdin) => {
+    this.executor._registryCommandHook = (cmd, args, stdin, outputPiped = false) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
       const unavailable = this.registryDependencyFailure(registered, cmd);
       if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
       if (registered.runWithStatusSync) {
-        return registered.runWithStatusSync(this.buildCommandContext(false, cmd), argv, input);
+        return registered.runWithStatusSync(this.buildCommandContext(outputPiped, cmd), argv, input);
       }
       if (registered.opensWireSession === true) return null;
-      const result = registered.run(this.buildCommandContext(false, cmd), argv, input);
+      const result = registered.run(this.buildCommandContext(outputPiped, cmd), argv, input);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
@@ -1785,8 +1785,8 @@ export abstract class LinuxMachine extends EndHost
         if (record === undefined) return;
         const limit = executor.processMgr.nofileLimit(record.uid);
         const hard = executor.processMgr.nofileHardLimit(record.uid);
-        record.uid = uid;
-        record.gid = gid;
+        record.uid = record.euid = record.suid = record.fsuid = uid;
+        record.gid = record.egid = record.sgid = record.fsgid = gid;
         record.user = executor.userMgr.uidToName(uid);
         rememberNofile(uid);
         executor.processMgr.setNofileHardLimit(uid, hard);
@@ -2462,6 +2462,7 @@ export abstract class LinuxMachine extends EndHost
       const heldSession = this.sshSessionsByPid.get(pid);
       if (heldSession !== undefined) this.endSshSession(heldSession, 'killed');
       this.executor.releaseSshClient(pid);
+      this.executor.localDatagramSockets.releaseHolder(pid);
       for (const port of this.reapProcessSockets(pid, comm, 'tcp_close')) this._sshdActivePorts.delete(port);
     });
   }

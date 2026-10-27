@@ -7,9 +7,12 @@ import {
   SsRowPrinter, filterSubjectOf, socketViewOf, type SsOutputHost, type SsSocketView,
 } from './SsOutput';
 import { COLUMN, SsTable } from './SsTable';
+import {
+  SsUnixPrinter, unixFilterSubject, unixViewOf, type SsUnixHost, type SsUnixView,
+} from './SsUnix';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
-export interface SsHost extends SsArgumentEnvironment, SsOutputHost {
+export interface SsHost extends SsArgumentEnvironment, SsOutputHost, SsUnixHost {
   rows(): readonly KernelSocketRow[];
   procFile(path: string): string | null;
   destroy(row: KernelSocketRow): SocketDestroyOutcome;
@@ -153,6 +156,15 @@ export function runSs(args: readonly string[], host: SsHost): SsResult {
   if (request.showHeader) table.printHeader();
 
   const printer = new SsRowPrinter(table, request, host);
+  const unixPrinter = new SsUnixPrinter(table, request, host);
+  if (request.filter.hasFamily(AF.UNIX)) {
+    for (const row of host.unixSockets()) {
+      const view = unixViewOf(row);
+      if (view === null || (request.filter.databases & (1 << view.database)) === 0) continue;
+      if (!unixSelected(view, request)) continue;
+      unixPrinter.printRow(view);
+    }
+  }
   const rows = host.rows();
   for (const { protocol } of tablesToShow(request)) {
     let killDenied = false;
@@ -189,3 +201,9 @@ function selected(view: SsSocketView, request: SsRequest, host: SsHost): boolean
   );
 }
 
+
+function unixSelected(view: SsUnixView, request: SsRequest): boolean {
+  if ((request.filter.states & (1 << view.state)) === 0) return false;
+  if (request.filter.expression === null) return true;
+  return evaluateExpression(request.filter.expression, unixFilterSubject(view), () => false);
+}

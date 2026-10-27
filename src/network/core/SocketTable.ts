@@ -15,6 +15,7 @@
 import { EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX } from './WellKnownPorts';
 import { allocateEphemeralPort } from '../layers/transport/EphemeralPorts';
 import type { PortBindingPolicy } from './ports/PortBindingPolicy';
+import { SocketInodes } from './SocketInodes';
 
 export type SocketProtocol = 'tcp' | 'udp' | 'udplite';
 
@@ -65,9 +66,10 @@ export interface SocketEntry {
 // ─── SocketTable ───────────────────────────────────────────────────────
 
 export class SocketTable {
+  constructor(readonly inodes: SocketInodes = new SocketInodes()) {}
+
   private readonly sockets: Map<number, SocketEntry> = new Map();
   private readonly bindings: Set<string> = new Set();
-  private idCounter = 0;
   private ephemeralMin: number = EPHEMERAL_PORT_MIN;
   private ephemeralMax: number = EPHEMERAL_PORT_MAX;
 
@@ -131,9 +133,9 @@ export class SocketTable {
       throw new Error('EMFILE: Too many open files');
     }
 
-    this.idCounter++;
+    const id = this.inodes.next();
     const entry: SocketEntry = {
-      id: this.idCounter,
+      id,
       protocol,
       localAddress,
       localPort,
@@ -148,7 +150,7 @@ export class SocketTable {
       boundDevice: options?.boundDevice,
     };
 
-    this.sockets.set(this.idCounter, entry);
+    this.sockets.set(id, entry);
     this.bindings.add(key);
     return entry;
   }
@@ -188,9 +190,9 @@ export class SocketTable {
   ): SocketEntry {
     const actualPort = localPort === 0 ? this.allocateEphemeralPort() : localPort;
 
-    this.idCounter++;
+    const id = this.inodes.next();
     const entry: SocketEntry = {
-      id: this.idCounter,
+      id,
       protocol,
       localAddress,
       localPort: actualPort,
@@ -201,7 +203,7 @@ export class SocketTable {
       processName,
     };
 
-    this.sockets.set(this.idCounter, entry);
+    this.sockets.set(id, entry);
     this.bindings.add(this.bindKey(protocol, actualPort, localAddress));
     return entry;
   }
@@ -321,9 +323,9 @@ export class SocketTable {
       if (params.processName !== undefined) entry.processName = params.processName;
       return entry;
     }
-    this.idCounter++;
+    const id = this.inodes.next();
     const entry: SocketEntry = {
-      id: this.idCounter,
+      id,
       protocol: params.protocol,
       localAddress: params.localAddress,
       localPort: params.localPort,
@@ -333,7 +335,7 @@ export class SocketTable {
       pid: params.pid,
       processName: params.processName,
     };
-    this.sockets.set(this.idCounter, entry);
+    this.sockets.set(id, entry);
     return entry;
   }
 
@@ -478,6 +480,6 @@ export class SocketTable {
   clear(): void {
     this.sockets.clear();
     this.bindings.clear();
-    this.idCounter = 0;
+    this.inodes.reset();
   }
 }

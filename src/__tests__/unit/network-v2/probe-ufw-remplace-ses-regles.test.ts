@@ -199,6 +199,6 @@ describe('ufw remplace une regle au lieu d\'en empiler une seconde', () => {
     const { srv } = await lab();
     expect(String(await srv.executeCommand('sudo systemctl is-enabled ufw')).trim())
       .toBe('enabled');
-    expect(String(await srv.executeCommand('ps aux'))).toContain('/lib/ufw/ufw-init');
+    expect(String(await srv.executeCommand('ps auxww'))).toContain('/lib/ufw/ufw-init');
   }, 30000);
 });

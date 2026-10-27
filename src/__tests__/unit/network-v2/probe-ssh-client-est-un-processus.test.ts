@@ -53,7 +53,7 @@ async function tunnel(flags: string, forward = `9003:${PC3_IP}:8080`): Promise<v
 }
 
 async function sshRows(): Promise<string[]> {
-  const listing = await lan.pc1.executeCommand('ps -eo pid,ppid,uid,tty,comm,args');
+  const listing = await lan.pc1.executeCommand('ps -ww -eo pid,ppid,uid,tty,comm,args');
   return listing.split('\n').filter((line) => /\sssh\s/.test(line));
 }
 

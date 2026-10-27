@@ -9,11 +9,10 @@
 import { formatLocalTime } from './system/SystemInfo';
 import { simulationDate } from '@/network/core/SystemClock';
 
-import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
+import type { LinuxProcessManager, ProcessInfo, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
-import { runPs, transientSelfProcess } from './ps/PsCommand';
 import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
 import { renderTable, type TableColumn, type TableStyle, padToWidth } from '../shells/cli/TextTable';
 
@@ -60,15 +59,31 @@ export interface ProcessCmdContext {
   runAsChild?: (nice: number, cmd: string) => { output: string; exitCode: number };
 }
 
-// ─── ps ───────────────────────────────────────────────────────────────
-
-/**
- * `ps` delegates to the modular selection/format engine in
- * {@link runPs}. The engine handles selection (-e/-p/-C/-u/--ppid),
- * formats (default/-f/-l/aux/-o), --sort and error reporting.
- */
-export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
-  return runPs(args, ctx);
+function transientSelfProcess(ctx: ProcessCmdContext, comm: string): ProcessInfo {
+  const peers = ctx.pm.list();
+  const maxPid = peers.reduce((m, p) => Math.max(m, p.pid), 1);
+  return {
+    pid: maxPid + 1,
+    ppid: ctx.currentPid ?? ctx.shellPid ?? 1,
+    pgid: ctx.shellPid ?? 1,
+    sid: ctx.shellPid ?? 1,
+    uid: ctx.currentUid,
+    gid: ctx.currentUid,
+    user: ctx.currentUser,
+    command: comm,
+    comm,
+    args: [comm],
+    state: 'R',
+    startTime: simulationDate(),
+    cpuTime: 0,
+    vsize: 12 * 1024,
+    rss: 3 * 1024,
+    tty: ctx.tty,
+    nice: 0,
+    priority: 20,
+    cwd: '/',
+    exe: `/usr/bin/${comm}`,
+  };
 }
 
 // ─── top ──────────────────────────────────────────────────────────────
