@@ -4164,6 +4164,6 @@ atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à 
 ### [telnet-vrp] client VRP
 `Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
 
-## Cisco: time and logging commands still on the trie
+## Cisco: line and archive commands still on the trie
 
-Measured: `service timestamps`, `service sequence-numbers`, `ntp disable|broadcast|multicast` and `show ntp packets` moved to the socle. Still declared on `CommandTrie`: line-mode `exec-timeout`, `login-timeout`, `logging synchronous`, `access-class`, and the `archive`/`log config` adapter. `clock summer-time` still parses its rule through a REST tail (`parseSummerTimeRule`), so `?` after `recurring` shows only `date`/`<cr>` instead of the positional week/day/month/time grammar. Not closed: these need positional multi-keyword places in the socle.
+Measured: `exec-timeout`, `login-timeout`, `access-class`, `logging synchronous` and `clock summer-time` are on the socle. Still declared on `CommandTrie` (config-line mode, one monolithic handler): `password`, `login`, `privilege level`, `history size`, `session-timeout`, `absolute-timeout`, `rotary`, `autocommand`, `escape-character`, `speed`/`stopbits`, `accounting`/`authorization`, `exec banner`/`motd-banner`, and the `archive` / `log config` sub-modes (`CiscoArchiveCommands.ts`). Not closed: the generic line handler interleaves console, aux and vty storage per keyword and needs splitting one keyword at a time.

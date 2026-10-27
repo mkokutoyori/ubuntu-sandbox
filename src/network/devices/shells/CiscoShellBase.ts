@@ -220,6 +220,8 @@ import {
   AliasRepository, aliasModeForCliMode, type AliasMode,
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
+import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { summerTimeFamily } from '../../../cli/commands/clock/summerTimeFamily';
 import { serviceLoggingFamily, type ServiceLoggingHost } from '@/cli/commands/service/serviceLoggingFamily';
 import { LoggingConfig, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
@@ -502,21 +504,7 @@ const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   ],
 };
 
-const LINE_ACCESS_CLASS: readonly ArgumentSpec[] = [
-  {
-    name: 'access-list', type: 'WORD', description: 'Access-list name',
-    alternatives: [
-      { keyword: '<1-199>', description: 'IP access list (standard or extended)' },
-      { keyword: 'WORD', description: 'Access-list name' },
-    ],
-  },
-  enumeration('direction', 'Filter direction', [
-    ['in', 'Inbound packets'], ['out', 'Outbound packets'],
-  ]),
-];
-
 const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'access-class': LINE_ACCESS_CLASS,
   'motd-banner': null,
   length: { name: 'lines', type: 'INT', description: 'Number of lines on a screen', range: [0, 512] },
   width: { name: 'characters', type: 'INT', description: 'Width of the display terminal', range: [0, 512] },
@@ -525,7 +513,6 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
   rotary: { name: 'group', type: 'INT', description: 'Rotary group number', range: [1, 100] },
   autocommand: { name: 'command', type: 'REST', optional: true, description: 'Command to execute on connection' },
   password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
-  'login-timeout': { name: 'seconds', type: 'INT', range: [1, 300], description: 'Timeout in seconds' },
   speed: enumeration('bps', 'Transmit and receive speeds', [
     ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
     ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
@@ -556,10 +543,6 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
       { keyword: 'soft', description: 'Use a soft escape character' },
     ],
   },
-  'exec-timeout': [
-    { name: 'minutes', type: 'INT', range: [0, 35791], description: 'Timeout in minutes' },
-    { name: 'secondes', type: 'INT', range: [0, 2147483], optional: true, description: 'Timeout in seconds' },
-  ],
 };
 
 const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
@@ -980,9 +963,6 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
 const COMMON_TIME_ZONES: readonly string[] = [
   'UTC', 'GMT', 'WAT', 'CAT', 'EAT', 'CET', 'EET', 'MSK', 'IST', 'JST',
   'EST', 'CST', 'MST', 'PST', 'AST', 'HST', 'AKST',
-];
-const COMMON_SUMMER_ZONES: readonly string[] = [
-  'BST', 'CEST', 'EEST', 'EDT', 'CDT', 'MDT', 'PDT', 'ADT', 'AKDT',
 ];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -5044,22 +5024,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           },
         ],
       },
-      {
-        path: ['clock', 'summer-time'], description: 'Configure daylight saving time',
-        args: [{
-          name: 'zone', type: 'WORD', description: 'Name of time zone in summer',
-          tabSuggestions: COMMON_SUMMER_ZONES,
-        }],
-        tail: {
-          name: 'regle', type: 'REST', optional: true, description: 'Recurrence rule',
-          alternatives: [
-            { keyword: 'date', description: 'Specific date the change occurs' },
-            { keyword: 'recurring', description: 'Recurring summer time' },
-          ],
-        },
-        undoArgs: [],
-        undoArgsOnlyNegated: true,
-      },
     ], () => ({ apply: (words, negate) => this.applyClock(words, negate) }));
   }
 
@@ -5367,54 +5331,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerLineTransportCommands(t: CommandTrie): void {
-    t.registerGreedy('login-timeout', 'Set login timeout', (args) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const secondes = Number.parseInt(args[0], 10);
-      if (!/^\d+$/.test(args[0]) || secondes < 1 || secondes > 300) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      const range = this.selectedVtyRange;
-      if (!range) return '';
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      dev._getVtyLineConfig?.().upsert({
-        first: range.first, last: range.last, loginTimeoutSeconds: secondes,
-      });
-      return '';
-    });
-    t.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
-      if (args.length === 0) return '% Incomplete command.';
-      if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      const range = this.selectedVtyRange;
-      if (!range) {
-        if (this.selectedConsoleLine != null) {
-          this.consoleLineExecTimeoutMin = parseInt(args[0], 10);
-          this.consoleLineExecTimeoutSec = parseInt(args[1] ?? '0', 10);
-        }
-        return '';
-      }
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      dev._getVtyLineConfig?.().upsert({
-        first: range.first, last: range.last,
-        execTimeoutMinutes: parseInt(args[0], 10),
-        execTimeoutSeconds: parseInt(args[1] ?? '0', 10),
-      });
-      return '';
-    });
-    // `access-class <acl> {in|out}` — VTY ACL gate (§21).
-    t.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
-      this.requireLineKind('access-class');
-      const range = this.selectedVtyRange;
-      if (!range) return '';
-      if (!args[0] || !args[1]) return '% Incomplete command.';
-      const dir = args[1].toLowerCase();
-      if (dir !== 'in' && dir !== 'out') return CISCO_ERRORS.INVALID_INPUT;
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
-      dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
-      return '';
-    });
     // `transport input {all|ssh|telnet|none}` — the only line directive
     // we *do* react to today, because the sshd dispatch needs to know
     // whether SSH is administratively allowed on the VTY. Anything we
@@ -5450,6 +5366,68 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
   }
 
+  private lineSettingsHost(): LineSettingsHost {
+    type VtyConfig = {
+      upsert: (p: object) => unknown;
+      unset: (first: number, last: number, names: readonly string[]) => unknown;
+    };
+    const vty = (): { range: { first: number; last: number }; config: VtyConfig | undefined } | null => {
+      const range = this.selectedVtyRange;
+      if (!range) return null;
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => VtyConfig };
+      return { range, config: dev._getVtyLineConfig?.() };
+    };
+    const unset = (names: readonly string[]): void => {
+      const target = vty();
+      if (!target) return;
+      target.config?.unset(target.range.first, target.range.last, names);
+      (this.d() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
+    };
+    return {
+      guard: (keyword) => this.requireLineKind(keyword),
+      setExecTimeout: (minutes, seconds) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            execTimeoutMinutes: minutes, execTimeoutSeconds: seconds,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineExecTimeoutMin = minutes;
+          this.consoleLineExecTimeoutSec = seconds;
+        }
+      },
+      clearExecTimeout: () => unset(['execTimeoutMinutes', 'execTimeoutSeconds']),
+      setLoginTimeout: (seconds) => {
+        const target = vty();
+        target?.config?.upsert({
+          first: target.range.first, last: target.range.last, loginTimeoutSeconds: seconds,
+        });
+      },
+      clearLoginTimeout: () => unset(['loginTimeoutSeconds']),
+      setAccessClass: (list, direction) => {
+        const target = vty();
+        target?.config?.upsert({
+          first: target.range.first, last: target.range.last,
+          [direction === 'out' ? 'accessClassOut' : 'accessClassIn']: list,
+        });
+      },
+      clearAccessClass: (direction) => unset(
+        direction === 'in' ? ['accessClassIn']
+          : direction === 'out' ? ['accessClassOut'] : ['accessClassIn', 'accessClassOut']),
+      setLoggingSynchronous: (on) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, loggingSynchronous: on,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineLoggingSynchronous = on;
+        }
+      },
+    };
+  }
+
   private vtyUnsetFields(
     sub: string, args: readonly string[],
   ): ReadonlyArray<'execTimeoutMinutes' | 'execTimeoutSeconds' | 'accessClassIn' | 'accessClassOut'
@@ -5482,7 +5460,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       t.requireArgs(kw, 1);
     }
     for (const kw of ['login', 'password',
-      'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
+      'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
       'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec',
       'absolute-timeout', 'escape-character']) {
@@ -5816,6 +5794,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...administration,
       ...filtres,
       ...this.lineSpecs(),
+      ...lineSettingsFamily(() => this.lineSettingsHost()),
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
       vue(['show', 'ntp', 'packets'], 'NTP packet statistics', 1,
@@ -6223,6 +6202,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.ntpInterfaceSpecs(),
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
+      ...summerTimeFamily(() => ({ apply: (words, negate) => this.applyClock(words, negate) })),
       ...this.loginSpecs(),
       ...this.clearSpecs(),
       ...this.writeEraseSpecs(),
