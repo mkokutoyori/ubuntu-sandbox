@@ -179,6 +179,10 @@ import { resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
 import { SshFingerprint } from '@/network/protocols/ssh/SshFingerprint';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
+import { NetkitTelnetClient } from '@/network/protocols/telnet/client/NetkitTelnetClient';
+import { DeviceNetkitHost } from '@/network/protocols/telnet/client/DeviceNetkitHost';
+import { TranscriptTerminal } from '@/network/protocols/telnet/client/TranscriptTerminal';
+import { deviceWireDeps } from '@/terminal/subshells/NetkitTelnetSubShell';
 import { parseDialAddress } from '@/network/tcp/dial';
 import {
   runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost, type SshKeygenOutcome,
@@ -228,9 +232,6 @@ import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
-import {
-  TelnetClientSession, type TelnetClientTransport,
-} from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { SshClientHandle, SshClientPlacement } from './network/SshClientProcess';
@@ -2522,6 +2523,10 @@ export class LinuxCommandExecutor {
     return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
   }
 
+  exportedEnvironment(): Array<[string, string]> {
+    return [...this.env];
+  }
+
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const password = offeredPassword ?? this.sshpassPassword;
     const hostname = kernelHostname(this.vfs);
@@ -2683,15 +2688,6 @@ export class LinuxCommandExecutor {
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
   }
 
-  private async openWireTelnetSession(
-    ip: string, port: number,
-  ): Promise<TelnetClientSession | null> {
-    if (!this.tcpConnector) return null;
-    const dialed = await this.tcpConnector(ip, port);
-    if (!dialed || (dialed as { dialFailed?: string }).dialFailed !== undefined) return null;
-    return new TelnetClientSession(dialed as TelnetClientTransport);
-  }
-
   private static async settleWire(times = 12): Promise<void> {
     for (let i = 0; i < times; i++) {
       await Promise.resolve();
@@ -2699,25 +2695,42 @@ export class LinuxCommandExecutor {
     }
   }
 
-  async runTelnetExecAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
-    const probe = this.runTelnetClient(args);
-    if (probe.exitCode !== 0 || !probe.wireTarget) return { output: probe.output, exitCode: probe.exitCode };
-    const session = await this.openWireTelnetSession(probe.wireTarget.ip, probe.wireTarget.port);
-    if (!session) return { output: probe.output, exitCode: probe.exitCode };
-    const stdin = this._scenarioStdin ?? '';
-    await LinuxCommandExecutor.settleWire();
-    let transcript = session.drain();
-    for (const line of stdin.split('\n')) {
-      if (line.length === 0 && transcript.length > 0) continue;
-      session.send(line);
+  async runTelnetExecAsync(args: string[], piped?: string): Promise<ForegroundResult> {
+    const vfsReader = { readFile: (path: string) => this.vfs.readFile(path) };
+    const terminal = new TranscriptTerminal();
+    const host = new DeviceNetkitHost({
+      ...deviceWireDeps(this.localDevice as never, vfsReader),
+      environment: () => this.exportedEnvironment(),
+      user: () => ({ name: this.userMgr.currentUser, uid: this.userMgr.currentUid }),
+      lookupUser: (name) => this.userMgr.getUser(name) ?? null,
+      hostname: () => kernelHostname(this.vfs),
+      size: () => null,
+      readFile: (path) => this.vfs.readFile(path),
+      tty: false,
+    });
+    const client = new NetkitTelnetClient(host, terminal);
+    let exitCode = 0;
+    client.onExit((code) => { exitCode = code; });
+    await client.start(args);
+    await client.idle();
+    if (!client.exited) {
       await LinuxCommandExecutor.settleWire();
-      transcript += session.drain();
+      const input = piped ?? this._scenarioStdin ?? '';
+      const lines = input.split('\n');
+      if (lines[lines.length - 1] === '') lines.pop();
+      for (const line of lines) {
+        if (client.exited) break;
+        client.input(`${line}\n`);
+        await client.idle();
+        await LinuxCommandExecutor.settleWire();
+      }
+      if (!client.exited) {
+        client.endOfInput();
+        await LinuxCommandExecutor.settleWire();
+      }
     }
-    const closedByPeer = session.closed;
-    session.close();
-    await LinuxCommandExecutor.settleWire();
-    const farewell = closedByPeer ? 'Connection closed by foreign host.\n' : '';
-    return { output: `${probe.output}${transcript}${farewell}`, exitCode: 0 };
+    client.dispose();
+    return terminal.result(exitCode);
   }
 
   private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {

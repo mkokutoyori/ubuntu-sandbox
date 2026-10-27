@@ -721,6 +721,7 @@ export class TcpSocket {
    * stops accepting, it does not grow without limit.
    */
   private receiveQueue: unknown[] = [];
+  get hasUnreadData(): boolean { return this.receiveQueue.length > 0; }
   private receiveQueueBytes = 0;
   private receivePaused = false;
 
