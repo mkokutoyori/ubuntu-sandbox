@@ -3757,7 +3757,7 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 Les trois bancs passent en entier ; restent mesures et non fermes :
 - `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
-- Les constructeurs de contexte d'E/S existent en double : `ScriptRunner.runScriptContent*` et le chemin `bash` de l'executeur.
+- `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
 - Un alias defini et utilise sur la meme ligne est deja developpe (bash ne le voit qu'a la ligne suivante).
 - `extglob` est toujours accepte par le lexeur, que `shopt -s extglob` ait ete tape ou non.
 - Les erreurs de syntaxe a l'interieur de `$(...)`, de `<(...)` et d'un `eval` imbrique passent encore par `BashParser.parse` (exception) : aucune commande qui precede n'est executee, contrairement a bash.
