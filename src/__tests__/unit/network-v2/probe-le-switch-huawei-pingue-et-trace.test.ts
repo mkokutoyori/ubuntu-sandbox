@@ -10,16 +10,26 @@
  *  - une interface VLAN éteinte par l'opérateur (`shutdown`) était rendue sans `shutdown` : un export suivi d'un import la
  *    levait (`*down` devenait `down`).
  *
+ * Deux défauts du plan SVI sont apparus en pingant le lab livré, et se mesurent sur le même banc :
+ *  - le ping résolvait l'ARP de la CIBLE au lieu du prochain saut : une cible derrière une passerelle n'était atteinte que
+ *    si la passerelle répondait à l'ARP à sa place (proxy ARP) ;
+ *  - la réponse d'écho à une source hors du sous-réseau partait en diffusion de niveau 2 (aucune entrée ARP pour cette source),
+ *    donc une passerelle de type switch la jetait : `PC-WIN` n'atteignait pas `10.99.0.3` (la gestion de SW-HW) alors que
+ *    SW-CORE y arrivait. La réponse suit désormais la route vers la source, comme le fait `tracert`.
+ *
  * Le rendu de `ping` et de `tracert` est désormais UN module (`shells/huawei/huaweiPing.ts`) lu par le routeur et par
  * le switch : deux écritures d'un même format divergent, et le routeur gardait en plus deux gestionnaires IPv4 / IPv6.
  *
- * Discrimination `git stash` : 7 cas tombent avant le correctif — les six `ping` / `tracert` (« reaches the router »,
- * « reaches a host behind the router », « traces the path through the router », « reports the loss », « counts the
- * packets », « goes through the pipe filter ») et « renders shutdown for a Vlanif the operator shut ».
+ * Discrimination `git stash` : 10 cas tombent avant le correctif — les sept `ping` / `tracert` du premier lab (« reaches the
+ * router », « reaches a host behind the router », « reaches a host behind a gateway that does not answer ARP for it »,
+ * « traces the path through the router », « reports the loss », « counts the packets », « goes through the pipe filter »),
+ * « renders shutdown for a Vlanif the operator shut », et sur le lab à passerelle switch « answers a ping from a host beyond
+ * its gateway » et « pings a host beyond its gateway ». Le cas « answers a ping… » tombe aussi avec la seule réponse d'écho
+ * ancienne restaurée (mesure faite en la remettant dans l'arbre corrigé).
  *
  * Passent des deux côtés, et pourquoi :
- *  - « the router answers the switch » — TÉMOIN : prouve que le lab est sain (câble, VLAN, adresses), donc qu'un échec
- *    des cas ci-dessus accuse la commande et non la topologie.
+ *  - « the router answers the switch » et « the gateway answers the switch » — TÉMOINS : prouvent que les deux labs (câble,
+ *    VLAN, adresses) sont sains, donc qu'un échec des autres cas accuse la commande et non la topologie.
  *  - « refuses an IPv6 target » — NON-RÉGRESSION : avant, TOUTE saisie de `ping` était refusée avec ce même texte ; le
  *    cas fige que la commande, désormais connue, refuse encore ce que ce switch n'a pas de pile pour porter.
  *  - « a lifted Vlanif is not rendered shutdown » — NON-RÉGRESSION : le correctif écrit `shutdown` pour l'éteinte, il ne
@@ -28,6 +38,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -89,6 +100,13 @@ describe('Probe — a Huawei switch pings and traces from its VLAN interface', (
     expect(output).toContain('Reply from 198.51.100.10: bytes=56 Sequence=2');
   }, 60_000);
 
+  it('ping reaches a host behind a gateway that does not answer ARP for it', async () => {
+    const { huawei, router } = await lab();
+    await play(router, ['configure terminal', 'interface GigabitEthernet0/0', 'no ip proxy-arp', 'end']);
+    const output = await huawei.executeCommand('ping -c 2 198.51.100.10');
+    expect(output).toContain('2 packet(s) transmitted, 2 packet(s) received, 0% packet loss');
+  }, 60_000);
+
   it('tracert traces the path through the router', async () => {
     const { huawei } = await lab();
     const output = await huawei.executeCommand('tracert 198.51.100.10');
@@ -138,5 +156,46 @@ describe('Probe — display current-configuration renders the VLAN interface sta
     await play(huawei, ['system-view', 'interface Vlanif1', 'shutdown', 'undo shutdown', 'quit', 'return']);
     const configuration = await huawei.executeCommand('display current-configuration');
     expect(configuration).not.toMatch(/interface Vlanif1\n shutdown/);
+  }, 60_000);
+});
+
+async function behindALayer3Switch() {
+  const core = new CiscoSwitch('switch-cisco', 'SW-CORE', 26, 0, 0);
+  const huawei = new HuaweiSwitch('switch-huawei', 'SW-HW', 24, 0, 0);
+  const host = new LinuxPC('linux-pc', 'HOST', 0, 0);
+  for (const device of [core, huawei, host]) device.powerOn();
+  new Cable('host').connect(host.getPort('eth0')!, core.getPort('FastEthernet0/1')!);
+  new Cable('management').connect(huawei.getPort('GigabitEthernet0/0/1')!, core.getPort('FastEthernet0/2')!);
+  await play(core, [
+    'enable', 'configure terminal', 'ip routing', 'vlan 10', 'vlan 99', 'exit',
+    'interface FastEthernet0/1', 'switchport mode access', 'switchport access vlan 10',
+    'interface FastEthernet0/2', 'switchport mode access', 'switchport access vlan 99',
+    'interface Vlan10', 'ip address 10.10.0.1 255.255.255.0', 'no shutdown',
+    'interface Vlan99', 'ip address 10.99.0.1 255.255.255.0', 'no shutdown', 'end',
+  ]);
+  await play(host, ['ip addr add 10.10.0.11/24 dev eth0', 'ip route add default via 10.10.0.1']);
+  await play(huawei, [
+    'system-view', 'vlan batch 99', 'interface GigabitEthernet0/0/1', 'port link-type access', 'port default vlan 99', 'quit',
+    'interface Vlanif99', 'ip address 10.99.0.3 255.255.255.0', 'undo shutdown', 'quit',
+    'ip route-static 0.0.0.0 0.0.0.0 10.99.0.1', 'return',
+  ]);
+  return { core, huawei, host };
+}
+
+describe('Probe — a Huawei switch behind a layer 3 switch', () => {
+  it('TEMOIN: the gateway answers the switch', async () => {
+    const { core } = await behindALayer3Switch();
+    expect(await core.executeCommand('ping 10.99.0.3')).toContain('Success rate is 100 percent');
+  }, 60_000);
+
+  it('answers a ping from a host beyond its gateway', async () => {
+    const { host } = await behindALayer3Switch();
+    expect(await host.executeCommand('ping -c 2 10.99.0.3')).toContain('2 received');
+  }, 60_000);
+
+  it('pings a host beyond its gateway', async () => {
+    const { huawei } = await behindALayer3Switch();
+    expect(await huawei.executeCommand('ping -c 2 10.10.0.11'))
+      .toContain('2 packet(s) transmitted, 2 packet(s) received, 0% packet loss');
   }, 60_000);
 });

@@ -249,10 +249,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x200a8ea0)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x56213eb2)
   DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x200a8ea0)
-  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x200a8ea0)
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x56213eb2)
+  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x56213eb2)
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [55/300] lhq lhq$ ip addr show eth0
@@ -376,10 +376,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:53
   Sending on   LPF/eth0/02:00:00:00:00:53
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x5e22ddb1)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xdfbbe3a7)
   DHCPOFFER of 10.2.2.11 from 10.2.2.1
-  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67 (xid=0x5e22ddb1)
-  DHCPACK of 10.2.2.11 from 10.2.2.1 (xid=0x5e22ddb1)
+  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67 (xid=0xdfbbe3a7)
+  DHCPACK of 10.2.2.11 from 10.2.2.1 (xid=0xdfbbe3a7)
   bound to 10.2.2.11 -- renewal in 43200 seconds.
 
 [64/300] lbr lbr$ ip addr show eth0
@@ -503,10 +503,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xa63e6358)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x41c476d7)
   DHCPOFFER of 10.3.3.11 from 10.3.3.1
-  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0xa63e6358)
-  DHCPACK of 10.3.3.11 from 10.3.3.1 (xid=0xa63e6358)
+  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0x41c476d7)
+  DHCPACK of 10.3.3.11 from 10.3.3.1 (xid=0x41c476d7)
   bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 [73/300] ldc ldc$ ip addr show eth0
@@ -842,8 +842,8 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   Sending on   Socket/fallback
-  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0xf1e511e8)
-  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0xf1e511e8)
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x2b5f58bc)
+  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x2b5f58bc)
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [105/300] lhq lhq$ dhclient -v eth0
@@ -855,8 +855,8 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   Sending on   Socket/fallback
-  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0xb7f515bf)
-  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0xb7f515bf)
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x5a4e1a61)
+  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x5a4e1a61)
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [106/300] lhq lhq$ ip -4 addr show eth0
@@ -888,8 +888,8 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:53
   Sending on   LPF/eth0/02:00:00:00:00:53
   Sending on   Socket/fallback
-  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67 (xid=0x1b1d58b9)
-  DHCPACK of 10.2.2.11 from 10.2.2.1 (xid=0x1b1d58b9)
+  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67 (xid=0xbf046d9b)
+  DHCPACK of 10.2.2.11 from 10.2.2.1 (xid=0xbf046d9b)
   bound to 10.2.2.11 -- renewal in 43200 seconds.
 
 [110/300] lbr lbr$ ip -4 addr show eth0
@@ -921,8 +921,8 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
   Sending on   Socket/fallback
-  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0x39eb0129)
-  DHCPACK of 10.3.3.11 from 10.3.3.1 (xid=0x39eb0129)
+  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0x2619c386)
+  DHCPACK of 10.3.3.11 from 10.3.3.1 (xid=0x2619c386)
   bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 [114/300] ldc ldc$ ip -4 addr show eth0
@@ -1058,10 +1058,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x8068a4)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x1f2eeecc)
   DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x8068a4)
-  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x8068a4)
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x1f2eeecc)
+  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x1f2eeecc)
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [130/300] whq whq$ ipconfig /release
@@ -1100,10 +1100,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:53
   Sending on   LPF/eth0/02:00:00:00:00:53
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x5be0e8db)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x2fc1dd95)
   DHCPOFFER of 10.2.2.11 from 10.2.2.1
-  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67 (xid=0x5be0e8db)
-  DHCPACK of 10.2.2.11 from 10.2.2.1 (xid=0x5be0e8db)
+  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67 (xid=0x2fc1dd95)
+  DHCPACK of 10.2.2.11 from 10.2.2.1 (xid=0x2fc1dd95)
   bound to 10.2.2.11 -- renewal in 43200 seconds.
 
 [134/300] wbr wbr$ ipconfig /release
@@ -1142,10 +1142,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xf0915d4e)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x8ed81ab4)
   DHCPOFFER of 10.3.3.11 from 10.3.3.1
-  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0xf0915d4e)
-  DHCPACK of 10.3.3.11 from 10.3.3.1 (xid=0xf0915d4e)
+  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0x8ed81ab4)
+  DHCPACK of 10.3.3.11 from 10.3.3.1 (xid=0x8ed81ab4)
   bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 
@@ -1396,12 +1396,12 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
   Sending on   Socket/fallback
-  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0x40133178)
+  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67 (xid=0x14a36ec1)
   DHCPNAK or no response - reverting to DHCPDISCOVER
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x5af5c7d4)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xfc3564cb)
   DHCPOFFER of 10.3.3.2 from 172.16.13.1
-  DHCPREQUEST for 10.3.3.2 on eth0 to 255.255.255.255 port 67 (xid=0x5af5c7d4)
-  DHCPACK of 10.3.3.2 from 172.16.13.1 (xid=0x5af5c7d4)
+  DHCPREQUEST for 10.3.3.2 on eth0 to 255.255.255.255 port 67 (xid=0xfc3564cb)
+  DHCPACK of 10.3.3.2 from 172.16.13.1 (xid=0xfc3564cb)
   bound to 10.3.3.2 -- renewal in 43200 seconds.
 
 [198/300] ldc ldc$ ip addr show eth0
@@ -1871,10 +1871,10 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x338e1500)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x9483cbef)
   DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x338e1500)
-  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x338e1500)
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67 (xid=0x9483cbef)
+  DHCPACK of 10.1.1.10 from 10.1.1.1 (xid=0x9483cbef)
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [243/300] lhq lhq$ ip -4 addr show eth0
@@ -2381,87 +2381,87 @@ Total steps: 300
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 200A8EA0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 56213EB2, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 200A8EA0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 56213EB2, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 200A8EA0, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 56213EB2, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 200A8EA0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 56213EB2, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 5715394D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.11 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 5715394D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 5715394D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 5715394D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 5715394D, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 5715394D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid F1E511E8, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid 2B5F58BC, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid F1E511E8, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid 2B5F58BC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid B7F515BF, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid 5A4E1A61, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid B7F515BF, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid 5A4E1A61, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid 5715394D, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid AA135B3F, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid 5715394D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid 8068A4, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREQUEST: xid 1F2EEECC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.001: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid 8068A4, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.001: DHCPD: BOOTREPLY: xid 1F2EEECC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 8068A4, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 1F2EEECC, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid 8068A4, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid 1F2EEECC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid F5718594, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid EE85BF00, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
-  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid F5718594, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid EE85BF00, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid F5718594, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid EE85BF00, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid F5718594, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid EE85BF00, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.002: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.002: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.11
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 40133178, chaddr 0200.0000.005b, ciaddr 10.3.3.11, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 14A36EC1, chaddr 0200.0000.005b, ciaddr 10.3.3.11, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPDISCOVER from 0200.0000.005b through 10.3.3.1
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 5AF5C7D4, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 10.3.3.1
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid FC3564CB, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 10.3.3.1
   *Jun  6 08:00:00.002: DHCPD: DHCPOFFER on interface, offering 10.3.3.1 to 0200.0000.005b
-  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid 5AF5C7D4, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.1, giaddr 10.3.3.1
+  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid FC3564CB, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.1, giaddr 10.3.3.1
   *Jun  6 08:00:00.002: DHCPD: DHCPDISCOVER from 0200.0000.005b through 10.3.3.1
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 5AF5C7D4, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 10.3.3.1
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid FC3564CB, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 10.3.3.1
   *Jun  6 08:00:00.002: DHCPD: DHCPOFFER on interface, offering 10.3.3.2 to 0200.0000.005b
-  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid 5AF5C7D4, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.2, giaddr 10.3.3.1
+  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid FC3564CB, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.2, giaddr 10.3.3.1
   *Jun  6 08:00:00.002: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.2
-  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid 5AF5C7D4, chaddr 0200.0000.005b, ciaddr 10.3.3.2, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREQUEST: xid FC3564CB, chaddr 0200.0000.005b, ciaddr 10.3.3.2, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.002: DHCPD: DHCPACK sent to client 0200.0000.005b for 10.3.3.2
-  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid 5AF5C7D4, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.2, giaddr 0.0.0.0
+  *Jun  6 08:00:00.002: DHCPD: BOOTREPLY: xid FC3564CB, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.2, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 338E1500, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 9483CBEF, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 338E1500, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 9483CBEF, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 338E1500, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 9483CBEF, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 338E1500, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 9483CBEF, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.003: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 7EF5F7B8, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 59AE4634, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
-  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 7EF5F7B8, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 59AE4634, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 7EF5F7B8, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREQUEST: xid 59AE4634, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 7EF5F7B8, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.003: DHCPD: BOOTREPLY: xid 59AE4634, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.003: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.003: %SYS-5-CONFIG_I: Configured from console by console
 

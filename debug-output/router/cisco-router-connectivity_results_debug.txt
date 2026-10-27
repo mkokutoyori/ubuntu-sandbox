@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-connectivity
-Generated: 2026-10-27T16:12:55.571Z
+Generated: 2026-10-27T16:42:32.120Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
 Total steps: 313
@@ -1042,7 +1042,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:13 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:42 PM    Automatic
 
 [154/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1252,7 +1252,7 @@ Total steps: 313
   
   Current configuration : 1010 bytes
   !
-  ! Last configuration change at 16:13:05 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 16:42:42 UTC Tue Oct 27 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1302,7 +1302,7 @@ Total steps: 313
   
   Current configuration : 712 bytes
   !
-  ! Last configuration change at 16:13:03 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 16:42:40 UTC Tue Oct 27 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1379,7 +1379,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:02
+      10.0.0.2        120           00:00:06
     Distance: (default is 120)
 
 [198/313] r1 R1# show ip interface brief
@@ -1484,7 +1484,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX923154XJ
+  Processor board ID FTX6309V4KW
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1496,7 +1496,7 @@ Total steps: 313
   
   Current configuration : 1010 bytes
   !
-  ! Last configuration change at 16:13:05 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 16:42:42 UTC Tue Oct 27 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1682,7 +1682,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:02
+      10.0.0.2        120           00:00:06
     Distance: (default is 120)
 
 [213/313] r1 R1# show ip arp
@@ -1758,7 +1758,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:13 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:42 PM    Automatic
 
 [227/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1840,23 +1840,23 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Oct 27 16:12:55.565: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:12:55.566: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:12:55.567: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:12:55.568: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:12:55.674: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:12:57.871: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:12:57.966: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:12:58.004: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Oct 27 16:12:58.101: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.690: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.724: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.734: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 27 16:13:05.734: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 27 16:13:05.736: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.744: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:13:05.744: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:13:05.745: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:32.111: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 27 16:42:32.112: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 27 16:42:32.115: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:32.116: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:32.219: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:34.400: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:34.488: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:34.517: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Oct 27 16:42:34.603: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.214: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.253: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.264: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Oct 27 16:42:42.264: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Oct 27 16:42:42.266: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.272: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:42.272: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:42.273: %SYS-5-CONFIG_I: Configured from console by console
 
 [240/313] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1868,7 +1868,7 @@ Total steps: 313
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 800 (1/100 of seconds), resolution is 4001
-  reference time is EE8B4C0F.F5C28F5C (16:13:03.960 UTC Tue Oct 27 2026)
+  reference time is EE8B5300.7C6A7EF9 (16:42:40.486 UTC Tue Oct 27 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1879,7 +1879,7 @@ Total steps: 313
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [243/313] r1 R1# show clock
-  *16:13:05.000 UTC Tue Oct 27 2026
+  *16:42:42.000 UTC Tue Oct 27 2026
 
 [244/313] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2061,7 +2061,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX923154XJ
+  Processor board ID FTX6309V4KW
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2073,7 +2073,7 @@ Total steps: 313
   
   Current configuration : 1010 bytes
   !
-  ! Last configuration change at 16:13:05 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 16:42:42 UTC Tue Oct 27 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2243,7 +2243,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:03
+      10.0.0.2        120           00:00:06
     Distance: (default is 120)
   
   ------------------ show processes cpu ------------------
@@ -2292,7 +2292,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:13 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:42 PM    Automatic
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2317,27 +2317,27 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Oct 27 16:12:55.565: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:12:55.566: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:12:55.567: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:12:55.568: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:12:55.674: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:12:57.871: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:12:57.966: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:12:58.004: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Oct 27 16:12:58.101: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.690: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.724: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.734: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 27 16:13:05.734: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 27 16:13:05.736: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:13:05.744: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:13:05.744: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:13:05.745: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:32.111: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 27 16:42:32.112: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 27 16:42:32.115: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:32.116: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:32.219: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:34.400: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:34.488: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:34.517: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Oct 27 16:42:34.603: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.214: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.253: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.264: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Oct 27 16:42:42.264: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Oct 27 16:42:42.266: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 27 16:42:42.272: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:42.272: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 27 16:42:42.273: %SYS-5-CONFIG_I: Configured from console by console
 
 [257/313] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX923154XJ
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX6309V4KW
 
 [258/313] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2589,7 +2589,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:03
+      10.0.0.2        120           00:00:06
     Distance: (default is 120)
 
 [301/313] r1 R1(config-router)# exit
