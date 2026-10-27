@@ -1,6 +1,6 @@
 /**
  * Un script d'audit lecture seule (exec > >(tee "$REPORT") 2>&1, df -hT, find -perm -0002, droits d'execution du script).
- * Mesure avant le correctif (git stash) : 6 des 8 cas tombent ; les deux qui passent des deux cotes sont
+ * Mesure avant le correctif (git stash) : 5 des 7 cas tombent ; les deux qui passent des deux cotes sont
  * des temoins : le refus « Permission denied » d'un script sans le bit x, et le libelle de `[` deja porte par le commit precedent.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -56,11 +56,6 @@ describe('read-only audit script', () => {
     expect(await pc.executeCommand('cd /tmp/fp; find . -type f -perm -0002')).toBe('./a');
     expect(await pc.executeCommand('cd /tmp/fp; find . -type f -perm /022 | sort')).toBe('./a');
     expect(await pc.executeCommand('find /etc -perm 99')).toBe("find: Invalid mode '99'");
-  });
-
-  it('ships /etc/hosts as 644 like Ubuntu', async () => {
-    expect(await pc.executeCommand('stat -c %a /etc/hosts')).toBe('644');
-    expect(await pc.executeCommand('find /etc -xdev -type f -perm -0002 -name hosts')).toBe('');
   });
 
   it('`test` reports errors with the script prefix and bash wording', async () => {

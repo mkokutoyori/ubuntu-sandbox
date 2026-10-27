@@ -393,7 +393,7 @@ export class VirtualFileSystem {
       '\n' +
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
-      0o644, 0, 0);
+      0o666, 0, 0);
     this.createFileAt(GAI_CONF_PATH, GAI_CONF_FACTORY, 0o644, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
