@@ -18,10 +18,8 @@
  * comportement, et ne peuvent pas diverger.
  */
 
-import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { ArchiveService, ConfigLogRecord } from '../../router/archive/ArchiveService';
 import { renderTable, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
@@ -58,17 +56,27 @@ function renderConfigLog(records: readonly ConfigLogRecord[]): string {
  */
 const SANS_CHEMIN = '% Archive path not configured';
 
-/** `archive config` (EXEC privilégié) — archive la configuration courante. */
-export function registerArchiveExecCommands(
-  trie: CommandTrie, ar: ArchiveAccessor, runningConfig: () => string,
-  lireFichier: (url: string) => string | null = () => null,
-  lireStartup: () => string | null = () => null,
-  appliquer: (texte: string) => void = () => {},
-): void {
-  trie.register('show archive', 'Display archive status', () => {
+export interface ArchiveExecHost {
+  archive: ArchiveAccessor;
+  runningConfig: () => string;
+  readFile: (url: string) => string | null;
+  readStartup: () => string | null;
+  apply: (text: string) => void;
+}
+
+const EXEC_MODES = ['user', 'privileged'];
+
+export function archiveExecSpecs(host: () => ArchiveExecHost): CommandSpec[] {
+  const ar: ArchiveAccessor = () => host().archive();
+  const runningConfig = (): string => host().runningConfig();
+  const lireFichier = (url: string): string | null => host().readFile(url);
+  const lireStartup = (): string | null => host().readStartup();
+  const appliquer = (texte: string): void => host().apply(texte);
+  const showArchive = (): string => {
     const s = ar();
     return s ? s.formatShowArchive() : 'No archives configured / no revisions captured.';
-  });
+  };
+
   /*
    * `show archive config differences [<avant> [<apres>]]` — la commande
    * la plus utile de tout ce sous-systeme pour un auditeur, et elle etait
@@ -79,7 +87,7 @@ export function registerArchiveExecCommands(
    * courante : c'est la question qu'on pose le plus souvent, « qu'est-ce
    * qui a bouge depuis la derniere sauvegarde ? ».
    */
-  trie.registerGreedy('show archive config differences', 'Display archive config diff', (args) => {
+  const showDifferences = (args: readonly string[]): string => {
     const s = ar();
     if (!s) return 'No archive differences available.';
     const courant = runningConfig();
@@ -114,14 +122,14 @@ export function registerArchiveExecCommands(
     const apres = lire(args[1]);
     if (apres === null) return `%Error opening ${args[1]} (No such file or directory)`;
     return s.formatShowArchiveDiff(avant, apres);
-  });
+  };
 
   /*
    * `show archive log config all` — la porte du journal des commandes.
    * Il n'y en avait aucune : le sous-mode `log config` etait accepte, ses
    * reglages ranges, et rien ne pouvait etre relu.
    */
-  trie.registerGreedy('show archive log config', 'Display configuration log', (args) => {
+  const showConfigLog = (args: readonly string[]): string => {
     const s = ar();
     if (!s) return '';
     const tous = s.listConfigLog();
@@ -204,7 +212,7 @@ export function registerArchiveExecCommands(
 
     if (provisioning) return choisis.map((r) => r.command).join('\n');
     return renderConfigLog(choisis);
-  });
+  };
   /**
    * `configure replace <url> [force|list|time <n>]` — la VRAIE
    * restauration, celle que le chapitre oppose à `copy`.
@@ -224,7 +232,7 @@ export function registerArchiveExecCommands(
    * entièrement dans l'appel, donc rien ne peut mourir entre les deux :
    * le mot-clé est accepté et son effet annoncé, pas simulé.
    */
-  trie.registerGreedy('configure replace', 'Replace the running configuration', (args) => {
+  const configureReplace = (args: readonly string[]): string => {
     if (args.length === 0) throw new CliIncomplete();
     const { url, options, erreur } = parseConfigReplaceArgs(args);
     if (erreur) return erreur;
@@ -258,15 +266,79 @@ export function registerArchiveExecCommands(
     }
     appliquer(cible);
     return [...tete, 'Total number of passes: 1', 'Rollback Done'].join('\n');
-  });
+  };
 
-  trie.register('archive config', 'Archive the running configuration', () => {
+  const archiveConfig = (): string => {
     const s = ar();
     if (!s) return SANS_CHEMIN;
     if (!s.getPath().path) return SANS_CHEMIN;
     const r = s.capture('manual', runningConfig());
     return 'erreur' in r ? r.erreur : `Writing ${r.path}`;
-  });
+  };
+
+  const words = (value: string | undefined): string[] =>
+    (value ?? '').trim().split(/\s+/).filter(Boolean);
+  const base = { modes: EXEC_MODES, minPrivilege: 15 };
+  return [
+    {
+      ...base, id: 'show-archive', path: ['show', 'archive'],
+      description: 'Display archive status', run: () => showArchive(),
+    },
+    {
+      ...base, id: 'show-archive-config-differences',
+      path: ['show', 'archive', 'config', 'differences',
+        {
+          name: 'avant', type: 'WORD', optional: true,
+          description: 'File to compare from (defaults to the latest archive)',
+        },
+        {
+          name: 'apres', type: 'WORD', optional: true,
+          description: 'File to compare to (defaults to the running configuration)',
+        }],
+      description: 'Display archive config diff',
+      run: (_session, args) => showDifferences(
+        [args.avant, args.apres].filter((v): v is string => v !== undefined)),
+    },
+    {
+      ...base, id: 'show-archive-log-config',
+      path: ['show', 'archive', 'log', 'config', {
+        name: 'selection', type: 'REST', optional: true,
+        description: 'Records to show', literal: 'LINE',
+        alternatives: [
+          { keyword: 'all', description: 'All the records' },
+          { keyword: 'statistics', description: 'Memory held by the log' },
+          { keyword: 'user', description: 'Records of one user' },
+        ],
+      }],
+      description: 'Display configuration log',
+      run: (_session, args) => showConfigLog(words(args.selection)),
+    },
+    {
+      ...base, id: 'configure-replace',
+      path: ['configure', 'replace',
+        {
+          name: 'url', type: 'WORD',
+          description: 'URL of the configuration file to roll back to',
+        },
+        {
+          name: 'options', type: 'REST', optional: true,
+          description: 'How the rollback is performed', literal: 'LINE',
+          alternatives: [
+            { keyword: 'force', description: 'Do not prompt for confirmation' },
+            { keyword: 'list', description: 'List the commands, apply nothing' },
+            { keyword: 'nolock', description: 'Do not lock the configuration' },
+            { keyword: 'revert', description: 'Set the revert options' },
+            { keyword: 'time', description: 'Time for automatic rollback' },
+          ],
+        }],
+      description: 'Replace the running configuration',
+      run: (_session, args) => configureReplace([args.url, ...words(args.options)]),
+    },
+    {
+      ...base, id: 'archive-config', path: ['archive', 'config'],
+      description: 'Archive the running configuration', run: () => archiveConfig(),
+    },
+  ];
 }
 
 /**

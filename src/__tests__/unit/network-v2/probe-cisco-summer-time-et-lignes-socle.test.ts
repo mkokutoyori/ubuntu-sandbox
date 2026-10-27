@@ -4,7 +4,9 @@
  * on the socle.
  * Discriminated with git stash of src/network: 4 of 12 (first batch); second batch: 2 of 6 fail before (`escape-character` bare
  * accepted, `no length`/`no width` leaving the line); the other four are
- * witnesses/non-regressions; seventh batch (transport): 1 of 6 fails before (`transport output` was accepted and
+ * witnesses/non-regressions; eighth batch (archive EXEC commands): 0 of 6 fail before, by design (behaviour-preserving;
+ * the migration deletes the second registration on the privileged trie); seventh
+ * batch (transport): 1 of 6 fails before (`transport output` was accepted and
  * dropped); the others are witnesses or non-regressions (`no transport output` is
  * trivially true before, nothing was stored). Sixth batch (archive sub-modes): 0 of 5 fail before, by design (the trie adapter
  * already typed these places; the migration removes the duplicate registrations
@@ -304,5 +306,32 @@ describe('line transport', () => {
   it('answers incomplete to transport input alone', async () => {
     const r = await router('line vty 0 4');
     expect(await r.executeCommand('transport input')).toContain('Incomplete');
+  });
+});
+
+describe('archive EXEC commands', () => {
+  it('witness: show archive answers on a fresh router', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show archive')).toContain('No archives configured');
+  });
+  it('archive config without a path says so', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('archive config')).toContain('Archive path not configured');
+  });
+  it('archives the running configuration once a path is set', async () => {
+    const r = await router('archive', 'path flash:bk', 'end');
+    expect(await r.executeCommand('archive config')).toContain('Writing flash:bk');
+  });
+  it('answers incomplete to configure replace with no file', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('configure replace')).toContain('Incomplete');
+  });
+  it('refuses an unknown configure replace option', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('configure replace flash:x zorglub')).toContain('Invalid input');
+  });
+  it('lists the archive log statistics', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show archive log config statistics')).toContain('Config Log');
   });
 });

@@ -4164,6 +4164,6 @@ atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à 
 ### [telnet-vrp] client VRP
 `Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
 
-## Cisco: remaining trie commands of the time, log and line families
+## Cisco: transport output is stored, not enforced
 
-Measured: every config-line keyword and both `archive` sub-modes are on the socle. `transport output` is stored and rendered on vty, aux and console lines but no outbound connection consults it. Still on `CommandTrie`: the EXEC side of archive (`show archive`, `show archive config differences`, `show archive log config`, `configure replace`, `archive config` in `CiscoArchiveCommands.ts`). `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART, so they decide nothing. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner` and its documentation was not reachable to confirm it.
+Measured: the time, log, line and archive families are declared on the socle. `transport output` is stored and rendered on vty, aux and console lines but no outbound telnet or ssh connection consults it. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner` and its documentation was not reachable to confirm it. `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART.

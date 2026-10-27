@@ -225,7 +225,7 @@ import { serviceLoggingFamily, type ServiceLoggingHost } from '@/cli/commands/se
 import { LoggingConfig, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
-import { registerArchiveExecCommands, archiveOnWriteMemory,
+import { archiveExecSpecs, archiveOnWriteMemory,
   archiveSubmodeSpecs, archiveLogSubmodeSpecs } from './cisco/CiscoArchiveCommands';
 import {
   radiusServerSubmodeSpecs, tacacsServerSubmodeSpecs, aaaGroupSubmodeSpecs,
@@ -416,50 +416,6 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['udp-small-servers', 'Enable small UDP servers (e.g., ECHO)'],
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
-
-const ARCHIVE_EXEC: ReadonlySet<string> = new Set([
-  'show archive', 'show archive config differences', 'show archive log config',
-  'archive config', 'configure replace',
-]);
-
-const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-  'show archive config differences': [
-    {
-      name: 'avant', type: 'WORD', optional: true,
-      description: 'File to compare from (defaults to the latest archive)',
-    },
-    {
-      name: 'apres', type: 'WORD', optional: true,
-      description: 'File to compare to (defaults to the running configuration)',
-    },
-  ],
-  'configure replace': [
-    {
-      name: 'url', type: 'WORD',
-      description: 'URL of the configuration file to roll back to',
-    },
-    {
-      name: 'options', type: 'REST', optional: true,
-      description: 'How the rollback is performed', literal: 'LINE',
-      alternatives: [
-        { keyword: 'force', description: 'Do not prompt for confirmation' },
-        { keyword: 'list', description: 'List the commands, apply nothing' },
-        { keyword: 'nolock', description: 'Do not lock the configuration' },
-        { keyword: 'revert', description: 'Set the revert options' },
-        { keyword: 'time', description: 'Time for automatic rollback' },
-      ],
-    },
-  ],
-  'show archive log config': [{
-    name: 'selection', type: 'REST', optional: true,
-    description: 'Records to show', literal: 'LINE',
-    alternatives: [
-      { keyword: 'all', description: 'All the records' },
-      { keyword: 'statistics', description: 'Memory held by the log' },
-      { keyword: 'user', description: 'Records of one user' },
-    ],
-  }],
-};
 
 interface DhcpConfigServer {
   getPool(name: string): unknown;
@@ -6346,36 +6302,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
-  /**
-   * `show archive`, son journal, son diff, et `archive config`.
-   *
-   * Elles etaient deja declarees UNE fois pour les deux plateformes —
-   * `registerArchiveExecCommands` est appele ici et nulle part
-   * ailleurs — donc la migration ne referme aucun doublon ; elle donne
-   * a la famille ses modes et ses places declarees.
-   */
-  private registerArchiveExecOn(trie: CommandTrie): void {
-    registerArchiveExecCommands(
-      trie,
-      () => this.archiveService(),
-      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
-      (url) => this.fs().read(url),
-      () => this.readStartupConfig(),
-      (texte) => {
-        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
-        // zéro avant que le fichier ne soit appliqué, sinon ce que la
-        // configuration courante porte en trop y resterait — ce qui est
-        // précisément la différence avec `copy`.
-        const dev = this.d() as unknown as {
-          _resetConfigurableStateForReload?: () => void;
-          _applyConfigText?: (t: string) => void;
-        };
-        dev._resetConfigurableStateForReload?.();
-        dev._applyConfigText?.(texte);
-        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
-          ._noteConfigChange?.(this.configSessionLabel);
-      },
-    );
+  private replaceRunningConfig(texte: string): void {
+    const dev = this.d() as unknown as {
+      _resetConfigurableStateForReload?: () => void;
+      _applyConfigText?: (t: string) => void;
+    };
+    dev._resetConfigurableStateForReload?.();
+    dev._applyConfigText?.(texte);
+    (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
+      ._noteConfigChange?.(this.configSessionLabel);
   }
 
   /**
@@ -7167,14 +7102,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected archiveExecSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerArchiveExecOn(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 15,
-        skip: (path) => !ARCHIVE_EXEC.has(path),
-        argumentFor: (path) => ARCHIVE_EXEC_PLACES[path],
-      },
-    );
+    return archiveExecSpecs(() => ({
+      archive: () => this.archiveService(),
+      runningConfig: () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+      readFile: (url) => this.fs().read(url),
+      readStartup: () => this.readStartupConfig(),
+      apply: (text) => this.replaceRunningConfig(text),
+    }));
   }
 
   protected arpSpecs(): CommandSpec[] {
@@ -9714,14 +9648,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonPrivilegedCommands(): void {
-
-    // `archive config` / `show archive` — enregistrées ici, donc pour le
-    // routeur ET le switch, parce qu'un Catalyst connaît cette famille
-    // tout autant qu'un routeur et qu'elle était refusée en bloc sur le
-    // switch. Un équipement sans service d'archivage rend le message de
-    // table vide plutôt que de planter.
-    this.registerArchiveExecOn(this.privilegedTrie);
-
 
     this.privilegedTrie.registerSuggestions('write', [
       { keyword: 'memory',   description: 'Write to NVRAM' },
