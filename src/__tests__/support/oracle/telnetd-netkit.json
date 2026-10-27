@@ -1,0 +1,1154 @@
+{
+ "daemon": "in.telnetd",
+ "hostname": "vm",
+ "password": "Tpass-123",
+ "issue_net": "Ubuntu 24.04.5 LTS\n",
+ "scenarios": {
+  "opening-only": {
+   "steps": [],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    }
+   ]
+  },
+  "agrees-everything": {
+   "steps": [
+    [
+     "send",
+     "fffb18fffb1ffffb20fffb21fffb22fffb27"
+    ],
+    [
+     "wait",
+     0.5
+    ],
+    [
+     "send",
+     "fffa1800787465726dfff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb18fffb1ffffb20fffb21fffb22fffb27"
+     ],
+     "got": "fffd1ffffd21fffe22",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa1800787465726dfff0"
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "refuses-everything": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    }
+   ]
+  },
+  "ttype-then-login": {
+   "steps": [
+    [
+     "send",
+     "fffb18"
+    ],
+    [
+     "send",
+     "fffa1800787465726dfff0"
+    ],
+    [
+     "wait",
+     1.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb18"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa1800787465726dfff0"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "full-handshake": {
+   "steps": [
+    [
+     "send",
+     "fffb18"
+    ],
+    [
+     "send",
+     "fffa1800787465726dfff0"
+    ],
+    [
+     "send",
+     "fffb20"
+    ],
+    [
+     "send",
+     "fffa200033383430302c3338343030fff0"
+    ],
+    [
+     "send",
+     "fffb23"
+    ],
+    [
+     "send",
+     "fffa23003a30fff0"
+    ],
+    [
+     "send",
+     "fffb27"
+    ],
+    [
+     "send",
+     "fffa2700005553455201746573746572fff0"
+    ],
+    [
+     "send",
+     "fffb1f"
+    ],
+    [
+     "send",
+     "fffa1f00500018fff0"
+    ],
+    [
+     "wait",
+     1.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb18"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa1800787465726dfff0"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb20"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa200033383430302c3338343030fff0"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb23"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa23003a30fff0"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb27"
+     ],
+     "got": "fffa2001fff0fffa2301fff0fffa2701fff0fffa1801fff0",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa2700005553455201746573746572fff0"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb1f"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa1f00500018fff0"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "bad-login-three-times": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "send",
+     "6e6f626f64790d00"
+    ],
+    [
+     "wait",
+     0.5
+    ],
+    [
+     "send",
+     "77726f6e670d00"
+    ],
+    [
+     "wait",
+     1.5
+    ],
+    [
+     "send",
+     "6e6f626f64790d00"
+    ],
+    [
+     "send",
+     "77726f6e670d00"
+    ],
+    [
+     "wait",
+     1.5
+    ],
+    [
+     "send",
+     "6e6f626f64790d00"
+    ],
+    [
+     "send",
+     "77726f6e670d00"
+    ],
+    [
+     "wait",
+     2.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "6e6f626f64790d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "77726f6e670d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "6e6f626f64790d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "77726f6e670d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "6e6f626f64790d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "77726f6e670d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      2.0
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "login-ok-commands": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "send",
+     "7465737465720d00"
+    ],
+    [
+     "wait",
+     0.5
+    ],
+    [
+     "send",
+     "54706173732d3132330d00"
+    ],
+    [
+     "wait",
+     1.5
+    ],
+    [
+     "send",
+     "6563686f2068656c6c6f0d00"
+    ],
+    [
+     "send",
+     "77686f616d690d00"
+    ],
+    [
+     "send",
+     "7474790d00"
+    ],
+    [
+     "send",
+     "6563686f20245445524d0d00"
+    ],
+    [
+     "send",
+     "657869740d00"
+    ],
+    [
+     "wait",
+     1.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "7465737465720d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "54706173732d3132330d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "6563686f2068656c6c6f0d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "77686f616d690d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "7474790d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "6563686f20245445524d0d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "657869740d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "login-ok-term": {
+   "steps": [
+    [
+     "send",
+     "fffb18"
+    ],
+    [
+     "send",
+     "fffa1800787465726dfff0"
+    ],
+    [
+     "send",
+     "fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "send",
+     "7465737465720d00"
+    ],
+    [
+     "wait",
+     0.5
+    ],
+    [
+     "send",
+     "54706173732d3132330d00"
+    ],
+    [
+     "wait",
+     1.5
+    ],
+    [
+     "send",
+     "6563686f20245445524d0d00"
+    ],
+    [
+     "send",
+     "657869740d00"
+    ],
+    [
+     "wait",
+     1.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb18"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffa1800787465726dfff0"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc20fffc23fffc27"
+     ],
+     "got": "fffa1801fff0fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "7465737465720d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "54706173732d3132330d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "6563686f20245445524d0d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "657869740d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "echo-negotiation": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "send",
+     "fffe01"
+    ],
+    [
+     "wait",
+     0.4
+    ],
+    [
+     "send",
+     "fffd01"
+    ],
+    [
+     "wait",
+     0.4
+    ],
+    [
+     "send",
+     "fffe03"
+    ],
+    [
+     "send",
+     "fffd03"
+    ],
+    [
+     "send",
+     "fffb03"
+    ],
+    [
+     "send",
+     "fffc03"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffe01"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.4
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffd01"
+     ],
+     "got": "fffb01",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.4
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffe03"
+     ],
+     "got": "fffb03",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffd03"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffb03"
+     ],
+     "got": "fffd03",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc03"
+     ],
+     "got": "fffe03",
+     "closed": false
+    }
+   ]
+  },
+  "unknown-options": {
+   "steps": [
+    [
+     "send",
+     "fffdc8fffbc9fffd00fffb00fffd05fffd12"
+    ],
+    [
+     "wait",
+     0.5
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffdc8fffbc9fffd00fffb00fffd05fffd12"
+     ],
+     "got": "fffcc8fffec9fffb00fffd00fffb05fffb12",
+     "closed": true
+    }
+   ]
+  },
+  "controls": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "send",
+     "fff6"
+    ],
+    [
+     "send",
+     "fff1"
+    ],
+    [
+     "send",
+     "fff4"
+    ],
+    [
+     "send",
+     "fff3"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fff6"
+     ],
+     "got": "0d0a5b3c484f53543e203a207965735d0d0a",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fff1"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fff4"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fff3"
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "ayt-after-login": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "send",
+     "7465737465720d00"
+    ],
+    [
+     "wait",
+     0.5
+    ],
+    [
+     "send",
+     "54706173732d3132330d00"
+    ],
+    [
+     "wait",
+     1.5
+    ],
+    [
+     "send",
+     "fff6"
+    ],
+    [
+     "wait",
+     0.4
+    ],
+    [
+     "send",
+     "657869740d00"
+    ],
+    [
+     "wait",
+     1.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "7465737465720d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "54706173732d3132330d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.5
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fff6"
+     ],
+     "got": "0d0a5b3c484f53543e203a207965735d0d0a",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      0.4
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "657869740d00"
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    }
+   ]
+  },
+  "client-eof": {
+   "steps": [
+    [
+     "send",
+     "fffc18fffc20fffc23fffc27"
+    ],
+    [
+     "wait",
+     1.0
+    ],
+    [
+     "shutdown",
+     0
+    ],
+    [
+     "wait",
+     1.0
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "got": "fffd18fffd20fffd23fffd27",
+     "closed": false
+    },
+    {
+     "step": [
+      "send",
+      "fffc18fffc20fffc23fffc27"
+     ],
+     "got": "fffb03fffd01fffd1ffffb05fffd21",
+     "closed": false
+    },
+    {
+     "step": [
+      "wait",
+      1.0
+     ],
+     "got": "",
+     "closed": false
+    },
+    {
+     "step": [
+      "shutdown",
+      0
+     ],
+     "got": "",
+     "closed": true
+    }
+   ]
+  }
+ }
+}
