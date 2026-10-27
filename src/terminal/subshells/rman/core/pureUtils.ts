@@ -43,9 +43,19 @@ export function formatSize(bytes: number): string {
   return `${bytes}B`;
 }
 
+const ORACLE_STAMP_EPOCH_SECONDS = 567_993_600;
+
+export function oracleStamp(epochMs: number): number {
+  return Math.floor(epochMs / 1000) - ORACLE_STAMP_EPOCH_SECONDS;
+}
+
+export function rmanNowMs(ctx: { hostNowMs?(): number } | undefined): number {
+  return ctx?.hostNowMs?.() ?? simulationNowMs();
+}
+
 export function rmanWall(
-  ctx: { hostZoneName?(): string } | undefined,
-  atMs: number = simulationNowMs(),
+  ctx: { hostZoneName?(): string; hostNowMs?(): number } | undefined,
+  atMs: number = rmanNowMs(ctx),
 ): Date {
   return ZonedDate.in(atMs, ctx?.hostZoneName?.() ?? 'UTC');
 }

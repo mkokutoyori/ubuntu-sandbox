@@ -352,6 +352,7 @@ import './dba_extents';
 import './dba_audit_trail';
 import './dba_stmt_audit_opts';
 import './dba_profiles';
+import './resource_cost';
 import './dba_tab_statistics';
 import './dba_directories';
 import './dba_db_links';

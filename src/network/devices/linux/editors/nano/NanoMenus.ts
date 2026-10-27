@@ -4,7 +4,7 @@ export interface MenuEntry {
 }
 
 export type NanoMenuName =
-  | 'main' | 'search' | 'replace' | 'replace-with' | 'write-out' | 'read-file' | 'goto' | 'execute' | 'help' | 'search-in-help';
+  | 'main' | 'search' | 'replace' | 'replace-with' | 'write-out' | 'read-file' | 'goto' | 'execute' | 'help' | 'search-in-help' | 'linter';
 
 const E = (key: string, tag: string): MenuEntry => ({ key, tag });
 
@@ -49,6 +49,7 @@ export const NANO_MENUS: Readonly<Record<NanoMenuName, readonly MenuEntry[]>> = 
     E('^G', 'Help'), E('^C', 'Cancel'), E('M-F', 'New Buffer'), E('M-\\', 'Pipe Text'), E('^S', 'Spell Check'),
     E('^Y', 'Linter'), E('^J', 'Full Justify'), E('^O', 'Formatter'), E('^V', 'Cut Till End'), E('^Z', 'Suspend'),
   ],
+  linter: [E('^G', 'Help'), E('^C', 'Cancel'), E('^Y', 'Previous Linter message'), E('^V', 'Next Linter message')],
   help: [
     E('^L', 'Refresh'), E('^X', 'Close'), E('^W', 'Where Is'), E('^Q', 'Where Was'), E('M-Q', 'Previous'),
     E('M-W', 'Next'), E('^P', 'Prev Line'), E('^N', 'Next Line'), E('^Y', 'Prev Page'), E('^V', 'Next Page'),
@@ -110,4 +111,8 @@ export function menuLayout(menu: NanoMenuName, options: MenuOptions): MenuLayout
   const shown = entries.filter((entry) => !hidden.includes(entry.tag));
   const restricted = menu === 'main' ? shown.map((entry) => (entry.tag === 'Read File' ? E('^J', 'Justify') : entry)) : shown;
   return { entries: restricted, slots: restricted.length + unboundSlots };
+}
+
+export function shownEntryCount(cols: number, slots: number): number {
+  return Math.min(slots, Math.floor((cols + 40) / 20) * 2);
 }

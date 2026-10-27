@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|mouse|tab|state|rc|colors|syntax|package|lint|place|layout|edit|wrap|tools|insert|open|undo|undo2|search|help|blocks|exec [--seed N] [--cases N] [--from cases.json] [--workdir DIR] out.json
+
+A case with `"paint": true` records, for every row, one letter per cell from a legend kept for the whole case (`legend`: letter -> `FG/BG/FLAGS`,
+FG and BG a 0-255 palette index or `-` for the default, FLAGS any of `biur` for bold, italic, underline, reverse), read from `capture-pane -e -N`.
 
 A case with `"attrs": true` also records, for every row, one letter per cell: `.` default, `r` reverse, `b` bold, `a` bold white on red
 (the error colour), `y` black on bright yellow (the spotlight), `R` red background alone and `?` anything else, read from `capture-pane -e -N`.
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
-key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
+key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a mouse event (`click@ROW,COL`, `wheel-up@ROW,COL`,
+`wheel-down@ROW,COL`, sent as xterm SGR reports), a run of literal text (`-l`) or `@ROWSxCOLS`,
 which resizes the pane (a run of literal text is sent one character at a time, 40 ms apart, because nano
 wraps a burst of typed characters once at its end).  The real nano runs inside a pane of the given size (started with `-I`, so
 no rc file is read); the first record is the screen right after nano opened the file, then one
@@ -15,7 +19,7 @@ record per step: every row of the pane (title bar, edit window, status bar and t
 rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
 corpus) also records the files left in the directory after each step.
 """
-import argparse, contextlib, itertools, json, os, random, re, shlex, shutil, subprocess, tempfile, time, unicodedata
+import argparse, contextlib, glob, itertools, json, os, random, re, shlex, shutil, subprocess, tempfile, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 SESSION_NUMBERS = itertools.count()
@@ -25,7 +29,20 @@ KEYS = {"Left", "Right", "Up", "Down", "Home", "End", "PageUp", "PageDown", "Ent
 def tmux(*args):
     return subprocess.run(["tmux", *args], capture_output=True, text=True).stdout
 
+MOUSE = re.compile(r"^(click|wheel-up|wheel-down)@(\d+),(\d+)$")
+
+def mouse_bytes(kind, row, col):
+    x, y = col + 1, row + 1
+    if kind == "click":
+        return "\x1b[<0;%d;%dM\x1b[<0;%d;%dm" % (x, y, x, y)
+    return "\x1b[<%d;%d;%dM" % (64 if kind == "wheel-up" else 65, x, y)
+
 def send(name, token):
+    mouse = MOUSE.match(token)
+    if mouse:
+        tmux("send-keys", "-t", name, "-l", mouse_bytes(mouse.group(1), int(mouse.group(2)), int(mouse.group(3))))
+        time.sleep(0.15)
+        return
     if token in KEYS or re.match(r"^(C|M)-.+$", token) or token in ("C-Left", "C-Right"):
         tmux("send-keys", "-t", name, token)
     else:
@@ -97,6 +114,81 @@ def capture_attrs(name, width, height):
         rows.append("".join(letters)[:width].ljust(width, "."))
     return rows
 
+PAINT_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+def paint_apply(state, params):
+    codes = [int(p) if p else 0 for p in params.split(";")] or [0]
+    index = 0
+    while index < len(codes):
+        code = codes[index]
+        if code == 0:
+            state.update(bold=False, italic=False, underline=False, reverse=False, fg=None, bg=None)
+        elif code == 1:
+            state["bold"] = True
+        elif code == 3:
+            state["italic"] = True
+        elif code == 4:
+            state["underline"] = True
+        elif code == 7:
+            state["reverse"] = True
+        elif code == 22:
+            state["bold"] = False
+        elif code == 23:
+            state["italic"] = False
+        elif code == 24:
+            state["underline"] = False
+        elif code == 27:
+            state["reverse"] = False
+        elif 30 <= code <= 37:
+            state["fg"] = str(code - 30)
+        elif 90 <= code <= 97:
+            state["fg"] = str(code - 90 + 8)
+        elif code == 39:
+            state["fg"] = None
+        elif 40 <= code <= 47:
+            state["bg"] = str(code - 40)
+        elif 100 <= code <= 107:
+            state["bg"] = str(code - 100 + 8)
+        elif code == 49:
+            state["bg"] = None
+        elif code in (38, 48):
+            if index + 2 < len(codes) and codes[index + 1] == 5:
+                value = str(codes[index + 2])
+                index += 2
+            elif index + 4 < len(codes) and codes[index + 1] == 2:
+                value = "rgb:%d,%d,%d" % (codes[index + 2], codes[index + 3], codes[index + 4])
+                index += 4
+            else:
+                value = "?"
+            state["fg" if code == 38 else "bg"] = value
+        index += 1
+
+def paint_key(state):
+    flags = "".join(letter for letter, name in (("b", "bold"), ("i", "italic"), ("u", "underline"), ("r", "reverse")) if state[name])
+    return "%s/%s/%s" % (state["fg"] if state["fg"] is not None else "-", state["bg"] if state["bg"] is not None else "-", flags)
+
+def capture_paint(name, width, height, legend):
+    legend.setdefault(".", "-/-/")
+    letters_of = {key: letter for letter, key in legend.items()}
+    raw = tmux("capture-pane", "-e", "-p", "-N", "-t", name).split("\n")
+    state = {"bold": False, "italic": False, "underline": False, "reverse": False, "fg": None, "bg": None}
+    rows = []
+    for index in range(height):
+        row = raw[index] if index < len(raw) else ""
+        letters = []
+        for token in SGR.split(row):
+            if SGR.fullmatch(token):
+                paint_apply(state, token[2:-1])
+                continue
+            key = paint_key(state)
+            if key not in letters_of:
+                letters_of[key] = PAINT_LETTERS[len(legend) - 1] if len(legend) - 1 < len(PAINT_LETTERS) else "?"
+                legend[letters_of[key]] = key
+            for char in token:
+                letters.extend(letters_of[key] * cell_width(char))
+        rows.append("".join(letters)[:width].ljust(width, "."))
+    return rows
+
 def settled(name):
     last = None
     for _ in range(40):
@@ -143,7 +235,7 @@ def record_disk(casedir, hidden=False):
                 disk[key] = raw.decode("utf-8", "replace")
     return disk
 
-def record_screen(name, casedir=None, hidden=False, attrs=False):
+def record_screen(name, casedir=None, hidden=False, attrs=False, legend=None):
     snap = settled(name)
     if snap is None:
         return None
@@ -151,6 +243,8 @@ def record_screen(name, casedir=None, hidden=False, attrs=False):
     record = {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
     if attrs:
         record["attrs"] = capture_attrs(name, width, height)
+    if legend is not None:
+        record["paint"] = capture_paint(name, width, height, legend)
     if casedir is not None:
         record["disk"] = record_disk(casedir, hidden)
     return record
@@ -283,7 +377,12 @@ def run_cli_case(case, workdir):
              "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s" % (casedir, " ".join(shlex.quote(a) for a in case["args"])))
         record["opened"] = record_screen(name, disk_dir, hidden, case.get("attrs", False))
         record["after"] = []
+        steps_done = []
+        cursor = (record["opened"]["y"], record["opened"]["x"]) if record["opened"] else (0, 0)
         for step in case.get("steps", []):
+            if step == "click@cursor":
+                step = "click@%d,%d" % cursor
+            steps_done.append(step)
             if step.startswith("@"):
                 rows_, cols_ = step[1:].split("x")
                 tmux("resize-window", "-t", name, "-x", cols_, "-y", rows_)
@@ -298,7 +397,8 @@ def run_cli_case(case, workdir):
                     record["final_disk"] = record_disk(casedir, hidden)
                 break
             record["after"].append(snap)
-        record["steps"] = case.get("steps", [])[:len(record["after"])]
+            cursor = (snap["y"], snap["x"])
+        record["steps"] = steps_done[:len(record["after"])]
         tmux("kill-session", "-t", name)
     else:
         record["opens"] = False
@@ -893,7 +993,644 @@ def gen_exec(seed, count):
         cases.append({"id": "exe%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": without_stray_exec_keys(steps), "disk": True, "hidden": True})
     return cases
 
+MOUSE_FLAG_SETS = [["-m"], ["-m"], ["-m", "-l"], ["-m", "-S"], ["-m", "-q"], ["-m", "-x"], ["-m", "-_"], ["-m", "-0"], ["-m", "-e"], ["-m", "-v"], ["-m", "-l", "-S"], ["-m", "-c"], ["-m", "-q", "-l"], ["-m", "-%"]]
+MOUSE_KEYS = ["Down", "Down", "Up", "Right", "Left", "End", "Home", "PageDown", "PageUp", "x", "yz", "BSpace", "Enter", "C-k", "C-u", "M-a", "M-6", "C-w", "C-o", "C-r", "C-\\", "C-g", "C-x", "C-c", "M-u", "C-_", "foo", "Enter", "C-b", "C-f"]
+MOUSE_SIZES = [(5, 40), (6, 40), (8, 30), (10, 40), (10, 50), (12, 40), (12, 60), (14, 60), (24, 80), (9, 20)]
+
+def mouse_step(r, rows, cols):
+    kind = r.random()
+    if kind < 0.35:
+        return "click@cursor"
+    place = r.random()
+    if place < 0.55:
+        row, col = r.randint(1, max(1, rows - 4)), r.randint(0, cols - 1)
+    elif place < 0.8:
+        row, col = r.randint(max(0, rows - 3), rows - 1), r.randint(0, cols - 1)
+    elif place < 0.9:
+        row, col = 0, r.randint(0, cols - 1)
+    else:
+        row, col = r.randint(0, rows - 1), r.choice([0, 1, 2, 3, cols - 1])
+    if kind < 0.85:
+        return "click@%d,%d" % (row, col)
+    return "%s@%d,%d" % (r.choice(["wheel-up", "wheel-down"]), row, col)
+
+def gen_mouse(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = rand_buffer(r, r.choice([2, 4, 8, 14, 30]))
+        rows, cols = r.choice(MOUSE_SIZES)
+        steps = []
+        for _ in range(r.randint(4, 14)):
+            if r.random() < 0.6:
+                steps.append(mouse_step(r, rows, cols))
+            else:
+                steps.append(r.choice(MOUSE_KEYS))
+        cases.append({"id": "mou%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": r.choice(MOUSE_FLAG_SETS) + ["t.txt"], "steps": steps})
+    return cases
+
+TAB_NAMES = ["foo.txt", "foobar.txt", "foo", "bar.cfg", "baz", "sub/a.txt", "sub/b.txt", "sub/deep/x.txt", "sub2/y.txt", ".hidden", ".conf/z", "Zed.txt", "alpha", "alpine/1", "zzz.log", "\u00e9.txt", "\u4e2d\u6587.txt", "foo-1", "foo_2.bak", "a b.txt"]
+TAB_FRAGMENTS = ["f", "fo", "foo", "foo.", "foob", "b", "ba", "s", "su", "sub", "sub/", "sub/d", "sub2", ".", ".h", ".c", "Z", "z", "a", "al", "alp", "\u00e9", "\u4e2d", "x", "item", "item1", "t", "t.", ""]
+TAB_OPENERS = ["C-r", "C-r", "C-o", "C-o", "C-w", "C-\\", "C-t"]
+
+def gen_tab(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        names = r.sample(TAB_NAMES, r.randint(3, 9))
+        if r.random() < 0.15:
+            names += ["item%02d" % n for n in range(1, r.randint(12, 40))]
+        files = {name: ["x"] for name in names}
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (8, 30), (6, 40), (14, 50), (12, 100)])
+        steps = []
+        for _ in range(r.randint(0, 3)):
+            steps += [r.choice(["C-w", "C-w", "C-\\"]), r.choice(["foo", "foobar", "fab", "fx", "bar", "a"]), "Enter"]
+            if steps[-3] == "C-\\":
+                steps += [r.choice(["bar", "baz", "b"]), "Enter", "C-c"]
+        for _ in range(r.randint(1, 3)):
+            opener = r.choice(TAB_OPENERS)
+            steps.append(opener)
+            if opener == "C-o":
+                steps.append("C-k")
+            fragment = r.choice(TAB_FRAGMENTS)
+            if fragment:
+                steps.append(fragment)
+            for _ in range(r.randint(1, 4)):
+                steps.append("Tab")
+                if r.random() < 0.25:
+                    steps.append(r.choice(["x", "a", "BSpace", "Left", "Home", "End"]))
+            steps.append(r.choice(["C-c", "C-c", "Enter"] if opener in ("C-w", "C-t") else ["C-c", "C-c", "Left", "Enter"]))
+            if steps[-1] == "Left":
+                steps[-1] = "C-c"
+        cases.append({"id": "tab%d-%d" % (seed, i), "text": ["alpha", "beta"], "files": files, "rows": rows, "cols": cols, "args": ["t.txt"], "steps": steps})
+    return cases
+
+
+def snapshot_tree(root, mount_point):
+    entries = {}
+    for here, dirs, names in os.walk(root):
+        relative_here = os.path.relpath(here, root)
+        for entry in sorted(dirs):
+            relative = entry if relative_here == "." else os.path.join(relative_here, entry)
+            entries[mount_point + "/" + relative + "/"] = {"mode": os.stat(os.path.join(here, entry)).st_mode & 0o777}
+        for entry in sorted(names):
+            relative = entry if relative_here == "." else os.path.join(relative_here, entry)
+            path = os.path.join(here, entry)
+            entries[mount_point + "/" + relative] = {"mode": os.stat(path).st_mode & 0o777, "content": open(path, "rb").read().decode("utf-8", "replace")}
+    return entries
+
+def nano_running(name):
+    pid = tmux("display", "-p", "-t", name, "#{pane_pid}").strip()
+    return pid != "" and subprocess.run(["pgrep", "-P", pid, "-x", "nano"], capture_output=True).returncode == 0
+
+def run_state_case(case, workdir):
+    lab = os.path.join(workdir, case["id"])
+    casedir = os.path.join(lab, "work")
+    home = os.path.join(lab, "home")
+    xdg = os.path.join(lab, "xdg")
+    for directory in (casedir, home):
+        os.makedirs(directory, exist_ok=True)
+    tokens = lambda text: text.replace("@WORK@", casedir).replace("@LAB@", lab)
+    open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
+    for extra_name, extra_lines in case.get("files", {}).items():
+        os.makedirs(os.path.dirname(os.path.join(casedir, extra_name)), exist_ok=True)
+        open(os.path.join(casedir, extra_name), "w", encoding="utf-8").write("\n".join(extra_lines) + "\n")
+    for tree_name, tree_root in (("home", home), ("xdg", xdg)):
+        for relative, content in case.get(tree_name, {}).items():
+            target = os.path.join(tree_root, relative)
+            if relative.endswith("/"):
+                os.makedirs(target, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                open(target, "w", encoding="utf-8").write(tokens(content))
+    environment = {key: tokens(value) for key, value in case.get("env", {}).items()}
+    etc_binding = ""
+    if case.get("rc") and not case.get("package"):
+        etc_file = os.path.join(lab, "etc-nanorc")
+        open(etc_file, "w", encoding="utf-8").write(tokens(case.get("etc_nanorc", "")))
+        etc_binding = "mount --bind %s /etc/nanorc && " % shlex.quote(etc_file)
+    ignore = "" if case.get("rc") or case.get("package") else "-I"
+    legend = {} if case.get("paint") else None
+    runs = []
+    for run in case["runs"]:
+        name = "nt%d_%06d" % (os.getpid(), next(SESSION_NUMBERS))
+        tmux("kill-session", "-t", name)
+        words = " ".join("%s=%s" % (key, shlex.quote(value)) for key, value in environment.items())
+        arguments = " ".join(shlex.quote(tokens(a)) for a in run["args"])
+        inner = "%smount --bind %s /root && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color %s nano %s %s; sleep 20" % (etc_binding, shlex.quote(home), words, ignore, arguments)
+        tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name, "cd %s && unshare -m sh -c %s" % (shlex.quote(casedir), shlex.quote(inner)))
+        time.sleep(0.4)
+        opened = record_screen(name, None, True, False, legend)
+        record = {"args": run["args"], "steps": [], "opened": opened, "after": []}
+        for step in run["steps"] + STATE_FINISH:
+            if not nano_running(name):
+                break
+            send(name, step)
+            if case.get("settle"):
+                time.sleep(case["settle"])
+            snap = record_screen(name, None, True, False, legend)
+            if snap is None:
+                break
+            if not nano_running(name):
+                record["exit_step"] = step
+                record["exit_rows"] = snap["rows"]
+                record["exit_disk"] = record_disk(casedir, True)
+                break
+            record["steps"].append(step)
+            record["after"].append(snap)
+        time.sleep(0.3)
+        record["home"] = snapshot_tree(home, "/root")
+        if os.path.isdir(xdg):
+            record["xdg"] = snapshot_tree(xdg, xdg)
+        tmux("kill-session", "-t", name)
+        for leftover in glob.glob(os.path.join(casedir, "*.save")):
+            os.remove(leftover)
+        runs.append(record)
+    return dict(case, casedir=casedir, lab=lab, runs=runs, **({"legend": legend} if legend is not None else {}))
+
+STATE_FINISH = ["C-c", "C-x", "n"]
+STATE_FLAGS = [["-H"], ["-P"], ["-H", "-P"], ["-HP"], ["-H", "-P", "-R"], ["--historylog"], ["--positionlog"], ["-H", "-P", "-l"], ["-H", "-P", "-S"], ["-H", "-P", "-w"], ["-P", "-x"], []]
+STATE_MOVES = ["Down", "Down", "Up", "Right", "Right", "Left", "End", "Home", "PageDown", "PageUp", "M-/", "M-\\", "C-Right", "C-Left", "x", "yz", "BSpace", "Enter", "Tab", "DC"]
+STATE_SEARCH_WORDS = ["foo", "bar", "baz", "alpha", "é", "中文", "tab", "x", "a b", "[1", "end."]
+STATE_EXEC = ["echo hi", "seq 1 3", "true", "ls", "cat t.txt", "echo a b"]
+
+def state_history_file(r):
+    def entries(words, high):
+        return [r.choice(words) + (str(r.randint(0, 9)) if r.random() < 0.3 else "") for _ in range(r.randint(0, high))]
+    lists = [entries(STATE_SEARCH_WORDS, 6), entries(["Z", "XY", "new", "é", "a b"], 3), entries(STATE_EXEC, 3)]
+    return "".join("".join(entry + "\n" for entry in lst) + "\n" for lst in lists)
+
+def state_position_file(r, casedir_token, names):
+    lines = []
+    for _ in range(r.randint(0, 5)):
+        lines.append("%s/%s %d %d\n" % (casedir_token, r.choice(names + ["other.txt", "gone.txt"]), r.randint(0, 80), r.randint(0, 60)))
+    return "".join(lines)
+
+def gen_state_run(r, text, target, flags, allow_edit=True):
+    steps = []
+    for _ in range(r.randint(0, 3)):
+        kind = r.random()
+        if kind < 0.35:
+            steps.extend(r.choice(STATE_MOVES) for _ in range(r.randint(1, 6)))
+        elif kind < 0.65:
+            steps.extend(search_flow(r))
+        elif kind < 0.8:
+            steps.extend(["C-w", r.choice(STATE_SEARCH_WORDS), "Enter"])
+        elif kind < 0.85:
+            steps.extend(["C-t", r.choice(STATE_EXEC), "Enter"])
+        elif kind < 0.9:
+            steps.extend(["C-g", "C-w", r.choice(STATE_SEARCH_WORDS), "Enter", "C-x"])
+        elif allow_edit:
+            steps.extend(r.choice(["x", "yz", "Enter", "BSpace"]) for _ in range(r.randint(1, 3)))
+    steps = without_stray_exec_keys(steps)
+    ending = r.choice([["C-x", "n"], ["C-x", "n"], ["C-x", "y", "Enter"], ["C-x", "y", "Enter"], ["C-x"]])
+    return steps + ending
+
+def gen_state(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([3, 6, 12, 30, 60]))]
+        text[r.randrange(len(text))] += " foo bar baz alpha tab end."
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        files = {"u.txt": [edit_line(r) for _ in range(r.randint(2, 25))]} if r.random() < 0.4 else {}
+        flags = r.choice(STATE_FLAGS)
+        scenario = r.choices(["fresh", "history", "positions", "both", "legacy", "xdg", "xdg-missing", "local-file", "state-file"], [6, 3, 3, 3, 1, 2, 1, 1, 1])[0]
+        home, xdg, env = {}, {}, {}
+        names = ["t.txt"] + (["u.txt"] if files else [])
+        if scenario in ("history", "both"):
+            home[".local/share/nano/search_history"] = state_history_file(r)
+        if scenario in ("positions", "both"):
+            home[".local/share/nano/filepos_history"] = state_position_file(r, "@WORK@", names)
+        if scenario == "legacy":
+            home[".nano/search_history"] = state_history_file(r)
+            home[".nano/filepos_history"] = state_position_file(r, "@WORK@", names)
+        if scenario == "xdg":
+            env["XDG_DATA_HOME"] = "@LAB@/xdg"
+            xdg["nano/search_history"] = state_history_file(r)
+            xdg["nano/filepos_history"] = state_position_file(r, "@WORK@", names)
+        if scenario == "xdg-missing":
+            env["XDG_DATA_HOME"] = "@LAB@/xdg"
+        if scenario == "local-file":
+            home[".local"] = "x"
+        if scenario == "state-file":
+            home[".local/share/nano"] = "x"
+        runs = []
+        for _ in range(r.choice([1, 2, 2, 3])):
+            target = r.choice(names + ["./t.txt", "t.txt"])
+            args = list(flags)
+            if r.random() < 0.12:
+                args.append("+%d%s" % (r.randint(1, len(text) + 3), r.choice(["", ",3", ",1"])))
+            args.append(target)
+            runs.append({"args": args, "steps": gen_state_run(r, text, target, flags)})
+        case = {"id": "sta%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": xdg, "env": env, "runs": runs}
+        cases.append(case)
+    return cases
+
+
+RC_FLAGS = ["linenumbers", "tabstospaces", "autoindent", "softwrap", "nohelp", "constantshow", "smarthome", "zero", "minibar", "indicator",
+            "boldtext", "quickblank", "stateflags", "cutfromcursor", "atblanks", "jumpyscrolling", "emptyline", "nonewlines", "showcursor",
+            "trimblanks", "wordbounds", "zap", "preserve", "rebinddelete", "locking", "casesensitive", "regexp", "breaklonglines", "nowrap",
+            "afterends", "bookstyle", "noconvert", "unix", "backup", "historylog", "positionlog", "mouse", "allow_insecure_backup"]
+RC_VALUED = [("tabsize", ["1", "2", "3", "4", "6", "8", "12"]), ("fill", ["10", "20", "30", "-4", "-12", "0", "60"]), ("guidestripe", ["5", "10", "20", "40"]),
+             ("quotestr", ['"^> "', '"^[ \\t]*#"', '">"', "^>"]), ("punct", ['".,;"', '"!?"']), ("brackets", ['")]}"', '"\\"\')>]}"']), ("wordchars", ['"_-"', '"."']),
+             ("matchbrackets", ['"(){}"', '"<>"']), ("whitespace", ['"»·"', '">."'])]
+RC_ERRORS = ["set foo", "set tabsiz 4", "set", "unset", "unset tabsize", "set tabsize", "set tabsize 0", "set tabsize -3", "set tabsize abc", "set fill x", "set guidestripe 0",
+             "set guidestripe x", "frob", "frob a b", "set quotestr", 'set quotestr "abc', 'set punct "a b"', 'set brackets "x y"', 'set matchbrackets "abc"', 'set matchbrackets "a b"',
+             'set whitespace "abc"', 'set whitespace "a"', "unset speller", "set linenumbers extra words", "SET linenumbers", "set  linenumbers", "unset fill"]
+
+def rc_line(r):
+    kind = r.random()
+    if kind < 0.45:
+        return "%s %s" % (r.choice(["set", "set", "set", "unset"]), r.choice(RC_FLAGS))
+    if kind < 0.75:
+        name, values = r.choice(RC_VALUED)
+        return "set %s %s" % (name, r.choice(values))
+    if kind < 0.85:
+        return r.choice(RC_ERRORS)
+    if kind < 0.9:
+        return r.choice(["# comment", "", "   ", "\t# indented comment", "#set linenumbers"])
+    return r.choice(["\tset linenumbers", "  set tabsize 4", "set\tsoftwrap", "set tabsize\t4"])
+
+def rc_text(r):
+    lines = [rc_line(r) for _ in range(r.randint(1, 7))]
+    text = "\n".join(lines) + ("\n" if r.random() < 0.9 else "")
+    if r.random() < 0.1:
+        text = text.replace("\n", "\r\n")
+    return text
+
+RC_TYPING = ["hello world", "x", "a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l", "\tindented"]
+
+def gen_rc_steps(r, view):
+    steps = []
+    for _ in range(r.randint(1, 4)):
+        kind = r.random()
+        if kind < 0.3:
+            steps.extend(r.choice(STATE_MOVES[:14]) for _ in range(r.randint(1, 5)))
+        elif kind < 0.5 and not view:
+            steps.append(r.choice(RC_TYPING))
+        elif kind < 0.6 and not view:
+            steps.extend(["Enter", r.choice(["x", "yz"])])
+        elif kind < 0.7 and not view:
+            steps.append(r.choice(["C-j", "M-j", "C-k", "C-u", "Tab"]))
+        elif kind < 0.9:
+            steps.extend(search_flow(r, view))
+        else:
+            steps.extend(r.choice([["C-c"], ["M-n"], ["M-s"], ["M-x"], ["M-z"], ["C-g", "C-x"]]))
+    steps = without_stray_exec_keys(steps)
+    return steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x", "y", "Enter"], ["C-x"]])
+
+def gen_rc(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([3, 6, 12, 30]))]
+        text[r.randrange(len(text))] += " foo bar baz alpha tab end."
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        files = {"sub/keep": ["k"]}
+        home, xdg, env = {}, {}, {}
+        where = r.choices(["home", "config", "xdg", "none", "dir"], [8, 2, 2, 1, 1])[0]
+        if where == "home":
+            home[".nanorc"] = rc_text(r)
+        elif where == "config":
+            home[".config/nano/nanorc"] = rc_text(r)
+        elif where == "xdg":
+            env["XDG_CONFIG_HOME"] = "@LAB@/xdg"
+            xdg["nano/nanorc"] = rc_text(r)
+            if r.random() < 0.3:
+                home[".config/nano/nanorc"] = rc_text(r)
+        elif where == "dir":
+            home[".nanorc/"] = ""
+            home[".config/nano/nanorc"] = rc_text(r)
+        etc = rc_text(r) if r.random() < 0.4 else ""
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-i", "-E", "-w", "-b", "-x", "-c", "-A", "-e", "-j", "-k", "-a", "-q", "-L", "-%", "-_", "-0", "-O", "-y", "-W", "-Z", "-M", "-v"], r.choice([0, 0, 1, 2]))
+            if r.random() < 0.2:
+                args += [r.choice(["-T", "-r", "-J"]), r.choice(["2", "4", "10", "30"])]
+            if r.random() < 0.15:
+                args += ["-Q", r.choice(["^>", "^#"])]
+            if r.random() < 0.1:
+                args += ["-I"]
+            if r.random() < 0.15:
+                files["custom.rc"] = rc_text(r).split("\n")
+                args += ["-f", r.choice(["custom.rc", "custom.rc", "@WORK@/custom.rc", "missing.rc"])]
+            if r.random() < 0.08:
+                args += ["+%d" % r.randint(1, len(text))]
+            args.append("t.txt")
+            runs.append({"args": args, "steps": gen_rc_steps(r, "-v" in args)})
+        cases.append({"id": "rcf%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": xdg, "env": env, "rc": True, "etc_nanorc": etc, "runs": runs})
+    return cases
+
+COLOR_ELEMENTS = ["titlecolor", "numbercolor", "stripecolor", "scrollercolor", "selectedcolor", "spotlightcolor", "minicolor", "promptcolor", "statuscolor", "errorcolor", "keycolor", "functioncolor"]
+COLOR_BASE = ["red", "green", "blue", "yellow", "cyan", "magenta", "white", "black"]
+COLOR_EXTENDED = ["normal", "pink", "purple", "mauve", "lagoon", "mint", "lime", "peach", "orange", "latte", "rosy", "beet", "plum", "sea", "sky", "slate", "teal", "sage", "brown", "ocher", "sand", "tawny", "brick", "crimson", "grey", "gray"]
+COLOR_BAD = ["pinkish", "#12", "#12345", "#xyz", "lightnormal", "brightpink", "lightgrey", "light#123", "bright", "light", "", "Red", "RED", "bold", "italic"]
+
+def color_name(r):
+    kind = r.random()
+    if kind < 0.45:
+        return r.choice(COLOR_BASE)
+    if kind < 0.6:
+        return r.choice(["light", "bright"]) + r.choice(COLOR_BASE)
+    if kind < 0.8:
+        return r.choice(COLOR_EXTENDED)
+    if kind < 0.92:
+        return "#" + "".join(r.choice("0123456789abcdefABCDEF") for _ in range(3))
+    return r.choice(COLOR_BAD)
+
+def color_spec(r):
+    kind = r.random()
+    prefix = ""
+    if r.random() < 0.2:
+        prefix = r.choice(["bold,", "italic,", "bold,italic,", "italic,bold,", "bold", "italic", "bold,bold,"])
+    if kind < 0.45:
+        return prefix + color_name(r)
+    if kind < 0.85:
+        return prefix + color_name(r) + "," + color_name(r)
+    if kind < 0.95:
+        return prefix + "," + color_name(r)
+    return prefix + color_name(r) + ","
+
+def colors_rc_text(r):
+    lines = []
+    for _ in range(r.randint(1, 6)):
+        kind = r.random()
+        if kind < 0.8:
+            lines.append("set %s %s" % (r.choice(COLOR_ELEMENTS), r.choice(['"%s"', "%s"]) % color_spec(r)))
+        elif kind < 0.9:
+            lines.append(r.choice(["unset titlecolor", "set titlecolor", "unset statuscolor", "set keycolor"]))
+        else:
+            lines.append(rc_line(r))
+    return "\n".join(lines) + "\n"
+
+COLOR_STEPS = [["C-6"], ["C-6", "Right", "Right"], ["C-6", "Down"], ["C-w", "foo", "Enter"], ["C-w", "zzzz", "Enter"], ["M-w"], ["C-g", "C-x"], ["C-o"], ["C-r"], ["C-_"], ["C-c"], ["M-n"], ["C-t"], ["C-\\"], ["x", "C-x"], ["M-6"], ["C-u"], ["C-k"], ["C-j"]]
+
+def gen_colors(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([3, 6, 12, 30, 60]))]
+        text[r.randrange(len(text))] += " foo bar baz alpha tab end."
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        home = {".nanorc": colors_rc_text(r)}
+        env = {"NO_COLOR": "1"} if r.random() < 0.15 else {}
+        etc = colors_rc_text(r) if r.random() < 0.2 else ""
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-q", "-c", "-x", "-0", "-_", "-D", "-%", "-v", "-E", "-A"], r.choice([0, 1, 2, 3]))
+            if r.random() < 0.3:
+                args += ["-J", r.choice(["2", "5", "10", "30"])]
+            args.append("t.txt")
+            steps = []
+            for _ in range(r.randint(2, 6)):
+                kind = r.random()
+                if kind < 0.35:
+                    steps.extend(r.choice(MOVES) for _ in range(r.randint(1, 4)))
+                elif kind < 0.5 and "-v" not in args:
+                    steps.append(r.choice(RC_TYPING))
+                else:
+                    steps.extend(r.choice(COLOR_STEPS))
+            steps = without_stray_exec_keys(steps)
+            runs.append({"args": args, "steps": steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x"]])})
+        cases.append({"id": "col%d-%d" % (seed, i), "text": text, "files": {"sub/keep": ["k"]}, "rows": rows, "cols": cols, "home": home, "xdg": {}, "env": env, "rc": True, "etc_nanorc": etc, "paint": True, "runs": runs})
+    return cases
+
+SYNTAX_EXTENSIONS = ['"\\.txt$"', '"\\.txt$"', '"t\\.txt"', '"t\\.txt"', '"\\.(txt|md)$"', '".*"', '"^[a-z]"', '"\\.c$"', '"\\<t"', '"(unclosed"', '"u\\.c$" "\\.txt$"', '"x" "(bad"', "\\.txt$", '""', '"[a-"']
+SYNTAX_HEADERS = ['"^alpha"', '"^delta"', '"foo"', '"^#"', '"alpha" "^x"', '"(oops"', 'alpha', '""']
+SYNTAX_REGEXES = ['alpha', 'beta', 'GAMMA', 'foo', 'bar', 'Hello', 'caf\u00e9', '\u4e2d\u6587', '\\<(alpha|beta)\\>', '[A-Z]+', '[[:digit:]]+', '^ +', ' +$', '\\t', 'a.', 'o*', 'x*', '\\(x\\)', '[[:space:]]+', 'end\\.', '^[a-z]', '\\<b', 'a$', '^', '$', 'e|a', '.', 'ab*c?', '[', 'a{2', '*a', '(', ')', 'a\\']
+SYNTAX_LINES = ['"/\\*" end="\\*/"', '"//" end="$"', '"\\(" end="\\)"', '"\\"" end="\\""', '"^#" end="^$"', '"a" end="b"', '"x*" end="y*"', '"\\*/" end="\\*/"']
+
+def syntax_color_spec(r):
+    return r.choice(['red', 'green', 'blue', 'yellow', 'cyan', 'magenta', 'white', 'black', 'brightgreen,blue', 'bold,red', 'italic,green', 'bold,italic,yellow,blue', 'lightred', ',red', 'normal,cyan', '#f80', 'pink', 'nosuch', 'bold'])
+
+def syntax_rule_line(r):
+    keyword = r.choice(['color', 'color', 'color', 'icolor'])
+    spec = syntax_color_spec(r)
+    kind = r.random()
+    if kind < 0.45:
+        return '%s %s "%s"' % (keyword, spec, r.choice(SYNTAX_REGEXES))
+    if kind < 0.6:
+        return '%s %s "%s" "%s"' % (keyword, spec, r.choice(SYNTAX_REGEXES), r.choice(SYNTAX_REGEXES))
+    if kind < 0.85:
+        return '%s %s start=%s' % (keyword, spec, r.choice(SYNTAX_LINES))
+    return r.choice(['%s %s' % (keyword, spec), keyword, '%s %s alpha' % (keyword, spec), '%s %s ""' % (keyword, spec), '%s %s "alpha' % (keyword, spec), '%s %s start="a" "b"' % (keyword, spec), '%s %s start="a" end=b' % (keyword, spec), '%s %s "a" start="b" end="c" "d"' % (keyword, spec)])
+
+def syntax_block(r, name):
+    lines = []
+    head = r.random()
+    if head < 0.1:
+        lines.append(r.choice(['syntax', 'syntax ""', 'syntax "', 'syntax "a', 'syntax a"', 'syntax none', 'syntax "none" "x"', 'syntax "my lang" "\\.txt$"']))
+    elif head < 0.2:
+        lines.append('syntax "default"' + r.choice(['', '', ' "\\.txt$"']))
+    elif head < 0.9:
+        lines.append('syntax "%s" %s' % (name, r.choice(SYNTAX_EXTENSIONS)))
+    else:
+        lines.append('syntax %s %s' % (name, r.choice(SYNTAX_EXTENSIONS)))
+    for _ in range(r.randint(0, 2)):
+        lines.append('header %s' % r.choice(SYNTAX_HEADERS)) if r.random() < 0.6 else lines.append(r.choice(['magic "x"', 'header', 'magic']))
+    for _ in range(r.randint(0, 6)):
+        kind = r.random()
+        if kind < 0.7:
+            lines.append(syntax_rule_line(r))
+        elif kind < 0.78:
+            lines.append(r.choice(['comment "//"', 'comment //', 'comment', 'comment "', 'tabgives "  "', 'tabgives', 'linter xx', 'formatter yy', 'linter "q', 'comment "<!--"']))
+        elif kind < 0.84:
+            lines.append(r.choice(['# a comment', '', '   ', '\tcolor red "a"']))
+        elif kind < 0.9:
+            lines.append(r.choice(['set linenumbers', 'unset softwrap', 'set tabsize 3', 'include "/nonexistent"', 'bind ^S savefile main']))
+        elif kind < 0.95:
+            lines.append(r.choice(['frobnicate', 'colour red "a"', 'Color red "a"']))
+        else:
+            lines.append('syntax "inner%d" "\\.zzz$"' % r.randint(1, 9))
+    return lines
+
+SYNTAX_INCLUDES = ['include "~/syn/*.nanorc"', 'include "/root/syn/a.nanorc"', 'include ~/syn/b.nanorc', 'include "/root/syn/*.nanorc" extra', 'include "/root/nothing/*.nanorc"', 'include "/root/syn"', 'include "/root/syn/"', 'include', 'include "/root/syn/a.nanorc', 'include "~/syn/[ab].nanorc"', 'include "/dev/null"', 'include "/root/syn/c.nanorc"']
+
+def syntax_include_files(r):
+    files = {}
+    for name in r.sample(["a", "b", "c"], r.randint(0, 3)):
+        lines = []
+        for syntax_name in r.sample(['alpha', 'beta', 'gamma', 'c', 'text', 'markdown', 'default'], r.randint(1, 2)):
+            lines.extend(syntax_block(r, syntax_name))
+        if r.random() < 0.3:
+            lines.insert(r.randint(0, len(lines)), r.choice(['set tabsize 4', 'include "/root/syn/a.nanorc"', 'bind ^S savefile main', 'unset softwrap', 'extendsyntax alpha color red "a"', 'frob']))
+        files["syn/%s.nanorc" % name] = "\n".join(lines) + "\n"
+    return files
+
+def syntax_rc_text(r):
+    lines = []
+    if r.random() < 0.15:
+        lines.append(r.choice(['set linenumbers', 'set softwrap', 'set tabsize 4', 'set foo']))
+    names = r.sample(['alpha', 'beta', 'gamma', 'c', 'text', 'markdown', 'default'], r.randint(1, 3))
+    for name in names:
+        lines.extend(syntax_block(r, name))
+        if r.random() < 0.2:
+            lines.append(r.choice(SYNTAX_INCLUDES))
+    for _ in range(r.randint(0, 2)):
+        if r.random() < 0.5:
+            lines.append('extendsyntax %s %s' % (r.choice(names + ['nothere']), r.choice(['color red "alpha"', 'icolor blue "BETA"', 'header "^x"', 'comment "//"', 'tabgives "  "', 'color red "("', 'frob', 'magic "z"', 'color nosuch "a"', ''])))
+    return "\n".join(lines) + ("\n" if r.random() < 0.9 else "")
+
+SYNTAX_WORDS = ["alpha", "beta", "GAMMA", "foo", "bar", "Hello", "world", "caf\u00e9", "\u4e2d\u6587", "123", "(x)", "[1,2]", "a_b", "end.", "\ttab", "x", "ab", "abc", "aab", "/*", "*/", "//", "# note", "\"q\""]
+
+def syntax_line(r):
+    return " ".join(r.choice(SYNTAX_WORDS) for _ in range(r.randint(0, 9)))
+
+SYNTAX_STEPS = [["M-3"], ["M-3", "M-3"], ["M-o", "Tab"], ["C-6", "Down", "M-3"], ["Down"], ["Down", "Down"], ["Up"], ["End"], ["Home"], ["Right", "Right"], ["PageDown"], ["PageUp"], ["M-\\"], ["M-/"], ["M-y"], ["M-y", "M-y"], ["C-w", "alpha", "Enter"], ["C-w", "foo", "Enter"], ["C-6", "Down", "Right"], ["C-k"], ["C-u"], ["Enter"], ["BSpace"], ["DC"], ["/*"], ["*/"], ["x"], ["(", "x", ")"], ["Tab"], ["M-n"], ["M-s"], ["C-_", "3", "Enter"]]
+
+def gen_syntax(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [syntax_line(r) for _ in range(r.choice([4, 8, 14, 30]))]
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        home = {".nanorc": syntax_rc_text(r)}
+        if r.random() < 0.35:
+            home.update(syntax_include_files(r))
+        etc = syntax_rc_text(r) if r.random() < 0.25 else ""
+        files = {}
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-q", "-c", "-x", "-0", "-_", "-D", "-%", "-v", "-E", "-A", "-J"], r.choice([0, 0, 1, 2]))
+            if "-J" in args:
+                args += ["10"] if False else []
+                args.remove("-J")
+                args += ["-J", r.choice(["5", "20"])]
+            if r.random() < 0.25:
+                args += ["-Y", r.choice(["alpha", "beta", "gamma", "c", "text", "markdown", "default", "none", "nosuch", "x"])]
+            steps = []
+            for _ in range(r.randint(2, 7)):
+                steps.extend(r.choice(SYNTAX_STEPS))
+            if r.random() < 0.2:
+                steps.extend(["C-o", "BSpace", "BSpace", "BSpace", "BSpace", "BSpace", r.choice(["u.c", "n.md", "z.txt", "q"]), "Enter"])
+            steps = without_stray_exec_keys(steps)
+            runs.append({"args": args + ["t.txt"], "steps": steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x"]])})
+        cases.append({"id": "syn%d-%d" % (seed, i), "text": text, "files": files, "rows": rows, "cols": cols, "home": home, "xdg": {}, "env": {}, "rc": True, "etc_nanorc": etc, "paint": True, "runs": runs})
+    return cases
+
+PACKAGE_REAL_EXTENSIONS = ["c", "h", "cc", "hpp", "py", "sh", "bash", "pl", "pm", "json", "yaml", "yml", "xml", "html", "css", "js", "go", "rb", "sql", "md", "s", "S", "1", "5", "cmake", "txt", "conf", "el", "tcl", "mk"]
+PACKAGE_HAND_SAMPLES = {
+    "java": ["package demo;", "import java.util.List;", "/** Doc comment. */", "public class Demo extends Base {", "    private static final int LIMIT = 42; // limit", "    @Override public String toString() { return \"Demo\"; }", "    void run() throws Exception { if (LIMIT > 1) throw new Exception(\"x\"); }", "}"],
+    "rs": ["use std::collections::HashMap;", "// A comment", "#[derive(Debug)]", "pub struct Point { x: i32, y: i32 }", "impl Point {", "    pub fn new(x: i32, y: i32) -> Self { Point { x, y } }", "    fn show(&self) { println!(\"{} {}\", self.x, self.y); }", "}", "fn main() { let p = Point::new(1, 2); let n: u8 = 0x1f; p.show(); }"],
+    "patch": ["diff --git a/f.c b/f.c", "index 83db48f..bf2a3c1 100644", "--- a/f.c", "+++ b/f.c", "@@ -1,4 +1,5 @@ int main(void)", " context line", "-removed line", "+added line", "+another added", " tail"],
+    "scm": ["(define (square x) (* x x))", "; comment", "(let ((a 1) (b \"two\"))", "  (display (string-append \"a\" b)) #t)", "'(1 2 3)"],
+    "hs": ["module Main where", "-- comment", "import Data.List (sort)", "data Shape = Circle Double | Square Double deriving (Show)", "area :: Shape -> Double", "area (Circle r) = pi * r * r", "main = print $ sort [3, 1, 2]", "{- block", "comment -}"],
+    "ml": ["(* comment *)", "let rec fact n = if n <= 1 then 1 else n * fact (n - 1)", "type t = A | B of int", "let () = print_endline \"hi\"", "module M = struct let x = 0x10 end"],
+    "ac": ["AC_INIT([demo], [1.0])", "dnl comment", "AM_INIT_AUTOMAKE([foreign])", "AC_PROG_CC", "AC_CONFIG_FILES([Makefile])", "AC_OUTPUT"],
+    "nft": ["#!/usr/sbin/nft -f", "flush ruleset", "table inet filter {", "  chain input {", "    type filter hook input priority 0; policy drop;", "    ct state established,related accept", "    tcp dport { 22, 80 } accept", "  }", "}"],
+    "tex": ["\\documentclass{article}", "% comment", "\\usepackage{amsmath}", "\\begin{document}", "\\section{Intro} Text with $x^2$ and \\emph{words}.", "\\end{document}"],
+    "texi": ["\\input texinfo", "@c comment", "@setfilename demo.info", "@node Top", "@chapter Intro", "@code{foo} and @emph{bar}.", "@bye"],
+    "php": ["<?php", "// comment", "namespace App;", "class Demo { public function run(array $a): int { return count($a) + 0x1; } }", "$x = \"text\" . 'single';", "echo $x; ?>"],
+    "lua": ["-- comment", "local t = { a = 1, b = \"two\" }", "function t.run(x) if x > 1 then return x end end", "for i = 1, 10 do print(i) end", "--[[ block", "comment ]]"],
+    "awk": ["#!/usr/bin/awk -f", "BEGIN { FS = \":\" }", "# comment", "/^root/ { print $1, NR }", "END { print \"done\" }"],
+    "po": ["# translator comment", "msgid \"\"", "msgstr \"\"", "\"Content-Type: text/plain; charset=UTF-8\\n\"", "", "#: src/main.c:10", "msgid \"Hello\"", "msgstr \"Bonjour\""],
+    "m": ["#import <Foundation/Foundation.h>", "// comment", "@interface Demo : NSObject", "- (void)run;", "@end", "@implementation Demo", "- (void)run { NSLog(@\"hi\"); }", "@end"],
+    "eml": ["From: Ann <ann@example.org>", "To: Bob <bob@example.org>", "Subject: hello", "", "> quoted text", "plain text with https://example.org/page.html link"],
+    "ChangeLog": ["2024-01-02  Ann <ann@example.org>", "", "\t* src/main.c (main): Fix the thing.", "\t* README: Update."],
+    "spec": ["Name: demo", "Version: 1.0", "%description", "A demo package.", "%build", "make %{?_smp_mflags}", "%files", "%{_bindir}/demo"],
+    "pov": ["#include \"colors.inc\"", "// comment", "camera { location <0, 2, -3> look_at <0, 1, 2> }", "sphere { <0, 1, 2>, 2 texture { pigment { color Yellow } } }"],
+    "nanorc": ["## comment", "set linenumbers", "syntax demo \"\\.demo$\"", "color red \"alpha\"", "bind ^X exit main"],
+    "ms": [".TH DEMO 1", ".SH NAME", "demo \\- do the thing", ".B bold text", "\\fIitalic\\fR and \\*(lq quoted \\*(rq", ".\\\" comment"],
+    "list": ["deb http://archive.ubuntu.com/ubuntu noble main restricted", "# comment", "deb-src http://archive.ubuntu.com/ubuntu noble universe"],
+}
+PACKAGE_HEADER_FILES = [
+    ("run", "#!/bin/sh", ["echo \"hi\" # trailing", "if [ -n \"$1\" ]; then", "  exit 0", "fi"]),
+    ("tool", "#!/usr/bin/env python3", ["import os", "def main():", "    print('x', 0x10)  # note", "main()"]),
+    ("doc", "<?xml version=\"1.0\"?>", ["<root a=\"1\">", "  <!-- comment -->", "  <item>text &amp; more</item>", "</root>"]),
+    ("page", "<!DOCTYPE html>", ["<html><body class=\"x\">", "<a href=\"https://example.org\">link</a>", "</body></html>"]),
+    ("scr", "#!/usr/bin/perl", ["my $x = 1;", "print \"hi\\n\" if $x; # c", "sub f { return @_ }"]),
+    ("rubyscript", "#!/usr/bin/env ruby", ["class A", "  def b; :sym; end", "end", "puts \"x\" # c"]),
+    ("luascript", "#!/usr/bin/lua", ["local x = 1 -- c", "print(x)"]),
+    ("csrc", "/* -*- C -*- */", ["#include <stdio.h>", "int main(void) { return 0; }"]),
+    ("mkfile", "# -*- Makefile -*-", ["all: a.o", "\tcc -o $@ $^", "CFLAGS = -O2"]),
+    ("Makefile", "CC = gcc", ["all: main", "main: main.o", "\t$(CC) -o main main.o # link", ".PHONY: all", "include other.mk"]),
+    ("CMakeLists.txt", "cmake_minimum_required(VERSION 3.10)", ["project(demo C)", "# comment", "add_executable(demo main.c)", "if(WIN32)", "endif()"]),
+    ("ChangeLog.old", "Wed Jan  2 2024  Ann  <ann@example.org>", ["", "\t* file.c: change"]),
+    ("sources.list", "deb http://archive.ubuntu.com/ubuntu noble main", ["# comment", "deb-src http://archive.ubuntu.com/ubuntu noble main"]),
+    ("script.zsh", "#!/bin/zsh", ["export A=1", "for f in *; do echo $f; done"]),
+    ("profile", "# shell profile", ["export PATH=\"$PATH:/opt/bin\"", "alias ll='ls -l'"]),
+    ("plain", "Plain text mentioning https://example.org/a.html and ann@example.org", ["Date 2024.01.15 and GNU nano 7.2 \"Cool\"", "\t \tspace before tab", "# comment-like line", "[section]"]),
+]
+PACKAGE_SYNTAX_NAMES = ["c", "python", "sh", "default", "none", "makefile", "json", "html", "xml", "yaml", "perl", "ruby", "go", "css", "javascript", "man", "markdown", "nosuch", "patch", "sql", "tcl", "asm", "email", "cmake"]
+PACKAGE_STEPS = SYNTAX_STEPS + [["\""], ["'"], ["#"], ["<!--"], ["-->"], ["\\"], ["{", "}"], ["["], ["]"], ["`"], ["$"], [" "], ["C-y"]]
+
+def package_real_candidates(extension):
+    found = subprocess.run("find / -xdev -type f -name '*.%s' -size -40k -size +200c 2>/dev/null | head -300" % extension, shell=True, capture_output=True, text=True).stdout.split()
+    return sorted(found)
+
+def package_window(r, path):
+    try:
+        lines = open(path, encoding="utf-8").read().split("\n")
+    except (UnicodeDecodeError, OSError):
+        return None
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines = [line[:170] for line in lines if "\r" not in line and "\x00" not in line]
+    if len(lines) < 3:
+        return None
+    start = r.randint(0, max(0, min(len(lines) - 3, 300)))
+    return lines[start:start + r.choice([6, 12, 20, 40])]
+
+def package_sample(r, candidates):
+    kind = r.random()
+    if kind < 0.55:
+        extension = r.choice(PACKAGE_REAL_EXTENSIONS)
+        for _ in range(20):
+            files = candidates.setdefault(extension, package_real_candidates(extension))
+            if not files:
+                break
+            window = package_window(r, r.choice(files))
+            if window:
+                return "sample.%s" % extension, window
+    elif kind < 0.85:
+        extension = r.choice(sorted(PACKAGE_HAND_SAMPLES))
+        name = "ChangeLog" if extension == "ChangeLog" else "sample.%s" % extension
+        return name, list(PACKAGE_HAND_SAMPLES[extension])
+    name, first, rest = r.choice(PACKAGE_HEADER_FILES)
+    return name, [first] + rest
+
+def gen_package(seed, count):
+    r = random.Random(seed)
+    candidates = {}
+    cases = []
+    for i in range(count):
+        name, text = package_sample(r, candidates)
+        rows, cols = r.choice([(10, 40), (12, 60), (24, 80), (14, 50), (8, 30), (24, 100)])
+        runs = []
+        for _ in range(r.choice([1, 1, 2])):
+            args = r.sample(["-l", "-S", "-q", "-c", "-x", "-0", "-_", "-D", "-%", "-v", "-E", "-A", "-J"], r.choice([0, 0, 1, 2]))
+            if "-J" in args:
+                args.remove("-J")
+                args += ["-J", r.choice(["5", "20"])]
+            if r.random() < 0.15:
+                args += ["-Y", r.choice(PACKAGE_SYNTAX_NAMES)]
+            steps = []
+            for _ in range(r.randint(2, 8)):
+                steps.extend(r.choice(PACKAGE_STEPS))
+            if r.random() < 0.15:
+                steps.extend(["C-o", "BSpace", "BSpace", "BSpace", "BSpace", "BSpace", r.choice(["u.c", "n.md", "z.txt", "q.py", "r.sh", "Makefile", "a.json"]), "Enter"])
+            steps = without_stray_exec_keys(steps)
+            runs.append({"args": args + [name], "steps": steps + r.choice([["C-x", "n"], ["C-x", "n"], ["C-x"]])})
+        cases.append({"id": "pkg%d-%d" % (seed, i), "text": [""], "files": {name: text}, "rows": rows, "cols": cols, "home": {}, "xdg": {}, "env": {}, "rc": True, "package": True, "paint": True, "runs": runs})
+    return cases
+
+
 def gen(seed, count, corpus):
+    if corpus == "state":
+        return gen_state(seed, count)
+    if corpus == "rc":
+        return gen_rc(seed, count)
+    if corpus == "colors":
+        return gen_colors(seed, count)
+    if corpus == "syntax":
+        return gen_syntax(seed, count)
+    if corpus == "package":
+        return gen_package(seed, count)
+    if corpus == "tab":
+        return gen_tab(seed, count)
+    if corpus == "mouse":
+        return gen_mouse(seed, count)
     if corpus == "exec":
         return gen_exec(seed, count)
     if corpus == "blocks":
@@ -965,7 +1702,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
+    runner = run_state_case if a.corpus in ("state", "rc", "colors", "syntax", "package", "lint") else run_cli_case if a.corpus in ("cli", "mouse", "tab", "place", "tools", "insert", "open", "undo", "undo2", "search", "help", "blocks", "exec") else run_case
     if a.workdir:
         shutil.rmtree(a.workdir, ignore_errors=True)
         os.makedirs(a.workdir)

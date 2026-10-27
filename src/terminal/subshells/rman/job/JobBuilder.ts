@@ -292,11 +292,13 @@ export const JobBuilder = {
    * deleteObsolete with an explicit set of bsKeys to delete. Callers
    * (DeleteCommand) compute the list via the active IRetentionPolicy.
    */
-  deleteObsolete(setKeys: number[] = []): RmanJob {
+  deleteObsolete(setKeys: number[] = [], emptyMessage?: string): RmanJob {
+    const params: Record<string, string> = { setKeys: setKeys.join(',') };
+    if (emptyMessage) params.emptyMessage = emptyMessage;
     return _make('DELETE_OBSOLETE', [
       { name: 'retention_policy', pct: 30, message: 'RMAN retention policy will be applied to the command' },
       { name: 'using_channel',    pct: 60, message: 'using channel ORA_DISK_1' },
-    ], { setKeys: setKeys.join(',') });
+    ], params);
   },
 };
 

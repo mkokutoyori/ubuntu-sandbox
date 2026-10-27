@@ -9,7 +9,7 @@
  * the registry strictly Open/Closed.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import {
@@ -18,6 +18,7 @@ import {
   DEFAULT_RUNTIME_BUDGET,
 } from '../views/OracleRuntimeState';
 import { makeSqlId } from '../views/sqlId';
+import { hostNowMs } from '../time/OracleHostClock';
 
 /** Trim an array in place to its budget (FIFO eviction). */
 function capArray<T>(arr: T[], max: number): void {
@@ -55,7 +56,7 @@ export class OracleRuntimeStateActor {
 
   start(): void {
     if (this.subs.length > 0) return;
-    this.state.startedAt = simulationNowMs();
+    this.state.startedAt = hostNowMs();
 
     const scoped = <T extends { deviceId: string }>(handler: (p: T) => void) =>
       (event: { payload: unknown }) => {
@@ -87,7 +88,7 @@ export class OracleRuntimeStateActor {
           program: 'sqlplus@localhost',
           type: 'USER',
           status: 'INACTIVE',
-          logonTime: simulationNowMs(),
+          logonTime: hostNowMs(),
           inTransaction: false,
         });
         this.state.counters.logonsCumulative++;
@@ -107,7 +108,7 @@ export class OracleRuntimeStateActor {
         this.state.transactions.set(p.txId, {
           txId: p.txId,
           sessionId: p.sessionId,
-          startedAt: simulationNowMs(),
+          startedAt: hostNowMs(),
           status: 'ACTIVE',
           usedUblk: 0,
           usedUrec: 0,
@@ -158,7 +159,7 @@ export class OracleRuntimeStateActor {
         deviceId: string; sequence: number; path: string; scn?: number;
       }>((p) => {
         const recid = this.state.archivedLogs.length + 1;
-        const now = simulationNowMs();
+        const now = hostNowMs();
         const previous = this.state.archivedLogs[this.state.archivedLogs.length - 1];
         const nextScn = p.scn ?? (previous ? previous.nextScn + 1 : 1);
         this.state.archivedLogs.push({
@@ -177,7 +178,7 @@ export class OracleRuntimeStateActor {
       this.bus.subscribe('oracle.instance.alert-log-entry-added', scoped<{
         deviceId: string; line: string;
       }>((p) => {
-        this.state.alertEntries.push({ ts: simulationNowMs(), line: p.line });
+        this.state.alertEntries.push({ ts: hostNowMs(), line: p.line });
         capArray(this.state.alertEntries, this.budget.alertEntries);
       })),
 
@@ -192,7 +193,7 @@ export class OracleRuntimeStateActor {
           waitClass: p.waitClass,
           seq,
           waitTimeMicros: p.waitTimeMicros,
-          timestamp: simulationNowMs(),
+          timestamp: hostNowMs(),
         });
         capArray(this.state.waitHistory, this.budget.waitHistory);
         if (p.sessionId) {
@@ -207,7 +208,7 @@ export class OracleRuntimeStateActor {
       }>((p) => {
         this.state.latches.push({
           sid: p.sid, latch: p.latch, level: p.level,
-          kind: p.kind, spinCount: p.spinCount ?? 0, ts: simulationNowMs(),
+          kind: p.kind, spinCount: p.spinCount ?? 0, ts: hostNowMs(),
         });
         capArray(this.state.latches, this.budget.latches);
       })),
@@ -245,7 +246,7 @@ export class OracleRuntimeStateActor {
         deviceId: string; sessionId: string; sqlId: string; text: string;
         parsingSchema: string; hardParse: boolean;
       }>((p) => {
-        const now = simulationNowMs();
+        const now = hostNowMs();
         const existing = this.state.sqlCache.get(p.sqlId);
         if (existing) {
           existing.lastLoadTime = now;
@@ -364,13 +365,29 @@ export class OracleRuntimeStateActor {
         });
       })),
 
+      this.bus.subscribe('oracle.backup.deleted', scoped<{
+        deviceId: string; handle: string;
+      }>((p) => {
+        for (const record of this.state.backups) {
+          if (record.handle === p.handle) record.status = 'DELETED';
+        }
+      })),
+
+      this.bus.subscribe('oracle.archive-log.deleted', scoped<{
+        deviceId: string; path: string;
+      }>((p) => {
+        for (const record of this.state.archivedLogs) {
+          if (record.name === p.path) record.deleted = true;
+        }
+      })),
+
       this.bus.subscribe('oracle.service.event', scoped<{
         deviceId: string; name: string; kind: 'started' | 'stopped';
       }>((p) => {
         const rec = this.state.services.get(p.name);
         if (p.kind === 'started') {
           this.state.services.set(p.name, {
-            name: p.name, startedAt: simulationNowMs(), active: true,
+            name: p.name, startedAt: hostNowMs(), active: true,
           });
         } else if (rec) {
           rec.active = false;
@@ -394,7 +411,7 @@ export class OracleRuntimeStateActor {
           sessionId: p.sessionId, sid: sess.sid,
           opname: p.opname, target: p.target,
           sofar: p.sofar, totalwork: p.totalwork, units: p.units,
-          ts: simulationNowMs(),
+          ts: hostNowMs(),
         });
       })),
 
@@ -402,7 +419,7 @@ export class OracleRuntimeStateActor {
         deviceId: string; sid: number; metricName: string; value: number;
       }>((p) => {
         this.state.sessionMetrics.push({
-          sid: p.sid, metric: p.metricName, value: p.value, ts: simulationNowMs(),
+          sid: p.sid, metric: p.metricName, value: p.value, ts: hostNowMs(),
         });
         capArray(this.state.sessionMetrics, this.budget.sessionMetrics);
       })),
@@ -411,7 +428,7 @@ export class OracleRuntimeStateActor {
         deviceId: string; kind: string; bytes?: number; scn?: number;
       }>((p) => {
         this.state.flashbackHistory.push({
-          ts: simulationNowMs(),
+          ts: hostNowMs(),
           kind: p.kind,
           bytes: p.bytes ?? 0,
           scn: p.scn ?? 0,
@@ -442,7 +459,7 @@ export class OracleRuntimeStateActor {
    * queue, so the only place memory grows is in the runtime-state
    * collections. Capping them here is the canonical drain mechanism.
    */
-  drain(now: number = simulationNowMs()): void {
+  drain(now: number = hostNowMs()): void {
     this.eventsSinceLastDrain = 0;
     const ttl = this.budget.historyTtlMs;
     const cutoff = now - ttl;

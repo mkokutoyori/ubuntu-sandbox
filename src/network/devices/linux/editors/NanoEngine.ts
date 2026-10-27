@@ -1,9 +1,13 @@
 import type { ChildShellRun, EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
-import type { EditorKeyInput } from './EditorKeyInput';
+import { editorKey, type EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type DecodedFile, type NanoFileFormat } from './nano/NanoFormat';
-import { directoryNameOf, fullPathOf, openingFor } from './nano/NanoOpening';
+import { directoryNameOf, fullPathOf, openingFor, writeFailureReason } from './nano/NanoOpening';
+import { appendToHistory, parseHistoryLists, serializeHistoryLists } from './nano/NanoHistoryLists';
+import { findPosition, parsePositionHistory, serializePositionHistory, withPositionRecorded } from './nano/NanoPositionHistory';
+import type { NanoRcNotices } from './editorLaunch';
+import { POSITION_HISTORY_FILE, resolveStateDirectory, SEARCH_HISTORY_FILE, STARTUP_PROBLEM } from './nano/NanoStateDirectory';
 import { NanoUndoStack, type UndoKind, type UndoRestore } from './nano/NanoUndo';
 import {
   expandReplacement, PosixRegexError, SearchCircuit, SearchPattern,
@@ -13,36 +17,46 @@ import { yesNoAnswer } from './nano/NanoYesNo';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
-import { buildNanoScreen } from './nano/NanoScreen';
+import { buildNanoScreen, promptCursorAtColumn } from './nano/NanoScreen';
 import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import {
-  DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
+  DEFAULT_BRACKETS, DEFAULT_PUNCTUATION, DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
   paragraphEnd, paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
 } from './nano/NanoJustify';
 import { nextBlockLine, nextWordSpot, previousBlockLine, previousWordSpot } from './nano/NanoMotion';
-import type { NanoMenuName } from './nano/NanoMenus';
+import type { MenuOptions, NanoMenuName } from './nano/NanoMenus';
 import { helpAction, helpCursorMotion, unboundKeyMessage } from './nano/NanoHelpKeys';
 import { helpPage, type HelpMenu } from './nano/NanoHelpText';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
+import { resolveInterfacePaints } from './nano/NanoPaint';
+import { GENERAL_COMMENT, type SyntaxCatalog, type SyntaxDefinition } from './nano/NanoSyntax';
+import { precalculateMultiData, type MultiData } from './nano/NanoSyntaxPaint';
+import { argumentList, parseLintOutput, shellCommandLine, type LintMessage } from './nano/NanoExternalTools';
 import type { EditorScreen, ScreenRow } from './screen/EditorScreen';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { OperatingDirectory, operatingDirectoryRoot } from './nano/NanoOperatingDirectory';
+import { completeFileName, nextHistoryCompletion } from './nano/NanoCompletion';
+import { clickedShortcut, clickedYesNo, keyOfShortcutLabel, WHEEL_STEP } from './nano/NanoMouse';
+import { canonicalNanoKey } from './nano/NanoKeyAliases';
 import { WorkingDirectoryFs } from './WorkingDirectoryFs';
+
+let temporaryCounter = 0;
 
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
   | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
-  | 'help' | 'execute-prompt' | 'read-file-prompt' | 'confirm';
+  | 'help' | 'execute-prompt' | 'read-file-prompt' | 'confirm' | 'linting';
 
 const DEFAULT_FILL = -8;
 
-const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 'tabstospaces' | 'autoindent' | 'smarthome' | 'cutfromcursor'; readonly epithet: string }>> = {
+const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 'tabstospaces' | 'autoindent' | 'smarthome' | 'cutfromcursor' | 'mouse'; readonly epithet: string }>> = {
   l: { flag: 'breaklonglines', epithet: 'Hard wrapping of overlong lines' },
   o: { flag: 'tabstospaces', epithet: 'Conversion of typed tabs to spaces' },
   i: { flag: 'autoindent', epithet: 'Auto indent' },
   h: { flag: 'smarthome', epithet: 'Smart home key' },
   k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
+  m: { flag: 'mouse', epithet: 'Mouse support' },
 };
 
 function swappedDeleteKey(input: EditorKeyInput): EditorKeyInput {
@@ -65,6 +79,18 @@ export interface Confirmation {
   readonly cancel: () => void;
 }
 
+interface LintSession {
+  readonly messages: LintMessage[];
+  current: number;
+  shown: number | null;
+  readonly restoreNoHelp: boolean;
+}
+
+export interface MenuFlags {
+  readonly preserve: boolean;
+  readonly saveonexit: boolean;
+}
+
 export interface NanoLaunchOptions {
   readonly identity?: EditorIdentity;
   readonly settings?: NanoSettings;
@@ -72,6 +98,8 @@ export interface NanoLaunchOptions {
   readonly displayName?: string;
   readonly helpTitle?: string;
   readonly staleFooter?: ScreenRow;
+  readonly rc?: NanoRcNotices | null;
+  readonly menuFlags?: MenuFlags;
 }
 
 export interface PendingReplaceMatch {
@@ -136,6 +164,9 @@ export class NanoEngine {
   }
   private markFlagHidden = false;
   private statusText = '';
+  private statusLevel: number | null = null;
+  private lint: LintSession | null = null;
+  private afterWrite: (() => void) | null = null;
   private statusCountdown = 0;
   private statusAlert = false;
   private pauseNote: string | null = null;
@@ -145,9 +176,17 @@ export class NanoEngine {
   private openingAlerted = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
+  private currentLevel(): number { return this.statusLevel ?? messageLevel(this.statusText); }
+  private postStatus(level: number, text: string): void {
+    if (this.messageThisKey && level < this.currentLevel() && this.currentLevel() > MESSAGE_LEVEL.notice) return;
+    this._statusMessage = `[ ${text} ]`;
+    this.statusLevel = level;
+    this.statusAlert = level >= MESSAGE_LEVEL.ahem;
+  }
   private set _statusMessage(value: string) {
     this.staleFooter = null;
     this.statusText = value;
+    this.statusLevel = null;
     this.statusCountdown = value === '' ? 0 : this.live.quickblank ? 1 : STATUS_LINGER_KEYS;
     this.statusAlert = messageLevel(value) >= MESSAGE_LEVEL.ahem;
     this.statusRaw = false;
@@ -200,6 +239,20 @@ export class NanoEngine {
   private searchHistory: string[] = [];
   private replaceHistory: string[] = [];
   private historyPosition: number | null = null;
+  private tabPointers = new Map<string[], number>();
+  private historyInUse: string[] | null = null;
+  private listedCompletions: readonly string[] | null = null;
+  private listedIn: NanoMode | null = null;
+  private tabFragmentLength: number | null = null;
+  private tabPressedThisKey = false;
+  private stateDirectory: string | null = null;
+  private historyChanged = false;
+  private startupProblem: string | null = null;
+  private catalog: SyntaxCatalog | null = null;
+  private activeSyntax: SyntaxDefinition | null = null;
+  private syntaxHidden = false;
+  private multiCache: { readonly key: string; readonly syntax: SyntaxDefinition; readonly data: MultiData } | null = null;
+  private readonly exitNotices: string[] = [];
   private historyStash: string | null = null;
   private useRegex = false;
   private replaceWithBuffer = '';
@@ -223,6 +276,7 @@ export class NanoEngine {
 
   private readonly fs: EditorFsContext;
   private readonly operating: OperatingDirectory | null;
+  private readonly menuFlags: MenuFlags;
 
   constructor(
     fsContext: EditorFsContext,
@@ -238,6 +292,7 @@ export class NanoEngine {
     this.staleFooter = launch.staleFooter ?? null;
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
     this.launchIdentity = launch.identity;
+    this.menuFlags = launch.menuFlags ?? { preserve: this.settings.preserve, saveonexit: this.settings.saveonexit };
     const operatingRoot = this.settings.operatingdir === null ? null : operatingDirectoryRoot(fsContext, this.settings.operatingdir);
     this.fs = operatingRoot === null ? fsContext : new WorkingDirectoryFs(fsContext, operatingRoot.replace(/\/$/, '') || '/');
     this.operating = operatingRoot === null ? null : new OperatingDirectory(operatingRoot, this.fs);
@@ -247,7 +302,11 @@ export class NanoEngine {
     const content = confined ? '' : initialContent;
     const named = opening.path !== '';
     this.live = { ...this.settings, view: this.settings.view && named };
-    if (this.live.restricted) this.live.backup = false;
+    if (this.live.restricted) {
+      this.live.backup = false;
+      this.live.historylog = false;
+      this.live.positionlog = false;
+    }
     this._readOnly = this.live.view;
     this.titleName = named ? typedName : '';
     this.bufferPath = opening.path;
@@ -282,7 +341,58 @@ export class NanoEngine {
     this.saveFileNameBuffer = this.titleName;
     if (this.live.locking && !this._readOnly && named && opening.lockable) this.beginLocking();
     const start = launch.start ?? (initialCursor ? { line: initialCursor.line, column: initialCursor.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] } : null);
-    if (start !== null) this.applyStart(start);
+    if (launch.rc) {
+      this.exitNotices.push(...launch.rc.errors);
+      this.startupProblem = launch.rc.startupProblem;
+    }
+    this.caseSensitive = this.live.casesensitive;
+    this.useRegex = this.live.regexp;
+    this.openStateFiles();
+    this.catalog = launch.rc?.catalog ?? null;
+    this.selectSyntax();
+    const positioned = start !== null && this.applyStart(start);
+    if (!positioned && named) this.restoreLoggedPosition(typedName);
+    if (this.startupProblem !== null) this.announceStartupProblem(this.startupProblem);
+  }
+
+  private announceStartupProblem(problem: string): void {
+    this.raiseAlert(problem);
+  }
+
+  private raiseAlert(text: string): void {
+    if (this.currentLevel() === MESSAGE_LEVEL.alert) this.statusMore = true;
+    else this._statusMessage = `[ ${text} ]`;
+  }
+
+  private selectSyntax(): void {
+    if (this.catalog === null || this.helpTitle !== null) return;
+    const name = this.titleName;
+    const fullName = (name === '' ? null : fullPathOf(name, this.fs)) ?? name;
+    const selection = this.catalog.select(this.live.syntax, fullName, this.linesArr[0] ?? '', (message, at) => this.recordSyntaxError(message, at?.file ?? '', at?.line ?? 0));
+    this.activeSyntax = selection.syntax;
+    this.multiCache = null;
+    if (selection.alert !== null) this.raiseAlert(selection.alert);
+  }
+
+  private recordSyntaxError(message: string, file: string, line: number): void {
+    this.exitNotices.push(line > 0 ? `Error in ${file} on line ${line}: ${message}` : message);
+    this.startupProblem ??= `Mistakes in '${file}'`;
+  }
+
+  private syntaxPainting(): { rules: SyntaxDefinition['rules']; multi: MultiData } | null {
+    const syntax = this.activeSyntax;
+    if (syntax === null || this.syntaxHidden || syntax.rules.length === 0) return null;
+    const key = this.linesArr.join('\n');
+    if (this.multiCache === null || this.multiCache.key !== key || this.multiCache.syntax !== syntax) {
+      this.multiCache = { key, syntax, data: precalculateMultiData(this.linesArr, syntax.rules, syntax.multiCount) };
+    }
+    return { rules: syntax.rules, multi: this.multiCache.data.map((states) => states.slice()) };
+  }
+
+  private toggleSyntax(): void {
+    this.verticalKey = true;
+    this.syntaxHidden = !this.syntaxHidden;
+    this._statusMessage = `[ Color syntax highlighting ${this.syntaxHidden ? 'disabled' : 'enabled'} ]`;
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -360,13 +470,32 @@ export class NanoEngine {
 
   applyKey(input: EditorKeyInput): void {
     if (this._exited) return;
-    const k = this.live.rebinddelete ? swappedDeleteKey(input) : input;
+    const typed = this.live.rebinddelete ? swappedDeleteKey(input) : input;
+    const context = this.helpViewer !== null ? 'help' : this.isPrompting() ? 'prompt' : 'edit';
+    if (context === 'edit' && typed.key === 'F12' && !typed.ctrl && !typed.alt) {
+      this.runInput(typed, () => this.invokeSpeller());
+      return;
+    }
+    const k = canonicalNanoKey(typed, context);
     if (this.live.preserve && k.ctrl && (k.key.toLowerCase() === 'q' || k.key.toLowerCase() === 's')) return;
     if (k.alt) this.metaKeyUsed = true;
     if (this.helpViewer !== null) {
       this.keyInHelp(k);
       return;
     }
+    this.runInput(k, () => {
+      const wasPrompting = this.isPrompting();
+      if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') {
+        if (this.helpTitle === null) this.toggleHelpInPrompt();
+      } else if (wasPrompting && this.helpTitle === null && k.ctrl && k.key.toLowerCase() === 'g' && this.helpMenuOfPrompt() !== null) {
+        this.openHelp(this.helpMenuOfPrompt()!);
+      } else {
+        this.dispatchKey(k);
+      }
+    });
+  }
+
+  private runInput(k: EditorKeyInput | null, act: () => void): void {
     this.pauseNote = null;
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
@@ -378,17 +507,16 @@ export class NanoEngine {
     this.searchSpotlight = null;
     this.manner = 'centering';
     this.verticalKey = false;
-    if (!this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
+    this.redrawsOnlyChangedLines = false;
+    const viewBefore = { top: this.window.edittop, left: this.window.firstcolumn };
+    if (k !== null && !this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
     if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     const cursorBefore = { line: this._cursorLine, col: this._cursorCol };
-    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') {
-      if (this.helpTitle === null) this.toggleHelpInPrompt();
-    } else if (wasPrompting && k.ctrl && k.key.toLowerCase() === 'g' && this.helpMenuOfPrompt() !== null) {
-      this.openHelp(this.helpMenuOfPrompt()!);
-    } else {
-      this.dispatchKey(k);
-    }
+    this.tabPressedThisKey = false;
+    act();
+    if (k !== null && !this.tabPressedThisKey) this.tabFragmentLength = null;
+    if (this.listedCompletions !== null && this._mode !== this.listedIn) this.listedCompletions = null;
     if (this.searchSpotlight === null && this.isPrompting()) this.searchSpotlight = carriedSpotlight;
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
@@ -397,19 +525,20 @@ export class NanoEngine {
     if (!this.verticalKey && !promptLeftCursorAlone) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
     if (this.reportsPositionAsMessage() && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
+    if (this.redrawsOnlyChangedLines && this.zeroMode() && this._mode === 'edit' && viewBefore.top === this.window.edittop && viewBefore.left === this.window.firstcolumn) this.staleFooter = { text: '', spans: [] };
     this.makeRoomForMessage();
     this.settleTally();
   }
 
   private makeRoomForMessage(): void {
-    if (!this.zeroMode() || this.isPrompting() || messageLevel(this.statusText) <= MESSAGE_LEVEL.hush) return;
+    if (!this.zeroMode() || this.isPrompting() || this.currentLevel() <= MESSAGE_LEVEL.hush) return;
     if (this.window.cursorRow !== this.window.editRows - 1) return;
     this.window.scroll(true);
     this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
   private settleTally(): void {
-    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark;
+    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && this.currentLevel() < MESSAGE_LEVEL.remark;
     this.tally = this.reportSizePending && drawn ? this.writtenLineCount() : null;
     if (drawn) this.reportSizePending = false;
   }
@@ -421,7 +550,7 @@ export class NanoEngine {
   private minibarInfo(messageExpired: boolean): MinibarInfo | null {
     const prompting = this.isPrompting();
     if (!this.minibarMode() || prompting || this.helpTitle !== null) return null;
-    if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
+    if (!messageExpired && this.currentLevel() >= MESSAGE_LEVEL.remark) return null;
     const text = this.line(this._cursorLine);
     const code = this._cursorCol < text.length
       ? `U+${text.codePointAt(this._cursorCol)!.toString(16).toUpperCase().padStart(4, '0')}`
@@ -440,22 +569,109 @@ export class NanoEngine {
   }
 
   clickAt(row: number, col: number): void {
-    if (this._mode !== 'edit') return;
+    if (!this.live.mouse || this._exited) return;
+    if (this.helpViewer !== null) {
+      this.helpViewer.clickAt(row, col);
+      this.settleHelpViewer();
+      return;
+    }
+    const yesNo = this.yesNoQuestion();
+    if (yesNo !== null) {
+      const footerRow = this.footerRowOf(row);
+      const choice = footerRow === null ? null : clickedYesNo(this.window.cols, yesNo.withAll, footerRow, col);
+      if (choice !== null) this.feedKeys([choice === 'cancel' ? editorKey('c', { ctrl: true }) : editorKey(choice)]);
+      return;
+    }
+    const footerRow = this.footerRowOf(row);
+    if (footerRow !== null && footerRow > 0 && this.window.layout.barsFrom !== null) {
+      this.feedOrIgnore(this.pointerKeys(row, col, null));
+      return;
+    }
+    if (this.helpTitle !== null) {
+      this.runInput(null, () => undefined);
+      return;
+    }
+    this.runInput(null, () => {
+      if (this._mode === 'edit') this.clickInEditWindow(row, col);
+      else if (footerRow !== null) this.clickInPrompt(col);
+    });
+  }
+
+  wheelAt(row: number, col: number, forward: boolean): void {
+    if (!this.live.mouse || this._exited) return;
+    if (this.helpViewer !== null) {
+      this.helpViewer.wheelAt(row, col, forward);
+      this.settleHelpViewer();
+      return;
+    }
+    this.feedOrIgnore(this.pointerKeys(row, col, forward ? 'down' : 'up'));
+  }
+
+  pointerKeys(row: number, col: number, wheel: 'up' | 'down' | null): EditorKeyInput[] {
+    const layout = this.window.layout;
+    const footerRow = this.footerRowOf(row);
+    if (wheel !== null) {
+      const inMiddle = row >= layout.editFrom && row < layout.editFrom + this.window.editRows;
+      if (!inMiddle && footerRow !== 0) return [];
+      return Array.from({ length: WHEEL_STEP }, () => editorKey(wheel === 'up' ? 'ArrowUp' : 'ArrowDown'));
+    }
+    if (footerRow === null || footerRow === 0 || layout.barsFrom === null) return [];
+    const entry = clickedShortcut(this.window.cols, this.activeMenu(), this.menuOptions(), footerRow, col);
+    const key = entry === null ? null : keyOfShortcutLabel(entry.key);
+    return key === null ? [] : [key];
+  }
+
+  private feedOrIgnore(keys: readonly EditorKeyInput[]): void {
+    if (keys.length === 0) this.runInput(null, () => undefined);
+    else this.feedKeys(keys);
+  }
+
+  private feedKeys(keys: readonly EditorKeyInput[]): void {
+    for (const key of keys) this.applyKey(key);
+  }
+
+  private footerRowOf(row: number): number | null {
+    const statusRow = this.window.layout.statusRow;
+    return row >= statusRow && row < this.window.rows ? row - statusRow : null;
+  }
+
+  private yesNoQuestion(): { withAll: boolean } | null {
+    switch (this._mode) {
+      case 'exit-save-prompt':
+      case 'confirm':
+        return { withAll: false };
+      case 'replace-confirm':
+        return { withAll: true };
+      default:
+        return null;
+    }
+  }
+
+  private clickInEditWindow(row: number, col: number): void {
     const window = this.window;
     const top = window.layout.editFrom;
-    if (row < top || row >= top + window.editRows) return;
+    if (row < top || row >= top + window.editRows || col < window.margin) return;
+    const was = { line: this._cursorLine, col: this._cursorCol, row: window.cursorRow };
     const at = { line: window.edittop, leftedge: window.firstcolumn };
     window.goForward(row - top, at);
     const text = this.line(at.line);
     let column = Math.max(0, col - window.margin);
     if (this.live.softwrap) column += at.leftedge;
-    else if (at.line === this._cursorLine) column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
+    else column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
     this._cursorLine = at.line;
     this._cursorCol = actualX(text, column, this.live.tabsize);
     this.manner = 'flowing';
     this.placeWant = window.columnOf(this._cursorLine, this._cursorCol);
     this.verticalKey = true;
     this.followCursor();
+    if (row - top === was.row && this._cursorLine === was.line && this._cursorCol === was.col) this.toggleMark();
+    else this.cutAction = null;
+  }
+
+  private clickInPrompt(col: number): void {
+    const prompt = this.promptView();
+    if (prompt === null) return;
+    this._promptCursor = promptCursorAtColumn(this.window.cols, prompt.label, prompt.answer, this._promptCursor, this.live.tabsize, col);
   }
 
   get softwrapEnabled(): boolean { return this.live.softwrap; }
@@ -486,7 +702,7 @@ export class NanoEngine {
   }
 
   private discardEnabled(): boolean {
-    return this.live.saveonexit && !this.live.preserve;
+    return this.menuFlags.saveonexit && !this.menuFlags.preserve;
   }
 
   private writeNameFrozen(): boolean {
@@ -526,6 +742,66 @@ export class NanoEngine {
     return `${base}${format}${this.live.backup ? ' [Backup]' : ''}`;
   }
 
+  private promptAnswer(): { get: () => string; set: (value: string) => void; history: string[] | null; files: boolean } | null {
+    switch (this._mode) {
+      case 'save-prompt': return { get: () => this.saveFileNameBuffer, set: (v) => { this.saveFileNameBuffer = v; }, history: null, files: true };
+      case 'read-file-prompt': return { get: () => this.readFileBuffer, set: (v) => { this.readFileBuffer = v; }, history: null, files: true };
+      case 'search':
+      case 'replace-search': return { get: () => this.searchAnswer, set: (v) => { this.searchAnswer = v; }, history: this.searchHistory, files: false };
+      case 'replace-with': return { get: () => this.replaceWithBuffer, set: (v) => { this.replaceWithBuffer = v; }, history: this.replaceHistory, files: false };
+      case 'execute-prompt': return { get: () => this.executeCmdBuffer, set: (v) => { this.executeCmdBuffer = v; }, history: this.executeHistory, files: false };
+      default: return null;
+    }
+  }
+
+  private completeWithTab(): boolean {
+    const field = this.promptAnswer();
+    if (field === null) return false;
+    this.tabPressedThisKey = true;
+    if (field.history !== null) {
+      this.completeFromHistory(field.history, field.get, field.set);
+      return true;
+    }
+    if (this.live.restricted) return true;
+    const answer = field.get();
+    if (this._promptCursor < answer.length) return true;
+    const completion = completeFileName(this.fs, answer, (fullName) => this.operating === null || !this.operating.outside(fullName, true));
+    if (this.listedCompletions !== null && (completion === null || completion.list === null)) this.listedCompletions = null;
+    if (completion === null) return true;
+    if (completion.answer !== answer) {
+      field.set(completion.answer);
+      this._promptCursor = completion.answer.length;
+    }
+    if (completion.list !== null) {
+      this.listedCompletions = completion.list;
+      this.listedIn = this._mode;
+    }
+    return true;
+  }
+
+  private completeFromHistory(history: string[], get: () => string, set: (value: string) => void): void {
+    if (this.tabFragmentLength === null) this.tabFragmentLength = get().length;
+    if (this.tabFragmentLength > 0) {
+      const next = nextHistoryCompletion(history, this.historyPosition ?? this.tabPointers.get(history) ?? history.length, get(), this.tabFragmentLength);
+      if (next !== null) {
+        this.historyPosition = next.position;
+        this.tabPointers.set(history, next.position);
+        set(next.text);
+      }
+    }
+    this._promptCursor = get().length;
+  }
+
+  private activeMenu(prompt: { menu: NanoMenuName } | null = this.promptView()): NanoMenuName {
+    if (this.helpTitle !== null) return prompt === null ? 'help' : 'search-in-help';
+    if (this.lint !== null) return 'linter';
+    return prompt === null ? 'main' : prompt.menu;
+  }
+
+  private menuOptions(): MenuOptions {
+    return { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.menuFlags.preserve };
+  }
+
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
     switch (this._mode) {
       case 'save-prompt': return { label: this.writeOutLabel(), answer: this.saveFileNameBuffer, menu: 'write-out' };
@@ -543,10 +819,14 @@ export class NanoEngine {
     if (this.helpViewer !== null) return this.helpViewer.screen;
     const live = this.paintScreen(false);
     if (this.pauseNote !== null) return { ...live, hold: { millis: this.pauseMillis, then: this.paintScreen(true) } };
-    const level = messageLevel(this.statusText);
+    const level = this.currentLevel();
     const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
     if (!transient || this.isPrompting()) return live;
     return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
+  }
+
+  private interfacePaints() {
+    return resolveInterfacePaints(this.live.colors, this.live.boldtext, (this.fs.environmentVariable?.('NO_COLOR') ?? null) !== null);
   }
 
   private minibarMode(): boolean {
@@ -563,7 +843,7 @@ export class NanoEngine {
 
   private paintScreen(messageExpired: boolean): EditorScreen {
     const prompt = this.promptView();
-    const hidden = messageExpired || (this.bareDisplay() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark);
+    const hidden = messageExpired || (this.bareDisplay() && this.currentLevel() < MESSAGE_LEVEL.remark);
     const message = hidden ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
     const screen = buildNanoScreen({
       window: this.window,
@@ -574,13 +854,16 @@ export class NanoEngine {
       tabsize: this.live.tabsize,
       softwrap: this.live.softwrap,
       emphasis: this.live.boldtext ? 'bold' : 'reverse',
+      paints: this.interfacePaints(),
+      syntax: this.syntaxPainting(),
       stripe: this.live.guidestripe,
       title: {
         name: this.titleName === '' ? 'New Buffer' : this.titleName,
         state: this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
         branding: 'GNU nano 7.2',
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
-        heading: this.helpTitle ?? undefined,
+        heading: this.lint !== null ? this.titleName : this.helpTitle ?? undefined,
+        prefix: this.lint !== null ? 'Linting --' : undefined,
       },
       status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore, raw: this.statusRaw },
       minibar: this.minibarInfo(messageExpired),
@@ -589,8 +872,9 @@ export class NanoEngine {
         ? { question: 'Save modified buffer? ', withAll: false }
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
-      menu: this.helpTitle !== null ? (prompt === null ? 'help' : 'search-in-help') : prompt === null ? 'main' : prompt.menu,
-      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view, preserve: this.live.preserve },
+      completions: this.listedCompletions === null ? null : { names: this.listedCompletions, hiddenRows: this.live.zero && this.window.rows > 1 ? 1 : 0 },
+      menu: this.activeMenu(prompt),
+      menuOptions: this.menuOptions(),
       pause: messageExpired ? null : this.pauseNote,
       pauseKeepsMenu: this.pauseKeepsMenu,
     });
@@ -707,6 +991,7 @@ export class NanoEngine {
   private wipeStatus(): void {
     this.staleFooter = null;
     this.statusText = '';
+    this.statusLevel = null;
     this.statusCountdown = 0;
     this.statusAlert = false;
     this.statusMore = false;
@@ -741,8 +1026,13 @@ export class NanoEngine {
     if (this.reportsPositionAsMessage() && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
   }
 
-  scrollView(up: boolean, count: number): void {
-    for (let i = 0; i < count; i++) this.scrollRow(up);
+  scrollView(forward: boolean, count: number): void {
+    if (this.live.mouse) this.wheelAt(this.window.layout.editFrom, 0, forward);
+    else this.scrollLines(forward, count);
+  }
+
+  private scrollLines(forward: boolean, count: number): void {
+    for (let i = 0; i < count; i++) this.scrollRow(forward);
     this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
@@ -762,6 +1052,7 @@ export class NanoEngine {
   }
 
   private dispatchKey(k: EditorKeyInput): void {
+    if (k.key === 'Tab' && !k.ctrl && !k.alt && !k.shift && this.completeWithTab()) return;
     switch (this._mode) {
       case 'edit': return this.helpTitle === null ? this.applyEditKey(k) : this.applyHelpViewerKey(k);
       case 'save-prompt': return this.applySavePromptKey(k);
@@ -774,6 +1065,7 @@ export class NanoEngine {
       case 'goto-line': return this.applyGotoLineKey(k);
       case 'execute-prompt': return this.applyExecutePromptKey(k);
       case 'read-file-prompt': return this.applyReadFilePromptKey(k);
+      case 'linting': return this.applyLintKey(k);
     }
   }
 
@@ -903,6 +1195,7 @@ export class NanoEngine {
 
   private placeWant = 0;
   private verticalKey = false;
+  private redrawsOnlyChangedLines = false;
 
   private columnAtDisplay(line: number, want: number): number {
     return actualX(this.line(line), want, this.live.tabsize);
@@ -921,6 +1214,11 @@ export class NanoEngine {
     this.placeWant = landed.placeWant;
     this.verticalKey = true;
     return 0;
+  }
+
+  private refuseInViewMode(): void {
+    this._statusMessage = '[ Key is invalid in view mode ]';
+    this.verticalKey = true;
   }
 
   private moveVertical(delta: number): void {
@@ -979,7 +1277,7 @@ export class NanoEngine {
     // real nano simply ignores keys that would modify it.
     if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete' || k.key === 'Tab'
       || (k.key.length === 1 && !k.alt))) {
-      this._statusMessage = '[ Key is invalid in view mode ]';
+      this.refuseInViewMode();
       return;
     }
 
@@ -1014,9 +1312,9 @@ export class NanoEngine {
           return;
         }
         const cur = this.line(this._cursorLine);
-        const tab = this.live.tabstospaces
+        const tab = this.activeSyntax?.tab ?? (this.live.tabstospaces
           ? ' '.repeat(this.live.tabsize - (wideness(cur, this._cursorCol, this.live.tabsize) % this.live.tabsize))
-          : '\t';
+          : '\t');
         this.typeText(tab);
         return;
       }
@@ -1112,7 +1410,7 @@ export class NanoEngine {
     // read-only, since every one of them would mutate the buffer.
     if (this._readOnly && (key === 'o' || key === 's' || key === 'k' || key === 'u' || key === '\\'
       || key === 'j' || key === 'r' || key === 't')) {
-      this._statusMessage = '[ Key is invalid in view mode ]';
+      this.refuseInViewMode();
       return;
     }
     switch (key) {
@@ -1251,9 +1549,10 @@ export class NanoEngine {
 
   private applyEditAltKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
-    if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollView(false, 1); return; }
-    if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollView(true, 1); return; }
+    if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollLines(false, 1); return; }
+    if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollLines(true, 1); return; }
     if (key === 'z') { this.toggleHiddenInterface(); return; }
+    if (key === 'y') { this.toggleSyntax(); return; }
     if (key === 'x') { this.toggleHelpLines(); return; }
     if (key === 'c') { this.toggleConstantShow(); return; }
     if (key === 'n') {
@@ -1274,22 +1573,26 @@ export class NanoEngine {
       return;
     }
     if (k.key === '}' || k.key === '{') {
-      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (this._readOnly) { this.refuseInViewMode(); return; }
       if (k.key === '}') this.indentLines(); else this.unindentLines();
       return;
     }
     if (key === 'j') {
-      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (this._readOnly) { this.refuseInViewMode(); return; }
       this.justifyText(true);
       return;
     }
     if (key === 't' || (k.key === '3' && !k.shift)) {
-      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (this._readOnly) { this.refuseInViewMode(); return; }
       if (key === 't') this.cutTillEnd(); else this.commentLines();
       return;
     }
     const toggle = EDIT_TOGGLES[key];
     if (toggle !== undefined) {
+      if (toggle.flag === 'tabstospaces' && this.activeSyntax?.tab != null) {
+        this._statusMessage = '[ Current syntax determines Tab ]';
+        return;
+      }
       this.live[toggle.flag] = !this.live[toggle.flag];
       this.manner = 'flowing';
       const quietForStateFlags = (toggle.flag === 'autoindent' || toggle.flag === 'breaklonglines')
@@ -1322,11 +1625,11 @@ export class NanoEngine {
       return;
     }
     if (key === 'b') {
-      this._statusMessage = '[ No linter is defined for this type of file ]';
+      this.invokeLinter();
       return;
     }
     if (key === 'f') {
-      this._statusMessage = '[ No formatter is defined for this type of file ]';
+      this.invokeFormatter();
       return;
     }
     if (key === 'w') {
@@ -1516,8 +1819,12 @@ export class NanoEngine {
       if (this.line(index) === '') continue;
       this.linesArr[index] = unit + this.line(index);
       if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + unit.length;
-      if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += unit.length;
+      if (index === this._cursorLine && this._cursorCol > 0) {
+        this._cursorCol += unit.length;
+        this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+      }
     }
+    this.verticalKey = true;
   }
 
   private cutTillEnd(): void {
@@ -1538,7 +1845,14 @@ export class NanoEngine {
   }
 
   private commentLines(): void {
-    const prefix = '#';
+    const sequence = this.activeSyntax?.comment ?? GENERAL_COMMENT;
+    if (sequence === '') {
+      this._statusMessage = '[ Commenting is not supported for this file type ]';
+      return;
+    }
+    const bar = sequence.indexOf('|');
+    const prefix = bar < 0 ? sequence : sequence.slice(0, bar);
+    const suffix = bar < 0 ? '' : sequence.slice(bar + 1);
     const range = this.markedLineRange();
     const last = this.linesArr.length - 1;
     if (range.top === range.bottom && range.bottom === last && !this.live.nonewlines) {
@@ -1546,11 +1860,12 @@ export class NanoEngine {
       return;
     }
     const commentable = (index: number): boolean => this.live.nonewlines || index !== last;
+    const isCommented = (text: string): boolean => text.startsWith(prefix) && (suffix === '' || text.endsWith(suffix));
     let action: 'COMMENT' | 'UNCOMMENT' = 'UNCOMMENT';
     let allEmpty = true;
     for (let index = range.top; index <= range.bottom; index++) {
       const empty = [...this.line(index)].every((ch) => isBlankChar(ch));
-      if (!empty && !(commentable(index) && this.line(index).startsWith(prefix))) {
+      if (!empty && !(commentable(index) && isCommented(this.line(index)))) {
         action = 'COMMENT';
         break;
       }
@@ -1562,15 +1877,22 @@ export class NanoEngine {
       if (!commentable(index)) continue;
       const text = this.line(index);
       if (action === 'COMMENT') {
-        this.linesArr[index] = prefix + text;
+        this.linesArr[index] = prefix + text + suffix;
         if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + prefix.length;
-        if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += prefix.length;
-      } else if (text.startsWith(prefix)) {
-        this.linesArr[index] = text.slice(prefix.length);
+        if (index === this._cursorLine && this._cursorCol > 0) {
+          this._cursorCol += prefix.length;
+          this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+        }
+      } else if (isCommented(text)) {
+        this.linesArr[index] = text.slice(prefix.length, text.length - suffix.length);
         if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - prefix.length);
-        if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - prefix.length);
+        if (index === this._cursorLine) {
+          this._cursorCol = Math.max(0, this._cursorCol - prefix.length);
+          this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+        }
       }
     }
+    this.verticalKey = true;
     this.undoFinish();
     this._modified = true;
   }
@@ -1584,7 +1906,7 @@ export class NanoEngine {
       return;
     }
     this.undoBegin('INDENT');
-    this.shiftLinesRight(top, range.bottom, this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t');
+    this.shiftLinesRight(top, range.bottom, this.activeSyntax?.tab ?? (this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t'));
     this.undoFinish();
     this._modified = true;
   }
@@ -1603,8 +1925,12 @@ export class NanoEngine {
       if (removed === 0) continue;
       this.linesArr[index] = this.line(index).slice(removed);
       if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - removed);
-      if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - removed);
+      if (index === this._cursorLine) {
+        this._cursorCol = Math.max(0, this._cursorCol - removed);
+        this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+      }
     }
+    this.verticalKey = true;
     this.undoFinish();
     this._modified = true;
   }
@@ -1826,6 +2152,7 @@ export class NanoEngine {
   }
 
   private cancelPrompt(): void {
+    this.afterWrite = null;
     this._statusMessage = 'Cancelled';
     this._mode = 'edit';
   }
@@ -1911,6 +2238,7 @@ export class NanoEngine {
       return;
     }
     if (this.live.restricted) {
+      this.afterWrite = null;
       this.pauseWith('File exists -- cannot overwrite');
       return;
     }
@@ -1933,6 +2261,8 @@ export class NanoEngine {
       this._statusMessage = `[ ${this.operating.writeRefusal()} ]`;
       return;
     }
+    const continuation = this.afterWrite;
+    this.afterWrite = null;
     const region = selection ? this.getMarkedRegion() : null;
     const written = region === null ? this.serialize() : this.serializeRegion(region);
     const method = this.writeMethod;
@@ -1974,6 +2304,7 @@ export class NanoEngine {
     const n = this.writtenLineCount();
     if (this.minibarMode()) this.reportSizePending = true;
     else this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+    continuation?.();
   }
 
   private backupPathFor(target: string): string {
@@ -1990,6 +2321,7 @@ export class NanoEngine {
     this.dropLock();
     this.titleName = name;
     this.bufferPath = target;
+    this.selectSyntax();
     if (this.live.locking) this.acquireLock(name, false);
   }
 
@@ -2104,8 +2436,10 @@ export class NanoEngine {
     this._mode = 'edit';
     if (key === 'y') this.toFirstLine();
     else if (key === 'v') this.toLastLine();
-    else if (key === 'w') this.toParagraphBegin();
-    else this.toParagraphEnd();
+    else {
+      if (key === 'w') this.toParagraphBegin(); else this.toParagraphEnd();
+      this.redrawsOnlyChangedLines = true;
+    }
     return true;
   }
 
@@ -2123,19 +2457,23 @@ export class NanoEngine {
     if (parsed.line !== null) this.manner = 'recentering';
   }
 
-  private applyStart(start: NanoStart): void {
+  private applyStart(start: NanoStart): boolean {
     if (start.caseSensitive !== null) this.caseSensitive = start.caseSensitive;
     if (start.regex !== null) this.useRegex = start.regex;
+    let positioned = false;
     if (start.line !== 0 || start.column !== 0) {
       this.gotoLineNumbers(start.line, start.column);
       this.startPlacement = 'hugfloor';
+      positioned = true;
     } else if (start.search !== null) {
       this.searchAtStartup(start.search);
       this.startPlacement = 'centering';
+      positioned = true;
     }
-    if (start.alerts.length === 0) return;
+    if (start.alerts.length === 0) return positioned;
     this._statusMessage = `[ ${start.alerts[0]} ]`;
     this.statusMore = start.alerts.length + (this.openingAlerted ? 1 : 0) > 1;
+    return positioned;
   }
 
   private searchAtStartup(request: NanoSearchRequest): void {
@@ -2146,7 +2484,7 @@ export class NanoEngine {
     const circuit = new SearchCircuit(pattern, request.backwards);
     const hit = this.findNext(pattern, 'JUSTFIND', false, { line: 0, col: 0 }, circuit);
     if (hit === null) this.reportNotFound(request.pattern);
-    else if (messageLevel(this.statusText) <= MESSAGE_LEVEL.remark) this.wipeStatus();
+    else if (this.currentLevel() <= MESSAGE_LEVEL.remark) this.wipeStatus();
   }
 
   private gotoLineNumbers(line: number | null, column: number): void {
@@ -2183,7 +2521,7 @@ export class NanoEngine {
     const cols = this.window.cols;
     const page = helpPage(
       menu,
-      { restricted: this.live.restricted, preserve: this.live.preserve, saveonexit: this.live.saveonexit, view: this._readOnly },
+      { restricted: this.live.restricted, preserve: this.menuFlags.preserve, saveonexit: this.menuFlags.saveonexit, view: this._readOnly },
       { columns: cols, rows, leadingBlank: (this.live.minibar || !this.live.emptyline) && rows > 6, sidebar: this.window.sidebar },
     );
     const settings = defaultNanoSettings({
@@ -2206,12 +2544,14 @@ export class NanoEngine {
     const viewer = new NanoEngine(this.fs, '', page.lines.join('\n'), false, false, undefined, false, {
       identity: this.launchIdentity,
       settings,
+      menuFlags: this.menuFlags,
       helpTitle: page.title,
       staleFooter: tiny ? this.paintScreen(false).rows[this.window.layout.statusRow] : undefined,
     });
     viewer.lastSearchTerm = this.lastSearchTerm;
     viewer.searchHistory = this.searchHistory;
     viewer.replaceHistory = this.replaceHistory;
+    viewer.tabPointers = this.tabPointers;
     viewer.resize(rows, cols);
     this.helpViewer = viewer;
     this.wipeStatus();
@@ -2222,13 +2562,22 @@ export class NanoEngine {
   }
 
   private keyInHelp(k: EditorKeyInput): void {
+    this.helpViewer!.applyKey(k);
+    this.settleHelpViewer();
+  }
+
+  private settleHelpViewer(): void {
     const viewer = this.helpViewer!;
-    viewer.applyKey(k);
     if (!viewer.exited) return;
     const footer = viewer.screen.rows[this.window.layout.statusRow];
     this.lastSearchTerm = viewer.lastSearchTerm;
+    if (viewer.historyChanged) this.historyChanged = true;
     this.helpViewer = null;
     this.wipeStatus();
+    if (this.lint !== null) {
+      this.lintStep();
+      return;
+    }
     if (this.footerKeepsStaleText()) this.staleFooter = footer;
     if (this.reportsPositionAsMessage() && this._mode === 'edit') this._statusMessage = this.locationMessage();
   }
@@ -2239,13 +2588,13 @@ export class NanoEngine {
       this.applyEditKey(cursorMotion);
       return;
     }
-    const action = helpAction(k, this.live.preserve);
+    const action = helpAction(k, this.menuFlags.preserve);
     switch (action) {
       case 'scroll-up':
-        this.scrollView(false, 1);
+        this.scrollLines(false, 1);
         return;
       case 'scroll-down':
-        if (this.window.edittop + this.window.editRows - 1 < this.linesArr.length - 1) this.scrollView(true, 1);
+        if (this.window.edittop + this.window.editRows - 1 < this.linesArr.length - 1) this.scrollLines(true, 1);
         return;
       case 'page-up':
         this.pageUp();
@@ -2322,12 +2671,250 @@ export class NanoEngine {
     if (key !== 's' && key !== 't' && key !== 'y' && key !== 'o' && key !== 'j' && key !== 'v') return false;
     this.resetHistoryRecall();
     this._mode = 'edit';
-    if (key === 's' || key === 't') this._statusMessage = '[ Error invoking "spell" ]';
-    else if (key === 'y') this._statusMessage = '[ No linter is defined for this type of file ]';
-    else if (key === 'o') this._statusMessage = '[ No formatter is defined for this type of file ]';
+    if (key === 's' || key === 't') this.invokeSpeller();
+    else if (key === 'y') this.invokeLinter();
+    else if (key === 'o') this.invokeFormatter();
     else if (key === 'j') this.justifyText(true);
     else this.cutTillEnd();
     return true;
+  }
+
+  private invokeLinter(): void {
+    if (this.refuseWhenRestricted()) return;
+    const linter = this.activeSyntax?.linter ?? null;
+    if (linter === null) {
+      this.postStatus(MESSAGE_LEVEL.ahem, 'No linter is defined for this type of file');
+      return;
+    }
+    this.clearMark();
+    if (!this._modified) {
+      this.startLinter(linter);
+      return;
+    }
+    this.ask(
+      'Save modified buffer before linting?',
+      () => {
+        this.afterWrite = () => this.startLinter(linter);
+        if (this.titleName === '') {
+          this.beginWriteOut(false);
+          return;
+        }
+        this.exitAfterSave = false;
+        this.writeMethod = 'overwrite';
+        this.saveFileNameBuffer = this.titleName;
+        this.submitWriteName();
+      },
+      () => this.startLinter(linter),
+      () => this.postStatus(MESSAGE_LEVEL.hush, 'Cancelled'),
+    );
+  }
+
+  private startLinter(linter: string): void {
+    const run = this.runChildShell(shellCommandLine(argumentList(linter, this.titleName)));
+    if (run.status > 2) {
+      this.postStatus(MESSAGE_LEVEL.alert, `Error invoking '${linter}'`);
+      return;
+    }
+    const messages = parseLintOutput(run.output);
+    if (messages.length === 0) {
+      this.postStatus(MESSAGE_LEVEL.remark, `Got 0 parsable lines from command: ${linter}`);
+      return;
+    }
+    const helpless = this.live.nohelp;
+    if (helpless && this.window.rows > 5) {
+      this.live.nohelp = false;
+      this.window.align();
+    }
+    this.lint = { messages, current: 0, shown: null, restoreNoHelp: helpless };
+    this._mode = 'linting';
+    this.lintStep();
+  }
+
+  private lintMessageIsForAnotherFile(message: LintMessage): boolean {
+    const kind = this.fs.kindOf?.(message.filename) ?? (this.fs.exists(message.filename) ? 'file' : 'missing');
+    if (kind === 'missing') return false;
+    const there = this.fs.canonicalPath?.(message.filename) ?? this.fs.resolvePath(message.filename);
+    const here = this.fs.canonicalPath?.(this.bufferPath) ?? this.bufferPath;
+    return there !== here;
+  }
+
+  private lintStep(): void {
+    const lint = this.lint!;
+    const message = lint.messages[lint.current];
+    if (this.lintMessageIsForAnotherFile(message)) {
+      const resume = (): void => {
+        this._mode = 'linting';
+        this.dropLintMessagesOf(message.filename);
+      };
+      this.ask(
+        `This message is for unopened file ${message.filename}, open it in a new buffer?`,
+        resume,
+        resume,
+        () => {
+          this.leaveLint();
+          this.wipeStatus();
+        },
+      );
+      return;
+    }
+    if (lint.shown === lint.current) return;
+    lint.shown = lint.current;
+    const target = Math.min(Math.max(1, message.line), this.linesArr.length) - 1;
+    const text = this.line(target);
+    const column = wideness(text, message.column - 1, this.live.tabsize);
+    this._cursorLine = target;
+    this._cursorCol = actualX(text, column, this.live.tabsize);
+    this.placeWant = column;
+    this.manner = 'recentering';
+    this.verticalKey = true;
+    this.postStatus(MESSAGE_LEVEL.notice, message.text);
+  }
+
+  private dropLintMessagesOf(filename: string): void {
+    const lint = this.lint!;
+    const rest = lint.messages.slice(lint.current).filter((message) => message.filename !== filename);
+    const kept = lint.messages.slice(0, lint.current);
+    if (rest.length === 0) {
+      this.leaveLint();
+      this.wipeStatus();
+      return;
+    }
+    lint.messages.splice(0, lint.messages.length, ...kept, ...rest);
+    lint.shown = null;
+    this.lintStep();
+  }
+
+  private leaveLint(): void {
+    const lint = this.lint!;
+    this.lint = null;
+    this._mode = 'edit';
+    if (!lint.restoreNoHelp) return;
+    this.live.nohelp = true;
+    this.window.align();
+  }
+
+  private applyLintKey(k: EditorKeyInput): void {
+    const lint = this.lint!;
+    this.verticalKey = true;
+    const key = k.key.toLowerCase();
+    const leaves = (k.ctrl && (key === 'c' || key === 'x')) || (!k.ctrl && !k.alt && k.key === 'Enter');
+    const previous = (!k.ctrl && !k.alt && k.key === 'PageUp') || (k.ctrl && !k.alt && (key === 'y' || k.key === 'ArrowUp')) || (k.alt && k.key === '7');
+    const next = (!k.ctrl && !k.alt && k.key === 'PageDown') || (k.ctrl && !k.alt && (key === 'v' || k.key === 'ArrowDown')) || (k.alt && k.key === '8');
+    if (leaves) {
+      this.leaveLint();
+      this.wipeStatus();
+      return;
+    }
+    if (k.ctrl && key === 'g') {
+      lint.shown = null;
+      this.openHelp('linter');
+      return;
+    }
+    if (previous && lint.current > 0) lint.current--;
+    else if (next && lint.current < lint.messages.length - 1) lint.current++;
+    this.lintStep();
+    if (this._mode === 'linting') this.postStatus(MESSAGE_LEVEL.notice, lint.messages[lint.current].text);
+  }
+
+  private invokeFormatter(): void {
+    if (this.refuseWhenRestricted()) return;
+    const formatter = this.activeSyntax?.formatter ?? null;
+    if (formatter === null) {
+      this.postStatus(MESSAGE_LEVEL.ahem, 'No formatter is defined for this type of file');
+      return;
+    }
+    this.clearMark();
+    const path = this.temporaryFilePath();
+    if (path === null || !this.fs.writeFile(path, this.serialize())) {
+      this.postStatus(MESSAGE_LEVEL.alert, 'Error writing temp file: No such file or directory');
+      return;
+    }
+    this.treat(path, formatter, false);
+    this.fs.deleteFile(path);
+  }
+
+  private invokeSpeller(): void {
+    if (this.refuseWhenRestricted()) return;
+    const region = this.getMarkedRegion();
+    const path = this.temporaryFilePath();
+    if (path === null || !this.fs.writeFile(path, region === null ? this.serialize() : this.extractRegionText(region))) {
+      if (path !== null) this.fs.deleteFile(path);
+      this.postStatus(MESSAGE_LEVEL.alert, 'Error writing temp file: No such file or directory');
+      return;
+    }
+    const speller = this.live.speller;
+    if (speller !== null && speller !== '') this.treat(path, speller, true);
+    else this.postStatus(MESSAGE_LEVEL.alert, 'Error invoking "spell"');
+    this.fs.deleteFile(path);
+  }
+
+  private temporaryFilePath(): string | null {
+    const usable = (directory: string | null): string | null => {
+      if (directory === null || directory === '') return null;
+      const kind = this.fs.kindOf?.(directory) ?? 'directory';
+      return kind === 'directory' && !(this.fs.isReadOnly?.(directory) ?? false) ? (directory.endsWith('/') ? directory : `${directory}/`) : null;
+    };
+    const directory = usable(this.fs.environmentVariable?.('TMPDIR') ?? null) ?? usable('/tmp') ?? '/tmp/';
+    const dot = this.titleName.lastIndexOf('.');
+    const extension = dot < 0 || this.titleName.slice(dot).includes('/') ? '' : this.titleName.slice(dot);
+    let name = '';
+    do {
+      temporaryCounter++;
+      name = `${directory}nano.${temporaryCounter.toString(36).toUpperCase().padStart(6, 'A')}${extension}`;
+    } while (this.fs.exists(name));
+    return name;
+  }
+
+  private treat(path: string, program: string, spelling: boolean): void {
+    const region = spelling ? this.getMarkedRegion() : null;
+    const wasLine = this._cursorLine;
+    const wasPlaceWant = this.placeWant;
+    let wasCol = this._cursorCol;
+    const wasAtEnd = wasCol >= this.line(wasLine).length;
+    const markWasBefore = this.markLine !== null && (this.markLine < wasLine || (this.markLine === wasLine && (this.markCol ?? 0) < wasCol));
+    const wasMarkLine = this.markLine;
+    if ((this.fs.readFile(path) ?? '') === '') {
+      this.postStatus(MESSAGE_LEVEL.ahem, spelling && region !== null ? 'Selection is empty' : 'Buffer is empty');
+      return;
+    }
+    const stamp = this.fs.modificationStamp?.(path) ?? null;
+    const arguments_ = argumentList(program, path);
+    const run = this.runChildShell(shellCommandLine(arguments_));
+    if (run.status > 2) {
+      this.postStatus(MESSAGE_LEVEL.alert, `Error invoking '${arguments_[0]}'`);
+      return;
+    }
+    if (run.status !== 0) this.postStatus(MESSAGE_LEVEL.alert, `Program '${arguments_[0]}' complained`);
+    if (stamp !== null && this.fs.modificationStamp?.(path) === stamp) {
+      this.postStatus(MESSAGE_LEVEL.remark, 'Nothing changed');
+      return;
+    }
+    const content = this.fs.readFile(path);
+    if (content === null) return;
+    const decoded = decodeFile(content, !this.live.noconvert, false);
+    this.undoBegin('COUPLE', spelling ? 'spelling correction' : 'formatting');
+    if (region !== null) {
+      this.excise(region);
+      this.insertText(decoded.lines.join('\n'));
+      if (markWasBefore) wasCol = this._cursorCol;
+      else this.markCol = this._cursorCol;
+      this.markLine = wasMarkLine === null ? null : Math.min(wasMarkLine, this.linesArr.length - 1);
+    } else {
+      this.linesArr = [''];
+      this._cursorLine = 0;
+      this._cursorCol = 0;
+      this.insertText(decoded.lines.join('\n'));
+      this.ensureTrailingBlankLine();
+    }
+    this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
+    this._cursorCol = Math.min(wasCol, this.line(this._cursorLine).length);
+    if (wasAtEnd) this._cursorCol = this.line(this._cursorLine).length;
+    this.placeWant = wasPlaceWant;
+    this.verticalKey = true;
+    this.manner = 'stationary';
+    this.undoFinish();
+    this._modified = true;
+    this.postStatus(MESSAGE_LEVEL.remark, spelling ? 'Finished checking spelling' : 'Buffer has been processed');
   }
 
   private runChildShell(command: string, stdin?: string): ChildShellRun {
@@ -2446,12 +3033,7 @@ export class NanoEngine {
   }
 
   private writeFailureReason(name: string, target: string): string {
-    const parentKind = this.pathKind(directoryNameOf(target));
-    if (parentKind === 'missing') return 'No such file or directory';
-    if (parentKind !== 'directory') return 'Not a directory';
-    const kind = this.pathKind(target);
-    if (name.endsWith('/')) return kind === 'file' ? 'Not a directory' : 'Is a directory';
-    return kind === 'directory' ? 'Is a directory' : 'Permission denied';
+    return writeFailureReason(this.fs, name, target);
   }
 
   private pathKind(path: string): EditorPathKind {
@@ -2508,6 +3090,8 @@ export class NanoEngine {
       trimblanks: this.live.trimblanks,
       wrapAt: this.wrapAt,
       tabsize: this.live.tabsize,
+      punctuation: this.live.punct ?? DEFAULT_PUNCTUATION,
+      brackets: this.live.brackets ?? DEFAULT_BRACKETS,
     };
   }
 
@@ -2571,7 +3155,7 @@ export class NanoEngine {
       const trimmed = first.slice(leadLength(first, quote));
       piece[0] = primaryLead + trimmed;
       concatenateParagraph(piece, 0, count, quote);
-      piece[0] = squeeze(piece[0], primaryLead.length);
+      piece[0] = squeeze(piece[0], primaryLead.length, context.punctuation, context.brackets);
       rewrapParagraph(piece, 0, secondaryLead, context);
       if (start.col > 0) piece.unshift('');
       if (end.col > 0 && beforeEol) piece.push(primaryLead);
@@ -2658,7 +3242,7 @@ export class NanoEngine {
 
   private beginReplacePrompt(): void {
     if (this._readOnly) {
-      this._statusMessage = '[ Key is invalid in view mode ]';
+      this.refuseInViewMode();
       return;
     }
     this.searchDefaultText = this.searchDefaultNote();
@@ -2670,8 +3254,10 @@ export class NanoEngine {
   }
 
   private resetHistoryRecall(): void {
+    if (this.historyStash !== null && this.historyInUse !== null) this.tabPointers.delete(this.historyInUse);
     this.historyPosition = null;
     this.historyStash = null;
+    this.historyInUse = null;
   }
 
   private recallHistory(k: EditorKeyInput, history: string[], get: () => string, set: (value: string) => void): boolean {
@@ -2687,6 +3273,7 @@ export class NanoEngine {
     if (older) {
       if (this.historyStash === null) this.historyPosition = history.length;
       if (this.historyPosition === history.length) this.historyStash = get();
+      this.historyInUse = history;
       if (this.historyPosition !== null && this.historyPosition > 0) {
         this.historyPosition--;
         replace(history[this.historyPosition]);
@@ -2703,9 +3290,9 @@ export class NanoEngine {
   }
 
   private rememberInHistory(history: string[], text: string): void {
-    const at = history.indexOf(text);
-    if (at >= 0) history.splice(at, 1);
-    history.push(text);
+    appendToHistory(history, text, true);
+    this.historyChanged = true;
+    this.tabPointers.delete(history);
   }
 
   private searchStyle(): SearchStyle {
@@ -2936,5 +3523,82 @@ export class NanoEngine {
     this._exited = true;
     this._savedOnExit = saved;
     this.dropLock();
+    if (this.helpTitle !== null) return;
+    this.recordLoggedPosition();
+    this.saveHistoryLists();
+  }
+
+  get exitNotice(): string {
+    return this.exitNotices.map((notice) => `${notice}\n`).join('');
+  }
+
+  private openStateFiles(): void {
+    if (this.helpTitle !== null || !(this.live.historylog || this.live.positionlog)) return;
+    const state = resolveStateDirectory(this.fs);
+    this.exitNotices.push(...state.errors);
+    if (state.errors.length > 0) this.startupProblem ??= STARTUP_PROBLEM;
+    if (state.path === null) {
+      this.live.historylog = false;
+      this.live.positionlog = false;
+      return;
+    }
+    this.stateDirectory = state.path;
+    if (this.live.historylog) this.loadHistoryLists(`${state.path}${SEARCH_HISTORY_FILE}`);
+    if (this.live.positionlog) this.refuseUnreadable(this.positionFile(), () => { this.live.positionlog = false; });
+  }
+
+  private loadHistoryLists(file: string): void {
+    if (!this.refuseUnreadable(file, () => { this.live.historylog = false; })) return;
+    const lists = parseHistoryLists(this.fs.readFile(file) ?? '');
+    this.searchHistory = lists.search;
+    this.replaceHistory = lists.replace;
+    this.executeHistory = lists.execute;
+  }
+
+  private refuseUnreadable(file: string, giveUp: () => void): boolean {
+    const failure = this.fs.readError?.(file) ?? null;
+    if (failure === null) return true;
+    this.exitNotices.push(`Error reading ${file}: ${failure}`);
+    this.startupProblem ??= STARTUP_PROBLEM;
+    giveUp();
+    return false;
+  }
+
+  private positionFile(): string {
+    return `${this.stateDirectory}${POSITION_HISTORY_FILE}`;
+  }
+
+  private restoreLoggedPosition(typedName: string): void {
+    if (!this.live.positionlog || this.stateDirectory === null) return;
+    const fullPath = fullPathOf(typedName, this.fs);
+    if (fullPath === null) return;
+    const entry = findPosition(parsePositionHistory(this.fs.readFile(this.positionFile()) ?? ''), fullPath);
+    if (entry === null) return;
+    this.gotoLineNumbers(entry.line, entry.column);
+    this.startPlacement = 'hugfloor';
+  }
+
+  private recordLoggedPosition(): void {
+    if (!this.live.positionlog || this.stateDirectory === null || this.titleName === '') return;
+    const fullPath = fullPathOf(this.titleName, this.fs);
+    if (fullPath === null) return;
+    const file = this.positionFile();
+    const entries = parsePositionHistory(this.fs.readFile(file) ?? '');
+    const atDefault = this._cursorLine === 0 && this._cursorCol === 0;
+    const column = this.window.columnOf(this._cursorLine, this._cursorCol) + 1;
+    const updated = withPositionRecorded(entries, fullPath, this._cursorLine + 1, column, atDefault);
+    if (updated !== null) this.writeStateFile(file, serializePositionHistory(updated));
+  }
+
+  private saveHistoryLists(): void {
+    if (!this.live.historylog || !this.historyChanged || this.stateDirectory === null) return;
+    this.writeStateFile(`${this.stateDirectory}${SEARCH_HISTORY_FILE}`, serializeHistoryLists({
+      search: this.searchHistory, replace: this.replaceHistory, execute: this.executeHistory,
+    }));
+  }
+
+  private writeStateFile(path: string, content: string): void {
+    if (this.fs.writeFile(path, content)) this.fs.changeMode?.(path, 0o600);
+    else this.exitNotices.push(`Error writing ${path}: ${this.writeFailureReason(path, path)}`);
   }
 }

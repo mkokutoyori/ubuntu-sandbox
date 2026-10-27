@@ -41,7 +41,7 @@ import {
   MeasureCommandCmdlet,
 } from './DateTimeCmdlets';
 import {
-  SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet,
+  SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet, ConvertPathCmdlet,
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
   ClearContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
@@ -55,11 +55,11 @@ import {
   ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
-  SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
   GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
+import { SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet } from './LocationCmdlets';
 import { AddMemberCmdlet } from './AddMemberCmdlet';
 import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
@@ -337,6 +337,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new JoinPathCmdlet());
   registry.register(new TestPathCmdlet());
   registry.register(new ResolvePathCmdlet());
+  registry.register(new ConvertPathCmdlet());
   registry.register(new GetChildItemCmdlet());
   registry.register(new GetContentCmdlet());
   registry.register(new SetContentCmdlet());

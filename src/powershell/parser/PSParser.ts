@@ -467,8 +467,32 @@ export class PSParser {
           && v !== 'finally' && v !== 'default' && v !== 'end' && v !== 'process' && v !== 'begin');
   }
 
+  private standsAlone(): boolean {
+    const token = this.peek();
+    const next = this.peekAt(1);
+    return next === undefined || next.type === PSTokenType.EOF || next.type === PSTokenType.NEWLINE
+      || next.type === PSTokenType.SEMICOLON || next.type === PSTokenType.PIPE
+      || next.position.offset > token.position.offset + token.value.length;
+  }
+
+  private startsSymbolArgumentCommand(): boolean {
+    const head = this.peek();
+    const next = this.peekAt(1);
+    if (head.type !== PSTokenType.WORD || next === undefined) return false;
+    const separated = next.position.offset > (head.end ?? head.position.offset + head.value.length);
+    return separated && (next.type === PSTokenType.DOT || next.type === PSTokenType.RANGE || BAREWORD_LEADERS.has(next.type));
+  }
+
+  private parseCommandPipelineOnRight(pos: SourcePosition): PSExpression {
+    const commands: PSCommand[] = [this.parseCommand()];
+    while (this.check(PSTokenType.PIPE)) { this.advance(); commands.push(this.parseCommand()); }
+    const redirections = this.parseRedirections();
+    return { type: 'PipelineExpression', pipeline: makePipeline(commands, pos), redirections, position: pos };
+  }
+
   private startsCommandArgument(): boolean {
     const t = this.peek().type;
+    if ((t === PSTokenType.MINUS || t === PSTokenType.PLUS) && this.standsAlone()) return true;
     if (this.canStartExpression()) return true;
     if (t === PSTokenType.PLUS) {
       const suite = this.peekAt(1);
@@ -728,6 +752,9 @@ export class PSParser {
    */
   private parseCommandArgumentAtom(): PSExpression {
     const tok = this.peek();
+    if ((tok.type === PSTokenType.MINUS || tok.type === PSTokenType.PLUS) && this.standsAlone()) {
+      return this.parseBareword(false);
+    }
     // A command-argument value beginning with unary `-`/`+` (`-Age -5`,
     // `-Minimum -10`, `-n -$x`) — parse the full unary expression;
     // parsePostfixExpression alone can't consume the prefix sign.
@@ -910,6 +937,8 @@ export class PSParser {
     }
     const typedChain = this.check(PSTokenType.TYPE) ? this.typedAssignmentTypeCount() : 0;
     if (typedChain > 0) return this.parseTypedAssignment(typedChain) as unknown as PSExpression;
+
+    if (this.startsSymbolArgumentCommand()) return this.parseCommandPipelineOnRight(pos);
 
     const first = this.parseCommaList();
 

@@ -35,6 +35,8 @@ import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
   ArithmeticError, ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
+import { backgroundGroupText } from './CommandText';
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { isBuiltin, isShellBuiltinName, executeBuiltin } from '@/bash/runtime/Builtins';
 import { parseDeclarationFlags } from '@/bash/runtime/Declare';
 import type { DeclarationCommand } from '@/bash/runtime/Declare';
@@ -152,6 +154,11 @@ export interface IOContext {
    * the file to the job's pid once the redirection is applied.
    */
   bindBackgroundStdout?(pid: number, path: string): void;
+  bindBackgroundStderr?(pid: number, path: string, append: boolean): void;
+  holdBackgroundStdin?(pid: number, path: string): void;
+  beginBackgroundSubshell?(label: string): number;
+  endBackgroundSubshell?(pid: number, outcome: { cwd: string; image: readonly string[] | null; output: string; exitCode: number; parked: boolean }): void;
+  backgroundAnnouncement?(pid: number): string | null;
 }
 
 type Sink =
@@ -399,6 +406,7 @@ export class BashInterpreter {
         feed = normalizeResult(await this.executeCommand(
           step.value.argv, step.value.env, step.value.background, step.value.outputPiped,
           step.value.stdin));
+        await yieldWhenSliceIsSpent();
       } catch (e) {
         if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
@@ -697,6 +705,9 @@ export class BashInterpreter {
 
   private lastLineOriented: boolean | undefined = undefined;
   private pendingBackground = false;
+  private backgroundLastStage = false;
+  private execImage: string[] | null = null;
+  private daemonDepth = 0;
 
   private *visitAndOrList(node: AndOrList): Effects<void> {
     if (node.background && node.rest.length === 0
@@ -706,6 +717,26 @@ export class BashInterpreter {
       try {
         yield* this.visitPipeline(node.first);
       } finally {
+        this.pendingBackground = false;
+      }
+      this.env.lastExitCode = 0;
+      return;
+    }
+    if (node.background && node.rest.length === 0 && !node.first.negated
+        && node.first.commands.length === 1
+        && (node.first.commands[0].type === 'Subshell' || node.first.commands[0].type === 'BraceGroup')
+        && this.io?.beginBackgroundSubshell !== undefined) {
+      yield* this.runBackgroundGroup(node.first.commands[0]);
+      this.env.lastExitCode = 0;
+      return;
+    }
+    if (node.background && node.rest.length === 0 && !node.first.negated
+        && node.first.commands.length > 1 && node.first.commands.every((command) => command.type === 'SimpleCommand')) {
+      this.backgroundLastStage = true;
+      try {
+        yield* this.visitPipeline(node.first);
+      } finally {
+        this.backgroundLastStage = false;
         this.pendingBackground = false;
       }
       this.env.lastExitCode = 0;
@@ -819,6 +850,10 @@ export class BashInterpreter {
       // must NOT trigger errexit, only the final stage's (or, with
       // pipefail, the aggregate) does.
       const isLast = i === node.commands.length - 1;
+      if (isLast && this.backgroundLastStage) {
+        this.backgroundLastStage = false;
+        this.pendingBackground = true;
+      }
       if (!isLast) this.errexitSuppress++;
       const savedNonLastStage = this.nonLastPipelineStage;
       if (!isLast) this.nonLastPipelineStage = true;
@@ -1061,7 +1096,10 @@ export class BashInterpreter {
     }
 
     const backgroundedPid = yield* this.runWithPlan(plan, cmdName, () => this.dispatchCommand(args, node, plan));
-    if (backgroundedPid !== undefined) yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
+    if (backgroundedPid !== undefined) {
+      yield* this.bindBackgroundStdout(node.redirections, backgroundedPid);
+      this.announceBackground(backgroundedPid);
+    }
 
     this.flushOutSubs();
 
@@ -1103,7 +1141,10 @@ export class BashInterpreter {
       // `command` runs its operand skipping function and alias lookup.
       yield* this.runCommandWord(args.slice(1));
     } else if (cmdName === 'exec') {
-      if (args.length > 1) yield* this.runCommandWord(args.slice(1));
+      if (args.length > 1) {
+        this.execImage = args.slice(1);
+        yield* this.runCommandWord(args.slice(1));
+      }
     } else if (fn) {
       yield* this.callFunction(fn, args.slice(1), cmdName);
     } else if (cmdName === 'wait' && this.waitForJobs(args.slice(1))) {
@@ -1353,10 +1394,18 @@ export class BashInterpreter {
   /** Apply output redirections to captured output. */
   private *bindBackgroundStdout(redirections: Redirection[], pid: number): Effects<void> {
     if (!this.io?.bindBackgroundStdout) return;
+    let stdoutPath: string | undefined;
     for (const redir of redirections) {
-      if ((redir.op !== '>' && redir.op !== '>>') || (redir.fd !== undefined && redir.fd !== 1)) continue;
       const target = yield* this.expandWordG(redir.target);
-      this.io.bindBackgroundStdout(pid, this.absolutePath(target));
+      if (redir.fd === 2) {
+        if (redir.op === '>' || redir.op === '>>') this.io.bindBackgroundStderr?.(pid, this.absolutePath(target), redir.op === '>>');
+        else if (redir.op === '>&' && target === '1' && stdoutPath !== undefined) this.io.bindBackgroundStderr?.(pid, stdoutPath, true);
+      } else if ((redir.op === '>' || redir.op === '>>') && (redir.fd === undefined || redir.fd === 1)) {
+        stdoutPath = this.absolutePath(target);
+        this.io.bindBackgroundStdout(pid, stdoutPath);
+      } else if (redir.op === '<' && (redir.fd === undefined || redir.fd === 0)) {
+        this.io.holdBackgroundStdin?.(pid, this.absolutePath(target));
+      }
     }
   }
 
@@ -1636,7 +1685,7 @@ export class BashInterpreter {
 
   private *runConditionLoop(condition: CommandList, body: CommandList, whileTrue: boolean): Effects<void> {
     const MAX_ITERATIONS = 10000;
-    const parkAfterFirst = this.daemonMode && isUnconditional(condition, whileTrue);
+    const parkAfterFirst = (this.daemonMode || this.daemonDepth > 0) && isUnconditional(condition, whileTrue);
     let iterations = 0;
     let status = 0;
     while (iterations++ < MAX_ITERATIONS) {
@@ -1826,6 +1875,47 @@ export class BashInterpreter {
   }
 
   // ─── Brace Group & Subshell ───────────────────────────────────
+
+  private announceBackground(pid: number): void {
+    if (!this.interactive) return;
+    const text = this.io?.backgroundAnnouncement?.(pid);
+    if (text) this.log.write(1, `${text}\n`, 'never');
+  }
+
+  private *runBackgroundGroup(group: Subshell | BraceGroup): Effects<void> {
+    const io = this.io!;
+    const pid = io.beginBackgroundSubshell!(backgroundGroupText(group));
+    this.env.recordBackgroundPid(String(pid));
+    const parentEnv = this.env;
+    const parentLog = this.log;
+    const parentImage = this.execImage;
+    const childEnv = parentEnv.createSubshell();
+    this.env = childEnv;
+    this.log = new OutputLog();
+    this.execImage = null;
+    let output = '';
+    let parked = false;
+    this.daemonDepth++;
+    try {
+      yield* this.withRedirections(group.redirections, () => this.visitCommandList(group.body));
+    } catch (error) {
+      if (error instanceof ExitSignal) childEnv.lastExitCode = error.exitCode;
+      else if (error instanceof DaemonParkSignal) parked = true;
+      else throw error;
+    } finally {
+      this.daemonDepth--;
+      output = this.log.terminal();
+      this.log = parentLog;
+      this.env = parentEnv;
+    }
+    io.endBackgroundSubshell!(pid, {
+      cwd: childEnv.get('PWD') ?? io.resolvePath('.'), image: this.execImage, output, exitCode: childEnv.lastExitCode, parked,
+    });
+    if (parked || this.execImage !== null) this.externalChildren.add(String(pid));
+    else this.jobs.set(String(pid), childEnv.lastExitCode);
+    this.execImage = parentImage;
+    this.announceBackground(pid);
+  }
 
   private *visitBraceGroup(node: BraceGroup): Effects<void> {
     yield* this.visitCommandList(node.body);

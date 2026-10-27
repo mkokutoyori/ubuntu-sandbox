@@ -103,7 +103,7 @@ describe('the counters follow tcp_get_info', () => {
       segmentsOut: 2, segmentsIn: 1, dataSegmentsOut: 0, dataSegmentsIn: 0,
       delivered: 1, unacked: 0, retrans: 0, totalRetrans: 0, retransmits: 0, backoff: 0, probes: 0,
     });
-    expect(queues).toEqual({ receive: 0, send: 0 });
+    expect(queues).toEqual({ receive: 0, send: 0, unread: 0 });
     expect(timer).toBeNull();
   });
 
@@ -145,7 +145,7 @@ describe('the counters follow tcp_get_info', () => {
       bytesSent: 5, bytesAcked: 6, dataSegmentsOut: 1, segmentsOut: 3, segmentsIn: 2,
       delivered: 2, unacked: 0, lastDataSentMs: 5, lastAckReceivedMs: 0,
     });
-    expect(queues).toEqual({ receive: 0, send: 0 });
+    expect(queues).toEqual({ receive: 0, send: 0, unread: 0 });
     expect(timer).toBeNull();
   });
 
@@ -215,7 +215,7 @@ describe('the files: Recv-Q is unread octets, Send-Q is everything written and n
     const request = peer.dut.getTcpStack().listSockets()[0];
     const { queues, timer } = view(peer, request);
     expect(request.state).toBe('syn-received');
-    expect(queues).toEqual({ receive: 0, send: 0 });
+    expect(queues).toEqual({ receive: 0, send: 0, unread: 0 });
     expect(timer).toEqual({ kind: 'on', expiresInMs: 1000, retransmits: 0 });
   });
 });
@@ -253,7 +253,7 @@ describe('the timers: which one is armed, when it expires, and its third value',
     const { info, queues, timer } = view(peer, socket);
     expect(info.state).toBe('time-wait');
     expect(timer).toEqual({ kind: 'timewait', expiresInMs: 59_000, retransmits: 0 });
-    expect(queues).toEqual({ receive: 0, send: 0 });
+    expect(queues).toEqual({ receive: 0, send: 0, unread: 0 });
   });
 
   it('an idle established connection with nothing in flight and no keep-alive has no timer', () => {

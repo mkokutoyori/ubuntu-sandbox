@@ -1,11 +1,12 @@
 export type Errno =
   | 'EPERM' | 'ENOENT' | 'ENODEV' | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
   | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
-  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT';
+  | 'EOPNOTSUPP' | 'EPIPE' | 'EPROTO' | 'ECONNRESET' | 'ETIMEDOUT' | 'EBADMSG' | 'ENODATA' | 'EPROTONOSUPPORT' | 'ENOKEY' | 'EIO' | 'ERANGE' | 'ESRCH' | 'ENOTDIR' | 'EFBIG' | 'ENOMEM' | 'EINPROGRESS';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EPERM: { number: 1, text: 'Operation not permitted' },
   ENOENT: { number: 2, text: 'No such file or directory' },
+  ESRCH: { number: 3, text: 'No such process' },
   ENODEV: { number: 19, text: 'No such device' },
   EACCES: { number: 13, text: 'Permission denied' },
   EADDRINUSE: { number: 98, text: 'Address already in use' },
@@ -24,6 +25,16 @@ const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EPROTO: { number: 71, text: 'Protocol error' },
   ECONNRESET: { number: 104, text: 'Connection reset by peer' },
   ETIMEDOUT: { number: 110, text: 'Connection timed out' },
+  EBADMSG: { number: 74, text: 'Bad message' },
+  ENODATA: { number: 61, text: 'No data available' },
+  EPROTONOSUPPORT: { number: 93, text: 'Protocol not supported' },
+  ENOKEY: { number: 126, text: 'Required key not available' },
+  EIO: { number: 5, text: 'Input/output error' },
+  ERANGE: { number: 34, text: 'Numerical result out of range' },
+  ENOTDIR: { number: 20, text: 'Not a directory' },
+  EFBIG: { number: 27, text: 'File too large' },
+  ENOMEM: { number: 12, text: 'Cannot allocate memory' },
+  EINPROGRESS: { number: 115, text: 'Operation now in progress' },
 };
 
 export interface MessageTooLong {
@@ -34,6 +45,10 @@ export interface MessageTooLong {
 
 export function strerror(errno: Errno): string {
   return LINUX_ERRNO[errno].text;
+}
+
+export function errnoText(name: string): string {
+  return name in LINUX_ERRNO ? LINUX_ERRNO[name as Errno].text : name;
 }
 
 export function errnoNumber(errno: Errno): number {

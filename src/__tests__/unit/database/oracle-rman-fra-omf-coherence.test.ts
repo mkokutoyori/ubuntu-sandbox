@@ -33,6 +33,9 @@
  * nulle part ; et quatre variables de FORMAT sur huit traversaient le
  * nom de fichier telles quelles, %T rendant le tag au lieu de la date.
  *
+ * Corrige ensuite : le refus ORA-19809 de la troisieme sauvegarde supposait que la zone ne reprend jamais de place. Elle reprend celle des sauvegardes
+ * obsoletes selon la politique de retention (REDUNDANCY 1 par defaut) ; le refus ne vaut que lorsque rien n'est recuperable, d'ou CONFIGURE RETENTION POLICY TO NONE.
+ *
  * Discrimination par `git stash push -- src/database src/terminal src/network`
  * (sans -u, pour que les modules neufs restent chargeables) :
  * 10 cas sur 12 tombent avant le correctif.
@@ -177,11 +180,15 @@ describe('FORMAT : toute variable annoncée est substituée', () => {
 });
 
 describe('la FRA est un QUOTA, pas seulement un répertoire', () => {
-  it('une pièce qui dépasserait db_recovery_file_dest_size est refusée (ORA-19809)', () => {
+  it('une pièce qui dépasserait db_recovery_file_dest_size est refusée (ORA-19809) quand rien n\'est récupérable', () => {
     const srv = bootOracleServer('quota1');
-    expect(backupDatabase(srv)).toContain('Finished backup');
-    expect(backupDatabase(srv)).toContain('Finished backup');
-    const third = backupDatabase(srv);
+    const rman = ReactiveRmanSubShell.create(srv, ['target', '/']);
+    const run = (command: string): string => rman.subShell.processLine(command).output.join('\n');
+    run('configure retention policy to none;');
+    expect(run('backup database;')).toContain('Finished backup');
+    expect(run('backup database;')).toContain('Finished backup');
+    const third = run('backup database;');
+    rman.subShell.dispose();
     expect(third).toContain('ORA-19809');
     expect(third).toContain('ORA-19804');
     expect(sh(srv, 'find /u01/app/oracle/fast_recovery_area -name "*.bkp"')

@@ -28,15 +28,23 @@ export interface ActionArguments {
   readonly json: unknown[];
 }
 
-export interface ActionWorker {
-  doAction(args: ActionArguments, message: RsyslogMessage): ActionOutcome;
+interface ActionWorkerBase {
   tryResume?(): ActionOutcome;
-  beginTransaction?(): void;
-  endTransaction?(): ActionOutcome;
+  beginTransaction?(): ActionOutcome;
   pauseAfterAction?(): number;
   failureCode?(): number;
   close(): void;
 }
+
+export interface ImmediateActionWorker extends ActionWorkerBase {
+  doAction(args: ActionArguments, message: RsyslogMessage): ActionOutcome;
+}
+
+export interface TransactionalActionWorker extends ActionWorkerBase {
+  commitTransaction(batch: readonly ActionArguments[]): ActionOutcome;
+}
+
+export type ActionWorker = ImmediateActionWorker | TransactionalActionWorker;
 
 export interface ActionModuleInstance {
   readonly moduleName: string;
@@ -51,6 +59,7 @@ export interface RuntimeLog {
   error(text: string, code?: number, errno?: Errno): void;
   warning(text: string, code?: number): void;
   info(text: string, code?: number): void;
+  childExited(pid: number, exitCode: number): void;
   log(severity: number, code: number, text: string, errno?: Errno): void;
   internal(severity: number, code: number, text: string, mark?: boolean, facility?: number): void;
 }
@@ -74,6 +83,7 @@ export interface ModuleContext {
   readonly statistics: Statistics;
   readonly janitor: Janitor;
   recordSender(sender: string, messages: number, seconds: number): void;
+  localHostName(): string;
   template(name: string): Template | undefined;
   report(message: string): void;
   warn(message: string): void;
@@ -121,13 +131,14 @@ export interface InputInstance {
   readonly bindsBeforePrivilegeDrop?: boolean;
   check?(): void;
   start(): boolean;
+  run?(): void;
   stop(): void;
   hup?(): void;
   readonly description: string;
 }
 
 export interface InputSubmitter {
-  submit(info: InputSubmission): void;
+  submit(info: InputSubmission): boolean;
 }
 
 export interface PreparsedFields {
@@ -166,6 +177,8 @@ export interface InputSubmission {
   readonly mark?: boolean;
   readonly receivedAtMs?: number;
   readonly cee?: { readonly [key: string]: import('../Message').JsonValue };
+  readonly flowControl?: 'none' | 'light' | 'full';
+  readonly frameOversize?: boolean;
 }
 
 export interface InputContext extends ModuleContext {

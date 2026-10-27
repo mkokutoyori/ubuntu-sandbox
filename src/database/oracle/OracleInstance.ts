@@ -5,10 +5,8 @@
  * background processes, SGA/PGA parameters, and redo log groups.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
-import {
-  DEFAULT_HOST_CLOCK, hostOffsetSpec, hostWallDate, type OracleHostClock,
-} from './time/OracleHostClock';
+
+import { DEFAULT_HOST_CLOCK, hostOffsetSpec, hostWallDate, type OracleHostClock, hostNowDate, withHostClock } from './time/OracleHostClock';
 import type { OracleTimeZoneSpec } from './time/OracleTimeZone';
 
 import type { RedoRecord } from './storage/RedoStream';
@@ -137,7 +135,7 @@ export class OracleInstance {
    *  datafile headers (V$DATAFILE / V$DATAFILE_HEADER agree by design). */
   private _currentScn = 1_000_000;
   private _checkpointScn = 1_000_000;
-  private _checkpointTime = simulationDate();
+  private _checkpointTime = hostNowDate();
 
   // ── Reactive (Phase 7) ───────────────────────────────────────────
   /** Bus override; an instance with no host publishes on its own. */
@@ -342,6 +340,20 @@ export class OracleInstance {
 
   setHostClock(clock: OracleHostClock): void {
     this._hostClock = clock;
+  }
+
+  private atHostTime<T>(run: () => T): T {
+    return withHostClock(this._hostClock, run);
+  }
+
+  private _recoveryAreaReclaimProbe: (() => number) | null = null;
+
+  setRecoveryAreaReclaimProbe(probe: (() => number) | null): void {
+    this._recoveryAreaReclaimProbe = probe;
+  }
+
+  recoveryAreaReclaimableBytes(): number {
+    return this._recoveryAreaReclaimProbe?.() ?? 0;
   }
 
   hostClock(): OracleHostClock {
@@ -667,12 +679,14 @@ export class OracleInstance {
    * shutdowns — the same events as real Oracle.
    */
   performCheckpoint(): void {
-    this._checkpointScn = this.advanceScn();
-    this._checkpointTime = simulationDate();
-    this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
-    this.getBus().publish({
-      topic: 'oracle.storage.checkpoint-completed',
-      payload: { ...this.ref(), scn: this._checkpointScn },
+    this.atHostTime(() => {
+      this._checkpointScn = this.advanceScn();
+      this._checkpointTime = hostNowDate();
+      this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
+      this.getBus().publish({
+        topic: 'oracle.storage.checkpoint-completed',
+        payload: { ...this.ref(), scn: this._checkpointScn },
+      });
     });
   }
 
@@ -794,86 +808,88 @@ export class OracleInstance {
   get isOpen(): boolean { return this._state === 'OPEN'; }
 
   startup(mode?: 'NOMOUNT' | 'MOUNT' | 'RESTRICT' | 'FORCE'): string[] {
-    const output: string[] = [];
-    const now = simulationDate();
+    return this.atHostTime(() => {
+      const output: string[] = [];
+      const now = hostNowDate();
 
-    if (this._state === 'SHUTDOWN' && this._pendingDatabaseTimeZone !== null) {
-      this._databaseTimeZone = this._pendingDatabaseTimeZone;
-      this._pendingDatabaseTimeZone = null;
-    }
+      if (this._state === 'SHUTDOWN' && this._pendingDatabaseTimeZone !== null) {
+        this._databaseTimeZone = this._pendingDatabaseTimeZone;
+        this._pendingDatabaseTimeZone = null;
+      }
 
-    if (mode === 'FORCE' && this._state !== 'SHUTDOWN') {
-      output.push(...this.shutdown('ABORT'));
-    }
+      if (mode === 'FORCE' && this._state !== 'SHUTDOWN') {
+        output.push(...this.shutdown('ABORT'));
+      }
 
-    if (this._state !== 'SHUTDOWN') {
-      return [ORACLE_ERRORS.ORA_01081];
-    }
+      if (this._state !== 'SHUTDOWN') {
+        return [ORACLE_ERRORS.ORA_01081];
+      }
 
-    this._startupTime = now;
-    // STARTUP RESTRICT opens with RESTRICTED SESSION enabled; any other
-    // startup begins unrestricted (ALTER SYSTEM can toggle it later).
-    this._restrictedSession = mode === 'RESTRICT';
-    this.logAlert(`Starting ORACLE instance (${mode === 'RESTRICT' ? 'restrict' : 'normal'})`);
-    output.push(`ORACLE instance started.`);
-    output.push('');
+      this._startupTime = now;
+      // STARTUP RESTRICT opens with RESTRICTED SESSION enabled; any other
+      // startup begins unrestricted (ALTER SYSTEM can toggle it later).
+      this._restrictedSession = mode === 'RESTRICT';
+      this.logAlert(`Starting ORACLE instance (${mode === 'RESTRICT' ? 'restrict' : 'normal'})`);
+      output.push(`ORACLE instance started.`);
+      output.push('');
 
-    // NOMOUNT
-    this.transitionTo('NOMOUNT');
-    this.startBackgroundProcesses();
-    {
-      // Real startup banner prints exact byte counts derived from the
-      // live sga_target, not canned figures.
-      const sga = this.getSGAInfo();
-      const b = (spec: string): number => parseSize(spec);
-      const fixed = 2 * 1024 * 1024;
-      const variable = b(sga.sharedPool) + b(sga.largePool) + b(sga.javaPool);
-      output.push(`Total System Global Area ${padToWidth(String(b(sga.totalSize)), 10, 'right')} bytes`);
-      output.push(`Fixed Size               ${padToWidth(String(fixed), 10, 'right')} bytes`);
-      output.push(`Variable Size            ${padToWidth(String(variable), 10, 'right')} bytes`);
-      output.push(`Database Buffers         ${padToWidth(String(b(sga.bufferCache)), 10, 'right')} bytes`);
-      output.push(`Redo Buffers             ${padToWidth(String(b(sga.redoLogBuffer)), 10, 'right')} bytes`);
-    }
+      // NOMOUNT
+      this.transitionTo('NOMOUNT');
+      this.startBackgroundProcesses();
+      {
+        // Real startup banner prints exact byte counts derived from the
+        // live sga_target, not canned figures.
+        const sga = this.getSGAInfo();
+        const b = (spec: string): number => parseSize(spec);
+        const fixed = 2 * 1024 * 1024;
+        const variable = b(sga.sharedPool) + b(sga.largePool) + b(sga.javaPool);
+        output.push(`Total System Global Area ${padToWidth(String(b(sga.totalSize)), 10, 'right')} bytes`);
+        output.push(`Fixed Size               ${padToWidth(String(fixed), 10, 'right')} bytes`);
+        output.push(`Variable Size            ${padToWidth(String(variable), 10, 'right')} bytes`);
+        output.push(`Database Buffers         ${padToWidth(String(b(sga.bufferCache)), 10, 'right')} bytes`);
+        output.push(`Redo Buffers             ${padToWidth(String(b(sga.redoLogBuffer)), 10, 'right')} bytes`);
+      }
 
-    if (mode === 'NOMOUNT') {
-      this.logAlert('Instance started in NOMOUNT mode');
+      if (mode === 'NOMOUNT') {
+        this.logAlert('Instance started in NOMOUNT mode');
+        return output;
+      }
+
+      const missingCtl = this.missingControlFiles();
+      if (missingCtl.length > 0) {
+        this.logAlert('ORA-00210: cannot open the specified control file');
+        this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
+        output.push('ORA-00205: error in identifying control file, check alert log for more info');
+        return output;
+      }
+      this.transitionTo('MOUNT');
+      output.push(`Database mounted.`);
+      this.logAlert('Database mounted');
+
+      if (mode === 'MOUNT') return output;
+
+      // OPEN — DBWR must identify/lock every datafile first. A file
+      // deleted from the host filesystem surfaces here (not while the
+      // database was running), exactly like the real ORA-01157 ladder;
+      // the instance stays MOUNTed for RESTORE/RECOVER.
+      const missing = this.missingDatafiles();
+      if (missing.length > 0) {
+        const m = missing[0];
+        this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
+        output.push(`ORA-01157: cannot identify/lock data file ${m.fileNo} - see DBWR trace file`);
+        output.push(`ORA-01110: data file ${m.fileNo}: '${m.path}'`);
+        return output;
+      }
+      this.markOpen();
+      output.push(`Database opened.`);
+
+      if (mode === 'RESTRICT') {
+        output.push('Database opened in restricted mode.');
+        this.logAlert('Database opened in restricted mode');
+      }
+
       return output;
-    }
-
-    const missingCtl = this.missingControlFiles();
-    if (missingCtl.length > 0) {
-      this.logAlert('ORA-00210: cannot open the specified control file');
-      this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
-      output.push('ORA-00205: error in identifying control file, check alert log for more info');
-      return output;
-    }
-    this.transitionTo('MOUNT');
-    output.push(`Database mounted.`);
-    this.logAlert('Database mounted');
-
-    if (mode === 'MOUNT') return output;
-
-    // OPEN — DBWR must identify/lock every datafile first. A file
-    // deleted from the host filesystem surfaces here (not while the
-    // database was running), exactly like the real ORA-01157 ladder;
-    // the instance stays MOUNTed for RESTORE/RECOVER.
-    const missing = this.missingDatafiles();
-    if (missing.length > 0) {
-      const m = missing[0];
-      this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
-      output.push(`ORA-01157: cannot identify/lock data file ${m.fileNo} - see DBWR trace file`);
-      output.push(`ORA-01110: data file ${m.fileNo}: '${m.path}'`);
-      return output;
-    }
-    this.markOpen();
-    output.push(`Database opened.`);
-
-    if (mode === 'RESTRICT') {
-      output.push('Database opened in restricted mode.');
-      this.logAlert('Database opened in restricted mode');
-    }
-
-    return output;
+    });
   }
 
   /** Shared OPEN transition: redo state, alert log, service events. */
@@ -905,93 +921,99 @@ export class OracleInstance {
 
   /** ALTER DATABASE MOUNT — legal only from NOMOUNT (ORA-01100 otherwise). */
   mountDatabase(asStandby = false): void {
-    if (this._state === 'MOUNT' || this._state === 'OPEN') {
-      throw new OracleError(1100, 'database already mounted');
-    }
-    if (this._state !== 'NOMOUNT') {
-      throw new OracleError(1034, 'ORACLE not available');
-    }
-    const missingCtl = this.missingControlFiles();
-    if (missingCtl.length > 0) {
-      this.logAlert('ORA-00210: cannot open the specified control file');
-      this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
-      throw new OracleError(205, 'error in identifying control file, check alert log for more info');
-    }
-    this.transitionTo('MOUNT');
-    this.logAlert('Database mounted');
-    if (asStandby) {
-      this.setDatabaseRole('PHYSICAL STANDBY');
-      this.logAlert('Physical standby database mounted');
-    }
+    this.atHostTime(() => {
+      if (this._state === 'MOUNT' || this._state === 'OPEN') {
+        throw new OracleError(1100, 'database already mounted');
+      }
+      if (this._state !== 'NOMOUNT') {
+        throw new OracleError(1034, 'ORACLE not available');
+      }
+      const missingCtl = this.missingControlFiles();
+      if (missingCtl.length > 0) {
+        this.logAlert('ORA-00210: cannot open the specified control file');
+        this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
+        throw new OracleError(205, 'error in identifying control file, check alert log for more info');
+      }
+      this.transitionTo('MOUNT');
+      this.logAlert('Database mounted');
+      if (asStandby) {
+        this.setDatabaseRole('PHYSICAL STANDBY');
+        this.logAlert('Physical standby database mounted');
+      }
+    });
   }
 
   /** ALTER DATABASE OPEN — legal only from MOUNT (ORA-01507 / ORA-01531). */
   openDatabase(readOnly = false): void {
-    if (this._state === 'OPEN') {
-      throw new OracleError(1531, 'a database already open by the instance');
-    }
-    if (this._state !== 'MOUNT') {
-      throw new OracleError(1507, 'database not mounted');
-    }
-    const missing = this.missingDatafiles();
-    if (missing.length > 0) {
-      const m = missing[0];
-      this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
-      throw new OracleError(1157,
-        `cannot identify/lock data file ${m.fileNo} - see DBWR trace file\n` +
-        `ORA-01110: data file ${m.fileNo}: '${m.path}'`);
-    }
-    this.markOpen(readOnly);
+    this.atHostTime(() => {
+      if (this._state === 'OPEN') {
+        throw new OracleError(1531, 'a database already open by the instance');
+      }
+      if (this._state !== 'MOUNT') {
+        throw new OracleError(1507, 'database not mounted');
+      }
+      const missing = this.missingDatafiles();
+      if (missing.length > 0) {
+        const m = missing[0];
+        this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
+        throw new OracleError(1157,
+          `cannot identify/lock data file ${m.fileNo} - see DBWR trace file\n` +
+          `ORA-01110: data file ${m.fileNo}: '${m.path}'`);
+      }
+      this.markOpen(readOnly);
+    });
   }
 
   shutdown(mode?: 'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT'): string[] {
-    const output: string[] = [];
+    return this.atHostTime(() => {
+      const output: string[] = [];
 
-    if (this._state === 'SHUTDOWN') {
-      return [ORACLE_ERRORS.ORA_01034];
-    }
+      if (this._state === 'SHUTDOWN') {
+        return [ORACLE_ERRORS.ORA_01034];
+      }
 
-    const effectiveMode = mode ?? 'NORMAL';
-    this.logAlert(`Shutting down instance (${effectiveMode.toLowerCase()})`);
+      const effectiveMode = mode ?? 'NORMAL';
+      this.logAlert(`Shutting down instance (${effectiveMode.toLowerCase()})`);
 
-    if (this._state === 'OPEN') {
-      // Clean shutdowns checkpoint before closing (ABORT skips it, which
-      // is what makes the subsequent startup need instance recovery).
-      if (effectiveMode !== 'ABORT') this.performCheckpoint();
-      output.push('Database closed.');
-      this.logAlert('Database closed');
-    }
-    if (this._state === 'OPEN' || this._state === 'MOUNT') {
-      output.push('Database dismounted.');
-      this.logAlert('Database dismounted');
-    }
+      if (this._state === 'OPEN') {
+        // Clean shutdowns checkpoint before closing (ABORT skips it, which
+        // is what makes the subsequent startup need instance recovery).
+        if (effectiveMode !== 'ABORT') this.performCheckpoint();
+        output.push('Database closed.');
+        this.logAlert('Database closed');
+      }
+      if (this._state === 'OPEN' || this._state === 'MOUNT') {
+        output.push('Database dismounted.');
+        this.logAlert('Database dismounted');
+      }
 
-    output.push('ORACLE instance shut down.');
-    this.logAlert('Instance shut down');
+      output.push('ORACLE instance shut down.');
+      this.logAlert('Instance shut down');
 
-    // Emit background-process-stopped for each running process BEFORE we
-    // tear them down, so subscribers can clean up the device process table.
-    for (const p of this._backgroundProcesses) {
-      this.getBus().publish({
-        topic: 'oracle.instance.background-process-stopped',
-        payload: { ...this.ref(), name: p.name, pid: p.pid },
-      });
-    }
-    for (const sp of [...this._serverProcesses.keys()]) {
-      this.releaseServerProcess(sp);
-    }
-    this.transitionTo('SHUTDOWN');
-    this._startupTime = null;
-    this._restrictedSession = false;
-    this._backgroundProcesses = [];
-    for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
+      // Emit background-process-stopped for each running process BEFORE we
+      // tear them down, so subscribers can clean up the device process table.
+      for (const p of this._backgroundProcesses) {
+        this.getBus().publish({
+          topic: 'oracle.instance.background-process-stopped',
+          payload: { ...this.ref(), name: p.name, pid: p.pid },
+        });
+      }
+      for (const sp of [...this._serverProcesses.keys()]) {
+        this.releaseServerProcess(sp);
+      }
+      this.transitionTo('SHUTDOWN');
+      this._startupTime = null;
+      this._restrictedSession = false;
+      this._backgroundProcesses = [];
+      for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
 
-    if (this._schedulerSweepActor) {
-      this._schedulerSweepActor.stop();
-      this._schedulerSweepActor = null;
-    }
+      if (this._schedulerSweepActor) {
+        this._schedulerSweepActor.stop();
+        this._schedulerSweepActor = null;
+      }
 
-    return output;
+      return output;
+    });
   }
 
   // ── Background processes ──────────────────────────────────────────
@@ -1040,38 +1062,40 @@ export class OracleInstance {
    *   live background process of this instance.
    */
   handleBackgroundProcessDeath(pid: number): 'crashed' | 'restarted' | 'unknown' {
-    if (this._state === 'SHUTDOWN') return 'unknown';
-    const proc = this.getBackgroundProcessByPid(pid);
-    if (!proc) return 'unknown';
+    return this.atHostTime(() => {
+      if (this._state === 'SHUTDOWN') return 'unknown';
+      const proc = this.getBackgroundProcessByPid(pid);
+      if (!proc) return 'unknown';
 
-    if (OracleInstance.CRITICAL_BG_PROCESSES.has(proc.name)) {
-      // Capture PMON's pid for the banner before shutdown() tears the
-      // process list down (PMON itself is the reaper, or the victim).
-      const pmonPid = this.getBackgroundProcesses().find(p => p.name === 'PMON')?.pid ?? proc.pid;
-      const errno = OracleInstance.BG_TERMINATION_ERROR[proc.name] ?? 474;
-      this.logAlert(`${proc.name} (ospid: ${proc.pid}): terminated with error`);
-      this.logAlert(`PMON (ospid: ${pmonPid}): terminating the instance due to error ${errno}`);
-      this.logAlert(`Instance terminated by PMON, pid = ${pmonPid}`);
-      // Fatal death == SHUTDOWN ABORT: skips the checkpoint, leaving the
-      // instance needing recovery on the next startup.
-      this.shutdown('ABORT');
-      return 'crashed';
-    }
+      if (OracleInstance.CRITICAL_BG_PROCESSES.has(proc.name)) {
+        // Capture PMON's pid for the banner before shutdown() tears the
+        // process list down (PMON itself is the reaper, or the victim).
+        const pmonPid = this.getBackgroundProcesses().find(p => p.name === 'PMON')?.pid ?? proc.pid;
+        const errno = OracleInstance.BG_TERMINATION_ERROR[proc.name] ?? 474;
+        this.logAlert(`${proc.name} (ospid: ${proc.pid}): terminated with error`);
+        this.logAlert(`PMON (ospid: ${pmonPid}): terminating the instance due to error ${errno}`);
+        this.logAlert(`Instance terminated by PMON, pid = ${pmonPid}`);
+        // Fatal death == SHUTDOWN ABORT: skips the checkpoint, leaving the
+        // instance needing recovery on the next startup.
+        this.shutdown('ABORT');
+        return 'crashed';
+      }
 
-    // Non-fatal: PMON restarts the dead process. Reap the old pid from the
-    // host process table, then advertise the replacement under a new pid.
-    this.getBus().publish({
-      topic: 'oracle.instance.background-process-stopped',
-      payload: { ...this.ref(), name: proc.name, pid: proc.pid },
+      // Non-fatal: PMON restarts the dead process. Reap the old pid from the
+      // host process table, then advertise the replacement under a new pid.
+      this.getBus().publish({
+        topic: 'oracle.instance.background-process-stopped',
+        payload: { ...this.ref(), name: proc.name, pid: proc.pid },
+      });
+      proc.pid = this.nextPid();
+      this.logAlert(`Process termination detected (ospid: ${pid})`);
+      this.logAlert(`Restarting dead background process ${proc.name}`);
+      this.getBus().publish({
+        topic: 'oracle.instance.background-process-started',
+        payload: { ...this.ref(), name: proc.name, pid: proc.pid, description: proc.description },
+      });
+      return 'restarted';
     });
-    proc.pid = this.nextPid();
-    this.logAlert(`Process termination detected (ospid: ${pid})`);
-    this.logAlert(`Restarting dead background process ${proc.name}`);
-    this.getBus().publish({
-      topic: 'oracle.instance.background-process-started',
-      payload: { ...this.ref(), name: proc.name, pid: proc.pid, description: proc.description },
-    });
-    return 'restarted';
   }
 
   private _serverProcesses = new Map<number, ServerProcess>();
@@ -1134,41 +1158,43 @@ export class OracleInstance {
   }
 
   switchLogfile(): string {
-    if (this._state !== 'OPEN') return ORACLE_ERRORS.ORA_01034;
-    // A log switch triggers a (media-recovery) checkpoint in real Oracle.
-    this.performCheckpoint();
-    const currentGroup = this._redoLogGroups.find(g => g.status === 'CURRENT');
-    if (currentGroup) {
-      currentGroup.status = 'ACTIVE';
-      currentGroup.sequence = this._redoSequence;
-    }
-    this._redoSequence++;
-    const oldGroupNum = this._currentRedoGroup;
-    this._currentRedoGroup = (this._currentRedoGroup % this._redoLogGroups.length) + 1;
-    const nextGroup = this._redoLogGroups[this._currentRedoGroup - 1];
-    nextGroup.status = 'CURRENT';
-    nextGroup.sequence = this._redoSequence;
-    this.logAlert(`Thread 1 advanced to log sequence ${this._redoSequence}`);
-    this.getBus().publish({
-      topic: 'oracle.instance.redo-log-switched',
-      payload: {
-        ...this.ref(),
-        oldGroup: oldGroupNum,
-        newGroup: this._currentRedoGroup,
-        sequence: this._redoSequence,
-      },
-    });
-    if (this._archiveLogMode) {
-      const archivePath = `${ORACLE_CONFIG.BASE}/archivelog/1_${this._redoSequence - 1}_arc.arc`;
+    return this.atHostTime(() => {
+      if (this._state !== 'OPEN') return ORACLE_ERRORS.ORA_01034;
+      // A log switch triggers a (media-recovery) checkpoint in real Oracle.
+      this.performCheckpoint();
+      const currentGroup = this._redoLogGroups.find(g => g.status === 'CURRENT');
+      if (currentGroup) {
+        currentGroup.status = 'ACTIVE';
+        currentGroup.sequence = this._redoSequence;
+      }
+      this._redoSequence++;
+      const oldGroupNum = this._currentRedoGroup;
+      this._currentRedoGroup = (this._currentRedoGroup % this._redoLogGroups.length) + 1;
+      const nextGroup = this._redoLogGroups[this._currentRedoGroup - 1];
+      nextGroup.status = 'CURRENT';
+      nextGroup.sequence = this._redoSequence;
+      this.logAlert(`Thread 1 advanced to log sequence ${this._redoSequence}`);
       this.getBus().publish({
-        topic: 'oracle.archive-log.created',
+        topic: 'oracle.instance.redo-log-switched',
         payload: {
-          ...this.ref(), sequence: this._redoSequence - 1, path: archivePath,
-          scn: this.getCurrentScn(), redo: this.drainRedo(), origin: 'SWITCH',
+          ...this.ref(),
+          oldGroup: oldGroupNum,
+          newGroup: this._currentRedoGroup,
+          sequence: this._redoSequence,
         },
       });
-    }
-    return `System altered.`;
+      if (this._archiveLogMode) {
+        const archivePath = `${ORACLE_CONFIG.BASE}/archivelog/1_${this._redoSequence - 1}_arc.arc`;
+        this.getBus().publish({
+          topic: 'oracle.archive-log.created',
+          payload: {
+            ...this.ref(), sequence: this._redoSequence - 1, path: archivePath,
+            scn: this.getCurrentScn(), redo: this.drainRedo(), origin: 'SWITCH',
+          },
+        });
+      }
+      return `System altered.`;
+    });
   }
 
   getRedoLogGroups(): RedoLogGroup[] {
@@ -1290,19 +1316,21 @@ export class OracleInstance {
   }
 
   setParameter(name: string, value: string, scope?: 'MEMORY' | 'SPFILE' | 'BOTH'): void {
-    const key = name.toLowerCase();
-    const effectiveScope = scope ?? 'BOTH';
-    const oldValue = this._parameters.get(key);
-    if (effectiveScope === 'MEMORY' || effectiveScope === 'BOTH') {
-      this._parameters.set(key, value);
-    }
-    if (effectiveScope === 'SPFILE' || effectiveScope === 'BOTH') {
-      this._spfileParams.set(key, value);
-    }
-    this._modifiedParams.add(key);
-    this.getBus().publish({
-      topic: 'oracle.instance.parameter-changed',
-      payload: { ...this.ref(), key, oldValue, newValue: value, scope: effectiveScope },
+    this.atHostTime(() => {
+      const key = name.toLowerCase();
+      const effectiveScope = scope ?? 'BOTH';
+      const oldValue = this._parameters.get(key);
+      if (effectiveScope === 'MEMORY' || effectiveScope === 'BOTH') {
+        this._parameters.set(key, value);
+      }
+      if (effectiveScope === 'SPFILE' || effectiveScope === 'BOTH') {
+        this._spfileParams.set(key, value);
+      }
+      this._modifiedParams.add(key);
+      this.getBus().publish({
+        topic: 'oracle.instance.parameter-changed',
+        payload: { ...this.ref(), key, oldValue, newValue: value, scope: effectiveScope },
+      });
     });
   }
 
@@ -1352,7 +1380,7 @@ export class OracleInstance {
   // ── Alert log ────────────────────────────────────────────────────
 
   private logAlert(message: string): void {
-    const ts = simulationDate().toISOString().replace('T', ' ').slice(0, 19);
+    const ts = hostWallDate(this._hostClock).toISOString().replace('T', ' ').slice(0, 19);
     const line = `${ts}: ${message}`;
     this._alertLog.push(line);
     this.getBus().publish({
@@ -1367,7 +1395,9 @@ export class OracleInstance {
    * matching the way a real Oracle instance writes to `alert.log`.
    */
   logAlertEvent(message: string): void {
-    this.logAlert(message);
+    this.atHostTime(() => {
+      this.logAlert(message);
+    });
   }
 
   getAlertLog(): string[] {
@@ -1401,13 +1431,15 @@ export class OracleInstance {
   setFlashbackOn(on: boolean): void { this._flashbackOn = on; }
 
   setArchiveLogMode(enabled: boolean): string {
-    if (this._state !== 'MOUNT') {
-      return ORACLE_ERRORS.ORA_01126;
-    }
-    this._archiveLogMode = enabled;
-    this._parameters.set('archive_log_mode', enabled ? 'ENABLED' : 'DISABLED');
-    this.logAlert(`Archive log mode ${enabled ? 'enabled' : 'disabled'}`);
-    return 'Database altered.';
+    return this.atHostTime(() => {
+      if (this._state !== 'MOUNT') {
+        return ORACLE_ERRORS.ORA_01126;
+      }
+      this._archiveLogMode = enabled;
+      this._parameters.set('archive_log_mode', enabled ? 'ENABLED' : 'DISABLED');
+      this.logAlert(`Archive log mode ${enabled ? 'enabled' : 'disabled'}`);
+      return 'Database altered.';
+    });
   }
 
   // ── Version ──────────────────────────────────────────────────────
@@ -1463,62 +1495,66 @@ export class OracleInstance {
   }
 
   startListener(): string {
-    const configuredPort = this.readListenerOraPort();
-    if (configuredPort !== null) this._listener.setPort(configuredPort);
-    if (!this._listener.start()) {
-      return TNS_ERRORS.TNS_01106;
-    }
-    this.logAlert('Listener LISTENER started successfully');
-    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${this._listener.port}))`;
-    this.getBus().publish({
-      topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port, pid: this._listener.pid },
+    return this.atHostTime(() => {
+      const configuredPort = this.readListenerOraPort();
+      if (configuredPort !== null) this._listener.setPort(configuredPort);
+      if (!this._listener.start()) {
+        return TNS_ERRORS.TNS_01106;
+      }
+      this.logAlert('Listener LISTENER started successfully');
+      const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${this._listener.port}))`;
+      this.getBus().publish({
+        topic: 'oracle.listener.event',
+        payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port, pid: this._listener.pid },
+      });
+      this.getBus().publish({
+        topic: 'oracle.service.event',
+        payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
+      });
+      const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
+      const port = this._listener.port;
+      const sid = this.config.sid;
+      return [
+        `LSNRCTL for Linux: Version ${ver} - Production`,
+        `Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`,
+        '',
+        `TNSLSNR for Linux: Version ${ver} - Production`,
+        `System parameter file is ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
+        `Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/alert/log.xml`,
+        `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
+        '',
+        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
+        ...this._listener.statusBody(),
+        '',
+        'Listener started successfully.',
+      ].join('\n');
     });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
-    });
-    const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = this._listener.port;
-    const sid = this.config.sid;
-    return [
-      `LSNRCTL for Linux: Version ${ver} - Production`,
-      `Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`,
-      '',
-      `TNSLSNR for Linux: Version ${ver} - Production`,
-      `System parameter file is ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
-      `Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/alert/log.xml`,
-      `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
-      '',
-      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-      ...this._listener.statusBody(),
-      '',
-      'Listener started successfully.',
-    ].join('\n');
   }
 
   stopListener(): string {
-    if (!this._listener.stop()) {
-      return TNS_ERRORS.TNS_12541;
-    }
-    this.logAlert('Listener LISTENER stopped');
-    this.getBus().publish({
-      topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port, pid: this._listener.pid },
+    return this.atHostTime(() => {
+      if (!this._listener.stop()) {
+        return TNS_ERRORS.TNS_12541;
+      }
+      this.logAlert('Listener LISTENER stopped');
+      this.getBus().publish({
+        topic: 'oracle.listener.event',
+        payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port, pid: this._listener.pid },
+      });
+      this.getBus().publish({
+        topic: 'oracle.service.event',
+        payload: { ...this.ref(), name: this.config.sid, kind: 'stopped' },
+      });
+      const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
+      const port = this._listener.port;
+      return [
+        `LSNRCTL for Linux: Version ${ver} - Production`,
+        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
+        `The command completed successfully`,
+        '',
+        'Listener stopped.',
+      ].join('\n');
     });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: this.config.sid, kind: 'stopped' },
-    });
-    const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = this._listener.port;
-    return [
-      `LSNRCTL for Linux: Version ${ver} - Production`,
-      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-      `The command completed successfully`,
-      '',
-      'Listener stopped.',
-    ].join('\n');
   }
 
   getListenerStatus(): string {

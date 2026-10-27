@@ -1,7 +1,7 @@
 /**
  * `debug ip nat` a UN corps, pas deux.
  *
- * MESURE DE DEPART : `registerNATPrivilegedCommands` enregistrait
+ * MESURE DE DEPART : l ancien enregistrement NAT du trie portait
  * `debug ip nat` et `no debug ip nat` avec leur propre corps — il
  * allumait le moteur puis deleguait au service de debogage — et ce
  * corps n'a jamais repondu. C'est le repartiteur glouton `debug ip` de
@@ -32,10 +32,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
-import { collectRegistrations } from '@/cli/commands/trieAdapter';
-import { registerNATPrivilegedCommands } from '@/network/devices/shells/cisco/CiscoNATCommands';
-import type { Router } from '@/network/devices/Router';
-import type { CommandTrie } from '@/network/devices/shells/CommandTrie';
+import { natClearFamily } from '@/cli/commands/nat/natClearFamily';
+import { natConfigFamily } from '@/cli/commands/nat/natConfigFamily';
+import { natShowFamily } from '@/cli/commands/nat/natShowFamily';
+import type { NatHost } from '@/cli/commands/nat/natHost';
 
 async function routeurEnMode(): Promise<CiscoRouter> {
   const r = new CiscoRouter('R1');
@@ -44,15 +44,14 @@ async function routeurEnMode(): Promise<CiscoRouter> {
 }
 
 describe('la famille NAT ne declare aucun corps de debogage', () => {
-  it('aucun chemin enregistre ne commence par `debug`', () => {
-    const r = new CiscoRouter('R1');
-    const chemins = collectRegistrations(
-      (collector) => registerNATPrivilegedCommands(
-        collector as unknown as CommandTrie, () => r as unknown as Router),
-    ).map(e => e.path);
+  it('aucun chemin declare ne commence par `debug`', () => {
+    const host = (): NatHost => { throw new Error('jamais atteint'); };
+    const chemins = [
+      ...natClearFamily(host), ...natConfigFamily(host), ...natShowFamily(host),
+    ].map(spec => String(spec.path[0]));
 
     expect(chemins.length).toBeGreaterThan(0);
-    expect(chemins.filter(p => /(^|\s)debug\b/.test(p))).toEqual([]);
+    expect(chemins.filter(mot => mot === 'debug')).toEqual([]);
   });
 });
 

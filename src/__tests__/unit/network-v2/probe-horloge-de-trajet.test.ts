@@ -69,6 +69,7 @@ describe('the path clock makes round-trip times physical', () => {
 
   it('the RTT is the same on every probe: no CPU time in it', async () => {
     const { a } = await lab();
+    await a.executeCommand('ping -c 1 10.0.0.2');
     const values = await rtts(a, '-c 5 10.0.0.2');
     expect(new Set(values).size).toBe(1);
     expect(values[0]).toBeGreaterThan(0);
@@ -82,6 +83,7 @@ describe('the path clock makes round-trip times physical', () => {
 
   it('netem delay on a cable that is not the first hop shows in the RTT', async () => {
     const { a, b } = await lab();
+    await a.executeCommand('ping -c 1 10.0.0.2');
     await b.executeCommand('sudo tc qdisc add dev eth0 root netem delay 50ms');
     const values = await rtts(a);
     expect(values[0]).toBeGreaterThanOrEqual(50);

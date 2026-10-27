@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-10-14T20:07:54.079Z
+Generated: 2026-10-25T18:02:38.472Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -2010,8 +2010,8 @@ Total steps: 286
 
 [207/286] r1 <R1> display vrrp brief
   Total:0     Master:0     Backup:0     Non-active:0
-    VRID    State         Interface          Type      Virtual IP
-    ------  ------------  -----------------  --------  ----------
+    VRID    State         Interface               Type      Virtual IP
+    ------  ------------  ----------------------  --------  ----------
 
 [208/286] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
@@ -2030,11 +2030,53 @@ Total steps: 286
 
 [212/286] r1 <R1> display ike proposal
   Global IKE policy
-  Default protection suite
-  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
+  Default protection suite of priority 65507
+  	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
   	hash algorithm:         Secure Hash Standard
   	authentication method:  Rivest-Shamir-Adleman Signature
-  	Diffie-Hellman group:   #1 (768 bit)
+  	Diffie-Hellman group:   #5 (1536 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65508
+  	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #5 (1536 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65509
+  	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
+  	hash algorithm:         Message Digest 5
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #5 (1536 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65510
+  	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
+  	hash algorithm:         Message Digest 5
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #5 (1536 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65511
+  	encryption algorithm:   Three key triple DES
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #2 (1024 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65512
+  	encryption algorithm:   Three key triple DES
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #2 (1024 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65513
+  	encryption algorithm:   Three key triple DES
+  	hash algorithm:         Message Digest 5
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #2 (1024 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite of priority 65514
+  	encryption algorithm:   Three key triple DES
+  	hash algorithm:         Message Digest 5
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #2 (1024 bit)
   	lifetime:               86400 seconds, no volume limit
 
 [213/286] r1 <R1> display ike peer
@@ -2056,14 +2098,14 @@ Total steps: 286
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 20:07:54.292  Oct 14 2026(EE7A5F9A.4AC08312)
+  Reference time: 18:02:38.673  Oct 25 2026(EE88C2BE.AC49BA5E)
 
 [216/286] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [217/286] r1 <R1> display clock
-  2026-10-14 20:07:54
-  Wednesday
+  2026-10-25 18:02:38
+  Sunday
   Time Zone(UTC) : UTC
 
 [218/286] r1 <R1> display lldp neighbor
@@ -2124,13 +2166,13 @@ Total steps: 286
 [220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-10-14 20:07:54
+  CPU Usage Stat. Time : 2026-10-25 18:02:38
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-10-14 20:07:54
+  Memory utilization statistics at 2026-10-25 18:02:38
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2171,18 +2213,18 @@ Total steps: 286
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 12
-  2026-10-14 20:07:54 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-10-14 20:07:54 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-10-14 20:07:54 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-10-14 20:07:54 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-10-14 20:07:54 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-10-14 20:07:54 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-10-14 20:07:54 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-10-14 20:07:54 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-10-14 20:07:54 %01LINK/5/NOTIFICATIONS: Interface GE0/0/1, changed state to administratively down
-  2026-10-14 20:07:54 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
-  2026-10-14 20:07:54 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-10-14 20:07:54 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-25 18:02:38 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-25 18:02:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-25 18:02:38 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-25 18:02:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-25 18:02:38 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-10-25 18:02:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-10-25 18:02:38 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-25 18:02:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-25 18:02:38 %01LINK/5/NOTIFICATIONS: Interface GE0/0/1, changed state to administratively down
+  2026-10-25 18:02:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
+  2026-10-25 18:02:38 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-25 18:02:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
 
 [226/286] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2988,7 +3030,7 @@ Total steps: 286
     dhcpv6               DHCPv6 configuration
     dns                  Domain Name System
     firewall             Firewall configuration
-    header               Remove the login/shell banner
+    header               Configure the login and shell banners
     ike                  Internet Key Exchange
     ikev2                Internet Key Exchange version 2
     info-center          Information center configuration

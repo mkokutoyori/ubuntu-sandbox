@@ -15,6 +15,7 @@
  * Flags can be combined: arp -an, arp -en, arp -ani eth0, etc.
  */
 
+import { NET_TOOLS_VERSION } from './commands/net/NetToolsVersion';
 import type { ARPEntry } from '../EndHost';
 import { IPAddress, MACAddress } from '../../core/types';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -161,7 +162,7 @@ const HELP_TEXT = `Usage:
     dlci (Frame Relay DLCI) fddi (Fiber Distributed Data Interface) hippi (HIPPI)
     irda (IrLAP) x25 (generic X.25) eui64 (Generic EUI-64)`;
 
-const VERSION_TEXT = 'net-tools 2.10-alpha';
+const VERSION_TEXT = NET_TOOLS_VERSION;
 
 // ─── Display formatters ────────────────────────────────────────────
 

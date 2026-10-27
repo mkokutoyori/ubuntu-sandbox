@@ -8,7 +8,7 @@
  * Design: Facade + Strategy (each subsystem is independently testable).
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { ProfileManager } from './ProfileManager';
 import { QuotaManager } from './QuotaManager';
@@ -19,6 +19,7 @@ import { PrivilegeChecker } from './PrivilegeChecker';
 import type { OsSecurityContext } from './types';
 import { DEFAULT_OS_CONTEXT } from './types';
 import type { BaseCatalog } from '../../engine/catalog/BaseCatalog';
+import { hostNowMs } from '../time/OracleHostClock';
 
 export interface AuthenticationResult {
   success: boolean;
@@ -94,7 +95,7 @@ export class SecurityEngine {
     const inactiveDays = this.profiles.resolveInactiveAccountTimeDays(user.profile);
     if (inactiveDays !== Infinity && user.accountStatus !== 'LOCKED') {
       const lastLogin = this.loginTracker.getLastSuccessfulLogin(upper) ?? user.created;
-      const idleDays = (simulationNowMs() - lastLogin.getTime()) / (24 * 60 * 60 * 1000);
+      const idleDays = (hostNowMs() - lastLogin.getTime()) / (24 * 60 * 60 * 1000);
       if (idleDays >= inactiveDays) {
         catalog.lockUser(upper);
         this.loginTracker.lockAccount(upper, 'INACTIVITY');

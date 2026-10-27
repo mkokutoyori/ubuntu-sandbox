@@ -40,7 +40,7 @@ beforeEach(() => {
 const sudo = (host: LinuxPC, command: string): Promise<string> => host.executeCommand(`sudo ${command}`);
 
 const OPEN = 'Connection to 10.0.0.2 22 port [tcp/ssh] succeeded!';
-const TIMED_OUT = 'nc: connect to 10.0.0.2 port 22 (tcp) failed: Connection timed out';
+const TIMED_OUT = 'nc: connect to 10.0.0.2 port 22 (tcp) timed out: Operation now in progress';
 const REFUSED = 'nc: connect to 10.0.0.2 port 22 (tcp) failed: Connection refused';
 
 async function lab() {
@@ -144,7 +144,7 @@ describe('IPv6 segments traverse ip6tables OUTPUT the same way', () => {
   it('a DROP of port 22 times out, counted by ip6tables', async () => {
     const { a } = await lab();
     await sudo(a, 'ip6tables -A OUTPUT -p tcp --dport 22 -j DROP');
-    expect(await connect6(a)).toContain('failed: Connection timed out');
+    expect(await connect6(a)).toContain('timed out: Operation now in progress');
     expect(await countOf(a, 'ip6tables', 'DROP')).toBeGreaterThanOrEqual(2);
   });
 });

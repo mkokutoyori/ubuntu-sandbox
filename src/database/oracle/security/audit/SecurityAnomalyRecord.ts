@@ -2,10 +2,11 @@
  * SecurityAnomalyRecord — concrete `ISecurityAnomalyRecord`.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import type { ISecurityAnomalyRecord, Severity } from './interfaces';
 import type { SecurityAnomalyKind } from '../../events';
+import { hostNowDate } from '../../time/OracleHostClock';
 
 export class SecurityAnomalyRecord implements ISecurityAnomalyRecord {
   readonly anomalyId: number;
@@ -27,7 +28,7 @@ export class SecurityAnomalyRecord implements ISecurityAnomalyRecord {
     evidence?: Record<string, string | number | boolean>; timestamp?: Date;
   }) {
     this.anomalyId = init.anomalyId;
-    this.timestamp = init.timestamp ?? simulationDate();
+    this.timestamp = init.timestamp ?? hostNowDate();
     this.kind = init.kind;
     this.severity = init.severity;
     this.username = init.username.toUpperCase();
@@ -39,6 +40,6 @@ export class SecurityAnomalyRecord implements ISecurityAnomalyRecord {
   acknowledge(by: string): void {
     this.acknowledged = true;
     this.acknowledgedBy = by.toUpperCase();
-    this.acknowledgedAt = simulationDate();
+    this.acknowledgedAt = hostNowDate();
   }
 }

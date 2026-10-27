@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-10-14T19:58:50.944Z
+Generated: 2026-10-25T18:01:44.498Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -55,10 +55,10 @@ Total steps: 363
   VLAN0001         32769 0200.0000.0001  0               2     20  15
 
 [5/363] sw1 SW1# show spanning-tree bridge
-                                                     Hello  Max  Fwd
-  Vlan             Bridge ID                          Time  Age  Dly  Protocol
-  ---------------- ---------------------------------- -----  ---  ---  --------
-  VLAN0001         32769 (32768, 1)  0200.0000.0001  2     20   15   ieee
+                                                       Hello  Max  Fwd
+  Vlan              Bridge ID                           Time  Age  Dly  Protocol
+  ----------------  ---------------------------------  -----  ---  ---  --------
+  VLAN0001          32769 (32768, 1) 0200.0000.0001        2   20   15  ieee
 
 [6/363] sw1 SW1# show spanning-tree detail
    VLAN0001 is executing the pvst compatible Spanning Tree protocol
@@ -1595,10 +1595,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *19:58:53: STP: VLAN0001 Fa0/3 -> disabled
+  *18:01:44: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *19:58:53: STP: VLAN0001 Fa0/3 -> forwarding
+  *18:01:44: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1713,12 +1713,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.035 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.058 ms
   64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.035 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
@@ -1951,11 +1951,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 644 bytes, 0 no buffer
-       Received 2 broadcasts (4 multicasts)
+       6 packets input, 492 bytes, 0 no buffer
+       Received 2 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       54 packets output, 3996 bytes, 0 underruns
+       44 packets output, 3228 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1972,11 +1972,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 664 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       6 packets input, 512 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       49 packets output, 3494 bytes, 0 underruns
+       39 packets output, 2726 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1993,11 +1993,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 724 bytes, 0 no buffer
-       Received 1 broadcasts (5 multicasts)
+       7 packets input, 568 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       55 packets output, 4024 bytes, 0 underruns
+       45 packets output, 3260 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2438,11 +2438,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 376 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 224 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       49 packets output, 3600 bytes, 0 underruns
+       38 packets output, 2768 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2459,11 +2459,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 664 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       6 packets input, 512 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       44 packets output, 3174 bytes, 0 underruns
+       33 packets output, 2342 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2480,11 +2480,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       45 packets output, 3318 bytes, 0 underruns
+       34 packets output, 2490 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

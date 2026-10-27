@@ -1,6 +1,6 @@
 import { breakLine } from './NanoJustify';
 
-export type HelpMenu = 'main' | 'search' | 'replace' | 'replace-with' | 'goto' | 'write' | 'insert' | 'execute';
+export type HelpMenu = 'main' | 'search' | 'replace' | 'replace-with' | 'goto' | 'write' | 'insert' | 'execute' | 'linter';
 
 export interface HelpContext {
   readonly restricted: boolean;
@@ -240,8 +240,22 @@ const executeEntries = (context: HelpContext): readonly HelpEntry[] => [
   entry('^Z', 'Suspend the editor (return to the shell)', true),
 ];
 
+const LINTER_INTRODUCTION = '=== Linter ===\n\n In this mode, the status bar shows an error message or warning, and the cursor is put at the corresponding position in the file.  With PageUp and PageDown you can switch to earlier and later messages.\n\n The following function keys are available in Linter mode:\n\n';
+
 function documentFor(menu: HelpMenu, context: HelpContext): HelpDocument {
   switch (menu) {
+    case 'linter':
+      return {
+        title: 'Linter Help Text',
+        introduction: LINTER_INTRODUCTION,
+        entries: [
+          entry('^G (F1)', 'Display this help text'),
+          entry('^C (^X)', 'Cancel the current function', true),
+          entry('^Y (PgUp)', 'Go to previous linter msg'),
+          entry('^V (PgDn)', 'Go to next linter msg'),
+        ],
+        toggles: [],
+      };
     case 'search': return { title: 'Search Command Help Text', introduction: SEARCH_INTRODUCTION, entries: searchEntries(false), toggles: [] };
     case 'replace': return { title: 'Search Command Help Text', introduction: SEARCH_INTRODUCTION, entries: searchEntries(true), toggles: [] };
     case 'replace-with': return { title: 'Search Command Help Text', introduction: SEARCH_INTRODUCTION, entries: [...HELP_AND_CANCEL, ...HISTORY], toggles: [] };

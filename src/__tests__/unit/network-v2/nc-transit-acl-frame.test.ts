@@ -39,10 +39,7 @@ async function lab(acl: readonly string[]) {
   new Cable('c2').connect(router.getPort('GigabitEthernet0/1')!, srv.getPort('eth0')!);
   for (const line of ['enable', 'configure terminal',
     'interface GigabitEthernet0/0', 'ip address 10.0.1.1 255.255.255.0', 'no shutdown', 'exit',
-    'interface GigabitEthernet0/1', 'ip address 10.0.2.1 255.255.255.0', 'no shutdown', 'exit',
-    ...acl,
-    ...(acl.length ? ['interface GigabitEthernet0/0', 'ip access-group 100 in', 'exit'] : []),
-    'end']) {
+    'interface GigabitEthernet0/1', 'ip address 10.0.2.1 255.255.255.0', 'no shutdown', 'exit', 'end']) {
     await router.executeCommand(line);
   }
   pc.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
@@ -50,6 +47,11 @@ async function lab(acl: readonly string[]) {
   srv.configureInterface('eth0', new IPAddress('10.0.2.10'), new SubnetMask('255.255.255.0'));
   srv.setDefaultGateway(new IPAddress('10.0.2.1'));
   await pc.executeCommand('ping -c 1 10.0.2.10');
+  for (const line of ['configure terminal', ...acl,
+    ...(acl.length ? ['interface GigabitEthernet0/0', 'ip access-group 100 in', 'exit'] : []),
+    'end']) {
+    await router.executeCommand(line);
+  }
   await srv.executeCommand('sudo systemctl start ssh');
   return { pc, srv };
 }

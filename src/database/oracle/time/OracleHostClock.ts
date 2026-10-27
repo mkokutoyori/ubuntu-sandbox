@@ -13,6 +13,26 @@ export const DEFAULT_HOST_CLOCK: OracleHostClock = {
   zoneName: () => 'UTC',
 };
 
+let scopedClock: OracleHostClock | null = null;
+
+export function withHostClock<T>(clock: OracleHostClock, run: () => T): T {
+  const outer = scopedClock;
+  scopedClock = clock;
+  try {
+    return run();
+  } finally {
+    scopedClock = outer;
+  }
+}
+
+export function hostNowMs(): number {
+  return scopedClock === null ? simulationNowMs() : scopedClock.nowMs();
+}
+
+export function hostNowDate(): Date {
+  return new Date(hostNowMs());
+}
+
 export function hostZoneOf(clock: OracleHostClock): TimeZone {
   return TimeZone.parse(clock.zoneName()) ?? TimeZone.UTC;
 }

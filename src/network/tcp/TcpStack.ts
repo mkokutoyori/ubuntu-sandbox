@@ -276,6 +276,17 @@ export interface TcpMibSink {
   outReset(family: IpFamily): void;
 }
 
+export type TcpOrigination =
+  | { readonly outcome: 'refused' }
+  | { readonly outcome: 'lost'; readonly packet: IPv4Packet | IPv6Packet }
+  | { readonly outcome: 'looped'; readonly packet: IPv4Packet | IPv6Packet }
+  | { readonly outcome: 'routed'; readonly packet: IPv4Packet | IPv6Packet; readonly egress: string; readonly nextHopIp: string };
+
+export interface TcpEgress {
+  readonly name: string;
+  readonly nextHopIp?: string;
+}
+
 export interface TcpHost {
   readonly id: string;
   nowMs?(): number;
@@ -296,8 +307,7 @@ export interface TcpHost {
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
   adviseNegative?(nextHopIp: string): void;
   neighbourResolved?(nextHopIp: string): boolean;
-  filterLocalSegment?(packet: IPv4Packet | IPv6Packet, family: IpFamily): boolean;
-  filterOutgoing?(egressName: string, packet: IPv4Packet | IPv6Packet): 'accept' | 'drop' | 'reject';
+  originate?(packet: IPv4Packet | IPv6Packet, egress: TcpEgress | null): TcpOrigination;
   defaultTtl?(family: IpFamily): number | undefined;
   pathMtu?(remoteIp: string, linkMtu: number): number;
   ecnPolicy?(): TcpEcnPolicy;
@@ -354,6 +364,7 @@ export interface TcpExchangeOptions {
   diffServ?: DiffServField;
   ttlFloor?: TtlFloor;
   shutdownWrite?: boolean;
+  owner?: { pid: number; service?: string };
 }
 
 export interface TcpConnectOptions {
@@ -386,6 +397,7 @@ export interface TcpBindOptions {
   allowHalfOpen?: boolean;
   backlog?: number;
   boundDevice?: string;
+  serialAccept?: boolean;
 }
 
 export interface TcpListenOptions extends TcpBindOptions {
@@ -792,6 +804,10 @@ export class TcpListener {
 
   get accepting(): boolean { return this.onAccept !== null; }
 
+  serialAccept = false;
+  serving = false;
+  readonly awaiting: TcpSocket[] = [];
+
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
 }
 
@@ -943,6 +959,7 @@ export class TcpStack {
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
+    listener.serialAccept = opts.serialAccept ?? false;
     this.listeners.set(listener.key(), listener);
     this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined, !listener.accepting);
     if (listener.accepting) this.announceListener(listener, true);
@@ -1034,12 +1051,13 @@ export class TcpStack {
   }
 
   queuesOf(socket: TcpSocket): TcpQueues {
-    if (socket.isRequestSock || socket.state === 'time-wait') return { receive: 0, send: 0 };
+    if (socket.isRequestSock || socket.state === 'time-wait') return { receive: 0, send: 0, unread: 0 };
     const unsent = socket.sendBacklog.reduce((total, entry) => total + entry.payload.length, 0);
     const finQueued = socket.closeAfterFlush ? 1 : 0;
     return {
       receive: socket.unreadBytes + (socket.finUnread ? 1 : 0),
       send: ((socket.sendNext - socket.sendUnacked) + unsent + finQueued) >>> 0,
+      unread: socket.unreadBytes,
     };
   }
 
@@ -1234,10 +1252,9 @@ export class TcpStack {
     return received === '' ? null : received;
   }
 
-  exchange(
-    remoteIp: string, remotePort: number, payload: string,
-    opts: TcpExchangeOptions = {},
-  ): { outcome: TcpWireOutcome; received: string } {
+  open(
+    remoteIp: string, remotePort: number, opts: TcpExchangeOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
     const socket = this.connect(remoteIp, remotePort, {
       ...(opts.localPort === undefined ? {} : { localPort: opts.localPort }),
       ...(opts.localIp === undefined ? {} : { localIp: opts.localIp }),
@@ -1245,12 +1262,23 @@ export class TcpStack {
       ...(opts.diffServ === undefined ? {} : { diffServ: opts.diffServ }),
       ...(opts.ttlFloor === undefined ? {} : { ttlFloor: opts.ttlFloor }),
     });
-    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', received: '' };
+    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', socket: null };
     if (!socket.everEstablished) {
       const outcome = socket.connectProhibited ? 'prohibited' : socket.connectRefused ? 'refused' : 'timeout';
       socket.close();
-      return { outcome, received: '' };
+      return { outcome, socket: null };
     }
+    if (opts.owner !== undefined) this.setSocketOwner(socket, opts.owner.pid, opts.owner.service);
+    return { outcome: 'open', socket };
+  }
+
+  exchange(
+    remoteIp: string, remotePort: number, payload: string,
+    opts: TcpExchangeOptions = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    const opened = this.open(remoteIp, remotePort, opts);
+    const socket = opened.socket;
+    if (socket === null) return { outcome: opened.outcome, received: '' };
     let received = '';
     const stop = socket.onData((chunk) => {
       if (typeof chunk === 'string') received += chunk;
@@ -2539,11 +2567,35 @@ export class TcpStack {
     return true;
   }
 
+  acceptNext(listener: TcpListener): void {
+    listener.serving = false;
+    for (let next = listener.awaiting.shift(); next !== undefined; next = listener.awaiting.shift()) {
+      if (next.pendingListener !== listener || next.state !== 'established') continue;
+      this.admit(listener, next);
+      return;
+    }
+  }
+
   private completePassiveOpen(socket: TcpSocket): void {
     const listener = socket.pendingListener;
     if (!listener) return;
+    if (listener.serialAccept && listener.serving) {
+      listener.awaiting.push(socket);
+      return;
+    }
+    this.admit(listener, socket);
+  }
+
+  private inheritOwner(listener: TcpListener, socket: TcpSocket): void {
+    if (listener.identity.pid !== undefined && socket.ownerPid === null) {
+      this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
+    }
+  }
+
+  private admit(listener: TcpListener, socket: TcpSocket): void {
     socket.pendingListener = null;
-    if (listener.identity.pid !== undefined) this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
+    if (listener.serialAccept) listener.serving = true;
+    this.inheritOwner(listener, socket);
     if (listener.identity.banner) socket.write(listener.identity.banner);
     try { listener.onAccept?.(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
   }
@@ -3235,23 +3287,30 @@ export class TcpStack {
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl, shape?.tos)
       : this.buildIpv4Segment(srcIp, dstIp, seg, ttl, shape?.fragmentMtu, shape);
+    const origination: TcpOrigination = this.host.originate?.(l3Packet, local ? null : egress)
+      ?? (local
+        ? { outcome: 'looped', packet: l3Packet }
+        : { outcome: 'routed', packet: l3Packet, egress: egress.name, nextHopIp: egress.nextHopIp ?? dstIp });
+    if (origination.outcome === 'refused') return;
+    const emitted = origination.packet;
+    const carried = emitted.payload as TcpSegment;
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        sourceIp: srcIp, destinationIp: dstIp,
-        sourcePort: seg.sourcePort, destinationPort: seg.destinationPort,
+        sourceIp: emitted.sourceIP.toString(), destinationIp: emitted.destinationIP.toString(),
+        sourcePort: carried.sourcePort, destinationPort: carried.destinationPort,
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
         payloadSize: segmentPayloadSize(seg),
-        iface: local ? 'lo' : egress.name,
-        ...(local ? { packet: l3Packet } : {}),
+        iface: origination.outcome === 'routed' ? origination.egress : 'lo',
+        ...(origination.outcome === 'routed' ? {} : { packet: emitted }),
       },
     });
-    if (local) {
-      if (this.host.filterLocalSegment?.(l3Packet, family) === false) return;
-      const ipv4 = family === 'ipv6' ? undefined : l3Packet as IPv4Packet;
-      this.handleSegment(srcIp, dstIp, seg, {
+    if (origination.outcome === 'lost') return;
+    if (origination.outcome === 'looped') {
+      const ipv4 = emitted.type === 'ipv6' ? undefined : emitted;
+      this.handleSegment(emitted.sourceIP.toString(), emitted.destinationIP.toString(), carried, {
         ttl,
         ecn: EcnCodepoint.ofField(ipv4 === undefined ? shape?.tos ?? 0 : ipv4.tos),
         device: 'lo',
@@ -3259,24 +3318,20 @@ export class TcpStack {
       });
       return;
     }
-    if ((this.host.filterOutgoing?.(egress.name, l3Packet) ?? 'accept') !== 'accept') return;
-    const nextHopIp = egress.nextHopIp ?? dstIp;
-    if (family === 'ipv6') {
-      this.host.sendIpv6FrameNdpAware?.(
-        egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
+    if (emitted.type === 'ipv6') {
+      this.host.sendIpv6FrameNdpAware?.(origination.egress, emitted, new IPv6Address(origination.nextHopIp));
       return;
     }
-    const nextHop = new IPAddress(nextHopIp);
-    const packet = l3Packet as IPv4Packet;
+    const nextHop = new IPAddress(origination.nextHopIp);
     if (shape?.fragmentMtu === undefined) {
-      this.host.sendIpv4FrameArpAware(egress.name, packet, nextHop);
+      this.host.sendIpv4FrameArpAware(origination.egress, emitted, nextHop);
       return;
     }
     // `fragmentIPv4` compte la MTU du LIEN, en-tete compris ; `fragscan`
     // compte la charge seule.
-    const fragments = fragmentIPv4(packet, packet.ihl * 4 + shape.fragmentMtu);
+    const fragments = fragmentIPv4(emitted, emitted.ihl * 4 + shape.fragmentMtu);
     for (const fragment of fragments) {
-      this.host.sendIpv4FrameArpAware(egress.name, fragment, nextHop);
+      this.host.sendIpv4FrameArpAware(origination.egress, fragment, nextHop);
     }
   }
 

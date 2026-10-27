@@ -13,12 +13,11 @@
  * Mesure avec `git stash push -- NanoEngine.ts nano/` (le moteur seul) : 169, 165 et 160 cas sur 200 (corpus undo, seeds 1
  * a 3) puis 70, 77 et 74 cas sur 100 (corpus undo2, seeds 4 a 6) tombaient avant, 0 apres.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 3 cas sur 900.  Un cas de la liste qui se met a
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 2 cas sur 900 (und3-183, ou la longueur de l'en-tete d'un
+ * paragraphe est un decalage en OCTETS dans nano, a ete portee avec les fichiers nanorc : voir probe-nano-justify-bytes.test.ts).  Un cas de la liste qui se met a
  * passer fait echouer le test pour qu'on le retire.
  *   - und3-175 : avec -k, nano 7.2 annule une justification en laissant un tampon VIDE (le texte est perdu) : le defaut
  *     n'est volontairement pas reproduit.
- *   - und3-183 : la longueur de l'en-tete d'un paragraphe est un decalage en OCTETS dans nano (un caractere large
- *     coupe en deux dans la premiere ligne change la largeur restante) ; le moteur compte en caracteres.
  *   - un24-6 : frappe au milieu d'une ligne deja trop longue avec -b : nano coupe a un autre blanc que le moteur ; pas
  *     encore analyse.
  */
@@ -30,7 +29,7 @@ const dir = 'src/__tests__/support/oracle/nano-undo';
 const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoCliCase[] }) }));
 
-const UNPORTED_CASES: ReadonlySet<string> = new Set(['und3-175', 'und3-183', 'un24-6']);
+const UNPORTED_CASES: ReadonlySet<string> = new Set(['und3-175', 'un24-6']);
 
 describe('nano undo and redo recorded from a real nano', () => {
   for (const fixture of fixtures) {

@@ -20,6 +20,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   get dbId(): DbId { return this._current.dbId; }
   get dbName(): string { return this._current.dbName; }
   hostZoneName(): string { return this._current.hostZoneName?.() ?? 'UTC'; }
+  hostNowMs(): number { return this._current.hostNowMs(); }
   get vfs(): VfsAdapter { return this._current.vfs; }
 
   getDatafiles(): ReadonlyArray<DatafileInfo> { return this._current.getDatafiles(); }
@@ -39,6 +40,8 @@ export class RetargetableRmanContext implements IRmanOracleContext {
     return this._current.runSqlStatement(statement);
   }
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
+  recordBackupPieceDeleted(handle: string): void { this._current.recordBackupPieceDeleted(handle); }
+  recordArchivedLogDeleted(path: string): void { this._current.recordArchivedLogDeleted(path); }
   recordBlockCorruption(fileNo: number, blocks: number, type: BlockCorruptionType): void {
     this._current.recordBlockCorruption(fileNo, blocks, type);
   }

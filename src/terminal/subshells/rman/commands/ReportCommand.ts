@@ -4,8 +4,7 @@
  * Synchronous read from IRmanOracleContext (datafile list) and catalog.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
-import { formatOracleDate, rmanWall } from '../core/pureUtils';
+import { formatOracleDate, rmanNowMs, rmanWall } from '../core/pureUtils';
 
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
@@ -36,7 +35,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
     if (this.mode === 'OBSOLETE') {
       const snap = catalog.listAll();
       if (snap.ok === false) return snap;
-      const obsolete = activePolicy.findObsolete(snap.value.sets);
+      const obsolete = activePolicy.findObsolete(snap.value.sets, rmanNowMs(ctx));
       const lines = [
         '',
         'RMAN retention policy will be applied to the command',
@@ -115,7 +114,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
     }
     const fenetre = activePolicy.kind === 'recovery_window';
     const seuil = activePolicy.value ?? 1;
-    const bord = simulationNowMs() - seuil * 86_400_000;
+    const bord = rmanNowMs(ctx) - seuil * 86_400_000;
     const lines = [
       '',
       'RMAN retention policy will be applied to the command',
@@ -135,7 +134,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
         if (ancienne !== undefined && ancienne <= bord) continue;
         const jours = ancienne === undefined
           ? seuil
-          : Math.floor((simulationNowMs() - ancienne) / 86_400_000);
+          : Math.floor((rmanNowMs(ctx) - ancienne) / 86_400_000);
         lines.push(`${padToWidth(String(df.fileNo), 4)} ${padToWidth(String(jours), 5)} ${df.path}`);
         continue;
       }

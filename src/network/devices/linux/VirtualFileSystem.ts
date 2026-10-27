@@ -9,6 +9,7 @@ import { bytesToFileText } from '@/crypto/encoding';
 import { simulationNowMs } from '../../core/SystemClock';
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
+import { NANO_PACKAGE_DIRECTORIES, NANO_PACKAGE_FILES, NANO_PACKAGE_LINKS } from './editors/nano/NanoPackageFiles';
 import { VfsPath, type PathActor } from './VfsPath';
 import { fnmatch, globPaths } from './fs/Glob';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
@@ -63,6 +64,7 @@ export interface INode {
   mtime: number;
   atime: number;
   ctime: number;
+  revision?: number;
   deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
   /**
    * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
@@ -154,6 +156,14 @@ export interface VfsWriteEvent {
   readonly truncated: boolean;
 }
 
+export type VfsDirectoryEventKind = 'close-write' | 'moved-to' | 'create' | 'attrib';
+export type VfsDirectoryListener = (name: string, kind: VfsDirectoryEventKind) => void;
+
+export type VfsChange =
+  | { readonly kind: 'modified'; readonly path: string; readonly inode: number }
+  | { readonly kind: 'created' | 'deleted'; readonly path: string; readonly directory: boolean }
+  | { readonly kind: 'moved'; readonly from: string; readonly path: string; readonly directory: boolean };
+
 export class VirtualFileSystem {
   private nowMs: () => number = simulationNowMs;
 
@@ -163,7 +173,8 @@ export class VirtualFileSystem {
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
-  private entryListeners: Map<string, Set<() => void>> = new Map();
+  private directoryListeners: Map<number, Set<VfsDirectoryListener>> = new Map();
+  private changeListeners = new Set<(change: VfsChange) => void>();
   private readOnlyResolver?: (path: string) => boolean;
   private remoteMountPort: RemoteMountPort | null = null;
   /**
@@ -199,13 +210,22 @@ export class VirtualFileSystem {
    * Bytes in use — the sum of every file's reported size, which is what
    * `du` and `ls -l` show, so the three agree by construction.
    */
-  usedBytes(): number {
-    let total = 0;
-    for (const inode of this.inodes.values()) {
-      if (inode.type === 'directory' || inode.generator) continue;
-      total += inode.size;
-    }
-    return total;
+  usedBytes(): number { return this.bytesInUse; }
+
+  private bytesInUse = 0;
+
+  private countsAgainstCapacity(inode: INode): boolean {
+    return inode.type !== 'directory' && !inode.generator;
+  }
+
+  private resize(inode: INode, size: number): void {
+    if (this.countsAgainstCapacity(inode)) this.bytesInUse += size - inode.size;
+    inode.size = size;
+    inode.revision = (inode.revision ?? 0) + 1;
+  }
+
+  private release(inode: INode): void {
+    if (this.countsAgainstCapacity(inode)) this.bytesInUse -= inode.size;
   }
 
   /** Inodes in use — every object, directories included, as on ext4. */
@@ -379,6 +399,9 @@ export class VirtualFileSystem {
     this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
     for (const path of pluginFilePaths(LIBSASL2_MODULES_PLUGINS)) this.createFileAt(path, '\x7fELF', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
+    for (const directory of NANO_PACKAGE_DIRECTORIES) this.mkdirp(directory, 0o755, 0, 0);
+    for (const file of NANO_PACKAGE_FILES) this.createFileAt(file.path, file.content, 0o644, 0, 0);
+    for (const link of NANO_PACKAGE_LINKS) this.createSymlink(link.path, link.target, 0, 0);
     this.createFileAt('/etc/lsb-release',
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
       'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',
@@ -699,8 +722,9 @@ export class VirtualFileSystem {
         if (!this.canWriteFile(existing, uid, gid)) return null;
         if (!this.fitsBytes(content.length - existing.size)) return null; // ENOSPC
         existing.content = content;
-        existing.size = content.length;
+        this.resize(existing, content.length);
         existing.mtime = this.nowMs();
+        this.emitChange({ kind: 'modified', path: this.canonicalKey(path), inode: existing.id });
         return existing;
       }
       return null; // Can't overwrite non-file
@@ -711,9 +735,11 @@ export class VirtualFileSystem {
     if (!this.fitsInode() || !this.fitsBytes(content.length)) return null;
     const inode = this.allocInode('file', permissions, uid, gid);
     inode.content = content;
-    inode.size = content.length;
+    this.resize(inode, content.length);
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: false });
+    this.emitDirectoryEvent(path, 'create', false);
     return inode;
   }
 
@@ -732,11 +758,41 @@ export class VirtualFileSystem {
   ): void {
     const existing = this.resolveInode(path);
     if (existing && existing.type === 'file') {
+      this.release(existing);
       existing.generator = generator;
       return;
     }
     const inode = this.createFileAt(path, '', permissions, uid, gid);
-    if (inode) inode.generator = generator;
+    if (inode) {
+      this.release(inode);
+      inode.generator = generator;
+    }
+  }
+
+  /**
+   * A regular file whose bytes live in a model that is not a string: reads ask the
+   * model, writes hand it the new text, and the size is the one the owner declares.
+   * Capacity accounting, `ls`, `du`, rename and unlink see an ordinary inode.
+   */
+  registerBackedFile(
+    path: string,
+    backing: { read(): string; write(text: string): void },
+    size: number,
+    permissions = 0o640,
+    uid = 0,
+    gid = 0,
+  ): INode | null {
+    const existing = this.resolveInode(path, false);
+    const inode = existing && existing.type === 'file' ? existing : this.createFileAt(path, '', permissions, uid, gid);
+    if (!inode) return null;
+    Object.defineProperty(inode, 'content', {
+      configurable: true,
+      enumerable: true,
+      get: () => backing.read(),
+      set: (text: string) => backing.write(text),
+    });
+    this.resize(inode, size);
+    return inode;
   }
 
   registerWritableGeneratedFile(
@@ -770,6 +826,7 @@ export class VirtualFileSystem {
     if (times.atime !== undefined) inode.atime = times.atime;
     if (times.mtime !== undefined) inode.mtime = times.mtime;
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -778,6 +835,7 @@ export class VirtualFileSystem {
     if (existing) {
       existing.mtime = this.nowMs();
       existing.atime = this.nowMs();
+      this.emitDirectoryEvent(path, 'attrib');
       return true;
     }
     if (this.isVirtualTree(path)) return false;
@@ -909,7 +967,7 @@ export class VirtualFileSystem {
       } else {
         inode.content = content;
       }
-      inode.size = declaredSizeBytes ?? inode.content.length;
+      this.resize(inode, declaredSizeBytes ?? inode.content.length);
       inode.mtime = this.nowMs();
       this.emitWrite({
         path: this.canonicalKey(path),
@@ -917,7 +975,7 @@ export class VirtualFileSystem {
         current: inode.content,
         created: false,
         truncated: !append && previous.length > inode.content.length,
-      });
+      }, inode.id);
       return true;
     }
 
@@ -939,7 +997,7 @@ export class VirtualFileSystem {
       const perms = 0o666 & ~umask;
       const newInode = this.createFileAt(path, content, perms, uid, gid);
       if (newInode !== null) {
-        if (declaredSizeBytes !== undefined) newInode.size = declaredSizeBytes;
+        if (declaredSizeBytes !== undefined) this.resize(newInode, declaredSizeBytes);
         this.emitWrite({
           path: this.canonicalKey(path),
           previous: '',
@@ -1059,9 +1117,9 @@ export class VirtualFileSystem {
         if (this.isReadOnly(canonical)) return 'Read-only file system';
         const previous = held.content;
         held.content += text;
-        held.size = held.content.length;
+        this.resize(held, held.content.length);
         held.mtime = this.nowMs();
-        this.emitWrite({ path: canonical, previous, current: held.content, created: false, truncated: false });
+        this.emitWrite({ path: canonical, previous, current: held.content, created: false, truncated: false }, held.id);
         return null;
       },
     };
@@ -1124,30 +1182,58 @@ export class VirtualFileSystem {
     };
   }
 
-  onEntryChange(path: string, listener: () => void): () => void {
-    const key = this.canonicalKey(path);
-    const set = this.entryListeners.get(key) ?? new Set<() => void>();
+  onDirectoryEvent(directory: string, listener: VfsDirectoryListener): (() => void) | null {
+    const inode = this.resolveInode(directory);
+    if (inode === null || inode.type !== 'directory') return null;
+    const set = this.directoryListeners.get(inode.id) ?? new Set<VfsDirectoryListener>();
     set.add(listener);
-    this.entryListeners.set(key, set);
+    this.directoryListeners.set(inode.id, set);
     return () => {
       set.delete(listener);
-      if (set.size === 0) this.entryListeners.delete(key);
+      if (set.size === 0 && this.directoryListeners.get(inode.id) === set) this.directoryListeners.delete(inode.id);
     };
   }
 
-  private emitEntryChange(path: string): void {
-    for (const listener of [...(this.entryListeners.get(this.canonicalKey(path)) ?? [])]) {
-      try { listener(); } catch { /* a subscriber must not corrupt the filesystem */ }
+  private entryOf(path: string, followFinalLink: boolean, depth = 20): [INode, string] | null {
+    const parent = this.resolveParent(path);
+    if (parent === null || !followFinalLink || depth <= 0) return parent;
+    const childId = parent[0].children.get(parent[1]);
+    const child = childId === undefined ? undefined : this.inodes.get(childId);
+    if (child?.type !== 'symlink') return parent;
+    const directory = '/' + path.split('/').filter(Boolean).slice(0, -1).join('/');
+    return this.entryOf(this.normalizePath(this.resolutionTarget(child), directory), true, depth - 1);
+  }
+
+  private emitDirectoryEvent(path: string, kind: VfsDirectoryEventKind, followFinalLink = true): void {
+    if (this.directoryListeners.size === 0) return;
+    const entry = this.entryOf(path, followFinalLink);
+    if (entry === null) return;
+    for (const listener of [...(this.directoryListeners.get(entry[0].id) ?? [])]) {
+      try { listener(entry[1], kind); } catch { continue; }
+    }
+  }
+
+  onChange(listener: (change: VfsChange) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => { this.changeListeners.delete(listener); };
+  }
+
+  private emitChange(change: VfsChange): void {
+    for (const listener of [...this.changeListeners]) {
+      try { listener(change); }
+      catch { continue; }
     }
   }
 
   /** Fan out a write event to every subscriber registered against `path`. */
-  private emitWrite(event: VfsWriteEvent): void {
+  private emitWrite(event: VfsWriteEvent, inode?: number): void {
+    if (!event.created && inode !== undefined) this.emitChange({ kind: 'modified', path: event.path, inode });
+    this.emitDirectoryEvent(event.path, 'close-write');
     const set = this.writeListeners.get(event.path);
     if (!set || set.size === 0) return;
     for (const listener of set) {
       try { listener(event); }
-      catch { /* listeners must not corrupt the FS */ }
+      catch { continue; }
     }
   }
 
@@ -1177,8 +1263,10 @@ export class VirtualFileSystem {
 
     child.linkCount--;
     if (child.linkCount <= 0) {
+      this.release(child);
       this.inodes.delete(childId);
     }
+    this.emitChange({ kind: 'deleted', path: this.canonicalKey(path), directory: false });
     return true;
   }
 
@@ -1203,6 +1291,8 @@ export class VirtualFileSystem {
     parentInode.children.set(basename, dirInode.id);
     parentInode.linkCount++;
     parentInode.mtime = this.nowMs();
+    this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: true });
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1232,7 +1322,9 @@ export class VirtualFileSystem {
     parentInode.children.delete(basename);
     parentInode.linkCount--;
     parentInode.mtime = this.nowMs();
+    this.release(inode);
     this.inodes.delete(inode.id);
+    this.emitChange({ kind: 'deleted', path: this.canonicalKey(path), directory: true });
     return true;
   }
 
@@ -1289,18 +1381,20 @@ export class VirtualFileSystem {
 
   // ─── Link Operations ──────────────────────────────────────────────
 
-  createSymlink(path: string, target: string, uid: number, gid: number): boolean {
+  createSymlink(path: string, target: string, uid: number, gid: number, permissions = 0o777): boolean {
     const parent = this.resolveParent(path);
     if (!parent) return false;
     const [parentInode, basename] = parent;
 
     if (parentInode.children.has(basename)) return false;
 
-    const inode = this.allocInode('symlink', 0o777, uid, gid);
+    const inode = this.allocInode('symlink', permissions, uid, gid);
     inode.target = target;
-    inode.size = target.length;
+    this.resize(inode, target.length);
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitChange({ kind: 'created', path: this.canonicalKey(path), directory: false });
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1317,6 +1411,7 @@ export class VirtualFileSystem {
     parentInode.children.set(basename, targetInode.id);
     targetInode.linkCount++;
     parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1327,7 +1422,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     inode.permissions = mode;
     inode.ctime = this.nowMs();
-    this.emitEntryChange(path);
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1338,6 +1433,7 @@ export class VirtualFileSystem {
     if (!inode.aclUsers) inode.aclUsers = new Map();
     inode.aclUsers.set(user, perms & 0o7);
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1348,6 +1444,7 @@ export class VirtualFileSystem {
     if (!inode.aclGroups) inode.aclGroups = new Map();
     inode.aclGroups.set(group, perms & 0o7);
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1356,7 +1453,10 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclUsers) return false;
     const had = inode.aclUsers.delete(user);
-    if (had) inode.ctime = this.nowMs();
+    if (had) {
+      inode.ctime = this.nowMs();
+      this.emitDirectoryEvent(path, 'attrib');
+    }
     return had;
   }
 
@@ -1365,7 +1465,10 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclGroups) return false;
     const had = inode.aclGroups.delete(group);
-    if (had) inode.ctime = this.nowMs();
+    if (had) {
+      inode.ctime = this.nowMs();
+      this.emitDirectoryEvent(path, 'attrib');
+    }
     return had;
   }
 
@@ -1408,6 +1511,16 @@ export class VirtualFileSystem {
     inode.uid = uid;
     if (gid !== undefined) inode.gid = gid;
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
+    return true;
+  }
+
+  setImmutable(path: string, immutable: boolean): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode) return false;
+    inode.immutable = immutable;
+    inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1416,6 +1529,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     inode.gid = gid;
     inode.ctime = this.nowMs();
+    this.emitDirectoryEvent(path, 'attrib');
     return true;
   }
 
@@ -1485,7 +1599,10 @@ export class VirtualFileSystem {
       const existing = this.inodes.get(existingId);
       if (existing) {
         existing.linkCount--;
-        if (existing.linkCount <= 0) this.inodes.delete(existingId);
+        if (existing.linkCount <= 0) {
+          this.release(existing);
+          this.inodes.delete(existingId);
+        }
       }
     }
 
@@ -1499,7 +1616,8 @@ export class VirtualFileSystem {
       srcNode.children.set('..', dstParentInode.id);
     }
 
-    this.emitEntryChange(finalDst);
+    this.emitDirectoryEvent(finalDst, 'moved-to', false);
+    this.emitChange({ kind: 'moved', from: this.canonicalKey(srcPath), path: this.canonicalKey(finalDst), directory: srcNode?.type === 'directory' });
     return true;
   }
 
@@ -1515,6 +1633,7 @@ export class VirtualFileSystem {
     const inode = this.allocInode('fifo', permissions, uid, gid);
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1526,6 +1645,7 @@ export class VirtualFileSystem {
     const inode = this.allocInode('socket', permissions, uid, gid);
     parentInode.children.set(basename, inode.id);
     parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
     return true;
   }
 
@@ -1565,7 +1685,7 @@ export class VirtualFileSystem {
     options: any,
     results: string[],
   ): void {
-    const inode = this.resolveInode(path);
+    const inode = this.resolveInode(path, depth === 0);
     if (!inode) return;
 
     if (options.maxdepth !== undefined && depth > options.maxdepth) return;

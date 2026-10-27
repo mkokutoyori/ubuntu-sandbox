@@ -127,6 +127,7 @@ import type {
   FirewallProfileName, NetFirewallProfileRow,
 } from '@/network/devices/windows/netFirewallProfile';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { expandHomePath } from './homePath';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -214,6 +215,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
       isDirectory: e.entry.type === 'directory',
       size: e.entry.size,
       mtime: e.entry.mtime,
+      ctime: e.entry.ctime,
       attributes: new Set(e.entry.attributes),
       owner: e.entry.owner,
     }));
@@ -247,17 +249,41 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     const r = this.fs().moveFile(this.abs(src), this.abs(dest));
     if (!r.ok) throw new Error(r.error ?? `Cannot move`);
   }
+  private driveAliases: () => ReadonlyMap<string, string> = () => new Map();
+
+  attachDriveAliases(roots: () => ReadonlyMap<string, string>): void {
+    this.driveAliases = roots;
+  }
+
+  private aliased(path: string): string {
+    const alias = /^([A-Za-z][A-Za-z0-9_]*):(?:[\\/]+(.*))?$/.exec(path);
+    const root = alias === null ? undefined : this.driveAliases().get(alias[1].toLowerCase());
+    if (alias === null || root === undefined) return path;
+    const rest = alias[2] ?? '';
+    return rest === '' ? root : `${root.replace(/\\+$/, '')}\\${rest}`;
+  }
+
   normalizePath(path: string, cwd: string): string {
-    return this.fs().normalizePath(path, cwd);
+    return this.fs().normalizePath(expandHomePath(this.aliased(path), this.pc.getEnvVars().get('USERPROFILE') ?? 'C:\\Users\\User'), cwd);
   }
   getCwd(): string {
     return this.pc.getCwd();
   }
   setCwd(path: string): void {
-    this.pc.setCwd(this.abs(path));
+    this.pc.setCwd(this.fs().canonicalLeaf(this.abs(path)));
+  }
+  driveLocation(letter: string): string {
+    return this.pc.driveDirectory(letter);
   }
   isDirectory(path: string): boolean {
     return this.fs().isDirectory(this.abs(path));
+  }
+  attributesOf(path: string): ReadonlySet<string> | null {
+    return this.fs().resolve(this.abs(path))?.attributes ?? null;
+  }
+  clearAttributes(path: string, names: readonly string[]): void {
+    const attributes = this.fs().resolve(this.abs(path))?.attributes;
+    for (const name of names) attributes?.delete(name);
   }
   getAcl(path: string) {
     const e = this.fs().resolve(this.abs(path));
@@ -315,7 +341,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   }
 
   private abs(p: string): string {
-    return this.fs().normalizePath(p, this.pc.getCwd());
+    return this.normalizePath(p, this.pc.getCwd());
   }
 }
 

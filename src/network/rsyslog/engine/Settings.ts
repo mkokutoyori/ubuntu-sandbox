@@ -1,4 +1,5 @@
 import { AllowedSenderList } from './AllowedSenders';
+import type { CryptoProvider } from '../crypto/CryptoProvider';
 import { DEFAULT_PARSER_GLOBALS, type ParserGlobals } from '../MessageParser';
 import type { ParamDescriptor, ParamValue, ParamValues } from '../config/Params';
 
@@ -6,10 +7,13 @@ export interface QueueSettings {
   type: string;
   size: number;
   fileName: string | null;
-  highWatermark: number | null;
-  lowWatermark: number | null;
-  discardMark: number | null;
+  spoolDirectory: string | null;
+  highWatermark: number;
+  lowWatermark: number;
+  discardMark: number;
   discardSeverity: number;
+  fullDelayMark: number;
+  lightDelayMark: number;
   checkpointInterval: number;
   syncQueueFiles: boolean;
   workerThreads: number;
@@ -18,26 +22,57 @@ export interface QueueSettings {
   timeoutEnqueue: number;
   workerTimeoutThreadShutdown: number;
   dequeueSlowdown: number;
-  workerThreadMinimumMessages: number | null;
+  workerThreadMinimumMessages: number;
   maxFileSize: number;
   dequeueBatchSize: number;
+  minDequeueBatchSize: number;
+  minDequeueBatchTimeout: number;
   maxDiskSpace: number;
   saveOnShutdown: boolean;
   dequeueTimeBegin: number;
   dequeueTimeEnd: number;
+  samplingInterval: number;
+  takeFlowCtlFromMsg: boolean;
+  mutexContentionStats: boolean;
+  onCorruption: 'safe' | 'ignore' | 'inMemory';
+  diskQueueType: 'auto' | 'disk' | 'segmentedDisk';
+  diskQueueAutoUpgrade: boolean;
+  diskQueueIdleTimeout: number;
+  cryProvider: string | null;
+  crypto: CryptoProvider | null;
 }
 
-export function defaultQueueSettings(type: string, size: number): QueueSettings {
+export type QueueKind = 'main' | 'ruleset' | 'action';
+
+export interface QueueTimeouts {
+  timeoutShutdown: number;
+  timeoutActionCompletion: number;
+  timeoutEnqueue: number;
+  workerTimeoutThreadShutdown: number;
+}
+
+export function defaultQueueTimeouts(kind: QueueKind): QueueTimeouts {
   return {
-    type, size, fileName: null, highWatermark: null, lowWatermark: null, discardMark: null, discardSeverity: 8,
-    checkpointInterval: 0, syncQueueFiles: false, workerThreads: 1, timeoutShutdown: 1500, timeoutActionCompletion: 1000,
-    timeoutEnqueue: 2000, workerTimeoutThreadShutdown: 60000, dequeueSlowdown: 0, workerThreadMinimumMessages: null,
-    maxFileSize: 1024 * 1024, dequeueBatchSize: type === 'Direct' ? 1 : 128, maxDiskSpace: 0, saveOnShutdown: true,
-    dequeueTimeBegin: 0, dequeueTimeEnd: 25,
+    timeoutShutdown: kind === 'action' ? 10 : 1500, timeoutActionCompletion: 1000, timeoutEnqueue: 2000, workerTimeoutThreadShutdown: 60000,
+  };
+}
+
+export function defaultQueueSettings(type: string, size: number, kind: QueueKind = 'action', timeouts: QueueTimeouts = defaultQueueTimeouts(kind)): QueueSettings {
+  const main = kind === 'main';
+  return {
+    type, size, fileName: null, spoolDirectory: null, highWatermark: main ? 80000 : -1, lowWatermark: main ? 20000 : -1, discardMark: -1,
+    discardSeverity: 8, fullDelayMark: -1, lightDelayMark: -1, checkpointInterval: 0, syncQueueFiles: false, workerThreads: main ? 2 : 1, ...timeouts,
+    dequeueSlowdown: 0, workerThreadMinimumMessages: main ? 40000 : -1,
+    maxFileSize: kind === 'ruleset' ? 16 * 1024 * 1024 : 1024 * 1024,
+    dequeueBatchSize: main ? 256 : kind === 'ruleset' ? 1024 : 128,
+    minDequeueBatchSize: 0, minDequeueBatchTimeout: 1000, maxDiskSpace: 0, saveOnShutdown: true, dequeueTimeBegin: 0, dequeueTimeEnd: 25,
+    samplingInterval: 0, takeFlowCtlFromMsg: false, mutexContentionStats: false, onCorruption: 'safe', diskQueueType: 'auto',
+    diskQueueAutoUpgrade: false, diskQueueIdleTimeout: 60000, cryProvider: null, crypto: null,
   };
 }
 
 export interface GlobalSettings {
+  queueTimeouts: { action: QueueTimeouts; ruleset: QueueTimeouts };
   parser: ParserGlobals;
   parseHostnameAndTag: boolean;
   workDirectory: string | null;
@@ -52,6 +87,10 @@ export interface GlobalSettings {
   logStatusMessages: boolean;
   environment: Record<string, string>;
   defaultNetstreamDriver: string | null;
+  defaultOpensslEngine: string | null;
+  permitCtlC: boolean;
+  developerOptions: number;
+  shutdownQueueDoubleSize: boolean;
   defaultNetstreamDriverCaFile: string | null;
   defaultNetstreamDriverCertFile: string | null;
   defaultNetstreamDriverKeyFile: string | null;
@@ -59,9 +98,11 @@ export interface GlobalSettings {
   netstreamDriverCaExtraFiles: string | null;
   dropMessagesWithMaliciousDnsPtrRecords: boolean;
   abortOnUncleanConfig: boolean;
+  abortOnFailedQueueStartup: boolean;
   abortOnIdResolutionFail: boolean;
   operatingStateFile: string | null;
   compatDefaultsSecure: 'backward-compatible' | 'strict' | 'warn';
+  compatConfigFormat: { legacy: CompatMode; syslogd: CompatMode; property: CompatMode };
   ipProtocol: 'unspecified' | 'ipv4-only' | 'ipv6-only';
   supportCompressionExtension: boolean;
   markIntervalSeconds: number;
@@ -78,6 +119,7 @@ export interface GlobalSettings {
   defaultRuleset: string;
   maxOpenFiles: number | null;
   requireAllInputs: boolean;
+  reportChildProcessExits: 'none' | 'errors' | 'all';
   oversize: { errorFile: string | null; report: boolean; mode: 'truncate' | 'split' | 'accept' };
   privDrop: { uid: number; gid: number; keepSupplemental: boolean };
   extra: Map<string, ParamValue>;
@@ -99,6 +141,10 @@ export function defaultGlobalSettings(): GlobalSettings {
     logStatusMessages: true,
     environment: {},
     defaultNetstreamDriver: null,
+    defaultOpensslEngine: null,
+    permitCtlC: false,
+    developerOptions: 0,
+    shutdownQueueDoubleSize: false,
     defaultNetstreamDriverCaFile: null,
     defaultNetstreamDriverCertFile: null,
     defaultNetstreamDriverKeyFile: null,
@@ -106,9 +152,11 @@ export function defaultGlobalSettings(): GlobalSettings {
     netstreamDriverCaExtraFiles: null,
     dropMessagesWithMaliciousDnsPtrRecords: false,
     abortOnUncleanConfig: false,
+    abortOnFailedQueueStartup: false,
     abortOnIdResolutionFail: true,
     operatingStateFile: null,
     compatDefaultsSecure: 'backward-compatible',
+    compatConfigFormat: { legacy: 'enable', syslogd: 'enable', property: 'enable' },
     ipProtocol: 'unspecified',
     supportCompressionExtension: true,
     markIntervalSeconds: 20 * 60,
@@ -121,10 +169,12 @@ export function defaultGlobalSettings(): GlobalSettings {
     janitorInterval: 10,
     senders: { reportNew: false, reportGoneAway: false, timeoutAfter: 12 * 60 * 60, keepTrack: false },
     compactJson: false,
-    mainQueue: defaultQueueSettings('FixedArray', 100000),
+    queueTimeouts: { action: defaultQueueTimeouts('action'), ruleset: defaultQueueTimeouts('ruleset') },
+    mainQueue: defaultQueueSettings('FixedArray', 100000, 'main'),
     defaultRuleset: 'RSYSLOG_DefaultRuleset',
     maxOpenFiles: null,
     requireAllInputs: false,
+    reportChildProcessExits: 'errors',
     oversize: { errorFile: null, report: true, mode: 'truncate' },
     privDrop: { uid: 0, gid: 0, keepSupplemental: false },
     extra: new Map(),
@@ -205,6 +255,8 @@ export function clampMaxLine(requested: number, report: (message: string) => voi
   return requested;
 }
 
+export type CompatMode = 'enable' | 'warn' | 'disable';
+
 export function applyGlobalParams(settings: GlobalSettings, values: ParamValues, report: (message: string) => void): void {
   const parser = settings.parser;
   for (const [name, value] of values) settings.extra.set(name, value);
@@ -215,6 +267,17 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.dropMessagesWithMaliciousDnsPtrRecords = flag(values, 'dropmsgswithmaliciousdnsptrrecords') ?? settings.dropMessagesWithMaliciousDnsPtrRecords;
   settings.defaultNetstreamDriver = str(values, 'defaultnetstreamdriver') ?? settings.defaultNetstreamDriver;
   settings.defaultNetstreamDriverCaFile = str(values, 'defaultnetstreamdrivercafile') ?? settings.defaultNetstreamDriverCaFile;
+  settings.defaultOpensslEngine = str(values, 'defaultopensslengine') ?? settings.defaultOpensslEngine;
+  for (const kind of ['action', 'ruleset'] as const) {
+    const target = settings.queueTimeouts[kind];
+    target.timeoutShutdown = count(values, `default.${kind}.queue.timeoutshutdown`) ?? target.timeoutShutdown;
+    target.timeoutActionCompletion = count(values, `default.${kind}.queue.timeoutactioncompletion`) ?? target.timeoutActionCompletion;
+    target.timeoutEnqueue = count(values, `default.${kind}.queue.timeoutenqueue`) ?? target.timeoutEnqueue;
+    target.workerTimeoutThreadShutdown = count(values, `default.${kind}.queue.timeoutworkerthreadshutdown`) ?? target.workerTimeoutThreadShutdown;
+  }
+  settings.developerOptions = count(values, 'internal.developeronly.options') ?? settings.developerOptions;
+  settings.permitCtlC = flag(values, 'shutdown.enable.ctlc') ?? settings.permitCtlC;
+  settings.shutdownQueueDoubleSize = flag(values, 'shutdown.queue.doublesize') ?? settings.shutdownQueueDoubleSize;
   settings.defaultNetstreamDriverCertFile = str(values, 'defaultnetstreamdrivercertfile') ?? settings.defaultNetstreamDriverCertFile;
   settings.defaultNetstreamDriverKeyFile = str(values, 'defaultnetstreamdriverkeyfile') ?? settings.defaultNetstreamDriverKeyFile;
   settings.defaultNetstreamDriverCrlFile = str(values, 'defaultnetstreamdrivercrlfile') ?? settings.defaultNetstreamDriverCrlFile;
@@ -236,6 +299,7 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.processInternalMessages = flag(values, 'processinternalmessages') ?? settings.processInternalMessages;
   settings.variablesCaseSensitive = flag(values, 'variables.casesensitive') ?? settings.variablesCaseSensitive;
   settings.abortOnUncleanConfig = flag(values, 'abortonuncleanconfig') ?? settings.abortOnUncleanConfig;
+  settings.abortOnFailedQueueStartup = flag(values, 'abortonfailedqueuestartup') ?? settings.abortOnFailedQueueStartup;
   settings.operatingStateFile = str(values, 'operatingstatefile') ?? settings.operatingStateFile;
   settings.abortOnIdResolutionFail = flag(values, 'security.abortonidresolutionfail') ?? settings.abortOnIdResolutionFail;
   settings.aclAddHostnameOnFail = flag(values, 'net.acladdhostnameonfail') ?? settings.aclAddHostnameOnFail;
@@ -252,6 +316,17 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   const ipProtocol = str(values, 'net.ipprotocol');
   if (ipProtocol === 'unspecified' || ipProtocol === 'ipv4-only' || ipProtocol === 'ipv6-only') settings.ipProtocol = ipProtocol;
   else if (ipProtocol !== undefined) report(`invalid net.ipprotocol parameter '${ipProtocol}' -- ignored`);
+  for (const kind of ['legacy', 'syslogd', 'property'] as const) {
+    const mode = str(values, `compatibility.configformat.${kind}`);
+    if (mode === 'enable' || mode === 'warn' || mode === 'disable') settings.compatConfigFormat[kind] = mode;
+    else if (mode !== undefined) report(`invalid value '${mode}' for global parameter compatibility.configformat.${kind}`);
+  }
+  for (const name of ['libcapng.default', 'libcapng.enable']) {
+    if (values.has(name)) report("rsyslog wasn't compiled with libcap-ng support.");
+  }
+  if (values.has('stdlog.channelspec')) {
+    report("rsyslog wasn't compiled with liblogging-stdlog support. The 'stdlog.channelspec' parameter is ignored. Note: the syslog API is used instead.");
+  }
   const secureMode = str(values, 'compatibility.defaults.secure');
   if (secureMode === 'strict' || secureMode === 'backward-compatible' || secureMode === 'warn') {
     settings.compatDefaultsSecure = secureMode;
@@ -268,6 +343,9 @@ export function applyGlobalParams(settings: GlobalSettings, values: ParamValues,
   settings.oversize.report = flag(values, 'oversizemsg.report') ?? settings.oversize.report;
   const oversizeMode = str(values, 'oversizemsg.input.mode');
   if (oversizeMode !== undefined) settings.oversize.mode = oversizeMode === 'split' || oversizeMode === 'accept' ? oversizeMode : 'truncate';
+  const childExits = str(values, 'reportchildprocessexits');
+  if (childExits === 'none' || childExits === 'errors' || childExits === 'all') settings.reportChildProcessExits = childExits;
+  else if (childExits !== undefined) report(`invalid value '${childExits}' for global parameter reportChildProcessExits -- ignored`);
   settings.privDrop.keepSupplemental = flag(values, 'privdrop.group.keepsupplemental') ?? settings.privDrop.keepSupplemental;
   settings.privDrop.gid = count(values, 'privdrop.group.id') ?? count(values, 'privdrop.group.name') ?? settings.privDrop.gid;
   settings.privDrop.uid = count(values, 'privdrop.user.id') ?? count(values, 'privdrop.user.name') ?? settings.privDrop.uid;

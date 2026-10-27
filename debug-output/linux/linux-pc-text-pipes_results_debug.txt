@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-09-25T18:27:51.826Z
+Generated: 2026-10-26T23:38:59.057Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -106,7 +106,7 @@ $ [20/303]> echo "user=$USER home=$HOME"
   user=user home=/home/user
 
 $ [21/303]> echo ${HOSTNAME}
-  linux-pc
+  L-PC-TXT-DBG
 
 $ [22/303]> printf "%s\n" un deux trois
   un
@@ -129,7 +129,7 @@ $ [27/303]> echo {1..5}
   1 2 3 4 5
 
 $ [28/303]> echo *.txt
-  fruits.txt nombres.txt divers.txt seq.txt
+  divers.txt fruits.txt nombres.txt seq.txt
 
 
 --- [29] § cat — options ---
@@ -142,33 +142,33 @@ $ [29/303]> cat fruits.txt
   banane
 
 $ [30/303]> cat -n fruits.txt
-  banane
-  pomme
-  cerise
-  pomme
-  fraise
-  banane
+       1	banane
+       2	pomme
+       3	cerise
+       4	pomme
+       5	fraise
+       6	banane
 
 $ [31/303]> cat -b fruits.txt
-  banane
-  pomme
-  cerise
-  pomme
-  fraise
-  banane
+       1	banane
+       2	pomme
+       3	cerise
+       4	pomme
+       5	fraise
+       6	banane
 
 $ [32/303]> cat -A divers.txt
-    espaces  avant et apres  
-  MAJUSCULE minuscule
-  UNE LIGNE
+    espaces  avant et apres  $
+  MAJUSCULE minuscule$
+  UNE LIGNE$
 
 $ [33/303]> cat -E fruits.txt
-  banane
-  pomme
-  cerise
-  pomme
-  fraise
-  banane
+  banane$
+  pomme$
+  cerise$
+  pomme$
+  fraise$
+  banane$
 
 $ [34/303]> cat -T divers.txt
     espaces  avant et apres  
@@ -440,6 +440,7 @@ $ [80/303]> tail -n 1 gens.csv
   dan:28:nice
 
 $ [81/303]> head seq.txt nombres.txt
+  ==> seq.txt <==
   1
   2
   3
@@ -450,6 +451,8 @@ $ [81/303]> head seq.txt nombres.txt
   8
   9
   10
+  
+  ==> nombres.txt <==
   3
   1
   10
@@ -478,34 +481,34 @@ $ [82/303]> tail -q seq.txt nombres.txt
 
 --- [83] § wc — comptage ---
 $ [83/303]> wc fruits.txt
-        6       6      40 fruits.txt
+   6  6 40 fruits.txt
 
 $ [84/303]> wc -l fruits.txt
-        6 fruits.txt
+  6 fruits.txt
 
 $ [85/303]> wc -w gens.csv
-        4 gens.csv
+  4 gens.csv
 
 $ [86/303]> wc -c fruits.txt
-       40 fruits.txt
+  40 fruits.txt
 
 $ [87/303]> wc -m divers.txt
-       58 divers.txt
+  58 divers.txt
 
 $ [88/303]> wc -L divers.txt
-       27 divers.txt
+  27 divers.txt
 
 $ [89/303]> wc -l fruits.txt nombres.txt seq.txt
-        6 fruits.txt
-        6 nombres.txt
-       19 seq.txt
-       31 total
+    6 fruits.txt
+    6 nombres.txt
+   20 seq.txt
+   32 total
 
 $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  66
+  71
 
 
 --- [92] § sort — tri ---
@@ -1034,6 +1037,7 @@ $ [177/303]> cat /etc/passwd | wc -l
 
 $ [178/303]> ls /etc | grep conf | sort | head
   adduser.conf
+  gai.conf
   logrotate.conf
   nsswitch.conf
   resolv.conf
@@ -1115,9 +1119,7 @@ $ [199/303]> cat <<< "here string en entrée"
   here string en entrée
 
 $ [200/303]> sort <<< "c\nb\na"
-  a
-  b
-  c
+  c\nb\na
 
 $ [201/303]> NOM=debug; echo "valeur=$NOM"
   valeur=debug
@@ -1271,7 +1273,7 @@ $ [230/303]> pr -t fruits.txt
 $ [231/303]> pr -n fruits.txt
   
   
-  Fri Sep 25 2026  fruits.txt  Page 1
+  Mon Oct 26 2026  fruits.txt  Page 1
   
   
       1	banane
@@ -1280,7 +1282,6 @@ $ [231/303]> pr -n fruits.txt
       4	pomme
       5	fraise
       6	banane
-  
   
   
   
@@ -1311,37 +1312,39 @@ $ [233/303]> fold -s -w 10 divers.txt
 
 --- [234] § xargs & boucles ---
 $ [234/303]> echo "a b c" | xargs
-  echo a b c
+  a b c
 
 $ [235/303]> echo "fichier1 fichier2 fichier3" | xargs -n1
-  -n1 fichier1 fichier2 fichier3
+  fichier1
+  fichier2
+  fichier3
 
 $ [236/303]> ls /etc/*.conf | xargs -n1 basename
-  -n1 /etc/resolv.conf
-  -n1 /etc/adduser.conf
-  -n1 /etc/logrotate.conf
-  -n1 /etc/nsswitch.conf
-  -n1 /etc/rsyslog.conf
+  adduser.conf
+  gai.conf
+  logrotate.conf
+  nsswitch.conf
+  resolv.conf
+  rsyslog.conf
 
 $ [237/303]> echo "1 2 3" | xargs -I{} echo "valeur={}"
-  -I{} 1 2 3
+  valeur=1 2 3
 
 $ [238/303]> seq 1 5 | xargs echo
-  echo 1
-  echo 2
-  echo 3
-  echo 4
-  echo 5
+  1 2 3 4 5
 
 $ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
-  wc /etc/resolv.conf
-  wc /etc/adduser.conf
-  wc /etc/logrotate.conf
-  wc /etc/nsswitch.conf
-  wc /etc/rsyslog.conf
+    65 /etc/gai.conf
+     0 /etc/resolv.conf
+    20 /etc/adduser.conf
+    27 /etc/logrotate.conf
+    20 /etc/nsswitch.conf
+    51 /etc/rsyslog.conf
+   183 total
 
 $ [240/303]> echo "pomme banane" | xargs -d" " -n1 echo
-  -d  pomme banane
+  pomme
+  banane
 
 $ [241/303]> for f in fruits nombres seq; do echo "=> $f"; done
   => fruits
@@ -1415,7 +1418,7 @@ $ [260/303]> md5sum fruits.txt nombres.txt
   d477c7d63c0d6d3e48d6b8dd56d7d343  nombres.txt
 
 $ [261/303]> echo -n 'hello' | md5sum
-  md5sum: missing file operand
+  5d41402abc4b2a76b9719d911017c592  -
 
 $ [262/303]> echo 'données' | base64
   ZG9ubsOpZXMK
@@ -1433,7 +1436,6 @@ $ [265/303]> echo "diffusion" | tee /tmp/t1.txt /tmp/t2.txt
 
 $ [266/303]> cat /tmp/t1.txt /tmp/t2.txt
   diffusion
-  
   diffusion
 
 $ [267/303]> cat fruits.txt | tee /tmp/copie_pipe.txt | wc -l
@@ -1446,7 +1448,7 @@ $ [269/303]> cat /dev/null
 <empty>
 
 $ [270/303]> head -c 5 /dev/zero | wc -c
-  6
+  5
 
 $ [271/303]> echo "stdout"; echo "stderr" >&2
   stdout
@@ -1506,12 +1508,12 @@ $ [278/303]> cut -d: -f1 /etc/group | sort | head
   root
 
 $ [279/303]> wc -l /etc/passwd /etc/group
-        8 /etc/passwd
-       14 /etc/group
-       22 total
+    8 /etc/passwd
+   15 /etc/group
+   23 total
 
 $ [280/303]> grep -v "^#" /etc/hostname
-  linux-pc
+  L-PC-TXT-DBG
 
 $ [281/303]> sort -t: -k3 -n /etc/passwd | head
   root:x:0:0:root:/root:/bin/bash
@@ -1634,7 +1636,7 @@ $ [301/303]> tr a
 <empty>
 
 $ [302/303]> cat | | wc
-<empty>
+        0       0       0
 
 $ [303/303]> echo "fin du transcript text & pipes"
   fin du transcript text & pipes

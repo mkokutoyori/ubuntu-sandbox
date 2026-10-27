@@ -14,6 +14,7 @@ import type { ActionDefinition, ActionOptions, ActionRateLimit, LoadedConfig, Ru
 import { applyDirective } from './Directives';
 import type { RsyslogHost } from './Host';
 import { DiagnosticLog, RS_RET } from './Log';
+import { localHostNameOf } from './LocalHostName';
 import type {
   ActionModuleInstance, DirectiveRegistration, EngineModule, InputContext, InputModule, InputSubmitter, ModuleContext, ModuleRateLimiter,
   ModuleRateLimitSpec, OutputModule, RuntimeLog,
@@ -27,7 +28,9 @@ import { SenderResolver } from './SenderResolver';
 import { DynStatsRegistry, DEFAULT_MAX_CARDINALITY, DEFAULT_UNUSED_METRIC_LIFE_SECONDS } from './DynStats';
 import { PercentileStatsRegistry } from './PercentileStats';
 import { Statistics } from './Statistics';
-import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type QueueSettings } from './Settings';
+import { configureCryptoProvider } from '../crypto/CryptoEnvironment';
+import { applyQueueParameters, correctQueueParameters, type QueueContext } from './QueueParams';
+import { GLOBAL_PARAMS, applyGlobalParams, defaultGlobalSettings, defaultQueueSettings, type CompatMode, type QueueSettings, type QueueTimeouts } from './Settings';
 
 export interface ModuleCatalog {
   find(cnfName: string): EngineModule | undefined;
@@ -54,7 +57,13 @@ export const QUEUE_PARAMS: readonly ParamDescriptor[] = [
   { name: 'queue.dequeuetimebegin', type: 'int' }, { name: 'queue.dequeuetimeend', type: 'int' },
   { name: 'queue.dequeuebatchsize', type: 'int' }, { name: 'queue.maxdiskspace', type: 'size' },
   { name: 'queue.spooldirectory', type: 'string' }, { name: 'queue.takeflowctlfrommsg', type: 'binary' },
-  { name: 'queue.samplinginterval', type: 'int' },
+  { name: 'queue.samplinginterval', type: 'int' }, { name: 'queue.mindequeuebatchsize', type: 'int' },
+  { name: 'queue.mindequeuebatchsize.timeout', type: 'int' }, { name: 'queue.fulldelaymark', type: 'int' },
+  { name: 'queue.lightdelaymark', type: 'int' }, { name: 'queue.diskqueuetype', type: 'string' },
+  { name: 'queue.diskqueueautoupgrade', type: 'binary' }, { name: 'queue.diskqueueidletimeout', type: 'int' },
+  { name: 'queue.mutexcontentionstats', type: 'binary' }, { name: 'queue.oncorruption', type: 'string' }, { name: 'queue.cry.provider', type: 'string' },
+  { name: 'queue.cry.key', type: 'word' }, { name: 'queue.cry.keyfile', type: 'word' }, { name: 'queue.cry.keyprogram', type: 'word' },
+  { name: 'queue.cry.mode', type: 'word' }, { name: 'queue.cry.algo', type: 'word' },
 ];
 
 const ACTION_PARAMS: readonly ParamDescriptor[] = [
@@ -130,13 +139,14 @@ interface LegacyActionState {
   repeatedMessageContainsOriginalMessage: boolean;
   name: string | null;
   queue: QueueSettings;
+  explicitTimeouts: Set<keyof QueueTimeouts>;
 }
 
 function newLegacyActionState(): LegacyActionState {
   return {
     resumeInterval: 30, resumeRetryCount: 0, writeAllMarkMessages: true, execOnlyWhenPreviousIsSuspended: false,
     execOnlyOnceEveryInterval: 0, execOnlyEveryNthTime: 0, execOnlyEveryNthTimeTimeout: 0,
-    repeatedMessageContainsOriginalMessage: false, name: null, queue: defaultQueueSettings('Direct', 1000),
+    repeatedMessageContainsOriginalMessage: false, name: null, queue: defaultQueueSettings('Direct', 1000), explicitTimeouts: new Set(),
   };
 }
 
@@ -165,6 +175,7 @@ export class ConfigLoader implements ConfigSink {
       else this.log.info(text, code);
     },
     internal: () => undefined,
+    childExited: () => undefined,
   };
 
   constructor(private readonly options: LoaderOptions) {
@@ -194,11 +205,13 @@ export class ConfigLoader implements ConfigSink {
         info: (text, code) => this.runtimeSink.info(text, code),
         log: (severity, code, text, errno) => this.runtimeSink.log(severity, code, text, errno),
         internal: (severity, code, text, mark, facility) => this.runtimeSink.internal(severity, code, text, mark, facility),
+        childExited: (pid, exitCode) => this.runtimeSink.childExited(pid, exitCode),
       },
       settings,
       statistics: this.config.statistics,
       janitor: this.config.janitor,
       recordSender: (sender, messages, seconds) => this.recordSender(sender, messages, seconds),
+      localHostName: () => localHostNameOf(settings, options.host),
       template: (name) => this.config.templates.get(name),
       report: (message) => this.reportAt(message),
       warn: (message) => this.warnAt(message),
@@ -469,6 +482,7 @@ export class ConfigLoader implements ConfigSink {
     flag('escape8bitcharactersonreceive', (on) => { settings.parser.escape8BitCharactersOnReceive = on; });
     flag('escapecontrolcharactertab', (on) => { settings.parser.escapeControlCharacterTab = on; });
     word('defaultnetstreamdriver', (value) => { settings.defaultNetstreamDriver = value; });
+    word('defaultopensslengine', (value) => { settings.defaultOpensslEngine = value; });
     word('defaultnetstreamdrivercafile', (value) => { settings.defaultNetstreamDriverCaFile = value; });
     word('defaultnetstreamdrivercertfile', (value) => { settings.defaultNetstreamDriverCertFile = value; });
     word('defaultnetstreamdriverkeyfile', (value) => { settings.defaultNetstreamDriverKeyFile = value; });
@@ -500,7 +514,12 @@ export class ConfigLoader implements ConfigSink {
     word('moddir', () => undefined);
     this.registerDirective({ name: 'resetconfigvariables', type: 'custom', apply: () => undefined, custom: (rest) => { this.resetConfigVariables(); return rest; } });
     this.registerDirective({ name: 'rulesetparser', type: 'word', apply: (value) => this.addRulesetParser(String(value)) });
-    flag('rulesetcreatemainqueue', (on) => { if (on) this.currentRuleset.queue = defaultQueueSettings('LinkedList', 50000); });
+    flag('rulesetcreatemainqueue', (on) => {
+      if (!on) return;
+      const queue = { ...this.config.settings.mainQueue };
+      correctQueueParameters(queue, this.queueContext(`ruleset ${this.currentRuleset.name} queue`));
+      this.currentRuleset.queue = queue;
+    });
 
     const legacy = (): LegacyActionState => this.legacy;
     word('actionname', (value) => { legacy().name = value; });
@@ -524,10 +543,10 @@ export class ConfigLoader implements ConfigSink {
     flag('actionqueuesyncqueuefiles', (on) => { queue().syncQueueFiles = on; });
     word('actionqueuetype', (value) => { queue().type = queueTypeName(value) ?? queue().type; });
     integer('actionqueueworkerthreads', (value) => { queue().workerThreads = value; }, 'positive');
-    integer('actionqueuetimeoutshutdown', (value) => { queue().timeoutShutdown = value; });
-    integer('actionqueuetimeoutactioncompletion', (value) => { queue().timeoutActionCompletion = value; });
-    integer('actionqueuetimeoutenqueue', (value) => { queue().timeoutEnqueue = value; });
-    integer('actionqueueworkertimeoutthreadshutdown', (value) => { queue().workerTimeoutThreadShutdown = value; });
+    integer('actionqueuetimeoutshutdown', (value) => { queue().timeoutShutdown = value; legacy().explicitTimeouts.add('timeoutShutdown'); });
+    integer('actionqueuetimeoutactioncompletion', (value) => { queue().timeoutActionCompletion = value; legacy().explicitTimeouts.add('timeoutActionCompletion'); });
+    integer('actionqueuetimeoutenqueue', (value) => { queue().timeoutEnqueue = value; legacy().explicitTimeouts.add('timeoutEnqueue'); });
+    integer('actionqueueworkertimeoutthreadshutdown', (value) => { queue().workerTimeoutThreadShutdown = value; legacy().explicitTimeouts.add('workerTimeoutThreadShutdown'); });
     integer('actionqueueworkerthreadminimummessages', (value) => { queue().workerThreadMinimumMessages = value; });
     this.registerDirective({ name: 'actionqueuemaxfilesize', type: 'size', apply: (value) => { queue().maxFileSize = Number(value); } });
     flag('actionqueuesaveonshutdown', (on) => { queue().saveOnShutdown = on; });
@@ -536,11 +555,39 @@ export class ConfigLoader implements ConfigSink {
     integer('actionqueuedequeuetimeend', (value) => { queue().dequeueTimeEnd = value; });
   }
 
+  private readonly queueFiles = new Set<string>();
+
+  private queueContext(name: string): QueueContext {
+    return {
+      name,
+      usedFiles: this.queueFiles,
+      workDirectory: this.config.settings.workDirectory,
+      moduleFileAvailable: (fileName) => this.options.catalog.fileExists(fileName),
+      configureCrypto: (provider, parameters) => configureCryptoProvider(provider, parameters, this.options.host, (text, code) => this.log.error(text, code)),
+      diagnostics: {
+        parserError: (text) => this.reportAt(text),
+        parserWarning: (text) => this.warnAt(text),
+        warning: (text, code) => this.log.warning(text, code),
+        error: (text, code) => this.log.error(text, code),
+      },
+    };
+  }
+
+  private legacyQueueWithDefaults(): QueueSettings {
+    const queue = { ...this.legacy.queue };
+    const defaults = this.config.settings.queueTimeouts.action;
+    for (const field of ['timeoutShutdown', 'timeoutActionCompletion', 'timeoutEnqueue', 'workerTimeoutThreadShutdown'] as const) {
+      if (!this.legacy.explicitTimeouts.has(field)) queue[field] = defaults[field];
+    }
+    return queue;
+  }
+
   private resetConfigVariables(): void {
     this.legacy.execOnlyOnceEveryInterval = 0;
     this.legacy.execOnlyWhenPreviousIsSuspended = false;
     const settings = this.config.settings;
     settings.defaultNetstreamDriver = null;
+    settings.defaultOpensslEngine = null;
     settings.defaultNetstreamDriverCaFile = null;
     settings.defaultNetstreamDriverCertFile = null;
     settings.defaultNetstreamDriverKeyFile = null;
@@ -676,7 +723,9 @@ export class ConfigLoader implements ConfigSink {
   private processMainQueue(object: ConfigObject): void {
     const values = getParams(object.params, QUEUE_PARAMS, this.paramEnvironment());
     if (values === null) return;
-    applyQueueParams(this.config.settings.mainQueue, values);
+    const settings = this.config.settings;
+    Object.assign(settings.mainQueue, defaultQueueSettings('FixedArray', 50000, 'ruleset', { ...settings.queueTimeouts.ruleset }));
+    applyQueueParameters(settings.mainQueue, values, this.queueContext('main Q'));
   }
 
   private processModule(object: ConfigObject): void {
@@ -755,8 +804,10 @@ export class ConfigLoader implements ConfigSink {
     const parsers = arrayParam(values, 'parser');
     if (parsers !== undefined) ruleset.parserNames = [...parsers];
     if ([...values.keys()].some((key) => key.startsWith('queue.'))) {
-      const queue = defaultQueueSettings('LinkedList', 50000);
-      applyQueueParams(queue, values);
+      const queue = defaultQueueSettings('FixedArray', 50000, 'ruleset', { ...this.config.settings.queueTimeouts.ruleset });
+      const context = this.queueContext(`ruleset ${name} queue`);
+      applyQueueParameters(queue, values, context);
+      correctQueueParameters(queue, context);
       ruleset.queue = queue;
     }
   }
@@ -910,7 +961,17 @@ export class ConfigLoader implements ConfigSink {
   }
 
   cfsysline(line: string): void {
+    if (!this.permitCompatSyntax(this.config.settings.compatConfigFormat.legacy, '$-directive', line, 'compatibility.configformat.legacy')) return;
     this.runDirective(line.slice(1));
+  }
+
+  private permitCompatSyntax(mode: CompatMode, kind: string, text: string, option: string): boolean {
+    if (mode === 'warn') this.warnAt(`obsolete ${kind} syntax encountered: '${text}'`);
+    else if (mode === 'disable') {
+      this.reportAt(`obsolete ${kind} syntax disabled: '${text}'; use global(${option}="enable") to enable it`);
+      return false;
+    }
+    return true;
   }
 
   legacyRuleset(line: string): void {
@@ -1050,7 +1111,7 @@ export class ConfigLoader implements ConfigSink {
       errorFileMaxSize: 0,
       externalStateFile: null,
       rateLimitName: null,
-      queue: values === null ? { ...legacy.queue } : defaultQueueSettings('Direct', 1000),
+      queue: values === null ? this.legacyQueueWithDefaults() : defaultQueueSettings('Direct', 1000, 'action', { ...this.config.settings.queueTimeouts.action }),
     };
     if (values === null) {
       legacy.execOnlyEveryNthTime = 0;
@@ -1058,6 +1119,7 @@ export class ConfigLoader implements ConfigSink {
       legacy.writeAllMarkMessages = true;
       legacy.name = null;
       legacy.queue = defaultQueueSettings('Direct', 1000);
+      legacy.explicitTimeouts = new Set();
       return options;
     }
     const flag = (key: string): boolean | undefined => {
@@ -1081,15 +1143,10 @@ export class ConfigLoader implements ConfigSink {
     options.externalStateFile = stringParam(values, 'action.externalstate.file') ?? null;
     options.rateLimitName = stringParam(values, 'action.ratelimit.name') ?? null;
     options.copyMessage = flag('action.copymsg') ?? false;
-    const queueValues = new Map([...values].filter(([key]) => key.startsWith('queue.')));
-    if (queueValues.size > 0) {
-      options.queue = defaultQueueSettings('LinkedList', 1000);
-      applyQueueParams(options.queue, queueValues);
-    }
     return options;
   }
 
-  private bindAction(instance: ActionModuleInstance, options: ActionOptions, module: OutputModule): ActionDefinition | null {
+  private bindAction(instance: ActionModuleInstance, options: ActionOptions, module: OutputModule, values: ParamValues | null = null): ActionDefinition | null {
     const templates = [];
     for (const [index, request] of instance.templates.entries()) {
       if (request.asMessage === true) {
@@ -1110,6 +1167,12 @@ export class ConfigLoader implements ConfigSink {
       templates.push({ request, template });
     }
     const moduleDisplayName = module.builtin ? `builtin:${module.name}` : module.name;
+    const queueContext = this.queueContext(`${options.name ?? `action-${this.nextActionId}-${moduleDisplayName}`} queue`);
+    if (values !== null) {
+      options.queue = defaultQueueSettings('Direct', 1000, 'action', { ...this.config.settings.queueTimeouts.action });
+      applyQueueParameters(options.queue, new Map([...values].filter(([key]) => key.startsWith('queue.'))), queueContext);
+    }
+    correctQueueParameters(options.queue, queueContext);
     let outputLimiter: ActionRateLimit | null = null;
     if (options.rateLimitName !== null) {
       outputLimiter = this.createOutputRateLimiter(options.rateLimitName, options.name ?? `action-${this.nextActionId - 1}-${moduleDisplayName}`, options.queue.type === 'Direct');
@@ -1146,7 +1209,7 @@ export class ConfigLoader implements ConfigSink {
       this.reportAt(`errors occurred in file '${location.file}' around line ${location.line}`, location);
       return { k: 'nop' };
     }
-    const definition = this.bindAction(instance, options, module as OutputModule);
+    const definition = this.bindAction(instance, options, module as OutputModule, values);
     if (definition === null) {
       this.reportAt(`errors occurred in file '${location.file}' around line ${location.line}`, location);
       return { k: 'nop' };
@@ -1179,6 +1242,7 @@ export class ConfigLoader implements ConfigSink {
 
   newPriorityFilter(text: string, then: Stmt[], location: Location): Stmt {
     this.currentLocation = location;
+    if (!this.permitCompatSyntax(this.config.settings.compatConfigFormat.syslogd, 'classic syslogd filter', text, 'compatibility.configformat.syslogd')) return { k: 'nop' };
     const mask = decodePriorityFilter(text, (message) => this.log.error(message, RS_RET.ERR));
     if (mask === null) {
       this.config.hadErrors = true;
@@ -1189,6 +1253,7 @@ export class ConfigLoader implements ConfigSink {
 
   newPropertyFilter(text: string, then: Stmt[], location: Location): Stmt {
     this.currentLocation = location;
+    if (!this.permitCompatSyntax(this.config.settings.compatConfigFormat.property, 'classic property-based filter', text, 'compatibility.configformat.property')) return { k: 'nop' };
     const decoded = decodePropertyFilter(text, (message) => this.reportAt(message, location));
     if (decoded === null) return { k: 'nop' };
     return { k: 'propfilt', printable: text, prop: decoded.prop, operation: decoded.operation, negated: decoded.negated, value: decoded.value, then };
@@ -1364,37 +1429,6 @@ export class ConfigLoader implements ConfigSink {
 function queueTypeName(value: string): string | undefined {
   const map: Record<string, string> = { fixedarray: 'FixedArray', linkedlist: 'LinkedList', disk: 'Disk', direct: 'Direct', segmenteddisk: 'SegmentedDisk' };
   return map[value.toLowerCase()];
-}
-
-export function applyQueueParams(queue: QueueSettings, values: ParamValues): void {
-  const number = (key: string): number | undefined => numberParam(values, key);
-  const text = (key: string): string | undefined => stringParam(values, key);
-  const flag = (key: string): boolean | undefined => {
-    const value = values.get(key);
-    return value?.kind === 'N' ? value.n !== 0 : undefined;
-  };
-  queue.fileName = text('queue.filename') ?? queue.fileName;
-  queue.size = number('queue.size') ?? queue.size;
-  queue.highWatermark = number('queue.highwatermark') ?? queue.highWatermark;
-  queue.lowWatermark = number('queue.lowwatermark') ?? queue.lowWatermark;
-  queue.discardMark = number('queue.discardmark') ?? queue.discardMark;
-  queue.discardSeverity = number('queue.discardseverity') ?? queue.discardSeverity;
-  queue.checkpointInterval = number('queue.checkpointinterval') ?? queue.checkpointInterval;
-  queue.syncQueueFiles = flag('queue.syncqueuefiles') ?? queue.syncQueueFiles;
-  queue.type = text('queue.type') ?? queue.type;
-  queue.workerThreads = number('queue.workerthreads') ?? queue.workerThreads;
-  queue.timeoutShutdown = number('queue.timeoutshutdown') ?? queue.timeoutShutdown;
-  queue.timeoutActionCompletion = number('queue.timeoutactioncompletion') ?? queue.timeoutActionCompletion;
-  queue.timeoutEnqueue = number('queue.timeoutenqueue') ?? queue.timeoutEnqueue;
-  queue.workerTimeoutThreadShutdown = number('queue.timeoutworkerthreadshutdown') ?? queue.workerTimeoutThreadShutdown;
-  queue.workerThreadMinimumMessages = number('queue.workerthreadminimummessages') ?? queue.workerThreadMinimumMessages;
-  queue.maxFileSize = number('queue.maxfilesize') ?? queue.maxFileSize;
-  queue.saveOnShutdown = flag('queue.saveonshutdown') ?? queue.saveOnShutdown;
-  queue.dequeueSlowdown = number('queue.dequeueslowdown') ?? queue.dequeueSlowdown;
-  queue.dequeueTimeBegin = number('queue.dequeuetimebegin') ?? queue.dequeueTimeBegin;
-  queue.dequeueTimeEnd = number('queue.dequeuetimeend') ?? queue.dequeueTimeEnd;
-  queue.dequeueBatchSize = number('queue.dequeuebatchsize') ?? queue.dequeueBatchSize;
-  queue.maxDiskSpace = number('queue.maxdiskspace') ?? queue.maxDiskSpace;
 }
 
 export type { Template };

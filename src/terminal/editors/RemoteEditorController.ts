@@ -128,6 +128,7 @@ export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorV
   get replaceSearchQuery(): string { return this.current.replaceSearchQuery; }
   get replaceWithText(): string { return this.current.replaceWithText; }
   get pendingReplaceMatch(): PendingReplaceMatch | null { return this.current.pendingReplaceMatch; }
+  get exitNotice(): string { return this.current.exitNotice; }
 
   scrollView(up: boolean, count: number): void {
     void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));

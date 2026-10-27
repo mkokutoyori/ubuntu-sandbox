@@ -248,6 +248,8 @@ import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
 import { LocalDatagramSockets, type UnixStreamConnectOutcome, type UnixStreamHandlers } from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
+import { rscryutilHost } from './syslog/LinuxRscryutilHost';
+import { runRscryutil } from './syslog/RscryutilTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
 import { renderLoginctl, type LoginctlSessionAction } from './network/loginctlFormatter';
@@ -272,7 +274,9 @@ import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
+import { cwdLinkOf, exeLinkOf, rootLinkOf, type ProcessLinkSources } from './process/ProcessLinks';
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
+import { applyRcfiles, type RcHost } from './editors/nano/NanoRc';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -319,7 +323,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
-  'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
+  'systemctl', 'service', 'journalctl', 'rscryutil', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
   'conntrack',
@@ -432,6 +436,10 @@ function reportsOwnFailure(argv: readonly string[], exitCode: number): boolean {
   return exitCode === WRAPPER_FAILURE_STATUS && COMMAND_WRAPPERS.has(name);
 }
 
+function rmanExitCode(output: string): number {
+  return /RMAN-\d|ORA-\d/.test(output) ? 1 : 0;
+}
+
 function writesLines(argv: readonly string[]): boolean {
   const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
   const name = lead[0]?.split('/').pop();
@@ -515,15 +523,36 @@ type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly st
 
 const HOST_KEY_ADDED_NOTICE = 'Warning: Permanently added';
 
-function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: string; stdinPath?: string } {
+interface SplitRedirections {
+  argv: string[];
+  stdoutPath?: string;
+  stdinPath?: string;
+  stderrPath?: string;
+  stderrAppend: boolean;
+}
+
+function splitRedirections(tokens: string[]): SplitRedirections {
   const argv: string[] = [];
   let stdoutPath: string | undefined;
   let stdinPath: string | undefined;
+  let stderrPath: string | undefined;
+  let stderrAppend = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    const out = /^1?(>>?)(.*)$/.exec(token);
+    const out = /^1?(>>?)(?!&)(.*)$/.exec(token);
+    const err = /^2(>>?)(?!&)(.*)$/.exec(token);
     const input = /^<(.*)$/.exec(token);
-    if (out) {
+    if (token === '2>&1') {
+      if (stdoutPath !== undefined) {
+        stderrPath = stdoutPath;
+        stderrAppend = true;
+      }
+    } else if (/^1?>&[0-9]$/.test(token)) {
+      continue;
+    } else if (err) {
+      stderrPath = err[2] !== '' ? err[2] : tokens[++i];
+      stderrAppend = err[1] === '>>';
+    } else if (out) {
       stdoutPath = out[2] !== '' ? out[2] : tokens[++i];
     } else if (input) {
       stdinPath = input[1] !== '' ? input[1] : tokens[++i];
@@ -531,7 +560,7 @@ function splitRedirections(tokens: string[]): { argv: string[]; stdoutPath?: str
       argv.push(token);
     }
   }
-  return { argv, stdoutPath, stdinPath };
+  return { argv, stdoutPath, stdinPath, stderrPath, stderrAppend };
 }
 
 const AUDIT_SYSLOG_PRIORITY: Readonly<Record<AuditPriority, number>> = {
@@ -809,6 +838,7 @@ export class LinuxCommandExecutor {
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
   _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
+  _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<string>) | null = null;
   /**
    * Optional bridge into `LinuxMachine`'s `LinuxCommandRegistry` — set by
    * `LinuxMachine` so `LinuxCommand` objects that need full network context
@@ -868,6 +898,7 @@ export class LinuxCommandExecutor {
         uid: process.uid, gid: process.gid, comm: process.comm, exe: process.exe ?? null, cmdline: process.command ?? null, capeff: null, label: null,
         auditId: attrs.sessionid === none ? null : attrs.sessionid, loginUid: attrs.loginuid === none ? null : attrs.loginuid,
         cgroup: this.cgroupPathFor(pid), invocationId: null,
+        ...this.logRateLimitOf(process.serviceName),
       };
     });
     this.logMgr.setZone(() => this.identity.timezone);
@@ -895,7 +926,7 @@ export class LinuxCommandExecutor {
       ]),
     });
     this.sudoPam = new SudoPamSessions(this.pam, () => ({ uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() }));
-    this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
+    this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr, (name) => this.processMgr.pidof(name)[0] ?? 0);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditLog.setClock(this.wallNow);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
@@ -1307,6 +1338,7 @@ export class LinuxCommandExecutor {
       this.vfs.registerGeneratedFile(`/proc/${pid}/mounts`, () => this.mountTable.toProcMounts());
       this.vfs.registerGeneratedFile(`/proc/${pid}/mountinfo`, () => this.mountTable.toMountInfo());
       this.materializeProcExe(pid);
+      this.materializeProcLinks(pid);
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
@@ -1330,14 +1362,78 @@ export class LinuxCommandExecutor {
    */
   private materializeProcExe(pid: number): void {
     const p = this.processMgr.get(pid);
-    // Kernel threads have no executable — `/proc/<pid>/exe` is empty for
-    // them on a real system, so there is nothing to link.
-    if (!p || !p.exe.startsWith('/')) return;
+    const sources = this.processLinkSources();
+    const initial = exeLinkOf(sources, pid);
+    if (!p || initial === null) return;
     this.vfs.registerGeneratedSymlink(`/proc/${pid}/exe`, () => {
-      const live = this.processMgr.get(pid);
-      const exe = live?.exe ?? p.exe;
+      const exe = exeLinkOf(sources, pid) ?? initial;
       return this.vfs.exists(exe) ? exe : `${exe} (deleted)`;
     }, p.uid, p.gid);
+  }
+
+  private materializeProcLinks(pid: number): void {
+    const p = this.processMgr.get(pid);
+    if (!p) return;
+    const sources = this.processLinkSources();
+    this.vfs.registerGeneratedSymlink(`/proc/${pid}/cwd`, () => cwdLinkOf(sources, pid) ?? '/', p.uid, p.gid);
+    this.vfs.registerGeneratedSymlink(`/proc/${pid}/root`, () => rootLinkOf(sources, pid) ?? '/', p.uid, p.gid);
+  }
+
+  private beginBackgroundSubshell(label: string): number {
+    const c = this.ctx();
+    const proc = this.processMgr.spawn({
+      command: label, comm: 'bash', user: this.userMgr.currentUser, uid: c.uid, gid: c.gid,
+      ppid: this.currentBashPid(), tty: 'pts/0', cwd: this.cwd,
+    });
+    this.jobTable.add(proc.pid, `${label} &`);
+    this.waitScopes.push(0);
+    this.bashPids.push(proc.pid);
+    return proc.pid;
+  }
+
+  private endBackgroundSubshell(
+    pid: number, outcome: { cwd: string; image: readonly string[] | null; output: string; exitCode: number; parked: boolean },
+  ): void {
+    const seconds = this.waitScopes.pop() ?? 0;
+    this.bashPids.pop();
+    this.processMgr.replaceImage(pid, this.vfs.normalizePath(outcome.cwd, this.cwd), outcome.image);
+    const job = this.jobTable.findByPid(pid);
+    if (job === undefined) return;
+    job.capturedOutput = outcome.output;
+    job.exitCode = outcome.exitCode;
+    job.durationMs = outcome.parked ? PERSISTENT_LISTENER_DURATION_MS : Math.round(seconds * 1000);
+    job.completesAt = this.logicalNow() + job.durationMs;
+  }
+
+  private holdDescriptorsOfBackgroundJob(pid: number, commandLine: string): void {
+    const { argv, stdinPath, stdoutPath, stderrPath, stderrAppend } = splitRedirections(simpleTokenize(commandLine.replace(/^(sudo|nohup)\s+/, '')));
+    const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
+    if (stdinPath !== undefined) this.processMgr.redirectStandardStream(pid, 0, absolute(stdinPath), 'r');
+    if (stdoutPath !== undefined) this.processMgr.redirectStandardStream(pid, 1, absolute(stdoutPath), 'w');
+    if (stderrPath !== undefined) this.processMgr.redirectStandardStream(pid, 2, absolute(stderrPath), stderrAppend ? 'a' : 'w');
+    if (basenameOf(argv[0] ?? '') !== 'tail' || !argv.some((word) => /^-[A-Za-z]*[fF]|^--follow/.test(word))) return;
+    for (const word of argv.slice(1)) {
+      if (word.startsWith('-')) continue;
+      const path = absolute(word);
+      if (this.vfs.getType(path) === 'file') this.processMgr.openFile(pid, path, 'r');
+    }
+  }
+
+  resolveExecutablePath(name: string): string | null {
+    const resolver = new CommandResolver(this.shellIntrospection());
+    return resolver.resolveAll(name, { forcePath: true }).find((candidate) => candidate.kind === 'file')?.path ?? null;
+  }
+
+  processLinkSources(): ProcessLinkSources {
+    return {
+      subject: (pid) => {
+        const process = this.processMgr.get(pid);
+        if (process === undefined) return undefined;
+        return { pid, uid: process.uid, exe: process.exe, cwd: pid === this.currentBashPid() ? this.cwd : process.cwd };
+      },
+      descriptorSources: (pid) => this.descriptorSourcesFor(pid),
+      resolveExecutable: (name) => this.resolveExecutablePath(name),
+    };
   }
 
   /** `/proc/<pid>/fd/` — stdin/stdout/stderr, any `OSProcess.openFiles`,
@@ -1350,12 +1446,13 @@ export class LinuxCommandExecutor {
     const p = this.processMgr.get(pid);
     if (!p) return;
     const fdDir = `/proc/${pid}/fd`;
+    if (this.vfs.exists(fdDir)) this.vfs.rmrf(fdDir);
     this.vfs.mkdirp(fdDir, 0o500, p.uid, p.gid);
     // La numérotation vient de `openDescriptors`, pas d'ici : c'est la même
     // que celle que compte `RLIMIT_NOFILE`, donc les deux ne peuvent pas
     // diverger (§F9.3).
     for (const d of openDescriptors(this.descriptorSourcesFor(pid))) {
-      this.vfs.createSymlink(`${fdDir}/${d.fd}`, d.target, p.uid, p.gid);
+      this.vfs.createSymlink(`${fdDir}/${d.fd}`, d.target, p.uid, p.gid, d.writable ? 0o700 : 0o500);
     }
   }
 
@@ -1409,6 +1506,11 @@ export class LinuxCommandExecutor {
       hops++;
     }
     return { loginuid: NONE, sessionid: NONE };
+  }
+
+  private logRateLimitOf(serviceName: string | undefined): { logRateLimitIntervalUsec?: number; logRateLimitBurst?: number } {
+    const unit = serviceName === undefined ? undefined : this.serviceMgr.status(serviceName) ?? undefined;
+    return unit === undefined ? {} : { logRateLimitIntervalUsec: unit.logRateLimitIntervalUsec, logRateLimitBurst: unit.logRateLimitBurst };
   }
 
   cgroupPathFor(pid: number): string {
@@ -3196,7 +3298,7 @@ export class LinuxCommandExecutor {
   private startBackgroundJob(input: string): { announcement: string; settled: Promise<unknown> } | null {
     if (!endsWithUnquotedAmp(input)) return null;
     let cmdLine = input.replace(/\s*&\s*$/, '').trim();
-    if (!cmdLine) return null;
+    if (!cmdLine || !isSingleSimpleCommand(cmdLine)) return null;
 
     // `nohup CMD &` — strip the nohup wrapper and detach from the shell.
     let nohup = false;
@@ -3260,7 +3362,7 @@ export class LinuxCommandExecutor {
   }
 
   private spawnBackgroundJob(
-    cmdLine: string, nohup: boolean,
+    cmdLine: string, nohup: boolean, pipedInput?: string,
   ): { pid: number; jobId: number; settled: Promise<unknown> } | null {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
@@ -3281,6 +3383,7 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
       nice: niceInner?.adjustment,
     });
+    this.holdDescriptorsOfBackgroundJob(proc.pid, cmdLine);
     // §F5.7 — un accès à un montage réseau mort part en attente
     // ininterruptible et n'en revient pas. Le job est enregistré mais son
     // travail n'est jamais exécuté : c'est ce que « bloqué » veut dire, et
@@ -3329,10 +3432,11 @@ export class LinuxCommandExecutor {
     const noNetworkWork: Promise<unknown> = Promise.resolve();
     let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
-      const { argv: netArgv, stdoutPath, stdinPath } = splitRedirections(
+      const { argv: netArgv, stdoutPath, stdinPath, stderrPath, stderrAppend } = splitRedirections(
         simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
       if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
-      const netStdin = stdinPath === undefined ? undefined
+      if (stderrPath !== undefined) this.bindBackgroundStderr(proc.pid, this.vfs.normalizePath(stderrPath, this.cwd), stderrAppend);
+      const netStdin = stdinPath === undefined ? pipedInput
         : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
@@ -3340,11 +3444,16 @@ export class LinuxCommandExecutor {
         ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
         : null;
       this.runningBackgroundJobPid = null;
+      this.materializeProcFd(proc.pid);
       if (pending) {
         captured = '';
         exitCode = 0;
-        settled = pending
-          .then((r) => { job.capturedOutput = r.output; job.exitCode = r.exitCode; })
+        const finished = pending
+          .then((r) => {
+            job.capturedOutput = r.output;
+            job.exitCode = r.exitCode;
+            if (r.stderr) this.emitLateStderr(proc.pid, `${r.stderr}\n`);
+          })
           .catch(() => { job.exitCode = 1; })
           .then(() => {
             if (!parked) {
@@ -3352,6 +3461,8 @@ export class LinuxCommandExecutor {
               job.completesAt = this.logicalNow() + job.durationMs;
             }
           });
+        const running = new Promise<void>((resolve) => { this.backgroundRunning.set(proc.pid, resolve); });
+        settled = Promise.race([finished, running]);
       }
     }
     // The sync simulator executes the work eagerly. We still want
@@ -3395,6 +3506,17 @@ export class LinuxCommandExecutor {
     if (deltaMs <= 0) return;
     this.clockPort.step(deltaMs);
     this.notifyClockAdvanced();
+  }
+
+  private processTimers: { schedule(callback: () => void, delayMs: number): () => void } | null = null;
+
+  attachProcessTimers(timers: { schedule(callback: () => void, delayMs: number): () => void }): void {
+    this.processTimers = timers;
+  }
+
+  scheduleAfter(delayMs: number, callback: () => void): () => void {
+    if (this.processTimers === null) throw new Error('process timers are not attached to this machine');
+    return this.processTimers.schedule(callback, delayMs);
   }
 
   private readonly clockListeners: Array<() => void> = [];
@@ -3968,6 +4090,8 @@ export class LinuxCommandExecutor {
    * executor and normalize the terminal output — shared by the sync and
    * async execution paths.
    */
+  private cwdSetByDispatch: string | null = null;
+
   private applyInterpreterResult(
     result: { output: string; exitCode?: number; env?: Record<string, string> },
     initialPwd: string,
@@ -3982,7 +4106,10 @@ export class LinuxCommandExecutor {
         if (inode && inode.type === 'directory') {
           this.cwd = interpPwd;
         }
+      } else if (interpPwd === initialPwd && this.cwd !== initialPwd && this.cwd === this.cwdSetByDispatch) {
+        this.cwd = initialPwd;
       }
+      this.cwdSetByDispatch = null;
       for (const [key, value] of Object.entries(result.env)) {
         if (/^\d+$/.test(key) || ['?', '$', '!', '@', '#', '*', '0', 'PWD', 'OLDPWD'].includes(key)) continue;
         if (value !== initialVars[key]) {
@@ -4166,6 +4293,9 @@ export class LinuxCommandExecutor {
     // that policy check entirely. `sudo bash script.sh` therefore still
     // takes the pre-existing synchronous path (a known, narrower residual
     // gap) rather than risk bypassing sudoers enforcement.
+    if (!background && argv[0] === 'rman' && stdin && this.isServer && this._oracleRmanAsync) {
+      return this._oracleRmanAsync(argv.slice(1), stdin).then((output) => ({ output, exitCode: rmanExitCode(output) }));
+    }
     if (!background && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
       const effective = viaSudo ? argv.slice(1) : argv;
@@ -4351,6 +4481,15 @@ export class LinuxCommandExecutor {
       return fn();
     } finally {
       this.bashPids.pop();
+    }
+  }
+
+  async withProcessIdentityAsync<T>(pid: number, fn: () => Promise<T>): Promise<T> {
+    this.bashPids.push(pid);
+    try {
+      return await fn();
+    } finally {
+      this.bashPids.splice(this.bashPids.lastIndexOf(pid), 1);
     }
   }
 
@@ -4601,11 +4740,13 @@ export class LinuxCommandExecutor {
     this._cmdEnv = env;
     if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
       this.cwd = env['PWD'];
+      this.cwdSetByDispatch = env['PWD'];
     }
     if (argv.length === 0) return { output: '', exitCode: 0 };
     argv = this.shippedBinaryInvocation(argv);
     if (background) {
-      const spawned = this.spawnBackgroundJob(argv.join(' '), false);
+      const fed = interpreterStdin !== undefined && interpreterStdin !== '' && argv[argv.length - 1] === interpreterStdin;
+      const spawned = this.spawnBackgroundJob((fed ? argv.slice(0, -1) : argv).join(' '), false, fed ? interpreterStdin : undefined);
       if (!spawned) return { output: '', exitCode: 0 };
       return { output: '', exitCode: 0, backgroundPid: spawned.pid };
     }
@@ -5055,6 +5196,44 @@ export class LinuxCommandExecutor {
     this.vfs.writeFile(file.path, text, file.uid, file.gid, file.umask, true, undefined, false);
   }
 
+  private readonly lateStderr = new Map<number, {
+    file?: { path: string; uid: number; gid: number; umask: number };
+    pending: string[];
+  }>();
+
+  private bindBackgroundStderr(pid: number, path: string, append: boolean): void {
+    const file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
+    if (!append) this.vfs.writeFile(file.path, '', file.uid, file.gid, file.umask, false, undefined, false);
+    this.processMgr.redirectStandardStream(pid, 2, path, append ? 'a' : 'w');
+    const sink = this.lateStderr.get(pid) ?? { pending: [] };
+    sink.file = file;
+    this.lateStderr.set(pid, sink);
+    for (const text of sink.pending.splice(0)) this.appendLateStdout(file, text);
+  }
+
+  private readonly backgroundRunning = new Map<number, () => void>();
+
+  announceBackgroundRunning(pid: number): void {
+    this.backgroundRunning.get(pid)?.();
+    this.backgroundRunning.delete(pid);
+  }
+
+  isBackgroundJob(pid: number): boolean {
+    return this.jobTable.findByPid(pid) !== undefined;
+  }
+
+  emitLateStderr(pid: number, text: string): void {
+    if (text === '') return;
+    if (!this.processMgr.get(pid)) {
+      this.lateStderr.delete(pid);
+      return;
+    }
+    const sink = this.lateStderr.get(pid) ?? { pending: [] };
+    this.lateStderr.set(pid, sink);
+    if (sink.file) this.appendLateStdout(sink.file, text);
+    else sink.pending.push(text);
+  }
+
   emitLateStdout(pid: number, text: string): void {
     if (text === '') return;
     if (!this.processMgr.get(pid)) {
@@ -5092,7 +5271,20 @@ export class LinuxCommandExecutor {
       resolvePath: (path: string, cwd?: string) => {
         return this.vfs.normalizePath(path, cwd ?? this.cwd);
       },
+      bindBackgroundStderr: (pid: number, path: string, append: boolean) => {
+        this.bindBackgroundStderr(pid, this.vfs.normalizePath(path, this.cwd), append);
+      },
+      backgroundAnnouncement: (pid: number) => {
+        const job = this.jobTable.findByPid(pid);
+        return job === undefined ? null : `[${job.id}] ${pid}`;
+      },
+      beginBackgroundSubshell: (label: string) => this.beginBackgroundSubshell(label),
+      endBackgroundSubshell: (pid, outcome) => this.endBackgroundSubshell(pid, outcome),
+      holdBackgroundStdin: (pid: number, path: string) => {
+        this.processMgr.redirectStandardStream(pid, 0, this.vfs.normalizePath(path, this.cwd), 'r');
+      },
       bindBackgroundStdout: (pid: number, path: string) => {
+        this.processMgr.redirectStandardStream(pid, 1, path, 'w');
         const sink = this.lateStdout.get(pid) ?? { pending: [] };
         sink.file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
         this.lateStdout.set(pid, sink);
@@ -6182,8 +6374,12 @@ export class LinuxCommandExecutor {
         const result = runLogger(loggerHost(this, stdin, args), args, cmd);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
+      case 'rscryutil': {
+        const result = runRscryutil(rscryutilHost(this), args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
       case 'journalctl': {
-        const result = runJournalctl(journalctlHost(this), args, cmd);
+        const result = runJournalctl(journalctlHost(this, !c.isPiped), args, cmd);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'dmesg': {
@@ -6507,8 +6703,11 @@ export class LinuxCommandExecutor {
           const invocation = parseNanoCommandLine(args, cmd);
           if (invocation.kind === 'print') return { output: invocation.stdout, exitCode: 0 };
           if (invocation.kind === 'fail') return { output: [invocation.stderr, invocation.stdout].filter((part) => part !== '').join('\n'), exitCode: 1 };
-          const operating = invocation.settings.operatingdir;
-          if (operating !== null && operatingDirectoryRoot(this.operatingDirectoryHost(), operating) === null) return { output: invalidOperatingDirectoryMessage(operating), exitCode: 1 };
+          const host = this.editorHost();
+          const rc = applyRcfiles(host, invocation);
+          if (rc.failure !== null) return { output: rc.failure, exitCode: 1 };
+          const operating = rc.settings.operatingdir;
+          if (operating !== null && operatingDirectoryRoot(host, operating) === null) return { output: invalidOperatingDirectoryMessage(operating), exitCode: 1 };
           target = invocation.files[0]?.path;
         } else {
           target = args.find((a) => !a.startsWith('-'));
@@ -6555,7 +6754,7 @@ export class LinuxCommandExecutor {
       case 'rman': {
         if (this.isServer && this._oracleRman) {
           const output = this._oracleRman(args, stdin);
-          if (output !== null) return { output, exitCode: /RMAN-\d|ORA-\d/.test(output) ? 1 : 0 };
+          if (output !== null) return { output, exitCode: rmanExitCode(output) };
         }
         return {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
@@ -6662,13 +6861,14 @@ export class LinuxCommandExecutor {
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)
-        if (cmd.startsWith('./') || cmd.startsWith('/')) {
+        if (cmd.includes('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
-          if (this.vfs.exists(absPath)) {
-            const commandLine = ['/bin/bash', absPath, ...args].join(' ');
-            return this.runScriptProcess(commandLine, (identity, bridge) =>
-              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
-          }
+          const shellName = this.childShellRunning ? 'bash: line 1: ' : '';
+          if (!this.vfs.exists(absPath)) return { output: `${shellName}${cmd}: No such file or directory`, exitCode: 127 };
+          if (this.vfs.getType(absPath) === 'directory') return { output: `${shellName}${cmd}: Is a directory`, exitCode: 126 };
+          const commandLine = ['/bin/bash', absPath, ...args].join(' ');
+          return this.runScriptProcess(commandLine, (identity, bridge) =>
+            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
         }
 
         // `stdin` was popped off `args` above for the switch cases here that
@@ -8273,13 +8473,30 @@ export class LinuxCommandExecutor {
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
 
-  private operatingDirectoryHost(): OperatingDirectoryHost {
+  userHomeDirectory(uid: number): string | null {
+    return this.userMgr.getUserByUid(uid)?.home ?? null;
+  }
+
+  readRefusal(absolutePath: string, uid: number, gid: number): string | null {
+    const inode = this.vfs.resolveInode(absolutePath);
+    if (inode === null || inode.type === 'directory') return null;
+    return uid !== 0 && !this.vfs.checkAccess(inode, 'r', uid, gid) ? 'Permission denied' : null;
+  }
+
+  private editorHost(): OperatingDirectoryHost & RcHost {
     const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
+    const uid = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
     return {
+      identity: () => ({ user: this.userMgr.uidToName(uid), host: kernelHostname(this.vfs), pid: 0 }),
       resolvePath: absolute,
       exists: (path) => this.vfs.exists(absolute(path)),
       kindOf: (path) => this.editorPathKind(path),
       canonicalPath: (path) => this.vfs.realpath(absolute(path), this.cwd, true),
+      readFile: (path) => this.vfs.readFile(absolute(path)),
+      readError: (path) => this.readRefusal(absolute(path), uid, gid),
+      homeDirectory: () => this.userHomeDirectory(uid),
+      environmentVariable: (name) => this.commandEnvironment()[name] ?? null,
     };
   }
 
@@ -8803,6 +9020,7 @@ function isBackgroundListener(cmdLine: string): boolean {
   const argv = simpleTokenize(cmdLine);
   if (argv.length === 0) return false;
   const head = basenameOf(argv[0]);
+  if (head === 'tail') return argv.slice(1).some((a) => /^-[A-Za-z]*[fF]/.test(a) || a.startsWith('--follow'));
   if (head !== 'nc' && head !== 'ncat') return false;
   return argv.slice(1).some((a) => a === '-l' || (/^-[a-zA-Z]+$/.test(a) && a.includes('l')));
 }
@@ -8816,6 +9034,22 @@ function parseBackgroundDurationMs(cmdLine: string): number {
   const factor = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000
     : unit === 'd' ? 86_400_000 : 1_000;
   return Math.round(value * factor);
+}
+
+function isSingleSimpleCommand(input: string): boolean {
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  for (const c of input) {
+    if (escaped) { escaped = false; continue; }
+    if (c === '\\' && quote !== "'") { escaped = true; continue; }
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (';|&\n()`'.includes(c)) return false;
+  }
+  return true;
 }
 
 function endsWithUnquotedAmp(input: string): boolean {

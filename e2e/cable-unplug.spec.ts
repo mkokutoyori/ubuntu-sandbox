@@ -142,6 +142,8 @@ test.describe('cable unplug — ssh', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await expect(inTerminal(page, 'continue connecting')).toBeVisible({ timeout: 12_000 });
+    await typeCommand(page, 'yes');
     await expect(inTerminal(page, 'password')).toBeVisible({ timeout: 12_000 });
     await typePassword(page, 'admin');
     await expect(

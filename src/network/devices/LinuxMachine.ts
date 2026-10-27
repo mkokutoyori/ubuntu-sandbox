@@ -51,6 +51,8 @@ import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
+import { IoPageCache } from './linux/process/IoPageCache';
+import { ProcessUsage } from './linux/process/ProcessUsage';
 import { LinuxRsyslogDaemon, RSYSLOG_BINARY_MODULES, RSYSLOG_MODULE_DIRECTORY, UNCLEAN_CONFIG_ABORT_TEXT, runFailedText } from './linux/syslog/LinuxRsyslogDaemon';
 import { LinuxRsyslogHost, type RsyslogUdpEndpoint } from './linux/syslog/LinuxRsyslogHost';
 import { ClockTimers } from './linux/syslog/ClockTimers';
@@ -84,13 +86,18 @@ import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
-  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
+  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
+import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
+import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
+import { readResolvedConfig } from './linux/net/ResolvedConfig';
+import { parseDnsServerWord } from './linux/net/DnsServerWord';
+import { RESOLVED_CONF_DEFAULT_TEXT } from './linux/net/ResolvedDefaults';
 import { Port } from '../hardware/Port';
 import { Cable } from '../hardware/Cable';
 import type { TaggedEthernetFrame } from './Switch';
@@ -185,7 +192,6 @@ import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAutho
 import { parseResolvConf } from './linux/nss/ResolvConf';
 import {
   ResolvedService,
-  parseResolvedConf,
   RESOLVED_CONF_PATH,
   RUN_STUB_RESOLV,
   RUN_UPSTREAM_RESOLV,
@@ -251,6 +257,7 @@ import {
 import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
+import { MasqueradeFlowProjection } from './linux/MasqueradeFlowProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
@@ -311,8 +318,32 @@ const sideOf = (translation: NatTranslation): 'src' | 'dst' => translation.side 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   private readonly ipv4Settings = new LinuxIpv4Settings();
+  private readonly ipv4Vectors = new KernelVectorStore(LINUX_IPV4_VECTOR_KNOBS);
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly ipv6Settings = new LinuxIpv6Settings();
+  private deviceConfStore: Ipv4DeviceConf | null = null;
+  private get deviceConf(): Ipv4DeviceConf {
+    this.deviceConfStore ??= new Ipv4DeviceConf([...this.ports.keys()]);
+    return this.deviceConfStore;
+  }
+  protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  private registerDeviceConfScope(scope: string): void {
+    this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
+    for (const knob of IPV4_DEVICE_CONF_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/conf/${scope}/${knob.name}`,
+        () => `${this.deviceConf.get(scope, knob.name)}\n`,
+        (text) => this.deviceConf.write(scope, knob.name, text));
+    }
+  }
+  protected override addPort(port: Port): void {
+    super.addPort(port);
+    if (this.deviceConfStore?.addInterface(port.getName())) this.registerDeviceConfScope(port.getName());
+  }
+  private setIpForwarding(enabled: boolean): void {
+    const changed = this.ipForwardEnabled !== enabled;
+    this.ipForwardEnabled = enabled;
+    if (changed) this.deviceConf.forwardingChanged(enabled);
+  }
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
   protected override get ipv6FragmentTimeoutMs(): number { return this.ipv6Settings.fragmentTimeoutMs; }
   protected override get ipv6FragmentHighThresholdBytes(): number {
@@ -439,9 +470,10 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_forward',
       () => `${this.ipForwardEnabled ? 1 : 0}\n`,
       (text) => {
-        this.ipForwardEnabled = text.trim() === '1';
+        this.setIpForwarding(text.trim() === '1');
         return true;
       });
+    for (const scope of this.deviceConf.scopes()) this.registerDeviceConfScope(scope);
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
@@ -456,6 +488,11 @@ export abstract class LinuxMachine extends EndHost
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
         () => `${this.ipv4Settings.get(knob.name)}\n`,
         (text) => this.ipv4Settings.write(knob.name, text));
+    }
+    for (const knob of LINUX_IPV4_VECTOR_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
+        () => `${this.ipv4Vectors.text(knob.name)}\n`,
+        (text) => this.ipv4Vectors.write(knob.name, text));
     }
     this.executor.vfs.mkdirp('/proc/sys/net/ipv6', 0o755, 0, 0);
     for (const knob of LINUX_IPV6_KNOBS) {
@@ -527,7 +564,7 @@ export abstract class LinuxMachine extends EndHost
     // TIME-WAIT during a real handshake/close, and feed the per-device
     // packet log so `tcpdump` shows the SYN/SYN-ACK/ACK/FIN bytes the
     // simulated stack actually exchanges.
-    this.bindTcpProjections();
+    this.bindProjections();
     this.syncHostnameFiles(this.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
@@ -628,6 +665,11 @@ export abstract class LinuxMachine extends EndHost
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
+    const machineTimers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
+    this.executor.onClockAdvanced(() => machineTimers.pump());
+    this.executor.logMgr.attachJournalTimers(machineTimers);
+    this.executor.attachProcessTimers(machineTimers);
+    this.executor.logMgr.attachTerminals({ sessions: () => this.loggedInTerminals().map((terminal) => terminal.tty), write: (tty, text) => this.writeTerminal(tty, text) });
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
 
@@ -916,7 +958,7 @@ export abstract class LinuxMachine extends EndHost
     um.currentGid = 0;
     try {
       const run = () => this.executor.executeAsync(command);
-      return await (pid !== undefined ? this.executor.withProcessIdentity(pid, run) : run());
+      return await (pid !== undefined ? this.executor.withProcessIdentityAsync(pid, run) : run());
     } catch {
       return '';
     } finally {
@@ -979,6 +1021,14 @@ export abstract class LinuxMachine extends EndHost
   ): { outcome: TcpWireOutcome; received: string } {
     const exchange = super.tcpExchange(targetIP, port, payload, options);
     return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };
+  }
+
+  override tcpOpen(
+    targetIP: IPAddress | IPv6Address, port: number,
+    options: TcpExchangeSocketOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
+    const opened = super.tcpOpen(targetIP, port, options);
+    return { ...opened, outcome: this.failedNeighbourIsHostUnreachable(targetIP, opened.outcome) };
   }
 
   private nssHostAddressesSync(name: string, family: 2 | 10): string[] {
@@ -1068,7 +1118,17 @@ export abstract class LinuxMachine extends EndHost
    * service — pas par une commande, mais par un fichier d'unité
    * (`systemd.dnssd(5)`), au même format que les `.network` de networkd.
    */
-  loadDnssdServices(): void {
+  loadDnssdServices(report = false): void {
+    const vfs = this.executor.vfs;
+    const readout = discoverDnssdFiles({
+      readFile: (path) => vfs.readFile(path),
+      listDirectory: (path) => vfs.listDirectory(path),
+      hostName: () => this.getHostname(),
+    });
+    if (report) {
+      const pid = this.executor.serviceMgr.status('systemd-resolved')?.mainPid ?? 0;
+      for (const diagnostic of readout.diagnostics) this.executor.logMgr.logAt(diagnostic.priority <= 3 ? 'daemon.err' : 'daemon.warning', 'systemd-resolved', diagnostic.message, pid);
+    }
     const agent = this._mdnsAgent;
     if (!agent) return;
     const registry = agent.services();
@@ -1081,7 +1141,7 @@ export abstract class LinuxMachine extends EndHost
     const changed: ServiceRegistration[] = [];
     const seen = new Set<string>();
 
-    for (const file of discoverDnssdFiles(this.executor.vfs)) {
+    for (const file of readout.files) {
       const key = `${file.service.instance}|${file.service.type}`;
       seen.add(key);
       if (registry.publish(file.service)) changed.push(file.service);
@@ -1130,16 +1190,28 @@ export abstract class LinuxMachine extends EndHost
         // le transport sur le 853 chiffré (RFC 7858) ; le service décide,
         // celui-ci exécute.
         queryUpstream: async (server, name, qtype, dnssecOk, encrypted) => {
+          const word = parseDnsServerWord(server);
+          if (word === null) return null;
           let serverIP: IPAddress;
-          try { serverIP = new IPAddress(server); } catch { return null; }
+          try { serverIP = new IPAddress(word.address); } catch { return null; }
           const reply = await this.queryDnsServer(
-            serverIP, name, qtype, 2000, { dnssecOk, tls: encrypted });
+            serverIP, name, qtype, 2000, {
+              dnssecOk, tls: encrypted,
+              ...(word.port !== 0 ? { port: word.port } : {}),
+              ...(word.serverName !== null ? { serverName: word.serverName } : {}),
+            });
           return readUpstreamAnswer(reply, qtype);
         },
         queryUpstreamSync: (server, name, qtype) => {
+          const word = parseDnsServerWord(server);
+          if (word === null) return null;
           let serverIP: IPAddress;
-          try { serverIP = new IPAddress(server); } catch { return null; }
+          try { serverIP = new IPAddress(word.address); } catch { return null; }
           return readUpstreamAnswer(this.queryDnsServerSync(serverIP, name, qtype), qtype);
+        },
+        hostsLookup: (name, qtype) => {
+          const matching = HostsFile.parse(this.executor.vfs.readFile('/etc/hosts')).entries.filter((entry) => entry.hasName(name));
+          return { known: matching.length > 0, addresses: matching.filter((entry) => entry.isIPv6 === (qtype === 'AAAA')).map((entry) => entry.ip) };
         },
         validate: (records) => this.validateDnssec(records),
         hasTrustAnchors: () => this.dnssecAnchors.length > 0,
@@ -1172,17 +1244,19 @@ export abstract class LinuxMachine extends EndHost
           const svc = this.getResolvedService();
           const { server, link } = svc.selectServer(qname);
           if (!server) return { status: 'SERVFAIL', records: [] };
+          const word = parseDnsServerWord(server);
           let serverIP: IPAddress;
-          try { serverIP = new IPAddress(server); } catch { return { status: 'SERVFAIL', records: [] }; }
+          try { serverIP = new IPAddress(word?.address ?? server); } catch { return { status: 'SERVFAIL', records: [] }; }
+          const wire = { ...(word !== null && word.port !== 0 ? { port: word.port } : {}), ...(word?.serverName ? { serverName: word.serverName } : {}) };
           // La remontée de chaîne emprunte le même transport que la
           // requête qu'elle valide : sur un lien en DoT strict, le 53 en
           // clair n'a aucune raison de répondre.
           const tls = svc.dnsOverTlsModeFor(link) !== 'no';
           let reply = await this.queryDnsServer(
-            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, tls });
+            serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, tls, ...wire });
           if (!reply && tls && svc.dnsOverTlsModeFor(link) === 'opportunistic') {
             reply = await this.queryDnsServer(
-              serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
+              serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true, ...wire });
           }
           if (!reply) return { status: 'SERVFAIL', records: [] };
           return { status: 'NOERROR', records: reply.answers, authorities: reply.authorities };
@@ -1206,10 +1280,17 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Relit `resolved.conf` et réécrit les fichiers de `/run`. */
-  loadResolvedConfig(): void {
+  loadResolvedConfig(report = false): void {
     const svc = this._resolvedService;
     if (!svc) return;
-    svc.setGlobal(parseResolvedConf(this.executor.vfs.readFile(RESOLVED_CONF_PATH)));
+    const vfs = this.executor.vfs;
+    if (!vfs.exists(RESOLVED_CONF_PATH)) vfs.writeFile(RESOLVED_CONF_PATH, RESOLVED_CONF_DEFAULT_TEXT, 0, 0, 0o022);
+    const readout = readResolvedConfig(vfs, this.executor.logMgr.kernelCommandLine());
+    svc.setGlobal(readout.config);
+    if (report) {
+      const pid = this.executor.serviceMgr.status('systemd-resolved')?.mainPid ?? 0;
+      for (const diagnostic of readout.diagnostics) this.executor.logMgr.logAt(diagnostic.priority <= 3 ? 'daemon.err' : 'daemon.warning', 'systemd-resolved', diagnostic.message, pid);
+    }
     this.publishResolvedState();
   }
 
@@ -1231,27 +1312,62 @@ export abstract class LinuxMachine extends EndHost
   /** Le stub du resolver écoute-t-il pour de bon ? */
   private resolvedStubBound = false;
 
+  private resolvedStubEndpoints: Array<{ address: string; port: number; udp: boolean; tcp: boolean }> = [];
+
+  private closeResolvedStubEndpoints(): void {
+    for (const endpoint of this.resolvedStubEndpoints) {
+      if (endpoint.udp) this.udpCloseAddress(endpoint.address, endpoint.port);
+      if (endpoint.tcp) {
+        try { this.getTcpStack().closeListener(endpoint.port, endpoint.address); } catch { /* déjà fermé */ }
+      }
+    }
+    this.resolvedStubEndpoints = [];
+  }
+
   private bindResolvedStub(): void {
-    try {
-      // L'unité systemd-resolved pose une entrée sans gestionnaire dans la
-      // table des sockets (SERVICE_LISTENERS) : c'est elle que `ss`
-      // montrait. On la reprend pour mettre un vrai service derrière.
-      this.socketTable.unbind('udp', STUB_ADDRESS, DNS_PORT);
-      bindDnsUdpServer(this, (query) => {
-        const immediate = this.answerResolvedQuerySync(query);
-        return immediate ?? this.answerResolvedQuery(query);
-      }, DNS_PORT, 'systemd-resolved', STUB_ADDRESS, STUB_DEVICE);
-      // Le stub répond aussi en TCP sur une vraie machine — c'est par là
-      // que passe une réponse trop grande pour un datagramme (RFC 7766).
-      // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
-      // rien n'écoutait derrière
-      // (docs/PRD-Sockets-Une-Seule-Verite.md §P2).
-      bindDnsTcpServer(this, (query) => {
-        const immediate = this.answerResolvedQuerySync(query);
-        return immediate ?? this.answerResolvedQuery(query);
-      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved', boundDevice: STUB_DEVICE });
-      this.resolvedStubBound = true;
-    } catch { /* déjà lié */ }
+    this.closeResolvedStubEndpoints();
+    const global = this.getResolvedService().getGlobal();
+    const handler = (query: DnsMessage): DnsMessage | null | Promise<DnsMessage | null> => {
+      const immediate = this.answerResolvedQuerySync(query);
+      return immediate ?? this.answerResolvedQuery(query);
+    };
+    const wanted: Array<{ address: string; port: number; udp: boolean; tcp: boolean; device?: string }> = [
+      { address: STUB_ADDRESS, port: DNS_PORT, udp: global.dnsStubListener === 'yes' || global.dnsStubListener === 'udp', tcp: global.dnsStubListener === 'yes' || global.dnsStubListener === 'tcp', device: STUB_DEVICE },
+      ...global.dnsStubListenerExtra.map((extra) => ({ address: extra.address, port: extra.port, udp: extra.mode === 'yes' || extra.mode === 'udp', tcp: extra.mode === 'yes' || extra.mode === 'tcp' })),
+    ];
+    this.executor.serviceMgr.registerServiceListener('systemd-resolved', {
+      processName: 'systemd-resolved',
+      sockets: wanted.flatMap((target) => [
+        ...(target.udp ? [{ port: target.port, protocol: 'udp' as const, address: target.address }] : []),
+        ...(target.tcp ? [{ port: target.port, protocol: 'tcp' as const, address: target.address }] : []),
+      ]),
+    });
+    this.executor.resyncServicePorts('systemd-resolved');
+    this.resolvedStubBound = false;
+    for (const target of wanted) {
+      const bound = { address: target.address, port: target.port, udp: false, tcp: false };
+      try {
+        // L'unité systemd-resolved pose une entrée sans gestionnaire dans la
+        // table des sockets (SERVICE_LISTENERS) : c'est elle que `ss`
+        // montrait. On la reprend pour mettre un vrai service derrière.
+        this.socketTable.unbind('udp', target.address, target.port);
+        this.socketTable.unbind('tcp', target.address, target.port);
+        if (target.udp) {
+          bindDnsUdpServer(this, handler, target.port, 'systemd-resolved', target.address, target.device);
+          bound.udp = true;
+        }
+        // Le stub répond aussi en TCP sur une vraie machine — c'est par là
+        // que passe une réponse trop grande pour un datagramme (RFC 7766).
+        if (target.tcp) {
+          bindDnsTcpServer(this, handler, target.port, { address: target.address, processName: 'systemd-resolved', ...(target.device === undefined ? {} : { boundDevice: target.device }) });
+          bound.tcp = true;
+        }
+        if (target.address === STUB_ADDRESS && (bound.udp || bound.tcp)) this.resolvedStubBound = true;
+      } catch {
+        this.executor.logMgr.logAt('daemon.warning', 'systemd-resolved', `Failed to listen on ${target.address}:${target.port}`, this.executor.serviceMgr.status('systemd-resolved')?.mainPid ?? 0);
+      }
+      this.resolvedStubEndpoints.push(bound);
+    }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son
     // écoute est RÉELLE (`udpBindAddress` ci-dessus), elle est seulement
     // posée hors de la projection. Il déclare donc son serveur — APRÈS
@@ -1416,24 +1532,33 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
-  private runDaemonProgram(argv: readonly string[], uid: number, gid: number): number {
+  private runDaemonProgram(argv: readonly string[], uid: number, gid: number, parentPid: number): { pid: number; exitCode: number; output: string } {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
-    um.currentUser = um.getUserByUid(uid)?.username ?? 'root';
+    const user = um.getUserByUid(uid)?.username ?? 'root';
+    um.currentUser = user;
     um.currentUid = uid;
     um.currentGid = gid;
     this.executor.setCwd('/');
+    const child = this.executor.processMgr.spawn({ command: argv.join(' '), user, uid, gid, ppid: parentPid });
+    let exitCode: number;
+    let output = '';
     try {
       const quoted = argv.map((argument) => `'${argument.replace(/'/g, `'\\''`)}'`).join(' ');
-      return this.executor.runNonInteractive(() => this.executor.executeChild(quoted)).status;
+      const result = this.executor.withProcessIdentity(child.pid, () => this.executor.runNonInteractive(() => this.executor.executeChild(quoted)));
+      exitCode = result.status;
+      output = result.output;
     } catch {
-      return 1;
+      exitCode = 1;
     } finally {
       um.currentUser = prev.user;
       um.currentUid = prev.uid;
       um.currentGid = prev.gid;
       this.executor.setCwd(prev.cwd);
     }
+    this.executor.processMgr.exit(child.pid, exitCode);
+    this.executor.processMgr.reap(child.pid);
+    return { pid: child.pid, exitCode, output };
   }
 
   private deliverCronMail(recipient: string, body: string): void {
@@ -1453,17 +1578,20 @@ export abstract class LinuxMachine extends EndHost
     super.setEventBus(bus);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.dhcpd?.getEngine().setEventBus(this.getBus());
-    this.bindTcpProjections();
+    this.bindProjections();
   }
 
   private tcpSocketProjection: TcpSocketStateProjection | null = null;
   private tcpdumpProjection: TcpdumpCaptureProjection | null = null;
+  private masqueradeProjection: MasqueradeFlowProjection | null = null;
 
-  private bindTcpProjections(): void {
+  private bindProjections(): void {
     this.tcpSocketProjection?.dispose();
     this.tcpdumpProjection?.dispose();
+    this.masqueradeProjection?.dispose();
     this.tcpSocketProjection = new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
     this.tcpdumpProjection = new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
+    this.masqueradeProjection = new MasqueradeFlowProjection(this.getBus(), this.executor.iptables.connections, this.id);
   }
 
   override setHardware(profile: HardwareProfile): void {
@@ -1622,6 +1750,13 @@ export abstract class LinuxMachine extends EndHost
     const rememberNofile = (uid: number): void => {
       if (!savedNofile.has(uid)) savedNofile.set(uid, { soft: executor.processMgr.nofileLimit(uid), hard: executor.processMgr.nofileHardLimit(uid) });
     };
+    const pageCache = new IoPageCache();
+    const processUsage = new ProcessUsage(pageCache, () => timers.now());
+    vfs.onChange((change) => {
+      if (change.kind !== 'modified' && change.kind !== 'created') return;
+      const inode = vfs.resolveInode(change.path);
+      if (inode !== null && inode.type === 'file') pageCache.warm(inode.id, inode.size);
+    });
     const host = new LinuxRsyslogHost({
       vfs,
       vfsReader: { read: (path) => vfs.readFile(path) },
@@ -1630,12 +1765,14 @@ export abstract class LinuxMachine extends EndHost
       localSockets: executor.localDatagramSockets,
       udp: this as unknown as RsyslogUdpEndpoint,
       tcp: () => this.getTcpStack(),
+      http: { net: this.net, trustAnchors: () => this.trustedCAs },
       holdFile: (path, creation) => executor.logMgr.holdFile(path, creation),
+      usage: processUsage,
       resourceUsage: () => {
         const pid = mainPid();
         const record = executor.processMgr.get(pid);
         if (record === undefined) return {};
-        return { userMicroseconds: record.cpuTime * 1000, maxResidentKilobytes: record.rss, openFiles: executor.descriptorCountOf(pid) };
+        return processUsage.snapshot(record.rss, record.cpuTime * 1000, executor.descriptorCountOf(pid));
       },
       descriptorLimitReached: () => {
         const pid = mainPid();
@@ -1663,7 +1800,7 @@ export abstract class LinuxMachine extends EndHost
         executor.processMgr.setNofileLimit(uid, limit);
         return null;
       },
-      runProgram: (argv, uid, gid) => this.runDaemonProgram(argv, uid, gid),
+      runProgram: (argv, uid, gid, parentPid) => this.runDaemonProgram(argv, uid, gid, parentPid),
       restoreProcessLimits: () => {
         for (const [uid, saved] of savedNofile) {
           executor.processMgr.setNofileHardLimit(uid, saved.hard);
@@ -1683,17 +1820,8 @@ export abstract class LinuxMachine extends EndHost
       uidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getUser(name)?.uid ?? null),
       gidOf: (name) => (/^\d+$/.test(name) ? Number(name) : executor.userMgr.getGroup(name)?.gid ?? null),
       userExists: (name) => executor.userMgr.getUser(name) !== undefined,
-      terminals: () => {
-        this.ensureLocalConsoleSession();
-        return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
-      },
-      writeTerminal: (tty, text) => {
-        const path = `/dev/${tty}`;
-        const node = vfs.resolveInode(path);
-        if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
-        if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
-        this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
-      },
+      terminals: () => this.loggedInTerminals(),
+      writeTerminal: (tty, text) => this.writeTerminal(tty, text),
       resolveAddresses: (name) => executor.resolveHostAddresses(name),
       reverseName: (address) => reverseNameOf(executor.nss, address),
       servicePort: (name, protocol) => executor.resolveServicePort(name, protocol),
@@ -1733,16 +1861,25 @@ export abstract class LinuxMachine extends EndHost
 
     const startDaemon = (): void => {
       if (daemon.isRunning) return;
+      processUsage.reset();
       const outcome = daemon.start();
       if ('lines' in outcome) {
-        for (const line of [...outcome.lines, runFailedText(outcome.fatalCode)]) {
+        for (const line of outcome.runFailed ? [...outcome.lines, runFailedText(outcome.fatalCode)] : outcome.lines) {
           executor.logMgr.submitLibcSyslog(LOG_DAEMON_INFO, 'rsyslogd', mainPid(), line.replace(/^rsyslogd: /, ''), timers.now());
         }
         executor.serviceMgr.markFailed('rsyslog', 'exit-code');
         return;
       }
       this.rsyslogSignalTrap?.();
-      this.rsyslogSignalTrap = executor.processMgr.trapSignal(mainPid(), 'SIGHUP', () => daemon.hup());
+      const releaseHup = executor.processMgr.trapSignal(mainPid(), 'SIGHUP', () => daemon.hup());
+      const interrupt = (signal: 'SIGINT' | 'SIGQUIT', number: number): (() => void) => executor.processMgr.trapSignal(mainPid(), signal, () => {
+        if (!daemon.permitsCtlC()) return;
+        daemon.stop(number);
+        executor.processMgr.exit(mainPid(), 0);
+      });
+      const releaseInterrupt = interrupt('SIGINT', 2);
+      const releaseQuit = interrupt('SIGQUIT', 3);
+      this.rsyslogSignalTrap = () => { releaseHup(); releaseInterrupt(); releaseQuit(); };
       this.publishRsyslogPorts();
     };
     const stopDaemon = (): void => {
@@ -2058,13 +2195,18 @@ export abstract class LinuxMachine extends EndHost
   private wireNetworkConfigLifecycle(): void {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
-      if (name === 'systemd-networkd') this.applyNetworkConfiguration();
+      if (name === 'systemd-journald' && event !== 'restart') {
+        this.executor.logMgr.reloadJournaldConfig(this.executor.processMgr.pidof('systemd-journald')[0] ?? 0);
+        const audit = this.executor.logMgr.journald.settings.setAudit;
+        if (audit !== null) this.executor.auditRules.setEnabledFromJournald(audit);
+      }
+      if (name === 'systemd-networkd' && event !== 'restart') this.applyNetworkConfiguration();
       // `resolved.conf` n'était lu qu'à la toute première instanciation du
       // service : écrire `DNSOverTLS=` ou `DNSSEC=` puis redémarrer le
       // démon ne changeait rien, et le réglage global restait lettre morte.
       if (name === 'systemd-resolved') {
-        this.loadResolvedConfig();
-        this.loadDnssdServices();
+        this.loadResolvedConfig(event !== 'restart');
+        this.loadDnssdServices(event !== 'restart');
         if (event === 'start') this.bindResolvedStub();
         this.syncLinkLocalResponders();
       }
@@ -2826,6 +2968,20 @@ export abstract class LinuxMachine extends EndHost
     return entry ? { at: new Date(entry.when), from: entry.sourceHost } : null;
   }
 
+  private loggedInTerminals(): Array<{ user: string; tty: string }> {
+    this.ensureLocalConsoleSession();
+    return this.sessionTable.list().map((session) => ({ user: session.user, tty: session.tty }));
+  }
+
+  private writeTerminal(tty: string, text: string): void {
+    const vfs = this.executor.vfs;
+    const path = `/dev/${tty}`;
+    const node = vfs.resolveInode(path);
+    if (node === null) vfs.createFileAt(path, '', 0o620, 0, 5);
+    if (node === null || node.type === 'file') vfs.writeFile(path, text, 0, 0, 0o022, true);
+    this.getBus().publish({ topic: 'linux.tty.written', payload: { deviceId: this.id, tty, text } });
+  }
+
   /** Ensure a tty=tty1 console session exists for the local user. */
   private ensureLocalConsoleSession(): void {
     const user = this.executor.userMgr.currentUser;
@@ -3127,12 +3283,16 @@ export abstract class LinuxMachine extends EndHost
    * en place avant d'ouvrir la sienne), et `lsnrctl stop` le ferme pour
    * de bon.
    */
+  protected acceptTnsConnection(socket: { close(): void }): void {
+    socket.close();
+  }
+
   private bindTnsListener(): void {
     const stack = this.getTcpStack();
     const identity = { pid: 2001, processName: 'tnslsnr', banner: TNS_BOOT_BANNER };
     for (const addr of ['0.0.0.0', '::']) {
       try {
-        stack.listen(TNS_PORT, { onAccept: (socket) => socket.close(), identity }, addr);
+        stack.listen(TNS_PORT, { onAccept: (socket) => this.acceptTnsConnection(socket), identity }, addr);
       } catch { /* déjà ouvert */ }
     }
   }
@@ -3586,6 +3746,13 @@ export abstract class LinuxMachine extends EndHost
     return '';
   }
 
+  private setAdminState(name: string, enabled: boolean): void {
+    const port = this.ports.get(name);
+    if (!port) return;
+    port.setUp(enabled);
+    this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
+  }
+
   private deleteVirtualInterface(name: string): string {
     if (!this.virtualInterfaces.has(name)) {
       return this.ports.has(name)
@@ -3593,7 +3760,9 @@ export abstract class LinuxMachine extends EndHost
         : `Cannot find device "${name}"`;
     }
     const vlan = this.getVlanSubInterface(name);
+    if (this.ports.get(name)?.getIsUp()) this.setAdminState(name, false);
     this.ports.delete(name);
+    if (this.deviceConf.removeInterface(name)) this.executor.vfs.rmrf(`/proc/sys/net/ipv4/conf/${name}`);
     this.virtualInterfaces.delete(name);
     this.unregisterVlanSubInterface(name);
     if (vlan) this.withdrawVlanFromMvrp(vlan.parent, vlan.vid);
@@ -3764,6 +3933,8 @@ export abstract class LinuxMachine extends EndHost
     return LinuxMachine.SCRIPT_FILE_HEAD_RE.test(input);
   }
 
+  private static readonly LOOP_RE = /(^|[;&|({\s])(for|while|until)\s/;
+
   /**
    * `sshpass -p <pw> scp|sftp ...`: the only way scp/sftp can offer a
    * real credential (audit 03, MAJEUR §4) — routed through the async
@@ -3846,7 +4017,7 @@ export abstract class LinuxMachine extends EndHost
       if (sessionView !== null) return sessionView;
     }
 
-    if (!this.containsNetworkCommand(trimmed)) {
+    if (!this.containsNetworkCommand(trimmed) && !LinuxMachine.LOOP_RE.test(trimmed)) {
       return this.executor.execute(trimmed);
     }
 
@@ -4314,12 +4485,7 @@ export abstract class LinuxMachine extends EndHost
         port.removeSecondaryIP(ip);
         this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
-      setInterfaceAdmin: (name: string, enabled: boolean): void => {
-        const port = this.ports.get(name);
-        if (!port) return;
-        port.setUp(enabled);
-        this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
-      },
+      setInterfaceAdmin: (name: string, enabled: boolean): void => this.setAdminState(name, enabled),
       isDHCPConfigured: (name: string): boolean => {
         return this.isDHCPConfigured(name);
       },
@@ -4441,8 +4607,9 @@ export abstract class LinuxMachine extends EndHost
       routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
       flushRouteExceptions: () => this.flushRouteExceptions(),
-      udpListen: (port, processName, owner, onDatagram) => this.udpListen(port, processName, owner, onDatagram),
+      udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
+      tcpOpen: (target, port, options) => this.tcpOpen(target, port, options),
       ping6Sequence: (
         target: IPv6Address,
         count: number,
@@ -4521,7 +4688,7 @@ export abstract class LinuxMachine extends EndHost
         return this.requestDhcpv6Information(iface, verbose);
       },
       setIpForward: (enabled: boolean): void => {
-        this.ipForwardEnabled = enabled;
+        this.setIpForwarding(enabled);
       },
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;
@@ -4795,18 +4962,22 @@ export abstract class LinuxMachine extends EndHost
     return translated;
   }
 
+  protected override defragmentsBeforeRouting(): boolean {
+    return this.executor.iptables.needsConnectionTracking();
+  }
+
   protected override natPreRouting(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     if (isIPv4Fragment(ipPkt)) return ipPkt;
     const redirectAddress = this.ports.get(inPort)?.getIPAddress()?.toString() ?? null;
     return this.traverseNat(
-      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress },
+      'PREROUTING', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress, outInterface: null },
       (state) => this.evaluatePreRouting(inPort, ipPkt, state),
     );
   }
 
   protected override natLocalIn(inPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     return this.traverseNat(
-      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null },
+      'INPUT', ipPkt, () => this.arrivalFacts(inPort, ipPkt), { masqueradeAddress: null, redirectAddress: null, outInterface: null },
       (state) => this.executor.iptables.evaluateNat(this.arrivalFacts(inPort, ipPkt), 'INPUT', state),
     );
   }
@@ -4818,12 +4989,21 @@ export abstract class LinuxMachine extends EndHost
     const outName = outPort.getName();
     const masqueradeAddress = outPort.addressToward(nextHop)?.toString() ?? null;
     return this.traverseNat(
-      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null },
+      'POSTROUTING', outgoing, () => this.postRoutingFacts(inPort, outName, outgoing), { masqueradeAddress, redirectAddress: null, outInterface: outName },
       (state) => this.evaluateNat(outgoing, inPort, outName, state),
     );
   }
 
-  protected override natLocalOut(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+  protected override natOutput(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
+    if (isIPv4Fragment(ipPkt)) return ipPkt;
+    const facts = (): PacketInfo => this.postRoutingFacts(undefined, outPort, ipPkt);
+    return this.traverseNat(
+      'OUTPUT', ipPkt, facts, { masqueradeAddress: null, redirectAddress: null, outInterface: null },
+      (state) => this.executor.iptables.evaluateNat(facts(), 'OUTPUT', state),
+    );
+  }
+
+  protected override natLocalPostRouting(outPort: string, ipPkt: IPv4Packet): IPv4Packet | null {
     if (!this.executor.iptables.isTracked(ipPkt)) return ipPkt;
     const port = this.ports.get(outPort);
     if (port === undefined) return ipPkt;
@@ -4833,22 +5013,6 @@ export abstract class LinuxMachine extends EndHost
 
   protected override confirmForwarded(ipPkt: IPv4Packet): boolean {
     return this.executor.iptables.confirmForwarded(ipPkt);
-  }
-
-  protected override evaluateNatOutput(
-    srcIP: string, dstIP: IPAddress, dstPort: number, srcPort: number,
-    protocol: number, tentativeOutIface: string, ipPacketBytes: number,
-  ): { action: string; address?: string } | null {
-    const pkt: PacketInfo = {
-      direction: 'out',
-      protocol,
-      srcIP,
-      dstIP: dstIP.toString(),
-      srcPort, dstPort,
-      iface: tentativeOutIface,
-      ipPacketBytes,
-    };
-    return this.executor.iptables.evaluateNat(pkt, 'OUTPUT');
   }
 
   protected override evaluatePreRouting6(
@@ -4882,6 +5046,65 @@ export abstract class LinuxMachine extends EndHost
 
   editorCanonicalPath(path: string): string | null {
     return this.executor.vfs.realpath(path, this.executor.getCwd(), true);
+  }
+
+  editorListDirectory(path: string, session?: LinuxShellSession): string[] | null {
+    const vfs = this.executor.vfs;
+    const absolute = vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd());
+    const inode = vfs.resolveInode(absolute);
+    if (inode === null || inode.type !== 'directory') return null;
+    if (session !== undefined && !session.disposed && !vfs.checkAccess(inode, 'r', session.uid, session.gid)) return null;
+    return (vfs.listDirectory(absolute) ?? []).map((entry) => entry.name);
+  }
+
+  editorHomeDirectory(session?: LinuxShellSession): string | null {
+    const uid = session !== undefined && !session.disposed ? session.uid : this.executor.userMgr.currentUid;
+    return this.executor.userHomeDirectory(uid);
+  }
+
+  editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
+    if (session !== undefined && !session.disposed) return session.env.get(name) ?? null;
+    return this.executor.commandEnvironment()[name] ?? null;
+  }
+
+  editorMakeDirectory(path: string, mode: number, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const absolute = vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd());
+    if (vfs.getType(absolute) !== null) return 'File exists';
+    const parent = absolute.slice(0, absolute.lastIndexOf('/')) || '/';
+    const parentType = vfs.getType(parent);
+    if (parentType === null) return this.firstExistingAncestorIsDirectory(parent) ? 'No such file or directory' : 'Not a directory';
+    if (parentType !== 'directory') return 'Not a directory';
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
+    const parentInode = vfs.resolveInode(parent);
+    if (uid !== 0 && (parentInode === null || !vfs.checkAccess(parentInode, 'w', uid, gid) || !vfs.checkAccess(parentInode, 'x', uid, gid))) return 'Permission denied';
+    return vfs.mkdir(absolute, mode & ~(live?.umask ?? this.executor.getUmask()), uid, gid) ? null : 'Permission denied';
+  }
+
+  editorReadError(path: string, session?: LinuxShellSession): string | null {
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    const gid = live?.gid ?? (uid === 0 ? 0 : 1000);
+    return this.executor.readRefusal(this.executor.vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()), uid, gid);
+  }
+
+  editorChangeMode(path: string, mode: number, session?: LinuxShellSession): boolean {
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    return this.executor.vfs.chmod(this.executor.vfs.normalizePath(path, live?.cwd ?? this.executor.getCwd()), mode);
+  }
+
+  private firstExistingAncestorIsDirectory(path: string): boolean {
+    let current = path;
+    while (current !== '/' && this.executor.vfs.getType(current) === null) current = current.slice(0, current.lastIndexOf('/')) || '/';
+    return this.executor.vfs.getType(current) === 'directory';
+  }
+
+  editorModificationStamp(path: string, session?: LinuxShellSession): string | null {
+    const vfs = this.executor.vfs;
+    const inode = vfs.resolveInode(vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd()));
+    return inode === null ? null : `${inode.mtime}:${inode.revision ?? 0}`;
   }
 
   editorPathIsReadOnly(path: string): boolean {
@@ -4937,6 +5160,11 @@ export abstract class LinuxMachine extends EndHost
   installSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
+  }
+
+  appendSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
+    const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022, true);
   }
 
   /**

@@ -103,6 +103,49 @@ export class RowIndexCache {
     }
   }
 
+  rowReplaced(
+    tableKey: string,
+    fromEpoch: number,
+    toEpoch: number,
+    rowIndex: number,
+    before: StorageRow,
+    after: StorageRow,
+  ): void {
+    const prefix = `${tableKey}#`;
+    for (const [cacheKey, entry] of this.entries) {
+      if (!cacheKey.startsWith(prefix) || entry.epoch !== fromEpoch) continue;
+      entry.epoch = toEpoch;
+      if (rowIndex >= entry.indexedLength) continue;
+      const ordinals = cacheKey.slice(prefix.length).split(',').map(Number);
+      const oldKey = ordinals.map(o => encodeStored(before[o])).join(PART_SEPARATOR);
+      const newKey = ordinals.map(o => encodeStored(after[o])).join(PART_SEPARATOR);
+      ordinals.forEach((ordinal, c) => {
+        const kind = kindOfValue(after[ordinal]);
+        if (kind === null) return;
+        if (entry.kinds[c] === 'empty') entry.kinds[c] = kind;
+        else if (entry.kinds[c] !== kind) entry.kinds[c] = 'mixed';
+      });
+      if (oldKey === newKey) continue;
+      const from = entry.buckets.get(oldKey);
+      if (from) {
+        const position = from.indexOf(rowIndex);
+        if (position >= 0) from.splice(position, 1);
+        if (from.length === 0) entry.buckets.delete(oldKey);
+      }
+      const into = entry.buckets.get(newKey);
+      if (!into) entry.buckets.set(newKey, [rowIndex]);
+      else {
+        let low = 0;
+        let high = into.length;
+        while (low < high) {
+          const middle = (low + high) >>> 1;
+          if (into[middle] < rowIndex) low = middle + 1; else high = middle;
+        }
+        into.splice(low, 0, rowIndex);
+      }
+    }
+  }
+
   probe(
     tableKey: string,
     epoch: number,

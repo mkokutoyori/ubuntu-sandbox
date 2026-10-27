@@ -41,6 +41,19 @@ export function logonOverOracleNet(
   });
 }
 
+export interface OracleNetPeerIdentity {
+  readonly instanceName: string;
+  readonly deviceId: string;
+}
+
+export function identifyOverOracleNet(session: OracleNetSession | null): OracleNetPeerIdentity | null {
+  const answer = callOverOracleNet(session, { call: OracleNetCallId.Identify, body: {} });
+  if (answer.status !== OracleNetCallStatus.Ok || !answer.result) return null;
+  const row = answer.result.rows[0];
+  if (!row) return null;
+  return { instanceName: String(row[0]), deviceId: String(row[1]) };
+}
+
 export function executeOverOracleNet(
   session: OracleNetSession | null, sql: string,
 ): OracleNetResponse {

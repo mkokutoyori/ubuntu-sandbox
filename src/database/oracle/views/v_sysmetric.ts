@@ -5,11 +5,12 @@
  * window is the last interval (default 15s for "instance" group).
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 export const METRIC_CATALOGUE: ReadonlyArray<{ id: number; name: string; unit: string }> = [
   { id: 2000, name: 'CPU Usage Per Sec', unit: 'CentiSeconds Per Second' },
@@ -32,7 +33,7 @@ registerView({
   name: 'V$SYSMETRIC',
   comment: 'Current sample of per-second metrics',
   query({ runtime }) {
-    const intervalS = Math.max(15, Math.floor((simulationNowMs() - runtime.startedAt) / 1000));
+    const intervalS = Math.max(15, Math.floor((hostNowMs() - runtime.startedAt) / 1000));
     const valueOf = (name: string): number => {
       switch (name) {
         case 'CPU Usage Per Sec': return Math.floor(runtime.counters.executions / intervalS);
@@ -57,7 +58,7 @@ registerView({
         default: return 0;
       }
     };
-    const end = simulationNowMs();
+    const end = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

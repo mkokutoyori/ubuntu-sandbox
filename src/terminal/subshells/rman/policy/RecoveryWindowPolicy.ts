@@ -26,8 +26,8 @@ export class RecoveryWindowPolicy implements IRetentionPolicy {
 
   describe(): string { return `RECOVERY WINDOW OF ${this.value} DAYS`; }
 
-  findObsolete(sets: ReadonlyArray<BackupSet>): BackupSet[] {
-    const cutoff = simulationNowMs() - this.value * 86_400_000;
+  findObsolete(sets: ReadonlyArray<BackupSet>, nowMs: number = simulationNowMs()): BackupSet[] {
+    const cutoff = nowMs - this.value * 86_400_000;
     const preWindow = [...sets]
       .sort((a, b) => b.completionTime - a.completionTime)
       .filter(s => s.completionTime < cutoff);

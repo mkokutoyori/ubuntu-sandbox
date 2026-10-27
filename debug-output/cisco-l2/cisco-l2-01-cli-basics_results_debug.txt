@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-10-14T19:59:32.029Z
+Generated: 2026-10-25T18:01:41.340Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -23,7 +23,7 @@ Total steps: 366
     pwd         Display current working directory
     resume      Resume an outgoing connection
     rmdir       Remove a directory
-    show        Time range
+    show        Display the defined VRF instances
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
@@ -43,7 +43,7 @@ Total steps: 366
     cdp            Display CDP information
     clock          Display the system clock
     controllers    Display controller status
-    crypto         Show RSA public keys
+    crypto         Show the public keys of the IKE peers
     dhcp           DHCP client lease information
     dot1x          Display 802.1X state
     dtp            Display DTP information
@@ -56,7 +56,7 @@ Total steps: 366
     hosts          Display host cache
     interfaces     Interface status and configuration
     inventory      Display hardware inventory
-    ip             DHCP pool information
+    ip             Display the defined VRF instances
     ipv6           DHCPv6 address and prefix bindings
     lacp           Display LACP state
     line           Display TTY lines
@@ -90,18 +90,19 @@ Total steps: 366
     users          Display active lines
     version        System hardware and software status
     vlan           Display VLAN information
-    vrf            Display VRFs
+    vrf            Display the defined VRF instances
     vrrp           Display VRRP groups on SVIs
     vtp            Display the VTP password
     who            Display active lines
+    zone           Display zone security information
 
 [3/366] sw1 SW1> s?
-    show     Time range
+    show     Display the defined VRF instances
     squeeze  Squeeze a filesystem
     ssh      Open an SSH connection to a remote host
 
 [4/366] sw1 SW1> sh?
-    show  Time range
+    show  Display the defined VRF instances
 
 [5/366] sw1 SW1> en?
     enable  Turn on privileged commands
@@ -114,6 +115,7 @@ Total steps: 366
 [7/366] sw1 SW1> ping ?
     WORD  Ping destination address or hostname
     ip    IP echo
+    vrf   Send echo messages in a VPN Routing/Forwarding instance
     <cr>
 
 [8/366] sw1 SW1> terminal ?
@@ -150,7 +152,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *19:59:32.000 UTC Wed Oct 14 2026
+  *18:01:41.000 UTC Sun Oct 25 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -244,7 +246,7 @@ Total steps: 366
     rmdir       Remove a directory
     send        All tty lines
     setup       Run the initial configuration dialog
-    show        Time range
+    show        Display the defined VRF instances
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
@@ -272,7 +274,7 @@ Total steps: 366
     clock           Display the system clock
     configuration   Contents of startup configuration
     controllers     Display controller status
-    crypto          Show RSA public keys
+    crypto          Show the public keys of the IKE peers
     debugging       Display active debug flags
     dhcp            DHCP client lease information
     diag            Display chassis diagnostics
@@ -288,7 +290,7 @@ Total steps: 366
     hosts           Display host cache
     interfaces      Interface status and configuration
     inventory       Display hardware inventory
-    ip              DHCP pool information
+    ip              Display the defined VRF instances
     ipv6            DHCPv6 address and prefix bindings
     lacp            Display LACP state
     license         Display licenses
@@ -303,6 +305,7 @@ Total steps: 366
     pagp            Display PAgP state
     parser          Display CLI view information
     platform        Display platform information
+    policy-map      Display the runtime statistics of the inspect policies
     port-security   Display port security
     privilege       Display current privilege level
     processes       Display active processes
@@ -330,10 +333,12 @@ Total steps: 366
     users           Display active lines
     version         System hardware and software status
     vlan            Display VLAN information
-    vrf             Display VRFs
+    vrf             Display the defined VRF instances
     vrrp            Display VRRP groups on SVIs
     vtp             Display the VTP password
     who             Display active lines
+    zone            Display zone security information
+    zone-pair       Display the zone-pairs and their policy
 
 [20/366] sw1 SW1# configure ?
     replace   Replace the running configuration
@@ -355,6 +360,7 @@ Total steps: 366
     port-security  Clear all secure MAC addresses
     radius         Clear RADIUS server information
     spanning-tree  Restart protocol migration
+    zone-pair      Clear the policy-map counters
 
 [22/366] sw1 SW1# debug ?
     aaa                AAA accounting
@@ -501,7 +507,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC61231HXU
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC6943L9PC
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -541,14 +547,14 @@ Total steps: 366
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -565,14 +571,14 @@ Total steps: 366
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -1366,7 +1372,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *19:59:32.000 UTC Wed Oct 14 2026
+  *18:01:41.000 UTC Sun Oct 25 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1518,15 +1524,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:59:31.806: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Oct 14 19:59:31.807: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Oct 14 19:59:31.811: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Oct 14 19:59:31.811: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Oct 14 19:59:31.814: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Oct 14 19:59:31.814: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Oct 14 19:59:31.821: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:31.821: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:31.897: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 25 18:01:41.258: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Oct 25 18:01:41.258: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Oct 25 18:01:41.261: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Oct 25 18:01:41.261: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Oct 25 18:01:41.267: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Oct 25 18:01:41.267: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Oct 25 18:01:41.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:41.276: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 25 18:01:41.308: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1606,7 +1612,7 @@ Total steps: 366
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [74/366] sw1 SW1(config)# ?
-    aaa            Enable NEW access control commands and functions
+    aaa            Enable accounting update records
     access-list    Add an access list entry
     alias          Create a command alias
     archive        Enter archive configuration
@@ -1620,7 +1626,7 @@ Total steps: 366
     default        Set a command to its defaults
     do             To run exec commands in config mode
     dot1x          Enable 802.1X globally
-    enable         Set enable secret
+    enable         Assign the privileged level secret
     end            Exit from configure mode
     errdisable     Error disable recovery configuration
     exit           Exit from configure mode
@@ -1629,6 +1635,7 @@ Total steps: 366
     interface      FastEthernet IEEE 802.3
     ip             Enable IP routing
     ipv6           Configure IPv6 prefix pool
+    kerberos       Specify the Kerberos realm of this router
     lacp           LACP system priority
     line           Enter line configuration
     lldp           Enable LLDP globally
@@ -2057,14 +2064,14 @@ Total steps: 366
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -2992,14 +2999,14 @@ Total steps: 366
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Gi0/1
+     1    0200.0000.0053    DYNAMIC    Gi0/1
+     1    0200.0000.0057    DYNAMIC    Gi0/1
+     1    0200.0000.005b    DYNAMIC    Fa0/1
+     1    0200.0000.005f    DYNAMIC    Fa0/2
+     1    0200.0000.0063    DYNAMIC    Fa0/3
   
   Total Mac Addresses for this criterion: 6
 
@@ -3231,7 +3238,7 @@ Total steps: 366
 [197/366] srv1 srv1$ systemctl status sshd
   [0;1;32m●[0m ssh.service - OpenBSD Secure Shell server
        Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
-       Active: [0;1;32mactive (running)[0m since Wed, 14 Oct 2026 19:59:31 GMT
+       Active: [0;1;32mactive (running)[0m since Sun, 25 Oct 2026 18:01:41 GMT
      Main PID: 22 (sshd)
         Tasks: 1
        Memory: 4.2M
@@ -3616,7 +3623,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3723,7 +3730,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          10/14/2026, 7:59:31 PM
+  System Boot Time:          10/25/2026, 6:01:41 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3775,7 +3782,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   L2
@@ -3803,7 +3810,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3910,7 +3917,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          10/14/2026, 7:59:31 PM
+  System Boot Time:          10/25/2026, 6:01:41 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3962,27 +3969,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:01:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.035 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.058 ms
   64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.035 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
+  rtt min/avg/max/mdev = 0.035/0.046/0.058/0.011 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.064 ms
   64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss, time 1000ms
-  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
+  rtt min/avg/max/mdev = 0.039/0.051/0.064/0.012 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
@@ -3992,14 +3999,14 @@ Total steps: 366
   Mac Address Table
   -------------------------------------------
   
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address       Type       Ports
+  ----    --------------    -------    -----
+     1    0200.0000.004f    DYNAMIC    Fa0/1
+     1    0200.0000.0053    DYNAMIC    Fa0/2
+     1    0200.0000.0057    DYNAMIC    Fa0/3
+     1    0200.0000.005b    DYNAMIC    Gi0/1
+     1    0200.0000.005f    DYNAMIC    Gi0/1
+     1    0200.0000.0063    DYNAMIC    Gi0/1
   
   Total Mac Addresses for this criterion: 6
 
@@ -4023,11 +4030,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       11 packets input, 912 bytes, 0 no buffer
-       Received 3 broadcasts (4 multicasts)
+       9 packets input, 760 bytes, 0 no buffer
+       Received 3 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       41 packets output, 3230 bytes, 0 underruns
+       30 packets output, 2398 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4044,11 +4051,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       11 packets input, 932 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       9 packets input, 780 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       34 packets output, 2600 bytes, 0 underruns
+       23 packets output, 1768 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4065,11 +4072,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       33 packets output, 2540 bytes, 0 underruns
+       22 packets output, 1712 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4515,11 +4522,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 644 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       6 packets input, 492 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       40 packets output, 3090 bytes, 0 underruns
+       29 packets output, 2258 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4536,11 +4543,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 664 bytes, 0 no buffer
-       Received 1 broadcasts (7 multicasts)
+       6 packets input, 512 bytes, 0 no buffer
+       Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       33 packets output, 2460 bytes, 0 underruns
+       22 packets output, 1628 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4557,11 +4564,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       3 packets input, 226 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       34 packets output, 2604 bytes, 0 underruns
+       23 packets output, 1776 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

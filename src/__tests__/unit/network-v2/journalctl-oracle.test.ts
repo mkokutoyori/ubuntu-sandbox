@@ -9,14 +9,16 @@
  * parsed entries, because the real tool walks a hash map seeded at random and emits the keys in a different order on every
  * run; -N compares the sorted set of names for the same reason (the real order is the hash table's).
  * Two cases read file internals that the port does not model: --header is replayed from the counters printed by the binary (the
- * formatting is checked, the counters are inputs) and --verify is compared on its PASS lines only, the binary adding
- * 'Unused data (entry_offset==0)' lines that describe hash-chain bookkeeping of the real files.
+ * formatting is checked, the counters are inputs) and --verify is compared on its PASS lines only: the real offline files are not part of the fixture, so each
+ * listed file is replaced by an empty journal written by JournalImage (the byte-level verification itself is probed in journal-verify-oracle.test.ts).
  * Not recorded because they would change the machine (--rotate, --flush, --sync, --vacuum-*, --setup-keys) or print a random value
  * (--new-id128).
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { runJournalctl, type JournalctlHost, type JournalFileInfo, type PathStat } from '@/network/devices/linux/journal/JournalctlTool';
+import { bytesToFileText } from '@/crypto/encoding';
+import { JournalImage } from '@/network/devices/linux/journal/format/JournalImage';
 import { systemdCatalog } from '@/network/devices/linux/journal/Catalog';
 import type { JournalRecord } from '@/network/devices/linux/journal/JournalRecord';
 
@@ -40,6 +42,16 @@ interface Recorded {
 
 const fixture = JSON.parse(readFileSync('src/__tests__/support/oracle/audit-tools/journalctl-255.4.json', 'utf8')) as { now: number; entries: RecordedEntry[]; results: Recorded[] };
 const DIRECTORY = '/tmp/jcorpus/journal';
+const EMPTY_JOURNAL_SIZE = 8 * 1024 * 1024;
+const EMPTY_JOURNAL = (() => {
+  const image = new JournalImage({
+    identity: { fileId: new Uint8Array(16).fill(1), machineId: new Uint8Array(16).fill(2), seqnumId: new Uint8Array(16).fill(3) },
+    dataTableItems: 64, compressEnabled: false, sealed: false, allocate: () => EMPTY_JOURNAL_SIZE,
+  }).snapshot();
+  const padded = new Uint8Array(EMPTY_JOURNAL_SIZE);
+  padded.set(image);
+  return bytesToFileText(padded);
+})();
 
 const records: JournalRecord[] = fixture.entries.map(entry => ({
   fields: entry.fields.map(([name, value]) => [name, Uint8Array.from(Buffer.from(value, 'base64'))] as const),
@@ -94,7 +106,7 @@ function hostFor(zone: string, files: Map<string, string>, journalFiles: Journal
       if (path.startsWith('/nonexistent')) return { errno: 'ENOTDIR' };
       return { errno: 'ENOENT' };
     },
-    readFile: path => files.get(path) ?? null,
+    readFile: path => files.get(path) ?? (path.endsWith('.journal') ? EMPTY_JOURNAL : null),
     writeFile: (path, content) => {
       files.set(path, content);
       return null;
@@ -147,7 +159,7 @@ describe('journalctl 255.4 against the real binary', () => {
       const files = new Map<string, string>();
       if (recorded.cursorFile) files.set('/cursor-file', recorded.cursorFile.before);
       const infos = recorded.args.includes('--header') ? parseHeaders(text(recorded.stdout)) : recorded.args.includes('--verify')
-        ? [...text(recorded.stderr).matchAll(/^PASS: (.*)$/gm)].map(match => ({ path: match[1] } as JournalFileInfo)) : [];
+        ? [...text(recorded.stderr).matchAll(/^PASS: (.*)$/gm)].map(match => ({ path: match[1], compatibleFlags: [] } as unknown as JournalFileInfo)) : [];
       const result = runJournalctl(hostFor(recorded.zone, files, infos), [`--directory=${DIRECTORY}`, '--no-pager', ...recorded.args.map(a => a.replace('@CF@', '/cursor-file'))]);
       if (recorded.cursorFile) expect(files.get('/cursor-file')).toBe(recorded.cursorFile.after);
       const mode = recorded.args.includes('-o') ? recorded.args[recorded.args.indexOf('-o') + 1] : recorded.args.find(a => a.startsWith('--output='))?.slice(9) ?? '';

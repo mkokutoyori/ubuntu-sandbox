@@ -14,6 +14,9 @@ import { simulationNowMs } from '../../core/SystemClock';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { normalizeWindowsPath } from './windowsPath';
 import { WINDOWS_PROGRAMS } from './WinPrograms';
+import {
+  ERROR_DIR_NOT_EMPTY, ERROR_DIRECTORY, ERROR_PATH_NOT_FOUND, ERROR_SHARING_VIOLATION,
+} from './win32ErrorText';
 import { HostsFile } from '../HostsFile';
 
 /**
@@ -72,9 +75,18 @@ export interface WinDirEntry {
   entry: WinFSEntry;
 }
 
+export interface WindowsProcessDirectories {
+  driveDirectory(letter: string): string;
+  directoriesInUse(): readonly string[];
+}
+
+const directoryKey = (path: string): string => path.toLowerCase().replace(/\\+$/, '');
+
 export class WindowsFileSystem {
   /** Root of each drive: key = uppercase drive letter with colon, e.g. 'C:' */
   private drives: Map<string, WinFSEntry> = new Map();
+
+  private processes: WindowsProcessDirectories | null = null;
 
   /**
    * Last timestamp handed out by now(). The displayed clock still tracks
@@ -438,7 +450,74 @@ export class WindowsFileSystem {
    * - If relative, resolve against cwd
    */
   normalizePath(path: string, cwd: string): string {
-    return normalizeWindowsPath(path, cwd);
+    const processes = this.processes;
+    return normalizeWindowsPath(path, cwd, processes ? letter => processes.driveDirectory(letter) : undefined);
+  }
+
+  attachProcesses(processes: WindowsProcessDirectories): void {
+    this.processes = processes;
+  }
+
+  hasDrive(letter: string): boolean {
+    return this.drives.has(`${letter.toUpperCase()}:`);
+  }
+
+  canonicalPath(absPath: string): string {
+    const root = this.drives.get(absPath.substring(0, 2).toUpperCase());
+    const letter = `${absPath.substring(0, 1).toUpperCase()}:`;
+    if (!root) return absPath;
+    const names: string[] = [];
+    let current: WinFSEntry | undefined = root;
+    for (const part of absPath.substring(3).split('\\').filter(Boolean)) {
+      current = current?.children.get(part.toLowerCase());
+      names.push(current?.name ?? part);
+    }
+    return names.length === 0 ? `${letter}\\` : `${letter}\\${names.join('\\')}`;
+  }
+
+  canonicalLeaf(absPath: string): string {
+    const separator = absPath.lastIndexOf('\\');
+    if (separator <= 2) return absPath;
+    const leaf = this.resolve(absPath)?.name;
+    return leaf === undefined ? absPath : `${absPath.slice(0, separator + 1)}${leaf}`;
+  }
+
+  isDirectoryInUse(absPath: string): boolean {
+    return this.directoriesHeldWithin(absPath).length > 0;
+  }
+
+  private directoriesHeldWithin(absPath: string): string[] {
+    const root = directoryKey(absPath);
+    return (this.processes?.directoriesInUse() ?? []).filter(directory => {
+      const key = directoryKey(directory);
+      return key === root || key.startsWith(`${root}\\`);
+    });
+  }
+
+  private holdsDirectory(absPath: string): boolean {
+    const key = directoryKey(absPath);
+    return (this.processes?.directoriesInUse() ?? []).some(directory => directoryKey(directory) === key);
+  }
+
+  private refusalToRemove(entry: WinFSEntry, absPath: string): string | null {
+    if (entry.children.size > 0) return ERROR_DIR_NOT_EMPTY;
+    return this.holdsDirectory(absPath) ? ERROR_SHARING_VIOLATION : null;
+  }
+
+  private emptyDirectory(entry: WinFSEntry, absPath: string): string[] {
+    const errors: string[] = [];
+    for (const [key, child] of [...entry.children]) {
+      if (child.type === 'file') {
+        entry.children.delete(key);
+        continue;
+      }
+      const childPath = absPath.endsWith('\\') ? absPath + child.name : `${absPath}\\${child.name}`;
+      errors.push(...this.emptyDirectory(child, childPath));
+      const refusal = this.refusalToRemove(child, childPath);
+      if (refusal === null) entry.children.delete(key);
+      else errors.push(refusal);
+    }
+    return errors;
   }
   // ─── Resolution ──────────────────────────────────────────────────
 
@@ -545,9 +624,10 @@ export class WindowsFileSystem {
 
   rmdir(absPath: string): { ok: boolean; error?: string } {
     const entry = this.resolve(absPath);
-    if (!entry) return { ok: false, error: 'The system cannot find the path specified.' };
-    if (entry.type !== 'directory') return { ok: false, error: 'The directory name is invalid.' };
-    if (entry.children.size > 0) return { ok: false, error: 'The directory is not empty.' };
+    if (!entry) return { ok: false, error: ERROR_PATH_NOT_FOUND };
+    if (entry.type !== 'directory') return { ok: false, error: ERROR_DIRECTORY };
+    const refusal = this.refusalToRemove(entry, absPath);
+    if (refusal !== null) return { ok: false, error: refusal };
 
     const pair = this.resolveParent(absPath);
     if (!pair) return { ok: false, error: 'Cannot remove root.' };
@@ -559,10 +639,15 @@ export class WindowsFileSystem {
 
   rmdirRecursive(absPath: string): { ok: boolean; error?: string } {
     const entry = this.resolve(absPath);
-    if (!entry) return { ok: false, error: 'The system cannot find the path specified.' };
+    if (!entry) return { ok: false, error: ERROR_PATH_NOT_FOUND };
+    if (entry.type !== 'directory') return { ok: false, error: ERROR_DIRECTORY };
 
     const pair = this.resolveParent(absPath);
     if (!pair) return { ok: false, error: 'Cannot remove root.' };
+    const errors = this.emptyDirectory(entry, absPath);
+    const refusal = this.refusalToRemove(entry, absPath);
+    if (refusal !== null) errors.push(refusal);
+    if (errors.length > 0) return { ok: false, error: errors.join('\n') };
     const [parent, childName] = pair;
     parent.children.delete(childName.toLowerCase());
     parent.mtime = this.now();
@@ -674,7 +759,7 @@ export class WindowsFileSystem {
       return { ok: false, error: 'The file cannot be copied onto itself.' };
     }
     const existing = this.resolve(target);
-    if (existing && existing.type === 'file' && existing.attributes.has('readonly')) {
+    if (existing && existing.type === 'file' && (existing.attributes.has('readonly') || existing.attributes.has('hidden'))) {
       return { ok: false, error: 'Access is denied.' };
     }
 
@@ -708,9 +793,15 @@ export class WindowsFileSystem {
       const srcName = srcPath.substring(srcPath.lastIndexOf('\\') + 1);
       destPath = destPath.replace(/\\$/, '') + '\\' + srcName;
     }
-    if (this.sameEntry(srcPath, destPath)) return { ok: true };
+    if (this.sameEntry(srcPath, destPath)) {
+      srcEntry.name = destPath.substring(destPath.lastIndexOf('\\') + 1);
+      return { ok: true };
+    }
     if (srcEntry.type === 'directory' && (destPath.toLowerCase() + '\\').startsWith(srcPath.toLowerCase().replace(/\\$/, '') + '\\')) {
       return { ok: false, error: 'Access is denied.' };
+    }
+    if (srcEntry.type === 'directory' && this.isDirectoryInUse(srcPath)) {
+      return { ok: false, error: ERROR_SHARING_VIOLATION };
     }
 
     const pair = this.resolveParent(destPath);
@@ -744,6 +835,9 @@ export class WindowsFileSystem {
     const newKey = newName.toLowerCase();
     if (newKey !== oldKey && parent.children.has(newKey)) {
       return { ok: false, error: 'A duplicate file name exists, or the file cannot be found.' };
+    }
+    if (entry.type === 'directory' && this.isDirectoryInUse(absPath)) {
+      return { ok: false, error: ERROR_SHARING_VIOLATION };
     }
 
     parent.children.delete(oldKey);
@@ -798,36 +892,6 @@ export class WindowsFileSystem {
       if (e.entry.type === 'directory') {
         const childPath = absPath.endsWith('\\') ? absPath + e.name : absPath + '\\' + e.name;
         this._listRecursive(childPath, result);
-      }
-    }
-  }
-
-  // ─── Tree Display ────────────────────────────────────────────────
-
-  tree(absPath: string, showFiles = false): string {
-    const entry = this.resolve(absPath);
-    if (!entry || entry.type !== 'directory') return 'Invalid path - ' + absPath;
-
-    const lines: string[] = [absPath];
-    this._tree(entry, '', lines, showFiles);
-    return lines.join('\n');
-  }
-
-  private _tree(entry: WinFSEntry, prefix: string, lines: string[], showFiles: boolean): void {
-    let children = Array.from(entry.children.values())
-      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-
-    if (!showFiles) {
-      children = children.filter(c => c.type === 'directory');
-    }
-
-    for (let i = 0; i < children.length; i++) {
-      const isLast = i === children.length - 1;
-      const connector = isLast ? '└───' : '├───';
-      const extension = isLast ? '    ' : '│   ';
-      lines.push(prefix + connector + children[i].name);
-      if (children[i].type === 'directory') {
-        this._tree(children[i], prefix + extension, lines, showFiles);
       }
     }
   }
@@ -938,18 +1002,28 @@ export class WindowsFileSystem {
   }
 
   /**
-   * Volume serial — single source of truth for both `dir` and `vol`.
+   * Volume serial — single source of truth for `dir`, `vol` and `tree`.
    * Deterministic per (hostname, drive): realistic (unique per machine)
    * yet stable across runs, and identical no matter which command asks.
    */
   getVolumeSerialNumber(drive: string = 'C'): string {
+    const hex = this.volumeSerialWord(drive, '').toString(16).toUpperCase().padStart(8, '0');
+    return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+  }
+
+  getNtfsVolumeSerialNumber(drive: string = 'C'): string {
+    const high = (this.volumeSerialWord(drive, '#high') & 0xfff).toString(16).toUpperCase().padStart(8, '0');
+    const low = this.getVolumeSerialNumber(drive).replace('-', '');
+    return `${high} ${low.slice(0, 4)}:${low.slice(4)}`;
+  }
+
+  private volumeSerialWord(drive: string, salt: string): number {
     const letter = (drive || 'C').toUpperCase().replace(/[:\\]+$/, '').charAt(0) || 'C';
     let h = 0;
-    for (const ch of `${this.hostname}:${letter}`) {
+    for (const ch of `${this.hostname}:${letter}${salt}`) {
       h = ((h * 31) + ch.charCodeAt(0)) & 0xffffffff;
     }
-    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
-    return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    return Math.abs(h) >>> 0;
   }
 
   // ─── ACL Operations ─────────────────────────────────────────────

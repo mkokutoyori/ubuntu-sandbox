@@ -64,18 +64,18 @@ test.describe('FortiGate — inspection et UTM dans le terminal', () => {
     await waitForText(page, 'set av-scan monitor');
   });
 
-  test('`deep-inspection` est refuse en nommant la brique absente', async ({ page }) => {
+  test('`deep-inspection` est accepte et rendu', async ({ page }) => {
     test.setTimeout(120_000);
     const id = await poserFortiGate(page);
     await openTerminal(page, id);
 
     for (const c of [
       'config firewall ssl-ssh-profile', 'edit "SSL"',
-      'config https', 'set status deep-inspection',
+      'config https', 'set status deep-inspection', 'end', 'next', 'end',
+      'show firewall ssl-ssh-profile SSL',
     ]) await typeCmd(page, c);
 
-    await waitForText(page, 'Command fail');
-    await waitForText(page, 'certificate-inspection');
+    await waitForText(page, 'set status deep-inspection');
   });
 
   test('`certificate-inspection` est acceptee et rendue', async ({ page }) => {

@@ -6,11 +6,12 @@
  * the current dml counter.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowDate } from '../time/OracleHostClock';
 
 registerView({
   name: 'DBA_TAB_MODIFICATIONS',
@@ -35,7 +36,7 @@ registerView({
         slice(runtime.counters.dml),
         slice(runtime.counters.dml),
         slice(runtime.counters.dml),
-        simulationDate().toISOString(),
+        hostNowDate().toISOString(),
         'NO', 0,
       ])
     );

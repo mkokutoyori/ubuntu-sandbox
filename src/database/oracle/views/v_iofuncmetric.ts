@@ -2,11 +2,12 @@
  * V$IOFUNCMETRIC — per-I/O-function metrics snapshot.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { hostNowMs } from '../time/OracleHostClock';
 
 const FUNCTIONS = ['LGWR', 'DBWR', 'ARCH', 'Direct Reads', 'Direct Writes', 'Buffer Cache Reads', 'Others'];
 
@@ -16,7 +17,7 @@ registerView({
   query({ runtime }) {
     let reads = 0;
     for (const s of runtime.sqlCache.values()) reads += s.diskReads;
-    const end = simulationNowMs();
+    const end = hostNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

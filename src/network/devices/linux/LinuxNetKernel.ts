@@ -18,6 +18,7 @@
 
 import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
+import type { TcpSocket } from '../../tcp/TcpStack';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
 import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, Echo6Options, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport, TcpExchangeSocketOptions, UdpConnectOptions } from '../EndHost';
@@ -226,6 +227,11 @@ export interface LinuxNetKernel {
     options?: TcpExchangeSocketOptions,
   ): { outcome: TcpWireOutcome; received: string };
 
+  tcpOpen(
+    target: IPAddress | IPv6Address, port: number,
+    options?: TcpExchangeSocketOptions,
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null };
+
   udpConnect(
     target: IPAddress | IPv6Address, port: number,
     options?: UdpConnectOptions,
@@ -233,7 +239,7 @@ export interface LinuxNetKernel {
 
   udpListen(
     port: number, processName: string, owner: { pid?: number; uid?: number },
-    onDatagram?: (payload: Uint8Array) => void,
+    onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null;
 
   routeException(target: IPAddress): RouteException | null;

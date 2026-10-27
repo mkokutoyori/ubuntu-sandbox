@@ -14,5 +14,5 @@ export interface IRetentionPolicy {
   readonly kind:  RetentionKind;
   readonly value: number | null;
   describe(): string;
-  findObsolete(sets: ReadonlyArray<BackupSet>): BackupSet[];
+  findObsolete(sets: ReadonlyArray<BackupSet>, nowMs?: number): BackupSet[];
 }

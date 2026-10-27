@@ -7,6 +7,7 @@
 
 import type { ColumnDataType } from '../catalog/DataType';
 import { RowIndexCache, type IndexValueSemantics, type IndexRuntimeStats } from './RowIndexCache';
+import { OracleError } from '../types/DatabaseError';
 
 // ── Row representation ──────────────────────────────────────────────
 
@@ -15,6 +16,25 @@ export type CellValue = string | number | boolean | null | Date;
 
 /** A row is an array of cell values, ordered by column index. */
 export type StorageRow = CellValue[];
+
+export interface DeleteScan {
+  readonly source: StorageRow[];
+  readonly limit: number;
+  next: number;
+  readonly kept: StorageRow[];
+  readonly removed: StorageRow[];
+}
+
+export interface UpdateScan {
+  readonly source: StorageRow[];
+  readonly limit: number;
+  next: number;
+  count: number;
+}
+
+function scanConflict(): OracleError {
+  return new OracleError(8177, "can't serialize access for this transaction");
+}
 
 /**
  * Row-level change listener for transactional undo. The active session's
@@ -258,7 +278,7 @@ export abstract class BaseStorage {
 
   insertRows(schema: string, tableName: string, rows: StorageRow[]): number {
     const table = this.getTableData(schema, tableName);
-    table.rows.push(...rows);
+    for (const row of rows) table.rows.push(row);
     table.meta.rowCount = table.rows.length;
     if (this.undoSink) {
       for (const row of rows) this.undoSink.recordInsert(schema, tableName, row);
@@ -271,35 +291,81 @@ export abstract class BaseStorage {
   }
 
   deleteRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): number {
+    const scan = this.beginDeleteScan(schema, tableName);
+    this.advanceDeleteScan(scan, predicate, () => false);
+    return this.finishDeleteScan(schema, tableName, scan);
+  }
+
+  beginDeleteScan(schema: string, tableName: string): DeleteScan {
     const table = this.getTableData(schema, tableName);
-    const before = table.rows.length;
-    const removedRows: StorageRow[] = [];
-    table.rows = table.rows.filter(row => {
-      if (predicate(row)) { removedRows.push(row); return false; }
-      return true;
-    });
+    return { source: table.rows, limit: table.rows.length, next: 0, kept: [], removed: [] };
+  }
+
+  advanceDeleteScan(
+    scan: DeleteScan, predicate: (row: StorageRow) => boolean, stop: () => boolean,
+  ): boolean {
+    const { source } = scan;
+    while (scan.next < scan.limit) {
+      if ((scan.next & 255) === 255 && stop()) return false;
+      const row = source[scan.next++];
+      if (predicate(row)) scan.removed.push(row); else scan.kept.push(row);
+    }
+    return true;
+  }
+
+  finishDeleteScan(schema: string, tableName: string, scan: DeleteScan): number {
+    const table = this.getTableData(schema, tableName);
+    if (table.rows !== scan.source) throw scanConflict();
+    for (let i = scan.limit; i < table.rows.length; i++) scan.kept.push(table.rows[i]);
+    table.rows = scan.kept;
     table.meta.rowCount = table.rows.length;
-    const removed = before - table.rows.length;
+    const removed = scan.removed.length;
     if (removed > 0) table.epoch = BaseStorage.epochSource++;
     if (this.undoSink) {
-      for (const row of removedRows) this.undoSink.recordDelete(schema, tableName, row);
+      for (const row of scan.removed) this.undoSink.recordDelete(schema, tableName, row);
     }
     return removed;
   }
 
   updateRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow): number {
+    const scan = this.beginUpdateScan(schema, tableName);
+    this.advanceUpdateScan(schema, tableName, scan, predicate, updater, () => false);
+    return scan.count;
+  }
+
+  beginUpdateScan(schema: string, tableName: string): UpdateScan {
     const table = this.getTableData(schema, tableName);
-    let count = 0;
-    for (let i = 0; i < table.rows.length; i++) {
+    return { source: table.rows, limit: table.rows.length, next: 0, count: 0 };
+  }
+
+  advanceUpdateScan(
+    schema: string, tableName: string, scan: UpdateScan,
+    predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow,
+    stop: () => boolean,
+  ): boolean {
+    const table = this.getTableData(schema, tableName);
+    if (table.rows !== scan.source) throw scanConflict();
+    while (scan.next < scan.limit) {
+      if ((scan.next & 255) === 255 && stop()) return false;
+      const i = scan.next++;
       if (predicate(table.rows[i])) {
         const before = table.rows[i];
         table.rows[i] = updater(table.rows[i]);
+        const fromEpoch = table.epoch;
         table.epoch = BaseStorage.epochSource++;
+        this.rowIndexes.rowReplaced(`${schema.toUpperCase()}.${tableName.toUpperCase()}`, fromEpoch, table.epoch, i, before, table.rows[i]);
         this.undoSink?.recordUpdate(schema, tableName, before, table.rows[i]);
-        count++;
+        scan.count++;
       }
     }
-    return count;
+    return true;
+  }
+
+  rewriteRows(schema: string, tableName: string, apply: (rows: StorageRow[]) => void): void {
+    const table = this.getTableData(schema, tableName);
+    apply(table.rows);
+    table.meta.rowCount = table.rows.length;
+    table.epoch = BaseStorage.epochSource++;
   }
 
   truncateTable(schema: string, tableName: string): void {

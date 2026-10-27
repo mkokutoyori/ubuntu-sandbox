@@ -1,6 +1,12 @@
 import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGetopt';
+import { parseSize } from '../systemd/ParseSize';
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
 import { fnmatch } from '../fs/Glob';
+import { errnoText } from '@/network/core/Errno';
+import { fileTextToBytes } from '@/crypto/encoding';
+import { setupKeys } from './seal/SetupKeys';
+import { renderVerification } from './format/JournalVerifyRun';
+import { DEFAULT_FSS_INTERVAL_USEC } from './seal/SealingKeyFile';
 import { type SystemdClock, formatTimespan, formatTimestamp, parseSec, parseTimestamp, systemdClock } from '../systemd/SystemdTime';
 import { safeAtoi } from '../systemd/SafeNumbers';
 import { isGlob, unitNameMangle } from '../systemd/UnitName';
@@ -62,11 +68,25 @@ export interface VacuumSpec {
 
 export interface VacuumResult {
   directory: string;
-  deleted: Array<{ name: string; bytes: number }>;
+  deleted: Array<{ name: string; bytes: number; empty?: boolean }>;
   freedBytes: number;
 }
 
+export interface SealingHost {
+  persistentDirectory(): 'directory' | 'missing' | 'other';
+  machineId(): string;
+  bootId(): string;
+  hostname(): string;
+  keyPath(): string;
+  keyExists(): boolean;
+  removeKey(): string | null;
+  writeKey(content: string): string | null;
+  randomBytes(count: number): Uint8Array;
+  onTty(): boolean;
+}
+
 export interface JournalctlHost {
+  sealing?: SealingHost;
   files(): JournalFileInfo[];
   varlink(method: string, namespace: string | null): VarlinkOutcome;
   vacuum(spec: VacuumSpec): VacuumResult[];
@@ -90,11 +110,6 @@ export interface JournalctlHost {
   updateCatalog(): string | null;
   diskUsageBytes(): number;
 }
-
-const ERRNO_TEXT: Record<string, string> = {
-  EINVAL: 'Invalid argument', ENOENT: 'No such file or directory', ENODATA: 'No data available', EACCES: 'Permission denied', ERANGE: 'Numerical result out of range',
-  ENOTDIR: 'Not a directory', EPERM: 'Operation not permitted',
-};
 
 const LOG_LEVELS = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'];
 const FACILITY_NAMES = ['kern', 'user', 'mail', 'daemon', 'auth', 'syslog', 'lpr', 'news', 'uucp', 'cron', 'authpriv', 'ftp', '12', '13', '14', '15', 'local0', 'local1', 'local2', 'local3', 'local4', 'local5', 'local6', 'local7'];
@@ -127,10 +142,13 @@ const OPTIONS: readonly LongOption[] = [
 ];
 
 type Action = 'show' | 'new-id128' | 'list-catalog' | 'dump-catalog' | 'update-catalog' | 'flush' | 'relinquish-var' | 'sync' | 'rotate' | 'print-header'
-| 'verify' | 'disk-usage' | 'list-boots' | 'vacuum' | 'rotate-and-vacuum' | 'list-fields' | 'list-field-names';
+| 'verify' | 'setup-keys' | 'disk-usage' | 'list-boots' | 'vacuum' | 'rotate-and-vacuum' | 'list-fields' | 'list-field-names';
 
 interface Args {
   action: Action;
+  force: boolean;
+  interval: number;
+  verifyKey: string | null;
   output: OutputMode;
   utc: boolean;
   follow: boolean;
@@ -185,7 +203,7 @@ const CURRENT_USER_TYPE = 2;
 
 function defaultArgs(): Args {
   return {
-    action: 'show', output: 'short', utc: false, follow: false, full: true, all: false, lines: ARG_LINES_DEFAULT, linesOldest: false, noTail: false, truncateNewline: false,
+    action: 'show', force: false, interval: DEFAULT_FSS_INTERVAL_USEC, verifyKey: null, output: 'short', utc: false, follow: false, full: true, all: false, lines: ARG_LINES_DEFAULT, linesOldest: false, noTail: false, truncateNewline: false,
     quiet: false, merge: false, boot: false, bootId: null, bootOffset: 0, dmesg: false, noHostname: false, cursor: null, cursorFile: null, afterCursor: null,
     showCursor: false, directory: null, files: [], fileStdin: false, priorities: 0xff, facilities: [], since: 0, until: 0, sinceSet: false, untilSet: false,
     syslogIdentifiers: [], systemUnits: [], userUnits: [], field: null, catalog: false, reverse: false, journalType: 0, root: null, image: null, machine: null,
@@ -430,7 +448,7 @@ export function runJournalctl(host: JournalctlHost, argv: string[], program = 'j
   const sink = { write: (bytes: Uint8Array): void => { stdout.push(bytes); out.printf(text(bytes)); } };
   const say = (line: string): void => sink.write(utf8(line));
   const fail = (message: string, errno: string | null = null, code = 1): never => {
-    out.eprintf(`${message}${errno === null ? '' : `: ${ERRNO_TEXT[errno] ?? errno}`}\n`);
+    out.eprintf(`${message}${errno === null ? '' : `: ${errnoText(errno)}`}\n`);
     throw new ExitSignal(code);
   };
   const notice = (message: string): void => out.eprintf(`${message}\n`);
@@ -586,7 +604,7 @@ function parseArgv(
       case 0x114: args.action = action = 'verify'; break;
       case 0x116: args.action = action = 'disk-usage'; break;
       case 0x125: {
-        const size = parseSize(optarg as string);
+        const size = parseSize(optarg as string, 1024);
         if (size === null) return fail(`Failed to parse vacuum size: ${optarg}`);
         args.vacuumSize = size;
         args.action = action = action === 'rotate' ? 'rotate-and-vacuum' : 'vacuum';
@@ -605,7 +623,19 @@ function parseArgv(
         break;
       }
       case 0x10d: case 0x112: case 0x115: case 0x113:
-        return fail('Compiled without forward-secure sealing support.');
+        if (host.sealing === undefined) return fail('Compiled without forward-secure sealing support.');
+        if (c === 0x10d) args.force = true;
+        else if (c === 0x112) args.action = action = 'setup-keys';
+        else if (c === 0x115) {
+          args.verifyKey = optarg as string;
+          args.action = action = 'verify';
+          args.merge = false;
+        } else {
+          const parsed = parseSec(optarg as string);
+          if (!parsed.ok || parsed.usec <= 0) return fail(`Failed to parse sealing key change interval: ${optarg}`);
+          args.interval = parsed.usec;
+        }
+        break;
       case 0x70: {
         const value = optarg as string;
         const dots = value.indexOf('..');
@@ -719,13 +749,6 @@ function parseArgv(
   return 'continue';
 }
 
-function parseSize(input: string): number | null {
-  const match = /^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTPE]?)(?:i?B)?\s*$/i.exec(input);
-  if (match === null) return null;
-  const factors: Record<string, number> = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5, E: 1024 ** 6 };
-  return Math.floor(Number(match[1]) * factors[match[2].toUpperCase()]);
-}
-
 function runAction(
   host: JournalctlHost, args: Args, clock: SystemdClock, sink: { write(bytes: Uint8Array): void }, say: (text: string) => void, fail: Fail, notice: (message: string) => void, out: ToolOutput,
 ): void {
@@ -733,6 +756,12 @@ function runAction(
   if (args.action === 'new-id128') {
     const id = host.newId128();
     say(`As string:\n${id}\n\nAs UUID:\n${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}\n\nAs systemd-id128(1) macro:\n#define XYZ SD_ID128_MAKE(${id.match(/../g)!.join(',')})\n\nAs Python constant:\n>>> import uuid\n>>> XYZ = uuid.UUID('${id}')\n`);
+    return;
+  }
+  if (args.action === 'setup-keys') {
+    setupKeys(host.sealing as SealingHost, {
+      force: args.force, intervalUsec: args.interval, nowUsec: host.nowUsec(), formatInterval: (usec) => formatTimespan(usec, 0),
+    }, { info: notice, say, tty: (text) => { out.eprintf(text); }, fail });
     return;
   }
   if (args.action === 'flush' || args.action === 'relinquish-var' || args.action === 'sync' || args.action === 'rotate') {
@@ -749,7 +778,7 @@ function runAction(
   }
   const all = host.records();
   if (args.directory !== null && args.directory !== host.journalDirectory() && !host.journalDirectory().startsWith(`${args.directory.replace(/\/+$/, '')}/`)) return fail(`Failed to open ${args.directory}`, 'ENOENT');
-  if (args.root !== null || args.image !== null || args.files.length > 0 || args.fileStdin || args.machine !== null) {
+  if (args.root !== null || args.image !== null || (args.files.length > 0 && args.action !== 'verify') || args.fileStdin || args.machine !== null) {
     const target = args.root ?? args.image ?? args.files[0] ?? args.machine ?? 'files';
     return fail(`Failed to open ${args.files.length > 0 ? 'files' : target}`, 'ENOENT');
   }
@@ -786,13 +815,26 @@ function runAction(
     return;
   }
   if (args.action === 'verify') {
-    for (const file of host.files()) notice(`PASS: ${file.path}`);
+    const stamp = (usec: number): string => formatTimestamp(usec, 'pretty', clock) ?? '(null)';
+    const explicit = args.files.length > 0;
+    const paths = explicit ? args.files : host.files().map(file => file.path);
+    const files = paths.map(path => ({ path, content: host.readFile(path) }));
+    if (explicit && files.some(file => file.content === null)) return fail('Failed to open files', 'ENOENT');
+    const report = renderVerification(
+      files.flatMap(file => (file.content === null ? [] : [{ path: file.path, bytes: fileTextToBytes(file.content) }])), args.verifyKey, args.quiet, explicit, stamp,
+    );
+    for (const line of report.notices) notice(line);
+    if (report.fatal !== null) {
+      notice(report.fatal);
+      throw new ExitSignal(1);
+    }
+    if (report.status !== 0) throw new ExitSignal(report.status);
     return;
   }
   if (args.action === 'vacuum' || args.action === 'rotate-and-vacuum') {
     if (args.action === 'rotate-and-vacuum') varlinkCall(host, args, '--rotate', 'io.systemd.Journal.Rotate', fail);
     for (const result of host.vacuum({ size: args.vacuumSize, files: args.vacuumFiles, time: args.vacuumTime })) {
-      for (const entry of result.deleted) notice(`Deleted archived journal ${result.directory}/${entry.name} (${formatBytes(entry.bytes)}).`);
+      for (const entry of result.deleted) notice(`Deleted ${entry.empty === true ? 'empty ' : ''}archived journal ${result.directory}/${entry.name} (${formatBytes(entry.bytes)}).`);
       notice(`Vacuuming done, freed ${formatBytes(result.freedBytes)} of archived journals from ${result.directory}.`);
     }
     return;
@@ -879,13 +921,13 @@ function runCatalogAction(
   for (const item of items) {
     const id = parseId128(item);
     if (id === null) {
-      notice(`Failed to parse id128 '${item}': ${ERRNO_TEXT.EINVAL}`);
+      notice(`Failed to parse id128 '${item}': ${errnoText('EINVAL')}`);
       failure = failure ?? 'EINVAL';
       continue;
     }
     const body = findCatalogText(database, id, locale.messages);
     if (body === null) {
-      notice(`Failed to retrieve catalog entry for '${item}': ${ERRNO_TEXT.ENOENT}`);
+      notice(`Failed to retrieve catalog entry for '${item}': ${errnoText('ENOENT')}`);
       failure = failure ?? 'ENOENT';
       continue;
     }

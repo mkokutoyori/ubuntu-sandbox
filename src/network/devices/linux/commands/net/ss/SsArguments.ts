@@ -4,7 +4,7 @@ import {
 } from './SsModel';
 import { parseFilterExpression, type SsParseEnvironment } from './SsFilterExpression';
 
-export const SS_VERSION = 'ss utility, iproute2-5.15.0';
+export const SS_VERSION = 'ss utility, iproute2-6.1.0';
 
 export const SS_USAGE = [
   'Usage: ss [ OPTIONS ]',
@@ -19,6 +19,7 @@ export const SS_USAGE = [
   '   -e, --extended      show detailed socket information',
   '   -m, --memory        show socket memory usage',
   '   -p, --processes     show process using socket',
+  '   -T, --threads       show thread using socket',
   '   -i, --info          show internal TCP information',
   '       --tipcinfo      show internal tipc socket information',
   '   -s, --summary       show socket usage summary',
@@ -26,8 +27,8 @@ export const SS_USAGE = [
   '       --cgroup        show cgroup information',
   '   -b, --bpf           show bpf filter socket information',
   '   -E, --events        continually display sockets as they are destroyed',
-  '   -Z, --context       display process SELinux security contexts',
-  '   -z, --contexts      display process and socket SELinux security contexts',
+  '   -Z, --context       display task SELinux security contexts',
+  '   -z, --contexts      display task and socket SELinux security contexts',
   '   -N, --net           switch to the specified network namespace name',
   '',
   '   -4, --ipv4          display only IP version 4 sockets',
@@ -42,6 +43,7 @@ export const SS_USAGE = [
   '   -x, --unix          display only Unix domain sockets',
   '       --tipc          display only TIPC sockets',
   '       --vsock         display only vsock sockets',
+  '       --xdp           display only XDP sockets',
   '   -f, --family=FAMILY display sockets of type FAMILY',
   '       FAMILY := {inet|inet6|link|unix|netlink|vsock|tipc|xdp|help}',
   '',
@@ -51,7 +53,7 @@ export const SS_USAGE = [
   '       --inet-sockopt  show various inet socket options',
   '',
   '   -A, --query=QUERY, --socket=QUERY',
-  '       QUERY := {all|inet|tcp|mptcp|udp|raw|unix|unix_dgram|unix_stream|unix_seqpacket|packet|netlink|vsock_stream|vsock_dgram|tipc}[,QUERY]',
+  '       QUERY := {all|inet|tcp|mptcp|udp|raw|unix|unix_dgram|unix_stream|unix_seqpacket|packet|packet_raw|packet_dgram|netlink|dccp|sctp|vsock_stream|vsock_dgram|tipc|xdp}[,QUERY]',
   '',
   '   -D, --diag=FILE     Dump raw information about TCP sockets to FILE',
   '   -F, --filter=FILE   read filter information from FILE',
@@ -113,12 +115,13 @@ const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'kill', letter: 'K', takesArgument: false },
   { name: 'no-header', letter: 'H', takesArgument: false },
   { name: 'xdp', letter: XDP, takesArgument: false },
+  { name: 'threads', letter: 'T', takesArgument: false },
   { name: 'mptcp', letter: 'M', takesArgument: false },
   { name: 'oneline', letter: 'O', takesArgument: false },
   { name: 'inet-sockopt', letter: INET_SOCKOPT, takesArgument: false },
 ];
 
-const OPTION_LETTERS = 'dhaletuwxnro460spbEf:mMiA:D:F:vVzZN:KHSO';
+const OPTION_LETTERS = 'dhaletuwxnro460spbEf:mMiA:D:F:vVzZN:KHSOT';
 
 export interface SsRequest {
   readonly filter: SsFilter;
@@ -127,9 +130,11 @@ export interface SsRequest {
   readonly showOptions: boolean;
   readonly showDetails: number;
   readonly showUsers: boolean;
+  readonly showThreads: boolean;
   readonly showTcpInfo: boolean;
   readonly showTos: boolean;
   readonly showCgroup: boolean;
+  readonly showMemory: boolean;
   readonly showInetSockopt: boolean;
   readonly showHeader: boolean;
   readonly oneline: boolean;
@@ -168,9 +173,11 @@ export function parseSsArguments(args: readonly string[], environment: SsArgumen
   let showOptions = false;
   let showDetails = 0;
   let showUsers = false;
+  let showThreads = false;
   let showTcpInfo = false;
   let showTos = false;
   let showCgroup = false;
+  let showMemory = false;
   let showInetSockopt = false;
   let showHeader = true;
   let oneline = false;
@@ -191,10 +198,10 @@ export function parseSsArguments(args: readonly string[], environment: SsArgumen
         case 'r': resolveHosts = true; break;
         case 'o': showOptions = true; break;
         case 'e': showOptions = true; showDetails++; break;
-        case 'm':
-          throw new SsError('ss: -m needs socket buffer accounting (sk_rcvbuf, sk_sndbuf, skb truesize), which this TCP stack does not keep\n', 255);
+        case 'm': showMemory = true; break;
         case 'i': showTcpInfo = true; break;
         case 'p': showUsers = true; break;
+        case 'T': showUsers = true; showThreads = true; break;
         case 'b': showOptions = true; break;
         case 'E':
           throw new SsError('ss: -E (--events) needs a stream of socket events, which this terminal does not provide\n', 255);
@@ -265,7 +272,7 @@ export function parseSsArguments(args: readonly string[], environment: SsArgumen
     }
 
     const request: SsRequest = {
-      filter, numeric, resolveHosts, showOptions, showDetails, showUsers, showTcpInfo, showTos, showCgroup,
+      filter, numeric, resolveHosts, showOptions, showDetails, showUsers, showThreads, showTcpInfo, showTos, showCgroup, showMemory,
       showInetSockopt, showHeader, oneline, summary,
       summaryOnly: summary && filter.doDefault && operands.length === 0,
     };

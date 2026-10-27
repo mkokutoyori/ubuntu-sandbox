@@ -47,6 +47,7 @@ import { parseEditorLaunch, type NanoLaunch } from '@/network/devices/linux/edit
 
 /** Maximum number of output lines kept in memory per session. */
 const MAX_SCROLLBACK_LINES = 5000;
+const LISTENER_MIN_INTERVAL_MS = 16;
 
 /** Default command execution timeout in milliseconds (30 s). */
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
@@ -514,9 +515,25 @@ export abstract class TerminalSession {
 
   getVersion = (): number => this._version;
 
-  /** Bump version and notify all subscribers. */
+  private lastListenerFlushMs = Number.NEGATIVE_INFINITY;
+  private listenerFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
   protected notify(): void {
     this._version++;
+    if (this.listenerFlushTimer !== null) return;
+    const wait = LISTENER_MIN_INTERVAL_MS - (performance.now() - this.lastListenerFlushMs);
+    if (wait <= 0) {
+      this.flushListeners();
+      return;
+    }
+    this.listenerFlushTimer = setTimeout(() => {
+      this.listenerFlushTimer = null;
+      this.flushListeners();
+    }, wait);
+  }
+
+  private flushListeners(): void {
+    this.lastListenerFlushMs = performance.now();
     for (const l of this._listeners) l();
   }
 
@@ -536,7 +553,7 @@ export abstract class TerminalSession {
 
   editorSave(_content: string, _filePath: string): void {}
 
-  editorExit(_saved: boolean = true): void {}
+  editorExit(_saved: boolean = true, _notice: string = ''): void {}
 
   protected firstLocalIp(): string | null {
     const ports = (this.device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> }).getPorts?.();
@@ -593,6 +610,8 @@ export abstract class TerminalSession {
     if (mode.type !== 'remote-editor') { this.notify(); return; }
     if (mode.controller.exited) {
       this.inputMode = { type: 'normal' };
+      const notice = 'exitNotice' in mode.controller ? mode.controller.exitNotice : '';
+      if (notice !== '') this.addLines(notice.replace(/\n$/, '').split('\n'));
       this.addLine(this.getPrompt());
     }
     this.notify();
@@ -925,6 +944,10 @@ export abstract class TerminalSession {
       /* never propagate cleanup errors */
     }
     this.disposed = true;
+    if (this.listenerFlushTimer !== null) {
+      clearTimeout(this.listenerFlushTimer);
+      this.listenerFlushTimer = null;
+    }
     this._listeners.clear();
   }
 

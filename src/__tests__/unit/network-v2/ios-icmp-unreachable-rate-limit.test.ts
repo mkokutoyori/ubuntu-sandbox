@@ -147,12 +147,12 @@ describe('IOS ICMP unreachable rate limit', () => {
     expect(second).not.toContain('timed out');
   }, 30000);
 
-  it('nc -w bounds the connect: a timeout shorter than the RTO gives up before the retransmission', async () => {
+  it('nc -w 1 bounds the connect: it gives up at the RTO, before the retransmission', async () => {
     const { r1, near } = await lab();
     await type(r1, ['configure terminal', 'access-list 100 deny tcp any any eq 22',
       'access-list 100 permit ip any any', 'interface GigabitEthernet0/0', 'ip access-group 100 in', 'end']);
     await type(near, ['nc -zv 10.0.2.2 22']);
-    expect(await type(near, ['nc -zv -w 0 10.0.2.2 22'])).toContain('Connection timed out');
+    expect(await type(near, ['nc -zv -w 1 10.0.2.2 22'])).toContain('timed out: Operation now in progress');
   }, 30000);
 
   it('Windows ping pauses a second after an error reply, so every echo gets its unreachable', async () => {

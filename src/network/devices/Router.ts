@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
 import type { CbacPort } from './router/security/CbacFirewall';
@@ -151,7 +152,7 @@ import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from '../qos/CarPolicer';
 import {
-  buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT,
+  buildICMPError, mayGenerateICMPError, ICMP_REDIRECT_HOST, ICMP_UNREACH_PORT,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType, type ICMPErrorOptions,
 } from '../core/IcmpErrors';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
@@ -3921,18 +3922,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = inPortObj.getIPAddress();
     if (!myIP) return;
 
-    const redirectICMP: ICMPPacket = {
-      type: 'icmp',
-      icmpType: 'redirect',
-      code: 1, // Redirect for Host
-      id: 0, sequence: 0, dataSize: 0,
-      gateway: redirectGW,
-      originalPacket: offendingPkt,
-    };
-
-    const redirectIP = createIPv4Packet(
-      myIP, offendingPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
-      redirectICMP, 8,
+    const redirectIP = buildICMPError(
+      myIP, offendingPkt, 'redirect', ICMP_REDIRECT_HOST, this.defaultTTL, { gateway: redirectGW },
     );
 
     this.counters.icmpOutMsgs++;
@@ -6397,6 +6388,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
       results.push(row);
       hooks?.onResult?.(row);
+      await yieldWhenSliceIsSpent();
     }
     return results;
   }
@@ -6427,6 +6419,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
       results.push(row);
       hooks?.onResult?.(row);
+      await yieldWhenSliceIsSpent();
     }
     return results;
   }
@@ -6470,6 +6463,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const dataSize = Math.max(0, (hooks?.sizeBytes ?? 100) - 48);
     for (let seq = 1; seq <= count; seq++) {
       if (hooks?.shouldStop?.()) break;
+      await yieldWhenSliceIsSpent();
       this.pingIdCounter++;
       const id = this.pingIdCounter;
       const sentAt = PathClock.now();

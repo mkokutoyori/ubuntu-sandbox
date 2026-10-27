@@ -41,7 +41,6 @@ interface RelayingShell {
 }
 interface InterruptibleShell { interruptForeground(): boolean }
 interface ResizableShell { resize(rows: number, cols: number): void }
-interface AsyncCompletingShell { getCompletionsAsync(line: string): Promise<string[]> }
 
 export interface SubShellStackStep {
   readonly output: string[];
@@ -133,8 +132,8 @@ export class SubShellStack {
 
   async getCompletionsAsync(line: string): Promise<string[] | null> {
     if (!this.active) return null;
-    const top = this.top as Partial<AsyncCompletingShell>;
-    return top.getCompletionsAsync ? top.getCompletionsAsync(line) : [...this.top.getCompletions(line)];
+    const top = this.top;
+    return [...(top.getCompletionsAsync ? await top.getCompletionsAsync(line) : top.getCompletions(line))];
   }
 
   /** Hand the top of the stack the value it asked for with `pendingInput`. */

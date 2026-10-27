@@ -1,3 +1,4 @@
+import { hostNowMs } from '../time/OracleHostClock';
 /**
  * OracleRuntimeState — event-fed collections that back the dynamic
  * V$/GV$/DBA_HIST_ views.
@@ -13,7 +14,7 @@
  * yet, it returns its static schema-only empty set.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
+
 
 export interface RuntimeSessionRecord {
   sessionId: string;
@@ -97,6 +98,7 @@ export interface RuntimeArchivedLogRecord {
   nextScn: number;
   firstTime: number;
   nextTime: number;
+  deleted?: boolean;
 }
 
 export interface RuntimeBlockCorruptionRecord {
@@ -235,7 +237,7 @@ export class OracleRuntimeState {
   };
 
   /** Time the actor first subscribed — used as a baseline for histories. */
-  startedAt: number = simulationNowMs();
+  startedAt: number = hostNowMs();
 }
 
 /**

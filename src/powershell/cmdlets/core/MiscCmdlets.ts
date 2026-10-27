@@ -8,6 +8,8 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import type { VolumeInfo } from '@/powershell/providers/PSProviders';
+import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import {
   type ProcessPolicyPort, EXECUTION_POLICIES, EXECUTION_POLICY_SCOPES,
@@ -18,12 +20,12 @@ import { namedCredential } from './RemotingCmdlets';
 import { makePSCredential } from '@/powershell/credential/PSCredential';
 import { wildcardMatches, wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
-import { isRegistryPath, registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
 import { renderCmdletHelp, helpTopicNotFound, HELP_SYSTEM_TOPIC } from '@/powershell/help/renderHelp';
 import { parseCommentHelp, scriptHeadHelp } from '@/powershell/help/CommentHelp';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { helpObject, matchesFilter, resolveHelp } from '@/powershell/help/FunctionHelp';
 import { newErrorRecord } from '@/powershell/runtime/semantics/PSStreams';
+import { functionRow } from './CommandRows';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -358,21 +360,6 @@ function helpTopicOf(pipeInput: PSValue): string | null {
   return null;
 }
 
-/**
- * Un chemin que le fournisseur de fichiers peut juger.
- *
- * `C:` est un lecteur de fichiers ; `TestDrive:`, `HKLM:`, `Env:` sont
- * des lecteurs PowerShell d'un AUTRE fournisseur, dont le systeme de
- * fichiers ne sait rien — lui demander si le chemin existe reviendrait a
- * refuser un `Set-Location HKLM:` parfaitement valide. Une lettre unique
- * suivie de `:` est un lecteur de fichiers ; un nom plus long ne l'est
- * pas.
- */
-function isFileSystemPath(path: string): boolean {
-  const qualifier = /^([A-Za-z]+):/.exec(path);
-  return qualifier === null || qualifier[1].length === 1;
-}
-
 // ─── Get-Command ──────────────────────────────────────────────────────────
 
 export class GetCommandCmdlet implements ICmdlet {
@@ -415,11 +402,7 @@ export class GetCommandCmdlet implements ICmdlet {
         });
       }
     }
-    for (const fn of ctx.runtime.listFunctions()) {
-      const block = ctx.runtime.getFunctionBlock(fn);
-      const definition = block !== null && typeof block === 'object' ? (block as { sourceText?: string }).sourceText ?? '' : '';
-      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '', Definition: definition, ScriptBlock: block });
-    }
+    for (const fn of ctx.runtime.listFunctions()) rows.push(functionRow(ctx, fn));
 
     // -Name (positional or named): wildcard / exact, matched against the
     // display name. -Verb / -Noun split on the first dash.
@@ -665,200 +648,23 @@ export class WaitJobCmdlet implements ICmdlet {
   }
 }
 
-// ─── Set-Location ─────────────────────────────────────────────────────────
+const PROVIDERS = ['Alias', 'Environment', 'FileSystem', 'Function', 'Registry', 'Variable'] as const;
 
-const PROVIDER_DRIVES: Record<string, string[]> = {
-  filesystem: ['C', 'D'],
-  registry: ['HKLM', 'HKCU'],
-  environment: ['Env'],
-  variable: ['Variable'],
-  function: ['Function'],
-};
-
-function driveOf(path: string): string {
-  const qualifier = /^([A-Za-z]+):/.exec(path);
-  return qualifier === null ? 'C' : qualifier[1].toUpperCase();
+function providerNamed(name: string): string | undefined {
+  return PROVIDERS.find(candidate => candidate.toLowerCase() === name.toLowerCase());
 }
-
-function providerOfPath(path: string): string {
-  const drive = driveOf(path);
-  for (const [provider, drives] of Object.entries(PROVIDER_DRIVES)) {
-    if (drives.some(d => d.toUpperCase() === drive)) {
-      return provider === 'filesystem' ? 'FileSystem'
-        : provider.charAt(0).toUpperCase() + provider.slice(1);
-    }
-  }
-  return 'FileSystem';
-}
-
-function pathInfoOf(path: string): Record<string, PSValue> {
-  return {
-    Path: path,
-    ProviderPath: isRegistryPath(path) ? registryProviderPath(path) : path,
-    Provider: { Name: providerOfPath(path) } as Record<string, PSValue>,
-    Drive: { Name: driveOf(path) } as Record<string, PSValue>,
-  };
-}
-
-function rememberLocation(ctx: CmdletContext, path: string): void {
-  const seen = (ctx.runtime.getVariable('__locations__') as Record<string, PSValue> | null) ?? {};
-  seen[driveOf(path)] = path;
-  ctx.runtime.setVariable('__locations__', seen);
-}
-
-function rememberedLocation(ctx: CmdletContext, drive: string): string | null {
-  const seen = (ctx.runtime.getVariable('__locations__') as Record<string, PSValue> | null) ?? {};
-  const found = seen[drive.toUpperCase()];
-  return found === undefined ? null : psValueToString(found);
-}
-
-function currentLocation(ctx: CmdletContext): string {
-  const pwd = ctx.runtime.getVariable('PWD') as Record<string, PSValue> | null;
-  if (pwd !== null && pwd !== undefined && pwd['Path'] !== undefined) return psValueToString(pwd['Path']);
-  return ctx.providers.filesystem ? ctx.providers.filesystem.getCwd() : 'C:\\';
-}
-
-function moveTo(ctx: CmdletContext, path: string): boolean {
-  const fs = ctx.providers.filesystem;
-  if (isFileSystemPath(path)) {
-    const letter = /^([A-Za-z]):/.exec(path);
-    if (letter !== null && fs && !fs.exists(`${letter[1].toUpperCase()}:\\`)) {
-      ctx.emitError(`Set-Location : Cannot find drive. A drive with the name `
-        + `'${letter[1].toUpperCase()}' does not exist.`);
-      return false;
-    }
-    if (fs && !fs.exists(path)) {
-      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
-      return false;
-    }
-    ctx.runtime.setVariable('__psLocation__', '');
-    if (fs) fs.setCwd(fs.normalizePath(path, fs.getCwd()));
-    rememberLocation(ctx, fs ? fs.getCwd() : path);
-    return true;
-  }
-  if (isRegistryPath(path) && ctx.providers.registry && !ctx.providers.registry.testPath(path)) {
-    ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
-    return false;
-  }
-  ctx.runtime.setVariable('__psLocation__', path);
-  rememberLocation(ctx, path);
-  return true;
-}
-
-function locationStack(ctx: CmdletContext, name: string): PSValue[] {
-  const key = `__locationStack__${name === '' ? '' : `:${name.toLowerCase()}`}`;
-  return (ctx.runtime.getVariable(key) as PSValue[] | null) ?? [];
-}
-
-function saveLocationStack(ctx: CmdletContext, name: string, stack: PSValue[]): void {
-  const key = `__locationStack__${name === '' ? '' : `:${name.toLowerCase()}`}`;
-  ctx.runtime.setVariable(key, stack as unknown as PSValue);
-}
-
-function stackNameOf(ctx: CmdletContext): string {
-  return ctx.named['stackname'] !== undefined ? psValueToString(ctx.named['stackname']) : '';
-}
-
-export class SetLocationCmdlet implements ICmdlet {
-  readonly name = 'set-location';
-  readonly displayName = 'Set-Location';
-  readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
-  readonly parameterValues = { Path: 'directory', LiteralPath: 'directory' } as const;
-  readonly aliases = ['cd', 'chdir', 'sl'] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
-    if (!path) return null;
-    if (!moveTo(ctx, path)) return null;
-    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
-  }
-}
-
-export class PushLocationCmdlet implements ICmdlet {
-  readonly name = 'push-location';
-  readonly displayName = 'Push-Location';
-  readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
-  readonly parameterValues = { Path: 'directory', LiteralPath: 'directory' } as const;
-  readonly aliases = ['pushd'] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    const name = stackNameOf(ctx);
-    const stack = locationStack(ctx, name);
-    stack.push(currentLocation(ctx) as PSValue);
-    saveLocationStack(ctx, name, stack);
-    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
-    if (path) moveTo(ctx, path);
-    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
-  }
-}
-
-export class PopLocationCmdlet implements ICmdlet {
-  readonly name = 'pop-location';
-  readonly displayName = 'Pop-Location';
-  readonly parameters = ['PassThru', 'StackName'] as const;
-  readonly aliases = ['popd'] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    const name = stackNameOf(ctx);
-    const stack = locationStack(ctx, name);
-    const previous = stack.pop();
-    saveLocationStack(ctx, name, stack);
-    if (previous !== undefined && previous !== null) moveTo(ctx, psValueToString(previous));
-    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
-  }
-}
-
-export class GetLocationCmdlet implements ICmdlet {
-  readonly name = 'get-location';
-  readonly displayName = 'Get-Location';
-  readonly parameters = ['PSProvider', 'PSDrive', 'Stack', 'StackName'] as const;
-  readonly aliases = ['pwd', 'gl'] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    if (ctx.named['stack'] === true || ctx.named['stackname'] !== undefined) {
-      const stack = locationStack(ctx, stackNameOf(ctx));
-      return stack.map(p => pathInfoOf(psValueToString(p))) as PSValue;
-    }
-
-    const drive = ctx.named['psdrive'] !== undefined ? psValueToString(ctx.named['psdrive']) : null;
-    if (drive !== null) {
-      const known = Object.values(PROVIDER_DRIVES).flat()
-        .find(d => d.toUpperCase() === drive.toUpperCase());
-      if (known === undefined) {
-        ctx.emitError(`Get-Location : Cannot find drive. A drive with the name '${drive}' does not exist.`);
-        return null;
-      }
-      return pathInfoOf(rememberedLocation(ctx, known) ?? `${known}:\\`);
-    }
-
-    const provider = ctx.named['psprovider'] !== undefined ? psValueToString(ctx.named['psprovider']) : null;
-    if (provider !== null) {
-      const drives = PROVIDER_DRIVES[provider.toLowerCase()];
-      if (drives === undefined) {
-        ctx.emitError(`Get-Location : Cannot find the PowerShell provider '${provider}'.`);
-        return null;
-      }
-      for (const candidate of drives) {
-        const seen = rememberedLocation(ctx, candidate);
-        if (seen !== null) return pathInfoOf(seen);
-      }
-      return pathInfoOf(`${drives[0]}:\\`);
-    }
-
-    return pathInfoOf(currentLocation(ctx));
-  }
-}
-
 
 export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
   readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'PSProvider', 'Root', 'Description', 'Scope', 'Persist', 'Credential'] as const;
+  readonly switchParameters = ['Persist'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     const root = psValueToString(ctx.named['root'] ?? ctx.positional[2] ?? '');
+    const existing = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
     // A UNC root names a share on another machine: mapping it is a real
     // SMB connection, recorded where `net use` reads it, not a row in a
     // shell variable.
@@ -875,12 +681,25 @@ export class NewPSDriveCmdlet implements ICmdlet {
       }
       return { Name: name, Root: root, Used: 0, Free: 0, Provider: 'FileSystem' } as Record<string, PSValue>;
     }
-    const drive = { Name: name, Root: root, Used: 0, Free: 0 } as Record<string, PSValue>;
-    // Register drive in global scope for Get-PSDrive to retrieve
-    const existing = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    if (existing[name.toLowerCase()] !== undefined) {
+      ctx.emitError(`New-PSDrive : A drive with the name '${name}' already exists.`);
+      return null;
+    }
+    const requested = ctx.named['psprovider'] !== undefined ? psValueToString(ctx.named['psprovider']) : isRegistryPath(root) ? 'Registry' : 'FileSystem';
+    const provider = providerNamed(requested);
+    if (provider === undefined) {
+      ctx.emitError(`New-PSDrive : Cannot find a provider with the name '${requested}'.`);
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (provider === 'FileSystem' && fs !== undefined && !(fs.exists(root) && fs.isDirectory(root))) {
+      ctx.emitError(`New-PSDrive : The specified drive root "${root}" either does not exist, or it is not a folder.`);
+      return null;
+    }
+    const drive = { Name: name, Root: root, Provider: provider } as Record<string, PSValue>;
     (existing as Record<string, PSValue>)[name.toLowerCase()] = drive;
     ctx.runtime.setVariable('__drives__', existing);
-    return drive;
+    return { Name: name, ...occupancyOf(ctx, root), Provider: provider, Root: root };
   }
 }
 
@@ -890,22 +709,50 @@ export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
   readonly displayName = 'Get-PSDrive';
   readonly aliases = ['gdr'] as const;
-  readonly parameters = ['Name'] as const;
+  readonly parameters = ['Name', 'PSProvider', 'Scope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
+    const rows = this.drives(ctx);
+    const providers = namesOf(ctx.named['psprovider']);
+    for (const provider of providers) {
+      if (!hasWildcard(provider) && !PROVIDERS.some(candidate => candidate.toLowerCase() === provider.toLowerCase())) {
+        ctx.emitError(`Get-PSDrive : Cannot find a provider with the name '${provider}'.`);
+        return null;
+      }
+    }
+    const byProvider = providers.length === 0
+      ? rows
+      : rows.filter(row => providers.some(pattern => wildcardMatches(pattern, psValueToString(row['Provider']))));
+    const patterns = [...namesOf(ctx.named['name']), ...ctx.positional.flatMap(namesOf)];
+    if (patterns.length === 0) return byProvider;
+    const found: Record<string, PSValue>[] = [];
+    for (const pattern of patterns) {
+      const matching = byProvider.filter(row => wildcardMatches(pattern, psValueToString(row['Name'])));
+      if (matching.length === 0 && !hasWildcard(pattern)) {
+        ctx.emitError(`Get-PSDrive : Cannot find drive. A drive with the name '${pattern}' does not exist.`);
+        continue;
+      }
+      for (const row of matching) if (!found.includes(row)) found.push(row);
+    }
+    return found.length === 0 ? null : found.length === 1 ? found[0] : found;
+  }
+
+  private drives(ctx: CmdletContext): Record<string, PSValue>[] {
     const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
     const rows: Record<string, PSValue>[] = [];
+    const fs = ctx.providers.filesystem;
 
     // The file-system drives are the volumes the machine actually mounts,
     // with their real occupancy — not a frozen list beside the file system.
     for (const volume of ctx.providers.disks?.listVolumes() ?? []) {
+      const letter = volume.driveLetter;
+      const here = fs?.driveLocation?.(letter) ?? `${letter}:\\`;
       rows.push({
-        Name:     volume.driveLetter,
-        Used:     driveGigabytes(volume.size - volume.sizeRemaining),
-        Free:     driveGigabytes(volume.sizeRemaining),
+        Name:     letter,
+        ...volumeOccupancy(volume),
         Provider: 'FileSystem',
-        Root:     `${volume.driveLetter}:\\`,
+        Root:     `${letter}:\\`,
+        CurrentLocation: here.slice(3),
       });
     }
     const mounted = new Set(rows.map(r => psValueToString(r['Name']).toLowerCase()));
@@ -914,9 +761,8 @@ export class GetPSDriveCmdlet implements ICmdlet {
       const rec = value as Record<string, PSValue>;
       rows.push({
         Name:     rec['Name'],
-        Used:     rec['Used'] ?? '',
-        Free:     rec['Free'] ?? '',
-        Provider: rec['Provider'] ?? inferProvider(String(rec['Root'] ?? '')),
+        ...occupancyOf(ctx, String(rec['Root'])),
+        Provider: rec['Provider'],
         Root:     rec['Root'],
       });
     }
@@ -933,12 +779,13 @@ export class GetPSDriveCmdlet implements ICmdlet {
       });
     }
 
-    if (nameFilter) {
-      const found = rows.find(r => psValueToString(r['Name']).toLowerCase() === nameFilter);
-      return found ?? null;
-    }
-    return rows;
+    return rows.sort((a, b) => psValueToString(a['Name']).toLowerCase().localeCompare(psValueToString(b['Name']).toLowerCase()));
   }
+}
+
+function namesOf(value: PSValue): string[] {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).map(psValueToString).filter(name => name !== '');
 }
 
 // ─── Remove-PSDrive ────────────────────────────────────────────────────────
@@ -969,10 +816,16 @@ function driveGigabytes(bytes: number): string {
   return (bytes / 1_073_741_824).toFixed(2);
 }
 
-function inferProvider(root: string): string {
-  if (/^[A-Za-z]:\\?$/.test(root)) return 'FileSystem';
-  if (/^HK/i.test(root))           return 'Registry';
-  return '';
+function volumeOccupancy(volume: VolumeInfo): { Used: string; Free: string } {
+  return { Used: driveGigabytes(volume.size - volume.sizeRemaining), Free: driveGigabytes(volume.sizeRemaining) };
+}
+
+function occupancyOf(ctx: CmdletContext, root: string): { Used: string; Free: string } {
+  const letter = /^([A-Za-z]):/.exec(root)?.[1].toUpperCase();
+  const volume = letter === undefined
+    ? undefined
+    : ctx.providers.disks?.listVolumes().find(candidate => candidate.driveLetter.toUpperCase() === letter);
+  return volume === undefined ? { Used: '', Free: '' } : volumeOccupancy(volume);
 }
 
 // ─── Clear-Host ───────────────────────────────────────────────────────────

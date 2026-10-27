@@ -37,6 +37,7 @@ export interface DirEntry {
   isDirectory: boolean;
   size: number;
   mtime: Date;
+  ctime?: Date;
   attributes?: Set<string>;
   owner?: string;
 }
@@ -1224,8 +1225,14 @@ export interface IFileSystemProvider {
   getCwd(): string;
   /** Update current working directory. */
   setCwd(path: string): void;
+  driveLocation?(letter: string): string;
+  attachDriveAliases?(roots: () => ReadonlyMap<string, string>): void;
   /** Check if path is a directory. */
   isDirectory(path: string): boolean;
+  /** The Windows attributes of an entry (archive, hidden, system, readonly), or null when the path does not exist. */
+  attributesOf?(path: string): ReadonlySet<string> | null;
+  /** Clears the named Windows attributes (readonly, hidden, system, archive) of an existing entry. */
+  clearAttributes?(path: string, names: readonly string[]): void;
   /** Get ACL info for a path. */
   getAcl(path: string): { owner: string; acl: Array<{ principal: string; type: string; permissions: string[] }> } | null;
   /** Set the owner of a path. Returns true on success. */

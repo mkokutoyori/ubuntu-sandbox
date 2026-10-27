@@ -8,7 +8,7 @@ export async function retransmitSilentSyn<T>(
 ): Promise<T> {
   const first = attempt();
   if (!isSilent(first)) return first;
-  if (connectTimeoutMs !== undefined && connectTimeoutMs < TCP_INITIAL_RTO_MS) return first;
+  if (connectTimeoutMs !== undefined && connectTimeoutMs <= TCP_INITIAL_RTO_MS) return first;
   await wait(TCP_INITIAL_RTO_MS);
   return attempt();
 }

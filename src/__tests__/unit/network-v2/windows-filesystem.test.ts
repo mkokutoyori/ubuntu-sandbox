@@ -635,7 +635,7 @@ describe('Group 6: Windows-Specific Behaviors', () => {
       await pc.executeCommand('mkdir TreeTest\\Sub1');
       await pc.executeCommand('mkdir TreeTest\\Sub2');
       const output = await pc.executeCommand('tree TreeTest');
-      expect(output).toContain('TreeTest');
+      expect(output).toContain('TREETEST');
       expect(output).toContain('Sub1');
       expect(output).toContain('Sub2');
     });

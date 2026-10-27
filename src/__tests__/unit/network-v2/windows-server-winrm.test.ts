@@ -120,16 +120,17 @@ describe('Enter-PSSession — real dial + auth (PowerShellSubShell interception)
   it('succeeds against a reachable, quickconfig-ed, correctly authenticated target', async () => {
     const { srv, client } = await buildLan();
     await srv.executeCmdCommand('winrm quickconfig');
+    await srv.executeCmdCommand('net localgroup Administrators bob /add');
     const sh = ps(client);
     const result = await sh.processLine('Enter-PSSession -ComputerName SRV1 -Credential bob');
-    expect((result as { _enterRemotePS?: unknown })._enterRemotePS).toBeTruthy();
+    expect(result.childShell?.getPrompt()).toBe('[SRV1]: PS C:\\Users\\bob\\Documents> ');
   });
 
   it('fails against an unreachable target without entering a session', async () => {
     const { client } = await buildLan();
     const sh = ps(client);
     const result = await sh.processLine('Enter-PSSession -ComputerName SRV1 -Credential bob');
-    expect((result as { _enterRemotePS?: unknown })._enterRemotePS).toBeUndefined();
+    expect(result.childShell).toBeUndefined();
     expect(result.output.join('\n')).toMatch(/WinRM cannot complete the operation/i);
   });
 });

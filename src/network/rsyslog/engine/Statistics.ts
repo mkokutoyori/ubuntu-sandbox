@@ -48,6 +48,10 @@ export class StatsObject {
     return this.counters.map((counter) => counter.name);
   }
 
+  values(): Array<readonly [string, number]> {
+    return this.counters.map((counter) => [counter.name, counter.read()] as const);
+  }
+
   entries(resetCounters: boolean): Array<readonly [string, number]> {
     const values: Array<readonly [string, number]> = [];
     for (const counter of this.counters) {
@@ -178,6 +182,13 @@ export class Statistics {
     }
     lines.push(...this.senders.lines(format, resetCounters));
     return lines;
+  }
+
+  forEachCounter(visit: (object: StatsObject, counter: string, value: number) => void): void {
+    for (const object of [...this.objects]) {
+      for (const [name, value] of object.values()) visit(object, name, value);
+      object.readNotifier?.();
+    }
   }
 
   zabbixLine(timedate: string, resetCounters: boolean): string {

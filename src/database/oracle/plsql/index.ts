@@ -19,6 +19,13 @@ export interface PlsqlRunOutcome {
 }
 
 export function runAnonymousBlock(source: string, host: PlsqlHost): PlsqlRunOutcome {
+  const steps = runAnonymousBlockSteps(source, host);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+export function* runAnonymousBlockSteps(source: string, host: PlsqlHost): Generator<void, PlsqlRunOutcome, void> {
   let block;
   try {
     block = parsePlsql(source);
@@ -28,7 +35,7 @@ export function runAnonymousBlock(source: string, host: PlsqlHost): PlsqlRunOutc
   }
   const interp = new PlsqlInterpreter(host);
   try {
-    interp.run(block);
+    yield* interp.runSteps(block);
     return { ok: true, parseError: false, error: null };
   } catch (e) {
     if (e instanceof PlsqlException) return { ok: false, parseError: false, error: e };

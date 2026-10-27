@@ -1,6 +1,8 @@
 import type { FileHandle } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
 import { GzipStreamWriter } from '../Zlib';
+import type { CryptoFile, CryptoProvider } from '../crypto/CryptoProvider';
+import { latin1Text } from '../engine/Latin1';
 import { ZstdStreamWriter } from '../Zstd';
 
 export interface StreamSettings {
@@ -32,12 +34,6 @@ function bytesOf(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
-function latin1Of(bytes: Uint8Array): string {
-  let text = '';
-  for (let index = 0; index < bytes.length; index += 8192) text += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  return text;
-}
-
 export class OmfileStream implements FileHandle {
   private handle: FileHandle | null;
   private buffer = '';
@@ -53,6 +49,8 @@ export class OmfileStream implements FileHandle {
     first: FileHandle,
     private readonly settings: StreamSettings,
     private readonly services: StreamServices,
+    private readonly encryption: CryptoProvider | null = null,
+    private encrypted: CryptoFile | null = null,
   ) {
     this.handle = first;
     this.offset = services.size(path) ?? 0;
@@ -67,6 +65,14 @@ export class OmfileStream implements FileHandle {
     if (this.handle !== null) return null;
     const opened = this.services.open();
     if ('error' in opened) return opened.error;
+    if (this.encryption !== null) {
+      const file = this.encryption.openFile(this.path, 'w');
+      if ('error' in file) {
+        opened.close();
+        return file.error;
+      }
+      this.encrypted = file;
+    }
     this.handle = opened;
     this.offset = this.services.size(this.path) ?? 0;
     return null;
@@ -75,11 +81,12 @@ export class OmfileStream implements FileHandle {
   private physicalWrite(text: string, flushCompressor: boolean): string | null {
     const failure = this.ensureOpen();
     if (failure !== null) return failure;
-    let payload = text;
+    let data = bytesOf(text);
+    let binary = false;
     if (this.settings.zipLevel > 0) {
       this.compressor ??= this.newCompressor();
       const compressor = this.compressor as Compressor;
-      let output = compressor.write(bytesOf(text), flushCompressor);
+      let output = compressor.write(data, flushCompressor);
       if (this.settings.veryRobustZip) {
         const tail = compressor.finish();
         const joined = new Uint8Array(output.length + tail.length);
@@ -88,8 +95,14 @@ export class OmfileStream implements FileHandle {
         output = joined;
         this.compressor = null;
       }
-      payload = latin1Of(output);
+      data = output;
+      binary = true;
     }
+    if (this.encrypted !== null && data.length > 0) {
+      data = this.encrypted.encrypt(data);
+      binary = true;
+    }
+    const payload = binary ? latin1Text(data) : text;
     if (payload.length === 0) return null;
     const written = (this.handle as FileHandle).write(payload);
     if (written === null) this.offset += payload.length;
@@ -146,10 +159,12 @@ export class OmfileStream implements FileHandle {
     if (this.compressor !== null) {
       const tail = this.compressor.finish();
       this.compressor = null;
-      if (tail.length > 0) this.handle?.write(latin1Of(tail));
+      if (tail.length > 0) this.handle?.write(latin1Text(tail));
     }
     this.handle?.close();
     this.handle = null;
+    this.encrypted?.close(this.offset);
+    this.encrypted = null;
   }
 
   private processSizeLimit(): string | null {

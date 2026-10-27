@@ -11,6 +11,7 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { processSubShellLine } from '@/terminal/subshells/ISubShell';
 
 export class SqlPlusShell extends AbstractShell {
   readonly kind = 'sqlplus';
@@ -51,7 +52,7 @@ export class SqlPlusShell extends AbstractShell {
     if (!this.subShell) {
       return { output: ['sqlplus: not available on this device'], exit: true };
     }
-    const r = await this.subShell.processLine(line);
+    const r = await processSubShellLine(this.subShell, line);
     return {
       output: r.output ?? [],
       exit: r.exit,

@@ -865,6 +865,7 @@ export interface IPv4Packet extends NetworkPdu {
   /** Upper-layer payload (ICMP, UDP datagram, TCP segment, etc.). */
   payload: ICMPPacket | UDPPacket | TCPPacket | unknown;
   options?: IPv4Option[];
+  largestFragmentBytes?: number;
 }
 
 export interface IPv4Option {

@@ -68,6 +68,7 @@ export interface NanoEditorView extends EditorViewBase {
   readonly replaceSearchQuery: string;
   readonly replaceWithText: string;
   readonly pendingReplaceMatch: PendingReplaceMatch | null;
+  readonly exitNotice: string;
   readonly screen: EditorScreen;
 }
 

@@ -2,12 +2,27 @@ import { codePointWidth } from '../vim/VimCells';
 
 export type ScreenStyle =
   | 'linenr' | 'cursorlinenr' | 'nontext' | 'special' | 'visual' | 'colorcolumn' | 'modemsg' | 'error'
-  | 'reverse' | 'bold' | 'alert' | 'search' | 'incsearch';
+  | 'reverse' | 'bold' | 'alert' | 'search' | 'incsearch' | 'paint';
+
+export interface Paint {
+  readonly fg: number | null;
+  readonly bg: number | null;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly underline: boolean;
+  readonly reverse: boolean;
+}
 
 export interface ScreenSpan {
   readonly from: number;
   readonly to: number;
   readonly style: ScreenStyle;
+  readonly paint?: Paint;
+}
+
+export function paintKey(paint: Paint): string {
+  const flags = `${paint.bold ? 'b' : ''}${paint.italic ? 'i' : ''}${paint.underline ? 'u' : ''}${paint.reverse ? 'r' : ''}`;
+  return `${paint.fg ?? '-'}/${paint.bg ?? '-'}/${flags}`;
 }
 
 export interface ScreenRow {

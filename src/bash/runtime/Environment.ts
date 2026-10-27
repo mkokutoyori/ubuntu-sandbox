@@ -103,6 +103,7 @@ export class Environment implements ArithmeticScope {
       for (const [name, value] of Object.entries(options.variables)) {
         this.store(name, value, !SHELL_LOCAL_VARIABLES.has(name));
       }
+      this.backgroundPid = options.variables['!'] ?? '';
     }
     if (options.scriptName !== undefined) this.scriptName = options.scriptName;
     this.positional = options.positionalArgs ?? [];

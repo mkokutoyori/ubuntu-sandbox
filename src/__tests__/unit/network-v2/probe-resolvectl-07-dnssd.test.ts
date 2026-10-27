@@ -102,10 +102,11 @@ describe('Scénario 1 — le fichier d\'unité publie le service', () => {
     expect(parseDnssdFile('/etc/systemd/dnssd/x.txt', SERVICE_WEB.replace(/\\n/g, '\n'))).toBeNull();
   });
 
-  it('plusieurs `TxtText` s\'accumulent', () => {
+  it('chaque `TxtText` crée son propre enregistrement TXT', () => {
     const parsed = parseDnssdFile('/etc/systemd/dnssd/x.dnssd',
       '[Service]\nName=S\nType=_http._tcp\nPort=8080\nTxtText=a=1\nTxtText=b=2\n');
-    expect(parsed?.service.txt).toEqual(['a=1', 'b=2']);
+    expect(parsed?.service.txt).toEqual(['a=1']);
+    expect(parsed?.service.moreTxt).toEqual([['b=2']]);
   });
 });
 

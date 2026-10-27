@@ -16,12 +16,16 @@ export interface WindowPartition {
   star: boolean;
   /** Evaluate the i-th argument against the row at partition position `pos`. */
   arg(i: number, pos: number): CellValue;
-  /** Window-frame positions for `pos` (Oracle default-frame semantics included). */
-  frame(pos: number): number[];
+  frame(pos: number): FrameRange;
   /** True when the window ORDER BY ranks positions a and b as ties. */
   rowsEqual(a: number, b: number): boolean;
   /** Oracle three-way comparison (MIN/MAX must work on any data type). */
   compare(a: CellValue, b: CellValue): number;
+}
+
+export interface FrameRange {
+  start: number;
+  end: number;
 }
 
 export type WindowFunctionImpl = (p: WindowPartition) => CellValue[];
@@ -35,19 +39,39 @@ function rankValues(p: WindowPartition): number[] {
   return ranks;
 }
 
-function numericFrameValues(p: WindowPartition, frame: number[]): number[] {
-  const values: number[] = [];
-  for (const f of frame) {
-    const v = p.arg(0, f);
-    if (v !== null && v !== undefined) values.push(Number(v));
-  }
-  return values;
+function frameLength(frame: FrameRange): number {
+  return frame.end < frame.start ? 0 : frame.end - frame.start + 1;
 }
 
-function frameAggregate(compute: (p: WindowPartition, frame: number[]) => CellValue): WindowFunctionImpl {
+function frameAggregate(compute: (p: WindowPartition, frame: FrameRange) => CellValue): WindowFunctionImpl {
   return (p) => {
     const out: CellValue[] = new Array(p.size);
     for (let pos = 0; pos < p.size; pos++) out[pos] = compute(p, p.frame(pos));
+    return out;
+  };
+}
+
+function accumulatingAggregate<A>(
+  start: () => A,
+  add: (acc: A, value: CellValue) => void,
+  finish: (acc: A, frameSize: number) => CellValue,
+): WindowFunctionImpl {
+  return (p) => {
+    const out: CellValue[] = new Array(p.size);
+    let acc = start();
+    let from = 0;
+    let to = -1;
+    for (let pos = 0; pos < p.size; pos++) {
+      const frame = p.frame(pos);
+      if (frame.start !== from || frame.end < to) {
+        acc = start();
+        from = frame.start;
+        to = frame.start - 1;
+      }
+      for (let f = to + 1; f <= frame.end; f++) add(acc, p.arg(0, f));
+      if (frame.end > to) to = frame.end;
+      out[pos] = finish(acc, frameLength(frame));
+    }
     return out;
   };
 }
@@ -112,55 +136,68 @@ function lagLead(direction: -1 | 1): WindowFunctionImpl {
 }
 
 const FIRST_VALUE = frameAggregate((p, frame) =>
-  frame.length === 0 ? null : p.arg(0, frame[0]));
+  frameLength(frame) === 0 ? null : p.arg(0, frame.start));
 
 const LAST_VALUE = frameAggregate((p, frame) =>
-  frame.length === 0 ? null : p.arg(0, frame[frame.length - 1]));
+  frameLength(frame) === 0 ? null : p.arg(0, frame.end));
 
 const NTH_VALUE: WindowFunctionImpl = (p) => {
   const out: CellValue[] = new Array(p.size);
   for (let pos = 0; pos < p.size; pos++) {
     const n = p.argCount > 1 ? Number(p.arg(1, pos)) : 1;
     const frame = p.frame(pos);
-    out[pos] = n < 1 || n > frame.length ? null : p.arg(0, frame[n - 1]);
+    out[pos] = n < 1 || n > frameLength(frame) ? null : p.arg(0, frame.start + n - 1);
   }
   return out;
 };
 
-const COUNT = frameAggregate((p, frame) => {
-  if (p.star) return frame.length;
-  let count = 0;
-  for (const f of frame) {
-    const v = p.arg(0, f);
-    if (v !== null && v !== undefined) count++;
-  }
-  return count;
-});
+interface RunningSum {
+  total: number;
+  count: number;
+}
 
-const SUM = frameAggregate((p, frame) => {
-  const values = numericFrameValues(p, frame);
-  return values.length === 0 ? null : values.reduce((a, b) => a + b, 0);
-});
+const COUNT: WindowFunctionImpl = (p) => {
+  if (p.star) return frameAggregate((_, frame) => frameLength(frame))(p);
+  return accumulatingAggregate(
+    () => ({ count: 0 }),
+    (acc, v) => { if (v !== null && v !== undefined) acc.count++; },
+    (acc) => acc.count,
+  )(p);
+};
 
-const AVG = frameAggregate((p, frame) => {
-  const values = numericFrameValues(p, frame);
-  return values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length;
-});
+const SUM = accumulatingAggregate<RunningSum>(
+  () => ({ total: 0, count: 0 }),
+  (acc, v) => {
+    if (v === null || v === undefined) return;
+    acc.total += Number(v);
+    acc.count++;
+  },
+  (acc) => (acc.count === 0 ? null : acc.total),
+);
+
+const AVG = accumulatingAggregate<RunningSum>(
+  () => ({ total: 0, count: 0 }),
+  (acc, v) => {
+    if (v === null || v === undefined) return;
+    acc.total += Number(v);
+    acc.count++;
+  },
+  (acc) => (acc.count === 0 ? null : acc.total / acc.count),
+);
 
 /**
  * MIN/MAX use the Oracle comparator so strings and dates order
  * correctly. `direction` −1 keeps the smaller value, +1 the larger.
  */
 function extremum(direction: -1 | 1): WindowFunctionImpl {
-  return frameAggregate((p, frame) => {
-    let best: CellValue = null;
-    for (const f of frame) {
-      const v = p.arg(0, f);
-      if (v === null || v === undefined) continue;
-      if (best === null || direction * p.compare(v, best) > 0) best = v;
-    }
-    return best;
-  });
+  return (p) => accumulatingAggregate<{ best: CellValue }>(
+    () => ({ best: null }),
+    (acc, v) => {
+      if (v === null || v === undefined) return;
+      if (acc.best === null || direction * p.compare(v, acc.best) > 0) acc.best = v;
+    },
+    (acc) => acc.best,
+  )(p);
 }
 
 const WINDOW_FUNCTIONS: ReadonlyMap<string, WindowFunctionImpl> = new Map<string, WindowFunctionImpl>([

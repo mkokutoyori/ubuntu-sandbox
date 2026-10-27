@@ -35,6 +35,7 @@ import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError, RUNTIME_EXCEPTION } from './PSRuntimeError';
+import { PSLocationState } from './PSLocationState';
 import { stringMember } from './semantics/DotNetString';
 import { formatString } from './semantics/CompositeFormat';
 import { EnumType, PSEnumValue, builtinEnums, enumMember } from './semantics/PSEnum';
@@ -66,6 +67,7 @@ import type { PSProviders } from '@/powershell/providers/PSProviders';
 import { wildcardMatches, escapeWildcard, unescapeWildcard, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import type { ICmdlet, ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
+import type { ProviderFailure } from '@/powershell/cmdlets/core/ProviderFailures';
 import type {
   PSProgram, PSStatementList, PSStatement,
   PSPipelineStatement, PSAssignmentStatement,
@@ -82,6 +84,7 @@ import type {
   PSClassDefinition, PSEnumDefinition, PSPipelineChainStatement, PSTernaryExpression, PSMethodDefinition, PSPropertyDeclaration,
   PSBreakStatement, PSContinueStatement, PSTrapStatement, PSRedirection,
 } from '@/powershell/parser/PSASTNode';
+import { isScriptBlockValue } from '@/powershell/parser/PSASTNode';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Section 1 — Types, signals, and setup
@@ -123,6 +126,10 @@ function shortestSingleText(value: number): string {
 
 const COMMON_SWITCH_PARAMETERS: readonly string[] = ['verbose', 'debug', 'whatif', 'confirm'];
 
+function performing(action: string, target: string): string {
+  return `Performing the operation "${action}" on target "${target}".`;
+}
+
 function sourcePosition(source: string, offset: number): { line: number; column: number; lineText: string; message: string } {
   const before = source.slice(0, offset);
   const line = before.split('\n').length;
@@ -150,6 +157,12 @@ interface BoundCommand {
   readonly binding: CmdletBindingInfo | null;
   readonly bound: Record<string, PSValue>;
   readonly block: PSScriptBlock;
+}
+
+interface ErrorSource {
+  readonly displayName: string;
+  readonly invocationName: string;
+  readonly commandType: 'Cmdlet' | 'Function';
 }
 
 interface CollectorFrame {
@@ -349,6 +362,7 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
   } as Record<string, PSValue>,
 } as Record<string, Record<string, PSValue>>;
 const INPUT_CURSOR = '__inputCursor__';
+const DEFAULT_PROMPT = 'PS>';
 
 const SPLIT_SIMPLE_MATCH = 1;
 const SPLIT_REGEX_MATCH = 2;
@@ -451,10 +465,13 @@ for (const t of STACK_TYPES) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const DRIVE_NAME = /^[A-Za-z][A-Za-z0-9_]*:$/;
+
 export class PSRuntime {
   private readonly lexer: PSLexer;
   private readonly parser: PSParser;
   readonly edition: 'desktop' | 'core';
+  readonly locations = new PSLocationState();
   private readonly conversion: ConversionOptions;
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
@@ -652,15 +669,17 @@ export class PSRuntime {
     if (!globalEnv) {
       seedBuiltins(this.global, edition);
       this.global.set('__drives__', {
-        c:        { Name: 'C',        Root: 'C:\\',   Used: 0, Free: 0 },
-        d:        { Name: 'D',        Root: 'D:\\',   Used: 0, Free: 0 },
-        env:      { Name: 'Env',      Root: '',       Used: 0, Free: 0 },
-        variable: { Name: 'Variable', Root: '',       Used: 0, Free: 0 },
-        function: { Name: 'Function', Root: '',       Used: 0, Free: 0 },
-        hklm:     { Name: 'HKLM',     Root: 'HKLM:\\', Used: 0, Free: 0 },
-        hkcu:     { Name: 'HKCU',     Root: 'HKCU:\\', Used: 0, Free: 0 },
+        c:        { Name: 'C',        Root: 'C:\\', Provider: 'FileSystem' },
+        d:        { Name: 'D',        Root: 'D:\\', Provider: 'FileSystem' },
+        alias:    { Name: 'Alias',    Root: '', Provider: 'Alias' },
+        env:      { Name: 'Env',      Root: '', Provider: 'Environment' },
+        variable: { Name: 'Variable', Root: '', Provider: 'Variable' },
+        function: { Name: 'Function', Root: '', Provider: 'Function' },
+        hklm:     { Name: 'HKLM',     Root: 'HKLM:\\', Provider: 'Registry' },
+        hkcu:     { Name: 'HKCU',     Root: 'HKCU:\\', Provider: 'Registry' },
       } as Record<string, PSValue>);
     }
+    this.providers.filesystem?.attachDriveAliases?.(() => this.fileSystemDriveRoots());
     this.seedVersionTableFromRegistry();
   }
 
@@ -1093,6 +1112,25 @@ export class PSRuntime {
     return this.locationVariable(name) ?? this.global.get(name);
   }
   setVariable(name: string, value: PSValue): void { this.global.set(name, value); }
+
+  hasUserPrompt(): boolean {
+    return this.functions.has('prompt');
+  }
+
+  userPrompt(): string {
+    const pending = this.outputLines;
+    const status = this.global.get('?');
+    try {
+      this.execute('prompt');
+      const text = this.outputLines.join('');
+      return text === '' || this.global.get('?') === false ? DEFAULT_PROMPT : text;
+    } catch {
+      return DEFAULT_PROMPT;
+    } finally {
+      this.outputLines = pending;
+      this.global.set('?', status);
+    }
+  }
 
   // ── Program / StatementList ────────────────────────────────────────────────
 
@@ -1775,6 +1813,8 @@ export class PSRuntime {
    */
   private resolveExpansionVar(token: string, env: PSEnvironment): PSValue {
     const colon = token.indexOf(':');
+    const derived = this.locationVariable(token.slice(colon + 1));
+    if (derived !== undefined && (colon === -1 || token.slice(0, colon).toLowerCase() !== 'env')) return derived;
     if (colon === -1) {
       const val = env.get(token);
       return val === undefined ? null : val;
@@ -1813,16 +1853,28 @@ export class PSRuntime {
     table['BuildVersion'] = `${currentVersion}.${build}.1`;
   }
 
+  private fileSystemDriveRoots(): ReadonlyMap<string, string> {
+    const declared = (this.global.get('__drives__') as Record<string, Record<string, PSValue>> | null) ?? {};
+    const roots = new Map<string, string>();
+    for (const [key, drive] of Object.entries(declared)) {
+      if (drive['Provider'] !== 'FileSystem') continue;
+      const root = String(drive['Root']);
+      if (root.toLowerCase() !== `${key}:\\`) roots.set(key, root);
+    }
+    return roots;
+  }
+
+  currentLocationPath(): string {
+    return this.locations.foreign ?? this.providers.filesystem?.getCwd() ?? '';
+  }
+
   private locationVariable(name: string): PSValue | undefined {
-    const fs = this.providers.filesystem;
-    if (!fs) return undefined;
+    if (!this.providers.filesystem) return undefined;
     const lower = name.toLowerCase();
     if (lower !== 'pwd' && lower !== 'executioncontext') return undefined;
-    const foreign = this.global.get('__psLocation__');
-    const cwd = foreign !== undefined && foreign !== null && psValueToString(foreign) !== ''
-      ? psValueToString(foreign)
-      : fs.getCwd();
-    const location = { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
+    const cmdlet = this.registry.resolve('get-location');
+    if (!cmdlet) return undefined;
+    const location = cmdlet.execute(this.buildCmdletContext([], {}, null, this.global, [], 'continue', 'Get-Location', {}));
     if (lower === 'pwd') return location;
     return { SessionState: { Path: { CurrentLocation: location } } } as unknown as PSValue;
   }
@@ -3148,6 +3200,7 @@ export class PSRuntime {
 
     const rawName = this.resolveCommandName(nameNode, env);
     const lname   = rawName.toLowerCase();
+    const invocationName = calledWithOperator ? undefined : rawName;
     this.typedCommandNames.set(lname, rawName);
 
     const positional: PSValue[] = [];
@@ -3262,7 +3315,7 @@ export class PSRuntime {
     if (aliasDefinition !== undefined) {
       const aliasedFunction = this.functions.get(aliasDefinition);
       if (aliasedFunction) return this.callUserFunction(aliasedFunction, this.applyDefaultParams(aliasDefinition, named, env), positional, env, pipeInput);
-      return this.dispatchCmdlet(aliasDefinition, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans));
+      return this.dispatchCmdlet(aliasDefinition, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans), invocationName);
     }
 
     // User-defined function
@@ -3294,7 +3347,7 @@ export class PSRuntime {
     }
 
     // Registry dispatch
-    return this.dispatchCmdlet(lname, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans));
+    return this.dispatchCmdlet(lname, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans), invocationName);
   }
 
   private pipelineText(pipeInput: PSValue): string | null {
@@ -3716,8 +3769,7 @@ export class PSRuntime {
   }
 
   private isScriptBlock(val: PSValue): boolean {
-    return val !== null && typeof val === 'object' && !Array.isArray(val)
-      && (val as Record<string, unknown>).type === 'ScriptBlock';
+    return isScriptBlockValue(val);
   }
 
   private resolveCommandName(nameNode: PSExpression, env: PSEnvironment): string {
@@ -3863,6 +3915,7 @@ export class PSRuntime {
     pipeInput: PSValue,
     env: PSEnvironment,
     nativeArguments?: string[],
+    invocationName?: string,
   ): PSValue {
     named = this.expandCommonParameterAliases(named);
     positional = this.returnCommonSwitchArguments(named, positional);
@@ -3873,7 +3926,7 @@ export class PSRuntime {
     const produced: PSValue[] = [];
     let failure: unknown;
     try {
-      return this.dispatchResolved(name, positional, named, cmdletNamed, common, pipeInput, env, produced, nativeArguments);
+      return this.dispatchResolved(name, positional, named, cmdletNamed, common, pipeInput, env, produced, nativeArguments, invocationName);
     } catch (error) {
       failure = error;
       throw error;
@@ -3905,6 +3958,7 @@ export class PSRuntime {
     env: PSEnvironment,
     produced: PSValue[],
     nativeArguments?: string[],
+    invocationName?: string,
   ): PSValue {
     const prefAction       = psValueToString(env.get('ErrorActionPreference') ?? 'Continue').toLowerCase();
     const validated        = new Map(this.validatedPreferences(name, common));
@@ -3917,6 +3971,9 @@ export class PSRuntime {
     };
 
     const programStem = this.providers.network?.programStem(name) ?? null;
+    if (programStem === null && DRIVE_NAME.test(name) && positional.length === 0) {
+      return this.dispatchResolved('set-location', [name], named, cmdletNamed, common, pipeInput, env, produced);
+    }
     const resolved = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
     const cmdlet = resolved && resolved.coreOnly === true && this.edition === 'desktop' ? undefined : resolved;
     if (cmdlet) {
@@ -3969,14 +4026,14 @@ export class PSRuntime {
         const results: PSValue[] = [];
         for (const itemNamed of perItem) {
           const itemCtx = this.buildCmdletContext(
-            positional, itemNamed, null, env, emittedValues, errorAction, cmdletDisplayName, common);
+            positional, itemNamed, null, env, emittedValues, errorAction, cmdletDisplayName, common, invocationName);
           const one = cmdlet.execute(itemCtx);
           if (one !== null && one !== undefined) results.push(one);
         }
         result = results.length === 0 ? null : (results.length === 1 ? results[0] : (results as PSValue));
       } else {
         const ctx = this.buildCmdletContext(
-          positional, cmdletNamed, pipeInput, env, emittedValues, errorAction, cmdletDisplayName, common);
+          positional, cmdletNamed, pipeInput, env, emittedValues, errorAction, cmdletDisplayName, common, invocationName);
         result = cmdlet.execute(ctx);
       }
       if (cmdlet.reportsExitCode !== true) this.setStatus(this.errorsWritten === errorsBefore);
@@ -4064,29 +4121,36 @@ export class PSRuntime {
       && ['string', 'expandable'].includes((command.name as PSLiteralExpression).kind);
   }
 
-  private writeErrorRecord(record: Record<string, PSValue>, cmdletDisplayName: string, errorAction: string): void {
+  private writeErrorRecord(record: Record<string, PSValue>, source: ErrorSource, errorAction: string): void {
     if (errorAction === 'ignore') return;
     this.errorsWritten++;
     const exception = record.Exception as Record<string, PSValue> | null | undefined;
     const message = String(exception?.Message ?? record.Message ?? '');
-    const category = String((record.CategoryInfo as Record<string, PSValue> | undefined)?.Category ?? 'NotSpecified');
+    const categoryInfo = record.CategoryInfo as Record<string, PSValue> | undefined;
+    if (categoryInfo !== undefined) categoryInfo.Activity ??= source.displayName;
+    record.InvocationInfo ??= this.invocationInfo(source.displayName, {}, source.commandType, source.invocationName);
+    const category = String(categoryInfo?.Category ?? 'NotSpecified');
+    const activity = String(categoryInfo?.Activity ?? source.displayName);
     const fullyQualifiedErrorId = String(record.FullyQualifiedErrorId ?? '');
     const exceptionName = String(exception?.__type__ ?? 'WriteErrorException').replace(/^.*\./, '');
     const target = record.TargetObject;
-    const targetText = target === null || target === undefined ? ':' : `${psValueToString(target)}:${typeof target === 'string' ? 'String' : 'Object'}`;
+    const recordedType = categoryInfo?.TargetType;
+    const targetText = typeof recordedType === 'string'
+      ? `${String(categoryInfo?.TargetName ?? '')}:${recordedType}`
+      : target === null || target === undefined ? ':' : `${psValueToString(target)}:${typeof target === 'string' ? 'String' : 'Object'}`;
     if (errorAction === 'stop') {
       const stop = preferenceStopError('ErrorActionPreference', message);
       stop.errorRecord = record;
-      stop.commandName = cmdletDisplayName;
+      stop.commandName = source.displayName;
       throw stop;
     }
     this.streams.recordError(record);
     if (errorAction === 'silentlycontinue') return;
     const lines = this.edition === 'core'
-      ? [`${cmdletDisplayName}: ${message}`]
+      ? [`${source.displayName}: ${message}`]
       : [
-          `${cmdletDisplayName} : ${message}`,
-          `    + CategoryInfo          : ${category}: (${targetText}) [${cmdletDisplayName}], ${exceptionName}`,
+          `${source.invocationName} : ${message}`,
+          `    + CategoryInfo          : ${category}: (${targetText}) [${activity}], ${exceptionName}`,
           `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
         ];
     this.streams.deliver('error', record, lines);
@@ -4112,12 +4176,14 @@ export class PSRuntime {
 
   private readonly writtenObjects: PSValue[] = [];
 
-  private invocationInfo(name: string, bound: Record<string, PSValue>): Record<string, PSValue> {
+  private invocationInfo(
+    name: string, bound: Record<string, PSValue>, commandType: 'Cmdlet' | 'Function' = 'Function', invocationName: string = name,
+  ): Record<string, PSValue> {
     const span = this.callSites[this.callSites.length - 1]?.span;
     const position = span === undefined ? null : sourcePosition(span.source, span.start);
     return {
-      MyCommand: { Name: name, CommandType: 'Function' },
-      InvocationName: name,
+      MyCommand: { Name: name, CommandType: commandType },
+      InvocationName: invocationName,
       BoundParameters: bound,
       UnboundArguments: [],
       PSCommandPath: '',
@@ -4147,8 +4213,7 @@ export class PSRuntime {
 
   private shouldProcess(command: BoundCommand, scope: PSEnvironment, name: string, args: PSValue[]): boolean {
     const text = args.map(psValueToString);
-    const description = text.length >= 3 ? text[0]
-      : `Performing the operation "${text.length === 2 ? text[1] : name}" on target "${text[0] ?? ''}".`;
+    const description = text.length >= 3 ? text[0] : performing(text.length === 2 ? text[1] : name, text[0] ?? '');
     if (truthiness(scope.get('WhatIfPreference'))) {
       this.outputLines.push(`What if: ${description}`);
       return false;
@@ -4179,7 +4244,7 @@ export class PSRuntime {
         else this.writtenObjects.push(value);
         return null;
       },
-      WriteError: (record: PSValue) => { this.writeErrorRecord(record as Record<string, PSValue>, name, errorAction()); return null; },
+      WriteError: (record: PSValue) => { this.writeErrorRecord(record as Record<string, PSValue>, { displayName: name, invocationName: name, commandType: 'Function' }, errorAction()); return null; },
       WriteWarning: (message: PSValue) => { this.writeMessage('warning', psValueToString(message), scope, {}); return null; },
       WriteVerbose: (message: PSValue) => { this.writeMessage('verbose', psValueToString(message), scope, {}); return null; },
       WriteDebug: (message: PSValue) => { this.writeMessage('debug', psValueToString(message), scope, {}); return null; },
@@ -4270,13 +4335,17 @@ export class PSRuntime {
     errorAction: string = 'continue',
     cmdletDisplayName: string = 'Write-Error',
     commonPrefs: Record<string, PSValue> = {},
+    invocationName: string = cmdletDisplayName,
   ): CmdletContext {
     const self = this;
+    const errorSource: ErrorSource = { displayName: cmdletDisplayName, invocationName, commandType: 'Cmdlet' };
     positional = positional.map(unboxDeep);
     named = Object.fromEntries(Object.entries(named).map(([key, value]) => [key, unboxDeep(value)]));
     if (!PASS_THROUGH_CMDLETS.has(cmdletDisplayName.toLowerCase())) pipeInput = unboxDeep(pipeInput);
 
     const runtimeRef: IRuntimeRef = {
+      edition:            self.edition,
+      locations:          self.locations,
       execute:            (code) => self.execute(code),
       executeInteractive: (code) => self.executeInteractive(code),
       acceptNativeResult: (result) => self.acceptNativeResult(result),
@@ -4326,6 +4395,7 @@ export class PSRuntime {
       removeAlias: (name) => self.userAliases.delete(name.toLowerCase()),
       getCommandParameters: (name) => self.getCommandParameters(name),
       psCast: (val, typeName) => self.psCast(val, typeName),
+      scriptBlockFromText: (code) => self.scriptBlockFromText(code),
     };
 
     return {
@@ -4353,10 +4423,28 @@ export class PSRuntime {
           if (stripped === msg) break;
           msg = stripped;
         }
-        self.writeErrorRecord(classifiedError(msg, cmdletDisplayName), cmdletDisplayName, errorAction);
+        self.writeErrorRecord(classifiedError(msg, cmdletDisplayName), errorSource, errorAction);
       },
 
-      emitErrorRecord: (record: PSValue) => { self.writeErrorRecord(record as Record<string, PSValue>, cmdletDisplayName, errorAction); },
+      emitErrorRecord: (record: PSValue) => { self.writeErrorRecord(record as Record<string, PSValue>, errorSource, errorAction); },
+
+      shouldProcess: (target: string, action: string) => {
+        const asked = named['whatif'] !== undefined ? named['whatif'] === true : truthiness(env.get('WhatIfPreference'));
+        if (asked) self.outputLines.push(`What if: ${performing(action, target)}`);
+        return !asked;
+      },
+
+      emitFailure: (failure: ProviderFailure, command: string = cmdletDisplayName) => {
+        self.writeErrorRecord(newErrorRecord({
+          message: failure.message,
+          exceptionType: failure.exceptionType,
+          category: failure.category,
+          activity: command,
+          targetObject: failure.target,
+          targetType: failure.targetType,
+          fullyQualifiedErrorId: `${failure.errorId},Microsoft.PowerShell.Commands.${command.replace(/-/g, '')}Command`,
+        }), errorSource, errorAction);
+      },
 
       invokeBlock: (
         block: PSScriptBlock,
@@ -4831,7 +4919,7 @@ export class PSRuntime {
         }
       }
 
-      const key = Object.keys(rec).find(k => k.toLowerCase() === member) ?? member;
+      const key = Object.getOwnPropertyNames(rec).find(k => k.toLowerCase() === member) ?? member;
       const val = rec[key];
       if (val !== undefined) return val;
     }

@@ -47,6 +47,7 @@ export interface NatStaticEntry {
   isNetwork?: boolean;
   prefixLen?: number;
   rawConfig?: string;
+  interfaceName?: string;
   /** Number of packets this static mapping has translated (`show ip nat statistics`'s per-entry refcount). */
   hitCount?: number;
 }
@@ -73,6 +74,7 @@ export interface NatDynamicRule {
   poolName?: string;
   interfaceName?: string;
   overload?: boolean;
+  vrf?: string;
 }
 
 /** TCP session state (RFC 6146 §2.1). */
@@ -178,6 +180,16 @@ export interface NatTranslationEntry {
 /** Lower bound of the PAT ephemeral range (Cisco IOS overload default). */
 const NAT_EPHEMERAL_MIN = 1024;
 
+export const DEFAULT_NAT_TIMEOUTS: Readonly<NatTimeouts> = Object.freeze({
+  tcp:         86_400_000,   // 24 h  — RFC 2663 §2.3.1
+  tcpHalfOpen:     30_000,   // 30 s  — RFC 6146 §4
+  udp:            300_000,   // 5 min — RFC 4787 REQ-5
+  icmp:            60_000,   // 60 s  — common practice
+  dns:             60_000,   // 60 s  — IOS default
+  finrst:          60_000,   // 60 s  — IOS default
+  simple:          86_400_000,
+});
+
 export class NATEngine {
   private insideIfaces = new Set<string>();
   private outsideIfaces = new Set<string>();
@@ -201,15 +213,7 @@ export class NATEngine {
   private readonly maxPort = 65535;
 
   // Per-protocol session timeouts (ms)
-  private timeouts: NatTimeouts = {
-    tcp:         86_400_000,   // 24 h  — RFC 2663 §2.3.1
-    tcpHalfOpen:     30_000,   // 30 s  — RFC 6146 §4
-    udp:            300_000,   // 5 min — RFC 4787 REQ-5
-    icmp:            60_000,   // 60 s  — common practice
-    dns:             60_000,   // 60 s  — IOS default
-    finrst:          60_000,   // 60 s  — IOS default
-    simple:          86_400_000,
-  };
+  private timeouts: NatTimeouts = { ...DEFAULT_NAT_TIMEOUTS };
 
   // Hit/miss counters (RFC 2663 §4)
   private hitCount = 0;
@@ -349,6 +353,29 @@ export class NATEngine {
       e => !(e.localIP === localIP && e.globalIP === globalIP)
     );
     this.dropStaticFlows((s) => s.localIP === localIP && s.globalIP === globalIP);
+  }
+
+  removeStaticMapping(spec: {
+    localIP: string; globalIP: string; protocol?: 'tcp' | 'udp';
+    localPort?: number; globalPort?: number; interfaceName?: string; vrf?: string;
+  }): boolean {
+    const matches = (e: NatStaticEntry): boolean =>
+      e.localIP === spec.localIP && e.protocol === spec.protocol
+      && e.localPort === spec.localPort && e.globalPort === spec.globalPort
+      && e.vrf === spec.vrf
+      && (spec.interfaceName === undefined
+        ? e.interfaceName === undefined && e.globalIP === spec.globalIP
+        : e.interfaceName?.toLowerCase() === spec.interfaceName.toLowerCase());
+    const removed = this.staticEntries.filter(matches);
+    if (removed.length === 0) return false;
+    this.staticEntries = this.staticEntries.filter(e => !matches(e));
+    for (const entry of removed) {
+      this.dropStaticFlows((s) => s.localIP === entry.localIP && s.globalIP === entry.globalIP
+        && (entry.protocol === undefined
+          || (s.protocol === (entry.protocol === 'tcp' ? IP_PROTO_TCP : IP_PROTO_UDP)
+            && s.localPort === entry.localPort && s.globalPort === entry.globalPort)));
+    }
+    return true;
   }
 
   removeAllStaticEntries(): void {

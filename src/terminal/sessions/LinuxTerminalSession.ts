@@ -91,7 +91,7 @@ import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubSh
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
-import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
 import { LinuxEditorFsContext } from './LinuxEditorFsContext';
 import {
   createRemoteEditorController,
@@ -133,7 +133,7 @@ import {
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector, TcpDialFailure } from '@/network/tcp/types';
-import type { ISubShell } from '@/terminal/subshells/ISubShell';
+import { processSubShellLine, type ISubShell } from '@/terminal/subshells/ISubShell';
 import { CC } from '@/network/devices/linux/tty/Termios';
 import { echoedControl, echoesInput, interruptsOn } from '@/network/devices/linux/tty/TtyLineDiscipline';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -1171,7 +1171,7 @@ export class LinuxTerminalSession extends TerminalSession {
    */
   private openEditorFromCmd(cmd: string): boolean {
     const noSudo = cmd.startsWith('sudo ') ? cmd.slice(5).trim() : cmd;
-    const parts = noSudo.split(/\s+/);
+    const parts = splitShellWords(noSudo).words;
     const head = parts[0];
     if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
     return this.openEditor(head, parts.slice(1));
@@ -1472,11 +1472,12 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): boolean {
-    const launch = parseEditorArgs(editorCmd, args);
-    if (launch === null) return false;
-    const { filePath, nano, initialCursorLine, initialCursorCol } = launch;
+    const parsed = parseEditorArgs(editorCmd, args);
+    if (parsed === null) return false;
     const dev = this.device;
     const launchFs = this.shell && dev instanceof LinuxMachine ? new LinuxEditorFsContext(dev, this.shell) : null;
+    const launch = launchFs === null ? parsed : withRcfiles(launchFs, parsed);
+    const { filePath, nano, initialCursorLine, initialCursorCol } = launch;
     if (launchFs !== null && editorLaunchFailure(launchFs, launch) !== null) return false;
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against
@@ -1547,10 +1548,11 @@ export class LinuxTerminalSession extends TerminalSession {
    * making the editor "succeed" for chain semantics; `saved=false`
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
-  override editorExit(saved: boolean = true): void {
+  override editorExit(saved: boolean = true, notice: string = ''): void {
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
+    if (notice !== '') this.addLines(notice.replace(/\n$/, '').split('\n'));
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;
     this.notify();
@@ -2650,7 +2652,7 @@ export class LinuxTerminalSession extends TerminalSession {
         else this.addShellOutputLine(text);
         this.notify();
       };
-      const maybePromise = this.activeSubShell.processLine(line, onProgress);
+      const maybePromise = processSubShellLine(this.activeSubShell, line, onProgress);
 
       const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
         if (result.clearScreen) this.clear();

@@ -24,9 +24,9 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { ShellFactory } from '../ShellFactory';
 import { NestedSshLogin } from '../NestedSshLogin';
+import { leaseWindowsSession, returnWindowsSession } from './WindowsShellSessionLease';
 export interface WindowsPowerShellOptions extends AbstractShellOptions {
-  /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
-  readonly windowsSession?: WindowsShellSession | null;
+  readonly forkFrom?: WindowsShellSession | null;
   /** 'core' starts PowerShell 7 (pwsh); the default is Windows PowerShell 5.1. */
   readonly language?: 'desktop' | 'core';
 }
@@ -39,9 +39,6 @@ export class WindowsPowerShellShell extends AbstractShell {
   private subShell: PowerShellSubShell;
   private banner: readonly string[];
   private readonly windowsSession: WindowsShellSession | null;
-  /** True when this shell owns the WindowsShellSession (allocated it
-   *  itself, typical of SSH-pushed PS) and must close it on dispose. */
-  private readonly ownsSession: boolean;
   private readonly nestedSsh = new NestedSshLogin();
 
   /** PowerShell exposes BOTH `clear` and `cls` as aliases of Clear-Host. */
@@ -49,24 +46,10 @@ export class WindowsPowerShellShell extends AbstractShell {
 
   constructor(opts: WindowsPowerShellOptions) {
     super(opts);
-    if (opts.windowsSession) {
-      this.windowsSession = opts.windowsSession;
-      this.ownsSession = false;
-    } else if (opts.device instanceof WindowsPC) {
-      // No session supplied (typical SSH push): allocate one bound to
-      // the SSH user's home so PS commands operate on the right cwd
-      // instead of leaking C:\\Users\\User across foreign SSH sessions.
-      this.windowsSession = opts.device.openShellSession({
-        user: opts.user,
-        cwd: opts.context.cwd && opts.context.cwd.length > 0
-          ? opts.context.cwd
-          : `C:\\Users\\${opts.user}`,
-      });
-      this.ownsSession = true;
-    } else {
-      this.windowsSession = null;
-      this.ownsSession = false;
-    }
+    this.windowsSession = leaseWindowsSession({
+      device: opts.device, user: opts.user, directory: opts.context.cwd,
+      forkFrom: opts.forkFrom, inheritDriveDirectories: false,
+    });
     const { subShell, banner } = PowerShellSubShell.create(opts.device, {
       initialCwd: opts.context.cwd,
       // Pass the (possibly freshly-allocated) per-shell session so PS
@@ -114,7 +97,7 @@ export class WindowsPowerShellShell extends AbstractShell {
         user: this.user,
         parent: this,
         cwd: this.windowsSession?.cwd ?? this.context.cwd,
-        extras: { windowsSession: this.windowsSession ?? null },
+        extras: { forkFrom: this.windowsSession ?? null },
       });
       if (child) return { output: [], childShell: child };
     }
@@ -127,6 +110,7 @@ export class WindowsPowerShellShell extends AbstractShell {
       output: r.output ?? [],
       exit: r.exit,
       clearScreen: r.clearScreen,
+      childShell: r.childShell,
     };
   }
 
@@ -148,10 +132,7 @@ export class WindowsPowerShellShell extends AbstractShell {
 
   protected override onDispose(): void {
     this.subShell.dispose();
-    if (this.windowsSession && this.ownsSession
-        && this.device instanceof WindowsPC) {
-      this.device.closeShellSession(this.windowsSession);
-    }
+    returnWindowsSession(this.device, this.windowsSession);
   }
 
   async handleInput(value: string): Promise<ShellLineResult> {

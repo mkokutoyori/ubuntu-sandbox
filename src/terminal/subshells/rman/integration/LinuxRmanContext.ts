@@ -24,8 +24,9 @@ import type { ConnectPeerOutcome } from './IRmanOracleContext';
 import type { Equipment } from '@/network';
 import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
-import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
+import { getOracleDatabase } from '@/terminal/commands/database';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { archivedLogFromPath } from '../core/archivedLogNaming';
 import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -73,10 +74,15 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return this._oracle?.instance.hostClock().zoneName() ?? device.hostWallClock?.().zoneName() ?? 'UTC';
   }
 
+  hostNowMs(): number {
+    const device = this._device as unknown as { hostWallClock?: () => { nowMs(): number } };
+    return this._oracle?.instance.hostClock().nowMs() ?? device.hostWallClock?.().nowMs() ?? simulationNowMs();
+  }
+
   connectTarget(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome {
     const local = this._device as unknown as HostCapableDevice;
     const resolved = resolveOracleConnectTarget(
-      local, identifier, (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+      local, identifier, getOracleDatabase);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     return {
       ok: true,
@@ -108,7 +114,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
      | { ok: false; error: string } {
     const resolved = resolveOracleConnectTarget(
       localDevice as unknown as HostCapableDevice, identifier,
-      (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+      getOracleDatabase);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     const deviceId = resolved.db.instance.getDeviceId();
     const targetDevice = EquipmentRegistry.getInstance().getById(deviceId) ?? localDevice;
@@ -155,7 +161,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   static forDevice(device: Equipment): LinuxRmanContext {
     const oracle = (() => {
-      try { return getRegisteredOracleDatabase((device as { id?: string }).id ?? '') ?? null; }
+      try { return getOracleDatabase((device as { id?: string }).id ?? ''); }
       catch { return null; }
     })();
     return new LinuxRmanContext(device, oracle);
@@ -394,6 +400,24 @@ export class LinuxRmanContext implements IRmanOracleContext {
     });
   }
 
+  recordBackupPieceDeleted(handle: string): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.backup.deleted',
+      payload: { deviceId: (this._device as { id?: string }).id ?? '', sid: oracle.instance.config.sid, handle },
+    });
+  }
+
+  recordArchivedLogDeleted(path: string): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.archive-log.deleted',
+      payload: { deviceId: (this._device as { id?: string }).id ?? '', sid: oracle.instance.config.sid, path },
+    });
+  }
+
   getRecoveryAreaUsedBytes(): number {
     const distant = this.askRemoteScalar(
       'SELECT space_used FROM V$RECOVERY_FILE_DEST', 'SPACE_USED');
@@ -456,7 +480,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
     const oracle = this._oracle;
     if (!oracle) return false;
     const connus = oracle.instance.getRuntimeState().archivedLogs;
-    if (connus.some(l => l.name === path)) return false;
+    if (connus.some(l => !l.deleted && l.name === path)) return false;
     const repere = archivedLogFromPath(path, connus.length);
     const precedent = connus[connus.length - 1];
     oracle.instance.catalogArchivedLog(
@@ -467,7 +491,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> {
     const distant = this.askRemote(
-      'SELECT thread#, sequence#, name, first_change#, next_change# FROM V$ARCHIVED_LOG');
+      "SELECT thread#, sequence#, name, first_change#, next_change# FROM V$ARCHIVED_LOG WHERE deleted = 'NO'");
     if (distant !== null) {
       const colonne = (nom: string): number =>
         distant.columns.findIndex((c) => c.name.toUpperCase() === nom);
@@ -486,7 +510,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
         }));
       }
     }
-    const enregistres = this._oracle?.instance.getRuntimeState().archivedLogs ?? [];
+    const enregistres = (this._oracle?.instance.getRuntimeState().archivedLogs ?? []).filter(l => !l.deleted);
     if (enregistres.length > 0) {
       return enregistres.map(l => ({
         thread: l.thread, sequence: l.sequence, path: l.name,

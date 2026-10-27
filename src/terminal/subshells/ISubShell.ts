@@ -82,6 +82,11 @@ export interface ISubShell extends IShellBase {
     onProgress?: (text: string) => void,
   ): SubShellResult | Promise<SubShellResult>;
 
+  processLineCooperative?(
+    line: string,
+    onProgress?: (text: string) => void,
+  ): SubShellResult | Promise<SubShellResult>;
+
   /**
    * Optional: interrupt (Ctrl+C) the sub-shell's currently in-flight
    * `processLine()` call, e.g. to stop a remote streaming job over the
@@ -130,4 +135,14 @@ export interface ISubShell extends IShellBase {
 
   /** Clean up resources when the sub-shell exits. */
   dispose(): void;
+}
+
+export function processSubShellLine(
+  subShell: ISubShell,
+  line: string,
+  onProgress?: (text: string) => void,
+): SubShellResult | Promise<SubShellResult> {
+  return subShell.processLineCooperative !== undefined
+    ? subShell.processLineCooperative(line, onProgress)
+    : subShell.processLine(line, onProgress);
 }

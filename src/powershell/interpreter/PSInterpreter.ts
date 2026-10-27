@@ -113,6 +113,18 @@ export class PSInterpreter {
     return this.runtime.invokeScriptBlock(block, {}, positionalArgs, this.runtime.global);
   }
 
+  foreignLocation(): string | null {
+    return this.runtime.locations.foreign;
+  }
+
+  hasUserPrompt(): boolean {
+    return this.runtime.hasUserPrompt();
+  }
+
+  userPrompt(): string {
+    return this.runtime.userPrompt();
+  }
+
   /** All completable command names + aliases (for Tab completion). */
   listCommandNames(): string[] {
     return this.runtime.listCommandNames();

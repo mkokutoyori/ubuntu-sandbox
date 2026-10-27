@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-connectivity
-Generated: 2026-10-14T19:51:49.967Z
+Generated: 2026-10-25T17:56:56.796Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP routed data path: static/default/OSPF/RIP/BGP/DHCP + faults
 Total steps: 312
@@ -232,13 +232,13 @@ Total steps: 312
 
 [38/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.002 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.003 ms
   64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.002 ms
   64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.002 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss, time 2000ms
-  rtt min/avg/max/mdev = 0.002/0.002/0.002/0.000 ms
+  rtt min/avg/max/mdev = 0.002/0.002/0.003/0.000 ms
 
 [39/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -870,7 +870,6 @@ Total steps: 312
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 0 received, +3 errors, 100% packet loss, time 2000ms
-  
 
 [132/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
@@ -880,7 +879,6 @@ Total steps: 312
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 0 received, +3 errors, 100% packet loss, time 2000ms
-  
 
 [133/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
@@ -1280,7 +1278,6 @@ Total steps: 312
   
   --- 192.168.2.10 ping statistics ---
   2 packets transmitted, 0 received, +2 errors, 100% packet loss, time 1000ms
-  
 
 [199/312] r1 <R1> system-view
   Enter system view, return user view with return command.
@@ -1641,8 +1638,8 @@ Total steps: 312
 
 [233/312] r1 <R1> display vrrp brief
   Total:0     Master:0     Backup:0     Non-active:0
-    VRID    State         Interface          Type      Virtual IP
-    ------  ------------  -----------------  --------  ----------
+    VRID    State         Interface               Type      Virtual IP
+    ------  ------------  ----------------------  --------  ----------
 
 [234/312] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -1678,14 +1675,14 @@ Total steps: 312
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 19:51:57.480  Oct 14 2026(EE7A5BDD.7AE147AE)
+  Reference time: 17:57:04.207  Oct 25 2026(EE88C170.34FDF3B6)
 
 [242/312] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [243/312] r1 <R1> display clock
-  2026-10-14 19:51:57
-  Wednesday
+  2026-10-25 17:57:06
+  Sunday
   Time Zone(UTC) : UTC
 
 [244/312] r1 <R1> display lldp neighbor
@@ -1706,13 +1703,13 @@ Total steps: 312
 [246/312] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-10-14 19:51:57
+  CPU Usage Stat. Time : 2026-10-25 17:57:06
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [247/312] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-10-14 19:51:57
+  Memory utilization statistics at 2026-10-25 17:57:06
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1753,16 +1750,16 @@ Total steps: 312
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 10
-  2026-10-14 19:51:49 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-10-14 19:51:49 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-10-14 19:51:49 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-10-14 19:51:49 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-10-14 19:51:50 %01OSPF/5/NOTIFICATIONS: Process 1, Nbr 2.2.2.2 on GE0/0/0 from Loading to Full, LoadingDone
-  2026-10-14 19:51:57 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.2 Up
-  2026-10-14 19:51:57 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-10-14 19:51:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-10-14 19:51:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-10-14 19:51:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-25 17:56:56 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-25 17:56:56 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-25 17:56:56 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-25 17:56:56 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-25 17:56:58 %01OSPF/5/NOTIFICATIONS: Process 1, Nbr 2.2.2.2 on GE0/0/0 from Loading to Full, LoadingDone
+  2026-10-25 17:57:05 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.2 Up
+  2026-10-25 17:57:06 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-10-25 17:57:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-10-25 17:57:06 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-25 17:57:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [252/312] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2168,7 +2165,7 @@ Total steps: 312
     dhcpv6               DHCPv6 configuration
     dns                  Domain Name System
     firewall             Firewall configuration
-    header               Remove the login/shell banner
+    header               Configure the login and shell banners
     ike                  Internet Key Exchange
     ikev2                Internet Key Exchange version 2
     info-center          Information center configuration

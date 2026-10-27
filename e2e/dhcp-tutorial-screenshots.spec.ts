@@ -112,6 +112,7 @@ test.describe('DHCP tutorial — screenshots', () => {
 
     // Figure 2 — router CLI showing the configured pool.
     await openTerminal(page, lab.router);
+    await typeCmd(page, 'enable');
     await typeCmd(page, 'show running-config | section dhcp', 600);
     await page.waitForTimeout(400);
     await expect(page.locator('[data-testid="terminal-modal"]').getByText('ip dhcp pool LAN-MAISON', { exact: false }))
@@ -146,6 +147,7 @@ test.describe('DHCP tutorial — screenshots', () => {
 
     // Figure 5 — router CLI: show ip dhcp binding lists the two leases.
     await openTerminal(page, lab.router);
+    await typeCmd(page, 'enable');
     await typeCmd(page, 'show ip dhcp binding', 600);
     const routerText = await termText(page);
     const leases = (routerText.match(/192\.168\.1\.1\d{2}/g) ?? []);
