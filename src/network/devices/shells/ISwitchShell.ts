@@ -11,7 +11,7 @@ import type { ParsedPing } from './cisco/ciscoPing';
 export interface ISwitchShell {
   parseEchoRequest?(line: string, device: Switch): ParsedPing | null;
   /** Execute a raw CLI command string and return the output */
-  execute(sw: Switch, rawInput: string): string;
+  execute(sw: Switch, rawInput: string): string | Promise<string>;
   execSessionClosed?(): boolean;
   /**
    * Command-owned interactive flows (IoC): the shell declares which

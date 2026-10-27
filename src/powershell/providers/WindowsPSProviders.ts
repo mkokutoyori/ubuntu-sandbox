@@ -2115,9 +2115,6 @@ class WindowsNetworkAdapter implements INetworkProvider {
       preferredLifetimeSeconds: opts?.preferredLifetimeSeconds,
     });
     this.setDhcpEnabled(ifAlias, false);
-    if (opts?.gateway) {
-      this.addRoute(ip.includes(':') ? '::/0' : '0.0.0.0/0', ifAlias, opts.gateway, 256);
-    }
     // Mirror onto the device port so cmd's `ipconfig` / `netsh ipv4 show
     // addresses` see the same address PowerShell just added.
     if (!ip.includes(':')) {
@@ -2136,6 +2133,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
       if (this.pc.getPortsMap().has(portName)) {
         this.pc.configureIPv6Interface(portName, new IPv6Address(ip), prefixLength);
       }
+    }
+    if (opts?.gateway) {
+      this.addRoute(ip.includes(':') ? '::/0' : '0.0.0.0/0', ifAlias, opts.gateway, 256);
     }
   }
   removeIPAddress(ip: string): void {

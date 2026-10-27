@@ -835,6 +835,254 @@ sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
 nano ferait apres un `^L`.
 
+### [nano] fichiers nanorc : commandes acceptees mais pas encore evaluees
+`parse_rcfile` de nano 7.2 est porte pour `set` / `unset` (toutes les options de
+`rcopts`), les emplacements (`/etc/nanorc`, `~/.nanorc`, `$XDG_CONFIG_HOME/nano/nanorc`,
+`~/.config/nano/nanorc`, `-f`, `-I`), les textes d'erreur et la fusion avec la ligne
+de commande (`nano-rc-oracle.test.ts`, `probe-nano-rc.test.ts`). La vraie machine
+ACCEPTE les lignes suivantes ; le moteur les lit sans erreur et sans effet, ce qui
+est l'etat intermediaire d'une campagne en cours et non un livrable :
+- `bind`, `unbind` (raccourcis reconfigures) : lues sans effet (elles ferment bien une
+  syntaxe ouverte, comme dans nano), les touches ne sont jamais reliees. Raccourcis :
+  28d. Les douze `*color` d'interface (`nano-colors-oracle.test.ts`), la coloration
+  syntaxique (`syntax`, `header`, `color`, `icolor`, `extendsyntax`, `include`, `comment`,
+  `tabgives`, `-Y`, `M-Y` ; `nano-syntax-oracle.test.ts`, `probe-nano-syntax.test.ts`),
+  `linter` et `formatter` (`^T ^Y`, `^T ^O`, `M-B`, `M-F` ; `probe-nano-lint.test.ts`)
+  et `speller` (`-s`, `^T ^S` ; `probe-nano-spell.test.ts`) sont evaluees.
+- `matchbrackets`, `whitespace` : valides et rangees dans `NanoSettings`, jamais lues
+  parce que `M-]` (crochet correspondant) et `M-P` (blancs visibles) n'existent pas
+  encore dans le moteur (28e) ; `magic` reste un mot-cle inconnu, comme dans le nano
+  d'Ubuntu (sans libmagic) ; `multibuffer` (`-F`) et `rawsequences` (`-K`).
+- `allow_insecure_backup` : n'a d'effet que si l'`unlink` de la sauvegarde existante
+  echoue ; la procedure `make_backup_of` (unlink, creation exclusive, repli dans
+  `$HOME` avec « Cannot make regular backup », « Trying again in your home directory »)
+  n'est pas portee : le moteur ecrase la sauvegarde.
+
+### [nano] linter : un message pour un fichier non ouvert, reponse « oui »
+`do_linter` de nano 7.2 demande « This message is for unopened file F, open it in a new
+buffer? » quand le linter parle d'un autre fichier existant. La reponse « non » et ^C sont
+portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que le moteur ne sait
+pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
+`^R` en mode vue (entree suivante).
+
+### [machine Linux] `dash` absent, `sh -n` et `bash -n` sans effet
+Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
+n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
+`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' » ; et `sh -n script` /
+`bash -n script` n'ont pas la semantique « analyser sans executer » (le script est lance, `sh -n`
+sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse de dash
+(« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
+bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
+fonctionner comme sur Ubuntu.
+
+### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
+Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
+`spell`) dont la sortie passe par `sort` puis `uniq`, lit la liste des mots inconnus et propose
+chacun dans `fix_spello` (invite « Edit a replacement », « Replace with », remplacement de toutes
+les occurrences, retour au mot suivant). Le moteur repond « Error invoking "spell" » (comme un
+Ubuntu nu, le texte est le bon) parce que la machine simulee n'a ni `hunspell` ni `spell` ni
+dictionnaire. Il manque deux briques : une commande `hunspell` / `spell` avec un dictionnaire (rien
+dans le depot ne porte de liste de mots) et le dialogue `fix_spello`. Le correcteur ALTERNATIF
+(`-s PROGRAMME`, `set speller`) est complet.
+
+### [nano] entree litterale (`M-V`) : « [ Verbatim Input ] » n'existe pas
+Mesure avec `nano-package-oracle.test.ts` (corpus package, avant le retrait de `M-v` des gestes
+tires) : `M-V` affiche « [ Verbatim Input ] » dans la barre d'etat et la touche suivante est
+inseree telle quelle (un code de controle, une sequence d'echappement, ou un point de code saisi
+en octal / hexadecimal : 3 chiffres octaux, `u` + 4 a 6 chiffres hexadecimaux) ; le moteur ne
+connait pas la touche et affiche la position du curseur. Rien a voir avec les syntaxes : c'est
+une fonction de nano 7.2 que ni le moteur ni les corpus n'avaient encore exercee.
+
+### [nano] tampons multiples : `-F`, plusieurs fichiers, `M-<` `M->`, `M-F`, `^R` en mode vue
+Le moteur n'a qu'un tampon. Ce qui en depend, mesure sur nano 7.2 :
+- `^R` sous `-v` ouvre un NOUVEAU tampon : invite « File to read into new buffer [from ./]: »
+  (menu `^T Browse`, `M-N No Conversion`) au lieu de « Key is invalid in view mode » ; le moteur
+  refuse la touche (`nano-colors-oracle.test.ts`, UNPORTED_CASES col1-67, col1-117, col1-138,
+  col1-151, col1-153, col1-169, col2-6, col2-48, col2-58, col3-137, col3-170, col3-190 ; 7 cas
+  de `nano-layout-oracle.test.ts`) ;
+- `nano a b` : titre `[1/N]`, `M-<` / `M->` pour passer d'un tampon a l'autre, fermeture
+  (« Close »), message `[ x -- N lines ]` ; `-F` (`multibuffer`) fait de `^R` une lecture dans
+  un nouveau tampon, `M-F` aussi (menu Execute) ; `nano -` lit l'entree standard (« Reading data
+  from keyboard ») ;
+- le « oui » du linter pour un fichier non ouvert (entree suivante), et les clics de souris qui
+  peuvent ouvrir un tampon (`nano-mouse-oracle.test.ts`) ;
+- l'aide de l'invite « File to read into new buffer ».
+Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la marque, l'annulation,
+les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
+fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
+
+### [vim] coller depuis un autre programme (Ctrl+Maj+V, Maj+Inser, clic droit)
+Mesure en corrigeant le meme defaut dans nano : `VimEditor` annule chaque touche (`preventDefault`)
+et n'a ni gestionnaire `paste` ni moteur de collage, donc rien ne se colle dans vim depuis Notepad.
+Dans un vrai terminal le collage arrive comme des frappes (vim 9.1 active le « bracketed paste » :
+en mode Insertion le texte est insere tel quel, sans indentation automatique ; en mode Normal il
+est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes gestes que
+`NanoEditor` (`terminal/clipboard.ts`) et une mesure sous tmux du bracketed paste de vim 9.1.0016.
+
+### [nc] ce que le portage de `netcat.c` (Ubuntu 1.226-1ubuntu2) laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans un espace de noms) :
+- `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : les controles de `main()` sont portes
+  (« no proxy support for listen », « missing closing bracket in proxy »...) mais la connexion par
+  mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
+  le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
+  prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
+- `-U -l` (ecoute sur une socket UNIX) et `-U -u` (datagramme UNIX) sont refuses : le registre
+  `localDatagramSockets` sait connecter une socket flux, pas en ecouter une.
+- Deux `nc -l 9000` : `nc` pose SO_REUSEADDR et SO_REUSEPORT, donc le vrai accepte le second
+  ecouteur (meme uid) ; `SocketTable.bind` repond EADDRINUSE.
+- Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
+  (`getnameinfo`) : sur la machine d'enregistrement le DNS injoignable donne « nc: getnameinfo:
+  Temporary failure in name resolution » pour un joker, donc seul 127.0.0.1 (« localhost », via
+  /etc/hosts) est dans le corpus.
+- `ncat` est un alias de `nc` dans la declaration de la commande ; c'est l'outil de Nmap, pas
+  `netcat-openbsd` (options, messages et `-e` differents).
+- `-W` (arret apres N paquets) et `-t` (negociation telnet) : la boucle `readwrite` est portee
+  (`converse` dans `Nc.ts` : `-N -q -w -C -i -d`, connexion persistante, ecoute en service unique),
+  pas ces deux-la.
+- Entree standard du TERMINAL : un `nc host port` tape seul lit le clavier dans un vrai terminal
+  (il envoie ce qu'on tape jusqu'a Ctrl-D ou Ctrl-C) ; le terminal simule n'a pas d'entree
+  interactive pour une commande, donc `nc` lit la salutation du serveur puis se comporte comme un
+  Ctrl-C immediat (indicateur `terminal` de `converse`). Un `nc` en avant-plan alimente par un tube
+  (`echo x | nc ...`) reste connecte jusqu'a la fermeture du pair, `-N`, `-q` ou `-w`, comme le vrai.
+- Le test d'un `nc -u` vers un port qui ECOUTE mais ne repond jamais ne se termine pas sans `-w`,
+  `-q` ou Ctrl-C : c'est la mesure (rc 124 sous `timeout`), pas un defaut.
+
+### [ss] ce que le portage d'iproute2 6.1 laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `ss-iproute2-6.1.json`, 10 labos, 520 des 531 sorties
+identiques apres normalisation) :
+- `ss -m` : `skmem` est exact au repos et pour les prises de `nc` ; la file d'emission (`w`, `o`) et
+  le `tb` auto-regle apres un vrai transfert ne sont pas modelises au-dela des valeurs au repos.
+- `net.ipv4.tcp_rmem` / `tcp_wmem` sont stockes, rendus par `sysctl` et lus par `ss -m` ; le
+  reglage automatique de la fenetre de reception n'est pas modele.
+- Prises UNIX (`ss -x`, `netstat -x`, `/proc/net/unix`) : pas de table avec inodes, pairs et
+  chemins (c'est aussi ce qui fait refuser `nc -U -l`, voir l'entree [nc]).
+- Identite de la machine simulee : `/etc/os-release` et `lsb_release` se declarent Ubuntu 22.04.4
+  alors que les outils portes suivent les enregistrements d'Ubuntu 24.04 (iproute2 6.1.0, net-tools
+  2.10, psmisc 23.7, netcat-openbsd 1.226, procps-ng 4.0.4). `PackageDatabase` et `SS_VERSION` /
+  `NET_TOOLS_VERSION` disent deja 24.04 pour ces paquets ; l'identite du systeme, elle, reste a
+  trancher (changer la version annoncee decale `uname -r`, apt et les captures existantes). Le
+  controle de congestion par defaut est Reno ici, bbr sur la machine d'enregistrement (masque dans
+  la comparaison).
+
+### [fuser] ce que le portage de psmisc 23.7 laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `fuser-psmisc-23.7.json`, 179 des 181 sorties identiques
+et le labo `fuser-parsing`, 68 pas sur 68) :
+- `fuser -k -SIGNAL` : les signaux que `LinuxProcessManager` sait delivrer sont les 12 de son union
+  `Signal` ; les autres numeros (1 a 64) sont acceptes comme sur le vrai et recoivent l'action par
+  defaut de leur classe (ignore : CHLD, URG, WINCH ; arret : TSTP, TTIN, TTOU ; sinon terminaison),
+  pas le comportement propre a chacun (dump de memoire de QUIT/SEGV, par exemple).
+- Les deux pas `fuser -vm / 2>&1 | head -3` (labos `fuser-files` et `fuser-files-none`) dependent de
+  l'environnement : sur la machine d'enregistrement `/` liste les processus de l'espace de noms
+  hote, ici ceux du simulateur. Ils sont declares non portes dans `UNPORTED_STEPS`.
+
+### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
+Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
+export / reimport JSON. Fermes avec leurs sondes : `ping` / `tracert` du switch Huawei, `shutdown` de `Vlanif` rendu par
+`display current-configuration`, port routé Cisco (`no switchport`), netplan multi-fichiers (`routes:`, `nameservers:`,
+`match:`, erreurs de grammaire), `sudo NOM=valeur`, route par defaut de `New-NetIPAddress -DefaultGateway`, levee des
+interfaces VLAN au rejeu d'un export, serveurs DNS du poste Windows dans le fichier. Restent ouverts :
+- `CiscoSwitch` a 24 ports FastEthernet et deux GigabitEthernet0/1-2 la ou le modele du tutoriel (IOSvL2) porte Gi0/0 a
+  Gi3/3 : difference de modele materiel, pas un defaut de commande. Le lab nomme ses ports d'apres le simulateur.
+- Port routé Cisco : HSRP / VRRP / GLBP sur un port routé sont refuses avec la phrase des interfaces VLAN (`valid on SVI (Vlan)
+  interfaces only`) alors qu'IOS les accepte ; `ip nat inside|outside` sur un port routé n'est pas porte ; tous les ports
+  routés et toutes les interfaces VLAN parlent avec l'adresse MAC du pont (un vrai Catalyst en donne une par port) ; le refus
+  de `switchport ...` sur un port routé est `% Invalid input detected at '^' marker.` faute d'avoir pu lire la phrase exacte
+  d'IOS (le site de la communaute Cisco est injoignable d'ici ; un fil de discussion y parle de « not a switching port »).
+- Un port routé n'existe que sur `CiscoSwitch` : `undo portswitch` de VRP n'est pas porte (un `HuaweiSwitch` partage le meme
+  `Switch`, le plan SVI est donc pret).
+- `ping` et `tracert` de VRP : le routeur rend l'IPv4 et l'IPv6 dans deux mises en page differentes (IPv4 : statistiques sur
+  une ligne ; IPv6 : retrait de quatre espaces, statistiques sur quatre lignes), alors que la meme famille de commandes VRP
+  n'en a qu'une : l'une des deux n'est pas celle de VRP. Non tranche faute de capture ou de page de documentation lisible d'ici
+  (regle 8) ; le switch partage `shells/huawei/huaweiPing.ts` avec le routeur, donc suivra la correction. Le switch refuse
+  `ping ipv6` (pas de pile IPv6 de gestion).
+- netplan 0.104 : `set-name` n'est pas applique (la definition est ignoree, jamais renommee), `match.driver` ne
+  correspond jamais, le simulateur n'imprime pas l'avertissement de depreciation de `gateway4` / `gateway6`, les routes
+  portant `table:` ou un `type:` autre que `unicast` ne sont pas appliquees, et les types non-ethernet (bonds, bridges,
+  vlans, wifis, tunnels) ne sont valides qu'en surface.
+- Un `systemctl restart systemd-networkd` demarre maintenant un client DHCP sur toute interface netplan `dhcp4: true` (c'est
+  ce que fait le vrai) : un lab qui ne veut aucun bail doit le dire par `dhcp4: false` dans son fichier.
+
+### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
+Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
+alors que `ping 10.0.0.1` aboutit et que Linux repond « Connection refused ». Le rejeu des labos
+pose donc l'adresse sur `eth0`. Meme famille : `nc -s 10.0.0.2 127.0.0.1 9000` (source locale non
+loopback vers 127.0.0.1) expire chez nous, aboutit sur Linux (2 pas declares non portes).
+
+### [nano] navigateur de fichiers (`^T` dans `^R`, `^O`, `M-F`)
+La barre d'invite annonce `^T Browse` comme nano mais le navigateur n'existe pas : la touche est
+ignoree. Vu en mesurant : `nano-tools-oracle.test.ts` (3 cas du corpus), `nano-colors-oracle.test.ts`
+(col3-20, col3-28, col3-173). Lu dans `browser.c` de nano 7.2 (pas encore mesure sur le binaire) :
+`browse` / `read_the_list` / `browser_refresh` (liste triee mise en colonnes, largeur du plus long
+nom, taille ou « (dir) » affichee), `goto_dir`, recherche `findfile` / `search_filename`, `to_first_file`
+/ `to_last_file`, pages, fleches, mots et blocs, aide propre au navigateur, `^X` pour en sortir, Entree
+sur un dossier (qu'on entre) ou sur un fichier (qui revient dans l'invite). Brique a ecrire dans le
+moteur d'invites ; elle sert les trois invites de fichier.
+
+### [nano] « File was modified since you opened it »
+Non porte : le moteur ne compare pas la date de modification du fichier a celle qu'il a relevee a
+l'ouverture. La brique existe maintenant (`EditorFsContext.modificationStamp`, ajoutee pour
+« Nothing changed » du formateur) ; reste a la relever a l'ouverture et a la relire a
+l'ecriture (`write_it_out` pose la question « File was modified since you opened it; continue
+saving? »). Aussi `rnano` (nom du programme = mode restreint) : le lanceur ne l'aiguille pas.
+
+### [nano] annulation : « Undid insertion », `und3-175`, `un24-6`
+Cas de `nano-undo-oracle.test.ts` (UNPORTED_CASES : und3-175, un24-6) et de `nano-insert-oracle.test.ts` :
+- `und3-175` : avec `-k`, nano 7.2 annule une justification en laissant un tampon VIDE (le texte est
+  perdu). Defaut du binaire, volontairement NON reproduit.
+- `un24-6` : frappe au milieu d'une ligne deja trop longue avec `-b` : nano coupe a un autre
+  blanc que le moteur ; pas encore analyse.
+- « Undid insertion » : l'annulation de l'insertion d'un fichier (`^R`) porte le nom propre a ce
+  genre d'action chez nano 7.2 ; le moteur dit « Undid action » (ASSESSMENT, ligne `^R`).
+- L'insertion d'un FIFO par `^R` (nano lit jusqu'a la fin du flux).
+
+### [nano] recherche : ce qu'une regex POSIX fait et que JavaScript ne fait pas
+`-Q` et `M-R` passent par `CompiledEre` (`PosixEre`). Restent : la semantique POSIX des groupes de
+capture sous un quantificateur (derniere iteration, groupe non participant vide : celle de
+JavaScript est appliquee), `\c` sous `REG_ICASE` (defaut de la glibc), `[[:alpha:]]` et les classes
+par categories Unicode, les decalages en octets de nano (UTF-16 ici : seul le point de depart de
+la recherche arriere sur une fin de ligne multi-octet peut differer, `sea3-96` blanc d'une
+correspondance vide sur un caractere large apres un remplacement), l'indicateur « Searching... »
+des recherches longues, les touches tapees pendant la pause de 600 ms de « Key is invalid in view
+mode » (le rejeu n'a pas de file d'attente).
+
+### [nano] touches : touches modifiees, redimensionnement pendant l'aide, `rawsequences`
+- `F1`-`F12` sont portees d'apres `global.c` de nano 7.2 (`NanoKeyAliases` : F1 aide, F2 quitter, F3 ecrire,
+  F4 justifier, F5 lire, F6 chercher, F7/F8 pages, F9 couper, F10 coller, F11 position, F12 correcteur ;
+  dans une invite seulement F1 F9 F10, dans l'aide F1 F2 F6 F7 F8) mais NON rejouees : tmux envoie pour
+  ces touches des sequences que ncurses coupe (« Unbound key: 1 »), le corpus ne peut pas les enregistrer.
+- Les touches modifiees dont tmux envoie des sequences que ncurses coupe ne sont pas rejouees non plus.
+- Quand la fenetre change de taille pendant l'aide, nano redecoupe le texte de l'aide ; le moteur
+  garde le decoupage de l'ouverture.
+- `rawsequences` (`-K`) : lu, jamais evalue (touches Home/End des terminaux xterm / linux).
+
+### [navigateur] Ctrl+W, Ctrl+T et Ctrl+N ne parviennent pas a la page
+Chrome, Edge, Firefox et Safari gardent pour eux Ctrl+W (fermer l'onglet), Ctrl+T (en ouvrir un) et Ctrl+N
+(fenetre), hors plein ecran : `preventDefault` n'y peut rien. Dans nano, `^W` (Chercher), `^T` (Executer) et
+`^N` (ligne suivante) sont donc inatteignables au clavier dans un onglet ordinaire, alors que la barre les
+annonce. Ce qui est fait : la barre est cliquable (`barShortcutAt`), `F6` chercher (`NanoKeyAliases`),
+`navigator.keyboard.lock(['KeyW','KeyT','KeyN'])` demande a l'ouverture (ne vaut qu'en plein ecran, Chrome
+et Edge seulement). Reste : `^T` n'a aucune alternative clavier dans nano lui-meme ; aucune mesure dans un
+vrai navigateur (jsdom ne ferme pas d'onglet), a verifier a la main en plein ecran.
+
+### [nano] caracteres non enregistres
+Les corpus contiennent des accents precomposes (`é`, `café`) et du chinois (`中文`, largeur 2, avec
+des tabulations) mais PAS : les emoji hors du plan de base, les caracteres combinants et de largeur
+nulle (le recorder sait les compter, `cell_width`, aucun texte n'en contient), les octets UTF-8
+invalides, ni les caracteres de controle hors tabulation. Le moteur n'est donc ni valide ni
+refute sur ces textes : a enregistrer avant de pretendre que le rendu y est fidele.
+
+### [nano] `~` dans les invites de fichier
+Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
+developpe `~/x` avec le HOME du processus (`real_dir_from_tilde`, que
+`get_full_path` appelle aussi : c'est la cle de `filepos_history`) et complete
+`~util` avec `/etc/passwd` (`username_completion`). `EditorFsContext` porte
+maintenant le HOME (`environmentVariable('HOME')`, et `homeDirectory()` pour
+l'entree de passwd ; `nanoHomeDirectory` choisit entre les deux comme
+`get_homedir`) mais le moteur traite encore `~` comme un nom ordinaire : aucune
+completion, aucun developpement, y compris a l'ouverture d'un fichier.
+**Report** : brancher `nanoHomeDirectory` sur `fullPathOf` et sur les invites,
+et ajouter a `EditorFsContext` l'acces a la table des comptes pour `~util`.
+
 ---
 
 ### [terminal] Ctrl-C ne libere le terminal que pour les clients declares `foregroundClient`
@@ -3757,7 +4005,7 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 Les trois bancs passent en entier ; restent mesures et non fermes :
 - `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
-- Les constructeurs de contexte d'E/S existent en double : `ScriptRunner.runScriptContent*` et le chemin `bash` de l'executeur.
+- `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
 - Un alias defini et utilise sur la meme ligne est deja developpe (bash ne le voit qu'a la ligne suivante).
 - `extglob` est toujours accepte par le lexeur, que `shopt -s extglob` ait ete tape ou non.
 - Les erreurs de syntaxe a l'interieur de `$(...)`, de `<(...)` et d'un `eval` imbrique passent encore par `BashParser.parse` (exception) : aucune commande qui precede n'est executee, contrairement a bash.
@@ -3767,3 +4015,7 @@ Les trois bancs passent en entier ; restent mesures et non fermes :
 ### [find-grammaire] find n'a pas la grammaire d'expressions de findutils
 
 `find` (LinuxSearchCommands.cmdFind) accepte `-perm` octal (`N`, `-N`, `/N`) et `-xdev` depuis le script d'audit lecture seule, mais ignore toujours en silence les predicats qu'il ne connait pas (`-o`, `-a`, parentheses, `-printf`, `-ls`, `-links`, `-regex`, `-perm` symbolique `u+x`, `-exec ... +`). Un critere ignore rend la recherche plus large que ce que l'operateur a ecrit ; a fermer en portant l'arbre d'expressions de findutils et en refusant l'inconnu avec `find: unknown predicate`.
+
+### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
+
+Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.

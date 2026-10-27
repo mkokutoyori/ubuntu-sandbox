@@ -351,7 +351,7 @@ const SU_TTY = `/dev/${SU_TTY_NAME}`;
 const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
 
 function parseSudoLead(args: readonly string[]): {
-  flags: Set<string>; user: string | null; rest: string[];
+  flags: Set<string>; user: string | null; environment: Record<string, string>; rest: string[];
 } {
   const flags = new Set<string>();
   let user: string | null = null;
@@ -366,7 +366,8 @@ function parseSudoLead(args: readonly string[]): {
       i += 2;
     } else break;
   }
-  return { flags, user, rest: args.slice(i) };
+  const { assigned, rest } = leadingAssignments(args.slice(i));
+  return { flags, user, environment: assigned, rest };
 }
 
 const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
@@ -376,6 +377,20 @@ const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
+
+const NEVER_READ_STDIN: ReadonlySet<string> = new Set([
+  'mkdir', 'rmdir', 'rm', 'mv', 'cp', 'ln', 'touch', 'chmod', 'chown', 'chgrp', 'ls', 'stat', 'umask', 'cd', 'pwd', 'sleep', 'id', 'whoami',
+  'date', 'hostname', 'uname', 'df', 'du', 'free', 'ps', 'kill', 'which', 'whereis', 'find', 'basename', 'dirname', 'realpath', 'readlink',
+  'mktemp', 'ip', 'ss', 'netstat', 'ping', 'echo', 'true', 'false', 'test', '[', 'type', 'command', 'uptime', 'who', 'last', 'getent',
+  'systemctl', 'journalctl', 'restorecon',
+]);
+
+function ignoresStandardInput(argv: readonly string[]): boolean {
+  const command = (argv[0] ?? '').split('/').pop() ?? '';
+  if (NEVER_READ_STDIN.has(command)) return true;
+  const known = ALWAYS_READ_STDIN.has(command) || READ_STDIN_WITHOUT_OPERAND.has(command) || READ_STDIN_WITH_ONE_OPERAND.has(command);
+  return known && !readsStandardInput(command, argv.slice(1));
+}
 
 function readsStandardInput(command: string, args: readonly string[]): boolean {
   if (ALWAYS_READ_STDIN.has(command)) return true;
@@ -4664,7 +4679,7 @@ export class LinuxCommandExecutor {
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext()));
     }
     return { output: '', exitCode: 0 };
   }
@@ -4710,7 +4725,7 @@ export class LinuxCommandExecutor {
     if (!canExec) return { output: `${cmd}: Permission denied`, exitCode: 126 };
     const commandLine = ['/bin/bash', absPath, ...args].join(' ');
     return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
-      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity, this.buildIOContext()));
   }
 
   private shippedBinaryInvocation(argv: string[]): string[] {
@@ -4780,6 +4795,7 @@ export class LinuxCommandExecutor {
       const readsStdinPassword = lead.flags.has('S');
       const sudoTargetUser = lead.user;
       cmdArgs = lead.rest;
+      if (Object.keys(lead.environment).length > 0) this._cmdEnv = { ...(this._cmdEnv ?? Object.fromEntries(this.env)), ...lead.environment };
       const shellRequested = lead.flags.has('i') || lead.flags.has('s');
       if (cmdArgs.length === 0 && !shellRequested) {
         return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
@@ -5279,6 +5295,7 @@ export class LinuxCommandExecutor {
         const job = this.jobTable.findByPid(pid);
         return job === undefined ? null : `[${job.id}] ${pid}`;
       },
+      ignoresStdin: (argv: readonly string[]) => ignoresStandardInput(argv),
       beginBackgroundSubshell: (label: string) => this.beginBackgroundSubshell(label),
       endBackgroundSubshell: (pid, outcome) => this.endBackgroundSubshell(pid, outcome),
       holdBackgroundStdin: (pid: number, path: string) => {
@@ -6292,7 +6309,7 @@ export class LinuxCommandExecutor {
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext()));
         }
         if (stdin !== undefined && stdin !== '') {
           return this.runScriptProcess(cmd, (identity, bridge) =>
@@ -6869,7 +6886,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.getType(absPath) === 'directory') return { output: `${shellName}${cmd}: Is a directory`, exitCode: 126 };
           const commandLine = ['/bin/bash', absPath, ...args].join(' ');
           return this.runScriptProcess(commandLine, (identity, bridge) =>
-            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
+            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext()));
         }
 
         // `stdin` was popped off `args` above for the switch cases here that
@@ -9105,6 +9122,17 @@ function checksumVfs(content: string, cmd: string): string {
   if (cmd === 'sha256sum') return bytesToHex(sha256(bytes));
   if (cmd === 'sha1sum') return bytesToHex(sha1(bytes));
   return bytesToHex(md5(bytes));
+}
+
+function leadingAssignments(argv: string[]): { assigned: Record<string, string>; rest: string[] } {
+  const assigned: Record<string, string> = {};
+  let index = 0;
+  for (; index < argv.length; index++) {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(argv[index]);
+    if (match === null) break;
+    assigned[match[1]] = match[2];
+  }
+  return { assigned, rest: argv.slice(index) };
 }
 
 function basenameOf(path: string): string {

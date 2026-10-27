@@ -304,7 +304,7 @@ describe('Scénario 6 — DHCP piloté par fichier', () => {
     await redemarrer();
 
     expect(await pc.executeCommand('sudo journalctl -u systemd-networkd'))
-      .not.toContain('DHCPv4 client started');
+      .not.toContain('eth0: DHCPv4 client started');
   }, LONG);
 });
 

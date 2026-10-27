@@ -34,6 +34,7 @@ import {
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
+import { parseHuaweiPing, parseHuaweiTracert, formatHuaweiPing, formatHuaweiTracert } from './huawei/huaweiPing';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
 import { vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 import { getCredentialStore } from '@/network/equipment/RouterServiceCapabilities';
@@ -274,6 +275,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private selectedAclType: 'basic' | 'adv' = 'basic';
 
   private swRef: HuaweiSwitchDevice | null = null;
+
+  private pendingAsync: Promise<string> | null = null;
 
   /** Le magasin unique de l'etat `debugging` de ce switch. */
   private debugService(): HuaweiDebugService | null {
@@ -712,7 +715,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Main Execute ─────────────────────────────────────────────────
 
-  execute(sw: Switch, input: string): string {
+  execute(sw: Switch, input: string): string | Promise<string> {
     const trimmed = input.trim();
     if (!trimmed) return '';
     if (this.peerKeys.isEditing()) {
@@ -807,6 +810,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
 
     this.swRef = null;
+    if (this.pendingAsync) {
+      const asyncOutput = this.pendingAsync;
+      this.pendingAsync = null;
+      return filter ? asyncOutput.then((text) => applyPipeFilter(text, filter)) : asyncOutput;
+    }
     // Apply the pipe filter only to successful output (errors pass through).
     return filter && !output.startsWith('Error:')
       ? applyPipeFilter(output, filter)
@@ -2252,7 +2260,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'interface';
         this.selectedInterface = membre;
         const sortie = this.execute(sw, input);
-        if (sortie.trim()) sorties.push(sortie);
+        if (typeof sortie === 'string' && sortie.trim()) sorties.push(sortie);
       }
     } finally {
       this.mode = modeAvant;
@@ -3123,12 +3131,51 @@ export class HuaweiSwitchShell implements ISwitchShell {
     ]);
   }
 
+  private registerEchoCommands(trie: CommandTrie): void {
+    trie.registerGreedy('ping', 'Send ICMP echo messages', (args, line) => this.handlePing(args, line));
+    trie.registerGreedy('tracert', 'Trace route to destination', (args, line) => this.handleTracert(args, line));
+  }
+
+  private refuseIpv6Echo(args: readonly string[], line: string | undefined, ipv6: boolean): string | null {
+    if (!ipv6) return null;
+    const text = line ?? args.join(' ');
+    const position = args[0]?.toLowerCase() === 'ipv6' ? text.toLowerCase().indexOf('ipv6') : text.length - 1;
+    return HUAWEI_ERRORS.UNRECOGNIZED(text, Math.max(position, 0));
+  }
+
+  private handlePing(args: string[], line: string | undefined): string {
+    const sw = this.swRef;
+    if (!sw) return '';
+    const request = parseHuaweiPing(args);
+    if (typeof request === 'string') return request;
+    const refusal = this.refuseIpv6Echo(args, line, request.ipv6);
+    if (refusal !== null) return refusal;
+    const { target, count, timeoutMs, sourceIP } = request;
+    this.pendingAsync = sw.executePingSequence(new IPAddress(target), count, timeoutMs, sourceIP ?? undefined)
+      .then((results) => formatHuaweiPing(target, count, results));
+    return '';
+  }
+
+  private handleTracert(args: string[], line: string | undefined): string {
+    const sw = this.swRef;
+    if (!sw) return '';
+    const request = parseHuaweiTracert(args);
+    if (typeof request === 'string') return request;
+    const refusal = this.refuseIpv6Echo(args, line, request.ipv6);
+    if (refusal !== null) return refusal;
+    const { target, maxHops, timeoutMs, probesPerHop } = request;
+    this.pendingAsync = sw.executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop)
+      .then((hops) => formatHuaweiTracert(target, maxHops, hops));
+    return '';
+  }
+
   /**
    * VRP lifecycle / management commands common to every view + the
    * router shell (save, reboot, reset, commit, screen-length, header).
    * Single source via huawei/HuaweiCommonConfig (DRY).
    */
   private registerCommonMgmt(trie: CommandTrie): void {
+    this.registerEchoCommands(trie);
     registerHuaweiCommonMgmt(
       trie,
       { service: () => this.debugService(), platform: 'switch' },
@@ -4658,6 +4705,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const svi of svis) {
         const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
+        if (!svi.adminUp) lines.push(' shutdown');
         if (svi.dhcpClient) lines.push(' ip address dhcp-alloc');
         else if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {

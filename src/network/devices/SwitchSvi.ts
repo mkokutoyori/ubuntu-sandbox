@@ -19,6 +19,7 @@ import {
 import { Logger } from '../core/Logger';
 import type { IEventBus } from '../../events/EventBus';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+import type { TracerouteHop, TracerouteProbe } from './Router';
 import {
   echoDataBytesForDatagram, CISCO_ECHO_DATAGRAM_BYTES,
 } from '../icmp/IcmpEcho';
@@ -56,6 +57,11 @@ export interface SviInterface {
   helperAddresses: string[];
   dhcpClient?: boolean;
   arpTimeoutSec?: number | null;
+  routedPort?: string;
+}
+
+export function sviLabel(svi: SviInterface): string {
+  return svi.routedPort ?? `Vlanif${svi.vlan}`;
 }
 
 /** The minimal surface the SVI plane needs from its hosting switch. */
@@ -151,6 +157,7 @@ export class SwitchSvi {
   private pingId = 0;
   /** Inbound echo-replies observed during the current in-flight probe. */
   private pendingReply: { id: number; seq: number; fromIp: string; ttl: number } | null = null;
+  private pendingError: { id: number; fromIp: string; unreachable: boolean } | null = null;
 
   constructor(private readonly host: SviHost) {}
 
@@ -171,6 +178,16 @@ export class SwitchSvi {
     let svi = this.svis.get(vlan);
     if (!svi) { svi = { vlan, adminUp: false, helperAddresses: [] }; this.svis.set(vlan, svi); }
     return svi;
+  }
+
+  ensureRouted(vlan: number, portName: string): SviInterface {
+    const svi: SviInterface = { vlan, adminUp: true, helperAddresses: [], routedPort: portName };
+    this.svis.set(vlan, svi);
+    return svi;
+  }
+
+  remove(vlan: number): void {
+    this.svis.delete(vlan);
   }
 
   /** Append a DHCP relay target on `vlan`'s SVI (idempotent). */
@@ -248,7 +265,7 @@ export class SwitchSvi {
       rows.push({
         network: svi.ip.networkAddress(svi.mask),
         mask: svi.mask,
-        iface: `Vlanif${svi.vlan}`,
+        iface: sviLabel(svi),
         proto: 'connected',
       });
     }
@@ -259,7 +276,7 @@ export class SwitchSvi {
         mask: r.mask,
         nextHop: r.nextHop,
         preference: r.preference,
-        iface: egress ? `Vlanif${egress.vlan}` : '-',
+        iface: egress ? sviLabel(egress) : '-',
         proto: 'static',
       });
     }
@@ -431,6 +448,14 @@ export class SwitchSvi {
               id: icmp.id, seq: icmp.sequence,
               fromIp: workingIp.sourceIP.toString(), ttl: workingIp.ttl,
             };
+          } else if (icmp?.icmpType === 'time-exceeded' || icmp?.icmpType === 'destination-unreachable') {
+            const quoted = icmp.originalPacket?.payload as ICMPPacket | undefined;
+            if (quoted?.type === 'icmp') {
+              this.pendingError = {
+                id: quoted.id, fromIp: workingIp.sourceIP.toString(),
+                unreachable: icmp.icmpType === 'destination-unreachable',
+              };
+            }
           }
         } else if (workingIp.protocol === IP_PROTO_TCP) {
           const claimed = this.host.deliverLocalTcp?.(
@@ -683,9 +708,11 @@ export class SwitchSvi {
         if (s.adminUp && s.ip?.toString() === sourceIPStr) { svi = s; break; }
       }
     }
-    svi ??= this.egressSviFor(target);
+    const route = this.lookupRoute(target);
+    svi ??= route?.egress ?? this.egressSviFor(target);
     if (!svi || !svi.ip) return [];
     const selfIp = svi.ip;
+    const nextHop = route !== null && route.egress === svi ? route.nextHop : target;
 
     // Self-ping: every SVI address answers immediately.
     for (const s of this.svis.values()) {
@@ -703,7 +730,7 @@ export class SwitchSvi {
       }
     }
 
-    const targetMac = this.resolveArp(svi.vlan, selfIp, target);
+    const targetMac = this.resolveArp(svi.vlan, selfIp, nextHop);
     if (!targetMac) return []; // ARP failed → unreachable
 
     const results: CiscoPingRow[] = [];
@@ -753,10 +780,10 @@ export class SwitchSvi {
     return this.host.lookupArp(target.toString());
   }
 
-  private sendEcho(
-    vlan: number, selfIp: IPAddress, target: IPAddress, targetMac: MACAddress, seq: number,
-    hooks?: EchoHooks,
-  ): CiscoPingRow {
+  private emitEcho(
+    vlan: number, selfIp: IPAddress, target: IPAddress, nextHopMac: MACAddress, seq: number,
+    ttl: number, hooks?: EchoHooks,
+  ): number {
     const id = (this.pingId = (this.pingId + 1) & 0xffff);
     const dataSize = echoDataBytesForDatagram(
       hooks?.sizeBytes ?? CISCO_ECHO_DATAGRAM_BYTES);
@@ -764,22 +791,74 @@ export class SwitchSvi {
       type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize,
     };
     const ipPkt = createIPv4Packet(
-      selfIp, target, IP_PROTO_ICMP, 255, icmp, 8 + dataSize);
+      selfIp, target, IP_PROTO_ICMP, ttl, icmp, 8 + dataSize);
     if (hooks?.tos) ipPkt.tos = hooks.tos;
     if (hooks?.df) ipPkt.flags |= IPV4_FLAG_DF;
     this.pendingReply = null;
+    this.pendingError = null;
 
     this.host.egressOnVlan(vlan, {
-      srcMAC: this.host.getBridgeMac(), dstMAC: targetMac,
+      srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
+    return id;
+  }
 
+  private sendEcho(
+    vlan: number, selfIp: IPAddress, target: IPAddress, targetMac: MACAddress, seq: number,
+    hooks?: EchoHooks,
+  ): CiscoPingRow {
+    const id = this.emitEcho(vlan, selfIp, target, targetMac, seq, 255, hooks);
     const reply = this.pendingReply;
     this.pendingReply = null;
     if (reply && reply.id === id && reply.seq === seq) {
       return { success: true, rttMs: 1, ttl: reply.ttl, seq, fromIP: reply.fromIp };
     }
     return { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
+  }
+
+  /**
+   * Trace the path to `target` from the management SVIs: one echo per probe with a TTL that grows by one per hop,
+   * answered by a time-exceeded from each router on the way and by an echo reply from the destination.
+   */
+  async executeTraceroute(
+    target: IPAddress, maxHops = 30, _timeoutMs = 2000, probesPerHop = 3, firstTtl = 1,
+  ): Promise<TracerouteHop[]> {
+    const route = this.lookupRoute(target);
+    if (!route || !route.egress.ip) return [];
+    const selfIp = route.egress.ip;
+    const nextHopMac = this.resolveArp(route.egress.vlan, selfIp, route.nextHop);
+    if (!nextHopMac) return [{ hop: 1, timeout: true, probes: [{ responded: false }] }];
+
+    const hops: TracerouteHop[] = [];
+    for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
+      const probes: TracerouteProbe[] = [];
+      let reached = false;
+      for (let p = 0; p < probesPerHop; p++) {
+        const id = this.emitEcho(route.egress.vlan, selfIp, target, nextHopMac, p + 1, ttl);
+        const reply = this.pendingReply;
+        const error = this.pendingError;
+        this.pendingReply = null;
+        this.pendingError = null;
+        if (reply && reply.id === id) {
+          probes.push({ responded: true, rttMs: 1, ip: reply.fromIp });
+          reached = true;
+        } else if (error && error.id === id) {
+          probes.push({ responded: true, rttMs: 1, ip: error.fromIp, unreachable: error.unreachable });
+        } else {
+          probes.push({ responded: false });
+        }
+      }
+      const firstResponded = probes.find((probe) => probe.responded);
+      const firstUnreachable = probes.find((probe) => probe.unreachable);
+      hops.push({
+        hop: ttl, ip: firstResponded?.ip, rttMs: firstResponded?.rttMs,
+        timeout: firstResponded === undefined, unreachable: firstUnreachable !== undefined, probes,
+      });
+      if (reached || firstUnreachable !== undefined) break;
+      await yieldWhenSliceIsSpent();
+    }
+    return hops;
   }
 
   private sendArpReply(vlan: number, selfIp: IPAddress, req: ARPPacket): void {
@@ -823,10 +902,14 @@ export class SwitchSvi {
     vlan: number, selfIp: IPAddress, reqIp: IPv4Packet, reqIcmp: ICMPPacket,
   ): void {
     const ipPkt = buildEchoReply(reqIp, reqIcmp, selfIp, 255);
-    const targetMac = this.host.lookupArp(ipPkt.destinationIP.toString());
-    this.host.egressOnVlan(vlan, {
+    const route = this.lookupRoute(ipPkt.destinationIP);
+    const egressVlan = route?.egress.vlan ?? vlan;
+    const nextHopMac = route !== null && route.egress.ip !== undefined
+      ? this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop)
+      : this.host.lookupArp(ipPkt.destinationIP.toString());
+    this.host.egressOnVlan(egressVlan, {
       srcMAC: this.host.getBridgeMac(),
-      dstMAC: targetMac ?? MACAddress.broadcast(),
+      dstMAC: nextHopMac ?? MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
   }
