@@ -54,6 +54,7 @@ export interface ShellContext {
   openRefusal?: (absPath: string) => string | null;
   zone?: string;
   nowMs?: () => number;
+  deviceOf?: (absPath: string) => number;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {

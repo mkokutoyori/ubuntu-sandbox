@@ -393,7 +393,7 @@ export class VirtualFileSystem {
       '\n' +
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
-      0o666, 0, 0);
+      0o644, 0, 0);
     this.createFileAt(GAI_CONF_PATH, GAI_CONF_FACTORY, 0o644, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
@@ -1672,6 +1672,9 @@ export class VirtualFileSystem {
     mindepth?: number;
     /** If true, every individual predicate is logically negated (-not). */
     not?: boolean;
+    perm?: { kind: 'exact' | 'all' | 'any'; mode: number };
+    device?: number;
+    deviceOf?: (absPath: string) => number;
   } = {}): string[] {
     const results: string[] = [];
     this._findRecursive(startPath, startPath, 0, options, results);
@@ -1689,6 +1692,7 @@ export class VirtualFileSystem {
     if (!inode) return;
 
     if (options.maxdepth !== undefined && depth > options.maxdepth) return;
+    if (options.deviceOf !== undefined && options.deviceOf(path) !== options.device) return;
 
     const baseMatches = this._matchesFindCriteria(path, inode, options);
     const matches = options.not ? !baseMatches : baseMatches;
@@ -1723,6 +1727,14 @@ export class VirtualFileSystem {
 
     if (options.empty && inode.type === 'file' && inode.size > 0) return false;
     if (options.empty && inode.type === 'directory' && inode.children.size > 2) return false;
+
+    if (options.perm !== undefined) {
+      const bits = inode.permissions & 0o7777;
+      const { kind, mode } = options.perm;
+      if (kind === 'exact' && bits !== mode) return false;
+      if (kind === 'all' && (bits & mode) !== mode) return false;
+      if (kind === 'any' && mode !== 0 && (bits & mode) === 0) return false;
+    }
 
     if (options.user !== undefined && inode.uid !== options.user) return false;
     if (options.group !== undefined && inode.gid !== options.group) return false;

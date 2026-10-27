@@ -39,6 +39,9 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   let execCmd: string | undefined;
   let size: { op: '+' | '-' | '='; value: number } | undefined;
   let maxdepth: number | undefined;
+  let perm: { kind: 'exact' | 'all' | 'any'; mode: number } | undefined;
+  let xdev = false;
+  let argumentError: string | null = null;
   let mindepth: number | undefined;
   let notNext = false;
   let notFlag = false;
@@ -104,6 +107,14 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
         if (spec) size = spec;
         break;
       }
+      case '-perm': {
+        const operand = args[++i] ?? '';
+        const parsed = /^([-/]?)([0-7]{1,4})$/.exec(operand);
+        if (parsed === null) { argumentError = `find: Invalid mode '${operand}'`; break; }
+        perm = { kind: parsed[1] === '-' ? 'all' : parsed[1] === '/' ? 'any' : 'exact', mode: parseInt(parsed[2], 8) };
+        break;
+      }
+      case '-xdev': case '-mount': xdev = true; break;
       case '-maxdepth': maxdepth = parseInt(args[++i], 10); break;
       case '-mindepth': mindepth = parseInt(args[++i], 10); break;
       case '-print': printFlag = true; break;
@@ -148,6 +159,7 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   }
 
   if (timeError !== null) return timeError;
+  if (argumentError !== null) return argumentError;
   const absStart = ctx.vfs.normalizePath(startPath, ctx.cwd);
 
   const opts: any = {};
@@ -160,6 +172,8 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   if (timeTests.length > 0) opts.timeTests = timeTests;
   if (size) opts.size = size;
   if (maxdepth !== undefined) opts.maxdepth = maxdepth;
+  if (perm) opts.perm = perm;
+  if (xdev && ctx.deviceOf) { opts.device = ctx.deviceOf(absStart); opts.deviceOf = ctx.deviceOf; }
   if (mindepth !== undefined) opts.mindepth = mindepth;
   if (notFlag) opts.not = true;
   if (user) {
@@ -188,11 +202,8 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   // Convert to relative paths from startPath
   const displayResults = results.map(r => {
     if (startPath.startsWith('/')) return r;
-    const cwdPrefix = ctx.cwd === '/' ? '/' : ctx.cwd + '/';
-    if (r.startsWith(cwdPrefix)) {
-      return r.slice(cwdPrefix.length);
-    }
-    return r;
+    const typed = startPath.replace(/\/+$/, '') || '/';
+    return r === absStart ? typed : `${typed === '/' ? '' : typed}${r.slice(absStart === '/' ? 0 : absStart.length)}`;
   });
 
   if (execCmd) {

@@ -565,7 +565,7 @@ function versionCompare(a: string, b: string): number {
   return 0;
 }
 
-function expandShortOptionClusters(args: readonly string[], withValue: string): string[] {
+export function expandShortOptionClusters(args: readonly string[], withValue: string): string[] {
   const expanded: string[] = [];
   for (const arg of args) {
     if (!/^-[A-Za-z]{2,}/.test(arg)) {

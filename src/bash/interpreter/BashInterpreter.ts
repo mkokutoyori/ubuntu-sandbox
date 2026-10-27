@@ -247,7 +247,7 @@ export class BashInterpreter {
   private io: IOContext | null;
   private log = new OutputLog();
   /** Set by a bare `exec >> file 2>> errfile` — see runProgram. */
-  private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
+  private execRedirect: { stdout?: { path: string; append: boolean; pipe?: string }; stderr?: { path: string; append: boolean }; mergeStderr?: boolean; from: number } | null = null;
   private stdin: StdinSource | null = null;
   private readonly fdOutputs = new Map<number, Sink>();
   private readonly fdInputs = new Map<number, StdinSource>();
@@ -440,16 +440,25 @@ export class BashInterpreter {
     yield* this.fireExitTrap();
     const stderr = this.log.stream(2);
     if (this.execRedirect && this.io) {
+      const { before, after } = this.log.split(this.execRedirect.from);
       const excluded = new Set<1 | 2>();
+      let piped = '';
       if (this.execRedirect.stdout) {
-        this.io.writeFile(this.execRedirect.stdout.path, this.log.stream(1), this.execRedirect.stdout.append);
+        const { path, append, pipe } = this.execRedirect.stdout;
+        const written = this.execRedirect.mergeStderr
+          ? after.entries().map((chunk) => (chunk.newline === 'never' ? chunk.text : ensureTrailingNewline(chunk.text))).join('')
+          : after.stream(1);
+        this.io.writeFile(path, written, append);
         excluded.add(1);
+        if (this.execRedirect.mergeStderr) excluded.add(2);
+        if (pipe !== undefined) piped = yield* this.subcommandG(`${pipe} < ${path}`);
       }
       if (this.execRedirect.stderr) {
-        this.io.writeFile(this.execRedirect.stderr.path, stderr, this.execRedirect.stderr.append);
+        this.io.writeFile(this.execRedirect.stderr.path, after.stream(2), this.execRedirect.stderr.append);
         excluded.add(2);
       }
-      return { output: this.log.terminal(excluded), exitCode: this.env.lastExitCode, stderr: excluded.has(2) ? '' : stderr };
+      const remaining = excluded.has(2) ? before.stream(2) : stderr;
+      return { output: before.terminal() + after.terminal(excluded) + piped, exitCode: this.env.lastExitCode, stderr: remaining };
     }
     return { output: this.log.terminal(), exitCode: this.env.lastExitCode, stderr };
   }
@@ -1038,7 +1047,8 @@ export class BashInterpreter {
   private *runSimpleCommand(rawNode: SimpleCommand): Effects<void> {
     if (rawNode.position !== undefined) this.currentLine = rawNode.position.line;
     yield* this.fireSignalTrap('DEBUG');
-    const node = this.materializeProcSubs(rawNode);
+    const bareExec = rawNode.words.length === 1 && literalHeadName(rawNode) === 'exec';
+    const node = bareExec ? rawNode : this.materializeProcSubs(rawNode);
     this.lastSubstitutionStatus = null;
     if (!this.interactive && isShellOptionEnabled(this.env, 'noexec')) return;
 
@@ -1539,8 +1549,17 @@ export class BashInterpreter {
    */
   private *applyExecRedirections(redirections: Redirection[]): Effects<void> {
     for (const redir of redirections) {
+      if (redir.target.type === 'ProcessSubstitution' && redir.target.direction === 'out' && (redir.op === '>' || redir.op === '>>') && (redir.fd ?? 1) === 1) {
+        this.execRedirect ??= { from: this.log.entries().length };
+        this.execRedirect.stdout = { path: this.allocateProcSubPath(), append: false, pipe: redir.target.command };
+        continue;
+      }
       const target = yield* this.expandWordG(redir.target);
       const fd = redir.fd ?? (redir.op === '<' || redir.op === '<&' ? 0 : 1);
+      if (redir.op === '>&' && fd === 2 && target === '1' && this.execRedirect?.stdout !== undefined) {
+        this.execRedirect.mergeStderr = true;
+        continue;
+      }
       if (redir.op === '<' && fd >= 3) {
         const content = this.io?.readFile(this.absolutePath(target));
         if (content == null) {
@@ -1564,7 +1583,7 @@ export class BashInterpreter {
         this.fdOutputs.set(fd, { kind: 'file', path });
         continue;
       }
-      this.execRedirect ??= {};
+      this.execRedirect ??= { from: this.log.entries().length };
       if (fd === 2) this.execRedirect.stderr = { path, append };
       else this.execRedirect.stdout = { path, append };
     }

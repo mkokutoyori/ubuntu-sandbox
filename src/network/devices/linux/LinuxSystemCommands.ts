@@ -2,6 +2,7 @@ import type { ShellContext } from './LinuxFileCommands';
 import type { MemoryProfile, StorageDevice } from '../host/hardware';
 import type { MountEntry } from './MountTable';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { expandShortOptionClusters } from './LinuxTextCommands';
 
 export interface DfContext extends ShellContext {
   mounts: readonly MountEntry[];
@@ -159,7 +160,8 @@ function dfTableAll(ctx: DfContext): DfEntry[] {
   return ctx.mounts.map((e) => dfRow(ctx, e, sizes.get(e.source)));
 }
 
-export function cmdDf(ctx: DfContext, args: string[]): string {
+export function cmdDf(ctx: DfContext, rawArgs: string[]): string {
+  const args = expandShortOptionClusters(rawArgs, 'txB');
   const human = args.includes('-h') || args.includes('--human-readable');
   const inodes = args.includes('-i');
   let showType = args.includes('-T') || args.includes('--print-type');
@@ -174,7 +176,6 @@ export function cmdDf(ctx: DfContext, args: string[]): string {
     if (a === '-x' || a === '--exclude-type') { excludeTypes.push(args[++i] ?? ''); continue; }
     if (a.startsWith('-')) {
       if (!['-h', '--human-readable', '-i', '-T', '--print-type', '-a', '--all', '-H', '-k', '-m', '-l', '--local', '-P', '--portability', '-B', '--block-size'].includes(a)) {
-        if (/^-h+$/.test(a) && a.length > 2) return `df: invalid option -- '${a.slice(1)}'`;
         return `df: invalid option -- '${a.replace(/^-+/, '')}'`;
       }
       continue;

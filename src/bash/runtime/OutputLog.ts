@@ -18,6 +18,13 @@ export class OutputLog {
     if (text !== '') this.chunks.push({ fd, text, newline, ambiguous });
   }
 
+  split(index: number): { before: OutputLog; after: OutputLog } {
+    const before = new OutputLog();
+    const after = new OutputLog();
+    this.chunks.forEach((chunk, position) => (position < index ? before : after).chunks.push(chunk));
+    return { before, after };
+  }
+
   entries(): readonly Chunk[] {
     return this.chunks;
   }
