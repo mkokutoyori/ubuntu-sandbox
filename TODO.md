@@ -977,6 +977,21 @@ et le labo `fuser-parsing`, 68 pas sur 68) :
   l'environnement : sur la machine d'enregistrement `/` liste les processus de l'espace de noms
   hote, ici ceux du simulateur. Ils sont declares non portes dans `UNPORTED_STEPS`.
 
+### [lab NTP] ecarts mesures en montant le lab du tutoriel NTP (etape 0)
+Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
+export / reimport JSON (sonde `probe-un-lab-exporte-redevient-le-meme-lab.test.ts`). Fermes dans le meme changement : la
+route par defaut de `New-NetIPAddress -DefaultGateway`, la levee des interfaces VLAN au rejeu d'un export, les serveurs DNS
+du poste Windows dans le fichier. Restent ouverts :
+- `HuaweiSwitchShell` n'a ni `ping` ni `tracert` (le routeur Huawei les a) : le test 5 de l'exercice 0 (`ping` depuis SW-HW)
+  repond `Error: Unrecognized command found at '^' position.` ; seul `HuaweiVRPShell` enregistre `ping`.
+- netplan : le simulateur ne lit que `/etc/netplan/01-netcfg.yaml` (`NETPLAN_PATH`), ni `routes: - to: default via:`, ni
+  `nameservers:` (le DNS se pose a la main dans `/etc/resolv.conf`), ni les autres fichiers du repertoire : le vrai les fusionne
+  par ordre lexical. `netplan apply` d'un `50-lab.yaml` est un succes muet qui ne change rien.
+- `CiscoSwitch` a 24 ports FastEthernet et deux GigabitEthernet0/1-2 (IOSvL2 : Gi0/0 a Gi3/3) et refuse `no switchport`
+  (`% Incomplete command.`) : le lien routeur du lab passe par le VLAN de transit (variante que le tutoriel prevoit).
+- `Vlanif1` d'un switch Huawei n'est pas rendu `shutdown` par `display current-configuration`, donc un export / reimport le
+  leve (`*down` devient `down`).
+
 ### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
 Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
 alors que `ping 10.0.0.1` aboutit et que Linux repond « Connection refused ». Le rejeu des labos
