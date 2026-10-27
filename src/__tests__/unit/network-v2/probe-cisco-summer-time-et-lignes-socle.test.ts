@@ -4,7 +4,9 @@
  * on the socle.
  * Discriminated with git stash of src/network: 4 of 12 (first batch); second batch: 2 of 6 fail before (`escape-character` bare
  * accepted, `no length`/`no width` leaving the line); the other four are
- * witnesses/non-regressions; third batch: 1 of 5 fails before (`no accounting
+ * witnesses/non-regressions; fourth batch (login, password): 0 of 6 fail
+ * before, by design: it is a behaviour-preserving migration and the cases pin the
+ * behaviour (vty warning, incomplete, stray word, console round trip); third batch: 1 of 5 fails before (`no accounting
  * exec default` left the list in the running-config), the other four are
  * witnesses/non-regressions cases fail before
  * (week and weekday help after recurring, day-or-month help after date,
@@ -169,5 +171,42 @@ describe('line settings, third batch', () => {
   it('witness: motd-banner round trip on a vty', async () => {
     const r = await router('line vty 0 4', 'no motd-banner');
     expect(await config(r)).toContain('no motd-banner');
+  });
+});
+
+describe('line settings, fourth batch (login and password)', () => {
+  const config = async (r: Cli): Promise<string> => {
+    await r.executeCommand('end');
+    return r.executeCommand('show running-config');
+  };
+  it('witness: vty password and login round trip', async () => {
+    const r = await router('line vty 0 4', 'password secret1', 'login');
+    const out = await config(r);
+    expect(out).toContain('password');
+    expect(out).toContain(' login');
+  });
+  it('warns when login is set with no password', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('login')).toContain('until \'password\' is set');
+  });
+  it('answers incomplete to password with no text', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('password')).toContain('Incomplete');
+  });
+  it('refuses a stray word after login authentication <list>', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('login authentication a b')).toContain('Invalid input');
+  });
+  it('names the method list place after login authentication', async () => {
+    const r = await router('line vty 0 4');
+    expect(r.cliHelp('login authentication ')).toContain('default');
+  });
+  it('witness: console login local is rendered and no login local removes it', async () => {
+    const r = await router('line console 0', 'login local');
+    expect(await config(r)).toContain(' login local');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('line console 0');
+    await r.executeCommand('no login local');
+    expect(await config(r)).not.toContain(' login local');
   });
 });

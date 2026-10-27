@@ -528,19 +528,6 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
   ]),
 };
 
-const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
-  name: nom, type: 'WORD', description: 'Method list name',
-  alternatives: [
-    { keyword: 'default', description: 'The default method list' },
-    { keyword: 'WORD', description: 'Method list name' },
-  ],
-});
-
-const LINE_KEYWORD_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
-  'login authentication': LISTE_DE_METHODES('authentification'),
-};
-
 const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
   name: 'protocol', type: 'ENUM', description: 'Transport protocol',
   values: [
@@ -607,16 +594,6 @@ function modesDuTrie(champ: string): readonly string[] {
   return [champ.replace(/Trie$/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()];
 }
-
-const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
-  ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
-  ['no', [
-    ['login', 'Disable authentication on the line'],
-    ['password', 'Clear the line password'],
-  ]],
-];
-
-
 
 /*
  * Les declarations viennent de `ciscoArgumentHelp`, ou elles etaient
@@ -5265,22 +5242,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private lineSpecs(): CommandSpec[] {
-    const suites = new Map(LINE_KEYWORD_SUITES.map(([kw, liste]) => [kw, liste]));
-    const negations = new Map(suites.get('no') ?? []);
     return specsFromTrieRegistrations(
       (collector) => this.registerLineCommands(collector as unknown as CommandTrie),
       {
         modes: ['config-line'], minPrivilege: 15,
         undoFrom: 'no',
-        undoDescriptionFor: (path) => negations.get(path),
         argumentFor: (path) => LINE_ARGUMENTS[path],
         reachableWhenFor: (path) => () => this.lineKeywordAllowed(path),
-        keywordsFor: (path) => path === 'transport'
-          ? LINE_TRANSPORT_KEYWORDS
-          : suites.get(path)?.map(([keyword, description]) => ({
-          keyword, description,
-          argument: LINE_KEYWORD_ARGUMENTS[`${path} ${keyword}`],
-        })),
+        keywordsFor: (path) => path === 'transport' ? LINE_TRANSPORT_KEYWORDS : undefined,
       },
     );
   }
@@ -5388,6 +5357,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (!target) return;
         target.config?.removeMethodList(target.range.first, target.range.last, kind, service);
       },
+      setLinePassword: (words) => {
+        const typed = words.length > 1 && (words[0] === '0' || words[0] === '7');
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            linePassword: (typed ? words.slice(1) : words).join(' '),
+            linePasswordAlgo: typed && words[0] === '7' ? 'type-7' : 'plain',
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLinePasswordEncrypted = false;
+          let rest = [...words];
+          if (rest[0] === '0') rest = rest.slice(1);
+          else if (rest[0] === '7') { this.consoleLinePasswordEncrypted = true; rest = rest.slice(1); }
+          this.consoleLinePassword = rest.join(' ');
+        }
+      },
+      clearLinePassword: () => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, linePassword: '',
+          });
+        } else if (this.selectedConsoleLine != null) this.consoleLinePassword = null;
+      },
+      setLogin: (mode, list) => {
+        const target = vty();
+        if (target) {
+          const line = target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            login: mode, ...(mode === 'aaa' ? { loginAuthList: list } : {}),
+          }) as { requiresPasswordButUnset?: () => boolean } | undefined;
+          if (mode === 'password' && line?.requiresPasswordButUnset?.()) {
+            return `% Login disabled on line vty ${target.range.first} ${target.range.last}, until 'password' is set`;
+          }
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineLogin = mode;
+          this.consoleLineLoginAuthList = mode === 'aaa' ? list ?? null : null;
+        }
+        return '';
+      },
+      clearLogin: (local) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, login: 'none',
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineLoginAuthList = null;
+          this.consoleLineLogin = local ? null : 'none';
+        }
+      },
       setAuxExec: (enabled) => {
         if (this.selectedAuxLine != null) this.auxLineNoExec = !enabled;
       },
@@ -5454,106 +5475,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * sur la promesse de `?` laissait croire a une regle d'acces posee.
      */
     t.requireArgs('transport', 1);
-    for (const kw of ['login', 'password',
-      'no', 'speed', 'stopbits', 'databits', 'parity',
-      'flowcontrol']) {
-      t.registerGreedy(kw, `line ${kw}`, (args, raw) => {
+    for (const kw of ['no', 'speed', 'stopbits', 'databits', 'parity', 'flowcontrol']) {
+      t.registerGreedy(kw, `line ${kw}`, () => {
         this.requireLineKind(kw);
-        const range = this.selectedVtyRange;
-        if (!range) {
-          if (this.selectedAuxLine != null) {
-            return '';
-          }
-          if (this.selectedConsoleLine == null) return '';
-          if (kw === 'password') {
-            if (!args[0]) return '% Incomplete command.';
-            let pwArgs = [...args];
-            this.consoleLinePasswordEncrypted = false;
-            if (pwArgs[0] === '0') pwArgs = pwArgs.slice(1);
-            else if (pwArgs[0] === '7') { this.consoleLinePasswordEncrypted = true; pwArgs = pwArgs.slice(1); }
-            this.consoleLinePassword = pwArgs.join(' ');
-            return '';
-          }
-          if (kw === 'login') {
-            const sub = args[0]?.toLowerCase();
-            if (sub === 'local') { this.consoleLineLogin = 'local'; this.consoleLineLoginAuthList = null; return ''; }
-            if (sub === 'authentication') {
-              if (!args[1]) return '% Incomplete command.';
-              this.consoleLineLogin = 'aaa';
-              this.consoleLineLoginAuthList = args[1];
-              return '';
-            }
-            this.consoleLineLogin = 'password';
-            this.consoleLineLoginAuthList = null;
-            return '';
-          }
-          if (kw === 'no') {
-            const sub = args[0]?.toLowerCase();
-            if (sub === 'login') {
-              this.consoleLineLoginAuthList = null;
-              if (args[1]?.toLowerCase() === 'local') {
-                this.consoleLineLogin = null;
-              } else {
-                this.consoleLineLogin = 'none';
-              }
-              return '';
-            }
-            if (sub === 'password') { this.consoleLinePassword = null; return ''; }
-          }
-          return '';
-        }
-        if (kw === 'password' && !args[0]) return '% Incomplete command.';
-        const dev = this.d() as unknown as {
-          _getVtyLineConfig?: () => {
-            upsert: (p: object) => { requiresPasswordButUnset?: () => boolean };
-            unset: (first: number, last: number, names: readonly string[]) => unknown;
-          };
-        };
-        const update: Record<string, unknown> = { first: range.first, last: range.last };
-        if (kw === 'login') {
-          // bare `login` → authenticate with the line password; `login local`
-          // → local user DB; `login authentication …` → AAA.
-          const sub = args[0]?.toLowerCase();
-          if (sub === 'authentication') {
-            if (args[1] === undefined) throw new CliIncomplete();
-            if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
-            update.login = 'aaa';
-            update.loginAuthList = args[1];
-          } else {
-            update.login = sub === 'local' ? 'local' : 'password';
-          }
-        } else if (kw === 'password') {
-          // `password [0|7] <mot>`. Le chiffre de type n'est un type que
-          // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
-          // (`args.slice(1)`), donc `password mon mot` rangeait `mot` — le
-          // premier mot du mot de passe disparaissait — et la forme
-          // `password 7 <chiffre>` rangeait le chiffre comme s'il etait le
-          // texte en clair, sans garder l'algorithme.
-          if (args[0] === '0' && args.length > 1) {
-            update.linePassword = args.slice(1).join(' ');
-            update.linePasswordAlgo = 'plain';
-          } else if (args[0] === '7' && args.length > 1) {
-            update.linePassword = args.slice(1).join(' ');
-            update.linePasswordAlgo = 'type-7';
-          } else {
-            update.linePassword = args.join(' ');
-            update.linePasswordAlgo = 'plain';
-          }
-        } else if (kw === 'no' && args.length > 0) {
-          const sub = args[0]?.toLowerCase();
-          // `no password` clears the line secret (empty string → explicitly
-          // unset, distinct from "never configured"); `no login` disables auth.
-          if (sub === 'password') update.linePassword = '';
-          else if (sub === 'login') update.login = 'none';
-          update.removed = (raw ?? `no ${args.join(' ')}`).trim();
-        }
-        const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
-        // Bare `login` with no line password configured is inert on real IOS —
-        // the line refuses incoming sessions until a password is set. Echo the
-        // warning so operators (and the simulated incoming-VTY verdict) agree.
-        if (kw === 'login' && update.login === 'password' && line?.requiresPasswordButUnset?.()) {
-          return `% Login disabled on line vty ${range.first} ${range.last}, until 'password' is set`;
-        }
         return '';
       });
     }

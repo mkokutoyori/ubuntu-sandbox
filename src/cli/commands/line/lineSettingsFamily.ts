@@ -19,6 +19,10 @@ export interface LineSettingsHost {
   setMethodList(kind: 'accounting' | 'authorization', service: string, list: string): void;
   removeMethodList(kind: 'accounting' | 'authorization', service: string): void;
   setAuxExec(enabled: boolean): void;
+  setLinePassword(words: readonly string[]): void;
+  clearLinePassword(): void;
+  setLogin(mode: 'password' | 'local' | 'aaa', list?: string): string;
+  clearLogin(local: boolean): void;
 }
 
 const MODES = ['config-line'];
@@ -140,7 +144,48 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
       undo: (_session, args) => guarded(kind, () => host().removeMethodList(kind, key(args))),
     };
   };
+  const loginSpecs: CommandSpec[] = [
+    {
+      ...base, id: 'line-login', path: ['login'],
+      description: 'Enable password checking',
+      run: () => { host().guard('login'); return host().setLogin('password'); },
+      undo: () => guarded('login', () => host().clearLogin(false)),
+    },
+    {
+      ...base, id: 'line-login-local', path: ['login', 'local'],
+      description: 'Local password checking',
+      run: () => { host().guard('login'); return host().setLogin('local'); },
+      undo: () => guarded('login', () => host().clearLogin(true)),
+    },
+    {
+      ...base, id: 'line-login-authentication',
+      path: ['login', 'authentication', methodList('list')],
+      description: 'Authenticate using an AAA method list',
+      run: (_session, args) => {
+        host().guard('login');
+        return host().setLogin('aaa', args.list);
+      },
+      undo: () => guarded('login', () => host().clearLogin(false)),
+    },
+  ];
+  const passwordSpecs: CommandSpec[] = [
+    {
+      ...base, id: 'line-password',
+      path: ['password', {
+        name: 'password', type: 'REST', literal: 'LINE',
+        description: 'The UNENCRYPTED (cleartext) line password',
+      }],
+      description: 'Set a password',
+      run: (_session, args) => guarded('password', () =>
+        host().setLinePassword(args.password.trim().split(/\s+/))),
+      undo: () => guarded('password', () => host().clearLinePassword()),
+    },
+    undoOf(base, 'line-password', ['password'], 'Set a password',
+      () => guarded('password', () => host().clearLinePassword())),
+  ];
   return [
+    ...loginSpecs,
+    ...passwordSpecs,
     aaa('accounting', 'commands', 'Account for commands', true),
     aaa('accounting', 'connection', 'Account for connections', false),
     aaa('accounting', 'exec', 'Account for EXEC sessions', false),

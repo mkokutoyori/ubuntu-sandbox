@@ -4166,4 +4166,4 @@ atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à 
 
 ## Cisco: line and archive commands still on the trie
 
-Measured: every config-line keyword except `password`, `login`, `speed`/`stopbits`/`databits`/`parity`/`flowcontrol` and `transport` is on the socle. Still on `CommandTrie`: those, and the `archive` / `log config` sub-modes (`CiscoArchiveCommands.ts`). Not closed: `password`/`login` interleave console and vty storage and the type-7 algorithm; the serial keywords store nothing on any line today. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner` and its documentation was not reachable to confirm it.
+Measured: every config-line keyword except `speed`/`stopbits`/`databits`/`parity`/`flowcontrol` and `transport` is on the socle. Still on `CommandTrie`: those, and the `archive` / `log config` sub-modes (`CiscoArchiveCommands.ts`). Not closed: the serial keywords store nothing on any line today. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner` and its documentation was not reachable to confirm it.
