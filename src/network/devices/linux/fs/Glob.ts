@@ -184,6 +184,13 @@ export interface GlobOptions {
   readonly dotglob?: boolean;
   readonly nocaseglob?: boolean;
   readonly globstar?: boolean;
+  readonly abortOnUnreadable?: boolean;
+}
+
+export class GlobAborted extends Error {
+  constructor(readonly directory: string) {
+    super(`Unreadable directory ${directory}`);
+  }
 }
 
 function expandComponents(
@@ -210,11 +217,16 @@ function expandComponents(
     const path = join(unescape(component));
     if (fs.existsNoFollow(path) && (last || fs.isDirectory(path))) {
       expandComponents(fs, path, components, index + 1, out, options);
+    } else if (options.abortOnUnreadable === true && components.slice(index + 1).some(hasMagic)) {
+      throw new GlobAborted(path);
     }
     return;
   }
   const names = fs.listNames(base === '' ? '.' : base);
-  if (names === null) return;
+  if (names === null) {
+    if (options.abortOnUnreadable === true) throw new GlobAborted(base === '' ? '.' : base);
+    return;
+  }
   for (const name of [...names].sort()) {
     if (!fnmatch(component, name, { period: options.dotglob !== true, nocase: options.nocaseglob === true })) continue;
     const path = join(name);
