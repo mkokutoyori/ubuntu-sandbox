@@ -4999,6 +4999,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
   }
 
+  staticDnsServers(): { interface: string; servers: string[] }[] {
+    return [...this.dnsConfig]
+      .filter(([, config]) => config.mode === 'static' && config.servers.length > 0)
+      .map(([ifName, config]) => ({ interface: ifName, servers: [...config.servers] }));
+  }
+
   getClassId(ifName: string): string | null { return this.dhcpClassIds.get(ifName) ?? null; }
   setClassId(ifName: string, classId: string | null): void {
     if (classId) this.dhcpClassIds.set(ifName, classId);

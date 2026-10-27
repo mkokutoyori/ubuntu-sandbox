@@ -304,6 +304,7 @@ interface TopologyDeviceExport {
   windowsFeatures?: { installed: string[]; removed?: string[] };
   windowsCertificates?: WindowsCertificateState;
   windowsDomain?: WindowsDomainState;
+  windowsDnsServers?: { interface: string; servers: string[] }[];
   windowsSecurity?: WindowsSecurityPolicyState;
   activeDirectory?: {
     promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles;
@@ -1202,6 +1203,8 @@ function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Eq
     if (security) entry.windowsSecurity = security;
     const domain = device.captureDomainState();
     if (domain) entry.windowsDomain = domain;
+    const dnsServers = device.staticDnsServers();
+    if (dnsServers.length > 0) entry.windowsDnsServers = dnsServers;
     const registry = captureRegistry(device, twin);
     if (registry) entry.registry = registry;
     const teams = captureWindowsTeams(device);
@@ -1363,24 +1366,42 @@ export async function replayVendorConfig(device: Router | Switch, text: string):
   for (const line of enterBase) await device.executeCommand(line);
   let isBase = true;
 
+  const enableInterface = huawei ? 'undo shutdown' : 'no shutdown';
+  let interfaceOpen = false;
+  let interfaceShut = false;
+  const closeInterface = async (): Promise<void> => {
+    if (interfaceOpen && !interfaceShut) await device.executeCommand(enableInterface);
+    interfaceOpen = false;
+    interfaceShut = false;
+  };
+
   let wasIndented = false;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('Building configuration') || line.startsWith('Current configuration')) continue;
     if (line === '!' || line === '#') {
+      await closeInterface();
       if (!isBase) { for (const l of toBase) await device.executeCommand(l); isBase = true; }
       wasIndented = false;
       continue;
     }
     const indented = /^\s/.test(raw);
     if (!indented && wasIndented && !isBase) {
+      await closeInterface();
       for (const l of toBase) await device.executeCommand(l);
       isBase = true;
     }
+    if (!indented) await closeInterface();
     await device.executeCommand(line);
-    if (!indented) isBase = false;
+    if (!indented) {
+      isBase = false;
+      interfaceOpen = /^interface\s/.test(line);
+    } else if (line === 'shutdown') {
+      interfaceShut = true;
+    }
     wasIndented = indented;
   }
+  await closeInterface();
   for (const line of huawei ? ['return'] : ['end']) {
     await device.executeCommand(line);
   }
@@ -1573,6 +1594,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
       if (devData.windowsSecurity) restoreWindowsSecurityPolicy(device, devData.windowsSecurity);
       if (devData.windowsDomain) device.restoreDomainState(devData.windowsDomain);
+      for (const { interface: ifName, servers } of devData.windowsDnsServers ?? []) device.setDnsServers(ifName, servers);
       if (devData.windowsCertificates) restoreWindowsCertificates(device, devData.windowsCertificates);
       if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\

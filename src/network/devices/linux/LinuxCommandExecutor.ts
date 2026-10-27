@@ -351,7 +351,7 @@ const SU_TTY = `/dev/${SU_TTY_NAME}`;
 const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
 
 function parseSudoLead(args: readonly string[]): {
-  flags: Set<string>; user: string | null; rest: string[];
+  flags: Set<string>; user: string | null; environment: Record<string, string>; rest: string[];
 } {
   const flags = new Set<string>();
   let user: string | null = null;
@@ -366,7 +366,8 @@ function parseSudoLead(args: readonly string[]): {
       i += 2;
     } else break;
   }
-  return { flags, user, rest: args.slice(i) };
+  const { assigned, rest } = leadingAssignments(args.slice(i));
+  return { flags, user, environment: assigned, rest };
 }
 
 const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
@@ -4794,6 +4795,7 @@ export class LinuxCommandExecutor {
       const readsStdinPassword = lead.flags.has('S');
       const sudoTargetUser = lead.user;
       cmdArgs = lead.rest;
+      if (Object.keys(lead.environment).length > 0) this._cmdEnv = { ...(this._cmdEnv ?? Object.fromEntries(this.env)), ...lead.environment };
       const shellRequested = lead.flags.has('i') || lead.flags.has('s');
       if (cmdArgs.length === 0 && !shellRequested) {
         return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
@@ -9120,6 +9122,17 @@ function checksumVfs(content: string, cmd: string): string {
   if (cmd === 'sha256sum') return bytesToHex(sha256(bytes));
   if (cmd === 'sha1sum') return bytesToHex(sha1(bytes));
   return bytesToHex(md5(bytes));
+}
+
+function leadingAssignments(argv: string[]): { assigned: Record<string, string>; rest: string[] } {
+  const assigned: Record<string, string> = {};
+  let index = 0;
+  for (; index < argv.length; index++) {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(argv[index]);
+    if (match === null) break;
+    assigned[match[1]] = match[2];
+  }
+  return { assigned, rest: argv.slice(index) };
 }
 
 function basenameOf(path: string): string {

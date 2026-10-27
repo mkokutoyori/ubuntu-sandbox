@@ -2,12 +2,25 @@ import { SubnetMask } from '../../../core/types';
 
 export type InterfaceMethod = 'static' | 'dhcp';
 
+export interface DeclaredRoute {
+  to: string;
+  via: string;
+  metric?: number;
+}
+
 export interface DeclaredInterfaceConfig {
   method: InterfaceMethod;
   address?: string;
   cidr?: number;
   gateway?: string;
   mtu?: number;
+  secondaryAddresses?: string[];
+  routes?: DeclaredRoute[];
+  nameservers?: string[];
+  searchDomains?: string[];
+  macAddress?: string;
+  match?: { name?: string; macAddress?: string; driver?: string };
+  setName?: string;
 }
 
 export type NetplanRenderer = 'networkd' | 'NetworkManager';
@@ -15,6 +28,17 @@ export type NetplanRenderer = 'networkd' | 'NetworkManager';
 export interface NetplanConfig {
   renderer: NetplanRenderer;
   interfaces: Map<string, DeclaredInterfaceConfig>;
+  sources?: ReadonlyMap<string, string>;
+}
+
+export interface NetplanSource {
+  readonly path: string;
+  readonly text: string;
+}
+
+export interface NetplanReading {
+  readonly config: NetplanConfig;
+  readonly errors: readonly string[];
 }
 
 export function parseInterfacesFile(text: string): Map<string, DeclaredInterfaceConfig> {
@@ -69,82 +93,6 @@ export function serializeInterfacesFile(configs: ReadonlyMap<string, DeclaredInt
     lines.push('');
   }
   return lines.join('\n');
-}
-
-function indentOf(line: string): number {
-  return line.length - line.trimStart().length;
-}
-
-export function parseNetplanYaml(text: string): NetplanConfig {
-  const lines = text.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
-  let renderer: NetplanRenderer = 'networkd';
-  const interfaces = new Map<string, DeclaredInterfaceConfig>();
-
-  const ethernetsIdx = lines.findIndex(l => /^\s*ethernets:\s*$/.test(l));
-  const ethernetsIndent = ethernetsIdx >= 0 ? indentOf(lines[ethernetsIdx]) : -1;
-
-  for (const line of lines) {
-    const m = /^\s*renderer:\s*(\S+)\s*$/.exec(line);
-    if (m && (ethernetsIndent < 0 || indentOf(line) < ethernetsIndent)) {
-      renderer = m[1] === 'NetworkManager' ? 'NetworkManager' : 'networkd';
-    }
-  }
-
-  if (ethernetsIdx < 0) return { renderer, interfaces };
-
-  let currentName: string | null = null;
-  let currentIndent = -1;
-  let inAddresses = false;
-
-  for (let i = ethernetsIdx + 1; i < lines.length; i++) {
-    const line = lines[i];
-    const indent = indentOf(line);
-    if (indent <= ethernetsIndent) break;
-
-    const ifaceHeader = /^\s*([A-Za-z0-9_.-]+):\s*$/.exec(line);
-    if (ifaceHeader && indent === ethernetsIndent + 2) {
-      currentName = ifaceHeader[1];
-      currentIndent = indent;
-      inAddresses = false;
-      interfaces.set(currentName, { method: 'dhcp' });
-      continue;
-    }
-    if (!currentName) continue;
-    const cfg = interfaces.get(currentName)!;
-
-    if (indent <= currentIndent) { currentName = null; inAddresses = false; continue; }
-
-    const listItem = /^\s*-\s*(.+)\s*$/.exec(line);
-    if (inAddresses && listItem) {
-      const [addr, cidrStr] = listItem[1].trim().split('/');
-      cfg.address = addr;
-      if (cidrStr) cfg.cidr = parseInt(cidrStr, 10);
-      continue;
-    }
-    inAddresses = false;
-
-    const kv = /^\s*([A-Za-z0-9_.-]+):\s*(.*)\s*$/.exec(line);
-    if (!kv) continue;
-    const [, key, rawValue] = kv;
-    const value = rawValue.trim();
-    if (key === 'dhcp4') {
-      cfg.method = /^(yes|true)$/i.test(value) ? 'dhcp' : 'static';
-    } else if (key === 'addresses') {
-      if (value) {
-        const [addr, cidrStr] = value.replace(/^\[|\]$/g, '').split('/');
-        cfg.address = addr;
-        if (cidrStr) cfg.cidr = parseInt(cidrStr, 10);
-      } else {
-        inAddresses = true;
-      }
-    } else if (key === 'gateway4') {
-      cfg.gateway = value;
-    } else if (key === 'mtu') {
-      cfg.mtu = parseInt(value, 10);
-    }
-  }
-
-  return { renderer, interfaces };
 }
 
 export function serializeNetplanYaml(cfg: NetplanConfig): string {
