@@ -62,6 +62,7 @@ export interface VtyLineConfigInit {
   readonly aclInbound?: string;
   readonly aclOutbound?: string;
   readonly transportInput?: VtyTransport;
+  readonly transportOutput?: VtyTransport;
   readonly login?: VtyLoginMode;
   /** `password …` configured on the line (line-local auth secret). */
   readonly linePassword?: string;
@@ -173,6 +174,7 @@ export class VtyLineConfig {
   readonly aclInbound: string | null;
   readonly aclOutbound: string | null;
   readonly transportInput: VtyTransport | null;
+  readonly transportOutput: VtyTransport | null;
   readonly login: VtyLoginMode | null;
   readonly linePassword: string | null;
   readonly linePasswordAlgo: 'plain' | 'type-7';
@@ -211,6 +213,7 @@ export class VtyLineConfig {
     this.aclInbound         = init.aclInbound ?? null;
     this.aclOutbound        = init.aclOutbound ?? null;
     this.transportInput     = init.transportInput ?? null;
+    this.transportOutput    = init.transportOutput ?? null;
     this.login              = init.login ?? null;
     this.linePassword       = init.linePassword ?? null;
     this.linePasswordAlgo   = init.linePasswordAlgo ?? 'plain';
@@ -290,6 +293,7 @@ export class VtyLineConfig {
       aclInbound:         patch.aclInbound         ?? this.aclInbound         ?? undefined,
       aclOutbound:        patch.aclOutbound        ?? this.aclOutbound        ?? undefined,
       transportInput:     patch.transportInput     ?? this.transportInput     ?? undefined,
+      transportOutput:    patch.transportOutput    ?? this.transportOutput    ?? undefined,
       login:              patch.login              ?? this.login              ?? undefined,
       linePassword:       patch.linePassword       ?? this.linePassword       ?? undefined,
       linePasswordAlgo:   patch.linePasswordAlgo   ?? this.linePasswordAlgo   ?? undefined,
@@ -369,6 +373,7 @@ export class VtyLineConfig {
     if (this.stopbits !== null) lines.push(` stopbits ${this.stopbits}`);
     if (this.rotaryGroup !== null) lines.push(` rotary ${this.rotaryGroup}`);
     if (this.transportInput !== null) lines.push(` transport input ${this.transportInput}`);
+    if (this.transportOutput !== null) lines.push(` transport output ${this.transportOutput}`);
     if (this.loggingSynchronous) lines.push(' logging synchronous');
     return lines;
   }

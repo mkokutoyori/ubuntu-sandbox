@@ -26,6 +26,8 @@ export interface LineSettingsHost {
   clearLogin(local: boolean): void;
   setSerial(name: string, value: string): void;
   clearSerial(name: string): void;
+  setTransport(direction: 'input' | 'output', protocol: string): void;
+  clearTransport(direction: 'input' | 'output'): void;
 }
 
 const MODES = ['config-line'];
@@ -138,6 +140,13 @@ const SERIAL: ReadonlyArray<readonly [string, ArgumentSpec]> = [
   ])],
 ];
 
+function protocols(): ArgumentSpec {
+  return choices('protocol', 'Transport protocol', [
+    ['all', 'All protocols'], ['none', 'No protocols'],
+    ['ssh', 'TCP/IP SSH protocol'], ['telnet', 'TCP/IP Telnet protocol'],
+  ]);
+}
+
 export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] {
   const base = { modes: [...MODES], minPrivilege: 15 };
   const guarded = (keyword: string, body: () => void): string => {
@@ -228,7 +237,22 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
     undoOf(base, `line-${keyword}`, [keyword], place.description ?? keyword,
       () => guarded(keyword, () => host().clearSerial(keyword))),
   ]);
+  const transportSpecs = (['input', 'output'] as const).map((direction): CommandSpec => ({
+    ...base, id: `line-transport-${direction}`, path: ['transport', direction, protocols()],
+    description: direction === 'input'
+      ? 'Define which protocols to use when connecting to the terminal server'
+      : 'Define which protocols to use for outgoing connections',
+    run: (_session, args) => guarded('transport', () =>
+      host().setTransport(direction, args.protocol)),
+    undo: () => guarded('transport', () => host().clearTransport(direction)),
+  }));
+  const transportUndo = (['input', 'output'] as const).map((direction): CommandSpec =>
+    undoOf(base, `line-transport-${direction}`, ['transport', direction],
+      'Define which protocols to use', () => guarded('transport', () =>
+        host().clearTransport(direction))));
   const specs: CommandSpec[] = [
+    ...transportSpecs,
+    ...transportUndo,
     ...serialSpecs,
     ...loginSpecs,
     ...passwordSpecs,

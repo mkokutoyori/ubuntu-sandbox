@@ -4,7 +4,9 @@
  * on the socle.
  * Discriminated with git stash of src/network: 4 of 12 (first batch); second batch: 2 of 6 fail before (`escape-character` bare
  * accepted, `no length`/`no width` leaving the line); the other four are
- * witnesses/non-regressions; sixth batch (archive sub-modes): 0 of 5 fail before, by design (the trie adapter
+ * witnesses/non-regressions; seventh batch (transport): 1 of 6 fails before (`transport output` was accepted and
+ * dropped); the others are witnesses or non-regressions (`no transport output` is
+ * trivially true before, nothing was stored). Sixth batch (archive sub-modes): 0 of 5 fail before, by design (the trie adapter
  * already typed these places; the migration removes the duplicate registrations
  * in both shells and the cases pin the behaviour); fifth batch (serial keywords): 2 of 5 fail before (console and aux rendering); the
  * other three are non-regressions (range refusal, vty refusal, removal). Fourth
@@ -268,5 +270,39 @@ describe('archive sub-modes', () => {
   it('refuses a log buffer size of zero', async () => {
     const r = await router('archive', 'log config');
     expect(await r.executeCommand('logging size 0')).toContain('Invalid input');
+  });
+});
+
+describe('line transport', () => {
+  const config = async (r: Cli): Promise<string> => {
+    await r.executeCommand('end');
+    return r.executeCommand('show running-config');
+  };
+  it('witness: vty transport input is rendered', async () => {
+    const r = await router('line vty 0 4', 'transport input ssh');
+    expect(await config(r)).toContain(' transport input ssh');
+  });
+  it('stores and renders transport output on a vty', async () => {
+    const r = await router('line vty 0 4', 'transport output none');
+    expect(await config(r)).toContain(' transport output none');
+  });
+  it('removes transport output with no', async () => {
+    const r = await router('line vty 0 4', 'transport output none', 'no transport output');
+    expect(await config(r)).not.toContain(' transport output none');
+  });
+  it('does not let a console transport input rewrite the vty lines', async () => {
+    const r = await router('line vty 0 4', 'transport input ssh', 'exit', 'line console 0',
+      'transport input none');
+    const out = await config(r);
+    expect(out).toContain(' transport input ssh');
+  });
+  it('refuses transport preferred and a protocol that does not exist', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('transport preferred ssh')).toContain('Invalid input');
+    expect(await r.executeCommand('transport input zorglub')).toContain('Invalid input');
+  });
+  it('answers incomplete to transport input alone', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('transport input')).toContain('Incomplete');
   });
 });

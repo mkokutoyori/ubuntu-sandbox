@@ -503,28 +503,6 @@ const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   ],
 };
 
-const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
-  name: 'protocol', type: 'ENUM', description: 'Transport protocol',
-  values: [
-    { keyword: 'all', description: 'All protocols' },
-    { keyword: 'none', description: 'No protocols' },
-    { keyword: 'ssh', description: 'TCP/IP SSH protocol' },
-    { keyword: 'telnet', description: 'TCP/IP Telnet protocol' },
-  ],
-};
-
-const LINE_TRANSPORT_KEYWORDS:
-ReadonlyArray<{ keyword: string; description: string; argument: ArgumentSpec }> = [
-  {
-    keyword: 'input', argument: LINE_TRANSPORT_PROTOCOLS,
-    description: 'Define which protocols to use when connecting to the terminal server',
-  },
-  {
-    keyword: 'output', argument: LINE_TRANSPORT_PROTOCOLS,
-    description: 'Define which protocols to use for outgoing connections',
-  },
-];
-
 function enumeration(
   name: string, description: string, valeurs: ReadonlyArray<readonly [string, string]>,
 ): ArgumentSpec {
@@ -1177,12 +1155,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     historySize: number | null;
     historyEnabled: boolean;
     serial: ReadonlyMap<string, string>;
+    transport: ReadonlyMap<string, string>;
   } | null {
     if (this.consoleLinePassword == null && this.consoleLineLogin == null
       && this.consolePrivilegeLevel() == null && this.consoleLineExecTimeoutMin == null
       && !this.consoleLineLoggingSynchronous
       && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled
-      && this.consoleSerial.size === 0) return null;
+      && this.consoleSerial.size === 0 && this.consoleTransport.size === 0) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -1196,11 +1175,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       historySize: this.consoleLineHistorySize,
       historyEnabled: this.consoleLineHistoryEnabled,
       serial: this.consoleSerial,
+      transport: this.consoleTransport,
     };
   }
 
   protected readonly consoleSerial = new Map<string, string>();
   protected readonly auxSerial = new Map<string, string>();
+  protected readonly consoleTransport = new Map<string, string>();
+  protected auxLineTransportOutput: 'ssh' | 'telnet' | 'all' | 'none' | null = null;
 
   private serialStoreForSelectedLine(): Map<string, string> | null {
     if (this.selectedAuxLine != null) return this.auxSerial;
@@ -1211,15 +1193,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   _getAuxLineConfig(): {
     line: number; noExec: boolean;
     transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+    transportOutput: 'ssh' | 'telnet' | 'all' | 'none' | null;
     serial: ReadonlyMap<string, string>;
   } | null {
-    if (!this.auxLineNoExec && this.auxLineTransportInput == null && this.auxSerial.size === 0) {
+    if (!this.auxLineNoExec && this.auxLineTransportInput == null && this.auxSerial.size === 0
+      && this.auxLineTransportOutput == null) {
       return null;
     }
     return {
       line: this.selectedAuxLine ?? 0,
       noExec: this.auxLineNoExec,
       transportInput: this.auxLineTransportInput,
+      transportOutput: this.auxLineTransportOutput,
       serial: this.auxSerial,
     };
   }
@@ -5235,54 +5220,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [entete, ...associations.map(ligne)].join('\n');
   }
 
-  private lineSpecs(): CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerLineCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['config-line'], minPrivilege: 15,
-        undoFrom: 'no',
-        reachableWhenFor: (path) => () => this.lineKeywordAllowed(path),
-        keywordsFor: (path) => path === 'transport' ? LINE_TRANSPORT_KEYWORDS : undefined,
-      },
-    );
-  }
-
-  private registerLineTransportCommands(t: CommandTrie): void {
-    // `transport input {all|ssh|telnet|none}` — the only line directive
-    // we *do* react to today, because the sshd dispatch needs to know
-    // whether SSH is administratively allowed on the VTY. Anything we
-    // don't recognise is accepted silently, matching real IOS.
-    t.registerGreedy('transport', 'transport input/output', (args) => {
-      const dev = this.d() as unknown as {
-        _setVtyTransportInput?: (
-          t: 'ssh' | 'telnet' | 'all' | 'none',
-          range?: { first: number; last: number },
-        ) => void;
-      };
-      const dir = args[0]?.toLowerCase();
-      if (!dir) return CISCO_ERRORS.INCOMPLETE;
-      // `preferred` existe sur IOS et ne s'applique qu'aux connexions
-      // sortantes d'un serveur de terminaux : il est accepté et
-      // n'entraîne rien ici, mais il est refusé plutôt que stocké
-      // inerte, faute de quoi l'aide promettrait un réglage sans effet.
-      if (dir !== 'input' && dir !== 'output') return CISCO_ERRORS.INVALID_INPUT;
-      const proto = (args[1] ?? '').toLowerCase();
-      if (!proto) return '% Incomplete command.';
-      if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      if (dir !== 'input') return '';
-      if (this.selectedAuxLine != null) {
-        this.auxLineTransportInput = proto;
-        return '';
-      }
-      if (typeof dev._setVtyTransportInput === 'function') {
-        dev._setVtyTransportInput(proto, this.selectedVtyRange ?? undefined);
-      }
-      return '';
-    });
-  }
-
   private lineSettingsHost(): LineSettingsHost {
     type VtyConfig = {
       upsert: (p: object) => unknown;
@@ -5403,6 +5340,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           this.consoleLineLogin = local ? null : 'none';
         }
       },
+      setTransport: (direction, protocol) => {
+        const proto = protocol as 'ssh' | 'telnet' | 'all' | 'none';
+        const target = vty();
+        if (target) {
+          if (direction === 'input') {
+            (this.d() as unknown as {
+              _setVtyTransportInput?: (
+                t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number },
+              ) => void;
+            })._setVtyTransportInput?.(proto, target.range);
+          } else {
+            target.config?.upsert({
+              first: target.range.first, last: target.range.last, transportOutput: proto,
+            });
+          }
+        } else if (this.selectedAuxLine != null) {
+          if (direction === 'input') this.auxLineTransportInput = proto;
+          else this.auxLineTransportOutput = proto;
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleTransport.set(direction, proto);
+        }
+      },
+      clearTransport: (direction) => {
+        if (this.selectedVtyRange) {
+          unset([direction === 'input' ? 'transportInput' : 'transportOutput']);
+        } else if (this.selectedAuxLine != null) {
+          if (direction === 'input') this.auxLineTransportInput = null;
+          else this.auxLineTransportOutput = null;
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleTransport.delete(direction);
+        }
+      },
       setSerial: (name, value) => {
         const store = this.serialStoreForSelectedLine();
         store?.set(name, value);
@@ -5463,19 +5432,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
       },
     };
-  }
-
-  private registerLineCommands(t: CommandTrie): void {
-    this.registerLineTransportCommands(t);
-    /*
-     * Trois mots-cles de ce mode ne SONT PAS des commandes : ils
-     * ouvrent une famille. `transport` demande une direction,
-     * `accounting` et `authorization` une sorte, et chacune sa liste de
-     * methodes. Les trois annoncaient `<cr>` et refusaient ensuite —
-     * ils gouvernent pourtant qui entre par cette ligne, donc valider
-     * sur la promesse de `?` laissait croire a une regle d'acces posee.
-     */
-    t.requireArgs('transport', 1);
   }
 
   protected showSocleSpecs(): CommandSpec[] {
@@ -5607,7 +5563,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...identite,
       ...administration,
       ...filtres,
-      ...this.lineSpecs(),
       ...lineSettingsFamily(() => this.lineSettingsHost()),
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
