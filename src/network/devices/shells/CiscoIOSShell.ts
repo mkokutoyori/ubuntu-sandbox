@@ -229,7 +229,6 @@ import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
   eemPorteSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
-  buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
   netflowEemShowSpecs,
@@ -2514,8 +2513,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildFlowExporterSubmode(this.configFlowExporterTrie, this);
     buildFlowRecordSubmode(this.configFlowRecordTrie, this);
     buildFlowMonitorSubmode(this.configFlowMonitorTrie, this);
-    buildArchiveSubmode(this.configArchiveTrie, this);
-    buildArchiveLogSubmode(this.configArchiveLogTrie, this);
     buildEemNetflowArchiveInterfaceCommands(this.configIfTrie, this);
     buildEemNetflowArchiveShowCommands(this.userTrie, () => this.d());
     buildEemNetflowArchiveShowCommands(this.privilegedTrie, () => this.d());

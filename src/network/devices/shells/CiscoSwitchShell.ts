@@ -136,7 +136,6 @@ import {
 import {
   showSwitchVersion, showIpTraffic, iosClockConfigLines, ciscoShortInterfaceName,
 } from './cisco/CiscoCommonShow';
-import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import { compactVlanList, parseVlanList } from './cli/vlanList';
@@ -1870,16 +1869,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerStpInterface(): void {
-
-    // `archive` — la même famille que sur le routeur, construite par le
-    // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
-    // plateformes qui archivent différemment seraient un défaut, pas une
-    // fonctionnalité.
-    const archiveOf = () => this.archiveService();
-    buildArchiveSubmodeOn(this.configArchiveTrie, archiveOf, () => {
-      this.mode = 'config-archive-log';
-    });
-    buildArchiveLogSubmodeOn(this.configArchiveLogTrie, archiveOf);
 
     // show spanning-tree summary | mst configuration | interface <if>
   }

@@ -4,7 +4,9 @@
  * on the socle.
  * Discriminated with git stash of src/network: 4 of 12 (first batch); second batch: 2 of 6 fail before (`escape-character` bare
  * accepted, `no length`/`no width` leaving the line); the other four are
- * witnesses/non-regressions; fifth batch (serial keywords): 2 of 5 fail before (console and aux rendering); the
+ * witnesses/non-regressions; sixth batch (archive sub-modes): 0 of 5 fail before, by design (the trie adapter
+ * already typed these places; the migration removes the duplicate registrations
+ * in both shells and the cases pin the behaviour); fifth batch (serial keywords): 2 of 5 fail before (console and aux rendering); the
  * other three are non-regressions (range refusal, vty refusal, removal). Fourth
  * batch (login, password): 0 of 6 fail
  * before, by design: it is a behaviour-preserving migration and the cases pin the
@@ -240,5 +242,31 @@ describe('line settings, fifth batch (serial keywords)', () => {
   it('renders the aux serial settings', async () => {
     const r = await router('line aux 0', 'flowcontrol hardware');
     expect(await config(r)).toContain(' flowcontrol hardware');
+  });
+});
+
+describe('archive sub-modes', () => {
+  it('witness: archive path and maximum are applied', async () => {
+    const r = await router('archive', 'path flash:backup', 'maximum 5');
+    await r.executeCommand('end');
+    const out = await r.executeCommand('show archive');
+    expect(out).toContain('flash:backup');
+  });
+  it('refuses a maximum out of range', async () => {
+    const r = await router('archive');
+    expect(await r.executeCommand('maximum 15')).toContain('Invalid input');
+  });
+  it('answers incomplete to path without its value', async () => {
+    const r = await router('archive');
+    expect(await r.executeCommand('path')).toContain('Incomplete');
+  });
+  it('enters the log sub-mode and accepts the syslog format', async () => {
+    const r = await router('archive', 'log config');
+    expect(await r.executeCommand('notify syslog contenttype xml')).toBe('');
+    expect(await r.executeCommand('notify syslog contenttype zorglub')).toContain('Invalid input');
+  });
+  it('refuses a log buffer size of zero', async () => {
+    const r = await router('archive', 'log config');
+    expect(await r.executeCommand('logging size 0')).toContain('Invalid input');
   });
 });

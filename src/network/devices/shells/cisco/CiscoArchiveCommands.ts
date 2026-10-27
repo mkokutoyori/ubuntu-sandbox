@@ -284,100 +284,98 @@ export function archiveOnWriteMemory(ar: ArchiveAccessor, runningConfig: () => s
   s.capture('auto-write-memory', runningConfig());
 }
 
-/** Le sous-mode `(config-archive)#`. */
-export function buildArchiveSubmodeOn(
-  trie: CommandTrie, ar: ArchiveAccessor, enterLogMode: () => void,
-): void {
-  trie.registerGreedy('path', 'Archive path', (args) => {
-    if (args[0]) ar()?.setPath(args[0]);
-    return '';
-  });
-  trie.registerGreedy('time-period', 'Archive interval', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar()?.setTimePeriod(n);
-    return '';
-  });
-  trie.registerGreedy('maximum', 'Max revisions', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar()?.setMaximum(n);
-    return '';
-  });
-  trie.register('write-memory', 'Trigger archive on write', () => { ar()?.setWriteMemory(true); return ''; });
-  trie.register('no write-memory', 'Disable archive-on-write', () => { ar()?.setWriteMemory(false); return ''; });
-  trie.register('log config', 'Enter archive log config submode', () => {
-    ar()?.enableLogging();
-    enterLogMode();
-    return '';
-  });
-}
+const ARCHIVE_MODE = ['config-archive'];
+const ARCHIVE_LOG_MODE = ['config-archive-log'];
 
-/** Le sous-mode `(config-archive-log-cfg)#`. */
-export function buildArchiveLogSubmodeOn(trie: CommandTrie, ar: ArchiveAccessor): void {
-  trie.registerGreedy('logging size', 'Archive log buffer size', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar()?.setLogBufferSize(n);
-    return '';
-  });
-  trie.register('logging enable', 'Enable archive logging', () => { ar()?.enableLogging(); return ''; });
-  trie.register('logging disable', 'Disable archive logging', () => { ar()?.disableLogging(); return ''; });
-  trie.register('hidekeys', 'Hide passwords in archive log', () => { ar()?.setHidekeys(true); return ''; });
-  trie.register('no hidekeys', 'Show passwords in archive log', () => { ar()?.setHidekeys(false); return ''; });
-  trie.registerGreedy('notify syslog contenttype', 'Notify syslog format', (args) => {
-    ar()?.setNotifySyslog(args[0] === 'xml' ? 'xml' : 'plaintext');
-    return '';
-  });
-}
-
-const ARCHIVE_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  path: { name: 'chemin', type: 'WORD', description: 'Path for backups' },
-  'time-period': {
-    name: 'minutes', type: 'INT', range: [1, 525600],
-    description: 'Period of time in minutes between archives',
-  },
-  maximum: {
-    name: 'revisions', type: 'INT', range: [1, 14],
-    description: 'Maximum number of backups to keep',
-  },
-};
-
-const ARCHIVE_LOG_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'logging size': {
-    name: 'entrees', type: 'INT', range: [1, 1000],
-    description: 'Number of entries the log keeps',
-  },
-  'notify syslog contenttype': {
-    name: 'format', type: 'ENUM', description: 'Format of the syslog notification',
-    values: [
-      { keyword: 'plaintext', description: 'Plain text notification' },
-      { keyword: 'xml', description: 'XML notification' },
-    ],
-  },
+const SYSLOG_FORMAT: ArgumentSpec = {
+  name: 'format', type: 'ENUM', description: 'Format of the syslog notification',
+  values: [
+    { keyword: 'plaintext', description: 'Plain text notification' },
+    { keyword: 'xml', description: 'XML notification' },
+  ],
 };
 
 export function archiveSubmodeSpecs(
   ar: ArchiveAccessor, enterLogMode: () => void,
 ): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildArchiveSubmodeOn(collector as unknown as CommandTrie, ar, enterLogMode),
+  const base = { modes: ARCHIVE_MODE, minPrivilege: 15 };
+  return [
     {
-      modes: ['config-archive'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => ARCHIVE_ARGUMENTS[path],
+      ...base, id: 'archive-path', path: ['path', {
+        name: 'path', type: 'WORD', description: 'Path for backups',
+      }],
+      description: 'Archive path',
+      run: (_session, args) => { ar()?.setPath(args.path); return ''; },
     },
-  );
+    {
+      ...base, id: 'archive-time-period', path: ['time-period', {
+        name: 'minutes', type: 'INT', range: [1, 525600],
+        description: 'Period of time in minutes between archives',
+      }],
+      description: 'Archive interval',
+      run: (_session, args) => { ar()?.setTimePeriod(Number(args.minutes)); return ''; },
+    },
+    {
+      ...base, id: 'archive-maximum', path: ['maximum', {
+        name: 'revisions', type: 'INT', range: [1, 14],
+        description: 'Maximum number of backups to keep',
+      }],
+      description: 'Max revisions',
+      run: (_session, args) => { ar()?.setMaximum(Number(args.revisions)); return ''; },
+    },
+    {
+      ...base, id: 'archive-write-memory', path: ['write-memory'],
+      description: 'Trigger archive on write',
+      run: () => { ar()?.setWriteMemory(true); return ''; },
+      undo: () => { ar()?.setWriteMemory(false); return ''; },
+    },
+    {
+      ...base, id: 'archive-log-config', path: ['log', 'config'],
+      description: 'Enter archive log config submode',
+      run: () => {
+        ar()?.enableLogging();
+        enterLogMode();
+        return '';
+      },
+    },
+  ];
 }
 
 export function archiveLogSubmodeSpecs(ar: ArchiveAccessor): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildArchiveLogSubmodeOn(collector as unknown as CommandTrie, ar),
+  const base = { modes: ARCHIVE_LOG_MODE, minPrivilege: 15 };
+  return [
     {
-      modes: ['config-archive-log'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => ARCHIVE_LOG_ARGUMENTS[path],
+      ...base, id: 'archive-logging-size', path: ['logging', 'size', {
+        name: 'entries', type: 'INT', range: [1, 1000],
+        description: 'Number of entries the log keeps',
+      }],
+      description: 'Archive log buffer size',
+      run: (_session, args) => { ar()?.setLogBufferSize(Number(args.entries)); return ''; },
     },
-  );
+    {
+      ...base, id: 'archive-logging-enable', path: ['logging', 'enable'],
+      description: 'Enable archive logging',
+      run: () => { ar()?.enableLogging(); return ''; },
+    },
+    {
+      ...base, id: 'archive-logging-disable', path: ['logging', 'disable'],
+      description: 'Disable archive logging',
+      run: () => { ar()?.disableLogging(); return ''; },
+    },
+    {
+      ...base, id: 'archive-hidekeys', path: ['hidekeys'],
+      description: 'Hide passwords in archive log',
+      run: () => { ar()?.setHidekeys(true); return ''; },
+      undo: () => { ar()?.setHidekeys(false); return ''; },
+    },
+    {
+      ...base, id: 'archive-notify-syslog',
+      path: ['notify', 'syslog', 'contenttype', SYSLOG_FORMAT],
+      description: 'Notify syslog format',
+      run: (_session, args) => {
+        ar()?.setNotifySyslog(args.format === 'xml' ? 'xml' : 'plaintext');
+        return '';
+      },
+    },
+  ];
 }
