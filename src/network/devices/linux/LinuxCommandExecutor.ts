@@ -393,11 +393,48 @@ function ignoresStandardInput(argv: readonly string[]): boolean {
   return known && !readsStandardInput(command, argv.slice(1));
 }
 
+const STDIN_OPTIONS_WITH_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
+  grep: new Set(['-A', '-B', '-C', '-m', '-e', '-f', '-d', '-D']),
+  egrep: new Set(['-A', '-B', '-C', '-m', '-e', '-f', '-d', '-D']),
+  fgrep: new Set(['-A', '-B', '-C', '-m', '-e', '-f', '-d', '-D']),
+  sed: new Set(['-e', '-f', '-l']),
+  awk: new Set(['-F', '-v', '-f']),
+};
+
+const STDIN_OPTIONS_GIVING_THE_SCRIPT: Readonly<Record<string, ReadonlySet<string>>> = {
+  grep: new Set(['-e', '-f']),
+  egrep: new Set(['-e', '-f']),
+  fgrep: new Set(['-e', '-f']),
+  sed: new Set(['-e', '-f']),
+  awk: new Set(['-f']),
+};
+
 function readsStandardInput(command: string, args: readonly string[]): boolean {
   if (ALWAYS_READ_STDIN.has(command)) return true;
-  const operands = args.filter((argument) => !argument.startsWith('-') || argument === '-').length;
+  const takesValue = STDIN_OPTIONS_WITH_VALUE[command];
+  const givesScript = STDIN_OPTIONS_GIVING_THE_SCRIPT[command];
+  let operands = 0;
+  let scriptGiven = false;
+  for (let i = 0; i < args.length; i++) {
+    const argument = args[i];
+    if (argument === '--') {
+      operands += args.length - i - 1;
+      break;
+    }
+    if (argument.startsWith('-') && argument !== '-') {
+      if (takesValue?.has(argument)) {
+        if (givesScript?.has(argument)) scriptGiven = true;
+        i++;
+      } else if (takesValue !== undefined && argument.length > 2 && !argument.startsWith('--') && takesValue.has(argument.slice(0, 2))) {
+        if (givesScript?.has(argument.slice(0, 2))) scriptGiven = true;
+      }
+      continue;
+    }
+    operands++;
+  }
   if (READ_STDIN_WITHOUT_OPERAND.has(command)) return operands === 0;
-  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= (command === 'tr' ? 2 : 1);
+  const allowed = command === 'tr' ? 2 : scriptGiven ? 0 : 1;
+  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= allowed;
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([

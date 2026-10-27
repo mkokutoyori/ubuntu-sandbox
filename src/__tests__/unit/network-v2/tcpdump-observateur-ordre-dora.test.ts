@@ -42,7 +42,7 @@ async function lan() {
   new Cable('c').connect(observer.getPorts()[0], sw.getPorts()[2]);
   srv.getPorts()[0].configureIP(new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
   await observer.executeCommand('ip link set eth0 up');
-  await srv.executeCommand(`printf '%s' ${JSON.stringify('authoritative;\nsubnet 192.168.1.0 netmask 255.255.255.0 { range 192.168.1.100 192.168.1.110; }\n')} > /etc/dhcp/dhcpd.conf`);
+  await srv.executeCommand(`printf '%b' ${JSON.stringify('authoritative;\nsubnet 192.168.1.0 netmask 255.255.255.0 { range 192.168.1.100 192.168.1.110; }\n')} > /etc/dhcp/dhcpd.conf`);
   await srv.executeCommand('printf \'INTERFACESv4="eth0"\\n\' > /etc/default/isc-dhcp-server');
   await srv.executeCommand('systemctl start isc-dhcp-server');
   return { srv, client, observer };
