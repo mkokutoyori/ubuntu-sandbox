@@ -708,9 +708,11 @@ export class SwitchSvi {
         if (s.adminUp && s.ip?.toString() === sourceIPStr) { svi = s; break; }
       }
     }
-    svi ??= this.egressSviFor(target);
+    const route = this.lookupRoute(target);
+    svi ??= route?.egress ?? this.egressSviFor(target);
     if (!svi || !svi.ip) return [];
     const selfIp = svi.ip;
+    const nextHop = route !== null && route.egress === svi ? route.nextHop : target;
 
     // Self-ping: every SVI address answers immediately.
     for (const s of this.svis.values()) {
@@ -728,7 +730,7 @@ export class SwitchSvi {
       }
     }
 
-    const targetMac = this.resolveArp(svi.vlan, selfIp, target);
+    const targetMac = this.resolveArp(svi.vlan, selfIp, nextHop);
     if (!targetMac) return []; // ARP failed → unreachable
 
     const results: CiscoPingRow[] = [];
@@ -900,10 +902,14 @@ export class SwitchSvi {
     vlan: number, selfIp: IPAddress, reqIp: IPv4Packet, reqIcmp: ICMPPacket,
   ): void {
     const ipPkt = buildEchoReply(reqIp, reqIcmp, selfIp, 255);
-    const targetMac = this.host.lookupArp(ipPkt.destinationIP.toString());
-    this.host.egressOnVlan(vlan, {
+    const route = this.lookupRoute(ipPkt.destinationIP);
+    const egressVlan = route?.egress.vlan ?? vlan;
+    const nextHopMac = route !== null && route.egress.ip !== undefined
+      ? this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop)
+      : this.host.lookupArp(ipPkt.destinationIP.toString());
+    this.host.egressOnVlan(egressVlan, {
       srcMAC: this.host.getBridgeMac(),
-      dstMAC: targetMac ?? MACAddress.broadcast(),
+      dstMAC: nextHopMac ?? MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
   }
