@@ -65,10 +65,11 @@ export class BashLexer {
 
   private warnings: LexerWarning[] = [];
   private extglobPolicy: ExtglobPolicy = 'always';
+  private insideDoubleBracket = false;
   private extglobEvents: ReadonlyArray<{ readonly offset: number; readonly enable: boolean }> = [];
 
   private extglobEnabled(): boolean {
-    if (this.extglobPolicy === 'always') return true;
+    if (this.extglobPolicy === 'always' || this.insideDoubleBracket) return true;
     let enabled = false;
     for (const event of this.extglobEvents) if (event.offset <= this.pos) enabled = event.enable;
     return enabled;
@@ -90,6 +91,7 @@ export class BashLexer {
   private scan(input: string, strip: boolean, recover: boolean, firstLine: number, extglob: ExtglobPolicy): { tokens: Token[]; error: LexerError | null; warnings: readonly LexerWarning[] } {
     this.input = input;
     this.extglobPolicy = extglob;
+    this.insideDoubleBracket = false;
     this.extglobEvents = extglob === 'declared' ? extglobToggles(input) : [];
     this.pos = 0;
     this.line = firstLine;
@@ -506,6 +508,7 @@ export class BashLexer {
     this.advance();
     if (!this.isAtEnd() && this.peek() === '[') {
       this.advance();
+      this.insideDoubleBracket = true;
       return { type: TokenType.DLBRACKET, value: '[[', position: start };
     }
     return { type: TokenType.LBRACKET, value: '[', position: start };
@@ -516,6 +519,7 @@ export class BashLexer {
     this.advance();
     if (!this.isAtEnd() && this.peek() === ']') {
       this.advance();
+      this.insideDoubleBracket = false;
       return { type: TokenType.DRBRACKET, value: ']]', position: start };
     }
     return { type: TokenType.RBRACKET, value: ']', position: start };
