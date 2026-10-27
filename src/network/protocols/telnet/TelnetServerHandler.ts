@@ -22,6 +22,7 @@ import {
   encodeSubnegotiation, fromNvtText, parseTelnetChunk, toNvtText,
 } from './TelnetCodec';
 import { TelnetNegotiator, type TelnetOptionPolicy } from './TelnetNegotiator';
+import { NetkitTelnetdNegotiation } from './NetkitTelnetdNegotiation';
 import type { ITelnetServerContext, TelnetVtyShell } from './ITelnetServerContext';
 
 /**
@@ -72,18 +73,38 @@ class TelnetSession {
   private idleTimer: ReturnType<TimerSet['setTimeout']> | null = null;
   private busy: Promise<void> = Promise.resolve();
   private terminalType: string | null = null;
+  private readonly netkit: NetkitTelnetdNegotiation | null;
+  private deferredText = '';
 
   constructor(
     private readonly ctx: ITelnetServerContext,
     private readonly conn: TcpStream,
     private readonly clientIp: string,
-  ) {}
+  ) {
+    this.netkit = ctx.negotiation?.() === 'netkit'
+      ? new NetkitTelnetdNegotiation({
+        write: (bytes) => this.send(bytes),
+        ready: () => this.beginLogin(),
+        noteTerminalType: (name) => {
+          this.terminalType = name;
+          if (this.sessionId) this.ctx.noteTerminalType?.(this.sessionId, name);
+        },
+        noteEnvironment: () => {},
+        logout: () => { this.teardown('logout'); this.conn.close(); },
+        hostname: () => this.ctx.hostname(),
+      })
+      : null;
+  }
 
   start(): void {
     this.conn.onData((chunk) => this.onData(chunk));
     this.conn.onClose?.(() => this.teardown('closed'));
+    if (this.netkit) { this.netkit.start(); return; }
     this.send(this.negotiator.openingOffer());
+    this.beginLogin();
+  }
 
+  private beginLogin(): void {
     const banner = this.ctx.banner();
     if (banner) this.write(`\n${banner}\n`);
 
@@ -104,6 +125,21 @@ class TelnetSession {
     if (this.phase === 'closed') return;
     const parsed = parseTelnetChunk(chunk, this.carry);
     this.carry = parsed.carry;
+
+    if (this.netkit) {
+      this.netkit.receive(parsed.negotiations, parsed.subnegotiations);
+      for (const control of parsed.controls) if (!this.netkit.control(control)) this.onControl(control);
+      if (parsed.data) {
+        if (this.netkit.isReady) this.onText(parsed.data);
+        else this.deferredText += parsed.data;
+      }
+      if (this.netkit.isReady && this.deferredText) {
+        const queued = this.deferredText;
+        this.deferredText = '';
+        this.onText(queued);
+      }
+      return;
+    }
 
     const reply = this.negotiator.respond(parsed.negotiations);
     if (reply) this.send(reply);
@@ -168,7 +204,7 @@ class TelnetSession {
    */
   private echo(text: string): void {
     if (this.phase === 'password') return;
-    if (!this.negotiator.isLocalEnabled(OPT_ECHO)) return;
+    if (this.netkit ? !this.netkit.echoes : !this.negotiator.isLocalEnabled(OPT_ECHO)) return;
     this.send(toNvtText(text));
   }
 

@@ -39,6 +39,8 @@ export interface TelnetSessionHandle {
 
 export interface ITelnetServerContext {
   hostname(): string;
+  /** Which daemon's option negotiation the peer sees. Absent is the IOS one. */
+  negotiation?(): 'ios' | 'netkit';
   /** `banner login` / `header login` text, shown before authentication. */
   banner(): string | null;
   /** `banner motd` / `header shell` text, shown once authenticated. */

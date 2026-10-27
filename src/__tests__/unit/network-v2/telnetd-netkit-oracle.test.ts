@@ -72,16 +72,22 @@ describe('in.telnetd 0.17 — negotiation against the real daemon', () => {
       const socket = await (pc as unknown as { tcpConnect(h: string, p: number): Promise<TelnetClientTransport | null> }).tcpConnect('10.0.0.20', 23);
       expect(socket).not.toBeNull();
       let received = '';
+      let closed = false;
       socket!.onData((chunk) => { received += chunk; });
+      socket!.onClose?.(() => { closed = true; });
       await settle(20);
       const observed: string[] = [commandsOnly(toHex(received))];
       received = '';
       for (const [kind, payload] of scenario.steps) {
         if (kind === 'send') socket!.write(fromHex(payload as string));
-        else if (kind === 'shutdown') socket!.close();
+        else if (kind === 'shutdown') {
+          socket!.close();
+          closed = true;
+        }
         await settle(20);
         observed.push(commandsOnly(toHex(received)));
         received = '';
+        if (closed) break;
       }
       expect(observed).toEqual(scenario.result.map((r) => commandsOnly(r.got)));
     });

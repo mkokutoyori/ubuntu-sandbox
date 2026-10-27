@@ -3020,7 +3020,6 @@ export class NetkitTelnetClient {
   private receive(data: string): void {
     if (!this.connected || this.state === 'exited') return;
     const bytes = this.bytes(data);
-    if (this.toggles.netdata) this.dumpNetwork(bytes);
     this.netRing.push(...bytes);
     this.telrcv();
     this.netFlush();
@@ -3028,11 +3027,6 @@ export class NetkitTelnetClient {
   }
 
   private netRing: number[] = [];
-
-  private dumpNetwork(bytes: readonly number[]): void {
-    if (this.toggles.prettydump) this.out(`<${bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ')}\n`);
-    else this.out(`${bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ')}\n`);
-  }
 
   private telrcv(): void {
     while (this.netRing.length > 0 && this.connected) {
