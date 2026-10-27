@@ -98,6 +98,7 @@ import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapte
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+import type { TracerouteHop } from './Router';
 import { Logger } from '../core/Logger';
 import { isGroupAddress } from '../layers/link/LinkLayer';
 import {
@@ -161,11 +162,22 @@ export interface TaggedEthernetFrame extends EthernetFrame {
 
 // ─── Port Configuration ─────────────────────────────────────────────
 
+const FIRST_INTERNAL_VLAN = 1006;
+
 export type SwitchportMode = 'access' | 'trunk' | 'hybrid' | 'dot1q-tunnel';
+
+export interface RoutedPortState {
+  readonly internalVlan: number;
+  readonly previousMode: SwitchportMode;
+  readonly previousExplicitMode: boolean;
+  readonly previousAccessVlan: number;
+  readonly originalMac: MACAddress;
+}
 
 export interface SwitchportConfig {
   mode: SwitchportMode;
   explicitMode: boolean;
+  routed?: RoutedPortState;
   accessVlan: number;           // VLAN for access mode (default 1)
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
   trunkAllowedVlans: VlanSet;
@@ -578,19 +590,22 @@ export abstract class Switch extends Equipment {
     },
     lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
     forgetArp: (ip: string) => { this.arpTable.forgetDynamic(ip); },
-    learnArp: (ip, mac, iface, vlan) => { this.arpTable.learn(ip, mac, iface, vlan); },
+    learnArp: (ip, mac, iface, vlan) => {
+      const viaRoutedPort = this.svi.getSvi(vlan)?.routedPort !== undefined;
+      this.arpTable.learn(ip, mac, iface, viaRoutedPort ? undefined : vlan);
+    },
     fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
       this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? this._glbpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? null,
     icmpUnreachablesEnabled: (vlan) =>
-      !getSecurityConfig(this).ifaceFlags(`Vlan${vlan}`).noUnreachables,
+      !getSecurityConfig(this).ifaceFlags(this.l3InterfaceName(vlan)).noUnreachables,
     acceptsSourceRouting: () => getSecurityConfig(this).ipSourceRoute,
     aclDeniesRouted: (vlan, direction, pkt) => {
       const engine = this.vaclEngine;
       if (!engine) return false;
-      const ref = engine.getInterfaceACL(`Vlan${vlan}`, direction);
+      const ref = engine.getInterfaceACL(this.l3InterfaceName(vlan), direction);
       if (ref === null) return false;
       return engine.evaluateForDataPlane(ref, pkt) === 'deny';
     },
@@ -2171,6 +2186,7 @@ export abstract class Switch extends Equipment {
   getStpPortVlans(portName: string): number[] {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return [1];
+    if (cfg.routed) return [];
     if (cfg.mode === 'access') {
       return this.vlans.has(cfg.accessVlan) ? [cfg.accessVlan] : [1];
     }
@@ -3037,7 +3053,7 @@ export abstract class Switch extends Equipment {
     sessionShell.beginExecSession?.(account?.privilege ?? 1, user, account?.view ?? null);
     let ended = false;
     return {
-      execute: (rawInput: string): string => {
+      execute: (rawInput: string): string | Promise<string> => {
         const output = shell.execute(this, rawInput);
         ended = shell.execSessionClosed?.() === true;
         return output;
@@ -3130,6 +3146,7 @@ export abstract class Switch extends Equipment {
       line = line.slice(1, -1).trim();
     }
     const output = this.createShell().execute(this, line);
+    if (typeof output !== 'string') return null;
     return { output: output.endsWith('\n') ? output : `${output}\n`, exitCode: 0 };
   }
 
@@ -3440,8 +3457,67 @@ export abstract class Switch extends Equipment {
 
   configureSviIp(vlan: number, ip: IPAddress, mask: SubnetMask): void {
     this.svi.configure(vlan, ip, mask);
+    this.routedPortOfVlan(vlan)?.configureIP(ip, mask);
   }
-  clearSviIp(vlan: number): void { this.svi.clearIp(vlan); }
+  clearSviIp(vlan: number): void {
+    this.svi.clearIp(vlan);
+    this.routedPortOfVlan(vlan)?.clearIP();
+  }
+
+  private routedPortOfVlan(vlan: number): Port | undefined {
+    const name = this.svi.getSvi(vlan)?.routedPort;
+    return name === undefined ? undefined : this.getPort(name);
+  }
+
+  l3InterfaceName(vlan: number): string {
+    return this.svi.getSvi(vlan)?.routedPort ?? `Vlan${vlan}`;
+  }
+
+  routedVlanOf(portName: string): number | null {
+    return this.switchportConfigs.get(portName)?.routed?.internalVlan ?? null;
+  }
+
+  setRoutedPort(portName: string, routed: boolean): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    if (routed === (cfg.routed !== undefined)) return true;
+    if (routed) {
+      const internalVlan = this.nextInternalVlan();
+      const port = this.getPort(portName);
+      this.vlans.get(cfg.accessVlan)?.ports.delete(portName);
+      cfg.routed = {
+        internalVlan, previousMode: cfg.mode, previousExplicitMode: cfg.explicitMode,
+        previousAccessVlan: cfg.accessVlan, originalMac: port?.getMAC() ?? this.getBridgeMac(),
+      };
+      port?.setMAC(this.getBridgeMac());
+      cfg.mode = 'access';
+      cfg.accessVlan = internalVlan;
+      this.svi.ensureRouted(internalVlan, portName);
+    } else {
+      const state = cfg.routed!;
+      this.getPort(portName)?.clearIP();
+      this.getPort(portName)?.setMAC(state.originalMac);
+      this.svi.remove(state.internalVlan);
+      cfg.routed = undefined;
+      cfg.mode = state.previousMode;
+      cfg.explicitMode = state.previousExplicitMode;
+      cfg.accessVlan = state.previousAccessVlan;
+      if (cfg.mode === 'access' || cfg.mode === 'dot1q-tunnel') {
+        this.vlans.get(cfg.accessVlan)?.ports.add(portName);
+      }
+    }
+    this.flushDynamicMacsOnPort(portName, 'routed-port-change');
+    this.mvrpTopologyChanged();
+    Logger.info(this.id, 'switch:routed-port', `${this.name}: ${portName} ${routed ? 'routed' : 'switched'}`);
+    return true;
+  }
+
+  private nextInternalVlan(): number {
+    const taken = new Set<number>([...this.vlans.keys(), ...this.svi.list().map((svi) => svi.vlan)]);
+    let candidate = FIRST_INTERNAL_VLAN;
+    while (taken.has(candidate)) candidate++;
+    return candidate;
+  }
   setSviAdminUp(vlan: number, up: boolean): void {
     this.svi.setAdminUp(vlan, up);
     const clientIface = this.sviClientIface(vlan);
@@ -3548,6 +3624,12 @@ export abstract class Switch extends Equipment {
     hooks?: EchoHooks,
   ): Promise<CiscoPingRow[]> {
     return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr, hooks);
+  }
+
+  executeTraceroute(
+    target: IPAddress, maxHops = 30, timeoutMs = 2000, probesPerHop = 3, firstTtl = 1,
+  ): Promise<TracerouteHop[]> {
+    return this.svi.executeTraceroute(target, maxHops, timeoutMs, probesPerHop, firstTtl);
   }
 
   getStaticRoutes() { return this.svi.getStaticRoutes(); }
@@ -4175,7 +4257,7 @@ export abstract class Switch extends Equipment {
 
   _getSviArpAddresses(): Array<{ vlan: number; ip: string; mac: MACAddress }> {
     return this.getSvis()
-      .filter((svi) => svi.ip !== undefined)
+      .filter((svi) => svi.ip !== undefined && svi.routedPort === undefined)
       .map((svi) => ({ vlan: svi.vlan, ip: svi.ip!.toString(), mac: this.getBridgeMac() }));
   }
 
@@ -4189,7 +4271,9 @@ export abstract class Switch extends Equipment {
 
   _getArpStats(): ArpStats { return this.arpStats; }
 
-  _getSviVlanIds(): number[] { return this.getSvis().map((s) => s.vlan); }
+  _getSviVlanIds(): number[] {
+    return this.getSvis().filter((svi) => svi.routedPort === undefined).map((svi) => svi.vlan);
+  }
 
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
     this.arpTable.addStatic(ip.toString(), mac, iface);

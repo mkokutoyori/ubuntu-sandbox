@@ -109,7 +109,7 @@ export function networkdDiagnostics(vfs: VirtualFileSystem, files: readonly Netw
   return diagnostics;
 }
 
-function globMatches(pattern: string | undefined, name: string): boolean {
+export function globMatches(pattern: string | undefined, name: string): boolean {
   if (!pattern) return false;
   return pattern.split(/\s+/).some((p) => {
     if (p === '*') return true;

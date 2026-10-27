@@ -34,6 +34,7 @@ import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
 import {
   switchPortPhysicalSpecs, type PhysicalPortHost,
 } from './cisco/switchPortPhysicalSpecs';
+import { routedPortSpecs, type RoutedPortHost } from './cisco/routedPortSpecs';
 import { stpInterfaceSpecs, type StpInterfaceHost } from './cisco/stpInterfaceSpecs';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 import { arpTimeoutFamily } from '@/cli/commands/arp/arpTimeoutFamily';
@@ -50,6 +51,7 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
+import type { SviInterface } from '../SwitchSvi';
 import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
@@ -2061,7 +2063,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   selectedInterfaceName(): string | null { return this.selectedInterface ?? null; }
 
   setInterfaceArpTimeout(iface: string, seconds: number | null): void {
-    const vlan = this.sviVlanId(iface);
+    const vlan = this.l3VlanId(iface);
     if (vlan !== null) this.d().setSviArpTimeout(vlan, seconds);
   }
 
@@ -2189,8 +2191,43 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
   }
 
+  private routedPortHost(): RoutedPortHost {
+    return {
+      setSelectedPortsRouted: (routed) => {
+        const refusals: string[] = [];
+        for (const name of this.selectedInterfaceRange) {
+          if (!this.d().getPort(name) || !this.d().getSwitchportConfig(name)) {
+            refusals.push(CISCO_ERRORS.INVALID_INPUT);
+            continue;
+          }
+          this.d().setRoutedPort(name, routed);
+        }
+        return refusals.join('\n');
+      },
+    };
+  }
+
+  protected override executeOnTrie(cmdPart: string): string {
+    return this.routedPortRefusal(cmdPart) ?? super.executeOnTrie(cmdPart);
+  }
+
+  private routedPortRefusal(command: string): string | null {
+    if (this.mode !== 'config-if') return null;
+    const words = command.trim().split(/\s+/);
+    const negated = words[0]?.toLowerCase() === 'no';
+    const head = (negated ? words[1] : words[0])?.toLowerCase() ?? '';
+    const operands = words.length - (negated ? 2 : 1);
+    if (head.length < 2 || !'switchport'.startsWith(head) || operands < 1) return null;
+    const routed = this.selectedInterfaceRange.some((name) => this.d().routedVlanOf(name) !== null);
+    return routed ? CISCO_ERRORS.INVALID_INPUT : null;
+  }
+
+  private l3VlanId(iface: string): number | null {
+    return this.sviVlanId(iface) ?? this.d().routedVlanOf(iface);
+  }
+
   protected override ipAddressHost(): IpAddressHost {
-    const vlan = (): number | null => this.sviVlanId(this.selectedInterface ?? '');
+    const vlan = (): number | null => this.l3VlanId(this.selectedInterface ?? '');
     const surSvi = (appliquer: (n: number) => string): string => {
       const n = vlan();
       return n === null
@@ -2352,6 +2389,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...mstConfigSpecs(() => this.mstConfigHost()),
       ...echoSpecs(() => this.echoHost(), { ipv6: false, traceroute: false }),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
+      ...routedPortSpecs(() => this.routedPortHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
       ...dhcpClientFamily(),
@@ -4238,38 +4276,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(`interface ${portName}`);
       const desc = descs.get(portName);
       if (desc) lines.push(` description ${desc}`);
-      const dtpAdmin = dtpAgent?.getAdminMode(portName);
-      if (cfg.mode === 'dot1q-tunnel') {
-        lines.push(' switchport mode dot1q-tunnel');
-      } else if (dtpAdmin === 'dynamic-auto') {
-        lines.push(' switchport mode dynamic auto');
-      } else if (dtpAdmin === 'dynamic-desirable') {
-        lines.push(' switchport mode dynamic desirable');
-      } else if (dtpAdmin === 'nonegotiate') {
-        lines.push(' switchport nonegotiate');
-      } else if (dtpAdmin === 'trunk') {
-        lines.push(' switchport mode trunk');
-      } else if (cfg.explicitMode) {
-        lines.push(' switchport mode access');
+      const routedSvi = cfg.routed ? sw.getSvi(cfg.routed.internalVlan) : undefined;
+      if (routedSvi) {
+        lines.push(' no switchport');
+        lines.push(...this.sviAddressLines(sw, routedSvi));
+      } else {
+        lines.push(...this.switchportRunningConfigLines(sw, portName, cfg, dtpAgent));
       }
-      if (cfg.mode === 'trunk') {
-        if (cfg.trunkNativeVlan !== 1) {
-          lines.push(` switchport trunk native vlan ${cfg.trunkNativeVlan}`);
-        }
-        if (cfg.trunkAllowedVlans.size < 4094) {
-          if (cfg.trunkAllowedVlans.size === 0) {
-            lines.push(` switchport trunk allowed vlan none`);
-          } else {
-            const sorted = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-            lines.push(` switchport trunk allowed vlan ${this.compactVlanList(sorted)}`);
-          }
-        }
-      } else if (cfg.accessVlan !== 1) {
-        lines.push(` switchport access vlan ${cfg.accessVlan}`);
-      }
-      const voix = cfg.voiceVlan ?? cfg.voiceVlanMode;
-      if (voix !== undefined) lines.push(` switchport voice vlan ${voix}`);
-      if (sw.isPortProtected(portName)) lines.push(' switchport protected');
       lines.push(...runningConfigInterfaceACLFrom(
         sw.getVaclEngine().getInterfaceACLBindingsInternal(), portName));
       const macGroup = sw._getMacAccessGroups().get(portName);
@@ -4318,20 +4331,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (this.trackObjects.list().length > 0) lines.push('!');
 
     for (const svi of sw.getSvis()) {
+      if (svi.routedPort !== undefined) continue;
       lines.push(`interface Vlan${svi.vlan}`);
-      if (svi.dhcpClient) {
-        lines.push(' ip address dhcp');
-      } else if (svi.ip && svi.mask) {
-        lines.push(` ip address ${svi.ip} ${svi.mask}`);
-      } else {
-        lines.push(' no ip address');
-      }
-      for (const helper of svi.helperAddresses) {
-        lines.push(` ip helper-address ${helper}`);
-      }
-      if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {
-        lines.push(` arp timeout ${svi.arpTimeoutSec}`);
-      }
+      lines.push(...this.sviAddressLines(sw, svi));
       lines.push(...runningConfigInterfaceACLFrom(
         sw.getVaclEngine().getInterfaceACLBindingsInternal(), `Vlan${svi.vlan}`));
       lines.push(...getSecurityConfig(sw).asInterfaceRunningConfigLines(`Vlan${svi.vlan}`));
@@ -4578,8 +4580,67 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
+  private sviAddressLines(sw: CiscoSwitch, svi: SviInterface): string[] {
+    const lines: string[] = [];
+    if (svi.dhcpClient) {
+      lines.push(' ip address dhcp');
+    } else if (svi.ip && svi.mask) {
+      lines.push(` ip address ${svi.ip} ${svi.mask}`);
+    } else {
+      lines.push(' no ip address');
+    }
+    for (const helper of svi.helperAddresses) {
+      lines.push(` ip helper-address ${helper}`);
+    }
+    if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {
+      lines.push(` arp timeout ${svi.arpTimeoutSec}`);
+    }
+    return lines;
+  }
+
+  private switchportRunningConfigLines(
+    sw: CiscoSwitch, portName: string, cfg: SwitchportConfig,
+    dtpAgent: import('../../dtp/DtpAgent').DtpAgent | undefined,
+  ): string[] {
+    const lines: string[] = [];
+    const dtpAdmin = dtpAgent?.getAdminMode(portName);
+    if (cfg.mode === 'dot1q-tunnel') {
+      lines.push(' switchport mode dot1q-tunnel');
+    } else if (dtpAdmin === 'dynamic-auto') {
+      lines.push(' switchport mode dynamic auto');
+    } else if (dtpAdmin === 'dynamic-desirable') {
+      lines.push(' switchport mode dynamic desirable');
+    } else if (dtpAdmin === 'nonegotiate') {
+      lines.push(' switchport nonegotiate');
+    } else if (dtpAdmin === 'trunk') {
+      lines.push(' switchport mode trunk');
+    } else if (cfg.explicitMode) {
+      lines.push(' switchport mode access');
+    }
+    if (cfg.mode === 'trunk') {
+      if (cfg.trunkNativeVlan !== 1) {
+        lines.push(` switchport trunk native vlan ${cfg.trunkNativeVlan}`);
+      }
+      if (cfg.trunkAllowedVlans.size < 4094) {
+        if (cfg.trunkAllowedVlans.size === 0) {
+          lines.push(` switchport trunk allowed vlan none`);
+        } else {
+          const sorted = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
+          lines.push(` switchport trunk allowed vlan ${this.compactVlanList(sorted)}`);
+        }
+      }
+    } else if (cfg.accessVlan !== 1) {
+      lines.push(` switchport access vlan ${cfg.accessVlan}`);
+    }
+    const voix = cfg.voiceVlan ?? cfg.voiceVlanMode;
+    if (voix !== undefined) lines.push(` switchport voice vlan ${voix}`);
+    if (sw.isPortProtected(portName)) lines.push(' switchport protected');
+    return lines;
+  }
+
   private showSwitchportDetail(name: string): string {
     const c = this.d().getSwitchportConfig(name);
+    if (c?.routed) return [`Name: ${this.abbreviateInterface(name)}`, 'Switchport: Disabled'].join('\n');
     // Same reasoning as `showTrunkTable`: with no DTP there is nothing to
     // negotiate, so both modes come from the port's own configuration and
     // negotiation reads Off — which is the truth about an unmanaged port,
@@ -4686,7 +4747,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           .slice(0, INTERFACE_STATUS_NAME_WIDTH),
         status: sw.isPortErrDisabled(portName) ? 'err-disabled'
           : port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
-        vlan: cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
+        vlan: cfg?.routed ? 'routed' : cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
         // Read the port rather than guess from its name. The `a-`
         // prefix is IOS's way of saying the value was AUTO-NEGOTIATED,
         // so it is wrong the moment an operator forces speed or duplex —
@@ -5708,7 +5769,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const [nom, port] of ports) {
       blocs.push(ipInterfaceBlockFor(nom, port, ports, '', true, {}, this.liaisonsAcl(nom)));
     }
-    for (const svi of this.d().getSvis()) blocs.push(this.sviInterfaceBlock(svi.vlan));
+    for (const svi of this.d().getSvis()) {
+      if (svi.routedPort === undefined) blocs.push(this.sviInterfaceBlock(svi.vlan));
+    }
     return blocs.length ? blocs.join('\n') : 'No interfaces present.';
   }
 
@@ -5868,7 +5931,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       *localAddresses() {
         for (const svi of sw.getSvis()) {
           if (!svi.adminUp || !svi.ip) continue;
-          yield [`Vlan${svi.vlan}`, svi.ip] as const;
+          yield [sw.l3InterfaceName(svi.vlan), svi.ip] as const;
         }
       },
     };
@@ -5879,14 +5942,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   protected override poserRelaisDhcp(iface: string, cible: string): string {
-    const vlan = this.sviVlanId(iface);
+    const vlan = this.l3VlanId(iface);
     if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
     this.d().addSviHelperAddress(vlan, cible);
     return '';
   }
 
   protected override retirerRelaisDhcp(iface: string, cible: string): string {
-    const vlan = this.sviVlanId(iface);
+    const vlan = this.l3VlanId(iface);
     if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
     this.d().removeSviHelperAddress(vlan, cible);
     return '';
@@ -6076,6 +6139,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private showIpInterfaceBrief(): string {
     const rows = ipIntBriefRowsFromPorts(this.d()._getPortsInternal());
     for (const svi of this.d().getSvis()) {
+      if (svi.routedPort !== undefined) continue;
       rows.push({
         name: `Vlan${svi.vlan}`,
         ip: svi.ip ? svi.ip.toString() : 'unassigned',

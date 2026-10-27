@@ -977,20 +977,32 @@ et le labo `fuser-parsing`, 68 pas sur 68) :
   l'environnement : sur la machine d'enregistrement `/` liste les processus de l'espace de noms
   hote, ici ceux du simulateur. Ils sont declares non portes dans `UNPORTED_STEPS`.
 
-### [lab NTP] ecarts mesures en montant le lab du tutoriel NTP (etape 0)
+### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
 Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
-export / reimport JSON (sonde `probe-un-lab-exporte-redevient-le-meme-lab.test.ts`). Fermes dans le meme changement : la
-route par defaut de `New-NetIPAddress -DefaultGateway`, la levee des interfaces VLAN au rejeu d'un export, les serveurs DNS
-du poste Windows dans le fichier. Restent ouverts :
-- `HuaweiSwitchShell` n'a ni `ping` ni `tracert` (le routeur Huawei les a) : le test 5 de l'exercice 0 (`ping` depuis SW-HW)
-  repond `Error: Unrecognized command found at '^' position.` ; seul `HuaweiVRPShell` enregistre `ping`.
-- netplan : le simulateur ne lit que `/etc/netplan/01-netcfg.yaml` (`NETPLAN_PATH`), ni `routes: - to: default via:`, ni
-  `nameservers:` (le DNS se pose a la main dans `/etc/resolv.conf`), ni les autres fichiers du repertoire : le vrai les fusionne
-  par ordre lexical. `netplan apply` d'un `50-lab.yaml` est un succes muet qui ne change rien.
-- `CiscoSwitch` a 24 ports FastEthernet et deux GigabitEthernet0/1-2 (IOSvL2 : Gi0/0 a Gi3/3) et refuse `no switchport`
-  (`% Incomplete command.`) : le lien routeur du lab passe par le VLAN de transit (variante que le tutoriel prevoit).
-- `Vlanif1` d'un switch Huawei n'est pas rendu `shutdown` par `display current-configuration`, donc un export / reimport le
-  leve (`*down` devient `down`).
+export / reimport JSON. Fermes avec leurs sondes : `ping` / `tracert` du switch Huawei, `shutdown` de `Vlanif` rendu par
+`display current-configuration`, port routé Cisco (`no switchport`), netplan multi-fichiers (`routes:`, `nameservers:`,
+`match:`, erreurs de grammaire), `sudo NOM=valeur`, route par defaut de `New-NetIPAddress -DefaultGateway`, levee des
+interfaces VLAN au rejeu d'un export, serveurs DNS du poste Windows dans le fichier. Restent ouverts :
+- `CiscoSwitch` a 24 ports FastEthernet et deux GigabitEthernet0/1-2 la ou le modele du tutoriel (IOSvL2) porte Gi0/0 a
+  Gi3/3 : difference de modele materiel, pas un defaut de commande. Le lab nomme ses ports d'apres le simulateur.
+- Port routé Cisco : HSRP / VRRP / GLBP sur un port routé sont refuses avec la phrase des interfaces VLAN (`valid on SVI (Vlan)
+  interfaces only`) alors qu'IOS les accepte ; `ip nat inside|outside` sur un port routé n'est pas porte ; tous les ports
+  routés et toutes les interfaces VLAN parlent avec l'adresse MAC du pont (un vrai Catalyst en donne une par port) ; le refus
+  de `switchport ...` sur un port routé est `% Invalid input detected at '^' marker.` faute d'avoir pu lire la phrase exacte
+  d'IOS (le site de la communaute Cisco est injoignable d'ici ; un fil de discussion y parle de « not a switching port »).
+- Un port routé n'existe que sur `CiscoSwitch` : `undo portswitch` de VRP n'est pas porte (un `HuaweiSwitch` partage le meme
+  `Switch`, le plan SVI est donc pret).
+- `ping` et `tracert` de VRP : le routeur rend l'IPv4 et l'IPv6 dans deux mises en page differentes (IPv4 : statistiques sur
+  une ligne ; IPv6 : retrait de quatre espaces, statistiques sur quatre lignes), alors que la meme famille de commandes VRP
+  n'en a qu'une : l'une des deux n'est pas celle de VRP. Non tranche faute de capture ou de page de documentation lisible d'ici
+  (regle 8) ; le switch partage `shells/huawei/huaweiPing.ts` avec le routeur, donc suivra la correction. Le switch refuse
+  `ping ipv6` (pas de pile IPv6 de gestion).
+- netplan 0.104 : `set-name` n'est pas applique (la definition est ignoree, jamais renommee), `match.driver` ne
+  correspond jamais, le simulateur n'imprime pas l'avertissement de depreciation de `gateway4` / `gateway6`, les routes
+  portant `table:` ou un `type:` autre que `unicast` ne sont pas appliquees, et les types non-ethernet (bonds, bridges,
+  vlans, wifis, tunnels) ne sont valides qu'en surface.
+- Un `systemctl restart systemd-networkd` demarre maintenant un client DHCP sur toute interface netplan `dhcp4: true` (c'est
+  ce que fait le vrai) : un lab qui ne veut aucun bail doit le dire par `dhcp4: false` dans son fichier.
 
 ### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
 Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
