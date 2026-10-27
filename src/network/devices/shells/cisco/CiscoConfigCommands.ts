@@ -546,7 +546,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Up to 240 characters describing this interface' },
   shutdown: null,
   'ip directed-broadcast': null,
-  'ntp disable': null,
   'ip accounting': null,
   /*
    * Deux places et non un reste : `ip address` exige une adresse ET un
@@ -759,43 +758,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) delete (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss;
-    return '';
-  });
-  // Le durcissement du §9 du tutoriel NTP : `ntp disable` interdit a une
-  // interface de SERVIR le temps, ce qui est la contre-mesure la plus
-  // simple contre un client NTP non sollicite sur un lien exterieur. La
-  // commande etait refusee (`% Invalid input detected`), donc le
-  // durcissement impossible a ecrire.
-  trie.register('ntp disable', 'Disable NTP service on this interface', () => {
-    const iface = ctx.getSelectedInterface();
-    const agent = getNtpAgent(ctx.r());
-    if (iface && agent) agent.setInterfaceDisabled(iface, true);
-    return '';
-  });
-  for (const kind of ['broadcast', 'multicast'] as const) {
-    trie.registerGreedy(`ntp ${kind}`, kind === 'broadcast' ? 'Configure NTP broadcast service' : 'Configure NTP multicast service', (args) => {
-      const iface = ctx.getSelectedInterface();
-      const agent = getNtpAgent(ctx.r());
-      const parsed = parseNtpBroadcast(kind, args);
-      if (!parsed.ok) return `% Invalid input detected at '^' marker.`;
-      if (!iface || !agent) return '';
-      if (parsed.client !== undefined) agent.setBroadcastClient(iface, true, parsed.client.group);
-      else agent.setBroadcastServer(iface, parsed.server ?? null);
-      return '';
-    });
-    trie.registerGreedy(`no ntp ${kind}`, `Remove NTP ${kind} service`, (args) => {
-      const iface = ctx.getSelectedInterface();
-      const agent = getNtpAgent(ctx.r());
-      if (!iface || !agent) return '';
-      if (args[0]?.toLowerCase() === 'client') agent.setBroadcastClient(iface, false);
-      else agent.setBroadcastServer(iface, null);
-      return '';
-    });
-  }
-  trie.register('no ntp disable', 'Re-enable NTP service on this interface', () => {
-    const iface = ctx.getSelectedInterface();
-    const agent = getNtpAgent(ctx.r());
-    if (iface && agent) agent.setInterfaceDisabled(iface, false);
     return '';
   });
   trie.register('ip accounting', 'Enable IP accounting', () => {
