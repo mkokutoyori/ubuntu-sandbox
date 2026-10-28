@@ -283,7 +283,6 @@ function adresseReseau(ip: string, wildcard: string): string {
    * `capability` et `auto-cost` OUVRENT une famille : ils ne sont pas
    * des commandes. Les deux annoncaient `<cr>` et refusaient ensuite.
    */
-  trie.requireArgs('capability', 1);
   trie.requireArgs('auto-cost', 1);
   trie.registerGreedy('auto-cost', 'Calculate OSPF interface cost according to bandwidth', (args) => {
     if (args.length < 2 || args[0].toLowerCase() !== 'reference-bandwidth') {
@@ -307,13 +306,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('distribute-list', 'Filter networks in routing updates', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.distributeList = { aclId: args[0], direction: args[1].toLowerCase() as 'in' | 'out' };
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('no default-information originate', 'Stop distributing default route', (args) => {
     const parsed = parseDefaultInformation(args);
@@ -329,11 +321,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('no distribute-list', 'Remove distribute-list filter', () => {
-    ctx.r()._getOSPFExtraConfig().distributeList = undefined;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('timers throttle spf', 'Set OSPF SPF throttle timers', (args) => {
     if (args.length < 3) return '% Incomplete command.';
@@ -361,24 +348,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('graceful-restart', 'Configure graceful restart', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    let gracePeriod = 120;
-    for (let i = 0; i < args.length - 1; i++) {
-      if (args[i].toLowerCase() === 'grace-period') gracePeriod = parseInt(args[i + 1], 10);
-    }
-    extra.gracefulRestart = { enabled: true, gracePeriod };
-    return '';
-  });
 
-  trie.registerGreedy('bfd', 'BFD configuration', (args) => {
-    if (args.length >= 1 && args[0].toLowerCase() === 'all-interfaces') {
-      const extra = ctx.r()._getOSPFExtraConfig();
-      extra.bfdAllInterfaces = true;
-    }
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
     if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'detail')) {
@@ -396,25 +366,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('max-metric router-lsa', 'Configure OSPF max metric (stub router RFC 3137)', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    let onStartup: number | undefined;
-    for (let i = 0; i < args.length - 1; i++) {
-      if (args[i].toLowerCase() === 'on-startup') {
-        onStartup = parseInt(args[i + 1], 10);
-      }
-    }
-    extra.maxMetric = { enabled: true, onStartup };
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
-  trie.registerGreedy('no max-metric router-lsa', 'Remove stub router configuration', (_args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.maxMetric = { enabled: false };
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('neighbor', 'Configure NBMA neighbor', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -448,15 +400,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('capability', 'Configure OSPF capability', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    if (!extra.capabilities) extra.capabilities = {};
-    const cap = args[0].toLowerCase();
-    if (cap === 'transit') extra.capabilities.transit = true;
-    else if (cap === 'opaque') extra.capabilities.opaque = true;
-    return '';
-  });
 
   trie.register('version 2', 'Use RIPv2', () => {
     const r = ctx.r() as unknown as { _setRipVersion?: (v: 1 | 2) => void };
@@ -1092,14 +1035,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   neighbor: { name: 'voisin', type: 'IP_ADDR', description: 'Neighbor address' },
   'timers throttle lsa': INTERVALLES_LSA,
   'timers throttle spf': INTERVALLES_SPF,
-  'distribute-list': [{
-    name: 'filtre', type: 'WORD', description: 'Filter to apply',
-    alternatives: [
-      { keyword: '<1-199>', description: 'IP access list number' },
-      { keyword: 'gateway', description: 'Filtering incoming updates based on gateway' },
-      { keyword: 'prefix', description: 'Filter prefixes in routing updates' },
-    ],
-  }, { name: 'options', type: 'REST', values: [], description: 'Direction and filter name' }],
 };
 
 const ROUTER_OSPF_KEYWORDS:
@@ -1116,20 +1051,13 @@ Readonly<Record<string, ReadonlyArray<{
     keyword: 'reference-bandwidth', description: 'Reference bandwidth for cost calculation',
     argument: OSPF_INT('bande-passante', 1, 4294967, 'Reference bandwidth in Mbps'),
   }],
-  bfd: [{ keyword: 'all-interfaces', description: 'Enable BFD on all interfaces' }],
-  capability: [
-    { keyword: 'opaque', description: 'Opaque LSA' },
-    { keyword: 'transit', description: 'Transit area capability' },
-  ],
   'default-information originate': [
     { keyword: 'always', description: 'Always advertise the default route' },
     { keyword: 'metric', description: 'Metric used for generating the default route' },
     { keyword: 'metric-type', description: 'External link type of the default route' },
     { keyword: 'route-map', description: 'Generate the default route if the route map is satisfied' },
   ],
-  'graceful-restart': [{ keyword: 'grace-period', description: 'Grace period in seconds' }],
   'log-adjacency-changes': [{ keyword: 'detail', description: 'Detailed output' }],
-  'max-metric router-lsa': [{ keyword: 'on-startup', description: 'Set maximum metric temporarily after reboot' }],
   neighbor: [
     { keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval' },
     { keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor' },
@@ -1344,6 +1272,95 @@ const positiveNumber = (name: string, description: string): ArgumentSpec => ({
   formsAreExhaustive: true,
 });
 
+const DIRECTION: ArgumentSpec = {
+  name: 'direction', type: 'ENUM', description: 'Filter direction',
+  values: [
+    { keyword: 'in', description: 'Filter incoming routing updates' },
+    { keyword: 'out', description: 'Filter outgoing routing updates' },
+  ],
+};
+
+function processFeatureSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const extra = () => ctx.r()._getOSPFExtraConfig();
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const capability = (keyword: 'opaque' | 'transit', description: string): CommandSpec => ({
+    ...base, id: `ospf-capability-${keyword}`, path: ['capability', keyword], description,
+    undoDescription: `Disable the ${keyword} capability`,
+    run: () => { extra().capabilities = { ...extra().capabilities, [keyword]: true }; return ''; },
+    undo: () => { extra().capabilities = { ...extra().capabilities, [keyword]: false }; return ''; },
+  });
+  const distribute = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>,
+    store: (args: Record<string, string>) => { aclId?: string; prefixListName?: string },
+  ): CommandSpec => ({
+    ...base, id, path: [...path, DIRECTION],
+    description: 'Filter networks in routing updates',
+    undoDescription: 'Remove distribute-list filter', undoOmitsArguments: true,
+    run: (_session, args) => {
+      extra().distributeList = { ...store(args), direction: args.direction as 'in' | 'out' };
+      return converge();
+    },
+    undo: () => { extra().distributeList = undefined; return converge(); },
+  });
+  return [
+    capability('opaque', 'Opaque LSA'),
+    capability('transit', 'Transit area capability'),
+    {
+      ...base, id: 'ospf-bfd-all-interfaces', path: ['bfd', 'all-interfaces'],
+      description: 'Enable BFD on all interfaces', undoDescription: 'Disable BFD on all interfaces',
+      run: () => { extra().bfdAllInterfaces = true; return converge(); },
+      undo: () => { extra().bfdAllInterfaces = false; return converge(); },
+    },
+    {
+      ...base, id: 'ospf-graceful-restart', path: ['graceful-restart'],
+      description: 'Configure graceful restart', undoDescription: 'Disable graceful restart',
+      run: () => { extra().gracefulRestart = { enabled: true, gracePeriod: 120 }; return ''; },
+      undo: () => { extra().gracefulRestart = undefined; return ''; },
+    },
+    {
+      ...base, id: 'ospf-graceful-restart-grace-period',
+      path: ['graceful-restart', 'grace-period', positiveNumber('seconds', 'Grace period in seconds')],
+      description: 'Grace period in seconds', undoDescription: 'Disable graceful restart',
+      run: (_session, args) => {
+        extra().gracefulRestart = { enabled: true, gracePeriod: Number(args.seconds) };
+        return '';
+      },
+      undo: () => { extra().gracefulRestart = undefined; return ''; },
+    },
+    {
+      ...base, id: 'ospf-max-metric-router-lsa', path: ['max-metric', 'router-lsa'],
+      options: [{
+        keyword: 'on-startup', description: 'Set maximum metric temporarily after reboot',
+        argument: positiveNumber('seconds', 'Seconds after startup'),
+      }],
+      description: 'Configure OSPF max metric (stub router RFC 3137)',
+      undoDescription: 'Remove stub router configuration',
+      run: (_session, args) => {
+        extra().maxMetric = {
+          enabled: true,
+          ...(args.seconds !== undefined ? { onStartup: Number(args.seconds) } : {}),
+        };
+        return converge();
+      },
+      undo: () => { extra().maxMetric = { enabled: false }; return converge(); },
+    },
+    distribute('ospf-distribute-list-prefix',
+      ['distribute-list', 'prefix', { name: 'name', type: 'WORD', description: 'IP prefix-list name' }],
+      (args) => ({ prefixListName: args.name })),
+    distribute('ospf-distribute-list',
+      ['distribute-list', {
+        name: 'acl', type: 'WORD', description: 'IP access list',
+        alternatives: [
+          { keyword: '<1-199>', description: 'IP access list number' },
+          { keyword: '<1300-2699>', description: 'IP expanded access list number' },
+          { keyword: 'WORD', description: 'IP access list name' },
+        ],
+      }],
+      (args) => ({ aclId: args.acl })),
+  ];
+}
+
 function processSettingSpecs(ctx: CiscoShellContext): CommandSpec[] {
   const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
   const settings = () => ctx.r()._getOSPFExtraConfig() as unknown as ProcessSettings;
@@ -1544,6 +1561,7 @@ export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [
     ...redistributeSpecs(ctx),
     ...processSettingSpecs(ctx),
+    ...processFeatureSpecs(ctx),
     ...specsFromTrieRegistrations(
       (collector) =>
         buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),
