@@ -2759,15 +2759,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return '';
   }
 
-  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
-    if (isValidIPv4(cible)) return Promise.resolve(cible);
-    const svc = (appareil as {
-      getDnsService?: () => { resolve(n: string): Promise<string | null> };
-    }).getDnsService?.();
-    if (!svc) return Promise.resolve(null);
-    return svc.resolve(cible);
-  }
-
   private _handleTraceroute(demande: TracerouteRequest): string {
     const { target, maxHops, timeoutMs, probesPerHop, firstTtl } = demande;
 

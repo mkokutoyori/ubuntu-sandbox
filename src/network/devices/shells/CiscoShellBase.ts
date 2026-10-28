@@ -9412,6 +9412,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
+    if (isValidIPv4(cible)) return Promise.resolve(cible);
+    const svc = (appareil as {
+      getDnsService?: () => { resolve(n: string): Promise<string | null> };
+    }).getDnsService?.();
+    if (!svc) return Promise.resolve(null);
+    return svc.resolve(cible);
+  }
+
   private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {
     let user = 'admin';
     let port: string | null = null;
@@ -9434,6 +9443,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
+    const address = await this.resoudreCible(device, host);
+    if (address === null) return IOS_SSH.unresolved(host, Number(port ?? 22));
+    host = address;
     let hasSourceAddress = false;
     for (const [, p] of router._getPortsInternal()) {
       if (p.getIPAddress() && p.getIsUp()) { hasSourceAddress = true; break; }

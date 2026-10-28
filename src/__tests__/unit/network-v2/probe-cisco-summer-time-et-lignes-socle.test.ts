@@ -975,3 +975,28 @@ describe('addresses are judged as addresses', () => {
     expect(await r.executeCommand('ping 10.0.0.9 source 999.1.1.1')).not.toContain('Success rate');
   });
 });
+
+/*
+ * Twenty-sixth batch (outbound ssh to a target that does not resolve): the Cisco shell handed any
+ * name that was not in the host table to resolveSshTarget, which calls device.resolveHostname,
+ * a method only the hosts have, so `ssh -l u zorglub` and `ssh -l u 999.1.1.1` threw
+ * `resolver.resolveHostname is not a function`. The target is now resolved through the router's
+ * own DNS client (the one ping and traceroute use) and the IOS dialect's wording answers when it
+ * does not resolve. Fails before: the two throws (2 of 3); the third is the witness that a
+ * literal address still goes to the wire.
+ */
+describe('outbound ssh target resolution', () => {
+  const lab = () => router('interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'end');
+  it('answers for a name that does not resolve', async () => {
+    const r = await lab();
+    expect(await r.executeCommand('ssh -l u zorglub')).toContain('Bad IP address or host name');
+  });
+  it('answers for an address that is not one', async () => {
+    const r = await lab();
+    expect(await r.executeCommand('ssh -l u 999.1.1.1')).toContain('Bad IP address or host name');
+  });
+  it('witness: a literal address goes to the wire', async () => {
+    const r = await lab();
+    expect(await r.executeCommand('ssh -l u 10.0.0.9')).not.toContain('Bad IP address');
+  });
+});
