@@ -1,3 +1,4 @@
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
@@ -41,6 +42,15 @@ export interface FilterListHost {
   recordConfigLine(line: string): void;
 }
 
+const COMMUNITY_KEYWORDS = new Set(['internet', 'local-as', 'no-advertise', 'no-export', 'gshut']);
+
+function isCommunityValue(word: string): boolean {
+  if (COMMUNITY_KEYWORDS.has(word.toLowerCase())) return true;
+  const pair = /^(\d{1,5}):(\d{1,5})$/.exec(word);
+  if (pair) return Number(pair[1]) <= 65535 && Number(pair[2]) <= 65535;
+  return /^\d{1,10}$/.test(word) && Number(word) >= 1 && Number(word) <= 4294967295;
+}
+
 function ajouter(store: Map<string, string[]>, cle: string, regle: string): void {
   const liste = store.get(cle) ?? [];
   liste.push(regle);
@@ -65,6 +75,7 @@ export function bgpFilterListSpecs(ctx: () => FilterListHost): CommandSpec[] {
     id: string, mots: readonly (string | ArgumentSpec)[],
     cle: (args: Record<string, string>) => string,
     saisie: (args: Record<string, string>) => string,
+    valuesAreLiteral = true,
   ): CommandSpec => ({
     id,
     path: ['ip', 'community-list', ...mots, FILTER_ACTION,
@@ -72,6 +83,9 @@ export function bgpFilterListSpecs(ctx: () => FilterListHost): CommandSpec[] {
     description: 'Define BGP community list',
     modes: MODES, minPrivilege: 15,
     run: (_session, args) => {
+      if (valuesAreLiteral && !args.valeur.trim().split(/\s+/).every(isCommunityValue)) {
+        throw new CliInvalidInput();
+      }
       const regle = `${args.action} ${args.valeur}`;
       ajouter(ctx().communityLists(), cle(args), regle);
       ctx().recordConfigLine(`ip community-list ${saisie(args)} ${regle}`);
@@ -102,7 +116,7 @@ export function bgpFilterListSpecs(ctx: () => FilterListHost): CommandSpec[] {
     communaute('ip-community-list-standard', ['standard', nomDeCommunaute],
       (args) => `standard ${args.nom}`, (args) => `standard ${args.nom}`),
     communaute('ip-community-list-expanded', ['expanded', nomDeCommunaute],
-      (args) => `expanded ${args.nom}`, (args) => `expanded ${args.nom}`),
+      (args) => `expanded ${args.nom}`, (args) => `expanded ${args.nom}`, false),
     /*
      * La CLE du magasin est `<sorte> <nom>` — c'est ce que `show ip
      * community-list` redecoupe pour ecrire « Community standard list

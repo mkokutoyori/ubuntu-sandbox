@@ -193,7 +193,8 @@ export function buildIdentityConfigCommands(
 ): void {
   const sec = () => getSecurityConfig(ctx.r());
 
-  trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
+  trie.registerGreedy('service password-encryption', 'Enable password encryption', (args) => {
+    if (args.length > 0) throw new CliInvalidInput({ token: args[0] });
     sec().servicePasswordEncryption = true;
     const r = ctx.r() as unknown as {
       _setServiceFlag?: (n: string, on: boolean) => void;
