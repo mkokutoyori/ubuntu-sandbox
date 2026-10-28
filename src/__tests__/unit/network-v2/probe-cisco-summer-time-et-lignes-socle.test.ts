@@ -794,3 +794,48 @@ describe('show access-lists', () => {
     expect(await r.executeCommand('show access-lists A B')).toContain('Invalid input');
   });
 });
+
+/*
+ * Twenty-first batch (key chain): the lifetimes move. The old handler split a lifetime at a
+ * heuristic (the first `infinite` or the second time-of-day token, else the middle) and stored any
+ * words; `accept-lifetime garbage` was accepted and rendered. The lifetime is now typed
+ * (hh:mm:ss day-or-month month-or-day year, then infinite, duration <seconds> or an end time).
+ * Fails before: the garbage lifetime refusal and the missing-end refusal (2 of 7). The rest are
+ * witnesses: the chain, key, key-string and show round trips.
+ */
+describe('key chains', () => {
+  const chainWithKey = (...more: string[]) =>
+    router('key chain KC', 'key 1', 'key-string secret1', ...more);
+  it('witness: a key chain, a key and a key string are stored and shown', async () => {
+    const r = await chainWithKey('end');
+    const out = await r.executeCommand('show key chain KC');
+    expect(out).toContain('Key-chain KC:');
+    expect(out).toContain('key 1');
+  });
+  it('witness: no key chain removes it', async () => {
+    const r = await router('key chain KC', 'exit', 'no key chain KC', 'end');
+    expect(await r.executeCommand('show key chain KC')).toContain('not found');
+  });
+  it('witness: a lifetime with an end time is stored', async () => {
+    const r = await chainWithKey(
+      'accept-lifetime 10:00:00 Jan 1 2026 12:00:00 Dec 31 2026', 'end');
+    expect(await r.executeCommand('show key chain KC')).toContain('accept lifetime 10:00:00 Jan 1 2026');
+  });
+  it('accepts infinite and duration', async () => {
+    const r = await chainWithKey();
+    expect(await r.executeCommand('send-lifetime 10:00:00 Jan 1 2026 infinite')).toBe('');
+    expect(await r.executeCommand('send-lifetime 10:00:00 Jan 1 2026 duration 3600')).toBe('');
+  });
+  it('refuses a lifetime that is not a date', async () => {
+    const r = await chainWithKey();
+    expect(await r.executeCommand('accept-lifetime garbage')).toContain('Invalid input');
+  });
+  it('refuses a lifetime with no end', async () => {
+    const r = await chainWithKey();
+    expect(await r.executeCommand('accept-lifetime 10:00:00 Jan 1 2026')).not.toBe('');
+  });
+  it('refuses a send-id out of range', async () => {
+    const r = await chainWithKey();
+    expect(await r.executeCommand('send-id 300')).toContain('Invalid input');
+  });
+});

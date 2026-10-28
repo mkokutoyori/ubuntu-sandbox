@@ -3,6 +3,7 @@ import type { CommandSpec } from '../../CommandTable';
 import {
   SUMMER_TIME_OFFSET_RANGE, SUMMER_TIME_YEAR_RANGE,
 } from '../../../network/devices/shells/cisco/clockSummerTime';
+import { MONTHS, clockTime, monthOrDay } from './clockPlaces';
 
 export interface SummerTimeHost {
   apply(words: string[], negate: boolean): string;
@@ -15,11 +16,6 @@ const ZONE: ArgumentSpec = {
 
 const WEEKS = ['first', 'last', '1', '2', '3', '4', '5'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
-  'September', 'October', 'November', 'December',
-];
-
 function named(
   name: string, description: string, words: readonly string[], pattern: RegExp,
 ): ArgumentSpec {
@@ -33,31 +29,12 @@ function named(
 const prefixOf = (words: readonly string[]): RegExp =>
   new RegExp(`^(?:${words.map((w) => w.slice(0, 3)).join('|')})[a-z]*$`, 'i');
 
-function time(name: string, description: string): ArgumentSpec {
-  return {
-    name, type: 'WORD', literal: 'hh:mm', description,
-    pattern: /^(?:[01]?\d|2[0-3]):[0-5]\d$/,
-  };
-}
-
-function monthOrDay(name: string, description: string): ArgumentSpec {
-  return {
-    name, type: 'WORD', description,
-    pattern: /^(?:[1-9]|[12]\d|3[01]|[A-Za-z]{3,9})$/,
-    alternatives: [
-      { keyword: '<1-31>', description: 'Day of the month' },
-      ...MONTHS.map((keyword) => ({ keyword, description: 'Month' })),
-    ],
-    formsAreExhaustive: true,
-  };
-}
-
 function recurringBound(side: 'start' | 'end'): ArgumentSpec[] {
   return [
     named(`${side}-week`, 'Week of the month', WEEKS, /^(?:first|last|[1-5])$/i),
     named(`${side}-day`, 'Weekday', DAYS, prefixOf(DAYS)),
     named(`${side}-month`, 'Month', MONTHS, prefixOf(MONTHS)),
-    time(`${side}-time`, 'Time of day (hh:mm)'),
+    clockTime(`${side}-time`, 'Time of day (hh:mm)'),
   ];
 }
 
@@ -68,7 +45,7 @@ function dateBound(side: 'start' | 'end'): ArgumentSpec[] {
     {
       name: `${side}-year`, type: 'INT', range: SUMMER_TIME_YEAR_RANGE, description: 'Year',
     },
-    time(`${side}-time`, 'Time of day (hh:mm)'),
+    clockTime(`${side}-time`, 'Time of day (hh:mm)'),
   ];
 }
 

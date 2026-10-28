@@ -123,9 +123,7 @@ import {
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
-import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
-} from './cisco/CiscoKeyChainCommands';
+import { keyChainFamily, type KeyChainHost } from '@/cli/commands/keychain/keyChainFamily';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
   ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs, ipSlaGlobalSpecs,
@@ -163,12 +161,6 @@ import {
   registerDhcpShowCommands, dhcpIpv6ShowSpecs,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
-import {
-  registerKeyChainGlobalCommands,
-  buildKeyChainSubmode,
-  buildKeyChainKeySubmode,
-  registerKeyChainShowCommands,
-} from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
   routingProtoShowSpecs, routerSubmodeSpecs,
@@ -634,10 +626,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
       ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
-      ...keyChainGlobalSpecs(this),
-      ...keyChainShowSpecs(this),
-      ...keyChainSubmodeSpecs(this),
-      ...keyChainKeySubmodeSpecs(this),
+      ...keyChainFamily(() => this.keyChainHost(), (mode) => this.setMode(mode as CiscoShellMode)),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
       ...avecNumeroDeSequence(
@@ -1314,6 +1303,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private get fhrp(): FhrpRepository { return this.d().getFhrpRepository(); }
   private readonly keyChains = new KeyChainRepository();
+  private keyChainHost(): KeyChainHost {
+    return {
+      chains: () => this.getKeyChains(),
+      selectedChain: () => this.getSelectedKeyChain(),
+      selectChain: (name) => this.setSelectedKeyChain(name),
+      selectedKey: () => {
+        const chain = this.getSelectedKeyChain();
+        const id = this.getSelectedKeyChainKey();
+        return chain === null || id === null ? null : this.getKeyChains().ensureKey(chain, id);
+      },
+      selectKey: (id) => this.setSelectedKeyChainKey(id),
+    };
+  }
+
   getKeyChains(): KeyChainRepository { return this.keyChains; }
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
@@ -2452,11 +2455,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
     buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
-    registerKeyChainGlobalCommands(this.configTrie, this);
-    buildKeyChainSubmode(this.configKeychainTrie, this);
-    buildKeyChainKeySubmode(this.configKeychainKeyTrie, this);
-    registerKeyChainShowCommands(this.privilegedTrie, this);
-    registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     this.configRouterTrie.setCompletionFilter((path, keyword) =>
       routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,

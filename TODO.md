@@ -4141,3 +4141,7 @@ Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSyste
 ## Oracles Linux rouges sur la base (hors perimetre Cisco)
 
 Mesure : `shell-fin-de-ligne-oracle` (`printf '…' | head|tail …`, 17 cas) et `auditctl-oracle` echouent deja au commit `2351448f2`, AVANT les travaux telnet/Cisco de cette serie — verifie dans un worktree de ce commit (21 cas rouges sur 262). Verifie de la meme facon au meme commit : `aureport-oracle`, `ausearch-oracle`, `ausearch-interpret-oracle` et `netcmds-oracle` (nc-readwrite) sont rouges aussi. `probe-oracle-sqlplus-silencieux-et-rman-a-froid` (« 60 sauvegardes de suite laissent la boucle d'evenements respirer ») est un test de TEMPS : rouge dans un lot charge, vert seul — a ne pas compter parmi les defauts. Non diagnostique : les oracles rejouent des enregistrements de vrais binaires et l'ecart n'a pas ete lu cas par cas.
+
+## Cisco: key-chain lifetimes are stored, never evaluated
+
+Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-chain migration), stored on the key, rendered by `show key chain` and by the running-config, and read by nothing else: no routing protocol asks the key chain which key is valid NOW, so a key outside its lifetime still authenticates. Not closed: the brick is a clock-aware `validAt(instant)` on `KeyChainRepository` read by the protocols that take `key-chain` (EIGRP, RIP, OSPF auth), each of which also has to learn to pick among several valid keys.
