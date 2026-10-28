@@ -1380,26 +1380,6 @@ transcription ne montre pas un sixieme mode.
 ### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION (reste : SNMP)
 `sequenceFamily` accepte desormais `options` (un `OptionBag`) a la place de la queue `REST` : `ntp server|peer <ip> [key N] [prefer] [source IF] [version N] [minpoll N] [maxpoll N] [burst] [iburst]` nomme la valeur attendue a chaque rang. Il reste `snmp-server host <ip> version ?` (1 / 2c / 3, puis auth / noauth / priv), dont la grammaire est positionnelle et non un sac d'options : elle demande les `continuations` de `loggingFamily` portees par `sequenceFamily`.
 
-### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
-`aaa authentication login ?` et `aaa authentication login default ?`
-annoncent `<cr>` — la touche Entree — alors que la machine repond
-`% Incomplete command.` aux deux. Et les METHODES (`local`, `none`,
-`group`, `enable`, `line`…) ne sont annoncees nulle part, bien qu'elles
-soient desormais declarees et APPLIQUEES (`AAA_METHODS`).
-**Mesure** : `aaa ?` et `aaa authentication ?` rendent la bonne liste ;
-tout ce qui suit rend `<cr>` et rien d'autre, sur les deux plateformes.
-**Ce qui a ete tente et retire** : `requireArgs('aaa authentication
-login', 1)` est INERTE — `aaa` est enregistre en glouton, donc aucun
-noeud n'existe a cette profondeur pour porter la declaration, et une
-declaration que personne ne lit est exactement ce que ce depot retire
-ailleurs. Elle n'a donc pas ete laissee en place.
-**Report** : la reparation est la MIGRATION de la famille `aaa` vers le
-socle, ou chaque forme est un chemin declare avec ses places — c'est la
-seule facon de porter une aide a cette profondeur, et c'est un lot a
-part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
-libre au milieu, et une suite de methodes de longueur variable dont
-`group` consomme le mot suivant.
-
 ### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
 Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
 `2026-09-10 14:50:30.507 +02:00`. Un vrai Oracle rend cette valeur selon

@@ -367,3 +367,30 @@ describe('ntp server options named by position', () => {
     expect(r.cliHelp('ntp server 10.0.0.9 prefer ')).not.toMatch(/^\s*prefer\b/m);
   });
 });
+
+/*
+ * Tenth batch (aaa methods named per phase): 2 of 4 fail before (no method was named after the list
+ * name, and nothing kept `local` out of accounting help); the other two are witnesses.
+ */
+describe('aaa method lists name their methods', () => {
+  it('witness: a full authentication list is accepted', async () => {
+    const r = await router();
+    expect(await r.executeCommand('aaa authentication login default local none')).toBe('');
+  });
+  it('names the authentication methods after the list name', async () => {
+    const r = await router();
+    const help = r.cliHelp('aaa authentication login default ');
+    expect(help).toContain('local');
+    expect(help).toContain('group');
+  });
+  it('does not offer local in accounting', async () => {
+    const r = await router();
+    const help = r.cliHelp('aaa accounting exec default start-stop ');
+    expect(help).toContain('group');
+    expect(help).not.toMatch(/^\s*local\b/m);
+  });
+  it('refuses a method of another phase', async () => {
+    const r = await router();
+    expect(await r.executeCommand('aaa accounting exec default start-stop local')).toContain('Invalid input');
+  });
+});

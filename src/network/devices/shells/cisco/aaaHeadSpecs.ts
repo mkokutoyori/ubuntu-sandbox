@@ -39,6 +39,37 @@ export const AAA_SERVICES: Readonly<Record<AaaPhase, readonly string[]>> = {
   accounting: AAA_SERVICE_VALUES.accounting.map((v) => v.keyword),
 };
 
+export const AAA_METHOD_VALUES: Readonly<Record<AaaPhase, readonly Valeur[]>> = {
+  authentication: [
+    { keyword: 'enable', description: 'Use the enable password' },
+    { keyword: 'group', description: 'Use a server group' },
+    { keyword: 'krb5', description: 'Use Kerberos 5 authentication' },
+    { keyword: 'krb5-telnet', description: 'Allow logins already authenticated by Kerberos V Telnet' },
+    { keyword: 'line', description: 'Use the line password' },
+    { keyword: 'local', description: 'Use the local username database' },
+    { keyword: 'local-case', description: 'Use the local username database, case-sensitive' },
+    { keyword: 'none', description: 'No authentication' },
+  ],
+  authorization: [
+    { keyword: 'group', description: 'Use a server group' },
+    { keyword: 'if-authenticated', description: 'Succeed if the user has authenticated' },
+    { keyword: 'krb5-instance', description: 'Use Kerberos instance privilege maps' },
+    { keyword: 'local', description: 'Use the local username database' },
+    { keyword: 'none', description: 'No authorization' },
+  ],
+  accounting: [
+    { keyword: 'broadcast', description: 'Send accounting records to several servers' },
+    { keyword: 'group', description: 'Use a server group' },
+    { keyword: 'none', description: 'No accounting' },
+  ],
+};
+
+export const AAA_METHODS: Readonly<Record<AaaPhase, readonly string[]>> = {
+  authentication: AAA_METHOD_VALUES.authentication.map((v) => v.keyword),
+  authorization: AAA_METHOD_VALUES.authorization.map((v) => v.keyword),
+  accounting: AAA_METHOD_VALUES.accounting.map((v) => v.keyword),
+};
+
 export const AAA_GROUP_KINDS: readonly Valeur[] = [
   { keyword: 'radius', description: 'RADIUS server group' },
   { keyword: 'tacacs+', description: 'TACACS+ server group' },
@@ -85,10 +116,12 @@ const NOM_DE_LISTE: ArgumentSpec = {
   ],
 };
 
-const METHODES: ArgumentSpec = {
+const methodesOf = (nom: AaaPhase): ArgumentSpec => ({
   name: 'methodes', type: 'REST', literal: 'LINE',
   description: 'Methods to try, in order',
-};
+  alternatives: AAA_METHOD_VALUES[nom],
+  formsAreExhaustive: true,
+});
 
 const NIVEAU_DE_COMMANDE: ArgumentSpec = {
   name: 'niveau', type: 'INT', range: [0, 15],
@@ -139,7 +172,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       path: ['aaa', nom, {
         name: 'service', type: 'ENUM', description: placeDescription,
         values: AAA_SERVICE_VALUES[nom].filter((v) => v.keyword !== 'commands'),
-      }, NOM_DE_LISTE, METHODES],
+      }, NOM_DE_LISTE, methodesOf(nom)],
       description,
       modes: MODES, minPrivilege: 15,
       run: (_s, args) =>
@@ -158,7 +191,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
    */
   const commandes = (nom: AaaPhase): CommandSpec => ({
     id: `aaa-${nom}-commands`,
-    path: ['aaa', nom, 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE, METHODES],
+    path: ['aaa', nom, 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE, methodesOf(nom)],
     description: 'For exec (shell) commands',
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
@@ -193,7 +226,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       name: 'service', type: 'ENUM',
       description: PHASE_DESCRIPTIONS.accounting[1],
       values: AAA_SERVICE_VALUES.accounting.filter((v) => v.keyword !== 'commands'),
-    }, NOM_DE_LISTE, mot, mot === 'none' ? { ...METHODES, optional: true } : METHODES],
+    }, NOM_DE_LISTE, mot, mot === 'none' ? { ...methodesOf('accounting'), optional: true } : methodesOf('accounting')],
     description,
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
@@ -202,7 +235,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
   }, {
     id: `aaa-accounting-commands-${mot}`,
     path: ['aaa', 'accounting', 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE,
-      mot, mot === 'none' ? { ...METHODES, optional: true } : METHODES],
+      mot, mot === 'none' ? { ...methodesOf('accounting'), optional: true } : methodesOf('accounting')],
     description,
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
