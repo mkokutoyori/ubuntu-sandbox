@@ -3508,7 +3508,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.registerGreedy('negotiation', 'Auto-negotiation', (args) => {
       const port = portSelectionne();
       if (!port) return 'Error: Incomplete command.';
-      port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
+      if (args.length !== 1 || args[0].toLowerCase() !== 'auto') {
+        return args.length === 0 ? HUAWEI_ERRORS.INCOMPLETE('negotiation') : HUAWEI_ERRORS.WRONG(`negotiation ${args.join(' ')}`);
+      }
+      port.setNegotiationAuto(true);
       return '';
     });
     trie.registerGreedy('mac-address', 'Interface MAC address configuration', (args, ligne) => {

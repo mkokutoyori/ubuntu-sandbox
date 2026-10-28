@@ -901,8 +901,11 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
+    if (args.length !== 1 || args[0].toLowerCase() !== 'auto') {
+      return args.length === 0 ? HUAWEI_ERRORS.INCOMPLETE('negotiation') : HUAWEI_ERRORS.WRONG(`negotiation ${args.join(' ')}`);
+    }
     const port = ctx.r().getPort(ifName);
-    if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
+    if (port) port.setNegotiationAuto(true);
     return '';
   });
   trie.register('flow-control', 'Enable flow control', () => {
