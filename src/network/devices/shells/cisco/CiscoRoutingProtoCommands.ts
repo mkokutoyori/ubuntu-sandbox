@@ -325,6 +325,28 @@ const BGP_VALUE_OPTIONS = new Set([
   'listen', 'dampening', 'default', 'nexthop', 'additional-paths', 'always-compare-med',
 ]);
 
+function judgeRedistributeTail(tail: readonly string[]): void {
+  for (let at = 0; at < tail.length; at++) {
+    const word = tail[at].toLowerCase();
+    if (word === 'tag' || word === 'vrf') {
+      if (tail[at + 1] === undefined) throw new CliIncomplete();
+      if (word === 'tag' && !unsignedWithin(tail[at + 1], 0, 4294967295)) {
+        throw new CliInvalidInput({ token: tail[at + 1] });
+      }
+      at += 1;
+    } else if (word === 'match') {
+      let cursor = at + 1;
+      if (tail[cursor] === undefined) throw new CliIncomplete();
+      while (tail[cursor] !== undefined
+        && /^(?:internal|external|nssa-external|1|2)$/i.test(tail[cursor])) cursor++;
+      if (cursor === at + 1) throw new CliInvalidInput({ token: tail[cursor] });
+      at = cursor - 1;
+    } else if (!/^level-(?:1|2|1-2)$/.test(word)) {
+      throw new CliInvalidInput({ token: tail[at] });
+    }
+  }
+}
+
 function judgeBgpProcessOption(words: readonly string[]): void {
   const option = words[0]?.toLowerCase();
   if (option === undefined) throw new CliIncomplete();
@@ -540,6 +562,15 @@ function buildRouterSubmodeOn(
     }
     const parsed = parseRedistribute(a);
     if (!parsed) throw new CliInvalidInput();
+    judgeRedistributeTail(parsed.tail ?? []);
+    const protocolInUse = curProto(ctx).proto;
+    if (parsed.metric !== undefined) {
+      const ceiling = protocolInUse === 'rip' ? 1 : protocolInUse === 'eigrp' ? 5 : 1;
+      if (parsed.metric.length > ceiling) throw new CliInvalidInput({ token: a[a.indexOf(String(parsed.metric[ceiling])) ] });
+    }
+    if (parsed.metricType !== undefined && parsed.metricType !== 1 && parsed.metricType !== 2) {
+      throw new CliInvalidInput({ token: String(parsed.metricType) });
+    }
     const p = curProto(ctx).proto;
     const family = inFamily();
     if (p === 'bgp' && family?.kind === 'vrf') {

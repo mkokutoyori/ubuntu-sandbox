@@ -1,7 +1,7 @@
 /*
  * The sub-commands of `neighbor <peer> ...` under `router bgp` are judged.
  *
- * Measured before the change: 29 of the 59 cases fall. Anything after the
+ * Measured before the change: 37 of the 72 cases fall. Anything after the
  * peer that the handler did not know was pushed verbatim into the neighbor's
  * attribute list and rendered back, so `update-source zorglub`,
  * `ebgp-multihop zorglub`, `ebgp-multihop 300`, `timers zorglub`, a
@@ -23,6 +23,11 @@
  * ignored every argument), `bgp <unknown option>`, a flag option with a
  * trailing word, and `timers bgp` with a non-number, one value, a third value
  * or a first word that is not `bgp`.
+ *
+ * The redistribute block adds 8 failing cases: the parser kept unknown words in
+ * a `tail` that was stored and rendered back (`redistribute static zorglub`),
+ * and neither the number of metric values (RIP one, EIGRP five), the OSPF
+ * metric-type (1 or 2), a non-numeric tag nor a malformed `match` was judged.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -153,5 +158,38 @@ describe('process options of rip, eigrp and bgp', () => {
     ['router bgp 65001', 'timers bgp 10 30'],
   ])('witness: %s accepts `%s`', async (entry, line) => {
     expect(await (await inside(entry)).executeCommand(line)).toBe('');
+  });
+});
+
+describe('redistribute under rip, eigrp and bgp', () => {
+  const inside = async (...lines: string[]): Promise<Cli> => {
+    const r = new CiscoRouter('R1', 0, 0) as unknown as Cli & { powerOn(): void };
+    r.powerOn();
+    for (const l of ['enable', 'configure terminal', ...lines]) await r.executeCommand(l);
+    return r;
+  };
+
+  it.each([
+    ['router rip', 'redistribute static zorglub'],
+    ['router rip', 'redistribute static metric 1 2'],
+    ['router eigrp 100', 'redistribute static metric 1 2 3 4 5 6'],
+    ['router eigrp 100', 'redistribute static zorglub'],
+    ['router bgp 65001', 'redistribute static zorglub'],
+    ['router bgp 65001', 'redistribute ospf 1 metric-type 5'],
+    ['router bgp 65001', 'redistribute ospf 1 tag zorglub'],
+    ['router bgp 65001', 'redistribute ospf 1 match zorglub'],
+  ])('%s: refuses `%s`', async (entry, line) => {
+    expect(await (await inside(entry)).executeCommand(line)).toMatch(REFUSED);
+  });
+
+  it.each([
+    ['router rip', 'redistribute static metric 3'],
+    ['router eigrp 100', 'redistribute static metric 1000 100 255 1 1500'],
+    ['router bgp 65001', 'redistribute ospf 1 match internal external 1'],
+    ['router bgp 65001', 'redistribute static route-map RM'],
+    ['router bgp 65001', 'redistribute ospf 1 metric-type 2 tag 10'],
+  ])('witness: %s accepts `%s`', async (entry, line) => {
+    const out = await (await inside(entry)).executeCommand(line);
+    expect(out).not.toMatch(REFUSED);
   });
 });
