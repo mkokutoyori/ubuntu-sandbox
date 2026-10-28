@@ -53,7 +53,7 @@ import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { applyVrpLocalUser } from './huawei/huaweiLocalUser';
 import {
-  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, registerHuaweiUserClock,
 } from './huawei/HuaweiCommonSecurity';
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 import {
@@ -1551,6 +1551,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()), huaweiHeaderHost(() => this.r()));
     this.registerScreenSizeCommands(t);
+    registerHuaweiUserClock(t,
+      () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService } | undefined,
+      (epochMs) => this.r()?._setSystemClock(epochMs));
     registerHuaweiCommonSecurityDisplay(t, undefined,
       () => this.r()?.getSnmpService(), () => this.r());
 

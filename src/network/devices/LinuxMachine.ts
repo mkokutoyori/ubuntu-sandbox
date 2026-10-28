@@ -1953,6 +1953,13 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
+
+  restartTimeDaemonFromFiles(): void {
+    const service = this.chronyService;
+    if (service === null || !service.isRunning()) return;
+    service.stop();
+    service.start();
+  }
   private ntpPortsBound = new Set<number>();
 
   /**

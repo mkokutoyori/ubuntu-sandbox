@@ -199,6 +199,7 @@ export interface ChronyConf {
   readonly localOrphan: boolean;
   readonly selection: Partial<SelectionParameters>;
   readonly maxUpdateSkewPpm: number | null;
+  readonly maxSlewRatePpm: number | null;
   readonly maxChange: { offset: number; delay: number; ignore: number } | null;
   readonly nts: ChronyNtsConf;
   readonly sourceDirs: readonly string[];
@@ -221,7 +222,7 @@ const CONF_VIDE: ChronyConf = {
   sources: [], makestep: null, access: [], ratelimit: null,
   driftfile: '', logdir: '', logs: [], keyfile: '',
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
-  ntpPort: 123, commandPort: 323, bindCommandAddresses: [], commandRateLimit: null, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
+  ntpPort: 123, commandPort: 323, bindCommandAddresses: [], commandRateLimit: null, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxSlewRatePpm: null, maxChange: null,
   nts: { serverCerts: [], serverKeys: [], port: 4460, processes: 1, maxConnections: 100, dumpDir: '', ntpServer: null, rotateSeconds: 604800, refreshSeconds: 2419200, trustedCerts: [], systemCerts: true },
   sourceDirs: [], acceptesSansEffet: [], inconnues: [],
 };
@@ -255,6 +256,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   let localOrphan = false;
   const selection: Partial<SelectionParameters> = {};
   let maxUpdateSkewPpm: number | null = null;
+  let maxSlewRatePpm: number | null = null;
   let maxChange: { offset: number; delay: number; ignore: number } | null = null;
   const sourceDirs: string[] = [];
   const serverCerts: string[] = [];
@@ -371,7 +373,7 @@ export function parseChronyConf(texte: string): ChronyConf {
         break;
       }
       case 'maxdistance': case 'maxjitter': case 'reselectdist': case 'stratumweight':
-      case 'combinelimit': case 'maxclockerror': case 'maxupdateskew': {
+      case 'combinelimit': case 'maxclockerror': case 'maxupdateskew': case 'maxslewrate': {
         const value = parseFloat(args[0] ?? '');
         if (isNaN(value) || args.length !== 1) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
         if (cle === 'maxdistance') { maxdistanceSec = value; selection.maxDistance = value; }
@@ -380,6 +382,7 @@ export function parseChronyConf(texte: string): ChronyConf {
         else if (cle === 'stratumweight') selection.stratumWeight = value;
         else if (cle === 'combinelimit') selection.combineLimit = value;
         else if (cle === 'maxclockerror') selection.maxClockError = value * 1e-6;
+        else if (cle === 'maxslewrate') maxSlewRatePpm = value;
         else maxUpdateSkewPpm = value;
         break;
       }
@@ -436,7 +439,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   return {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
-    ntpPort, commandPort, bindCommandAddresses, commandRateLimit, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
+    ntpPort, commandPort, bindCommandAddresses, commandRateLimit, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxSlewRatePpm, maxChange,
     nts: { ...ntsSettings, serverCerts, serverKeys, trustedCerts }, sourceDirs,
     acceptesSansEffet, inconnues,
   };

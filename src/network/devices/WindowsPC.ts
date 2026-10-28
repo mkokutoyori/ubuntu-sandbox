@@ -6566,6 +6566,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private _w32time: W32TimeService | null = null;
+
+  reapplyTimeConfiguration(): void {
+    if (this.svcMgr.isStarted('W32Time')) this.getW32Time().applyConfiguration();
+  }
+
   getW32Time(): W32TimeService {
     if (!this._w32time) {
       this._w32time = new W32TimeService({

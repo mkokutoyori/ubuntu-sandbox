@@ -4217,6 +4217,7 @@ export abstract class Switch extends Equipment {
    * puisque c'est le Vlanif qui porte l'adresse.
    */
   private _ntpAgent: NtpAgent | null = null;
+  peekNtpAgent(): NtpAgent | null { return this._ntpAgent; }
   getNtpAgent(): NtpAgent {
     if (this._ntpAgent) return this._ntpAgent;
     this._ntpAgent = new NtpAgent(

@@ -79,10 +79,11 @@ export interface EtatHorloge {
   aberrationDepuisMs: number;
   /** Un saut a-t-il deja eu lieu ? `makestep <seuil> <limite>` le borne. */
   sautsFaits: number;
+  updatesApplied: number;
 }
 
 export function creerEtatHorloge(): EtatHorloge {
-  return { etat: 'NSET', offsetApplique: 0, aberrationDepuisMs: 0, sautsFaits: 0 };
+  return { etat: 'NSET', offsetApplique: 0, aberrationDepuisMs: 0, sautsFaits: 0, updatesApplied: 0 };
 }
 
 /** Ce que la discipline decide d'une mesure. */
@@ -116,6 +117,7 @@ export interface ReglagesDiscipline {
   slewRatePpm?: number;
   spikeThresholdMs?: number;
   spikeWatchMs?: number;
+  stepLimitCountsUpdates?: boolean;
 }
 
 /**
@@ -142,6 +144,12 @@ export function disciplinerHorloge(
   // secondes ne se corrige pas, il se signale. Un vrai ntpd s'arrete
   // plutot que de deregler la machine sur une mesure invraisemblable.
   if (seuilPanique > 0 && ecart > seuilPanique) return { quoi: 'panic' };
+
+  if (reglages.stepLimitCountsUpdates === true) {
+    const stepAllowed = limite < 0 || etat.updatesApplied < limite;
+    if (stepAllowed && ecart > seuilSaut) return { quoi: 'step', nouvelOffset: offsetMesureMs };
+    return { quoi: 'slew', nouvelOffset: glisser(etat, offsetMesureMs, ecoulementMs, reglages.slewRatePpm ?? PPM_MAX) };
+  }
 
   // Sous le seuil, le glissement suffit — et c'est le regime normal.
   if (ecart <= seuilSaut && ecart <= seuilAberration) {
@@ -189,12 +197,12 @@ export function appliquerDecision(
     case 'slew':
       return {
         etat: 'SYNC', offsetApplique: decision.nouvelOffset,
-        aberrationDepuisMs: 0, sautsFaits: etat.sautsFaits,
+        aberrationDepuisMs: 0, sautsFaits: etat.sautsFaits, updatesApplied: etat.updatesApplied + 1,
       };
     case 'step':
       return {
         etat: 'SYNC', offsetApplique: decision.nouvelOffset,
-        aberrationDepuisMs: 0, sautsFaits: etat.sautsFaits + 1,
+        aberrationDepuisMs: 0, sautsFaits: etat.sautsFaits + 1, updatesApplied: etat.updatesApplied + 1,
       };
     case 'spike':
       // L'horloge ne bouge pas, mais le temps passe : c'est cette

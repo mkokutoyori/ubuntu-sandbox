@@ -5,6 +5,7 @@ import { IP_PROTO_UDP, type EthernetFrame, type IPv4Packet, type UDPPacket } fro
 import { UDP_PORT_NTP } from '../../../ntp/types';
 import { isValidIPv4 } from '../../../core/ip';
 import type { Port } from '../../../hardware/Port';
+import type { SystemClock } from '../../../core/SystemClock';
 
 export type NtpKeyType = 'MD5' | 'SHA1' | 'SHA256';
 export type NtpIpType = 'IPv4' | 'IPv6' | 'Both';
@@ -138,6 +139,7 @@ export interface NtpWiringHost {
   ports(): Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  systemClock(): SystemClock;
   vrfs?(): readonly number[];
   bus(): IEventBus;
 }
@@ -150,6 +152,7 @@ export function buildFirewallNtp(host: NtpWiringHost): FirewallNtp {
     getPort: (name) => host.port(name),
     getPorts: () => host.ports(),
     sendUdpDatagram: (request) => host.sendUdpDatagram(request),
+    getSystemClock: () => host.systemClock(),
     sendFrame: (portName, frame) => { host.sendFrame(portName, frame); },
     vrfs: () => host.vrfs?.() ?? [0],
   }, () => host.bus());
