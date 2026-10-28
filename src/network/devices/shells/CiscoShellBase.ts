@@ -220,6 +220,7 @@ import {
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
 import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { httpServerFamily, type HttpServerHost } from '../../../cli/commands/http/httpServerFamily';
 import { fileSystemFamily } from '../../../cli/commands/filesystem/fileSystemFamily';
 import { sharedShowFamily, type SharedShowHost } from '../../../cli/commands/show/sharedShowFamily';
 import { outgoingSessionFamily, type OutgoingSessionHost } from '../../../cli/commands/session/outgoingSessionFamily';
@@ -541,35 +542,6 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
  * la ou elles sont, migrees ou non.
  */
-const HTTP_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'ip http server': null,
-  'ip http secure-server': null,
-  'ip http port': { name: 'port', type: 'INT', description: 'Port the HTTP server listens on',
-    range: [1, 65535] },
-  'ip http secure-port': { name: 'port', type: 'INT',
-    description: 'Port the HTTPS server listens on', range: [1, 65535] },
-  'ip http max-connections': { name: 'nombre', type: 'REST',
-    description: 'Number of concurrent connections allowed' },
-  'ip http access-class': { name: 'liste', type: 'REST',
-    description: 'Access list restricting who may connect',
-    /*
-     * La forme historique est NOMMEE et non bornee : le gestionnaire
-     * accepte un nom comme un numero, et annoncer `<1-99>` promettrait
-     * une plage que `probe-plage-annoncee-est-appliquee` ferait alors
-     * appliquer — donc refuserait une liste nommee que la machine
-     * accepte.
-     */
-    alternatives: [
-      { keyword: 'WORD', description: 'Access list name or number' },
-      { keyword: 'ipv4', description: 'IPv4 access list, then its name' },
-    ] },
-  'ip http authentication': { name: 'methode', type: 'REST',
-    description: 'How the server authenticates a request' },
-  'ip http timeout-policy': { name: 'reste', type: 'REST',
-    description: '`idle`, `life` and `requests`, with their values' },
-};
-
 /*
  * `source-interface` est le seul mot que `ip domain-lookup` prenne, et
  * il etait declare par `registerSuggestions` sur le trie — donc perdu le
@@ -6045,14 +6017,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected httpServerSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerHttpServerOn(collector as unknown as CommandTrie),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        argumentFor: (path) => HTTP_ARGUMENTS[path],
-      },
-    );
+    return httpServerFamily(() => this.httpServerHost());
   }
 
   protected dnsConfigSpecs(): readonly CommandSpec[] {
@@ -9712,7 +9677,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.registerHttpServerOn(trie);
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without
@@ -9977,61 +9941,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Une valeur hors bornes est REFUSÉE plutôt que rognée : la ranger
    * silencieusement ferait mentir la configuration relue.
    */
-  protected registerHttpServerOn(trie: CommandTrie): void {
+  protected httpServerHost(): HttpServerHost {
     const svc = () => getHttpService(this.d());
     const sync = () => {
       const dev = this.d() as unknown as { _refreshHttpListeners?: () => void };
       dev._refreshHttpListeners?.();
     };
-
-    trie.register('ip http server', 'Enable HTTP server', () => {
-      svc()?.setEnabled(true); sync(); return '';
-    });
-    trie.register('no ip http server', 'Disable HTTP server', () => {
-      svc()?.setEnabled(false); sync(); return '';
-    });
-    trie.register('ip http secure-server', 'Enable HTTPS server', () => {
-      svc()?.setSecureEnabled(true, this.d().getHostname()); sync(); return '';
-    });
-    trie.register('no ip http secure-server', 'Disable HTTPS server', () => {
-      svc()?.setSecureEnabled(false); sync(); return '';
-    });
-
-    trie.registerGreedy('ip http port', 'HTTP server port', (args) => {
-      const port = Number(args[0]);
-      if (args.length === 0) throw new CliIncomplete();
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      svc()?.setPort(port); sync(); return '';
-    });
-    trie.registerGreedy('no ip http port', 'Restore default HTTP port', () => {
-      svc()?.setPort(80); sync(); return '';
-    });
-    trie.registerGreedy('ip http secure-port', 'HTTPS server port', (args) => {
-      const port = Number(args[0]);
-      if (args.length === 0) throw new CliIncomplete();
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      svc()?.setSecurePort(port); sync(); return '';
-    });
-
-    trie.registerGreedy('ip http authentication',
-      'Set HTTP server authentication method', (args) => {
+    return {
+      setEnabled: (on) => { svc()?.setEnabled(on); sync(); },
+      setSecureEnabled: (on) => {
+        if (on) svc()?.setSecureEnabled(true, this.d().getHostname());
+        else svc()?.setSecureEnabled(false);
+        sync();
+      },
+      setPort: (port) => { svc()?.setPort(port); sync(); },
+      setSecurePort: (port) => { svc()?.setSecurePort(port); sync(); },
+      authentication: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         const method = args[0].toLowerCase();
         if (!HTTP_AUTH_METHODS.includes(method as HttpAuthMethod)) {
           throw new CliInvalidInput({ token: args[0] });
         }
         svc()?.setAuthMethod(method as HttpAuthMethod, args[1]);
-        return '';
-      });
-    trie.registerGreedy('no ip http authentication',
-      'Restore default authentication', () => { svc()?.resetAuthMethod(); return ''; });
-
-    trie.registerGreedy('ip http max-connections',
-      'Set maximum concurrent connections', (args) => {
+      },
+      resetAuthentication: () => { svc()?.resetAuthMethod(); },
+      maxConnections: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         const n = Number(args[0]);
         if (!Number.isInteger(n)
@@ -10039,26 +9973,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           throw new CliInvalidInput({ token: args[0] });
         }
         svc()?.setMaxConnections(n);
-        return '';
-      });
-    trie.registerGreedy('no ip http max-connections',
-      'Restore default connection limit', () => { svc()?.setMaxConnections(5); return ''; });
-
-    trie.registerGreedy('ip http access-class',
-      'Restrict HTTP server access by ACL', (args) => {
+      },
+      resetMaxConnections: () => { svc()?.setMaxConnections(5); },
+      accessClass: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         // `ipv4 <nom>` est la forme longue d'IOS ; le premier mot seul est
         // la forme numérotée historique.
         const acl = args[0].toLowerCase() === 'ipv4' ? args[1] : args[0];
         if (!acl) throw new CliIncomplete();
         svc()?.setAccessClass(acl);
-        return '';
-      });
-    trie.registerGreedy('no ip http access-class',
-      'Remove HTTP access restriction', () => { svc()?.setAccessClass(null); return ''; });
-
-    trie.registerGreedy('ip http timeout-policy',
-      'Set HTTP server timeout policy', (args) => {
+      },
+      clearAccessClass: () => { svc()?.setAccessClass(null); },
+      timeoutPolicy: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         // Les trois mots-clés sont obligatoires sur IOS et dans cet
         // ordre : la commande décrit une politique entière, pas trois
@@ -10077,10 +10003,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           values.push(v);
         }
         svc()?.setTimeoutPolicy({ idleSec: values[0], lifeSec: values[1], requests: values[2] });
-        return '';
-      });
-    trie.registerGreedy('no ip http timeout-policy',
-      'Restore default timeout policy', () => { svc()?.resetTimeoutPolicy(); return ''; });
+      },
+      resetTimeoutPolicy: () => { svc()?.resetTimeoutPolicy(); },
+    };
   }
 }
 

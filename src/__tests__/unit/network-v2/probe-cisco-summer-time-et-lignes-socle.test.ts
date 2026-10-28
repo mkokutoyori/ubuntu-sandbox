@@ -545,3 +545,50 @@ describe('file system commands', () => {
     expect(await r.executeCommand('squeeze usb0:')).toContain('No such device');
   });
 });
+
+/*
+ * Fifteenth batch (ip http family): 0 of 7 fail before, by design. The commands were registered
+ * twice (the global config trie and the adapter) and the port was range-checked twice (the
+ * handler and the typed place); one declaration and one check remain. The cases pin the behaviour.
+ */
+describe('ip http server family', () => {
+  const config = async (r: Cli): Promise<string> => {
+    await r.executeCommand('end');
+    return r.executeCommand('show running-config');
+  };
+  it('witness: ip http server is rendered and no ip http server removes it', async () => {
+    const r = await router('ip http server');
+    expect(await config(r)).toContain('ip http server');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('no ip http server');
+    expect(await config(r)).not.toMatch(/^ip http server$/m);
+  });
+  it('stores a port and restores 80 with no', async () => {
+    const r = await router('ip http port 8080');
+    expect(await config(r)).toContain('ip http port 8080');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('no ip http port');
+    expect(await config(r)).not.toContain('ip http port 8080');
+  });
+  it('refuses a port out of range', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip http port 70000')).toContain('Invalid input');
+  });
+  it('answers incomplete to ip http port alone', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip http port')).toContain('Incomplete');
+  });
+  it('refuses an unknown authentication method', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip http authentication zorglub')).toContain('Invalid input');
+  });
+  it('refuses max-connections out of range', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip http max-connections 99')).toContain('Invalid input');
+  });
+  it('requires the three timeout-policy words in order', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip http timeout-policy life 5 idle 5 requests 5')).toContain('Invalid input');
+    expect(await r.executeCommand('ip http timeout-policy idle 5 life 5 requests 5')).toBe('');
+  });
+});
