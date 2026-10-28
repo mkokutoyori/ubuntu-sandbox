@@ -438,15 +438,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
 
 export function buildISAKMPPolicyCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
 
-  trie.registerGreedy('encryption', 'Set encryption algorithm', (args) => {
-    const p = ctx.getSelectedISAKMPPriority();
-    if (p === null) return '% No policy selected';
-    const policy = eng(ctx).getOrCreateISAKMPPolicy(p);
-    // Normalize: 'aes 256' or 'aes' or '3des'
-    policy.encryption = args.join(' ').toLowerCase();
-    return '';
-  });
-
   trie.registerGreedy('hash', 'Set hash algorithm', (args) => {
     const p = ctx.getSelectedISAKMPPriority();
     if (p === null) return '% No policy selected';
@@ -866,17 +857,8 @@ const CRYPTO_ENUM = (
   values: valeurs.map(([keyword, texte]) => ({ keyword, description: texte })),
 });
 
-const SUITE_LIBRE: ArgumentSpec = {
-  name: 'suite', type: 'REST', optional: true, values: [], description: '',
-};
-
 const ISAKMP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  encryption: [CRYPTO_ENUM('algorithme', 'Encryption algorithm', [
-    ['3des', 'Three key triple DES'],
-    ['aes', 'AES - Advanced Encryption Standard'],
-    ['des', 'DES - Data Encryption Standard (56 bit keys)'],
-  ]), SUITE_LIBRE],
   hash: CRYPTO_ENUM('condense', 'Hash algorithm', [
     ['md5', 'Message Digest 5'],
     ['sha', 'Secure Hash Standard'],
@@ -1029,7 +1011,44 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
+function isakmpEncryptionSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-isakmp'], minPrivilege: 15 };
+  const apply = (value: string): string => {
+    const priority = ctx.getSelectedISAKMPPriority();
+    if (priority === null) return '% No policy selected';
+    eng(ctx).getOrCreateISAKMPPolicy(priority).encryption = value;
+    return '';
+  };
+  return [
+    {
+      ...base, id: 'isakmp-encryption-3des', path: ['encryption', '3des'],
+      description: 'Three key triple DES', run: () => apply('3des'),
+    },
+    {
+      ...base, id: 'isakmp-encryption-des', path: ['encryption', 'des'],
+      description: 'DES - Data Encryption Standard (56 bit keys)', run: () => apply('des'),
+    },
+    {
+      ...base, id: 'isakmp-encryption-aes',
+      path: ['encryption', 'aes', {
+        name: 'size', type: 'ENUM', optional: true, description: 'Key size',
+        values: [
+          { keyword: '128', description: 'Key size 128' },
+          { keyword: '192', description: 'Key size 192' },
+          { keyword: '256', description: 'Key size 256' },
+        ],
+      }],
+      description: 'AES - Advanced Encryption Standard',
+      run: (_session, args) => apply(args.size ? `aes ${args.size}` : 'aes'),
+    },
+  ];
+}
+
 export function isakmpPolicySpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [...isakmpEncryptionSpecs(ctx), ...isakmpPolicyTrieSpecs(ctx)];
+}
+
+function isakmpPolicyTrieSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) =>
       buildISAKMPPolicyCommands(collector as unknown as CommandTrie, ctx),

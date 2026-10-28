@@ -9,7 +9,9 @@
  * accepted (the ranges Cisco documents for the periodic DPD interval and
  * retry), and `nat keepalive zorglub` was accepted and did nothing. The other
  * four are witnesses: the address, wildcard and hostname forms, the removals,
- * and the valid keepalives.
+ * and the valid keepalives. The policy `encryption` cases added after that
+ * measurement: 3 of 4 fall before (`aes 256 zorglub`, `aes 100` and `3des
+ * zorglub` were accepted through an untyped tail and stored verbatim).
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -82,4 +84,18 @@ describe('crypto isakmp keepalive', () => {
   it('witness: a NAT keepalive interval is applied', async () => {
     expect(await (await router()).executeCommand('crypto isakmp nat keepalive 20')).toBe('');
   });
+});
+
+describe('crypto isakmp policy encryption', () => {
+  it('witness: aes with and without a key size, 3des and des are applied', async () => {
+    const r = await router('crypto isakmp policy 10');
+    for (const line of ['encryption aes', 'encryption aes 256', 'encryption 3des', 'encryption des']) {
+      expect(await r.executeCommand(line), line).toBe('');
+    }
+  });
+
+  it.each(['encryption aes 256 zorglub', 'encryption aes 100', 'encryption 3des zorglub'])(
+    'refuses `%s` at the caret', async (line) => {
+      expect(await (await router('crypto isakmp policy 10')).executeCommand(line)).toMatch(CARET);
+    });
 });
