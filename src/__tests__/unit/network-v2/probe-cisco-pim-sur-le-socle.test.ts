@@ -2,7 +2,7 @@
  * PIM configuration (interface and global) declared natively on the socle
  * instead of re-read from the trie.
  *
- * Measured before the change: 8 of the 12 cases fall —
+ * Measured before the change: 10 of the 15 cases fall —
  *   rp-address 999.1.1.1 and join-prune-interval 0 answered a bare
  *     "% Invalid ..." with no caret,
  *   spt-threshold accepted any word and kept nothing, so a valid one never
@@ -11,9 +11,12 @@
  *   `no ip pim dr-priority` DISABLED PIM on the interface instead of
  *     restoring the default priority,
  *   query-interval was stored and never rendered in the running-config,
- *   dr-priority zorglub answered "% Invalid priority" without a caret.
- * Pass either way (4): the witnesses — a valid rp-address, its removal, a
- * valid bsr-candidate, and `no ip pim sparse-mode`.
+ *   dr-priority zorglub answered "% Invalid priority" without a caret,
+ *   `show ip mroute 999.1.1.1` and `show ip pim neighbor zorglub` were
+ *     accepted and answered an empty table.
+ * Pass either way (5): the witnesses — a valid rp-address, its removal, a
+ * valid bsr-candidate, `no ip pim sparse-mode`, and the two show commands
+ * with a valid argument.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -107,5 +110,25 @@ describe('PIM interface configuration on the socle', () => {
   it('refuses a non-numeric DR priority at the caret', async () => {
     const r = await router('interface GigabitEthernet0/0');
     expect(await r.executeCommand('ip pim dr-priority zorglub')).toMatch(CARET);
+  });
+});
+
+describe('PIM show commands on the socle', () => {
+  it('witness: show ip pim neighbor and show ip mroute answer a valid argument', async () => {
+    const r = await router('interface GigabitEthernet0/0', 'ip pim sparse-mode');
+    expect(await r.executeCommand('do show ip pim neighbor GigabitEthernet0/0'))
+      .toContain('PIM Neighbor Table');
+    expect(await r.executeCommand('do show ip mroute 239.1.1.1'))
+      .toContain('IP Multicast Routing Table');
+  });
+
+  it('refuses a malformed group address', async () => {
+    const r = await router();
+    expect(await r.executeCommand('do show ip mroute 999.1.1.1')).toMatch(CARET);
+  });
+
+  it('refuses a word that is not an interface', async () => {
+    const r = await router();
+    expect(await r.executeCommand('do show ip pim neighbor zorglub')).toMatch(CARET);
   });
 });

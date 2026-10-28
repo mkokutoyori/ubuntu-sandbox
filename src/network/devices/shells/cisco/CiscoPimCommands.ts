@@ -283,11 +283,11 @@ export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): v
   });
 }
 
-export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
-  trie.registerGreedy('show ip pim neighbor', 'Display PIM neighbors', (args) => {
+export function pimShowSpecs(ctx: ShowCtx): CommandSpec[] {
+  const neighbors = (requestedInterface: string | undefined): string => {
     const a = agent(ctx.r());
     if (!a) return '';
-    const neighbors = a.listNeighbors(namedInterface(ctx, args[0]));
+    const neighbors = a.listNeighbors(namedInterface(ctx, requestedInterface));
     const rows = ['PIM Neighbor Table',
       'Neighbor Address  Interface                Uptime/Expires    Ver  DR Prio/Mode'];
     for (const n of neighbors) {
@@ -296,9 +296,9 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       rows.push(`${padToWidth(n.neighborIp, 18)}${padToWidth(n.iface, 25)}${padToWidth(uptime + '/' + expires, 18)}v2   ${n.drPriority}${n.hasDrPriorityOption ? '' : ' (default)'}`);
     }
     return rows.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip pim rp mapping', 'Display PIM RP mappings', () => {
+  const rpMapping = (): string => {
     const a = agent(ctx.r());
     if (!a) return '';
     const rps = a.listRps();
@@ -319,9 +319,9 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       }
     }
     return lines.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip pim bsr-router', 'Display the PIM bootstrap router', () => {
+  const bsrRouter = (): string => {
     const a = agent(ctx.r());
     if (!a) return '';
     const cfg = a.getConfig();
@@ -344,13 +344,13 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       lines.push(`    Group(s) ${cfg.rpCandidate.groupRangeAddress}/${cfg.rpCandidate.groupRangeMaskBits}, priority ${cfg.rpCandidate.priority}`);
     }
     return lines.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip pim interface', 'Display PIM interface state', (args) => {
+  const interfaces = (requestedInterface: string | undefined): string => {
     const a = agent(ctx.r());
     const r = ctx.r();
     if (!a) return '';
-    const requested = namedInterface(ctx, args[0]);
+    const requested = namedInterface(ctx, requestedInterface);
     const ifaces = requested ? [requested] : Array.from(a.getConfig().interfaces.keys());
     // L'en-tête tient sur deux lignes et les données sur une : les trois
     // se déduisent des MÊMES largeurs, sinon elles finissent décalées
@@ -386,12 +386,11 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
 
     }
     return lines.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip mroute', 'Display IP multicast routing table', (args) => {
+  const mroute = (groupFilter: string | undefined): string => {
     const a = agent(ctx.r());
     if (!a) return '';
-    const groupFilter = args.find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
     const mroutes = a.listMroutes().filter((m) => !groupFilter || m.groupAddress === groupFilter);
     const lines: string[] = ['IP Multicast Routing Table',
       "Flags: D - Dense, S - Sparse, s - SSM Group, C - Connected, L - Local,",
@@ -414,23 +413,34 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     }
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
     return lines.join('\n');
-  });
-}
-
-const PIM_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
-  'show ip pim neighbor': ['WORD', 'Interface name'],
-  'show ip pim interface': ['WORD', 'Interface name'],
-  'show ip mroute': ['A.B.C.D', 'Multicast group address'],
-};
-
-export function pimShowSpecs(ctx: ShowCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerPimShowCommands(collector as unknown as CommandTrie, ctx),
+  };
+  const base = { modes: ['user', 'privileged'], minPrivilege: 1 };
+  const interfacePlace: ArgumentSpec = {
+    name: 'interface', type: 'INTERFACE', optional: true, description: 'Interface name',
+  };
+  return [
     {
-      modes: ['user', 'privileged'],
-      minPrivilege: 1,
-      restDescriptionFor: (path) => PIM_SHOW_ARGUMENTS[path]?.[1],
-      restLiteralFor: (path) => PIM_SHOW_ARGUMENTS[path]?.[0],
+      ...base, id: 'show-ip-pim-neighbor', path: ['show', 'ip', 'pim', 'neighbor', interfacePlace],
+      description: 'Display PIM neighbors', run: (_session, args) => neighbors(args.interface),
     },
-  );
+    {
+      ...base, id: 'show-ip-pim-rp-mapping', path: ['show', 'ip', 'pim', 'rp', 'mapping'],
+      description: 'Display PIM RP mappings', run: () => rpMapping(),
+    },
+    {
+      ...base, id: 'show-ip-pim-bsr-router', path: ['show', 'ip', 'pim', 'bsr-router'],
+      description: 'Display the PIM bootstrap router', run: () => bsrRouter(),
+    },
+    {
+      ...base, id: 'show-ip-pim-interface', path: ['show', 'ip', 'pim', 'interface', interfacePlace],
+      description: 'Display PIM interface state', run: (_session, args) => interfaces(args.interface),
+    },
+    {
+      ...base, id: 'show-ip-mroute',
+      path: ['show', 'ip', 'mroute', {
+        name: 'group', type: 'IP_ADDR', optional: true, description: 'Multicast group address',
+      }],
+      description: 'Display IP multicast routing table', run: (_session, args) => mroute(args.group),
+    },
+  ];
 }

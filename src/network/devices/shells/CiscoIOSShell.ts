@@ -109,7 +109,7 @@ import {
   igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
-  buildPimGlobalConfigCommands, registerPimShowCommands,
+  buildPimGlobalConfigCommands,
   pimInterfaceSpecs, pimGlobalSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
@@ -2507,7 +2507,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
