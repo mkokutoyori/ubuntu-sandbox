@@ -1043,3 +1043,43 @@ describe('interface address', () => {
     expect(await r.executeCommand('ip address 10.0.0.1 255.255.255.255')).toBe('');
   });
 });
+
+/*
+ * Twenty-ninth batch (switch: DAI vlan list, MAC aging bound): ip arp inspection vlan kept a copy
+ * of the VLAN list reader that accepted 5000 and looped over every id of a range (1-2000000000),
+ * where ip dhcp snooping vlan, vlan and the rest use parseVlanList; the aging time announced
+ * <0-1000000> but only refused negatives. Fails before: the three refusals (3 of 5); witnesses
+ * are the valid list and the valid aging time.
+ */
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+
+describe('switch: DAI vlan list and MAC aging', () => {
+  const sw = async (...more: string[]): Promise<Cli> => {
+    const s = new CiscoSwitch('switch-cisco', 'SW1', 8, 0, 0) as unknown as Cli;
+    s.powerOn();
+    for (const c of ['enable', 'configure terminal', ...more]) await s.executeCommand(c);
+    return s;
+  };
+  it('refuses a VLAN id out of range', async () => {
+    const s = await sw();
+    expect(await s.executeCommand('ip arp inspection vlan 5000')).toContain('Invalid');
+  });
+  it('refuses an enormous range at once instead of looping over it', async () => {
+    const s = await sw();
+    const started = Date.now();
+    expect(await s.executeCommand('ip arp inspection vlan 1-2000000000')).toContain('Invalid');
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+  it('witness: a valid list is accepted', async () => {
+    const s = await sw();
+    expect(await s.executeCommand('ip arp inspection vlan 10,20-22')).toBe('');
+  });
+  it('refuses an aging time above the announced bound', async () => {
+    const s = await sw();
+    expect(await s.executeCommand('mac address-table aging-time 9999999')).toContain('Invalid');
+  });
+  it('witness: a valid aging time is accepted', async () => {
+    const s = await sw();
+    expect(await s.executeCommand('mac address-table aging-time 600')).toBe('');
+  });
+});
