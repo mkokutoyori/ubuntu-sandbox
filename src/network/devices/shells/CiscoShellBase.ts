@@ -4679,22 +4679,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
 
   protected loginSpecs(): CommandSpec[] {
-    return sequenceFamily([
-      {
-        path: ['login', 'block-for'], description: 'Set the login blocking period',
-        args: [{
-          name: 'secondes', type: 'INT', range: [1, 65535],
-          description: 'Duration of the blocking period',
-        }],
-        tail: {
-          name: 'options', type: 'REST', optional: true,
-          description: 'Attempt threshold and observation window',
-          alternatives: [
-            { keyword: 'attempts', description: 'Number of failures that triggers the block' },
-            { keyword: 'within', description: 'Window in which the failures are counted' },
-          ],
-        },
-      },
+    const window = (name: string, description: string): ArgumentSpec => ({
+      name, type: 'INT', range: [1, 65535], description,
+    });
+    const blockFor: CommandSpec = {
+      id: 'login-block-for',
+      path: ['login', 'block-for', window('seconds', 'Duration of the blocking period'),
+        'attempts', window('attempts', 'Number of failures that triggers the block'),
+        'within', window('window', 'Window in which the failures are counted')],
+      description: 'Set the login blocking period',
+      undoDescription: 'Remove the login blocking period', undoOmitsArguments: true,
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => this.applyLogin(
+        ['block-for', args.seconds, 'attempts', args.attempts, 'within', args.window]),
+      undo: () => this.removeLoginBlock(),
+    };
+    return [blockFor, ...sequenceFamily([
       {
         path: ['login', 'delay'], description: 'Set delay between successive login attempts',
         args: [{
@@ -4713,7 +4713,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['login', 'on-success', 'log'], description: 'Log every successful login',
       },
-    ], () => ({ apply: (words) => this.applyLogin(words) }));
+    ], () => ({ apply: (words, negate) => (negate ? this.removeLoginBlock(words) : this.applyLogin(words)) }))];
+  }
+
+  private removeLoginBlock(words: string[] = []): string {
+    if (words.length > 0 && words[0] !== 'block-for') return '';
+    getSecurityConfig(this.d() as object).login.blockFor = undefined;
+    (this.d() as unknown as { _removeLoginBlock?: () => void })._removeLoginBlock?.();
+    return '';
   }
 
   private applyLogin(words: string[]): string {
