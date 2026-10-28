@@ -110,6 +110,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
+    Logger.setDebugEnabled(true);
   });
 
   // ─── 1. MODE TRANSITIONS & PROCESS ACTIVATION ───────────────────

@@ -146,6 +146,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
+    Logger.setDebugEnabled(true);
   });
 
   // ─── PARTIE 1 & 2 : MÉTROLOGIE ET DIFFERENCES RIPv1 / RIPv2 ────────
