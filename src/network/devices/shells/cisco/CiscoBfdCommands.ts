@@ -81,7 +81,9 @@ export function buildBfdInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
     const a = agent(ctx.r());
     if (!a) return '';
     const pairs: Record<string, number> = {};
-    for (let i = 0; i + 1 < args.length; i += 2) {
+    const leading = parseInt(args[0] ?? '', 10);
+    if (!Number.isNaN(leading)) pairs['interval'] = leading;
+    for (let i = Number.isNaN(leading) ? 0 : 1; i + 1 < args.length; i += 2) {
       const k = args[i].toLowerCase();
       const v = parseInt(args[i + 1], 10);
       if (!Number.isNaN(v)) pairs[k] = v;
