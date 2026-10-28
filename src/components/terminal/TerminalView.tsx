@@ -64,8 +64,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // when you scroll back; forcing scrollTop unconditionally on every
   // render (as this used to) yanked the view back down on every notify
   // during a stream (tail -f, ping, debug ip ospf), making the
-  // scrollback unreadable (rapport 09 audit — mirrors the live-tail
-  // pattern already correct in NetworkLogsPanel.tsx).
+  // scrollback unreadable (rapport 09 audit).
   const [stuckToBottom, setStuckToBottom] = useState(true);
   useEffect(() => {
     if (stuckToBottom && terminalRef.current) {

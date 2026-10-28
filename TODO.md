@@ -2423,6 +2423,26 @@ fichier partagé et toute la suite ; le relever dans un seul spec
 soignerait le symptôme à un endroit alors que tous y sont exposés. À
 trancher avec l'autre agent, qui exécute la même suite.
 
+### [performance] le journal `debug` est construit même quand personne ne le lit
+Mesuré sur un écho ICMP injecté trame par trame (`portA.sendFrame`, deux
+postes Linux et un CiscoSwitch, 20 000 requêtes par passe, 5 passes
+entrelacées, bac à sable de 4 cœurs) : une traversée de câble coûte
+**90 µs** (médiane ; 61 µs au mieux) avec le journal actif, **36 µs** sous
+`Logger.silenced` (le `Logger` se tait mais les appelants construisent
+encore leurs chaînes) et **29 µs** quand les cinq sites chauds sont gardés
+par un `Logger.enabled('debug')` (`Cable.transmit`, `Port` envoi et
+réception, `Switch` apprentissage et transmission). 4,25 entrées de
+journal par traversée, dont 4 de niveau `debug`. Tas : 30 000 requêtes
+sont passées de 9,3 s à 4,1 s et le pic de tas de 285 Mio à 113 Mio.
+**Ce que le levier ne ferme pas** : la mémoire retenue après GC est la
+même (83 Mio avec ou sans journal) — elle vient d'ailleurs, environ 2,9 Kio
+par aller-retour, libérée seulement quand le temps simulé avance.
+**Report** : prototype jeté (drapeau `debugEnabled` + garde sur les cinq
+sites) ; il reste à choisir qui décide que le niveau `debug` est lu (le
+panneau de journal, seul consommateur de ces entrées dans l'interface, a
+été retiré ; `LoggingConfig` ne lit que `info`/`warn`/`error`) et à garder
+les 42 sites `Logger.debug` restants, ou à rendre le message paresseux.
+
 ### [typecheck] 229 erreurs de type au compteur
 `npm run typecheck` en compte 229, contre 341 avant la passe de cette
 session. Les erreurs des fichiers de PRODUCTION ont presque toutes été

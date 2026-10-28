@@ -2,7 +2,7 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2, Settings } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, Undo2, Redo2, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ToolbarProps {
@@ -17,8 +17,6 @@ interface ToolbarProps {
   onReset?: () => void;
   onHelp?: () => void;
   onSettings?: () => void;
-  logsOpen?: boolean;
-  onToggleLogs?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
   canUndo?: boolean;
@@ -28,7 +26,7 @@ interface ToolbarProps {
 export function Toolbar({
   projectName, onProjectNameChange, onClearAll, hasDevices,
   onExport, onImport, onSave, onOpen, onReset, onHelp, onSettings,
-  logsOpen, onToggleLogs, onUndo, onRedo, canUndo, canRedo,
+  onUndo, onRedo, canUndo, canRedo,
 }: ToolbarProps) {
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
@@ -82,16 +80,8 @@ export function Toolbar({
         <ToolbarButton icon={RotateCcw} label="Reset" onClick={onReset} />
       </div>
 
-      {/* Right section - Logs, Settings, Help */}
+      {/* Right section - Settings, Help */}
       <div className="flex items-center gap-2">
-        {onToggleLogs && (
-          <ToolbarButton
-            icon={ScrollText}
-            label="Logs"
-            onClick={onToggleLogs}
-            variant={logsOpen ? 'primary' : 'default'}
-          />
-        )}
         <ToolbarButton icon={Settings} label="Settings" onClick={onSettings} />
         <ToolbarButton icon={HelpCircle} label="Help" onClick={onHelp} />
       </div>
@@ -102,20 +92,18 @@ export function Toolbar({
 interface ToolbarButtonProps {
   icon: React.ElementType;
   label: string;
-  variant?: 'default' | 'primary';
   onClick?: () => void;
   disabled?: boolean;
 }
 
-function ToolbarButton({ icon: Icon, label, variant = 'default', onClick, disabled }: ToolbarButtonProps) {
+function ToolbarButton({ icon: Icon, label, onClick, disabled }: ToolbarButtonProps) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-        variant === 'default' && "text-foreground/70 hover:text-foreground hover:bg-white/10",
-        variant === 'primary' && "bg-primary/20 text-primary hover:bg-primary/30",
+        "text-foreground/70 hover:text-foreground hover:bg-white/10",
         disabled && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-foreground/70"
       )}
       title={label}

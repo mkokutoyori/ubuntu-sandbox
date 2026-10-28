@@ -1111,9 +1111,6 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-sent',
       payload: { ...this.hostRef(), ...payload },
     });
-    // Mirror onto the Logger so the Network Logs panel surfaces every
-    // ping packet — the bus payload is intentionally machine-friendly,
-    // Logger carries the human-readable line.
     Logger.info(
       this.id, 'icmp:echo-sent',
       `${this.name}: ICMP echo #${payload.seq} → ${payload.toIp} (id=${payload.id}, ttl=${payload.ttl}, ${payload.size}B)`,
