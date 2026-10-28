@@ -13,6 +13,7 @@
  *   crypto ipsec profile NAME     → config-ipsec-profile mode
  */
 
+import { isValidIPv4 } from '@/network/core/ip';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
@@ -166,6 +167,7 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
       eng(ctx).addPreSharedKey(cible.toLowerCase(), key, true);
       return '';
     }
+    if (!isValidIPv4(cible)) return "% Invalid input detected at '^' marker.";
     eng(ctx).addPreSharedKey(cible, key);
     return '';
   });

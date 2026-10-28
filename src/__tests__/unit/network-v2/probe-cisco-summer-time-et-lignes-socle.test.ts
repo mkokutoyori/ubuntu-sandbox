@@ -1000,3 +1000,19 @@ describe('outbound ssh target resolution', () => {
     expect(await r.executeCommand('ssh -l u 10.0.0.9')).not.toContain('Bad IP address');
   });
 });
+
+/*
+ * Twenty-seventh batch (crypto isakmp key address): `address 999.1.1.1` stored a pre-shared key
+ * for a peer address that cannot exist. Fails before: the refusal (1 of 2); the witness is that a
+ * valid peer address still stores.
+ */
+describe('crypto isakmp key address', () => {
+  it('refuses a peer address that is not one', async () => {
+    const r = await router();
+    expect(await r.executeCommand('crypto isakmp key K address 999.1.1.1')).toContain('Invalid input');
+  });
+  it('witness: a valid peer address stores the key', async () => {
+    const r = await router();
+    expect(await r.executeCommand('crypto isakmp key K address 10.0.0.2')).toBe('');
+  });
+});

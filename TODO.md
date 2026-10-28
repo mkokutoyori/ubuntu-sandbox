@@ -4153,3 +4153,7 @@ Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overri
 ## Linux: tcpdump ICMPv6 « unreachable port » rouge sur la base
 
 Mesure : `probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee` > « a datagram to a closed UDP port draws "unreachable port" naming the quoted destination and port » echoue deja au commit `2351448f2` (avant la serie telnet/Cisco), 1 cas sur 90. Non diagnostique.
+
+## Rouges sur la base, vus par le lot IPSec (hors perimetre)
+
+Mesure au commit `2351448f2` (avant la serie telnet/Cisco), worktree dedie : `crypto-pki-trustpool` (cabundle url), `ike-real-diffie-hellman` (2 cas), `probe-linux-kerberos-tools-answer-like-mit` (5 cas de rejeu) — 8 cas rouges sur 57. Non diagnostiques.
