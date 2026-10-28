@@ -508,3 +508,40 @@ describe('shared show commands', () => {
     expect(await r.executeCommand('show aaa')).not.toContain('Invalid input');
   });
 });
+
+/*
+ * Fourteenth batch (flash: file commands): 0 of 7 fail before, by design. dir, more, verify, delete,
+ * mkdir, rmdir, squeeze and pwd were registered twice (the trie through registerCommonShowCommands
+ * and the adapter); the cases pin the behaviour of the single declaration.
+ */
+describe('file system commands', () => {
+  it('witness: dir flash: lists the directory', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('dir flash:')).toContain('Directory of');
+  });
+  it('pwd answers flash:', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('pwd')).toBe('flash:');
+  });
+  it('mkdir then rmdir round trip', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('mkdir flash:backups')).toContain('Created dir flash:backups');
+    expect(await r.executeCommand('rmdir flash:backups')).toContain('Removed dir flash:backups');
+  });
+  it('more on a missing file says so', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('more flash:absent.txt')).toContain('No such file or directory');
+  });
+  it('more with no file is incomplete', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('more')).toContain('Incomplete');
+  });
+  it('verify accepts the /md5 option before the file name', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('verify /md5 flash:absent.bin')).toContain('No such file or directory');
+  });
+  it('squeeze of an unknown device is refused with its own wording', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('squeeze usb0:')).toContain('No such device');
+  });
+});

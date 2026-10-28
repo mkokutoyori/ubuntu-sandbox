@@ -220,6 +220,7 @@ import {
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
 import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { fileSystemFamily } from '../../../cli/commands/filesystem/fileSystemFamily';
 import { sharedShowFamily, type SharedShowHost } from '../../../cli/commands/show/sharedShowFamily';
 import { outgoingSessionFamily, type OutgoingSessionHost } from '../../../cli/commands/session/outgoingSessionFamily';
 import { snmpHostFamily } from '../../../cli/commands/snmp/snmpHostFamily';
@@ -540,19 +541,6 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
  * la ou elles sont, migrees ou non.
  */
-const FILESYSTEM_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  dir: { ...FICHIER_CISCO('filesystem', 'Filesystem or directory to list'),
-    optional: true },
-  more: FICHIER_CISCO('file', 'File to display'),
-  verify: FICHIER_CISCO('file', 'File to verify'),
-  delete: FICHIER_CISCO('file', 'File to be deleted'),
-  mkdir: FICHIER_CISCO('directory', 'Directory to create'),
-  rmdir: FICHIER_CISCO('directory', 'Directory to remove'),
-  squeeze: FICHIER_CISCO('filesystem', 'Filesystem to squeeze'),
-  pwd: null,
-};
-
 const HTTP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip http server': null,
@@ -2228,8 +2216,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Enregistré sur la trie privilégiée uniquement : sur un vrai IOS,
    * l'EXEC utilisateur n'a accès à aucune de ces commandes.
    */
-  private registerFileSystemCommands(trie: CommandTrie): void {
-    trie.registerGreedy('dir', 'List files on a filesystem', (args) => {
+  protected fileSystemSpecs(): readonly CommandSpec[] {
+    const listDirectory = (args: readonly string[]): string => {
       // `/all` liste aussi les fichiers marqués supprimés ; ce système de
       // fichiers en libère l'espace tout de suite (comme un IOS moderne),
       // donc il n'y a jamais rien de plus à montrer — l'option est
@@ -2240,9 +2228,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `%Error opening ${cible} (No such file or directory)`;
       }
       return this.fs().renderDir(cible.replace(/\/$/, '') || 'flash:');
-    });
+    };
 
-    trie.registerGreedy('more', 'Display a file', (args) => {
+    const moreFile = (args: readonly string[]): string => {
       const nom = args[0] ?? '';
       if (!nom) return '% Incomplete command.';
       if (/^nvram:startup-config$/i.test(nom)) {
@@ -2254,7 +2242,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // une fausseté vérifiable : le vrai `more` sur du binaire crache
       // des octets illisibles, pas une page blanche.
       return f.content ?? `%Error opening ${nom} (Is a binary file)`;
-    });
+    };
 
     /*
      * `verify [/md5] <fichier>` — le controle A22 d'une liste d'audit.
@@ -2276,7 +2264,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * reference publiee par Cisco pour une image qui n'existe pas ferait
      * croire a une comparaison qui n'a pas lieu.
      */
-    trie.registerGreedy('verify', 'Verify a file', (args) => {
+    const verifyFile = (args: readonly string[]): string => {
       const mots = args.filter((a) => a.length > 0);
       const md5Demande = mots.some((a) => a.toLowerCase() === '/md5');
       const nom = mots.find((a) => !a.startsWith('/')) ?? '';
@@ -2297,9 +2285,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       lignes.push('', `Digital signature successfully verified in file flash:${f.name}`);
       return lignes.join('\n');
-    });
+    };
 
-    trie.registerGreedy('delete', 'Delete a file', (args) => {
+    const deleteFile = (args: readonly string[]): string => {
       const nom = args.filter((a) => !a.startsWith('/')).pop() ?? '';
       if (!nom) return '% Incomplete command.';
       if (!this.fs().exists(nom)) {
@@ -2314,7 +2302,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const court = nom.replace(/^[a-z]+:\/?/i, '');
       const chemin = /^[a-z]+:/i.test(nom) ? nom.replace(/^([a-z]+):\/?/i, '$1:/') : `flash:/${court}`;
       return `Delete filename [${court}]?\nDelete ${chemin}? [confirm]`;
-    });
+    };
 
     /**
      * `mkdir` / `rmdir` — un `flash:` a des répertoires, et le tutoriel
@@ -2322,7 +2310,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * `mkdir flash:backups` tombait dans la résolution de nom d'hôte et
      * répondait `Translating "mkdir"...`.
      */
-    trie.registerGreedy('mkdir', 'Create a directory', (args) => {
+    const makeDirectory = (args: readonly string[]): string => {
       const nom = args[0];
       if (!nom) throw new CliIncomplete();
       const propre = nom.replace(/\/+$/, '');
@@ -2330,8 +2318,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.fs().makeDirectory(propre);
       return `Create directory filename [${propre.replace(/^[a-z]+:\/?/i, '')}]? [confirm]\n`
         + `Created dir ${propre}`;
-    });
-    trie.registerGreedy('rmdir', 'Remove a directory', (args) => {
+    };
+    const removeDirectory = (args: readonly string[]): string => {
       const nom = args[0];
       if (!nom) throw new CliIncomplete();
       const propre = nom.replace(/\/+$/, '');
@@ -2340,7 +2328,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (verdict === 'non-vide') return `%Error Removing dir ${propre} (Directory not empty)`;
       return `Remove directory filename [${propre.replace(/^[a-z]+:\/?/i, '')}]? [confirm]\n`
         + `Removed dir ${propre}`;
-    });
+    };
 
     /**
      * `squeeze` — sur un IOS ancien, `delete` marquait le fichier et
@@ -2349,7 +2337,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * DIT qu'il n'y avait rien à récupérer plutôt que de prétendre
      * l'avoir fait.
      */
-    trie.registerGreedy('squeeze', 'Squeeze a filesystem', (args) => {
+    const squeezeFilesystem = (args: readonly string[]): string => {
       const cible = args[0] ?? 'flash:';
       if (!/^(flash|bootflash|disk0):?$/i.test(cible.replace(/\/$/, ''))) {
         return `%Error squeezing ${cible} (No such device)`;
@@ -2358,12 +2346,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         + 'Squeeze operation may take a while. Continue? [confirm]\n'
         + 'Squeeze of flash complete\n'
         + '%No files were deleted: this filesystem reclaims space on delete.';
+    };
+
+
+    return fileSystemFamily({
+      list: listDirectory, more: moreFile, verify: verifyFile, remove: deleteFile,
+      makeDirectory, removeDirectory, squeeze: squeezeFilesystem,
+      workingDirectory: () => 'flash:',
     });
-
-    trie.register('pwd', 'Display current working directory', () => 'flash:');
-
-    // Greedy comme l'inscription figée qu'elle remplace, pour que
-    // `show boot` suivi d'un mot continue de résoudre.
   }
 
   /** `dir nvram:` — deux entrées, comme sur le vrai. */
@@ -6050,16 +6040,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
-  protected fileSystemSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerFileSystemCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 1,
-        argumentFor: (path) => FILESYSTEM_ARGUMENTS[path],
-      },
-    );
-  }
-
   protected identitySubmodeContext(): CiscoSecurityShellContext | null {
     return null;
   }
@@ -9240,7 +9220,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Elle repondait `% Invalid input`. Le rendu est le meme parce que
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
-    this.registerFileSystemCommands(target);
     // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
     // que lu, ici et à deux autres endroits. Mesuré avant correction,
     // `show running-config all` rendait donc « Building configuration... »
