@@ -394,3 +394,41 @@ describe('aaa method lists name their methods', () => {
     expect(await r.executeCommand('aaa accounting exec default start-stop local')).toContain('Invalid input');
   });
 });
+
+/*
+ * Eleventh batch (snmp-server host by position): 2 of 6 fail before (the help after `version` and after
+ * `version 3` named nothing); the other four are witnesses/non-regressions.
+ */
+describe('snmp-server host names its values by position', () => {
+  it('witness: the legacy form stores the community', async () => {
+    const r = await router('snmp-server host 10.0.0.9 public');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).toContain('snmp-server host 10.0.0.9');
+  });
+  it('names the versions after version', async () => {
+    const r = await router();
+    const help = r.cliHelp('snmp-server host 10.0.0.9 version ');
+    expect(help).toContain('2c');
+    expect(help).toContain('3');
+  });
+  it('names the security levels after version 3', async () => {
+    const r = await router();
+    const help = r.cliHelp('snmp-server host 10.0.0.9 version 3 ');
+    expect(help).toContain('noauth');
+    expect(help).toContain('priv');
+  });
+  it('refuses a version that does not exist', async () => {
+    const r = await router();
+    expect(await r.executeCommand('snmp-server host 10.0.0.9 version 4 public')).toContain('Invalid input');
+  });
+  it('accepts a typed v2c host and a v3 host', async () => {
+    const r = await router();
+    expect(await r.executeCommand('snmp-server host 10.0.0.9 traps version 2c public')).toBe('');
+    expect(await r.executeCommand('snmp-server host 10.0.0.10 informs version 3 priv admin')).toBe('');
+  });
+  it('removes a host with no', async () => {
+    const r = await router('snmp-server host 10.0.0.9 public', 'no snmp-server host 10.0.0.9');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).not.toContain('snmp-server host 10.0.0.9');
+  });
+});

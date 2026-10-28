@@ -63,7 +63,7 @@ import { legacyFamily } from '@/cli/LegacyDeclaration';
 import {
   loggingFamily, type LoggingEntry, type LoggingContinuation,
 } from '@/cli/commands/logging/loggingFamily';
-import { sequenceFamily, type SequenceEntry } from '@/cli/commands/SequenceFamily';
+import { sequenceFamily, type SequenceEntry, type SequenceHost } from '@/cli/commands/SequenceFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
   HISTORY_SIZE_MIN, HISTORY_SIZE_MAX, RATE_LIMIT_MIN, RATE_LIMIT_MAX,
@@ -221,6 +221,7 @@ import {
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
 import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { snmpHostFamily } from '../../../cli/commands/snmp/snmpHostFamily';
 import { summerTimeFamily } from '../../../cli/commands/clock/summerTimeFamily';
 import { serviceLoggingFamily, type ServiceLoggingHost } from '@/cli/commands/service/serviceLoggingFamily';
 import { LoggingConfig, deviceClockSource } from '../inspection/config/LoggingConfig';
@@ -4685,18 +4686,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ]),
       },
       {
-        path: ['snmp-server', 'host'],
-        description: 'Specify hosts to receive SNMP notifications',
-        args: [{
-          name: 'adresse', type: 'IP_ADDR',
-          description: 'IP address of SNMP notification host',
-        }],
-        tail: suite('Notification type, version and community', [
-          ['informs', 'Send Inform requests'], ['traps', 'Send Trap messages'],
-          ['udp-port', 'UDP destination port'], ['version', 'SNMP version to use'],
-        ]),
-      },
-      {
         path: ['snmp-server', 'group'], description: 'Define an SNMP group',
         args: [nom('groupe', 'SNMP group name')],
         tail: suite('Version and view association', [
@@ -4767,7 +4756,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
     ];
 
-    return sequenceFamily(entries, () => ({
+    const host: SequenceHost = {
       apply: (words, negate) => {
         const svc = getSnmpService(this.d());
         if (!svc) return '';
@@ -4779,7 +4768,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         this.syncSnmpAgent();
         return '';
       },
-    }));
+    };
+    return [...sequenceFamily(entries, () => host), ...snmpHostFamily(() => host)];
   }
 
 

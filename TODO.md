@@ -1377,8 +1377,8 @@ que ces modes ; l'entree est ici pour que la table ne soit pas prise
 pour un oubli si un mode manquait vraiment. Rien a corriger tant qu'une
 transcription ne montre pas un sixieme mode.
 
-### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION (reste : SNMP)
-`sequenceFamily` accepte desormais `options` (un `OptionBag`) a la place de la queue `REST` : `ntp server|peer <ip> [key N] [prefer] [source IF] [version N] [minpoll N] [maxpoll N] [burst] [iburst]` nomme la valeur attendue a chaque rang. Il reste `snmp-server host <ip> version ?` (1 / 2c / 3, puis auth / noauth / priv), dont la grammaire est positionnelle et non un sac d'options : elle demande les `continuations` de `loggingFamily` portees par `sequenceFamily`.
+### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION (ferme)
+`ntp server|peer` passe par un `OptionBag` (`sequenceFamily` accepte `options`) et `snmp-server host` par `snmpHostFamily`, dont les mots-cles sont des noeuds du chemin : `version ?`, `version 3 ?` et `key ?` nomment la valeur attendue. Reste ouvert, et note a part : `snmp-server host ... vrf <nom>` et les types de notification (voir ci-dessus).
 
 ### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
 Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
