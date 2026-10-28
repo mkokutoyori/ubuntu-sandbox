@@ -190,7 +190,7 @@ const LLDP_TLV_DESCRIPTIONS: Readonly<Record<LldpOptionalTlv, string>> = {
   'management-address': 'Management Address TLV',
 };
 import {
-  registerArpShowCommands, registerArpConfigCommands,
+  arpSpecs as ciscoArpSpecs,
 } from './cisco/CiscoArpCommands';
 import {
   showClock, showUsers, showInventory, showProcessesCpu, showProcessesMemory,
@@ -521,8 +521,6 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
  * la ou elles sont, migrees ou non.
  */
-const QUATUOR_POINTE = /^\d{1,3}(\.\d{1,3}){3}$/;
-
 /*
  * Les sortes de ligne, et jusqu'ou chacune est numerotee.
  *
@@ -6876,31 +6874,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected arpSpecs(): CommandSpec[] {
-    const provider = () => this.d();
-    return [
-      ...specsFromTrieRegistrations(
-        (collector) =>
-          registerArpShowCommands(collector as unknown as CommandTrie, provider),
-        {
-          modes: ['user', 'privileged'], minPrivilege: 1,
-          restDescriptionFor: () => 'ARP entry address or interface',
-          restLiteralFor: () => 'A.B.C.D',
-        },
-      ),
-      ...specsFromTrieRegistrations(
-        (collector) =>
-          registerArpConfigCommands(collector as unknown as CommandTrie, provider),
-        {
-          modes: ['config'], minPrivilege: 15,
-          undoFromNegatedPaths: true,
-          argumentFor: (path) => ({
-            name: 'reste', type: 'REST', pattern: QUATUOR_POINTE,
-            restMinWords: path === 'no arp' ? 1 : 2,
-            description: 'IP address of the ARP entry', literal: 'A.B.C.D',
-          }),
-        },
-      ),
-    ];
+    return ciscoArpSpecs(() => this.d());
   }
 
   protected identityBootSpecs(): CommandSpec[] {

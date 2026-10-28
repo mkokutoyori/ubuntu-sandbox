@@ -704,3 +704,41 @@ describe('hostname, boot and line entry', () => {
     expect(await r.executeCommand('show boot')).not.toContain('flash:image.bin');
   });
 });
+
+/*
+ * Eighteenth batch (arp): the cases that move are named. The old adapter judged the address with a
+ * regular expression that also accepts 999.999.999.999, then the handler judged it a second time
+ * (`% Invalid IP address "x"`); the places are now IP_ADDR and MAC_ADDR values, refused at the
+ * caret. Fails before: the address that is not one (the old answer is the handler's message, not
+ * the caret), and the hardware address that is not one. Pass either way: the witnesses.
+ */
+describe('arp commands', () => {
+  it('witness: a static entry is added and removed', async () => {
+    const r = await router('arp 10.0.0.9 aaaa.bbbb.cccc arpa');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show arp')).toContain('10.0.0.9');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('no arp 10.0.0.9');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show arp')).not.toContain('10.0.0.9');
+  });
+  it('refuses an address with an octet out of range at the caret', async () => {
+    const r = await router();
+    const out = await r.executeCommand('arp 999.1.1.1 aaaa.bbbb.cccc arpa');
+    expect(out).toContain("Invalid input detected at '^' marker");
+  });
+  it('refuses a hardware address that is not one at the caret', async () => {
+    const r = await router();
+    const out = await r.executeCommand('arp 10.0.0.9 zorglub arpa');
+    expect(out).toContain("Invalid input detected at '^' marker");
+  });
+  it('answers incomplete to arp with an address only', async () => {
+    const r = await router();
+    expect(await r.executeCommand('arp 10.0.0.9')).toContain('Incomplete');
+  });
+  it('witness: show arp answers on a fresh router', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show arp')).not.toContain('Invalid input');
+    expect(await r.executeCommand('show ip arp')).not.toContain('Invalid input');
+  });
+});
