@@ -75,19 +75,9 @@ async function ospf(): Promise<Cli> {
   return d;
 }
 
-/** Les vingt-et-une frappes que la machine refuse, et que `?` disait completes. */
+/** Les onze frappes que la machine refuse, et que `?` disait completes. */
 const INCOMPLETES: readonly string[] = [
   'area',
-  'area authentication',
-  'area default-cost',
-  'area filter-list',
-  'area message-digest',
-  'area no-summary',
-  'area nssa-only',
-  'area range',
-  'area sham-link',
-  'area stub',
-  'area virtual-link',
   'auto-cost',
   'auto-cost reference-bandwidth',
   'capability',

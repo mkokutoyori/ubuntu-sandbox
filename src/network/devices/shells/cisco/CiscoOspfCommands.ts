@@ -368,25 +368,6 @@ function adresseReseau(ip: string, wildcard: string): string {
 
 
 
-  trie.registerGreedy('neighbor', 'Configure NBMA neighbor', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const ip = args[0];
-    const extra = ctx.r()._getOSPFExtraConfig();
-    if (!extra.nbmaNeighbors) extra.nbmaNeighbors = [];
-    let priority: number | undefined;
-    let pollInterval: number | undefined;
-    for (let i = 1; i < args.length - 1; i++) {
-      if (args[i].toLowerCase() === 'priority') priority = parseInt(args[i + 1], 10);
-      if (args[i].toLowerCase() === 'poll-interval') pollInterval = parseInt(args[i + 1], 10);
-    }
-    // Replace or add neighbor
-    const existing = extra.nbmaNeighbors.findIndex(n => n.ip === ip);
-    const entry = { ip, priority, pollInterval };
-    if (existing >= 0) extra.nbmaNeighbors[existing] = entry;
-    else extra.nbmaNeighbors.push(entry);
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('summary-address', 'Summarize external routes for ASBR', (args) => {
     if (args.length < 2) return '% Incomplete command.';
@@ -1000,9 +981,14 @@ const OSPF_INT = (
   name: string, min: number, max: number, description: string,
 ): ArgumentSpec => ({ name, type: 'INT', range: [min, max], description });
 
+const AREA_ID_PATTERN = new RegExp('^(?:'
+  + '[0-3]?\\d{1,9}|4[01]\\d{8}|42[0-8]\\d{7}|429[0-3]\\d{6}|4294[0-8]\\d{5}'
+  + '|42949[0-5]\\d{4}|429496[0-6]\\d{3}|4294967[01]\\d{2}|42949672[0-8]\\d|429496729[0-5]'
+  + '|(?:\\d{1,3}\\.){3}\\d{1,3})$');
+
 const AIRE: ArgumentSpec = {
   name: 'aire', type: 'WORD', literal: '<0-4294967295>',
-  description: 'OSPF area ID',
+  description: 'OSPF area ID', pattern: AREA_ID_PATTERN,
 };
 
 const INTERVALLES_LSA: readonly ArgumentSpec[] = [
@@ -1032,7 +1018,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'max-lsa': OSPF_INT('lsas', 1, 4294967294, 'Maximum number of non self-generated LSAs'),
   'passive-interface': { name: 'interface', type: 'INTERFACE', description: 'Interface on which updates are suppressed' },
   area: AIRE,
-  neighbor: { name: 'voisin', type: 'IP_ADDR', description: 'Neighbor address' },
   'timers throttle lsa': INTERVALLES_LSA,
   'timers throttle spf': INTERVALLES_SPF,
 };
@@ -1058,10 +1043,6 @@ Readonly<Record<string, ReadonlyArray<{
     { keyword: 'route-map', description: 'Generate the default route if the route map is satisfied' },
   ],
   'log-adjacency-changes': [{ keyword: 'detail', description: 'Detailed output' }],
-  neighbor: [
-    { keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval' },
-    { keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor' },
-  ],
 };
 
 /**
@@ -1284,6 +1265,38 @@ function processFeatureSpecs(ctx: CiscoShellContext): CommandSpec[] {
   const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
   const extra = () => ctx.r()._getOSPFExtraConfig();
   const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const neighbor: CommandSpec = {
+    ...base, id: 'ospf-neighbor',
+    path: ['neighbor', { name: 'neighbor', type: 'IP_ADDR', description: 'Neighbor address' }],
+    options: [
+      {
+        keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor',
+        argument: OSPF_INT('priority', 0, 255, 'Priority'),
+      },
+      {
+        keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval',
+        argument: positiveNumber('poll-interval', 'Seconds'),
+      },
+    ],
+    description: 'Configure NBMA neighbor', undoDescription: 'Remove the NBMA neighbor',
+    run: (_session, args) => {
+      const config = extra();
+      const list = (config.nbmaNeighbors ??= []);
+      const entry = {
+        ip: args.neighbor,
+        priority: args.priority !== undefined ? Number(args.priority) : undefined,
+        pollInterval: args['poll-interval'] !== undefined ? Number(args['poll-interval']) : undefined,
+      };
+      const index = list.findIndex((item) => item.ip === args.neighbor);
+      if (index >= 0) list[index] = entry; else list.push(entry);
+      return converge();
+    },
+    undo: (_session, args) => {
+      const config = extra();
+      config.nbmaNeighbors = (config.nbmaNeighbors ?? []).filter((item) => item.ip !== args.neighbor);
+      return converge();
+    },
+  };
   const capability = (keyword: 'opaque' | 'transit', description: string): CommandSpec => ({
     ...base, id: `ospf-capability-${keyword}`, path: ['capability', keyword], description,
     undoDescription: `Disable the ${keyword} capability`,
@@ -1304,6 +1317,7 @@ function processFeatureSpecs(ctx: CiscoShellContext): CommandSpec[] {
     undo: () => { extra().distributeList = undefined; return converge(); },
   });
   return [
+    neighbor,
     capability('opaque', 'Opaque LSA'),
     capability('transit', 'Transit area capability'),
     {
