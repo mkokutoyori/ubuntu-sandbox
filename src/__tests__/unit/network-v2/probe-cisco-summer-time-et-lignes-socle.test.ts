@@ -592,3 +592,57 @@ describe('ip http server family', () => {
     expect(await r.executeCommand('ip http timeout-policy idle 5 life 5 requests 5')).toBe('');
   });
 });
+
+/*
+ * Sixteenth batch (ip domain / ip name-server / ip host / ip dns): 0 of 9 fail before, by design.
+ * The family was a trie registration adapted at build time; it is now declared per command, with
+ * typed places (the spoofing address is an IP_ADDR place, the retry and timeout counts are ranges).
+ */
+describe('dns client and server configuration', () => {
+  const config = async (r: Cli): Promise<string> => {
+    await r.executeCommand('end');
+    return r.executeCommand('show running-config');
+  };
+  it('witness: a domain name is stored and removed', async () => {
+    const r = await router('ip domain-name example.com');
+    expect(await config(r)).toContain('ip domain-name example.com');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('no ip domain-name');
+    expect(await config(r)).not.toContain('example.com');
+  });
+  it('stores name servers', async () => {
+    const r = await router('ip name-server 10.0.0.53 10.0.0.54');
+    expect(await config(r)).toContain('ip name-server 10.0.0.53');
+  });
+  it('refuses a name server that is not an address', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip name-server zorglub')).toContain('Invalid input');
+  });
+  it('adds and removes a host table entry', async () => {
+    const r = await router('ip host r2 10.0.0.2');
+    expect(await config(r)).toContain('ip host r2 10.0.0.2');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('no ip host r2');
+    expect(await config(r)).not.toContain('ip host r2 10.0.0.2');
+  });
+  it('answers incomplete to ip host with no address', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip host r2')).toContain('Incomplete');
+  });
+  it('refuses a retry count out of range', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip domain retry 101')).toContain('Invalid input');
+  });
+  it('restores the default timeout with no', async () => {
+    const r = await router('ip domain timeout 9', 'no ip domain timeout');
+    expect(await config(r)).not.toContain('ip domain timeout 9');
+  });
+  it('refuses a spoofing address that is not one', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip dns spoofing zorglub')).toContain('Invalid input');
+  });
+  it('names source-interface after ip domain-lookup', async () => {
+    const r = await router();
+    expect(r.cliHelp('ip domain-lookup ')).toContain('source-interface');
+  });
+});

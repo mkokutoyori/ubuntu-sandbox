@@ -208,7 +208,7 @@ import {
 } from './cisco/CiscoCommonShow';
 import { renderInterfaceErrorCounters } from './cisco/ciscoCounterTables';
 import {
-  registerCiscoDnsCommands, registerCiscoDnsExecCommands, type DnsCommandContext,
+  ciscoDnsConfigSpecs, type DnsCommandContext,
   DNS_RETRY_RANGE, DNS_TIMEOUT_RANGE,
 } from './cisco/CiscoDnsCommands';
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
@@ -542,71 +542,7 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
  * la ou elles sont, migrees ou non.
  */
-/*
- * `source-interface` est le seul mot que `ip domain-lookup` prenne, et
- * il etait declare par `registerSuggestions` sur le trie — donc perdu le
- * jour ou la famille a migre, l'elagage ayant lieu avant. Un mot-cle le
- * declare des deux cotes a la fois : l'aide l'annonce et l'analyse le
- * reconnait.
- */
-const DOMAIN_LOOKUP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'source-interface', description: 'Source interface for packets',
-  undoWithoutArgument: true,
-  argument: { name: 'interface', type: 'INTERFACE',
-    description: 'Interface used as the source address' },
-}];
-
 const QUATUOR_POINTE = /^\d{1,3}(\.\d{1,3}){3}$/;
-
-const DNS_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-
-  'ip domain-lookup': null,
-  'ip domain lookup': null,
-  'ip domain round-robin': null,
-  'ip dns server': null,
-  'ip domain-name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
-  'ip domain name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
-  'ip domain-list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
-  'ip domain list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
-  'ip domain retry': { name: 'essais', type: 'INT', range: DNS_RETRY_RANGE,
-    description: 'Number of times a resolution is retried' },
-  'ip domain timeout': { name: 'secondes', type: 'INT', range: DNS_TIMEOUT_RANGE,
-    description: 'Time waited for a resolution' },
-  'ip dns spoofing': { name: 'adresse', type: 'REST',
-    description: 'Address answered to every query' },
-  'ip dns primary': { name: 'reste', type: 'REST',
-    description: 'Zone, then `soa` with its name server and mailbox' },
-  /*
-   * Le gestionnaire prend PLUSIEURS serveurs — `setNameServers(args)` —
-   * donc une place unique refuserait le second ; la premiere est typee
-   * pour qu'`?` annonce `A.B.C.D` comme IOS, la suite est libre.
-   */
-  'ip name-server': [
-    { name: 'adresse', type: 'IP_ADDR', description: 'Domain server IP address' },
-    { name: 'reste', type: 'REST', optional: true,
-      description: 'Further domain server addresses' },
-  ],
-  /*
-   * `ip host <nom> <adresse>...` ou `ip host <nom> ns <adresse>` : le
-   * gestionnaire exige deux mots, donc la seconde place n'est pas
-   * facultative — sans quoi `ip host ?` annonce `<cr>` pour une frappe
-   * que la meme machine declare incomplete.
-   */
-  'ip host': [
-    { name: 'nom', type: 'WORD', description: 'Name of host' },
-    /*
-     * La seconde place est FACULTATIVE alors que le gestionnaire exige
-     * deux mots, et c'est la NEGATION qui l'impose : `no ip host r2` ne
-     * prend qu'un nom, et la negation reprend les places de la forme
-     * positive. La rendre exigee faisait repondre « Incomplete » a une
-     * suppression parfaitement formee. `ip host ?` n'annonce pas `<cr>`
-     * pour autant, le NOM etant exige.
-     */
-    { name: 'reste', type: 'REST', optional: true,
-      description: 'Host addresses, or `ns` then the name server address' },
-  ],
-};
 
 /*
  * Les sortes de ligne, et jusqu'ou chacune est numerotee.
@@ -6021,17 +5957,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected dnsConfigSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => registerCiscoDnsCommands(
-        collector as unknown as CommandTrie, this.dnsCommandContext()),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        argumentFor: (path) => DNS_ARGUMENTS[path],
-        keywordsFor: (path) => /^ip domain[- ]lookup$/.test(path)
-          ? DOMAIN_LOOKUP_KEYWORDS : undefined,
-      },
-    );
+    return ciscoDnsConfigSpecs(this.dnsCommandContext());
   }
 
   protected identitySubmodeSpecs(): readonly CommandSpec[] {
@@ -9217,7 +9143,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * aucune connexion n'est retenue, aucun module n'est déclaré — donc
      * `all` rend l'état et le dit, plutôt que d'inventer deux tableaux.
      */
-    registerCiscoDnsExecCommands(target, this.dnsCommandContext());
   }
 
   /** Map a CLI alias mode keyword to the repository's AliasMode. */
@@ -9685,7 +9610,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configState.set('ip routing', false);
       return '';
     });
-    registerCiscoDnsCommands(trie, this.dnsCommandContext());
     /**
      * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
      *

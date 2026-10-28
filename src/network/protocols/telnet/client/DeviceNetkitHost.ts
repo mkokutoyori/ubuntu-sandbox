@@ -16,6 +16,7 @@ export interface DeviceNetkitDeps {
   readonly lookupHost: (name: string) => string | null;
   readonly servicePort: (name: string) => number | null;
   readonly reach: (ip: string, port: number) => Promise<TcpWireOutcome>;
+  readonly routeFailure?: (ip: string) => string | null;
   readonly dial: (ip: string, port: number) => Promise<NetkitTelnetTransport | { readonly dialFailed: string } | null>;
 }
 
@@ -58,6 +59,8 @@ export class DeviceNetkitHost implements NetkitTelnetHost {
   }
 
   async connect(address: NetkitAddress, port: number): Promise<NetkitConnection> {
+    const routeFailure = this.deps.routeFailure?.(address.text) ?? null;
+    if (routeFailure !== null) return refused(routeFailure);
     const reach = await this.deps.reach(address.text, port);
     if (reach !== 'open') return refused(WIRE_ERRNO[reach]);
     const dialed = await this.deps.dial(address.text, port);

@@ -1,4 +1,5 @@
-import type { CommandTrie } from '../CommandTrie';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { CommandSpec } from '@/cli/CommandTable';
 import type { CiscoDnsConfig, DnsErreur } from '../../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../../router/dns/RouterHostsTable';
 import { isValidIPv4 } from '@/network/core/ip';
@@ -20,13 +21,10 @@ function rendre(err: DnsErreur | null): string {
   return err.kind === 'incomplete' ? INCOMPLETE : INVALID;
 }
 
-function borne(v: string | undefined, min: number, max: number): number | null {
-  const n = Number.parseInt(v ?? '', 10);
-  if (!Number.isFinite(n) || n < min || n > max) return null;
-  return n;
-}
+const words = (value: string | undefined): string[] =>
+  (value ?? '').trim().split(/\s+/).filter(Boolean);
 
-export function registerCiscoDnsCommands(trie: CommandTrie, ctx: DnsCommandContext): void {
+export function ciscoDnsConfigSpecs(ctx: DnsCommandContext): CommandSpec[] {
   const cfg = () => ctx.config();
   const applique = (f: (c: CiscoDnsConfig) => string): string => {
     const c = cfg();
@@ -35,121 +33,156 @@ export function registerCiscoDnsCommands(trie: CommandTrie, ctx: DnsCommandConte
     if (out === '') ctx.afterApply?.();
     return out;
   };
+  const base = { modes: ['config'], minPrivilege: 15 };
+  const specs: CommandSpec[] = [];
 
-  for (const racine of ['ip domain-lookup', 'ip domain lookup']) {
-    trie.registerGreedy(racine, 'Enable IP Domain Name System hostname translation', (args) =>
-      applique((c) => {
-        if (args.length === 0) { c.lookupEnabled = true; return ''; }
-        if (args[0].toLowerCase() !== 'source-interface') return INVALID;
-        if (!args[1]) return INCOMPLETE;
-        c.lookupSourceInterface = args[1];
-        c.lookupEnabled = true;
-        return '';
-      }));
-    trie.registerGreedy(`no ${racine}`, 'Disable IP Domain Name System hostname translation', (args) =>
-      applique((c) => {
-        if (args[0]?.toLowerCase() === 'source-interface') {
-          c.lookupSourceInterface = null;
-          return '';
-        }
-        c.lookupEnabled = false;
-        return '';
-      }));
+  const command = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>, description: string,
+    run: (args: Record<string, string>) => string,
+    undo?: (args: Record<string, string>) => string,
+  ): void => {
+    specs.push({
+      ...base, id, path: [...path], description,
+      run: (_session, args) => applique(() => run(args)),
+      ...(undo ? { undo: (_session: unknown, args: Record<string, string>) => applique(() => undo(args)) } : {}),
+    } as CommandSpec);
+  };
+  const bareUndo = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>, description: string,
+    undo: () => string,
+  ): void => {
+    specs.push({
+      ...base, id: `${id}-undo`, path: [...path], description, existsOnlyNegated: true,
+      run: () => INCOMPLETE,
+      undo: () => applique(() => undo()),
+    });
+  };
+
+  for (const root of [['ip', 'domain-lookup'], ['ip', 'domain', 'lookup']]) {
+    const tag = root.join('-');
+    command(tag, root, 'Enable IP Domain Name System hostname translation',
+      () => { const c = cfg(); if (c) c.lookupEnabled = true; return ''; },
+      () => { const c = cfg(); if (c) c.lookupEnabled = false; return ''; });
+    command(`${tag}-source-interface`, [...root, 'source-interface', {
+      name: 'interface', type: 'INTERFACE', description: 'Interface used as the source address',
+    }], 'Source interface for packets',
+    (args) => {
+      const c = cfg();
+      if (c) { c.lookupSourceInterface = args.interface; c.lookupEnabled = true; }
+      return '';
+    },
+    () => { const c = cfg(); if (c) c.lookupSourceInterface = null; return ''; });
+    bareUndo(`${tag}-source-interface`, [...root, 'source-interface'],
+      'Source interface for packets',
+      () => { const c = cfg(); if (c) c.lookupSourceInterface = null; return ''; });
   }
 
-  for (const racine of ['ip domain-name', 'ip domain name']) {
-    trie.registerGreedy(racine, 'Define the default domain name', (args) =>
-      applique((c) => {
-        if (!args[0]) return INCOMPLETE;
-        c.domainName = args[0];
-        return '';
-      }));
-    trie.registerGreedy(`no ${racine}`, 'Remove the default domain name', () =>
-      applique((c) => { c.domainName = ''; return ''; }));
+  for (const root of [['ip', 'domain-name'], ['ip', 'domain', 'name']]) {
+    const tag = root.join('-');
+    const clear = () => { const c = cfg(); if (c) c.domainName = ''; return ''; };
+    command(tag, [...root, { name: 'name', type: 'WORD', description: 'Default domain name' }],
+      'Define the default domain name',
+      (args) => { const c = cfg(); if (c) c.domainName = args.name; return ''; }, clear);
+    bareUndo(tag, root, 'Remove the default domain name', clear);
   }
 
-  for (const racine of ['ip domain-list', 'ip domain list']) {
-    trie.registerGreedy(racine, 'Define a list of default domain names', (args) =>
-      applique((c) => rendre(c.addDomainToList(args[0]))));
-    trie.registerGreedy(`no ${racine}`, 'Remove a default domain name', (args) =>
-      applique((c) => { c.removeDomainFromList(args[0]); return ''; }));
+  for (const root of [['ip', 'domain-list'], ['ip', 'domain', 'list']]) {
+    const tag = root.join('-');
+    command(tag, [...root, {
+      name: 'name', type: 'WORD', description: 'Domain name to append to the list',
+    }], 'Define a list of default domain names',
+    (args) => rendre(cfg()?.addDomainToList(args.name) ?? null),
+    (args) => { cfg()?.removeDomainFromList(args.name); return ''; });
   }
 
-  trie.registerGreedy('ip name-server', 'Specify address of name server to use', (args) =>
-    applique((c) => rendre(c.setNameServers(args))));
-  trie.registerGreedy('no ip name-server', 'Remove a name server', (args) =>
-    applique((c) => { c.removeNameServers(args); return ''; }));
+  const nameServers: ArgumentSpec[] = [
+    { name: 'address', type: 'IP_ADDR', description: 'Domain server IP address' },
+    { name: 'more', type: 'REST', optional: true, description: 'Further domain server addresses' },
+  ];
+  const serverWords = (args: Record<string, string>) => [args.address, ...words(args.more)];
+  command('ip-name-server', ['ip', 'name-server', ...nameServers],
+    'Specify address of name server to use',
+    (args) => rendre(cfg()?.setNameServers(serverWords(args)) ?? null),
+    (args) => { cfg()?.removeNameServers(serverWords(args)); return ''; });
+  bareUndo('ip-name-server', ['ip', 'name-server'], 'Remove a name server',
+    () => { cfg()?.removeNameServers([]); return ''; });
 
-  trie.registerGreedy('ip domain timeout', 'Set time to wait for a DNS response', (args) =>
-    applique((c) => {
-      const n = borne(args[0], ...DNS_TIMEOUT_RANGE);
-      if (n === null) return args[0] === undefined ? INCOMPLETE : INVALID;
-      c.timeout = n;
+  const timed = (
+    keyword: string, name: string, range: readonly [number, number], description: string,
+    set: (c: CiscoDnsConfig, n: number) => void, restore: (c: CiscoDnsConfig) => void,
+  ): void => {
+    const reset = () => { const c = cfg(); if (c) restore(c); return ''; };
+    command(`ip-domain-${keyword}`, ['ip', 'domain', keyword, {
+      name, type: 'INT', range: [range[0], range[1]], description,
+    }], description,
+    (args) => { const c = cfg(); if (c) set(c, Number(args[name])); return ''; }, reset);
+    bareUndo(`ip-domain-${keyword}`, ['ip', 'domain', keyword], description, reset);
+  };
+  timed('timeout', 'seconds', DNS_TIMEOUT_RANGE, 'Set time to wait for a DNS response',
+    (c, n) => { c.timeout = n; }, (c) => { c.timeout = 3; });
+  timed('retry', 'tries', DNS_RETRY_RANGE, 'Set number of times to retry a DNS query',
+    (c, n) => { c.retry = n; }, (c) => { c.retry = 2; });
+
+  command('ip-domain-round-robin', ['ip', 'domain', 'round-robin'],
+    'Rotate the order of returned addresses',
+    () => { const c = cfg(); if (c) c.roundRobin = true; return ''; },
+    () => { const c = cfg(); if (c) c.roundRobin = false; return ''; });
+  command('ip-dns-server', ['ip', 'dns', 'server'], 'Enable the DNS server',
+    () => { const c = cfg(); if (c) c.serverEnabled = true; return ''; },
+    () => { const c = cfg(); if (c) c.serverEnabled = false; return ''; });
+
+  const spoofingOff = () => {
+    const c = cfg();
+    if (c) { c.spoofing = false; c.spoofingAddress = null; }
+    return '';
+  };
+  const spoofingOn = (address: string | null) => {
+    const c = cfg();
+    if (c) { c.spoofing = true; c.spoofingAddress = address; }
+    return '';
+  };
+  command('ip-dns-spoofing', ['ip', 'dns', 'spoofing'], 'Enable DNS spoofing',
+    () => spoofingOn(null), spoofingOff);
+  command('ip-dns-spoofing-address', ['ip', 'dns', 'spoofing', {
+    name: 'address', type: 'IP_ADDR', description: 'Address answered to every query',
+  }], 'Enable DNS spoofing', (args) => spoofingOn(args.address), spoofingOff);
+
+  command('ip-dns-primary', ['ip', 'dns', 'primary', {
+    name: 'zone', type: 'REST', description: 'Zone, then `soa` with its name server and mailbox',
+  }], 'Configure this device as primary for a zone',
+  (args) => rendre(cfg()?.setPrimaryZone(words(args.zone)) ?? null),
+  (args) => { cfg()?.primaryZones.delete((words(args.zone)[0] ?? '').toLowerCase()); return ''; });
+
+  command('ip-host', ['ip', 'host', { name: 'name', type: 'WORD', description: 'Name of host' }, {
+    name: 'more', type: 'REST', optional: true,
+    description: 'Host addresses, or `ns` then the name server address',
+  }], 'Add a host to the host table',
+  (args) => {
+    const c = cfg();
+    if (!c) return '';
+    const rest = words(args.more);
+    if (rest.length < 1) return INCOMPLETE;
+    if (rest[0].toLowerCase() === 'ns') {
+      if (!rest[1]) return INCOMPLETE;
+      return rendre(c.addNsRecord(args.name, rest[1]));
+    }
+    const addresses = rest.filter((a) => !/^\d+$/.test(a) || isValidIPv4(a));
+    for (const a of addresses) if (!isValidIPv4(a)) return `% Invalid IP address ${a}.`;
+    if (addresses.length === 0) return INCOMPLETE;
+    if (addresses.length > 8) return INVALID;
+    ctx.hosts()?.upsert(args.name, addresses, true);
+    return '';
+  },
+  (args) => {
+    const c = cfg();
+    if (!c) return '';
+    if (words(args.more)[0]?.toLowerCase() === 'ns') {
+      c.nsRecords.delete(args.name.toLowerCase());
       return '';
-    }));
-  trie.registerGreedy('no ip domain timeout', 'Restore the default DNS timeout', () =>
-    applique((c) => { c.timeout = 3; return ''; }));
+    }
+    ctx.hosts()?.remove(args.name);
+    return '';
+  });
 
-  trie.registerGreedy('ip domain retry', 'Set number of times to retry a DNS query', (args) =>
-    applique((c) => {
-      const n = borne(args[0], ...DNS_RETRY_RANGE);
-      if (n === null) return args[0] === undefined ? INCOMPLETE : INVALID;
-      c.retry = n;
-      return '';
-    }));
-  trie.registerGreedy('no ip domain retry', 'Restore the default DNS retry count', () =>
-    applique((c) => { c.retry = 2; return ''; }));
-
-  trie.register('ip domain round-robin', 'Rotate the order of returned addresses', () =>
-    applique((c) => { c.roundRobin = true; return ''; }));
-  trie.register('no ip domain round-robin', 'Stop rotating returned addresses', () =>
-    applique((c) => { c.roundRobin = false; return ''; }));
-
-  trie.register('ip dns server', 'Enable the DNS server', () =>
-    applique((c) => { c.serverEnabled = true; return ''; }));
-  trie.register('no ip dns server', 'Disable the DNS server', () =>
-    applique((c) => { c.serverEnabled = false; return ''; }));
-
-  trie.registerGreedy('ip dns spoofing', 'Enable DNS spoofing', (args) =>
-    applique((c) => {
-      if (args[0] !== undefined && !isValidIPv4(args[0])) return INVALID;
-      c.spoofing = true;
-      c.spoofingAddress = args[0] ?? null;
-      return '';
-    }));
-  trie.registerGreedy('no ip dns spoofing', 'Disable DNS spoofing', () =>
-    applique((c) => { c.spoofing = false; c.spoofingAddress = null; return ''; }));
-
-  trie.registerGreedy('ip dns primary', 'Configure this device as primary for a zone', (args) =>
-    applique((c) => rendre(c.setPrimaryZone(args))));
-  trie.registerGreedy('no ip dns primary', 'Remove a primary zone', (args) =>
-    applique((c) => { c.primaryZones.delete((args[0] ?? '').toLowerCase()); return ''; }));
-
-  trie.registerGreedy('ip host', 'Add a host to the host table', (args) =>
-    applique((c) => {
-      if (args.length < 2) return INCOMPLETE;
-      if (args[1].toLowerCase() === 'ns') {
-        if (!args[2]) return INCOMPLETE;
-        return rendre(c.addNsRecord(args[0], args[2]));
-      }
-      const adresses = args.slice(1).filter((a) => !/^\d+$/.test(a) || isValidIPv4(a));
-      for (const a of adresses) if (!isValidIPv4(a)) return `% Invalid IP address ${a}.`;
-      if (adresses.length === 0) return INCOMPLETE;
-      if (adresses.length > 8) return INVALID;
-      ctx.hosts()?.upsert(args[0], adresses, true);
-      return '';
-    }));
-  trie.registerGreedy('no ip host', 'Remove a host from the host table', (args) =>
-    applique((c) => {
-      if (args.length < 1) return INCOMPLETE;
-      if (args[1]?.toLowerCase() === 'ns') {
-        c.nsRecords.delete(args[0].toLowerCase());
-        return '';
-      }
-      ctx.hosts()?.remove(args[0]);
-      return '';
-    }));
-}
-
-export function registerCiscoDnsExecCommands(trie: CommandTrie, ctx: DnsCommandContext): void {
+  return specs;
 }
