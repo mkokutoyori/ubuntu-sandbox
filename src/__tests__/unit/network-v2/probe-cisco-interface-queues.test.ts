@@ -1,7 +1,7 @@
 /*
  * Interface sub-commands whose tail was dropped or stored verbatim.
  *
- * Measured before the change: 14 of the 24 cases fall. `negotiation zorglub`
+ * Measured before the change: 26 of the 31 cases fall. `negotiation zorglub`
  * silently turned auto-negotiation OFF (anything but `auto` was read as
  * "off"), `ip tcp adjust-mss zorglub` and a value outside 500-1460 were
  * accepted and ignored, `ip hello-interval eigrp` and `ip hold-time eigrp`
@@ -10,7 +10,9 @@
  * authentication zorglub` enabled simple authentication; `tunnel source
  * zorglub` and `tunnel source 999.1.1.1` were accepted (a source is an address
  * or an interface name). The six witnesses
- * (the valid form of each family) pass either way.
+ * (the valid form of each family) pass either way. `bfd interval` took any
+ * word after the numbers and dropped it (6 more cases); its multiplier bound
+ * 3-50 is the IOS one but was written from memory, not from a fetched page.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -58,4 +60,18 @@ describe('tunnel source', () => {
     'witness: accepts `%s`', async (line) => {
       expect(await (await onInterface()).executeCommand(line)).not.toMatch(REFUSED);
     });
+});
+
+describe('bfd interval', () => {
+  it.each([
+    'bfd interval 50 min_rx 50 multiplier zorglub', 'bfd interval 50 min_rx 50 multiplier 2',
+    'bfd interval zorglub', 'bfd interval 50 zorglub 5', 'bfd interval 50 min_rx',
+    'bfd interval 50 min_rx 50 multiplier 3 extra',
+  ])('refuses `%s`', async (line) => {
+    expect(await (await onInterface()).executeCommand(line)).toMatch(REFUSED);
+  });
+
+  it('witness: the full form is accepted', async () => {
+    expect(await (await onInterface()).executeCommand('bfd interval 50 min_rx 50 multiplier 3')).toBe('');
+  });
 });
