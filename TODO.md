@@ -4188,3 +4188,13 @@ probe-cle-privee-d-hote-est-privee, probe-couche-internet-un-seul-ttl,
 probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
 processus, plus the Linux oracle and crypto reds listed above. None is caused by
 the Cisco socle series; they are recorded so a sweep is read against them.
+
+## IKEv2 global settings: upper bounds not enforced (source unreachable)
+
+`crypto ikev2 dpd`, `nat keepalive`, `cookie-challenge` and `window` now refuse
+non-numeric and zero values, but their upper bounds are not enforced and the
+help does not announce a range: the Cisco command reference for the IKEv2
+forms could not be reached (a search returned the IKEv1 `crypto isakmp
+keepalive` page, 10-3600 s periodic and 2-60 s retry, which is a different
+command and was not applied by analogy). Fetch the IKEv2 pages, then declare
+the ranges on the places in CiscoIPSecIKEv2Commands.ts.

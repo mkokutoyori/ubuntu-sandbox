@@ -32,25 +32,71 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Name of the IKEv2 keyring' },
   'crypto ikev2 profile': { name: 'nom', type: 'WORD',
     description: 'Name of the IKEv2 profile' },
-  'crypto ikev2 dpd': { name: 'reste', type: 'REST',
-    description: 'Interval and retry, then `periodic` or `on-demand`' },
-  'crypto ikev2 cookie-challenge': { name: 'seuil', type: 'REST',
-    description: 'Number of half-open sessions above which a cookie is required' },
-  'crypto ikev2 window': { name: 'taille', type: 'REST',
-    description: 'Number of outstanding requests allowed' },
-  'crypto ikev2 nat keepalive': { name: 'secondes', type: 'REST',
-    description: 'Interval between NAT keepalives, in seconds' },
 };
 
+const positive = (name: string, description: string): ArgumentSpec => ({
+  name, type: 'WORD', description, pattern: /^[1-9]\d{0,9}$/,
+  alternatives: [{ keyword: '<number>', description }],
+  formsAreExhaustive: true,
+});
+
 export function ikev2GlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
+  const base = { modes: ['config'], minPrivilege: 15 };
+  const native: CommandSpec[] = [
+    {
+      ...base, id: 'config-crypto-ikev2-dpd',
+      path: ['crypto', 'ikev2', 'dpd',
+        positive('interval', 'DPD interval in seconds'),
+        positive('retry', 'DPD retry interval in seconds'),
+        {
+          name: 'mode', type: 'ENUM', description: 'DPD mode',
+          values: [
+            { keyword: 'on-demand', description: 'Send DPD only when there is traffic to send' },
+            { keyword: 'periodic', description: 'Send DPD at the configured interval' },
+          ],
+        }],
+      description: 'Global IKEv2 DPD interval / retry',
+      run: (_session, args) => {
+        eng(ctx).setIkev2GlobalDpd(Number(args.interval), Number(args.retry), args.mode.toLowerCase());
+        return '';
+      },
+    },
+    {
+      ...base, id: 'config-crypto-ikev2-nat-keepalive',
+      path: ['crypto', 'ikev2', 'nat', 'keepalive',
+        positive('seconds', 'Interval between NAT keepalives, in seconds')],
+      description: 'Set IKEv2 NAT keepalive',
+      run: (_session, args) => { eng(ctx).setIkev2NatKeepalive(Number(args.seconds)); return ''; },
+    },
+    {
+      ...base, id: 'config-crypto-ikev2-cookie-challenge',
+      path: ['crypto', 'ikev2', 'cookie-challenge', {
+        name: 'threshold', type: 'WORD', pattern: /^\d{1,10}$/,
+        description: 'Number of half-open sessions above which a cookie is required',
+        alternatives: [{
+          keyword: '<number>',
+          description: 'Number of half-open sessions above which a cookie is required',
+        }],
+        formsAreExhaustive: true,
+      }],
+      description: 'Set IKEv2 cookie-challenge threshold',
+      run: (_session, args) => { eng(ctx).setIkev2CookieChallenge(Number(args.threshold)); return ''; },
+    },
+    {
+      ...base, id: 'config-crypto-ikev2-window',
+      path: ['crypto', 'ikev2', 'window', positive('size', 'Number of outstanding requests allowed')],
+      description: 'Set IKEv2 window size',
+      run: (_session, args) => { eng(ctx).setIkev2WindowSize(Number(args.size)); return ''; },
+    },
+  ];
+  return [...native, ...specsFromTrieRegistrations(
     (collector) => buildIKEv2GlobalCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config'], minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => IKEV2_GLOBAL_ARGUMENTS[path],
     },
-  );
+  )];
 }
 
 export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -117,32 +163,6 @@ export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   trie.registerGreedy('no crypto ikev2 profile', 'Remove IKEv2 profile', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     eng(ctx).removeIKEv2Profile(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('crypto ikev2 dpd', 'Global IKEv2 DPD interval / retry', (args) => {
-    const interval = parseInt(args[0] ?? '', 10);
-    const retry = parseInt(args[1] ?? '', 10);
-    eng(ctx).setIkev2GlobalDpd(
-      Number.isFinite(interval) ? interval : undefined,
-      Number.isFinite(retry) ? retry : undefined,
-      args[2]?.toLowerCase(),
-    );
-    return '';
-  });
-  trie.registerGreedy('crypto ikev2 nat keepalive', 'Set IKEv2 NAT keepalive', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setIkev2NatKeepalive(n);
-    return '';
-  });
-  trie.registerGreedy('crypto ikev2 cookie-challenge', 'Set IKEv2 cookie-challenge threshold', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setIkev2CookieChallenge(n);
-    return '';
-  });
-  trie.registerGreedy('crypto ikev2 window', 'Set IKEv2 window size', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setIkev2WindowSize(n);
     return '';
   });
 }
