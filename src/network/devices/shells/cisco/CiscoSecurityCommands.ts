@@ -16,7 +16,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
 import type { OptionSpec } from '@/cli/OptionBag';
 import {
-  specsFromTrieRegistrations, type AdapterKeyword,
+  specsFromTrieRegistrations,
 } from '@/cli/commands/trieAdapter';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import {
@@ -336,11 +336,9 @@ function verifierMethodesAaa(phase: AaaPhase, methods: readonly string[]): strin
 
 export function buildSecuritySubmodeCommands(
   pmapClassTrie: CommandTrie,
-  trustpointTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
   buildPolicyClassSubmodeOn(pmapClassTrie, ctx);
-  buildTrustpointSubmodeOn(trustpointTrie, ctx);
 }
 
 const CMAP_ACL_MIN = 1;
@@ -361,91 +359,6 @@ export function buildPolicyClassSubmodeOn(
     if (spec.greedy) pmapClassTrie.registerGreedy(spec.words, spec.description, apply);
     else pmapClassTrie.register(spec.words, spec.description, () => apply([]));
   }
-}
-
-export function buildTrustpointSubmodeOn(
-  trustpointTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  const tp = () => {
-    const name = ctx.getPkiTrustpoint?.();
-    return name ? sec().pkiTrustpoints.get(name) ?? null : null;
-  };
-  trustpointTrie.registerGreedy('enrollment', 'Enrollment configuration', (args) => {
-    const t = tp(); if (!t) return '';
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    const mot = args[0].toLowerCase();
-    if (mot === 'url') {
-      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-      t.enrollmentUrl = args[1];
-      delete t.enrollmentProfile;
-      delete t.source;
-      return '';
-    }
-    if (mot === 'profile') {
-      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-      t.enrollmentProfile = args[1];
-      delete t.enrollmentUrl;
-      delete t.source;
-      return '';
-    }
-    if (mot === 'selfsigned' || mot === 'self-signed') t.source = 'selfsigned';
-    else if (mot === 'terminal') t.source = 'terminal';
-    else throw new CliInvalidInput({ token: args[0] });
-    delete t.enrollmentUrl;
-    delete t.enrollmentProfile;
-    return '';
-  });
-  trustpointTrie.registerGreedy('subject-name', 'Set subject name', (args) => {
-    const t = tp(); if (!t) return '';
-    t.subjectName = args.join(' ');
-    return '';
-  });
-  trustpointTrie.registerGreedy('revocation-check', 'Set revocation check method', (args) => {
-    const t = tp(); if (!t) return '';
-    const mode = args.join(' ').toLowerCase();
-    if (mode === 'crl' || mode === 'none' || mode === 'ocsp' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') {
-      t.revocationCheck = mode as 'crl' | 'none' | 'ocsp' | 'crl-or-ocsp' | 'crl-then-ocsp';
-    }
-    return '';
-  });
-  trustpointTrie.registerGreedy('rsakeypair', 'Bind RSA keypair', (args) => {
-    const t = tp(); if (!t) return '';
-    t.rsaKeypair = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('fqdn', 'Set FQDN', (args) => {
-    const t = tp(); if (!t) return '';
-    t.fqdn = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('ip-address', 'Set IP', (args) => {
-    const t = tp(); if (!t) return '';
-    t.ipAddress = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('serial-number', 'Set serial number', (args) => {
-    const t = tp(); if (!t) return '';
-    t.serialNumber = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('auto-enroll', 'Auto-enrollment', (args) => {
-    const t = tp(); if (!t) return '';
-    const cfg: { percent?: number; regenerate?: boolean } = {};
-    for (let i = 0; i < args.length; i++) {
-      const n = parseInt(args[i], 10);
-      if (!isNaN(n)) cfg.percent = n;
-      if (args[i] === 'regenerate') cfg.regenerate = true;
-    }
-    t.autoEnroll = cfg;
-    return '';
-  });
-  trustpointTrie.registerGreedy('fingerprint', 'Set fingerprint', (args) => {
-    const t = tp(); if (!t) return '';
-    t.fingerprint = args.join(' ');
-    return '';
-  });
 }
 
 const REVOCATION_MODES: readonly EnumValue[] = [
@@ -836,63 +749,99 @@ export function aaaGroupSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpe
   ];
 }
 
-const TRUSTPOINT_ENROLLMENT: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'profile', description: 'Name of an enrollment profile',
-    argument: place('profil', 'WORD', 'Enrollment profile name'),
-  },
-  { keyword: 'self-signed', description: 'Generate a self-signed certificate', argument: null },
-  { keyword: 'selfsigned', description: 'Generate a self-signed certificate', argument: null },
-  { keyword: 'terminal', description: 'Cut and paste the certificate at the terminal', argument: null },
-  {
-    keyword: 'url', description: 'Enrollment URL of the certification authority',
-    argument: place('url', 'WORD', 'The enrollment URL itself'),
-  },
-];
-
-const TRUSTPOINT_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  enrollment: null,
-  'subject-name': place('sujet', 'REST',
-    'Distinguished name of the certificate subject', { literal: 'LINE' }),
-  'revocation-check': place('methode', 'ENUM', 'How to check the revocation status', {
-    values: REVOCATION_MODES,
-  }),
-  rsakeypair: place('cle', 'WORD', 'Name of the RSA key pair to bind'),
-  fqdn: formes('nom', 'Fully qualified domain name of the certificate', [
-    { keyword: 'WORD', description: 'The domain name itself' },
-    { keyword: 'none', description: 'Do not include a domain name' },
-  ]),
-  'ip-address': formes('adresse', 'IP address of the certificate', [
-    { keyword: 'A.B.C.D', description: 'The address itself' },
-    { keyword: 'none', description: 'Do not include an IP address' },
-  ]),
-  'serial-number': formes('serie', 'Serial number of the certificate', [
-    { keyword: 'none', description: 'Do not include a serial number' },
-  ]),
-  'auto-enroll': place('pourcentage', 'INT',
-    'Percentage of the certificate lifetime after which to re-enrol', {
-      optional: true,
-    }),
-  fingerprint: place('empreinte', 'REST', 'Fingerprint the certificate must carry', { literal: 'LINE' }),
-};
-
 export function trustpointSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildTrustpointSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-ca-trustpoint'], minPrivilege: 15,
-      argumentFor: (path) => TRUSTPOINT_ARGUMENTS[path],
-      keywordsFor: (path) => path === 'enrollment' ? TRUSTPOINT_ENROLLMENT
-        : path === 'auto-enroll' ? AUTO_ENROLL_KEYWORDS : undefined,
+  const base = { modes: ['config-ca-trustpoint'], minPrivilege: 15 };
+  const trustpoint = () => {
+    const name = ctx.getPkiTrustpoint?.();
+    return name ? getSecurityConfig(ctx.r()).pkiTrustpoints.get(name) : undefined;
+  };
+  const setting = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>, description: string,
+    apply: (entry: NonNullable<ReturnType<typeof trustpoint>>, args: Record<string, string>) => void,
+  ): CommandSpec => ({
+    ...base, id, path: [...path], description,
+    run: (_session, args) => {
+      const entry = trustpoint();
+      if (entry) apply(entry, args);
+      return '';
     },
-  );
+  });
+  const forgetEnrollment = (entry: NonNullable<ReturnType<typeof trustpoint>>): void => {
+    delete entry.enrollmentUrl;
+    delete entry.enrollmentProfile;
+    delete entry.source;
+  };
+  const selfSigned = (keyword: string): CommandSpec => setting(
+    `trustpoint-enrollment-${keyword}`, ['enrollment', keyword],
+    'Generate a self-signed certificate',
+    (entry) => { forgetEnrollment(entry); entry.source = 'selfsigned'; });
+  return [
+    setting('trustpoint-enrollment-url',
+      ['enrollment', 'url', place('url', 'WORD', 'The enrollment URL itself')],
+      'Enrollment URL of the certification authority',
+      (entry, args) => { forgetEnrollment(entry); entry.enrollmentUrl = args.url; }),
+    setting('trustpoint-enrollment-profile',
+      ['enrollment', 'profile', place('profile', 'WORD', 'Enrollment profile name')],
+      'Name of an enrollment profile',
+      (entry, args) => { forgetEnrollment(entry); entry.enrollmentProfile = args.profile; }),
+    selfSigned('self-signed'),
+    selfSigned('selfsigned'),
+    setting('trustpoint-enrollment-terminal', ['enrollment', 'terminal'],
+      'Cut and paste the certificate at the terminal',
+      (entry) => { forgetEnrollment(entry); entry.source = 'terminal'; }),
+    setting('trustpoint-subject-name',
+      ['subject-name', place('subject', 'REST',
+        'Distinguished name of the certificate subject', { literal: 'LINE' })],
+      'Set subject name', (entry, args) => { entry.subjectName = args.subject.trim(); }),
+    setting('trustpoint-revocation-check',
+      ['revocation-check', place('method', 'ENUM', 'How to check the revocation status',
+        { values: REVOCATION_MODES })],
+      'Set revocation check method',
+      (entry, args) => { entry.revocationCheck = args.method.toLowerCase() as typeof entry.revocationCheck; }),
+    setting('trustpoint-rsakeypair',
+      ['rsakeypair', place('key', 'WORD', 'Name of the RSA key pair to bind')],
+      'Bind RSA keypair', (entry, args) => { entry.rsaKeypair = args.key; }),
+    setting('trustpoint-fqdn',
+      ['fqdn', place('name', 'WORD', 'Fully qualified domain name of the certificate',
+        { alternatives: [
+          { keyword: 'WORD', description: 'The domain name itself' },
+          { keyword: 'none', description: 'Do not include a domain name' },
+        ] })],
+      'Set FQDN', (entry, args) => { entry.fqdn = args.name; }),
+    setting('trustpoint-ip-address',
+      ['ip-address', place('address', 'IP_ADDR', 'The address itself')],
+      'Set IP', (entry, args) => { entry.ipAddress = args.address; }),
+    setting('trustpoint-ip-address-none', ['ip-address', 'none'],
+      'Do not include an IP address', (entry) => { entry.ipAddress = 'none'; }),
+    setting('trustpoint-serial-number-none', ['serial-number', 'none'],
+      'Do not include a serial number', (entry) => { entry.serialNumber = 'none'; }),
+    {
+      ...base, id: 'trustpoint-auto-enroll',
+      path: ['auto-enroll', place('percent', 'INT',
+        'Percentage of the certificate lifetime after which to re-enrol',
+        { optional: true, range: [1, 100] })],
+      options: [{
+        keyword: 'regenerate', description: 'Generate a new key pair when re-enrolling',
+      }],
+      description: 'Auto-enrollment',
+      run: (_session, args) => {
+        const entry = trustpoint();
+        if (entry) {
+          entry.autoEnroll = {
+            ...(args.percent !== undefined ? { percent: Number(args.percent) } : {}),
+            ...(args.regenerate !== undefined ? { regenerate: true } : {}),
+          };
+        }
+        return '';
+      },
+    },
+    setting('trustpoint-fingerprint',
+      ['fingerprint', place('fingerprint', 'REST',
+        'Fingerprint the certificate must carry', { literal: 'LINE' })],
+      'Set fingerprint', (entry, args) => { entry.fingerprint = args.fingerprint.trim(); }),
+  ];
 }
 
-const AUTO_ENROLL_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'regenerate', description: 'Generate a new key pair when re-enrolling',
-  argument: null, afterArguments: true,
-}];
 
 function addAction(
   ctx: CiscoSecurityShellContext,
