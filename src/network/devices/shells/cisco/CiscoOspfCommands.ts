@@ -17,6 +17,7 @@ import { formatIosElapsed } from './iosElapsed';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { isAreaId, isBackboneAreaId, type LSAHeader, type OSPFNeighborState, type OSPFNetworkType } from '../../../ospf/types';
 import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
+import { refuseUnknownSelector } from './showSelectors';
 
 import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
@@ -1801,6 +1802,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail'));
   trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => showIpOspfDatabaseExternal(getRouter(), args));
   trie.registerGreedy('show ip ospf interface', 'Display OSPF interface information', (args) => {
+    refuseUnknownSelector(args, { keywords: ['brief'], interfaces: true, max: 1 });
     if (args[0] === 'brief') return showIpOspfInterfaceBrief(getRouter());
     return showIpOspfInterface(getRouter(), args[0]);
   });

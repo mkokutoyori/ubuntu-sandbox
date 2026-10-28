@@ -11,6 +11,7 @@ import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
+import { refuseUnknownSelector } from './showSelectors';
 import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -1341,6 +1342,7 @@ export function registerRoutingProtoShow(
   });
 
   trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbors', (a) => {
+    refuseUnknownSelector(a, { keywords: ['detail', 'static'], interfaces: true, max: 2 });
     const e = eigrpE();
     if (!e.isEnabled()) return '';
     live();
@@ -1349,12 +1351,17 @@ export function registerRoutingProtoShow(
       : showIpEigrpNeighbors(e);
   });
   trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', (a) => {
+    refuseUnknownSelector(a, {
+      keywords: ['all-links', 'summary', 'zero-successors', 'active', 'pending', 'detail-links'],
+      addresses: true, integer: [1, 4294967295], max: 2,
+    });
     const e = eigrpE();
     if (!e.isEnabled()) return '';
     live();
     return showIpEigrpTopology(e, a[0]?.toLowerCase() === 'all-links');
   });
   trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', (a) => {
+    refuseUnknownSelector(a, { keywords: ['detail'], interfaces: true, integer: [1, 65535], max: 3 });
     const e = eigrpE();
     if (!e.isEnabled()) return '';
     live();
