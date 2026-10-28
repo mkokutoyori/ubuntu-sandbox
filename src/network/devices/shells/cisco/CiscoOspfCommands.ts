@@ -947,6 +947,16 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     if (!ifName) return '';
     const svc = ctx.r().getNhrpService();
     const sub = args[0]?.toLowerCase();
+    const numericBounds: Record<string, [number, number]> = {
+      'network-id': [1, 4294967295], holdtime: [1, 65535],
+    };
+    const bounds = sub ? numericBounds[sub] : undefined;
+    if (bounds && args[1] !== undefined) {
+      const value = Number(args[1]);
+      if (!/^\d+$/.test(args[1]) || value < bounds[0] || value > bounds[1] || args.length > 2) {
+        throw new CliInvalidInput();
+      }
+    }
     if (sub === 'authentication' && args[1]) svc.configure(ifName, { authentication: args[1] });
     else if (sub === 'network-id' && args[1]) svc.configure(ifName, { networkId: parseInt(args[1], 10) });
     else if (sub === 'holdtime' && args[1]) svc.configure(ifName, { holdtimeSec: parseInt(args[1], 10) });

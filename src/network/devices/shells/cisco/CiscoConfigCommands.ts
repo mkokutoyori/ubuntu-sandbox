@@ -1188,7 +1188,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (slashIdx === -1) throw new CliInvalidInput();
     const addr = addrStr.substring(0, slashIdx);
     const prefixLen = parseInt(addrStr.substring(slashIdx + 1), 10);
-    if (isNaN(prefixLen)) throw new CliInvalidInput();
+    if (!/^\d{1,3}$/.test(addrStr.substring(slashIdx + 1)) || prefixLen > 128) throw new CliInvalidInput();
+    if (args.length > 2 || (args.length === 2 && !['eui-64', 'anycast'].includes(args[1].toLowerCase()))) {
+      throw new CliInvalidInput();
+    }
     try {
       const ipv6Addr = new IPv6Address(addr);
       ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
