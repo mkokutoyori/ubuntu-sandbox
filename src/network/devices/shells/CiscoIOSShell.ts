@@ -153,7 +153,7 @@ import {
   registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
+  buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
   dhcpPoolClassSpecs, dhcpClassSpecs, ipv6DhcpPoolSpecs,
   buildConfigDhcpClassCommands,
   buildConfigIpv6DhcpCommands,
@@ -2436,7 +2436,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
-    buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
     buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);

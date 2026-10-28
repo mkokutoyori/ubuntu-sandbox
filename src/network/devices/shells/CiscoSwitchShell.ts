@@ -137,7 +137,7 @@ import {
   showSwitchVersion, showIpTraffic, iosClockConfigLines, ciscoShortInterfaceName,
 } from './cisco/CiscoCommonShow';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
-import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
+import { dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import { compactVlanList, parseVlanList } from './cli/vlanList';
 
 /** La distance administrative d'une route statique sur IOS. */
@@ -5430,7 +5430,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // handful of accessors the pool commands actually call need to be
     // populated; the rest of CiscoShellContext is irrelevant on a
     // switch (no IPSec / routing-proto state here).
-    buildConfigDhcpCommands(this.configDhcpTrie, this.dhcpPoolContext());
 
     // ── AAA / TACACS+ / RADIUS / protection force brute ──
     // Un Catalyst 2960 connait toute cette famille ; elle vivait dans le

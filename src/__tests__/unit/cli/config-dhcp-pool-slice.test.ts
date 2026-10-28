@@ -116,10 +116,10 @@ describe('`?` annonce la place, et les formes que le gestionnaire lit', () => {
   });
 
   it('`option ?` annonce le code avant ses formats', async () => {
-    const aide = (await dansUnPool(PLATEFORMES[0][1])).cliHelp('option ');
-    expect(aide).toContain('<0-254>');
-    expect(aide).toContain('ascii');
-    expect(aide).toContain('hex');
+    const device = await dansUnPool(PLATEFORMES[0][1]);
+    expect(device.cliHelp('option ')).toContain('<0-254>');
+    const formes = device.cliHelp('option 43 ');
+    for (const forme of ['ascii', 'hex', 'ip']) expect(formes, forme).toContain(forme);
   });
 
   it('`netbios-node-type ?` rend les quatre types', async () => {

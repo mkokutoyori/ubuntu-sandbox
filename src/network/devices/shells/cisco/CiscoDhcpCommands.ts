@@ -41,279 +41,263 @@ function parseAddressList(args: string[]): string[] | null {
   return args;
 }
 
-// ─── DHCP Pool Config Mode Commands ──────────────────────────────────
-
-export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('network', 'Define DHCP pool network', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    ctx.r()._getDHCPServerInternal().configurePoolNetwork(ctx.getSelectedDHCPPool()!, args[0], args[1]);
-    return '';
-  });
-
-  trie.registerGreedy('default-router', 'Set default router for DHCP clients', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    const routers = parseAddressList(args);
-    if (!routers) return INVALID_INPUT;
-    ctx.r()._getDHCPServerInternal().configurePoolRouter(ctx.getSelectedDHCPPool()!, routers);
-    return '';
-  });
-
-  trie.registerGreedy('dns-server', 'Set DNS server for DHCP clients', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    const servers = parseAddressList(args);
-    if (!servers) return INVALID_INPUT;
-    ctx.r()._getDHCPServerInternal().configurePoolDNS(ctx.getSelectedDHCPPool()!, servers);
-    return '';
-  });
-
-  trie.registerGreedy('domain-name', 'Set domain name for DHCP clients', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    ctx.r()._getDHCPServerInternal().configurePoolDomain(ctx.getSelectedDHCPPool()!, args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('lease', 'Set DHCP lease duration', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const pool = ctx.getSelectedDHCPPool();
-    if (!pool) return '% No DHCP pool selected';
-    if (args[0]?.toLowerCase() === 'infinite') {
-      ctx.r()._getDHCPServerInternal().configurePoolLeaseInfinite(pool);
-      return '';
-    }
-    if (args.length > 3 || args.some(a => !/^\d+$/.test(a))) return INVALID_INPUT;
-    const [days, hours, minutes] = args.map(Number);
-    if (days > 365 || (hours ?? 0) > 23 || (minutes ?? 0) > 59) return INVALID_INPUT;
-    const seconds = days * 86400 + (hours ?? 0) * 3600 + (minutes ?? 0) * 60;
-    if (seconds === 0) return INVALID_INPUT;
-    ctx.r()._getDHCPServerInternal().configurePoolLease(pool, seconds);
-    return '';
-  });
-
-  trie.registerGreedy('client-identifier deny', 'Deny DHCP by client identifier', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    ctx.r()._getDHCPServerInternal().addDenyPattern(ctx.getSelectedDHCPPool()!, args[0]);
-    return '';
-  });
-
-  // ── Pool sub-options → real DHCPServer pool state ──
-  const dhcp = () => ctx.r()._getDHCPServerInternal();
-  const pool = () => ctx.getSelectedDHCPPool();
-
-  trie.registerGreedy('next-server', 'Set boot/next server', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolNextServer(pool()!, args[0]);
-    return '';
-  });
-  trie.registerGreedy('bootfile', 'Set boot filename', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolBootfile(pool()!, args[0]);
-    return '';
-  });
-  trie.registerGreedy('netbios-name-server', 'Set NetBIOS name server(s)', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolNetbios(pool()!, args);
-    return '';
-  });
-  trie.registerGreedy('netbios-node-type', 'Set NetBIOS node type', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolNetbiosNodeType(pool()!, args[0]);
-    return '';
-  });
-  trie.registerGreedy('option', 'Set a raw DHCP option', (args) => {
-    if (args.length < 3) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    const code = boundedInteger(args[0], DHCP_OPTION_CODE_MIN, DHCP_OPTION_CODE_MAX);
-    if (code === null) throw new CliInvalidInput({ token: args[0] });
-    if (!isDhcpOptionKind(args[1])) throw new CliInvalidInput({ token: args[1] });
-    const valeur = args.slice(2).join(' ');
-    if (!dhcp().configurePoolOption(pool()!, code, args[1].toLowerCase() as DhcpOptionKind,
-      valeur)) {
-      throw new CliInvalidInput({ token: args[2] });
-    }
-    return '';
-  });
-  trie.registerGreedy('host', 'Manual binding host address', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    const result = dhcp().configurePoolManual(pool()!, 'host', args[0], args[1]);
-    return result.ok ? '' : `% ${result.error}`;
-  });
-  trie.registerGreedy('hardware-address', 'Manual binding hardware address', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolManual(pool()!, 'hardwareAddress', args[0]);
-    return '';
-  });
-  trie.registerGreedy('client-identifier', 'Manual binding client identifier', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    if (!isDhcpClientIdentifier(args[0])) throw new CliInvalidInput({ token: args[0] });
-    dhcp().configurePoolManual(pool()!, 'clientIdentifier', args[0]);
-    return '';
-  });
-  trie.registerGreedy('client-name', 'Manual binding client name', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolManual(pool()!, 'clientName', args[0]);
-    return '';
-  });
-
-  /* `utilization mark` OUVRE une famille : il demande lequel des deux seuils. */
-  trie.requireArgs('utilization mark', 1);
-  trie.registerGreedy('utilization mark', 'Configure the utilization threshold', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const p = pool();
-    if (!p) return '% No DHCP pool selected';
-    const kind = args[0]?.toLowerCase();
-    if (kind !== 'high' && kind !== 'low') return INVALID_INPUT;
-    if (args.length < 2) return '% Incomplete command.';
-    if (!/^\d+$/.test(args[1])) return INVALID_INPUT;
-    if (args.length > 3) return INVALID_INPUT;
-    if (args.length === 3 && args[2]?.toLowerCase() !== 'log') return INVALID_INPUT;
-    const log = args.length === 3;
-    if (!dhcp().configurePoolUtilizationMark(p, kind, parseInt(args[1], 10), log)) {
-      return INVALID_INPUT;
-    }
-    return '';
-  });
-
-  trie.registerGreedy('no utilization mark', 'Restore the default utilization threshold', (args) => {
-    const p = pool();
-    if (!p) return '% No DHCP pool selected';
-    const kind = args[0]?.toLowerCase();
-    if (kind !== 'high' && kind !== 'low') return INVALID_INPUT;
-    dhcp().resetPoolUtilizationMark(p, kind);
-    return '';
-  });
-
-  trie.registerGreedy('class', 'Bind a DHCP class to this pool', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    const p = pool(); if (!p) return '';
-    const r = ctx.r() as any;
-    const classes = r._ciscoDhcpPoolClasses ?? (r._ciscoDhcpPoolClasses = new Map<string, any>());
-    const list = classes.get(p) ?? [];
-    if (!list.find((c: any) => c.className === args[0])) {
-      list.push({ className: args[0], ranges: [] });
-    }
-    classes.set(p, list);
-    r._ciscoDhcpPoolCurrentClass = args[0];
-    ctx.setMode('config-dhcp-pool-class');
-    return '';
-  });
-}
-
-
 const REST = (literal: string, description: string): ArgumentSpec =>
   ({ name: 'valeur', type: 'REST', literal, description });
 
-const DHCP_POOL_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  network: [
-    { name: 'reseau', type: 'IP_ADDR', description: 'Network number' },
-    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Network mask' },
+const NO_POOL = '% No DHCP pool selected';
+const USABLE_HOST_FIRST_OCTET = /^(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])\./;
+const MAX_ADDRESSES = 8;
+
+function addressList(prefix: string, description: string, usableHost: boolean): ArgumentSpec[] {
+  return Array.from({ length: MAX_ADDRESSES }, (_unused, index): ArgumentSpec => ({
+    name: `${prefix}${index}`, type: 'IP_ADDR', description,
+    ...(index > 0 ? { optional: true } : {}),
+    ...(usableHost ? { pattern: USABLE_HOST_FIRST_OCTET } : {}),
+  }));
+}
+
+function addressesOf(args: Record<string, string>, prefix: string): string[] {
+  return Object.keys(args)
+    .filter((key) => key.startsWith(prefix) && args[key] !== undefined)
+    .sort()
+    .map((key) => args[key]);
+}
+
+const NETBIOS_NODE_TYPES: ArgumentSpec = {
+  name: 'type', type: 'ENUM', description: 'NetBIOS node type',
+  values: [
+    { keyword: 'b-node', description: 'Broadcast node' },
+    { keyword: 'h-node', description: 'Hybrid node' },
+    { keyword: 'm-node', description: 'Mixed node' },
+    { keyword: 'p-node', description: 'Peer-to-peer node' },
   ],
-  host: [
-    { name: 'adresse', type: 'IP_ADDR', description: 'Client IP address' },
-    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Client subnet mask' },
-  ],
-  'default-router': REST('A.B.C.D', 'Default router IP address'),
-  'dns-server': REST('A.B.C.D', 'DNS server IP address'),
-  'netbios-name-server': REST('A.B.C.D', 'NetBIOS name server IP address'),
-  lease: REST('<0-365>', 'Days'),
-  option: REST(`<${DHCP_OPTION_CODE_MIN}-${DHCP_OPTION_CODE_MAX}>`, 'DHCP option code'),
-  'next-server': { name: 'adresse', type: 'IP_ADDR', description: 'Boot server IP address' },
-  bootfile: { name: 'fichier', type: 'WORD', description: 'Boot file name' },
-  class: { name: 'nom', type: 'WORD', description: 'Name of the DHCP class' },
-  'client-name': { name: 'nom', type: 'WORD', description: 'Client name, without the domain' },
-  'domain-name': { name: 'domaine', type: 'WORD', description: 'Domain name given to clients' },
-  'hardware-address': { name: 'mac', type: 'MAC_ADDR', description: 'Client hardware address' },
-  'client-identifier': { name: 'identifiant', type: 'WORD', description: 'Client identifier' },
-  'client-identifier deny': { name: 'identifiant', type: 'WORD', description: 'Client identifier to deny' },
-  'netbios-node-type': {
-    name: 'type', type: 'ENUM', description: 'NetBIOS node type',
-    values: [
-      { keyword: 'b-node', description: 'Broadcast node' },
-      { keyword: 'h-node', description: 'Hybrid node' },
-      { keyword: 'm-node', description: 'Mixed node' },
-      { keyword: 'p-node', description: 'Peer-to-peer node' },
-    ],
-  },
 };
 
-const JOURNAL_DU_SEUIL: ArgumentSpec = {
-  name: 'journal', type: 'ENUM', optional: true,
-  description: 'Enable the system message',
-  values: [{
-    keyword: 'log',
-    description: 'Generate a system message when the mark is crossed',
-  }],
-};
-
-/**
- * Les deux seuils ont deux PLAGES : le haut refuse zero, le bas
- * l'accepte (`DHCPServer.configurePoolUtilizationMark`). Une seule
- * declaration annoncait leur union, donc `?` promettait `<0-100>` la ou
- * la machine refuse `high 0`. Deux mots-cles, deux plages.
- *
- * `undoWithoutArgument` dit l'autre moitie : `no utilization mark high`
- * s'arrete au mot-cle, comme sur IOS, alors que la forme positive exige
- * son pourcentage. C'est ce qui permet a la place d'etre EXIGEE sans
- * couper la negation — elle etait declaree facultative pour cette seule
- * raison, et promettait donc un `<cr>` que le gestionnaire refuse.
- */
-const SEUIL = (
-  keyword: 'high' | 'low', plancher: number, description: string,
-): AdapterKeyword => ({
-  keyword, description, undoWithoutArgument: true,
-  argument: [
-    {
-      name: `pourcentage-${keyword}`, type: 'INT', range: [plancher, 100],
-      description: 'Percentage of the pool size',
-    },
-    JOURNAL_DU_SEUIL,
-  ],
-});
-
-const DHCP_POOL_KEYWORDS:
-Readonly<Record<string, ReadonlyArray<AdapterKeyword>>> = {
-  lease: [{ keyword: 'infinite', description: 'Infinite lease', argument: null }],
-  option: [
-    {
-      keyword: 'ascii', description: 'ASCII text',
-      argument: { name: 'texte', type: 'REST', literal: 'LINE',
-        description: 'ASCII string sent as the option value' },
-    },
-    {
-      keyword: 'hex', description: 'Hexadecimal',
-      argument: { name: 'octets', type: 'REST', literal: 'WORD',
-        description: 'Hexadecimal string sent as the option value' },
-    },
-  ],
-  'utilization mark': [
-    SEUIL('high', 1, 'Configure the high utilization mark'),
-    SEUIL('low', 0, 'Configure the low utilization mark'),
-  ],
+const UTILIZATION_LOG: ArgumentSpec = {
+  name: 'log', type: 'ENUM', optional: true, description: 'Enable the system message',
+  values: [{ keyword: 'log', description: 'Generate a system message when the mark is crossed' }],
 };
 
 export function dhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildConfigDhcpCommands(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-dhcp'], minPrivilege: 15 };
+  const dhcp = () => ctx.r()._getDHCPServerInternal();
+  const onPool = (apply: (pool: string) => string): string => {
+    const pool = ctx.getSelectedDHCPPool();
+    return pool ? apply(pool) : NO_POOL;
+  };
+  const word = (name: string, description: string): ArgumentSpec => ({
+    name, type: 'WORD', description,
+  });
+  const utilizationMark = (
+    keyword: 'high' | 'low', floor: number, description: string,
+  ): CommandSpec => ({
+    ...base, id: `dhcp-pool-utilization-mark-${keyword}`,
+    path: ['utilization', 'mark', keyword, {
+      name: 'percentage', type: 'INT', range: [floor, 100],
+      description: 'Percentage of the pool size',
+    }, UTILIZATION_LOG],
+    description, undoDescription: 'Restore the default utilization threshold',
+    undoOmitsArguments: true,
+    run: (_session, args) => onPool((pool) =>
+      dhcp().configurePoolUtilizationMark(
+        pool, keyword, parseInt(args.percentage, 10), args.log !== undefined)
+        ? '' : INVALID_INPUT),
+    undo: () => onPool((pool) => { dhcp().resetPoolUtilizationMark(pool, keyword); return ''; }),
+  });
+  const rawOption = (kind: DhcpOptionKind, place: ArgumentSpec): CommandSpec => ({
+    ...base, id: `dhcp-pool-option-${kind}`,
+    path: ['option', {
+      name: 'code', type: 'INT', range: [DHCP_OPTION_CODE_MIN, DHCP_OPTION_CODE_MAX],
+      description: 'DHCP option code',
+    }, kind, place],
+    description: 'Set a raw DHCP option',
+    run: (_session, args) => onPool((pool) => {
+      if (!dhcp().configurePoolOption(pool, Number(args.code), kind, args.value.trim())) {
+        throw new CliInvalidInput({ token: args.value.split(/\s+/)[0] });
+      }
+      return '';
+    }),
+  });
+  const manual = (
+    id: string, keyword: string, field: 'hardwareAddress' | 'clientName', place: ArgumentSpec,
+    description: string,
+  ): CommandSpec => ({
+    ...base, id, path: [keyword, place], description,
+    run: (_session, args) => onPool((pool) => {
+      dhcp().configurePoolManual(pool, field, args[place.name]);
+      return '';
+    }),
+  });
+  const leaseTime = (name: string, max: number, description: string, optional: boolean): ArgumentSpec => ({
+    name, type: 'INT', range: [0, max], description, ...(optional ? { optional: true } : {}),
+  });
+  return [
     {
-      modes: ['config-dhcp'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => DHCP_POOL_ARGUMENTS[path],
-      keywordsFor: (path) => DHCP_POOL_KEYWORDS[path],
+      ...base, id: 'dhcp-pool-network',
+      path: ['network',
+        { name: 'network', type: 'IP_ADDR', description: 'Network number' },
+        { name: 'mask', type: 'SUBNET_MASK', description: 'Network mask' }],
+      description: 'Define DHCP pool network',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolNetwork(pool, args.network, args.mask);
+        return '';
+      }),
     },
-  );
+    {
+      ...base, id: 'dhcp-pool-default-router',
+      path: ['default-router', ...addressList('router', 'Default router IP address', true)],
+      description: 'Set default router for DHCP clients',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolRouter(pool, addressesOf(args, 'router'));
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-dns-server',
+      path: ['dns-server', ...addressList('server', 'DNS server IP address', true)],
+      description: 'Set DNS server for DHCP clients',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolDNS(pool, addressesOf(args, 'server'));
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-domain-name',
+      path: ['domain-name', word('domain', 'Domain name given to clients')],
+      description: 'Set domain name for DHCP clients',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolDomain(pool, args.domain);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-lease-infinite', path: ['lease', 'infinite'],
+      description: 'Infinite lease',
+      run: () => onPool((pool) => { dhcp().configurePoolLeaseInfinite(pool); return ''; }),
+    },
+    {
+      ...base, id: 'dhcp-pool-lease',
+      path: ['lease', leaseTime('days', 365, 'Days', false),
+        leaseTime('hours', 23, 'Hours', true), leaseTime('minutes', 59, 'Minutes', true)],
+      description: 'Set DHCP lease duration',
+      run: (_session, args) => onPool((pool) => {
+        const seconds = Number(args.days) * 86400
+          + Number(args.hours ?? 0) * 3600 + Number(args.minutes ?? 0) * 60;
+        if (seconds === 0) return INVALID_INPUT;
+        dhcp().configurePoolLease(pool, seconds);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-client-identifier-deny',
+      path: ['client-identifier', 'deny', word('identifier', 'Client identifier to deny')],
+      description: 'Deny DHCP by client identifier',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().addDenyPattern(pool, args.identifier);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-next-server',
+      path: ['next-server', { name: 'address', type: 'IP_ADDR', description: 'Boot server IP address' }],
+      description: 'Set boot/next server',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolNextServer(pool, args.address);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-bootfile',
+      path: ['bootfile', word('file', 'Boot file name')],
+      description: 'Set boot filename',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolBootfile(pool, args.file);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-netbios-name-server',
+      path: ['netbios-name-server', ...addressList('server', 'NetBIOS name server IP address', false)],
+      description: 'Set NetBIOS name server(s)',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolNetbios(pool, addressesOf(args, 'server'));
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'dhcp-pool-netbios-node-type',
+      path: ['netbios-node-type', NETBIOS_NODE_TYPES],
+      description: 'Set NetBIOS node type',
+      run: (_session, args) => onPool((pool) => {
+        dhcp().configurePoolNetbiosNodeType(pool, args.type);
+        return '';
+      }),
+    },
+    rawOption('ascii', {
+      name: 'value', type: 'REST', literal: 'LINE',
+      description: 'ASCII string sent as the option value',
+    }),
+    rawOption('ip', {
+      name: 'value', type: 'REST', literal: 'A.B.C.D',
+      description: 'IP addresses sent as the option value',
+    }),
+    rawOption('hex', {
+      name: 'value', type: 'REST', literal: 'WORD',
+      description: 'Hexadecimal string sent as the option value',
+    }),
+    {
+      ...base, id: 'dhcp-pool-host',
+      path: ['host',
+        { name: 'address', type: 'IP_ADDR', description: 'Client IP address' },
+        { name: 'mask', type: 'SUBNET_MASK', optional: true, description: 'Client subnet mask' }],
+      description: 'Manual binding host address',
+      run: (_session, args) => onPool((pool) => {
+        const result = dhcp().configurePoolManual(pool, 'host', args.address, args.mask);
+        return result.ok ? '' : `% ${result.error}`;
+      }),
+    },
+    manual('dhcp-pool-hardware-address', 'hardware-address', 'hardwareAddress',
+      { name: 'mac', type: 'MAC_ADDR', description: 'Client hardware address' },
+      'Manual binding hardware address'),
+    {
+      ...base, id: 'dhcp-pool-client-identifier',
+      path: ['client-identifier', word('identifier', 'Client identifier')],
+      description: 'Manual binding client identifier',
+      run: (_session, args) => onPool((pool) => {
+        if (!isDhcpClientIdentifier(args.identifier)) {
+          throw new CliInvalidInput({ token: args.identifier });
+        }
+        dhcp().configurePoolManual(pool, 'clientIdentifier', args.identifier);
+        return '';
+      }),
+    },
+    manual('dhcp-pool-client-name', 'client-name', 'clientName',
+      word('name', 'Client name, without the domain'), 'Manual binding client name'),
+    utilizationMark('high', 1, 'Configure the high utilization mark'),
+    utilizationMark('low', 0, 'Configure the low utilization mark'),
+    {
+      ...base, id: 'dhcp-pool-class', path: ['class', word('name', 'Name of the DHCP class')],
+      description: 'Bind a DHCP class to this pool',
+      run: (_session, args) => {
+        const pool = ctx.getSelectedDHCPPool();
+        if (!pool) return '';
+        const router = ctx.r() as unknown as {
+          _ciscoDhcpPoolClasses?: Map<string, Array<{ className: string; ranges: unknown[] }>>;
+          _ciscoDhcpPoolCurrentClass?: string;
+        };
+        const classes = router._ciscoDhcpPoolClasses
+          ?? (router._ciscoDhcpPoolClasses = new Map());
+        const list = classes.get(pool) ?? [];
+        if (!list.find((entry) => entry.className === args.name)) {
+          list.push({ className: args.name, ranges: [] });
+        }
+        classes.set(pool, list);
+        router._ciscoDhcpPoolCurrentClass = args.name;
+        ctx.setMode('config-dhcp-pool-class');
+        return '';
+      },
+    },
+  ];
 }
 
 export function buildConfigDhcpPoolClassCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
