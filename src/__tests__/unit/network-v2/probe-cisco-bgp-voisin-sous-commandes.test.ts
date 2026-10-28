@@ -1,7 +1,7 @@
 /*
  * The sub-commands of `neighbor <peer> ...` under `router bgp` are judged.
  *
- * Measured before the change: 13 of the 29 cases fall. Anything after the
+ * Measured before the change: 19 of the 42 cases fall. Anything after the
  * peer that the handler did not know was pushed verbatim into the neighbor's
  * attribute list and rendered back, so `update-source zorglub`,
  * `ebgp-multihop zorglub`, `ebgp-multihop 300`, `timers zorglub`, a
@@ -12,6 +12,11 @@
  * without a number, timers, password, in/out filters, maximum-prefix with its
  * options, next-hop-self, send-community, soft-reconfiguration, route
  * reflector client, shutdown, activate and peer-group.
+ *
+ * The last block (`network` under rip, eigrp and bgp) adds 6 failing cases: a
+ * stray word after the RIP network, an EIGRP wildcard that is not an address,
+ * and a BGP tail that is not `mask A.B.C.D`, `route-map NAME` or `backdoor`
+ * were accepted and (for BGP) rendered back verbatim.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -72,5 +77,39 @@ describe('neighbor sub-commands under router bgp', () => {
     const r = await bgp();
     await r.executeCommand('neighbor 10.0.0.2 remote-as 65002');
     expect(await r.executeCommand(line)).toMatch(REFUSED);
+  });
+});
+
+describe('network under rip, eigrp and bgp', () => {
+  const inProtocol = async (...lines: string[]): Promise<Cli> => {
+    const r = new CiscoRouter('R1', 0, 0) as unknown as Cli & { powerOn(): void };
+    r.powerOn();
+    for (const l of ['enable', 'configure terminal', ...lines]) await r.executeCommand(l);
+    return r;
+  };
+
+  it.each([
+    ['router rip', 'network 10.0.0.0 zorglub'],
+    ['router rip', 'network 10.0.0.0 0.0.0.255'],
+    ['router eigrp 100', 'network 10.0.0.0 zorglub'],
+    ['router eigrp 100', 'network 10.0.0.0 0.0.0.255 extra'],
+    ['router bgp 65001', 'network 10.0.0.0 mask zorglub'],
+    ['router bgp 65001', 'network 10.0.0.0 zorglub'],
+    ['router bgp 65001', 'network 10.0.0.0 mask 255.0.0.0 mask 255.0.0.0'],
+  ])('%s: refuses `%s`', async (entry, line) => {
+    const r = await inProtocol(entry);
+    expect(await r.executeCommand(line)).toMatch(REFUSED);
+  });
+
+  it.each([
+    ['router rip', 'network 10.0.0.0'],
+    ['router eigrp 100', 'network 10.0.0.0'],
+    ['router eigrp 100', 'network 10.0.0.0 0.0.0.255'],
+    ['router bgp 65001', 'network 10.0.0.0 mask 255.0.0.0'],
+    ['router bgp 65001', 'network 10.0.0.0 mask 255.0.0.0 route-map RM'],
+    ['router bgp 65001', 'network 10.0.0.0 backdoor'],
+  ])('witness: %s accepts `%s`', async (entry, line) => {
+    const r = await inProtocol(entry);
+    expect(await r.executeCommand(line)).toBe('');
   });
 });

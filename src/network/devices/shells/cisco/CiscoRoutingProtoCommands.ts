@@ -316,6 +316,28 @@ const BGP_NEIGHBOR_TAILS: Readonly<Record<string, NeighborJudge>> = {
   'unsuppress-map': (words) => needsWord(words, 0),
 };
 
+function judgeBgpNetworkTail(args: readonly string[]): void {
+  let at = 1;
+  const seen = new Set<string>();
+  while (at < args.length) {
+    const keyword = args[at].toLowerCase();
+    if (seen.has(keyword)) throw new CliInvalidInput({ token: args[at] });
+    seen.add(keyword);
+    if (keyword === 'mask') {
+      if (args[at + 1] === undefined) throw new CliIncomplete();
+      if (!isValidIPv4(args[at + 1])) throw new CliInvalidInput({ token: args[at + 1] });
+      at += 2;
+    } else if (keyword === 'route-map') {
+      if (args[at + 1] === undefined) throw new CliIncomplete();
+      at += 2;
+    } else if (keyword === 'backdoor') {
+      at += 1;
+    } else {
+      throw new CliInvalidInput({ token: args[at] });
+    }
+  }
+}
+
 function judgeBgpNeighborTail(words: readonly string[]): void {
   const subCommand = words[1]?.toLowerCase();
   if (subCommand === undefined) return;
@@ -346,6 +368,7 @@ function buildRouterSubmodeOn(
       if (!isValidIPv4(args[0]) || !ripRoutableNetwork(args[0])) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
+      if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
       const net = new IPAddress(args[0]);
       const mask = classfulMask(net);
       const classful = net.networkAddress(mask);
@@ -355,8 +378,11 @@ function buildRouterSubmodeOn(
     }
     if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
-    if (args[1] === 'mask' && !isValidIPv4(args[2] ?? '')) {
-      throw new CliInvalidInput({ token: args[2] });
+    if (proto === 'eigrp') {
+      if (args[1] !== undefined && !isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
+      if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+    } else {
+      judgeBgpNetworkTail(args);
     }
     if (proto === 'eigrp') {
       const wildcard = toWildcard(args[1]);
