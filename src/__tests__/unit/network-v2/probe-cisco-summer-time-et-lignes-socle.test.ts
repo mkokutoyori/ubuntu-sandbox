@@ -432,3 +432,34 @@ describe('snmp-server host names its values by position', () => {
     expect(await r.executeCommand('show running-config')).not.toContain('snmp-server host 10.0.0.9');
   });
 });
+
+/*
+ * Twelfth batch (outgoing session commands): 0 of 5 fail before, by design. The commands were
+ * registered twice (the trie and the adapter); the cases pin the behaviour the single declaration
+ * must keep.
+ */
+describe('outgoing session commands', () => {
+  it('where answers on a fresh router', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('where')).toContain('No connections open');
+  });
+  it('disconnect with no connection says so', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('disconnect')).toContain('No connections open');
+  });
+  it('disconnect of an unknown number says so', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('disconnect 4')).toContain('No information for this connection');
+  });
+  it('resume with nothing open says so', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('resume')).toContain('No connection open');
+  });
+  it('lists the verbs in help', async () => {
+    const r = await router('end');
+    const help = r.cliHelp('');
+    for (const verb of ['telnet', 'ssh', 'where', 'resume', 'disconnect']) {
+      expect(help).toContain(verb);
+    }
+  });
+});

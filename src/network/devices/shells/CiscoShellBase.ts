@@ -221,6 +221,7 @@ import {
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
 import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { outgoingSessionFamily, type OutgoingSessionHost } from '../../../cli/commands/session/outgoingSessionFamily';
 import { snmpHostFamily } from '../../../cli/commands/snmp/snmpHostFamily';
 import { summerTimeFamily } from '../../../cli/commands/clock/summerTimeFamily';
 import { serviceLoggingFamily, type ServiceLoggingHost } from '@/cli/commands/service/serviceLoggingFamily';
@@ -534,22 +535,6 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
 });
 
 /*
- * `disconnect` et `resume` NOMMENT leurs deux formes sans restreindre :
- * le gestionnaire lit un numero et repond lui-meme a ce qui n'en est
- * pas un (`disconnect all` rend « No information for this connection »,
- * ce qu'un test epingle), donc une place bornee refuserait au caret ce
- * que la machine accepte. Les deux libelles sont ceux qu'IOS ecrit.
- */
-const CONNEXION_SORTANTE: ArgumentSpec = {
-  name: 'connexion', type: 'REST', optional: true,
-  description: 'Connection number or name',
-  alternatives: [
-    { keyword: '<1-16>', description: 'Connection number' },
-    { keyword: 'WORD', description: 'Connection name' },
-  ],
-};
-
-/*
  * Ce que ce lot prend de `registerCommonShowCommands`. Nommer les
  * chemins plutot que de tout collecter est ce qui laisse ses
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
@@ -589,22 +574,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
    * annoncer `<cr>` a une commande qui ne s'ecrit jamais seule.
    */
   terminal: { name: 'reglage', type: 'REST', description: 'Terminal parameter to set' },
-};
-
-const SESSION_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  where: null,
-  disconnect: CONNEXION_SORTANTE,
-  resume: CONNEXION_SORTANTE,
-  /*
-   * La place est GLOUTONNE : les deux gestionnaires filtrent les options
-   * en `-`, donc `ssh -l zoe 10.0.0.9` porte trois mots et une place
-   * unique l'aurait refusee.
-   */
-  ssh: { name: 'hote', type: 'REST', literal: 'WORD',
-    description: 'IP address or hostname of a remote system' },
-  telnet: { name: 'hote', type: 'REST', literal: 'WORD',
-    description: 'IP address or hostname of a remote system' },
 };
 
 const FILESYSTEM_ARGUMENTS:
@@ -6054,13 +6023,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected sessionSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerOutgoingSessionCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 1,
-        argumentFor: (path) => SESSION_ARGUMENTS[path],
+    return outgoingSessionFamily(() => this.outgoingSessionHost());
+  }
+
+  private outgoingSessionHost(): OutgoingSessionHost {
+    return {
+      list: () => renderSessions(this.outgoingSessions),
+      disconnect: (args) => {
+        if (!args[0]) {
+          const last = this.outgoingSessions.list().slice(-1)[0];
+          if (!last) return '% No connections open';
+          this.outgoingSessions.close(last.conn);
+          return '';
+        }
+        const n = parseInt(args[0], 10);
+        if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
+        const cible = this.outgoingSessions.get(n)!;
+        this.outgoingSessions.close(n);
+        return `Closing connection to ${cible.host} [confirm]`;
       },
-    );
+      resume: (args) => {
+        const list = this.outgoingSessions.list();
+        const n = args[0] ? parseInt(args[0], 10) : (list.slice(-1)[0]?.conn ?? NaN);
+        const s = this.outgoingSessions.get(n);
+        if (!s) return '% No connection open';
+        this.outgoingSessions.touch(n);
+        return `[Resuming connection ${n} to ${s.host} ... ]`;
+      },
+      ssh: () => '% Password: required. Outbound SSH asks for it through its interaction prompt.',
+      telnet: (args) => this.runOutboundTelnet([...args]),
+    };
   }
 
   protected fileSystemSpecs(): readonly CommandSpec[] {
@@ -9245,35 +9237,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Shared Command Registration ───────────────────────────────
 
-  private registerOutgoingSessionCommands(trie: CommandTrie): void {
-    trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
-    trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
-      if (!args[0]) {
-        const last = this.outgoingSessions.list().slice(-1)[0];
-        if (!last) return '% No connections open';
-        this.outgoingSessions.close(last.conn);
-        return '';
-      }
-      const n = parseInt(args[0], 10);
-      if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
-      const cible = this.outgoingSessions.get(n)!;
-      this.outgoingSessions.close(n);
-      return `Closing connection to ${cible.host} [confirm]`;
-    });
-    trie.registerGreedy('resume', 'Resume an outgoing connection', (args) => {
-      const list = this.outgoingSessions.list();
-      const n = args[0] ? parseInt(args[0], 10) : (list.slice(-1)[0]?.conn ?? NaN);
-      const s = this.outgoingSessions.get(n);
-      if (!s) return '% No connection open';
-      this.outgoingSessions.touch(n);
-      return `[Resuming connection ${n} to ${s.host} ... ]`;
-    });
-    trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
-      () => '% Password: required. Outbound SSH asks for it through its interaction prompt.');
-    trie.registerGreedy('telnet', 'Open a Telnet session',
-      (args) => this.runOutboundTelnet(args));
-  }
-
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
   private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
     const trie = scopedTrie(target, scope);
@@ -9282,7 +9245,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Elle repondait `% Invalid input`. Le rendu est le meme parce que
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
-    this.registerOutgoingSessionCommands(target);
     trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () =>
       renderInterfaceErrorCounters(this.d().getPortNames().map((name) => {
         const c = this.d().getPort(name)?.getCounters();
