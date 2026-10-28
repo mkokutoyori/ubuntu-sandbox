@@ -2701,6 +2701,19 @@ export class LinuxCommandExecutor {
    * same format as a known_hosts line. Used to seed known_hosts non-
    * interactively.
    */
+  private telnetRouteFailure(address: string): string | null {
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp || sourceIp === '127.0.0.1') return 'Network is unreachable';
+    const found = findHostByAddress(address, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
+    if (!found) return parseDialAddress(address) ? sshUnreachableReason(this.localDevice, address) : null;
+    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
+    if (found.poweredOff || found.interfaceDown
+      || (!reachable && !isPathReachable(sourceIp, found.ip, this.localDevice as never))) {
+      return 'No route to host';
+    }
+    return null;
+  }
+
   /**
    * `telnet host [port]` — open a Telnet (TCP/23) session to a remote device.
    * Resolution and reachability reuse the shared topology helpers; a network
@@ -2725,23 +2738,15 @@ export class LinuxCommandExecutor {
       return { output: `telnet: connect to address ${host}: Network is unreachable`, exitCode: 1 };
     }
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-    if (!found) {
-      if (parseDialAddress(host)) {
-        const reason = sshUnreachableReason(this.localDevice, host);
-        return {
-          output: `Trying ${host}...\ntelnet: connect to address ${host}: ${reason}`,
-          exitCode: 1,
-        };
-      }
+    const failure = this.telnetRouteFailure(host);
+    if (!found && failure === null) {
       return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
     }
-    // Resolve the device that actually owns the address over the cable plant.
-    // The static registry can hold several fixtures sharing an IP; only the
-    // cable-reachable one answers, and its VTY config governs the verdict.
-    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
-    if (found.poweredOff || found.interfaceDown || (!reachable && !isPathReachable(sourceIp, found.ip, this.localDevice as never))) {
-      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
+    if (failure !== null || !found) {
+      const shown = found?.ip ?? host;
+      return { output: `Trying ${shown}...\ntelnet: connect to address ${shown}: ${failure}`, exitCode: 1 };
     }
+    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
 
     const wireCapable = typeof ((reachable ?? found.device) as unknown as {
       getTcpStack?: () => unknown;
@@ -2811,6 +2816,7 @@ export class LinuxCommandExecutor {
     const terminal = new TranscriptTerminal();
     const host = new DeviceNetkitHost({
       ...deviceWireDeps(this.localDevice as never, vfsReader),
+      routeFailure: (ip) => this.telnetRouteFailure(ip),
       environment: () => this.exportedEnvironment(),
       user: () => ({ name: this.userMgr.currentUser, uid: this.userMgr.currentUid }),
       lookupUser: (name) => this.userMgr.getUser(name) ?? null,

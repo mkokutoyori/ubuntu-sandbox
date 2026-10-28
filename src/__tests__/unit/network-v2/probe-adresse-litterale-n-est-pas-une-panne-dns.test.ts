@@ -85,13 +85,13 @@ describe('une adresse litterale n\'est pas une panne de DNS', () => {
 
   it('telnet vers une adresse SANS ROUTE rend ENETUNREACH', async () => {
     const sortie = await (await poste()).executeCommand('telnet 203.0.113.9');
-    expect(sortie).toContain('telnet: connect to address 203.0.113.9: Network is unreachable');
+    expect(sortie).toContain('telnet: Unable to connect to remote host: Network is unreachable');
     expect(sortie).not.toContain('could not resolve');
   });
 
   it('telnet vers une adresse SUR LE LIEN que personne ne porte rend EHOSTUNREACH', async () => {
     const sortie = await (await poste()).executeCommand('telnet 10.0.0.55');
-    expect(sortie).toContain('telnet: connect to address 10.0.0.55: No route to host');
+    expect(sortie).toContain('telnet: Unable to connect to remote host: No route to host');
     expect(sortie).not.toContain('could not resolve');
   });
 

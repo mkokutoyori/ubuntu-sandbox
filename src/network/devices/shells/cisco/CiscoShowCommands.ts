@@ -65,6 +65,12 @@ import { vrfRunningConfigLines, type VrfHost } from './ciscoVrfStore';
 import { formatIosElapsed } from './iosElapsed';
 import { renderNtpBroadcastLines } from './ciscoNtpBroadcast';
 
+const SERIAL_ORDER = ['speed', 'databits', 'stopbits', 'parity', 'flowcontrol'] as const;
+
+function serialLines(serial: ReadonlyMap<string, string>): string[] {
+  return SERIAL_ORDER.filter((name) => serial.has(name)).map((name) => ` ${name} ${serial.get(name)}`);
+}
+
 export function serviceFlagLines(
   device: { getServiceFlags?: () => ReadonlyMap<string, boolean> },
 ): string[] {
@@ -2038,6 +2044,8 @@ export function consoleAndAuxLineConfigLines(
     loggingSynchronous: boolean;
     historySize: number | null;
     historyEnabled: boolean;
+    serial: ReadonlyMap<string, string>;
+    transport: ReadonlyMap<string, string>;
   };
   if (consoleCfg) {
     lines.push(`line console ${consoleCfg.line}`);
@@ -2058,6 +2066,11 @@ export function consoleAndAuxLineConfigLines(
     if (consoleCfg.loggingSynchronous) lines.push(' logging synchronous');
     if (!consoleCfg.historyEnabled) lines.push(' no history');
     else if (consoleCfg.historySize != null) lines.push(` history size ${consoleCfg.historySize}`);
+    for (const direction of ['input', 'output']) {
+      const protocol = consoleCfg.transport.get(direction);
+      if (protocol !== undefined) lines.push(` transport ${direction} ${protocol}`);
+    }
+    lines.push(...serialLines(consoleCfg.serial));
     lines.push('!');
   }
 
@@ -2065,11 +2078,15 @@ export function consoleAndAuxLineConfigLines(
     line: number;
     noExec: boolean;
     transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+    transportOutput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+    serial: ReadonlyMap<string, string>;
   };
   if (auxCfg) {
     lines.push(`line aux ${auxCfg.line}`);
     if (auxCfg.noExec) lines.push(' no exec');
     if (auxCfg.transportInput != null) lines.push(` transport input ${auxCfg.transportInput}`);
+    if (auxCfg.transportOutput != null) lines.push(` transport output ${auxCfg.transportOutput}`);
+    lines.push(...serialLines(auxCfg.serial));
     lines.push('!');
   }
   return lines;

@@ -480,8 +480,37 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected override onVtyLine(): boolean { return this.isVtyRemoteSession; }
 
+  private assignedLine: { kind: CliLineKind; index: number } | null = null;
+
   protected override onLineAssigned(kind: CliLineKind, index: number, recordId: string): void {
+    this.assignedLine = { kind, index };
     this.vty?.assignLine(kind, index, recordId);
+  }
+
+  protected override outboundTransportRefusal(protocol: 'telnet' | 'ssh'): string | null {
+    if (this.assignedLine === null) return null;
+    const { kind, index } = this.assignedLine;
+    let allowed: string | null | undefined;
+    if (kind === 'vty') {
+      const dev = this.device as unknown as {
+        _getVtyLineConfig?: () => {
+          all: () => ReadonlyArray<{ first: number; last: number; transportOutput: string | null }>;
+        };
+      };
+      allowed = dev._getVtyLineConfig?.().all()
+        .find((block) => block.first <= index && index <= block.last)?.transportOutput;
+    } else {
+      const shell = (this.device as unknown as {
+        getShell?: () => { outboundTransportOf?: (kind: 'con' | 'aux') => string | null };
+      }).getShell?.();
+      allowed = shell?.outboundTransportOf?.(kind);
+    }
+    if (allowed === null || allowed === undefined || allowed === 'all' || allowed === protocol) {
+      return null;
+    }
+    return protocol === 'telnet'
+      ? '% Telnet connections not permitted from this terminal'
+      : '% SSH connections not permitted from this terminal';
   }
 
   /**

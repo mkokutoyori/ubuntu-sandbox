@@ -7,13 +7,14 @@
  * Commands:
  *   show arp / show ip arp [<ip>|<interface>]  — display ARP table
  *   clear arp-cache                            — clear dynamic entries
- *   arp <ip> <mac> arpa                        — add static entry (config)
+ *   arp <ip> <mac> [arpa]                      — add static entry (config)
  *   no arp <ip>                                — remove entry (config)
  */
 
 import { IPAddress, MACAddress } from '../../../core/types';
 import type { ARPProvider, CiscoARPEntry } from '../CiscoDevice';
-import type { CommandTrie } from '../CommandTrie';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { CommandSpec } from '@/cli/CommandTable';
 import { renderTableText } from '../cli/TextTable';
 import {
   ARP_COLUMNS, ARP_DETAIL_COLUMNS, ARP_STYLE, type ArpRow,
@@ -159,66 +160,70 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
   return renderTableText(lines, ARP_COLUMNS, ARP_STYLE);
 }
 
-// ─── Command Registration: Show Commands ────────────────────────────
+// ─── Command declarations ───────────────────────────────────────────
 
-/**
- * Register ARP show commands on a trie (user + privileged modes).
- */
-export function registerArpShowCommands(
-  trie: CommandTrie,
-  getProvider: () => ARPProvider,
-): void {
-  trie.registerGreedy('show arp', 'Display ARP table', (args) =>
-    showArp(getProvider(), args.length > 0 ? args : undefined),
-  );
-  trie.registerGreedy('show ip arp', 'Display ARP table', (args) =>
-    showArp(getProvider(), args.length > 0 ? args : undefined),
-  );
-}
+const ARP_FILTER: ArgumentSpec = {
+  name: 'filter', type: 'REST', optional: true, literal: 'A.B.C.D',
+  description: 'ARP entry address or interface',
+};
 
-// ─── Command Registration: Config Commands ──────────────────────────
+const ARP_ADDRESS: ArgumentSpec = {
+  name: 'address', type: 'IP_ADDR', description: 'IP address of the ARP entry',
+};
 
-/**
- * Register `arp <ip> <mac> arpa` and `no arp <ip>` on a config trie.
- */
-export function registerArpConfigCommands(
-  trie: CommandTrie,
-  getProvider: () => ARPProvider,
-): void {
-  trie.registerGreedy('arp', 'Add static ARP entry', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    let ip: IPAddress;
-    try { ip = new IPAddress(args[0]); }
-    catch { return `% Invalid IP address "${args[0]}"`; }
-    const macStr = args[1];
-    let mac: MACAddress;
-    try {
-      mac = new MACAddress(macStr);
-    } catch {
-      return `% Invalid MAC address "${macStr}"`;
-    }
-    // Determine interface: first port with an IP, or first port
-    let iface = '';
-    for (const [name, port] of getProvider()._getPortsInternal()) {
-      if (port.getIPAddress()) {
-        iface = name;
-        break;
-      }
-    }
-    if (!iface) {
-      const first = getProvider()._getPortsInternal().keys().next().value;
-      if (first) iface = first;
-    }
-    getProvider()._addStaticARP(ip, mac, iface);
-    return '';
+const ARP_HARDWARE: ArgumentSpec = {
+  name: 'hardware', type: 'MAC_ADDR', description: 'Hardware address of the ARP entry',
+};
+
+const ARP_ENCAP: ArgumentSpec = {
+  name: 'encapsulation', type: 'ENUM', optional: true, description: 'Encapsulation type',
+  values: [{ keyword: 'arpa', description: 'Ethernet encapsulation' }],
+};
+
+export function arpSpecs(getProvider: () => ARPProvider): CommandSpec[] {
+  const show = (path: string[]): CommandSpec => ({
+    id: path.join('-'), path: [...path, ARP_FILTER],
+    description: 'Display ARP table', modes: ['user', 'privileged'], minPrivilege: 1,
+    run: (_session, args) => {
+      const words = (args.filter ?? '').trim().split(/\s+/).filter(Boolean);
+      return showArp(getProvider(), words.length > 0 ? words : undefined);
+    },
   });
-
-  trie.registerGreedy('no arp', 'Remove ARP entry', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    let ip: IPAddress;
-    try { ip = new IPAddress(args[0]); }
-    catch { return `% Invalid IP address "${args[0]}"`; }
-    getProvider()._deleteARP(ip);
+  const remove = (args: Record<string, string>): string => {
+    getProvider()._deleteARP(new IPAddress(args.address));
     return '';
-  });
+  };
+  const config = { modes: ['config'], minPrivilege: 15 };
+  return [
+    show(['show', 'arp']),
+    show(['show', 'ip', 'arp']),
+    {
+      ...config, id: 'arp', path: ['arp', ARP_ADDRESS, ARP_HARDWARE, ARP_ENCAP],
+      description: 'Add static ARP entry',
+      undoDescription: 'Remove ARP entry',
+      run: (_session, args) => {
+        const provider = getProvider();
+        let iface = '';
+        for (const [name, port] of provider._getPortsInternal()) {
+          if (port.getIPAddress()) {
+            iface = name;
+            break;
+          }
+        }
+        if (!iface) {
+          const first = provider._getPortsInternal().keys().next().value;
+          if (first) iface = first;
+        }
+        provider._addStaticARP(new IPAddress(args.address), new MACAddress(args.hardware), iface);
+        return '';
+      },
+      undo: (_session, args) => remove(args),
+    },
+    {
+      ...config, id: 'arp-undo', path: ['arp', ARP_ADDRESS],
+      description: 'Remove ARP entry', existsOnlyNegated: true,
+      run: () => '% Incomplete command.',
+      undo: (_session, args) => remove(args),
+    },
+  ];
 }

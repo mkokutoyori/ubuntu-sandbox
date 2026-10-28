@@ -32,6 +32,16 @@ export class VtyLineConfigStore {
     return next;
   }
 
+  removeMethodList(
+    first: number, last: number, kind: 'accounting' | 'authorization', service: string,
+  ): VtyLineConfig | undefined {
+    const existing = this.byKey.get(`${first} ${last}`);
+    if (!existing) return undefined;
+    const next = existing.withoutMethodList(kind, service);
+    this.byKey.set(`${first} ${last}`, next);
+    return next;
+  }
+
   get(first: number, last: number): VtyLineConfig | undefined {
     return this.byKey.get(`${first} ${last}`);
   }

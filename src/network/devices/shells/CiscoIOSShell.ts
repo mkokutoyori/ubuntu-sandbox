@@ -102,14 +102,13 @@ import {
   vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, bfdInterfaceSpecs, bfdShowSpecs,
+  bfdInterfaceSpecs, bfdShowSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
-  buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
+  igmpShowSpecs,
   igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
-  buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
   pimInterfaceSpecs, pimGlobalSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
@@ -118,14 +117,12 @@ import {
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import {
-  buildTrackConfigCommands, trackShowSpecs, trackSubmodeSpecs,
+  trackShowSpecs, trackSubmodeSpecs,
   trackEntrySpecs, routerTrackEntryHost,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
-import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
-} from './cisco/CiscoKeyChainCommands';
+import { keyChainFamily, type KeyChainHost } from '@/cli/commands/keychain/keyChainFamily';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
   ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs, ipSlaGlobalSpecs,
@@ -137,7 +134,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  registerPolicyShow, policyShowSpecs,
+  policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -164,12 +161,6 @@ import {
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
 import {
-  registerKeyChainGlobalCommands,
-  buildKeyChainSubmode,
-  buildKeyChainKeySubmode,
-  registerKeyChainShowCommands,
-} from './cisco/CiscoKeyChainCommands';
-import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
   routingProtoShowSpecs, routerSubmodeSpecs,
 } from './cisco/CiscoRoutingProtoCommands';
@@ -178,7 +169,7 @@ import {
   type CiscoACLShellContext,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands,
-  registerACLShowCommands, aclShowSpecs,
+  aclShowSpecs,
   parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, ipv6AclHost,
   type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
@@ -229,7 +220,6 @@ import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
   eemPorteSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
-  buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
   netflowEemShowSpecs,
@@ -634,11 +624,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaHttpRawSpecs(this),
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
-      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
-      ...keyChainGlobalSpecs(this),
-      ...keyChainShowSpecs(this),
-      ...keyChainSubmodeSpecs(this),
-      ...keyChainKeySubmodeSpecs(this),
+      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config', 'config-track']),
+      ...keyChainFamily(() => this.keyChainHost(), (mode) => this.setMode(mode as CiscoShellMode)),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
       ...avecNumeroDeSequence(
@@ -1315,6 +1302,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private get fhrp(): FhrpRepository { return this.d().getFhrpRepository(); }
   private readonly keyChains = new KeyChainRepository();
+  private keyChainHost(): KeyChainHost {
+    return {
+      chains: () => this.getKeyChains(),
+      selectedChain: () => this.getSelectedKeyChain(),
+      selectChain: (name) => this.setSelectedKeyChain(name),
+      selectedKey: () => {
+        const chain = this.getSelectedKeyChain();
+        const id = this.getSelectedKeyChainKey();
+        return chain === null || id === null ? null : this.getKeyChains().ensureKey(chain, id);
+      },
+      selectKey: (id) => this.setSelectedKeyChainKey(id),
+    };
+  }
+
   getKeyChains(): KeyChainRepository { return this.keyChains; }
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
@@ -2425,19 +2426,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildBfdInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
-    buildIgmpInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
-    buildPimInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
-    buildPimGlobalConfigCommands(this.configTrie, { r: () => this.d() });
     if (this.hasVxlanHardware()) {
       buildVxlanInterfaceCommands(this.configIfTrie, {
         selectedInterface: () => this.getSelectedInterface(),
@@ -2445,7 +2433,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         r: () => this.d(),
       });
     }
-    buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
@@ -2453,11 +2440,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
     buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
-    registerKeyChainGlobalCommands(this.configTrie, this);
-    buildKeyChainSubmode(this.configKeychainTrie, this);
-    buildKeyChainKeySubmode(this.configKeychainKeyTrie, this);
-    registerKeyChainShowCommands(this.privilegedTrie, this);
-    registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     this.configRouterTrie.setCompletionFilter((path, keyword) =>
       routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
@@ -2514,8 +2496,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildFlowExporterSubmode(this.configFlowExporterTrie, this);
     buildFlowRecordSubmode(this.configFlowRecordTrie, this);
     buildFlowMonitorSubmode(this.configFlowMonitorTrie, this);
-    buildArchiveSubmode(this.configArchiveTrie, this);
-    buildArchiveLogSubmode(this.configArchiveLogTrie, this);
     buildEemNetflowArchiveInterfaceCommands(this.configIfTrie, this);
     buildEemNetflowArchiveShowCommands(this.userTrie, () => this.d());
     buildEemNetflowArchiveShowCommands(this.privilegedTrie, () => this.d());
@@ -2525,10 +2505,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerIgmpShowCommands(trie, this.multicastShowContext());
-    registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerPolicyShow(trie, this.policy);
     this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
   }
@@ -2601,9 +2578,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     // DHCP show commands
     registerDhcpShowCommands(trie, getRouter);
-
-    // ACL show commands
-    registerACLShowCommands(trie, getRouter);
 
     // OSPF show commands
     registerOSPFShowCommands(trie, getRouter);
@@ -2746,6 +2720,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (sourceIP) {
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
+      else if (parsed.protocol !== 'ipv6' && /^[\d.]+$/.test(sourceIP)) {
+        throw new CliInvalidInput({ token: sourceIP });
+      }
     }
 
     if (parsed.protocol === 'ipv6') {
@@ -2773,15 +2750,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
 
     return '';
-  }
-
-  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
-    if (isValidIPv4(cible)) return Promise.resolve(cible);
-    const svc = (appareil as {
-      getDnsService?: () => { resolve(n: string): Promise<string | null> };
-    }).getDnsService?.();
-    if (!svc) return Promise.resolve(null);
-    return svc.resolve(cible);
   }
 
   private _handleTraceroute(demande: TracerouteRequest): string {
@@ -2849,7 +2817,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   private _resolveSourceIP(router: any, source: string): string | null {
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(source)) return source;
+    if (isValidIPv4(source)) return source;
     const ports = router._getPortsInternal?.() as Map<string, any> | undefined;
     if (!ports) return null;
     const port = ports.get(source);

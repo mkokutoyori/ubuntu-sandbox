@@ -647,11 +647,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     ]), optional: true },
   ]);
 
-  tries.configLine.describeArgs('exec-timeout', [
-    INT('minutes', [0, 35791], 'Timeout in minutes'),
-    { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
-      range: [0, 2147483] },
-  ]);
   // `tacacs server <nom>` et `tacacs-server host <adresse>` : les deux
   // mots-clés absorbent leur argument, et faute de le décrire l'aide
   // reproposait la liste d'options à sa place.
@@ -821,14 +816,6 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
     WORD('name', 'The ascii name for the VLAN'),
   ]);
 
-  tries.configLine.describeArgs('exec-timeout', [
-    INT('minutes', [0, 35791], 'Timeout in minutes'),
-    { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
-      range: [0, 2147483] },
-  ]);
-  tries.configLine.describeArgs('login-timeout', [
-    INT('seconds', [1, 300], 'Timeout in seconds'),
-  ]);
   tries.configLine.describeArgs('password', [
     LINE('password', 'The UNENCRYPTED (cleartext) line password'),
   ]);

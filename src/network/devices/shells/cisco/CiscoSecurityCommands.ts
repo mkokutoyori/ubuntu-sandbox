@@ -128,15 +128,9 @@ export const USERNAME_CONTINUATIONS: ReadonlyArray<{
  * si bien que n'importe quelle forme était acceptée en silence.
  */
 
-import { AAA_SERVICES } from './aaaHeadSpecs';
+import { AAA_SERVICES, AAA_METHODS } from './aaaHeadSpecs';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
-export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
-  authentication: [
-    'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
-  ],
-  authorization: ['group', 'if-authenticated', 'krb5-instance', 'local', 'none'],
-  accounting: ['broadcast', 'group', 'none'],
-};
+export { AAA_METHODS };
 
 export const AAA_COMMAND_LEVEL_RANGE: readonly [number, number] = [0, 15];
 

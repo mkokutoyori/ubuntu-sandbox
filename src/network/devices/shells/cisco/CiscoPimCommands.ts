@@ -1,16 +1,11 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import {
-  specsFromTrieRegistrations, collectRegistrations,
-} from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import type { PimMode } from '../../../pim/types';
 import { hms } from '@/lib/format';
-import { CISCO_ERRORS } from '../cli-utils';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { FIXED_TABLE, padToWidth, renderTable, type TableColumn } from '@/network/devices/shells/cli/TextTable';
@@ -44,285 +39,245 @@ export const PIM_DENSE_MODE_NOTE =
   '% PIM dense mode is accepted but behaves as sparse mode in this simulator '
   + '(explicit join only — flood-and-prune is not modelled).';
 
+const PIM_DEFAULT_DR_PRIORITY = 1;
+const PIM_DEFAULT_HELLO_SECONDS = 30;
+const PIM_DEFAULT_JOIN_PRUNE_SECONDS = 60;
+
 export function pimInterfaceRunningConfigLines(router: Router, iface: string): string[] {
   const a = agent(router);
   if (!a) return [];
   const rt = a.getInterfaceRuntime(iface);
   if (!rt?.enabled) return [];
   const lines = [` ip pim ${rt.mode}-mode`];
-  if (rt.drPriority !== 1) lines.push(` ip pim dr-priority ${rt.drPriority}`);
+  if (rt.drPriority !== PIM_DEFAULT_DR_PRIORITY) lines.push(` ip pim dr-priority ${rt.drPriority}`);
+  if (rt.helloIntervalSec !== PIM_DEFAULT_HELLO_SECONDS) lines.push(` ip pim query-interval ${rt.helloIntervalSec}`);
   return lines;
 }
 
-const PIM_IF_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'ip pim sparse-mode': null,
-  'ip pim dense-mode': null,
-  'ip pim sparse-dense-mode': null,
-  'ip pim dr-priority': {
-    name: 'priorite', type: 'REST', description: 'DR election priority',
-    alternatives: [{ keyword: '<0-4294967295>', description: 'DR election priority' }],
-  },
-  'ip pim query-interval': {
-    name: 'secondes', type: 'REST', description: 'Hello interval in seconds',
-    alternatives: [{ keyword: '<1-65535>', description: 'Hello interval in seconds' }],
-  },
-  /*
-   * `no ip pim` s'ecrit aussi `no ip pim sparse-mode` ou
-   * `no ip pim dense-mode` : le gestionnaire ignore la suite (`void
-   * args`) et coupe PIM dans tous les cas, mais la place doit exister
-   * pour que la ligne l'atteigne. La declarer nulle refusait au caret
-   * les deux formes que tout le monde tape.
-   */
-  'no ip pim': { name: 'mode', type: 'REST', optional: true,
-    description: 'Mode to remove, if named' },
-};
-
-/*
- * `no ip pim` SEUL n'a pas de forme positive a nier : `ip pim` tout
- * court n'est pas une commande, les trois modes le sont. Le socle
- * traitant `no` comme un modificateur, la commande doit donc exister a
- * sa place positive en n'existant QUE niee — sinon elle s'ecrit avec un
- * premier mot `no`, ce que le socle ne resout pas.
- *
- * Le gestionnaire est repris du meme constructeur plutot que recopie :
- * une seconde ecriture de « couper PIM » pourrait diverger de celle-ci.
- */
-function pimBareNegationSpec(ctx: IfCtx): CommandSpec {
-  const collecte = collectRegistrations(
-    (collector) => buildPimInterfaceCommands(collector as unknown as CommandTrie, ctx));
-  const negation = collecte.find(entry => entry.path === 'no ip pim');
-  return {
-    id: 'config-if-ip-pim-negated',
-    path: ['ip', 'pim'],
-    description: 'PIM interface configuration',
-    modes: MODES_INTERFACE,
-    minPrivilege: 15,
-    existsOnlyNegated: true,
-    run: () => '',
-    undo: () => negation?.action([], 'no ip pim') ?? '',
-  };
-}
-
 export function pimInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
-  return [pimBareNegationSpec(ctx), ...specsFromTrieRegistrations(
-    (collector) => buildPimInterfaceCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: MODES_INTERFACE, minPrivilege: 15,
-      /*
-       * `no` est un MODIFICATEUR pour le socle : la negation doit donc
-       * etre l'`undo` des trois formes positives et non un chemin dont
-       * le premier mot serait `no`. `no ip pim` porte la negation de
-       * toute la famille — le gestionnaire ignore le mode nomme et coupe
-       * PIM dans tous les cas — d'ou `undoFrom`.
-       */
-      undoFrom: 'no ip pim',
-      argumentFor: (path) => PIM_IF_ARGUMENTS[path],
-    },
-  )];
-}
-
-export function buildPimInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
-  const enable = (mode: PimMode) => (args: string[]) => {
-    void args;
+  const base = { modes: MODES_INTERFACE, minPrivilege: 15 };
+  const onPorts = (apply: (a: PimAgent, port: string) => void): string => {
     const a = agent(ctx.r());
     if (!a) return '';
-    for (const port of ctx.selectedPorts()) a.enableInterface(port, mode);
-    return mode === 'sparse' ? '' : PIM_DENSE_MODE_NOTE;
+    for (const port of ctx.selectedPorts()) apply(a, port);
+    return '';
   };
-  trie.registerGreedy('ip pim sparse-mode', 'Enable PIM sparse mode', enable('sparse'));
-  trie.registerGreedy('ip pim dense-mode', 'Enable PIM dense mode', enable('dense'));
-  trie.registerGreedy('ip pim sparse-dense-mode', 'Enable PIM sparse-dense mode', enable('sparse-dense'));
-
-  trie.registerGreedy('no ip pim', 'Disable PIM on interface', (args) => {
-    void args;
-    const a = agent(ctx.r());
-    if (!a) return '';
-    for (const port of ctx.selectedPorts()) a.disableInterface(port);
-    return '';
+  const disable = (): string => onPorts((a, port) => a.disableInterface(port));
+  const enableMode = (mode: PimMode, description: string): CommandSpec => ({
+    ...base,
+    id: `config-if-ip-pim-${mode}-mode`,
+    path: ['ip', 'pim', `${mode}-mode`],
+    description,
+    undoDescription: 'Disable PIM on interface',
+    run: () => {
+      onPorts((a, port) => a.enableInterface(port, mode));
+      return mode === 'sparse' ? '' : PIM_DENSE_MODE_NOTE;
+    },
+    undo: disable,
   });
-
-  trie.registerGreedy('ip pim dr-priority', 'Set PIM DR election priority', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    const prio = parseInt(args[0], 10);
-    if (Number.isNaN(prio) || prio < 0) return '% Invalid priority';
-    for (const port of ctx.selectedPorts()) a.setDrPriority(port, prio);
-    return '';
-  });
-
-  trie.registerGreedy('ip pim query-interval', 'Set PIM hello interval (seconds)', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    const secs = parseInt(args[0], 10);
-    if (Number.isNaN(secs) || secs <= 0) return '% Invalid interval';
-    for (const port of ctx.selectedPorts()) a.setHelloInterval(port, secs);
-    return '';
-  });
+  return [
+    {
+      ...base, id: 'config-if-ip-pim-negated', path: ['ip', 'pim'],
+      description: 'PIM interface configuration', existsOnlyNegated: true,
+      run: () => '', undo: disable,
+    },
+    enableMode('sparse', 'Enable PIM sparse mode'),
+    enableMode('dense', 'Enable PIM dense mode'),
+    enableMode('sparse-dense', 'Enable PIM sparse-dense mode'),
+    {
+      ...base, id: 'config-if-ip-pim-dr-priority', undoOmitsArguments: true,
+      path: ['ip', 'pim', 'dr-priority', {
+        name: 'priority', type: 'INT', range: [0, 4294967295],
+        description: 'DR election priority',
+      }],
+      description: 'Set PIM DR election priority',
+      undoDescription: 'Restore the default DR priority',
+      run: (_session, args) =>
+        onPorts((a, port) => a.setDrPriority(port, parseInt(args.priority, 10))),
+      undo: () => onPorts((a, port) => a.setDrPriority(port, PIM_DEFAULT_DR_PRIORITY)),
+    },
+    {
+      ...base, id: 'config-if-ip-pim-query-interval', undoOmitsArguments: true,
+      path: ['ip', 'pim', 'query-interval', {
+        name: 'seconds', type: 'INT', range: [1, 65535],
+        description: 'Hello interval in seconds',
+      }],
+      description: 'Set PIM hello interval (seconds)',
+      undoDescription: 'Restore the default hello interval',
+      run: (_session, args) =>
+        onPorts((a, port) => a.setHelloInterval(port, parseInt(args.seconds, 10))),
+      undo: () => onPorts((a, port) => a.setHelloInterval(port, PIM_DEFAULT_HELLO_SECONDS)),
+    },
+  ];
 }
 
 export function pimGlobalRunningConfigLines(router: Router): string[] {
   const a = agent(router);
   if (!a) return [];
-  return a.listRps()
-    .filter((rp) => rp.isStatic)
-    .map((rp) => `ip pim rp-address ${rp.rpAddress}`);
+  const spt = a.getSptThreshold();
+  return [
+    ...a.listRps()
+      .filter((rp) => rp.isStatic)
+      .map((rp) => `ip pim rp-address ${rp.rpAddress}`),
+    ...(spt === null ? [] : [`ip pim spt-threshold ${spt}`]),
+  ];
 }
-
-const PIM_GLOBAL_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'ip pim rp-address': {
-    name: 'rp', type: 'REST', description: 'Address of the rendezvous point',
-    alternatives: [{ keyword: 'A.B.C.D', description: 'Address of the rendezvous point' }],
-  },
-  'ip pim spt-threshold': {
-    name: 'seuil', type: 'REST',
-    description: 'Rate above which the router joins the shortest-path tree',
-    alternatives: [{ keyword: 'infinity', description: 'Never join the shortest-path tree' }],
-  },
-  'ip pim send-rp-announce': {
-    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
-  },
-  'ip pim send-rp-discovery': {
-    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
-  },
-  'ip pim bsr-candidate': {
-    name: 'reste', type: 'REST', description: 'Interface, then hash length and priority',
-  },
-  'ip pim rp-candidate': {
-    name: 'reste', type: 'REST', description: 'Interface, then interval and priority',
-  },
-};
 
 export function pimGlobalSpecs(ctx: ShowCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildPimGlobalConfigCommands(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config'], minPrivilege: 15 };
+  const withAgent = (apply: (a: PimAgent) => string): string => {
+    const a = agent(ctx.r());
+    return a ? apply(a) : '';
+  };
+  const native: CommandSpec[] = [
     {
-      modes: ['config'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => PIM_GLOBAL_ARGUMENTS[path],
+      ...base, id: 'config-ip-pim-rp-address',
+      path: ['ip', 'pim', 'rp-address', {
+        name: 'rp', type: 'IP_ADDR', description: 'Address of the rendezvous point',
+      }],
+      description: 'Configure static PIM RP address',
+      undoDescription: 'Remove static PIM RP address',
+      run: (_session, args) => withAgent((a) => { a.addStaticRp(args.rp); return ''; }),
+      undo: (_session, args) => withAgent((a) => { a.removeStaticRp(args.rp); return ''; }),
     },
-  );
+    {
+      ...base, id: 'config-ip-pim-spt-threshold', undoOmitsArguments: true,
+      path: ['ip', 'pim', 'spt-threshold', {
+        name: 'threshold', type: 'WORD',
+        description: 'Rate above which the router joins the shortest-path tree',
+        alternatives: [
+          { keyword: 'infinity', description: 'Never join the shortest-path tree' },
+          { keyword: '<0-4294967>', description: 'Rate in kbps' },
+        ],
+        pattern: /^(infinity|\d{1,7})$/i,
+      }],
+      description: 'Configure PIM SPT switchover threshold',
+      undoDescription: 'Restore the default SPT switchover threshold',
+      run: (_session, args) => withAgent((a) => {
+        const word = args.threshold.toLowerCase();
+        const kbps = word === 'infinity' ? word : parseInt(word, 10);
+        if (kbps !== 'infinity' && kbps > 4294967) throw new CliInvalidInput();
+        a.setSptThreshold(kbps);
+        return '';
+      }),
+      undo: () => withAgent((a) => { a.setSptThreshold(null); return ''; }),
+    },
+    {
+      ...base, id: 'config-ip-pim-join-prune-interval', undoOmitsArguments: true,
+      path: ['ip', 'pim', 'join-prune-interval', {
+        name: 'seconds', type: 'INT', range: [1, 65535],
+        description: 'Join/prune interval in seconds',
+      }],
+      description: 'Set PIM join/prune interval (seconds)',
+      undoDescription: 'Restore the default join/prune interval',
+      run: (_session, args) => withAgent((a) => {
+        a.setJoinPruneInterval(parseInt(args.seconds, 10));
+        return '';
+      }),
+      undo: () => withAgent((a) => { a.setJoinPruneInterval(PIM_DEFAULT_JOIN_PRUNE_SECONDS); return ''; }),
+    },
+    {
+      ...base, id: 'config-ip-pim-bsr-candidate', undoOmitsArguments: true,
+      path: ['ip', 'pim', 'bsr-candidate',
+        { name: 'interface', type: 'INTERFACE', description: 'Interface whose address identifies the BSR' },
+        { name: 'hashMaskLength', type: 'INT', range: [0, 32], optional: true,
+          description: 'Hash mask length for RP selection' },
+        { name: 'priority', type: 'INT', range: [0, 255], optional: true,
+          description: 'Priority of the candidate BSR' },
+      ],
+      description: 'Configure this router as a candidate BSR',
+      undoDescription: 'Remove the candidate BSR configuration',
+      run: (_session, args) => withAgent((a) => {
+        const ip = ctx.r().getPort(args.interface)?.getIPAddress()?.toString();
+        if (!ip) return `% Interface ${args.interface} has no IP address`;
+        a.setBsrCandidate(ip, args.priority === undefined ? 0 : parseInt(args.priority, 10));
+        return '';
+      }),
+      undo: () => withAgent((a) => { a.clearBsrCandidate(); return ''; }),
+    },
+  ];
+  const interfaceAddress = (name: string): string | undefined =>
+    ctx.r().getPort(name)?.getIPAddress()?.toString();
+  const device = () => ctx.r() as unknown as {
+    _recordUnhandledConfigLine?: (line: string) => void;
+    _removeUnhandledConfigLine?: (line: string) => void;
+  };
+  const interfacePlace: ArgumentSpec = {
+    name: 'interface', type: 'INTERFACE', description: 'Interface whose address identifies this router',
+  };
+  const scopePlace: ArgumentSpec = {
+    name: 'ttl', type: 'INT', range: [1, 255], description: 'Time-to-live of the announcements',
+  };
+  const intervalOption = {
+    keyword: 'interval', description: 'Advertisement interval',
+    argument: { name: 'interval', type: 'INT', range: [1, 16383], description: 'Seconds' },
+  } as const;
+  const autoRpLine = (keyword: string, args: Record<string, string>): string =>
+    `ip pim ${keyword}${args.interface ? ` ${args.interface}` : ''} scope ${args.ttl}`;
+  const autoRp: CommandSpec[] = [
+    {
+      ...base, id: 'config-ip-pim-rp-candidate',
+      path: ['ip', 'pim', 'rp-candidate', interfacePlace],
+      description: 'Advertise this router as a candidate RP',
+      undoDescription: 'Remove the candidate RP configuration', undoOmitsArguments: true,
+      options: [
+        { keyword: 'priority', description: 'Priority of the candidate RP',
+          argument: { name: 'priority', type: 'INT', range: [0, 255], description: 'Priority value' } },
+        intervalOption,
+      ],
+      run: (_session, args) => withAgent((a) => {
+        const ip = interfaceAddress(args.interface);
+        if (!ip) return `% Interface ${args.interface} has no IP address`;
+        a.setRpCandidate(ip, args.priority === undefined ? 0 : parseInt(args.priority, 10));
+        if (args.interval !== undefined) a.setCandidateRpInterval(parseInt(args.interval, 10));
+        return '';
+      }),
+      undo: () => withAgent((a) => { a.clearRpCandidate(); return ''; }),
+    },
+    {
+      ...base, id: 'config-ip-pim-send-rp-announce',
+      path: ['ip', 'pim', 'send-rp-announce', interfacePlace, 'scope', scopePlace],
+      description: 'Announce this router as an Auto-RP candidate RP',
+      undoDescription: 'Stop announcing this router as an Auto-RP candidate RP',
+      run: (_session, args) => withAgent((a) => {
+        const ip = interfaceAddress(args.interface);
+        if (!ip) return `% Interface ${args.interface} has no IP address`;
+        a.setRpCandidate(ip, 0);
+        device()._recordUnhandledConfigLine?.(autoRpLine('send-rp-announce', args));
+        return '';
+      }),
+      undo: (_session, args) => withAgent((a) => {
+        a.clearRpCandidate();
+        device()._removeUnhandledConfigLine?.(autoRpLine('send-rp-announce', args));
+        return '';
+      }),
+    },
+    ...[
+      { id: 'config-ip-pim-send-rp-discovery', places: [] as ArgumentSpec[] },
+      { id: 'config-ip-pim-send-rp-discovery-interface', places: [interfacePlace] },
+    ].map(({ id, places }): CommandSpec => ({
+      ...base, id,
+      path: ['ip', 'pim', 'send-rp-discovery', ...places, 'scope', scopePlace],
+      description: 'Act as the Auto-RP mapping agent',
+      undoDescription: 'Stop acting as the Auto-RP mapping agent',
+      run: (_session, args) => withAgent(() => {
+        device()._recordUnhandledConfigLine?.(autoRpLine('send-rp-discovery', args));
+        return '';
+      }),
+      undo: (_session, args) => withAgent(() => {
+        device()._removeUnhandledConfigLine?.(autoRpLine('send-rp-discovery', args));
+        return '';
+      }),
+    })),
+  ];
+  return [...native, ...autoRp];
 }
 
-export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): void {
-  trie.registerGreedy('ip pim rp-address', 'Configure static PIM RP address', (args) => {
+export function pimShowSpecs(ctx: ShowCtx): CommandSpec[] {
+  const neighbors = (requestedInterface: string | undefined): string => {
     const a = agent(ctx.r());
     if (!a) return '';
-    const rpAddress = args[0];
-    if (!rpAddress || !/^\d+\.\d+\.\d+\.\d+$/.test(rpAddress)) return '% Invalid RP address';
-    if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
-    a.addStaticRp(rpAddress);
-    return '';
-  });
-
-  trie.registerGreedy('no ip pim rp-address', 'Remove static PIM RP address', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    const rpAddress = args[0];
-    if (!rpAddress) return '';
-    a.removeStaticRp(rpAddress);
-    return '';
-  });
-
-  trie.registerGreedy('ip pim spt-threshold', 'Configure PIM SPT switchover threshold', () => '');
-
-  // `ip pim bsr-candidate <iface> [hash-mask-length] [priority]` — the BSR
-  // identity is the interface's own address, exactly as on real IOS.
-  trie.registerGreedy('ip pim bsr-candidate', 'Configure this router as a candidate BSR', (args) => {
-    const a = agent(ctx.r());
-    const r = ctx.r();
-    if (!a) return '';
-    const iface = args[0];
-    if (!iface) return '% Incomplete command.';
-    const ip = r.getPort(iface)?.getIPAddress()?.toString();
-    if (!ip) return `% Interface ${iface} has no IP address`;
-    const priority = args[2] !== undefined ? parseInt(args[2], 10) : 0;
-    if (Number.isNaN(priority) || priority < 0 || priority > 255) {
-      return `% Invalid input detected at '^' marker.`;
-    }
-    a.setBsrCandidate(ip, priority);
-    return '';
-  });
-
-  trie.registerGreedy('no ip pim bsr-candidate', 'Remove the candidate BSR configuration', () => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    a.clearBsrCandidate();
-    return '';
-  });
-
-  // `ip pim rp-candidate <iface> [group-list <acl>] [priority <n>]`.
-  trie.registerGreedy('ip pim rp-candidate', 'Advertise this router as a candidate RP', (args) => {
-    const a = agent(ctx.r());
-    const r = ctx.r();
-    if (!a) return '';
-    const iface = args[0];
-    if (!iface) return '% Incomplete command.';
-    const ip = r.getPort(iface)?.getIPAddress()?.toString();
-    if (!ip) return `% Interface ${iface} has no IP address`;
-    const pIdx = args.findIndex((x) => x.toLowerCase() === 'priority');
-    const priority = pIdx >= 0 ? parseInt(args[pIdx + 1] ?? '', 10) : 0;
-    if (Number.isNaN(priority) || priority < 0 || priority > 255) {
-      return `% Invalid input detected at '^' marker.`;
-    }
-    a.setRpCandidate(ip, priority);
-    return '';
-  });
-
-  trie.registerGreedy('ip pim send-rp-announce', 'Announce this router as an Auto-RP candidate RP', (args, raw) => {
-    const a = agent(ctx.r());
-    const r = ctx.r();
-    if (!a) return '';
-    const iface = args[0];
-    if (!iface) return CISCO_ERRORS.INCOMPLETE;
-    const ip = r.getPort(iface)?.getIPAddress()?.toString();
-    if (!ip) return `% Interface ${iface} has no IP address`;
-    const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
-    if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
-    const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
-    if (Number.isNaN(scope) || scope < 1 || scope > 255) throw new CliInvalidInput();
-    a.setRpCandidate(ip, 0);
-    (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
-      ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-announce ${args.join(' ')}`);
-    return '';
-  });
-
-  trie.registerGreedy('ip pim send-rp-discovery', 'Act as the Auto-RP mapping agent', (args, raw) => {
-    const r = ctx.r();
-    if (!agent(r)) return '';
-    const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
-    if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
-    const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
-    if (Number.isNaN(scope) || scope < 1 || scope > 255) throw new CliInvalidInput();
-    (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
-      ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-discovery ${args.join(' ')}`);
-    return '';
-  });
-
-  trie.registerGreedy('no ip pim rp-candidate', 'Remove the candidate RP configuration', () => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    a.clearRpCandidate();
-    return '';
-  });
-
-  trie.registerGreedy('ip pim join-prune-interval', 'Set PIM join/prune interval (seconds)', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    const secs = parseInt(args[0], 10);
-    if (Number.isNaN(secs) || secs <= 0) return '% Invalid interval';
-    a.setJoinPruneInterval(secs);
-    return '';
-  });
-}
-
-export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
-  trie.registerGreedy('show ip pim neighbor', 'Display PIM neighbors', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    const neighbors = a.listNeighbors(namedInterface(ctx, args[0]));
+    const neighbors = a.listNeighbors(namedInterface(ctx, requestedInterface));
     const rows = ['PIM Neighbor Table',
       'Neighbor Address  Interface                Uptime/Expires    Ver  DR Prio/Mode'];
     for (const n of neighbors) {
@@ -331,9 +286,9 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       rows.push(`${padToWidth(n.neighborIp, 18)}${padToWidth(n.iface, 25)}${padToWidth(uptime + '/' + expires, 18)}v2   ${n.drPriority}${n.hasDrPriorityOption ? '' : ' (default)'}`);
     }
     return rows.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip pim rp mapping', 'Display PIM RP mappings', () => {
+  const rpMapping = (): string => {
     const a = agent(ctx.r());
     if (!a) return '';
     const rps = a.listRps();
@@ -354,9 +309,9 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       }
     }
     return lines.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip pim bsr-router', 'Display the PIM bootstrap router', () => {
+  const bsrRouter = (): string => {
     const a = agent(ctx.r());
     if (!a) return '';
     const cfg = a.getConfig();
@@ -379,13 +334,13 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       lines.push(`    Group(s) ${cfg.rpCandidate.groupRangeAddress}/${cfg.rpCandidate.groupRangeMaskBits}, priority ${cfg.rpCandidate.priority}`);
     }
     return lines.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip pim interface', 'Display PIM interface state', (args) => {
+  const interfaces = (requestedInterface: string | undefined): string => {
     const a = agent(ctx.r());
     const r = ctx.r();
     if (!a) return '';
-    const requested = namedInterface(ctx, args[0]);
+    const requested = namedInterface(ctx, requestedInterface);
     const ifaces = requested ? [requested] : Array.from(a.getConfig().interfaces.keys());
     // L'en-tête tient sur deux lignes et les données sur une : les trois
     // se déduisent des MÊMES largeurs, sinon elles finissent décalées
@@ -421,12 +376,11 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
 
     }
     return lines.join('\n');
-  });
+  };
 
-  trie.registerGreedy('show ip mroute', 'Display IP multicast routing table', (args) => {
+  const mroute = (groupFilter: string | undefined): string => {
     const a = agent(ctx.r());
     if (!a) return '';
-    const groupFilter = args.find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
     const mroutes = a.listMroutes().filter((m) => !groupFilter || m.groupAddress === groupFilter);
     const lines: string[] = ['IP Multicast Routing Table',
       "Flags: D - Dense, S - Sparse, s - SSM Group, C - Connected, L - Local,",
@@ -449,23 +403,34 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     }
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
     return lines.join('\n');
-  });
-}
-
-const PIM_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
-  'show ip pim neighbor': ['WORD', 'Interface name'],
-  'show ip pim interface': ['WORD', 'Interface name'],
-  'show ip mroute': ['A.B.C.D', 'Multicast group address'],
-};
-
-export function pimShowSpecs(ctx: ShowCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerPimShowCommands(collector as unknown as CommandTrie, ctx),
+  };
+  const base = { modes: ['user', 'privileged'], minPrivilege: 1 };
+  const interfacePlace: ArgumentSpec = {
+    name: 'interface', type: 'INTERFACE', optional: true, description: 'Interface name',
+  };
+  return [
     {
-      modes: ['user', 'privileged'],
-      minPrivilege: 1,
-      restDescriptionFor: (path) => PIM_SHOW_ARGUMENTS[path]?.[1],
-      restLiteralFor: (path) => PIM_SHOW_ARGUMENTS[path]?.[0],
+      ...base, id: 'show-ip-pim-neighbor', path: ['show', 'ip', 'pim', 'neighbor', interfacePlace],
+      description: 'Display PIM neighbors', run: (_session, args) => neighbors(args.interface),
     },
-  );
+    {
+      ...base, id: 'show-ip-pim-rp-mapping', path: ['show', 'ip', 'pim', 'rp', 'mapping'],
+      description: 'Display PIM RP mappings', run: () => rpMapping(),
+    },
+    {
+      ...base, id: 'show-ip-pim-bsr-router', path: ['show', 'ip', 'pim', 'bsr-router'],
+      description: 'Display the PIM bootstrap router', run: () => bsrRouter(),
+    },
+    {
+      ...base, id: 'show-ip-pim-interface', path: ['show', 'ip', 'pim', 'interface', interfacePlace],
+      description: 'Display PIM interface state', run: (_session, args) => interfaces(args.interface),
+    },
+    {
+      ...base, id: 'show-ip-mroute',
+      path: ['show', 'ip', 'mroute', {
+        name: 'group', type: 'IP_ADDR', optional: true, description: 'Multicast group address',
+      }],
+      description: 'Display IP multicast routing table', run: (_session, args) => mroute(args.group),
+    },
+  ];
 }

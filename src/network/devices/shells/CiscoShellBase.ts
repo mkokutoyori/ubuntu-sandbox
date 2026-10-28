@@ -40,6 +40,7 @@ import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { applyTransition } from '@/cli/CliEngine';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
+import type { OptionSpec } from '@/cli/OptionBag';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { SOCLE, continuationsPourLeSocle } from './cisco/ciscoContinuations';
 import type { ContinuationTable } from './cisco/ciscoContinuations';
@@ -62,7 +63,7 @@ import { legacyFamily } from '@/cli/LegacyDeclaration';
 import {
   loggingFamily, type LoggingEntry, type LoggingContinuation,
 } from '@/cli/commands/logging/loggingFamily';
-import { sequenceFamily, type SequenceEntry } from '@/cli/commands/SequenceFamily';
+import { sequenceFamily, type SequenceEntry, type SequenceHost } from '@/cli/commands/SequenceFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
   HISTORY_SIZE_MIN, HISTORY_SIZE_MAX, RATE_LIMIT_MIN, RATE_LIMIT_MAX,
@@ -79,7 +80,6 @@ import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
 import { pingRequestOfSpec } from './cisco/echoSpecs';
-import { toutesLesSuites } from './cisco/ciscoContinuations';
 import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
@@ -126,7 +126,6 @@ import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
   parseAaaMethod,
 } from './cisco/CiscoSecurityCommands';
-import { parseLineMethodList } from './cisco/lineMethodList';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
 import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
@@ -142,7 +141,7 @@ import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
 import type { VrfHost } from './cisco/ciscoVrfStore';
 import { vrfDeclarationSpecs, type VrfDeclarationHost } from './cisco/vrfSpecs';
-import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
+import { NTP_VERSION, type NtpVersion } from '../../ntp/types';
 import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
   getGlobalConfig, CEF_LOAD_SHARING_ALGORITHMS, CEF_ACCOUNTING_KINDS,
@@ -191,7 +190,7 @@ const LLDP_TLV_DESCRIPTIONS: Readonly<Record<LldpOptionalTlv, string>> = {
   'management-address': 'Management Address TLV',
 };
 import {
-  registerArpShowCommands, registerArpConfigCommands,
+  arpSpecs as ciscoArpSpecs,
 } from './cisco/CiscoArpCommands';
 import {
   showClock, showUsers, showInventory, showProcessesCpu, showProcessesMemory,
@@ -209,7 +208,7 @@ import {
 } from './cisco/CiscoCommonShow';
 import { renderInterfaceErrorCounters } from './cisco/ciscoCounterTables';
 import {
-  registerCiscoDnsCommands, registerCiscoDnsExecCommands, type DnsCommandContext,
+  ciscoDnsConfigSpecs, type DnsCommandContext,
   DNS_RETRY_RANGE, DNS_TIMEOUT_RANGE,
 } from './cisco/CiscoDnsCommands';
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
@@ -220,11 +219,19 @@ import {
   AliasRepository, aliasModeForCliMode, type AliasMode,
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
+import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { httpServerFamily, type HttpServerHost } from '../../../cli/commands/http/httpServerFamily';
+import { identityBootFamily, type IdentityBootHost } from '../../../cli/commands/identity/identityBootFamily';
+import { fileSystemFamily } from '../../../cli/commands/filesystem/fileSystemFamily';
+import { sharedShowFamily, type SharedShowHost } from '../../../cli/commands/show/sharedShowFamily';
+import { outgoingSessionFamily, type OutgoingSessionHost } from '../../../cli/commands/session/outgoingSessionFamily';
+import { snmpHostFamily } from '../../../cli/commands/snmp/snmpHostFamily';
+import { summerTimeFamily } from '../../../cli/commands/clock/summerTimeFamily';
 import { serviceLoggingFamily, type ServiceLoggingHost } from '@/cli/commands/service/serviceLoggingFamily';
 import { LoggingConfig, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
-import { registerArchiveExecCommands, archiveOnWriteMemory,
+import { archiveExecSpecs, archiveOnWriteMemory,
   archiveSubmodeSpecs, archiveLogSubmodeSpecs } from './cisco/CiscoArchiveCommands';
 import {
   radiusServerSubmodeSpecs, tacacsServerSubmodeSpecs, aaaGroupSubmodeSpecs,
@@ -234,7 +241,7 @@ import { absoluteLineNumber } from '../router/aaa/SshSessionRegistry';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
   scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS,
-  PRIVILEGED_EXEC_ONLY, type ExecScope,
+  type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
   loggingShowViews, severityValues,
@@ -281,15 +288,29 @@ const NTP_KEY_SPEC = {
   range: [1, 4294967295] as const, description: 'Key number',
 };
 
+const NTP_POLL_RANGE: readonly [number, number] = [4, 17];
+
+const NTP_ASSOCIATION_OPTIONS: readonly OptionSpec[] = [
+  { keyword: 'key', description: 'Configure peer authentication key',
+    argument: { ...NTP_KEY_SPEC, name: 'key-number' } },
+  { keyword: 'prefer', description: 'Prefer this peer when possible' },
+  { keyword: 'source', description: 'Interface for source address',
+    argument: { name: 'source-interface', type: 'INTERFACE',
+      description: 'Interface to use for source address' } },
+  { keyword: 'version', description: 'Configure NTP version',
+    argument: { name: 'ntp-version', type: 'INT', range: [1, 4], description: 'NTP version number' } },
+  { keyword: 'maxpoll', description: 'Maximum poll interval',
+    argument: { name: 'maxpoll-exponent', type: 'INT', range: [...NTP_POLL_RANGE], description: 'Poll interval as a power of two, in seconds' } },
+  { keyword: 'minpoll', description: 'Minimum poll interval',
+    argument: { name: 'minpoll-exponent', type: 'INT', range: [...NTP_POLL_RANGE], description: 'Poll interval as a power of two, in seconds' } },
+  { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
+  { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
+];
+
 interface QueueAssociationNtp {
   prefer: boolean;
   keyId?: number;
   options: NtpAssociationOptions;
-  refus?: string;
-}
-
-function estNumeroDeCleNtp(token: string | undefined): boolean {
-  return token !== undefined && argumentAccepts(NTP_KEY_SPEC, token);
 }
 
 const SNOOPING_BINDING_COLUMNS: ReadonlyArray<TableColumn<DHCPSnoopingBinding>> = [
@@ -416,50 +437,6 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
 
-const ARCHIVE_EXEC: ReadonlySet<string> = new Set([
-  'show archive', 'show archive config differences', 'show archive log config',
-  'archive config', 'configure replace',
-]);
-
-const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-  'show archive config differences': [
-    {
-      name: 'avant', type: 'WORD', optional: true,
-      description: 'File to compare from (defaults to the latest archive)',
-    },
-    {
-      name: 'apres', type: 'WORD', optional: true,
-      description: 'File to compare to (defaults to the running configuration)',
-    },
-  ],
-  'configure replace': [
-    {
-      name: 'url', type: 'WORD',
-      description: 'URL of the configuration file to roll back to',
-    },
-    {
-      name: 'options', type: 'REST', optional: true,
-      description: 'How the rollback is performed', literal: 'LINE',
-      alternatives: [
-        { keyword: 'force', description: 'Do not prompt for confirmation' },
-        { keyword: 'list', description: 'List the commands, apply nothing' },
-        { keyword: 'nolock', description: 'Do not lock the configuration' },
-        { keyword: 'revert', description: 'Set the revert options' },
-        { keyword: 'time', description: 'Time for automatic rollback' },
-      ],
-    },
-  ],
-  'show archive log config': [{
-    name: 'selection', type: 'REST', optional: true,
-    description: 'Records to show', literal: 'LINE',
-    alternatives: [
-      { keyword: 'all', description: 'All the records' },
-      { keyword: 'statistics', description: 'Memory held by the log' },
-      { keyword: 'user', description: 'Records of one user' },
-    ],
-  }],
-};
-
 interface DhcpConfigServer {
   getPool(name: string): unknown;
   createPool(name: string): void;
@@ -478,136 +455,6 @@ const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
   ['incoming', 'Set incoming terminal line banner'],
   ['login', 'Set login banner'],
   ['motd', 'Set Message of the Day banner'],
-];
-
-const SERVICES_A_MOTEUR: ReadonlySet<string> = new Set([
-  'service sequence-numbers', 'service timestamps',
-]);
-
-const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-  'service timestamps': [
-    {
-      name: 'channel', type: 'ENUM', optional: true,
-      description: 'Message class to timestamp',
-      values: [
-        { keyword: 'debug', description: 'Timestamp debug messages' },
-        { keyword: 'log', description: 'Timestamp log messages' },
-      ],
-    },
-    {
-      name: 'format', type: 'REST', optional: true,
-      description: 'Timestamp format and options',
-      literal: 'LINE',
-    },
-  ],
-};
-
-const LINE_ACCESS_CLASS: readonly ArgumentSpec[] = [
-  {
-    name: 'access-list', type: 'WORD', description: 'Access-list name',
-    alternatives: [
-      { keyword: '<1-199>', description: 'IP access list (standard or extended)' },
-      { keyword: 'WORD', description: 'Access-list name' },
-    ],
-  },
-  enumeration('direction', 'Filter direction', [
-    ['in', 'Inbound packets'], ['out', 'Outbound packets'],
-  ]),
-];
-
-const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'access-class': LINE_ACCESS_CLASS,
-  'motd-banner': null,
-  length: { name: 'lines', type: 'INT', description: 'Number of lines on a screen', range: [0, 512] },
-  width: { name: 'characters', type: 'INT', description: 'Width of the display terminal', range: [0, 512] },
-  'session-timeout': { name: 'minutes', type: 'INT', description: 'Timeout in minutes', range: [0, 35791] },
-  'absolute-timeout': { name: 'minutes', type: 'INT', description: 'Absolute session lifetime in minutes', range: [0, 35791] },
-  rotary: { name: 'group', type: 'INT', description: 'Rotary group number', range: [1, 100] },
-  autocommand: { name: 'command', type: 'REST', optional: true, description: 'Command to execute on connection' },
-  password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
-  'login-timeout': { name: 'seconds', type: 'INT', range: [1, 300], description: 'Timeout in seconds' },
-  speed: enumeration('bps', 'Transmit and receive speeds', [
-    ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
-    ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
-    ['38400', '38400 bps'], ['57600', '57600 bps'], ['115200', '115200 bps'],
-  ]),
-  databits: enumeration('bits', 'Number of data bits per character', [
-    ['5', 'Five data bits'], ['6', 'Six data bits'],
-    ['7', 'Seven data bits'], ['8', 'Eight data bits'],
-  ]),
-  stopbits: enumeration('bits', 'Number of stop bits', [
-    ['1', 'One stop bit'], ['2', 'Two stop bits'],
-  ]),
-  parity: enumeration('parity', 'Set terminal parity', [
-    ['even', 'Even parity'], ['none', 'No parity'], ['odd', 'Odd parity'],
-  ]),
-  flowcontrol: enumeration('method', 'Set the flow control', [
-    ['hardware', 'Hardware flow control'],
-    ['none', 'Set no flow control'],
-    ['software', 'Software flow control'],
-  ]),
-  'escape-character': {
-    name: 'caractere', type: 'INT', optional: true, range: [0, 255],
-    description: 'ASCII decimal value of the escape character',
-    values: [
-      { keyword: 'break', description: 'Use the BREAK signal as the escape character' },
-      { keyword: 'default', description: 'Restore the default escape character' },
-      { keyword: 'none', description: 'Disable the escape character' },
-      { keyword: 'soft', description: 'Use a soft escape character' },
-    ],
-  },
-  'exec-timeout': [
-    { name: 'minutes', type: 'INT', range: [0, 35791], description: 'Timeout in minutes' },
-    { name: 'secondes', type: 'INT', range: [0, 2147483], optional: true, description: 'Timeout in seconds' },
-  ],
-};
-
-const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
-  name: nom, type: 'WORD', description: 'Method list name',
-  alternatives: [
-    { keyword: 'default', description: 'The default method list' },
-    { keyword: 'WORD', description: 'Method list name' },
-  ],
-});
-
-const LINE_KEYWORD_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
-  'privilege level': { name: 'level', type: 'INT', optional: true, description: 'Privilege level', range: [0, 15] },
-  'history size': { name: 'size', type: 'INT', optional: true, description: 'Size of history buffer', range: [0, 256] },
-  'login authentication': LISTE_DE_METHODES('authentification'),
-  'accounting commands': [
-    { name: 'niveau', type: 'INT', range: [0, 15], description: 'Privilege level' },
-    LISTE_DE_METHODES('comptes-commandes'),
-  ],
-  'accounting connection': LISTE_DE_METHODES('comptes-connexion'),
-  'accounting exec': LISTE_DE_METHODES('comptes-exec'),
-  'authorization commands': [
-    { name: 'niveau-autorisation', type: 'INT', range: [0, 15], description: 'Privilege level' },
-    LISTE_DE_METHODES('autorisation-commandes'),
-  ],
-  'authorization exec': LISTE_DE_METHODES('autorisation-exec'),
-};
-
-const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
-  name: 'protocol', type: 'ENUM', description: 'Transport protocol',
-  values: [
-    { keyword: 'all', description: 'All protocols' },
-    { keyword: 'none', description: 'No protocols' },
-    { keyword: 'ssh', description: 'TCP/IP SSH protocol' },
-    { keyword: 'telnet', description: 'TCP/IP Telnet protocol' },
-  ],
-};
-
-const LINE_TRANSPORT_KEYWORDS:
-ReadonlyArray<{ keyword: string; description: string; argument: ArgumentSpec }> = [
-  {
-    keyword: 'input', argument: LINE_TRANSPORT_PROTOCOLS,
-    description: 'Define which protocols to use when connecting to the terminal server',
-  },
-  {
-    keyword: 'output', argument: LINE_TRANSPORT_PROTOCOLS,
-    description: 'Define which protocols to use for outgoing connections',
-  },
 ];
 
 function enumeration(
@@ -655,31 +502,6 @@ function modesDuTrie(champ: string): readonly string[] {
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()];
 }
 
-const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
-  ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
-  ['logging', [['synchronous', 'Synchronize logging output with EXEC output']]],
-  ['privilege', [['level', 'Set the privilege level of the line']]],
-  ['exec', [['banner', 'Enable the display of the EXEC banner']]],
-  ['history', [['size', 'Set the size of the history buffer']]],
-  ['no', [
-    ['absolute-timeout', 'Clear the absolute session limit'],
-    ['escape-character', 'Restore the default escape character'],
-    ['exec', 'Disable the EXEC process'],
-    ['history', 'Disable the command history'],
-    ['login', 'Disable authentication on the line'],
-    ['logging', 'Disable synchronous logging'],
-    ['password', 'Clear the line password'],
-    ['privilege', 'Clear the privilege level'],
-  ]],
-  ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
-  ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
-];
-
-function suitesDeLigne(mot: string): readonly string[] {
-  return (LINE_KEYWORD_SUITES.find(([k]) => k === mot)?.[1] ?? []).map(([s]) => s);
-}
-
-
 /*
  * Les declarations viennent de `ciscoArgumentHelp`, ou elles etaient
  * posees sur la trie privilegiee : les porter ici est ce qui les garde
@@ -694,187 +516,11 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
 });
 
 /*
- * `disconnect` et `resume` NOMMENT leurs deux formes sans restreindre :
- * le gestionnaire lit un numero et repond lui-meme a ce qui n'en est
- * pas un (`disconnect all` rend « No information for this connection »,
- * ce qu'un test epingle), donc une place bornee refuserait au caret ce
- * que la machine accepte. Les deux libelles sont ceux qu'IOS ecrit.
- */
-const CONNEXION_SORTANTE: ArgumentSpec = {
-  name: 'connexion', type: 'REST', optional: true,
-  description: 'Connection number or name',
-  alternatives: [
-    { keyword: '<1-16>', description: 'Connection number' },
-    { keyword: 'WORD', description: 'Connection name' },
-  ],
-};
-
-/*
  * Ce que ce lot prend de `registerCommonShowCommands`. Nommer les
  * chemins plutot que de tout collecter est ce qui laisse ses
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
  * la ou elles sont, migrees ou non.
  */
-const SHOW_PARTAGEES: ReadonlySet<string> = new Set([
-  'show interfaces counters errors', 'show mac address-table', 'terminal',
-  'show ntp packets', 'show cdp', 'show lldp', 'show snmp', 'show parser view',
-  'show hosts', 'show ip dns statistics',
-  'show redundancy', 'show aaa',
-]);
-/*
- * `show adjacency` n'est PAS partagee : le commutateur en enregistre une
- * autre, plus riche (elle lit sa table ARP et connait `detail` et
- * `summary`), qui gagnait dans le trie parce qu'elle est declaree apres.
- * La declarer au socle la ferait perdre — mesure par
- * `cisco-switch-l3-referential`.
- */
-
-const SHARED_SHOW_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'show snmp': { name: 'vue', type: 'REST', optional: true,
-    description: 'SNMP detail to display' },
-  'show hosts': null,
-  'show adjacency': { name: 'reste', type: 'REST', optional: true,
-    description: 'Adjacency detail to display' },
-  'show ip dns statistics': null,
-  'show interfaces counters errors': null,
-  'show redundancy': null,
-  'show aaa': { name: 'reste', type: 'REST', optional: true,
-    description: 'AAA detail to display' },
-  'show mac address-table': { name: 'filtre', type: 'REST', optional: true,
-    description: 'Filter the MAC address table' },
-  /*
-   * La place est EXIGEE : `terminal` seul est declare incomplet par le
-   * gestionnaire, et la place facultative de l'adaptateur ferait
-   * annoncer `<cr>` a une commande qui ne s'ecrit jamais seule.
-   */
-  terminal: { name: 'reglage', type: 'REST', description: 'Terminal parameter to set' },
-};
-
-const SESSION_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  where: null,
-  disconnect: CONNEXION_SORTANTE,
-  resume: CONNEXION_SORTANTE,
-  /*
-   * La place est GLOUTONNE : les deux gestionnaires filtrent les options
-   * en `-`, donc `ssh -l zoe 10.0.0.9` porte trois mots et une place
-   * unique l'aurait refusee.
-   */
-  ssh: { name: 'hote', type: 'REST', literal: 'WORD',
-    description: 'IP address or hostname of a remote system' },
-  telnet: { name: 'hote', type: 'REST', literal: 'WORD',
-    description: 'IP address or hostname of a remote system' },
-};
-
-const FILESYSTEM_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  dir: { ...FICHIER_CISCO('filesystem', 'Filesystem or directory to list'),
-    optional: true },
-  more: FICHIER_CISCO('file', 'File to display'),
-  verify: FICHIER_CISCO('file', 'File to verify'),
-  delete: FICHIER_CISCO('file', 'File to be deleted'),
-  mkdir: FICHIER_CISCO('directory', 'Directory to create'),
-  rmdir: FICHIER_CISCO('directory', 'Directory to remove'),
-  squeeze: FICHIER_CISCO('filesystem', 'Filesystem to squeeze'),
-  pwd: null,
-};
-
-const HTTP_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'ip http server': null,
-  'ip http secure-server': null,
-  'ip http port': { name: 'port', type: 'INT', description: 'Port the HTTP server listens on',
-    range: [1, 65535] },
-  'ip http secure-port': { name: 'port', type: 'INT',
-    description: 'Port the HTTPS server listens on', range: [1, 65535] },
-  'ip http max-connections': { name: 'nombre', type: 'REST',
-    description: 'Number of concurrent connections allowed' },
-  'ip http access-class': { name: 'liste', type: 'REST',
-    description: 'Access list restricting who may connect',
-    /*
-     * La forme historique est NOMMEE et non bornee : le gestionnaire
-     * accepte un nom comme un numero, et annoncer `<1-99>` promettrait
-     * une plage que `probe-plage-annoncee-est-appliquee` ferait alors
-     * appliquer — donc refuserait une liste nommee que la machine
-     * accepte.
-     */
-    alternatives: [
-      { keyword: 'WORD', description: 'Access list name or number' },
-      { keyword: 'ipv4', description: 'IPv4 access list, then its name' },
-    ] },
-  'ip http authentication': { name: 'methode', type: 'REST',
-    description: 'How the server authenticates a request' },
-  'ip http timeout-policy': { name: 'reste', type: 'REST',
-    description: '`idle`, `life` and `requests`, with their values' },
-};
-
-/*
- * `source-interface` est le seul mot que `ip domain-lookup` prenne, et
- * il etait declare par `registerSuggestions` sur le trie — donc perdu le
- * jour ou la famille a migre, l'elagage ayant lieu avant. Un mot-cle le
- * declare des deux cotes a la fois : l'aide l'annonce et l'analyse le
- * reconnait.
- */
-const DOMAIN_LOOKUP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'source-interface', description: 'Source interface for packets',
-  undoWithoutArgument: true,
-  argument: { name: 'interface', type: 'INTERFACE',
-    description: 'Interface used as the source address' },
-}];
-
-const QUATUOR_POINTE = /^\d{1,3}(\.\d{1,3}){3}$/;
-
-const DNS_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-
-  'ip domain-lookup': null,
-  'ip domain lookup': null,
-  'ip domain round-robin': null,
-  'ip dns server': null,
-  'ip domain-name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
-  'ip domain name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
-  'ip domain-list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
-  'ip domain list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
-  'ip domain retry': { name: 'essais', type: 'INT', range: DNS_RETRY_RANGE,
-    description: 'Number of times a resolution is retried' },
-  'ip domain timeout': { name: 'secondes', type: 'INT', range: DNS_TIMEOUT_RANGE,
-    description: 'Time waited for a resolution' },
-  'ip dns spoofing': { name: 'adresse', type: 'REST',
-    description: 'Address answered to every query' },
-  'ip dns primary': { name: 'reste', type: 'REST',
-    description: 'Zone, then `soa` with its name server and mailbox' },
-  /*
-   * Le gestionnaire prend PLUSIEURS serveurs — `setNameServers(args)` —
-   * donc une place unique refuserait le second ; la premiere est typee
-   * pour qu'`?` annonce `A.B.C.D` comme IOS, la suite est libre.
-   */
-  'ip name-server': [
-    { name: 'adresse', type: 'IP_ADDR', description: 'Domain server IP address' },
-    { name: 'reste', type: 'REST', optional: true,
-      description: 'Further domain server addresses' },
-  ],
-  /*
-   * `ip host <nom> <adresse>...` ou `ip host <nom> ns <adresse>` : le
-   * gestionnaire exige deux mots, donc la seconde place n'est pas
-   * facultative — sans quoi `ip host ?` annonce `<cr>` pour une frappe
-   * que la meme machine declare incomplete.
-   */
-  'ip host': [
-    { name: 'nom', type: 'WORD', description: 'Name of host' },
-    /*
-     * La seconde place est FACULTATIVE alors que le gestionnaire exige
-     * deux mots, et c'est la NEGATION qui l'impose : `no ip host r2` ne
-     * prend qu'un nom, et la negation reprend les places de la forme
-     * positive. La rendre exigee faisait repondre « Incomplete » a une
-     * suppression parfaitement formee. `ip host ?` n'annonce pas `<cr>`
-     * pour autant, le NOM etant exige.
-     */
-    { name: 'reste', type: 'REST', optional: true,
-      description: 'Host addresses, or `ns` then the name server address' },
-  ],
-};
-
 /*
  * Les sortes de ligne, et jusqu'ou chacune est numerotee.
  *
@@ -907,59 +553,6 @@ const SORTES_DE_LIGNE: Readonly<Record<string, {
 export const DERNIERE_LIGNE_ABSOLUE =
   absoluteLineNumber('vty', SORTES_DE_LIGNE.vty.max);
 
-type TeteLigne =
-  | { sorte: 'console' | 'vty' | 'aux' | 'tty'; premiere: number; derniere: number }
-  | { erreur: string };
-
-/**
- * La designation d'une ligne, lue UNE fois pour `line` et pour `no line`.
- *
- * Les deux commandes en avaient chacune leur lecture, et elles avaient
- * diverge jusqu'a l'absurde : `no line` verifiait la sorte, exigeait un
- * numero, le voulait entier et refusait une plage a l'envers, quand
- * `line` n'examinait rien du tout — `line zorglub`, `line vty` seul,
- * `line vty 99`, `line vty zorglub` et `line vty 5 2` etaient tous
- * acceptes et faisaient entrer dans le sous-mode. L'operateur pouvait
- * donc poser une plage que la negation refusait ensuite de retirer, et
- * taper ses reglages d'acces dans un sous-mode qui ne designait aucune
- * ligne.
- */
-function analyserTeteLigne(args: readonly string[]): TeteLigne {
-  const mot = (args[0] ?? '').toLowerCase();
-  if (mot === '') return { erreur: CISCO_ERRORS.INCOMPLETE };
-  const sorte = SORTES_DE_LIGNE[mot];
-  if (!sorte) throw new CliInvalidInput({ token: args[0] });
-  if (args[1] === undefined) return { erreur: CISCO_ERRORS.INCOMPLETE };
-
-  const borne = (jeton: string): number => {
-    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
-    const valeur = Number.parseInt(jeton, 10);
-    if (valeur > sorte.max) throw new CliInvalidInput({ token: jeton });
-    return valeur;
-  };
-  const premiere = borne(args[1]);
-  const derniere = args[2] === undefined ? premiere : borne(args[2]);
-  if (derniere < premiere) throw new CliInvalidInput({ token: args[2] as string });
-  if (args[3] !== undefined) throw new CliInvalidInput({ token: args[3] });
-  return { sorte: sorte.canonique, premiere, derniere };
-}
-
-const IDENTITE_ET_AMORCAGE: ReadonlySet<string> = new Set([
-  'boot system', 'boot enable-break', 'boot manual', 'config-register',
-  'hostname',
-]);
-
-const IDENTITE_PLACES:
-  Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
-  hostname: { name: 'nom', type: 'WORD', description: 'This system\'s network name' },
-  'config-register': {
-    name: 'valeur', type: 'WORD', description: 'Config register value, in hex',
-  },
-  'boot system': {
-    name: 'image', type: 'REST', description: 'System image file', literal: 'WORD',
-  },
-};
-
 type HardeningEntry = readonly [
   readonly string[], string, string,
   (sec: ReturnType<typeof getSecurityConfig>, on: boolean) => void,
@@ -980,9 +573,6 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
 const COMMON_TIME_ZONES: readonly string[] = [
   'UTC', 'GMT', 'WAT', 'CAT', 'EAT', 'CET', 'EET', 'MSK', 'IST', 'JST',
   'EST', 'CST', 'MST', 'PST', 'AST', 'HST', 'AKST',
-];
-const COMMON_SUMMER_ZONES: readonly string[] = [
-  'BST', 'CEST', 'EEST', 'EDT', 'CDT', 'MDT', 'PDT', 'ADT', 'AKDT',
 ];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -1289,11 +879,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     loggingSynchronous: boolean;
     historySize: number | null;
     historyEnabled: boolean;
+    serial: ReadonlyMap<string, string>;
+    transport: ReadonlyMap<string, string>;
   } | null {
     if (this.consoleLinePassword == null && this.consoleLineLogin == null
       && this.consolePrivilegeLevel() == null && this.consoleLineExecTimeoutMin == null
       && !this.consoleLineLoggingSynchronous
-      && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled) return null;
+      && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled
+      && this.consoleSerial.size === 0 && this.consoleTransport.size === 0) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -1306,15 +899,44 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       loggingSynchronous: this.consoleLineLoggingSynchronous,
       historySize: this.consoleLineHistorySize,
       historyEnabled: this.consoleLineHistoryEnabled,
+      serial: this.consoleSerial,
+      transport: this.consoleTransport,
     };
   }
 
-  _getAuxLineConfig(): { line: number; noExec: boolean; transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null } | null {
-    if (!this.auxLineNoExec && this.auxLineTransportInput == null) return null;
+  protected readonly consoleSerial = new Map<string, string>();
+  protected readonly auxSerial = new Map<string, string>();
+  protected readonly consoleTransport = new Map<string, string>();
+  protected auxLineTransportOutput: 'ssh' | 'telnet' | 'all' | 'none' | null = null;
+
+  outboundTransportOf(kind: 'con' | 'aux'): string | null {
+    return kind === 'aux'
+      ? this.auxLineTransportOutput
+      : this.consoleTransport.get('output') ?? null;
+  }
+
+  private serialStoreForSelectedLine(): Map<string, string> | null {
+    if (this.selectedAuxLine != null) return this.auxSerial;
+    if (this.selectedConsoleLine != null && !this.selectedVtyRange) return this.consoleSerial;
+    return null;
+  }
+
+  _getAuxLineConfig(): {
+    line: number; noExec: boolean;
+    transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+    transportOutput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+    serial: ReadonlyMap<string, string>;
+  } | null {
+    if (!this.auxLineNoExec && this.auxLineTransportInput == null && this.auxSerial.size === 0
+      && this.auxLineTransportOutput == null) {
+      return null;
+    }
     return {
       line: this.selectedAuxLine ?? 0,
       noExec: this.auxLineNoExec,
       transportInput: this.auxLineTransportInput,
+      transportOutput: this.auxLineTransportOutput,
+      serial: this.auxSerial,
     };
   }
   protected terminalMonitor = false;
@@ -2426,8 +2048,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Enregistré sur la trie privilégiée uniquement : sur un vrai IOS,
    * l'EXEC utilisateur n'a accès à aucune de ces commandes.
    */
-  private registerFileSystemCommands(trie: CommandTrie): void {
-    trie.registerGreedy('dir', 'List files on a filesystem', (args) => {
+  protected fileSystemSpecs(): readonly CommandSpec[] {
+    const listDirectory = (args: readonly string[]): string => {
       // `/all` liste aussi les fichiers marqués supprimés ; ce système de
       // fichiers en libère l'espace tout de suite (comme un IOS moderne),
       // donc il n'y a jamais rien de plus à montrer — l'option est
@@ -2438,9 +2060,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `%Error opening ${cible} (No such file or directory)`;
       }
       return this.fs().renderDir(cible.replace(/\/$/, '') || 'flash:');
-    });
+    };
 
-    trie.registerGreedy('more', 'Display a file', (args) => {
+    const moreFile = (args: readonly string[]): string => {
       const nom = args[0] ?? '';
       if (!nom) return '% Incomplete command.';
       if (/^nvram:startup-config$/i.test(nom)) {
@@ -2452,7 +2074,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // une fausseté vérifiable : le vrai `more` sur du binaire crache
       // des octets illisibles, pas une page blanche.
       return f.content ?? `%Error opening ${nom} (Is a binary file)`;
-    });
+    };
 
     /*
      * `verify [/md5] <fichier>` — le controle A22 d'une liste d'audit.
@@ -2474,7 +2096,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * reference publiee par Cisco pour une image qui n'existe pas ferait
      * croire a une comparaison qui n'a pas lieu.
      */
-    trie.registerGreedy('verify', 'Verify a file', (args) => {
+    const verifyFile = (args: readonly string[]): string => {
       const mots = args.filter((a) => a.length > 0);
       const md5Demande = mots.some((a) => a.toLowerCase() === '/md5');
       const nom = mots.find((a) => !a.startsWith('/')) ?? '';
@@ -2495,9 +2117,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       lignes.push('', `Digital signature successfully verified in file flash:${f.name}`);
       return lignes.join('\n');
-    });
+    };
 
-    trie.registerGreedy('delete', 'Delete a file', (args) => {
+    const deleteFile = (args: readonly string[]): string => {
       const nom = args.filter((a) => !a.startsWith('/')).pop() ?? '';
       if (!nom) return '% Incomplete command.';
       if (!this.fs().exists(nom)) {
@@ -2512,7 +2134,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const court = nom.replace(/^[a-z]+:\/?/i, '');
       const chemin = /^[a-z]+:/i.test(nom) ? nom.replace(/^([a-z]+):\/?/i, '$1:/') : `flash:/${court}`;
       return `Delete filename [${court}]?\nDelete ${chemin}? [confirm]`;
-    });
+    };
 
     /**
      * `mkdir` / `rmdir` — un `flash:` a des répertoires, et le tutoriel
@@ -2520,7 +2142,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * `mkdir flash:backups` tombait dans la résolution de nom d'hôte et
      * répondait `Translating "mkdir"...`.
      */
-    trie.registerGreedy('mkdir', 'Create a directory', (args) => {
+    const makeDirectory = (args: readonly string[]): string => {
       const nom = args[0];
       if (!nom) throw new CliIncomplete();
       const propre = nom.replace(/\/+$/, '');
@@ -2528,8 +2150,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.fs().makeDirectory(propre);
       return `Create directory filename [${propre.replace(/^[a-z]+:\/?/i, '')}]? [confirm]\n`
         + `Created dir ${propre}`;
-    });
-    trie.registerGreedy('rmdir', 'Remove a directory', (args) => {
+    };
+    const removeDirectory = (args: readonly string[]): string => {
       const nom = args[0];
       if (!nom) throw new CliIncomplete();
       const propre = nom.replace(/\/+$/, '');
@@ -2538,7 +2160,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (verdict === 'non-vide') return `%Error Removing dir ${propre} (Directory not empty)`;
       return `Remove directory filename [${propre.replace(/^[a-z]+:\/?/i, '')}]? [confirm]\n`
         + `Removed dir ${propre}`;
-    });
+    };
 
     /**
      * `squeeze` — sur un IOS ancien, `delete` marquait le fichier et
@@ -2547,7 +2169,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * DIT qu'il n'y avait rien à récupérer plutôt que de prétendre
      * l'avoir fait.
      */
-    trie.registerGreedy('squeeze', 'Squeeze a filesystem', (args) => {
+    const squeezeFilesystem = (args: readonly string[]): string => {
       const cible = args[0] ?? 'flash:';
       if (!/^(flash|bootflash|disk0):?$/i.test(cible.replace(/\/$/, ''))) {
         return `%Error squeezing ${cible} (No such device)`;
@@ -2556,12 +2178,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         + 'Squeeze operation may take a while. Continue? [confirm]\n'
         + 'Squeeze of flash complete\n'
         + '%No files were deleted: this filesystem reclaims space on delete.';
+    };
+
+
+    return fileSystemFamily({
+      list: listDirectory, more: moreFile, verify: verifyFile, remove: deleteFile,
+      makeDirectory, removeDirectory, squeeze: squeezeFilesystem,
+      workingDirectory: () => 'flash:',
     });
-
-    trie.register('pwd', 'Display current working directory', () => 'flash:');
-
-    // Greedy comme l'inscription figée qu'elle remplace, pour que
-    // `show boot` suivi d'un mot continue de résoudre.
   }
 
   /** `dir nvram:` — deux entrées, comme sur le vrai. */
@@ -2776,7 +2400,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected initializeCommands(): void {
     this.registerCommonUserCommands();
     this.registerCommonPrivilegedCommands();
-    this.registerCommonConfigCommands();
     this.registerDeviceCommands();
     this.pruneMigratedFromTries();
     this.privilegedTrie.importMissingFrom(this.userTrie);
@@ -4637,20 +4260,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected ntpSpecs(): CommandSpec[] {
     const cle = NTP_KEY_SPEC;
-    const serveur: SequenceEntry['tail'] = {
-      name: 'options', type: 'REST', optional: true,
-      alternatives: [
-        { keyword: 'key', description: 'Configure peer authentication key' },
-        { keyword: 'prefer', description: 'Prefer this peer when possible' },
-        { keyword: 'source', description: 'Interface for source address' },
-        { keyword: 'version', description: 'Configure NTP version' },
-        { keyword: 'maxpoll', description: 'Maximum poll interval' },
-        { keyword: 'minpoll', description: 'Minimum poll interval' },
-        { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
-        { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
-      ],
-    };
-
     return sequenceFamily([
       { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
       { path: ['ntp', 'logging'], description: 'Enable NTP message logging' },
@@ -4665,12 +4274,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['ntp', 'server'], description: 'Configure NTP server',
         args: [{ name: 'adresse', type: 'IP_ADDR', description: 'IP address of peer' }],
-        tail: serveur,
+        options: NTP_ASSOCIATION_OPTIONS,
       },
       {
         path: ['ntp', 'peer'], description: 'Configure NTP peer',
         args: [{ name: 'adresse', type: 'IP_ADDR', description: 'IP address of peer' }],
-        tail: serveur,
+        options: NTP_ASSOCIATION_OPTIONS,
       },
       {
         path: ['ntp', 'master'], description: 'Act as NTP master clock',
@@ -4758,13 +4367,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['sntp', 'server'], description: 'SNTP server (alias for ntp server)',
         args: [cible],
-        tail: {
-          name: 'options', type: 'REST', optional: true,
-          description: 'Preference of this server',
-          alternatives: [
-            { keyword: 'prefer', description: 'Prefer this peer when possible' },
-          ],
-        },
+        options: [{ keyword: 'prefer', description: 'Prefer this peer when possible' }],
       },
       {
         path: ['sntp', 'unicast'], description: 'SNTP unicast client',
@@ -4834,18 +4437,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         args: [nom('communaute', 'SNMP community string')],
         tail: suite('Access privileges and access list', [
           ['ro', 'Read-only access'], ['rw', 'Read-write access'],
-        ]),
-      },
-      {
-        path: ['snmp-server', 'host'],
-        description: 'Specify hosts to receive SNMP notifications',
-        args: [{
-          name: 'adresse', type: 'IP_ADDR',
-          description: 'IP address of SNMP notification host',
-        }],
-        tail: suite('Notification type, version and community', [
-          ['informs', 'Send Inform requests'], ['traps', 'Send Trap messages'],
-          ['udp-port', 'UDP destination port'], ['version', 'SNMP version to use'],
         ]),
       },
       {
@@ -4919,7 +4510,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
     ];
 
-    return sequenceFamily(entries, () => ({
+    const host: SequenceHost = {
       apply: (words, negate) => {
         const svc = getSnmpService(this.d());
         if (!svc) return '';
@@ -4931,7 +4522,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         this.syncSnmpAgent();
         return '';
       },
-    }));
+    };
+    return [...sequenceFamily(entries, () => host), ...snmpHostFamily(() => host)];
   }
 
 
@@ -4987,7 +4579,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           return '';
         }
         const parsed = parseNtpBroadcast(kind, rest);
-        if (!parsed.ok) throw new CliInvalidInput({ token: rest[parsed.refusedAt ?? 0] ?? head });
+        if (!parsed.ok) {
+          const at = parsed.refusedAt ?? 0;
+          if (at === rest.length - 1 && ['key', 'version', 'ttl', 'destination'].includes(rest[at].toLowerCase())) throw new CliIncomplete();
+          throw new CliInvalidInput({ token: rest[at] ?? head });
+        }
         for (const port of ports()) {
           if (parsed.client !== undefined) agent.setBroadcastClient(port, true, parsed.client.group);
           else agent.setBroadcastServer(port, parsed.server ?? null);
@@ -5039,22 +4635,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             description: 'Minutes offset from UTC',
           },
         ],
-      },
-      {
-        path: ['clock', 'summer-time'], description: 'Configure daylight saving time',
-        args: [{
-          name: 'zone', type: 'WORD', description: 'Name of time zone in summer',
-          tabSuggestions: COMMON_SUMMER_ZONES,
-        }],
-        tail: {
-          name: 'regle', type: 'REST', optional: true, description: 'Recurrence rule',
-          alternatives: [
-            { keyword: 'date', description: 'Specific date the change occurs' },
-            { keyword: 'recurring', description: 'Recurring summer time' },
-          ],
-        },
-        undoArgs: [],
-        undoArgsOnlyNegated: true,
       },
     ], () => ({ apply: (words, negate) => this.applyClock(words, negate) }));
   }
@@ -5341,345 +4921,218 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [entete, ...associations.map(ligne)].join('\n');
   }
 
-  private lineSpecs(): CommandSpec[] {
-    const suites = new Map(LINE_KEYWORD_SUITES.map(([kw, liste]) => [kw, liste]));
-    const negations = new Map(suites.get('no') ?? []);
-    return specsFromTrieRegistrations(
-      (collector) => this.registerLineCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['config-line'], minPrivilege: 15,
-        undoFrom: 'no',
-        undoDescriptionFor: (path) => negations.get(path),
-        argumentFor: (path) => LINE_ARGUMENTS[path],
-        reachableWhenFor: (path) => () => this.lineKeywordAllowed(path),
-        keywordsFor: (path) => path === 'transport'
-          ? LINE_TRANSPORT_KEYWORDS
-          : suites.get(path)?.map(([keyword, description]) => ({
-          keyword, description,
-          argument: LINE_KEYWORD_ARGUMENTS[`${path} ${keyword}`],
-        })),
+  private lineSettingsHost(): LineSettingsHost {
+    type VtyConfig = {
+      upsert: (p: object) => unknown;
+      unset: (first: number, last: number, names: readonly string[]) => unknown;
+      removeMethodList: (first: number, last: number, kind: string, service: string) => unknown;
+    };
+    const vty = (): { range: { first: number; last: number }; config: VtyConfig | undefined } | null => {
+      const range = this.selectedVtyRange;
+      if (!range) return null;
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => VtyConfig };
+      return { range, config: dev._getVtyLineConfig?.() };
+    };
+    const unset = (names: readonly string[]): void => {
+      const target = vty();
+      if (!target) return;
+      target.config?.unset(target.range.first, target.range.last, names);
+      (this.d() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
+    };
+    return {
+      guard: (keyword) => this.requireLineKind(keyword),
+      allows: (keyword) => this.lineKeywordAllowed(keyword),
+      setExecTimeout: (minutes, seconds) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            execTimeoutMinutes: minutes, execTimeoutSeconds: seconds,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineExecTimeoutMin = minutes;
+          this.consoleLineExecTimeoutSec = seconds;
+        }
       },
-    );
-  }
-
-  private registerLineTransportCommands(t: CommandTrie): void {
-    t.registerGreedy('login-timeout', 'Set login timeout', (args) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const secondes = Number.parseInt(args[0], 10);
-      if (!/^\d+$/.test(args[0]) || secondes < 1 || secondes > 300) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      const range = this.selectedVtyRange;
-      if (!range) return '';
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      dev._getVtyLineConfig?.().upsert({
-        first: range.first, last: range.last, loginTimeoutSeconds: secondes,
-      });
-      return '';
-    });
-    t.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
-      if (args.length === 0) return '% Incomplete command.';
-      if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      const range = this.selectedVtyRange;
-      if (!range) {
-        if (this.selectedConsoleLine != null) {
-          this.consoleLineExecTimeoutMin = parseInt(args[0], 10);
-          this.consoleLineExecTimeoutSec = parseInt(args[1] ?? '0', 10);
+      clearExecTimeout: () => unset(['execTimeoutMinutes', 'execTimeoutSeconds']),
+      setLoginTimeout: (seconds) => {
+        const target = vty();
+        target?.config?.upsert({
+          first: target.range.first, last: target.range.last, loginTimeoutSeconds: seconds,
+        });
+      },
+      clearLoginTimeout: () => unset(['loginTimeoutSeconds']),
+      setAccessClass: (list, direction) => {
+        const target = vty();
+        target?.config?.upsert({
+          first: target.range.first, last: target.range.last,
+          [direction === 'out' ? 'accessClassOut' : 'accessClassIn']: list,
+        });
+      },
+      clearAccessClass: (direction) => unset(
+        direction === 'in' ? ['accessClassIn']
+          : direction === 'out' ? ['accessClassOut'] : ['accessClassIn', 'accessClassOut']),
+      patch: (fields) => {
+        const target = vty();
+        target?.config?.upsert({ first: target.range.first, last: target.range.last, ...fields });
+      },
+      unset: (names) => unset(names),
+      setMethodList: (kind, service, list) => {
+        const target = vty();
+        target?.config?.upsert({
+          first: target.range.first, last: target.range.last,
+          [kind === 'accounting' ? 'accountingList' : 'authorizationList']: `${service} ${list}`,
+        });
+      },
+      removeMethodList: (kind, service) => {
+        const target = vty();
+        if (!target) return;
+        target.config?.removeMethodList(target.range.first, target.range.last, kind, service);
+      },
+      setLinePassword: (words) => {
+        const typed = words.length > 1 && (words[0] === '0' || words[0] === '7');
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            linePassword: (typed ? words.slice(1) : words).join(' '),
+            linePasswordAlgo: typed && words[0] === '7' ? 'type-7' : 'plain',
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLinePasswordEncrypted = false;
+          let rest = [...words];
+          if (rest[0] === '0') rest = rest.slice(1);
+          else if (rest[0] === '7') { this.consoleLinePasswordEncrypted = true; rest = rest.slice(1); }
+          this.consoleLinePassword = rest.join(' ');
+        }
+      },
+      clearLinePassword: () => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, linePassword: '',
+          });
+        } else if (this.selectedConsoleLine != null) this.consoleLinePassword = null;
+      },
+      setLogin: (mode, list) => {
+        const target = vty();
+        if (target) {
+          const line = target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            login: mode, ...(mode === 'aaa' ? { loginAuthList: list } : {}),
+          }) as { requiresPasswordButUnset?: () => boolean } | undefined;
+          if (mode === 'password' && line?.requiresPasswordButUnset?.()) {
+            return `% Login disabled on line vty ${target.range.first} ${target.range.last}, until 'password' is set`;
+          }
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineLogin = mode;
+          this.consoleLineLoginAuthList = mode === 'aaa' ? list ?? null : null;
         }
         return '';
-      }
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      dev._getVtyLineConfig?.().upsert({
-        first: range.first, last: range.last,
-        execTimeoutMinutes: parseInt(args[0], 10),
-        execTimeoutSeconds: parseInt(args[1] ?? '0', 10),
-      });
-      return '';
-    });
-    // `access-class <acl> {in|out}` — VTY ACL gate (§21).
-    t.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
-      this.requireLineKind('access-class');
-      const range = this.selectedVtyRange;
-      if (!range) return '';
-      if (!args[0] || !args[1]) return '% Incomplete command.';
-      const dir = args[1].toLowerCase();
-      if (dir !== 'in' && dir !== 'out') return CISCO_ERRORS.INVALID_INPUT;
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
-      dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
-      return '';
-    });
-    // `transport input {all|ssh|telnet|none}` — the only line directive
-    // we *do* react to today, because the sshd dispatch needs to know
-    // whether SSH is administratively allowed on the VTY. Anything we
-    // don't recognise is accepted silently, matching real IOS.
-    t.registerGreedy('transport', 'transport input/output', (args) => {
-      const dev = this.d() as unknown as {
-        _setVtyTransportInput?: (
-          t: 'ssh' | 'telnet' | 'all' | 'none',
-          range?: { first: number; last: number },
-        ) => void;
-      };
-      const dir = args[0]?.toLowerCase();
-      if (!dir) return CISCO_ERRORS.INCOMPLETE;
-      // `preferred` existe sur IOS et ne s'applique qu'aux connexions
-      // sortantes d'un serveur de terminaux : il est accepté et
-      // n'entraîne rien ici, mais il est refusé plutôt que stocké
-      // inerte, faute de quoi l'aide promettrait un réglage sans effet.
-      if (dir !== 'input' && dir !== 'output') return CISCO_ERRORS.INVALID_INPUT;
-      const proto = (args[1] ?? '').toLowerCase();
-      if (!proto) return '% Incomplete command.';
-      if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      if (dir !== 'input') return '';
-      if (this.selectedAuxLine != null) {
-        this.auxLineTransportInput = proto;
-        return '';
-      }
-      if (typeof dev._setVtyTransportInput === 'function') {
-        dev._setVtyTransportInput(proto, this.selectedVtyRange ?? undefined);
-      }
-      return '';
-    });
-  }
-
-  private vtyUnsetFields(
-    sub: string, args: readonly string[],
-  ): ReadonlyArray<'execTimeoutMinutes' | 'execTimeoutSeconds' | 'accessClassIn' | 'accessClassOut'
-    | 'sessionTimeoutMinutes' | 'privilege' | 'loginTimeoutSeconds' | 'rotaryGroup'> | null {
-    if (sub === 'exec-timeout') return ['execTimeoutMinutes', 'execTimeoutSeconds'];
-    if (sub === 'access-class') {
-      const direction = args[args.length - 1]?.toLowerCase();
-      if (direction === 'in') return ['accessClassIn'];
-      if (direction === 'out') return ['accessClassOut'];
-      return ['accessClassIn', 'accessClassOut'];
-    }
-    if (sub === 'session-timeout') return ['sessionTimeoutMinutes'];
-    if (sub === 'privilege') return ['privilege'];
-    if (sub === 'login-timeout') return ['loginTimeoutSeconds'];
-    if (sub === 'rotary') return ['rotaryGroup'];
-    return null;
-  }
-
-  private registerLineCommands(t: CommandTrie): void {
-    this.registerLineTransportCommands(t);
-    /*
-     * Trois mots-cles de ce mode ne SONT PAS des commandes : ils
-     * ouvrent une famille. `transport` demande une direction,
-     * `accounting` et `authorization` une sorte, et chacune sa liste de
-     * methodes. Les trois annoncaient `<cr>` et refusaient ensuite —
-     * ils gouvernent pourtant qui entre par cette ligne, donc valider
-     * sur la promesse de `?` laissait croire a une regle d'acces posee.
-     */
-    for (const kw of ['transport', 'accounting', 'authorization']) {
-      t.requireArgs(kw, 1);
-    }
-    for (const kw of ['login', 'password',
-      'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
-      'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
-      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec',
-      'absolute-timeout', 'escape-character']) {
-      t.registerGreedy(kw, `line ${kw}`, (args, raw) => {
-        this.requireLineKind(kw);
-        const range = this.selectedVtyRange;
-        if (!range) {
-          if (this.selectedAuxLine != null) {
-            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
-            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
-            return '';
-          }
-          if (this.selectedConsoleLine == null) return '';
-          if (kw === 'password') {
-            if (!args[0]) return '% Incomplete command.';
-            let pwArgs = [...args];
-            this.consoleLinePasswordEncrypted = false;
-            if (pwArgs[0] === '0') pwArgs = pwArgs.slice(1);
-            else if (pwArgs[0] === '7') { this.consoleLinePasswordEncrypted = true; pwArgs = pwArgs.slice(1); }
-            this.consoleLinePassword = pwArgs.join(' ');
-            return '';
-          }
-          if (kw === 'login') {
-            const sub = args[0]?.toLowerCase();
-            if (sub === 'local') { this.consoleLineLogin = 'local'; this.consoleLineLoginAuthList = null; return ''; }
-            if (sub === 'authentication') {
-              if (!args[1]) return '% Incomplete command.';
-              this.consoleLineLogin = 'aaa';
-              this.consoleLineLoginAuthList = args[1];
-              return '';
-            }
-            this.consoleLineLogin = 'password';
-            this.consoleLineLoginAuthList = null;
-            return '';
-          }
-          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
-            this.consoleLineLoggingSynchronous = true;
-            return '';
-          }
-          if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-            const lvl = parseInt(args[1], 10);
-            if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-              return CISCO_ERRORS.INVALID_INPUT;
-            }
-            this.consolePrivilegeLevel(lvl);
-            return '';
-          }
-          if (kw === 'history') {
-            if ((args[0] ?? '').toLowerCase() !== 'size') return CISCO_ERRORS.INVALID_INPUT;
-            const n = parseInt(args[1] ?? '', 10);
-            if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
-            this.consoleLineHistorySize = n;
-            this.consoleLineHistoryEnabled = true;
-            this.terminalHistorySize = n;
-            this.terminalHistoryEnabled = n > 0;
-            return '';
-          }
-          if (kw === 'no') {
-            const sub = args[0]?.toLowerCase();
-            if (sub === 'history') {
-              this.consoleLineHistoryEnabled = false;
-              this.consoleLineHistorySize = null;
-              this.terminalHistorySize = 0;
-              this.terminalHistoryEnabled = false;
-              return '';
-            }
-            if (sub === 'login') {
-              this.consoleLineLoginAuthList = null;
-              if (args[1]?.toLowerCase() === 'local') {
-                this.consoleLineLogin = null;
-              } else {
-                this.consoleLineLogin = 'none';
-              }
-              return '';
-            }
-            if (sub === 'password') { this.consoleLinePassword = null; return ''; }
-            if (sub === 'privilege') { this.consolePrivilegeLevel(null); return ''; }
-            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
-          }
-          return '';
+      },
+      clearLogin: (local) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, login: 'none',
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineLoginAuthList = null;
+          this.consoleLineLogin = local ? null : 'none';
         }
-        if (kw === 'password' && !args[0]) return '% Incomplete command.';
-        const dev = this.d() as unknown as {
-          _getVtyLineConfig?: () => {
-            upsert: (p: object) => { requiresPasswordButUnset?: () => boolean };
-            unset: (first: number, last: number, names: readonly string[]) => unknown;
-          };
-        };
-        const update: Record<string, unknown> = { first: range.first, last: range.last };
-        if (kw === 'login') {
-          // bare `login` → authenticate with the line password; `login local`
-          // → local user DB; `login authentication …` → AAA.
-          const sub = args[0]?.toLowerCase();
-          if (sub === 'authentication') {
-            if (args[1] === undefined) throw new CliIncomplete();
-            if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
-            update.login = 'aaa';
-            update.loginAuthList = args[1];
+      },
+      setTransport: (direction, protocol) => {
+        const proto = protocol as 'ssh' | 'telnet' | 'all' | 'none';
+        const target = vty();
+        if (target) {
+          if (direction === 'input') {
+            (this.d() as unknown as {
+              _setVtyTransportInput?: (
+                t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number },
+              ) => void;
+            })._setVtyTransportInput?.(proto, target.range);
           } else {
-            update.login = sub === 'local' ? 'local' : 'password';
+            target.config?.upsert({
+              first: target.range.first, last: target.range.last, transportOutput: proto,
+            });
           }
-        } else if (kw === 'password') {
-          // `password [0|7] <mot>`. Le chiffre de type n'est un type que
-          // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
-          // (`args.slice(1)`), donc `password mon mot` rangeait `mot` — le
-          // premier mot du mot de passe disparaissait — et la forme
-          // `password 7 <chiffre>` rangeait le chiffre comme s'il etait le
-          // texte en clair, sans garder l'algorithme.
-          if (args[0] === '0' && args.length > 1) {
-            update.linePassword = args.slice(1).join(' ');
-            update.linePasswordAlgo = 'plain';
-          } else if (args[0] === '7' && args.length > 1) {
-            update.linePassword = args.slice(1).join(' ');
-            update.linePasswordAlgo = 'type-7';
-          } else {
-            update.linePassword = args.join(' ');
-            update.linePasswordAlgo = 'plain';
-          }
-        } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
-          update.loggingSynchronous = true;
-        } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-          update.privilege = parseInt(args[1], 10);
-        } else if (kw === 'session-timeout' && args[0]) {
-          update.sessionTimeoutMinutes = parseInt(args[0], 10);
-        } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
-          update.historySize = parseInt(args[1], 10);
-          update.historyEnabled = true;
-        } else if (kw === 'absolute-timeout' && args[0]) {
-          // `absolute-timeout <minutes>` : la duree MAXIMALE d'une
-          // session, activite comprise. `exec-timeout` ne borne que
-          // l'inactivite, donc un operateur qui tape sans arret n'etait
-          // jamais deconnecte — ce que cette commande existe pour
-          // empecher. Elle etait refusee.
-          const min = parseInt(args[0], 10);
-          if (!Number.isFinite(min) || min < 0) return CISCO_ERRORS.INVALID_INPUT;
-          update.absoluteTimeoutMinutes = min;
-        } else if (kw === 'escape-character' && args[0]) {
-          // `escape-character {break | <ascii> | default | none | soft}`.
-          const v = args[0].toLowerCase();
-          if (v === 'break' || v === 'default' || v === 'none' || v === 'soft') {
-            update.escapeCharacter = v;
-          } else {
-            const code = parseInt(args[0], 10);
-            if (!Number.isFinite(code) || code < 0 || code > 255) return CISCO_ERRORS.INVALID_INPUT;
-            update.escapeCharacter = String(code);
-          }
-        } else if (kw === 'length' && args[0]) {
-          update.terminalLength = parseInt(args[0], 10);
-        } else if (kw === 'width' && args[0]) {
-          update.terminalWidth = parseInt(args[0], 10);
-        } else if (kw === 'autocommand') {
-          update.autocommand = args.join(' ');
-        } else if (kw === 'motd-banner') {
-          update.motdBannerSuppressed = false;
-        } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
-          update.execBannerSuppressed = false;
-        } else if (kw === 'authorization' || kw === 'accounting') {
-          const verdict = parseLineMethodList(args, suitesDeLigne(kw));
-          if ('incomplete' in verdict) throw new CliIncomplete();
-          if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
-          if (kw === 'authorization') update.authorizationList = verdict.tail;
-          else update.accountingList = verdict.tail;
-        } else if (kw === 'speed' && args[0]) {
-          update.speedBaud = parseInt(args[0], 10);
-        } else if (kw === 'stopbits' && args[0]) {
-          update.stopbits = parseInt(args[0], 10);
-        } else if (kw === 'rotary' && args[0]) {
-          update.rotaryGroup = parseInt(args[0], 10);
-        } else if (kw === 'no' && args.length > 0) {
-          const sub = args[0]?.toLowerCase();
-          // `no password` clears the line secret (empty string → explicitly
-          // unset, distinct from "never configured"); `no login` disables auth.
-          if (sub === 'password') update.linePassword = '';
-          else if (sub === 'login') update.login = 'none';
-          // `no history` COUPE l'historique ; ce n'est pas
-          // `history size 0`, qui en demande un de taille nulle.
-          else if (sub === 'history' && args.length === 1) update.historyEnabled = false;
-          else if (sub === 'absolute-timeout') update.absoluteTimeoutMinutes = 0;
-          else if (sub === 'escape-character') update.escapeCharacter = 'default';
-          else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
-          else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
-          else if (sub === 'autocommand') update.autocommand = '';
-          else {
-            const unsets = this.vtyUnsetFields(sub, args);
-            if (unsets !== null) {
-              dev._getVtyLineConfig?.().unset(range.first, range.last, unsets);
-              (this.d() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
-            }
-          }
-          update.removed = (raw ?? `no ${args.join(' ')}`).trim();
+        } else if (this.selectedAuxLine != null) {
+          if (direction === 'input') this.auxLineTransportInput = proto;
+          else this.auxLineTransportOutput = proto;
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleTransport.set(direction, proto);
         }
-        const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
-        // Bare `login` with no line password configured is inert on real IOS —
-        // the line refuses incoming sessions until a password is set. Echo the
-        // warning so operators (and the simulated incoming-VTY verdict) agree.
-        if (kw === 'login' && update.login === 'password' && line?.requiresPasswordButUnset?.()) {
-          return `% Login disabled on line vty ${range.first} ${range.last}, until 'password' is set`;
+      },
+      clearTransport: (direction) => {
+        if (this.selectedVtyRange) {
+          unset([direction === 'input' ? 'transportInput' : 'transportOutput']);
+        } else if (this.selectedAuxLine != null) {
+          if (direction === 'input') this.auxLineTransportInput = null;
+          else this.auxLineTransportOutput = null;
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleTransport.delete(direction);
         }
-        return '';
-      });
-    }
+      },
+      setSerial: (name, value) => {
+        const store = this.serialStoreForSelectedLine();
+        store?.set(name, value);
+      },
+      clearSerial: (name) => {
+        this.serialStoreForSelectedLine()?.delete(name);
+      },
+      setAuxExec: (enabled) => {
+        if (this.selectedAuxLine != null) this.auxLineNoExec = !enabled;
+      },
+      setHistorySize: (size) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last,
+            historySize: size, historyEnabled: true,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineHistorySize = size;
+          this.consoleLineHistoryEnabled = true;
+          this.terminalHistorySize = size;
+          this.terminalHistoryEnabled = size > 0;
+        }
+      },
+      disableHistory: () => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, historyEnabled: false,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineHistoryEnabled = false;
+          this.consoleLineHistorySize = null;
+          this.terminalHistorySize = 0;
+          this.terminalHistoryEnabled = false;
+        }
+      },
+      setPrivilege: (level) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, privilege: level,
+          });
+        } else if (this.selectedConsoleLine != null) this.consolePrivilegeLevel(level);
+      },
+      clearPrivilege: () => {
+        if (this.selectedVtyRange) unset(['privilege']);
+        else if (this.selectedConsoleLine != null) this.consolePrivilegeLevel(null);
+      },
+      setLoggingSynchronous: (on) => {
+        const target = vty();
+        if (target) {
+          target.config?.upsert({
+            first: target.range.first, last: target.range.last, loggingSynchronous: on,
+          });
+        } else if (this.selectedConsoleLine != null) {
+          this.consoleLineLoggingSynchronous = on;
+        }
+      },
+    };
   }
 
   protected showSocleSpecs(): CommandSpec[] {
@@ -5811,7 +5264,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...identite,
       ...administration,
       ...filtres,
-      ...this.lineSpecs(),
+      ...lineSettingsFamily(() => this.lineSettingsHost()),
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
       vue(['show', 'ntp', 'packets'], 'NTP packet statistics', 1,
@@ -6219,6 +5672,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.ntpInterfaceSpecs(),
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
+      ...summerTimeFamily(() => ({ apply: (words, negate) => this.applyClock(words, negate) })),
       ...this.loginSpecs(),
       ...this.clearSpecs(),
       ...this.writeEraseSpecs(),
@@ -6248,7 +5702,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...ipSshSpecs(() => this.ipSshHost()),
       ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
       ...ikePubkeySpecs(() => this.ikePubkeyHost()),
-      ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
@@ -6341,36 +5794,80 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * seconde fois leverait un doublon.
    */
   protected sharedShowSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerCommonShowCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 1,
-        modesFor: (path) => PRIVILEGED_EXEC_ONLY.has(path) ? ['privileged'] : undefined,
-        skip: (path) => !SHOW_PARTAGEES.has(path),
-        argumentFor: (path) => SHARED_SHOW_ARGUMENTS[path],
-        keywordsFor: toutesLesSuites,
+    return sharedShowFamily(() => this.sharedShowHost());
+  }
+
+  private sharedShowHost(): SharedShowHost {
+    return {
+      errorCounters: () => renderInterfaceErrorCounters(this.d().getPortNames().map((name) => {
+        const c = this.d().getPort(name)?.getCounters();
+        const inErr = c?.errorsIn ?? 0;
+        return {
+          port: ciscoShortInterfaceName(name), alignErr: 0, fcsErr: inErr,
+          xmitErr: c?.errorsOut ?? 0, rcvErr: inErr, underSize: 0, outDiscards: 0,
+        };
+      })),
+      providesMacAddressTable: () =>
+        this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView(),
+      macAddressTable: () =>
+        ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'),
+      cdp: (args) => showCdp(this.cs(), args.join(' '), this.configState.isEnabled('cdp')),
+      lldp: (args) => showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp')),
+      snmp: () => showSnmp(this.cs(), this.getChassisProfile()),
+      parserView: (args) => {
+        const sec = getSecurityConfig(this.d());
+        if (args.length === 0) {
+          return `Current view is '${this.activeParserView ?? 'root'}'`;
+        }
+        if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
+        if (sec.parserViews.size === 0) return 'No views are configured';
+        const lignes = ['Views/SuperViews Present in System:'];
+        for (const v of sec.parserViews.values()) {
+          lignes.push(v.superview ? `${v.name} *` : v.name);
+        }
+        lignes.push('-------(*) represent superview-------');
+        return lignes.join('\n');
       },
-    );
+      hosts: () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]),
+      dnsStatistics: () =>
+        showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]),
+      hasRedundancy: () => this.hasSwitchingHardware(),
+      redundancy: () => showRedundancy(),
+      aaa: (args) => showAaa(getSecurityConfig(this.d() as unknown as Router), args.join(' ')),
+    };
   }
 
   protected sessionSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerOutgoingSessionCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 1,
-        argumentFor: (path) => SESSION_ARGUMENTS[path],
-      },
-    );
+    return outgoingSessionFamily(() => this.outgoingSessionHost());
   }
 
-  protected fileSystemSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerFileSystemCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 1,
-        argumentFor: (path) => FILESYSTEM_ARGUMENTS[path],
+  private outgoingSessionHost(): OutgoingSessionHost {
+    return {
+      list: () => renderSessions(this.outgoingSessions),
+      disconnect: (args) => {
+        if (!args[0]) {
+          const last = this.outgoingSessions.list().slice(-1)[0];
+          if (!last) return '% No connections open';
+          this.outgoingSessions.close(last.conn);
+          return '';
+        }
+        const n = parseInt(args[0], 10);
+        if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
+        const cible = this.outgoingSessions.get(n)!;
+        this.outgoingSessions.close(n);
+        return `Closing connection to ${cible.host} [confirm]`;
       },
-    );
+      resume: (args) => {
+        const list = this.outgoingSessions.list();
+        const n = args[0] ? parseInt(args[0], 10) : (list.slice(-1)[0]?.conn ?? NaN);
+        const s = this.outgoingSessions.get(n);
+        if (!s) return '% No connection open';
+        this.outgoingSessions.touch(n);
+        return `[Resuming connection ${n} to ${s.host} ... ]`;
+      },
+      ssh: () => '% Password: required. Outbound SSH asks for it through its interaction prompt.',
+      telnet: (args) => this.runOutboundTelnet([...args]),
+    };
   }
 
   protected identitySubmodeContext(): CiscoSecurityShellContext | null {
@@ -6378,28 +5875,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected httpServerSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerHttpServerOn(collector as unknown as CommandTrie),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        argumentFor: (path) => HTTP_ARGUMENTS[path],
-      },
-    );
+    return httpServerFamily(() => this.httpServerHost());
   }
 
   protected dnsConfigSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => registerCiscoDnsCommands(
-        collector as unknown as CommandTrie, this.dnsCommandContext()),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        argumentFor: (path) => DNS_ARGUMENTS[path],
-        keywordsFor: (path) => /^ip domain[- ]lookup$/.test(path)
-          ? DOMAIN_LOOKUP_KEYWORDS : undefined,
-      },
-    );
+    return ciscoDnsConfigSpecs(this.dnsCommandContext());
   }
 
   protected identitySubmodeSpecs(): readonly CommandSpec[] {
@@ -6477,15 +5957,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         modes: ['config'], minPrivilege: 15,
         run: dhcp(true), undo: dhcp(false),
       },
-      ...specsFromTrieRegistrations(
-        (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
-        {
-          modes: ['config'], minPrivilege: 15,
-          undoFromNegatedPaths: true,
-          skip: (path) => !SERVICES_A_MOTEUR.has(path.replace(/^no /, '')),
-          argumentFor: (path) => SERVICE_PLACES[path.replace(/^no /, '')],
-        },
-      ),
       ...(identite === null ? [] : specsFromTrieRegistrations(
         (collector) =>
           buildIdentityConfigCommands(collector as unknown as CommandTrie, identite),
@@ -6593,36 +6064,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
-  /**
-   * `show archive`, son journal, son diff, et `archive config`.
-   *
-   * Elles etaient deja declarees UNE fois pour les deux plateformes —
-   * `registerArchiveExecCommands` est appele ici et nulle part
-   * ailleurs — donc la migration ne referme aucun doublon ; elle donne
-   * a la famille ses modes et ses places declarees.
-   */
-  private registerArchiveExecOn(trie: CommandTrie): void {
-    registerArchiveExecCommands(
-      trie,
-      () => this.archiveService(),
-      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
-      (url) => this.fs().read(url),
-      () => this.readStartupConfig(),
-      (texte) => {
-        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
-        // zéro avant que le fichier ne soit appliqué, sinon ce que la
-        // configuration courante porte en trop y resterait — ce qui est
-        // précisément la différence avec `copy`.
-        const dev = this.d() as unknown as {
-          _resetConfigurableStateForReload?: () => void;
-          _applyConfigText?: (t: string) => void;
-        };
-        dev._resetConfigurableStateForReload?.();
-        dev._applyConfigText?.(texte);
-        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
-          ._noteConfigChange?.(this.configSessionLabel);
-      },
-    );
+  private replaceRunningConfig(texte: string): void {
+    const dev = this.d() as unknown as {
+      _resetConfigurableStateForReload?: () => void;
+      _applyConfigText?: (t: string) => void;
+    };
+    dev._resetConfigurableStateForReload?.();
+    dev._applyConfigText?.(texte);
+    (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
+      ._noteConfigChange?.(this.configSessionLabel);
   }
 
   /**
@@ -7414,87 +6864,71 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected archiveExecSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerArchiveExecOn(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 15,
-        skip: (path) => !ARCHIVE_EXEC.has(path),
-        argumentFor: (path) => ARCHIVE_EXEC_PLACES[path],
-      },
-    );
+    return archiveExecSpecs(() => ({
+      archive: () => this.archiveService(),
+      runningConfig: () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+      readFile: (url) => this.fs().read(url),
+      readStartup: () => this.readStartupConfig(),
+      apply: (text) => this.replaceRunningConfig(text),
+    }));
   }
 
   protected arpSpecs(): CommandSpec[] {
-    const provider = () => this.d();
-    return [
-      ...specsFromTrieRegistrations(
-        (collector) =>
-          registerArpShowCommands(collector as unknown as CommandTrie, provider),
-        {
-          modes: ['user', 'privileged'], minPrivilege: 1,
-          restDescriptionFor: () => 'ARP entry address or interface',
-          restLiteralFor: () => 'A.B.C.D',
-        },
-      ),
-      ...specsFromTrieRegistrations(
-        (collector) =>
-          registerArpConfigCommands(collector as unknown as CommandTrie, provider),
-        {
-          modes: ['config'], minPrivilege: 15,
-          undoFromNegatedPaths: true,
-          argumentFor: (path) => ({
-            name: 'reste', type: 'REST', pattern: QUATUOR_POINTE,
-            restMinWords: path === 'no arp' ? 1 : 2,
-            description: 'IP address of the ARP entry', literal: 'A.B.C.D',
-          }),
-        },
-      ),
-    ];
-  }
-
-  protected lineEntrySpecs(): CommandSpec[] {
-    const places = (max: number): ArgumentSpec[] => [
-      { name: 'premiere', type: 'INT', range: [0, max], description: 'First Line number' },
-      { name: 'derniere', type: 'INT', range: [0, max],
-        description: 'Last Line number', optional: true },
-    ];
-    /*
-     * `con` est l'abreviation de `console` et non une cinquieme sorte :
-     * le socle la resout par prefixe, donc seule la forme canonique se
-     * declare — la declarer deux fois rendrait `line ?` avec une ligne
-     * de trop, que `?` d'IOS n'ecrit pas.
-     */
-    const parCanonique = new Map(
-      Object.values(SORTES_DE_LIGNE).map(sorte => [sorte.canonique, sorte]));
-    const sortes = [...parCanonique.values()]
-      .sort((a, b) => a.canonique.localeCompare(b.canonique))
-      .map(sorte => ({
-        keyword: sorte.canonique, description: sorte.description,
-        argument: places(sorte.max),
-      }));
-
-    return specsFromTrieRegistrations(
-      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['config', 'config-line'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => path !== 'line' && path !== 'no line',
-        keywordsFor: () => sortes,
-      },
-    );
+    return ciscoArpSpecs(() => this.d());
   }
 
   protected identityBootSpecs(): CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => !IDENTITE_ET_AMORCAGE.has(path.replace(/^no /, '')),
-        argumentFor: (path) => IDENTITE_PLACES[path],
-        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE),
+    const kinds = [...new Map(
+      Object.values(SORTES_DE_LIGNE).map((sorte) => [sorte.canonique, sorte])).values()]
+      .sort((a, b) => a.canonique.localeCompare(b.canonique))
+      .map((sorte) => ({
+        keyword: sorte.canonique, max: sorte.max, description: sorte.description,
+      }));
+    return identityBootFamily(() => this.identityBootHost(), kinds);
+  }
+
+  private identityBootHost(): IdentityBootHost {
+    return {
+      addBootSystem: (image) => this.fs().addBootSystem(image),
+      removeBootSystem: (image) => this.fs().removeBootSystem(image),
+      hasConfigRegister: () => this.hasConfigRegister(),
+      setEnableBreak: (on) => this.fs().setEnableBreak(on),
+      setManualBoot: (on) => this.fs().setManualBoot(on),
+      setConfigRegister: (value) => this.fs().setConfigRegister(value),
+      setHostname: (name) => this.d()._setHostnameInternal(name),
+      resetHostname: () => {
+        const dev = this.d();
+        dev._setHostnameInternal(dev.defaultHostname());
       },
-    );
+      enterLine: (kind, first, last) => {
+        this.mode = 'config-line';
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
+        this.selectedAuxLine = null;
+        if (kind === 'vty' || kind === 'tty') {
+          this.selectedVtyRange = { first, last };
+          const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+          dev._getVtyLineConfig?.().upsert({ first, last });
+        } else if (kind === 'console') {
+          this.selectedConsoleLine = first;
+        } else {
+          this.selectedAuxLine = first;
+        }
+      },
+      removeLine: (kind, first, last) => {
+        if (kind === 'console' || kind === 'aux') {
+          return `% Can't delete ${kind === 'aux' ? 'AUX' : 'console'} line`;
+        }
+        const dev = this.d() as unknown as {
+          _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
+        };
+        dev._getVtyLineConfig?.().remove(first, last);
+        if (this.selectedVtyRange?.first === first && this.selectedVtyRange?.last === last) {
+          this.selectedVtyRange = null;
+        }
+        return '';
+      },
+    };
   }
 
   protected hardeningSpecs(): CommandSpec[] {
@@ -9067,7 +8501,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
         const queue = this.lireQueueAssociationNtp(a, args);
-        if (queue.refus !== undefined) throw new CliInvalidInput({ token: queue.refus });
         if (a[0] === 'server') {
           agent.addServer(resolved, queue.prefer, queue.keyId, 'ntp', queue.options);
         } else {
@@ -9145,33 +8578,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const queue: QueueAssociationNtp = { prefer: false, options: {} };
     for (let i = 2; i < minuscules.length; i++) {
       const mot = minuscules[i];
-      if (mot === 'prefer') { queue.prefer = true; continue; }
-      if (mot === 'iburst' || mot === 'burst') {
-        queue.options = { ...queue.options, [mot]: true };
-        continue;
-      }
       const valeur = minuscules[i + 1];
-      if (mot === 'minpoll' || mot === 'maxpoll') {
-        if (valeur === undefined || !/^\d+$/.test(valeur) || Number(valeur) < 4 || Number(valeur) > 17) {
-          return { ...queue, refus: valeur ?? mot };
-        }
+      if (mot === 'prefer') queue.prefer = true;
+      else if (mot === 'iburst' || mot === 'burst') queue.options = { ...queue.options, [mot]: true };
+      else if (mot === 'minpoll' || mot === 'maxpoll') {
         queue.options = { ...queue.options, [mot]: Number(valeur) };
         i++;
-        continue;
-      }
-      if (mot === 'key') {
-        if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
+      } else if (mot === 'key') {
         queue.keyId = Number(valeur);
+        i++;
       } else if (mot === 'version') {
-        if (!isNtpVersion(valeur)) return { ...queue, refus: valeur ?? mot };
         queue.options = { ...queue.options, version: Number(valeur) as NtpVersion };
+        i++;
       } else if (mot === 'source') {
-        if (!bruts[i + 1]) return { ...queue, refus: mot };
         queue.options = { ...queue.options, sourceInterface: bruts[i + 1] };
-      } else {
-        return { ...queue, refus: bruts[i] ?? mot };
+        i++;
       }
-      i++;
     }
     return queue;
   }
@@ -9579,35 +9001,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Shared Command Registration ───────────────────────────────
 
-  private registerOutgoingSessionCommands(trie: CommandTrie): void {
-    trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
-    trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
-      if (!args[0]) {
-        const last = this.outgoingSessions.list().slice(-1)[0];
-        if (!last) return '% No connections open';
-        this.outgoingSessions.close(last.conn);
-        return '';
-      }
-      const n = parseInt(args[0], 10);
-      if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
-      const cible = this.outgoingSessions.get(n)!;
-      this.outgoingSessions.close(n);
-      return `Closing connection to ${cible.host} [confirm]`;
-    });
-    trie.registerGreedy('resume', 'Resume an outgoing connection', (args) => {
-      const list = this.outgoingSessions.list();
-      const n = args[0] ? parseInt(args[0], 10) : (list.slice(-1)[0]?.conn ?? NaN);
-      const s = this.outgoingSessions.get(n);
-      if (!s) return '% No connection open';
-      this.outgoingSessions.touch(n);
-      return `[Resuming connection ${n} to ${s.host} ... ]`;
-    });
-    trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
-      () => '% Password: required. Outbound SSH asks for it through its interaction prompt.');
-    trie.registerGreedy('telnet', 'Open a Telnet session',
-      (args) => this.runOutboundTelnet(args));
-  }
-
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
   private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
     const trie = scopedTrie(target, scope);
@@ -9616,40 +9009,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Elle repondait `% Invalid input`. Le rendu est le meme parce que
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
-    this.registerOutgoingSessionCommands(target);
-    trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () =>
-      renderInterfaceErrorCounters(this.d().getPortNames().map((name) => {
-        const c = this.d().getPort(name)?.getCounters();
-        const inErr = c?.errorsIn ?? 0;
-        return {
-          port: ciscoShortInterfaceName(name), alignErr: 0, fcsErr: inErr,
-          xmitErr: c?.errorsOut ?? 0, rcvErr: inErr, underSize: 0, outDiscards: 0,
-        };
-      })));
-    this.registerFileSystemCommands(target);
-    // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
-    // au demarrage — n'avait aucune commande pour la relire : elle
-    // defilait une fois et disparaissait. C'est une AUTRE table que
-    // celle de `show license`, qui liste les licences par
-    // fonctionnalite ; les confondre ferait croire qu'un routeur sans
-    // `uc` n'a pas de ligne `uc`. Meme source que le demarrage.
-    // `getMacTable` — minuscule — n'est défini sur AUCUN appareil : celui
-    // que `Switch` porte s'appelle `getMACTable()`. Le lecteur rendait
-    // donc `undefined`, et cette vue répondait « No entries » quoi que le
-    // commutateur ait appris — y compris après un DORA et un ping
-    // réussis, avec deux entrées bien présentes dans sa table. Exactement
-    // le défaut de `_getRunningConfigText` décrit trois lignes plus bas,
-    // dans ce même fichier.
-    //
-    // Pire : cette inscription MASQUAIT celle de `CiscoSwitchShell`, qui
-    // est complète (filtres `dynamic`/`static`/`vlan`/`interface`, tri,
-    // colonnes). Un commutateur avait donc une vue juste que personne
-    // n'atteignait. Elle n'est désormais posée que si l'appareil n'en
-    // fournit pas de meilleure.
-    if (this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView()) {
-      trie.registerGreedy('show mac address-table', 'Display MAC address table', () =>
-        ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'));
-    }
     // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
     // que lu, ici et à deux autres endroits. Mesuré avant correction,
     // `show running-config all` rendait donc « Building configuration... »
@@ -9673,52 +9032,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // tous le tableau des associations. Chaque sous-commande est
     // desormais un chemin reel, et ce que la plateforme n'a pas est
     // refuse comme IOS refuse (meme defaut que `display vrrp`, lot V15).
-    trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
-      showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')), [
-      { keyword: 'neighbors', description: 'CDP neighbor entries' },
-      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
-      { keyword: 'interface', description: 'CDP interface status and configuration' },
-      { keyword: 'traffic',   description: 'CDP statistics' },
-    ]);
-    trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
-      showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')), [
-      { keyword: 'neighbors', description: 'LLDP neighbor entries' },
-      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
-      { keyword: 'errors',    description: 'LLDP computational errors and overflows' },
-      { keyword: 'interface', description: 'LLDP interface status and configuration' },
-      { keyword: 'local-info', description: 'Local LLDP information' },
-      { keyword: 'traffic',   description: 'LLDP statistics' },
-    ]);
-    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
-    /**
-     * `show parser view [all]`.
-     *
-     * Sans argument : la vue COURANTE de cette session. Avec `all` : les
-     * vues declarees sur l'equipement. Deux questions differentes, deux
-     * reponses -- c'est le defaut qu'on vient de refermer sur `show aaa`.
-     */
-    trie.registerGreedy('show parser view', 'Display CLI view information', (args) => {
-      const sec = getSecurityConfig(this.d());
-      if (args.length === 0) {
-        return `Current view is '${this.activeParserView ?? 'root'}'`;
-      }
-      if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
-      if (sec.parserViews.size === 0) return 'No views are configured';
-      // L'etoile est la SEULE information que cette vue apporte de plus
-      // que la configuration : laquelle des vues declarees est une
-      // supervue. Sans elle et sans sa legende, la commande recopie une
-      // liste de noms.
-      const lignes = ['Views/SuperViews Present in System:'];
-      for (const v of sec.parserViews.values()) {
-        lignes.push(v.superview ? `${v.name} *` : v.name);
-      }
-      lignes.push('-------(*) represent superview-------');
-      return lignes.join('\n');
-    });
-    // Le nœud intermédiaire porte sa description, APRÈS l'enregistrement
-    // qui le crée : `describeNode` sort en silence sur un nœud absent.
-    trie.describeNode('show parser', 'Display parser information');
-
     /*
      * `show ip http server status` et `... all` LISENT le service, elles
      * ne récitent pas un texte : le port, la méthode d'authentification
@@ -9728,18 +9041,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * aucune connexion n'est retenue, aucun module n'est déclaré — donc
      * `all` rend l'état et le dit, plutôt que d'inventer deux tableaux.
      */
-    trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
-    registerCiscoDnsExecCommands(target, this.dnsCommandContext());
-    trie.registerGreedy('show ip dns statistics', 'Display DNS server statistics', () =>
-      showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]));
-    if (this.hasSwitchingHardware()) {
-      trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
-        showRedundancy());
-    }
-    trie.registerGreedy('show aaa', 'Display AAA state', (a) => {
-      const dev = this.d() as unknown as Router;
-      return showAaa(getSecurityConfig(dev), a.join(' '));
-    });
   }
 
   /** Map a CLI alias mode keyword to the repository's AliasMode. */
@@ -9962,14 +9263,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerCommonPrivilegedCommands(): void {
 
-    // `archive config` / `show archive` — enregistrées ici, donc pour le
-    // routeur ET le switch, parce qu'un Catalyst connaît cette famille
-    // tout autant qu'un routeur et qu'elle était refusée en bloc sur le
-    // switch. Un équipement sans service d'archivage rend le message de
-    // table vide plutôt que de planter.
-    this.registerArchiveExecOn(this.privilegedTrie);
-
-
     this.privilegedTrie.registerSuggestions('write', [
       { keyword: 'memory',   description: 'Write to NVRAM' },
       { keyword: 'terminal', description: 'Write to terminal (display running-config)' },
@@ -10119,6 +9412,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
+    if (isValidIPv4(cible)) return Promise.resolve(cible);
+    const svc = (appareil as {
+      getDnsService?: () => { resolve(n: string): Promise<string | null> };
+    }).getDnsService?.();
+    if (!svc) return Promise.resolve(null);
+    return svc.resolve(cible);
+  }
+
   private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {
     let user = 'admin';
     let port: string | null = null;
@@ -10141,6 +9443,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
+    const address = await this.resoudreCible(device, host);
+    if (address === null) return IOS_SSH.unresolved(host, Number(port ?? 22));
+    host = address;
     let hasSourceAddress = false;
     for (const [, p] of router._getPortsInternal()) {
       if (p.getIPAddress() && p.getIsUp()) { hasSourceAddress = true; break; }
@@ -10156,172 +9461,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       command: cmd,
       password: offeredPassword,
     });
-  }
-
-  private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {
-    // La séquence de démarrage. `config-register 0x2142` est la moitié
-    // de la récupération de mot de passe la plus enseignée du cours ;
-    // le registre est réellement stocké et son bit 0x40 réellement lu.
-    trie.registerGreedy('boot system', 'Specify system image to load', (args) => {
-      const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
-      if (!image) return '% Incomplete command.';
-      this.fs().addBootSystem(image);
-      return '';
-    });
-    trie.registerGreedy('no boot system', 'Remove a system image from the boot list', (args) => {
-      const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
-      this.fs().removeBootSystem(image || undefined);
-      return '';
-    });
-    if (!this.hasConfigRegister()) {
-      // Les deux seuls reglages d'amorcage d'un Catalyst, et les deux
-      // seuls champs de son `show boot` qu'un operateur peut changer.
-      trie.register('boot enable-break', 'Enable the Break key during boot',
-        () => { this.fs().setEnableBreak(true); return ''; });
-      trie.register('no boot enable-break', 'Disable the Break key during boot',
-        () => { this.fs().setEnableBreak(false); return ''; });
-      trie.register('boot manual', 'Boot into the boot loader instead of the image',
-        () => { this.fs().setManualBoot(true); return ''; });
-      trie.register('no boot manual', 'Boot the image automatically',
-        () => { this.fs().setManualBoot(false); return ''; });
-    }
-    if (this.hasConfigRegister()) {
-      trie.registerGreedy('config-register', 'Set configuration register', (args) => {
-        const val = args[0] ?? '';
-        if (!this.fs().setConfigRegister(val)) {
-          return '% Invalid config register value';
-        }
-        return '';
-      });
-    }
-
-    trie.registerGreedy('hostname', 'Set system hostname', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      this.d()._setHostnameInternal(args[0]);
-      return '';
-    });
-
-    trie.register('no hostname', 'Reset hostname', () => {
-      const dev = this.d();
-      dev._setHostnameInternal(dev.defaultHostname());
-      return '';
-    });
-
-    this.registerHttpServerOn(trie);
-    // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
-    // the router (CiscoOspfCommands, device-specific); only record the
-    // negation here so it's recognised on both vendors without
-    // shadowing that specific handler.
-    trie.registerGreedy('no ip routing', 'Disable IP routing', () => {
-      this.configState.set('ip routing', false);
-      return '';
-    });
-    registerCiscoDnsCommands(trie, this.dnsCommandContext());
-    /**
-     * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
-     *
-     * Deux conditions d'IOS, et ce ne sont pas des formalites : il faut
-     * `aaa new-model` (une vue est un mecanisme d'autorisation, il vit
-     * dans AAA) et il faut etre dans la vue RACINE (sans quoi une vue
-     * restreinte pourrait s'octroyer des commandes, ce qui viderait le
-     * mecanisme de son sens).
-     */
-    // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
-    // pour une seule commande finiraient par se contredire sur la même
-    // date.
-    // `username <name> [privilege N] [secret|password] <pwd>` — captures
-    // the local-user database so the sshd dispatch can validate inbound
-    // logins. Anything we don't parse is still accepted silently.
-    // `service timestamps` has its own registration above and the trie
-    // routes to the more specific one, so the second parser this handler
-    // used to carry never ran — it could only ever contradict the first.
-    // `ip ssh …` : le handler qui vivait ici ecrivait un SECOND magasin
-    // (celui du gestionnaire) que rien ne lisait pour ces champs, et il
-    // etait de toute facon ombre sur le routeur par l'enregistrement plus
-    // specifique de `CiscoSecurityCommands`. Deux magasins pour un fait,
-    // avec des defauts qui se contredisaient : il n'en reste qu'un.
-    // Le commutateur garde son propre `ip ssh version`.
-
-    // `line {console|vty|aux} …` → shared config-line sub-mode.
-    // We remember the selected VTY range so subsequent directives
-    // (exec-timeout, access-class, transport input, …) land in the
-    // right VtyLineConfig block.
-    trie.registerGreedy('line', 'Enter line configuration', (args) => {
-      const tete = analyserTeteLigne(args);
-      if ('erreur' in tete) return tete.erreur;
-
-      this.mode = 'config-line';
-      this.selectedVtyRange = null;
-      this.selectedConsoleLine = null;
-      this.selectedAuxLine = null;
-      if (tete.sorte === 'vty' || tete.sorte === 'tty') {
-        this.selectedVtyRange = { first: tete.premiere, last: tete.derniere };
-        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-        dev._getVtyLineConfig?.().upsert({ first: tete.premiere, last: tete.derniere });
-      } else if (tete.sorte === 'console') {
-        this.selectedConsoleLine = tete.premiere;
-      } else {
-        this.selectedAuxLine = tete.premiere;
-      }
-      return '';
-    });
-    /**
-     * `no line <type> <first> [<last>]` remet ces lignes a leur
-     * configuration d'usine.
-     *
-     * `no ?` offrait `line` — « Remove line configuration » — et rien ne
-     * portait ce chemin : la commande etait annoncee et refusee au
-     * caret. Ce qu'elle fait est LU sur ce que `line` ecrit : le bloc
-     * VTY est le seul etat que la configuration de ligne persiste, donc
-     * le retirer EST le retour aux defauts, et la running-config cesse
-     * de le rendre. La console et l'AUX n'ont pas de bloc a supprimer :
-     * IOS refuse d'ailleurs `no line console 0`, une ligne qu'on ne peut
-     * pas retirer d'un chassis.
-     */
-    trie.registerGreedy('no line', 'Remove line configuration', (args) => {
-      const tete = analyserTeteLigne(args);
-      if ('erreur' in tete) return tete.erreur;
-      if (tete.sorte === 'console' || tete.sorte === 'aux') {
-        return `% Can't delete ${tete.sorte === 'aux' ? 'AUX' : 'console'} line`;
-      }
-      const dev = this.d() as unknown as {
-        _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
-      };
-      dev._getVtyLineConfig?.().remove(tete.premiere, tete.derniere);
-      if (this.selectedVtyRange?.first === tete.premiere
-        && this.selectedVtyRange?.last === tete.derniere) {
-        this.selectedVtyRange = null;
-      }
-      return '';
-    });
-    // Une ligne se DESIGNE : `line` seul, comme `no line` seul, repond
-    // « Incomplete », donc ni l'un ni l'autre n'annonce `<cr>`.
-    trie.requireArgs('line', 1);
-    trie.requireArgs('no line', 1);
-
-    // Les vingt mots-clés ci-dessus partagent UN handler, et
-    // `autoContinuations` lit le corps d'un handler pour deviner ses
-    // suites : chacun des vingt se voyait donc proposer l'union des
-    // mots de tous les autres — `login ?` offrait `password`, `size`,
-    // `synchronous`… La déclaration explicite prime sur l'extraction,
-    // et chaque suite ci-dessous est celle que ce handler DISPATCHE
-    // vraiment, pas celle qu'IOS documente : annoncer une forme que la
-    // machine refuse ensuite serait le défaut inverse.
-
-    // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
-    // so show running-config can echo it back exactly.
-    /**
-     * La commande existe-t-elle dans l'arbre de ce mode ?
-     *
-     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
-     * tout : `commands configure include hostname` porte sur une commande
-     * de configuration, qui n'est dans aucun arbre exec.
-     */
-    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
-    // distinct de `exec-timeout` qui compte l'inactivite APRES la
-    // connexion. La commande d'IOS etait refusee.
-
-    // ARP config commands (shared between router and switch)
   }
 
   /**
@@ -10472,61 +9611,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Une valeur hors bornes est REFUSÉE plutôt que rognée : la ranger
    * silencieusement ferait mentir la configuration relue.
    */
-  protected registerHttpServerOn(trie: CommandTrie): void {
+  protected httpServerHost(): HttpServerHost {
     const svc = () => getHttpService(this.d());
     const sync = () => {
       const dev = this.d() as unknown as { _refreshHttpListeners?: () => void };
       dev._refreshHttpListeners?.();
     };
-
-    trie.register('ip http server', 'Enable HTTP server', () => {
-      svc()?.setEnabled(true); sync(); return '';
-    });
-    trie.register('no ip http server', 'Disable HTTP server', () => {
-      svc()?.setEnabled(false); sync(); return '';
-    });
-    trie.register('ip http secure-server', 'Enable HTTPS server', () => {
-      svc()?.setSecureEnabled(true, this.d().getHostname()); sync(); return '';
-    });
-    trie.register('no ip http secure-server', 'Disable HTTPS server', () => {
-      svc()?.setSecureEnabled(false); sync(); return '';
-    });
-
-    trie.registerGreedy('ip http port', 'HTTP server port', (args) => {
-      const port = Number(args[0]);
-      if (args.length === 0) throw new CliIncomplete();
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      svc()?.setPort(port); sync(); return '';
-    });
-    trie.registerGreedy('no ip http port', 'Restore default HTTP port', () => {
-      svc()?.setPort(80); sync(); return '';
-    });
-    trie.registerGreedy('ip http secure-port', 'HTTPS server port', (args) => {
-      const port = Number(args[0]);
-      if (args.length === 0) throw new CliIncomplete();
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      svc()?.setSecurePort(port); sync(); return '';
-    });
-
-    trie.registerGreedy('ip http authentication',
-      'Set HTTP server authentication method', (args) => {
+    return {
+      setEnabled: (on) => { svc()?.setEnabled(on); sync(); },
+      setSecureEnabled: (on) => {
+        if (on) svc()?.setSecureEnabled(true, this.d().getHostname());
+        else svc()?.setSecureEnabled(false);
+        sync();
+      },
+      setPort: (port) => { svc()?.setPort(port); sync(); },
+      setSecurePort: (port) => { svc()?.setSecurePort(port); sync(); },
+      authentication: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         const method = args[0].toLowerCase();
         if (!HTTP_AUTH_METHODS.includes(method as HttpAuthMethod)) {
           throw new CliInvalidInput({ token: args[0] });
         }
         svc()?.setAuthMethod(method as HttpAuthMethod, args[1]);
-        return '';
-      });
-    trie.registerGreedy('no ip http authentication',
-      'Restore default authentication', () => { svc()?.resetAuthMethod(); return ''; });
-
-    trie.registerGreedy('ip http max-connections',
-      'Set maximum concurrent connections', (args) => {
+      },
+      resetAuthentication: () => { svc()?.resetAuthMethod(); },
+      maxConnections: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         const n = Number(args[0]);
         if (!Number.isInteger(n)
@@ -10534,26 +9643,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           throw new CliInvalidInput({ token: args[0] });
         }
         svc()?.setMaxConnections(n);
-        return '';
-      });
-    trie.registerGreedy('no ip http max-connections',
-      'Restore default connection limit', () => { svc()?.setMaxConnections(5); return ''; });
-
-    trie.registerGreedy('ip http access-class',
-      'Restrict HTTP server access by ACL', (args) => {
+      },
+      resetMaxConnections: () => { svc()?.setMaxConnections(5); },
+      accessClass: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         // `ipv4 <nom>` est la forme longue d'IOS ; le premier mot seul est
         // la forme numérotée historique.
         const acl = args[0].toLowerCase() === 'ipv4' ? args[1] : args[0];
         if (!acl) throw new CliIncomplete();
         svc()?.setAccessClass(acl);
-        return '';
-      });
-    trie.registerGreedy('no ip http access-class',
-      'Remove HTTP access restriction', () => { svc()?.setAccessClass(null); return ''; });
-
-    trie.registerGreedy('ip http timeout-policy',
-      'Set HTTP server timeout policy', (args) => {
+      },
+      clearAccessClass: () => { svc()?.setAccessClass(null); },
+      timeoutPolicy: (args) => {
         if (args.length === 0) throw new CliIncomplete();
         // Les trois mots-clés sont obligatoires sur IOS et dans cet
         // ordre : la commande décrit une politique entière, pas trois
@@ -10572,10 +9673,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           values.push(v);
         }
         svc()?.setTimeoutPolicy({ idleSec: values[0], lifeSec: values[1], requests: values[2] });
-        return '';
-      });
-    trie.registerGreedy('no ip http timeout-policy',
-      'Restore default timeout policy', () => { svc()?.resetTimeoutPolicy(); return ''; });
+      },
+      resetTimeoutPolicy: () => { svc()?.resetTimeoutPolicy(); },
+    };
   }
 }
 

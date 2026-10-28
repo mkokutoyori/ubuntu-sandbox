@@ -18,10 +18,8 @@
  * comportement, et ne peuvent pas diverger.
  */
 
-import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { ArchiveService, ConfigLogRecord } from '../../router/archive/ArchiveService';
 import { renderTable, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
@@ -58,17 +56,27 @@ function renderConfigLog(records: readonly ConfigLogRecord[]): string {
  */
 const SANS_CHEMIN = '% Archive path not configured';
 
-/** `archive config` (EXEC privilégié) — archive la configuration courante. */
-export function registerArchiveExecCommands(
-  trie: CommandTrie, ar: ArchiveAccessor, runningConfig: () => string,
-  lireFichier: (url: string) => string | null = () => null,
-  lireStartup: () => string | null = () => null,
-  appliquer: (texte: string) => void = () => {},
-): void {
-  trie.register('show archive', 'Display archive status', () => {
+export interface ArchiveExecHost {
+  archive: ArchiveAccessor;
+  runningConfig: () => string;
+  readFile: (url: string) => string | null;
+  readStartup: () => string | null;
+  apply: (text: string) => void;
+}
+
+const EXEC_MODES = ['user', 'privileged'];
+
+export function archiveExecSpecs(host: () => ArchiveExecHost): CommandSpec[] {
+  const ar: ArchiveAccessor = () => host().archive();
+  const runningConfig = (): string => host().runningConfig();
+  const lireFichier = (url: string): string | null => host().readFile(url);
+  const lireStartup = (): string | null => host().readStartup();
+  const appliquer = (texte: string): void => host().apply(texte);
+  const showArchive = (): string => {
     const s = ar();
     return s ? s.formatShowArchive() : 'No archives configured / no revisions captured.';
-  });
+  };
+
   /*
    * `show archive config differences [<avant> [<apres>]]` — la commande
    * la plus utile de tout ce sous-systeme pour un auditeur, et elle etait
@@ -79,7 +87,7 @@ export function registerArchiveExecCommands(
    * courante : c'est la question qu'on pose le plus souvent, « qu'est-ce
    * qui a bouge depuis la derniere sauvegarde ? ».
    */
-  trie.registerGreedy('show archive config differences', 'Display archive config diff', (args) => {
+  const showDifferences = (args: readonly string[]): string => {
     const s = ar();
     if (!s) return 'No archive differences available.';
     const courant = runningConfig();
@@ -114,14 +122,14 @@ export function registerArchiveExecCommands(
     const apres = lire(args[1]);
     if (apres === null) return `%Error opening ${args[1]} (No such file or directory)`;
     return s.formatShowArchiveDiff(avant, apres);
-  });
+  };
 
   /*
    * `show archive log config all` — la porte du journal des commandes.
    * Il n'y en avait aucune : le sous-mode `log config` etait accepte, ses
    * reglages ranges, et rien ne pouvait etre relu.
    */
-  trie.registerGreedy('show archive log config', 'Display configuration log', (args) => {
+  const showConfigLog = (args: readonly string[]): string => {
     const s = ar();
     if (!s) return '';
     const tous = s.listConfigLog();
@@ -204,7 +212,7 @@ export function registerArchiveExecCommands(
 
     if (provisioning) return choisis.map((r) => r.command).join('\n');
     return renderConfigLog(choisis);
-  });
+  };
   /**
    * `configure replace <url> [force|list|time <n>]` — la VRAIE
    * restauration, celle que le chapitre oppose à `copy`.
@@ -224,7 +232,7 @@ export function registerArchiveExecCommands(
    * entièrement dans l'appel, donc rien ne peut mourir entre les deux :
    * le mot-clé est accepté et son effet annoncé, pas simulé.
    */
-  trie.registerGreedy('configure replace', 'Replace the running configuration', (args) => {
+  const configureReplace = (args: readonly string[]): string => {
     if (args.length === 0) throw new CliIncomplete();
     const { url, options, erreur } = parseConfigReplaceArgs(args);
     if (erreur) return erreur;
@@ -258,15 +266,79 @@ export function registerArchiveExecCommands(
     }
     appliquer(cible);
     return [...tete, 'Total number of passes: 1', 'Rollback Done'].join('\n');
-  });
+  };
 
-  trie.register('archive config', 'Archive the running configuration', () => {
+  const archiveConfig = (): string => {
     const s = ar();
     if (!s) return SANS_CHEMIN;
     if (!s.getPath().path) return SANS_CHEMIN;
     const r = s.capture('manual', runningConfig());
     return 'erreur' in r ? r.erreur : `Writing ${r.path}`;
-  });
+  };
+
+  const words = (value: string | undefined): string[] =>
+    (value ?? '').trim().split(/\s+/).filter(Boolean);
+  const base = { modes: EXEC_MODES, minPrivilege: 15 };
+  return [
+    {
+      ...base, id: 'show-archive', path: ['show', 'archive'],
+      description: 'Display archive status', run: () => showArchive(),
+    },
+    {
+      ...base, id: 'show-archive-config-differences',
+      path: ['show', 'archive', 'config', 'differences',
+        {
+          name: 'avant', type: 'WORD', optional: true,
+          description: 'File to compare from (defaults to the latest archive)',
+        },
+        {
+          name: 'apres', type: 'WORD', optional: true,
+          description: 'File to compare to (defaults to the running configuration)',
+        }],
+      description: 'Display archive config diff',
+      run: (_session, args) => showDifferences(
+        [args.avant, args.apres].filter((v): v is string => v !== undefined)),
+    },
+    {
+      ...base, id: 'show-archive-log-config',
+      path: ['show', 'archive', 'log', 'config', {
+        name: 'selection', type: 'REST', optional: true,
+        description: 'Records to show', literal: 'LINE',
+        alternatives: [
+          { keyword: 'all', description: 'All the records' },
+          { keyword: 'statistics', description: 'Memory held by the log' },
+          { keyword: 'user', description: 'Records of one user' },
+        ],
+      }],
+      description: 'Display configuration log',
+      run: (_session, args) => showConfigLog(words(args.selection)),
+    },
+    {
+      ...base, id: 'configure-replace',
+      path: ['configure', 'replace',
+        {
+          name: 'url', type: 'WORD',
+          description: 'URL of the configuration file to roll back to',
+        },
+        {
+          name: 'options', type: 'REST', optional: true,
+          description: 'How the rollback is performed', literal: 'LINE',
+          alternatives: [
+            { keyword: 'force', description: 'Do not prompt for confirmation' },
+            { keyword: 'list', description: 'List the commands, apply nothing' },
+            { keyword: 'nolock', description: 'Do not lock the configuration' },
+            { keyword: 'revert', description: 'Set the revert options' },
+            { keyword: 'time', description: 'Time for automatic rollback' },
+          ],
+        }],
+      description: 'Replace the running configuration',
+      run: (_session, args) => configureReplace([args.url, ...words(args.options)]),
+    },
+    {
+      ...base, id: 'archive-config', path: ['archive', 'config'],
+      description: 'Archive the running configuration', run: () => archiveConfig(),
+    },
+  ];
 }
 
 /**
@@ -284,100 +356,98 @@ export function archiveOnWriteMemory(ar: ArchiveAccessor, runningConfig: () => s
   s.capture('auto-write-memory', runningConfig());
 }
 
-/** Le sous-mode `(config-archive)#`. */
-export function buildArchiveSubmodeOn(
-  trie: CommandTrie, ar: ArchiveAccessor, enterLogMode: () => void,
-): void {
-  trie.registerGreedy('path', 'Archive path', (args) => {
-    if (args[0]) ar()?.setPath(args[0]);
-    return '';
-  });
-  trie.registerGreedy('time-period', 'Archive interval', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar()?.setTimePeriod(n);
-    return '';
-  });
-  trie.registerGreedy('maximum', 'Max revisions', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar()?.setMaximum(n);
-    return '';
-  });
-  trie.register('write-memory', 'Trigger archive on write', () => { ar()?.setWriteMemory(true); return ''; });
-  trie.register('no write-memory', 'Disable archive-on-write', () => { ar()?.setWriteMemory(false); return ''; });
-  trie.register('log config', 'Enter archive log config submode', () => {
-    ar()?.enableLogging();
-    enterLogMode();
-    return '';
-  });
-}
+const ARCHIVE_MODE = ['config-archive'];
+const ARCHIVE_LOG_MODE = ['config-archive-log'];
 
-/** Le sous-mode `(config-archive-log-cfg)#`. */
-export function buildArchiveLogSubmodeOn(trie: CommandTrie, ar: ArchiveAccessor): void {
-  trie.registerGreedy('logging size', 'Archive log buffer size', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar()?.setLogBufferSize(n);
-    return '';
-  });
-  trie.register('logging enable', 'Enable archive logging', () => { ar()?.enableLogging(); return ''; });
-  trie.register('logging disable', 'Disable archive logging', () => { ar()?.disableLogging(); return ''; });
-  trie.register('hidekeys', 'Hide passwords in archive log', () => { ar()?.setHidekeys(true); return ''; });
-  trie.register('no hidekeys', 'Show passwords in archive log', () => { ar()?.setHidekeys(false); return ''; });
-  trie.registerGreedy('notify syslog contenttype', 'Notify syslog format', (args) => {
-    ar()?.setNotifySyslog(args[0] === 'xml' ? 'xml' : 'plaintext');
-    return '';
-  });
-}
-
-const ARCHIVE_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  path: { name: 'chemin', type: 'WORD', description: 'Path for backups' },
-  'time-period': {
-    name: 'minutes', type: 'INT', range: [1, 525600],
-    description: 'Period of time in minutes between archives',
-  },
-  maximum: {
-    name: 'revisions', type: 'INT', range: [1, 14],
-    description: 'Maximum number of backups to keep',
-  },
-};
-
-const ARCHIVE_LOG_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'logging size': {
-    name: 'entrees', type: 'INT', range: [1, 1000],
-    description: 'Number of entries the log keeps',
-  },
-  'notify syslog contenttype': {
-    name: 'format', type: 'ENUM', description: 'Format of the syslog notification',
-    values: [
-      { keyword: 'plaintext', description: 'Plain text notification' },
-      { keyword: 'xml', description: 'XML notification' },
-    ],
-  },
+const SYSLOG_FORMAT: ArgumentSpec = {
+  name: 'format', type: 'ENUM', description: 'Format of the syslog notification',
+  values: [
+    { keyword: 'plaintext', description: 'Plain text notification' },
+    { keyword: 'xml', description: 'XML notification' },
+  ],
 };
 
 export function archiveSubmodeSpecs(
   ar: ArchiveAccessor, enterLogMode: () => void,
 ): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildArchiveSubmodeOn(collector as unknown as CommandTrie, ar, enterLogMode),
+  const base = { modes: ARCHIVE_MODE, minPrivilege: 15 };
+  return [
     {
-      modes: ['config-archive'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => ARCHIVE_ARGUMENTS[path],
+      ...base, id: 'archive-path', path: ['path', {
+        name: 'path', type: 'WORD', description: 'Path for backups',
+      }],
+      description: 'Archive path',
+      run: (_session, args) => { ar()?.setPath(args.path); return ''; },
     },
-  );
+    {
+      ...base, id: 'archive-time-period', path: ['time-period', {
+        name: 'minutes', type: 'INT', range: [1, 525600],
+        description: 'Period of time in minutes between archives',
+      }],
+      description: 'Archive interval',
+      run: (_session, args) => { ar()?.setTimePeriod(Number(args.minutes)); return ''; },
+    },
+    {
+      ...base, id: 'archive-maximum', path: ['maximum', {
+        name: 'revisions', type: 'INT', range: [1, 14],
+        description: 'Maximum number of backups to keep',
+      }],
+      description: 'Max revisions',
+      run: (_session, args) => { ar()?.setMaximum(Number(args.revisions)); return ''; },
+    },
+    {
+      ...base, id: 'archive-write-memory', path: ['write-memory'],
+      description: 'Trigger archive on write',
+      run: () => { ar()?.setWriteMemory(true); return ''; },
+      undo: () => { ar()?.setWriteMemory(false); return ''; },
+    },
+    {
+      ...base, id: 'archive-log-config', path: ['log', 'config'],
+      description: 'Enter archive log config submode',
+      run: () => {
+        ar()?.enableLogging();
+        enterLogMode();
+        return '';
+      },
+    },
+  ];
 }
 
 export function archiveLogSubmodeSpecs(ar: ArchiveAccessor): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildArchiveLogSubmodeOn(collector as unknown as CommandTrie, ar),
+  const base = { modes: ARCHIVE_LOG_MODE, minPrivilege: 15 };
+  return [
     {
-      modes: ['config-archive-log'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => ARCHIVE_LOG_ARGUMENTS[path],
+      ...base, id: 'archive-logging-size', path: ['logging', 'size', {
+        name: 'entries', type: 'INT', range: [1, 1000],
+        description: 'Number of entries the log keeps',
+      }],
+      description: 'Archive log buffer size',
+      run: (_session, args) => { ar()?.setLogBufferSize(Number(args.entries)); return ''; },
     },
-  );
+    {
+      ...base, id: 'archive-logging-enable', path: ['logging', 'enable'],
+      description: 'Enable archive logging',
+      run: () => { ar()?.enableLogging(); return ''; },
+    },
+    {
+      ...base, id: 'archive-logging-disable', path: ['logging', 'disable'],
+      description: 'Disable archive logging',
+      run: () => { ar()?.disableLogging(); return ''; },
+    },
+    {
+      ...base, id: 'archive-hidekeys', path: ['hidekeys'],
+      description: 'Hide passwords in archive log',
+      run: () => { ar()?.setHidekeys(true); return ''; },
+      undo: () => { ar()?.setHidekeys(false); return ''; },
+    },
+    {
+      ...base, id: 'archive-notify-syslog',
+      path: ['notify', 'syslog', 'contenttype', SYSLOG_FORMAT],
+      description: 'Notify syslog format',
+      run: (_session, args) => {
+        ar()?.setNotifySyslog(args.format === 'xml' ? 'xml' : 'plaintext');
+        return '';
+      },
+    },
+  ];
 }

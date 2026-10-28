@@ -1,4 +1,3 @@
-import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import {
   describeTrack, trackStateNoun,
@@ -11,10 +10,8 @@ import { RETURN_CODE_LABEL } from '../../../ipsla/types';
 import { CliInvalidInput, INCOMPLETE_MESSAGE } from '../cli/CliDiagnostic';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { OptionSpec } from '@/cli/OptionBag';
 import { showTrackSpec } from './showViewSpecs';
-import {
-  specsFromTrieRegistrations, type AdapterKeyword,
-} from '@/cli/commands/trieAdapter';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface TrackCommandContext {
@@ -133,88 +130,6 @@ function briefObject(object: TrackObject): string {
   }
 }
 
-export function buildTrackConfigCommands(
-  configTrie: CommandTrie,
-  trackTrie: CommandTrie,
-  ctx: TrackCommandContext,
-): void {
-  buildTrackSubmodeOn(trackTrie, ctx);
-}
-
-export function buildTrackSubmodeOn(
-  trackTrie: CommandTrie, ctx: TrackCommandContext,
-): void {
-  const enterTrack = (args: string[]): string => {
-    if (args.length < 1) return '% Incomplete command.';
-    const id = parseInt(args[0], 10);
-    if (Number.isNaN(id)) return '% Invalid track number';
-    const error = defineTrack(serviceOf(ctx), args);
-    if (error) return error;
-    ctx.setSelectedTrack(id);
-    ctx.setMode('config-track');
-    return '';
-  };
-  trackTrie.registerGreedy('track', 'Tracking configuration commands', enterTrack);
-
-  trackTrie.registerGreedy('object', 'Add an object to the list', (args) => {
-    const object = selectedObject(ctx);
-    if (!object) return '';
-    const id = parseInt(args[0], 10);
-    if (Number.isNaN(id)) return '% Incomplete command.';
-    const weightIndex = args.indexOf('weight');
-    object.members = object.members.filter((member) => member.id !== id);
-    object.members.push({
-      id,
-      weight: weightIndex >= 0 ? parseInt(args[weightIndex + 1], 10) : undefined,
-      negate: args.includes('not'),
-    });
-    return '';
-  });
-
-  trackTrie.registerGreedy('no object', 'Remove an object from the list', (args) => {
-    const object = selectedObject(ctx);
-    if (!object) return '';
-    const id = parseInt(args[0], 10);
-    object.members = object.members.filter((member) => member.id !== id);
-    return '';
-  });
-
-  trackTrie.registerGreedy('threshold', 'Set threshold values', (args) => {
-    const object = selectedObject(ctx);
-    if (!object) return '';
-    const upIndex = args.indexOf('up');
-    const downIndex = args.indexOf('down');
-    if (upIndex >= 0) object.thresholdUp = parseInt(args[upIndex + 1], 10);
-    if (downIndex >= 0) object.thresholdDown = parseInt(args[downIndex + 1], 10);
-    return '';
-  });
-
-  trackTrie.registerGreedy('delay', 'Delay a state change notification', (args) => {
-    const object = selectedObject(ctx);
-    if (!object) return '';
-    const upIndex = args.indexOf('up');
-    const downIndex = args.indexOf('down');
-    if (upIndex < 0 && downIndex < 0) return '% Incomplete command.';
-    if (upIndex >= 0) {
-      const value = parseInt(args[upIndex + 1], 10);
-      if (Number.isNaN(value)) return '% Incomplete command.';
-      object.delayUpSeconds = value;
-    }
-    if (downIndex >= 0) {
-      const value = parseInt(args[downIndex + 1], 10);
-      if (Number.isNaN(value)) return '% Incomplete command.';
-      object.delayDownSeconds = value;
-    }
-    return '';
-  });
-
-  trackTrie.registerGreedy('no delay', 'Remove the state change delay', () => {
-    const object = selectedObject(ctx);
-    if (object) { object.delayUpSeconds = 0; object.delayDownSeconds = 0; }
-    return '';
-  });
-}
-
 export function trackShowSpecs(ctx: TrackCommandContext): CommandSpec[] {
   return [showTrackSpec((cible) => {
     const service = serviceOf(ctx);
@@ -244,69 +159,6 @@ export function trackShowSpecs(ctx: TrackCommandContext): CommandSpec[] {
     return objects.map((object) => renderDetail(ctx, object)).join('\n');
   })];
 }
-
-const OBJET_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'not', description: 'Negate the state of this object',
-    afterArguments: true, argument: null,
-  },
-  {
-    keyword: 'weight', description: 'Weight of this object in the list',
-    afterArguments: true,
-    argument: { name: 'poids', type: 'INT', description: 'Weight value', range: [1, 255] },
-  },
-];
-
-/*
- * `threshold up 2 down 1` et `delay up 10 down 20` posent les DEUX
- * bornes sur une seule ligne, dans l'ordre qu'on veut : chaque mot-cle
- * prend donc sa valeur PUIS de quoi accueillir l'autre paire, sans quoi
- * la seconde moitie de la ligne n'a pas de destination.
- */
-const AUTRE_BORNE: ArgumentSpec = {
-  name: 'autre', type: 'REST', optional: true,
-  description: 'The other bound, `up <value>` or `down <value>`',
-};
-
-const SEUIL_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'up', description: 'Value at or above which the list is up',
-    argument: [
-      { name: 'valeur', type: 'INT', description: 'Threshold value' }, AUTRE_BORNE,
-    ],
-  },
-  {
-    keyword: 'down', description: 'Value at or below which the list is down',
-    argument: [
-      { name: 'valeur', type: 'INT', description: 'Threshold value' }, AUTRE_BORNE,
-    ],
-  },
-];
-
-const DELAI_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'up', description: 'Delay before reporting the object up',
-    argument: [
-      { name: 'secondes', type: 'INT', description: 'Delay in seconds', range: [0, 180] },
-      AUTRE_BORNE,
-    ],
-  },
-  {
-    keyword: 'down', description: 'Delay before reporting the object down',
-    argument: [
-      { name: 'secondes', type: 'INT', description: 'Delay in seconds', range: [0, 180] },
-      AUTRE_BORNE,
-    ],
-  },
-];
-
-const TRACK_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  track: { name: 'numero', type: 'INT', description: 'Tracked object number', range: [1, 1000] },
-  object: { name: 'numero', type: 'INT', description: 'Object number to add', range: [1, 1000] },
-  threshold: null,
-  delay: null,
-};
 
 /**
  * Ce qu'une plateforme fait d'un objet suivi qu'on vient de declarer.
@@ -371,16 +223,83 @@ export function routerTrackEntryHost(ctx: TrackCommandContext): TrackEntryHost {
   };
 }
 
+const OBJECT_NUMBER: ArgumentSpec = {
+  name: 'number', type: 'INT', range: [1, 1000], description: 'Object number',
+};
+
+const thresholdOptions: readonly OptionSpec[] = [
+  { keyword: 'up', description: 'Value at or above which the list is up',
+    argument: { name: 'up', type: 'INT', description: 'Threshold value' } },
+  { keyword: 'down', description: 'Value at or below which the list is down',
+    argument: { name: 'down', type: 'INT', description: 'Threshold value' } },
+];
+
+const delayOptions: readonly OptionSpec[] = [
+  { keyword: 'up', description: 'Delay before reporting the object up',
+    argument: { name: 'up', type: 'INT', range: [0, 180], description: 'Delay in seconds' } },
+  { keyword: 'down', description: 'Delay before reporting the object down',
+    argument: { name: 'down', type: 'INT', range: [0, 180], description: 'Delay in seconds' } },
+];
+
 export function trackSubmodeSpecs(ctx: TrackCommandContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildTrackSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-track'], minPrivilege: 15 };
+  const object = () => selectedObject(ctx);
+  return [
     {
-      modes: ['config-track'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => TRACK_ARGUMENTS[path],
-      keywordsFor: (path) => path === 'object' ? OBJET_KEYWORDS
-        : path === 'threshold' ? SEUIL_KEYWORDS
-          : path === 'delay' ? DELAI_KEYWORDS : undefined,
+      ...base, id: 'track-object', path: ['object', OBJECT_NUMBER],
+      description: 'Add an object to the list', undoDescription: 'Remove an object from the list',
+      options: [
+        { keyword: 'not', description: 'Negate the state of this object' },
+        { keyword: 'weight', description: 'Weight of this object in the list',
+          argument: { name: 'weight', type: 'INT', range: [1, 255], description: 'Weight value' } },
+      ],
+      run: (_session, args) => {
+        const tracked = object();
+        if (!tracked) return '';
+        const id = Number(args.number);
+        tracked.members = tracked.members.filter((member) => member.id !== id);
+        tracked.members.push({
+          id,
+          weight: args.weight === undefined ? undefined : Number(args.weight),
+          negate: args.not !== undefined,
+        });
+        return '';
+      },
+      undo: (_session, args) => {
+        const tracked = object();
+        if (tracked) {
+          tracked.members = tracked.members.filter((member) => member.id !== Number(args.number));
+        }
+        return '';
+      },
     },
-  );
+    {
+      ...base, id: 'track-threshold', path: ['threshold'],
+      description: 'Set threshold values', options: thresholdOptions, requiresOneOption: true,
+      run: (_session, args) => {
+        const tracked = object();
+        if (!tracked) return '';
+        if (args.up !== undefined) tracked.thresholdUp = Number(args.up);
+        if (args.down !== undefined) tracked.thresholdDown = Number(args.down);
+        return '';
+      },
+    },
+    {
+      ...base, id: 'track-delay', path: ['delay'],
+      description: 'Delay a state change notification', undoDescription: 'Remove the state change delay',
+      options: delayOptions, requiresOneOption: true,
+      run: (_session, args) => {
+        const tracked = object();
+        if (!tracked) return '';
+        if (args.up !== undefined) tracked.delayUpSeconds = Number(args.up);
+        if (args.down !== undefined) tracked.delayDownSeconds = Number(args.down);
+        return '';
+      },
+      undo: () => {
+        const tracked = object();
+        if (tracked) { tracked.delayUpSeconds = 0; tracked.delayDownSeconds = 0; }
+        return '';
+      },
+    },
+  ];
 }

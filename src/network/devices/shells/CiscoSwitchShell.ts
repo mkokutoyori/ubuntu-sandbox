@@ -136,7 +136,6 @@ import {
 import {
   showSwitchVersion, showIpTraffic, iosClockConfigLines, ciscoShortInterfaceName,
 } from './cisco/CiscoCommonShow';
-import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import { compactVlanList, parseVlanList } from './cli/vlanList';
@@ -428,7 +427,7 @@ const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
  */
 const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   'mac address-table aging-time': [{
-    name: 'secondes', type: 'INT', range: [0, 1000000], rangeIsAdvisory: true,
+    name: 'secondes', type: 'INT', range: [0, 1000000],
     description: 'Aging time in seconds, 0 to disable aging',
   }],
   'mac address-table static': [{
@@ -1077,26 +1076,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerDaiCommands(trie: SwitchTries): void {
-    const parseList = (spec: string): number[] => {
-      const out: number[] = [];
-      for (const part of spec.split(',')) {
-        const m = part.match(/^(\d+)-(\d+)$/);
-        if (m) { for (let i = +m[1]; i <= +m[2]; i++) out.push(i); }
-        else { const n = parseInt(part, 10); if (!isNaN(n)) out.push(n); }
-      }
-      return out;
-    };
-
     // ── Global ── ip arp inspection vlan <list>
     trie.config.registerGreedy('ip arp inspection vlan', 'Enable DAI on VLAN(s)', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+      const vlans = parseVlanList(args.join(''));
+      if (vlans === null) return '% Invalid VLAN ID';
       const cfg = this.d()._getArpInspectionConfig();
-      for (const v of parseList(args.join(','))) cfg.vlans.add(v);
+      for (const v of vlans) cfg.vlans.add(v);
       return '';
     });
     trie.config.registerGreedy('no ip arp inspection vlan', 'Disable DAI on VLAN(s)', (args) => {
+      const vlans = parseVlanList(args.join(''));
+      if (vlans === null) return '% Invalid VLAN ID';
       const cfg = this.d()._getArpInspectionConfig();
-      for (const v of parseList(args.join(','))) cfg.vlans.delete(v);
+      for (const v of vlans) cfg.vlans.delete(v);
       return '';
     });
     trie.config.registerGreedy('ip arp inspection validate', 'Extra DAI checks', (args) => {
@@ -1128,8 +1121,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const list = args[vlanIdx + 1];
       if (!list) return CISCO_ERRORS.INCOMPLETE;
       const isStatic = args[vlanIdx + 2]?.toLowerCase() === 'static';
+      const vlans = parseVlanList(list);
+      if (vlans === null) return '% Invalid VLAN ID';
       const cfg = this.d()._getArpInspectionConfig();
-      for (const v of parseList(list)) cfg.vlanAclFilters.set(v, { aclName, staticMode: isStatic });
+      for (const v of vlans) cfg.vlanAclFilters.set(v, { aclName, staticMode: isStatic });
       return '';
     });
     trie.config.registerGreedy('errdisable recovery cause arp-inspection',
@@ -1870,16 +1865,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerStpInterface(): void {
-
-    // `archive` — la même famille que sur le routeur, construite par le
-    // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
-    // plateformes qui archivent différemment seraient un défaut, pas une
-    // fonctionnalité.
-    const archiveOf = () => this.archiveService();
-    buildArchiveSubmodeOn(this.configArchiveTrie, archiveOf, () => {
-      this.mode = 'config-archive-log';
-    });
-    buildArchiveLogSubmodeOn(this.configArchiveLogTrie, archiveOf);
 
     // show spanning-tree summary | mst configuration | interface <if>
   }

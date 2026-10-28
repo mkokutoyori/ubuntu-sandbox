@@ -1,7 +1,6 @@
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
-import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './CiscoArchiveCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
@@ -239,18 +238,6 @@ export function buildFlowMonitorSubmode(trie: CommandTrie, ctx: CiscoEemNetflowA
     const m = get(); if (m && args[0]) m.maximumFlows = parseInt(args[0], 10);
     return '';
   });
-}
-
-// Les deux sous-modes `archive` vivent dans `CiscoArchiveCommands.ts`,
-// partagés avec le switch : une seule implémentation, donc pas de
-// divergence possible entre les deux plateformes.
-export function buildArchiveSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
-  buildArchiveSubmodeOn(trie, () => ctx.r().getArchiveService(),
-    () => ctx.setMode('config-archive-log' as CiscoShellMode));
-}
-
-export function buildArchiveLogSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
-  buildArchiveLogSubmodeOn(trie, () => ctx.r().getArchiveService());
 }
 
 export function netflowInterfaceSpecs(

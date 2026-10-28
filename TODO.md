@@ -1377,46 +1377,8 @@ que ces modes ; l'entree est ici pour que la table ne soit pas prise
 pour un oubli si un mode manquait vraiment. Rien a corriger tant qu'une
 transcription ne montre pas un sixieme mode.
 
-### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
-`sequenceFamily` decrit la queue libre d'une commande par UNE place
-`REST` portant ses formes. Elles sont donc annoncees a chaque rang, sans
-savoir laquelle vient d'etre tapee, et une valeur qui SUIT une forme ne
-peut pas etre nommee du tout. Deux familles en souffrent aujourd'hui :
-
-    snmp-server host 10.0.0.1 version ?   attendu 1 / 2c / 3
-    snmp-server host 10.0.0.1 version 3 ? attendu auth / noauth / priv / WORD
-    ntp server 10.0.0.1 key ?             attendu <1-4294967295>
-    ntp server 10.0.0.1 version ?         attendu <1-4>
-
-**Mesure** : chacune rend les formes de la queue (`key`, `prefer`,
-`source`, `version` cote NTP) et jamais la valeur attendue. Depuis les
-lots SNMP et NTP, l'aide ne REFUSE plus a ces rangs et ne repropose plus
-une forme deja tapee ; ce qui manque est de NOMMER.
-**Report** : le mecanisme existe deja a cote — `loggingFamily` porte des
-`continuations` (« les mots-cles qui SUIVENT l'argument »,
-`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
-enrichissement du declarateur PARTAGE, donc un lot a lui seul ; declarer
-a cote quelques chemins types ferait DEUX grammaires pour une commande,
-le defaut que ce depot passe son temps a refermer.
-### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
-`aaa authentication login ?` et `aaa authentication login default ?`
-annoncent `<cr>` — la touche Entree — alors que la machine repond
-`% Incomplete command.` aux deux. Et les METHODES (`local`, `none`,
-`group`, `enable`, `line`…) ne sont annoncees nulle part, bien qu'elles
-soient desormais declarees et APPLIQUEES (`AAA_METHODS`).
-**Mesure** : `aaa ?` et `aaa authentication ?` rendent la bonne liste ;
-tout ce qui suit rend `<cr>` et rien d'autre, sur les deux plateformes.
-**Ce qui a ete tente et retire** : `requireArgs('aaa authentication
-login', 1)` est INERTE — `aaa` est enregistre en glouton, donc aucun
-noeud n'existe a cette profondeur pour porter la declaration, et une
-declaration que personne ne lit est exactement ce que ce depot retire
-ailleurs. Elle n'a donc pas ete laissee en place.
-**Report** : la reparation est la MIGRATION de la famille `aaa` vers le
-socle, ou chaque forme est un chemin declare avec ses places — c'est la
-seule facon de porter une aide a cette profondeur, et c'est un lot a
-part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
-libre au milieu, et une suite de methodes de longueur variable dont
-`group` consomme le mot suivant.
+### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION (ferme)
+`ntp server|peer` passe par un `OptionBag` (`sequenceFamily` accepte `options`) et `snmp-server host` par `snmpHostFamily`, dont les mots-cles sont des noeuds du chemin : `version ?`, `version 3 ?` et `key ?` nomment la valeur attendue. Reste ouvert, et note a part : `snmp-server host ... vrf <nom>` et les types de notification (voir ci-dessus).
 
 ### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
 Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
@@ -4184,6 +4146,65 @@ atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à 
 ### [telnet-vrp] client VRP
 `Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
 
-## Cisco: time and logging commands still on the trie
+## Cisco: wording of the outbound transport refusals
 
-Measured: `service timestamps`, `service sequence-numbers`, `ntp disable|broadcast|multicast` and `show ntp packets` moved to the socle. Still declared on `CommandTrie`: line-mode `exec-timeout`, `login-timeout`, `logging synchronous`, `access-class`, and the `archive`/`log config` adapter. `clock summer-time` still parses its rule through a REST tail (`parseSummerTimeRule`), so `?` after `recurring` shows only `date`/`<cr>` instead of the positional week/day/month/time grammar. Not closed: these need positional multi-keyword places in the socle.
+Measured: `transport output` is enforced for `telnet` and `ssh` launched from a console, aux or vty session (the vty block is found by the session's line index). The refusal wordings `% Telnet connections not permitted from this terminal` and `% SSH connections not permitted from this terminal` are written from memory of IOS: the Cisco documentation was not reachable to confirm them. Scripted and non-interactive `telnet`/`ssh` (`executeCommand`) do not consult the setting. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner`, also unconfirmed. `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART.
+
+## Linux: known_hosts is written hashed, linux-hosts-hostname-hijack expects the plain name
+
+Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("première connexion légitime enregistre la clé du vrai serveur sous le nom d'hôte") fails on the base commit too: `cat ~/.ssh/known_hosts` returns a `|1|salt|hash ssh-ed25519 …` line, the test expects `serveur-legitime.domaine.local` in clear. Either the client hashes by default (Ubuntu's `HashKnownHosts yes`, which would make the test's premise false) or the test predates the hashing. Not decided: it needs the OpenSSH `ssh_config` default of the distribution the simulator claims to be.
+
+## Cisco: `boot system` is not rendered in the running-config
+
+Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSystem`) and read back by `show boot` (`BOOT variable = flash:image.bin`), but `show running-config` on a router and on a switch never writes the line, so an exported topology loses it on import. The two renderers (`showRunningConfig` for the router, `buildRunningConfig` for the switch) do not reach the shell's file system. Not closed: they need a narrow port to the boot list.
+
+## Oracles Linux rouges sur la base (hors perimetre Cisco)
+
+Mesure : `shell-fin-de-ligne-oracle` (`printf '…' | head|tail …`, 17 cas) et `auditctl-oracle` echouent deja au commit `2351448f2`, AVANT les travaux telnet/Cisco de cette serie — verifie dans un worktree de ce commit (21 cas rouges sur 262). Verifie de la meme facon au meme commit : `aureport-oracle`, `ausearch-oracle`, `ausearch-interpret-oracle` et `netcmds-oracle` (nc-readwrite) sont rouges aussi. `probe-oracle-sqlplus-silencieux-et-rman-a-froid` (« 60 sauvegardes de suite laissent la boucle d'evenements respirer ») est un test de TEMPS : rouge dans un lot charge, vert seul — a ne pas compter parmi les defauts. Non diagnostique : les oracles rejouent des enregistrements de vrais binaires et l'ecart n'a pas ete lu cas par cas.
+
+## Cisco: key-chain lifetimes are stored, never evaluated
+
+Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-chain migration), stored on the key, rendered by `show key chain` and by the running-config, and read by nothing else: no routing protocol asks the key chain which key is valid NOW, so a key outside its lifetime still authenticates. Not closed: the brick is a clock-aware `validAt(instant)` on `KeyChainRepository` read by the protocols that take `key-chain` (EIGRP, RIP, OSPF auth), each of which also has to learn to pick among several valid keys.
+
+## Cisco: the NVE / VXLAN CLI is unreachable on every platform
+
+Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overrides it, so `interface nve`'s `source-interface`, `member vni`, `peer-ip` and the four `show nve|vxlan|mac address-table vxlan` views are never declared on any router or switch, whatever the chassis profile. `VxlanAgent` works (its protocol tests drive it through the API); only the CLI door is shut. Not closed: which chassis profiles carry VXLAN hardware (the real Catalyst 9000 and Nexus lines do, the ISR lines do not) is a platform fact whose documentation was not reachable. Forcing the flag is not enough either: with `hasVxlanHardware()` patched to true, `interface nve1` cannot be created (no such port), so `source-interface` answers `% No interface selected` and `show nve vni` stays empty. The migration of these nine registrations to the socle was tried and reverted for that reason: it could not be probed.
+
+## Linux: tcpdump ICMPv6 « unreachable port » rouge sur la base
+
+Mesure : `probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee` > « a datagram to a closed UDP port draws "unreachable port" naming the quoted destination and port » echoue deja au commit `2351448f2` (avant la serie telnet/Cisco), 1 cas sur 90. Non diagnostique.
+
+## Rouges sur la base, vus par le lot IPSec (hors perimetre)
+
+Mesure au commit `2351448f2` (avant la serie telnet/Cisco), worktree dedie : `crypto-pki-trustpool` (cabundle url), `ike-real-diffie-hellman` (2 cas), `probe-linux-kerberos-tools-answer-like-mit` (5 cas de rejeu) — 8 cas rouges sur 57. Non diagnostiques.
+
+## Cisco: invalid inputs the fuzz scan still sees accepted
+
+Measured with a scan of ~90 invalid one-liners on a fresh router (the others are refused): `interface loopback 99999999999` (the number overflows a signed 32-bit integer, IOS stops at 2147483647), `hostname 1bad` and a 100-character hostname, `logging buffered 1` (IOS floors the buffer size), a 300-character `description` (IOS truncates or refuses past 240), `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface, `clear ip route 999.1.1.1`. Not closed: each bound is an IOS fact whose documentation was not reachable, except the loopback overflow, which needs the interface-name parser (spread over `Router.ts` and the shell) rather than one place.
+
+## Cisco: `show` verbs whose free tail is accepted without being judged
+
+Measured by appending the word `zorglub` to 75 `show` verbs on a fresh router (the others answer `% Invalid input`): `show ip ospf neighbor`, `show ip eigrp neighbors`, `show cdp neighbors`, `show lldp neighbors`, `show snmp`, `show flash:`, `show boot`, `show environment`, `show processes memory`, `show memory`, `show ip sla summary`, `show ip cef`, `show ip mroute`, `show ip pim neighbor`, `show ip igmp groups`, `show ssh`, `show class-map`, `show policy-map` answer without `% Invalid input`. Not all ignore the word: `show ip ospf neighbor` filters its lines by substring (a word that matches nothing leaves only the header), which is a judgement of sorts but not the IOS grammar (interface, neighbor id, `detail`); the others (`show boot`, `show memory`, `show ssh`…) print their normal output whatever follows. Several are right to take a tail (an interface, a name, `detail`, `statistics`): what is missing is the judgement of the tail, which needs each verb's own grammar (interface name, neighbor id, `detail`). Not closed: one lot per family, each with the IOS forms it must keep.
+
+## PIM: rp-candidate / bsr-candidate group-list, interval and running-config
+
+`ip pim rp-candidate <iface> group-list <acl>` is refused at the caret: the
+agent advertises the whole 224.0.0.0/4 range and has no per-candidate group
+range from an ACL, and the old handler accepted the keyword and ignored it.
+`ip pim bsr-candidate` / `rp-candidate` store only the interface ADDRESS, so
+neither is rendered in the running-config (the interface identity is lost).
+`ip pim spt-threshold` is stored and rendered but the engine builds only
+(*,G) state, so it is never evaluated. Seen while migrating the PIM family.
+
+## Reds already present at the base commit 2351448f2 (full network-v2 sweep)
+
+Measured by running the same files on a clean worktree of the base: run-parts
+(5), basic-commandes #84 (L2-only switch IP), auditctl-other #128,
+fault-sigkill-residues, firewall/architecture-guards G8, linux-bash-details
+G11-01/02, linux-ls-tty-awareness, linux-rsyslog-imfile truncation,
+nano-colors/exec/tab oracles and probe-nano-exec, nss-resolution-unified,
+observability-bridge §JB, openssl-ocsp-probe (-port/-url), probe-base-de-paquets,
+probe-cle-privee-d-hote-est-privee, probe-couche-internet-un-seul-ttl,
+probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
+processus, plus the Linux oracle and crypto reds listed above. None is caused by
+the Cisco socle series; they are recorded so a sweep is read against them.

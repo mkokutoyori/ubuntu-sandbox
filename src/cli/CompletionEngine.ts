@@ -174,6 +174,13 @@ function suggestionsAt(
     }
   }
 
+  if (argument && trigger === 'QUESTION_MARK') {
+    for (const word of argument.tabSuggestions ?? []) {
+      if (!word.toLowerCase().startsWith(lowered)) continue;
+      out.push({ value: word, description: argument.description ?? '', isArgument: true });
+    }
+  }
+
   if (argument && trigger === 'TAB') {
     for (const word of argument.tabSuggestions ?? []) {
       if (!word.toLowerCase().startsWith(lowered)) continue;

@@ -62,6 +62,7 @@ export interface VtyLineConfigInit {
   readonly aclInbound?: string;
   readonly aclOutbound?: string;
   readonly transportInput?: VtyTransport;
+  readonly transportOutput?: VtyTransport;
   readonly login?: VtyLoginMode;
   /** `password …` configured on the line (line-local auth secret). */
   readonly linePassword?: string;
@@ -156,6 +157,11 @@ export function mergeMethodListLines(existing: string | null | undefined, incomi
   return [...kept, incoming].join('\n');
 }
 
+export function withoutMethodListLine(existing: string | null | undefined, service: string): string {
+  const keyOf = (line: string): string => line.split(' ').slice(0, -1).join(' ');
+  return (existing ?? '').split('\n').filter((line) => line !== '' && keyOf(line) !== service).join('\n');
+}
+
 export class VtyLineConfig {
   readonly first: number;
   readonly last: number;
@@ -168,6 +174,7 @@ export class VtyLineConfig {
   readonly aclInbound: string | null;
   readonly aclOutbound: string | null;
   readonly transportInput: VtyTransport | null;
+  readonly transportOutput: VtyTransport | null;
   readonly login: VtyLoginMode | null;
   readonly linePassword: string | null;
   readonly linePasswordAlgo: 'plain' | 'type-7';
@@ -206,6 +213,7 @@ export class VtyLineConfig {
     this.aclInbound         = init.aclInbound ?? null;
     this.aclOutbound        = init.aclOutbound ?? null;
     this.transportInput     = init.transportInput ?? null;
+    this.transportOutput    = init.transportOutput ?? null;
     this.login              = init.login ?? null;
     this.linePassword       = init.linePassword ?? null;
     this.linePasswordAlgo   = init.linePasswordAlgo ?? 'plain';
@@ -253,6 +261,17 @@ export class VtyLineConfig {
     return new VtyLineRange(this.first, this.last);
   }
 
+  withoutMethodList(kind: 'accounting' | 'authorization', service: string): VtyLineConfig {
+    const field = kind === 'accounting' ? 'accountingList' : 'authorizationList';
+    const remaining = withoutMethodListLine(this[field], service);
+    const kept: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(this)) {
+      kept[name] = value === null ? undefined : value;
+    }
+    kept[field] = remaining === '' ? undefined : remaining;
+    return new VtyLineConfig(kept as unknown as VtyLineConfigInit);
+  }
+
   withoutFields(names: readonly (keyof VtyLineConfigInit)[]): VtyLineConfig {
     const kept: Record<string, unknown> = {};
     for (const [name, value] of Object.entries(this)) {
@@ -274,6 +293,7 @@ export class VtyLineConfig {
       aclInbound:         patch.aclInbound         ?? this.aclInbound         ?? undefined,
       aclOutbound:        patch.aclOutbound        ?? this.aclOutbound        ?? undefined,
       transportInput:     patch.transportInput     ?? this.transportInput     ?? undefined,
+      transportOutput:    patch.transportOutput    ?? this.transportOutput    ?? undefined,
       login:              patch.login              ?? this.login              ?? undefined,
       linePassword:       patch.linePassword       ?? this.linePassword       ?? undefined,
       linePasswordAlgo:   patch.linePasswordAlgo   ?? this.linePasswordAlgo   ?? undefined,
@@ -353,6 +373,7 @@ export class VtyLineConfig {
     if (this.stopbits !== null) lines.push(` stopbits ${this.stopbits}`);
     if (this.rotaryGroup !== null) lines.push(` rotary ${this.rotaryGroup}`);
     if (this.transportInput !== null) lines.push(` transport input ${this.transportInput}`);
+    if (this.transportOutput !== null) lines.push(` transport output ${this.transportOutput}`);
     if (this.loggingSynchronous) lines.push(' logging synchronous');
     return lines;
   }

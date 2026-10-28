@@ -147,6 +147,7 @@ export interface PimConfig {
   learnedRps: PimRpEntry[];
   mroutes: Map<string, PimMroutEntry>;
   joinPruneIntervalSec: number;
+  sptThreshold: 'infinity' | number | null;
   joinPruneHoldtimeSec: number;
   /** This router's own C-BSR configuration, if any. */
   bsrCandidate: PimBsrCandidate | null;
@@ -179,6 +180,7 @@ export function createDefaultPimConfig(): PimConfig {
     learnedRps: [],
     mroutes: new Map(),
     joinPruneIntervalSec: 60,
+    sptThreshold: null,
     joinPruneHoldtimeSec: 210,
     bsrCandidate: null,
     currentBsr: null,
