@@ -435,7 +435,7 @@ export class Cable {
       return false;
     }
 
-    Logger.debug(this.id, 'cable:transmit',
+    if (Logger.enabled('debug')) Logger.debug(this.id, 'cable:transmit',
       `${fromPort.getEquipmentId()}.${fromPort.getName()} → ${targetPort.getEquipmentId()}.${targetPort.getName()}`,
       { srcMAC: frame.srcMAC.toString(), dstMAC: frame.dstMAC.toString() });
 

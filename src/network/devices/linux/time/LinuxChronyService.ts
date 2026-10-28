@@ -53,6 +53,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LocalReference, NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
 import { DEFAULT_SELECTION_PARAMETERS } from '../../../ntp/ChronySelection';
+import type { ReglagesDiscipline } from '../../../ntp/discipline';
 import { TimeSmoothing } from '../../../ntp/TimeSmoothing';
 import type { UdpListener } from '../../EndHost';
 import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
@@ -86,6 +87,8 @@ export interface ChronyHost extends ChronyNtsHost {
   releaseCommandAddress?(address: string, port: number): void;
   sendUdpDatagram?(request: UdpSendRequest): boolean;
 }
+
+const DEFAULT_MAX_SLEW_RATE_PPM = 83333.333;
 
 const CHRONY_PROFILE: Partial<NtpPlatformProfile> = {
   respondsWhenUnsynchronized: true,
@@ -171,6 +174,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     this.localOverride = null;
     this.commandPackets = 0;
     this.manualSamples = [];
+    this.host.ntp().restartDiscipline();
     this.host.ntp().start();
     return { ok: true };
   }
@@ -293,8 +297,12 @@ export class LinuxChronyService implements ServiceSocketServer {
 
   setMakestep(thresholdSeconds: number, limit: number): void {
     this.host.ntp().setReglagesDiscipline({
-      seuilSautMs: thresholdSeconds * 1000, limiteSauts: limit, reinitialiserAssociationsAuSaut: false,
+      seuilSautMs: thresholdSeconds * 1000, limiteSauts: limit, ...this.chronyDiscipline(), reinitialiserAssociationsAuSaut: false,
     });
+  }
+
+  private chronyDiscipline(): ReglagesDiscipline {
+    return { seuilPaniqueMs: 0, stepLimitCountsUpdates: true, slewRatePpm: this.conf.maxSlewRatePpm ?? DEFAULT_MAX_SLEW_RATE_PPM };
   }
 
   removeSource(ip: string): boolean {
@@ -465,8 +473,8 @@ export class LinuxChronyService implements ServiceSocketServer {
     // glisser, et combien de fois. Il etait lu et range sans jamais
     // atteindre le moteur (lot N9).
     agent.setReglagesDiscipline(this.conf.makestep
-      ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite, reinitialiserAssociationsAuSaut: false }
-      : { reinitialiserAssociationsAuSaut: false });
+      ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite, ...this.chronyDiscipline(), reinitialiserAssociationsAuSaut: false }
+      : { ...this.chronyDiscipline(), limiteSauts: 0, reinitialiserAssociationsAuSaut: false });
     agent.setSelectionParameters({
       ...DEFAULT_SELECTION_PARAMETERS, ...this.conf.selection,
     });

@@ -2649,7 +2649,7 @@ export abstract class Switch extends Equipment {
         age: this.macAgingTime,
         timestamp: simulationNowMs(),
       });
-      Logger.debug(this.id, 'switch:mac-learn', `${this.name}: learned ${srcMAC} VLAN ${ingressVlan} on ${portName}`);
+      if (Logger.enabled('debug')) Logger.debug(this.id, 'switch:mac-learn', `${this.name}: learned ${srcMAC} VLAN ${ingressVlan} on ${portName}`);
       if (isNew) {
         this.getBus().publish({
           topic: 'switch.mac.learned',
@@ -2755,7 +2755,7 @@ export abstract class Switch extends Equipment {
     } else {
       const dstEntry = this.macTable.get(`${ingressVlan}:${dstMAC}`)!;
       if (dstEntry.port !== portName) {
-        Logger.debug(
+        if (Logger.enabled('debug')) Logger.debug(
           this.id, 'switch:forward',
           `${this.name}: forward ${dstMAC} VLAN ${ingressVlan} ${portName} → ${dstEntry.port}`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: dstEntry.port },
@@ -4217,6 +4217,7 @@ export abstract class Switch extends Equipment {
    * puisque c'est le Vlanif qui porte l'adresse.
    */
   private _ntpAgent: NtpAgent | null = null;
+  peekNtpAgent(): NtpAgent | null { return this._ntpAgent; }
   getNtpAgent(): NtpAgent {
     if (this._ntpAgent) return this._ntpAgent;
     this._ntpAgent = new NtpAgent(

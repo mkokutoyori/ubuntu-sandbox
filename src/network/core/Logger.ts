@@ -5,7 +5,7 @@
  * §10.3): the Logger is now an adapter on top of the central `EventBus`.
  *
  * Behaviour preserved (≈ 90 callsites unchanged):
- *  - `Logger.{debug,info,warn,error}(source, event, message, data?)` still
+ *  - `Logger.{info,warn,error}(source, event, message, data?)` still
  *    appends to an in-memory ring buffer and notifies legacy subscribers
  *    filtered by `source` / `event` prefix / `level`.
  *  - `subscribe(handler, filter?)` and `unsubscribe(id)` keep their exact
@@ -56,6 +56,15 @@ class LoggerSingleton {
   /** Bus override — falls back to the lazy default singleton. */
   private busOverride: IEventBus | null = null;
   private mutedDepth = 0;
+  private debugEnabled = false;
+
+  setDebugEnabled(enabled: boolean): void {
+    this.debugEnabled = enabled;
+  }
+
+  enabled(level: LogLevel): boolean {
+    return this.mutedDepth === 0 && (level !== 'debug' || this.debugEnabled);
+  }
 
   silenced<T>(run: () => T): T {
     this.mutedDepth++;
@@ -80,7 +89,7 @@ class LoggerSingleton {
 
   /** Publish a log event */
   log(level: LogLevel, source: string, event: string, message: string, data?: Record<string, unknown>): void {
-    if (this.mutedDepth > 0) return;
+    if (!this.enabled(level)) return;
     const entry: NetworkLog = {
       timestamp: simulationNowMs(),
       level,
@@ -155,13 +164,8 @@ class LoggerSingleton {
     return this.logs.filter(l => l.source === source);
   }
 
-  /** Clear the in-memory log buffer. Leaves subscribers attached so the
-   *  UI panel keeps receiving NEW events after the user hits "clear". */
   clear(): void {
     this.logs = [];
-    // Notify subscribers with a synthetic event so they redraw the
-    // empty state — equivalent to `journalctl --rotate` followed by an
-    // immediate read.
     for (const sub of this.subscriptions) {
       try {
         sub.subscriber({
@@ -180,6 +184,7 @@ class LoggerSingleton {
     this.logs = [];
     this.subscriptions = [];
     this.nextId = 1;
+    this.debugEnabled = false;
   }
 }
 

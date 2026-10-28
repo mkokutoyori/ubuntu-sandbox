@@ -82,11 +82,12 @@ import {
 } from './huawei/HuaweiConfigCommands';
 import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
-  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, remoteAccessConfigBlocksVrp,
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, registerHuaweiUserClock, remoteAccessConfigBlocksVrp,
 } from './huawei/HuaweiCommonSecurity';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 import { RsaPeerPublicKeyEditor } from './huawei/HuaweiRsaPeerPublicKeyEditor';
 import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
+import { lignesConfigNtpVrp } from './huawei/huaweiNtpCommands';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
 import { analyserRegleVrp } from './huawei/HuaweiAclRule';
@@ -966,6 +967,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display + common management commands
     this.registerDisplayCommands(this.userTrie);
     this.registerCommonMgmt(this.userTrie);
+    registerHuaweiUserClock(this.userTrie,
+      () => this.swRef === null ? undefined : commeRouteur(this.swRef),
+      (epochMs) => commeRouteur(this.swRef)._setSystemClock(epochMs));
   }
 
   // ─── Command Tree: System View ([hostname]) ───────────────────────
@@ -4669,6 +4673,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const mgmt = sw.getManagementService?.();
     const snmpLignes = lignesConfigSnmpVrp(sw.getSnmpService?.());
     if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
+    const ntpLignes = lignesConfigNtpVrp(sw.peekNtpAgent() ?? undefined);
+    if (ntpLignes.length > 0) { lines.push(...ntpLignes); lines.push('#'); }
     for (const block of mgmt ? remoteAccessConfigBlocksVrp(mgmt) : []) {
       lines.push(...block);
       lines.push('#');

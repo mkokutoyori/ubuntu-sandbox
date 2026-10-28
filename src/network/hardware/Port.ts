@@ -1162,7 +1162,7 @@ export class Port {
     this.counters.bytesOut += ethernetFrameBytes(frame);
     if (frame.dstMAC.isBroadcast()) this.counters.broadcastOut++;
     else if (frame.dstMAC.isGroup()) this.counters.multicastOut++;
-    Logger.debug(this.equipmentId, 'port:send',
+    if (Logger.enabled('debug')) Logger.debug(this.equipmentId, 'port:send',
       `${this.name}: sending frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });
     this.getBus().publish({
@@ -1201,7 +1201,7 @@ export class Port {
     this.counters.bytesIn += ethernetFrameBytes(frame);
     if (frame.dstMAC.isBroadcast()) this.counters.broadcastIn++;
     else if (frame.dstMAC.isGroup()) this.counters.multicastIn++;
-    Logger.debug(this.equipmentId, 'port:recv',
+    if (Logger.enabled('debug')) Logger.debug(this.equipmentId, 'port:recv',
       `${this.name}: received frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });
     this.getBus().publish({

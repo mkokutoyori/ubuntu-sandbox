@@ -114,6 +114,7 @@ export class HuaweiRouter extends Router {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       localClock: () => this.localClock(),
+      getSystemClock: () => this.getSystemClock(),
       getType: () => this.getType(),
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),

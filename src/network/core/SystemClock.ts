@@ -5,6 +5,7 @@ export class SystemClock {
   private overrideMs: number | null = null;
   private setAtMs = 0;
   private skewMs = 0;
+  private readonly stepListeners: Array<(deltaMs: number) => void> = [];
 
   constructor(private readonly source: () => number = simulationNowMs) {}
 
@@ -13,22 +14,36 @@ export class SystemClock {
     return this.overrideMs + (this.source() - this.setAtMs);
   }
 
+  onStep(listener: (deltaMs: number) => void): void {
+    this.stepListeners.push(listener);
+  }
+
   set(epochMs: number): void {
+    const before = this.now();
     this.overrideMs = epochMs;
     this.setAtMs = this.source();
     this.skewMs = 0;
+    this.notifyStep(this.now() - before);
   }
 
   step(deltaMs: number): void {
     if (this.overrideMs === null) this.skewMs += deltaMs;
     else this.overrideMs += deltaMs;
+    this.notifyStep(deltaMs);
   }
 
   isSetManually(): boolean { return this.overrideMs !== null; }
 
   release(): void {
+    const before = this.now();
     this.overrideMs = null;
     this.skewMs = 0;
+    this.notifyStep(this.now() - before);
+  }
+
+  private notifyStep(deltaMs: number): void {
+    if (deltaMs === 0) return;
+    for (const listener of this.stepListeners) listener(deltaMs);
   }
 }
 
