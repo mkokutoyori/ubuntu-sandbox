@@ -10,7 +10,7 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
-import { boundedInteger } from '@/cli/ArgumentTypes';
+import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
 import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -204,7 +204,6 @@ export function buildRoutingProtoConfig(
 
 
 export const BGP_DIRECTION = /^(?:in|out)$/i;
-const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*\d+(?:\/\d+)*(?:\.\d+)?$/;
 const unsignedWithin = (word: string | undefined, min: number, max: number): boolean =>
   word !== undefined && /^\d{1,10}$/.test(word) && Number(word) >= min && Number(word) <= max;
 

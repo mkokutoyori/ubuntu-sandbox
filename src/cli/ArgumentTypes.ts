@@ -138,7 +138,7 @@ export interface ArgumentTypeDefinition {
 }
 
 const MAC = /^([0-9a-f]{4}\.){2}[0-9a-f]{4}$|^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
-const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*[0-9]+(\/[0-9]+)*(\.[0-9]+)?$/;
+export const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*[0-9]+(\/[0-9]+)*(\.[0-9]+)?$/;
 /**
  * Une heure du jour, `hh:mm` ou `hh:mm:ss`.
  *

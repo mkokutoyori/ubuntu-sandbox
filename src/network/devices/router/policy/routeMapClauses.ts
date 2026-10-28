@@ -1,4 +1,4 @@
-import { boundedInteger } from '@/cli/ArgumentTypes';
+import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
 import { isValidIPv4 } from '@/network/core/ip';
 import {
   BGP_ORIGINS, BGP_WEIGHT_MAX, BGP_ATTRIBUTE_MAX, isBgpWellKnownCommunity,
@@ -31,6 +31,12 @@ function motsFermes(mots: readonly string[]): RouteMapClauseSpec['judge'] {
     if (tail.length === 0) return 'incomplete';
     return admis.has(tail[0].toLowerCase()) ? OK : { at: 0 };
   };
+}
+
+function interfaces(tail: readonly string[]): TailVerdict {
+  if (tail.length === 0) return 'incomplete';
+  const bad = tail.findIndex(word => !INTERFACE_NAME.test(word));
+  return bad < 0 ? OK : { at: bad };
 }
 
 function motLibre(minimum = 1): RouteMapClauseSpec['judge'] {
@@ -134,7 +140,7 @@ export const ROUTE_MAP_MATCH_CLAUSES: readonly RouteMapClauseSpec[] = Object.fre
   { words: ['extcommunity'], description: 'Match BGP/VPN extended community list',
     judge: motLibre() },
   { words: ['interface'], description: 'Match first hop interface of route',
-    judge: motLibre() },
+    judge: interfaces },
   { words: ['ip', 'address'], description: 'Match address of route or match packet',
     judge: motLibre() },
   { words: ['ip', 'next-hop'], description: 'Match next-hop address of route',
@@ -163,8 +169,8 @@ export const ROUTE_MAP_SET_CLAUSES: readonly RouteMapClauseSpec[] = Object.freez
     judge: motLibre(2) },
   { words: ['community'], description: 'BGP community attribute', judge: jugerCommunaute },
   { words: ['default', 'interface'], description: 'Default output interface',
-    judge: motLibre() },
-  { words: ['interface'], description: 'Output interface', judge: motLibre() },
+    judge: interfaces },
+  { words: ['interface'], description: 'Output interface', judge: interfaces },
   { words: ['ip', 'default', 'next-hop'], description: 'Default next hop address',
     judge: jugerSautSuivant },
   { words: ['ip', 'df'], description: "Set IP Don't Fragment bit", judge: entier(0, 1) },
