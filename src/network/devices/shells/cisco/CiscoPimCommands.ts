@@ -1,17 +1,11 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import { isValidIPv4 } from '@/network/core/ip';
-import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import {
-  specsFromTrieRegistrations, collectRegistrations,
-} from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import type { PimMode } from '../../../pim/types';
 import { hms } from '@/lib/format';
-import { CISCO_ERRORS } from '../cli-utils';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { FIXED_TABLE, padToWidth, renderTable, type TableColumn } from '@/network/devices/shells/cli/TextTable';
@@ -129,19 +123,6 @@ export function pimGlobalRunningConfigLines(router: Router): string[] {
   ];
 }
 
-const PIM_GLOBAL_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'ip pim send-rp-announce': {
-    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
-  },
-  'ip pim send-rp-discovery': {
-    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
-  },
-  'ip pim rp-candidate': {
-    name: 'reste', type: 'REST', description: 'Interface, then interval and priority',
-  },
-};
-
 export function pimGlobalSpecs(ctx: ShowCtx): CommandSpec[] {
   const base = { modes: ['config'], minPrivilege: 15 };
   const withAgent = (apply: (a: PimAgent) => string): string => {
@@ -215,72 +196,81 @@ export function pimGlobalSpecs(ctx: ShowCtx): CommandSpec[] {
       undo: () => withAgent((a) => { a.clearBsrCandidate(); return ''; }),
     },
   ];
-  return [...native, ...specsFromTrieRegistrations(
-    (collector) =>
-      buildPimGlobalConfigCommands(collector as unknown as CommandTrie, ctx),
+  const interfaceAddress = (name: string): string | undefined =>
+    ctx.r().getPort(name)?.getIPAddress()?.toString();
+  const device = () => ctx.r() as unknown as {
+    _recordUnhandledConfigLine?: (line: string) => void;
+    _removeUnhandledConfigLine?: (line: string) => void;
+  };
+  const interfacePlace: ArgumentSpec = {
+    name: 'interface', type: 'INTERFACE', description: 'Interface whose address identifies this router',
+  };
+  const scopePlace: ArgumentSpec = {
+    name: 'ttl', type: 'INT', range: [1, 255], description: 'Time-to-live of the announcements',
+  };
+  const intervalOption = {
+    keyword: 'interval', description: 'Advertisement interval',
+    argument: { name: 'interval', type: 'INT', range: [1, 16383], description: 'Seconds' },
+  } as const;
+  const autoRpLine = (keyword: string, args: Record<string, string>): string =>
+    `ip pim ${keyword}${args.interface ? ` ${args.interface}` : ''} scope ${args.ttl}`;
+  const autoRp: CommandSpec[] = [
     {
-      modes: ['config'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => PIM_GLOBAL_ARGUMENTS[path],
+      ...base, id: 'config-ip-pim-rp-candidate',
+      path: ['ip', 'pim', 'rp-candidate', interfacePlace],
+      description: 'Advertise this router as a candidate RP',
+      undoDescription: 'Remove the candidate RP configuration', undoOmitsArguments: true,
+      options: [
+        { keyword: 'priority', description: 'Priority of the candidate RP',
+          argument: { name: 'priority', type: 'INT', range: [0, 255], description: 'Priority value' } },
+        intervalOption,
+      ],
+      run: (_session, args) => withAgent((a) => {
+        const ip = interfaceAddress(args.interface);
+        if (!ip) return `% Interface ${args.interface} has no IP address`;
+        a.setRpCandidate(ip, args.priority === undefined ? 0 : parseInt(args.priority, 10));
+        if (args.interval !== undefined) a.setCandidateRpInterval(parseInt(args.interval, 10));
+        return '';
+      }),
+      undo: () => withAgent((a) => { a.clearRpCandidate(); return ''; }),
     },
-  )];
-}
-
-export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): void {
-  // `ip pim rp-candidate <iface> [group-list <acl>] [priority <n>]`.
-  trie.registerGreedy('ip pim rp-candidate', 'Advertise this router as a candidate RP', (args) => {
-    const a = agent(ctx.r());
-    const r = ctx.r();
-    if (!a) return '';
-    const iface = args[0];
-    if (!iface) return '% Incomplete command.';
-    const ip = r.getPort(iface)?.getIPAddress()?.toString();
-    if (!ip) return `% Interface ${iface} has no IP address`;
-    const pIdx = args.findIndex((x) => x.toLowerCase() === 'priority');
-    const priority = pIdx >= 0 ? parseInt(args[pIdx + 1] ?? '', 10) : 0;
-    if (Number.isNaN(priority) || priority < 0 || priority > 255) {
-      return `% Invalid input detected at '^' marker.`;
-    }
-    a.setRpCandidate(ip, priority);
-    return '';
-  });
-
-  trie.registerGreedy('ip pim send-rp-announce', 'Announce this router as an Auto-RP candidate RP', (args, raw) => {
-    const a = agent(ctx.r());
-    const r = ctx.r();
-    if (!a) return '';
-    const iface = args[0];
-    if (!iface) return CISCO_ERRORS.INCOMPLETE;
-    const ip = r.getPort(iface)?.getIPAddress()?.toString();
-    if (!ip) return `% Interface ${iface} has no IP address`;
-    const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
-    if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
-    const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
-    if (Number.isNaN(scope) || scope < 1 || scope > 255) throw new CliInvalidInput();
-    a.setRpCandidate(ip, 0);
-    (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
-      ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-announce ${args.join(' ')}`);
-    return '';
-  });
-
-  trie.registerGreedy('ip pim send-rp-discovery', 'Act as the Auto-RP mapping agent', (args, raw) => {
-    const r = ctx.r();
-    if (!agent(r)) return '';
-    const scopeIdx = args.findIndex((x) => x.toLowerCase() === 'scope');
-    if (scopeIdx === -1) return CISCO_ERRORS.INCOMPLETE;
-    const scope = parseInt(args[scopeIdx + 1] ?? '', 10);
-    if (Number.isNaN(scope) || scope < 1 || scope > 255) throw new CliInvalidInput();
-    (r as unknown as { _recordUnhandledConfigLine?: (l: string) => void })
-      ._recordUnhandledConfigLine?.(raw ?? `ip pim send-rp-discovery ${args.join(' ')}`);
-    return '';
-  });
-
-  trie.registerGreedy('no ip pim rp-candidate', 'Remove the candidate RP configuration', () => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    a.clearRpCandidate();
-    return '';
-  });
+    {
+      ...base, id: 'config-ip-pim-send-rp-announce',
+      path: ['ip', 'pim', 'send-rp-announce', interfacePlace, 'scope', scopePlace],
+      description: 'Announce this router as an Auto-RP candidate RP',
+      undoDescription: 'Stop announcing this router as an Auto-RP candidate RP',
+      run: (_session, args) => withAgent((a) => {
+        const ip = interfaceAddress(args.interface);
+        if (!ip) return `% Interface ${args.interface} has no IP address`;
+        a.setRpCandidate(ip, 0);
+        device()._recordUnhandledConfigLine?.(autoRpLine('send-rp-announce', args));
+        return '';
+      }),
+      undo: (_session, args) => withAgent((a) => {
+        a.clearRpCandidate();
+        device()._removeUnhandledConfigLine?.(autoRpLine('send-rp-announce', args));
+        return '';
+      }),
+    },
+    ...[
+      { id: 'config-ip-pim-send-rp-discovery', places: [] as ArgumentSpec[] },
+      { id: 'config-ip-pim-send-rp-discovery-interface', places: [interfacePlace] },
+    ].map(({ id, places }): CommandSpec => ({
+      ...base, id,
+      path: ['ip', 'pim', 'send-rp-discovery', ...places, 'scope', scopePlace],
+      description: 'Act as the Auto-RP mapping agent',
+      undoDescription: 'Stop acting as the Auto-RP mapping agent',
+      run: (_session, args) => withAgent(() => {
+        device()._recordUnhandledConfigLine?.(autoRpLine('send-rp-discovery', args));
+        return '';
+      }),
+      undo: (_session, args) => withAgent(() => {
+        device()._removeUnhandledConfigLine?.(autoRpLine('send-rp-discovery', args));
+        return '';
+      }),
+    })),
+  ];
+  return [...native, ...autoRp];
 }
 
 export function pimShowSpecs(ctx: ShowCtx): CommandSpec[] {

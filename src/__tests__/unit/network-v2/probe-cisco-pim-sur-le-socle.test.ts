@@ -2,7 +2,7 @@
  * PIM configuration (interface and global) declared natively on the socle
  * instead of re-read from the trie.
  *
- * Measured before the change: 10 of the 15 cases fall —
+ * Measured before the change: 13 of the 20 cases fall —
  *   rp-address 999.1.1.1 and join-prune-interval 0 answered a bare
  *     "% Invalid ..." with no caret,
  *   spt-threshold accepted any word and kept nothing, so a valid one never
@@ -13,7 +13,10 @@
  *   query-interval was stored and never rendered in the running-config,
  *   dr-priority zorglub answered "% Invalid priority" without a caret,
  *   `show ip mroute 999.1.1.1` and `show ip pim neighbor zorglub` were
- *     accepted and answered an empty table.
+ *     accepted and answered an empty table,
+ *   rp-candidate priority 999 was refused without a caret, rp-candidate
+ *     group-list 10 was accepted and ignored, and send-rp-announce without
+ *     its scope was not an incomplete command.
  * Pass either way (5): the witnesses — a valid rp-address, its removal, a
  * valid bsr-candidate, `no ip pim sparse-mode`, and the two show commands
  * with a valid argument.
@@ -130,5 +133,39 @@ describe('PIM show commands on the socle', () => {
   it('refuses a word that is not an interface', async () => {
     const r = await router();
     expect(await r.executeCommand('do show ip pim neighbor zorglub')).toMatch(CARET);
+  });
+});
+
+describe('PIM candidate RP and Auto-RP on the socle', () => {
+  it('witness: a candidate RP on an addressed interface is accepted', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip pim rp-candidate GigabitEthernet0/0 priority 10')).toBe('');
+  });
+
+  it('refuses a priority beyond 255', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip pim rp-candidate GigabitEthernet0/0 priority 999'))
+      .toMatch(CARET);
+  });
+
+  it('refuses a group-list it cannot evaluate rather than ignoring it', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip pim rp-candidate GigabitEthernet0/0 group-list 10'))
+      .toMatch(CARET);
+  });
+
+  it('send-rp-announce needs its scope, and `no` removes the recorded line', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip pim send-rp-announce GigabitEthernet0/0'))
+      .toContain('% Incomplete command.');
+    await r.executeCommand('ip pim send-rp-announce GigabitEthernet0/0 scope 16');
+    expect(await running(r)).toContain('ip pim send-rp-announce GigabitEthernet0/0 scope 16');
+    await r.executeCommand('no ip pim send-rp-announce GigabitEthernet0/0 scope 16');
+    expect(await running(r)).not.toContain('ip pim send-rp-announce');
+  });
+
+  it('refuses a scope of zero', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ip pim send-rp-discovery scope 0')).toMatch(CARET);
   });
 });

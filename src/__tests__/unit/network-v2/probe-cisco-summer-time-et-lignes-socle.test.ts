@@ -967,7 +967,7 @@ describe('addresses are judged as addresses', () => {
   });
   it('ip pim rp-address refuses 999.1.1.1 and keeps a valid one', async () => {
     const r = await router('ip multicast-routing');
-    expect(await r.executeCommand('ip pim rp-address 999.1.1.1')).toContain('Invalid RP address');
+    expect(await r.executeCommand('ip pim rp-address 999.1.1.1')).toContain("Invalid input detected at '^' marker.");
     expect(await r.executeCommand('ip pim rp-address 10.0.0.9')).toBe('');
   });
   it('ping source refuses 999.1.1.1', async () => {

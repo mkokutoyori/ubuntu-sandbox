@@ -208,6 +208,10 @@ export class PimAgent {
     this.advertiseCandidateRp();
   }
 
+  setCandidateRpInterval(seconds: number): void {
+    this.config.candidateRpIntervalSec = seconds;
+  }
+
   clearRpCandidate(): void {
     this.config.rpCandidate = null;
   }
