@@ -163,6 +163,23 @@ export function displayDhcpSnooping(): string {
  * both the switch and the router. Wired into the system-view trie of
  * each shell — single source so the list isn't duplicated (DRY).
  */
+export function registerHuaweiUserClock(
+  trie: CommandTrie,
+  getRouter: () => { getManagementService: () => import('../../router/management/RouterManagementService').RouterManagementService } | undefined,
+  setSystemClock: (epochMs: number) => void,
+): void {
+  trie.registerGreedy('clock datetime', 'Set the system date and time', (args) => {
+    const router = getRouter();
+    if (!router) return '';
+    const words = ['datetime', ...args];
+    const verdict = router.getManagementService().configureClock(words);
+    if (typeof verdict === 'string' || verdict === null) return HUAWEI_ERRORS.WRONG(words.join(' '), 0);
+    setSystemClock(verdict);
+    return '';
+  });
+  trie.requireArgs('clock datetime', 2);
+}
+
 export function registerHuaweiCommonSecurity(
   trie: CommandTrie,
   getRouter?: () => { getManagementService: () => import('../../router/management/RouterManagementService').RouterManagementService },

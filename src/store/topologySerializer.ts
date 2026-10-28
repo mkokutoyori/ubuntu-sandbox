@@ -1584,6 +1584,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // before the manager can be asked to enable or start it.
       if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
       if (devData.linuxBonds) restoreLinuxBonds(device, devData.linuxBonds);
+      device.restartTimeDaemonFromFiles();
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
@@ -1607,7 +1608,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsFirewallRules) {
         restoreWindowsFirewallRules(device, devData.windowsFirewallRules);
       }
-      if (devData.registry) restoreRegistry(device, devData.registry);
+      if (devData.registry) {
+        restoreRegistry(device, devData.registry);
+        device.reapplyTimeConfiguration();
+      }
       if (devData.windowsTeams) restoreWindowsTeams(device, devData.windowsTeams);
     }
     if (device instanceof Firewall && devData.runningConfigText) {

@@ -364,6 +364,7 @@ describe('Ping through Switch (equipment-driven communication)', () => {
   // ─── LOGGER ────────────────────────────────────────────────────
 
   it('should emit log events during ping', async () => {
+    Logger.setDebugEnabled(true);
     const { pc1, pc2 } = setupLAN();
 
     await pc1.executeCommand('ifconfig eth0 192.168.1.10');

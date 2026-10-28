@@ -45,6 +45,7 @@ beforeEach(() => {
   resetDeviceCounters();
   MACAddress.resetCounter();
   Logger.reset();
+  Logger.setDebugEnabled(true);
 });
 
 function wire() {

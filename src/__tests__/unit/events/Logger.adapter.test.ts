@@ -34,6 +34,7 @@ describe('Logger ↔ EventBus adapter (Phase 2)', () => {
   });
 
   it('mirrors the four levels (debug/info/warn/error)', () => {
+    Logger.setDebugEnabled(true);
     Logger.debug('s', 'e', 'm');
     Logger.info('s', 'e', 'm');
     Logger.warn('s', 'e', 'm');

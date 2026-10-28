@@ -1,4 +1,4 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
+import { SystemClock, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -41,7 +41,7 @@ import {
   formaterVariables, formaterListeAssociations,
 } from './control';
 import {
-  disciplinerHorloge, appliquerDecision, creerEtatHorloge,
+  disciplinerHorloge, appliquerDecision, creerEtatHorloge, PPM_MAX,
   type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
 } from './discipline';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
@@ -65,6 +65,7 @@ export interface NtpHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
+  getSystemClock?(): SystemClock;
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
   joinMulticastGroup?(iface: string, group: string): void;
@@ -136,7 +137,15 @@ export class NtpAgent {
     private readonly host: NtpHost,
     private readonly getBus: () => IEventBus,
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
+  ) {
+    this.clock = host.getSystemClock?.() ?? new SystemClock();
+    this.clock.onStep((deltaMs) => {
+      if (!this.disciplineIsStepping) this.operatorSteppedClock(deltaMs);
+    });
+  }
+
+  private readonly clock: SystemClock;
+  private disciplineIsStepping = false;
 
   start(): void {
     if (this.running) return;
@@ -401,7 +410,28 @@ export class NtpAgent {
       else this.smoothing.adjust(cooked, -delta / 1000, 0, this.reference.skew());
     }
     if (delta !== 0) for (const a of this.config.associations.values()) a.statistics.correctOffset(delta / 1000);
+    this.disciplineIsStepping = true;
+    try {
+      this.clock.step(delta);
+    } finally {
+      this.disciplineIsStepping = false;
+    }
     this.config.offsetMs = offsetMs;
+    if (kind === 'step' || this.profile.pollModel === 'chrony') this.shiftStoredOffsets(delta);
+  }
+
+  private operatorSteppedClock(deltaMs: number): void {
+    if (this.smoothing !== null) this.smoothing.stepped((this.now() - deltaMs) / 1000, -deltaMs / 1000);
+    for (const a of this.config.associations.values()) a.statistics.correctOffset(deltaMs / 1000);
+    this.shiftStoredOffsets(deltaMs);
+  }
+
+  private shiftStoredOffsets(deltaMs: number): void {
+    if (deltaMs === 0) return;
+    for (const a of this.config.associations.values()) {
+      a.offsetMs -= deltaMs;
+      a.filter = a.filter.map((stage) => ({ ...stage, offsetMs: stage.offsetMs - deltaMs }));
+    }
   }
 
   reselectSources(): void {
@@ -449,10 +479,6 @@ export class NtpAgent {
       this.horloge.etat, { quoi: 'step', nouvelOffset: this.config.offsetMs + deltaMs }, 0);
     this.horloge.derniereDecision = 'step';
     this.setClockOffset(this.horloge.etat.offsetApplique, 'step');
-    for (const a of this.config.associations.values()) {
-      a.offsetMs -= deltaMs;
-      a.filter = a.filter.map((stage) => ({ ...stage, offsetMs: stage.offsetMs - deltaMs }));
-    }
   }
 
   startBurst(serverIp: string, goodSamples: number, totalSamples: number): boolean {
@@ -495,6 +521,14 @@ export class NtpAgent {
   /** `makestep <seuil> <limite>` de chrony, et l'equivalent d'un `-g`. */
   setReglagesDiscipline(r: ReglagesDiscipline): void { this.reglagesDiscipline = r; }
   getEtatHorloge(): Readonly<EtatHorloge> { return this.horloge.etat; }
+
+  restartDiscipline(): void {
+    this.horloge = {
+      etat: { ...creerEtatHorloge(), offsetApplique: this.horloge.etat.offsetApplique },
+      dernierReglageMs: 0,
+      derniereDecision: null,
+    };
+  }
   getDerniereDecision(): DecisionDiscipline['quoi'] | null {
     return this.horloge.derniereDecision;
   }
@@ -541,7 +575,8 @@ export class NtpAgent {
     if (!this.isSynced()) return 0;
     const best = [...this.config.associations.values()].find((a) => a.preferred);
     if (!best || best.pollSec <= 0) return 0;
-    return (best.offsetMs / 1000 / best.pollSec) * 1e6;
+    const ppm = (best.offsetMs / 1000 / best.pollSec) * 1e6;
+    return Math.max(-PPM_MAX, Math.min(PPM_MAX, ppm));
   }
   setAuthenticate(on: boolean): void { this.config.authenticate = on; }
   addAuthKey(id: number, algo: string, key: string): void { this.config.authKeys.set(id, { id, algo, key }); }
@@ -621,7 +656,7 @@ export class NtpAgent {
   isSynced(): boolean { return this.config.localStratum < NTP_MAX_STRATUM && this.config.system.leap !== 3; }
 
   now(): number {
-    return simulationNowMs() + this.config.offsetMs;
+    return this.clock.now();
   }
 
   private nts: NtsSupport | null = null;
@@ -1558,6 +1593,7 @@ export class NtpAgent {
     this.horloge.dernierReglageMs = now;
     this.horloge.derniereDecision = decision.quoi;
     if (decision.quoi === 'spike' || decision.quoi === 'panic') return;
+    const measuredOffsetMs = best.offsetMs;
     system.updateMs = best.updateMs;
     system.offsetMs = combined.offsetMs;
     system.jitterMs = combined.jitterMs;
@@ -1589,7 +1625,7 @@ export class NtpAgent {
       system.rootDelayMs = best.rootDelayMs + best.delayMs;
       system.rootDispersionMs = best.rootDispersionMs
         + Math.sqrt(best.jitterMs ** 2 + combined.jitterMs ** 2)
-        + Math.max(best.dispersionMs + NTP_PHI * (now - best.updateMs) + Math.abs(best.offsetMs), NTP_MIN_DISPERSION_MS);
+        + Math.max(best.dispersionMs + NTP_PHI * (now - best.updateMs) + Math.abs(measuredOffsetMs), NTP_MIN_DISPERSION_MS);
     }
     system.peerIp = best.serverIp;
     this.config.lastSyncMs = now;
@@ -1600,12 +1636,12 @@ export class NtpAgent {
         topic: 'ntp.synced',
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
-          serverIp: best.serverIp, offsetMs: best.offsetMs, delayMs: best.delayMs,
+          serverIp: best.serverIp, offsetMs: measuredOffsetMs, delayMs: best.delayMs,
           newStratum: this.config.localStratum,
         },
       });
       Logger.info(this.host.id, 'ntp:synced',
-        `${this.host.name}: NTP synced with ${best.serverIp} stratum ${this.config.localStratum} offset ${best.offsetMs}ms`);
+        `${this.host.name}: NTP synced with ${best.serverIp} stratum ${this.config.localStratum} offset ${measuredOffsetMs}ms`);
     }
   }
 
@@ -1758,7 +1794,7 @@ export class NtpAgent {
       rootdelay: (best ? Math.abs(best.delayMs) : 0).toFixed(3),
       rootdisp: (best ? best.dispersionMs : 0).toFixed(3),
       refid: cfg.refIdentifier,
-      offset: cfg.offsetMs.toFixed(3),
+      offset: cfg.system.offsetMs.toFixed(3),
       frequency: this.getDriftPpm().toFixed(3),
       sys_jitter: '0.000',
       clk_jitter: '0.000',

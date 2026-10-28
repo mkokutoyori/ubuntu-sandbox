@@ -1,4 +1,5 @@
 import type { EthernetFrame, IPv4Packet } from '../../../core/types';
+import type { SystemClock } from '../../../core/SystemClock';
 import type { SshKeyAlgorithm } from '../../../protocols/ssh/SshHostKey';
 import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
@@ -47,6 +48,7 @@ export interface ManagementHost {
   ports(): Port[];
   sendFrame(iface: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  systemClock(): SystemClock;
   sessions(): readonly VdomSessions[];
   connectedRoutes(): ReadonlyArray<{ network: string; mask: string; iface: string }>;
   addressOf(iface: string): string | undefined;
@@ -144,6 +146,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     ports: () => host.ports(),
     sendFrame: (name, frame) => { host.sendFrame(name, frame); },
     sendUdpDatagram: (request) => host.sendUdpDatagram(request),
+    systemClock: () => host.systemClock(),
     vrfs: () => host.routingVrfs?.() ?? [0],
     bus: () => host.bus(),
   });

@@ -13,14 +13,14 @@ npm run dev              # Dev server on port 8080
 npm run typecheck        # TypeScript check — the ONLY command that checks anything
 npm run build            # Production build
 npm run lint             # ESLint (flat config)
-npm run test:run         # Vitest single run
+npm run test:run         # Vitest over the WHOLE suite — never run it (rule 11)
 npx vitest run src/__tests__/unit/network-v2/ospf.test.ts   # One test file
 npm run test:e2e         # Playwright e2e (spins up dev server on :8080)
 ```
 
 **`tsc --noEmit -p tsconfig.json` checks NOTHING.** The root `tsconfig.json` is solution-style (`"files": []` plus `references`), so pointing `tsc` at it succeeds having compiled zero files. Use `npm run typecheck` (`tsconfig.app.json`). The repo carries a standing backlog of type errors, almost all in tests; the rule is not "zero errors" but **no more than before your change** — count with `npm run typecheck 2>&1 | grep -c "error TS"` on your branch and on its base.
 
-Full sweeps are slow (`network-v2` is ~1900 files / ~31000 tests, ~55 min). Redirect to a log and poll; never edit source or `git stash` while a sweep is running — vitest loads modules lazily, so a mid-run edit poisons the result.
+There is no full sweep: `network-v2` alone is ~1900 files / ~31000 tests, ~55 min, and running it is forbidden (rule 11). Run the tests a change can reach, in chunks. Redirect each chunk to a log and poll; never edit source or `git stash` in a tree while a chunk is running — vitest loads modules lazily, so a mid-run edit poisons the result.
 
 ## Rules
 
@@ -73,6 +73,14 @@ No inline `//`, no new `/** */`, no file headers, no section banners, no `// ─
 ### 10. Code is written in English
 
 Identifiers, types, functions, constants, locals, test names: English, without exception. Some older code carries French identifiers; that is legacy, not a pattern to extend. Do not rename it wholesale — leave it and write English in anything you add or touch.
+
+### 11. Never sweep a directory — find the tests concerned, and run at most 600 files per invocation
+
+**A run of `src/__tests__/unit/network-v2` as a whole, of `npm run test:run`, or of any directory or glob that is not a list of files you chose, is forbidden.** Finding the tests a change can reach is part of the task and is mandatory: do the research, do not fall back on "run everything and diff the failures".
+
+Research means, at least: grep the changed symbol, method, CLI string, event name, file path and message text across `src/__tests__` — **the message as well as the event name** (two RIP tests read `rip:send` by the destination address in its message, and a search on event names alone missed them); follow importers of the changed module, including the `_*` helpers that tests import; add the tests that observe the whole of a shared channel when the change touches it (every reader of `Logger`, every `subscribeAll` / `BusTracer` test); add the probes and tests of the subsystem's own directory. Say in the commit message how the set was found and how many files were run.
+
+**One `vitest run` takes at most 600 files, counted on the command line.** A larger set is cut into chunks of at most 600, run one after another, each chunk's result read before the next starts. If the research yields more than 600 files, it is too coarse: narrow it before running anything. Never raise the limit and never replace the file list by a directory.
 
 ## Architecture
 

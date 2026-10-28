@@ -663,6 +663,7 @@ export class Firewall extends Equipment {
       port: (iface) => this.getPort(iface),
       ports: () => [...this.getPorts().values()],
       sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+      systemClock: () => this.getSystemClock(),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       sessions: () => this.vdoms.names().map((vdom) => ({ vdom, table: this.getVdom(vdom).sessions })),
       connectedRoutes: () => this.interfaces.connectedRoutes(),

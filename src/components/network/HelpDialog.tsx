@@ -35,7 +35,6 @@ export function HelpDialog({ open, onOpenChange }: HelpDialogProps) {
               <li><strong>Export</strong> — download the topology as a JSON file.</li>
               <li><strong>Import</strong> — load a topology from a local JSON file.</li>
               <li><strong>Reset</strong> — power-cycle every device on the canvas.</li>
-              <li><strong>Logs</strong> — open the network event log panel.</li>
               <li><strong>Settings</strong> — preferences by category; Simulation holds the clock (pause, speed, advance every device).</li>
             </ul>
           </section>

@@ -15,7 +15,6 @@ import { useState, useCallback, useMemo, useEffect, useSyncExternalStore } from 
 import { DevicePalette } from './DevicePalette';
 import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
-import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
 import { SettingsDialog } from '@/components/settings';
@@ -41,7 +40,6 @@ export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
 
   // Tiling state
   const [tileLayout, setTileLayout] = useState<TileLayout>('grid');
@@ -431,8 +429,6 @@ export function NetworkDesigner() {
         onReset={handleReset}
         onHelp={() => setHelpOpen(true)}
         onSettings={() => setSettingsOpen(true)}
-        logsOpen={logsOpen}
-        onToggleLogs={() => setLogsOpen(o => !o)}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
@@ -538,12 +534,6 @@ export function NetworkDesigner() {
             <PropertiesPanel />
           </div>
         </div>
-
-        {/* Network logs panel (slide-in from the right edge). Lives in the
-            same column as Properties so opening it doesn't reflow the
-            canvas. The Logger backend already buffers every event; we
-            just surface it. */}
-        {logsOpen && <NetworkLogsPanel />}
       </div>
 
       {/* ── Terminal tile overlay (hidden while peeking at the desktop) ── */}
