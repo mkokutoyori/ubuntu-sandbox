@@ -374,6 +374,15 @@ const AUTRES: ArgumentSpec = {
   name: 'autres', type: 'REST', optional: true, values: [], description: '',
 };
 
+const MAX_LISTED = 8;
+
+const listOf = (first: ArgumentSpec): ArgumentSpec[] => [
+  first,
+  ...Array.from({ length: MAX_LISTED - 1 }, (_unused, index): ArgumentSpec => ({
+    ...first, name: `${first.name}${index + 2}`, optional: true,
+  })),
+];
+
 const GROUPES_DH: ReadonlyArray<readonly [string, string]> = [
   ['1', 'Diffie-Hellman group 1 (768 bit)'],
   ['2', 'Diffie-Hellman group 2 (1024 bit)'],
@@ -403,7 +412,7 @@ const METHODE_AUTH = IKEV2_ENUM('methode', 'Authentication method', [
 
 const IKEV2_PROPOSAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  encryption: [IKEV2_ENUM('algorithme', 'Encryption algorithm', [
+  encryption: listOf(IKEV2_ENUM('algorithme', 'Encryption algorithm', [
     ['3des', 'Three key triple DES'],
     ['aes-cbc-128', 'AES-CBC with a 128 bit key'],
     ['aes-cbc-192', 'AES-CBC with a 192 bit key'],
@@ -411,16 +420,15 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     ['aes-gcm-128', 'AES-GCM with a 128 bit key'],
     ['aes-gcm-256', 'AES-GCM with a 256 bit key'],
     ['des', 'DES - Data Encryption Standard (56 bit keys)'],
-  ]), AUTRES],
-  integrity: [IKEV2_ENUM('algorithme', 'Integrity algorithm', CONDENSES), AUTRES],
-  group: [IKEV2_ENUM('groupe', 'Diffie-Hellman group', GROUPES_DH), AUTRES],
-  prf: [IKEV2_ENUM('fonction', 'Pseudo-random function', CONDENSES), AUTRES],
+  ])),
+  integrity: listOf(IKEV2_ENUM('algorithme', 'Integrity algorithm', CONDENSES)),
+  group: listOf(IKEV2_ENUM('groupe', 'Diffie-Hellman group', GROUPES_DH)),
+  prf: listOf(IKEV2_ENUM('fonction', 'Pseudo-random function', CONDENSES)),
 };
 
 const IKEV2_POLICY_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  proposal: [{ name: 'nom', type: 'WORD', description: 'Name of the IKEv2 proposal' },
-    AUTRES],
+  proposal: listOf({ name: 'nom', type: 'WORD', description: 'Name of the IKEv2 proposal' }),
   'match address local': {
     name: 'adresse', type: 'IP_ADDR', description: 'Local address the policy matches',
   },
