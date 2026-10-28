@@ -205,6 +205,8 @@ export abstract class CLITerminalSession extends TerminalSession {
   /** Overridden by vendors carrying a per-line CLI state bag. */
   protected onLineAssigned(_kind: CliLineKind, _index: number, _recordId: string): void { /* vendor hook */ }
 
+  protected outboundTransportRefusal(_protocol: 'telnet' | 'ssh'): string | null { return null; }
+
   private occupiedLineName: string | null = null;
 
   /** The line this session occupies (`con 0`, `vty 2`, …), or null. */
@@ -522,7 +524,21 @@ export abstract class CLITerminalSession extends TerminalSession {
       const wanted = trimmed === '' ? this.lastSuspended() : (Number.parseInt(clientLine.split(/\s+/)[1] ?? '', 10) || this.lastSuspended());
       if (wanted !== null && this.resumeSuspended(wanted)) return;
     }
+    if (firstWord === 'ssh') {
+      const refusal = this.outboundTransportRefusal('ssh');
+      if (refusal !== null) {
+        this.addLine(refusal);
+        this.notify();
+        return;
+      }
+    }
     if (firstWord === 'telnet') {
+      const refusal = this.outboundTransportRefusal('telnet');
+      if (refusal !== null) {
+        this.addLine(refusal);
+        this.notify();
+        return;
+      }
       await this.enterTelnet(clientLine.split(/\s+/).slice(1));
       return;
     }

@@ -1140,6 +1140,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected readonly consoleTransport = new Map<string, string>();
   protected auxLineTransportOutput: 'ssh' | 'telnet' | 'all' | 'none' | null = null;
 
+  outboundTransportOf(kind: 'con' | 'aux'): string | null {
+    return kind === 'aux'
+      ? this.auxLineTransportOutput
+      : this.consoleTransport.get('output') ?? null;
+  }
+
   private serialStoreForSelectedLine(): Map<string, string> | null {
     if (this.selectedAuxLine != null) return this.auxSerial;
     if (this.selectedConsoleLine != null && !this.selectedVtyRange) return this.consoleSerial;

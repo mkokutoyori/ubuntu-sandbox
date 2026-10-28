@@ -4164,6 +4164,6 @@ atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à 
 ### [telnet-vrp] client VRP
 `Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
 
-## Cisco: transport output is stored, not enforced
+## Cisco: wording of the outbound transport refusals
 
-Measured: the time, log, line and archive families are declared on the socle. `transport output` is stored and rendered on vty, aux and console lines but no outbound telnet or ssh connection consults it. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner` and its documentation was not reachable to confirm it. `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART.
+Measured: `transport output` is enforced for `telnet` and `ssh` launched from a console, aux or vty session (the vty block is found by the session's line index). The refusal wordings `% Telnet connections not permitted from this terminal` and `% SSH connections not permitted from this terminal` are written from memory of IOS: the Cisco documentation was not reachable to confirm them. Scripted and non-interactive `telnet`/`ssh` (`executeCommand`) do not consult the setting. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner`, also unconfirmed. `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART.
