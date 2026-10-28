@@ -69,9 +69,13 @@ export interface OSPFExtraConfig {
   maxLsa?: number;
   gracefulRestart?: { enabled: boolean; gracePeriod: number };
   bfdAllInterfaces?: boolean;
-  redistributeStatic?: { subnets: boolean; metricType: number };
-  redistributeConnected?: { subnets: boolean };
+  redistributeStatic?: { subnets: boolean; metricType: number; metric?: number };
+  redistributeConnected?: { subnets: boolean; metric?: number; metricType?: number };
   redistributeRip?: { subnets: boolean; metric?: number; metricType: number };
+  redistributeOther?: Array<{
+    protocol: 'bgp' | 'eigrp' | 'ospf' | 'isis'; id?: string;
+    subnets: boolean; metric?: number; metricType?: number;
+  }>;
   virtualLinks: Map<string, string>;
   areaDefaultCost: Map<string, number>;
   areaAuthentication: Map<string, 'simple' | 'message-digest' | 'null'>;
@@ -1711,7 +1715,10 @@ export class RouterOSPFIntegration {
         if (rt.type !== 'static') continue;
         if (rt.network.toString() === '0.0.0.0') continue;
         if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
-        routes.push({ network: rt.network.toString(), mask: rt.mask.toString(), metric: 20, metricType });
+        routes.push({
+          network: rt.network.toString(), mask: rt.mask.toString(),
+          metric: extra.redistributeStatic.metric ?? 20, metricType,
+        });
       }
     }
 
@@ -1730,7 +1737,11 @@ export class RouterOSPFIntegration {
         if (rt.type !== 'connected') continue;
         if (this.ospfEngine.getInterface(rt.iface)) continue; // already an OSPF interface
         if (this.isFilteredByDistributeList(rt.network.toString(), rt.mask.toString(), 'out')) continue;
-        routes.push({ network: rt.network.toString(), mask: rt.mask.toString(), metric: 20, metricType: 2 });
+        routes.push({
+          network: rt.network.toString(), mask: rt.mask.toString(),
+          metric: extra.redistributeConnected.metric ?? 20,
+          metricType: (extra.redistributeConnected.metricType ?? 2) as 1 | 2,
+        });
       }
     }
 

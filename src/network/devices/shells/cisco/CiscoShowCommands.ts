@@ -1024,6 +1024,12 @@ function lignesDAire(
       spfThrottle?: { initial: number; hold: number; max: number };
       defaultInformation?: DefaultInformationOriginate;
       defaultMetric?: number;
+      redistributeStatic?: { subnets: boolean; metricType: number; metric?: number };
+      redistributeConnected?: { subnets: boolean; metric?: number; metricType?: number };
+      redistributeRip?: { subnets: boolean; metric?: number; metricType: number };
+      redistributeOther?: Array<{
+        protocol: string; id?: string; subnets: boolean; metric?: number; metricType?: number;
+      }>;
     };
   })._getOSPFExtraConfig?.();
   for (const [id, voisin] of extra?.virtualLinks ?? []) {
@@ -1046,6 +1052,20 @@ function lignesDAire(
     lignes.push(`neighbor ${voisin.ip}`
       + `${voisin.priority !== undefined ? ` priority ${voisin.priority}` : ''}`
       + `${voisin.pollInterval !== undefined ? ` poll-interval ${voisin.pollInterval}` : ''}`);
+  }
+  const redistribute = (
+    source: string,
+    config: { subnets: boolean; metric?: number; metricType?: number },
+  ): string => ['redistribute', source,
+    ...(config.metric !== undefined ? ['metric', String(config.metric)] : []),
+    ...(config.metricType === 1 ? ['metric-type 1'] : []),
+    ...(config.subnets ? ['subnets'] : []),
+  ].join(' ');
+  if (extra?.redistributeStatic) lignes.push(redistribute('static', extra.redistributeStatic));
+  if (extra?.redistributeConnected) lignes.push(redistribute('connected', extra.redistributeConnected));
+  if (extra?.redistributeRip) lignes.push(redistribute('rip', extra.redistributeRip));
+  for (const other of extra?.redistributeOther ?? []) {
+    lignes.push(redistribute(`${other.protocol} ${other.id}`, other));
   }
   if (extra?.defaultMetric !== undefined) lignes.push(`default-metric ${extra.defaultMetric}`);
   if (extra?.defaultInformation) lignes.push(defaultInformationLine(extra.defaultInformation));

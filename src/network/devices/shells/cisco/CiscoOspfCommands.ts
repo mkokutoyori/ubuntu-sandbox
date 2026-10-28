@@ -37,6 +37,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import type { OptionSpec } from '@/cli/OptionBag';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { toutesLesSuites } from './ciscoContinuations';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -358,40 +359,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('redistribute', 'Redistribute routes from another routing protocol', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const protocol = args[0].toLowerCase();
-    const knownProtocols = ['connected', 'static', 'rip', 'eigrp', 'bgp', 'isis', 'ospf'];
-    if (!knownProtocols.includes(protocol)) return "% Invalid input detected at '^' marker.";
-    if (protocol === 'static') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      let metricType = 2; // default E2
-      for (let i = 0; i < args.length - 1; i++) {
-        if (args[i].toLowerCase() === 'metric-type') metricType = parseInt(args[i + 1], 10);
-      }
-      extra.redistributeStatic = { subnets, metricType };
-    } else if (protocol === 'connected') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      extra.redistributeConnected = { subnets };
-    } else if (protocol === 'rip') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      let metricType = 2;
-      let metric: number | undefined;
-      for (let i = 0; i < args.length - 1; i++) {
-        const tk = args[i].toLowerCase();
-        if (tk === 'metric-type') metricType = parseInt(args[i + 1], 10);
-        else if (tk === 'metric') {
-          const m = parseInt(args[i + 1], 10);
-          if (!Number.isNaN(m)) metric = m;
-        }
-      }
-      extra.redistributeRip = { subnets, metric, metricType };
-    }
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
   trie.registerGreedy('distribute-list', 'Filter networks in routing updates', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
@@ -410,21 +377,6 @@ function adresseReseau(ip: string, wildcard: string): string {
 
   trie.registerGreedy('no default-metric', 'Stop using a default metric', () => {
     ctx.r()._getOSPFExtraConfig().defaultMetric = undefined;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
-  trie.registerGreedy('no redistribute', 'Stop redistributing routes', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const protocol = (args[0] ?? '').toLowerCase();
-    if (protocol === 'static') extra.redistributeStatic = undefined;
-    else if (protocol === 'connected') extra.redistributeConnected = undefined;
-    else if (protocol === 'rip') extra.redistributeRip = undefined;
-    else {
-      extra.redistributeStatic = undefined;
-      extra.redistributeConnected = undefined;
-      extra.redistributeRip = undefined;
-    }
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -1191,16 +1143,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   neighbor: { name: 'voisin', type: 'IP_ADDR', description: 'Neighbor address' },
   'timers throttle lsa': INTERVALLES_LSA,
   'timers throttle spf': INTERVALLES_SPF,
-  redistribute: [{
-    name: 'protocole', type: 'ENUM', description: 'Source protocol to redistribute',
-    values: [
-      { keyword: 'bgp', description: 'Border Gateway Protocol (BGP)' },
-      { keyword: 'connected', description: 'Connected' },
-      { keyword: 'eigrp', description: 'Enhanced Interior Gateway Routing Protocol (EIGRP)' },
-      { keyword: 'rip', description: 'Routing Information Protocol (RIP)' },
-      { keyword: 'static', description: 'Static routes' },
-    ],
-  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
   'distribute-list': [{
     name: 'filtre', type: 'WORD', description: 'Filter to apply',
     alternatives: [
@@ -1450,8 +1392,111 @@ function aireSpecs(ctx: CiscoShellContext): CommandSpec[] {
   })) as CommandSpec[];
 }
 
+const REDISTRIBUTE_OPTIONS: readonly OptionSpec[] = [
+  { keyword: 'subnets', description: 'Consider subnets for redistribution' },
+  {
+    keyword: 'metric', description: 'Metric for redistributed routes',
+    argument: OSPF_INT('metric', 0, 16777214, 'OSPF default metric'),
+  },
+  {
+    keyword: 'metric-type', description: 'OSPF/IS-IS exterior metric type for redistributed routes',
+    argument: {
+      name: 'metric-type', type: 'ENUM', description: 'External metric type',
+      values: [
+        { keyword: '1', description: 'Set OSPF External Type 1 metrics' },
+        { keyword: '2', description: 'Set OSPF External Type 2 metrics' },
+      ],
+    },
+  },
+];
+
+type RedistributeOther = NonNullable<
+  ReturnType<CiscoShellContext['r']> extends infer R
+    ? R extends { _getOSPFExtraConfig(): infer E } ? E : never : never
+>['redistributeOther'];
+
+function redistributeSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const extra = () => ctx.r()._getOSPFExtraConfig();
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const settings = (args: Record<string, string>) => ({
+    subnets: args.subnets !== undefined,
+    ...(args.metric !== undefined ? { metric: Number(args.metric) } : {}),
+    ...(args['metric-type'] !== undefined ? { metricType: Number(args['metric-type']) } : {}),
+  });
+  const own = (
+    protocol: 'static' | 'connected' | 'rip', description: string,
+  ): CommandSpec => ({
+    ...base, id: `ospf-redistribute-${protocol}`, path: ['redistribute', protocol],
+    options: REDISTRIBUTE_OPTIONS, description,
+    undoDescription: `Stop redistributing ${protocol} routes`,
+    run: (_session, args) => {
+      const config = settings(args);
+      if (protocol === 'static') {
+        extra().redistributeStatic = { ...config, metricType: config.metricType ?? 2 };
+      } else if (protocol === 'connected') {
+        extra().redistributeConnected = config;
+      } else {
+        extra().redistributeRip = { ...config, metricType: config.metricType ?? 2 };
+      }
+      return converge();
+    },
+    undo: () => {
+      if (protocol === 'static') extra().redistributeStatic = undefined;
+      else if (protocol === 'connected') extra().redistributeConnected = undefined;
+      else extra().redistributeRip = undefined;
+      return converge();
+    },
+  });
+  const other = (
+    protocol: 'bgp' | 'eigrp' | 'ospf', range: [number, number], description: string,
+  ): CommandSpec => ({
+    ...base, id: `ospf-redistribute-${protocol}`,
+    path: ['redistribute', protocol, OSPF_INT('id', range[0], range[1], 'Process or autonomous system number')],
+    options: REDISTRIBUTE_OPTIONS, description,
+    undoDescription: `Stop redistributing ${protocol} routes`,
+    run: (_session, args) => {
+      const list = (extra().redistributeOther ??= []) as NonNullable<RedistributeOther>;
+      const entry = { protocol, id: args.id, ...settings(args) };
+      const index = list.findIndex((item) => item.protocol === protocol && item.id === args.id);
+      if (index >= 0) list[index] = entry; else list.push(entry);
+      return converge();
+    },
+    undo: (_session, args) => {
+      const list = extra().redistributeOther;
+      if (list) {
+        extra().redistributeOther = list.filter(
+          (item) => !(item.protocol === protocol && item.id === args.id));
+      }
+      return converge();
+    },
+  });
+  return [
+    own('static', 'Static routes'),
+    own('connected', 'Connected'),
+    own('rip', 'Routing Information Protocol (RIP)'),
+    other('bgp', [1, 4294967295], 'Border Gateway Protocol (BGP)'),
+    other('eigrp', [1, 65535], 'Enhanced Interior Gateway Routing Protocol (EIGRP)'),
+    other('ospf', [1, 65535], 'Open Shortest Path First (OSPF)'),
+    {
+      ...base, id: 'ospf-redistribute-all', path: ['redistribute'],
+      description: 'Redistribute information from another routing protocol',
+      existsOnlyNegated: true, run: () => '% Incomplete command.',
+      undo: () => {
+        const config = extra();
+        config.redistributeStatic = undefined;
+        config.redistributeConnected = undefined;
+        config.redistributeRip = undefined;
+        config.redistributeOther = undefined;
+        return converge();
+      },
+    },
+  ];
+}
+
 export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [
+    ...redistributeSpecs(ctx),
     ...specsFromTrieRegistrations(
       (collector) =>
         buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),

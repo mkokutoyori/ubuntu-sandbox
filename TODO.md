@@ -4205,3 +4205,17 @@ environnement, probe-fuseau-linux-et-pare-feu, probe-fuser-porte-de-psmisc,
 probe-ldapsearch-linux-interroge-le-controleur-de-domaine,
 probe-oracle-sqlplus-silencieux-et-rman-a-froid, probe-proc-sys-write-reaches-
 the-store, probe-procfs-does-not-grow, scenario10-linux-audit, tail.
+
+## OSPF redistribute: route-map, tag, and sources the engine does not evaluate
+
+`redistribute static|connected|rip` under `router ospf` now judges its options,
+honours `metric` and `metric-type` in the LSAs the engine originates and is
+rendered in the running-config. Still open: `route-map` and `tag` are not
+declared (refused at the caret) because the engine neither evaluates a
+route-map on redistribution nor carries the external route tag; and
+`redistribute bgp|eigrp|ospf N` is stored and rendered but no route from those
+sources enters OSPF. IS-IS as a source is not declared. The same renderer gap
+(stored, accepted, not shown) still exists for `distribute-list`, `max-lsa`,
+`summary-address`, `max-metric router-lsa`, `bfd all-interfaces` and
+`graceful-restart` under `router ospf`.
+
