@@ -7008,6 +7008,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       [['lease'], 'Set DHCP lease duration'],
       [['option'], 'Set a raw DHCP option'],
       [['show', 'ip', 'http', 'server'], 'HTTP server information'],
+      [['match'], 'Match criteria', ['config-cmap']],
+      [['match', 'access-group'], 'Access group', ['config-cmap']],
+      [['service-policy', 'type'], 'Type of the service policy', ['config-zone-pair']],
     ];
   }
 

@@ -15,7 +15,6 @@ import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
 import type { OptionSpec } from '@/cli/OptionBag';
-import { boundedInteger } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
@@ -336,82 +335,16 @@ function verifierMethodesAaa(phase: AaaPhase, methods: readonly string[]): strin
 }
 
 export function buildSecuritySubmodeCommands(
-  cmapTrie: CommandTrie,
-  pmapTrie: CommandTrie,
   pmapClassTrie: CommandTrie,
-  cpTrie: CommandTrie,
-  zoneTrie: CommandTrie,
-  zonePairTrie: CommandTrie,
-  trTrie: CommandTrie,
   trustpointTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
-  buildClassMapSubmodeOn(cmapTrie, ctx);
-  buildPolicyMapSubmodeOn(pmapTrie, ctx);
   buildPolicyClassSubmodeOn(pmapClassTrie, ctx);
-  buildControlPlaneSubmodeOn(cpTrie, ctx);
-  buildZoneSubmodeOn(zoneTrie, ctx);
-  buildZonePairSubmodeOn(zonePairTrie, ctx);
   buildTrustpointSubmodeOn(trustpointTrie, ctx);
 }
 
 const CMAP_ACL_MIN = 1;
 const CMAP_ACL_MAX = 2799;
-
-export function buildClassMapSubmodeOn(
-  cmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  cmapTrie.registerGreedy('match', 'Match criteria', (args) => {
-    const name = ctx.getClassMap?.();
-    if (!name) return '';
-    const cm = sec().classMaps.get(name);
-    if (!cm) return '';
-    if (args[0] === 'access-group') {
-      if (args[1] === undefined) throw new CliIncomplete();
-      if (args[1] === 'name') {
-        if (args[2] === undefined) throw new CliIncomplete();
-        cm.matches.push({ kind: 'access-group-name', value: args[2] });
-      } else if (boundedInteger(args[1], CMAP_ACL_MIN, CMAP_ACL_MAX) !== null) {
-        cm.matches.push({ kind: 'access-group-num', value: args[1] });
-      } else {
-        throw new CliInvalidInput({ token: args[1] });
-      }
-    } else if (args[0] === 'protocol' && args[1]) {
-      cm.matches.push({ kind: 'protocol', value: args[1] });
-    } else if (args[0] === 'any') {
-      cm.matches.push({ kind: 'any' });
-    }
-    return '';
-  });
-}
-
-export function buildPolicyMapSubmodeOn(
-  pmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  pmapTrie.registerGreedy('class', 'Class for policy', (args) => {
-    const pname = ctx.getPolicyMap?.();
-    if (!pname) return '';
-    const pm = sec().policyMaps.get(pname);
-    if (!pm) return '';
-    let kind: 'class-default' | 'named' | 'inspect' = 'named';
-    let i = 0;
-    if (args[i] === 'type' && args[i + 1] === 'inspect') { kind = 'inspect'; i += 2; }
-    const cname = args[i] ?? '';
-    if (cname === 'class-default') kind = 'class-default';
-    let cls = pm.classes.find(c => c.className === cname);
-    if (!cls) {
-      cls = { className: cname, kind, actions: [] };
-      pm.classes.push(cls);
-    }
-    ctx.setPolicyClass?.(cname);
-    ctx.setMode('config-pmap-c' as CiscoShellMode);
-    return '';
-  });
-}
 
 export function buildPolicyClassSubmodeOn(
   pmapClassTrie: CommandTrie, ctx: CiscoSecurityShellContext,
@@ -428,47 +361,6 @@ export function buildPolicyClassSubmodeOn(
     if (spec.greedy) pmapClassTrie.registerGreedy(spec.words, spec.description, apply);
     else pmapClassTrie.register(spec.words, spec.description, () => apply([]));
   }
-}
-
-export function buildControlPlaneSubmodeOn(
-  cpTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  cpTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
-    if (args[0] === 'input' && args[1]) sec().controlPlane.servicePolicyInput = args[1];
-    if (args[0] === 'output' && args[1]) sec().controlPlane.servicePolicyOutput = args[1];
-    return '';
-  });
-}
-
-export function buildZoneSubmodeOn(
-  zoneTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  zoneTrie.registerGreedy('description', 'Zone description', (args) => {
-    const name = ctx.getZone?.();
-    if (!name) return '';
-    const z = sec().zones.get(name);
-    if (z) (z as unknown as { description?: string }).description = args.join(' ');
-    return '';
-  });
-}
-
-export function buildZonePairSubmodeOn(
-  zonePairTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  zonePairTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
-    const name = ctx.getZonePair?.();
-    if (!name) return '';
-    const zp = sec().zonePairs.get(name);
-    if (!zp) return '';
-    if (args[0] === 'type' && args[1] === 'inspect' && args[2]) zp.servicePolicy = args[2];
-    return '';
-  });
 }
 
 export function buildTrustpointSubmodeOn(
@@ -577,20 +469,6 @@ function formes(
   return { name, type: 'REST', description, alternatives };
 }
 
-const CMAP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'access-group', description: 'Access group',
-    argument: formes('liste', 'Access list to match', [
-      { keyword: `<${CMAP_ACL_MIN}-${CMAP_ACL_MAX}>`, description: 'Access list index' },
-      { keyword: 'name', description: 'Named access list' },
-    ]),
-  },
-  {
-    keyword: 'protocol', description: 'Protocol',
-    argument: place('protocole', 'WORD', 'Protocol name'),
-  },
-  { keyword: 'any', description: 'Any packets', argument: null },
-];
 
 /**
  * Ce que la configuration globale de securite confie au socle.
@@ -635,31 +513,71 @@ export function securityGlobalSpecs(ctx: CiscoSecurityShellContext): CommandSpec
 }
 
 export function classMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildClassMapSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-cmap'], minPrivilege: 15,
-      keywordsFor: () => CMAP_KEYWORDS,
-      argumentFor: () => null,
+  const base = { modes: ['config-cmap'], minPrivilege: 15 };
+  const classMap = () => {
+    const name = ctx.getClassMap?.();
+    return name ? getSecurityConfig(ctx.r()).classMaps.get(name) : undefined;
+  };
+  const match = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>, description: string,
+    record: (args: Record<string, string>) => { kind: string; value?: string },
+  ): CommandSpec => ({
+    ...base, id, path: [...path], description,
+    run: (_session, args) => {
+      const entry = classMap();
+      if (entry) (entry.matches as Array<{ kind: string; value?: string }>).push(record(args));
+      return '';
     },
-  );
+  });
+  return [
+    match('cmap-match-access-group-name',
+      ['match', 'access-group', 'name', place('name', 'WORD', 'Named access list')],
+      'Named access list',
+      (args) => ({ kind: 'access-group-name', value: args.name })),
+    match('cmap-match-access-group-number',
+      ['match', 'access-group', place('number', 'INT', 'Access list index',
+        { range: [CMAP_ACL_MIN, CMAP_ACL_MAX] })],
+      'Access list index',
+      (args) => ({ kind: 'access-group-num', value: args.number })),
+    match('cmap-match-protocol',
+      ['match', 'protocol', place('protocol', 'WORD', 'Protocol name')],
+      'Protocol', (args) => ({ kind: 'protocol', value: args.protocol })),
+    match('cmap-match-any', ['match', 'any'], 'Any packets', () => ({ kind: 'any' })),
+  ];
 }
 
 export function policyMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildPolicyMapSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-pmap'], minPrivilege: 15 };
+  const enter = (className: string, kind: 'class-default' | 'named' | 'inspect'): string => {
+    const name = ctx.getPolicyMap?.();
+    const policy = name ? getSecurityConfig(ctx.r()).policyMaps.get(name) : undefined;
+    if (!policy) return '';
+    if (!policy.classes.find((c) => c.className === className)) {
+      policy.classes.push({ className, kind, actions: [] });
+    }
+    ctx.setPolicyClass?.(className);
+    ctx.setMode('config-pmap-c' as CiscoShellMode);
+    return '';
+  };
+  return [
     {
-      modes: ['config-pmap'], minPrivilege: 15,
-      argumentFor: () => formes('classe', 'class-map name', [
-        { keyword: 'WORD', description: 'class-map name' },
-        {
-          keyword: 'class-default',
-          description: 'System default class matching otherwise unclassified packets',
-        },
-        { keyword: 'type', description: 'policy-map class type' },
-      ]),
+      ...base, id: 'pmap-class-default', path: ['class', 'class-default'],
+      description: 'System default class matching otherwise unclassified packets',
+      run: () => enter('class-default', 'class-default'),
     },
-  );
+    {
+      ...base, id: 'pmap-class-type-inspect',
+      path: ['class', 'type', 'inspect', place('class', 'WORD', 'class-map name')],
+      description: 'policy-map class type',
+      run: (_session, args) => enter(args.class, 'inspect'),
+    },
+    {
+      ...base, id: 'pmap-class',
+      path: ['class', place('class', 'WORD', 'class-map name')],
+      description: 'Class for policy',
+      run: (_session, args) => enter(args.class, 'named'),
+    },
+  ];
 }
 
 /**
@@ -749,53 +667,51 @@ export function policyClassSubmodeSpecs(ctx: CiscoSecurityShellContext): Command
   );
 }
 
-const SERVICE_POLICY_SENS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'input', description: 'Assign a policy map to the input of the control plane',
-    argument: place('politique', 'WORD', 'Policy map name'),
-  },
-  {
-    keyword: 'output', description: 'Assign a policy map to the output of the control plane',
-    argument: place('politique', 'WORD', 'Policy map name'),
-  },
-];
 
 export function controlPlaneSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildControlPlaneSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-cp'], minPrivilege: 15,
-      keywordsFor: () => SERVICE_POLICY_SENS,
-      argumentFor: () => null,
+  const base = { modes: ['config-cp'], minPrivilege: 15 };
+  const direction = (
+    keyword: 'input' | 'output', field: 'servicePolicyInput' | 'servicePolicyOutput',
+  ): CommandSpec => ({
+    ...base, id: `cp-service-policy-${keyword}`,
+    path: ['service-policy', keyword, place('policy', 'WORD', 'Policy map name')],
+    description: `Assign a policy map to the ${keyword} of the control plane`,
+    run: (_session, args) => {
+      getSecurityConfig(ctx.r()).controlPlane[field] = args.policy;
+      return '';
     },
-  );
+  });
+  return [direction('input', 'servicePolicyInput'), direction('output', 'servicePolicyOutput')];
 }
 
 export function zoneSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildZoneSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-zone'], minPrivilege: 15,
-      argumentFor: () => place('texte', 'REST',
-        'Up to 200 characters describing this zone', { literal: 'LINE' }),
+  return [{
+    id: 'zone-description', modes: ['config-zone'], minPrivilege: 15,
+    path: ['description', place('text', 'REST',
+      'Up to 200 characters describing this zone', { literal: 'LINE' })],
+    description: 'Zone description',
+    run: (_session, args) => {
+      const name = ctx.getZone?.();
+      const zone = name ? getSecurityConfig(ctx.r()).zones.get(name) : undefined;
+      if (zone) zone.description = args.text.trim();
+      return '';
     },
-  );
+  }];
 }
 
 export function zonePairSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildZonePairSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-zone-pair'], minPrivilege: 15,
-      argumentFor: () => null,
-      keywordsFor: () => [{
-        keyword: 'type', description: 'Type of the service policy',
-        argument: formes('inspection', 'Inspection policy map to apply', [
-          { keyword: 'inspect', description: 'Apply an inspection policy map' },
-        ]),
-      }],
+  return [{
+    id: 'zone-pair-service-policy', modes: ['config-zone-pair'], minPrivilege: 15,
+    path: ['service-policy', 'type', 'inspect',
+      place('policy', 'WORD', 'Inspection policy map to apply')],
+    description: 'Apply policy',
+    run: (_session, args) => {
+      const name = ctx.getZonePair?.();
+      const pair = name ? getSecurityConfig(ctx.r()).zonePairs.get(name) : undefined;
+      if (pair) pair.servicePolicy = args.policy;
+      return '';
     },
-  );
+  }];
 }
 
 export function radiusServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {

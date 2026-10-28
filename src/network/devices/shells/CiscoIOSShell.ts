@@ -2462,17 +2462,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     buildSecurityConfigCommands(this.configTrie, this);
     buildSecurityInterfaceCommands(this.configIfTrie, this);
-    buildSecuritySubmodeCommands(
-      this.configCmapTrie,
-      this.configPmapTrie,
-      this.configPmapClassTrie,
-      this.configCpTrie,
-      this.configZoneTrie,
-      this.configZonePairTrie,
-      this.configTimeRangeTrie,
-      this.configCaTrustpointTrie,
-      this,
-    );
+    buildSecuritySubmodeCommands(this.configPmapClassTrie, this.configCaTrustpointTrie, this);
     buildSecurityShowCommands(this.userTrie, () => this.d());
     buildSecurityShowCommands(this.privilegedTrie, () => this.d());
 
