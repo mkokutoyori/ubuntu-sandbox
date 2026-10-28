@@ -4286,3 +4286,15 @@ fail on a tree with no change from the CLI hardening series (checked by
 stashing `src`). Seen while running the tests that mention `router bgp` and
 `ipv6 address`. Not diagnosed: nothing was done beyond establishing that the
 failures predate the series.
+
+## Huawei management configurators record unknown forms as raw lines
+
+`RouterManagementService.configureNtp|configureSflow|configureClock|
+configureTelnet|configureStelnet` end in `recordRaw(feature, line)` when the
+form is not recognised, so `sflow zorglub`, `bfd zorglub`, `isis 1 zorglub`,
+`clock datetime zorglub` and others (seen by fuzzing a HuaweiRouter with a
+trailing `zorglub`) are accepted and stored verbatim. Only the
+`<feature> enable|disable <extra>` forms were closed. The VRP grammar for the
+rest was not reachable, so refusing them would be guessing (rule 8). Needs the
+Huawei command reference for sflow, bfd, isis, traffic classifier/behavior/
+policy, route-policy and `snmp-agent community`.

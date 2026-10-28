@@ -234,7 +234,11 @@ export function registerHuaweiCommonSecurity(
         resyncListeners();
         break;
       }
-      case 'ntp-service': mgmt.configureNtp(args); break;
+      case 'ntp-service': {
+        const refuse = mgmt.configureNtp(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        break;
+      }
       case 'clock': {
         const verdict = mgmt.configureClock(args);
         if (typeof verdict === 'string') return HUAWEI_ERRORS.WRONG(args.join(' '), 0);
