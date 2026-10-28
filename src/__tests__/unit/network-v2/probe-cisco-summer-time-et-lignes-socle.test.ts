@@ -950,3 +950,28 @@ describe('bfd interface commands', () => {
     expect(await r.executeCommand('bfd interval')).toContain('Incomplete');
   });
 });
+
+/*
+ * Twenty-fifth batch (addresses judged by a regular expression): ^\d+\.\d+\.\d+\.\d+$ accepts
+ * 999.1.1.1. bfd neighbor 999.1.1.1 created a session, ip pim rp-address 999.1.1.1 stored a
+ * rendezvous point, and ping ... source 999.1.1.1 was sent from an address no interface can hold.
+ * The three now judge with isValidIPv4. Fails before: the three refusals (3 of 4); the fourth is
+ * the witness that a valid RP address is still stored.
+ */
+describe('addresses are judged as addresses', () => {
+  it('bfd neighbor refuses 999.1.1.1', async () => {
+    const r = await router('interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0');
+    expect(await r.executeCommand('bfd neighbor 999.1.1.1')).toContain('Invalid neighbor');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show bfd neighbors')).not.toContain('999.1.1.1');
+  });
+  it('ip pim rp-address refuses 999.1.1.1 and keeps a valid one', async () => {
+    const r = await router('ip multicast-routing');
+    expect(await r.executeCommand('ip pim rp-address 999.1.1.1')).toContain('Invalid RP address');
+    expect(await r.executeCommand('ip pim rp-address 10.0.0.9')).toBe('');
+  });
+  it('ping source refuses 999.1.1.1', async () => {
+    const r = await router('interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'end');
+    expect(await r.executeCommand('ping 10.0.0.9 source 999.1.1.1')).not.toContain('Success rate');
+  });
+});

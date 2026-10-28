@@ -3,6 +3,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import type { BfdSessionRuntime } from '../../../bfd/types';
+import { isValidIPv4 } from '@/network/core/ip';
 import type { BfdAgent } from '../../../bfd/BfdAgent';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -104,7 +105,7 @@ export function bfdInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
       description: 'BFD static neighbor', undoDescription: 'Remove BFD neighbor',
       run: (_session, args) => withAgent((a) => {
         const ip = words(args.neighbor)[0];
-        if (!ip || !/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return '% Invalid neighbor';
+        if (!ip || !isValidIPv4(ip)) return '% Invalid neighbor';
         for (const port of ctx.selectedPorts()) a.ensureSession(port, ip);
         return '';
       }),

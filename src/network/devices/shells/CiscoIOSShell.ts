@@ -2727,6 +2727,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (sourceIP) {
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
+      else if (parsed.protocol !== 'ipv6' && /^[\d.]+$/.test(sourceIP)) {
+        throw new CliInvalidInput({ token: sourceIP });
+      }
     }
 
     if (parsed.protocol === 'ipv6') {
@@ -2830,7 +2833,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   private _resolveSourceIP(router: any, source: string): string | null {
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(source)) return source;
+    if (isValidIPv4(source)) return source;
     const ports = router._getPortsInternal?.() as Map<string, any> | undefined;
     if (!ports) return null;
     const port = ports.get(source);

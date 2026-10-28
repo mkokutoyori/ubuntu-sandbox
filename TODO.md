@@ -4149,3 +4149,7 @@ Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-
 ## Cisco: the NVE / VXLAN CLI is unreachable on every platform
 
 Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overrides it, so `interface nve`'s `source-interface`, `member vni`, `peer-ip` and the four `show nve|vxlan|mac address-table vxlan` views are never declared on any router or switch, whatever the chassis profile. `VxlanAgent` works (its protocol tests drive it through the API); only the CLI door is shut. Not closed: which chassis profiles carry VXLAN hardware (the real Catalyst 9000 and Nexus lines do, the ISR lines do not) is a platform fact whose documentation was not reachable. Forcing the flag is not enough either: with `hasVxlanHardware()` patched to true, `interface nve1` cannot be created (no such port), so `source-interface` answers `% No interface selected` and `show nve vni` stays empty. The migration of these nine registrations to the socle was tried and reverted for that reason: it could not be probed.
+
+## Linux: tcpdump ICMPv6 « unreachable port » rouge sur la base
+
+Mesure : `probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee` > « a datagram to a closed UDP port draws "unreachable port" naming the quoted destination and port » echoue deja au commit `2351448f2` (avant la serie telnet/Cisco), 1 cas sur 90. Non diagnostique.

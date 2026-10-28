@@ -1,5 +1,6 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
+import { isValidIPv4 } from '@/network/core/ip';
 import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
@@ -211,7 +212,7 @@ export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): v
     const a = agent(ctx.r());
     if (!a) return '';
     const rpAddress = args[0];
-    if (!rpAddress || !/^\d+\.\d+\.\d+\.\d+$/.test(rpAddress)) return '% Invalid RP address';
+    if (!rpAddress || !isValidIPv4(rpAddress)) return '% Invalid RP address';
     if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
     a.addStaticRp(rpAddress);
     return '';
