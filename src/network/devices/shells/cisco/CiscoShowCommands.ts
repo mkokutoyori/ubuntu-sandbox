@@ -1036,6 +1036,17 @@ function lignesDAire(
       summaryAddresses?: Array<{ network: string; mask: string }>;
       bfdAllInterfaces?: boolean;
       gracefulRestart?: { enabled: boolean; gracePeriod: number };
+      maximumPaths?: number;
+      compatibleRfc1583?: boolean;
+      distance?: { all?: number; intraArea?: number; interArea?: number; external?: number };
+      timersLsaArrivalMs?: number;
+      timersPacingFloodMs?: number;
+      timersPacingRetransmissionMs?: number;
+      ispf?: boolean;
+      prefixSuppression?: boolean;
+      shutdown?: boolean;
+      segmentRoutingMpls?: boolean;
+      discardRouteExternal?: boolean;
     };
   })._getOSPFExtraConfig?.();
   for (const [id, voisin] of extra?.virtualLinks ?? []) {
@@ -1073,6 +1084,32 @@ function lignesDAire(
   for (const other of extra?.redistributeOther ?? []) {
     lignes.push(redistribute(`${other.protocol} ${other.id}`, other));
   }
+  if (extra?.maximumPaths !== undefined) lignes.push(`maximum-paths ${extra.maximumPaths}`);
+  if (extra?.compatibleRfc1583) lignes.push('compatible rfc1583');
+  if (extra?.distance?.all !== undefined) lignes.push(`distance ${extra.distance.all}`);
+  const ospfDistance = extra?.distance;
+  if (ospfDistance && (ospfDistance.intraArea !== undefined
+    || ospfDistance.interArea !== undefined || ospfDistance.external !== undefined)) {
+    lignes.push(['distance ospf',
+      ...(ospfDistance.intraArea !== undefined ? [`intra-area ${ospfDistance.intraArea}`] : []),
+      ...(ospfDistance.interArea !== undefined ? [`inter-area ${ospfDistance.interArea}`] : []),
+      ...(ospfDistance.external !== undefined ? [`external ${ospfDistance.external}`] : []),
+    ].join(' '));
+  }
+  if (extra?.timersLsaArrivalMs !== undefined) {
+    lignes.push(`timers lsa arrival ${extra.timersLsaArrivalMs}`);
+  }
+  if (extra?.timersPacingFloodMs !== undefined) {
+    lignes.push(`timers pacing flood ${extra.timersPacingFloodMs}`);
+  }
+  if (extra?.timersPacingRetransmissionMs !== undefined) {
+    lignes.push(`timers pacing retransmission ${extra.timersPacingRetransmissionMs}`);
+  }
+  if (extra?.ispf) lignes.push('ispf');
+  if (extra?.prefixSuppression) lignes.push('prefix-suppression');
+  if (extra?.discardRouteExternal) lignes.push('discard-route external');
+  if (extra?.segmentRoutingMpls) lignes.push('segment-routing mpls');
+  if (extra?.shutdown) lignes.push('shutdown');
   if (extra?.maxLsa) lignes.push(`max-lsa ${extra.maxLsa}`);
   if (extra?.maxMetric?.enabled) {
     lignes.push(`max-metric router-lsa${

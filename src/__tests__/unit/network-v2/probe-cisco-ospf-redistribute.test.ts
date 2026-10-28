@@ -3,7 +3,7 @@
  * options judged, its metric honoured by the engine, and the whole thing
  * rendered in the running-config.
  *
- * Measured before the change: 9 of the 12 cases fall. The handler read its
+ * Measured before the change: 19 of the 29 cases fall. The handler read its
  * options with a positional parseInt scan: `metric zorglub` and
  * `metric-type 5` were accepted (the 5 stored as the external type), a
  * trailing word was accepted, `metric` on `static` and `connected` was
@@ -17,6 +17,14 @@
  * The last case (the other six accepted settings rendered) was added by the
  * follow-up: max-lsa, max-metric, summary-address, distribute-list, bfd
  * all-interfaces and graceful-restart were stored and never shown.
+ *
+ * The last block (process-level settings) adds 10 failing cases: `compatible
+ * zorglub`, `distance 300`, `distance ospf` with no option, `discard-route
+ * zorglub`, `timers lsa arrival zorglub` and the others listed there were
+ * accepted, and none of maximum-paths, compatible rfc1583, distance, timers,
+ * ispf, prefix-suppression, discard-route, segment-routing or shutdown was
+ * rendered. These settings are stored and rendered but the engine does not
+ * evaluate them (TODO.md).
  *
  * Not declared, because the engine cannot evaluate them (TODO.md):
  * `route-map` and `tag`.
@@ -120,5 +128,42 @@ describe('the other accepted OSPF settings are rendered too', () => {
       ' bfd all-interfaces', ' graceful-restart grace-period 90']) {
       expect(config, line).toContain(line);
     }
+  });
+});
+
+describe('the process-level settings are typed and rendered', () => {
+  it('shows every setting the operator wrote', async () => {
+    const r = await ospf('maximum-paths 2', 'compatible rfc1583', 'distance 100',
+      'distance ospf intra-area 90 external 150', 'timers lsa arrival 500',
+      'timers pacing flood 20', 'timers pacing retransmission 40', 'ispf',
+      'prefix-suppression', 'discard-route external', 'segment-routing mpls', 'shutdown');
+    const config = await section(r);
+    for (const line of [' maximum-paths 2', ' compatible rfc1583', ' distance 100',
+      ' distance ospf intra-area 90 external 150', ' timers lsa arrival 500',
+      ' timers pacing flood 20', ' timers pacing retransmission 40', ' ispf',
+      ' prefix-suppression', ' discard-route external', ' segment-routing mpls', ' shutdown']) {
+      expect(config, line).toContain(line);
+    }
+  });
+
+  it('`no` restores each one', async () => {
+    const r = await ospf('ispf', 'shutdown', 'maximum-paths 2', 'distance 100');
+    for (const line of ['no ispf', 'no shutdown', 'no maximum-paths', 'no distance']) {
+      await r.executeCommand(line);
+    }
+    const config = await section(r);
+    for (const word of ['ispf', 'shutdown', 'maximum-paths', 'distance']) {
+      expect(config, word).not.toContain(` ${word}`);
+    }
+  });
+
+  it.each([
+    'maximum-paths zorglub', 'maximum-paths 0', 'maximum-paths 99', 'compatible zorglub',
+    'compatible rfc1583 zorglub', 'distance zorglub', 'distance 300', 'distance 110 zorglub',
+    'distance ospf', 'distance ospf external zorglub', 'ispf zorglub', 'shutdown zorglub',
+    'prefix-suppression zorglub', 'discard-route zorglub', 'timers lsa arrival zorglub',
+  ])('refuses `%s` at the caret or as incomplete', async (line) => {
+    const out = await (await ospf()).executeCommand(line);
+    expect(out).toMatch(/Invalid input detected|Incomplete command/);
   });
 });

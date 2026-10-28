@@ -4215,3 +4215,15 @@ declared (refused at the caret) because the engine neither evaluates a
 route-map on redistribution nor carries the external route tag; and
 `redistribute bgp|eigrp|ospf N` is stored and rendered but no route from those
 sources enters OSPF. IS-IS as a source is not declared. 
+
+## OSPF process settings stored and rendered, not evaluated
+
+`distance`, `compatible rfc1583`, `ispf`, `prefix-suppression`, `discard-route
+external`, `segment-routing mpls`, `timers lsa arrival`, `timers pacing flood`
+and `timers pacing retransmission` under `router ospf` are typed, stored and
+rendered in the running-config, and `show` nothing of them changes behaviour:
+the engine reads none of them. `shutdown` is stored and rendered but does not
+stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
+(administrative distance of installed routes, RFC 1583 external path selection,
+incremental SPF, the discard route, process shutdown).
+
