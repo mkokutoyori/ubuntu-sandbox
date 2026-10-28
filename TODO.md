@@ -4281,7 +4281,8 @@ language is the one stored by the export dialog, else the browser's.
 ## Reds measured at base outside the network-v2 sweep (new_firewall)
 
 `src/__tests__/unit/new_firewall/fortigate-battery-06-ipv6-ospf-bgp-ztna.test.ts`
-(32 cases), `fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases) and
+(32 cases), `fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases),
+`fortigate-battery-10-sdwan-vxlan-pqc.test.ts` (28 cases) and
 `fortigate-battery-11-hybrid-cloud-evpn-k8s.test.ts` (28 cases)
 fail on a tree with no change from the CLI hardening series (checked by
 stashing `src`). Seen while running the tests that mention `router bgp` and
