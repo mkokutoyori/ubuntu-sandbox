@@ -8,6 +8,13 @@
  * stored as NaN or out of range. The four witnesses (the valid forms) pass
  * either way. Bounds network-id 1-4294967295 and holdtime 1-65535 are the
  * IOS ones, written from memory, not from a fetched page.
+ *
+ * Second change: the other `ip nhrp` forms judged by shape (flags take no
+ * word, nhs and map need IPv4 addresses, registration timeout and use are
+ * 1-65535). 13 cases added, 8 fall before it (`shortcut|redirect|server-only
+ * zorglub`, `nhs zorglub`, `map multicast zorglub`, `map <ip> zorglub`,
+ * `registration timeout zorglub`, `use zorglub`); the 5 added witnesses pass
+ * either way.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -29,6 +36,8 @@ describe('ipv6 address and ip nhrp tails', () => {
   it.each([
     'ipv6 address 2001:db8::/64 eui-64', 'ipv6 address 2001:db8::1/64',
     'ip nhrp network-id 10', 'ip nhrp holdtime 600',
+    'ip nhrp shortcut', 'ip nhrp nhs 10.0.0.1', 'ip nhrp map 10.0.0.2 192.0.2.2',
+    'ip nhrp map multicast dynamic', 'ip nhrp registration timeout 30',
   ])('witness: `%s` is accepted', async (line) => {
     expect(await (await onInterface()).executeCommand(line)).toBe('');
   });
@@ -38,6 +47,9 @@ describe('ipv6 address and ip nhrp tails', () => {
     'ipv6 address 2001:db8::1/129', 'ipv6 address 2001:db8::1/64abc',
     'ip nhrp network-id zorglub', 'ip nhrp network-id 0', 'ip nhrp network-id 10 zorglub',
     'ip nhrp holdtime zorglub', 'ip nhrp holdtime 70000',
+    'ip nhrp shortcut zorglub', 'ip nhrp redirect zorglub', 'ip nhrp nhs zorglub',
+    'ip nhrp map multicast zorglub', 'ip nhrp map 10.0.0.2 zorglub',
+    'ip nhrp registration timeout zorglub', 'ip nhrp use zorglub', 'ip nhrp server-only zorglub',
   ])('`%s` is refused', async (line) => {
     expect(await (await onInterface()).executeCommand(line)).toMatch(REFUSED);
   });

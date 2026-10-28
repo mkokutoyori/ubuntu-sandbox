@@ -950,6 +950,24 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     const numericBounds: Record<string, [number, number]> = {
       'network-id': [1, 4294967295], holdtime: [1, 65535],
     };
+    const isIp = (word: string | undefined) => word !== undefined
+      && /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(word)
+      && word.split('.').every(octet => Number(octet) <= 255);
+    const two = args.slice(0, 2).join(' ').toLowerCase();
+    const shapeOk = (() => {
+      if (sub === 'shortcut' || sub === 'server-only' || sub === 'record') return args.length === 1;
+      if (sub === 'redirect') return args.length === 1;
+      if (two === 'cache non-authoritative') return args.length === 2;
+      if (sub === 'nhs') return args.length >= 2 && isIp(args[1]);
+      if (sub === 'map' && args[1]?.toLowerCase() === 'multicast') {
+        return args.length === 3 && (isIp(args[2]) || args[2].toLowerCase() === 'dynamic');
+      }
+      if (sub === 'map') return args.length === 3 && isIp(args[1]) && isIp(args[2]);
+      if (two === 'registration timeout') return args.length === 3 && /^\d+$/.test(args[2]) && Number(args[2]) >= 1 && Number(args[2]) <= 65535;
+      if (sub === 'use') return args.length === 2 && /^\d+$/.test(args[1]) && Number(args[1]) >= 1 && Number(args[1]) <= 65535;
+      return true;
+    })();
+    if (!shapeOk) throw new CliInvalidInput();
     const bounds = sub ? numericBounds[sub] : undefined;
     if (bounds && args[1] !== undefined) {
       const value = Number(args[1]);
