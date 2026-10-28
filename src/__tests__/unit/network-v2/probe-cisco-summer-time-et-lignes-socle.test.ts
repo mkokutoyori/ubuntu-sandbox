@@ -742,3 +742,31 @@ describe('arp commands', () => {
     expect(await r.executeCommand('show ip arp')).not.toContain('Invalid input');
   });
 });
+
+/*
+ * Nineteenth batch (show prefix-list / route-map): the cases that move are named. The old filter
+ * `/^detail|summary$/` binds as (^detail)|(summary$), so a prefix-list whose name merely starts
+ * with detail or ends with summary was taken for a view keyword and not looked up; the filter is
+ * now ^(detail|summary)$. Fails before: the list named detail_edge (1 of 4). The rest are witnesses.
+ */
+describe('show prefix-list and route-map', () => {
+  it('witness: show route-map answers', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show route-map')).not.toContain('Invalid input');
+  });
+  it('refuses a second word after show route-map NAME', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show route-map A B')).toContain('Invalid input');
+  });
+  it('finds a prefix-list whose name starts with detail', async () => {
+    const r = await router('ip prefix-list OTHER seq 5 permit 192.168.0.0/16',
+      'ip prefix-list detail_edge seq 5 permit 10.0.0.0/8', 'end');
+    const out = await r.executeCommand('show ip prefix-list detail_edge');
+    expect(out).toContain('detail_edge');
+    expect(out).not.toContain('OTHER');
+  });
+  it('witness: show ip prefix-list detail answers', async () => {
+    const r = await router('ip prefix-list EDGE seq 5 permit 10.0.0.0/8', 'end');
+    expect(await r.executeCommand('show ip prefix-list detail')).not.toContain('Invalid input');
+  });
+});

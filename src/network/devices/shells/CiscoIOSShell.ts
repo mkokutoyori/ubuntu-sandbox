@@ -137,7 +137,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  registerPolicyShow, policyShowSpecs,
+  policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -2525,7 +2525,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerPolicyShow(trie, this.policy);
     this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
   }
