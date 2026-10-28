@@ -14,6 +14,7 @@ import {
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
+import type { OptionSpec } from '@/cli/OptionBag';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
@@ -334,122 +335,6 @@ function verifierMethodesAaa(phase: AaaPhase, methods: readonly string[]): strin
   return null;
 }
 
-/**
- * Les trois sous-modes de la famille identite : `config-radius-server`,
- * `config-tacacs-server` et `config-aaa-group`. Extraits pour la meme
- * raison que les deux fonctions ci-dessus — sans eux, `tacacs server X`
- * ouvrirait un mode ou aucune commande n'existe.
- */
-export function buildIdentitySubmodeCommands(
-  radiusTrie: CommandTrie,
-  tacacsTrie: CommandTrie,
-  aaaGroupTrie: CommandTrie,
-  ctx: CiscoSecurityShellContext,
-): void {
-  buildRadiusServerSubmodeOn(radiusTrie, ctx);
-  buildTacacsServerSubmodeOn(tacacsTrie, ctx);
-  buildAaaGroupSubmodeOn(aaaGroupTrie, ctx);
-}
-
-export function buildRadiusServerSubmodeOn(
-  radiusTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  radiusTrie.registerGreedy('address', 'Radius address', (args) => {
-    const name = ctx.getRadiusServer?.();
-    if (!name) return '';
-    const s = sec().radiusServers.get(name);
-    if (!s) return '';
-    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'auth-port' && args[i + 1]) s.authPort = parseInt(args[i + 1], 10);
-      if (args[i] === 'acct-port' && args[i + 1]) s.acctPort = parseInt(args[i + 1], 10);
-    }
-    return '';
-  });
-  radiusTrie.registerGreedy('key', 'Radius key', (args) => {
-    const name = ctx.getRadiusServer?.();
-    if (!name) return '';
-    const s = sec().radiusServers.get(name);
-    if (s) s.key = args.join(' ');
-    return '';
-  });
-}
-
-export function buildTacacsServerSubmodeOn(
-  tacacsTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  tacacsTrie.registerGreedy('address', 'Tacacs address', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    if (!s) return '';
-    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
-    return '';
-  });
-  tacacsTrie.registerGreedy('key', 'Tacacs key', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    if (s) s.key = args.join(' ');
-    return '';
-  });
-  tacacsTrie.registerGreedy('port', 'Tacacs port', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    const n = parseInt(args[0], 10);
-    if (s && !isNaN(n)) s.port = n;
-    return '';
-  });
-  tacacsTrie.registerGreedy('timeout', 'Tacacs timeout', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    const n = parseInt(args[0], 10);
-    if (s && !isNaN(n)) s.timeoutSec = n;
-    return '';
-  });
-}
-
-export function buildAaaGroupSubmodeOn(
-  aaaGroupTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  /*
-   * Un groupe accepte DEUX formes de membre, et seule la moderne etait
-   * lue : `server name <nom>` designe un serveur declare par
-   * `tacacs server <nom>`, tandis que `server <ip>` — la forme heritee,
-   * celle qui accompagne `tacacs-server host` et que tous les cours
-   * emploient — etait acceptee et JETEE en silence. Un groupe monte a
-   * l'ancienne etait donc vide, et l'authentification ne trouvait aucun
-   * serveur sans que rien ne le dise.
-   */
-  aaaGroupTrie.registerGreedy('server', 'Add server', (args) => {
-    const name = ctx.getAaaGroup?.();
-    if (!name) return '';
-    const g = sec().aaaGroups.get(name);
-    if (!g) return '';
-    const membre = args[0] === 'name' ? args[1] : args[0];
-    if (!membre) return CISCO_ERRORS.INCOMPLETE;
-    if (!g.members.includes(membre)) g.members.push(membre);
-    return '';
-  });
-  aaaGroupTrie.registerGreedy('no server', 'Remove server', (args) => {
-    const name = ctx.getAaaGroup?.();
-    const g = name ? sec().aaaGroups.get(name) : undefined;
-    if (!g) return '';
-    const membre = args[0] === 'name' ? args[1] : args[0];
-    const i = membre ? g.members.indexOf(membre) : -1;
-    if (i >= 0) g.members.splice(i, 1);
-    return '';
-  });
-}
-
 export function buildSecuritySubmodeCommands(
   cmapTrie: CommandTrie,
   pmapTrie: CommandTrie,
@@ -458,9 +343,6 @@ export function buildSecuritySubmodeCommands(
   zoneTrie: CommandTrie,
   zonePairTrie: CommandTrie,
   trTrie: CommandTrie,
-  radiusTrie: CommandTrie,
-  tacacsTrie: CommandTrie,
-  aaaGroupTrie: CommandTrie,
   trustpointTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
@@ -470,7 +352,6 @@ export function buildSecuritySubmodeCommands(
   buildControlPlaneSubmodeOn(cpTrie, ctx);
   buildZoneSubmodeOn(zoneTrie, ctx);
   buildZonePairSubmodeOn(zonePairTrie, ctx);
-  buildIdentitySubmodeCommands(radiusTrie, tacacsTrie, aaaGroupTrie, ctx);
   buildTrustpointSubmodeOn(trustpointTrie, ctx);
 }
 
@@ -917,62 +798,126 @@ export function zonePairSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpe
   );
 }
 
-const RADIUS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'ipv4', description: 'IPv4 address of the RADIUS server',
-  argument: [
-    place('adresse', 'IP_ADDR', 'IP address of the RADIUS server'),
-    place('ports', 'REST', 'auth-port and acct-port of this server', { optional: true }),
-  ],
-}];
-
 export function radiusServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildRadiusServerSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-radius-server'], minPrivilege: 15 };
+  const server = () => {
+    const name = ctx.getRadiusServer?.();
+    return name ? getSecurityConfig(ctx.r()).radiusServers.get(name) : undefined;
+  };
+  const portOption = (keyword: string, description: string): OptionSpec => ({
+    keyword, description,
+    argument: { name: keyword, type: 'INT', range: [1, 65535], description: 'Port number' },
+  });
+  return [
     {
-      modes: ['config-radius-server'], minPrivilege: 15,
-      argumentFor: (path) => path === 'key'
-        ? place('cle', 'REST', 'The shared key itself', { literal: 'LINE' }) : null,
-      keywordsFor: (path) => path === 'address' ? RADIUS_SUBMODE_KEYWORDS : undefined,
+      ...base, id: 'radius-server-address-ipv4',
+      path: ['address', 'ipv4',
+        place('address', 'IP_ADDR', 'IP address of the RADIUS server')],
+      options: [
+        portOption('auth-port', 'UDP port for RADIUS authentication server'),
+        portOption('acct-port', 'UDP port for RADIUS accounting server'),
+      ],
+      description: 'IPv4 address of the RADIUS server',
+      run: (_session, args) => {
+        const entry = server();
+        if (!entry) return '';
+        entry.address = args.address;
+        if (args['auth-port'] !== undefined) entry.authPort = Number(args['auth-port']);
+        if (args['acct-port'] !== undefined) entry.acctPort = Number(args['acct-port']);
+        return '';
+      },
     },
-  );
+    {
+      ...base, id: 'radius-server-key',
+      path: ['key', place('key', 'REST', 'The shared key itself', { literal: 'LINE' })],
+      description: 'Radius key',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.key = args.key.trim();
+        return '';
+      },
+    },
+  ];
 }
 
-const TACACS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'ipv4', description: 'IPv4 address of the TACACS+ server',
-  argument: place('adresse', 'IP_ADDR', 'IP address of the TACACS+ server'),
-}];
-
-const TACACS_SUBMODE_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  address: null,
-  key: place('cle', 'REST', 'The shared key itself', { literal: 'LINE' }),
-  port: place('port', 'INT', 'Port number', { range: [1, 65535] }),
-  timeout: place('secondes', 'INT', 'Wait time in seconds', { range: [1, 1000] }),
-};
-
 export function tacacsServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildTacacsServerSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-tacacs-server'], minPrivilege: 15 };
+  const server = () => {
+    const name = ctx.getTacacsServer?.();
+    return name ? getSecurityConfig(ctx.r()).tacacsServers.get(name) : undefined;
+  };
+  return [
     {
-      modes: ['config-tacacs-server'], minPrivilege: 15,
-      argumentFor: (path) => TACACS_SUBMODE_ARGUMENTS[path],
-      keywordsFor: (path) => path === 'address' ? TACACS_SUBMODE_KEYWORDS : undefined,
+      ...base, id: 'tacacs-server-address-ipv4',
+      path: ['address', 'ipv4',
+        place('address', 'IP_ADDR', 'IP address of the TACACS+ server')],
+      description: 'IPv4 address of the TACACS+ server',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.address = args.address;
+        return '';
+      },
     },
-  );
+    {
+      ...base, id: 'tacacs-server-key',
+      path: ['key', place('key', 'REST', 'The shared key itself', { literal: 'LINE' })],
+      description: 'Tacacs key',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.key = args.key.trim();
+        return '';
+      },
+    },
+    {
+      ...base, id: 'tacacs-server-port',
+      path: ['port', place('port', 'INT', 'Port number', { range: [1, 65535] })],
+      description: 'Tacacs port',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.port = Number(args.port);
+        return '';
+      },
+    },
+    {
+      ...base, id: 'tacacs-server-timeout',
+      path: ['timeout', place('seconds', 'INT', 'Wait time in seconds', { range: [1, 1000] })],
+      description: 'Tacacs timeout',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.timeoutSec = Number(args.seconds);
+        return '';
+      },
+    },
+  ];
 }
 
 export function aaaGroupSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildAaaGroupSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-aaa-group'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: () => formes('serveur', 'Server that joins the group', [
-        { keyword: 'A.B.C.D', description: 'Address of a server declared the legacy way' },
-        { keyword: 'name', description: 'Name of a server declared by `tacacs server`' },
-      ]),
+  const base = { modes: ['config-aaa-group'], minPrivilege: 15 };
+  const group = () => {
+    const name = ctx.getAaaGroup?.();
+    return name ? getSecurityConfig(ctx.r()).aaaGroups.get(name) : undefined;
+  };
+  const member = (path: ReadonlyArray<string | ArgumentSpec>, id: string, description: string,
+    placeName: string): CommandSpec => ({
+    ...base, id, path: [...path], description, undoDescription: 'Remove server',
+    run: (_session, args) => {
+      const entry = group();
+      if (entry && !entry.members.includes(args[placeName])) entry.members.push(args[placeName]);
+      return '';
     },
-  );
+    undo: (_session, args) => {
+      const entry = group();
+      const index = entry ? entry.members.indexOf(args[placeName]) : -1;
+      if (entry && index >= 0) entry.members.splice(index, 1);
+      return '';
+    },
+  });
+  return [
+    member(['server', 'name', place('name', 'WORD', 'Name of a server declared by `tacacs server`')],
+      'aaa-group-server-name', 'Name of a server declared by `tacacs server`', 'name'),
+    member(['server', place('address', 'IP_ADDR', 'Address of a server declared the legacy way')],
+      'aaa-group-server-address', 'Address of a server declared the legacy way', 'address'),
+  ];
 }
 
 const TRUSTPOINT_ENROLLMENT: ReadonlyArray<AdapterKeyword> = [

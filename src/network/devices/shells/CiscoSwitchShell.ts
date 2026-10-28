@@ -130,7 +130,7 @@ import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
 import { fhrpViewOf, formatArpTimeout } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
 import {
-  buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
+  buildIdentityConfigCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
@@ -5438,10 +5438,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // inspect`). Extraite, elle sert les deux sans leur donner le reste.
     const identityCtx = this.identitySubmodeContext();
     buildIdentityConfigCommands(this.configTrie, identityCtx);
-    buildIdentitySubmodeCommands(
-      this.configRadiusServerTrie, this.configTacacsServerTrie,
-      this.configAaaGroupTrie, identityCtx,
-    );
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {

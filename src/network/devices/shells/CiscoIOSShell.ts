@@ -2470,9 +2470,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       this.configZoneTrie,
       this.configZonePairTrie,
       this.configTimeRangeTrie,
-      this.configRadiusServerTrie,
-      this.configTacacsServerTrie,
-      this.configAaaGroupTrie,
       this.configCaTrustpointTrie,
       this,
     );
