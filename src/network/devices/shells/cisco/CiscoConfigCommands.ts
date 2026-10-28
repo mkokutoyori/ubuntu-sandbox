@@ -15,7 +15,7 @@ import { CommandTrie, formatInvalidInput } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../../qos/CarPolicer';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import {
   getGlobalConfig, DHCP_RELAY_INFO_POLICIES, CEF_LOAD_SHARING_ALGORITHMS,
   type DhcpRelayInfoPolicy,
@@ -597,6 +597,20 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   ],
 };
 
+const KNOWN_ENCAPSULATIONS: ReadonlySet<string> = new Set([
+  'dot1q', 'isl', 'ppp', 'hdlc', 'frame-relay', 'x25', 'lapb', 'sdlc', 'slip', 'atm-dxi',
+]);
+
+function judgeEigrpIntervalTail(args: readonly string[]): void {
+  if (args.length < 2) throw new CliIncomplete();
+  for (const at of [0, 1]) {
+    if (!/^\d+$/.test(args[at]) || Number(args[at]) < 1 || Number(args[at]) > 65535) {
+      throw new CliInvalidInput({ token: args[at] });
+    }
+  }
+  if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+}
+
 export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => buildConfigIfCommands(collector as unknown as CommandTrie, ctx),
@@ -684,6 +698,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
+    if (args[0]?.toLowerCase() !== 'auto') throw new CliInvalidInput({ token: args[0] });
+    if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
@@ -746,6 +762,11 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.registerGreedy('ip tcp adjust-mss', 'Clamp TCP MSS on outgoing SYN', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!/^\d+$/.test(args[0]) || Number(args[0]) < 500 || Number(args[0]) > 1460) {
+      throw new CliInvalidInput({ token: args[0] });
+    }
+    if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
@@ -908,6 +929,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // `ip hello-interval eigrp <as> <sec>` — the value drives the real
   // Hello timer (RFC 7868 §5.3.1), not just the running-config text.
   trie.registerGreedy('ip hello-interval eigrp', 'EIGRP hello interval', (args, raw) => {
+    judgeEigrpIntervalTail(args);
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     port?.addEigrpExtra(raw ?? `ip hello-interval eigrp ${args.join(' ')}`);
@@ -920,6 +942,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // `ip hold-time eigrp <as> <sec>` — independent of the Hello interval,
   // exactly as IOS keeps it: raising one does not raise the other.
   trie.registerGreedy('ip hold-time eigrp', 'EIGRP hold time', (args, raw) => {
+    judgeEigrpIntervalTail(args);
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     port?.addEigrpExtra(raw ?? `ip hold-time eigrp ${args.join(' ')}`);
@@ -1037,12 +1060,17 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!port) return '';
     const type = args[0]?.toLowerCase() ?? '';
     if (!type) return '% Incomplete command.';
+    if (!KNOWN_ENCAPSULATIONS.has(type)) throw new CliInvalidInput({ token: args[0] });
     let vlan: number | undefined;
     if (args[1] !== undefined) {
       if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
       vlan = parseInt(args[1], 10);
     } else if (type === 'dot1q' || type === 'isl') {
       return '% Incomplete command.';
+    }
+    const trailing = args.slice(2).filter((word) => word.toLowerCase() !== 'native');
+    if (trailing.length > 0 || args.slice(2).length > 1) {
+      throw new CliInvalidInput({ token: trailing[0] ?? args[3] });
     }
     (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
       type, vlan, native: args.includes('native'),
@@ -1160,7 +1188,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (slashIdx === -1) throw new CliInvalidInput();
     const addr = addrStr.substring(0, slashIdx);
     const prefixLen = parseInt(addrStr.substring(slashIdx + 1), 10);
-    if (isNaN(prefixLen)) throw new CliInvalidInput();
+    if (!/^\d{1,3}$/.test(addrStr.substring(slashIdx + 1)) || prefixLen > 128) throw new CliInvalidInput();
+    if (args.length > 2 || (args.length === 2 && !['eui-64', 'anycast'].includes(args[1].toLowerCase()))) {
+      throw new CliInvalidInput();
+    }
     try {
       const ipv6Addr = new IPv6Address(addr);
       ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
@@ -1174,6 +1205,46 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
 // ─── IP Route Command (config mode) ─────────────────────────────────
 
 const isDottedIp = (s: string) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s);
+
+const INVALID_ROUTE_TOKEN = "% Invalid input detected at '^' marker.";
+
+function parseStaticRouteTail(tokens: readonly string[]): string | {
+  ad?: number; trackId?: string; permanent: boolean; tag?: number; name?: string;
+} {
+  let ad: number | undefined;
+  let trackId: string | undefined;
+  let permanent = false;
+  let tag: number | undefined;
+  let name: string | undefined;
+  let at = 0;
+  if (tokens[at] !== undefined && /^\d+$/.test(tokens[at])) {
+    const distance = Number(tokens[at]);
+    if (distance < 1 || distance > 255) return INVALID_ROUTE_TOKEN;
+    ad = distance;
+    at++;
+  }
+  while (at < tokens.length) {
+    const word = tokens[at].toLowerCase();
+    if (word === 'permanent') { permanent = true; at++; continue; }
+    if (word === 'dhcp') { at++; continue; }
+    const value = tokens[at + 1];
+    if (word === 'track' || word === 'tag' || word === 'name') {
+      if (value === undefined) return '% Incomplete command.';
+      if (word === 'name') name = value;
+      else if (!/^\d+$/.test(value)) return INVALID_ROUTE_TOKEN;
+      else if (word === 'track') trackId = value;
+      else {
+        const number = Number(value);
+        if (number < 1 || number > 4294967295) return INVALID_ROUTE_TOKEN;
+        tag = number;
+      }
+      at += 2;
+      continue;
+    }
+    return INVALID_ROUTE_TOKEN;
+  }
+  return { ad, trackId, permanent, tag, name };
+}
 
 export function cmdIpRoute(router: Router, args: string[]): string {
   let cursor = 0;
@@ -1208,33 +1279,9 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   if (nextHopStr && !isValidIPv4(nextHopStr)) {
     return "% Invalid input detected at '^' marker.";
   }
-  // `track <N>` — extracted before the AD-token scan below so its numeric
-  // argument is never mistaken for the administrative distance.
-  let trackId: string | undefined;
-  const trackIdx = rest.indexOf('track');
-  if (trackIdx >= 0 && rest[trackIdx + 1]) {
-    trackId = rest[trackIdx + 1];
-    rest = rest.slice(0, trackIdx).concat(rest.slice(trackIdx + 2));
-  }
-  // `permanent` — la route reste dans la table quand son interface de
-  // sortie tombe. Le mot-clé était accepté et jeté (il ne ressemble ni à
-  // une distance ni à `track`, donc rien ne le lisait) : la route
-  // disparaissait au `shutdown` comme une statique ordinaire, soit
-  // exactement ce que ce mot-clé sert à empêcher.
-  let permanent = false;
-  const permIdx = rest.indexOf('permanent');
-  if (permIdx >= 0) {
-    permanent = true;
-    rest = rest.slice(0, permIdx).concat(rest.slice(permIdx + 1));
-  }
-  // Optional administrative distance (RFC: 1-255).
-  let ad: number | undefined;
-  const adTok = rest.find((t) => /^\d+$/.test(t));
-  if (adTok !== undefined) {
-    const n = parseInt(adTok, 10);
-    if (n < 1 || n > 255) return "% Invalid input detected at '^' marker.";
-    ad = n;
-  }
+  const tail = parseStaticRouteTail(rest);
+  if (typeof tail === 'string') return tail;
+  const { ad, trackId, permanent, tag, name } = tail;
   if (vrfName) {
     const r = router as any;
     const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
@@ -1243,10 +1290,17 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     vrfs.set(vrfName, list);
     return '';
   }
-  const opts: { preference?: number; iface?: string; track?: string; permanent?: boolean } = {};
+  const opts: {
+    preference?: number; iface?: string; track?: string; permanent?: boolean;
+    tag?: number; description?: string;
+  } = {};
   if (ad !== undefined) opts.preference = ad;
   if (trackId !== undefined) opts.track = trackId;
   if (permanent) opts.permanent = true;
+  if (tag !== undefined) opts.tag = tag;
+  if (name !== undefined) opts.description = name;
+  const hasOptions = ad !== undefined || trackId !== undefined || permanent
+    || tag !== undefined || name !== undefined;
   if (outIface) {
     opts.iface = outIface;
     const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
@@ -1256,11 +1310,11 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     const nextHop = new IPAddress(nextHopStr);
     if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
       return router.setDefaultRoute(nextHop, 0,
-        (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
+        hasOptions ? opts : undefined)
         ? '' : '% Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop, 0,
-      (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
+      hasOptions ? opts : undefined)
       ? '' : '% Next-hop is not reachable';
   }
   return '% Incomplete command.';

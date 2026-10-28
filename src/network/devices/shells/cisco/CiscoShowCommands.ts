@@ -128,7 +128,7 @@ export function showVersion(
 export function staticRouteTail(r: {
   nextHop: { toString(): string } | null; iface: string;
   ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
-  track?: string;
+  track?: string; tag?: number; description?: string;
 }): string {
   const nh = r.nextHop ? r.nextHop.toString() : '';
   const parts: string[] = [];
@@ -139,8 +139,10 @@ export function staticRouteTail(r: {
     parts.push(nh);
   }
   if (r.preference !== undefined) parts.push(String(r.preference));
+  if (r.description) parts.push('name', r.description);
   if (r.track) parts.push('track', r.track);
   if (r.permanent) parts.push('permanent');
+  if (r.tag !== undefined) parts.push('tag', String(r.tag));
   return parts.join(' ');
 }
 
@@ -671,7 +673,7 @@ export function showRunningConfig(router: Router): string {
   const ipv6Statiques = (router as unknown as {
     _getIPv6RoutingTableInternal?: () => ReadonlyArray<{
       prefix: { toString(): string }; prefixLength: number;
-      nextHop: { toString(): string } | null; iface: string; type: string;
+      nextHop: { toString(): string } | null; iface: string; type: string; preference?: number;
     }>;
   })._getIPv6RoutingTableInternal?.() ?? [];
   const lignesIpv6: string[] = [];
@@ -680,7 +682,8 @@ export function showRunningConfig(router: Router): string {
     const queue = [r.nextHop ? String(r.nextHop) : null, r.nextHop ? null : r.iface]
       .filter((x): x is string => !!x).join(' ');
     if (!queue) continue;
-    lignesIpv6.push(`ipv6 route ${r.prefix}/${r.prefixLength} ${queue}`);
+    lignesIpv6.push(`ipv6 route ${r.prefix}/${r.prefixLength} ${queue}`
+      + `${r.preference !== undefined ? ` ${r.preference}` : ''}`);
   }
   if (lignesIpv6.length > 0) { lines.push(...lignesIpv6); lines.push('!'); }
 

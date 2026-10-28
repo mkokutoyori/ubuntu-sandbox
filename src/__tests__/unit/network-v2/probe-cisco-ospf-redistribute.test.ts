@@ -3,7 +3,7 @@
  * options judged, its metric honoured by the engine, and the whole thing
  * rendered in the running-config.
  *
- * Measured before the change: 19 of the 29 cases fall. The handler read its
+ * Measured before the change: 37 of the 50 cases fall. The handler read its
  * options with a positional parseInt scan: `metric zorglub` and
  * `metric-type 5` were accepted (the 5 stored as the external type), a
  * trailing word was accepted, `metric` on `static` and `connected` was
@@ -25,6 +25,18 @@
  * ispf, prefix-suppression, discard-route, segment-routing or shutdown was
  * rendered. These settings are stored and rendered but the engine does not
  * evaluate them (TODO.md).
+ *
+ * The last block (capability, bfd, graceful-restart, max-metric,
+ * distribute-list) adds 12 failing cases: each accepted a trailing word or a
+ * non-number, `distribute-list prefix PL in` stored the word `prefix` as the
+ * access list and `PL` as the direction (so it never filtered), and none of
+ * their `no` forms existed.
+ *
+ * The last block (neighbor and area ids) adds 6 failing cases: an area id that
+ * is neither a number up to 4294967295 nor a dotted quad (`area zorglub
+ * stub`) was accepted and the sub-command words (`area stub`) were taken for
+ * area ids, a neighbor priority beyond 255 or non-numeric was accepted, and
+ * `no neighbor` did not exist.
  *
  * Not declared, because the engine cannot evaluate them (TODO.md):
  * `route-map` and `tag`.
@@ -165,5 +177,61 @@ describe('the process-level settings are typed and rendered', () => {
   ])('refuses `%s` at the caret or as incomplete', async (line) => {
     const out = await (await ospf()).executeCommand(line);
     expect(out).toMatch(/Invalid input detected|Incomplete command/);
+  });
+});
+
+describe('capability, bfd, graceful-restart, max-metric and distribute-list', () => {
+  it.each([
+    'distribute-list zorglub', 'distribute-list 10 zorglub', 'distribute-list 10 in zorglub',
+    'distribute-list prefix P zorglub', 'graceful-restart zorglub',
+    'graceful-restart grace-period zorglub', 'bfd zorglub', 'bfd all-interfaces zorglub',
+    'max-metric router-lsa zorglub', 'max-metric router-lsa on-startup zorglub',
+    'capability zorglub',
+  ])('refuses `%s`', async (line) => {
+    expect(await (await ospf()).executeCommand(line))
+      .toMatch(/Invalid input detected|Incomplete command/);
+  });
+
+  it('keeps the prefix-list name of `distribute-list prefix` and renders it', async () => {
+    const r = await ospf('distribute-list prefix PL in');
+    expect(await section(r)).toContain(' distribute-list prefix PL in');
+  });
+
+  it('`no` removes each of them', async () => {
+    const r = await ospf('distribute-list 10 out', 'bfd all-interfaces',
+      'graceful-restart grace-period 90', 'max-metric router-lsa', 'capability opaque');
+    for (const line of ['no distribute-list', 'no bfd all-interfaces', 'no graceful-restart',
+      'no max-metric router-lsa', 'no capability opaque']) {
+      await r.executeCommand(line);
+    }
+    const config = await section(r);
+    for (const word of ['distribute-list', 'bfd', 'graceful-restart', 'max-metric', 'capability']) {
+      expect(config, word).not.toContain(` ${word}`);
+    }
+  });
+});
+
+describe('neighbor and area ids', () => {
+  it.each([
+    'neighbor 10.0.0.1 priority zorglub', 'neighbor 10.0.0.1 priority 300',
+    'neighbor 10.0.0.1 zorglub', 'area zorglub stub', 'area 99999999999 stub',
+    'area 1.2.3 stub',
+  ])('refuses `%s`', async (line) => {
+    expect(await (await ospf()).executeCommand(line))
+      .toMatch(/Invalid input detected|Incomplete command/);
+  });
+
+  it('witness: decimal and dotted area ids and a priority neighbor are accepted and rendered', async () => {
+    const r = await ospf('neighbor 10.0.0.1 priority 5 poll-interval 60', 'area 1 stub',
+      'area 0.0.0.2 stub');
+    const config = await section(r);
+    expect(config).toContain(' neighbor 10.0.0.1 priority 5 poll-interval 60');
+    expect(config).toContain(' area 1 stub');
+  });
+
+  it('`no neighbor` removes it', async () => {
+    const r = await ospf('neighbor 10.0.0.1 priority 5');
+    await r.executeCommand('no neighbor 10.0.0.1');
+    expect(await section(r)).not.toContain(' neighbor');
   });
 });
