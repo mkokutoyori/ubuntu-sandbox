@@ -145,6 +145,7 @@ import { nprocCommand } from './system/Nproc';
 import { anacronCommand } from './system/Anacron';
 import { systemdAnalyzeCommand } from './system/SystemdAnalyze';
 import { fuserCommand } from './system/Fuser';
+import { psCommand } from './system/Ps';
 import { aptCacheCommand } from './system/AptCache';
 import { aptCommand, aptGetCommand } from './system/Apt';
 import { dpkgCommand } from './system/Dpkg';
@@ -306,6 +307,7 @@ export {
   anacronCommand,
   systemdAnalyzeCommand,
   fuserCommand,
+  psCommand,
   aptCacheCommand,
   aptCommand,
   aptGetCommand,
@@ -480,6 +482,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   anacronCommand,
   systemdAnalyzeCommand,
   fuserCommand,
+  psCommand,
   aptCacheCommand,
   aptCommand,
   aptGetCommand,

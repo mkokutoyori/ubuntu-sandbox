@@ -32,6 +32,7 @@ import {
 import type { InteractiveStep } from '@/terminal/core/types';
 import { isInteractionPlanner, type InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
+import type { OutgoingSessionRegistry } from '@/network/devices/shells/OutgoingSessionRegistry';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import type { TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
@@ -108,6 +109,9 @@ export abstract class CLITerminalSession extends TerminalSession {
    * socket (docs/PRD-VTY-Transport.md §2.1 item 6).
    */
   private remoteSubShell: ISubShell | null = null;
+  private remoteConn: number | null = null;
+  private escapePrefix = false;
+  private readonly suspendedSessions = new Map<number, ISubShell>();
   private quoteNextKey = false;
 
   protected abstract getDefaultPrompt(): string;
@@ -423,6 +427,15 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected handleNormalKey(e: KeyEvent): boolean {
+    if (this.remoteSubShell !== null && this.getTelnetDialect().suspendable === true) {
+      if (this.escapePrefix) {
+        this.escapePrefix = false;
+        if (e.key === 'x') { this.suspendRemote(); return true; }
+      } else if (e.ctrlKey && (e.key === '^' || e.key === '6')) {
+        this.escapePrefix = true;
+        return true;
+      }
+    }
     if (e.key.toLowerCase() === 'v' && e.ctrlKey && !e.shiftKey) {
       this.quoteNextKey = true;
       return false;
@@ -505,6 +518,10 @@ export abstract class CLITerminalSession extends TerminalSession {
 
     const clientLine = this.stripClientPrefix(trimmed);
     const firstWord = clientLine.split(/\s+/)[0]?.toLowerCase();
+    if (this.suspendedSessions.size > 0 && (trimmed === '' || firstWord === 'resume')) {
+      const wanted = trimmed === '' ? this.lastSuspended() : (Number.parseInt(clientLine.split(/\s+/)[1] ?? '', 10) || this.lastSuspended());
+      if (wanted !== null && this.resumeSuspended(wanted)) return;
+    }
     if (firstWord === 'telnet') {
       await this.enterTelnet(clientLine.split(/\s+/).slice(1));
       return;
@@ -702,10 +719,54 @@ export abstract class CLITerminalSession extends TerminalSession {
     if (!sub) { this.notify(); return; }
 
     this.remoteSubShell = sub;
+    const registry = this.sessionRegistry();
+    this.remoteConn = registry === null ? null : registry.open({
+      host: args.find((a) => !a.startsWith('-')) ?? '', address: args.find((a) => !a.startsWith('-')) ?? '', protocol: 'telnet', user: '',
+      socket: { close: () => sub.dispose() },
+    }).conn;
     const opening = await sub.begin();
     for (const line of opening.output) this.addLine(line);
-    if (opening.exit) this.remoteSubShell = null;
+    if (opening.exit) this.releaseRemote();
     this.notify();
+  }
+
+  private sessionRegistry(): OutgoingSessionRegistry | null {
+    const shell = (this.device as { getShell?: () => { sessionRegistry?: () => OutgoingSessionRegistry } }).getShell?.();
+    return shell?.sessionRegistry?.() ?? null;
+  }
+
+  private releaseRemote(): void {
+    if (this.remoteConn !== null) this.sessionRegistry()?.close(this.remoteConn);
+    this.remoteSubShell = null;
+    this.remoteConn = null;
+  }
+
+  private suspendRemote(): void {
+    if (this.remoteSubShell === null || this.remoteConn === null) return;
+    this.suspendedSessions.set(this.remoteConn, this.remoteSubShell);
+    this.remoteSubShell = null;
+    this.remoteConn = null;
+    this.input = '';
+    this.updatePrompt();
+  }
+
+  private resumeSuspended(conn: number): boolean {
+    const sub = this.suspendedSessions.get(conn);
+    const entry = this.sessionRegistry()?.get(conn);
+    if (sub === undefined || entry === undefined) return false;
+    this.suspendedSessions.delete(conn);
+    this.sessionRegistry()?.touch(conn);
+    this.addLine(`[Resuming connection ${conn} to ${entry.host} ... ]`);
+    this.remoteSubShell = sub;
+    this.remoteConn = conn;
+    this.notify();
+    return true;
+  }
+
+  private lastSuspended(): number | null {
+    const registry = this.sessionRegistry();
+    const live = [...this.suspendedSessions.keys()].filter((conn) => registry?.get(conn) !== undefined);
+    return live.length === 0 ? null : Math.max(...live);
   }
 
   private async runRemoteLine(line: string): Promise<void> {
@@ -714,7 +775,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     let result = await sub.processLine(line, (text) => this.addLine(text));
     for (;;) {
       for (const out of result.output) this.addLine(out);
-      if (result.exit) { sub.dispose(); this.remoteSubShell = null; break; }
+      if (result.exit) { sub.dispose(); this.releaseRemote(); break; }
       if (result.pendingInput === undefined || sub.handleInput === undefined) break;
       const io = this.createSshTerminalIO();
       const answer = await io.readInput(result.pendingInput.promptText, result.pendingInput.kind === 'password');

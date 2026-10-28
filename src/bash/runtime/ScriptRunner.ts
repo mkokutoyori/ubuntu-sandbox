@@ -103,7 +103,7 @@ export function runScriptContent(
 
   let interp: BashInterpreter | undefined;
   try {
-    const ast = parseScript(source);
+    const ast = parseScript(source, 1, identity?.interactive === true ? 'always' : 'declared');
 
     interp = new BashInterpreter({
       executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),
@@ -213,7 +213,7 @@ export async function runScriptContentAsync(
 
   let interp: BashInterpreter | undefined;
   try {
-    const ast = parseScript(source);
+    const ast = parseScript(source, 1, identity?.interactive === true ? 'always' : 'declared');
 
     interp = new BashInterpreter({
       executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),

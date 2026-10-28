@@ -43,7 +43,7 @@ describe('bequeath connections appear in ps as oracleSID (LOCAL=YES)', () => {
   it('a live sqlplus / as sysdba session has its dedicated server in ps', () => {
     const srv = bootOracleServer('sp1');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const ps = sh(srv, 'ps aux');
+    const ps = sh(srv, 'ps auxww');
     expect(ps).toMatch(/oracleORCL \(DESCRIPTION=\(LOCAL=YES\)\(ADDRESS=\(PROTOCOL=beq\)\)\)/);
     subShell.dispose();
   });
@@ -52,14 +52,14 @@ describe('bequeath connections appear in ps as oracleSID (LOCAL=YES)', () => {
     const srv = bootOracleServer('sp2');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     subShell.dispose();
-    expect(sh(srv, 'ps aux')).not.toMatch(/LOCAL=YES/);
+    expect(sh(srv, 'ps auxww')).not.toMatch(/LOCAL=YES/);
   });
 
   it('SHUTDOWN kills every dedicated server (PMON cleanup)', () => {
     const srv = bootOracleServer('sp3');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     subShell.processLine('SHUTDOWN IMMEDIATE');
-    expect(sh(srv, 'ps aux')).not.toMatch(/oracleORCL \(/);
+    expect(sh(srv, 'ps auxww')).not.toMatch(/oracleORCL \(/);
     subShell.dispose();
   });
 });
@@ -91,7 +91,7 @@ describe('V$PROCESS and V$SESSION tell the same story as ps', () => {
     // account. (The host process table allocates its own pid namespace,
     // so the ps pid differs from SPID — same pre-existing approximation
     // as the ora_pmon/ora_smon background processes.)
-    expect(sh(srv, 'ps aux')).toMatch(/oracle\s+\d+.*oracleORCL \(/);
+    expect(sh(srv, 'ps auxww')).toMatch(/oracle\s+\d+.*oracleORCL \(/);
     subShell.dispose();
   });
 });
@@ -115,7 +115,7 @@ describe('Oracle Net connections fork LOCAL=NO servers', () => {
   it('sqlplus user/pass@alias lands as LOCAL=NO in ps (loopback through the listener)', () => {
     const srv = bootOracleServer('sp6');
     const { subShell } = SqlPlusSubShell.create(srv, ['system/oracle@ORCL']);
-    const ps = sh(srv, 'ps aux');
+    const ps = sh(srv, 'ps auxww');
     expect(ps).toMatch(/oracleORCL \(LOCAL=NO\)/);
     subShell.dispose();
   });

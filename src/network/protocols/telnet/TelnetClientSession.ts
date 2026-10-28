@@ -20,6 +20,7 @@ import { TelnetNegotiator, type TelnetOptionPolicy } from './TelnetNegotiator';
 /** Sub-option codes of RFC 1091's terminal-type negotiation. */
 const TERMINAL_TYPE_IS = 0;
 const TERMINAL_TYPE_SEND = 1;
+const TERMINAL_SPEED_REPORT = '38400,38400';
 
 /** What a client describes about itself, and what it lets the server drive. */
 export const DEFAULT_TELNET_CLIENT_POLICY: TelnetOptionPolicy = {
@@ -108,7 +109,13 @@ export class TelnetClientSession {
 
   /** RFC 1091: the server asks `SEND`, the client answers `IS <type>`. */
   private onSubnegotiation(option: number, params: readonly number[]): void {
-    if (option !== OPT_TERMINAL_TYPE || params[0] !== TERMINAL_TYPE_SEND) return;
+    if (params[0] !== TERMINAL_TYPE_SEND) return;
+    if (option === OPT_TERMINAL_SPEED) {
+      const payload = [TERMINAL_TYPE_IS, ...Array.from(TERMINAL_SPEED_REPORT, (c) => c.charCodeAt(0))];
+      this.transport.write(encodeSubnegotiation(OPT_TERMINAL_SPEED, payload));
+      return;
+    }
+    if (option !== OPT_TERMINAL_TYPE) return;
     const payload = [TERMINAL_TYPE_IS, ...Array.from(this.terminalType, (c) => c.charCodeAt(0))];
     this.transport.write(encodeSubnegotiation(OPT_TERMINAL_TYPE, payload));
   }

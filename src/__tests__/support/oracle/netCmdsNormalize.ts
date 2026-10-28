@@ -1,7 +1,11 @@
+import { isPsInvocation, normalizePs } from './netCmdsNormalizePs';
+
 export interface NormalizeSide {
   readonly pids: Readonly<Record<string, number | null>>;
   readonly baseline: string;
   readonly shellPid?: number;
+  readonly visible?: readonly number[];
+  readonly initPid?: number;
 }
 
 const NETLINK_ERROR = 'RTNETLINK answers: Invalid argument';
@@ -63,11 +67,18 @@ function normalizeNetstat(output: string, side: NormalizeSide): string {
       result.push(lines[index++]);
       continue;
     }
-    result.push(lines[index++]);
+    const title = lines[index++];
+    result.push(title);
     const header = index < lines.length ? lines[index++] : '';
-    result.push(header);
+    const unix = title.startsWith('Active UNIX');
+    result.push(unix ? header.replace(/\s+/g, ' ') : header);
     const rows: string[] = [];
-    while (index < lines.length && !lines[index].startsWith('Active ')) rows.push(blankInodeColumn(lines[index++], header));
+    while (index < lines.length && !lines[index].startsWith('Active ')) {
+      const raw = lines[index++];
+      rows.push(unix
+        ? blankInodeColumn(raw.replace(/(\s)(\d+)\/([\w.-]+)(?=\s|$)/, (whole, gap: string, pid: string, program: string) => (names.has(Number(pid)) ? `${gap}<${names.get(Number(pid))}>/${program}` : whole)), header).replace(/\s+/g, ' ').replace(/\s+$/, '')
+        : blankInodeColumn(raw, header));
+    }
     result.push(...rows.sort());
   }
   return result.join('\n').replace(/\n+$/, '');
@@ -115,18 +126,99 @@ function normalizeFuser(output: string, side: NormalizeSide, command: string): s
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+const UNIX_SS_COMMAND = /^ss\b[^|;]*(\s-[a-zA-Z]*x|--unix|-f\s+unix|-A\s+\S*unix)/;
+const SS_LEADING_COLUMNS = ['Netid', 'State', 'Recv-Q', 'Send-Q'];
+
+function maskKernelIdentity(text: string): string {
+  return text
+    .replace(/^\/tmp\/[^\s:]+\.sh: line \d+: /gm, '<shell>: ')
+    .replace(/^-?(?:bash|sh): (?:line \d+: )?/gm, '<shell>: ')
+    .replace(/socket:\[\d+\]/g, 'socket:[#]')
+    .replace(/^l[r-][w-]x------ (\S+ \S+) 0 -> (\/dev\/null|\/dev\/pts\/\d+)$/gm, 'l??x------ $1 0 -> <stdin>')
+    .replace(/\/tmp\/nc-[A-Za-z0-9]{6}\//g, '/tmp/nc-XXXXXX/')
+    .replace(/(sockets: used \d+\nTCP: inuse \d+ orphan \d+ tw \d+ )alloc \d+/, '$1alloc #')
+    .replace(/ino:\d+ dev:0\/\d+/g, 'ino:# dev:0/#');
+}
+
+function relabelSsUnixRows(lines: readonly string[], unixCommand: boolean): string[] {
+  const headerLine = lines.length > 0 && /^(Netid|State|Recv-Q)\s/.test(lines[0]) ? lines[0] : null;
+  const body = headerLine === null ? lines : lines.slice(1);
+  const headerColumns = headerLine === null ? [] : headerLine.split(/\s+/);
+  const lead = headerLine === null ? SS_LEADING_COLUMNS.length : SS_LEADING_COLUMNS.filter((name) => headerColumns.includes(name)).length;
+  const hasNetid = headerColumns.includes('Netid') || headerLine === null;
+  const tokensOf = body.filter((line) => line.trim() !== '').map((line) => line.trim().split(/\s+/));
+  const isUnix = (tokens: readonly string[]): boolean => (hasNetid ? /^u_(str|dgr|seq)$/.test(tokens[0]) : unixCommand);
+  const rows = tokensOf.filter(isUnix);
+  const others = tokensOf.filter((tokens) => !isUnix(tokens)).map((tokens) => tokens.join(' '));
+  const maskedOf = (tokens: readonly string[]): string => tokens.map((token, index) => (index === lead + 1 || index === lead + 3 ? '#' : token)).join(' ');
+  const ordered = [...rows].sort((a, b) => (maskedOf(a) < maskedOf(b) ? -1 : maskedOf(a) > maskedOf(b) ? 1 : 0));
+  const labels = new Map<string, string>();
+  const labelOf = (inode: string): string => {
+    if (inode === '0') return '0';
+    let label = labels.get(inode);
+    if (label === undefined) {
+      label = `i${labels.size + 1}`;
+      labels.set(inode, label);
+    }
+    return label;
+  };
+  for (const tokens of ordered) {
+    if (tokens.length > lead + 3) {
+      labelOf(tokens[lead + 1]);
+      labelOf(tokens[lead + 3]);
+    }
+  }
+  const rendered = ordered.map((tokens) => {
+    const out = [...tokens];
+    if (out.length > lead + 3) {
+      out[lead + 1] = labelOf(tokens[lead + 1]);
+      out[lead + 3] = labelOf(tokens[lead + 3]);
+    }
+    let afterPeers = false;
+    return out.map((token, index) => {
+      if (index <= lead + 3) return token;
+      if (token === 'peers:') afterPeers = true;
+      else if (afterPeers && /^\d+$/.test(token)) return labels.get(token) ?? '#';
+      return token;
+    }).join(' ');
+  });
+  return [...(headerLine === null ? [] : [headerColumns.join(' ')]), ...[...rendered, ...others].sort()];
+}
+
+function normalizeProcNetUnix(lines: readonly string[]): string[] {
+  const header = lines.filter((line) => /^Num\s+RefCount/.test(line)).map((line) => line.trim().split(/\s+/).join(' '));
+  const rows = lines.filter((line) => /^[0-9a-f]{16}:/.test(line)).map((line) => {
+    const tokens = line.trim().split(/\s+/);
+    tokens[0] = '#:';
+    tokens[6] = '#';
+    return tokens.join(' ');
+  }).sort();
+  const others = lines.filter((line) => !/^Num\s+RefCount/.test(line) && !/^[0-9a-f]{16}:/.test(line) && line !== '');
+  return [...header, ...rows, ...others];
+}
+
 export function normalizeNetOutput(output: string, side: NormalizeSide, command = '', loose = false): string {
-  if (/^netstat\b/.test(command)) return normalizeNetstat(output, side);
-  if (/\bfuser\b/.test(command)) return normalizeFuser(output, side, command);
+  const plain = maskKernelIdentity(output);
+  if (isPsInvocation(command)) return normalizePs(plain, side, pidNamesOf(side), command);
+  if (/^netstat\b/.test(command)) return normalizeNetstat(plain, side);
+  if (/\bfuser\b/.test(command)) return normalizeFuser(plain, side, command);
+  if (/\/proc\/net\/unix/.test(command) && !/\bgrep -c\b/.test(command)) {
+    return normalizeProcNetUnix(plain.split('\n').map((line) => line.replace(/\s+$/, ''))).join('\n').replace(/\n+$/, '');
+  }
   const names = pidNamesOf(side);
-  let text = relativeSummary(output, side.baseline)
+  let text = relativeSummary(plain, side.baseline)
     .replace(/pid=(\d+)/g, (whole, pid: string) => (names.has(Number(pid)) ? `pid=<${names.get(Number(pid))}>` : whole))
+    .replace(/tid=(\d+)/g, (whole, pid: string) => (names.has(Number(pid)) ? `tid=<${names.get(Number(pid))}>` : whole))
     .replace(/ino:\d+ sk:[0-9a-f]+/g, 'ino:# sk:#')
     .replace(/timer:\(([a-z]+),[^)]*\)/g, 'timer:($1,#)')
     .replace(/cgroup:\S+/g, 'cgroup:#')
     .replace(/\btb(2626560|3939840)\b/g, 'tb<autotuned>')
     .replace(/\b(bbr|reno|cubic)\b/g, '<cc>');
   let lines = text.split('\n').map((line) => line.replace(/\s+$/, ''));
+  const unixCommand = UNIX_SS_COMMAND.test(command);
+  if (unixCommand || lines.some((line) => /^u_(str|dgr|seq)\s/.test(line.trim()))) {
+    return relabelSsUnixRows(lines.filter((line) => line !== NETLINK_ERROR && !/^nl\s/.test(line)), unixCommand).join('\n').replace(/\n+$/, '');
+  }
   if (loose) lines = lines.filter((line) => line !== NETLINK_ERROR && !/^nl\s/.test(line));
   if (loose || text.includes('cgroup:#')) lines = lines.map((line) => line.replace(/\s+/g, ' '));
   const header = lines.length > 0 && HEADER.test(lines[0]) ? [lines[0]] : [];

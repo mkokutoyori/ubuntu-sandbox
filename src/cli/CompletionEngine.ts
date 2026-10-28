@@ -175,6 +175,10 @@ function suggestionsAt(
   }
 
   if (argument && trigger === 'TAB') {
+    for (const word of argument.tabSuggestions ?? []) {
+      if (!word.toLowerCase().startsWith(lowered)) continue;
+      out.push({ value: word, description: '', isArgument: true, completable: true });
+    }
     for (const suggestion of argumentCompletableValues(argument)) {
       if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
       out.push({

@@ -78,7 +78,7 @@ describe('la numérotation des descripteurs est celle du noyau', () => {
 describe('`/proc/<pid>/fd` rend exactement cette table', () => {
   it('sshd a ses trois standards et ses sockets d\'écoute', async () => {
     const pc = box();
-    const ps = await pc.executeCommand('ps aux');
+    const ps = await pc.executeCommand('ps auxww');
     const pid = ps.split('\n').find((l) => l.includes('/usr/sbin/sshd'))!
       .trim().split(/\s+/)[1];
 
@@ -136,7 +136,7 @@ describe('§F9.3 — les journaux que rsyslog tient ouverts SONT ses descripteur
   it('`/proc/<pid>/fd` de rsyslog montre le fichier journal', async () => {
     const pc = box();
     await pc.executeCommand('logger -t essai "une ligne"');
-    const ps = await pc.executeCommand('ps aux');
+    const ps = await pc.executeCommand('ps auxww');
     const pid = ps.split('\n').find((l) => l.includes('rsyslogd'))!
       .trim().split(/\s+/)[1];
 
@@ -152,7 +152,7 @@ describe('§F9.3 — les journaux que rsyslog tient ouverts SONT ses descripteur
     await pc.executeCommand('sudo rm /var/log/syslog');
     await pc.executeCommand('logger -t essai "dans-le-vide"');
 
-    const ps = await pc.executeCommand('ps aux');
+    const ps = await pc.executeCommand('ps auxww');
     const pid = ps.split('\n').find((l) => l.includes('rsyslogd'))!
       .trim().split(/\s+/)[1];
 

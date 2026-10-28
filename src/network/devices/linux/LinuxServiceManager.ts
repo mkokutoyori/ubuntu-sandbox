@@ -31,6 +31,7 @@ import {
 } from './service/RuntimeArtifacts';
 import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
+import { md5Hex } from '../../../crypto/hash';
 
 /** systemd-equivalent activation state for a unit. */
 export type ServiceState =
@@ -603,6 +604,12 @@ export type ServiceLifecycleListener = (
   serviceName: string,
 ) => void;
 
+const SERVICE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+
+function serviceEnviron(unitName: string): Readonly<Record<string, string>> {
+  return { LANG: 'C.UTF-8', PATH: SERVICE_PATH, INVOCATION_ID: md5Hex(unitName) };
+}
+
 export class LinuxServiceManager {
   private nowMs: () => number = simulationNowMs;
 
@@ -960,6 +967,7 @@ export class LinuxServiceManager {
       serviceName: u.name,
       vsize: profile.vsize,
       rss: profile.rss,
+      environ: serviceEnviron(u.name),
     });
     u.mainPid = proc.pid;
     this.emitStateChanged(u.name, prev, 'activating');
@@ -1464,6 +1472,7 @@ export class LinuxServiceManager {
       serviceName: u.name,
       vsize: profile.vsize,
       rss: profile.rss,
+      environ: serviceEnviron(u.name),
     });
     u.mainPid = proc.pid;
     u.activeSince = new Date(this.nowMs());

@@ -2072,7 +2072,7 @@ describe('§30 — Command flow respects aliases through SSH', () => {
     {
       name: 'alias inside a heredoc-sent script is honoured on the remote shell',
       on: l => l.linux1,
-      cmd: 'ssh alice@10.0.0.2 \'bash -lc "shopt -s expand_aliases; alias greet=echo; greet bonjour"\'',
+      cmd: 'ssh alice@10.0.0.2 \'bash -lc "shopt -s expand_aliases\nalias greet=echo\ngreet bonjour"\'',
       contains: [/^bonjour$/m],
     },
     {

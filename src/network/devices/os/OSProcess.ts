@@ -150,6 +150,7 @@ export class OSProcess {
   /** kernel-mode jiffies (stime). */
   stime = 0;
   wchan = '0';
+  forkedNoExec = false;
   numThreads: number;
   exitCode?: number;
   exitSignal?: string;

@@ -270,17 +270,3 @@ function rawRow(
   return `${padToWidth(protocol, 4)}  ${padToWidth(String(line.receiveQueue), 6, 'right')} ${padToWidth(String(line.transmitQueue), 6, 'right')} `
     + `${padToWidth(local, 23)} ${padToWidth(remote, 23)} ${padToWidth(String(line.state), 11)}${trailer(line, false, options, host)}`;
 }
-
-export function renderUnixSockets(
-  options: NetstatOptions, host: NetstatInternetHost, programNotice: string,
-): NetstatInternetOutput {
-  let text = 'Active UNIX domain sockets ';
-  text += options.all ? '(servers and established)' : options.listening ? '(only servers)' : '(w/o servers)';
-  text += '\nProto RefCnt Flags       Type       State         I-Node  ';
-  if (options.programs) text += ` ${padToWidth('PID/Program name', PROGRAM_NAME_WIDTH)}`;
-  text += ' Path\n';
-  if (host.procFile('/proc/net/unix') === null && options.argumentCount > 0) {
-    return { text, stderr: programNotice + missing('AF UNIX'), exitCode: 1 };
-  }
-  return { text, stderr: programNotice, exitCode: 0 };
-}

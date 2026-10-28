@@ -59,14 +59,15 @@ import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cpOperands, cmdInstall, installOperands, cmdMv, cmdRm, cmdMkdir, mkdirOperands, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdMkfifo } from './LinuxPermCommands';
+import { runUmask } from './umask/Umask';
 import {
   runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
@@ -164,9 +165,9 @@ import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
-import { LinuxProcessManager, kernelComm, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
+import { LinuxProcessManager, kernelComm, type ProcessInfo, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
+import { cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
@@ -179,6 +180,10 @@ import { resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
 import { SshFingerprint } from '@/network/protocols/ssh/SshFingerprint';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
+import { NetkitTelnetClient } from '@/network/protocols/telnet/client/NetkitTelnetClient';
+import { DeviceNetkitHost } from '@/network/protocols/telnet/client/DeviceNetkitHost';
+import { TranscriptTerminal } from '@/network/protocols/telnet/client/TranscriptTerminal';
+import { deviceWireDeps } from '@/terminal/subshells/NetkitTelnetSubShell';
 import { parseDialAddress } from '@/network/tcp/dial';
 import {
   runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost, type SshKeygenOutcome,
@@ -192,9 +197,14 @@ import { findHostByAddress, isPathReachable, findReachableHost } from './network
 import type { HostKeyProbeResult } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
 import { runDd } from './commands/fs/Dd';
+import { runMktemp } from './commands/fs/Mktemp';
 import { runFallocate } from './commands/fs/Fallocate';
 import { renderProcSwaps } from './commands/system/Swapon';
 import { loadSnapshot, renderProcLoadavg, renderProcStat } from './system/LoadAverage';
+import { runPsCommand } from './commands/system/Ps';
+import { environText, renderProcPidCmdline, renderProcPidStat, renderProcPidStatm, renderProcPidStatus } from './process/ProcPidFiles';
+import type { ProcessTask } from './process/ProcessTask';
+import { buildTask, type TaskFacts } from './process/ProcessTaskBuilder';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { SshUserContext } from '../../protocols/ssh/SshUserContext';
@@ -228,9 +238,6 @@ import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
-import {
-  TelnetClientSession, type TelnetClientTransport,
-} from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { SshClientHandle, SshClientPlacement } from './network/SshClientProcess';
@@ -246,7 +253,10 @@ import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
-import { LocalDatagramSockets, type UnixStreamConnectOutcome, type UnixStreamHandlers } from './syslog/LocalDatagramSockets';
+import type { UnixSocketRow } from './unix/UnixSocketTable';
+import {
+  LocalDatagramSockets, type UnixOwner, type UnixStreamAccess, type UnixStreamConnectOutcome, type UnixStreamHandlers,
+} from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
 import { rscryutilHost } from './syslog/LinuxRscryutilHost';
 import { runRscryutil } from './syslog/RscryutilTool';
@@ -299,7 +309,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
-  'dd', 'fallocate', 'sync',
+  'dd', 'fallocate', 'sync', 'install',
   'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
@@ -392,11 +402,55 @@ function ignoresStandardInput(argv: readonly string[]): boolean {
   return known && !readsStandardInput(command, argv.slice(1));
 }
 
+const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
+  head: new Set(['-n', '-c', '--lines', '--bytes']),
+  tail: new Set(['-n', '-c', '-s', '--lines', '--bytes', '--pid', '--sleep-interval']),
+  cut: new Set(['-d', '-f', '-c', '-b', '--delimiter', '--fields', '--characters', '--bytes', '--output-delimiter']),
+  sort: new Set(['-k', '-t', '-o', '-T', '-S', '--key', '--field-separator', '--output', '--temporary-directory', '--buffer-size']),
+  uniq: new Set(['-f', '-s', '-w', '--skip-fields', '--skip-chars', '--check-chars']),
+  nl: new Set(['-b', '-d', '-f', '-h', '-i', '-l', '-n', '-s', '-v', '-w']),
+  xxd: new Set(['-l', '-s', '-c', '-g', '-o']),
+  base64: new Set(['-w', '--wrap']),
+  grep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
+  egrep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
+  fgrep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
+  sed: new Set(['-e', '-f', '-l', '--expression', '--file', '--line-length']),
+  awk: new Set(['-F', '-v', '-f', '--field-separator', '--assign', '--file']),
+};
+
+const OPTIONS_GIVING_THE_PROGRAM: Readonly<Record<string, ReadonlySet<string>>> = {
+  grep: new Set(['-e', '-f', '--regexp', '--file']),
+  egrep: new Set(['-e', '-f', '--regexp', '--file']),
+  fgrep: new Set(['-e', '-f', '--regexp', '--file']),
+  sed: new Set(['-e', '-f', '--expression', '--file']),
+  awk: new Set(['-f', '--file']),
+};
+
 function readsStandardInput(command: string, args: readonly string[]): boolean {
   if (ALWAYS_READ_STDIN.has(command)) return true;
-  const operands = args.filter((argument) => !argument.startsWith('-') || argument === '-').length;
+  const valued = OPTIONS_TAKING_VALUE[command] ?? new Set<string>();
+  const program = OPTIONS_GIVING_THE_PROGRAM[command] ?? new Set<string>();
+  let operands = 0;
+  let programGiven = false;
+  for (let index = 0; index < args.length; index++) {
+    const word = args[index];
+    if (word === '--') {
+      operands += args.length - index - 1;
+      break;
+    }
+    if (word === '-') return true;
+    if (word.startsWith('-')) {
+      const attached = !valued.has(word) && !word.startsWith('--') && word.length > 2 && valued.has(word.slice(0, 2));
+      const option = attached ? word.slice(0, 2) : word;
+      if (program.has(option)) programGiven = true;
+      if (!attached && valued.has(word)) index++;
+      continue;
+    }
+    operands++;
+  }
   if (READ_STDIN_WITHOUT_OPERAND.has(command)) return operands === 0;
-  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= (command === 'tr' ? 2 : 1);
+  const allowed = programGiven ? 0 : command === 'tr' ? 2 : 1;
+  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= allowed;
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
@@ -588,6 +642,15 @@ export interface ForegroundResult {
   stderr?: string;
   interleaved?: string;
 }
+
+const UNIX_FILE_DEVICE_MAJOR = 254;
+const CLOCK_TICKS_PER_SECOND = 100;
+const SHELL_INTERPRETERS: ReadonlySet<string> = new Set(['bash', 'sh', 'dash']);
+const PAGE_SIZE_BYTES = 4096;
+
+const SESSION_UMASK = 0o022;
+
+const RUNS_IN_CURRENT_SHELL: ReadonlySet<string> = new Set(['umask', 'eval', 'source', '.', 'builtin', 'command', 'exec', 'time']);
 
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
@@ -861,7 +924,7 @@ export class LinuxCommandExecutor {
    * bash script, not just from the top-level per-command dispatch. Returns
    * null when the command isn't a registered (synchronous) registry entry.
    */
-  _registryCommandHook: ((cmd: string, args: string[], stdin?: string) => { output: string; exitCode: number } | null) | null = null;
+  _registryCommandHook: ((cmd: string, args: string[], stdin?: string, outputPiped?: boolean) => { output: string; exitCode: number } | null) | null = null;
   /**
    * Optional bridge to a registered `LinuxCommand`'s own declarative
    * `privilege` field, set by `LinuxMachine` alongside `_registryCommandHook`.
@@ -1059,14 +1122,17 @@ export class LinuxCommandExecutor {
     const shellPpid = sshd?.pid ?? 1;
     const shell = this.processMgr.spawn({
       command: '-bash',
-      comm: '-bash',
+      comm: 'bash',
       user: shellUser,
       uid: shellUid,
       gid: shellUid,
       ppid: shellPpid,
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.buildEnvVars(false),
     });
+    shell.sid = shell.pid;
+    shell.pgid = shell.pid;
     this.shellPid = shell.pid;
     this.shellPpid = shell.ppid;
 
@@ -1275,6 +1341,52 @@ export class LinuxCommandExecutor {
 
 
 
+  private readonly socketDescriptorSignatures = new Map<number, string>();
+
+  private refreshSocketDescriptors(): void {
+    const holders = new Set<number>(this.socketDescriptorSignatures.keys());
+    for (const entry of this.socketTable?.getAll() ?? []) if (entry.pid !== undefined) holders.add(entry.pid);
+    for (const socket of this.localDatagramSockets.rows()) for (const holder of socket.holders) holders.add(holder);
+    for (const pid of holders) {
+      if (this.processMgr.get(pid) === undefined) {
+        this.socketDescriptorSignatures.delete(pid);
+        continue;
+      }
+      const signature = openDescriptors(this.descriptorSourcesFor(pid)).map((descriptor) => `${descriptor.fd}:${descriptor.target}`).join('|');
+      if (this.socketDescriptorSignatures.get(pid) === signature) continue;
+      this.socketDescriptorSignatures.set(pid, signature);
+      if (this.materializedProcPids.has(pid)) this.materializeProcFd(pid);
+    }
+  }
+
+  taskFacts(): TaskFacts {
+    return {
+      hertz: CLOCK_TICKS_PER_SECOND,
+      bootEpochMs: (this.lifecycle.bootedAt() ?? simulationDate()).getTime(),
+      pageSizeBytes: PAGE_SIZE_BYTES,
+      cpuCount: this.hardware.cpu.logicalCpus,
+      userName: (uid) => this.userMgr.getUserByUid(uid)?.username ?? null,
+      groupName: (gid) => this.userMgr.getGroupByGid(gid)?.name ?? null,
+      supplementaryGroups: (info) => this.userMgr.getUserGroups(info.user).map((group) => group.gid),
+      loginUid: (pid) => this.auditAttrs(pid).loginuid,
+      cgroupOf: (pid) => this.cgroupPathFor(pid),
+      exeOf: (pid) => exeLinkOf(this.processLinkSources(), pid),
+      environOf: (info) => this.environReadableBy(info) ? environText(info.environ, ' ') : null,
+      labelOf: () => 'unconfined',
+      foregroundGroupOf: (info) => info.sid,
+    };
+  }
+
+  private environReadableBy(info: ProcessInfo): boolean {
+    const viewer = this.userMgr.currentUid;
+    return viewer === 0 || viewer === info.uid;
+  }
+
+  taskOf(pid: number): ProcessTask | null {
+    const info = this.processMgr.get(pid);
+    return info === undefined ? null : buildTask(info, this.taskFacts());
+  }
+
   /** Materialize /proc/<pid>/ for every live process, drop entries for dead
    *  PIDs. Each entry exposes generated `status`, `cmdline`, `comm`, `stat`
    *  files driven live from the process manager. */
@@ -1297,34 +1409,30 @@ export class LinuxCommandExecutor {
         return p ? `${kernelComm(p.comm)}\n` : '';
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/cmdline`, () => {
-        const p = this.processMgr.get(pid);
-        if (!p || p.command.startsWith('[')) return '';
-        return [p.command.split(/\s+/)[0], ...p.args].join('\0') + '\0';
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidCmdline(task, this.processMgr.get(pid)?.command ?? '');
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/status`, () => {
-        const p = this.processMgr.get(pid);
-        if (!p) return '';
-        return [
-          `Name:\t${kernelComm(p.comm)}`,
-          `State:\t${p.state} (${stateLabel(p.state)})`,
-          `Tgid:\t${p.pid}`,
-          `Pid:\t${p.pid}`,
-          `PPid:\t${p.ppid}`,
-          `Uid:\t${p.uid}\t${p.uid}\t${p.uid}\t${p.uid}`,
-          `Gid:\t${p.gid}\t${p.gid}\t${p.gid}\t${p.gid}`,
-          `VmSize:\t${p.vsize} kB`,
-          `VmRSS:\t${p.rss} kB`,
-          `Threads:\t${p.numThreads ?? 1}`,
-          '',
-        ].join('\n');
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidStatus(task, this.umask);
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/stat`, () => {
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidStat(task, task.rssPages);
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/statm`, () => {
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidStatm(task, PAGE_SIZE_BYTES / 1024);
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/environ`, () => {
         const p = this.processMgr.get(pid);
-        if (!p) return '';
-        return [
-          p.pid, `(${kernelComm(p.comm)})`, p.state, p.ppid, p.pgid, p.sid, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
-          p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
-        ].join(' ') + '\n';
+        return p === undefined || !this.environReadableBy(p) ? '' : environText(p.environ, '\0', '\0');
+      }, 0o400);
+      const owner = this.processMgr.get(pid);
+      if (owner !== undefined) this.vfs.chown(`/proc/${pid}/environ`, owner.uid, owner.gid);
+      this.vfs.registerGeneratedFile(`/proc/${pid}/wchan`, () => {
+        const task = this.taskOf(pid);
+        return task === null || task.wchanName === '-' ? '0' : task.wchanName;
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/loginuid`, () => {
         const a = this.auditAttrs(pid);
@@ -1357,6 +1465,7 @@ export class LinuxCommandExecutor {
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
+    this.refreshSocketDescriptors();
     // `/proc/self` designe le processus COURANT, pas le shell de la
     // session : un sous-shell ou l'enfant de `nice` doit s'y retrouver.
     // Le lien etait pose une fois avec le PID du shell, et les fichiers
@@ -1478,7 +1587,10 @@ export class LinuxCommandExecutor {
       pid,
       tty: p?.tty,
       openFiles: p?.openFiles,
-      socketIds: this.socketTable === null ? [] : socketIdsOwnedBy(this.socketTable, this.socketProcesses(), pid),
+      socketIds: [
+        ...(this.socketTable === null ? [] : socketIdsOwnedBy(this.socketTable, this.socketProcesses(), pid)),
+        ...this.localDatagramSockets.inodesHeldBy(pid),
+      ],
     };
   }
 
@@ -2522,6 +2634,10 @@ export class LinuxCommandExecutor {
     return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
   }
 
+  exportedEnvironment(): Array<[string, string]> {
+    return [...this.env];
+  }
+
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const password = offeredPassword ?? this.sshpassPassword;
     const hostname = kernelHostname(this.vfs);
@@ -2683,15 +2799,6 @@ export class LinuxCommandExecutor {
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
   }
 
-  private async openWireTelnetSession(
-    ip: string, port: number,
-  ): Promise<TelnetClientSession | null> {
-    if (!this.tcpConnector) return null;
-    const dialed = await this.tcpConnector(ip, port);
-    if (!dialed || (dialed as { dialFailed?: string }).dialFailed !== undefined) return null;
-    return new TelnetClientSession(dialed as TelnetClientTransport);
-  }
-
   private static async settleWire(times = 12): Promise<void> {
     for (let i = 0; i < times; i++) {
       await Promise.resolve();
@@ -2699,25 +2806,42 @@ export class LinuxCommandExecutor {
     }
   }
 
-  async runTelnetExecAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
-    const probe = this.runTelnetClient(args);
-    if (probe.exitCode !== 0 || !probe.wireTarget) return { output: probe.output, exitCode: probe.exitCode };
-    const session = await this.openWireTelnetSession(probe.wireTarget.ip, probe.wireTarget.port);
-    if (!session) return { output: probe.output, exitCode: probe.exitCode };
-    const stdin = this._scenarioStdin ?? '';
-    await LinuxCommandExecutor.settleWire();
-    let transcript = session.drain();
-    for (const line of stdin.split('\n')) {
-      if (line.length === 0 && transcript.length > 0) continue;
-      session.send(line);
+  async runTelnetExecAsync(args: string[], piped?: string): Promise<ForegroundResult> {
+    const vfsReader = { readFile: (path: string) => this.vfs.readFile(path) };
+    const terminal = new TranscriptTerminal();
+    const host = new DeviceNetkitHost({
+      ...deviceWireDeps(this.localDevice as never, vfsReader),
+      environment: () => this.exportedEnvironment(),
+      user: () => ({ name: this.userMgr.currentUser, uid: this.userMgr.currentUid }),
+      lookupUser: (name) => this.userMgr.getUser(name) ?? null,
+      hostname: () => kernelHostname(this.vfs),
+      size: () => null,
+      readFile: (path) => this.vfs.readFile(path),
+      tty: false,
+    });
+    const client = new NetkitTelnetClient(host, terminal);
+    let exitCode = 0;
+    client.onExit((code) => { exitCode = code; });
+    await client.start(args);
+    await client.idle();
+    if (!client.exited) {
       await LinuxCommandExecutor.settleWire();
-      transcript += session.drain();
+      const input = piped ?? this._scenarioStdin ?? '';
+      const lines = input.split('\n');
+      if (lines[lines.length - 1] === '') lines.pop();
+      for (const line of lines) {
+        if (client.exited) break;
+        client.input(`${line}\n`);
+        await client.idle();
+        await LinuxCommandExecutor.settleWire();
+      }
+      if (!client.exited) {
+        client.endOfInput();
+        await LinuxCommandExecutor.settleWire();
+      }
     }
-    const closedByPeer = session.closed;
-    session.close();
-    await LinuxCommandExecutor.settleWire();
-    const farewell = closedByPeer ? 'Connection closed by foreign host.\n' : '';
-    return { output: `${probe.output}${transcript}${farewell}`, exitCode: 0 };
+    client.dispose();
+    return terminal.result(exitCode);
   }
 
   private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
@@ -2962,6 +3086,7 @@ export class LinuxCommandExecutor {
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
+    this.localDatagramSockets.shareInodes(table.inodes);
     // SSH port-forwards bind their listeners on the very same table, so
     // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
     const ownStack = (this.localDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
@@ -2973,7 +3098,9 @@ export class LinuxCommandExecutor {
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.registerProcNet(() => this.kernelSocketRows(), () => this.protocolCounters(), () => this.kernelIpFacts());
+    portsFs.registerProcNet(
+      () => this.kernelSocketRows(), () => this.protocolCounters(), () => this.kernelIpFacts(), () => this.localDatagramSockets.rows(),
+    );
   }
 
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
@@ -3073,6 +3200,21 @@ export class LinuxCommandExecutor {
     };
   }
 
+  unixSocketOwners(row: UnixSocketRow): Array<{ pid: number; uid: number; name: string; fd: number }> {
+    const target = `socket:[${row.inode}]`;
+    const owners: Array<{ pid: number; uid: number; name: string; fd: number }> = [];
+    for (const pid of row.holders) {
+      const process = this.processMgr.get(pid);
+      const fd = openDescriptors(this.descriptorSourcesFor(pid)).find((descriptor) => descriptor.target === target)?.fd;
+      if (process !== undefined && fd !== undefined) owners.push({ pid, uid: process.uid, name: kernelComm(process.comm), fd });
+    }
+    return owners;
+  }
+
+  unixFileDevice(path: string): number {
+    return (UNIX_FILE_DEVICE_MAJOR << 8) | Math.max(0, this.mountTable.deviceOf(path) - 1);
+  }
+
   kernelSocketRows(): KernelSocketRow[] {
     if (this.socketTable === null) return [];
     return kernelSocketRows({
@@ -3136,6 +3278,10 @@ export class LinuxCommandExecutor {
     if (inode === null && live === undefined) return { errno: 'ENOENT' };
     if (inode !== null && !this.checkPermission(inode, 'r')) return { errno: 'EACCES' };
     return live ?? { errno: 'ENOTTY' };
+  }
+
+  ptyExists(name: string): boolean {
+    return name === 'pts/0' || this.ttyLookup(name) !== undefined;
   }
 
   terminalColumns(): number {
@@ -3378,14 +3524,16 @@ export class LinuxCommandExecutor {
 
   private spawnBackgroundJob(
     cmdLine: string, nohup: boolean, pipedInput?: string,
+    inheritedEnvironment: Readonly<Record<string, string>> = this.buildEnvVars(false),
   ): { pid: number; jobId: number; settled: Promise<unknown> } | null {
-    const argv = simpleTokenize(cmdLine);
+    const typed = simpleTokenize(cmdLine);
+    const { assigned, rest: argv } = leadingAssignments(typed);
     if (argv.length === 0) return null;
     const c = this.ctx();
     // real nice(1) execve()s over itself, so comm/cmdline should reflect
     // the wrapped command, not "nice" — see niceWrappedCommand().
     const niceInner = niceWrappedCommand(argv);
-    const spawnCommand = niceInner ? niceInner.argv.join(' ') : cmdLine;
+    const spawnCommand = (niceInner?.argv ?? argv).join(' ');
     const spawnComm = basenameOf((niceInner?.argv ?? argv)[0]);
     const proc = this.processMgr.spawn({
       command: spawnCommand,
@@ -3397,7 +3545,9 @@ export class LinuxCommandExecutor {
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
       nice: niceInner?.adjustment,
+      environ: { ...inheritedEnvironment, ...assigned },
     });
+    if (!nohup && this.monitorMode(inheritedEnvironment) && this.currentBashPid() === this.shellPid) proc.pgid = proc.pid;
     this.holdDescriptorsOfBackgroundJob(proc.pid, cmdLine);
     // §F5.7 — un accès à un montage réseau mort part en attente
     // ininterruptible et n'en revient pas. Le job est enregistré mais son
@@ -3428,6 +3578,8 @@ export class LinuxCommandExecutor {
     let exitCode = 0;
     let parked = false;
     this.waitScopes.push(0);
+    const parentUmask = this.umask;
+    this.jobScriptPid = SHELL_INTERPRETERS.has(basenameOf(argv[0])) ? proc.pid : null;
     try {
       this.withProcessIdentity(proc.pid, () => {
         const r = this.executeCoreWithResult(cmdLine, true);
@@ -3439,7 +3591,7 @@ export class LinuxCommandExecutor {
           this.processMgr.setState(proc.pid, 'S');
         }
       });
-    } catch { /* background failures are silent */ } finally { this.waitScopes.pop(); }
+    } catch { /* background failures are silent */ } finally { this.waitScopes.pop(); this.umask = parentUmask; this.jobScriptPid = null; }
     // The job's own command (e.g. `nc -l` binding a socket) runs *after*
     // syncProcPids() already materialized its fresh /proc/<pid>/fd/ — so
     // anything it opens during that run is invisible until refreshed here.
@@ -3726,7 +3878,9 @@ export class LinuxCommandExecutor {
 
   private handleWait(args: string[]): string {
     const specs = args.filter((a) => !a.startsWith('-'));
-    const running = this.jobTable.list().filter((j) => j.isRunning());
+    const scoped = this.waitScopes.length > 0;
+    const ownChild = (job: { readonly pid: number }): boolean => this.processMgr.get(job.pid)?.ppid === this.currentBashPid();
+    const running = this.jobTable.list().filter((j) => j.isRunning() && (!scoped || ownChild(j)));
     let targets = running;
     if (specs.length > 0) {
       targets = [];
@@ -3739,7 +3893,9 @@ export class LinuxCommandExecutor {
     }
     let last = 0;
     for (const job of targets) {
-      if (job.completesAt !== undefined) {
+      if (job.completesAt !== undefined && scoped) {
+        this.spendSeconds(Math.max(0, job.completesAt - this.logicalNow()) / 1000);
+      } else if (job.completesAt !== undefined) {
         this.stepClock(job.completesAt - this.logicalNow());
         this.completeBackgroundJob(job);
         last = job.exitCode ?? 0;
@@ -4464,6 +4620,7 @@ export class LinuxCommandExecutor {
       ppid: this.currentBashPid(),
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.environmentOfCommand(),
     });
     this.foregroundNetworkPid = proc.pid;
     return proc;
@@ -4473,6 +4630,7 @@ export class LinuxCommandExecutor {
     if (this.foregroundNetworkPid === pid) this.foregroundNetworkPid = null;
     if (!this.processMgr.get(pid)) return;
     if ((this.socketTable?.listByPid(pid).length ?? 0) > 0) return;
+    if (this.localDatagramSockets.inodesHeldBy(pid).length > 0) return;
     this.processMgr.exit(pid, exitCode);
   }
 
@@ -4509,6 +4667,15 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private jobScriptPid: number | null = null;
+
+  private adoptedJobScript() {
+    const pid = this.jobScriptPid;
+    if (pid === null || pid !== this.currentBashPid()) return null;
+    this.jobScriptPid = null;
+    return this.processMgr.get(pid) ?? null;
+  }
+
   private runScriptProcess(
     command: string,
     run: (
@@ -4516,8 +4683,9 @@ export class LinuxCommandExecutor {
       bridge: (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number },
     ) => ScriptResult,
   ): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
-    const ppid = this.currentBashPid();
-    const proc = this.processMgr.spawn({
+    const adopted = this.adoptedJobScript();
+    const ppid = adopted?.ppid ?? this.currentBashPid();
+    const proc = adopted ?? this.processMgr.spawn({
       command,
       comm: 'bash',
       user: this.userMgr.currentUser,
@@ -4526,6 +4694,7 @@ export class LinuxCommandExecutor {
       ppid,
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.environmentOfCommand(),
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
@@ -4535,7 +4704,7 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    this.bashPids.push(proc.pid);
+    if (adopted === null) this.bashPids.push(proc.pid);
     try {
       const result = run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
@@ -4545,13 +4714,13 @@ export class LinuxCommandExecutor {
         // drop it silently and let the DaemonParkSignal re-propagate so
         // the *outer* backgrounded job (spawnBackgroundJob's own PID)
         // ends up parked instead.
-        if (this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
+        if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
         throw new DaemonParkSignal(result.output, result.interp);
       }
-      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      this.bashPids.pop();
+      if (adopted === null) this.bashPids.pop();
     }
   }
 
@@ -4581,8 +4750,9 @@ export class LinuxCommandExecutor {
         { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }>,
     ) => Promise<ScriptResult>,
   ): Promise<{ output: string; exitCode: number; stderr?: string; interleaved?: string }> {
-    const ppid = this.currentBashPid();
-    const proc = this.processMgr.spawn({
+    const adopted = this.adoptedJobScript();
+    const ppid = adopted?.ppid ?? this.currentBashPid();
+    const proc = adopted ?? this.processMgr.spawn({
       command,
       comm: 'bash',
       user: this.userMgr.currentUser,
@@ -4591,6 +4761,7 @@ export class LinuxCommandExecutor {
       ppid,
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.environmentOfCommand(),
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
@@ -4600,18 +4771,18 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    this.bashPids.push(proc.pid);
+    if (adopted === null) this.bashPids.push(proc.pid);
     try {
       const result = await run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
         // Same reasoning as the sync version — see runScriptProcess.
-        if (this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
+        if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
         throw new DaemonParkSignal(result.output, result.interp);
       }
-      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      this.bashPids.pop();
+      if (adopted === null) this.bashPids.pop();
     }
   }
 
@@ -4762,7 +4933,7 @@ export class LinuxCommandExecutor {
     argv = this.shippedBinaryInvocation(argv);
     if (background) {
       const fed = interpreterStdin !== undefined && interpreterStdin !== '' && argv[argv.length - 1] === interpreterStdin;
-      const spawned = this.spawnBackgroundJob((fed ? argv.slice(0, -1) : argv).join(' '), false, fed ? interpreterStdin : undefined);
+      const spawned = this.spawnBackgroundJob((fed ? argv.slice(0, -1) : argv).map(quoteShellWord).join(' '), false, fed ? interpreterStdin : undefined, env ?? this.environmentOfCommand());
       if (!spawned) return { output: '', exitCode: 0 };
       return { output: '', exitCode: 0, backgroundPid: spawned.pid };
     }
@@ -4787,6 +4958,7 @@ export class LinuxCommandExecutor {
     let cmdArgs = [...argv];
     let isSudo = false;
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
+    let sudoParentUmask: number | null = null;
     let closeSudo: () => void = () => undefined;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
@@ -4795,7 +4967,7 @@ export class LinuxCommandExecutor {
       const readsStdinPassword = lead.flags.has('S');
       const sudoTargetUser = lead.user;
       cmdArgs = lead.rest;
-      if (Object.keys(lead.environment).length > 0) this._cmdEnv = { ...(this._cmdEnv ?? Object.fromEntries(this.env)), ...lead.environment };
+      if (Object.keys(lead.environment).length > 0) this._cmdEnv = { ...this.environmentOfCommand(), ...lead.environment };
       const shellRequested = lead.flags.has('i') || lead.flags.has('s');
       if (cmdArgs.length === 0 && !shellRequested) {
         return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
@@ -4827,10 +4999,13 @@ export class LinuxCommandExecutor {
       this.userMgr.currentUser = targetUserEntry.username;
       this.userMgr.currentUid = targetUserEntry.uid;
       this.userMgr.currentGid = targetUserEntry.gid;
+      sudoParentUmask = this.umask;
+      this.umask = SESSION_UMASK;
     }
 
     if (cmdArgs.length === 0) {
       if (savedUser) { this.userMgr.currentUser = savedUser.user; this.userMgr.currentUid = savedUser.uid; this.userMgr.currentGid = savedUser.gid; }
+      if (sudoParentUmask !== null) this.umask = sudoParentUmask;
       closeSudo();
       return { output: '', exitCode: 0 };
     }
@@ -4872,6 +5047,7 @@ export class LinuxCommandExecutor {
       this.userMgr.currentUser = savedUser.user;
       this.userMgr.currentUid = savedUser.uid;
       this.userMgr.currentGid = savedUser.gid;
+      if (sudoParentUmask !== null) this.umask = sudoParentUmask;
     }
     // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
     if (savedUser && suLeftSessionOpen) {
@@ -5288,6 +5464,8 @@ export class LinuxCommandExecutor {
       resolvePath: (path: string, cwd?: string) => {
         return this.vfs.normalizePath(path, cwd ?? this.cwd);
       },
+      getUmask: () => this.umask,
+      setUmask: (mask: number) => { this.umask = mask; },
       bindBackgroundStderr: (pid: number, path: string, append: boolean) => {
         this.bindBackgroundStderr(pid, this.vfs.normalizePath(path, this.cwd), append);
       },
@@ -5384,8 +5562,16 @@ export class LinuxCommandExecutor {
     return { ...this.buildEnvVars(), ...(this._cmdEnv ?? {}) };
   }
 
+  private monitorMode(live: Readonly<Record<string, string>> = {}): boolean {
+    return (live.SHELLOPTS ?? this.env.get('SHELLOPTS') ?? INTERACTIVE_SHELLOPTS).split(':').includes('monitor');
+  }
+
+  environmentOfCommand(): Readonly<Record<string, string>> {
+    return this._cmdEnv ?? this.buildEnvVars(false);
+  }
+
   /** Build initial environment variables for the bash interpreter. */
-  private buildEnvVars(): Record<string, string> {
+  private buildEnvVars(forShell = true): Record<string, string> {
     if (this.envOverride) return { ...this.envOverride };
     const user = this.userMgr.currentUser;
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
@@ -5408,6 +5594,8 @@ export class LinuxCommandExecutor {
     for (const [k, v] of this.env) {
       vars[k] = v;
     }
+    if (!forShell) return vars;
+    vars.SHELLOPTS ??= INTERACTIVE_SHELLOPTS;
     vars.COLUMNS ??= String(this.terminalColumns());
     vars.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
     return vars;
@@ -5517,13 +5705,13 @@ export class LinuxCommandExecutor {
     return this.auditDaemon.followForeground(line, stopped);
   }
 
-  connectUnixStream(path: string, handlers: UnixStreamHandlers): UnixStreamConnectOutcome {
+  unixAccess(): UnixStreamAccess {
     const gids = this.userMgr.getUserGroups(this.userMgr.currentUser).map((group) => group.gid);
-    return this.localDatagramSockets.connectStream(
-      this.vfs.normalizePath(path, this.cwd),
-      { uid: this.userMgr.currentUid, gids: [this.userMgr.currentGid, ...gids] },
-      handlers,
-    );
+    return { uid: this.userMgr.currentUid, gids: [this.userMgr.currentGid, ...gids] };
+  }
+
+  connectUnixStream(path: string, handlers: UnixStreamHandlers, owner?: UnixOwner): UnixStreamConnectOutcome {
+    return this.localDatagramSockets.connectStream(this.vfs.normalizePath(path, this.cwd), this.unixAccess(), handlers, owner);
   }
 
   private changeAuditRunlevel(level: 'single' | 'halt'): void {
@@ -5697,7 +5885,13 @@ export class LinuxCommandExecutor {
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
-    const result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
+    const parentUmask = this.umask;
+    let result: { output: string; exitCode: number };
+    try {
+      result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
+    } finally {
+      if (!RUNS_IN_CURRENT_SHELL.has(cmd)) this.umask = parentUmask;
+    }
     this.replayProgramTrace(cmd, args, result);
     return result;
   }
@@ -5819,10 +6013,14 @@ export class LinuxCommandExecutor {
         return { output: cmdEcho(c, expanded), exitCode: 0 };
       }
       case 'cp': {
-        const paths = args.filter(a => !a.startsWith('-'));
-        for (const p of paths) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        for (const p of cpOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
         const outCp = cmdCp(c, args);
-        return { output: outCp, exitCode: outCp.startsWith('cp:') ? 1 : 0 };
+        return { output: outCp, exitCode: /^cp: (?!warning:)/m.test(outCp) ? 1 : 0 };
+      }
+      case 'install': {
+        for (const p of installOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        const outInstall = cmdInstall(c, args);
+        return { output: outInstall, exitCode: /^install:/m.test(outInstall) ? 1 : 0 };
       }
       case 'mv': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -5844,13 +6042,13 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
       }
       case 'mkdir': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
+        for (const p of mkdirOperands(args)) {
           const abs = this.vfs.normalizePath(p, this.cwd);
           this.publishFsAccess(abs, 'w', 'mkdir');
           this.publishSyscall('mkdir', abs);
         }
         const outMk = cmdMkdir(c, args);
-        return { output: outMk, exitCode: outMk.startsWith('mkdir:') ? 1 : 0 };
+        return { output: outMk, exitCode: /^mkdir:/m.test(outMk) ? 1 : 0 };
       }
       case 'rmdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -5968,9 +6166,9 @@ export class LinuxCommandExecutor {
       }
       case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
       case 'umask': {
-        const result = cmdUmask(c, args);
-        if (result.newUmask !== undefined) this.umask = result.newUmask;
-        return { output: result.output, exitCode: result.exitCode };
+        const result = runUmask(args, this.umask);
+        if (result.mask !== undefined) this.umask = result.mask;
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.stderr }) };
       }
       case 'ulimit': {
         const flag = args[0] ?? '-f';
@@ -6217,7 +6415,7 @@ export class LinuxCommandExecutor {
       //   env -u NAME … cmd         → run cmd with NAME removed
       //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this._cmdEnv ?? Object.fromEntries(this.env));
+        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this.environmentOfCommand());
         if (cmdline.length === 0) {
           return {
             output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
@@ -6231,7 +6429,7 @@ export class LinuxCommandExecutor {
       // printenv — print the whole environment, or specific variables.
       // With names, one value per line; exit 1 if any name is unset.
       case 'printenv': {
-        const envView = this._cmdEnv ?? Object.fromEntries(this.env);
+        const envView = this.environmentOfCommand();
         const names = args.filter((a) => !a.startsWith('-'));
         if (names.length === 0) {
           return {
@@ -6256,7 +6454,7 @@ export class LinuxCommandExecutor {
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
       case 'locale': {
-        const e = this._cmdEnv ?? Object.fromEntries(this.env);
+        const e = this.environmentOfCommand();
         const lang = e['LANG'] ?? '';
         const lcAll = e['LC_ALL'] ?? '';
         const effective = lcAll || lang || 'C';
@@ -6482,7 +6680,6 @@ export class LinuxCommandExecutor {
       case 'taskset': return cmdTaskset(args, this.processCmdContext());
 
       // ps — process listing backed by ProcessManager
-      case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
       case 'tty': {
@@ -6859,22 +7056,10 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: exit };
       }
+      case 'ps': return runPsCommand({ executor: this, outputPiped: c.isPiped }, args);
       case 'mktemp': {
-        // Real mktemp honours a template argument: the trailing run of
-        // X's is replaced by random characters, and the file is created.
-        const rand = (n: number) => Math.random().toString(36).slice(2, 2 + n).padEnd(n, '0');
-        const template = args.find((a) => !a.startsWith('-'));
-        let path: string;
-        if (template && /XXX/.test(template)) {
-          path = template.replace(/X{3,}(?!.*X{3})/, (m) => rand(m.length));
-          if (!path.startsWith('/')) path = this.vfs.normalizePath(path, this.cwd);
-        } else if (template) {
-          return { output: `mktemp: too few X's in template '${template}'`, exitCode: 1 };
-        } else {
-          path = '/tmp/tmp.' + rand(10);
-        }
-        this.vfs.writeFile(path, '', this.userMgr.currentUid, this.userMgr.currentGid, 0o077);
-        return { output: path, exitCode: 0 };
+        const result = runMktemp(this, args, (name) => (this._cmdEnv ?? Object.fromEntries(this.env))[name]);
+        return { output: result.output, exitCode: result.exitCode, ...(result.stderr === undefined ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
 
       default: {
@@ -6895,7 +7080,7 @@ export class LinuxCommandExecutor {
         // what to do with it: a command that says `readsStdin` gets it as a
         // parameter, one that doesn't gets it re-appended as the trailing
         // word it used to arrive as.
-        const registryResult = this._registryCommandHook?.(cmd, args, stdin);
+        const registryResult = this._registryCommandHook?.(cmd, args, stdin, c.isPiped);
         if (registryResult) return registryResult;
 
         return { output: `${this.childShellRunning ? 'bash: line 1: ' : ''}${cmd}: command not found`, exitCode: 127 };
@@ -7669,6 +7854,7 @@ export class LinuxCommandExecutor {
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
+    this.umask = SESSION_UMASK;
     if (loginShell) this.cwd = user.home;
 
     return {
@@ -8490,6 +8676,7 @@ export class LinuxCommandExecutor {
 
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
+  wallClockMs(): number { return this.wallNow(); }
 
   userHomeDirectory(uid: number): string | null {
     return this.userMgr.getUserByUid(uid)?.home ?? null;
@@ -9043,6 +9230,11 @@ function isBackgroundListener(cmdLine: string): boolean {
   return argv.slice(1).some((a) => a === '-l' || (/^-[a-zA-Z]+$/.test(a) && a.includes('l')));
 }
 
+function quoteShellWord(word: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(word)) return word;
+  return `'${word.replace(/'/g, "'\\''")}'`;
+}
+
 function parseBackgroundDurationMs(cmdLine: string): number {
   if (isBackgroundListener(cmdLine)) return PERSISTENT_LISTENER_DURATION_MS;
   const m = /\bsleep\s+(\d+(?:\.\d+)?)\s*([smhd]?)\b/.exec(cmdLine);
@@ -9160,6 +9352,7 @@ function niceWrappedCommand(argv: string[]): { argv: string[]; adjustment: numbe
 }
 
 const NOHUP_OUT_UMASK = 0o177;
+const INTERACTIVE_SHELLOPTS = 'braceexpand:emacs:hashall:histexpand:history:interactive-comments:monitor';
 
 const TIMEOUT_EXIT_TIMEDOUT = 124;
 const TIMEOUT_EXIT_CANCELED = 125;

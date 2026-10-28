@@ -153,7 +153,7 @@ describe('Scénario 2 — cycle de vie des processus', () => {
       const psOut = await run(`ps -p ${pid} -o ni,pri`);
       const [ni, pri] = psOut.split('\n')[1].trim().split(/\s+/);
       expect(ni).toBe('5');
-      expect(pri).toBe('25');
+      expect(pri).toBe('14');
 
       const sched = await run(`cat /proc/${pid}/sched`);
       expect(sched).toMatch(/prio\s*:\s*125/);

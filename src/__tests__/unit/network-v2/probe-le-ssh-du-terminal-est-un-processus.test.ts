@@ -125,7 +125,7 @@ function transcript(terminal: LinuxTerminalSession): string {
 }
 
 async function processes(machine: LinuxPC | LinuxServer): Promise<ProcessRow[]> {
-  const listing = await machine.executeCommand('ps -eo pid,ppid,user,tty,comm,args');
+  const listing = await machine.executeCommand('ps -ww -eo pid,ppid,user,tty,comm,args');
   return listing.split('\n').flatMap((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line);
     return match === null

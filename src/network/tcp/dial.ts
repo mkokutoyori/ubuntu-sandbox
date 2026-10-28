@@ -20,7 +20,7 @@ export async function dialTcp(
   const socket = stack.connect(destination.toString(), port.value);
   if (!socket) return { dialFailed: stack.hasEgressTo(destination.toString()) ? 'timeout' : 'unreachable' };
   if (socket.state === 'established') return socket;
-  if (socket.closed) return dialFailureOf(socket);
+  if (socket.closed) return answeredBeforeClosing(socket) ? socket : dialFailureOf(socket);
   if (stack.awaitsUnresolvedNeighbour(destination.toString())) {
     socket.close();
     return { dialFailed: 'unreachable' };
@@ -36,12 +36,16 @@ export async function dialTcp(
   });
 }
 
-function dialFailureOf(socket: { connectRefused?: boolean }): TcpDialFailure {
+function answeredBeforeClosing(socket: { everEstablished: boolean; hasUnreadData: boolean }): boolean {
+  return socket.everEstablished && socket.hasUnreadData;
+}
+
+function dialFailureOf(socket: { connectRefused?: boolean; everEstablished?: boolean }): TcpDialFailure {
   // Un client ordinaire garde ici les trois issues qu'il sait dire : un
   // interdit administratif est un REFUS explicite du reseau, donc il se
   // rend comme tel. Seul le scanner, qui interroge `connectOutcome`,
   // distingue « rien n'ecoute » de « quelque chose l'interdit ».
-  return { dialFailed: socket.connectRefused ? 'refused' : 'timeout' };
+  return { dialFailed: socket.connectRefused || socket.everEstablished ? 'refused' : 'timeout' };
 }
 
 export function socketStream(socket: TcpSocket): TcpStream {

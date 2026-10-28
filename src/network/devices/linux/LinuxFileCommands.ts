@@ -7,6 +7,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { parseChmodMode } from './ChmodMode';
 import { interpretEscapes } from './LinuxShellParser';
 import type { PathActor } from './VfsPath';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -207,10 +208,11 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
 
   if (paths.length === 0) paths.push('.');
 
-  const allOutput: string[] = [];
+  const failures: string[] = [];
+  const listedFiles: Array<{ name: string; inode: INode; absPath: string }> = [];
+  const listedDirectories: Array<{ name: string; absPath: string }> = [];
 
   for (const rawPath of paths) {
-    // Glob expansion
     const expandedPaths = expandGlob(ctx, rawPath);
 
     for (const p of expandedPaths) {
@@ -224,21 +226,27 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
         ?? ctx.vfs.resolveInode(absPath, false);
 
       if (!inode) {
-        allOutput.push(`ls: cannot access '${p}': No such file or directory`);
-        continue;
-      }
-
-      if (inode.type !== 'directory' || dirOnly) {
-        // Show single file/dir entry
-        const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
-        allOutput.push(formatEntry(ctx, p, inode, absPath, opts));
+        failures.push(`ls: cannot access '${p}': No such file or directory`);
+      } else if (inode.type !== 'directory' || dirOnly) {
+        listedFiles.push({ name: p, inode, absPath });
       } else {
-        const result = listDir(ctx, absPath, p, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing);
-        allOutput.push(result);
+        listedDirectories.push({ name: p, absPath });
       }
     }
   }
+
+  const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
+  listedFiles.sort(byName);
+  listedDirectories.sort(byName);
+  const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
+  const allOutput: string[] = [...failures];
+  for (const file of listedFiles) allOutput.push(formatEntry(ctx, file.name, file.inode, file.absPath, opts));
+  const headed = paths.length > 1 && !recursive;
+  listedDirectories.forEach((directory, index) => {
+    if (headed) allOutput.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
+    allOutput.push(listDir(ctx, directory.absPath, directory.name, longFormat, showAll, showInode,
+      sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing));
+  });
 
   return allOutput.join('\n').trimEnd();
 }
@@ -592,26 +600,320 @@ export function cmdEcho(ctx: ShellContext, args: string[]): string {
   return text;
 }
 
+interface CpRequest {
+  readonly recursive: boolean;
+  readonly preserve: boolean;
+  readonly noClobber: boolean;
+  readonly verbose: boolean;
+  readonly updateOnly: boolean;
+  readonly hardLink: boolean;
+  readonly symbolicLink: boolean;
+  readonly backup: boolean;
+  readonly noTargetDirectory: boolean;
+  readonly targetDirectory: string | null;
+  readonly dereference: 'always' | 'command-line' | 'never' | null;
+  readonly operands: string[];
+}
+
+function parseCpArguments(args: readonly string[]): CpRequest | string {
+  const flags = {
+    recursive: false, preserve: false, noClobber: false, verbose: false, updateOnly: false, hardLink: false, symbolicLink: false,
+    backup: false, noTargetDirectory: false,
+  };
+  let targetDirectory: string | null = null;
+  let dereference: CpRequest['dereference'] = null;
+  const operands: string[] = [];
+  const invalid = (text: string): string => `cp: invalid option -- '${text}'\nTry 'cp --help' for more information.`;
+  let optionsEnded = false;
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (optionsEnded || !argument.startsWith('-') || argument === '-') {
+      operands.push(argument);
+    } else if (argument === '--') {
+      optionsEnded = true;
+    } else if (argument.startsWith('--')) {
+      if (argument === '--recursive') flags.recursive = true;
+      else if (argument === '--archive') { flags.recursive = true; flags.preserve = true; dereference ??= 'never'; }
+      else if (argument === '--preserve' || argument.startsWith('--preserve=')) flags.preserve = true;
+      else if (argument === '--no-clobber') flags.noClobber = true;
+      else if (argument === '--verbose') flags.verbose = true;
+      else if (argument === '--update' || argument.startsWith('--update=')) flags.updateOnly = true;
+      else if (argument === '--link') flags.hardLink = true;
+      else if (argument === '--symbolic-link') flags.symbolicLink = true;
+      else if (argument === '--backup' || argument.startsWith('--backup=')) flags.backup = true;
+      else if (argument === '--no-target-directory') flags.noTargetDirectory = true;
+      else if (argument === '--dereference') dereference = 'always';
+      else if (argument === '--no-dereference') dereference = 'never';
+      else if (argument.startsWith('--target-directory=')) targetDirectory = argument.slice('--target-directory='.length);
+      else if (argument === '--target-directory') targetDirectory = args[++index] ?? null;
+      else if (argument !== '--force' && argument !== '--one-file-system') return `cp: unrecognized option '${argument}'\nTry 'cp --help' for more information.`;
+    } else {
+      for (let letter = 1; letter < argument.length; letter++) {
+        const flag = argument[letter];
+        if (flag === 'r' || flag === 'R') flags.recursive = true;
+        else if (flag === 'a') { flags.recursive = true; flags.preserve = true; dereference ??= 'never'; }
+        else if (flag === 'p') flags.preserve = true;
+        else if (flag === 'n') flags.noClobber = true;
+        else if (flag === 'v') flags.verbose = true;
+        else if (flag === 'u') flags.updateOnly = true;
+        else if (flag === 'l') flags.hardLink = true;
+        else if (flag === 's') flags.symbolicLink = true;
+        else if (flag === 'b') flags.backup = true;
+        else if (flag === 'T') flags.noTargetDirectory = true;
+        else if (flag === 'L') dereference = 'always';
+        else if (flag === 'H') dereference = 'command-line';
+        else if (flag === 'P' || flag === 'd') dereference = 'never';
+        else if (flag === 't') {
+          const attached = argument.slice(letter + 1);
+          if (attached !== '') targetDirectory = attached;
+          else if (index + 1 < args.length) targetDirectory = args[++index];
+          else return "cp: option requires an argument -- 't'\nTry 'cp --help' for more information.";
+          break;
+        } else if (flag !== 'f' && flag !== 'x' && flag !== 'Z' && flag !== 'i') return invalid(flag);
+      }
+    }
+  }
+  return { ...flags, targetDirectory, dereference, operands };
+}
+
+export function cpOperands(args: readonly string[]): string[] {
+  const request = parseCpArguments(args);
+  return typeof request === 'string' ? [] : request.operands;
+}
+
+const PERMISSION_BITS = 0o777;
+const ALL_MODE_BITS = 0o7777;
+const CP_NO_CLOBBER_WARNING = 'cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead';
+
+function copyTree(
+  ctx: ShellContext, request: CpRequest, source: string, target: string, sourceName: string, targetName: string, messages: string[],
+  depth = 0,
+): void {
+  const link = ctx.vfs.lstat(source);
+  if (link === null) {
+    messages.push(`cp: cannot stat '${sourceName}': No such file or directory`);
+    return;
+  }
+  const follow = request.dereference === 'always'
+    || (depth === 0 && (request.dereference === 'command-line' || (request.dereference === null && !request.recursive)));
+  const inode = link.type === 'symlink' && follow ? ctx.vfs.resolveInode(source) ?? link : link;
+  const exists = ctx.vfs.lstat(target) !== null;
+  if (inode.type === 'directory') {
+    if (!request.recursive) {
+      messages.push(`cp: -r not specified; omitting directory '${sourceName}'`);
+      return;
+    }
+    if (target === source || target.startsWith(`${source}/`)) {
+      messages.push(`cp: cannot copy a directory, '${sourceName}', into itself, '${targetName}'`);
+      return;
+    }
+    if (!exists && !ctx.vfs.mkdir(target, request.preserve ? inode.permissions & ALL_MODE_BITS : inode.permissions & PERMISSION_BITS & ~ctx.umask, ctx.uid, ctx.gid)) {
+      messages.push(`cp: cannot create directory '${targetName}'`);
+      return;
+    }
+    if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
+    for (const entry of ctx.vfs.listDirectory(source) ?? []) {
+      if (entry.name === '.' || entry.name === '..') continue;
+      copyTree(ctx, request, `${source}/${entry.name}`, `${target}/${entry.name}`, `${sourceName}/${entry.name}`, `${targetName}/${entry.name}`, messages, depth + 1);
+    }
+    if (request.preserve) {
+      ctx.vfs.chmod(target, inode.permissions & ALL_MODE_BITS);
+      if (ctx.uid === 0) ctx.vfs.chown(target, inode.uid, inode.gid);
+    }
+    return;
+  }
+  if (exists && request.noClobber) return;
+  if (exists && request.updateOnly && (ctx.vfs.lstat(target)?.mtime ?? 0) >= inode.mtime) return;
+  if (exists && request.backup) ctx.vfs.rename(target, `${target}~`);
+  if (request.hardLink || request.symbolicLink) {
+    if (ctx.vfs.lstat(target) !== null) ctx.vfs.deleteFile(target);
+    const made = request.symbolicLink ? ctx.vfs.createSymlink(target, sourceName, ctx.uid, ctx.gid) : ctx.vfs.createHardLink(target, source);
+    if (!made) messages.push(`cp: cannot create ${request.symbolicLink ? 'symbolic' : 'hard'} link '${targetName}' to '${sourceName}'`);
+    else if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
+    return;
+  }
+  if (inode.type === 'symlink') {
+    if (exists) ctx.vfs.deleteFile(target);
+    if (!ctx.vfs.createSymlink(target, inode.target, ctx.uid, ctx.gid)) messages.push(`cp: cannot create symbolic link '${targetName}'`);
+    else if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
+    return;
+  }
+  if (inode.type !== 'file') {
+    messages.push(`cp: cannot copy '${sourceName}' to '${targetName}'`);
+    return;
+  }
+  const created = ctx.vfs.createFileAt(target, inode.content, inode.permissions & PERMISSION_BITS & ~ctx.umask, ctx.uid, ctx.gid);
+  if (created === null) {
+    messages.push(`cp: cannot create regular file '${targetName}'`);
+    return;
+  }
+  if (request.preserve) {
+    ctx.vfs.chmod(target, inode.permissions & ALL_MODE_BITS);
+    if (ctx.uid === 0) ctx.vfs.chown(target, inode.uid, inode.gid);
+  }
+  if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
+}
+
 export function cmdCp(ctx: ShellContext, args: string[]): string {
-  const nonFlags = args.filter(a => !a.startsWith('-'));
-  if (nonFlags.length < 2) return 'cp: missing operand';
+  const parsed = parseCpArguments(args);
+  if (typeof parsed === 'string') return parsed;
+  const request = parsed;
+  const operands = [...request.operands];
+  const destinationName = request.targetDirectory ?? operands.pop();
+  if (destinationName === undefined) return "cp: missing file operand\nTry 'cp --help' for more information.";
+  if (operands.length === 0) {
+    return request.targetDirectory === null
+      ? `cp: missing destination file operand after '${destinationName}'\nTry 'cp --help' for more information.`
+      : "cp: missing file operand\nTry 'cp --help' for more information.";
+  }
   const actor = actorOf(ctx);
-  const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
-  const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
-  if (!srcPath.exists()) return `cp: cannot stat '${nonFlags[0]}': No such file or directory`;
-  if (ctx.uid !== 0) {
-    if (srcPath.exists() && !srcPath.canRead()) {
-      return `cp: cannot open '${nonFlags[0]}' for reading: Permission denied`;
+  const destination = ctx.vfs.path(destinationName, ctx.cwd, actor);
+  const intoDirectory = request.targetDirectory !== null || (!request.noTargetDirectory && destination.isDirectory());
+  if (request.targetDirectory !== null && !destination.isDirectory()) return `cp: target '${destinationName}': ${destination.exists() ? 'Not a directory' : 'No such file or directory'}`;
+  if (operands.length > 1 && !intoDirectory) return `cp: target '${destinationName}': ${destination.exists() ? 'Not a directory' : 'No such file or directory'}`;
+  const messages: string[] = request.noClobber ? [CP_NO_CLOBBER_WARNING] : [];
+  for (const sourceName of operands) {
+    const source = ctx.vfs.path(sourceName, ctx.cwd, actor);
+    if (ctx.uid !== 0) {
+      if (source.exists() && !source.canRead()) {
+        messages.push(`cp: cannot open '${sourceName}' for reading: Permission denied`);
+        continue;
+      }
+      const destinationDirectory = intoDirectory ? destination : destination.parent();
+      if (destinationDirectory.inode() && !destinationDirectory.isWritableDir()) {
+        messages.push(`cp: cannot create regular file '${destinationName}': Permission denied`);
+        continue;
+      }
     }
-    const destDir = dstPath.isDirectory() ? dstPath : dstPath.parent();
-    if (destDir.inode() && !destDir.isWritableDir()) {
-      return `cp: cannot create regular file '${nonFlags[1]}': Permission denied`;
+    const base = source.value.split('/').filter(Boolean).pop() ?? '';
+    const target = intoDirectory ? `${destination.value.replace(/\/$/, '')}/${base}` : destination.value;
+    const targetName = intoDirectory ? `${destinationName.replace(/\/$/, '')}/${base}` : destinationName;
+    copyTree(ctx, request, source.value, target, sourceName, targetName, messages);
+  }
+  return messages.join('\n');
+}
+
+const INSTALL_DEFAULT_MODE = 0o755;
+
+interface InstallRequest {
+  readonly directories: boolean;
+  readonly createLeading: boolean;
+  readonly verbose: boolean;
+  readonly modeText: string | null;
+  readonly owner: string | null;
+  readonly group: string | null;
+  readonly targetDirectory: string | null;
+  readonly operands: string[];
+}
+
+function parseInstallArguments(args: readonly string[]): InstallRequest {
+  let directories = false;
+  let createLeading = false;
+  let verbose = false;
+  let modeText: string | null = null;
+  let owner: string | null = null;
+  let group: string | null = null;
+  let targetDirectory: string | null = null;
+  const operands: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--') {
+      operands.push(...args.slice(index + 1));
+      break;
     }
+    if (argument === '--directory') directories = true;
+    else if (argument === '--verbose') verbose = true;
+    else if (argument.startsWith('--mode=')) modeText = argument.slice('--mode='.length);
+    else if (argument.startsWith('--owner=')) owner = argument.slice('--owner='.length);
+    else if (argument.startsWith('--group=')) group = argument.slice('--group='.length);
+    else if (argument.startsWith('--target-directory=')) targetDirectory = argument.slice('--target-directory='.length);
+    else if (argument.startsWith('--')) continue;
+    else if (argument.startsWith('-') && argument.length > 1) {
+      for (let letter = 1; letter < argument.length; letter++) {
+        const flag = argument[letter];
+        if (flag === 'd') directories = true;
+        else if (flag === 'D') createLeading = true;
+        else if (flag === 'v') verbose = true;
+        else if (flag === 'm' || flag === 'o' || flag === 'g' || flag === 't') {
+          const attached = argument.slice(letter + 1);
+          const value = attached !== '' ? attached : args[++index] ?? '';
+          if (flag === 'm') modeText = value;
+          else if (flag === 'o') owner = value;
+          else if (flag === 'g') group = value;
+          else targetDirectory = value;
+          break;
+        }
+      }
+    } else operands.push(argument);
   }
-  if (!ctx.vfs.copy(srcPath.value, dstPath.value, ctx.uid, ctx.gid, ctx.umask)) {
-    return `cp: cannot copy '${nonFlags[0]}' to '${nonFlags[1]}'`;
+  return { directories, createLeading, verbose, modeText, owner, group, targetDirectory, operands };
+}
+
+export function installOperands(args: readonly string[]): string[] {
+  return parseInstallArguments(args).operands;
+}
+
+export function cmdInstall(ctx: ShellContext, args: string[]): string {
+  const request = parseInstallArguments(args);
+  let mode = INSTALL_DEFAULT_MODE;
+  if (request.modeText !== null) {
+    const parsed = parseChmodMode(request.modeText, 0);
+    if (parsed === null) return `install: invalid mode '${request.modeText}'`;
+    mode = parsed;
   }
-  return '';
+  const uid = request.owner === null ? ctx.uid : ctx.userMgr.resolveUid(request.owner);
+  const gid = request.group === null ? ctx.gid : ctx.userMgr.resolveGid(request.group);
+  if (uid < 0) return `install: invalid user '${request.owner}'`;
+  if (gid < 0) return `install: invalid group '${request.group}'`;
+  const messages: string[] = [];
+  const makeDirectories = (absolute: string, display: string): void => {
+    const missing: string[] = [];
+    for (let probe = absolute; probe !== '/' && !ctx.vfs.exists(probe); probe = probe.slice(0, probe.lastIndexOf('/')) || '/') missing.unshift(probe);
+    for (const component of missing) {
+      ctx.vfs.mkdir(component, component === absolute ? mode : INSTALL_DEFAULT_MODE, ctx.uid, ctx.gid);
+      if (uid !== ctx.uid || gid !== ctx.gid) ctx.vfs.chown(component, uid, gid);
+      if (request.verbose) messages.push(`install: creating directory '${displayedComponent(display, absolute, missing, component)}'`);
+    }
+  };
+  if (request.directories) {
+    if (request.operands.length === 0) return "install: missing file operand\nTry 'install --help' for more information.";
+    for (const operand of request.operands) makeDirectories(ctx.vfs.normalizePath(operand, ctx.cwd), operand);
+    return messages.join('\n');
+  }
+  const operands = [...request.operands];
+  const destinationName = request.targetDirectory ?? operands.pop();
+  if (destinationName === undefined || operands.length === 0) {
+    return destinationName === undefined
+      ? "install: missing file operand\nTry 'install --help' for more information."
+      : `install: missing destination file operand after '${destinationName}'\nTry 'install --help' for more information.`;
+  }
+  const destination = ctx.vfs.normalizePath(destinationName, ctx.cwd);
+  const intoDirectory = ctx.vfs.getType(destination) === 'directory';
+  if (operands.length > 1 && !intoDirectory) return `install: target '${destinationName}': ${ctx.vfs.exists(destination) ? 'Not a directory' : 'No such file or directory'}`;
+  for (const sourceName of operands) {
+    const source = ctx.vfs.resolveInode(ctx.vfs.normalizePath(sourceName, ctx.cwd));
+    if (source === null) {
+      messages.push(`install: cannot stat '${sourceName}': No such file or directory`);
+      continue;
+    }
+    if (source.type === 'directory') {
+      messages.push(`install: omitting directory '${sourceName}'`);
+      continue;
+    }
+    const base = sourceName.split('/').filter(Boolean).pop() ?? '';
+    const target = intoDirectory ? `${destination.replace(/\/$/, '')}/${base}` : destination;
+    const targetName = intoDirectory ? `${destinationName.replace(/\/$/, '')}/${base}` : destinationName;
+    if (request.createLeading) makeDirectories(target.slice(0, target.lastIndexOf('/')) || '/', targetName);
+    if (ctx.vfs.lstat(target) !== null) ctx.vfs.deleteFile(target);
+    if (ctx.vfs.createFileAt(target, source.content, mode, ctx.uid, ctx.gid) === null) {
+      messages.push(`install: cannot create regular file '${targetName}': No such file or directory`);
+      continue;
+    }
+    ctx.vfs.chmod(target, mode);
+    if (uid !== ctx.uid || gid !== ctx.gid) ctx.vfs.chown(target, uid, gid);
+    if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
+  }
+  return messages.join('\n');
 }
 
 export function cmdMv(ctx: ShellContext, args: string[]): string {
@@ -708,45 +1010,122 @@ export function cmdRm(ctx: ShellContext, args: string[]): string {
   return '';
 }
 
-export function cmdMkdir(ctx: ShellContext, args: string[]): string {
+function displayedComponent(typed: string, absolute: string, components: readonly string[], component: string): string {
+  const trimmed = typed.replace(/\/+$/, '');
+  const segments = trimmed.split('/');
+  const dropped = components.length - 1 - components.indexOf(component);
+  return segments.slice(0, Math.max(1, segments.length - dropped)).join('/') || absolute;
+}
+
+const MKDIR_INTERMEDIATE_BITS = 0o300;
+const MKDIR_DEFAULT_MODE = 0o777;
+
+interface MkdirRequest {
+  readonly parents: boolean;
+  readonly verbose: boolean;
+  readonly modeText: string | null;
+  readonly paths: string[];
+}
+
+function parseMkdirArguments(args: readonly string[]): MkdirRequest | string {
   let parents = false;
+  let verbose = false;
+  let modeText: string | null = null;
   const paths: string[] = [];
-  for (const arg of args) {
-    if (arg === '-p') { parents = true; continue; }
-    if (arg.startsWith('-')) continue;
-    paths.push(arg);
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--') {
+      paths.push(...args.slice(index + 1));
+      break;
+    }
+    if (argument === '--parents') parents = true;
+    else if (argument === '--verbose') verbose = true;
+    else if (argument.startsWith('--mode=')) modeText = argument.slice('--mode='.length);
+    else if (argument === '--mode') modeText = args[++index] ?? null;
+    else if (argument.startsWith('-') && argument.length > 1 && !argument.startsWith('--')) {
+      for (let letter = 1; letter < argument.length; letter++) {
+        const flag = argument[letter];
+        if (flag === 'p') parents = true;
+        else if (flag === 'v') verbose = true;
+        else if (flag === 'm') {
+          const attached = argument.slice(letter + 1);
+          if (attached !== '') modeText = attached;
+          else if (index + 1 < args.length) modeText = args[++index];
+          else return "mkdir: option requires an argument -- 'm'\nTry 'mkdir --help' for more information.";
+          break;
+        }
+      }
+    } else {
+      paths.push(argument);
+    }
+  }
+  return { parents, verbose, modeText, paths };
+}
+
+export function mkdirOperands(args: readonly string[]): string[] {
+  const request = parseMkdirArguments(args);
+  return typeof request === 'string' ? [] : request.paths;
+}
+
+export function cmdMkdir(ctx: ShellContext, args: string[]): string {
+  const request = parseMkdirArguments(args);
+  if (typeof request === 'string') return request;
+  if (request.paths.length === 0) return "mkdir: missing operand\nTry 'mkdir --help' for more information.";
+  const defaultMode = MKDIR_DEFAULT_MODE & ~ctx.umask;
+  let finalMode = defaultMode;
+  if (request.modeText !== null) {
+    const parsed = parseChmodMode(request.modeText, MKDIR_DEFAULT_MODE);
+    if (parsed === null) return `mkdir: invalid mode '${request.modeText}'`;
+    finalMode = parsed;
   }
 
   const actor = actorOf(ctx);
-  for (const p of paths) {
+  const messages: string[] = [];
+  const created = (name: string): void => {
+    if (request.verbose) messages.push(`mkdir: created directory '${name}'`);
+  };
+  for (const p of request.paths) {
     const path = ctx.vfs.path(p, ctx.cwd, actor);
     const absPath = path.value;
-    const perms = 0o777 & ~ctx.umask;
     if (absPath.startsWith('/proc/') && !path.exists()) return `mkdir: cannot create directory '${p}': No such file or directory`;
-    if (parents) {
+    if (request.parents) {
       if (ctx.uid !== 0 && !path.exists()) {
         let anc = path.parent();
         while (!anc.exists() && anc.value !== '/') anc = anc.parent();
         if (!anc.isWritableDir()) {
-          return `mkdir: cannot create directory '${p}': Permission denied`;
+          return [...messages, `mkdir: cannot create directory '${p}': Permission denied`].join('\n');
         }
       }
-      ctx.vfs.mkdirp(absPath, perms, ctx.uid, ctx.gid);
+      const missing: string[] = [];
+      for (let probe = absPath; probe !== '/' && !ctx.vfs.exists(probe); probe = probe.slice(0, probe.lastIndexOf('/')) || '/') missing.unshift(probe);
+      for (const component of missing) {
+        const isLast = component === absPath;
+        ctx.vfs.mkdir(component, isLast ? finalMode : defaultMode | MKDIR_INTERMEDIATE_BITS, ctx.uid, ctx.gid);
+        created(displayedComponent(p, absPath, missing, component));
+      }
     } else {
       if (ctx.uid !== 0 && path.parent().inode() && !path.parent().isWritableDir()) {
-        return `mkdir: cannot create directory '${p}': Permission denied`;
+        return [...messages, `mkdir: cannot create directory '${p}': Permission denied`].join('\n');
       }
-      if (!ctx.vfs.mkdir(absPath, perms, ctx.uid, ctx.gid)) {
+      if (ctx.vfs.exists(absPath)) {
+        messages.push(`mkdir: cannot create directory '${p}': File exists`);
+        continue;
+      }
+      if (!ctx.vfs.mkdir(absPath, finalMode, ctx.uid, ctx.gid)) {
         // A directory costs an inode; on an exhausted volume that is the
         // real reason, and the one an operator has to be told about.
         if (ctx.vfs.freeInodes() === 0) {
-          return `mkdir: cannot create directory '${p}': No space left on device`;
+          return [...messages, `mkdir: cannot create directory '${p}': No space left on device`].join('\n');
         }
-        return `mkdir: cannot create directory '${p}'`;
+        const parentType = ctx.vfs.getType(absPath.slice(0, absPath.lastIndexOf('/')) || '/');
+        const reason = parentType === null ? ': No such file or directory' : parentType === 'directory' ? '' : ': Not a directory';
+        messages.push(`mkdir: cannot create directory '${p}'${reason}`);
+        continue;
       }
+      created(p);
     }
   }
-  return '';
+  return messages.join('\n');
 }
 
 export function cmdRmdir(ctx: ShellContext, args: string[]): string {

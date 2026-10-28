@@ -509,16 +509,17 @@ function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { out
   if (!Array.isArray(got)) return { output: got, exitCode: 2 };
 
   const [a, b] = got;
+  const silent = args.some((argument) => argument === '-s' || argument === '--silent' || argument === '--quiet');
   if (a === b) return { output: '', exitCode: 0 };
   const min = Math.min(a.length, b.length);
   for (let i = 0; i < min; i++) {
     if (a[i] !== b[i]) {
       const line = a.slice(0, i).split('\n').length;
       // `char`, pas `byte` : c'est le mot que GNU cmp imprime.
-      return { output: `${files[0]} ${files[1]} differ: char ${i + 1}, line ${line}`, exitCode: 1 };
+      return { output: silent ? '' : `${files[0]} ${files[1]} differ: char ${i + 1}, line ${line}`, exitCode: 1 };
     }
   }
-  return { output: `cmp: EOF on ${a.length < b.length ? files[0] : files[1]}`, exitCode: 1 };
+  return { output: silent ? '' : `cmp: EOF on ${a.length < b.length ? files[0] : files[1]}`, exitCode: 1 };
 }
 
 // ─── split ──────────────────────────────────────────────────────────

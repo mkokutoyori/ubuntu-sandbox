@@ -165,7 +165,7 @@ describe('/proc/self mene au processus courant', () => {
 
     const parSelf = await pc.executeCommand('cat /proc/self/status');
 
-    expect(parSelf).toMatch(/^Name:\t-bash$/m);
+    expect(parSelf).toMatch(/^Name:\tbash$/m);
   });
 
   it('il dit la meme chose que /proc/$$/status', async () => {

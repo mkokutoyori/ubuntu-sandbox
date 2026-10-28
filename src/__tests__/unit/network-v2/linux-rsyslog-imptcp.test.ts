@@ -63,7 +63,7 @@ describe('imptcp on a Linux host', () => {
 
   it('files what nc -U writes to the UNIX stream socket, which carries the requested mode', async () => {
     const { server } = await lab('module(load="imptcp")\ninput(type="imptcp" path="/run/ptcp.sock" fileCreateMode="0660")');
-    await server.executeCommand('echo "<13>Oct 19 12:00:01 server1 probe: local stream" | nc -U /run/ptcp.sock');
+    await server.executeCommand('echo "<13>Oct 19 12:00:01 server1 probe: local stream" | nc -N -U /run/ptcp.sock');
     expect(await server.executeCommand('cat /var/log/ptcp.log')).toContain('local stream');
     expect(await server.executeCommand('ls -l /run/ptcp.sock')).toMatch(/^srw-rw----/);
   });

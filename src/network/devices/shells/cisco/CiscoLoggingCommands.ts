@@ -8,7 +8,7 @@
  * diverger en silence.
  *
  * Ce qui reste : les severites, que le socle LIT depuis ici pour ne pas
- * retaper les phrases d'IOS ; `service sequence-numbers` ; les vues
+ * retaper les phrases d'IOS ; les vues
  * `show logging` ; et `clear logging`.
  */
 
@@ -56,26 +56,6 @@ export function severityValues(): Array<{ keyword: string; description: string }
       description: `${SEVERITY_HELP[name]} (severity=${i})`,
     })),
   ];
-}
-
-/**
- * `service sequence-numbers` numérote pour de vrai.
- *
- * La commande tombait dans le gestionnaire générique `service`, qui la
- * rangeait parmi les drapeaux du routeur : `LoggingConfig.sequenceNumbers`
- * n'était écrit par personne, `show logging` répondait donc
- * `Sequence numbers: disabled` à qui venait de l'activer, et aucune ligne
- * ne portait de numéro. Elle est enregistrée pour elle-même ici, ce qui
- * la fait aussi apparaître dans `service ?` — où elle manquait.
- */
-export function registerSequenceNumbersCommand(trie: CommandTrie, ctx: LoggingCommandContext): void {
-  const set = (on: boolean) => (): string => {
-    ctx.beforeApply?.();
-    ctx.config().sequenceNumbers = on;
-    return '';
-  };
-  trie.register('service sequence-numbers', 'Stamp logger messages with a sequence number', set(true));
-  trie.register('no service sequence-numbers', 'Stop stamping logger messages', set(false));
 }
 
 export interface LoggingShowView {

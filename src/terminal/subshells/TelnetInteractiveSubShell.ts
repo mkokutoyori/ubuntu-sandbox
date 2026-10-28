@@ -30,6 +30,7 @@ export class TelnetInteractiveSubShell implements ISubShell {
     private readonly client: TelnetClientSession,
     private readonly host: string,
     private readonly onEnd?: () => void,
+    private readonly farewell: string = 'Connection closed by foreign host.',
   ) {}
 
   getPrompt(): string { return this.prompt; }
@@ -47,7 +48,7 @@ export class TelnetInteractiveSubShell implements ISubShell {
   }
 
   async processLine(line: string): Promise<SubShellResult> {
-    if (this.client.closed) return this.finish([`Connection closed by foreign host.`]);
+    if (this.client.closed) return this.finish([this.farewell]);
     this.client.send(line);
     return this.render(await this.collect(), line);
   }
@@ -90,6 +91,7 @@ export class TelnetInteractiveSubShell implements ISubShell {
 
     if (this.client.closed) {
       if (this.prompt) { output.push(this.prompt); this.prompt = ''; }
+      output.push(this.farewell);
       return this.finish(output);
     }
     return { output, exit: false, prompt: this.prompt };

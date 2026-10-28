@@ -71,6 +71,7 @@ export interface HostCondition {
   readonly address: Uint8Array;
   readonly bits: number;
   readonly port: number;
+  readonly pattern?: string;
 }
 
 export type SsExpression =

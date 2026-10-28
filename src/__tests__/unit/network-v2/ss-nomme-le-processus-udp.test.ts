@@ -26,7 +26,7 @@ async function serveur() {
   new Cable('c1').connect(srv.getPorts()[0], sw.getPorts()[0]);
   srv.getPorts()[0].configureIP(new IPAddress('192.168.60.1'), new SubnetMask('255.255.255.0'));
   srv.powerOn();
-  await srv.executeCommand(`printf '%s' ${JSON.stringify(CONF)} > /etc/dhcp/dhcpd.conf`);
+  await srv.executeCommand(`printf '%b' ${JSON.stringify(CONF)} > /etc/dhcp/dhcpd.conf`);
   return srv;
 }
 

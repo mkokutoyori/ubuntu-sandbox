@@ -212,7 +212,7 @@ describe('un demon n a qu un pid, quelle que soit la vue', () => {
     const pc = poste();
 
     const parPs = /^\s*(\d+)\s/.exec((await pc.executeCommand('ps -e')).split('\n')
-      .find((l) => l.includes('systemd-resolved')) ?? '')?.[1] ?? '<absent>';
+      .find((l) => l.includes('systemd-resolve')) ?? '')?.[1] ?? '<absent>';
     const parSs = /users:\(\("systemd-resolve",pid=(\d+)/
       .exec(await pc.executeCommand('sudo ss -tlnp'))?.[1] ?? '<absent>';
 

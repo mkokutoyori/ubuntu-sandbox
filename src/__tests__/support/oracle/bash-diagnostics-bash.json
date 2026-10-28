@@ -520,6 +520,46 @@
    "script": "main() { false; }\nset -E\ntrap \"echo caught\" ERR\nmain",
    "output": "caught\ncaught\n",
    "status": 1
+  },
+  {
+   "script": "shopt -s expand_aliases\nalias say=\"echo hi\"; say\nsay",
+   "output": "s.sh: line 2: say: command not found\nhi\n",
+   "status": 0
+  },
+  {
+   "script": "echo !(a)",
+   "output": "s.sh: line 1: syntax error near unexpected token `('\ns.sh: line 1: `echo !(a)'\n",
+   "status": 2
+  },
+  {
+   "script": "x=a; case $x in !(b)) echo m;; esac",
+   "output": "s.sh: line 1: syntax error near unexpected token `('\ns.sh: line 1: `x=a; case $x in !(b)) echo m;; esac'\n",
+   "status": 2
+  },
+  {
+   "script": "shopt -s extglob\necho @(a|b)\ncase a in @(a|b)) echo yes;; esac",
+   "output": "@(a|b)\nyes\n",
+   "status": 0
+  },
+  {
+   "script": "echo ok\necho $(echo a ;; b)\necho after",
+   "output": "ok\ns.sh: line 2: syntax error near unexpected token `;;'\ns.sh: line 2: `echo $(echo a ;; b)'\n",
+   "status": 2
+  },
+  {
+   "script": "echo $(if)\necho after",
+   "output": "s.sh: line 1: syntax error near unexpected token `)'\ns.sh: line 1: `echo $(if)'\n",
+   "status": 2
+  },
+  {
+   "script": "cat <(echo a\necho after",
+   "output": "s.sh: line 3: unexpected EOF while looking for matching `)'\n",
+   "status": 2
+  },
+  {
+   "script": "shopt -u extglob\ncase a in @(a)) echo y;; esac",
+   "output": "s.sh: line 2: syntax error near unexpected token `('\ns.sh: line 2: `case a in @(a)) echo y;; esac'\n",
+   "status": 2
   }
  ]
 }

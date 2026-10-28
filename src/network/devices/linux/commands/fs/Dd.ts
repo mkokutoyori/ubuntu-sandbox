@@ -164,6 +164,15 @@ function report(o: Operands, full: number, partial: number, bytes: number, start
  */
 export function runDd(
   exec: LinuxCommandExecutor, args: string[],
+): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+  const result = runDdMerged(exec, args);
+  if (result.output === '') return result;
+  const text = result.output.endsWith('\n') ? result.output : `${result.output}\n`;
+  return { output: '', exitCode: result.exitCode, stderr: text, interleaved: text };
+}
+
+function runDdMerged(
+  exec: LinuxCommandExecutor, args: string[],
 ): { output: string; exitCode: number } {
   const parsed = parseOperands(args);
   if ('exitCode' in parsed) return parsed;

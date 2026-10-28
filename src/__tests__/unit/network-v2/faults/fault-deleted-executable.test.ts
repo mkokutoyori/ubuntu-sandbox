@@ -50,7 +50,7 @@ function box(): LinuxPC {
 
 /** Le pid du processus principal d'un service, lu dans `ps`. */
 async function pidOf(pc: LinuxPC | LinuxServer, exe: string): Promise<string> {
-  const ps = await pc.executeCommand('ps aux');
+  const ps = await pc.executeCommand('ps auxww');
   const line = ps.split('\n').find((l) => l.includes(exe));
   expect(line, `aucun processus ${exe} dans ps`).toBeDefined();
   return line!.trim().split(/\s+/)[1];

@@ -1,7 +1,6 @@
 import { parseNetstatArguments, type NetstatOptions } from './NetstatArguments';
-import {
-  renderInternetConnections, renderUnixSockets, type NetstatInternetHost,
-} from './NetstatInternet';
+import { renderInternetConnections, type NetstatInternetHost } from './NetstatInternet';
+import { renderUnixSockets } from './NetstatUnix';
 import { runStatistics } from './NetstatStatistics';
 
 export interface NetstatHost extends NetstatInternetHost {

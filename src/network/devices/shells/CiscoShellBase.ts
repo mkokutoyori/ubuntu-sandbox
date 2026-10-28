@@ -219,7 +219,9 @@ import type { IRouterShell } from './IRouterShell';
 import {
   AliasRepository, aliasModeForCliMode, type AliasMode,
 } from '../inspection/config/AliasRepository';
-import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
+import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
+import { serviceLoggingFamily, type ServiceLoggingHost } from '@/cli/commands/service/serviceLoggingFamily';
+import { LoggingConfig, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory,
@@ -236,7 +238,6 @@ import {
 } from './cisco/CiscoExecScope';
 import {
   loggingShowViews, severityValues,
-  registerSequenceNumbersCommand,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
@@ -975,6 +976,14 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
 
+
+const COMMON_TIME_ZONES: readonly string[] = [
+  'UTC', 'GMT', 'WAT', 'CAT', 'EAT', 'CET', 'EET', 'MSK', 'IST', 'JST',
+  'EST', 'CST', 'MST', 'PST', 'AST', 'HST', 'AKST',
+];
+const COMMON_SUMMER_ZONES: readonly string[] = [
+  'BST', 'CEST', 'EEST', 'EDT', 'CDT', 'MDT', 'PDT', 'ADT', 'AKDT',
+];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -4927,6 +4936,81 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
 
 
+  protected ntpInterfaceSpecs(): CommandSpec[] {
+    const ports = (): string[] => this.selectedPortsForConfigIf();
+    return sequenceFamily([
+      {
+        path: ['ntp', 'disable'], description: 'Disable NTP service on this interface',
+        modes: ['config-if', 'config-subif'],
+      },
+      {
+        path: ['ntp', 'broadcast'], description: 'Configure NTP broadcast service',
+        modes: ['config-if', 'config-subif'],
+        tail: {
+          name: 'options', type: 'REST', optional: true, description: 'Broadcast options',
+          alternatives: [
+            { keyword: 'client', description: 'Listen to NTP broadcasts' },
+            { keyword: 'destination', description: 'Broadcast destination address' },
+            { keyword: 'key', description: 'Authentication key number' },
+            { keyword: 'version', description: 'NTP version' },
+          ],
+        },
+      },
+      {
+        path: ['ntp', 'multicast'], description: 'Configure NTP multicast service',
+        modes: ['config-if', 'config-subif'],
+        tail: {
+          name: 'options', type: 'REST', optional: true, description: 'Multicast options',
+          alternatives: [
+            { keyword: 'client', description: 'Listen to NTP multicast' },
+            { keyword: 'key', description: 'Authentication key number' },
+            { keyword: 'ttl', description: 'IP time-to-live of the multicast packets' },
+            { keyword: 'version', description: 'NTP version' },
+          ],
+        },
+      },
+    ], () => ({
+      apply: (words, negate) => {
+        const agent = getNtpAgent(this.d());
+        if (!agent) return '';
+        const [head, ...rest] = words;
+        if (head === 'disable') {
+          for (const port of ports()) agent.setInterfaceDisabled(port, !negate);
+          return '';
+        }
+        const kind = head as 'broadcast' | 'multicast';
+        if (negate) {
+          for (const port of ports()) {
+            if (rest[0]?.toLowerCase() === 'client') agent.setBroadcastClient(port, false);
+            else agent.setBroadcastServer(port, null);
+          }
+          return '';
+        }
+        const parsed = parseNtpBroadcast(kind, rest);
+        if (!parsed.ok) throw new CliInvalidInput({ token: rest[parsed.refusedAt ?? 0] ?? head });
+        for (const port of ports()) {
+          if (parsed.client !== undefined) agent.setBroadcastClient(port, true, parsed.client.group);
+          else agent.setBroadcastServer(port, parsed.server ?? null);
+        }
+        return '';
+      },
+    }));
+  }
+
+  private serviceLoggingHost(): ServiceLoggingHost {
+    return {
+      setTimestamps: (channels, spec) => {
+        this.attachLoggingToDevice(this.d());
+        for (const channel of channels) this.logging.setTimestampSpec(channel, { ...spec });
+      },
+      setSequenceNumbers: (on) => {
+        const ctx = this.loggingCommandContext();
+        ctx.beforeApply?.();
+        ctx.config().sequenceNumbers = on;
+      },
+    };
+  }
+
   protected clockSpecs(): CommandSpec[] {
     return sequenceFamily([
       {
@@ -4945,7 +5029,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['clock', 'timezone'], description: 'Set timezone',
         args: [
-          { name: 'zone', type: 'WORD', description: 'Name of time zone' },
+          {
+            name: 'zone', type: 'WORD', description: 'Name of time zone',
+            tabSuggestions: COMMON_TIME_ZONES,
+          },
           { name: 'heures', type: 'INT', range: [-23, 23], description: 'Hours offset from UTC' },
           {
             name: 'minutes', type: 'INT', range: [0, 59], optional: true,
@@ -4955,7 +5042,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         path: ['clock', 'summer-time'], description: 'Configure daylight saving time',
-        args: [{ name: 'zone', type: 'WORD', description: 'Name of time zone in summer' }],
+        args: [{
+          name: 'zone', type: 'WORD', description: 'Name of time zone in summer',
+          tabSuggestions: COMMON_SUMMER_ZONES,
+        }],
         tail: {
           name: 'regle', type: 'REST', optional: true, description: 'Recurrence rule',
           alternatives: [
@@ -5724,6 +5814,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.lineSpecs(),
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
+      vue(['show', 'ntp', 'packets'], 'NTP packet statistics', 1,
+        () => showNtpPackets(this.cs())),
+      {
+        id: 'show-ntp-packets-mode',
+        path: ['show', 'ntp', 'packets', 'mode', {
+          name: 'mode', type: 'ENUM', description: 'NTP mode',
+          values: [
+            { keyword: 'active', description: 'Symmetric active mode' },
+            { keyword: 'client', description: 'Client mode' },
+            { keyword: 'passive', description: 'Symmetric passive mode' },
+            { keyword: 'server', description: 'Server mode' },
+          ],
+        }],
+        description: 'Display packets by NTP mode',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => showNtpPackets(this.cs(), args.mode),
+      },
       vue(['show', 'ntp', 'authentication-keys'], 'Display NTP authentication keys', 15,
         () => showNtpAuthenticationKeys(this.cs())),
       vue(['show', 'ntp', 'associations'], 'NTP associations', 1,
@@ -6106,8 +6213,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...ipv6DhcpFamily(() => this.ipv6DhcpHost(), (epochMs) => ciscoClockReading(this.cs(), epochMs).local),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
+      ...serviceLoggingFamily(() => this.serviceLoggingHost()),
       ...this.ntpSpecs(),
       ...this.sntpSpecs(),
+      ...this.ntpInterfaceSpecs(),
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
       ...this.loginSpecs(),
@@ -9461,6 +9570,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   getMode(): string { return this.mode; }
 
+  sessionRegistry(): OutgoingSessionRegistry { return this.outgoingSessions; }
+
   protected buildDevicePrompt(device: TDevice): string {
     const mode = this.mode === 'user' && this.currentPrivilegeLevel >= 2 ? 'privileged' : this.mode;
     return buildPrompt(mode, device._getHostnameInternal(), this.getPromptMap());
@@ -9562,16 +9673,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // tous le tableau des associations. Chaque sous-commande est
     // desormais un chemin reel, et ce que la plateforme n'a pas est
     // refuse comme IOS refuse (meme defaut que `display vrrp`, lot V15).
-    // Refusee au lot N1 faute de compteurs : ils existent (lot N8).
-    trie.registerGreedy('show ntp packets', 'NTP packet statistics', (a) => {
-      if (a.length === 0) return showNtpPackets(this.cs());
-      if (a[0].toLowerCase() !== 'mode') return CISCO_ERRORS.INVALID_INPUT;
-      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
-      return showNtpPackets(this.cs(), a[1]);
-    }, [{ keyword: 'mode', description: 'Display packets by NTP mode' }]);
-    // Pas de greedy de repli : sans lui, l'arbre lui-meme refuse
-    // `show ntp packets` avec le curseur d'IOS, ce qu'un repli maison
-    // ne saurait pas placer aussi bien.
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')), [
       { keyword: 'neighbors', description: 'CDP neighbor entries' },
@@ -9732,55 +9833,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * real router accepts. Bare `no service timestamps` turns BOTH channels
    * off, since with no channel named there is nothing to restrict it to.
    */
-  private applyServiceTimestamps(args: string[], negate: boolean): string {
-    const mots = args.map(s => s.toLowerCase());
-    this.attachLoggingToDevice(this.d());
-    const canaux: Array<'debug' | 'log'> = mots[0] === 'debug' || mots[0] === 'log'
-      ? [mots[0] as 'debug' | 'log']
-      : ['debug', 'log'];
-    const nomme = canaux.length === 1;
-    const reste = mots.slice(nomme ? 1 : 0);
-
-    if (negate) {
-      if (reste.length > 0 && !this.horodatageOptionsValides(reste)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      for (const c of canaux) this.logging.setTimestampSpec(c, disabledTimestampSpec());
-      return '';
-    }
-
-    if (!nomme && reste.length > 0) return CISCO_ERRORS.INVALID_INPUT;
-    const spec = this.parseHorodatage(reste);
-    if (!spec) return CISCO_ERRORS.INVALID_INPUT;
-    for (const c of canaux) this.logging.setTimestampSpec(c, { ...spec });
-    return '';
-  }
-
-  private horodatageOptionsValides(mots: string[]): boolean {
-    return this.parseHorodatage(mots) !== null;
-  }
-
-  /**
-   * `uptime` takes no modifier of its own on IOS beyond `msec`; the rest
-   * only mean something for a real date, so accepting them after `uptime`
-   * would store a flag nothing can read.
-   */
-  private parseHorodatage(mots: string[]): TimestampSpec | null {
-    const spec = bareTimestampSpec();
-    if (mots.length === 0) return spec;
-    if (mots[0] !== 'uptime' && mots[0] !== 'datetime') return null;
-    spec.format = mots[0];
-    for (const m of mots.slice(1)) {
-      if (m === 'msec') { spec.msec = true; continue; }
-      if (spec.format !== 'datetime') return null;
-      if (m === 'localtime') { spec.localtime = true; continue; }
-      if (m === 'show-timezone') { spec.showTimezone = true; continue; }
-      if (m === 'year') { spec.year = true; continue; }
-      return null;
-    }
-    return spec;
-  }
-
   /** Public read accessor — used by CLITerminalSession to size the pager. */
   getTerminalLength(): number { return this.terminalLength; }
   /** Public read accessor — symmetric with getTerminalLength. */
@@ -10174,11 +10226,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * restreinte pourrait s'octroyer des commandes, ce qui viderait le
      * mecanisme de son sens).
      */
-    registerSequenceNumbersCommand(trie, this.loggingCommandContext());
-    trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
-      this.applyServiceTimestamps(args, false));
-    trie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
-      this.applyServiceTimestamps(args, true));
     // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
     // pour une seule commande finiraient par se contredire sur la même
     // date.

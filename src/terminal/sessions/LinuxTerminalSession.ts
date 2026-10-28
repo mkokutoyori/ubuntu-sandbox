@@ -88,7 +88,7 @@ import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { OpenSslSClientSubShell } from '@/terminal/subshells/OpenSslSClientSubShell';
 import { OpenSslSServerSubShell } from '@/terminal/subshells/OpenSslSServerSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
-import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
+import { NetkitTelnetSubShell, deviceWireDeps } from '@/terminal/subshells/NetkitTelnetSubShell';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
@@ -2068,21 +2068,32 @@ export class LinuxTerminalSession extends TerminalSession {
    * (docs/PRD-VTY-Transport.md §2.1 item 6).
    */
   private async enterTelnet(args: string[]): Promise<void> {
-    const vfs = (this.device as unknown as {
-      executor?: { vfs?: { readFile(p: string): string | null } };
-    }).executor?.vfs;
-    const sub = await launchTelnet(args, {
-      device: this.device,
-      resolverVfs: vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined,
-      emit: (text, type) => this.addLine(text, type),
+    const executor = (this.device as unknown as {
+      executor?: {
+        vfs?: { readFile(p: string): string | null };
+        userMgr: { currentUser: string; currentUid: number; getUser(name: string): { uid: number } | undefined };
+        exportedEnvironment(): Array<[string, string]>;
+        getWindowSize(): { rows: number; cols: number };
+      };
+    }).executor;
+    const vfs = executor?.vfs;
+    const sub = new NetkitTelnetSubShell({
+      ...deviceWireDeps(this.device, vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined),
+      environment: () => {
+        const entries = executor ? executor.exportedEnvironment() : [];
+        return entries.some(([name]) => name === 'TERM') ? entries : [...entries, ['TERM', 'xterm']];
+      },
+      user: () => (executor ? { name: executor.userMgr.currentUser, uid: executor.userMgr.currentUid } : null),
+      lookupUser: (name) => executor?.userMgr.getUser(name) ?? null,
+      hostname: () => this.device.getHostname(),
+      size: () => (executor ? executor.getWindowSize() : null),
+      readFile: (p: string) => (vfs ? vfs.readFile(p) : null),
     });
-    if (!sub) { this.notify(); return; }
-
+    const opening = await sub.begin(args);
+    for (const line of opening.output) this.addLine(line);
+    if (opening.exit) { this.notify(); return; }
     this.activeSubShell = sub;
     this._inputBuf = '';
-    const opening = await sub.begin();
-    for (const line of opening.output) this.addLine(line);
-    if (opening.exit) { this.exitSubShell(); return; }
     this.notify();
   }
 
@@ -2628,6 +2639,17 @@ export class LinuxTerminalSession extends TerminalSession {
    */
   private handleSubShellKey(e: KeyEvent): boolean {
     if (!this.activeSubShell) return false;
+
+    const intercepted = this.activeSubShell.interceptKey?.(e, this._inputBuf);
+    if (intercepted) {
+      void Promise.resolve(intercepted).then((result) => {
+        if (result.clearInput) this._inputBuf = '';
+        for (const outputLine of result.output) this.addLine(outputLine);
+        if (result.exit) this.exitSubShell();
+        else this.notify();
+      });
+      return true;
+    }
 
     if (e.key === 'Enter') {
       const line = this._inputBuf;

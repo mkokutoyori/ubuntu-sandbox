@@ -31,8 +31,8 @@ describe('interactive shell identity', () => {
   it('$$ matches the -bash entry reported by ps', async () => {
     const pc = new LinuxPC('linux-pc', 'ID-PC', 10, 10);
     const pid = (await pc.executeCommand('echo $$')).trim();
-    const out = await pc.executeCommand(`ps -p ${pid}`);
-    expect(out).toContain('-bash');
+    const out = await pc.executeCommand(`ps -p ${pid} -o args=`);
+    expect(out).toBe('-bash');
   });
 
   it('$PPID is defined and numeric', async () => {

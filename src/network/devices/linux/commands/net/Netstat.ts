@@ -31,6 +31,13 @@ function loadPrograms(ctx: LinuxCommandContext): ProgramTable {
     const name = row.entry.processName ?? programNameOf(process?.command.split(/\s+/)[0] ?? owner.name);
     byInode.set(row.entry.id, `${owner.pid}/${name}`.slice(0, PROGRAM_NAME_LENGTH));
   }
+  for (const socket of executor.localDatagramSockets.rows()) {
+    const pid = socket.holders.length === 0 ? undefined : Math.min(...socket.holders);
+    if (socket.inode === 0 || pid === undefined || byInode.has(socket.inode)) continue;
+    const process = executor.processMgr.get(pid);
+    if (process === undefined || (currentUid !== 0 && process.uid !== currentUid)) continue;
+    byInode.set(socket.inode, `${pid}/${programNameOf(process.command.split(/\s+/)[0])}`.slice(0, PROGRAM_NAME_LENGTH));
+  }
   const denied = currentUid !== 0 && executor.processMgr.list().some((process) => process.uid !== currentUid);
   let notice = '';
   if (denied) {

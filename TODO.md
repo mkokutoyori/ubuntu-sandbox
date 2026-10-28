@@ -954,8 +954,6 @@ identiques apres normalisation) :
   le `tb` auto-regle apres un vrai transfert ne sont pas modelises au-dela des valeurs au repos.
 - `net.ipv4.tcp_rmem` / `tcp_wmem` sont stockes, rendus par `sysctl` et lus par `ss -m` ; le
   reglage automatique de la fenetre de reception n'est pas modele.
-- Prises UNIX (`ss -x`, `netstat -x`, `/proc/net/unix`) : pas de table avec inodes, pairs et
-  chemins (c'est aussi ce qui fait refuser `nc -U -l`, voir l'entree [nc]).
 - Identite de la machine simulee : `/etc/os-release` et `lsb_release` se declarent Ubuntu 22.04.4
   alors que les outils portes suivent les enregistrements d'Ubuntu 24.04 (iproute2 6.1.0, net-tools
   2.10, psmisc 23.7, netcat-openbsd 1.226, procps-ng 4.0.4). `PackageDatabase` et `SS_VERSION` /
@@ -974,6 +972,111 @@ et le labo `fuser-parsing`, 68 pas sur 68) :
 - Les deux pas `fuser -vm / 2>&1 | head -3` (labos `fuser-files` et `fuser-files-none`) dependent de
   l'environnement : sur la machine d'enregistrement `/` liste les processus de l'espace de noms
   hote, ici ceux du simulateur. Ils sont declares non portes dans `UNPORTED_STEPS`.
+
+### [UNIX] ce que la table des prises UNIX laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `unix-sockets.json`, 8 labos : flux, ecoute seule, deux clients, datagramme,
+datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -x`, `/proc/net/unix`, `/proc/<pid>/fd`,
+`fuser`, `nc -lU` / `-U` / `-luU` / `-uU` sortent identiques apres normalisation des inodes, sauf :
+- `lsof -U`, `lsof <socket>`, `lsof -p` : `lsof` est un petit gabarit sans les colonnes ni les lignes du vrai (4.95) ;
+  les sept pas lsof de chaque labo sont declares non portes dans `UNPORTED_STEPS`.
+- `nc -l` AU PREMIER PLAN rend la main aussitot (TCP comme UNIX) au lieu de bloquer jusqu'a la fin de la connexion ;
+  `timeout 1 nc -lU p; echo $?` rend donc 0 au lieu de 124. Le corriger ferait attendre tout test qui lance `nc -l`
+  sans `&` puis se connecte depuis une autre machine.
+- `ss -xaE` : refus explicite (« needs a stream of socket events ») ; le vrai n'affiche rien et rend la main.
+- `ss -e` d'une prise UNIX dont le pair est parti : la fleche `<->` ne devient pas `<--` / `-->` (aucune mesure faite).
+  Mesure faite pour un proprietaire non root : `ss -xlpe` n'affiche pas `uid:` pour une prise UNIX, ce que fait le simulateur.
+- Le labo `unix-user` (un `nc -lU` lance par `nobody`) est declare non porte en entier : `sudo -u nobody nc -lU p &`
+  rend 127 (le chemin des travaux d'arriere-plan ne retire que le mot `sudo`, pas `-u utilisateur`, et lance la commande reseau
+  sous l'identite de l'appelant). Les vues d'un proprietaire non root (`netstat -p` d'un autre utilisateur, `fuser -u`,
+  `EACCES` sur une prise dont l'utilisateur n'a pas le droit d'ecriture) y sont enregistrees et attendent ce correctif.
+- Les prises UNIX que posent rsyslog (`/dev/log`, imptcp) et auditd n'ont pas de porteur : elles figurent dans
+  `/proc/net/unix` et `ss -x` sans `users:` ni descripteur, parce que leur donner un pid decalerait les numeros de
+  descripteur que les tests rsyslog lisent deja.
+- `nc -U` tape seul dans le terminal (plan de flux `planNcUnix`) ouvre une prise sans processus.
+- `connect()` sur une file d'acceptation pleine (plus de `backlog + 1` connexions en attente) rend EAGAIN ici ; le vrai
+  bloque jusqu'a ce que le serveur accepte.
+- `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
+  filtres retournent tous les peripheriques.
+
+### [pipelines] le stderr d'un etage de tube est avale par l'etage suivant
+Mesure : `ls /proc/99999/fd | tail -n +2` n'affiche rien, `ls /nonexistent | cat` affiche l'erreur (qui a transite par
+le tube) ; le vrai laisse l'erreur sur le terminal dans les deux cas. Les commandes heritees de la couche
+`ShellContext` rendent leur diagnostic dans `output` au lieu de `stderr`, si bien que l'interpreteur le pousse dans le
+tube. Vu en rejouant `ls -l /proc/$P1/fd | tail -n +2` d'un processus mort (labos unix-closed et unix-none, declares non
+portes).
+
+### [stat] `stat` est un gabarit
+Mesure : `stat /absent; echo $?` rend 0 (le vrai : 1), `stat --version` repond `stat: missing operand`, `-L`, `-f`, `-t`
+sont ignores, et le message dit « cannot stat » (coreutils 8.32 d'Ubuntu 22.04) quand les enregistrements d'Ubuntu 24.04
+disent « cannot statx ». Vu en rejouant `stat -c '%F %a %U'` (labo unix-none).
+
+### [umask] ce que le portage de `umask` laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le
+builtin (`-S`, `-p`, octal jusqu'a 07777, mode symbolique, erreurs et codes de retour), sa portee (sous-shell, etage de
+tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, les redirections, `mkfifo`, `cp [-p]`,
+`install`, `mktemp` et la prise de `nc -lU` sortent identiques apres normalisation, sauf les onze pas du labo
+`umask-scopes` declares dans `UNPORTED_STEPS`, qui tiennent tous a la couche des builtins de bash et non a `umask` :
+- `builtin umask`, `command -V umask`, `type -a umask`, `help umask`, `enable -n umask`, `which umask`, un `alias umask=…`
+  et `/usr/bin/umask` : le simulateur n'a pas de table des builtins (nom, etat active / desactive, aide, resolution
+  alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
+- `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
+  interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
+- `su -s /bin/sh nobody -c umask` : `su` n'honore pas `-s`.
+Autres ecarts mesures, non fermes :
+- `pam_umask` : le vrai donne 0002 aux utilisateurs dont le groupe prive porte leur nom (`USERGROUPS_ENAB`) ; `sudo` et
+  `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
+- `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
+  et `ls -l /proc/$$/fd` ne le montre pas.
+- `cp` : `-i`, `-x` et `-Z` sont acceptes sans effet, `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un
+  lien (le seul cas enregistre est un fichier regulier).
+- `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
+  la sortie non tty n'a pas ete comparee.
+- `install -D -t`, `install -s` et `install --strip` : seul le jeu d'options du corpus (`-m -d -D -o -g -v`) est enregistre.
+
+### [ps] ce que le portage de `ps` laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `ps-procps-4.0.4.json`, 5 labos, 629 pas, procps-ng 4.0.4 sur Ubuntu 24.04, pty
+de 80 colonnes, noyau d'enregistrement 6.18 Firecracker) : tous les pas sortent identiques apres normalisation sauf les 49
+declares dans `UNPORTED_STEPS`, qui se rangent en huit familles (le compte entre parentheses est celui des pas) :
+- Etages de tube non simultanes (9 pas, `ps -ef | cat` et variantes) : le vrai liste `cat` (et `grep` dans `ps aux | grep x`)
+  car bash cree tous les etages avant d'executer le premier ; l'interpreteur execute les etages l'un apres l'autre et ne
+  materialise un processus que pendant la commande qui tourne. Fermer cela demande que `visitPipeline` annonce les etages a
+  la table des processus avant le premier (mots deja developpes, un processus par etage, meme groupe), puis que chaque etage
+  adopte le sien ; le piege est le developpement d'un mot qui execute une substitution de commande deux fois.
+- Environnement (7 pas, `ps e`, `ps ae`, `ps ce`, `ps ef`, `ps -r -e`, `ps -ef -aux`) : `e` affiche maintenant l'environnement exporte
+  du processus (herite au `fork`, `VAR=x cmd` ajoute, lisible par le proprietaire et root, `/proc/<pid>/environ` en 0400),
+  mais l'ordre des variables d'un vrai bash est celui de sa table de hachage et le texte enregistre est celui du shell du
+  labo ; la longueur de `bash /tmp/<labo>.sh` decide aussi de la troncature a 80 colonnes. Le dispositif est mesure par la
+  sonde `probe-ps-porte-de-procps.test.ts`, pas par le corpus. L'environnement de pid 1 n'a que `HOME`, `init`, `TERM`
+  (le vrai ajoute `BOOT_IMAGE` et `NETWORK_SKIP_ENSLAVED`) et celui d'un service n'a que `LANG`, `PATH`, `INVOCATION_ID`
+  (le vrai ajoute `JOURNAL_STREAM`, numero d'inode du socket de journald non modelise).
+- Valeurs propres au noyau d'enregistrement (11 pas) : label de securite (`kernel` ici, `unconfined` sur un Ubuntu avec
+  AppArmor), chemin de cgroup (`4:memory:/process_api/...`), score OOM, groupes supplementaires (`-` ici, `0` pour root sur un
+  noyau habituel), temps CPU cumule des enfants moissonnes du shell du labo (`ps S`, `ps -S`), fautes de page mineures de ce
+  shell (5139).
+- Ligne de commande du shell du labo (`bash /tmp/<labo>.sh`) contre celle de la machine (`-bash`), qui decide du tri sur
+  `args`/`cmd` (`--sort=args`, `--sort=cmd`, `ps O c`) et des colonnes `comm=,args=` sans entete (5 pas).
+- Tri sur des grandeurs mesurees (`--sort=time|rss|pcpu|pmem|etime`, `ps O r`, `ps O v`, `ps O Pf`, 8 pas) : deux `sleep`
+  du meme labo ont des RSS differents (1668, 1672, 1676) ; les empreintes du simulateur sont constantes par programme, donc
+  l'ordre retombe sur le pid.
+- Pagination et largeur (4 pas : `--rows 5`, `--lines 5`, `LINES=5`, `COLUMNS=5`) : le nombre d'entetes repetes depend du nombre
+  de lignes, et la machine simulee en a 30 de plus que l'espace de noms du labo. Le mecanisme (un entete toutes les
+  `screen_rows - 1` lignes, `--headers`) est couvert par la sonde.
+- Selections que l'espace de noms rend vides (3 pas : `ps -u -1`, `ps -N -u root`, `ps 5`) : le groupe de processus 1 n'existe
+  pas dans l'espace de noms (pid 1 y dirige un groupe du dehors), tous les processus du labo sont a root, et le pid 5 est un
+  thread noyau de la machine simulee.
+Limites du normaliseur de colonnes (`netCmdsNormalizePs.ts`), pas du simulateur (2 pas) : un entete vide (`-o user=,pid`) decale les
+cellules, et un tableau sans entete (`--no-headers -f`, `-o comm=,args=`) ne dit pas quelle cellule est `C` ou `STIME`.
+Autres ecarts mesures, non fermes :
+- Chiffres memoire : seuls `bash`, `sleep`, `nc` et `ps` ont une empreinte mesuree (VSZ, RSS, TRS, PSS, USS, fautes mineures,
+  octets lus) ; les autres programmes ont des proportions (texte = VSZ/12, PSS = RSS/2, USS = RSS/3).
+- `pgrep`, `pkill`, `pidof`, `top`, `pstree` et `watch` restent sur `LinuxProcessCommands` (jouet) : ce sont d'autres
+  binaires de procps-ng (`pgrep`/`pkill` partagent `pgrep.c`, `top` a son propre ecran) et ils n'ont pas ete rejoues.
+- Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
+- Le tableau des jobs (`jobs`, `%1`) est global a la machine et non a un shell : un `bash -c` imbrique ne voit pas son
+  propre tableau.
+- `/dev/pts/N`, `/proc/tty/drivers` et `/proc/sys/kernel/pid_max` n'existent pas comme fichiers : `ps` lit le plafond des
+  pids (4194304, colonne de 7 chiffres) dans `PID_MAX` de `LinuxProcessManager`, et le numero de terminal dans
+  `ttyDeviceNumber`.
 
 ### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
 Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
@@ -4006,9 +4109,8 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 Les trois bancs passent en entier ; restent mesures et non fermes :
 - `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
 - `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
-- Un alias defini et utilise sur la meme ligne est deja developpe (bash ne le voit qu'a la ligne suivante).
-- `extglob` est toujours accepte par le lexeur, que `shopt -s extglob` ait ete tape ou non.
-- Les erreurs de syntaxe a l'interieur de `$(...)`, de `<(...)` et d'un `eval` imbrique passent encore par `BashParser.parse` (exception) : aucune commande qui precede n'est executee, contrairement a bash.
+- `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
+- Les erreurs de syntaxe a l'interieur d'un `$(...)` ecrit entre guillemets doubles ne sont pas relevees au parsage (seuls les `$(...)`, backticks et `<(...)` nus le sont).
 - Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
 - `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
@@ -4019,3 +4121,49 @@ Les trois bancs passent en entier ; restent mesures et non fermes :
 ### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
 
 Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.
+
+---
+
+## Telnet (client netkit, serveur netkit, clients des équipements réseau)
+
+Le client Linux est le port de netkit-telnet 0.17 (`src/network/protocols/telnet/client/`), rejoué contre le binaire réel
+(`telnet-client-netkit-oracle.test.ts`) ; le telnetd Linux suit la machine d'options de `in.telnetd` (`NetkitTelnetdNegotiation`).
+
+### [telnet] `z` ne suspend rien
+`host.suspend` est absent : la commande `z` rend la main immédiatement, ce que fait le vrai client dans un groupe de processus
+orphelin (relevé sous pty). Dans un shell à contrôle de tâches il s'arrêterait réellement. Brique manquante : un contrôle de tâches
+dans le terminal.
+
+### [telnet] `send synch` envoie le DM dans le flux
+Le client réel envoie l'octet DM en données urgentes (`MSG_OOB`) et traite une marque urgente entrante (`netex` : abandon des données
+en file). `TcpSocket` porte déjà `onUrgent` ; le port client ne l'utilise pas. Les octets du flux sont identiques, la marque urgente
+manque.
+
+### [telnet] routage par la source (`telnet @hop1@hop2:hote`)
+Le nom est résolu comme un nom ordinaire et échoue en `could not resolve`. Brique manquante : les options IP LSRR/SSRR dans la pile.
+
+### [telnet] `-n fichier` et `set tracefile` retiennent le nom sans rien écrire
+La trace des options (`toggle options`) va toujours à l'écran. Brique manquante : l'écriture d'un fichier par le client depuis la
+sortie standard du processus.
+
+### [telnet] les lignes d'un tube sont consommées avec une pause entre chacune
+`printf 'a\nb\n' | telnet h` envoie `a`, attend le calme du fil, puis `b`, comme si l'émetteur dormait. Un vrai tube remet tout d'un
+bloc puis l'EOF ; le client ferme alors avant la réponse du serveur. Le comportement choisi sert les scripts ; il n'est pas celui du
+binaire.
+
+### [telnet-windows] `telnet.exe` : invite `Microsoft Telnet>`, `set`, `display`, `unset`
+Le texte d'aide de `WindowsPC.cmdTelnet` vient d'une mémoire non vérifiée et la touche d'échappement `CTRL+]` n'ouvre aucune invite.
+Pas d'autorité atteignable ici (le proxy refuse `learn.microsoft.com`, 403) et pas de binaire Windows : rien n'est porté plutôt que
+deviné (`CLAUDE.md` §8).
+
+### [telnet-ios] touches d'échappement du client IOS autres que `x`
+`Ctrl-Maj-6 x` suspend et `resume`/`disconnect`/`show sessions`/Entrée reprennent, avec les libellés déjà rendus par le shell Cisco.
+Les autres touches (`c`, `b`, `h`, `n`, `p`, `1-9`) et le texte exact de la confirmation de `disconnect` n'ont pas de source
+atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à la connexion ne sont pas enregistrés : pas d'équipement.
+
+### [telnet-vrp] client VRP
+`Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
+
+## Cisco: time and logging commands still on the trie
+
+Measured: `service timestamps`, `service sequence-numbers`, `ntp disable|broadcast|multicast` and `show ntp packets` moved to the socle. Still declared on `CommandTrie`: line-mode `exec-timeout`, `login-timeout`, `logging synchronous`, `access-class`, and the `archive`/`log config` adapter. `clock summer-time` still parses its rule through a REST tail (`parseSummerTimeRule`), so `?` after `recurring` shows only `date`/`<cr>` instead of the positional week/day/month/time grammar. Not closed: these need positional multi-keyword places in the socle.

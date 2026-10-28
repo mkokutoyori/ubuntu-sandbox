@@ -5,6 +5,7 @@ export interface NetCmdsStep {
   readonly cmd: string;
   readonly output: string;
   readonly status: number;
+  readonly visible?: readonly number[];
 }
 
 export interface NetCmdsCase {
@@ -15,6 +16,7 @@ export interface NetCmdsCase {
   readonly addresses: readonly string[];
   readonly settle: number;
   readonly recordedPids: Readonly<Record<string, number | null>>;
+  readonly shellPid?: number;
   readonly baseline: string;
 }
 
@@ -32,7 +34,28 @@ export interface NetCmdsRun {
 }
 
 interface RootRunner {
-  readonly executor: { runAsUser<T>(username: string, fn: () => Promise<T>): Promise<T> };
+  readonly executor: {
+    runAsUser<T>(username: string, fn: () => Promise<T>): Promise<T>;
+    readonly processMgr: {
+      list(): readonly { readonly pid: number; readonly ppid: number }[];
+      get(pid: number): { user: string; uid: number; gid: number; euid: number; egid: number; suid: number; sgid: number; fsuid: number; fsgid: number } | undefined;
+    };
+  };
+}
+
+function descendantsOf(pc: LinuxPC, root: number): number[] {
+  const table = (pc as unknown as RootRunner).executor.processMgr.list();
+  const found = new Set<number>([root]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const proc of table) {
+      if (!found.has(proc.pid) && found.has(proc.ppid)) {
+        found.add(proc.pid);
+        grew = true;
+      }
+    }
+  }
+  return [...found];
 }
 
 const EPHEMERAL_PORT_FIRST = 32768;
@@ -74,6 +97,7 @@ export async function replayNetCmdsCase(lab: NetCmdsCase): Promise<NetCmdsRun> {
   await asRoot(`mkdir -p ${LAB_DIRECTORY}`);
   const names = lab.pids;
   const script = [
+    'set +m',
     `cd ${LAB_DIRECTORY}`,
     ...lab.setup,
     `sleep ${lab.settle}`,
@@ -89,13 +113,16 @@ export async function replayNetCmdsCase(lab: NetCmdsCase): Promise<NetCmdsRun> {
     }
   }
   const shellPid = Number((await asRoot('echo $$')).trim());
+  const shell = (pc as unknown as RootRunner).executor.processMgr.get(shellPid);
+  if (shell !== undefined) Object.assign(shell, { user: 'root', uid: 0, gid: 0, euid: 0, egid: 0, suid: 0, sgid: 0, fsuid: 0, fsgid: 0 });
   const steps: NetCmdsStep[] = [];
   for (const step of lab.steps) {
+    const visible = descendantsOf(pc, shellPid);
     const raw = await withinStepTimeout(asRoot(`cd ${LAB_DIRECTORY}; ${step.cmd}\necho "${STATUS_MARK}$?"`));
     const at = raw.lastIndexOf(STATUS_MARK);
     const status = at < 0 ? -1 : Number(raw.slice(at + STATUS_MARK.length).trim());
     const output = at < 0 ? raw : raw.slice(0, at).replace(/\n$/, '');
-    steps.push({ cmd: step.cmd, output, status });
+    steps.push({ cmd: step.cmd, output, status, visible });
   }
   return { steps, pids, shellPid, baseline };
 }

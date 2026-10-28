@@ -37,6 +37,10 @@ export class LinuxTelnetServerContext implements ITelnetServerContext {
     return this.host.hostname();
   }
 
+  negotiation(): 'netkit' {
+    return 'netkit';
+  }
+
   banner(): string | null {
     const issue = this.host.readFile('/etc/issue.net');
     return issue && issue.trim().length > 0 ? issue : null;

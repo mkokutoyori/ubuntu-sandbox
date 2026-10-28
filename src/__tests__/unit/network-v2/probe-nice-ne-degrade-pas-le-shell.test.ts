@@ -66,10 +66,10 @@ function poste(): Cmd {
   return createDevice('linux-pc', 0, 0) as unknown as Cmd;
 }
 
-/** La colonne NI de la ligne `-bash` de `ps`. */
+/** La colonne NI de la ligne `bash` de `ps`. */
 async function niceDuShell(pc: Cmd): Promise<string> {
   const sortie = await pc.executeCommand('ps -eo pid,ni,comm');
-  return sortie.split('\n').find((l) => l.includes('-bash'))?.trim().split(/\s+/)[1] ?? '<absent>';
+  return sortie.split('\n').find((l) => /\sbash$/.test(l.trim()))?.trim().split(/\s+/)[1] ?? '<absent>';
 }
 
 describe('le shell garde sa priorite', () => {
@@ -155,7 +155,7 @@ describe('TEMOIN', () => {
   it('renice ecrit toujours sur le processus qu on lui designe', async () => {
     const pc = poste();
     const shellPid = (await pc.executeCommand('ps -eo pid,ni,comm'))
-      .split('\n').find((l) => l.includes('-bash'))?.trim().split(/\s+/)[0] ?? '0';
+      .split('\n').find((l) => /\sbash$/.test(l.trim()))?.trim().split(/\s+/)[0] ?? '0';
 
     await pc.executeCommand(`sudo renice -n 4 -p ${shellPid}`);
 

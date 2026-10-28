@@ -144,7 +144,30 @@ export function cmdGrep(
     if (a === '--extended-regexp') { fl.extended = true; continue; }
     if (a === '--basic-regexp') { fl.extended = false; continue; }
     if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
-      if (!applyShortFlags(a.slice(1), fl)) { /* unknown short flag → ignore */ }
+      let at = 1;
+      while (at < a.length) {
+        const flag = a[at];
+        if (/[0-9]/.test(flag)) {
+          let end = at;
+          while (end < a.length && /[0-9]/.test(a[end])) end++;
+          fl.after = fl.before = parseInt(a.slice(at, end), 10);
+          at = end;
+          continue;
+        }
+        if ('ABCmefdD'.includes(flag)) {
+          const attached = a.slice(at + 1);
+          const value = attached !== '' ? attached : (args[++i] ?? '');
+          if (flag === 'A') fl.after = parseInt(value, 10) || 0;
+          else if (flag === 'B') fl.before = parseInt(value, 10) || 0;
+          else if (flag === 'C') { fl.after = parseInt(value, 10) || 0; fl.before = fl.after; }
+          else if (flag === 'm') fl.maxCount = parseInt(value, 10) || 0;
+          else if (flag === 'e') { patterns.push(value); patternGiven = true; }
+          else if (flag === 'f') { addPatternsFromFile(ctx, value, patterns); patternGiven = true; }
+          break;
+        }
+        applyShortFlags(flag, fl);
+        at++;
+      }
       continue;
     }
     if (a.startsWith('--')) continue; // unknown long option

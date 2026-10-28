@@ -192,15 +192,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('ipv6 route', [
     { name: 'prefix', type: 'WORD', description: 'IPv6 prefix', literal: 'X:X:X:X::X/<0-128>' },
   ]);
-  // La forme nue est acceptée sur IOS et vaut `debug uptime` : le canal
-  // est donc OPTIONNEL, sans quoi une commande valide serait refusée.
-  tries.config.describeArgs('service timestamps', [
-    { name: 'channel', type: 'ENUM', description: 'Message class to timestamp', optional: true,
-      values: [
-        { keyword: 'debug', description: 'Timestamp debug messages' },
-        { keyword: 'log', description: 'Timestamp log messages' },
-      ] },
-  ]);
   // Les NOMS restent des `WORD`, mais avec leur propre description.
   tries.config.describeArgs('username', [WORD('name', 'Name of the local user')]);
   tries.config.describeArgs('ip domain-list', [WORD('name', 'Domain name to append to the list')]);

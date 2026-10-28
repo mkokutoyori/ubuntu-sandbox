@@ -1,0 +1,1234 @@
+{
+ "family": "umask",
+ "tools": {
+  "ss": "ss utility, iproute2-6.1.0",
+  "netstat": "net-tools 2.10",
+  "fuser": "fuser (PSmisc) 23.7",
+  "lsof": "revision: 4.95.0",
+  "nc": "netcat-openbsd 1.226-1ubuntu2",
+  "bash": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+  "kernel": "6.18.44-fc-v165"
+ },
+ "cases": [
+  {
+   "id": "umask-parsing",
+   "setup": [],
+   "pids": [],
+   "addresses": [],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask -S",
+     "output": "u=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask -p",
+     "output": "umask 0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask -pS",
+     "output": "umask -S u=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask -Sp",
+     "output": "umask -S u=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask -p -S",
+     "output": "umask -S u=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask -S -p",
+     "output": "umask -S u=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; umask; umask -S; umask -p; umask -pS",
+     "output": "0077\nu=rwx,g=,o=\numask 0077\numask -S u=rwx,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0; umask; umask -S",
+     "output": "0000\nu=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 7; umask",
+     "output": "0007",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0777; umask; umask -S",
+     "output": "0777\nu=,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 22; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0022; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 00022; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 7777; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "umask 1000; echo rc=$?",
+     "output": "rc=0",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0778; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 60: umask: 0778: octal number out of range\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 8; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 63: umask: 8: octal number out of range\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 09; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 66: umask: 09: octal number out of range\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask abc; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 69: umask: `b': invalid symbolic mode operator\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask -x; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 72: umask: -x: invalid option\numask: usage: umask [-p] [-S] [mode]\nrc=2",
+     "status": 0
+    },
+    {
+     "cmd": "umask --; echo rc=$?; umask",
+     "output": "0000\nrc=0\n0000",
+     "status": 0
+    },
+    {
+     "cmd": "umask -- 022; echo rc=$?; umask",
+     "output": "rc=0\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask -- -S; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 81: umask: `S': invalid symbolic mode character\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022 033; echo rc=$?; umask",
+     "output": "rc=0\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask --help; echo rc=$?",
+     "output": "umask: umask [-p] [-S] [mode]\n    Display or set file mode mask.\n    \n    Sets the user file-creation mask to MODE.  If MODE is omitted, prints\n    the current value of the mask.\n    \n    If MODE begins with a digit, it is interpreted as an octal number;\n    otherwise it is a symbolic mode string like that accepted by chmod(1).\n    \n    Options:\n      -p\tif MODE is omitted, output in a form that may be reused as input\n      -S\tmakes the output symbolic; otherwise an octal number is output\n    \n    Exit Status:\n    Returns success unless MODE is invalid or an invalid option is given.\nrc=2",
+     "status": 0
+    },
+    {
+     "cmd": "umask -S 077; echo rc=$?; umask",
+     "output": "u=rwx,g=,o=\nrc=0\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask -p 077; echo rc=$?; umask",
+     "output": "rc=0\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask -pS 077; echo rc=$?; umask",
+     "output": "u=rwx,g=,o=\nrc=0\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask ''; echo rc=$?; umask",
+     "output": "/tmp/tmp10pk0fr1.sh: line 99: umask: `\u0000': invalid symbolic mode operator\nrc=1\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask ' 022'; echo rc=$?; umask",
+     "output": "/tmp/tmp10pk0fr1.sh: line 102: umask: ` ': invalid symbolic mode operator\nrc=1\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022 ; umask '0 22'; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 105: umask: 0 22: octal number out of range\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask +022; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 108: umask: `0': invalid symbolic mode character\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask -022; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 111: umask: -0: invalid option\numask: usage: umask [-p] [-S] [mode]\nrc=2",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0x22; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 114: umask: 0x22: octal number out of range\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 1e2; echo rc=$?",
+     "output": "/tmp/tmp10pk0fr1.sh: line 117: umask: 1e2: octal number out of range\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 0000; umask; umask 022",
+     "output": "0000",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 2\nTCP:   12 (estab 0, closed 12, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "umask-symbolic",
+   "setup": [],
+   "pids": [],
+   "addresses": [],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "umask 022; umask u=rwx,g=rx,o=rx; umask; umask -S",
+     "output": "0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask u=rwx,g=,o=; umask; umask -S",
+     "output": "0077\nu=rwx,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask u=rwx,g=rx,o=; umask; umask -S",
+     "output": "0027\nu=rwx,g=rx,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask a=rwx; umask; umask -S",
+     "output": "0000\nu=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask a=; umask; umask -S",
+     "output": "0777\nu=,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask a=r; umask; umask -S",
+     "output": "0333\nu=r,g=r,o=r",
+     "status": 0
+    },
+    {
+     "cmd": "umask =rwx; umask; umask -S",
+     "output": "0000\nu=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask =; umask; umask -S",
+     "output": "0777\nu=,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u+w; umask; umask -S",
+     "output": "0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask g+w; umask; umask -S",
+     "output": "0002\nu=rwx,g=rwx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask o+w; umask; umask -S",
+     "output": "0020\nu=rwx,g=rx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask a+w; umask; umask -S",
+     "output": "0000\nu=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask +w; umask; umask -S",
+     "output": "0000\nu=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask go-rx; umask; umask -S",
+     "output": "0077\nu=rwx,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask g-r; umask; umask -S",
+     "output": "0062\nu=rwx,g=x,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask o-rwx; umask; umask -S",
+     "output": "0027\nu=rwx,g=rx,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask -w; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 57: umask: -w: invalid option\numask: usage: umask [-p] [-S] [mode]\n0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=g; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 60: umask: `g': invalid symbolic mode character\n0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask g=u; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 63: umask: `u': invalid symbolic mode character\n0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask o=g; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 66: umask: `g': invalid symbolic mode character\n0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u+g; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 69: umask: `g': invalid symbolic mode character\n0022\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; umask g=u; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 72: umask: `u': invalid symbolic mode character\n0077\nu=rwx,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; umask u=rwx,g=u; umask; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 75: umask: `u': invalid symbolic mode character\n0077\nu=rwx,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=rw,g=r,o=r; umask; umask -S",
+     "output": "0133\nu=rw,g=r,o=r",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask ug=rwx; umask; umask -S",
+     "output": "0002\nu=rwx,g=rwx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask ugo=rwx; umask; umask -S",
+     "output": "0000\nu=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=rwx g=rx; echo rc=$?; umask",
+     "output": "rc=0\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=rwx,g=rx,o=rx,; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 90: umask: `\u0000': invalid symbolic mode operator\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask ,u=rwx; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 93: umask: `,': invalid symbolic mode operator\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 96: umask: `\u0000': invalid symbolic mode operator\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=q; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 99: umask: `q': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask z=r; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 102: umask: `z': invalid symbolic mode operator\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=rwxs; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 105: umask: `s': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=rwxt; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 108: umask: `t': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=X; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 111: umask: `X': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u==r; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 114: umask: `=': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=r+w; echo rc=$?; umask -S",
+     "output": "/tmp/tmpywddy6c4.sh: line 117: umask: `+': invalid symbolic mode character\nrc=1\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u+=w; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 120: umask: `=': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=rwx,x; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 123: umask: `x': invalid symbolic mode operator\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask a+rwx,u-w; umask -S",
+     "output": "u=rx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u+w,g+w,o+w; umask -S",
+     "output": "u=rwx,g=rwx,o=rwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0777; umask u+rwx; umask -S",
+     "output": "u=rwx,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0777; umask a+r; umask -S",
+     "output": "u=r,g=r,o=r",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0; umask a-rwx; umask -S",
+     "output": "u=,g=,o=",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask -S u=rwx; umask -S",
+     "output": "u=rwx,g=rx,o=rx\nu=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask A=r; echo rc=$?",
+     "output": "/tmp/tmpywddy6c4.sh: line 144: umask: `A': invalid symbolic mode operator\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask u=R; echo rc=$?",
+     "output": "/tmp/tmpywddy6c4.sh: line 147: umask: `R': invalid symbolic mode character\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask ' u=rwx'; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 150: umask: ` ': invalid symbolic mode operator\nrc=1\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 'u=rwx '; echo rc=$?; umask",
+     "output": "/tmp/tmpywddy6c4.sh: line 153: umask: ` ': invalid symbolic mode character\nrc=1\n0022",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 2\nTCP:   12 (estab 0, closed 12, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "umask-scopes",
+   "setup": [],
+   "pids": [],
+   "addresses": [],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "umask 022; (umask 077; umask); umask",
+     "output": "0077\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; { umask 077; }; umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 077 | cat; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 077 & wait; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; echo 077 | umask; umask",
+     "output": "0022\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; echo $(umask 077; umask); umask",
+     "output": "0077\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; v=$(umask 077); umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; `umask 077`; umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; bash -c umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; sh -c umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; bash -c 'umask 027; umask'; umask",
+     "output": "0027\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 027; (bash -c umask)",
+     "output": "0027",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; bash -c 'umask 077; touch /tmp/lab/sc1'; umask; ls -l sc1 | cut -c1-10",
+     "output": "0022\n-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; env sh -c umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; nice bash -c umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; sudo bash -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; f() { umask 077; }; f; umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; f() { local x; umask 077; }; f; umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; trap 'umask' EXIT; umask 077",
+     "output": "",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; for i in 1; do umask 027; done; umask",
+     "output": "0027",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; if true; then umask 027; fi; umask",
+     "output": "0027",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; while false; do :; done; umask 027; umask",
+     "output": "0027",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; x=1 umask 077; umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; command umask 077; umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; builtin umask 077; umask",
+     "output": "0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; type umask",
+     "output": "umask is a shell builtin",
+     "status": 0
+    },
+    {
+     "cmd": "command -V umask",
+     "output": "umask is a shell builtin",
+     "status": 0
+    },
+    {
+     "cmd": "type -a umask",
+     "output": "umask is a shell builtin",
+     "status": 0
+    },
+    {
+     "cmd": "type -t umask",
+     "output": "builtin",
+     "status": 0
+    },
+    {
+     "cmd": "help umask | head -3",
+     "output": "umask: umask [-p] [-S] [mode]\n    Display or set file mode mask.\n    ",
+     "status": 0
+    },
+    {
+     "cmd": "enable -n umask; umask 077; echo rc=$?; enable umask; umask",
+     "output": "/tmp/tmpkcj8os4j.sh: line 99: umask: command not found\nrc=127\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; alias umask='echo no'; umask; unalias umask; umask",
+     "output": "0022\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask=5; umask; echo $umask",
+     "output": "0022\n5",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; /usr/bin/umask 2>&1 | head -1; echo rc=$?",
+     "output": "/tmp/tmpkcj8os4j.sh: line 108: /usr/bin/umask: No such file or directory\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; which umask; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; exec 3>&1; umask -S >&3; umask >&3",
+     "output": "u=rwx,g=rx,o=rx\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask -S > um.txt; cat um.txt",
+     "output": "u=rwx,g=rx,o=rx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 2>/dev/null; echo rc=$?",
+     "output": "0022\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077 2>&1; echo rc=$?; umask",
+     "output": "rc=0\n0077",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 099 2>&1 >/dev/null; umask",
+     "output": "/tmp/tmpkcj8os4j.sh: line 126: umask: 099: octal number out of range\n0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 099 2>/dev/null; echo rc=$?",
+     "output": "rc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 000; sudo bash -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0277; sudo bash -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; sudo -u nobody bash -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; su -s /bin/sh nobody -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; su -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; su - -c umask",
+     "output": "0022",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; sudo sh -c 'umask; umask 027; umask'; umask",
+     "output": "0022\n0027\n0077",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 2\nTCP:   12 (estab 0, closed 12, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "umask-files",
+   "setup": [
+    "touch f1",
+    "echo seed > f1"
+   ],
+   "pids": [],
+   "addresses": [],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "umask 022; touch f1; mkdir d1; echo x > r1; ls -ld f1 d1 r1 | cut -c1-10",
+     "output": "drwxr-xr-x\n-rw-r--r--\n-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; touch f2; mkdir d2; echo x > r2; ls -ld f2 d2 r2 | cut -c1-10",
+     "output": "drwx------\n-rw-------\n-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 027; touch f3; mkdir d3; echo x > r3; ls -ld f3 d3 r3 | cut -c1-10",
+     "output": "drwxr-x---\n-rw-r-----\n-rw-r-----",
+     "status": 0
+    },
+    {
+     "cmd": "umask 000; touch f4; mkdir d4; echo x > r4; ls -ld f4 d4 r4 | cut -c1-10",
+     "output": "drwxrwxrwx\n-rw-rw-rw-\n-rw-rw-rw-",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0777; touch f5; mkdir d5; echo x > r5 2>/dev/null; ls -ld f5 d5 r5 | cut -c1-10 2>&1",
+     "output": "d---------\n----------\n----------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; : > t1; umask 077; touch t1; ls -ld t1 | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 000; ln -s f4 l4; mkfifo p4; ls -ld l4 p4 | cut -c1-10",
+     "output": "lrwxrwxrwx\nprw-rw-rw-",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; ln -s f4 l5; mkfifo p5; ls -ld l5 p5 | cut -c1-10",
+     "output": "lrwxrwxrwx\nprw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mkdir -p pa/pb/pc; ls -ld pa pa/pb pa/pb/pc | cut -c1-10",
+     "output": "drwx------\ndrwx------\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; mkdir -p qa/qb/qc; ls -ld qa qa/qb qa/qb/qc | cut -c1-10",
+     "output": "drwxr-xr-x\ndrwxr-xr-x\ndrwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0277; mkdir -p ra/rb 2>&1; echo rc=$?; ls -ld ra | cut -c1-10 2>&1",
+     "output": "rc=0\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 0377; mkdir -p sa/sb 2>&1; echo rc=$?; ls -ld sa | cut -c1-10 2>&1",
+     "output": "rc=0\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mkdir -m 755 m1; mkdir -m 700 m2; mkdir -m u=rwx,go=rx m3; mkdir -m +w m4; ls -ld m1 m2 m3 m4 | cut -c1-10",
+     "output": "drwxr-xr-x\ndrwx------\ndrwxr-xr-x\ndrwxrwxrwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; touch tt; chmod 644 tt; ls -ld tt | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; cp /etc/hostname c1; ls -ld c1 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 000; cp /etc/hostname c2; ls -ld c2 | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; cp -p /etc/hostname c3; ls -ld c3 | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; touch exec1; chmod 755 exec1; umask 077; cp exec1 exec2; ls -ld exec1 exec2 | cut -c1-10",
+     "output": "-rwxr-xr-x\n-rwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; install -m 644 /etc/hostname i1; install -d id1; install /etc/hostname i2; ls -ld i1 id1 i2 | cut -c1-10",
+     "output": "-rw-r--r--\n-rwxr-xr-x\ndrwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; tee tee1 < /dev/null; echo x | tee tee2 > /dev/null; ls -ld tee1 tee2 | cut -c1-10",
+     "output": "-rw-------\n-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; dd if=/dev/null of=dd1 2>/dev/null; ls -ld dd1 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; echo x >> ap1; ls -ld ap1 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; echo x &> both1; exec 4> fd1; exec 4>&-; ls -ld both1 fd1 | cut -c1-10",
+     "output": "-rw-------\n-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mv f1 f1.moved; ls -ld f1.moved | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; touch -t 200001010000 old1; ls -ld old1 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mkdir new1; cd new1; touch inner; cd ..; ls -ld new1 new1/inner | cut -c1-10",
+     "output": "drwx------\n-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; nc -lU sock1 & sleep 0.3; ls -ld sock1 | cut -c1-10",
+     "output": "srwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; nc -lU sock2 & sleep 0.3; ls -ld sock2 | cut -c1-10",
+     "output": "srwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 000; nc -lU sock3 & sleep 0.3; ls -ld sock3 | cut -c1-10",
+     "output": "srwxrwxrwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 027; nc -luU sock4 & sleep 0.3; ls -ld sock4 | cut -c1-10",
+     "output": "srwxr-x---",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; bash -c 'umask 077; touch bs1'; ls -ld bs1 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; sudo touch su1; ls -ld su1 | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; (touch sh1); { touch sh2; }; ls -ld sh1 sh2 | cut -c1-10",
+     "output": "-rw-------\n-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; umask 077 && touch and1; ls -ld and1 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; touch before; umask 077; touch after; ls -ld before after | cut -c1-10",
+     "output": "-rw-------\n-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; mkdir sticky; chmod 1777 sticky; touch sticky/s1; ls -ld sticky sticky/s1 | cut -c1-10",
+     "output": "drwxrwxrwt\n-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; mkdir -m 2755 setgid1; ls -ld setgid1 | cut -c1-10",
+     "output": "drwxr-sr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; ln f1.moved hard1; ls -ld hard1 | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; ln -s /etc/hostname sym1; ls -ld sym1 | cut -c1-10",
+     "output": "lrwxrwxrwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; cp -r d1 d1copy; ls -ld d1copy | cut -c1-10",
+     "output": "drwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; cp -a d1 d1archive; ls -ld d1archive | cut -c1-10",
+     "output": "drwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; tar -cf a.tar d1; mkdir x1; tar -xf a.tar -C x1; ls -ld a.tar x1 x1/d1 | cut -c1-10",
+     "output": "-rw-------\ndrwx------\ndrwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; tar -xf a.tar -p -C . 2>&1 | head -1; ls -ld d1 | cut -c1-10",
+     "output": "drwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; gzip -k a.tar; ls -ld a.tar.gz | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; printf 'x' | tee -a tee3 > /dev/null; ls -ld tee3 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mktemp -p . mkt.XXXX | cut -c1-5; mktemp -d -p . mkd.XXXX | cut -c1-5; ls -ld mkt.* mkd.* | cut -c1-10",
+     "output": "./mkt\n./mkd\ndrwx------\n-rw-------",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 2\nTCP:   12 (estab 0, closed 12, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  },
+  {
+   "id": "umask-tools",
+   "setup": [
+    "touch tf0"
+   ],
+   "pids": [],
+   "addresses": [],
+   "settle": 0.4,
+   "steps": [
+    {
+     "cmd": "umask 022; mkdir -v v1; mkdir -pv v2/a/b; mkdir v1; echo rc=$?; mkdir -p v1; echo rc=$?",
+     "output": "mkdir: created directory 'v1'\nmkdir: created directory 'v2'\nmkdir: created directory 'v2/a'\nmkdir: created directory 'v2/a/b'\nmkdir: cannot create directory 'v1': File exists\nrc=1\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir -v -m 700 v3; ls -ld v3 | cut -c1-10",
+     "output": "mkdir: created directory 'v3'\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "touch tf; mkdir tf/x; echo rc=$?",
+     "output": "mkdir: cannot create directory 'tf/x': Not a directory\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir -m 999 x1; echo rc=$?",
+     "output": "mkdir: invalid mode '999'\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir -m; echo rc=$?",
+     "output": "mkdir: option requires an argument -- 'm'\nTry 'mkdir --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir; echo rc=$?",
+     "output": "mkdir: missing operand\nTry 'mkdir --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir -m u=rwx,g=,o= mm1 mm2; ls -ld mm1 mm2 | cut -c1-10",
+     "output": "drwx------\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir -m 0 zero; ls -ld zero | cut -c1-10",
+     "output": "d---------",
+     "status": 0
+    },
+    {
+     "cmd": "mkdir -m a+rwx all1; ls -ld all1 | cut -c1-10",
+     "output": "drwxrwxrwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mkdir -m o+r or1; ls -ld or1 | cut -c1-10",
+     "output": "drwxrwxrwx",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; cp -v /etc/hostname v1c; cp /etc/hostname /etc/passwd noexist; echo rc=$?",
+     "output": "'/etc/hostname' -> 'v1c'\ncp: target 'noexist': No such file or directory\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "cp /etc/hostname; echo rc=$?",
+     "output": "cp: missing destination file operand after '/etc/hostname'\nTry 'cp --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "cp; echo rc=$?",
+     "output": "cp: missing file operand\nTry 'cp --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "cp nonexist x; echo rc=$?",
+     "output": "cp: cannot stat 'nonexist': No such file or directory\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "cp v1 x; echo rc=$?",
+     "output": "cp: -r not specified; omitting directory 'v1'\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; cp /etc/hostname v1; ls v1",
+     "output": "hostname",
+     "status": 0
+    },
+    {
+     "cmd": "cp -n /etc/passwd v1c; cmp -s v1c /etc/passwd; echo same=$?",
+     "output": "cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead\nsame=1",
+     "status": 0
+    },
+    {
+     "cmd": "cp -n /etc/hostname fresh-n; echo rc=$?",
+     "output": "cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "cp --no-clobber /etc/passwd v1c; echo rc=$?",
+     "output": "cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "cp -r v2 v2c; ls -R v2c",
+     "output": "v2c:\na\n\nv2c/a:\nb\n\nv2c/a/b:",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; cp -r v2 v2d; ls -ld v2d v2d/a v2d/a/b | cut -c1-10",
+     "output": "drwx------\ndrwx------\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; cp -a v2 v2e; ls -ld v2e v2e/a v2e/a/b | cut -c1-10",
+     "output": "drwxr-xr-x\ndrwxr-xr-x\ndrwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; chmod 4755 suid; touch suid; chmod 4755 suid; cp suid suid2; ls -l suid suid2 | cut -c1-10",
+     "output": "chmod: cannot access 'suid': No such file or directory\n-rwsr-xr-x\n-rwxr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; cp -p suid suid3; ls -l suid3 | cut -c1-10",
+     "output": "-rwsr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; install -v /etc/hostname iv1; install -vd iv2/a; install -D /etc/hostname iv3/b/c; ls -R iv3 | head -3",
+     "output": "'/etc/hostname' -> 'iv1'\ninstall: creating directory 'iv2'\ninstall: creating directory 'iv2/a'\niv3:\nb\n",
+     "status": 0
+    },
+    {
+     "cmd": "install; echo rc=$?",
+     "output": "install: missing file operand\nTry 'install --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "install /etc/hostname; echo rc=$?",
+     "output": "install: missing destination file operand after '/etc/hostname'\nTry 'install --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "install nonexist x; echo rc=$?",
+     "output": "install: cannot stat 'nonexist': No such file or directory\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "install v1 x; echo rc=$?",
+     "output": "install: omitting directory 'v1'\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "install -m 4755 /etc/hostname isuid; ls -l isuid | cut -c1-10",
+     "output": "-rwsr-xr-x",
+     "status": 0
+    },
+    {
+     "cmd": "install -m u=rw,go=r /etc/hostname isym; ls -l isym | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "install -m 999 /etc/hostname ibad; echo rc=$?",
+     "output": "install: invalid mode '999'\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; install -d -m 700 idm; ls -ld idm | cut -c1-10",
+     "output": "drwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; install -o nobody -g nogroup -m 640 /etc/hostname iown; ls -l iown | awk '{print $1,$3,$4}'",
+     "output": "-rw-r----- nobody nogroup",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; mktemp | cut -c1-9; mktemp -d | cut -c1-9; f=$(mktemp); ls -l $f | cut -c1-10; d=$(mktemp -d); ls -ld $d | cut -c1-10",
+     "output": "/tmp/tmp.\n/tmp/tmp.\n-rw-------\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 000; f=$(mktemp); ls -l $f | cut -c1-10; d=$(mktemp -d); ls -ld $d | cut -c1-10",
+     "output": "-rw-------\ndrwx------",
+     "status": 0
+    },
+    {
+     "cmd": "mktemp fooXXXXXX | cut -c1-3; mktemp foo.XXX --suffix=.txt | cut -c1-4; mktemp XX; echo rc=$?",
+     "output": "foo\nfoo.\nmktemp: too few X's in template 'XX'\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mktemp -u | cut -c1-9; mktemp -p /tmp | cut -c1-9; mktemp -p /tmp/lab tmp.XXXX | cut -c1-13; mktemp -p /nonexistent; echo rc=$?; mktemp -q -p /nonexistent; echo rc=$?",
+     "output": "/tmp/tmp.\n/tmp/tmp.\n/tmp/lab/tmp.\nmktemp: failed to create file via template '/nonexistent/tmp.XXXXXXXXXX': No such file or directory\nrc=1\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mktemp -p . mkt.XXXX | cut -c1-5; mktemp -d -p . mkd.XXXX | cut -c1-5; ls -d mkt.* mkd.* | cut -c1-3",
+     "output": "./mkt\n./mkd\nmkd\nmkt",
+     "status": 0
+    },
+    {
+     "cmd": "mktemp -t abcXXXX | cut -c1-8; mktemp --tmpdir | cut -c1-9; mktemp -h; echo rc=$?",
+     "output": "/tmp/abc\n/tmp/tmp.\nmktemp: invalid option -- 'h'\nTry 'mktemp --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "mktemp a b; echo rc=$?",
+     "output": "mktemp: too many templates\nTry 'mktemp --help' for more information.\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "TMPDIR=/tmp/lab mktemp | cut -c1-13; TMPDIR=/tmp/lab mktemp -t zXXX | cut -c1-10",
+     "output": "/tmp/lab/tmp.\n/tmp/lab/z",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; dd if=/dev/null of=ddx 2>/dev/null; ls -l ddx | cut -c1-10; dd if=/dev/null of=ddy 2>&1 | head -1; dd if=nonexist 2>&1 | head -1; dd if=nonexist 2>/dev/null; echo rc=$?",
+     "output": "-rw-------\n0+0 records in\ndd: failed to open 'nonexist': No such file or directory\nrc=1",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; exec 5> ex1; exec 6>> ex2; ls -l ex1 ex2 | cut -c1-10; echo still-here",
+     "output": "-rw-r--r--\n-rw-r--r--\nstill-here",
+     "status": 0
+    },
+    {
+     "cmd": "umask 077; exec 7> ex3; ls -l ex3 | cut -c1-10",
+     "output": "-rw-------",
+     "status": 0
+    },
+    {
+     "cmd": "umask 022; echo x | tee tz1 > /dev/null; ls -l tz1 | cut -c1-10",
+     "output": "-rw-r--r--",
+     "status": 0
+    },
+    {
+     "cmd": "ls -ld nonexist v1 v2 tf 2>&1 | cut -c1-10; echo rc=$?",
+     "output": "ls: cannot\n-rw-r--r--\ndrwxr-xr-x\ndrwxr-xr-x\nrc=0",
+     "status": 0
+    },
+    {
+     "cmd": "ls v1 v2 tf nonexist 2>&1; echo rc=$?",
+     "output": "ls: cannot access 'nonexist': No such file or directory\ntf\n\nv1:\nhostname\n\nv2:\na\nrc=2",
+     "status": 0
+    },
+    {
+     "cmd": "ls -d v2 v1 tf | cat",
+     "output": "tf\nv1\nv2",
+     "status": 0
+    },
+    {
+     "cmd": "ls -1 tf v1 v2",
+     "output": "tf\n\nv1:\nhostname\n\nv2:\na",
+     "status": 0
+    },
+    {
+     "cmd": "cd /tmp/lab; ls -ld ./v2 v1/ ../lab/tf | cut -c1-10",
+     "output": "-rw-r--r--\ndrwxr-xr-x\ndrwxr-xr-x",
+     "status": 0
+    }
+   ],
+   "recordedPids": {},
+   "baseline": "Total: 2\nTCP:   12 (estab 0, closed 12, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  0         0         0        \nUDP\t  0         0         0        \nTCP\t  0         0         0        \nINET\t  0         0         0        \nFRAG\t  0         0         0        \n"
+  }
+ ]
+}

@@ -111,6 +111,7 @@ export interface ArgumentSpec {
    * Le rendu impose, quand le type ne suffit pas a le decrire (`hh:mm`).
    */
   readonly literal?: string;
+  readonly tabSuggestions?: readonly string[];
   /**
    * La FORME que la valeur doit avoir, quand le type ne suffit pas.
    *
@@ -154,7 +155,7 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
   Object.freeze({
     INT: {
       placeholder: `<0-${INT_ANNOUNCED_MAX}>`,
-      accepts: (t) => /^\d+$/.test(t) && Number(t) <= INT_ANNOUNCED_MAX,
+      accepts: (t) => /^-?\d+$/.test(t) && Math.abs(Number(t)) <= INT_ANNOUNCED_MAX,
     },
     WORD: { placeholder: 'WORD', accepts: (t) => t.length > 0 && !/\s/.test(t) },
     LINE: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
@@ -295,7 +296,10 @@ export function argumentAccepts(spec: ArgumentSpec, raw: string): boolean {
 
 export function argumentPlaceholder(spec: ArgumentSpec): string {
   if (spec.literal) return spec.literal;
-  if (spec.range) return `<${spec.range[0]}-${spec.range[1]}>`;
+  if (spec.range) {
+    const [low, high] = spec.range;
+    return low < 0 ? `<${low} - ${high}>` : `<${low}-${high}>`;
+  }
   return ARGUMENT_TYPES[spec.type].placeholder;
 }
 

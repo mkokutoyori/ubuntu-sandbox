@@ -42,7 +42,7 @@ function lsnrctl(srv: LinuxServer, sub: string): string {
 }
 
 const netstat = (srv: LinuxServer) => srv.executeShellCommandSync('netstat -tlnp');
-const ps = (srv: LinuxServer) => srv.executeShellCommandSync('ps aux');
+const ps = (srv: LinuxServer) => srv.executeShellCommandSync('ps auxww');
 
 describe('listener lifecycle drives the socket and process tables', () => {
   it('while running: port 1521 bound, tnslsnr in ps, unit active', () => {

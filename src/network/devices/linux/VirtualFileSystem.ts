@@ -19,6 +19,14 @@ import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
 
+const FIND_TYPES = ['f', 'd', 'l', 'p', 's', 'c', 'b'] as const;
+
+export type FindType = typeof FIND_TYPES[number];
+
+export function isFindType(text: string): text is FindType {
+  return (FIND_TYPES as readonly string[]).includes(text);
+}
+
 export interface RemoteMountStat {
   readonly type: FileType;
   readonly permissions: number;
@@ -350,7 +358,7 @@ export class VirtualFileSystem {
     this.createCharDev('/dev/pts/ptmx', 'ptmx');
     // The local console VT is a static device node present from boot,
     // unlike pty slaves which come and go with sessions.
-    this.createCharDev('/dev/tty1', 'tty');
+    for (let console = 0; console <= 63; console++) this.createCharDev(`/dev/tty${console}`, 'tty');
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
@@ -487,7 +495,7 @@ export class VirtualFileSystem {
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
       'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'cd', 'bash', 'sh',
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'tee', 'sleep',
-      'kill', 'locate', 'updatedb'];
+      'kill', 'locate', 'updatedb', 'install'];
     for (const bin of binaries) {
       this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }
@@ -1549,22 +1557,6 @@ export class VirtualFileSystem {
 
   // ─── Copy / Move Operations ───────────────────────────────────────
 
-  copy(srcPath: string, dstPath: string, uid: number, gid: number, umask: number): boolean {
-    const srcInode = this.resolveInode(srcPath);
-    if (!srcInode || srcInode.type !== 'file') return false;
-
-    // If dst is a directory, copy into it
-    const dstInode = this.resolveInode(dstPath);
-    let finalDst = dstPath;
-    if (dstInode?.type === 'directory') {
-      const srcBasename = srcPath.split('/').filter(Boolean).pop()!;
-      finalDst = dstPath.replace(/\/$/, '') + '/' + srcBasename;
-    }
-
-    const perms = 0o666 & ~umask;
-    return this.createFileAt(finalDst, srcInode.content, perms, uid, gid) !== null;
-  }
-
   rename(srcPath: string, dstPath: string): boolean {
     const remote = this.remoteFor(srcPath);
     if (remote && this.remoteFor(dstPath) === remote) {
@@ -1659,7 +1651,7 @@ export class VirtualFileSystem {
     iname?: string;        // case-insensitive -name
     path?: string;         // glob against the full path
     ipath?: string;        // case-insensitive -path
-    type?: 'f' | 'd' | 'l';
+    type?: FindType;
     empty?: boolean;
     user?: number;
     group?: number;
@@ -1713,7 +1705,9 @@ export class VirtualFileSystem {
 
   private _matchesFindCriteria(path: string, inode: INode, options: any): boolean {
     if (options.type !== undefined) {
-      const typeMap: Record<string, FileType> = { f: 'file', d: 'directory', l: 'symlink' };
+      const typeMap: Record<FindType, FileType> = {
+        f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'chardev',
+      };
       if (inode.type !== typeMap[options.type]) return false;
     }
 
