@@ -879,3 +879,49 @@ describe('track list submode', () => {
     expect(await r.executeCommand('threshold up 2 down 1')).toBe('');
   });
 });
+
+/*
+ * Twenty-third batch (igmp interface and show): 0 of 7 fail before, by design. The commands were
+ * registered on the config-if trie and through the adapter; one declaration remains and the cases
+ * pin the behaviour, including the messages other tests rely on (IGMPv3 not supported, invalid
+ * group address).
+ */
+describe('igmp', () => {
+  const onInterface = (...more: string[]) =>
+    router('interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', ...more);
+  it('witness: ip igmp join-group is stored and no ip igmp join-group removes it', async () => {
+    const r = await onInterface('ip igmp join-group 239.1.1.1');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).toContain('ip igmp join-group 239.1.1.1');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand('no ip igmp join-group 239.1.1.1');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).not.toContain('ip igmp join-group 239.1.1.1');
+  });
+  it('says IGMPv3 is not supported', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('ip igmp version 3')).toContain('IGMPv3 is not supported');
+  });
+  it('rejects a group that is not multicast', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('ip igmp join-group 10.0.0.1')).toContain('Invalid group address');
+  });
+  it('answers incomplete to join-group alone', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('ip igmp join-group')).toContain('Incomplete');
+  });
+  it('witness: version 1 is rendered and no ip igmp version restores v2', async () => {
+    const r = await onInterface('ip igmp version 1');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).toContain('ip igmp version 1');
+  });
+  it('show ip igmp interface answers', async () => {
+    const r = await onInterface('ip igmp', 'end');
+    expect(await r.executeCommand('show ip igmp interface')).toContain('IGMP is enabled');
+  });
+  it('show ip igmp groups answers with its header', async () => {
+    const r = await onInterface('ip igmp', 'end');
+    expect(await r.executeCommand('show ip igmp groups')).toContain('IGMP Connected Group Membership');
+  });
+});

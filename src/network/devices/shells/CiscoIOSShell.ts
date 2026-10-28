@@ -105,7 +105,7 @@ import {
   buildBfdInterfaceCommands, bfdInterfaceSpecs, bfdShowSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
-  buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
+  igmpShowSpecs,
   igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
@@ -2431,10 +2431,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
     });
-    buildIgmpInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
     buildPimInterfaceCommands(this.configIfTrie, {
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
@@ -2519,7 +2515,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     this.registerRouterShowViews(trie);
